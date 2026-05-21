@@ -25,3 +25,14 @@ ping happened.
 
 Resolution: quiet MCP suppression returns
 `{"sent": false, "suppressed": true, "reason": "telegram_fyis_off"}`.
+
+## Finding 4 — Quiet mode must not hide blocker progress
+
+The live 18g launch produced a watched-run `HALTED before implementation`
+message because the requested worktree was outside writable roots. Treating
+that as a routine FYI made the supervisor record context but fail to ping Sam.
+
+Resolution: `test_quiet_telegram_fyis_allows_halt_escalation_ping` drives
+`TelegramProgressStreamer.handle_event` with the same HALT/sandbox-blocker text
+shape and asserts quiet mode still sends Telegram, records the notification as
+`[watched run alert]`, and marks urgency as `alert`.

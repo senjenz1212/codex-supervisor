@@ -37,33 +37,32 @@ class TelegramProgressStreamer:
         message = progress_message(run_id, event)
         if not message:
             return
+        urgency = progress_urgency(event, message)
 
         for watch in self.state.active_run_watches(run_id):
             if event_id <= int(watch["last_event_id"] or 0):
                 continue
-            quiet = self.telegram_fyi_mode == "off"
-            if not quiet:
+            suppressed = self.telegram_fyi_mode == "off" and urgency != "alert"
+            if not suppressed:
                 try:
                     await self.notifier.send_message(message)
                 except Exception as e:
                     log.warning("telegram progress send failed for run %s: %s", run_id, e)
                     continue
             request = {
-                "origin": (
-                    "progress_notification_suppressed"
-                    if quiet else "progress_notification"
-                ),
+                "origin": _notification_origin(suppressed=suppressed, urgency=urgency),
                 "kind": "watched_run_progress",
                 "run_id": run_id,
                 "event_id": event_id,
+                "urgency": urgency,
             }
-            if quiet:
+            if suppressed:
                 request["suppressed_by"] = "telegram_fyis_off"
             self.state.record_supervisor_notification(
                 chat_id=str(watch["chat_id"]),
-                message_text=(
-                    "[watched run progress suppressed]"
-                    if quiet else "[watched run progress]"
+                message_text=_notification_turn_label(
+                    suppressed=suppressed,
+                    urgency=urgency,
                 ),
                 response_text=message,
                 request=request,
@@ -71,7 +70,8 @@ class TelegramProgressStreamer:
                     "name": "progress_message",
                     "run_id": run_id,
                     "event_id": event_id,
-                    "suppressed": quiet,
+                    "suppressed": suppressed,
+                    "urgency": urgency,
                 }],
                 proposed_actions=[],
             )
@@ -199,6 +199,67 @@ def progress_message(run_id: str, event: dict[str, Any]) -> str | None:
         )
 
     return None
+
+
+def progress_urgency(event: dict[str, Any], message: str) -> str:
+    """Classify watched-run progress for Telegram quiet-mode routing.
+
+    Quiet mode suppresses routine FYIs only. Explicit halts, blockers, failed
+    checks, and approval-needed states are operator alerts.
+    """
+    payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+    payload_type = str(payload.get("type") or "").lower()
+    text = " ".join([
+        str(payload.get("message") or ""),
+        str(payload.get("last_agent_message") or ""),
+        message,
+    ]).lower()
+
+    if "halted" in text or " halt " in f" {text} ":
+        return "alert"
+    if "blocker" in text or "blocked" in text:
+        return "alert"
+    if "sandbox" in text and (
+        "writable roots" in text
+        or "approval policy" in text
+        or "blocked" in text
+        or "cannot create" in text
+    ):
+        return "alert"
+    if (
+        "ci failed" in text
+        or "checks failed" in text
+        or "check failed" in text
+        or "failing check" in text
+    ):
+        return "alert"
+    if (
+        "needs approval" in text
+        or "requires approval" in text
+        or "pending approval" in text
+        or "waiting for approval" in text
+        or "tier-b approval" in text
+    ):
+        return "alert"
+    if payload_type == "task_complete" and "failed" in text:
+        return "alert"
+    return "fyi"
+
+
+def _notification_origin(*, suppressed: bool, urgency: str) -> str:
+    if suppressed:
+        return "progress_notification_suppressed"
+    if urgency == "alert":
+        return "progress_alert"
+    return "progress_notification"
+
+
+def _notification_turn_label(*, suppressed: bool, urgency: str) -> str:
+    if suppressed:
+        return "[watched run progress suppressed]"
+    if urgency == "alert":
+        return "[watched run alert]"
+    return "[watched run progress]"
 
 
 def _should_review(event: dict[str, Any]) -> bool:

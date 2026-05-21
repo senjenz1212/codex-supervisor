@@ -58,6 +58,9 @@ Source PRD: `docs/prd/claude-supervisor-telegram-prd.md`
   two approval-gated slash commands `/autosteer` and `/quiet`; their command
   matrix, configured-chat authority, stale callback behavior, allowlist, and
   restart-failure handling are covered in `tests/test_telegram_live.py`.
+- Quiet mode suppresses routine watched-run progress, but blocker progress
+  such as HALTED/sandbox-blocked runs is covered as an alert bypass in
+  `tests/test_telegram_progress_streaming.py`.
 - Rolling model-generated summary refresh is implemented at the Telegram
   ingress boundary. Every thresholded conversation turn refreshes
   `supervisor_conversations.summary` with a fail-soft summarizer while raw

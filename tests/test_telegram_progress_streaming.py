@@ -209,3 +209,60 @@ async def test_quiet_telegram_fyis_suppresses_progress_ping_but_keeps_context(tm
     decision = await asyncio.wait_for(state.next_decision(), timeout=0.2)
     assert decision.kind == "review_updates"
     assert decision.payload["event_id"] == 31
+
+
+@pytest.mark.asyncio
+async def test_quiet_telegram_fyis_allows_halt_escalation_ping(tmp_path):
+    """CS22/CS23 regression: quiet mode suppresses FYIs, not blocker alerts.
+
+    This mirrors the live 18g failure where the watched session halted because
+    the requested worktree was outside writable roots. That must ping Sam even
+    when routine progress is quiet.
+    """
+    from supervisor.telegram_progress import TelegramProgressStreamer
+
+    state = State(str(tmp_path / "state.db"))
+    state.register_run(
+        run_id="run-vela",
+        session_id="session-vela",
+        rollout_path=str(tmp_path / "rollout.jsonl"),
+        task="Monitor Vela",
+        scope=ScopeContract(),
+        target_kind="codex",
+    )
+    state.create_run_watch(chat_id="42", run_id="run-vela", last_event_id=40)
+    notifier = _FakeNotifier()
+    streamer = TelegramProgressStreamer(
+        state=state,
+        notifier=notifier,
+        telegram_fyi_mode="off",
+    )
+
+    await streamer.handle_event("run-vela", {
+        "id": 41,
+        "kind": "event_msg",
+        "payload": {
+            "type": "task_complete",
+            "turn_id": "turn-halt",
+            "last_agent_message": (
+                "HALTED before implementation.\n\n"
+                "Reason: sandbox writable roots do not include "
+                "`/Users/sam.zhang/Documents/cortex-pod-vela-18g-meeting-notes`, "
+                "and approval policy is `never`, so I cannot create the "
+                "requested clean worktree/branch there."
+            ),
+        },
+    })
+
+    assert len(notifier.messages) == 1
+    assert "HALTED before implementation" in notifier.messages[0]
+    assert "writable roots" in notifier.messages[0]
+    watch = state.active_run_watches("run-vela")[0]
+    assert watch["last_event_id"] == 41
+    turns = state.recent_supervisor_turns(chat_id="42", n=5)
+    assert len(turns) == 1
+    assert turns[0]["message_text"] == "[watched run alert]"
+    assert turns[0]["request"]["origin"] == "progress_alert"
+    assert "suppressed_by" not in turns[0]["request"]
+    assert turns[0]["tool_outputs"][0]["suppressed"] is False
+    assert turns[0]["tool_outputs"][0]["urgency"] == "alert"

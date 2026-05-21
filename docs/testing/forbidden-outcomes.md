@@ -47,6 +47,9 @@ issue explicitly adds a stricter rule.
   Telegram supervisor turn.
 - Quiet Telegram FYI mode suppresses alerts or approval prompts, forgets
   watched-run progress context, or reports a suppressed FYI as sent.
+- Quiet Telegram FYI mode suppresses watched-run blocker progress such as
+  HALTED runs, sandbox-blocked worktree creation, CI failure, or
+  approval-needed states.
 - Progress-context repair sends a duplicate Telegram notification or writes a
   blank-chat memory row.
 - A progress notification grants permission to mutate a target session.

@@ -22,6 +22,9 @@ context and still allowing alerts, approvals, and CS21 autosteer.
 - `review_updates` can still run, but MCP `send_message` suppresses
   `normal`/`fyi` messages and reports `sent=false`.
 - MCP `send_message(... urgency="alert")` still sends.
+- Watched-run blocker progress, including `HALTED`, sandbox blocked
+  worktree creation, CI failure, and approval-needed states, is classified as
+  `alert` and still sends.
 - Approval prompts and destructive escalation gates remain outside FYI
   suppression.
 
@@ -30,6 +33,8 @@ context and still allowing alerts, approvals, and CS21 autosteer.
 - Quiet mode forgets progress.
 - Quiet mode replays the same event later.
 - Quiet mode suppresses alerts or approval prompts.
+- Quiet mode suppresses watched-run blocker alerts such as `HALTED` or
+  sandbox-blocked worktree creation.
 - Quiet mode disables autosteer.
 - A suppressed FYI reports `sent=true`.
 - Routine progress or review pings still reach Telegram in quiet mode.
@@ -50,6 +55,16 @@ context and still allowing alerts, approvals, and CS21 autosteer.
      `cfg.modes.telegram_fyis == "off"`.
 
 3. Regression — existing progress, context, and autosteer tests remain green.
+
+4. Live regression — watched-run HALT bypasses quiet mode.
+   - Test:
+     `test_quiet_telegram_fyis_allows_halt_escalation_ping`.
+   - Fixture shape mirrors the 18g launch failure: task complete with
+     `HALTED before implementation` and `sandbox writable roots` in the
+     last agent message.
+   - GREEN adds progress urgency classification so alerts send even when
+     `telegram_fyis` is `off`, while routine progress remains suppressed and
+     persisted as quiet context.
 
 ## Grill Findings
 
