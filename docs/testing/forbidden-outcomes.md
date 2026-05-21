@@ -41,6 +41,8 @@ issue explicitly adds a stricter rule.
   fixture tests; or treats a method/path diff as verified GUI repaint.
 - Outbound watched-run progress notifications are invisible to the next
   Telegram supervisor turn.
+- Quiet Telegram FYI mode suppresses alerts or approval prompts, forgets
+  watched-run progress context, or reports a suppressed FYI as sent.
 - Progress-context repair sends a duplicate Telegram notification or writes a
   blank-chat memory row.
 - A progress notification grants permission to mutate a target session.

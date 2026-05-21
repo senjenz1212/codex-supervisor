@@ -33,9 +33,20 @@ def build_telegram_mcp_server(cfg: Config, state: State):
     async def send_message(args: dict) -> dict[str, Any]:
         text = args["text"]
         urg = args.get("urgency", "normal")
+        if cfg.modes.telegram_fyis == "off" and urg != "alert":
+            return {"content": [{"type": "text", "text": json.dumps({
+                "sent": False,
+                "suppressed": True,
+                "reason": "telegram_fyis_off",
+                "urgency": urg,
+            })}]}
         prefix = {"normal": "", "alert": "[alert] ", "fyi": "[fyi] "}.get(urg, "")
         await notifier.send_message(prefix + text)
-        return {"content": [{"type": "text", "text": '{"sent": true}'}]}
+        return {"content": [{"type": "text", "text": json.dumps({
+            "sent": True,
+            "suppressed": False,
+            "urgency": urg,
+        })}]}
 
     @tool(
         "ask_user",

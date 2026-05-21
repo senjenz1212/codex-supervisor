@@ -60,6 +60,8 @@ supervisor:
 
 modes:
   rollout_ingestion: enforce
+  # advise: send routine watched-run FYI/progress pings.
+  # off: quiet mode; suppress routine FYIs but still allow alerts and approvals.
   telegram_fyis: advise
   drift_l1_l3: shadow
   drift_l4: advise

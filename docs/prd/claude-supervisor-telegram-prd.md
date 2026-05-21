@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft v0.13 — Aggressive steering is escalation-gated.
+Draft v0.14 — Quiet mode suppresses FYIs but preserves escalation.
 
 ## Changelog
 
@@ -16,6 +16,9 @@ Draft v0.13 — Aggressive steering is escalation-gated.
 - v0.13 — Added CS21: aggressive steering mode may auto-deliver
   non-destructive steering through the action ledger, while destructive
   escalation remains approval-gated.
+- v0.14 — Added CS22: `telegram_fyis: off` suppresses routine progress and
+  review pings while preserving quiet context, auto-steer, alerts, and approval
+  prompts.
 - v0.11 — Added CS14: Desktop status sync reports an effective visibility
   state. App-server `thread/inject_items` success is treated as history-only
   unless the adapter explicitly proves live GUI repaint.
@@ -122,6 +125,9 @@ Reframe the architecture:
 18. As Sam, I can ask the supervisor to continue with suggested low-risk moves
     automatically, while it only pings me for escalation, destructive recovery,
     blocked delivery, or ambiguous authority.
+19. As Sam, I can put Telegram in quiet mode so watched-run progress and
+    review FYIs do not ping me, while the supervisor still remembers progress
+    and still pings me for alerts, approval, or escalation.
 
 ## PRD Promise Contracts
 
@@ -485,6 +491,32 @@ Forbidden outcomes: auto-steering runs without an action row; `advise` mode
 auto-delivers; `enforce` mode auto-executes kill, restart, or destructive
 recovery; stale Telegram approval callbacks mutate the target; Claude changes
 live modes from free text; a failed auto-steer is reported as delivered.
+
+### CS22. Quiet Mode Suppresses FYIs But Preserves Escalation
+
+User-visible promise: When `modes.telegram_fyis` is `off`, the supervisor does
+not send routine watched-run progress or review/advice Telegram pings. It still
+records the progress as quiet context, advances watch offsets, keeps automatic
+non-destructive steering available through CS21, and lets alerts plus approval
+prompts reach Sam.
+
+Representative actions: Set `telegram_fyis: off`, watch "Vela chat bot", let a
+run emit `Run started` or `Run complete`, and let a `review_updates` decision
+try to send a normal or FYI Telegram message. Trigger an alert-path message or
+an approval prompt.
+
+Public boundary: `telegram_progress_context` plus `telegram_mcp_tools`.
+
+Allowed outcomes: progress events are not sent to Telegram in quiet mode; the
+event is persisted as suppressed supervisor context with `active_run_id`; the
+watch offset advances so the same event is not replayed; quiet mode still
+enqueues grounded review work; Telegram MCP `send_message` suppresses
+`normal`/`fyi` messages but allows `alert`; approval prompts and destructive
+escalation gates remain available.
+
+Forbidden outcomes: quiet mode forgets progress, replays the same event later,
+suppresses alerts or approval prompts, disables auto-steer, sends routine
+review/progress pings anyway, or lets a suppressed FYI pretend it was sent.
 
 ## Non-Goals
 

@@ -21,20 +21,23 @@ Decide what to do, and never take a destructive action without user confirmation
 
 ### stalled
 1. Read the last 10 events. Is there a tool call hanging? An approval prompt waiting?
-2. Send the user a message: `⚠ Run <id> stalled for >90s on <last_action>. Investigating.`
+2. Send the user an alert message with `urgency="alert"`:
+   `⚠ Run <id> stalled for >90s on <last_action>. Investigating.`
 3. Try a soft probe via inject_steering: a message like *"Are you blocked? Briefly summarize current state and next step."*
 4. Wait 60s. If new events appear, send_message that recovery worked. record_decision.
 5. If still stalled, ask_user with options ["Wait longer", "Kill"].
 
 ### crashed
 1. The Codex desktop process is not running. The supervisor cannot inject anything.
-2. Send the user an alert: `🚨 Codex desktop process died during run <id>. Last activity: <ts>.`
+2. Send the user an alert with `urgency="alert"`:
+   `🚨 Codex desktop process died during run <id>. Last activity: <ts>.`
 3. ask_user with options ["Restart Codex", "Leave it", "Mark run failed"].
 4. record_decision; the daemon will execute the chosen action.
 
 ### hooks_broken
 1. Codex is running but our hook server isn't being called. This means safety checks are off.
-2. Send the user an alert: `🚨 Hooks broken for >5min on run <id>. Real-time critique disabled.`
+2. Send the user an alert with `urgency="alert"`:
+   `🚨 Hooks broken for >5min on run <id>. Real-time critique disabled.`
 3. ask_user with options ["Continue without hooks", "Pause until restart", "Kill"].
 4. record_decision.
 

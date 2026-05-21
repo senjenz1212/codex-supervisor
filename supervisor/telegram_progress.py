@@ -22,11 +22,13 @@ class TelegramProgressStreamer:
         notifier: Any,
         target_adapter: Any | None = None,
         desktop_status_mode: str = "off",
+        telegram_fyi_mode: str = "advise",
     ):
         self.state = state
         self.notifier = notifier
         self.target_adapter = target_adapter
         self.desktop_status_mode = desktop_status_mode
+        self.telegram_fyi_mode = telegram_fyi_mode
 
     async def handle_event(self, run_id: str, event: dict[str, Any]) -> None:
         event_id = int(event.get("id") or 0)
@@ -39,25 +41,37 @@ class TelegramProgressStreamer:
         for watch in self.state.active_run_watches(run_id):
             if event_id <= int(watch["last_event_id"] or 0):
                 continue
-            try:
-                await self.notifier.send_message(message)
-            except Exception as e:
-                log.warning("telegram progress send failed for run %s: %s", run_id, e)
-                continue
+            quiet = self.telegram_fyi_mode == "off"
+            if not quiet:
+                try:
+                    await self.notifier.send_message(message)
+                except Exception as e:
+                    log.warning("telegram progress send failed for run %s: %s", run_id, e)
+                    continue
+            request = {
+                "origin": (
+                    "progress_notification_suppressed"
+                    if quiet else "progress_notification"
+                ),
+                "kind": "watched_run_progress",
+                "run_id": run_id,
+                "event_id": event_id,
+            }
+            if quiet:
+                request["suppressed_by"] = "telegram_fyis_off"
             self.state.record_supervisor_notification(
                 chat_id=str(watch["chat_id"]),
-                message_text="[watched run progress]",
+                message_text=(
+                    "[watched run progress suppressed]"
+                    if quiet else "[watched run progress]"
+                ),
                 response_text=message,
-                request={
-                    "origin": "progress_notification",
-                    "kind": "watched_run_progress",
-                    "run_id": run_id,
-                    "event_id": event_id,
-                },
+                request=request,
                 tool_outputs=[{
                     "name": "progress_message",
                     "run_id": run_id,
                     "event_id": event_id,
+                    "suppressed": quiet,
                 }],
                 proposed_actions=[],
             )

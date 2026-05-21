@@ -97,6 +97,13 @@ runtime receives the prior outbound progress notification in conversation
 context. Tests may fake Telegram delivery and the model runtime, but must not
 skip watch state, progress send, or supervisor turn persistence.
 
+## telegram_mcp_tools
+
+Invoke the Telegram MCP toolpack used by Claude decision agents and verify
+message routing, urgency policy, FYI suppression, and approval prompts through
+the public tool functions. Tests may fake the SDK decorator and Telegram
+notifier, but must not bypass `build_telegram_mcp_server`.
+
 ## progress_context_backfill
 
 Repair an already-sent watched-run progress notification by loading the stored

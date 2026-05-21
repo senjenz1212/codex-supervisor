@@ -89,6 +89,9 @@ supervisor:
   hook_critique_strategy: model_first
 
 modes:
+  # Set to off for quiet mode: no routine FYI/progress pings, while alerts and
+  # approval prompts still reach you.
+  telegram_fyis: advise
   drift_l1_l3: shadow
   drift_l4: advise
   hook_blocking: shadow
@@ -101,6 +104,18 @@ modes:
 Use `steering_injection: enforce` only when you want the supervisor to proceed
 with low-risk steering automatically and ping you only for escalations.
 Destructive recovery actions still require fresh approval.
+
+For the more aggressive "only ping me for escalations" setup, combine:
+
+```yaml
+modes:
+  telegram_fyis: off
+  steering_injection: enforce
+```
+
+That suppresses routine watched-run progress and review FYIs, but preserves
+quiet progress context, alert messages, approval prompts, and action-ledger
+autosteer.
 
 ## Start In Foreground
 

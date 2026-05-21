@@ -159,3 +159,53 @@ async def test_task_complete_progress_enqueues_grounded_review_once(tmp_path):
     assert decision.payload["chat_id"] == "42"
     assert decision.payload["event_id"] == 21
     assert state.decisions.empty()
+
+
+@pytest.mark.asyncio
+async def test_quiet_telegram_fyis_suppresses_progress_ping_but_keeps_context(tmp_path):
+    """CS22 RED: escalation-only mode should stop FYI progress pings without
+    making the supervisor forget what happened."""
+    from supervisor.telegram_progress import TelegramProgressStreamer
+
+    state = State(str(tmp_path / "state.db"))
+    state.register_run(
+        run_id="run-vela",
+        session_id="session-vela",
+        rollout_path=str(tmp_path / "rollout.jsonl"),
+        task="Monitor Vela",
+        scope=ScopeContract(),
+        target_kind="codex",
+    )
+    state.create_run_watch(chat_id="42", run_id="run-vela", last_event_id=30)
+    notifier = _FakeNotifier()
+    streamer = TelegramProgressStreamer(
+        state=state,
+        notifier=notifier,
+        telegram_fyi_mode="off",
+    )
+
+    await streamer.handle_event("run-vela", {
+        "id": 31,
+        "kind": "event_msg",
+        "payload": {
+            "type": "task_complete",
+            "turn_id": "turn-quiet",
+            "last_agent_message": "PR #58 merged. Next low-risk slice is ready.",
+        },
+    })
+
+    assert notifier.messages == []
+    watch = state.active_run_watches("run-vela")[0]
+    assert watch["last_event_id"] == 31
+    conversation = state.get_supervisor_conversation("42")
+    assert conversation is not None
+    assert conversation["active_run_id"] == "run-vela"
+    turns = state.recent_supervisor_turns(chat_id="42", n=5)
+    assert len(turns) == 1
+    assert turns[0]["message_text"] == "[watched run progress suppressed]"
+    assert turns[0]["request"]["origin"] == "progress_notification_suppressed"
+    assert turns[0]["request"]["suppressed_by"] == "telegram_fyis_off"
+    assert "PR #58 merged" in turns[0]["response_text"]
+    decision = await asyncio.wait_for(state.next_decision(), timeout=0.2)
+    assert decision.kind == "review_updates"
+    assert decision.payload["event_id"] == 31

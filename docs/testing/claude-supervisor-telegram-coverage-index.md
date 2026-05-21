@@ -20,6 +20,7 @@ Source PRD: `docs/prd/claude-supervisor-telegram-prd.md`
 | CS14 Desktop GUI Repaint Truth Is Not Implied By History Append | In progress | `.scratch/claude-supervisor-telegram/14-desktop-gui-repaint-truth.md` |
 | CS15 Desktop GUI Reflection Viability Is Evidence-Gated | In progress | `.scratch/claude-supervisor-telegram/20-cold-start-normal-turn-ipc-spike.md` |
 | CS21 Aggressive Steering Proceeds Only Within Escalation Policy | Covered | `.scratch/claude-supervisor-telegram/21-aggressive-steering-escalation-policy.md` |
+| CS22 Quiet Mode Suppresses FYIs But Preserves Escalation | Covered | `.scratch/claude-supervisor-telegram/22-quiet-mode-escalation-only.md` |
 
 ## Implemented Tests
 
@@ -30,6 +31,7 @@ Source PRD: `docs/prd/claude-supervisor-telegram-prd.md`
 - `tests/test_action_executor.py`
 - `tests/test_codex_resume.py`
 - `tests/test_telegram_progress_streaming.py`
+- `tests/test_telegram_quiet_mode.py`
 - `tests/test_workspace_grounding.py`
 - `tests/test_agent_invoker_review.py`
 - `tests/test_codex_mcp_tools.py`

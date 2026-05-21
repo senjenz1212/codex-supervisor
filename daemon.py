@@ -89,6 +89,7 @@ async def main() -> int:
             notifier=notifier,
             target_adapter=target_adapter,
             desktop_status_mode=cfg.modes.desktop_status_sync,
+            telegram_fyi_mode=cfg.modes.telegram_fyis,
         )
     chat_supervisor = None
     if notifier is not None:
