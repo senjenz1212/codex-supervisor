@@ -117,6 +117,18 @@ That suppresses routine watched-run progress and review FYIs, but preserves
 quiet progress context, alert messages, approval prompts, and action-ledger
 autosteer.
 
+You can also request these mode changes from Telegram:
+
+```text
+/autosteer on
+/autosteer off
+/quiet on
+/quiet off
+```
+
+Each command sends an inline approval prompt first. The config is not changed
+and the daemon is not restarted until you tap `Approve`.
+
 ## Start In Foreground
 
 ```bash

@@ -14,9 +14,8 @@ executor and approval path.
 
 **Allowed outcomes:** read-only answers are immediate; steering creates action
 rows; steering delivery requires a fresh nonce-protected Telegram approval
-before the target adapter receives an `inject_steering` action; mode changes
-are deferred in v0.7 and do not mutate config; destructive actions require
-fresh approval.
+before the target adapter receives an `inject_steering` action; free-text mode
+changes do not mutate config; destructive actions require fresh approval.
 
 **Forbidden outcomes:** free text directly kills, restarts, blocks, or injects
 steering; free text changes supervisor modes; stale approval buttons execute
@@ -48,4 +47,6 @@ Implemented for the Claude-tool path. The supervisor runtime can request
 steering through `mcp__supervisor__request_steering`; execution stays behind
 `action_executor` and nonce approval. Open-ended natural-language extraction
 heuristics remain Claude's responsibility rather than a Python parser. Telegram
-mode changes remain deferred; no `request_mode_change` tool is exposed.
+free-text mode changes remain unsupported; no `request_mode_change` tool is
+exposed. CS23 adds narrow approval-gated slash commands for `/autosteer` and
+`/quiet`.

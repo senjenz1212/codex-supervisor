@@ -9,6 +9,8 @@ issue explicitly adds a stricter rule.
   kill/restart/destructive recovery without fresh user approval.
 - Destructive action runs without fresh user approval.
 - Stale or spoofed Telegram callback performs an action.
+- Telegram free text or slash commands mutate live modes without a fresh
+  nonce-protected approval callback.
 - A secret appears in SQLite or Telegram text.
 - Replay calls live target agents, live Telegram, or live model APIs by default.
 - Drift, replay, action policy, or decision runtime reads raw Claude Code or

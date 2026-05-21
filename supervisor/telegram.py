@@ -8,9 +8,14 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import secrets
+import time
 from typing import Any
+from pathlib import Path
 
 import httpx
+import yaml
 
 from .config import Config
 from .redaction import redact_for_telegram
@@ -159,11 +164,19 @@ class TelegramPoller:
         state: State,
         target_adapter: Any | None = None,
         chat_handler: Any | None = None,
+        config_path: str | None = None,
+        restart_runner: Any | None = None,
     ):
         self.cfg = cfg
         self.state = state
         self.target_adapter = target_adapter
         self.chat_handler = chat_handler
+        self.config_path = (
+            config_path
+            or os.environ.get("CODEX_SUPERVISOR_CONFIG")
+            or str(Path.home() / ".codex-supervisor" / "config.yaml")
+        )
+        self.restart_runner = restart_runner or _restart_launch_agent
         self.offset = 0
 
     async def run(self) -> None:
@@ -219,6 +232,26 @@ class TelegramPoller:
         if idx >= len(options):
             return
         answer = options[idx]
+
+        mode_action = self._pending_mode_change_for_ask(ask_id)
+        if mode_action is not None:
+            result = await self._resolve_mode_change_approval(
+                ask_id=ask_id,
+                answer=answer,
+                nonce=nonce,
+                action_row=mode_action,
+            )
+            if result.get("status") == "applied":
+                await self._answer_callback(cb, "Recorded: Approve", client=client)
+            elif result.get("status") == "cancelled":
+                await self._answer_callback(cb, f"Recorded: {answer}", client=client)
+            else:
+                await self._answer_callback(
+                    cb,
+                    "Approval expired or invalid.",
+                    client=client,
+                )
+            return
 
         delivered = False
         if self.target_adapter is not None:
@@ -305,6 +338,167 @@ class TelegramPoller:
                     "text": redact_for_telegram(text),
                 },
             )
+            return
+
+        mode_change = self._parse_mode_command(msg["text"])
+        if mode_change is not None:
+            await self._request_mode_change_approval(mode_change, client=client)
+
+    @staticmethod
+    def _parse_mode_command(text: str) -> dict[str, str] | None:
+        parts = text.split()
+        if len(parts) != 2:
+            return None
+        command, arg = parts[0].lower(), parts[1].lower()
+        if command == "/autosteer" and arg in {"on", "off"}:
+            return {
+                "command": command,
+                "mode_key": "steering_injection",
+                "new_value": "enforce" if arg == "on" else "advise",
+                "label": "autosteer",
+            }
+        if command == "/quiet" and arg in {"on", "off"}:
+            return {
+                "command": command,
+                "mode_key": "telegram_fyis",
+                "new_value": "off" if arg == "on" else "advise",
+                "label": "quiet mode",
+            }
+        return None
+
+    async def _request_mode_change_approval(
+        self,
+        change: dict[str, str],
+        *,
+        client: httpx.AsyncClient,
+    ) -> None:
+        mode_key = change["mode_key"]
+        old_value = str(getattr(self.cfg.modes, mode_key))
+        new_value = change["new_value"]
+        if old_value == new_value:
+            await client.post(
+                api_url(self.cfg.telegram.bot_token, "sendMessage"),
+                data={
+                    "chat_id": self.cfg.telegram.chat_id,
+                    "text": f"{change['label']} is already {new_value}.",
+                },
+            )
+            return
+
+        nonce = secrets.token_hex(8)
+        expires_at = int(time.time()) + int(self.cfg.telegram.ask_timeout_s)
+        question = (
+            f"Approve mode change?\n"
+            f"{mode_key}: {old_value} -> {new_value}\n"
+            f"Config: {self.config_path}"
+        )
+        ask_id = self.state.create_ask(
+            "__supervisor__",
+            question,
+            ["Approve", "Reject"],
+            nonce=nonce,
+            expires_at=expires_at,
+        )
+        action_id = self.state.record_action(
+            run_id="__supervisor__",
+            action_type="mode_change",
+            requested_by="telegram_command",
+            payload={
+                "ask_id": ask_id,
+                "nonce": nonce,
+                "expires_at": expires_at,
+                "command": change["command"],
+                "mode_key": mode_key,
+                "old_value": old_value,
+                "new_value": new_value,
+                "config_path": self.config_path,
+                "requires_approval": True,
+            },
+            status="pending_approval",
+        )
+        keyboard = {
+            "inline_keyboard": [[
+                {
+                    "text": opt,
+                    "callback_data": f"ask:{ask_id}:{nonce}:{i}",
+                }
+            ] for i, opt in enumerate(["Approve", "Reject"])]
+        }
+        await client.post(
+            api_url(self.cfg.telegram.bot_token, "sendMessage"),
+            data={
+                "chat_id": self.cfg.telegram.chat_id,
+                "text": redact_for_telegram(question),
+                "reply_markup": json.dumps(keyboard),
+            },
+        )
+        log.info("queued mode_change action=%s %s=%s", action_id, mode_key, new_value)
+
+    def _pending_mode_change_for_ask(self, ask_id: int):
+        rows = self.state._conn.execute(
+            """SELECT * FROM actions
+               WHERE action_type='mode_change'
+                 AND status='pending_approval'
+               ORDER BY id DESC"""
+        ).fetchall()
+        for row in rows:
+            try:
+                payload = json.loads(row["payload_json"] or "{}")
+            except json.JSONDecodeError:
+                continue
+            if int(payload.get("ask_id") or 0) == int(ask_id):
+                return row
+        return None
+
+    async def _resolve_mode_change_approval(
+        self,
+        *,
+        ask_id: int,
+        answer: str,
+        nonce: str | None,
+        action_row: Any,
+    ) -> dict[str, Any]:
+        ok = self.state.answer_ask(ask_id, answer, nonce=nonce)
+        if not ok:
+            refreshed = self.state.get_ask(ask_id)
+            if refreshed is not None and refreshed["status"] == "expired":
+                self.state.complete_action(action_row["id"], "approval_expired", {
+                    "answer": answer,
+                })
+            return {"status": "rejected", "reason": "invalid_or_expired_approval"}
+
+        if answer.lower() != "approve":
+            self.state.complete_action(action_row["id"], "cancelled", {
+                "answer": answer,
+            })
+            return {"status": "cancelled"}
+
+        payload = json.loads(action_row["payload_json"] or "{}")
+        mode_key = str(payload.get("mode_key") or "")
+        new_value = str(payload.get("new_value") or "")
+        if mode_key not in {"steering_injection", "telegram_fyis"}:
+            self.state.complete_action(action_row["id"], "failed", {
+                "answer": answer,
+                "reason": "mode_not_allowlisted",
+            })
+            return {"status": "failed", "reason": "mode_not_allowlisted"}
+        try:
+            _write_mode_value(self.config_path, mode_key, new_value)
+            restart_result = await self.restart_runner()
+        except Exception as e:
+            self.state.complete_action(action_row["id"], "failed", {
+                "answer": answer,
+                "reason": "mode_change_failed",
+                "error": str(e),
+            })
+            return {"status": "failed", "reason": "mode_change_failed"}
+
+        self.state.complete_action(action_row["id"], "applied", {
+            "answer": answer,
+            "restart_result": restart_result,
+        })
+        setattr(self.cfg.modes, mode_key, new_value)
+        return {"status": "applied", "restart_result": restart_result}
 
     async def _handle_chat_message(self, msg: dict[str, Any], client: httpx.AsyncClient) -> None:
         chat = msg.get("chat", {})
@@ -340,3 +534,31 @@ class TelegramPoller:
                 log.warning("telegram chat send failed: %s", data)
         except Exception:
             pass
+
+
+def _write_mode_value(config_path: str, mode_key: str, new_value: str) -> None:
+    path = Path(config_path).expanduser()
+    with path.open() as f:
+        raw = yaml.safe_load(f) or {}
+    modes = raw.setdefault("modes", {})
+    modes[mode_key] = new_value
+    path.write_text(yaml.safe_dump(raw, sort_keys=False))
+
+
+async def _restart_launch_agent() -> dict[str, Any]:
+    uid = os.getuid()
+    proc = await asyncio.create_subprocess_exec(
+        "launchctl",
+        "kickstart",
+        "-k",
+        f"gui/{uid}/com.sam.codex-supervisor",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await proc.communicate()
+    return {
+        "ok": proc.returncode == 0,
+        "returncode": proc.returncode,
+        "stdout": stdout.decode("utf-8", errors="replace")[:1000],
+        "stderr": stderr.decode("utf-8", errors="replace")[:1000],
+    }

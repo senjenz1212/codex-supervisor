@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft v0.14 — Quiet mode suppresses FYIs but preserves escalation.
+Draft v0.15 — Mode toggles are approval-gated Telegram commands.
 
 ## Changelog
 
@@ -19,6 +19,9 @@ Draft v0.14 — Quiet mode suppresses FYIs but preserves escalation.
 - v0.14 — Added CS22: `telegram_fyis: off` suppresses routine progress and
   review pings while preserving quiet context, auto-steer, alerts, and approval
   prompts.
+- v0.15 — Added CS23: `/autosteer` and `/quiet` Telegram commands can request
+  mode changes, but only nonce-approved callbacks mutate config and restart the
+  daemon.
 - v0.11 — Added CS14: Desktop status sync reports an effective visibility
   state. App-server `thread/inject_items` success is treated as history-only
   unless the adapter explicitly proves live GUI repaint.
@@ -39,7 +42,8 @@ Draft v0.14 — Quiet mode suppresses FYIs but preserves escalation.
   sending recommendations.
 - v0.7 — Closed CS4 steering gap: natural-language steer requests now create
   nonce-protected Telegram approval actions before Codex receives any steer.
-  Telegram mode changes remain deferred and are not exposed as tools.
+  Telegram mode changes were deferred at this stage and are not exposed as
+  Claude tools.
 - v0.3 — Added CS7: Telegram conversations must feel continuous across turns,
   daemon restarts, and SDK compaction by combining Claude SDK session resume
   with supervisor-owned SQLite memory and rolling summaries.
@@ -92,8 +96,8 @@ Reframe the architecture:
    stored hook/event/action ids.
 6. As Sam, I can request a nudge or re-anchor, but steering still goes through
    the action ledger and approval/mode policy.
-7. As Sam, I can eventually change modes from Telegram only through an
-   explicit, confirmation-protected action. This is deferred in v0.7.
+7. As Sam, I can change the two supported Telegram-facing modes from Telegram
+   only through explicit, confirmation-protected commands.
 8. As Sam, I can replay any supervisor Telegram turn from stored inputs and
    model/tool outputs.
 9. As Sam, I can keep deterministic fallback rules for hard safety even when
@@ -128,6 +132,8 @@ Reframe the architecture:
 19. As Sam, I can put Telegram in quiet mode so watched-run progress and
     review FYIs do not ping me, while the supervisor still remembers progress
     and still pings me for alerts, approval, or escalation.
+20. As Sam, I can turn autosteer and quiet mode on/off from Telegram, but the
+    supervisor must ask me for a button approval before changing live config.
 
 ## PRD Promise Contracts
 
@@ -188,12 +194,12 @@ prompts.
 ### CS4. Telegram Requests Cannot Bypass Approval and Modes
 
 User-visible promise: A natural-language request like "stop it" or "nudge it"
-becomes a proposed action and follows mode/approval policy. Requests to change
-operating modes are explicitly deferred in v0.7 and must not mutate live
-configuration.
+becomes a proposed action and follows mode/approval policy. Free-text requests
+to change operating modes must not mutate live configuration.
 
 Representative actions: Send "re-anchor Vela chat bot"; ask for a mode change
-and receive a deferred/unsupported response rather than a silent config change.
+in free text and receive an unsupported/deferred response rather than a silent
+config change.
 
 Public boundary: `telegram_chat_ingress` plus `action_executor`.
 
@@ -518,12 +524,35 @@ Forbidden outcomes: quiet mode forgets progress, replays the same event later,
 suppresses alerts or approval prompts, disables auto-steer, sends routine
 review/progress pings anyway, or lets a suppressed FYI pretend it was sent.
 
+### CS23. Telegram Mode Toggles Require Approval
+
+User-visible promise: Telegram commands `/autosteer on|off` and `/quiet on|off`
+can request live mode changes, but they must create a nonce-protected approval
+prompt before mutating `~/.codex-supervisor/config.yaml` or restarting the
+daemon.
+
+Representative actions: Send `/autosteer on`, tap Approve, then verify
+`modes.steering_injection=enforce`; send `/quiet on`, tap Reject, and verify
+`modes.telegram_fyis` is unchanged.
+
+Public boundary: `telegram_chat_ingress` callback handling.
+
+Allowed outcomes: commands from the configured chat create a `mode_change`
+action and Telegram ask; config stays unchanged until approval; Approve updates
+only `steering_injection` or `telegram_fyis`, restarts the launch agent, and
+marks the action `applied`; Reject marks the action `cancelled`; stale or
+spoofed callbacks fail closed.
+
+Forbidden outcomes: free text changes modes; a slash command changes config
+without approval; non-allowlisted mode keys are writable; rejected/stale
+callbacks mutate config; restart failure is reported as success.
+
 ## Non-Goals
 
 - Replacing Codex Desktop.
 - Building a polished web UI.
 - Letting Telegram free text perform destructive actions directly.
-- Letting Telegram change supervisor modes in v0.7.
+- Letting Telegram free text change supervisor modes.
 - Treating "Vela chat bot" as Slack unless the user explicitly configures a
   Slack source.
 - Guaranteeing that an already-open Desktop renderer repaints immediately after

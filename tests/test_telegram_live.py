@@ -37,6 +37,36 @@ def _cfg(tmp_path) -> Config:
     })
 
 
+def _config_file(tmp_path, *, steering_injection: str = "advise", telegram_fyis: str = "advise"):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        "\n".join([
+            "target:",
+            "  kind: codex",
+            "  codex:",
+            f"    sessions_root: {tmp_path / 'sessions'}",
+            "orchestrator:",
+            f"  run_registry_dir: {tmp_path / 'runs'}",
+            "supervisor:",
+            f"  state_db: {tmp_path / 'state.db'}",
+            "modes:",
+            f"  telegram_fyis: {telegram_fyis}",
+            f"  steering_injection: {steering_injection}",
+            "models:",
+            "  realtime_critique_model: claude-haiku-4-5",
+            "  drift_l3_model: claude-haiku-4-5",
+            "  drift_l4_model: claude-sonnet-4-6",
+            "  post_run_eval_model: claude-sonnet-4-6",
+            "  embedding_model: text-embedding-3-small",
+            "telegram:",
+            "  bot_token: 123456:test-token",
+            "  chat_id: '42'",
+            "",
+        ])
+    )
+    return path
+
+
 class _FakeClient:
     def __init__(self):
         self.posts: list[dict] = []
@@ -178,3 +208,110 @@ async def test_telegram_notifier_formats_approval_buttons_with_nonce(tmp_path):
     buttons = markup["inline_keyboard"]
     assert buttons[0][0]["callback_data"] == "ask:7:n-7:0"
     assert buttons[1][0]["callback_data"] == "ask:7:n-7:1"
+
+
+@pytest.mark.asyncio
+async def test_autosteer_command_requires_approval_before_changing_config(tmp_path):
+    """CS23 RED: Telegram can request autosteer, but mode mutation is gated by
+    a nonce approval callback."""
+    from supervisor.config import Config
+    from supervisor.telegram import TelegramPoller
+
+    config_path = _config_file(tmp_path, steering_injection="advise")
+    cfg = Config.load(config_path)
+    state = State(str(tmp_path / "telegram.db"))
+    restarts: list[dict] = []
+
+    async def restart_runner() -> dict:
+        restarts.append({"called": True})
+        return {"ok": True, "method": "fake_restart"}
+
+    poller = TelegramPoller(
+        cfg,
+        state,
+        config_path=str(config_path),
+        restart_runner=restart_runner,
+    )
+    client = _FakeClient()
+
+    await poller._handle_command(
+        {"chat": {"id": 42}, "text": "/autosteer on"},
+        client,
+    )
+
+    fresh = Config.load(config_path)
+    assert fresh.modes.steering_injection == "advise"
+    assert restarts == []
+    action = state._conn.execute(
+        "SELECT action_type, status, payload_json FROM actions"
+    ).fetchone()
+    assert action["action_type"] == "mode_change"
+    assert action["status"] == "pending_approval"
+    payload = json.loads(action["payload_json"])
+    assert payload["mode_key"] == "steering_injection"
+    assert payload["new_value"] == "enforce"
+    ask = state._conn.execute("SELECT * FROM telegram_asks").fetchone()
+    assert ask["status"] == "pending"
+    assert "steering_injection" in ask["question"]
+    message_payload = client.posts[0]["data"]
+    markup = json.loads(message_payload["reply_markup"])
+    approve_callback = markup["inline_keyboard"][0][0]["callback_data"]
+
+    await poller._handle_callback(
+        {"id": "callback-mode", "data": approve_callback},
+        client=client,
+    )
+
+    changed = Config.load(config_path)
+    assert changed.modes.steering_injection == "enforce"
+    assert restarts == [{"called": True}]
+    ask = state.get_ask(ask["ask_id"])
+    assert ask["status"] == "answered"
+    action = state._conn.execute("SELECT * FROM actions").fetchone()
+    assert action["status"] == "applied"
+    payload = json.loads(action["payload_json"])
+    assert payload["answer"] == "Approve"
+    assert payload["restart_result"]["ok"] is True
+    assert client.posts[-1]["data"]["text"] == "Recorded: Approve"
+
+
+@pytest.mark.asyncio
+async def test_quiet_command_reject_does_not_change_config_or_restart(tmp_path):
+    from supervisor.config import Config
+    from supervisor.telegram import TelegramPoller
+
+    config_path = _config_file(tmp_path, telegram_fyis="advise")
+    cfg = Config.load(config_path)
+    state = State(str(tmp_path / "telegram.db"))
+    restarts: list[dict] = []
+
+    async def restart_runner() -> dict:
+        restarts.append({"called": True})
+        return {"ok": True, "method": "fake_restart"}
+
+    poller = TelegramPoller(
+        cfg,
+        state,
+        config_path=str(config_path),
+        restart_runner=restart_runner,
+    )
+    client = _FakeClient()
+
+    await poller._handle_command(
+        {"chat": {"id": 42}, "text": "/quiet on"},
+        client,
+    )
+    message_payload = client.posts[0]["data"]
+    markup = json.loads(message_payload["reply_markup"])
+    reject_callback = markup["inline_keyboard"][1][0]["callback_data"]
+
+    await poller._handle_callback(
+        {"id": "callback-mode-reject", "data": reject_callback},
+        client=client,
+    )
+
+    unchanged = Config.load(config_path)
+    assert unchanged.modes.telegram_fyis == "advise"
+    assert restarts == []
+    action = state._conn.execute("SELECT * FROM actions").fetchone()
+    assert action["status"] == "cancelled"

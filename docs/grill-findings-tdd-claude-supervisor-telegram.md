@@ -50,5 +50,5 @@ Follow-up closure: `test_telegram_steer_request_creates_approval_action_not_dire
 now starts at Telegram chat ingress and proves a steer request creates a
 pending approval action, while `test_execute_action_inject_steering_runs_version_gated_resume`
 proves approved delivery happens through `CodexAdapter`.
-The TDD plan also records that mode changes are deferred and no
+The TDD plan also records that free-text mode changes are unsupported and no
 `request_mode_change` tool is exposed.

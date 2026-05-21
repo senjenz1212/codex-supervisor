@@ -7,7 +7,7 @@ Source PRD: `docs/prd/claude-supervisor-telegram-prd.md`
 | CS1 Telegram Is a Conversational Supervisor Surface | Covered | `.scratch/claude-supervisor-telegram/03-telegram-chat-ingress.md` |
 | CS2 Named Codex Sessions Resolve to Concrete Run State | Covered | `.scratch/claude-supervisor-telegram/02-named-session-resolver.md` |
 | CS3 Claude Supervisor Uses Tools, Not Raw Database Coupling | Covered | `.scratch/claude-supervisor-telegram/01-supervisor-tool-api.md` |
-| CS4 Telegram Requests Cannot Bypass Approval and Modes | Covered for steering; mode changes deferred | `.scratch/claude-supervisor-telegram/05-mode-safe-telegram-actions.md` |
+| CS4 Telegram Requests Cannot Bypass Approval and Modes | Covered for steering and free-text mode safety | `.scratch/claude-supervisor-telegram/05-mode-safe-telegram-actions.md` |
 | CS5 Supervisor Turns Are Replayable | Covered | `.scratch/claude-supervisor-telegram/04-supervisor-turn-replay.md` |
 | CS6 Codex App-Server Is a Future Target Surface, Not Required Now | Deferred | `.scratch/claude-supervisor-telegram/06-codex-app-server-adapter-spike.md` |
 | CS7 Telegram Conversations Feel Continuous | Covered | `.scratch/claude-supervisor-telegram/07-conversation-continuity.md` |
@@ -21,6 +21,7 @@ Source PRD: `docs/prd/claude-supervisor-telegram-prd.md`
 | CS15 Desktop GUI Reflection Viability Is Evidence-Gated | In progress | `.scratch/claude-supervisor-telegram/20-cold-start-normal-turn-ipc-spike.md` |
 | CS21 Aggressive Steering Proceeds Only Within Escalation Policy | Covered | `.scratch/claude-supervisor-telegram/21-aggressive-steering-escalation-policy.md` |
 | CS22 Quiet Mode Suppresses FYIs But Preserves Escalation | Covered | `.scratch/claude-supervisor-telegram/22-quiet-mode-escalation-only.md` |
+| CS23 Telegram Mode Toggles Require Approval | Covered | `.scratch/claude-supervisor-telegram/23-telegram-mode-toggle-approval.md` |
 
 ## Implemented Tests
 
@@ -51,8 +52,9 @@ Source PRD: `docs/prd/claude-supervisor-telegram-prd.md`
   behind `action_executor`. In `advise`, Telegram approval is required. In
   `enforce`, non-destructive steering may auto-deliver; destructive actions
   still require approval.
-- Telegram mode changes are deferred in v0.7. No mode-change MCP tool is
-  exposed, and live config cannot be changed from free text.
+- Generic Telegram mode changes remain deferred. No mode-change MCP tool is
+  exposed, and live config cannot be changed from free text. CS23 adds only the
+  two approval-gated slash commands `/autosteer` and `/quiet`.
 - Rolling model-generated summary refresh is implemented at the Telegram
   ingress boundary. Every thresholded conversation turn refreshes
   `supervisor_conversations.summary` with a fail-soft summarizer while raw
