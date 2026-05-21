@@ -46,6 +46,27 @@ button callback.
 3. Regression — existing Telegram callback, autosteer, and quiet-mode tests
    stay green.
 
+4. PRD-to-TDD audit — complete the documented command matrix and authority
+   checks.
+   - Tests:
+     `test_mode_toggle_off_commands_are_approval_gated`,
+     `test_mode_toggle_command_from_wrong_chat_is_ignored`.
+   - Guards `/autosteer off`, `/quiet off`, and configured-chat authority.
+
+5. PRD-to-TDD audit — stale/forged approvals fail closed.
+   - Tests:
+     `test_mode_toggle_expired_callback_fails_closed`,
+     `test_mode_toggle_non_allowlisted_key_fails_closed`.
+   - Guards expired approval buttons and forged `mode_change` rows that target
+     non-allowlisted mode keys.
+
+6. PRD-to-TDD audit — restart failures are not success.
+   - Test:
+     `test_mode_toggle_restart_failure_is_not_reported_as_success`.
+   - GREEN treats a restart result with `ok: false` as failed, rolls the config
+     file back to its previous value, and records `restart_failed` instead of
+     `applied`.
+
 ## Grill Findings
 
 PRD grill: `docs/grill-findings-telegram-mode-toggle-approval.md`

@@ -245,6 +245,12 @@ class TelegramPoller:
                 await self._answer_callback(cb, "Recorded: Approve", client=client)
             elif result.get("status") == "cancelled":
                 await self._answer_callback(cb, f"Recorded: {answer}", client=client)
+            elif result.get("status") == "failed":
+                await self._answer_callback(
+                    cb,
+                    "Mode change failed; config was not applied.",
+                    client=client,
+                )
             else:
                 await self._answer_callback(
                     cb,
@@ -482,14 +488,46 @@ class TelegramPoller:
                 "reason": "mode_not_allowlisted",
             })
             return {"status": "failed", "reason": "mode_not_allowlisted"}
+        previous_value: Any = None
+        wrote_config = False
         try:
-            _write_mode_value(self.config_path, mode_key, new_value)
+            previous_value = _write_mode_value(
+                self.config_path,
+                mode_key,
+                new_value,
+            )
+            wrote_config = True
             restart_result = await self.restart_runner()
+            if isinstance(restart_result, dict) and restart_result.get("ok") is False:
+                rollback = _rollback_mode_value(
+                    self.config_path,
+                    mode_key,
+                    previous_value,
+                )
+                self.state.complete_action(action_row["id"], "failed", {
+                    "answer": answer,
+                    "reason": "restart_failed",
+                    "restart_result": restart_result,
+                    "rollback": rollback,
+                })
+                return {
+                    "status": "failed",
+                    "reason": "restart_failed",
+                    "restart_result": restart_result,
+                }
         except Exception as e:
+            rollback: dict[str, Any] | None = None
+            if wrote_config:
+                rollback = _rollback_mode_value(
+                    self.config_path,
+                    mode_key,
+                    previous_value,
+                )
             self.state.complete_action(action_row["id"], "failed", {
                 "answer": answer,
                 "reason": "mode_change_failed",
                 "error": str(e),
+                "rollback": rollback,
             })
             return {"status": "failed", "reason": "mode_change_failed"}
 
@@ -536,13 +574,35 @@ class TelegramPoller:
             pass
 
 
-def _write_mode_value(config_path: str, mode_key: str, new_value: str) -> None:
+def _write_mode_value(config_path: str, mode_key: str, new_value: str) -> Any:
     path = Path(config_path).expanduser()
     with path.open() as f:
         raw = yaml.safe_load(f) or {}
     modes = raw.setdefault("modes", {})
+    previous_value = modes.get(mode_key)
     modes[mode_key] = new_value
     path.write_text(yaml.safe_dump(raw, sort_keys=False))
+    return previous_value
+
+
+def _rollback_mode_value(
+    config_path: str,
+    mode_key: str,
+    previous_value: Any,
+) -> dict[str, Any]:
+    path = Path(config_path).expanduser()
+    try:
+        with path.open() as f:
+            raw = yaml.safe_load(f) or {}
+        modes = raw.setdefault("modes", {})
+        if previous_value is None:
+            modes.pop(mode_key, None)
+        else:
+            modes[mode_key] = previous_value
+        path.write_text(yaml.safe_dump(raw, sort_keys=False))
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 async def _restart_launch_agent() -> dict[str, Any]:

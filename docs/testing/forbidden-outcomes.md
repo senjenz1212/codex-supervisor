@@ -11,6 +11,8 @@ issue explicitly adds a stricter rule.
 - Stale or spoofed Telegram callback performs an action.
 - Telegram free text or slash commands mutate live modes without a fresh
   nonce-protected approval callback.
+- Telegram mode-toggle approval reports success after launch-agent restart
+  failure or leaves the config file changed when restart fails.
 - A secret appears in SQLite or Telegram text.
 - Replay calls live target agents, live Telegram, or live model APIs by default.
 - Drift, replay, action policy, or decision runtime reads raw Claude Code or

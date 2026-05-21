@@ -540,12 +540,14 @@ Public boundary: `telegram_chat_ingress` callback handling.
 Allowed outcomes: commands from the configured chat create a `mode_change`
 action and Telegram ask; config stays unchanged until approval; Approve updates
 only `steering_injection` or `telegram_fyis`, restarts the launch agent, and
-marks the action `applied`; Reject marks the action `cancelled`; stale or
-spoofed callbacks fail closed.
+marks the action `applied`; if restart reports failure, the config file is
+rolled back and the action is marked `failed`; Reject marks the action
+`cancelled`; stale or spoofed callbacks fail closed.
 
 Forbidden outcomes: free text changes modes; a slash command changes config
 without approval; non-allowlisted mode keys are writable; rejected/stale
-callbacks mutate config; restart failure is reported as success.
+callbacks mutate config; restart failure is reported as success or leaves a
+partially-applied config file behind.
 
 ## Non-Goals
 

@@ -32,6 +32,7 @@ Source PRD: `docs/prd/claude-supervisor-telegram-prd.md`
 - `tests/test_action_executor.py`
 - `tests/test_codex_resume.py`
 - `tests/test_telegram_progress_streaming.py`
+- `tests/test_telegram_live.py`
 - `tests/test_telegram_quiet_mode.py`
 - `tests/test_workspace_grounding.py`
 - `tests/test_agent_invoker_review.py`
@@ -54,7 +55,9 @@ Source PRD: `docs/prd/claude-supervisor-telegram-prd.md`
   still require approval.
 - Generic Telegram mode changes remain deferred. No mode-change MCP tool is
   exposed, and live config cannot be changed from free text. CS23 adds only the
-  two approval-gated slash commands `/autosteer` and `/quiet`.
+  two approval-gated slash commands `/autosteer` and `/quiet`; their command
+  matrix, configured-chat authority, stale callback behavior, allowlist, and
+  restart-failure handling are covered in `tests/test_telegram_live.py`.
 - Rolling model-generated summary refresh is implemented at the Telegram
   ingress boundary. Every thresholded conversation turn refreshes
   `supervisor_conversations.summary` with a fail-soft summarizer while raw
