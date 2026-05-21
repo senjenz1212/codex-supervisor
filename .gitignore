@@ -1,0 +1,26 @@
+.DS_Store
+
+# Python/runtime artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Local scratch/runtime state
+pytest-cache-files-*/
+.scratch/gui-probes/
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# Local secrets/config
+.env
+.env.*
+!.env.example
+secrets.env
+config.yaml

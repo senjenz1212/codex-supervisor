@@ -1,0 +1,29 @@
+# Minimal config used by the target_config_load RED test.
+# Notable: NO `codex:` section. NO references to ~/.codex.
+
+target:
+  kind: claude_code
+
+orchestrator:
+  run_registry_dir: /tmp/test-supervisor/runs
+
+supervisor:
+  state_db: /tmp/test-supervisor/state.db
+
+models:
+  realtime_critique_model: claude-haiku-4-5-20251001
+  drift_l3_model: claude-haiku-4-5-20251001
+  drift_l4_model: claude-sonnet-4-6
+  post_run_eval_model: claude-sonnet-4-6
+  embedding_model: text-embedding-3-small
+
+telegram:
+  bot_token: fake-token
+  chat_id: fake-chat
+
+drift:
+  nudge_text_template: "Test nudge: {task}"
+
+logging:
+  level: INFO
+  file: /tmp/test-supervisor.log

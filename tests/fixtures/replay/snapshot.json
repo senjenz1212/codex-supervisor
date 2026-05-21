@@ -1,0 +1,21 @@
+{
+  "run_id": "run_replay_001",
+  "session_id": "sess-replay-001",
+  "target": "claude_code",
+  "task": "Refactor the auth service",
+  "scope_contract": {
+    "allowed_paths": ["src/auth/"],
+    "related_paths": ["src/lib/"],
+    "protected_paths": ["src/payments/"],
+    "never_touch_patterns": ["**/.env*", "**/credentials*"]
+  },
+  "modes": {
+    "drift_l1_l3": "shadow",
+    "drift_l4": "advise",
+    "hook_blocking": "shadow",
+    "steering_injection": "advise",
+    "recovery_actions": "ask_user"
+  },
+  "codex_cli_version": null,
+  "created_at": 1747800000
+}

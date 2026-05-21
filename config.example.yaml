@@ -1,0 +1,140 @@
+# Copy this to ~/.codex-supervisor/config.yaml and fill in the TODOs.
+# This example is tuned for supervising Codex Desktop live.
+
+target:
+  kind: codex
+  codex:
+    sessions_root: ~/.codex/sessions
+    # Prefer an absolute path for LaunchAgents; launchd does not inherit your
+    # interactive shell PATH.
+    cli_command: codex
+    # Approved steering defaults to CLI resume. Use desktop_gui only after a
+    # live smoke has verified Accessibility permissions and host coordinates.
+    steering_delivery: resume
+    # Host-specific click target for the Codex input box when
+    # steering_delivery: desktop_gui.
+    desktop_gui_session_click_x:
+    desktop_gui_session_click_y:
+    desktop_gui_input_x:
+    desktop_gui_input_y:
+    desktop_gui_swift_command: /usr/bin/swift
+    desktop_gui_submit_delay_ms: 2000
+    # launchd starts the supervisor outside your trusted project directory.
+    # Keep this flag unless your daemon cwd is always trusted by Codex.
+    resume_extra_args:
+      - --skip-git-repo-check
+    resume_timeout_s: 60
+    # Passive Desktop status sync uses Codex app-server.
+    # `proxy` is the live Desktop path; `stdio` is for detached protocol tests.
+    app_server_transport: proxy
+    app_server_load_thread_before_inject: true
+    app_server_timeout_s: 10
+    cli_search_paths:
+      - ~/.npm-global/bin/codex
+      - /Applications/Codex.app/Contents/Resources/codex
+      - /opt/homebrew/bin/codex
+      - /usr/local/bin/codex
+    desktop_process_names:
+      - "Codex"
+
+# Alternate target, kept for Claude Code testing:
+# target:
+#   kind: claude_code
+#   claude_code:
+#     cli_command: claude
+#     transcripts_root: ~/.claude/projects
+
+orchestrator:
+  run_registry_dir: ~/.codex-supervisor/runs
+
+supervisor:
+  state_db: ~/.codex-supervisor/state.db
+  hook_server_port: 19001
+  # model_first sends every hook to Claude Agent SDK before deterministic
+  # fallback rules. Use deterministic_first if you want cheaper/faster hooks.
+  hook_critique_strategy: model_first
+  rollout_sweep_interval_s: 10
+  drift_check_interval_s: 30
+  stall_threshold_s: 90
+  nudge_cooldown_s: 300
+
+modes:
+  rollout_ingestion: enforce
+  telegram_fyis: advise
+  drift_l1_l3: shadow
+  drift_l4: advise
+  # advise: queue steering for Telegram approval.
+  # enforce: auto-deliver non-destructive steering through the action ledger.
+  # Destructive recovery still requires fresh approval in every mode.
+  steering_injection: advise
+  # Mirror watched-run progress into Codex thread history through app-server.
+  # This is best-effort and does not prove the already-open Desktop GUI
+  # repainted unless a live smoke test confirms it.
+  desktop_status_sync: "off"
+  hook_blocking: shadow
+  recovery_actions: ask_user
+
+models:
+  # API keys are optional for hook audit, rollout ingest, Telegram, /status,
+  # and deterministic replay. Live L2/L3/L4 model decisions need them.
+  anthropic_api_key: ${ANTHROPIC_API_KEY}
+  anthropic_auth_token: ${ANTHROPIC_AUTH_TOKEN}
+  anthropic_base_url: ${ANTHROPIC_BASE_URL}
+  realtime_critique_model: claude-haiku-4-5-20251001
+  drift_l3_model: claude-haiku-4-5-20251001
+  drift_l4_model: claude-sonnet-4-6
+  post_run_eval_model: claude-sonnet-4-6
+
+  openai_api_key: ${OPENAI_API_KEY}
+  openai_base_url: ${OPENAI_BASE_URL}
+  embedding_model: text-embedding-3-small
+
+  local_fallback:
+    enabled: false
+    base_url: http://localhost:8000/v1
+    fast_model: NousResearch/Hermes-4-14B
+    deep_model: NousResearch/Hermes-4-70B-FP8
+
+telegram:
+  bot_token: ${TELEGRAM_BOT_TOKEN}
+  chat_id: ${TELEGRAM_CHAT_ID}
+  poll_interval_s: 2
+  ask_timeout_s: 300
+
+drift:
+  l1_scope_violation_threshold: 3
+  l2_similarity_threshold: 0.4
+  nudge_text_template: |
+    Pause. Your original task was:
+
+      {task}
+
+    Recent activity suggests drift. Re-state the goal before continuing.
+
+logging:
+  level: INFO
+  file: /tmp/codex-supervisor.log
+
+# Optional external MCP connectors for the Telegram Claude supervisor.
+# This imports local MCP server definitions from Claude Desktop when present,
+# plus any explicit mcp_servers below. External tools are inert until you add
+# exact `mcp__server__tool` names to allowed_tools.
+connectors:
+  enabled: false
+  import_from_claude_desktop: true
+  claude_desktop_config_path: ~/Library/Application Support/Claude/claude_desktop_config.json
+  mcp_servers: {}
+  allowed_tools: []
+  disallowed_tools: []
+
+  # Example shape for a remote Slack MCP server. Leave disabled until the MCP
+  # server is authorized and you know the exact read-only tool names.
+  # mcp_servers:
+  #   slack:
+  #     type: http
+  #     url: https://mcp.slack.com/mcp
+  # allowed_tools:
+  #   - mcp__slack__search
+  #   - mcp__slack__fetch
+  # disallowed_tools:
+  #   - mcp__slack__send_message

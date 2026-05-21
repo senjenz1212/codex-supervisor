@@ -1,0 +1,15 @@
+{
+  "run_id": "run_replay_001",
+  "target": "claude_code",
+  "event_count": 3,
+  "modes": {
+    "drift_l1_l3": "shadow",
+    "drift_l4": "advise",
+    "hook_blocking": "shadow",
+    "steering_injection": "advise",
+    "recovery_actions": "ask_user"
+  },
+  "scope_findings": [],
+  "verdicts": [],
+  "proposed_actions": []
+}

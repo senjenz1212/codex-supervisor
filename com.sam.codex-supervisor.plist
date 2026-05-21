@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.sam.codex-supervisor</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/sam.zhang/Documents/codex-supervisor/scripts/run-daemon.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/sam.zhang/Documents/codex-supervisor</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>CODEX_SUPERVISOR_CONFIG</key>
+        <string>/Users/sam.zhang/.codex-supervisor/config.yaml</string>
+        <!-- The actual secrets are kept in ~/.codex-supervisor/secrets.env and
+             sourced by a wrapper script if you prefer; or set them here.
+             Plist values are world-readable for the user — adjust to taste. -->
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/codex-supervisor.out</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/codex-supervisor.err</string>
+
+    <!-- Restart with backoff if it crashes more than once per 10s. -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+</dict>
+</plist>

@@ -1,0 +1,29 @@
+{
+  "run_id": "run_drift_l1_001",
+  "target": "claude_code",
+  "event_count": 5,
+  "modes": {
+    "drift_l1_l3": "shadow",
+    "drift_l4": "advise",
+    "hook_blocking": "shadow",
+    "steering_injection": "advise",
+    "recovery_actions": "ask_user"
+  },
+  "scope_findings": [
+    {"event_id": 12, "path": "src/billing/charges.py",  "classification": "out_of_scope", "severity": "warn"},
+    {"event_id": 13, "path": "src/payments/refunds.py", "classification": "protected",    "severity": "severe"},
+    {"event_id": 14, "path": ".env.production",          "classification": "never_touch",  "severity": "severe"}
+  ],
+  "verdicts": [
+    {
+      "layer": "L1",
+      "run_id": "run_drift_l1_001",
+      "classification": "scope_violation",
+      "confidence": 1.0,
+      "evidence_event_ids": [12, 13, 14],
+      "recommended_action": "ask_user",
+      "user_visible_summary": "L1 scope: 1 out-of-scope, 1 protected, 1 never-touch"
+    }
+  ],
+  "proposed_actions": []
+}

@@ -1,0 +1,21 @@
+{
+  "by_event_id": {},
+  "by_phase": {
+    "L2": {
+      "similarity": 0.18,
+      "threshold": 0.4
+    },
+    "L3": {
+      "current_step": "Editing payment refund code",
+      "plan_status": "blocked",
+      "rationale": "The recent intent summary and writes no longer serve the auth/login refactor."
+    },
+    "L4": {
+      "classification": "hard_divergence",
+      "confidence": 0.91,
+      "evidence_event_ids": [21, 22, 23],
+      "recommended_action": "ask_user",
+      "user_visible_summary": "The agent is working in payments/billing while the task is auth/login."
+    }
+  }
+}
