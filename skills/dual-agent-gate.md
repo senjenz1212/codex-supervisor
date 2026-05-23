@@ -37,6 +37,10 @@ When calling `start_dual_agent_gate`, pass the current PRD/TDD/grill/issue
 documents through `planning_artifacts` with `mutable_by_worker=false` unless the
 user explicitly approves worker edits. This pins checksums in the handoff packet
 so Claude Code cannot silently rewrite the spec to match the implementation.
+Claude Code is launched in the same worktree with built-in tools enabled from
+the first gate (`--tools default`, `--permission-mode bypassPermissions`) so it
+can inspect files, run tests, and review diffs directly instead of relying only
+on Codex-supplied summaries.
 
 For each major decision gate:
 

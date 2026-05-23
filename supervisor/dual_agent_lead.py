@@ -63,8 +63,8 @@ class LeadInvocationRequest:
     budget_usd: float = 5.0
     timeout_s: int = 600
     cli_command: str = "claude"
-    permission_mode: str = "dontAsk"
-    tools: str = ""
+    permission_mode: str = "bypassPermissions"
+    tools: str = "default"
     effort: ClaudeEffort = "max"
     explicit_env: dict[str, str] = field(default_factory=dict)
     handoff_packet_path: str | Path | None = None

@@ -18,6 +18,8 @@ def test_dual_agent_skill_uses_desktop_chat_when_telegram_is_absent():
     assert "planning_artifacts" in text
     assert "export_gate_artifacts" in text
     assert "docs/dual-agent/<task_id>/" in text
+    assert "`--tools default`" in text
+    assert "`--permission-mode bypassPermissions`" in text
 
 
 def test_desktop_probe_doc_covers_g1_g2_g3_and_corrects_execute_flag():

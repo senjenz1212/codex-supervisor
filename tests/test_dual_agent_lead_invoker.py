@@ -68,8 +68,34 @@ def test_build_lead_command_uses_non_bare_claude_so_slash_lead_can_resolve(tmp_p
     assert argv[:2] == ["claude", "--no-session-persistence"]
     assert argv[argv.index("--model") + 1] == "opus"
     assert argv[argv.index("--effort") + 1] == "max"
-    assert argv[argv.index("--tools") + 1] == ""
+    assert argv[argv.index("--permission-mode") + 1] == "bypassPermissions"
+    assert argv[argv.index("--tools") + 1] == "default"
     assert argv[argv.index("-p") + 1] == prompt
+
+
+def test_lead_invocation_defaults_to_same_worktree_tool_access(tmp_path):
+    calls: list[dict[str, object]] = []
+    stdout = json.dumps({"result": _outcome_block()})
+
+    def fake_runner(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append({"argv": argv, **kwargs})
+        return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
+
+    request = LeadInvocationRequest(
+        task_id="slice0-lead",
+        gate="outcome_review",
+        instruction="Review the implementation directly.",
+        cwd=tmp_path,
+    )
+
+    result = invoke_claude_lead(request, runner=fake_runner)
+
+    assert result.probe.ok
+    argv = calls[0]["argv"]
+    assert isinstance(argv, list)
+    assert argv[argv.index("--tools") + 1] == "default"
+    assert argv[argv.index("--permission-mode") + 1] == "bypassPermissions"
+    assert calls[0]["cwd"] == str(tmp_path)
 
 
 def test_select_lead_model_prefers_best_models_for_all_best_quality_work():
