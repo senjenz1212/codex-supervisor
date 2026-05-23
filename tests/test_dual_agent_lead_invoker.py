@@ -67,14 +67,15 @@ def test_build_lead_command_uses_non_bare_claude_so_slash_lead_can_resolve(tmp_p
     assert "--bare" not in argv
     assert argv[:2] == ["claude", "--no-session-persistence"]
     assert argv[argv.index("--model") + 1] == "opus"
+    assert argv[argv.index("--effort") + 1] == "max"
     assert argv[argv.index("--tools") + 1] == ""
     assert argv[argv.index("-p") + 1] == prompt
 
 
-def test_select_lead_model_prefers_best_models_for_gate_decisions():
+def test_select_lead_model_prefers_best_models_for_all_best_quality_work():
     assert select_lead_model("prd_review", quality="best") == "opus"
     assert select_lead_model("outcome_review", quality="best") == "opus"
-    assert select_lead_model("execution", quality="best") == "sonnet"
+    assert select_lead_model("execution", quality="best") == "opus"
     assert select_lead_model("prd_review", quality="balanced") == "sonnet"
     assert select_lead_model("prd_review", quality="cheap") == "haiku"
     assert select_lead_model("prd_review", quality="best", explicit_model="sonnet") == "sonnet"

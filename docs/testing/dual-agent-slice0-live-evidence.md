@@ -118,8 +118,9 @@ Observed behavior:
 Wrapper behavior:
 
 - Builds a non-bare `claude --no-session-persistence -p "/lead ..."` command.
-- Selects `opus` for best-quality decision gates, `sonnet` for best-quality
-  execution, and `haiku` when explicitly asked for cheap probes.
+- Selects `opus` for all best-quality gates, including execution, and `haiku`
+  only when explicitly asked for cheap probes.
+- Passes `--effort max` to Claude Code for `/lead` invocations by default.
 - Captures stdout/stderr through an injectable runner.
 - Parses Claude `--output-format json` output and validates the resulting
   transcript through `evaluate_outcome_fidelity`.
@@ -200,6 +201,8 @@ Observed model-tier finding:
   decision and another omitted the outcome block after retry.
 - `quality="best"` passed the live single-gate and three-round flows. Desktop
   probe instructions now use `quality="best"` for the live G-2 path.
+- Codex session spawning defaults to `gpt-5.1-codex-max` with
+  `reasoning_effort="xhigh"`.
 
 Desktop GUI note:
 

@@ -232,6 +232,9 @@ Tests must verify the server exposes the dual-agent gate tools Codex needs:
 `read_gate_transcript`, and `start_codex_session`. The MCP boundary must
 persist gate results and round decisions to the supervisor event ledger so
 later tools can read outcomes and reconstruct the dialogue without relying on
-chat memory. In the Codex Desktop initiated no-Telegram scope, a blocked gate
+chat memory. `start_codex_session` must default to the strongest configured
+Codex model and high reasoning (`gpt-5.1-codex-max` with
+`reasoning_effort="xhigh"`) unless the caller explicitly overrides it. In the
+Codex Desktop initiated no-Telegram scope, a blocked gate
 must escalate through Desktop chat and re-run `start_dual_agent_gate`; it must
 not wait on `poll_resume_signal` unless a Telegram callback exists.

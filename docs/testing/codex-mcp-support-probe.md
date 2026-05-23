@@ -67,7 +67,7 @@ the production server and called:
 The tool returned:
 
 ```json
-{"status":"dry_run","argv":["codex","exec","--json","-C","/Users/sam.zhang/Documents/codex-supervisor","[PROMPT_REDACTED]"]}
+{"status":"dry_run","argv":["codex","exec","--json","-C","/Users/sam.zhang/Documents/codex-supervisor","-m","gpt-5.1-codex-max","-c","reasoning_effort=\"xhigh\"","[PROMPT_REDACTED]"]}
 ```
 
 This validates Codex can consume the real supervisor MCP entrypoint. The smoke

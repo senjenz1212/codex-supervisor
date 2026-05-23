@@ -12,7 +12,7 @@ Claude Code as the implementer.
 - `mcp__codex_supervisor__poll_resume_signal(task_id, run_id, gate, instruction, cwd, expected_specialists, expected_decisions, expected_objections, quality, model, budget_usd, timeout_s)`
 - `mcp__codex_supervisor__read_outcome(run_id, task_id)`
 - `mcp__codex_supervisor__read_gate_transcript(run_id, task_id)`
-- `mcp__codex_supervisor__start_codex_session(prompt, cwd, model, execute, timeout_s)`
+- `mcp__codex_supervisor__start_codex_session(prompt, cwd, model, reasoning_effort, execute, timeout_s)`
 
 ## Gate Policy
 
@@ -46,7 +46,11 @@ For each major decision gate:
 ## Defaults
 
 - Use `quality="best"` for PRD, TDD, and outcome-review gates.
-- Use `quality="balanced"` for execution gates unless the task is high-risk.
+- Use `quality="best"` for execution gates too unless the user explicitly asks
+  to save cost. Cost is not the default constraint for this workflow.
+- When spawning Codex sessions through the supervisor, use
+  `model="gpt-5.1-codex-max"` and `reasoning_effort="xhigh"` unless the user
+  explicitly chooses a cheaper tier.
 - Keep `timeout_s` high enough for `/lead`; default to 600 seconds.
 - Use the same approved worktree for one task. Use separate worktrees for
   parallel tasks.

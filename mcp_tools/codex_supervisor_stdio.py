@@ -31,6 +31,8 @@ from supervisor.telegram import TelegramNotifier, telegram_enabled
 
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
+DEFAULT_CODEX_MODEL = "gpt-5.1-codex-max"
+DEFAULT_CODEX_REASONING_EFFORT = "xhigh"
 
 
 class CodexSupervisorMcpAPI:
@@ -298,14 +300,16 @@ class CodexSupervisorMcpAPI:
         prompt: str,
         cwd: str,
         model: str | None = None,
+        reasoning_effort: str = DEFAULT_CODEX_REASONING_EFFORT,
         execute: bool = False,
         timeout_s: int = 600,
     ) -> dict[str, Any]:
         codex_cfg = self.cfg.target.codex if self.cfg.target and self.cfg.target.codex else None
         cli = codex_cfg.cli_command if codex_cfg is not None else "codex"
         argv = [cli, "exec", "--json", "-C", str(Path(cwd).expanduser())]
-        if model:
-            argv.extend(["-m", model])
+        argv.extend(["-m", model or DEFAULT_CODEX_MODEL])
+        if reasoning_effort:
+            argv.extend(["-c", f'reasoning_effort="{reasoning_effort}"'])
         argv.append(prompt)
         if not execute:
             return {"status": "dry_run", "argv": _redacted_prompt_argv(argv)}
@@ -523,6 +527,7 @@ def build_codex_supervisor_mcp_server(
         prompt: str,
         cwd: str,
         model: str | None = None,
+        reasoning_effort: str = DEFAULT_CODEX_REASONING_EFFORT,
         execute: bool = False,
         timeout_s: int = 600,
     ) -> dict[str, Any]:
@@ -530,6 +535,7 @@ def build_codex_supervisor_mcp_server(
             prompt=prompt,
             cwd=cwd,
             model=model,
+            reasoning_effort=reasoning_effort,
             execute=execute,
             timeout_s=timeout_s,
         )

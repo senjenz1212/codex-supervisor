@@ -46,6 +46,7 @@ OutcomeValidationAction = Literal[
     "retry_once_with_corrective_packet",
     "abort_to_operator",
 ]
+ClaudeEffort = Literal["low", "medium", "high", "xhigh", "max"]
 
 
 @dataclass(frozen=True)
@@ -64,6 +65,7 @@ class LeadInvocationRequest:
     cli_command: str = "claude"
     permission_mode: str = "dontAsk"
     tools: str = ""
+    effort: ClaudeEffort = "max"
     explicit_env: dict[str, str] = field(default_factory=dict)
     handoff_packet_path: str | Path | None = None
 
@@ -144,8 +146,6 @@ def select_lead_model(
     if quality == "cheap":
         return "haiku"
     if quality == "balanced":
-        return "sonnet"
-    if gate == "execution":
         return "sonnet"
     return "opus"
 
@@ -301,6 +301,8 @@ def build_claude_lead_command(request: LeadInvocationRequest) -> list[str]:
         _format_budget(request.budget_usd),
         "--permission-mode",
         request.permission_mode,
+        "--effort",
+        request.effort,
         "--tools",
         request.tools,
     ]
