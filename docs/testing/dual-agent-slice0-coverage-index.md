@@ -21,6 +21,7 @@ Source PRD: `docs/prd/dual-agent-slice0-reality-check-prd.md`
 | Resume loop | `test_deadlock_continue_signal_is_claimed_once_and_redispatches_gate` proves `Continue` is claimed exactly once and re-dispatches the matching gate spec | Covered |
 | Stale paused-state digest | `test_paused_dual_agent_actions_send_one_stale_digest` proves paused dual-agent actions emit one Telegram digest after the stale threshold and remain paused | Covered |
 | CS24 gate runner | `test_cs24_gate_runner_writes_handoff_invokes_lead_and_verifies_planning_boundaries`, `test_cs24_gate_runner_retries_malformed_outcome_once_then_accepts`, `test_cs24_gate_runner_stops_sequence_on_blocked_gate` | Covered |
+| Codex-facing MCP control surface | `test_codex_supervisor_mcp_exposes_dual_agent_gate_tools`, `test_codex_supervisor_mcp_records_rounds_checks_budget_and_polls_resume`, `test_codex_supervisor_mcp_start_codex_session_can_dry_run_or_execute_with_runner`, `test_codex_supervisor_mcp_console_script_is_registered` | Covered |
 | P5 artifact exposure guardrail | `test_p5_artifact_redaction_covers_markdown_and_gate_logs` | Covered |
 | P6 test coverage gate | `test_p6_test_coverage_gate_asks_one_bounded_followup_for_code_without_tests`, `test_p6_test_coverage_gate_passes_when_test_file_changed` | Covered |
 | P7 Telegram rate limit and batching | `test_p7_telegram_batches_fyis_but_sends_alerts_approvals_and_milestones` | Covered |
@@ -49,6 +50,11 @@ Claude/Codex/Telegram/ChatGPT/Desktop probes must be adapted into the same
 fixture shapes before they can unblock CS24. Secret handling in Slice 0 is a
 lightweight exposure guardrail for operator-facing summaries, not an exhaustive
 DLP program.
+
+Codex MCP support is live-probed in
+`docs/testing/codex-mcp-support-probe.md`. The probe showed `codex exec --json`
+loading a repo-provided stdio MCP server and invoking its tool. The production
+entrypoint is `codex-supervisor-mcp`.
 
 ## Local Claude Code Surface Evidence
 

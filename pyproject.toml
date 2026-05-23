@@ -11,6 +11,7 @@ dependencies = [
     "anthropic>=0.40.0",
     "openai>=1.50.0",            # used for embeddings only (text-embedding-3-small)
     "fastapi>=0.115.0",
+    "mcp>=1.27.1",
     "uvicorn>=0.32.0",
     "watchfiles>=0.24.0",
     "psutil>=6.0.0",
@@ -22,6 +23,9 @@ dependencies = [
 [project.optional-dependencies]
 agent = ["claude-agent-sdk>=0.1.0"]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.24"]
+
+[project.scripts]
+codex-supervisor-mcp = "mcp_tools.codex_supervisor_stdio:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

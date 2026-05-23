@@ -217,3 +217,14 @@ packet policy must create `dual_agent_validation_failure` actions and Telegram
 asks instead of silently blocking. `Continue` answers must be claimable exactly
 once before re-dispatching the matching gate. Paused dual-agent actions must
 emit at most one stale digest after the stale threshold and remain paused.
+
+## codex_supervisor_mcp
+
+Codex consumes supervisor control through the stdio MCP entrypoint
+`codex-supervisor-mcp`, implemented by `mcp_tools.codex_supervisor_stdio`.
+Tests must verify the server exposes the dual-agent gate tools Codex needs:
+`start_dual_agent_gate`, `record_gate_round`, `check_budget`,
+`escalate_deadlock`, `poll_resume_signal`, `read_outcome`, and
+`start_codex_session`. The MCP boundary must persist gate results to the
+supervisor event ledger so later tools can read outcomes without relying on
+chat memory.
