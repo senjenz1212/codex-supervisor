@@ -13,6 +13,9 @@ SnapshotStatus = Literal["ok", "not_found", "partial"]
 InteractionLiveness = Literal["unknown", "active", "stale", "complete", "blocked"]
 GateDecision = Literal["accept", "revise", "deny", "unknown"]
 BlockerSource = Literal["result_escalation", "validation_probe", "latest_round_objection"]
+InboxItemKind = Literal["round", "result", "blocker", "warning", "handoff"]
+InboxActor = Literal["codex", "claude", "supervisor", "system"]
+InboxSeverity = Literal["info", "warning", "blocked", "success"]
 
 
 @dataclass(frozen=True)
@@ -55,10 +58,37 @@ class AgentInteractionSnapshot:
 
 
 @dataclass(frozen=True)
+class AgentInteractionInboxItem:
+    item_id: str
+    event_id: int | None
+    ts: Any
+    gate: str | None
+    kind: InboxItemKind
+    attributed_to: InboxActor
+    title: str
+    body: str
+    decision: str | None
+    severity: InboxSeverity
+    action_required: bool
+
+
+@dataclass(frozen=True)
+class AgentInteractionInbox:
+    run_id: str
+    task_id: str
+    liveness: InteractionLiveness
+    status: SnapshotStatus
+    generated_at_s: int
+    items: tuple[AgentInteractionInboxItem, ...]
+    warnings: tuple[SnapshotWarning, ...]
+
+
+@dataclass(frozen=True)
 class _RoundEvent:
     event_id: int
     ts: Any
     gate: str
+    round_index: int | None
     codex_decision: GateDecision | None
     claude_decision: GateDecision | None
     codex_confidence: float | None
@@ -73,8 +103,23 @@ class _ResultEvent:
     gate: str
     status: str
     probes: dict[str, Any]
+    outcome: Any
     escalation: Any
     handoff_packet_path: str | None
+
+
+@dataclass(frozen=True)
+class _InboxItemDraft:
+    event_id: int | None
+    ts: Any
+    gate: str | None
+    kind: InboxItemKind
+    attributed_to: InboxActor
+    title: str
+    body: str
+    decision: str | None
+    severity: InboxSeverity
+    action_required: bool
 
 
 def get_agent_interaction_snapshot(
@@ -211,6 +256,37 @@ def get_agent_interaction_snapshot(
     )
 
 
+def get_agent_interaction_inbox(
+    state: State,
+    *,
+    run_id: str,
+    task_id: str,
+    now_s: int | None = None,
+    limit: int | None = None,
+) -> AgentInteractionInbox:
+    if limit is not None and limit < 0:
+        raise ValueError("limit must be >= 0")
+
+    snapshot = get_agent_interaction_snapshot(
+        state,
+        run_id=run_id,
+        task_id=task_id,
+        now_s=now_s,
+    )
+    event_items = _read_event_inbox_item_drafts(state, run_id=run_id, task_id=task_id)
+    limited_event_items = _apply_event_item_limit(event_items, limit)
+    synthetic_items = _synthetic_inbox_item_drafts(snapshot)
+    return AgentInteractionInbox(
+        run_id=run_id,
+        task_id=task_id,
+        liveness=snapshot.liveness,
+        status=snapshot.status,
+        generated_at_s=snapshot.generated_at_s,
+        items=_materialize_inbox_items([*limited_event_items, *synthetic_items]),
+        warnings=tuple(snapshot.warnings),
+    )
+
+
 def _parse_round(
     payload: dict[str, Any],
     event_id: int,
@@ -239,6 +315,7 @@ def _parse_round(
         event_id=event_id,
         ts=ts,
         gate=gate,
+        round_index=_normalize_round_index(round_payload.get("round_index")),
         codex_decision=codex_decision,
         claude_decision=claude_decision,
         codex_confidence=_normalize_confidence(
@@ -275,9 +352,225 @@ def _parse_result(
         gate=gate,
         status=status,
         probes=probes,
+        outcome=payload.get("outcome"),
         escalation=payload.get("escalation"),
         handoff_packet_path=_string_or_none(payload.get("handoff_packet_path")),
     )
+
+
+def _read_event_inbox_item_drafts(
+    state: State,
+    *,
+    run_id: str,
+    task_id: str,
+) -> list[_InboxItemDraft]:
+    items: list[_InboxItemDraft] = []
+    for row in state.read_dual_agent_gate_events(run_id):
+        event_id = int(row["event_id"])
+        kind = str(row["kind"])
+        ts = row["ts"]
+        try:
+            payload = json.loads(row["payload_json"] or "{}")
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(payload, dict) or payload.get("task_id") != task_id:
+            continue
+        parse_warnings: list[SnapshotWarning] = []
+        if kind == "dual_agent_gate_round":
+            parsed_round = _parse_round(payload, event_id, ts, parse_warnings)
+            if parsed_round is not None:
+                items.append(_round_inbox_item_draft(parsed_round))
+        elif kind == "dual_agent_gate_result":
+            parsed_result = _parse_result(payload, event_id, ts, parse_warnings)
+            if parsed_result is not None:
+                items.append(_result_inbox_item_draft(parsed_result))
+    return items
+
+
+def _round_inbox_item_draft(round_event: _RoundEvent) -> _InboxItemDraft:
+    codex_decision = _decision_label(round_event.codex_decision)
+    claude_decision = _decision_label(round_event.claude_decision)
+    decision = f"codex={codex_decision};claude={claude_decision}"
+    return _InboxItemDraft(
+        event_id=round_event.event_id,
+        ts=round_event.ts,
+        gate=round_event.gate,
+        kind="round",
+        attributed_to=_round_actor(codex_decision, claude_decision),
+        title=f"Round {_round_index_label(round_event.round_index)}: {codex_decision}/{claude_decision}",
+        body=round_event.objection or "No objection recorded.",
+        decision=decision,
+        severity=_round_severity(codex_decision, claude_decision),
+        action_required=(
+            codex_decision == "deny"
+            or claude_decision == "deny"
+            or bool(round_event.objection)
+        ),
+    )
+
+
+def _result_inbox_item_draft(result: _ResultEvent) -> _InboxItemDraft:
+    validation_issue = _result_has_validation_issue(result)
+    status = result.status
+    return _InboxItemDraft(
+        event_id=result.event_id,
+        ts=result.ts,
+        gate=result.gate,
+        kind="result",
+        attributed_to="supervisor",
+        title=f"Gate {result.gate}: {status}",
+        body=_result_body(result),
+        decision=status,
+        severity=_result_severity(result, validation_issue=validation_issue),
+        action_required=validation_issue or status == "blocked" or result.escalation is not None,
+    )
+
+
+def _synthetic_inbox_item_drafts(snapshot: AgentInteractionSnapshot) -> list[_InboxItemDraft]:
+    items: list[_InboxItemDraft] = []
+    if snapshot.blocker is not None:
+        blocker_title = snapshot.blocker.code or snapshot.blocker.source or "unknown"
+        items.append(_InboxItemDraft(
+            event_id=None,
+            ts=None,
+            gate=snapshot.latest_gate,
+            kind="blocker",
+            attributed_to="supervisor",
+            title=f"Blocked: {blocker_title}",
+            body=snapshot.blocker.message,
+            decision=None,
+            severity="blocked",
+            action_required=True,
+        ))
+    for warning in snapshot.warnings:
+        items.append(_InboxItemDraft(
+            event_id=warning.event_id,
+            ts=None,
+            gate=snapshot.latest_gate,
+            kind="warning",
+            attributed_to="system",
+            title=f"Warning: {warning.code}",
+            body=warning.message,
+            decision=None,
+            severity="warning",
+            action_required=warning.code in {"corrupt_event_skipped", "unexpected_event_shape"},
+        ))
+    if snapshot.handoff_packet_path is not None:
+        items.append(_InboxItemDraft(
+            event_id=snapshot.latest_result_event_id,
+            ts=None,
+            gate=snapshot.latest_gate,
+            kind="handoff",
+            attributed_to="system",
+            title="Handoff packet",
+            body=snapshot.handoff_packet_path,
+            decision=None,
+            severity="info",
+            action_required=False,
+        ))
+    return items
+
+
+def _apply_event_item_limit(
+    items: list[_InboxItemDraft],
+    limit: int | None,
+) -> list[_InboxItemDraft]:
+    if limit is None or limit >= len(items):
+        return list(items)
+    if limit == 0:
+        return []
+    if limit == 1:
+        return [items[-1]]
+    return [items[0], *items[-(limit - 1):]]
+
+
+def _materialize_inbox_items(drafts: list[_InboxItemDraft]) -> tuple[AgentInteractionInboxItem, ...]:
+    counts: dict[tuple[InboxItemKind, int | None], int] = {}
+    items: list[AgentInteractionInboxItem] = []
+    for draft in drafts:
+        key = (draft.kind, draft.event_id)
+        ordinal = counts.get(key, 0)
+        counts[key] = ordinal + 1
+        event_id_label = draft.event_id if draft.event_id is not None else "none"
+        items.append(AgentInteractionInboxItem(
+            item_id=f"{draft.kind}:{event_id_label}:{ordinal}",
+            event_id=draft.event_id,
+            ts=draft.ts,
+            gate=draft.gate,
+            kind=draft.kind,
+            attributed_to=draft.attributed_to,
+            title=draft.title,
+            body=draft.body,
+            decision=draft.decision,
+            severity=draft.severity,
+            action_required=draft.action_required,
+        ))
+    return tuple(items)
+
+
+def _round_actor(codex_decision: str, claude_decision: str) -> InboxActor:
+    if codex_decision in {"deny", "revise"}:
+        return "codex"
+    if claude_decision in {"deny", "revise"}:
+        return "claude"
+    return "supervisor"
+
+
+def _round_severity(codex_decision: str, claude_decision: str) -> InboxSeverity:
+    if "deny" in {codex_decision, claude_decision}:
+        return "blocked"
+    if {codex_decision, claude_decision} == {"accept"}:
+        return "success"
+    if "revise" in {codex_decision, claude_decision} or "unknown" in {codex_decision, claude_decision}:
+        return "warning"
+    return "info"
+
+
+def _result_has_validation_issue(result: _ResultEvent) -> bool:
+    for probe_id in ("P2", "P3"):
+        probe = result.probes.get(probe_id)
+        if not isinstance(probe, dict):
+            continue
+        status = probe.get("status")
+        if status is not None and status != "green":
+            return True
+    return False
+
+
+def _result_severity(result: _ResultEvent, *, validation_issue: bool) -> InboxSeverity:
+    if validation_issue or result.status == "blocked" or result.escalation is not None:
+        return "blocked"
+    if result.status == "accepted":
+        return "success"
+    if result.status in {"failed", "rejected"}:
+        return "warning"
+    return "info"
+
+
+def _result_body(result: _ResultEvent) -> str:
+    if isinstance(result.outcome, dict):
+        summary = _string_or_none(result.outcome.get("summary"))
+        if summary:
+            return summary
+    if isinstance(result.escalation, dict):
+        reason = _string_or_none(result.escalation.get("reason"))
+        if reason:
+            return reason
+        message = _string_or_none(result.escalation.get("message"))
+        if message:
+            return message
+        return json.dumps(result.escalation, sort_keys=True, default=str)
+    if result.escalation is not None:
+        return json.dumps(result.escalation, sort_keys=True, default=str)
+    return "No outcome summary recorded."
+
+
+def _decision_label(decision: GateDecision | None) -> str:
+    return decision or "unknown"
+
+
+def _round_index_label(round_index: int | None) -> str:
+    return str(round_index) if round_index is not None else "unknown"
 
 
 def _derive_blocker_and_liveness(
@@ -458,6 +751,12 @@ def _normalize_confidence(
         warnings.append(_invalid_confidence(event_id, field, value))
         return None
     return confidence
+
+
+def _normalize_round_index(value: Any) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
 
 
 def _invalid_confidence(event_id: int, field: str, value: Any) -> SnapshotWarning:

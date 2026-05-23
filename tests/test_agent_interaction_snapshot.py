@@ -115,6 +115,14 @@ def _snapshot(state: State, **kwargs):
     return get_agent_interaction_snapshot(state, **defaults)
 
 
+def _inbox(state: State, **kwargs):
+    from supervisor.agent_interaction_snapshot import get_agent_interaction_inbox
+
+    defaults = {"run_id": "run-1", "task_id": "task-1", "now_s": 1900}
+    defaults.update(kwargs)
+    return get_agent_interaction_inbox(state, **defaults)
+
+
 def test_state_read_dual_agent_gate_events_filters_and_orders(tmp_path):
     state = _state(tmp_path)
     other_kind = _insert_event(
@@ -179,6 +187,74 @@ def test_dto_field_surfaces_and_literal_aliases_are_pinned():
     assert get_args(snapshot.SnapshotStatus) == ("ok", "not_found", "partial")
     assert get_args(snapshot.InteractionLiveness) == ("unknown", "active", "stale", "complete", "blocked")
     assert get_args(snapshot.GateDecision) == ("accept", "revise", "deny", "unknown")
+
+
+def test_inbox_public_signature_dtos_and_literal_aliases_are_pinned():
+    import supervisor.agent_interaction_snapshot as snapshot
+
+    signature = inspect.signature(snapshot.get_agent_interaction_inbox)
+    assert list(signature.parameters) == ["state", "run_id", "task_id", "now_s", "limit"]
+    assert signature.parameters["run_id"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert signature.parameters["task_id"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert signature.parameters["now_s"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert signature.parameters["limit"].kind is inspect.Parameter.KEYWORD_ONLY
+    for cls in (snapshot.AgentInteractionInbox, snapshot.AgentInteractionInboxItem):
+        assert dataclasses.is_dataclass(cls)
+        assert cls.__dataclass_params__.frozen
+
+    assert [field.name for field in dataclasses.fields(snapshot.AgentInteractionInbox)] == [
+        "run_id",
+        "task_id",
+        "liveness",
+        "status",
+        "generated_at_s",
+        "items",
+        "warnings",
+    ]
+    assert [field.name for field in dataclasses.fields(snapshot.AgentInteractionInboxItem)] == [
+        "item_id",
+        "event_id",
+        "ts",
+        "gate",
+        "kind",
+        "attributed_to",
+        "title",
+        "body",
+        "decision",
+        "severity",
+        "action_required",
+    ]
+    assert get_args(snapshot.InboxItemKind) == ("round", "result", "blocker", "warning", "handoff")
+    assert get_args(snapshot.InboxActor) == ("codex", "claude", "supervisor", "system")
+    assert get_args(snapshot.InboxSeverity) == ("info", "warning", "blocked", "success")
+
+
+def test_inbox_uses_snapshot_liveness_status_warnings_and_single_time_read(tmp_path, monkeypatch):
+    import supervisor.agent_interaction_snapshot as snapshot
+
+    calls = 0
+
+    def fake_time():
+        nonlocal calls
+        calls += 1
+        return 1234567890.9
+
+    monkeypatch.setattr(snapshot.time, "time", fake_time)
+    state = _state(tmp_path)
+
+    result = snapshot.get_agent_interaction_inbox(state, run_id="missing", task_id="missing")
+
+    assert calls == 1
+    assert result.run_id == "missing"
+    assert result.task_id == "missing"
+    assert result.status == "not_found"
+    assert result.liveness == "unknown"
+    assert result.generated_at_s == 1234567890
+    assert isinstance(result.items, tuple)
+    assert isinstance(result.warnings, tuple)
+    assert [item.kind for item in result.items] == ["warning"]
+    assert result.items[0].title == "Warning: no_dual_agent_events"
+    assert result.items[0].action_required is False
 
 
 def test_empty_ledger_returns_exact_not_found_defaults(tmp_path):
@@ -533,6 +609,227 @@ def test_missing_handoff_packet_path_warns_for_accepted_result(tmp_path):
     assert "missing_handoff_packet_path" in {warning.code for warning in result.warnings}
 
 
+def test_inbox_limit_keeps_first_and_latest_event_items_with_synthetic_items_retained(tmp_path):
+    state = _state(tmp_path)
+    event_ids = [
+        _insert_event(
+            state,
+            payload=_round_payload(round_index=index, codex_decision="accept", claude_decision="accept"),
+            ts=1000 + index,
+        )
+        for index in range(1, 6)
+    ]
+
+    assert [item.event_id for item in _inbox(state, limit=None).items] == event_ids
+    assert [item.event_id for item in _inbox(state, limit=0).items] == []
+    assert [item.event_id for item in _inbox(state, limit=1).items] == [event_ids[-1]]
+    assert [item.event_id for item in _inbox(state, limit=2).items] == [event_ids[0], event_ids[-1]]
+    assert [item.event_id for item in _inbox(state, limit=3).items] == [event_ids[0], event_ids[-2], event_ids[-1]]
+    assert [item.event_id for item in _inbox(state, limit=5).items] == event_ids
+    with pytest.raises(ValueError, match="limit must be >= 0"):
+        _inbox(state, limit=-1)
+
+
+@pytest.mark.parametrize(
+    (
+        "codex_decision",
+        "claude_decision",
+        "objection",
+        "expected_actor",
+        "expected_severity",
+        "expected_action",
+    ),
+    [
+        ("accept", "accept", None, "supervisor", "success", False),
+        ("revise", "accept", None, "codex", "warning", False),
+        ("accept", "revise", "missing tests", "claude", "warning", True),
+        ("deny", "accept", None, "codex", "blocked", True),
+        ("accept", "deny", "unsafe plan", "claude", "blocked", True),
+        ("unknown", "accept", None, "supervisor", "warning", False),
+    ],
+)
+def test_inbox_round_item_mapping(
+    tmp_path,
+    codex_decision,
+    claude_decision,
+    objection,
+    expected_actor,
+    expected_severity,
+    expected_action,
+):
+    state = _state(tmp_path)
+    event_id = _insert_event(
+        state,
+        payload=_round_payload(
+            gate="prd_review",
+            round_index=7,
+            codex_decision=codex_decision,
+            claude_decision=claude_decision,
+            objection=objection,
+        ),
+        ts=1700,
+    )
+
+    item = _inbox(state).items[0]
+
+    assert item.item_id == f"round:{event_id}:0"
+    assert item.event_id == event_id
+    assert item.ts == 1700
+    assert item.gate == "prd_review"
+    assert item.kind == "round"
+    assert item.attributed_to == expected_actor
+    assert item.title == f"Round 7: {codex_decision}/{claude_decision}"
+    assert item.body == (objection or "No objection recorded.")
+    assert item.decision == f"codex={codex_decision};claude={claude_decision}"
+    assert item.severity == expected_severity
+    assert item.action_required is expected_action
+
+
+def test_inbox_result_item_uses_outcome_summary_and_flags_p2_p3_red_only(tmp_path):
+    state = _state(tmp_path)
+    red_id = _insert_event(
+        state,
+        kind="dual_agent_gate_result",
+        payload={
+            **_result_payload(gate="outcome_review", status="accepted"),
+            "outcome": {"summary": "Implemented the approved projection."},
+            "probes": {
+                "P2": {"probe_id": "P2", "status": "red", "reason": "lead_invocation_failed", "details": {}},
+                "P3": {"probe_id": "P3", "status": "green", "reason": "outcome_fidelity_ok", "details": {}},
+                "P4": {"probe_id": "P4", "status": "red", "reason": "ignored", "details": {}},
+            },
+        },
+        ts=1700,
+    )
+
+    red_item = _inbox(state).items[0]
+
+    assert red_item.item_id == f"result:{red_id}:0"
+    assert red_item.kind == "result"
+    assert red_item.attributed_to == "supervisor"
+    assert red_item.title == "Gate outcome_review: accepted"
+    assert red_item.body == "Implemented the approved projection."
+    assert red_item.decision == "accepted"
+    assert red_item.severity == "blocked"
+    assert red_item.action_required is True
+
+    p4_only_state = _state(tmp_path / "p4")
+    p4_id = _insert_event(
+        p4_only_state,
+        kind="dual_agent_gate_result",
+        payload={
+            **_result_payload(gate="outcome_review", status="accepted"),
+            "outcome": {"summary": "P4 does not block this projection."},
+            "probes": {
+                "P2": {"probe_id": "P2", "status": "green", "reason": "ok", "details": {}},
+                "P3": {"probe_id": "P3", "status": "green", "reason": "ok", "details": {}},
+                "P4": {"probe_id": "P4", "status": "red", "reason": "ignored", "details": {}},
+            },
+        },
+        ts=1701,
+    )
+
+    p4_item = _inbox(p4_only_state).items[0]
+
+    assert p4_item.item_id == f"result:{p4_id}:0"
+    assert p4_item.severity == "success"
+    assert p4_item.action_required is False
+
+
+@pytest.mark.parametrize(
+    ("escalation", "expected_body"),
+    [
+        ({"type": "deadlock", "reason": "budget exhausted", "message": "unused"}, "budget exhausted"),
+        ({"type": "deadlock", "message": "need operator"}, "need operator"),
+        ({"type": "deadlock", "other": "value"}, '{"other": "value", "type": "deadlock"}'),
+        ("manual pause", '"manual pause"'),
+    ],
+)
+def test_inbox_result_body_falls_back_to_escalation_then_default(tmp_path, escalation, expected_body):
+    state = _state(tmp_path)
+    _insert_event(
+        state,
+        kind="dual_agent_gate_result",
+        payload={**_result_payload(status="blocked", escalation=escalation), "outcome": None},
+        ts=1700,
+    )
+
+    assert _inbox(state).items[0].body == expected_body
+
+    default_state = _state(tmp_path / "default")
+    _insert_event(default_state, kind="dual_agent_gate_result", payload=_result_payload(status="accepted"), ts=1701)
+
+    assert _inbox(default_state).items[0].body == "No outcome summary recorded."
+
+
+def test_inbox_synthetic_items_follow_event_items_and_pin_titles_actions_and_ids(tmp_path):
+    state = _state(tmp_path)
+    corrupt_id = _insert_event(state, payload="{bad-json", ts=1699)
+    result_id = _insert_event(
+        state,
+        kind="dual_agent_gate_result",
+        payload=_result_payload(
+            status="blocked",
+            escalation={"type": "deadlock", "reason": "budget exhausted"},
+            handoff_packet_path="/tmp/approved/handoff.json",
+        ),
+        ts=1700,
+    )
+
+    items = _inbox(state).items
+
+    assert [item.kind for item in items] == ["result", "blocker", "warning", "handoff"]
+    assert [item.item_id for item in items] == [
+        f"result:{result_id}:0",
+        "blocker:none:0",
+        f"warning:{corrupt_id}:0",
+        f"handoff:{result_id}:0",
+    ]
+    assert items[1].title == "Blocked: deadlock"
+    assert items[1].body == "budget exhausted"
+    assert items[1].severity == "blocked"
+    assert items[1].action_required is True
+    assert items[2].title == "Warning: corrupt_event_skipped"
+    assert items[2].event_id == corrupt_id
+    assert items[2].action_required is True
+    assert items[3].title == "Handoff packet"
+    assert items[3].body == "/tmp/approved/handoff.json"
+    assert items[3].action_required is False
+
+
+def test_inbox_warning_actions_are_required_only_for_corrupt_or_unexpected_events(tmp_path):
+    state = _state(tmp_path)
+    _insert_event(state, payload={"task_id": "task-1", "gate": "tdd_review"}, ts=1000)
+    _insert_event(state, kind="dual_agent_gate_result", payload=_result_payload(handoff_packet_path=None), ts=1001)
+
+    warnings = [item for item in _inbox(state).items if item.kind == "warning"]
+
+    assert [(item.title, item.action_required) for item in warnings] == [
+        ("Warning: unexpected_event_shape", True),
+        ("Warning: missing_handoff_packet_path", False),
+    ]
+
+
+def test_inbox_read_only_runtime_guard_matches_static_for_state_write_methods(tmp_path, monkeypatch):
+    state = _state(tmp_path)
+    _insert_event(state, payload=_round_payload(), ts=1000)
+
+    for name in [
+        "write_event",
+        "record_action",
+        "complete_action",
+        "mark_action_resume_requested",
+        "claim_resume_signal",
+    ]:
+        if hasattr(State, name):
+            monkeypatch.setattr(State, name, lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError(name)))
+
+    result = _inbox(state)
+
+    assert result.status == "ok"
+    assert result.items[0].kind == "round"
+
+
 def test_valid_result_missing_gate_is_unexpected_event_shape(tmp_path):
     state = _state(tmp_path)
     payload = _result_payload()
@@ -671,6 +968,8 @@ def test_schema_parity_against_real_dual_agent_writers_field_to_behavior(tmp_pat
 def test_no_desktop_repaint_claim_or_import():
     source = Path("supervisor/agent_interaction_snapshot.py").read_text()
     for forbidden in [
+        ".lingtai",
+        "mailbox",
         "desktop_gui_control",
         "desktop_status_sync",
         "app_server",
@@ -682,4 +981,13 @@ def test_no_desktop_repaint_claim_or_import():
     doc = Path("docs/testing/agent-interaction-snapshot.md")
     text = doc.read_text()
     assert "ledger snapshot" in text
+    assert "ledger-backed inbox projection" in text
+    assert "no ack/read/unread semantics" in text
     assert "live GUI repaint" not in text
+    for forbidden in [
+        "mailbox is authoritative",
+        "filesystem mailbox truth layer",
+        "mailbox source of truth",
+        ".lingtai/",
+    ]:
+        assert forbidden not in text
