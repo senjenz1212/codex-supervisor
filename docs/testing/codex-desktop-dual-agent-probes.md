@@ -139,12 +139,17 @@ After all three rounds, call read_outcome and summarize whether the gate
 converged. If a gate returns blocked or escalation returns telegram_disabled,
 ask me in this Desktop chat for corrective input instead of calling
 poll_resume_signal.
+
+Before summarizing, call mcp__codex_supervisor__read_gate_transcript with the
+same run_id and task_id. Use that result to show the clean Codex/Claude
+dialogue, not just the final outcome.
 ```
 
 Pass criteria:
 
 - Desktop makes at least three `start_dual_agent_gate` calls.
 - Desktop makes at least three `record_gate_round` calls.
+- Desktop calls `read_gate_transcript` before summarizing.
 - The final response states whether the gate converged or asks the user for
   corrective input in chat.
 - `poll_resume_signal` is not called unless a Telegram callback was actually
@@ -168,10 +173,19 @@ limit 10;
 '
 ```
 
+Verify transcript retrieval:
+
+```text
+In Codex Desktop, ask:
+"Call mcp__codex_supervisor__read_gate_transcript for run_id <RUN_ID> and
+task_id <TASK_ID>, then show me the rounds and final result."
+```
+
 Fail criteria:
 
 - The rounds are synthesized without calling `start_dual_agent_gate`.
 - Fewer than three `dual_agent_gate_round` events land in SQLite.
+- `read_gate_transcript` cannot reconstruct the rounds and final result.
 - The Desktop tries to wait on `poll_resume_signal` in the no-Telegram path.
 
 ## Expected Narrow-Scope Verdict

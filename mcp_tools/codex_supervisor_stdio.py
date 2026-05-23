@@ -243,6 +243,55 @@ class CodexSupervisorMcpAPI:
                 }
         return {"status": "not_found", "run_id": run_id, "task_id": task_id}
 
+    def read_gate_transcript(self, *, run_id: str, task_id: str) -> dict[str, Any]:
+        rows = self.state._conn.execute(
+            """SELECT * FROM events
+               WHERE run_id=? AND source='dual_agent'
+                 AND kind IN ('dual_agent_gate_round', 'dual_agent_gate_result')
+               ORDER BY event_id ASC""",
+            (run_id,),
+        ).fetchall()
+        rounds: list[dict[str, Any]] = []
+        latest_result: dict[str, Any] | None = None
+        latest_result_event_id: int | None = None
+        for row in rows:
+            payload = json.loads(row["payload_json"] or "{}")
+            if str(payload.get("task_id") or "") != task_id:
+                continue
+            if row["kind"] == "dual_agent_gate_round":
+                round_payload = dict(payload.get("round") or {})
+                rounds.append(redact({
+                    "event_id": row["event_id"],
+                    "occurred_at": row["ts"],
+                    "gate": payload.get("gate"),
+                    **round_payload,
+                }))
+            elif row["kind"] == "dual_agent_gate_result":
+                latest_result = redact(payload)
+                latest_result_event_id = int(row["event_id"])
+
+        if not rounds and latest_result is None:
+            return {
+                "status": "not_found",
+                "run_id": run_id,
+                "task_id": task_id,
+                "rounds": [],
+                "result": None,
+                "handoff_packet_path": None,
+            }
+        return {
+            "status": "ok",
+            "run_id": run_id,
+            "task_id": task_id,
+            "rounds": rounds,
+            "result_event_id": latest_result_event_id,
+            "result": latest_result,
+            "handoff_packet_path": (
+                latest_result.get("handoff_packet_path")
+                if latest_result is not None else None
+            ),
+        }
+
     def start_codex_session(
         self,
         *,
@@ -464,6 +513,10 @@ def build_codex_supervisor_mcp_server(
     @mcp.tool()
     def read_outcome(run_id: str, task_id: str) -> dict[str, Any]:
         return tool_api.read_outcome(run_id=run_id, task_id=task_id)
+
+    @mcp.tool()
+    def read_gate_transcript(run_id: str, task_id: str) -> dict[str, Any]:
+        return tool_api.read_gate_transcript(run_id=run_id, task_id=task_id)
 
     @mcp.tool()
     def start_codex_session(

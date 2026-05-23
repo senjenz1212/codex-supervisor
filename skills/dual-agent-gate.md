@@ -11,6 +11,7 @@ Claude Code as the implementer.
 - `mcp__codex_supervisor__escalate_deadlock(run_id, task_id, gate, rounds, per_gate_cap, task_budget)`
 - `mcp__codex_supervisor__poll_resume_signal(task_id, run_id, gate, instruction, cwd, expected_specialists, expected_decisions, expected_objections, quality, model, budget_usd, timeout_s)`
 - `mcp__codex_supervisor__read_outcome(run_id, task_id)`
+- `mcp__codex_supervisor__read_gate_transcript(run_id, task_id)`
 - `mcp__codex_supervisor__start_codex_session(prompt, cwd, model, execute, timeout_s)`
 
 ## Gate Policy
@@ -36,7 +37,11 @@ For each major decision gate:
    corrective instruction and record the new round with `record_gate_round`.
 8. Call `poll_resume_signal` only when Telegram is configured and a
    `Continue` or `Retry` callback was actually recorded.
-9. Read the final gate result with `read_outcome` before advancing.
+9. Before advancing or summarizing for the user, call `read_gate_transcript`
+   and use it to show the clean Codex/Claude dialogue: rounds, decisions,
+   confidences, objections, and final outcome.
+10. Read the final gate result with `read_outcome` when you only need the
+    latest outcome without the dialogue history.
 
 ## Defaults
 

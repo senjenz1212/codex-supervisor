@@ -11,6 +11,8 @@ def test_dual_agent_skill_uses_desktop_chat_when_telegram_is_absent():
     assert "Do not call `poll_resume_signal`" in text
     assert "no-Telegram path" in text
     assert "re-invoke `start_dual_agent_gate`" in text
+    assert "read_gate_transcript" in text
+    assert "Before advancing or summarizing" in text
 
 
 def test_desktop_probe_doc_covers_g1_g2_g3_and_corrects_execute_flag():
@@ -21,4 +23,7 @@ def test_desktop_probe_doc_covers_g1_g2_g3_and_corrects_execute_flag():
     assert "## G-3: Desktop Drives Three Dialogue Rounds" in text
     assert "`start_dual_agent_gate` has no `execute=true` flag" in text
     assert "poll_resume_signal` is not called unless a Telegram callback was actually" in text
+    assert "read_gate_transcript" in text
+    assert "clean Codex/Claude" in text
+    assert "dialogue, not just the final outcome" in text
     assert "sqlite3 ~/.codex-supervisor/state.db" in text

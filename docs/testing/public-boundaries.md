@@ -224,9 +224,10 @@ Codex consumes supervisor control through the stdio MCP entrypoint
 `codex-supervisor-mcp`, implemented by `mcp_tools.codex_supervisor_stdio`.
 Tests must verify the server exposes the dual-agent gate tools Codex needs:
 `start_dual_agent_gate`, `record_gate_round`, `check_budget`,
-`escalate_deadlock`, `poll_resume_signal`, `read_outcome`, and
-`start_codex_session`. The MCP boundary must persist gate results to the
-supervisor event ledger so later tools can read outcomes without relying on
+`escalate_deadlock`, `poll_resume_signal`, `read_outcome`,
+`read_gate_transcript`, and `start_codex_session`. The MCP boundary must
+persist gate results and round decisions to the supervisor event ledger so
+later tools can read outcomes and reconstruct the dialogue without relying on
 chat memory. In the Codex Desktop initiated no-Telegram scope, a blocked gate
 must escalate through Desktop chat and re-run `start_dual_agent_gate`; it must
 not wait on `poll_resume_signal` unless a Telegram callback exists.

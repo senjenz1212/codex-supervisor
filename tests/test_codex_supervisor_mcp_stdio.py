@@ -101,6 +101,7 @@ async def test_codex_supervisor_mcp_exposes_dual_agent_gate_tools(tmp_path):
     assert set(server.tools) >= {
         "start_dual_agent_gate",
         "record_gate_round",
+        "read_gate_transcript",
         "read_outcome",
         "check_budget",
         "escalate_deadlock",
@@ -128,6 +129,74 @@ async def test_codex_supervisor_mcp_exposes_dual_agent_gate_tools(tmp_path):
     ))
     assert outcome["status"] == "ok"
     assert outcome["result"]["status"] == "accepted"
+
+
+@pytest.mark.asyncio
+async def test_codex_supervisor_mcp_reads_clean_gate_transcript(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
+    from supervisor.dual_agent_runner import build_lead_replay_stdout
+
+    state = State(str(tmp_path / "state.db"))
+
+    def fake_runner(argv, **kwargs):
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=build_lead_replay_stdout(_outcome_block("transcript-task")),
+            stderr="",
+        )
+
+    server = build_codex_supervisor_mcp_server(
+        _cfg(tmp_path),
+        state,
+        mcp_cls=_FakeMCP,
+        runner=fake_runner,
+    )
+
+    for round_index, codex_decision, claude_decision, objection in [
+        (1, "deny", "accept", "No tests added."),
+        (2, "revise", "revise", "Acceptance criteria still vague."),
+        (3, "accept", "accept", None),
+    ]:
+        await _maybe_await(server.tools["record_gate_round"](
+            run_id="transcript-run",
+            task_id="transcript-task",
+            gate="prd_review",
+            round_index=round_index,
+            codex_decision=codex_decision,
+            claude_decision=claude_decision,
+            codex_confidence=0.9 + (round_index / 100),
+            claude_confidence=0.8 + (round_index / 100),
+            objection=objection,
+        ))
+
+    gate_result = await _maybe_await(server.tools["start_dual_agent_gate"](
+        task_id="transcript-task",
+        run_id="transcript-run",
+        gate="prd_review",
+        instruction="Finish the gate.",
+        cwd=str(tmp_path),
+        expected_specialists=["Planner"],
+        expected_decisions=["accept plan"],
+        expected_objections=[],
+    ))
+
+    transcript = await _maybe_await(server.tools["read_gate_transcript"](
+        run_id="transcript-run",
+        task_id="transcript-task",
+    ))
+
+    assert transcript["status"] == "ok"
+    assert transcript["run_id"] == "transcript-run"
+    assert transcript["task_id"] == "transcript-task"
+    assert [r["round_index"] for r in transcript["rounds"]] == [1, 2, 3]
+    assert transcript["rounds"][0]["codex_decision"] == "deny"
+    assert transcript["rounds"][0]["claude_decision"] == "accept"
+    assert transcript["rounds"][0]["objection"] == "No tests added."
+    assert transcript["rounds"][0]["event_id"] < transcript["rounds"][1]["event_id"]
+    assert transcript["result"]["status"] == "accepted"
+    assert transcript["result"]["outcome"]["task_id"] == "transcript-task"
+    assert transcript["handoff_packet_path"] == gate_result["handoff_packet_path"]
 
 
 @pytest.mark.asyncio
