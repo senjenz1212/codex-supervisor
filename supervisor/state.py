@@ -328,6 +328,16 @@ class State:
             for r in rows
         ]
 
+    def read_dual_agent_gate_events(self, run_id: str) -> list[sqlite3.Row]:
+        return list(self._conn.execute(
+            """SELECT event_id, ts, kind, payload_json
+               FROM events
+               WHERE run_id=?
+                 AND kind IN ('dual_agent_gate_round', 'dual_agent_gate_result')
+               ORDER BY event_id ASC""",
+            (run_id,),
+        ))
+
     def get_event(self, *, run_id: str, event_id: int) -> sqlite3.Row | None:
         return self._conn.execute(
             "SELECT * FROM events WHERE run_id=? AND event_id=?",
