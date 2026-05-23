@@ -21,6 +21,10 @@ Adopt **dual-agent gates, single-agent execution** as the target architecture:
   is a lightweight guardrail: prove the intended gateway and avoid obvious raw
   token leaks to operator-facing surfaces, but do not turn Slice 0 into an
   exhaustive secret-management project.
+- Codex hands context to Claude Code through a typed handoff packet, not raw
+  conversation history. The packet is written to `.handoff/<task_id>.json`,
+  includes `packet_schema_version`, pins planning artifact checksums, pins the
+  `/lead` skill version/hash, and names the outcome-validation failure policy.
 
 Slice 0 is not a feature slice. It is the evidence gate that decides whether
 the architecture is safe to build.
@@ -152,6 +156,8 @@ Fixture:
 Pass criteria:
 
 - The orchestration surface runs from the Codex-spawned process.
+- The Codex-owned spawn prompt references the typed handoff packet as the
+  bounded context source.
 - The evidence names the surface used, for example `/lead`, `claude_agents`,
   `feature-dev`, or `superpowers:subagent-driven-development`.
 - stdout/stderr capture is complete under the load case.
@@ -192,6 +198,8 @@ Fixture:
 Pass criteria:
 
 - Deterministic parser maps transcript to schema.
+- Claude JSON output from `--output-format json` fails loudly if the known
+  `result: string` field is missing or type-drifted.
 - All specialist names survive.
 - All specialist decisions survive.
 - All flagged objections/conflicts survive.
@@ -199,6 +207,12 @@ Pass criteria:
   present or explicitly marked unknown.
 - If the adapter exceeds roughly 50 lines of domain logic, stop and consider
   consuming the orchestration surface's native format instead.
+- Before judging implementation outcome, Codex verifies that immutable planning
+  artifacts named in the handoff packet still match their handoff checksums.
+- Outcome validation failure behavior is pinned by packet policy:
+  malformed/missing outcome retries once with a corrective packet by default;
+  fidelity failure, subprocess failure, and timeout abort to the operator by
+  default.
 
 Fail means:
 

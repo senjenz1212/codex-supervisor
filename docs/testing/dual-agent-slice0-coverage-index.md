@@ -12,7 +12,8 @@ Source PRD: `docs/prd/dual-agent-slice0-reality-check-prd.md`
 | P1 worktree boundary | `test_p1_worktree_boundary_requires_expected_cwd_and_no_offlimits_touch`, `test_p1_fails_when_outcome_was_not_written`, `test_p1_fails_when_git_status_contains_unexpected_path`, `test_p1_fails_when_claude_touches_sibling_worktree` | Covered |
 | P2 worker orchestration invocation and high-volume capture | `test_p2_worker_invocation_requires_complete_high_volume_capture`, `test_p2_fails_on_truncated_capture_even_if_worker_exits_zero`, `test_p2_fails_when_output_was_not_codex_spawned_or_no_surface_is_recorded`, `test_p2_fails_when_load_case_is_not_high_volume_tokens` | Covered |
 | P3 worker output to outcome fidelity | `test_p3_worker_outcome_adapter_preserves_specialists_decisions_and_objections`, `test_p3_fails_when_adapter_drops_worker_signal`, `test_p3_fails_when_required_review_evidence_is_not_explicit` | Covered |
-| Claude `/lead` invocation wrapper | `test_build_lead_command_uses_non_bare_claude_so_slash_lead_can_resolve`, `test_select_lead_model_prefers_best_models_for_gate_decisions`, `test_invoke_claude_lead_parses_json_output_and_validates_outcome`, `test_invoke_claude_lead_reports_subprocess_failure`, `test_invoke_claude_lead_surfaces_outcome_fidelity_failure` | Covered |
+| Claude `/lead` invocation wrapper | `test_build_lead_command_uses_non_bare_claude_so_slash_lead_can_resolve`, `test_select_lead_model_prefers_best_models_for_gate_decisions`, `test_invoke_claude_lead_parses_json_output_and_validates_outcome`, `test_invoke_claude_lead_reports_subprocess_failure`, `test_invoke_claude_lead_reports_timeout_without_auto_retry`, `test_invoke_claude_lead_fails_loudly_on_claude_json_schema_drift`, `test_invoke_claude_lead_reports_malformed_outcome_block`, `test_invoke_claude_lead_surfaces_outcome_fidelity_failure` | Covered |
+| Typed Codex-to-Claude handoff packet | `test_write_handoff_packet_pins_schema_planning_checksums_and_lead_skill`, `test_build_lead_prompt_references_handoff_packet_instead_of_raw_context`, `test_handoff_packet_rejects_planning_artifacts_outside_worktree`, `test_custom_outcome_validation_policy_is_pinned_in_packet`, `test_verify_planning_artifact_boundaries_detects_worker_spec_rewrite` | Covered |
 | P4 deadlock pauses | `test_p4_deadlock_budget_records_pause_not_auto_decision` | Covered |
 | P5 artifact exposure guardrail | `test_p5_artifact_redaction_covers_markdown_and_gate_logs` | Covered |
 | P6 test coverage gate | `test_p6_test_coverage_gate_asks_one_bounded_followup_for_code_without_tests`, `test_p6_test_coverage_gate_passes_when_test_file_changed` | Covered |
@@ -29,10 +30,12 @@ The deterministic Slice 0 boundary is `supervisor.dual_agent`: fixture-shaped
 probe inputs enter pure validators and produce `ProbeResult` records. The live
 Claude `/lead` process boundary is `supervisor.dual_agent_lead`; tests inject a
 fake runner and assert the command/prompt/result adaptation without calling live
-Claude. Live Claude/Codex/Telegram/ChatGPT/Desktop probes must be adapted into
-the same fixture shapes before they can unblock CS24. Secret handling in Slice
-0 is a lightweight exposure guardrail for operator-facing summaries, not an
-exhaustive DLP program.
+Claude. The same boundary writes `.handoff/<task_id>.json` packets with schema
+version, planning artifact checksums, outcome-validation policy, and `/lead`
+skill version/hash pinning. Live Claude/Codex/Telegram/ChatGPT/Desktop probes
+must be adapted into the same fixture shapes before they can unblock CS24.
+Secret handling in Slice 0 is a lightweight exposure guardrail for
+operator-facing summaries, not an exhaustive DLP program.
 
 ## Local Claude Code Surface Evidence
 

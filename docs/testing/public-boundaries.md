@@ -196,4 +196,8 @@ Tests must inject a fake runner rather than spawning live Claude. The command
 builder must use non-bare `claude -p` so slash commands can resolve, must expose
 model-quality policy explicitly, must capture stdout/stderr without truncation,
 and must fail closed when the process fails or the typed outcome loses expected
-specialist decisions or objections.
+specialist decisions or objections. The handoff writer must create
+`.handoff/<task_id>.json` with an explicit packet schema version, immutable
+planning artifact checksums, pinned `/lead` skill version/hash, and the selected
+outcome-validation failure policy. Post-worker review must be able to verify
+that immutable planning artifacts still match the checksums from handoff.
