@@ -148,3 +148,22 @@ Interpretation:
   typed outcome handoff.
 - The high-volume P2 load proof is still separate. It should use a real worker
   run or a non-model fixture producer, not synthetic model padding.
+
+## 2026-05-23 High-Volume Replay Harness
+
+Implementation:
+
+- `supervisor.dual_agent_runner.write_replay_fixture_family` writes replayable
+  Claude stdout fixtures from a captured `/lead` transcript seed.
+- `supervisor.dual_agent_runner.make_replay_runner` replays those stdout files
+  through the same `invoke_claude_lead` boundary used by live calls.
+- The deterministic suite covers 2K, 10K, 50K, and 200K token-size replay
+  levels and asserts byte-for-byte stdout capture, JSON parse, P2 capture
+  evidence, and P3 outcome fidelity.
+
+Interpretation:
+
+- CI now has a free regression for pipe/buffer truncation and JSON parse drift.
+- Periodic live refresh remains operational: when Claude Code or `/lead`
+  changes, refresh the seed transcript from a real `/lead` run and rerun the
+  same replay family.

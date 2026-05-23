@@ -165,6 +165,9 @@ Pass criteria:
   summary.
 - The capture mechanism is chunk-safe and does not truncate mid-JSON,
   mid-markdown, or mid-line.
+- CI includes replay fixtures at 2K, 10K, 50K, and 200K token-size load levels
+  through the same `/lead` invoker boundary. The replay source can be refreshed
+  from live `/lead` output when Claude Code or `/lead` changes.
 
 Fail means:
 
@@ -237,10 +240,39 @@ Pass criteria:
   type.
 - Supervisor action status is `paused_for_human`, not `failed`, `accepted`, or
   `delivered`.
+- The escalation creates a nonce-protected Telegram ask with `Pause`, `Kill`,
+  and `Continue`; callbacks update the action to `paused`, `kill_requested`, or
+  `continue_requested` without directly executing destructive work.
 
 Fail means:
 
 - Unsafe autonomy. Do not build CS24.
+
+### CS24 Gate Runner Boundary
+
+Purpose: wire the hard-stop evidence into the actual gate sequence without
+requiring the operator to manually prompt each phase.
+
+Fixture:
+
+- one or more gate specs with approved worktree, handoff artifacts, expected
+  specialists, decisions, and objections.
+- fake Claude runners replay valid, malformed, and schema-drift outputs.
+
+Pass criteria:
+
+- Each gate writes `.handoff/<task_id>.json`.
+- Each gate invokes the `/lead` boundary with the packet path.
+- P1 planning artifact checksums, P2 capture evidence, and P3 outcome fidelity
+  are all present before a gate is accepted.
+- Malformed outcome blocks retry once when the packet policy allows.
+- Subprocess failure, timeout, schema drift, fidelity loss, or planning checksum
+  changes block the gate.
+- Multi-gate execution stops at the first blocked gate.
+
+Fail means:
+
+- Keep using manual Codex orchestration; do not advertise CS24 as autonomous.
 
 ### P5 Artifact Exposure Guardrail
 

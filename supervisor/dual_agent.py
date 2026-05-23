@@ -227,7 +227,11 @@ def evaluate_worker_invocation(probe: WorkerInvocationProbeInput) -> ProbeResult
         "P2",
         "green",
         "worker_orchestration_invocation_ok",
-        {"orchestration_surface": probe.orchestration_surface},
+        {
+            "orchestration_surface": probe.orchestration_surface,
+            "captured_bytes": probe.captured_bytes,
+            "captured_token_estimate": probe.captured_token_estimate,
+        },
     )
 
 

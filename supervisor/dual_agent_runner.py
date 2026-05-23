@@ -1,0 +1,376 @@
+"""Production-facing dual-agent gate runner primitives.
+
+This is still deliberately small: the runner creates the handoff packet,
+invokes Claude Code `/lead`, validates the output through Slice 0 probes, and
+stops on the first blocked gate. Live process calls remain injectable.
+"""
+from __future__ import annotations
+
+import json
+import secrets
+import subprocess
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Callable
+
+from .dual_agent import (
+    GateRound,
+    Outcome,
+    ProbeResult,
+    WorkerInvocationProbeInput,
+    evaluate_deadlock_budget,
+    evaluate_worker_invocation,
+)
+from .dual_agent_lead import (
+    GateName,
+    LeadInvocationRequest,
+    LeadInvocationResult,
+    ModelQuality,
+    OutcomeValidationPolicy,
+    PlanningArtifact,
+    Runner,
+    compute_file_sha256,
+    invoke_claude_lead,
+    verify_planning_artifact_boundaries,
+    write_handoff_packet,
+)
+from .state import State
+
+
+@dataclass(frozen=True)
+class ReplayFixture:
+    token_size: int
+    stdout_path: Path
+    sha256: str
+
+
+@dataclass(frozen=True)
+class DeadlockEscalation:
+    status: str
+    action_id: int | None = None
+    ask_id: int | None = None
+    nonce: str | None = None
+    probe: ProbeResult | None = None
+
+
+@dataclass(frozen=True)
+class DualAgentGateSpec:
+    task_id: str
+    run_id: str
+    gate: GateName
+    instruction: str
+    cwd: str | Path
+    planning_artifacts: tuple[PlanningArtifact, ...] = ()
+    expected_specialists: tuple[str, ...] = ()
+    expected_decisions: tuple[str, ...] = ()
+    expected_objections: tuple[str, ...] = ()
+    quality: ModelQuality = "best"
+    model: str | None = None
+    budget_usd: float = 5.0
+    timeout_s: int = 600
+    lead_skill_path: str | Path | None = None
+    outcome_validation_policy: OutcomeValidationPolicy = field(default_factory=OutcomeValidationPolicy)
+
+
+@dataclass(frozen=True)
+class DualAgentGateResult:
+    task_id: str
+    gate: GateName
+    status: str
+    probes: dict[str, ProbeResult]
+    handoff_packet_path: Path
+    lead_result: LeadInvocationResult | None = None
+    outcome: Outcome | None = None
+    attempts: int = 0
+
+
+def build_lead_replay_stdout(
+    transcript: str,
+    *,
+    model: str = "claude-haiku-4-5-20251001",
+    cost_usd: float = 0.0,
+) -> str:
+    return json.dumps({
+        "type": "result",
+        "subtype": "success",
+        "result": transcript,
+        "model": model,
+        "total_cost_usd": cost_usd,
+    })
+
+
+def write_replay_fixture_family(
+    directory: str | Path,
+    *,
+    seed_transcript: str,
+    token_sizes: tuple[int, ...],
+    model: str,
+) -> list[ReplayFixture]:
+    out_dir = Path(directory)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    fixtures: list[ReplayFixture] = []
+    for token_size in token_sizes:
+        transcript = _expand_transcript(seed_transcript, token_size)
+        stdout = build_lead_replay_stdout(transcript, model=model)
+        path = out_dir / f"lead-{token_size}.stdout.json"
+        path.write_text(stdout)
+        fixtures.append(ReplayFixture(
+            token_size=token_size,
+            stdout_path=path,
+            sha256=compute_file_sha256(path),
+        ))
+    return fixtures
+
+
+def make_replay_runner(stdout_path: str | Path) -> Runner:
+    text = Path(stdout_path).read_text()
+
+    def _runner(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(argv, 0, stdout=text, stderr="")
+
+    return _runner
+
+
+def run_dual_agent_gate(
+    spec: DualAgentGateSpec,
+    *,
+    runner: Runner = subprocess.run,
+) -> DualAgentGateResult:
+    request = _lead_request(spec)
+    packet_path = write_handoff_packet(
+        request,
+        planning_artifacts=spec.planning_artifacts,
+        lead_skill_path=spec.lead_skill_path,
+        outcome_validation_policy=spec.outcome_validation_policy,
+    )
+    request = _lead_request(spec, packet_path=packet_path)
+    lead_result = invoke_claude_lead(request, runner=runner)
+    attempts = 1
+    if _should_retry_outcome(lead_result.probe, spec.outcome_validation_policy):
+        corrective = _lead_request(
+            spec,
+            packet_path=packet_path,
+            instruction=(
+                spec.instruction
+                + "\n\nCorrective retry: the previous response did not contain "
+                  "a valid <dual_agent_outcome> block. Return the required block only after your summary."
+            ),
+        )
+        lead_result = invoke_claude_lead(corrective, runner=runner)
+        attempts = 2
+
+    probes: dict[str, ProbeResult] = {}
+    probes["P2"] = _p2_from_lead_result(lead_result)
+    probes["P3"] = lead_result.probe
+    probes["P1"] = verify_planning_artifact_boundaries(packet_path)
+
+    status = "accepted" if all(p.ok for p in probes.values()) else "blocked"
+    return DualAgentGateResult(
+        task_id=spec.task_id,
+        gate=spec.gate,
+        status=status,
+        probes=probes,
+        handoff_packet_path=packet_path,
+        lead_result=lead_result,
+        outcome=lead_result.outcome,
+        attempts=attempts,
+    )
+
+
+def run_dual_agent_gates(
+    specs: list[DualAgentGateSpec],
+    *,
+    runner: Runner = subprocess.run,
+) -> list[DualAgentGateResult]:
+    results: list[DualAgentGateResult] = []
+    for spec in specs:
+        result = run_dual_agent_gate(spec, runner=runner)
+        results.append(result)
+        if result.status != "accepted":
+            break
+    return results
+
+
+async def request_deadlock_escalation(
+    *,
+    state: State,
+    notifier: Any,
+    run_id: str,
+    task_id: str,
+    gate: GateName,
+    rounds: list[GateRound],
+    per_gate_cap: int,
+    task_budget: int,
+    now: Callable[[], int] | None = None,
+) -> DeadlockEscalation:
+    probe = evaluate_deadlock_budget(
+        rounds,
+        per_gate_cap=per_gate_cap,
+        task_budget=task_budget,
+    )
+    if probe.reason != "paused_for_human":
+        return DeadlockEscalation(status="not_deadlocked", probe=probe)
+
+    current = int(now() if now is not None else time.time())
+    nonce = secrets.token_hex(8)
+    options = ["Pause", "Kill", "Continue"]
+    question = (
+        f"[{task_id}] Dual-agent gate deadlock.\n"
+        f"gate={gate}\n"
+        "Codex and Claude did not converge before budget exhaustion. Choose next action."
+    )
+    ask_id = state.create_ask(
+        run_id,
+        question,
+        options,
+        nonce=nonce,
+        expires_at=current + 3600,
+    )
+    action_id = state.record_action(
+        run_id=run_id,
+        action_type="dual_agent_gate_deadlock",
+        requested_by="dual_agent_gate",
+        payload={
+            "task_id": task_id,
+            "gate": gate,
+            "ask_id": ask_id,
+            "nonce": nonce,
+            "options": options,
+            "rounds": [r.__dict__ for r in rounds],
+            "escalation_type": "kill_or_pause",
+            "reason": "budget_exhausted",
+        },
+        status="paused_for_human",
+    )
+    await notifier.send_approval_prompt(
+        ask_id=ask_id,
+        question=question,
+        options=options,
+        nonce=nonce,
+    )
+    return DeadlockEscalation(
+        status="paused_for_human",
+        action_id=action_id,
+        ask_id=ask_id,
+        nonce=nonce,
+        probe=probe,
+    )
+
+
+def pending_deadlock_action_for_ask(state: State, ask_id: int):
+    rows = state._conn.execute(
+        """SELECT * FROM actions
+           WHERE action_type='dual_agent_gate_deadlock'
+             AND status='paused_for_human'
+           ORDER BY id DESC"""
+    ).fetchall()
+    for row in rows:
+        try:
+            payload = json.loads(row["payload_json"] or "{}")
+        except json.JSONDecodeError:
+            continue
+        if int(payload.get("ask_id") or 0) == int(ask_id):
+            return row
+    return None
+
+
+def resolve_deadlock_escalation(
+    *,
+    state: State,
+    ask_id: int,
+    answer: str,
+    nonce: str | None,
+    action_row: Any,
+) -> dict[str, Any]:
+    ok = state.answer_ask(ask_id, answer, nonce=nonce)
+    if not ok:
+        refreshed = state.get_ask(ask_id)
+        if refreshed is not None and refreshed["status"] == "expired":
+            state.complete_action(action_row["id"], "approval_expired", {"answer": answer})
+        return {"status": "rejected", "reason": "invalid_or_expired_approval"}
+
+    normalized = answer.strip().lower()
+    status_by_answer = {
+        "pause": "paused",
+        "kill": "kill_requested",
+        "continue": "continue_requested",
+    }
+    status = status_by_answer.get(normalized)
+    if status is None:
+        state.complete_action(action_row["id"], "failed", {
+            "answer": answer,
+            "reason": "unknown_deadlock_answer",
+        })
+        return {"status": "failed", "reason": "unknown_deadlock_answer"}
+    state.complete_action(action_row["id"], status, {"answer": answer})
+    return {"status": status}
+
+
+def _lead_request(
+    spec: DualAgentGateSpec,
+    *,
+    packet_path: Path | None = None,
+    instruction: str | None = None,
+) -> LeadInvocationRequest:
+    return LeadInvocationRequest(
+        task_id=spec.task_id,
+        gate=spec.gate,
+        instruction=instruction or spec.instruction,
+        cwd=spec.cwd,
+        expected_specialists=spec.expected_specialists,
+        expected_decisions=spec.expected_decisions,
+        expected_objections=spec.expected_objections,
+        quality=spec.quality,
+        model=spec.model,
+        budget_usd=spec.budget_usd,
+        timeout_s=spec.timeout_s,
+        handoff_packet_path=packet_path,
+    )
+
+
+def _p2_from_lead_result(result: LeadInvocationResult) -> ProbeResult:
+    if result.probe.probe_id == "P2":
+        return result.probe
+    return evaluate_worker_invocation(WorkerInvocationProbeInput(
+        exit_code=0,
+        output_text=result.transcript,
+        captured_bytes=result.stdout_bytes,
+        expected_bytes=result.stdout_bytes,
+        specialist_names=tuple(s.name for s in result.outcome.specialists) if result.outcome else (),
+        decisions=tuple(result.outcome.decisions) if result.outcome else (),
+        objections=tuple(result.outcome.objections) if result.outcome else (),
+        spawned_by_codex=True,
+        orchestration_surface="/lead",
+        captured_token_estimate=max(1, len(result.stdout) // 4),
+        expected_token_estimate=0,
+    ))
+
+
+def _should_retry_outcome(
+    probe: ProbeResult,
+    policy: OutcomeValidationPolicy,
+) -> bool:
+    if policy.malformed_outcome != "retry_once_with_corrective_packet":
+        return False
+    return (
+        probe.reason == "missing dual_agent_outcome block"
+        or probe.reason.startswith("invalid dual_agent_outcome block")
+    )
+
+
+def _expand_transcript(seed_transcript: str, token_size: int) -> str:
+    body = _repeat_to_token_floor(
+        "Specialist signal: Planner kept the PRD/TDD scope intact; "
+        "Reviewer checked tests and objections; Implementer reported no blocker.\n",
+        token_size,
+    )
+    if "{body}" in seed_transcript:
+        return seed_transcript.replace("{body}", body)
+    return body + "\n" + seed_transcript
+
+
+def _repeat_to_token_floor(text: str, token_size: int) -> str:
+    target_chars = max(token_size * 4, len(text))
+    repeats = (target_chars // len(text)) + 1
+    return (text * repeats)[:target_chars]

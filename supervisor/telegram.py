@@ -259,6 +259,26 @@ class TelegramPoller:
                 )
             return
 
+        deadlock_action = self._pending_dual_agent_deadlock_for_ask(ask_id)
+        if deadlock_action is not None:
+            from .dual_agent_runner import resolve_deadlock_escalation
+            result = resolve_deadlock_escalation(
+                state=self.state,
+                ask_id=ask_id,
+                answer=answer,
+                nonce=nonce,
+                action_row=deadlock_action,
+            )
+            if result.get("status") in {"paused", "kill_requested", "continue_requested"}:
+                await self._answer_callback(cb, f"Recorded: {answer}", client=client)
+            else:
+                await self._answer_callback(
+                    cb,
+                    "Approval expired or invalid.",
+                    client=client,
+                )
+            return
+
         delivered = False
         if self.target_adapter is not None:
             from .action_executor import resolve_approval
@@ -455,6 +475,10 @@ class TelegramPoller:
             if int(payload.get("ask_id") or 0) == int(ask_id):
                 return row
         return None
+
+    def _pending_dual_agent_deadlock_for_ask(self, ask_id: int):
+        from .dual_agent_runner import pending_deadlock_action_for_ask
+        return pending_deadlock_action_for_ask(self.state, ask_id)
 
     async def _resolve_mode_change_approval(
         self,

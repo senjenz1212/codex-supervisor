@@ -11,10 +11,13 @@ Source PRD: `docs/prd/dual-agent-slice0-reality-check-prd.md`
 | P0 credential boundary | `test_p0_credential_boundary_checks_gateway_precedence_and_redaction`, `test_p0_fails_when_successful_model_call_hits_wrong_gateway`, `test_p0_fails_without_required_spawn_env_evidence` | Covered |
 | P1 worktree boundary | `test_p1_worktree_boundary_requires_expected_cwd_and_no_offlimits_touch`, `test_p1_fails_when_outcome_was_not_written`, `test_p1_fails_when_git_status_contains_unexpected_path`, `test_p1_fails_when_claude_touches_sibling_worktree` | Covered |
 | P2 worker orchestration invocation and high-volume capture | `test_p2_worker_invocation_requires_complete_high_volume_capture`, `test_p2_fails_on_truncated_capture_even_if_worker_exits_zero`, `test_p2_fails_when_output_was_not_codex_spawned_or_no_surface_is_recorded`, `test_p2_fails_when_load_case_is_not_high_volume_tokens` | Covered |
+| P2 high-volume replay fixture family | `test_p2_replay_fixture_family_exercises_large_stdout_without_truncation` covers 2K, 10K, 50K, and 200K token-size replay through the same `/lead` invoker | Covered |
 | P3 worker output to outcome fidelity | `test_p3_worker_outcome_adapter_preserves_specialists_decisions_and_objections`, `test_p3_fails_when_adapter_drops_worker_signal`, `test_p3_fails_when_required_review_evidence_is_not_explicit` | Covered |
 | Claude `/lead` invocation wrapper | `test_build_lead_command_uses_non_bare_claude_so_slash_lead_can_resolve`, `test_select_lead_model_prefers_best_models_for_gate_decisions`, `test_invoke_claude_lead_parses_json_output_and_validates_outcome`, `test_invoke_claude_lead_reports_subprocess_failure`, `test_invoke_claude_lead_reports_timeout_without_auto_retry`, `test_invoke_claude_lead_fails_loudly_on_claude_json_schema_drift`, `test_invoke_claude_lead_reports_malformed_outcome_block`, `test_invoke_claude_lead_surfaces_outcome_fidelity_failure` | Covered |
 | Typed Codex-to-Claude handoff packet | `test_write_handoff_packet_pins_schema_planning_checksums_and_lead_skill`, `test_build_lead_prompt_references_handoff_packet_instead_of_raw_context`, `test_handoff_packet_rejects_planning_artifacts_outside_worktree`, `test_custom_outcome_validation_policy_is_pinned_in_packet`, `test_verify_planning_artifact_boundaries_detects_worker_spec_rewrite` | Covered |
 | P4 deadlock pauses | `test_p4_deadlock_budget_records_pause_not_auto_decision` | Covered |
+| P4 Telegram deadlock escalation | `test_p4_deadlock_escalation_sends_telegram_prompt_and_callback_resolves` creates a `kill_or_pause` ask, sends approval buttons, and resolves a callback to `continue_requested` | Covered |
+| CS24 gate runner | `test_cs24_gate_runner_writes_handoff_invokes_lead_and_verifies_planning_boundaries`, `test_cs24_gate_runner_retries_malformed_outcome_once_then_accepts`, `test_cs24_gate_runner_stops_sequence_on_blocked_gate` | Covered |
 | P5 artifact exposure guardrail | `test_p5_artifact_redaction_covers_markdown_and_gate_logs` | Covered |
 | P6 test coverage gate | `test_p6_test_coverage_gate_asks_one_bounded_followup_for_code_without_tests`, `test_p6_test_coverage_gate_passes_when_test_file_changed` | Covered |
 | P7 Telegram rate limit and batching | `test_p7_telegram_batches_fyis_but_sends_alerts_approvals_and_milestones` | Covered |
@@ -32,9 +35,13 @@ Claude `/lead` process boundary is `supervisor.dual_agent_lead`; tests inject a
 fake runner and assert the command/prompt/result adaptation without calling live
 Claude. The same boundary writes `.handoff/<task_id>.json` packets with schema
 version, planning artifact checksums, outcome-validation policy, and `/lead`
-skill version/hash pinning. Live Claude/Codex/Telegram/ChatGPT/Desktop probes
-must be adapted into the same fixture shapes before they can unblock CS24.
-Secret handling in Slice 0 is a lightweight exposure guardrail for
+skill version/hash pinning. The CS24 runner boundary is
+`supervisor.dual_agent_runner`: it writes the handoff packet, invokes `/lead`,
+verifies P1/P2/P3 evidence, retries malformed outcomes once according to packet
+policy, stops on blocked gates, and routes budget deadlock to Telegram through
+the existing ask/callback path. Live Claude/Codex/Telegram/ChatGPT/Desktop
+probes must be adapted into the same fixture shapes before they can unblock
+CS24. Secret handling in Slice 0 is a lightweight exposure guardrail for
 operator-facing summaries, not an exhaustive DLP program.
 
 ## Local Claude Code Surface Evidence
