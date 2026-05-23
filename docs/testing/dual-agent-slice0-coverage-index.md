@@ -12,6 +12,7 @@ Source PRD: `docs/prd/dual-agent-slice0-reality-check-prd.md`
 | P1 worktree boundary | `test_p1_worktree_boundary_requires_expected_cwd_and_no_offlimits_touch`, `test_p1_fails_when_outcome_was_not_written`, `test_p1_fails_when_git_status_contains_unexpected_path`, `test_p1_fails_when_claude_touches_sibling_worktree` | Covered |
 | P2 worker orchestration invocation and high-volume capture | `test_p2_worker_invocation_requires_complete_high_volume_capture`, `test_p2_fails_on_truncated_capture_even_if_worker_exits_zero`, `test_p2_fails_when_output_was_not_codex_spawned_or_no_surface_is_recorded`, `test_p2_fails_when_load_case_is_not_high_volume_tokens` | Covered |
 | P3 worker output to outcome fidelity | `test_p3_worker_outcome_adapter_preserves_specialists_decisions_and_objections`, `test_p3_fails_when_adapter_drops_worker_signal`, `test_p3_fails_when_required_review_evidence_is_not_explicit` | Covered |
+| Claude `/lead` invocation wrapper | `test_build_lead_command_uses_non_bare_claude_so_slash_lead_can_resolve`, `test_select_lead_model_prefers_best_models_for_gate_decisions`, `test_invoke_claude_lead_parses_json_output_and_validates_outcome`, `test_invoke_claude_lead_reports_subprocess_failure`, `test_invoke_claude_lead_surfaces_outcome_fidelity_failure` | Covered |
 | P4 deadlock pauses | `test_p4_deadlock_budget_records_pause_not_auto_decision` | Covered |
 | P5 artifact exposure guardrail | `test_p5_artifact_redaction_covers_markdown_and_gate_logs` | Covered |
 | P6 test coverage gate | `test_p6_test_coverage_gate_asks_one_bounded_followup_for_code_without_tests`, `test_p6_test_coverage_gate_passes_when_test_file_changed` | Covered |
@@ -25,19 +26,24 @@ Source PRD: `docs/prd/dual-agent-slice0-reality-check-prd.md`
 ## Public Boundary
 
 The deterministic Slice 0 boundary is `supervisor.dual_agent`: fixture-shaped
-probe inputs enter pure validators and produce `ProbeResult` records. Live
-Claude/Codex/Telegram/ChatGPT/Desktop probes must be adapted into these
-fixture shapes before they can unblock CS24. Secret handling in Slice 0 is a
-lightweight exposure guardrail for operator-facing summaries, not an exhaustive
-DLP program.
+probe inputs enter pure validators and produce `ProbeResult` records. The live
+Claude `/lead` process boundary is `supervisor.dual_agent_lead`; tests inject a
+fake runner and assert the command/prompt/result adaptation without calling live
+Claude. Live Claude/Codex/Telegram/ChatGPT/Desktop probes must be adapted into
+the same fixture shapes before they can unblock CS24. Secret handling in Slice
+0 is a lightweight exposure guardrail for operator-facing summaries, not an
+exhaustive DLP program.
 
 ## Local Claude Code Surface Evidence
 
-- `claude agents` is available locally and reports configured agents.
-- No local `/lead` command file has been found in user or plugin command paths.
-- P2 therefore treats `/lead` as one acceptable orchestration surface, but the
-  practical local target is Claude Code agents plus installed
-  subagent-driven-development/feature-dev/code-review skills.
+- A portable global `/lead` command is installed at
+  `/Users/sam.zhang/.claude/skills/lead/SKILL.md`.
+- `/lead` works from `codex-supervisor` and `muse-editor` through non-bare
+  `claude -p`; `--bare` does not resolve slash commands.
+- Unity Hub has a richer project-local `/lead` override under ignored
+  `.claude/skills` operational config.
+- `claude agents` is available locally and remains the fallback worker surface
+  if `/lead` is absent in another environment.
 - Current live-probe notes live in
   `docs/testing/dual-agent-slice0-live-evidence.md`.
 

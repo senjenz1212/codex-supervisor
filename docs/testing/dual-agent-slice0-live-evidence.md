@@ -42,15 +42,14 @@ Observed local surfaces:
 - Installed superpowers include `subagent-driven-development`, which describes
   implementer, spec-reviewer, and code-quality-reviewer subagent loops.
 
-Not observed:
+Original finding, superseded later the same day:
 
 - No local `/lead` command file was found in user or plugin command paths.
 
 Interpretation:
 
-- Treat `/lead` as unproven/unavailable on this machine.
-- The practical local worker-orchestration target is Claude Code agents plus
-  the installed subagent-driven-development/feature-dev/code-review surfaces.
+- Claude Code agents are a valid fallback worker-orchestration surface.
+- Later probes installed and verified a portable global `/lead`; see below.
 
 ## 2026-05-23 Minimal Custom-Agent Spawn
 
@@ -91,3 +90,61 @@ Interpretation:
   emits enough output, or a local non-model fixture producer below the same
   capture wrapper. It should not rely on persuading the model to generate
   padding.
+
+## 2026-05-23 Portable Global `/lead`
+
+Current command locations:
+
+- Global portable command:
+  `/Users/sam.zhang/.claude/skills/lead/SKILL.md`
+- Unity Hub project-local override:
+  `/Users/sam.zhang/Documents/unity-hub/.claude/skills/lead/SKILL.md`
+- Unity Hub `.claude/skills` is ignored by repo policy, so that override is
+  local operational config rather than version-controlled source.
+
+Observed behavior:
+
+- Non-bare `claude -p "/lead ..."` resolves the global `/lead` command from
+  `codex-supervisor`.
+- Non-bare `claude -p "/lead ..."` resolves the global `/lead` command from
+  `muse-editor`.
+- `--bare` remains inappropriate for `/lead` because it does not resolve the
+  slash command.
+- Both live probes ended with a parseable `<dual_agent_outcome>` block and
+  passed `supervisor.dual_agent.evaluate_outcome_fidelity`.
+
+## 2026-05-23 `supervisor.dual_agent_lead` Wrapper Smoke
+
+Wrapper behavior:
+
+- Builds a non-bare `claude --no-session-persistence -p "/lead ..."` command.
+- Selects `opus` for best-quality decision gates, `sonnet` for best-quality
+  execution, and `haiku` when explicitly asked for cheap probes.
+- Captures stdout/stderr through an injectable runner.
+- Parses Claude `--output-format json` output and validates the resulting
+  transcript through `evaluate_outcome_fidelity`.
+
+Live smoke from `codex-supervisor`:
+
+- Gate: `intent`
+- Quality: `cheap`
+- Probe result: `P3 green outcome_fidelity_ok`
+- Cost: `$0.0302968`
+- Stdout bytes: `3873`
+- Stderr bytes: `0`
+
+Live smoke from `muse-editor`:
+
+- Gate: `intent`
+- Quality: `cheap`
+- Probe result: `P3 green outcome_fidelity_ok`
+- Cost: `$0.06103875`
+- Stdout bytes: `3182`
+- Stderr bytes: `0`
+
+Interpretation:
+
+- The portable `/lead` path is now good enough for gate-level smoke tests and
+  typed outcome handoff.
+- The high-volume P2 load proof is still separate. It should use a real worker
+  run or a non-model fixture producer, not synthetic model padding.

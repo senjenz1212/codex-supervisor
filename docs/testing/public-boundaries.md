@@ -187,3 +187,13 @@ Live probes must first be adapted into the same fixture shapes before they can
 unblock CS24. The exposure guardrail should catch obvious raw credential
 publication to operator-facing surfaces without making exhaustive secret
 classification the center of the Slice 0 effort.
+
+## dual_agent_lead_invocation
+
+Build a Claude Code `/lead` invocation through `supervisor.dual_agent_lead` and
+adapt the captured transcript into `supervisor.dual_agent` outcome validators.
+Tests must inject a fake runner rather than spawning live Claude. The command
+builder must use non-bare `claude -p` so slash commands can resolve, must expose
+model-quality policy explicitly, must capture stdout/stderr without truncation,
+and must fail closed when the process fails or the typed outcome loses expected
+specialist decisions or objections.

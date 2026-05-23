@@ -166,10 +166,18 @@ Fail means:
 
 Current local finding:
 
-- No local `/lead` command file has been found yet.
+- A portable global `/lead` command file now exists at
+  `/Users/sam.zhang/.claude/skills/lead/SKILL.md`.
+- `/lead` resolves through non-bare `claude -p`; `--bare` remains unsuitable
+  for slash-command resolution.
+- The global `/lead` command has been smoke-tested from both
+  `codex-supervisor` and `muse-editor` with the typed
+  `<dual_agent_outcome>` block.
+- Unity Hub keeps a richer project-local `/lead` override under ignored local
+  `.claude/skills` operational config.
 - `claude agents` is available and reports configured agent surfaces.
-- The closest local equivalent is Claude Code agents plus installed
-  subagent-driven-development/feature-dev/code-review skills.
+- Claude Code agents plus installed subagent-driven-development/
+  feature-dev/code-review skills remain the fallback worker surface.
 
 ### P3 Worker Output to `outcome.md` Adapter Fidelity
 
