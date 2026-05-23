@@ -267,8 +267,13 @@ Pass criteria:
   are all present before a gate is accepted.
 - Malformed outcome blocks retry once when the packet policy allows.
 - Subprocess failure, timeout, schema drift, fidelity loss, or planning checksum
-  changes block the gate.
+  changes block the gate and, when the packet policy is `abort_to_operator`,
+  create a validation-failure Telegram ask.
 - Multi-gate execution stops at the first blocked gate.
+- A `Continue` response to a deadlock ask is claimable exactly once and can
+  re-dispatch the matching gate spec.
+- Paused dual-agent actions older than the stale threshold emit a one-time
+  Telegram digest while remaining paused.
 
 Fail means:
 

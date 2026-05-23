@@ -214,6 +214,7 @@ class TelegramPoller:
                 await self._handle_command(msg, client)
             elif text:
                 await self._handle_chat_message(msg, client)
+        await self._send_dual_agent_paused_digests(client)
 
     async def _handle_callback(
         self,
@@ -270,6 +271,26 @@ class TelegramPoller:
                 action_row=deadlock_action,
             )
             if result.get("status") in {"paused", "kill_requested", "continue_requested"}:
+                await self._answer_callback(cb, f"Recorded: {answer}", client=client)
+            else:
+                await self._answer_callback(
+                    cb,
+                    "Approval expired or invalid.",
+                    client=client,
+                )
+            return
+
+        validation_action = self._pending_dual_agent_validation_for_ask(ask_id)
+        if validation_action is not None:
+            from .dual_agent_runner import resolve_validation_escalation
+            result = resolve_validation_escalation(
+                state=self.state,
+                ask_id=ask_id,
+                answer=answer,
+                nonce=nonce,
+                action_row=validation_action,
+            )
+            if result.get("status") in {"paused", "retry_requested", "cancelled"}:
                 await self._answer_callback(cb, f"Recorded: {answer}", client=client)
             else:
                 await self._answer_callback(
@@ -479,6 +500,21 @@ class TelegramPoller:
     def _pending_dual_agent_deadlock_for_ask(self, ask_id: int):
         from .dual_agent_runner import pending_deadlock_action_for_ask
         return pending_deadlock_action_for_ask(self.state, ask_id)
+
+    def _pending_dual_agent_validation_for_ask(self, ask_id: int):
+        from .dual_agent_runner import pending_validation_action_for_ask
+        return pending_validation_action_for_ask(self.state, ask_id)
+
+    async def _send_dual_agent_paused_digests(
+        self,
+        client: httpx.AsyncClient,
+    ) -> None:
+        from .dual_agent_runner import send_stale_paused_digests
+        await send_stale_paused_digests(
+            state=self.state,
+            notifier=TelegramNotifier(self.cfg),
+            client=client,
+        )
 
     async def _resolve_mode_change_approval(
         self,

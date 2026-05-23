@@ -112,6 +112,7 @@ CREATE TABLE IF NOT EXISTS actions (
   status        TEXT NOT NULL,
   payload_json  TEXT NOT NULL,
   created_at    INTEGER NOT NULL,
+  resume_requested_at INTEGER,
   completed_at  INTEGER
 );
 
@@ -196,9 +197,20 @@ class State:
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA synchronous=NORMAL")
         self._conn.executescript(SCHEMA)
+        self._ensure_actions_resume_requested_at()
         self._conn.commit()
         self._lock = asyncio.Lock()
         self.decisions: asyncio.Queue[Decision] = asyncio.Queue()
+
+    def _ensure_actions_resume_requested_at(self) -> None:
+        columns = {
+            row["name"]
+            for row in self._conn.execute("PRAGMA table_info(actions)").fetchall()
+        }
+        if "resume_requested_at" not in columns:
+            self._conn.execute(
+                "ALTER TABLE actions ADD COLUMN resume_requested_at INTEGER"
+            )
 
     # --- run registration (public boundary: run_registration_api) ---
     def register_run(self, *, run_id: str, session_id: str, rollout_path: str,
@@ -457,6 +469,155 @@ class State:
                 "UPDATE actions SET status=?, completed_at=? WHERE id=?",
                 (status, int(time.time()), action_id),
             )
+        self._conn.commit()
+
+    def mark_action_resume_requested(
+        self,
+        action_id: int,
+        *,
+        payload_update: dict | None = None,
+    ) -> None:
+        row = self._conn.execute(
+            "SELECT payload_json FROM actions WHERE id=?", (action_id,)
+        ).fetchone()
+        existing = json.loads(row["payload_json"]) if row else {}
+        if payload_update is not None:
+            existing.update(redact(payload_update))
+        now = int(time.time())
+        self._conn.execute(
+            """UPDATE actions
+                  SET status='continue_requested',
+                      payload_json=?,
+                      resume_requested_at=?,
+                      completed_at=NULL
+                WHERE id=?""",
+            (json.dumps(existing), now, action_id),
+        )
+        self._conn.commit()
+
+    def claim_resume_signal(
+        self,
+        *,
+        run_id: str,
+        task_id: str,
+        action_type: str = "dual_agent_gate_deadlock",
+    ) -> dict[str, Any] | None:
+        rows = self._conn.execute(
+            """SELECT * FROM actions
+               WHERE run_id=? AND action_type=? AND status='continue_requested'
+               ORDER BY resume_requested_at ASC, id ASC""",
+            (run_id, action_type),
+        ).fetchall()
+        for row in rows:
+            payload = json.loads(row["payload_json"] or "{}")
+            if str(payload.get("task_id") or "") != task_id:
+                continue
+            payload["resumed_at"] = int(time.time())
+            cur = self._conn.execute(
+                """UPDATE actions
+                      SET status='resumed',
+                          payload_json=?,
+                          completed_at=?
+                    WHERE id=? AND status='continue_requested'""",
+                (json.dumps(redact(payload)), int(time.time()), row["id"]),
+            )
+            if cur.rowcount:
+                self._conn.commit()
+                return {
+                    "id": row["id"],
+                    "run_id": row["run_id"],
+                    "action_type": row["action_type"],
+                    "status": "resumed",
+                    "payload": payload,
+                }
+        self._conn.commit()
+        return None
+
+    def claim_retry_signal(
+        self,
+        *,
+        run_id: str,
+        task_id: str,
+        action_type: str = "dual_agent_validation_failure",
+    ) -> dict[str, Any] | None:
+        rows = self._conn.execute(
+            """SELECT * FROM actions
+               WHERE run_id=? AND action_type=? AND status='retry_requested'
+               ORDER BY completed_at ASC, id ASC""",
+            (run_id, action_type),
+        ).fetchall()
+        for row in rows:
+            payload = json.loads(row["payload_json"] or "{}")
+            if str(payload.get("task_id") or "") != task_id:
+                continue
+            payload["retried_at"] = int(time.time())
+            cur = self._conn.execute(
+                """UPDATE actions
+                      SET status='retried',
+                          payload_json=?,
+                          completed_at=?
+                    WHERE id=? AND status='retry_requested'""",
+                (json.dumps(redact(payload)), int(time.time()), row["id"]),
+            )
+            if cur.rowcount:
+                self._conn.commit()
+                return {
+                    "id": row["id"],
+                    "run_id": row["run_id"],
+                    "action_type": row["action_type"],
+                    "status": "retried",
+                    "payload": payload,
+                }
+        self._conn.commit()
+        return None
+
+    def stale_paused_dual_agent_actions(
+        self,
+        *,
+        older_than_s: int,
+        now: int | None = None,
+        limit: int = 20,
+    ) -> list[sqlite3.Row]:
+        current = int(now if now is not None else time.time())
+        cutoff = current - older_than_s
+        rows = self._conn.execute(
+            """SELECT * FROM actions
+               WHERE action_type IN (
+                   'dual_agent_gate_deadlock',
+                   'dual_agent_validation_failure'
+               )
+                 AND status='paused'
+                 AND completed_at IS NOT NULL
+                 AND completed_at <= ?
+               ORDER BY completed_at ASC, id ASC
+               LIMIT ?""",
+            (cutoff, limit),
+        ).fetchall()
+        stale: list[sqlite3.Row] = []
+        for row in rows:
+            payload = json.loads(row["payload_json"] or "{}")
+            if payload.get("paused_digest_sent_at") is not None:
+                continue
+            stale.append(row)
+        return stale
+
+    def mark_paused_digest_sent(
+        self,
+        action_id: int,
+        *,
+        sent_at: int | None = None,
+    ) -> None:
+        row = self._conn.execute(
+            "SELECT payload_json FROM actions WHERE id=?", (action_id,)
+        ).fetchone()
+        existing = json.loads(row["payload_json"]) if row else {}
+        existing["paused_digest_sent_at"] = int(
+            sent_at if sent_at is not None else time.time()
+        )
+        self._conn.execute(
+            "UPDATE actions SET payload_json=? WHERE id=?",
+            (json.dumps(redact(existing)), action_id),
+        )
         self._conn.commit()
 
     # --- decision labels ---

@@ -212,4 +212,8 @@ the gate sequence on the first blocked gate, and never choose a winner on
 budget exhaustion. Deadlock escalation must create a `dual_agent_gate_deadlock`
 action, create a nonce-protected Telegram ask with `Pause`, `Kill`, and
 `Continue`, and resolve callbacks through the existing Telegram poller without
-executing destructive work directly.
+executing destructive work directly. Validation failures controlled by the
+packet policy must create `dual_agent_validation_failure` actions and Telegram
+asks instead of silently blocking. `Continue` answers must be claimable exactly
+once before re-dispatching the matching gate. Paused dual-agent actions must
+emit at most one stale digest after the stale threshold and remain paused.

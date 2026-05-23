@@ -17,6 +17,9 @@ Source PRD: `docs/prd/dual-agent-slice0-reality-check-prd.md`
 | Typed Codex-to-Claude handoff packet | `test_write_handoff_packet_pins_schema_planning_checksums_and_lead_skill`, `test_build_lead_prompt_references_handoff_packet_instead_of_raw_context`, `test_handoff_packet_rejects_planning_artifacts_outside_worktree`, `test_custom_outcome_validation_policy_is_pinned_in_packet`, `test_verify_planning_artifact_boundaries_detects_worker_spec_rewrite` | Covered |
 | P4 deadlock pauses | `test_p4_deadlock_budget_records_pause_not_auto_decision` | Covered |
 | P4 Telegram deadlock escalation | `test_p4_deadlock_escalation_sends_telegram_prompt_and_callback_resolves` creates a `kill_or_pause` ask, sends approval buttons, and resolves a callback to `continue_requested` | Covered |
+| Validation-failure escalation policies | `test_blocked_gate_abort_policies_escalate_validation_failures`, `test_validation_failure_callback_resolves_retry_request` cover fidelity failure, subprocess failure, timeout, schema drift, and Telegram callback resolution | Covered |
+| Resume loop | `test_deadlock_continue_signal_is_claimed_once_and_redispatches_gate` proves `Continue` is claimed exactly once and re-dispatches the matching gate spec | Covered |
+| Stale paused-state digest | `test_paused_dual_agent_actions_send_one_stale_digest` proves paused dual-agent actions emit one Telegram digest after the stale threshold and remain paused | Covered |
 | CS24 gate runner | `test_cs24_gate_runner_writes_handoff_invokes_lead_and_verifies_planning_boundaries`, `test_cs24_gate_runner_retries_malformed_outcome_once_then_accepts`, `test_cs24_gate_runner_stops_sequence_on_blocked_gate` | Covered |
 | P5 artifact exposure guardrail | `test_p5_artifact_redaction_covers_markdown_and_gate_logs` | Covered |
 | P6 test coverage gate | `test_p6_test_coverage_gate_asks_one_bounded_followup_for_code_without_tests`, `test_p6_test_coverage_gate_passes_when_test_file_changed` | Covered |
@@ -38,11 +41,14 @@ version, planning artifact checksums, outcome-validation policy, and `/lead`
 skill version/hash pinning. The CS24 runner boundary is
 `supervisor.dual_agent_runner`: it writes the handoff packet, invokes `/lead`,
 verifies P1/P2/P3 evidence, retries malformed outcomes once according to packet
-policy, stops on blocked gates, and routes budget deadlock to Telegram through
-the existing ask/callback path. Live Claude/Codex/Telegram/ChatGPT/Desktop
-probes must be adapted into the same fixture shapes before they can unblock
-CS24. Secret handling in Slice 0 is a lightweight exposure guardrail for
-operator-facing summaries, not an exhaustive DLP program.
+policy, stops on blocked gates, escalates validation failures according to the
+packet policy, routes budget deadlock to Telegram through the existing
+ask/callback path, exposes a pull-based resume loop for `Continue` answers, and
+emits one-time stale digests for paused dual-agent actions. Live
+Claude/Codex/Telegram/ChatGPT/Desktop probes must be adapted into the same
+fixture shapes before they can unblock CS24. Secret handling in Slice 0 is a
+lightweight exposure guardrail for operator-facing summaries, not an exhaustive
+DLP program.
 
 ## Local Claude Code Surface Evidence
 
@@ -65,3 +71,5 @@ operator-facing summaries, not an exhaustive DLP program.
   smoke check, not a hard-stop probe.
 - Day 0 cockpit ADR selects current Cortex as the first cockpit target; later
   replacement can happen behind the same supervisor-ledger contract.
+- Paused-state stale digests are covered at the runner boundary and owned by
+  the Telegram poller sweep.

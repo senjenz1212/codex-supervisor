@@ -55,6 +55,16 @@ class DeadlockEscalation:
 
 
 @dataclass(frozen=True)
+class ValidationEscalation:
+    status: str
+    action_id: int | None = None
+    ask_id: int | None = None
+    nonce: str | None = None
+    policy_field: str | None = None
+    probe: ProbeResult | None = None
+
+
+@dataclass(frozen=True)
 class DualAgentGateSpec:
     task_id: str
     run_id: str
@@ -83,6 +93,7 @@ class DualAgentGateResult:
     lead_result: LeadInvocationResult | None = None
     outcome: Outcome | None = None
     attempts: int = 0
+    escalation: DeadlockEscalation | ValidationEscalation | None = None
 
 
 def build_lead_replay_stdout(
@@ -192,6 +203,60 @@ def run_dual_agent_gates(
     return results
 
 
+async def run_dual_agent_gate_with_escalation(
+    spec: DualAgentGateSpec,
+    *,
+    state: State,
+    notifier: Any,
+    runner: Runner = subprocess.run,
+) -> DualAgentGateResult:
+    result = run_dual_agent_gate(spec, runner=runner)
+    if result.status == "accepted":
+        return result
+    escalation = await _maybe_request_validation_escalation(
+        result,
+        spec=spec,
+        state=state,
+        notifier=notifier,
+    )
+    return DualAgentGateResult(
+        task_id=result.task_id,
+        gate=result.gate,
+        status=result.status,
+        probes=result.probes,
+        handoff_packet_path=result.handoff_packet_path,
+        lead_result=result.lead_result,
+        outcome=result.outcome,
+        attempts=result.attempts,
+        escalation=escalation,
+    )
+
+
+def resume_pending_gates(
+    specs: list[DualAgentGateSpec],
+    *,
+    state: State,
+    runner: Runner = subprocess.run,
+) -> list[DualAgentGateResult]:
+    results: list[DualAgentGateResult] = []
+    for spec in specs:
+        signal = claim_resume_signal(
+            state,
+            run_id=spec.run_id,
+            task_id=spec.task_id,
+        )
+        if signal is None:
+            signal = claim_retry_signal(
+                state,
+                run_id=spec.run_id,
+                task_id=spec.task_id,
+            )
+        if signal is None:
+            continue
+        results.append(run_dual_agent_gate(spec, runner=runner))
+    return results
+
+
 async def request_deadlock_escalation(
     *,
     state: State,
@@ -258,10 +323,89 @@ async def request_deadlock_escalation(
     )
 
 
+async def request_validation_escalation(
+    *,
+    state: State,
+    notifier: Any,
+    run_id: str,
+    task_id: str,
+    gate: GateName,
+    policy_field: str,
+    probe: ProbeResult,
+    now: Callable[[], int] | None = None,
+) -> ValidationEscalation:
+    current = int(now() if now is not None else time.time())
+    nonce = secrets.token_hex(8)
+    options = ["Pause", "Retry", "Cancel"]
+    question = (
+        f"[{task_id}] Dual-agent validation failure.\n"
+        f"gate={gate}\n"
+        f"policy={policy_field}\n"
+        f"reason={probe.reason}\n"
+        "Choose next action."
+    )
+    ask_id = state.create_ask(
+        run_id,
+        question,
+        options,
+        nonce=nonce,
+        expires_at=current + 3600,
+    )
+    action_id = state.record_action(
+        run_id=run_id,
+        action_type="dual_agent_validation_failure",
+        requested_by="dual_agent_gate",
+        payload={
+            "task_id": task_id,
+            "gate": gate,
+            "ask_id": ask_id,
+            "nonce": nonce,
+            "options": options,
+            "policy_field": policy_field,
+            "probe_id": probe.probe_id,
+            "probe_reason": probe.reason,
+            "probe_details": probe.details,
+            "escalation_type": "validation_failure",
+        },
+        status="paused_for_human",
+    )
+    await notifier.send_approval_prompt(
+        ask_id=ask_id,
+        question=question,
+        options=options,
+        nonce=nonce,
+    )
+    return ValidationEscalation(
+        status="validation_failure",
+        action_id=action_id,
+        ask_id=ask_id,
+        nonce=nonce,
+        policy_field=policy_field,
+        probe=probe,
+    )
+
+
 def pending_deadlock_action_for_ask(state: State, ask_id: int):
     rows = state._conn.execute(
         """SELECT * FROM actions
            WHERE action_type='dual_agent_gate_deadlock'
+             AND status='paused_for_human'
+           ORDER BY id DESC"""
+    ).fetchall()
+    for row in rows:
+        try:
+            payload = json.loads(row["payload_json"] or "{}")
+        except json.JSONDecodeError:
+            continue
+        if int(payload.get("ask_id") or 0) == int(ask_id):
+            return row
+    return None
+
+
+def pending_validation_action_for_ask(state: State, ask_id: int):
+    rows = state._conn.execute(
+        """SELECT * FROM actions
+           WHERE action_type='dual_agent_validation_failure'
              AND status='paused_for_human'
            ORDER BY id DESC"""
     ).fetchall()
@@ -303,8 +447,87 @@ def resolve_deadlock_escalation(
             "reason": "unknown_deadlock_answer",
         })
         return {"status": "failed", "reason": "unknown_deadlock_answer"}
+    if status == "continue_requested":
+        state.mark_action_resume_requested(action_row["id"], payload_update={"answer": answer})
+    else:
+        state.complete_action(action_row["id"], status, {"answer": answer})
+    return {"status": status}
+
+
+def resolve_validation_escalation(
+    *,
+    state: State,
+    ask_id: int,
+    answer: str,
+    nonce: str | None,
+    action_row: Any,
+) -> dict[str, Any]:
+    ok = state.answer_ask(ask_id, answer, nonce=nonce)
+    if not ok:
+        refreshed = state.get_ask(ask_id)
+        if refreshed is not None and refreshed["status"] == "expired":
+            state.complete_action(action_row["id"], "approval_expired", {"answer": answer})
+        return {"status": "rejected", "reason": "invalid_or_expired_approval"}
+
+    normalized = answer.strip().lower()
+    status_by_answer = {
+        "pause": "paused",
+        "retry": "retry_requested",
+        "cancel": "cancelled",
+    }
+    status = status_by_answer.get(normalized)
+    if status is None:
+        state.complete_action(action_row["id"], "failed", {
+            "answer": answer,
+            "reason": "unknown_validation_answer",
+        })
+        return {"status": "failed", "reason": "unknown_validation_answer"}
     state.complete_action(action_row["id"], status, {"answer": answer})
     return {"status": status}
+
+
+def claim_resume_signal(
+    state: State,
+    *,
+    run_id: str,
+    task_id: str,
+) -> dict[str, Any] | None:
+    return state.claim_resume_signal(run_id=run_id, task_id=task_id)
+
+
+def claim_retry_signal(
+    state: State,
+    *,
+    run_id: str,
+    task_id: str,
+) -> dict[str, Any] | None:
+    return state.claim_retry_signal(run_id=run_id, task_id=task_id)
+
+
+async def send_stale_paused_digests(
+    *,
+    state: State,
+    notifier: Any,
+    stale_after_s: int = 3600,
+    now: Callable[[], int] | None = None,
+    client: Any | None = None,
+    limit: int = 20,
+) -> list[int]:
+    current = int(now() if now is not None else time.time())
+    sent_action_ids: list[int] = []
+    rows = state.stale_paused_dual_agent_actions(
+        older_than_s=stale_after_s,
+        now=current,
+        limit=limit,
+    )
+    for row in rows:
+        payload = json.loads(row["payload_json"] or "{}")
+        text = _paused_digest_text(row, payload, current)
+        kwargs = {"client": client} if client is not None else {}
+        await notifier.send_message(text, **kwargs)
+        state.mark_paused_digest_sent(row["id"], sent_at=current)
+        sent_action_ids.append(int(row["id"]))
+    return sent_action_ids
 
 
 def _lead_request(
@@ -345,6 +568,62 @@ def _p2_from_lead_result(result: LeadInvocationResult) -> ProbeResult:
         captured_token_estimate=max(1, len(result.stdout) // 4),
         expected_token_estimate=0,
     ))
+
+
+async def _maybe_request_validation_escalation(
+    result: DualAgentGateResult,
+    *,
+    spec: DualAgentGateSpec,
+    state: State,
+    notifier: Any,
+) -> ValidationEscalation | None:
+    failure = _validation_failure_policy(result.probes)
+    if failure is None:
+        return None
+    policy_field, probe = failure
+    if getattr(spec.outcome_validation_policy, policy_field) != "abort_to_operator":
+        return None
+    return await request_validation_escalation(
+        state=state,
+        notifier=notifier,
+        run_id=spec.run_id,
+        task_id=spec.task_id,
+        gate=spec.gate,
+        policy_field=policy_field,
+        probe=probe,
+    )
+
+
+def _validation_failure_policy(
+    probes: dict[str, ProbeResult],
+) -> tuple[str, ProbeResult] | None:
+    p2 = probes.get("P2")
+    p3 = probes.get("P3")
+    if p2 is not None and not p2.ok:
+        if p2.reason == "lead_invocation_timeout":
+            return "timeout", p2
+        if p2.reason in {"lead_invocation_failed", "claude_json_schema_drift"}:
+            return "subprocess_failure", p2
+    if p3 is not None and not p3.ok:
+        if p3.reason == "outcome_signal_loss":
+            return "fidelity_failure", p3
+    return None
+
+
+def _paused_digest_text(row: Any, payload: dict[str, Any], current: int) -> str:
+    paused_at = int(row["completed_at"] or row["created_at"] or current)
+    age_s = max(0, current - paused_at)
+    age_min = age_s // 60
+    task_id = payload.get("task_id") or "unknown-task"
+    gate = payload.get("gate") or "unknown-gate"
+    reason = payload.get("reason") or payload.get("probe_reason") or "paused"
+    return (
+        f"[{task_id}] Dual-agent gate still paused.\n"
+        f"gate={gate}\n"
+        f"action={row['action_type']}\n"
+        f"age_min={age_min}\n"
+        f"reason={reason}"
+    )
 
 
 def _should_retry_outcome(
