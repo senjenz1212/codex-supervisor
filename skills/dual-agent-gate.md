@@ -27,8 +27,16 @@ For each major decision gate:
 4. After each round, call `check_budget`.
 5. If budget is exhausted and the agents still disagree, call
    `escalate_deadlock`. Do not choose a winner silently.
-6. If Telegram later records `Continue` or `Retry`, call `poll_resume_signal`.
-7. Read the final gate result with `read_outcome` before advancing.
+6. If `escalate_deadlock` returns `telegram_disabled`, or if
+   `start_dual_agent_gate` returns `blocked` without a validation escalation,
+   use Codex Desktop chat as the escalation surface: ask the user for corrective
+   input or permission to stop. Do not call `poll_resume_signal` in this
+   no-Telegram path; nothing will write a resume signal.
+7. After the user answers in chat, re-invoke `start_dual_agent_gate` with the
+   corrective instruction and record the new round with `record_gate_round`.
+8. Call `poll_resume_signal` only when Telegram is configured and a
+   `Continue` or `Retry` callback was actually recorded.
+9. Read the final gate result with `read_outcome` before advancing.
 
 ## Defaults
 
@@ -37,6 +45,8 @@ For each major decision gate:
 - Keep `timeout_s` high enough for `/lead`; default to 600 seconds.
 - Use the same approved worktree for one task. Use separate worktrees for
   parallel tasks.
+- In Codex Desktop initiated runs, assume Telegram may be absent. The Desktop
+  chat is then the human escalation channel.
 
 ## Stop Conditions
 
@@ -48,3 +58,7 @@ Pause and escalate instead of continuing when:
 - The worker changed immutable planning artifacts.
 - Test coverage is absent for code changes and no explicit exception was
   approved.
+
+When Telegram is absent, "pause and escalate" means ask the user in Codex
+Desktop chat, then either stop or re-run the gate with the user's corrective
+instruction. It does not mean polling `poll_resume_signal`.
