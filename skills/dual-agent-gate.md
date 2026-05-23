@@ -49,7 +49,7 @@ For each major decision gate:
 - Use `quality="best"` for execution gates too unless the user explicitly asks
   to save cost. Cost is not the default constraint for this workflow.
 - When spawning Codex sessions through the supervisor, use
-  `model="gpt-5.1-codex-max"` and `reasoning_effort="xhigh"` unless the user
+  `model="gpt-5.5"` and `reasoning_effort="xhigh"` unless the user
   explicitly chooses a cheaper tier.
 - Keep `timeout_s` high enough for `/lead`; default to 600 seconds.
 - Use the same approved worktree for one task. Use separate worktrees for

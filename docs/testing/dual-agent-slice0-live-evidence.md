@@ -201,7 +201,7 @@ Observed model-tier finding:
   decision and another omitted the outcome block after retry.
 - `quality="best"` passed the live single-gate and three-round flows. Desktop
   probe instructions now use `quality="best"` for the live G-2 path.
-- Codex session spawning defaults to `gpt-5.1-codex-max` with
+- Codex session spawning defaults to `gpt-5.5` with
   `reasoning_effort="xhigh"`.
 
 Desktop GUI note:

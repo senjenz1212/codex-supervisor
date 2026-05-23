@@ -233,7 +233,7 @@ Tests must verify the server exposes the dual-agent gate tools Codex needs:
 persist gate results and round decisions to the supervisor event ledger so
 later tools can read outcomes and reconstruct the dialogue without relying on
 chat memory. `start_codex_session` must default to the strongest configured
-Codex model and high reasoning (`gpt-5.1-codex-max` with
+Codex model and high reasoning (`gpt-5.5` with
 `reasoning_effort="xhigh"`) unless the caller explicitly overrides it. In the
 Codex Desktop initiated no-Telegram scope, a blocked gate
 must escalate through Desktop chat and re-run `start_dual_agent_gate`; it must

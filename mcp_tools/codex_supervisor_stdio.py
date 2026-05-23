@@ -31,7 +31,7 @@ from supervisor.telegram import TelegramNotifier, telegram_enabled
 
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
-DEFAULT_CODEX_MODEL = "gpt-5.1-codex-max"
+DEFAULT_CODEX_MODEL = "gpt-5.5"
 DEFAULT_CODEX_REASONING_EFFORT = "xhigh"
 
 

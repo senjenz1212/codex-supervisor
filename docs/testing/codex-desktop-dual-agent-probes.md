@@ -45,7 +45,7 @@ Use the codex_supervisor MCP server. Do not use shell commands.
 Call mcp__codex_supervisor__start_codex_session exactly once with:
 - prompt: "desktop mcp visibility probe"
 - cwd: "/Users/sam.zhang/Documents/codex-supervisor"
-- model: "gpt-5.1-codex-max"
+- model: "gpt-5.5"
 - reasoning_effort: "xhigh"
 - execute: false
 
@@ -57,7 +57,7 @@ Pass criteria:
 - The Desktop transcript shows an MCP tool call to
   `codex_supervisor.start_codex_session`.
 - The tool result has `status="dry_run"`.
-- The returned argv includes `-m gpt-5.1-codex-max` and
+- The returned argv includes `-m gpt-5.5` and
   `reasoning_effort="xhigh"`.
 - No shell command is used.
 
