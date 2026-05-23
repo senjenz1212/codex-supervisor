@@ -16,6 +16,10 @@ from typing import Any, Callable
 
 from supervisor.config import Config
 from supervisor.dual_agent import GateRound, evaluate_deadlock_budget
+from supervisor.dual_agent_artifacts import (
+    default_dual_agent_artifact_dir,
+    export_dual_agent_run_artifacts,
+)
 from supervisor.dual_agent_runner import (
     DualAgentGateResult,
     DualAgentGateSpec,
@@ -24,7 +28,7 @@ from supervisor.dual_agent_runner import (
     run_dual_agent_gate,
     run_dual_agent_gate_with_escalation,
 )
-from supervisor.dual_agent_lead import GateName
+from supervisor.dual_agent_lead import GateName, PlanningArtifact
 from supervisor.redaction import redact
 from supervisor.state import State
 from supervisor.telegram import TelegramNotifier, telegram_enabled
@@ -66,6 +70,7 @@ class CodexSupervisorMcpAPI:
         model: str | None = None,
         budget_usd: float = 5.0,
         timeout_s: int = 600,
+        planning_artifacts: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         spec = self._gate_spec(
             task_id=task_id,
@@ -80,6 +85,7 @@ class CodexSupervisorMcpAPI:
             model=model,
             budget_usd=budget_usd,
             timeout_s=timeout_s,
+            planning_artifacts=planning_artifacts,
         )
         notifier = self._notifier()
         if notifier is not None:
@@ -115,6 +121,7 @@ class CodexSupervisorMcpAPI:
         model: str | None = None,
         budget_usd: float = 5.0,
         timeout_s: int = 600,
+        planning_artifacts: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         spec = self._gate_spec(
             task_id=task_id,
@@ -129,6 +136,7 @@ class CodexSupervisorMcpAPI:
             model=model,
             budget_usd=budget_usd,
             timeout_s=timeout_s,
+            planning_artifacts=planning_artifacts,
         )
         results = resume_pending_gates([spec], state=self.state, runner=self.runner)
         if not results:
@@ -294,6 +302,30 @@ class CodexSupervisorMcpAPI:
             ),
         }
 
+    def export_gate_artifacts(
+        self,
+        *,
+        run_id: str,
+        task_id: str,
+        cwd: str,
+        output_dir: str | None = None,
+    ) -> dict[str, Any]:
+        target_dir = Path(output_dir).expanduser() if output_dir else default_dual_agent_artifact_dir(cwd, task_id)
+        result = export_dual_agent_run_artifacts(
+            self.state,
+            run_id=run_id,
+            task_id=task_id,
+            output_dir=target_dir,
+        )
+        cwd_path = Path(cwd).resolve()
+        return {
+            "status": result.status,
+            "run_id": run_id,
+            "task_id": task_id,
+            "output_dir": _display_path(result.output_dir, cwd_path),
+            "files": [_display_path(path, cwd_path) for path in result.files],
+        }
+
     def start_codex_session(
         self,
         *,
@@ -353,6 +385,7 @@ class CodexSupervisorMcpAPI:
         model: str | None,
         budget_usd: float,
         timeout_s: int,
+        planning_artifacts: list[dict[str, Any]] | None,
     ) -> DualAgentGateSpec:
         return DualAgentGateSpec(
             task_id=task_id,
@@ -367,6 +400,14 @@ class CodexSupervisorMcpAPI:
             model=model,
             budget_usd=budget_usd,
             timeout_s=timeout_s,
+            planning_artifacts=tuple(
+                artifact
+                for artifact in (
+                    _maybe_artifact(item)
+                    for item in (planning_artifacts or [])
+                )
+                if artifact is not None
+            ),
         )
 
     def _notifier(self) -> Any | None:
@@ -414,6 +455,7 @@ def build_codex_supervisor_mcp_server(
         model: str | None = None,
         budget_usd: float = 5.0,
         timeout_s: int = 600,
+        planning_artifacts: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         return await tool_api.start_dual_agent_gate(
             task_id=task_id,
@@ -428,6 +470,7 @@ def build_codex_supervisor_mcp_server(
             model=model,
             budget_usd=budget_usd,
             timeout_s=timeout_s,
+            planning_artifacts=planning_artifacts,
         )
 
     @mcp.tool()
@@ -444,6 +487,7 @@ def build_codex_supervisor_mcp_server(
         model: str | None = None,
         budget_usd: float = 5.0,
         timeout_s: int = 600,
+        planning_artifacts: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         return tool_api.poll_resume_signal(
             task_id=task_id,
@@ -458,6 +502,7 @@ def build_codex_supervisor_mcp_server(
             model=model,
             budget_usd=budget_usd,
             timeout_s=timeout_s,
+            planning_artifacts=planning_artifacts,
         )
 
     @mcp.tool()
@@ -521,6 +566,20 @@ def build_codex_supervisor_mcp_server(
     @mcp.tool()
     def read_gate_transcript(run_id: str, task_id: str) -> dict[str, Any]:
         return tool_api.read_gate_transcript(run_id=run_id, task_id=task_id)
+
+    @mcp.tool()
+    def export_gate_artifacts(
+        run_id: str,
+        task_id: str,
+        cwd: str,
+        output_dir: str | None = None,
+    ) -> dict[str, Any]:
+        return tool_api.export_gate_artifacts(
+            run_id=run_id,
+            task_id=task_id,
+            cwd=cwd,
+            output_dir=output_dir,
+        )
 
     @mcp.tool()
     def start_codex_session(
@@ -602,6 +661,26 @@ def _gate_round_from_payload(payload: dict[str, Any]) -> GateRound:
         claude_confidence=float(payload["claude_confidence"]),
         objection=payload.get("objection"),
     )
+
+
+def _maybe_artifact(payload: dict[str, Any]) -> PlanningArtifact | None:
+    path = payload.get("path")
+    kind = payload.get("kind")
+    if not path or not kind:
+        return None
+    return PlanningArtifact(
+        path=Path(str(path)).expanduser(),
+        kind=str(kind),  # type: ignore[arg-type]
+        mutable_by_worker=bool(payload.get("mutable_by_worker", False)),
+    )
+
+
+def _display_path(path: Path, cwd: Path) -> str:
+    resolved = path.resolve()
+    try:
+        return str(resolved.relative_to(cwd))
+    except ValueError:
+        return str(resolved)
 
 
 def _redacted_prompt_argv(argv: list[str]) -> list[str]:

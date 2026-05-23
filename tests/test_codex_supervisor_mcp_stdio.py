@@ -103,6 +103,7 @@ async def test_codex_supervisor_mcp_exposes_dual_agent_gate_tools(tmp_path):
         "record_gate_round",
         "read_gate_transcript",
         "read_outcome",
+        "export_gate_artifacts",
         "check_budget",
         "escalate_deadlock",
         "poll_resume_signal",

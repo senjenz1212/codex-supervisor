@@ -12,12 +12,31 @@ Claude Code as the implementer.
 - `mcp__codex_supervisor__poll_resume_signal(task_id, run_id, gate, instruction, cwd, expected_specialists, expected_decisions, expected_objections, quality, model, budget_usd, timeout_s)`
 - `mcp__codex_supervisor__read_outcome(run_id, task_id)`
 - `mcp__codex_supervisor__read_gate_transcript(run_id, task_id)`
+- `mcp__codex_supervisor__export_gate_artifacts(run_id, task_id, cwd, output_dir)`
 - `mcp__codex_supervisor__start_codex_session(prompt, cwd, model, reasoning_effort, execute, timeout_s)`
 
 ## Gate Policy
 
 Codex owns PRD, TDD, and review gates. Claude Code owns implementation through
 `/lead`. Both agents participate at major decision points.
+
+Before implementation, Codex must run the repo's `prd-to-tdd` workflow, not an
+ad hoc PRD/TDD prompt. That workflow creates or updates durable artifacts:
+
+- `docs/dual-agent/<task_id>/prd.md`
+- `docs/dual-agent/<task_id>/grill-findings.md`
+- `docs/dual-agent/<task_id>/issues.md`
+- `docs/dual-agent/<task_id>/tdd.md`
+- `docs/dual-agent/<task_id>/grill-findings-tdd.md`
+
+The `prd-to-tdd` workflow includes the two `grill-with-docs` gates. Do not
+advance from PRD to TDD, or from TDD to implementation, until the corresponding
+grill findings are resolved or explicitly waived in the artifact.
+
+When calling `start_dual_agent_gate`, pass the current PRD/TDD/grill/issue
+documents through `planning_artifacts` with `mutable_by_worker=false` unless the
+user explicitly approves worker edits. This pins checksums in the handoff packet
+so Claude Code cannot silently rewrite the spec to match the implementation.
 
 For each major decision gate:
 
@@ -42,6 +61,9 @@ For each major decision gate:
    confidences, objections, and final outcome.
 10. Read the final gate result with `read_outcome` when you only need the
     latest outcome without the dialogue history.
+11. After each accepted PRD, TDD, implementation, or outcome-review milestone,
+    call `export_gate_artifacts` so the operator has readable Markdown artifacts
+    in `docs/dual-agent/<task_id>/`.
 
 ## Defaults
 
@@ -56,6 +78,9 @@ For each major decision gate:
   parallel tasks.
 - In Codex Desktop initiated runs, assume Telegram may be absent. The Desktop
   chat is then the human escalation channel.
+- Treat `docs/dual-agent/<task_id>/` as the durable artifact folder for the
+  run. The supervisor SQLite ledger remains the source of truth; these files are
+  readable projections and planning artifacts.
 
 ## Stop Conditions
 

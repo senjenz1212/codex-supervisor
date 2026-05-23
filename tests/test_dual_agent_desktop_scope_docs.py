@@ -13,6 +13,11 @@ def test_dual_agent_skill_uses_desktop_chat_when_telegram_is_absent():
     assert "re-invoke `start_dual_agent_gate`" in text
     assert "read_gate_transcript" in text
     assert "Before advancing or summarizing" in text
+    assert "`prd-to-tdd` workflow" in text
+    assert "`grill-with-docs` gates" in text
+    assert "planning_artifacts" in text
+    assert "export_gate_artifacts" in text
+    assert "docs/dual-agent/<task_id>/" in text
 
 
 def test_desktop_probe_doc_covers_g1_g2_g3_and_corrects_execute_flag():
