@@ -6,7 +6,7 @@ setup(
     version="0.2.0",
     description="Always-on local supervisor for coding-agent sessions.",
     packages=find_packages(include=["supervisor*", "mcp_tools*"]),
-    python_requires=">=3.9",
+    python_requires=">=3.10",
     install_requires=[
         "anthropic>=0.40.0",
         "openai>=1.50.0",

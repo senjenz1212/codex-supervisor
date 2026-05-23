@@ -1,0 +1,11 @@
+{
+  "description": "Synthetic P0 operator-facing redaction fixture. Values are fake and intentionally credential-shaped.",
+  "input": {
+    "stderr": "ANTHROPIC_AUTH_TOKEN=sk-ant-synthetic-secret",
+    "summary": "Authorization: Bearer synthetic-token"
+  },
+  "must_not_publish": [
+    "sk-ant-synthetic-secret",
+    "synthetic-token"
+  ]
+}

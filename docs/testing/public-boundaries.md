@@ -175,3 +175,15 @@ Tests must prove raw params, prompt text, patch values, and secrets are not
 stored in summaries; fixture analysis must not connect to the real Desktop IPC
 socket, start turns, steer turns, submit GUI input, or mark GUI repaint as
 verified.
+
+## dual_agent_slice0
+
+Submit fixture-shaped probe evidence through `supervisor.dual_agent` validators
+and verify Slice 0 hard-stop, lightweight artifact-exposure guardrails,
+budget-pause, worker-orchestration fidelity, Telegram batching,
+parallel-isolation, and claim-verification behavior. Tests must not call live
+Claude, Codex, Telegram, ChatGPT mobile, Cortex, or Codex Desktop by default.
+Live probes must first be adapted into the same fixture shapes before they can
+unblock CS24. The exposure guardrail should catch obvious raw credential
+publication to operator-facing surfaces without making exhaustive secret
+classification the center of the Slice 0 effort.

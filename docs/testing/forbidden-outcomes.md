@@ -43,6 +43,21 @@ issue explicitly adds a stricter rule.
 - Desktop IPC cold-start/normal-turn capture diff stores raw IPC values,
   prompt text, patch values, or secrets; touches the real Desktop socket from
   fixture tests; or treats a method/path diff as verified GUI repaint.
+- Dual-agent production gates start before Slice 0 hard-stop probes P0, P1,
+  P2, P3, and P4 are green.
+- Dual-agent gates choose a winner at budget exhaustion instead of pausing for
+  human review.
+- Dual-agent outcome review treats agent prose as verified action state
+  without matching ledger, tool, PR, deployment, or automation evidence.
+- Dual-agent worker-output adaptation drops specialist names, decisions,
+  objections, changed files, test status, or confidence while still reporting
+  the adapter as green.
+- Dual-agent credential probes treat a successful model call as proof that the
+  intended gateway was used.
+- Dual-agent artifact handoffs broad-publish raw credentials to Telegram,
+  Cortex/cockpit, or SQLite, or copy known token substrings from
+  `handover.md`, `outcome.md`, or `gate_log.jsonl` into operator summaries
+  without the lightweight exposure guardrail.
 - Outbound watched-run progress notifications are invisible to the next
   Telegram supervisor turn.
 - Quiet Telegram FYI mode suppresses alerts or approval prompts, forgets
