@@ -21,6 +21,7 @@ Source PRD: `docs/prd/dual-agent-slice0-reality-check-prd.md`
 | Resume loop | `test_deadlock_continue_signal_is_claimed_once_and_redispatches_gate` proves `Continue` is claimed exactly once and re-dispatches the matching gate spec | Covered |
 | Stale paused-state digest | `test_paused_dual_agent_actions_send_one_stale_digest` proves paused dual-agent actions emit one Telegram digest after the stale threshold and remain paused | Covered |
 | CS24 gate runner | `test_cs24_gate_runner_writes_handoff_invokes_lead_and_verifies_planning_boundaries`, `test_cs24_gate_runner_retries_malformed_outcome_once_then_accepts`, `test_cs24_gate_runner_stops_sequence_on_blocked_gate` | Covered |
+| CS24 handoff/worktree lock | `test_cs24_gate_runner_refuses_existing_handoff_lock_without_invoking_lead`, `test_cs24_gate_runner_removes_handoff_lock_after_success`, `test_cs24_gate_runner_removes_handoff_lock_after_blocked_worker_result` prove one live gate owns the worktree handoff boundary and stale locks do not remain after normal blocked or accepted exits | Covered |
 | Codex-facing MCP control surface | `test_codex_supervisor_mcp_exposes_dual_agent_gate_tools`, `test_codex_supervisor_mcp_reads_clean_gate_transcript`, `test_codex_supervisor_mcp_records_rounds_checks_budget_and_polls_resume`, `test_codex_supervisor_mcp_start_codex_session_can_dry_run_or_execute_with_runner`, `test_codex_supervisor_mcp_console_script_is_registered` | Covered |
 | Codex Desktop no-Telegram gate flow | `test_dual_agent_skill_uses_desktop_chat_when_telegram_is_absent`, `test_desktop_probe_doc_covers_g1_g2_g3_and_corrects_execute_flag`, `docs/testing/codex-desktop-dual-agent-probes.md` | Manual probes scripted |
 | P5 artifact exposure guardrail | `test_p5_artifact_redaction_covers_markdown_and_gate_logs` | Covered |
@@ -46,7 +47,10 @@ verifies P1/P2/P3 evidence, retries malformed outcomes once according to packet
 policy, stops on blocked gates, escalates validation failures according to the
 packet policy, routes budget deadlock to Telegram through the existing
 ask/callback path, exposes a pull-based resume loop for `Continue` answers, and
-emits one-time stale digests for paused dual-agent actions. Live
+emits one-time stale digests for paused dual-agent actions. It also holds a
+worktree-level `.handoff/.dual-agent.lock` while a gate is invoking `/lead` so
+another gate cannot concurrently overwrite the same handoff boundary or mutate
+the same worktree through the runner. Live
 Claude/Codex/Telegram/ChatGPT/Desktop probes must be adapted into the same
 fixture shapes before they can unblock CS24. Secret handling in Slice 0 is a
 lightweight exposure guardrail for operator-facing summaries, not an exhaustive

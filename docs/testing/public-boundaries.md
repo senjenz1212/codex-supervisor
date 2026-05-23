@@ -209,7 +209,11 @@ fake Claude runners and fake Telegram notifiers. The runner must write the
 typed handoff packet, invoke the `/lead` boundary, classify P1/P2/P3 probe
 evidence, retry malformed outcome blocks at most once when policy allows, stop
 the gate sequence on the first blocked gate, and never choose a winner on
-budget exhaustion. Deadlock escalation must create a `dual_agent_gate_deadlock`
+budget exhaustion. The runner must acquire a worktree-level
+`.handoff/.dual-agent.lock` before writing the handoff packet or invoking
+`/lead`, refuse a second concurrent gate in the same worktree without invoking
+Claude, and remove the lock after accepted or blocked worker outcomes.
+Deadlock escalation must create a `dual_agent_gate_deadlock`
 action, create a nonce-protected Telegram ask with `Pause`, `Kill`, and
 `Continue`, and resolve callbacks through the existing Telegram poller without
 executing destructive work directly. Validation failures controlled by the

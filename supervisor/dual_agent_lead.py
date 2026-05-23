@@ -179,9 +179,19 @@ def build_lead_prompt(request: LeadInvocationRequest) -> str:
         f"{handoff}"
         f"{expected}\n\n"
         "Use the strongest available reasoning for this gate. Keep routine progress concise. "
-        "Always end with <dual_agent_outcome>{...valid compact JSON...}</dual_agent_outcome> "
-        "including task_id, summary, specialists, decisions, objections, changed_files, "
-        "tests, test_status, confidence, evidence, claims, blockers, and escalations."
+        f"{_outcome_block_contract()}"
+    )
+
+
+def _outcome_block_contract() -> str:
+    return (
+        "Always end with <dual_agent_outcome>{...valid compact JSON...}</dual_agent_outcome>. "
+        "The JSON must include: task_id string, summary string, specialists array, "
+        "decisions array, objections array, changed_files array, tests array, "
+        "test_status string, confidence number from 0 to 1, and claims array. "
+        "Every specialist object must include a string name and a string decision; "
+        "do not use null for specialist decisions. Repeat each required decision in "
+        "the top-level decisions array."
     )
 
 
@@ -229,10 +239,14 @@ def write_handoff_packet(
         outcome_validation_policy=outcome_validation_policy,
         suggested_skills=suggested_skills,
     )
-    path = Path(request.cwd).resolve() / ".handoff" / f"{_safe_task_id(request.task_id)}.json"
+    path = handoff_packet_path(request.cwd, request.task_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(packet.model_dump(), indent=2, sort_keys=True) + "\n")
     return path
+
+
+def handoff_packet_path(cwd: str | Path, task_id: str) -> Path:
+    return Path(cwd).resolve() / ".handoff" / f"{_safe_task_id(task_id)}.json"
 
 
 def read_handoff_packet(path: str | Path) -> HandoffPacket:

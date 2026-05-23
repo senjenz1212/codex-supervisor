@@ -13,6 +13,7 @@ venv/
 # Local scratch/runtime state
 pytest-cache-files-*/
 .scratch/gui-probes/
+.handoff/
 *.db
 *.sqlite
 *.sqlite3

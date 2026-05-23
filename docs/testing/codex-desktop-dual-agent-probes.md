@@ -26,6 +26,10 @@ export TASK_ID="desktop-dual-agent-$(date +%Y%m%d-%H%M%S)"
 export RUN_ID="$TASK_ID"
 ```
 
+The runner holds `.handoff/.dual-agent.lock` for each live gate. If a previous
+probe crashed and a later gate returns `handoff_lock_held`, inspect and remove
+that stale lock only after confirming no live gate is still running.
+
 `start_dual_agent_gate` has no `execute=true` flag. A live G-2 probe means the
 Desktop calls `start_dual_agent_gate` for real and Claude `/lead` runs. The
 `execute` flag belongs only to `start_codex_session`, which is not part of the
@@ -75,7 +79,7 @@ Call mcp__codex_supervisor__start_dual_agent_gate with:
 - expected_specialists: ["Planner"]
 - expected_decisions: ["accept plan"]
 - expected_objections: []
-- quality: "cheap"
+- quality: "best"
 - timeout_s: 600
 
 After the tool returns, call mcp__codex_supervisor__read_outcome with the same

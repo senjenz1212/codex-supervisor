@@ -62,6 +62,8 @@ def test_build_lead_command_uses_non_bare_claude_so_slash_lead_can_resolve(tmp_p
     assert prompt.startswith("/lead Gate mode: prd_review.")
     assert "Task id: slice0-lead." in prompt
     assert "Always end with <dual_agent_outcome>" in prompt
+    assert "Every specialist object must include a string name and a string decision" in prompt
+    assert "do not use null for specialist decisions" in prompt
     assert "--bare" not in argv
     assert argv[:2] == ["claude", "--no-session-persistence"]
     assert argv[argv.index("--model") + 1] == "opus"

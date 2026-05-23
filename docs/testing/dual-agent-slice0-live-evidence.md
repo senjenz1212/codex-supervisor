@@ -167,3 +167,45 @@ Interpretation:
 - Periodic live refresh remains operational: when Claude Code or `/lead`
   changes, refresh the seed transcript from a real `/lead` run and rerun the
   same replay family.
+
+## 2026-05-23 Codex CLI MCP Dual-Agent E2E
+
+Single-gate live path:
+
+- Initiator: `codex exec --json` with the `codex_supervisor` stdio MCP server.
+- Worker: live Claude Code `/lead` through `start_dual_agent_gate`.
+- Task id / run id: `cli-dual-agent-e2e-20260523-091026`.
+- Quality: `best`.
+- Result: `accepted`.
+- Probes: `P1 planning_artifact_boundaries_ok`, `P2 worker_orchestration_invocation_ok`,
+  `P3 outcome_fidelity_ok`.
+- Transcript readback: `read_gate_transcript` returned `status="ok"` and a
+  handoff packet path.
+
+Multi-round live path:
+
+- Initiator: `codex exec --json` with the `codex_supervisor` stdio MCP server.
+- Task id / run id: `cli-dual-agent-g3-20260523-091159`.
+- Calls: three `start_dual_agent_gate` calls and three `record_gate_round`
+  calls.
+- Gate statuses: `accepted`, `accepted`, `accepted`.
+- Round records: `revise/revise`, `revise/revise`, `accept/accept`.
+- Transcript readback: `read_gate_transcript` returned `status="ok"` with
+  three ordered rounds and final accepted result.
+
+Observed model-tier finding:
+
+- `quality="cheap"` is acceptable for deterministic wrapper tests but was
+  flaky in live Codex-to-Claude e2e: one run produced a null specialist
+  decision and another omitted the outcome block after retry.
+- `quality="best"` passed the live single-gate and three-round flows. Desktop
+  probe instructions now use `quality="best"` for the live G-2 path.
+
+Desktop GUI note:
+
+- Computer Use could list Codex Desktop but refused to control
+  `com.openai.codex` for safety reasons, so the GUI renderer itself was not
+  automation-tested from this session.
+- The CLI e2e proves the same repo-provided stdio MCP server, gate runner,
+  handoff packet, Claude `/lead` invocation, SQLite event ledger, and transcript
+  readback path that Desktop is configured to consume.

@@ -206,6 +206,92 @@ def test_cs24_gate_runner_writes_handoff_invokes_lead_and_verifies_planning_boun
     assert packet["planning_artifacts"][0]["path"] == "docs/prd.md"
 
 
+def test_cs24_gate_runner_refuses_existing_handoff_lock_without_invoking_lead(tmp_path):
+    handoff_dir = tmp_path / ".handoff"
+    handoff_dir.mkdir()
+    lock_path = handoff_dir / ".dual-agent.lock"
+    lock_path.write_text(json.dumps({"run_id": "other-run", "task_id": "other-task"}))
+    calls = 0
+
+    def fake_runner(argv, **kwargs):
+        nonlocal calls
+        calls += 1
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=build_lead_replay_stdout("Should not run.\n" + _outcome_block("gate-locked")),
+            stderr="",
+        )
+
+    spec = DualAgentGateSpec(
+        task_id="gate-locked",
+        run_id="run-cs24",
+        gate="prd_review",
+        instruction="Review PRD.",
+        cwd=tmp_path,
+    )
+
+    result = run_dual_agent_gate(spec, runner=fake_runner)
+
+    assert result.status == "blocked"
+    assert result.attempts == 0
+    assert result.handoff_packet_path == tmp_path / ".handoff" / "gate-locked.json"
+    assert result.probes["P1"].reason == "handoff_lock_held"
+    assert calls == 0
+    assert lock_path.exists()
+
+
+def test_cs24_gate_runner_removes_handoff_lock_after_success(tmp_path):
+    lock_path = tmp_path / ".handoff" / ".dual-agent.lock"
+
+    def fake_runner(argv, **kwargs):
+        assert lock_path.exists()
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=build_lead_replay_stdout("Accepted.\n" + _outcome_block("gate-cleanup")),
+            stderr="",
+        )
+
+    spec = DualAgentGateSpec(
+        task_id="gate-cleanup",
+        run_id="run-cs24",
+        gate="prd_review",
+        instruction="Review PRD.",
+        cwd=tmp_path,
+        expected_specialists=("Planner",),
+        expected_decisions=("accept plan",),
+        expected_objections=(),
+    )
+
+    result = run_dual_agent_gate(spec, runner=fake_runner)
+
+    assert result.status == "accepted"
+    assert not lock_path.exists()
+
+
+def test_cs24_gate_runner_removes_handoff_lock_after_blocked_worker_result(tmp_path):
+    lock_path = tmp_path / ".handoff" / ".dual-agent.lock"
+
+    def fake_runner(argv, **kwargs):
+        assert lock_path.exists()
+        return subprocess.CompletedProcess(argv, 2, stdout="", stderr="boom")
+
+    spec = DualAgentGateSpec(
+        task_id="gate-blocked-cleanup",
+        run_id="run-cs24",
+        gate="outcome_review",
+        instruction="Review outcome.",
+        cwd=tmp_path,
+    )
+
+    result = run_dual_agent_gate(spec, runner=fake_runner)
+
+    assert result.status == "blocked"
+    assert result.probes["P2"].reason == "lead_invocation_failed"
+    assert not lock_path.exists()
+
+
 def test_cs24_gate_runner_retries_malformed_outcome_once_then_accepts(tmp_path):
     calls = 0
 

@@ -7,6 +7,7 @@ stops on the first blocked gate. Live process calls remain injectable.
 from __future__ import annotations
 
 import json
+import os
 import secrets
 import subprocess
 import time
@@ -31,6 +32,7 @@ from .dual_agent_lead import (
     PlanningArtifact,
     Runner,
     compute_file_sha256,
+    handoff_packet_path,
     invoke_claude_lead,
     verify_planning_artifact_boundaries,
     write_handoff_packet,
@@ -148,45 +150,62 @@ def run_dual_agent_gate(
     *,
     runner: Runner = subprocess.run,
 ) -> DualAgentGateResult:
-    request = _lead_request(spec)
-    packet_path = write_handoff_packet(
-        request,
-        planning_artifacts=spec.planning_artifacts,
-        lead_skill_path=spec.lead_skill_path,
-        outcome_validation_policy=spec.outcome_validation_policy,
-    )
-    request = _lead_request(spec, packet_path=packet_path)
-    lead_result = invoke_claude_lead(request, runner=runner)
-    attempts = 1
-    if _should_retry_outcome(lead_result.probe, spec.outcome_validation_policy):
-        corrective = _lead_request(
-            spec,
-            packet_path=packet_path,
-            instruction=(
-                spec.instruction
-                + "\n\nCorrective retry: the previous response did not contain "
-                  "a valid <dual_agent_outcome> block. Return the required block only after your summary."
-            ),
+    packet_path = handoff_packet_path(spec.cwd, spec.task_id)
+    lock_path = _handoff_lock_path(spec)
+    lock_probe = _acquire_handoff_lock(lock_path, spec=spec, packet_path=packet_path)
+    if lock_probe is not None:
+        return DualAgentGateResult(
+            task_id=spec.task_id,
+            gate=spec.gate,
+            status="blocked",
+            probes={"P1": lock_probe},
+            handoff_packet_path=packet_path,
+            attempts=0,
         )
-        lead_result = invoke_claude_lead(corrective, runner=runner)
-        attempts = 2
+    try:
+        request = _lead_request(spec)
+        packet_path = write_handoff_packet(
+            request,
+            planning_artifacts=spec.planning_artifacts,
+            lead_skill_path=spec.lead_skill_path,
+            outcome_validation_policy=spec.outcome_validation_policy,
+        )
+        request = _lead_request(spec, packet_path=packet_path)
+        lead_result = invoke_claude_lead(request, runner=runner)
+        attempts = 1
+        if _should_retry_outcome(lead_result.probe, spec.outcome_validation_policy):
+            corrective = _lead_request(
+                spec,
+                packet_path=packet_path,
+                instruction=(
+                    spec.instruction
+                    + "\n\nCorrective retry: the previous response did not contain "
+                      "a valid <dual_agent_outcome> block. Return the required block only after your summary. "
+                      "Every specialist must have a string name and string decision; do not use null. "
+                      "Repeat required decisions in the top-level decisions array."
+                ),
+            )
+            lead_result = invoke_claude_lead(corrective, runner=runner)
+            attempts = 2
 
-    probes: dict[str, ProbeResult] = {}
-    probes["P2"] = _p2_from_lead_result(lead_result)
-    probes["P3"] = lead_result.probe
-    probes["P1"] = verify_planning_artifact_boundaries(packet_path)
+        probes: dict[str, ProbeResult] = {}
+        probes["P2"] = _p2_from_lead_result(lead_result)
+        probes["P3"] = lead_result.probe
+        probes["P1"] = verify_planning_artifact_boundaries(packet_path)
 
-    status = "accepted" if all(p.ok for p in probes.values()) else "blocked"
-    return DualAgentGateResult(
-        task_id=spec.task_id,
-        gate=spec.gate,
-        status=status,
-        probes=probes,
-        handoff_packet_path=packet_path,
-        lead_result=lead_result,
-        outcome=lead_result.outcome,
-        attempts=attempts,
-    )
+        status = "accepted" if all(p.ok for p in probes.values()) else "blocked"
+        return DualAgentGateResult(
+            task_id=spec.task_id,
+            gate=spec.gate,
+            status=status,
+            probes=probes,
+            handoff_packet_path=packet_path,
+            lead_result=lead_result,
+            outcome=lead_result.outcome,
+            attempts=attempts,
+        )
+    finally:
+        _release_handoff_lock(lock_path)
 
 
 def run_dual_agent_gates(
@@ -502,6 +521,62 @@ def claim_retry_signal(
     task_id: str,
 ) -> dict[str, Any] | None:
     return state.claim_retry_signal(run_id=run_id, task_id=task_id)
+
+
+def _handoff_lock_path(spec: DualAgentGateSpec) -> Path:
+    return Path(spec.cwd).resolve() / ".handoff" / ".dual-agent.lock"
+
+
+def _acquire_handoff_lock(
+    lock_path: Path,
+    *,
+    spec: DualAgentGateSpec,
+    packet_path: Path,
+) -> ProbeResult | None:
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    metadata = {
+        "run_id": spec.run_id,
+        "task_id": spec.task_id,
+        "gate": spec.gate,
+        "pid": os.getpid(),
+        "created_at": int(time.time()),
+        "handoff_packet_path": str(packet_path),
+    }
+    try:
+        fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError:
+        return ProbeResult(
+            "P1",
+            "red",
+            "handoff_lock_held",
+            {
+                "lock_path": str(lock_path),
+                "handoff_packet_path": str(packet_path),
+            },
+        )
+    except OSError as e:
+        return ProbeResult(
+            "P1",
+            "red",
+            "handoff_lock_error",
+            {
+                "lock_path": str(lock_path),
+                "handoff_packet_path": str(packet_path),
+                "error": str(e),
+            },
+        )
+    try:
+        os.write(fd, (json.dumps(metadata, sort_keys=True) + "\n").encode())
+    finally:
+        os.close(fd)
+    return None
+
+
+def _release_handoff_lock(lock_path: Path) -> None:
+    try:
+        lock_path.unlink()
+    except FileNotFoundError:
+        pass
 
 
 async def send_stale_paused_digests(
