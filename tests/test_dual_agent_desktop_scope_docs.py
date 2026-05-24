@@ -47,3 +47,27 @@ def test_desktop_probe_doc_covers_g1_g2_g3_and_corrects_execute_flag():
     assert "clean Codex/Claude" in text
     assert "dialogue, not just the final outcome" in text
     assert "sqlite3 ~/.codex-supervisor/state.db" in text
+
+
+def test_new_chat_how_to_covers_dual_agent_handoff_flow():
+    text = Path("docs/how-to/dual-agent-from-new-chat.md").read_text()
+
+    assert "codex mcp add codex_supervisor" in text
+    assert "uv --directory /Users/sam.zhang/Documents/codex-supervisor" in text
+    assert "codex-supervisor-mcp --config ~/.codex-supervisor/config.yaml" in text
+    assert "read_gate_transcript" in text
+    assert "read_outcome" in text
+    assert "docs/dual-agent/<TASK_ID>/interactions.md" in text
+    assert "prd_review" in text
+    assert "issues_review" in text
+    assert "tdd_review" in text
+    assert "implementation_plan" in text
+    assert "execution" in text
+    assert "outcome_review" in text
+    assert 'artifact_policy="strict"' in text
+    assert "planning_artifacts" in text
+    assert "mutable_by_worker=false" in text
+    assert "gate_prerequisites_missing" in text
+    assert "required_artifacts_missing" in text
+    assert "user_facing=True" in text
+    assert "poll_resume_signal" in text
