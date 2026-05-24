@@ -1,0 +1,203 @@
+{
+  "capture_dir": "/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-supervisor-live-lead-emeg9kyi/lead-captures",
+  "claim_with_receipts": {
+    "details": {
+      "legacy_verified_claims": [],
+      "receipts": [
+        {
+          "claims": [
+            "tests passed"
+          ],
+          "command": "python3 -m pytest -q",
+          "kind": "test",
+          "receipt_id": "pytest-live-sandbox",
+          "status": "passed",
+          "stderr": "",
+          "stdout": ".                                                                        [100%]\n1 passed in 0.01s\n"
+        },
+        {
+          "changed_files": [
+            ".handoff/",
+            "docs/dual-agent/live-lead-no-budget-probe-20260524-01/grill-findings.md",
+            "docs/dual-agent/live-lead-no-budget-probe-20260524-01/index.md",
+            "docs/dual-agent/live-lead-no-budget-probe-20260524-01/interactions.md",
+            "docs/dual-agent/live-lead-no-budget-probe-20260524-01/issues.md",
+            "docs/dual-agent/live-lead-no-budget-probe-20260524-01/outcome-review.md",
+            "docs/dual-agent/live-lead-no-budget-probe-20260524-01/prd.md",
+            "docs/dual-agent/live-lead-no-budget-probe-20260524-01/screenshots.md",
+            "docs/dual-agent/live-lead-no-budget-probe-20260524-01/tdd.md",
+            "docs/dual-agent/live-lead-no-budget-probe-20260524-01/transcript.md",
+            "sandbox_slug.py",
+            "tests/"
+          ],
+          "claims": [
+            "implemented"
+          ],
+          "kind": "git_diff",
+          "receipt_id": "git-diff-live-sandbox",
+          "status": "present"
+        },
+        {
+          "claims": [
+            "implemented"
+          ],
+          "kind": "git_status",
+          "receipt_id": "git-status-live-sandbox",
+          "status": "passed",
+          "stdout": "?? .handoff/\n?? docs/dual-agent/live-lead-no-budget-probe-20260524-01/grill-findings.md\n?? docs/dual-agent/live-lead-no-budget-probe-20260524-01/index.md\n?? docs/dual-agent/live-lead-no-budget-probe-20260524-01/interactions.md\n?? docs/dual-agent/live-lead-no-budget-probe-20260524-01/issues.md\n?? docs/dual-agent/live-lead-no-budget-probe-20260524-01/outcome-review.md\n?? docs/dual-agent/live-lead-no-budget-probe-20260524-01/prd.md\n?? docs/dual-agent/live-lead-no-budget-probe-20260524-01/screenshots.md\n?? docs/dual-agent/live-lead-no-budget-probe-20260524-01/tdd.md\n?? docs/dual-agent/live-lead-no-budget-probe-20260524-01/transcript.md\n?? sandbox_slug.py\n?? tests/\n"
+        }
+      ]
+    },
+    "probe_id": "P11",
+    "reason": "workflow_claims_verified",
+    "status": "green"
+  },
+  "claim_without_receipts": {
+    "details": {
+      "failures": [
+        "tests_passed_without_test_receipt",
+        "implemented_without_diff_receipt"
+      ],
+      "legacy_verified_claims": [],
+      "receipts": []
+    },
+    "probe_id": "P11",
+    "reason": "workflow_claim_verification_failed",
+    "status": "red"
+  },
+  "files": "./.pytest_cache/CACHEDIR.TAG\n./.pytest_cache/README.md\n./.pytest_cache/.gitignore\n./tests/test_slugify_label.py\n./.handoff/live-lead-no-budget-probe-20260524-01.json\n./README.md\n./sandbox_slug.py\n./.git/config\n./.git/HEAD\n./.git/info/exclude\n./.git/logs/HEAD\n./.git/description\n./.git/hooks/commit-msg.sample\n./.git/hooks/pre-rebase.sample\n./.git/hooks/sendemail-validate.sample\n./.git/hooks/pre-commit.sample\n./.git/hooks/applypatch-msg.sample\n./.git/hooks/fsmonitor-watchman.sample\n./.git/hooks/pre-receive.sample\n./.git/hooks/prepare-commit-msg.sample\n./.git/hooks/post-update.sample\n./.git/hooks/pre-merge-commit.sample\n./.git/hooks/pre-applypatch.sample\n./.git/hooks/pre-push.sample\n./.git/hooks/update.sample\n./.git/hooks/push-to-checkout.sample\n./.git/index\n./.git/COMMIT_EDITMSG\n",
+  "gate_probe_reasons": {
+    "execution": {
+      "P1": "planning_artifact_boundaries_ok",
+      "P2": "worker_orchestration_invocation_ok",
+      "P3": "outcome_fidelity_ok",
+      "P_planning": "planning_validation_ok"
+    },
+    "implementation_plan": {
+      "P1": "planning_artifact_boundaries_ok",
+      "P2": "worker_orchestration_invocation_ok",
+      "P3": "outcome_fidelity_ok",
+      "P_planning": "planning_validation_ok"
+    },
+    "issues_review": {
+      "P1": "planning_artifact_boundaries_ok",
+      "P2": "worker_orchestration_invocation_ok",
+      "P3": "outcome_fidelity_ok",
+      "P_planning": "planning_validation_ok"
+    },
+    "outcome_review": {
+      "P1": "planning_artifact_boundaries_ok",
+      "P2": "worker_orchestration_invocation_ok",
+      "P3": "outcome_fidelity_ok",
+      "P_planning": "planning_validation_ok"
+    },
+    "prd_review": {
+      "P1": "planning_artifact_boundaries_ok",
+      "P2": "worker_orchestration_invocation_ok",
+      "P3": "outcome_fidelity_ok",
+      "P_planning": "planning_validation_ok"
+    },
+    "tdd_review": {
+      "P1": "planning_artifact_boundaries_ok",
+      "P2": "worker_orchestration_invocation_ok",
+      "P3": "outcome_fidelity_ok",
+      "P_planning": "planning_validation_ok"
+    }
+  },
+  "gate_statuses": {
+    "execution": "accepted",
+    "implementation_plan": "accepted",
+    "issues_review": "accepted",
+    "outcome_review": "accepted",
+    "prd_review": "accepted",
+    "tdd_review": "accepted"
+  },
+  "git_diff_names": "",
+  "git_status": "?? .handoff/\n?? docs/dual-agent/live-lead-no-budget-probe-20260524-01/grill-findings.md\n?? docs/dual-agent/live-lead-no-budget-probe-20260524-01/index.md\n?? docs/dual-agent/live-lead-no-budget-probe-20260524-01/interactions.md\n?? docs/dual-agent/live-lead-no-budget-probe-20260524-01/issues.md\n?? docs/dual-agent/live-lead-no-budget-probe-20260524-01/outcome-review.md\n?? docs/dual-agent/live-lead-no-budget-probe-20260524-01/prd.md\n?? docs/dual-agent/live-lead-no-budget-probe-20260524-01/screenshots.md\n?? docs/dual-agent/live-lead-no-budget-probe-20260524-01/tdd.md\n?? docs/dual-agent/live-lead-no-budget-probe-20260524-01/transcript.md\n?? sandbox_slug.py\n?? tests/\n",
+  "latest_gate_status": "accepted",
+  "latest_outcome_status": "ok",
+  "pytest_returncode": 0,
+  "pytest_stderr": "",
+  "pytest_stdout": ".                                                                        [100%]\n1 passed in 0.01s\n",
+  "receipts": [
+    {
+      "claims": [
+        "tests passed"
+      ],
+      "command": "python3 -m pytest -q",
+      "kind": "test",
+      "receipt_id": "pytest-live-sandbox",
+      "status": "passed",
+      "stderr": "",
+      "stdout": ".                                                                        [100%]\n1 passed in 0.01s\n"
+    },
+    {
+      "changed_files": [
+        ".handoff/",
+        "docs/dual-agent/live-lead-no-budget-probe-20260524-01/grill-findings.md",
+        "docs/dual-agent/live-lead-no-budget-probe-20260524-01/index.md",
+        "docs/dual-agent/live-lead-no-budget-probe-20260524-01/interactions.md",
+        "docs/dual-agent/live-lead-no-budget-probe-20260524-01/issues.md",
+        "docs/dual-agent/live-lead-no-budget-probe-20260524-01/outcome-review.md",
+        "docs/dual-agent/live-lead-no-budget-probe-20260524-01/prd.md",
+        "docs/dual-agent/live-lead-no-budget-probe-20260524-01/screenshots.md",
+        "docs/dual-agent/live-lead-no-budget-probe-20260524-01/tdd.md",
+        "docs/dual-agent/live-lead-no-budget-probe-20260524-01/transcript.md",
+        "sandbox_slug.py",
+        "tests/"
+      ],
+      "claims": [
+        "implemented"
+      ],
+      "kind": "git_diff",
+      "receipt_id": "git-diff-live-sandbox",
+      "status": "present"
+    },
+    {
+      "claims": [
+        "implemented"
+      ],
+      "kind": "git_status",
+      "receipt_id": "git-status-live-sandbox",
+      "status": "passed",
+      "stdout": "?? .handoff/\n?? docs/dual-agent/live-lead-no-budget-probe-20260524-01/grill-findings.md\n?? docs/dual-agent/live-lead-no-budget-probe-20260524-01/index.md\n?? docs/dual-agent/live-lead-no-budget-probe-20260524-01/interactions.md\n?? docs/dual-agent/live-lead-no-budget-probe-20260524-01/issues.md\n?? docs/dual-agent/live-lead-no-budget-probe-20260524-01/outcome-review.md\n?? docs/dual-agent/live-lead-no-budget-probe-20260524-01/prd.md\n?? docs/dual-agent/live-lead-no-budget-probe-20260524-01/screenshots.md\n?? docs/dual-agent/live-lead-no-budget-probe-20260524-01/tdd.md\n?? docs/dual-agent/live-lead-no-budget-probe-20260524-01/transcript.md\n?? sandbox_slug.py\n?? tests/\n"
+    }
+  ],
+  "root": "/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-supervisor-live-lead-emeg9kyi",
+  "round_recording": {
+    "artifact_export": {
+      "files": [
+        "docs/dual-agent/live-lead-no-budget-probe-20260524-01/index.md",
+        "docs/dual-agent/live-lead-no-budget-probe-20260524-01/prd.md",
+        "docs/dual-agent/live-lead-no-budget-probe-20260524-01/tdd.md",
+        "docs/dual-agent/live-lead-no-budget-probe-20260524-01/grill-findings.md",
+        "docs/dual-agent/live-lead-no-budget-probe-20260524-01/issues.md",
+        "docs/dual-agent/live-lead-no-budget-probe-20260524-01/screenshots.md",
+        "docs/dual-agent/live-lead-no-budget-probe-20260524-01/outcome-review.md",
+        "docs/dual-agent/live-lead-no-budget-probe-20260524-01/interactions.md",
+        "docs/dual-agent/live-lead-no-budget-probe-20260524-01/transcript.md"
+      ],
+      "output_dir": "docs/dual-agent/live-lead-no-budget-probe-20260524-01",
+      "run_id": "live-lead-no-budget-probe-20260524-01",
+      "status": "ok",
+      "task_id": "live-lead-no-budget-probe-20260524-01"
+    },
+    "recorded_gates": [
+      "prd_review",
+      "issues_review",
+      "tdd_review",
+      "implementation_plan",
+      "execution",
+      "outcome_review"
+    ],
+    "transcript_interaction_count_after_recording": 12,
+    "transcript_round_count_after_recording": 6
+  },
+  "run_id": "live-lead-no-budget-probe-20260524-01",
+  "sandbox": "/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-supervisor-live-lead-emeg9kyi/sandbox-repo",
+  "state_db": "/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-supervisor-live-lead-emeg9kyi/probe-state.db",
+  "task_id": "live-lead-no-budget-probe-20260524-01",
+  "transcript_interaction_count": 12,
+  "transcript_round_count": 0,
+  "transcript_status": "ok"
+}

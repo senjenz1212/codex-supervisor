@@ -212,3 +212,73 @@ Desktop GUI note:
 - The CLI e2e proves the same repo-provided stdio MCP server, gate runner,
   handoff packet, Claude `/lead` invocation, SQLite event ledger, and transcript
   readback path that Desktop is configured to consume.
+
+## 2026-05-24 Live No-Budget Claude `/lead` Sandbox Probe
+
+Scope:
+
+- Task id / run id: `live-lead-no-budget-probe-20260524-01`.
+- Cwd: disposable temporary git repository, not the `codex-supervisor` worktree.
+- Cursor: disabled.
+- Codex subagents: disabled.
+- Gate invocation: direct `start_dual_agent_gate` calls through
+  `CodexSupervisorMcpAPI`.
+- Cost cap policy: no practical cap for the probe; each live gate was invoked
+  with `quality="best"` and `budget_usd=100.0`, which produced
+  `claude --model opus --max-budget-usd 100`.
+
+Gate sequence:
+
+- `prd_review`: accepted.
+- `issues_review`: accepted.
+- `tdd_review`: accepted.
+- `implementation_plan`: accepted.
+- `execution`: accepted.
+- `outcome_review`: accepted.
+
+Probe results:
+
+- Every gate returned `P1 planning_artifact_boundaries_ok`.
+- Every gate returned `P2 worker_orchestration_invocation_ok`.
+- Every gate returned `P3 outcome_fidelity_ok`.
+- Every gate returned `P_planning planning_validation_ok`.
+
+Implementation evidence:
+
+- Claude Code created `tests/test_slugify_label.py`.
+- Claude Code created `sandbox_slug.py`.
+- Codex ran `python3 -m pytest -q` in the sandbox after execution:
+  `1 passed in 0.01s`.
+- `read_gate_transcript` returned `status="ok"`.
+- The ledger had 12 `dual_agent_interaction_message` events and, after Codex
+  recorded review decisions, 6 `dual_agent_gate_round` events.
+- Exported artifacts were written under
+  `docs/dual-agent/live-lead-no-budget-probe-20260524-01/` in the sandbox and
+  copied into this repo for inspection.
+
+Claim-verification evidence:
+
+- With receipts, `verify_workflow_claims` returned `P11 green
+  workflow_claims_verified`.
+- Without receipts, the same live outcome returned `P11 red
+  workflow_claim_verification_failed` with:
+  `tests_passed_without_test_receipt` and
+  `implemented_without_diff_receipt`.
+
+Captured fixtures:
+
+- Live stdout fixtures and redacted metadata are checked in under
+  `tests/fixtures/dual_agent/live_lead_no_budget_probe_20260524_01/`.
+- `tests/test_dual_agent_live_lead_fixture.py` replays all six captured stdout
+  files through `invoke_claude_lead` and asserts typed outcome parsing remains
+  green.
+
+Known caveats:
+
+- This was not a Codex Desktop GUI run; it used the same Python MCP API boundary
+  directly to avoid Desktop automation friction.
+- The sandbox `git diff --name-only` was empty because new files were untracked;
+  receipt evidence used `git status --porcelain=v1` to enumerate changed paths.
+- The first script collected 12 interactions but no explicit round rows; Codex
+  then recorded one accepted `dual_agent_gate_round` per gate and refreshed the
+  artifact export.

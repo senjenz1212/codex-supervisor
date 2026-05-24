@@ -1,0 +1,26 @@
+{
+  "argv_redacted": [
+    "claude",
+    "--no-session-persistence",
+    "-p",
+    "[PROMPT_REDACTED]",
+    "--output-format",
+    "json",
+    "--model",
+    "opus",
+    "--max-budget-usd",
+    "100",
+    "--permission-mode",
+    "bypassPermissions",
+    "--effort",
+    "max",
+    "--tools",
+    "default"
+  ],
+  "cwd": "/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-supervisor-live-lead-emeg9kyi/sandbox-repo",
+  "elapsed_s": 44.815041065216064,
+  "index": 6,
+  "returncode": 0,
+  "stderr_bytes": 0,
+  "stdout_bytes": 4570
+}
