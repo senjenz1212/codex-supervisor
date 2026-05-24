@@ -148,10 +148,20 @@ outcome-review gate with:
 
 ```text
 user_facing=True
-screenshots=[{"path": "<ABSOLUTE_SCREENSHOT_PATH>", "label": "Final state", "note": "Captured by Codex before outcome review."}]
+screenshots=[{
+  "path": "<ABSOLUTE_SCREENSHOT_PATH>",
+  "label": "Final state",
+  "note": "Captured by Codex before outcome review.",
+  "source": "computer_use",
+  "validation": {
+    "status": "passed",
+    "notes": "Codex reviewed the visual state against the acceptance criteria."
+  }
+}]
 ```
 
-Strict mode blocks user-facing outcome review without screenshots.
+Strict mode blocks user-facing outcome review without valid screenshot evidence,
+Browser/Computer Use provenance, and a passed visual validation status.
 
 ## If The New Chat Does Not Have MCP
 

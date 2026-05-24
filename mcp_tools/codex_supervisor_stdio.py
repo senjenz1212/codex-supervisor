@@ -55,6 +55,8 @@ GATE_PREREQUISITES = {
     "outcome_review": ("execution",),
 }
 RELAXED_ARTIFACT_POLICIES = {"relaxed", "audit", "off"}
+VISUAL_VALIDATION_SOURCES = {"browser", "browser_use", "browser-use", "computer_use", "computer-use", "computer"}
+VISUAL_VALIDATION_PASSED = {"passed", "pass", "accepted", "accept", "ok"}
 
 
 class CodexSupervisorMcpAPI:
@@ -833,6 +835,7 @@ def _artifact_preflight(
     required_prerequisites = list(GATE_PREREQUISITES.get(gate, ()))
     present, missing_paths = _planning_artifact_roles(planning_artifacts)
     screenshot_paths, missing_screenshot_paths = _valid_screenshot_paths(screenshots)
+    visual_validation = _visual_validation_evidence(screenshots, required=user_facing)
     gate_statuses = _latest_gate_statuses(state, run_id=run_id, task_id=task_id)
     accepted_prerequisites = [
         prereq for prereq in required_prerequisites
@@ -861,6 +864,7 @@ def _artifact_preflight(
                 "user_facing": user_facing,
                 "screenshots": screenshot_paths,
                 "missing_screenshot_paths": missing_screenshot_paths,
+                "visual_validation": visual_validation,
             }
         return {
             "status": "ok",
@@ -878,6 +882,7 @@ def _artifact_preflight(
             "user_facing": user_facing,
             "screenshots": screenshot_paths,
             "missing_screenshot_paths": missing_screenshot_paths,
+            "visual_validation": visual_validation,
         }
 
     missing = [role for role in required if role not in present]
@@ -885,6 +890,8 @@ def _artifact_preflight(
         missing.append("screenshots")
     elif missing_screenshot_paths:
         missing.append("screenshots")
+    if user_facing and screenshot_paths and visual_validation["status"] != "ok":
+        missing.append("visual_validation")
 
     blocked = bool(missing or missing_prerequisites)
     if missing_prerequisites:
@@ -910,6 +917,7 @@ def _artifact_preflight(
         "user_facing": user_facing,
         "screenshots": screenshot_paths,
         "missing_screenshot_paths": missing_screenshot_paths,
+        "visual_validation": visual_validation,
     }
 
 
@@ -1001,8 +1009,100 @@ def _valid_screenshot_paths(
         if not path.exists() or not path.is_file():
             missing.append(str(path))
             continue
+        if _image_format(path) is None:
+            missing.append(f"{path}:invalid-image")
+            continue
         valid.append(str(path))
     return valid, missing
+
+
+def _visual_validation_evidence(
+    screenshots: list[dict[str, Any]],
+    *,
+    required: bool,
+) -> dict[str, Any]:
+    if not screenshots:
+        return {
+            "status": "blocked" if required else "not_required",
+            "reason": "no_visual_evidence" if required else "no_screenshots_supplied",
+            "evidence": [],
+            "failures": [],
+            "allowed_sources": sorted(VISUAL_VALIDATION_SOURCES),
+        }
+
+    evidence: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
+    for index, screenshot in enumerate(screenshots, start=1):
+        path_value = screenshot.get("path")
+        path = Path(str(path_value)).expanduser() if path_value else None
+        source = _normalise_visual_source(
+            screenshot.get("source")
+            or screenshot.get("captured_by")
+            or screenshot.get("tool")
+        )
+        validation = screenshot.get("validation")
+        validation_payload = validation if isinstance(validation, dict) else {}
+        validation_status = _normalise_validation_status(
+            screenshot.get("validation_status")
+            or validation_payload.get("status")
+            or validation_payload.get("result")
+        )
+        validation_notes = str(
+            screenshot.get("validation_notes")
+            or validation_payload.get("notes")
+            or screenshot.get("note")
+            or ""
+        ).strip()
+        image_format = _image_format(path) if path is not None and path.exists() and path.is_file() else None
+        item = {
+            "index": index,
+            "path": str(path) if path is not None else "<missing-path>",
+            "source": source,
+            "validation_status": validation_status,
+            "image_format": image_format,
+            "validation_notes_present": bool(validation_notes),
+        }
+        if image_format is None:
+            failures.append({**item, "reason": "invalid_or_missing_image"})
+        if source not in VISUAL_VALIDATION_SOURCES:
+            failures.append({**item, "reason": "missing_or_unsupported_capture_source"})
+        if validation_status not in VISUAL_VALIDATION_PASSED:
+            failures.append({**item, "reason": "visual_review_not_passed"})
+        evidence.append(item)
+
+    return {
+        "status": "blocked" if failures else "ok",
+        "reason": "visual_validation_failed" if failures else "visual_validation_ok",
+        "evidence": evidence,
+        "failures": failures,
+        "allowed_sources": sorted(VISUAL_VALIDATION_SOURCES),
+    }
+
+
+def _normalise_visual_source(value: Any) -> str:
+    return str(value or "").strip().lower().replace(" ", "_")
+
+
+def _normalise_validation_status(value: Any) -> str:
+    return str(value or "").strip().lower().replace(" ", "_")
+
+
+def _image_format(path: Path | None) -> str | None:
+    if path is None:
+        return None
+    try:
+        header = path.read_bytes()[:32]
+    except OSError:
+        return None
+    if header.startswith(b"\x89PNG\r\n\x1a\n") and header[12:16] == b"IHDR":
+        return "png"
+    if header.startswith(b"\xff\xd8\xff"):
+        return "jpeg"
+    if header.startswith((b"GIF87a", b"GIF89a")):
+        return "gif"
+    if header.startswith(b"RIFF") and header[8:12] == b"WEBP":
+        return "webp"
+    return None
 
 
 def _maybe_artifact(payload: dict[str, Any]) -> PlanningArtifact | None:
@@ -1025,6 +1125,28 @@ def _maybe_screenshot(payload: dict[str, Any]) -> ScreenshotArtifact | None:
         path=Path(str(path)).expanduser(),
         label=str(payload.get("label") or Path(str(path)).stem),
         note=str(payload.get("note") or ""),
+        source=_normalise_visual_source(
+            payload.get("source")
+            or payload.get("captured_by")
+            or payload.get("tool")
+        ),
+        validation_status=_normalise_validation_status(
+            payload.get("validation_status")
+            or (
+                payload.get("validation", {}).get("status")
+                if isinstance(payload.get("validation"), dict)
+                else ""
+            )
+        ),
+        validation_notes=str(
+            payload.get("validation_notes")
+            or (
+                payload.get("validation", {}).get("notes")
+                if isinstance(payload.get("validation"), dict)
+                else ""
+            )
+            or ""
+        ),
     )
 
 

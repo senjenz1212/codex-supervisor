@@ -27,7 +27,7 @@ Source PRD: `docs/prd/dual-agent-slice0-reality-check-prd.md`
 | P5 artifact exposure guardrail | `test_p5_artifact_redaction_covers_markdown_and_gate_logs` | Covered |
 | P6 test coverage gate | `test_p6_test_coverage_gate_asks_one_bounded_followup_for_code_without_tests`, `test_p6_test_coverage_gate_passes_when_test_file_changed` | Covered |
 | P7 Telegram rate limit and batching | `test_p7_telegram_batches_fyis_but_sends_alerts_approvals_and_milestones` | Covered |
-| P8 computer-use validation smoke | Manual/live smoke only; intentionally not in deterministic suite | Deferred |
+| P8 computer-use validation evidence gate | `test_codex_supervisor_mcp_blocks_user_facing_gate_without_visual_validation`, `test_codex_supervisor_mcp_accepts_user_facing_gate_with_screenshots`, `test_export_dual_agent_run_artifacts_copies_screenshots_and_writes_manifest` require valid screenshot files, Browser/Computer Use provenance, passed visual review metadata, and exported evidence | Covered at evidence boundary |
 | P9 ChatGPT mobile control smoke | Manual/live smoke only; intentionally not in deterministic suite | Deferred |
 | P10 parallel isolation | `test_p10_parallel_isolation_requires_task_prefix_and_unique_worktree`, `test_p10_fails_on_shared_worktree_or_ambiguous_telegram` | Covered |
 | P11 claim verification | `test_p11_claim_verification_flags_unverified_agent_claims` | Covered |
@@ -81,8 +81,10 @@ re-run `start_dual_agent_gate` with corrective input.
 
 ## Deferred Live Checks
 
-- P8 requires a deterministic local GUI or browser target and should not block
-  non-GUI delivery.
+- P8 now blocks user-facing strict gates unless Codex supplies visual evidence
+  captured through Browser or Computer Use and marks the visual review as passed.
+  The remaining live check is whether Codex actually captures the UI correctly
+  for a given product surface; the supervisor enforces the evidence contract.
 - P9 requires Sam's phone and connected-host setup; it is a product-surface
   smoke check, not a hard-stop probe.
 - Day 0 cockpit ADR selects current Cortex as the first cockpit target; later

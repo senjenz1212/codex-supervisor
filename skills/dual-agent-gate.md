@@ -86,10 +86,14 @@ For each major decision gate:
     auto-exports readable Markdown artifacts into
     `docs/dual-agent/<task_id>/`; call `export_gate_artifacts` manually only to
     refresh or add external evidence.
-12. For user-facing UI or visual changes, Codex should capture screenshots
-    through Browser or Computer Use, call the outcome-review gate with
-    `user_facing=True`, and pass screenshots as
-    `screenshots=[{"path": "...", "label": "...", "note": "..."}]`, and include
+12. For user-facing UI or visual changes, Codex must capture screenshots through
+    Browser or Computer Use, review the visual state against the acceptance
+    criteria, call the outcome-review gate with `user_facing=True`, and pass
+    visual evidence as
+    `screenshots=[{"path": "...", "label": "...", "note": "...", "source": "computer_use", "validation": {"status": "passed", "notes": "..."}}]`.
+    `source` must be `computer_use` or `browser`, and `validation.status` must
+    be passed/accepted/ok. Strict user-facing gates block with
+    `visual_validation` if this provenance and review evidence is missing. Include
     the generated `screenshots.md` plus code diff and test output in the final
     outcome-review gate. Do not accept a user-facing change on code/tests alone
     when the visual state is inspectable.
@@ -114,7 +118,9 @@ For each major decision gate:
   interaction record. Use `transcript.md` when raw ledger detail is needed.
 - Store visual evidence under `docs/dual-agent/<task_id>/screenshots/` through
   `export_gate_artifacts`; review `screenshots.md` together with code, tests,
-  and gate transcript before final acceptance.
+  and gate transcript before final acceptance. A screenshot file alone is not
+  enough for `user_facing=True`; the gate requires Browser/Computer Use source
+  metadata and an explicit passed visual validation.
 
 ## Stop Conditions
 

@@ -31,6 +31,8 @@ def test_dual_agent_skill_uses_desktop_chat_when_telegram_is_absent():
     assert "`--permission-mode bypassPermissions`" in text
     assert "screenshots.md" in text
     assert "Browser or Computer Use" in text
+    assert "`source` must be `computer_use` or `browser`" in text
+    assert "`visual_validation`" in text
     assert "code diff and test output" in text
     assert "Do not accept a user-facing change on code/tests alone" in text
 
@@ -70,4 +72,7 @@ def test_new_chat_how_to_covers_dual_agent_handoff_flow():
     assert "gate_prerequisites_missing" in text
     assert "required_artifacts_missing" in text
     assert "user_facing=True" in text
+    assert '"source": "computer_use"' in text
+    assert '"status": "passed"' in text
+    assert "passed visual validation status" in text
     assert "poll_resume_signal" in text

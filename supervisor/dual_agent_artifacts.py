@@ -22,6 +22,9 @@ class ScreenshotArtifact:
     path: str | Path
     label: str
     note: str = ""
+    source: str = ""
+    validation_status: str = ""
+    validation_notes: str = ""
 
 
 def export_dual_agent_run_artifacts(
@@ -60,7 +63,7 @@ def export_dual_agent_run_artifacts(
     files[6].write_text(_gate_markdown("Outcome Review Gate", by_gate.get("outcome_review", ())), encoding="utf-8")
     files[7].write_text(_interactions_markdown(run_id, task_id, events), encoding="utf-8")
     files[8].write_text(_transcript_markdown(run_id, task_id, events), encoding="utf-8")
-    return DualAgentArtifactExport(status="ok", output_dir=out_dir, files=(*files, *tuple(path for path, _, _ in screenshot_files)))
+    return DualAgentArtifactExport(status="ok", output_dir=out_dir, files=(*files, *tuple(path for path, _ in screenshot_files)))
 
 
 def default_dual_agent_artifact_dir(cwd: str | Path, task_id: str) -> Path:
@@ -350,8 +353,8 @@ def _issues_markdown(events: list[dict[str, Any]]) -> str:
 def _copy_screenshots(
     output_dir: Path,
     screenshots: tuple[ScreenshotArtifact, ...],
-) -> list[tuple[Path, str, str]]:
-    copied: list[tuple[Path, str, str]] = []
+) -> list[tuple[Path, ScreenshotArtifact]]:
+    copied: list[tuple[Path, ScreenshotArtifact]] = []
     if not screenshots:
         return copied
     screenshot_dir = output_dir / "screenshots"
@@ -365,11 +368,21 @@ def _copy_screenshots(
         filename = f"{index:02d}-{_safe_path_component(label).lower()}{suffix}"
         target = screenshot_dir / filename
         target.write_bytes(source.read_bytes())
-        copied.append((target, label, _clean_text(screenshot.note)))
+        copied.append((
+            target,
+            ScreenshotArtifact(
+                path=target,
+                label=label,
+                note=_clean_text(screenshot.note),
+                source=_clean_text(screenshot.source),
+                validation_status=_clean_text(screenshot.validation_status),
+                validation_notes=_clean_text(screenshot.validation_notes),
+            ),
+        ))
     return copied
 
 
-def _screenshots_markdown(screenshots: list[tuple[Path, str, str]]) -> str:
+def _screenshots_markdown(screenshots: list[tuple[Path, ScreenshotArtifact]]) -> str:
     lines = [
         "# Screenshots",
         "",
@@ -384,7 +397,8 @@ def _screenshots_markdown(screenshots: list[tuple[Path, str, str]]) -> str:
         ])
         return "\n".join(lines)
 
-    for path, label, note in screenshots:
+    for path, screenshot in screenshots:
+        label = screenshot.label
         rel = f"screenshots/{path.name}"
         lines.extend([
             f"## {label}",
@@ -392,8 +406,17 @@ def _screenshots_markdown(screenshots: list[tuple[Path, str, str]]) -> str:
             f"![{label}]({rel})",
             "",
         ])
-        if note:
-            lines.extend([note, ""])
+        metadata = []
+        if screenshot.source:
+            metadata.append(f"- source: `{screenshot.source}`")
+        if screenshot.validation_status:
+            metadata.append(f"- validation_status: `{screenshot.validation_status}`")
+        if metadata:
+            lines.extend(metadata + [""])
+        if screenshot.note:
+            lines.extend([screenshot.note, ""])
+        if screenshot.validation_notes:
+            lines.extend(["Validation notes:", "", screenshot.validation_notes, ""])
     return "\n".join(lines)
 
 
@@ -446,6 +469,7 @@ def _artifact_rigor_markdown(value: Any) -> str:
         "user_facing",
         "screenshots",
         "missing_screenshot_paths",
+        "visual_validation",
     ]:
         if key not in value:
             continue

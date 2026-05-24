@@ -68,6 +68,14 @@ async def _maybe_await(value):
     return value
 
 
+def _tiny_png() -> bytes:
+    return (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+        b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02"
+        b"\x00\x00\x00\x90wS\xde"
+    )
+
+
 def _write_planning_artifacts(tmp_path: Path, *, include_implementation_plan: bool = True) -> list[dict]:
     artifact_dir = tmp_path / "docs" / "dual-agent" / "gate-1"
     artifact_dir.mkdir(parents=True)
@@ -341,7 +349,7 @@ async def test_codex_supervisor_mcp_accepts_user_facing_gate_with_screenshots(tm
     _write_accepted_gate(state, gate="implementation_plan")
     _write_accepted_gate(state, gate="execution")
     screenshot = tmp_path / "final-state.png"
-    screenshot.write_bytes(b"fake-png")
+    screenshot.write_bytes(_tiny_png())
 
     def fake_runner(argv, **kwargs):
         return subprocess.CompletedProcess(
@@ -373,13 +381,71 @@ async def test_codex_supervisor_mcp_accepts_user_facing_gate_with_screenshots(tm
             "path": str(screenshot),
             "label": "Final state",
             "note": "Captured by Codex before outcome review.",
+            "source": "computer_use",
+            "validation": {
+                "status": "passed",
+                "notes": "Codex reviewed the captured UI state against the acceptance criteria.",
+            },
         }],
     ))
 
     assert result["status"] == "accepted"
     assert result["artifact_rigor"]["status"] == "ok"
+    assert result["artifact_rigor"]["visual_validation"]["status"] == "ok"
     assert "docs/dual-agent/gate-1/screenshots.md" in result["artifact_export"]["files"]
     assert "docs/dual-agent/gate-1/screenshots/01-final-state.png" in result["artifact_export"]["files"]
+
+
+@pytest.mark.asyncio
+async def test_codex_supervisor_mcp_blocks_user_facing_gate_without_visual_validation(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
+
+    state = State(str(tmp_path / "state.db"))
+    planning_artifacts = _write_planning_artifacts(tmp_path)
+    _write_accepted_gate(state, gate="prd_review")
+    _write_accepted_gate(state, gate="issues_review")
+    _write_accepted_gate(state, gate="tdd_review")
+    _write_accepted_gate(state, gate="implementation_plan")
+    _write_accepted_gate(state, gate="execution")
+    screenshot = tmp_path / "final-state.png"
+    screenshot.write_bytes(_tiny_png())
+
+    def fake_runner(argv, **kwargs):
+        raise AssertionError("user-facing gate must block before Claude without visual validation")
+
+    server = build_codex_supervisor_mcp_server(
+        _cfg(tmp_path),
+        state,
+        mcp_cls=_FakeMCP,
+        runner=fake_runner,
+    )
+
+    result = await _maybe_await(server.tools["start_dual_agent_gate"](
+        task_id="gate-1",
+        run_id="run-1",
+        gate="outcome_review",
+        instruction="Review the user-facing implementation outcome.",
+        cwd=str(tmp_path),
+        planning_artifacts=planning_artifacts,
+        user_facing=True,
+        screenshots=[{
+            "path": str(screenshot),
+            "label": "Final state",
+            "note": "Screenshot without Browser/Computer Use validation metadata.",
+        }],
+    ))
+
+    assert result["status"] == "blocked"
+    assert result["artifact_rigor"]["missing_artifacts"] == ["visual_validation"]
+    assert result["artifact_rigor"]["visual_validation"]["status"] == "blocked"
+    reasons = {
+        failure["reason"]
+        for failure in result["artifact_rigor"]["visual_validation"]["failures"]
+    }
+    assert reasons == {
+        "missing_or_unsupported_capture_source",
+        "visual_review_not_passed",
+    }
 
 
 @pytest.mark.asyncio
