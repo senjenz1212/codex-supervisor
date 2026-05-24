@@ -229,6 +229,9 @@ def test_export_dual_agent_run_artifacts_includes_artifact_rigor_details(tmp_pat
                 "required_artifacts": ["prd", "tdd_plan", "grill_findings", "issues"],
                 "present_artifacts": ["prd"],
                 "missing_artifacts": ["tdd_plan", "grill_findings", "issues"],
+                "required_prerequisite_gates": ["prd_review", "issues_review", "tdd_review"],
+                "accepted_prerequisite_gates": ["prd_review"],
+                "missing_prerequisite_gates": ["issues_review", "tdd_review"],
                 "user_facing": True,
                 "screenshots": [],
             },
@@ -249,6 +252,9 @@ def test_export_dual_agent_run_artifacts_includes_artifact_rigor_details(tmp_pat
     assert "- reason: `required_artifacts_missing`" in outcome_review
     assert "- required_artifacts: `prd`, `tdd_plan`, `grill_findings`, `issues`" in outcome_review
     assert "- missing_artifacts: `tdd_plan`, `grill_findings`, `issues`" in outcome_review
+    assert "- required_prerequisite_gates: `prd_review`, `issues_review`, `tdd_review`" in outcome_review
+    assert "- accepted_prerequisite_gates: `prd_review`" in outcome_review
+    assert "- missing_prerequisite_gates: `issues_review`, `tdd_review`" in outcome_review
     assert "- user_facing: `True`" in outcome_review
 
 

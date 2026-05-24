@@ -33,6 +33,14 @@ The `prd-to-tdd` workflow includes the two `grill-with-docs` gates. Do not
 advance from PRD to TDD, or from TDD to implementation, until the corresponding
 grill findings are resolved or explicitly waived in the artifact.
 
+The supervisor ledger enforces the gate sequence in strict mode. Before
+`implementation_plan`, the ledger must already contain accepted `prd_review`,
+`issues_review`, and `tdd_review` results for the same `run_id` and `task_id`.
+Before `execution`, it must contain accepted `implementation_plan`. Before
+`outcome_review`, it must contain accepted `execution`. If this chain is
+missing, `start_dual_agent_gate` returns `gate_prerequisites_missing` and does
+not launch Claude Code.
+
 When calling `start_dual_agent_gate`, pass the current PRD/TDD/grill/issue
 documents through `planning_artifacts` with `mutable_by_worker=false`, and keep
 `artifact_policy="strict"` unless the user explicitly approves relaxing the

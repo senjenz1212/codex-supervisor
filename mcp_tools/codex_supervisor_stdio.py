@@ -40,9 +40,19 @@ DEFAULT_CODEX_MODEL = "gpt-5.5"
 DEFAULT_CODEX_REASONING_EFFORT = "xhigh"
 STRICT_ARTIFACT_GATES = {"implementation_plan", "execution", "outcome_review"}
 STRICT_ARTIFACT_REQUIREMENTS = {
+    "prd_review": ("prd",),
+    "issues_review": ("prd", "issues", "grill_findings"),
+    "tdd_review": ("prd", "issues", "tdd_plan", "grill_findings"),
     "implementation_plan": ("prd", "tdd_plan", "grill_findings", "issues"),
     "execution": ("prd", "tdd_plan", "grill_findings", "issues", "implementation_plan"),
     "outcome_review": ("prd", "tdd_plan", "grill_findings", "issues", "implementation_plan"),
+}
+GATE_PREREQUISITES = {
+    "issues_review": ("prd_review",),
+    "tdd_review": ("prd_review", "issues_review"),
+    "implementation_plan": ("prd_review", "issues_review", "tdd_review"),
+    "execution": ("implementation_plan",),
+    "outcome_review": ("execution",),
 }
 RELAXED_ARTIFACT_POLICIES = {"relaxed", "audit", "off"}
 
@@ -84,6 +94,9 @@ class CodexSupervisorMcpAPI:
         screenshots: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         artifact_preflight = _artifact_preflight(
+            state=self.state,
+            run_id=run_id,
+            task_id=task_id,
             gate=str(gate),
             planning_artifacts=planning_artifacts or [],
             artifact_policy=artifact_policy,
@@ -172,6 +185,9 @@ class CodexSupervisorMcpAPI:
         screenshots: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         artifact_preflight = _artifact_preflight(
+            state=self.state,
+            run_id=run_id,
+            task_id=task_id,
             gate=str(gate),
             planning_artifacts=planning_artifacts or [],
             artifact_policy=artifact_policy,
@@ -764,7 +780,7 @@ def _artifact_blocked_payload(
         "outcome": None,
         "escalation": {
             "type": "artifact_rigor",
-            "reason": "required_artifacts_missing",
+            "reason": str(artifact_preflight.get("reason") or "required_artifacts_missing"),
             "details": artifact_preflight,
         },
         "artifact_rigor": artifact_preflight,
@@ -803,6 +819,9 @@ def _gate_round_from_payload(payload: dict[str, Any]) -> GateRound:
 
 def _artifact_preflight(
     *,
+    state: State,
+    run_id: str,
+    task_id: str,
     gate: str,
     planning_artifacts: list[dict[str, Any]],
     artifact_policy: str,
@@ -811,8 +830,18 @@ def _artifact_preflight(
 ) -> dict[str, Any]:
     policy = str(artifact_policy or "strict").strip().lower()
     required = list(STRICT_ARTIFACT_REQUIREMENTS.get(gate, ()))
+    required_prerequisites = list(GATE_PREREQUISITES.get(gate, ()))
     present, missing_paths = _planning_artifact_roles(planning_artifacts)
     screenshot_paths, missing_screenshot_paths = _valid_screenshot_paths(screenshots)
+    gate_statuses = _latest_gate_statuses(state, run_id=run_id, task_id=task_id)
+    accepted_prerequisites = [
+        prereq for prereq in required_prerequisites
+        if gate_statuses.get(prereq) == "accepted"
+    ]
+    missing_prerequisites = [
+        prereq for prereq in required_prerequisites
+        if gate_statuses.get(prereq) != "accepted"
+    ]
 
     if policy != "strict":
         if policy not in RELAXED_ARTIFACT_POLICIES:
@@ -825,6 +854,10 @@ def _artifact_preflight(
                 "present_artifacts": sorted(present),
                 "missing_artifacts": [],
                 "missing_artifact_paths": missing_paths,
+                "required_prerequisite_gates": required_prerequisites,
+                "accepted_prerequisite_gates": accepted_prerequisites,
+                "missing_prerequisite_gates": missing_prerequisites,
+                "gate_statuses": gate_statuses,
                 "user_facing": user_facing,
                 "screenshots": screenshot_paths,
                 "missing_screenshot_paths": missing_screenshot_paths,
@@ -838,6 +871,10 @@ def _artifact_preflight(
             "present_artifacts": sorted(present),
             "missing_artifacts": [role for role in required if role not in present],
             "missing_artifact_paths": missing_paths,
+            "required_prerequisite_gates": required_prerequisites,
+            "accepted_prerequisite_gates": accepted_prerequisites,
+            "missing_prerequisite_gates": missing_prerequisites,
+            "gate_statuses": gate_statuses,
             "user_facing": user_facing,
             "screenshots": screenshot_paths,
             "missing_screenshot_paths": missing_screenshot_paths,
@@ -849,19 +886,54 @@ def _artifact_preflight(
     elif missing_screenshot_paths:
         missing.append("screenshots")
 
+    blocked = bool(missing or missing_prerequisites)
+    if missing_prerequisites:
+        reason = "gate_prerequisites_missing"
+    elif missing:
+        reason = "required_artifacts_missing"
+    else:
+        reason = "required_artifacts_present"
+
     return {
-        "status": "blocked" if missing else "ok",
-        "reason": "required_artifacts_missing" if missing else "required_artifacts_present",
+        "status": "blocked" if blocked else "ok",
+        "reason": reason,
         "gate": gate,
         "artifact_policy": policy,
         "required_artifacts": required,
         "present_artifacts": sorted(present),
         "missing_artifacts": missing,
         "missing_artifact_paths": missing_paths,
+        "required_prerequisite_gates": required_prerequisites,
+        "accepted_prerequisite_gates": accepted_prerequisites,
+        "missing_prerequisite_gates": missing_prerequisites,
+        "gate_statuses": gate_statuses,
         "user_facing": user_facing,
         "screenshots": screenshot_paths,
         "missing_screenshot_paths": missing_screenshot_paths,
     }
+
+
+def _latest_gate_statuses(
+    state: State,
+    *,
+    run_id: str,
+    task_id: str,
+) -> dict[str, str]:
+    statuses: dict[str, str] = {}
+    for row in state.read_dual_agent_gate_events(run_id):
+        if row["kind"] != "dual_agent_gate_result":
+            continue
+        try:
+            payload = json.loads(row["payload_json"] or "{}")
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(payload, dict) or str(payload.get("task_id") or "") != task_id:
+            continue
+        gate = str(payload.get("gate") or "")
+        status = str(payload.get("status") or "")
+        if gate and status:
+            statuses[gate] = status
+    return statuses
 
 
 def _planning_artifact_roles(

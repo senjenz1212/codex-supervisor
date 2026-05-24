@@ -19,6 +19,10 @@ def test_dual_agent_skill_uses_desktop_chat_when_telegram_is_absent():
     assert "artifact_policy=\"strict\"" in text
     assert "user_facing=True" in text
     assert "required_artifacts_missing" in text
+    assert "accepted `prd_review`" in text
+    assert "`issues_review`, and `tdd_review`" in text
+    assert "accepted `execution`" in text
+    assert "gate_prerequisites_missing" in text
     assert "export_gate_artifacts" in text
     assert "docs/dual-agent/<task_id>/" in text
     assert "`--tools default`" in text

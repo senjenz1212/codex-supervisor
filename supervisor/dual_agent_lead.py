@@ -26,6 +26,7 @@ HANDOFF_PACKET_SCHEMA_VERSION = "dual-agent-handoff/v1"
 GateName = Literal[
     "intent",
     "prd_review",
+    "issues_review",
     "tdd_review",
     "implementation_plan",
     "execution",
