@@ -23,6 +23,11 @@ from .dual_agent import (
     evaluate_deadlock_budget,
     evaluate_worker_invocation,
 )
+from .agent_mailbox import (
+    AgentMailboxMessage,
+    outcome_confidence_report,
+    planning_artifact_refs,
+)
 from .dual_agent_lead import (
     GateName,
     LeadInvocationRequest,
@@ -36,6 +41,11 @@ from .dual_agent_lead import (
     invoke_claude_lead,
     verify_planning_artifact_boundaries,
     write_handoff_packet,
+)
+from .planning_validator import (
+    planning_validation_probe,
+    required_planning_kinds_for_gate,
+    validate_planning_artifacts,
 )
 from .state import State
 
@@ -149,6 +159,7 @@ def run_dual_agent_gate(
     spec: DualAgentGateSpec,
     *,
     runner: Runner = subprocess.run,
+    state: State | None = None,
 ) -> DualAgentGateResult:
     packet_path = handoff_packet_path(spec.cwd, spec.task_id)
     lock_path = _handoff_lock_path(spec)
@@ -163,7 +174,75 @@ def run_dual_agent_gate(
             attempts=0,
         )
     try:
+        planning_result = validate_planning_artifacts(
+            spec.planning_artifacts,
+            required_kinds=required_planning_kinds_for_gate(spec.gate),
+            gate=spec.gate,
+        )
+        if state is not None:
+            state.write_event(
+                run_id=spec.run_id,
+                source="dual_agent",
+                kind="dual_agent_planning_validation",
+                payload=planning_result.to_event_payload(
+                    task_id=spec.task_id,
+                    gate=spec.gate,
+                ),
+            )
+        planning_probe = planning_validation_probe(planning_result)
+        if not planning_result.ok:
+            if state is not None:
+                state.write_event(
+                    run_id=spec.run_id,
+                    source="dual_agent",
+                    kind="dual_agent_interaction_message",
+                    payload=AgentMailboxMessage(
+                        task_id=spec.task_id,
+                        gate=spec.gate,
+                        sender="supervisor",
+                        recipient="codex",
+                        message_type="gate_blocked_before_worker",
+                        content="Planning validation blocked the gate before Claude Code /lead was invoked.",
+                        confidence=None,
+                        artifacts=planning_artifact_refs(spec.planning_artifacts),
+                        metadata={
+                            "planning_validation": planning_result.to_event_payload(
+                                task_id=spec.task_id,
+                                gate=spec.gate,
+                            ),
+                        },
+                    ).to_event_payload(),
+                )
+            return DualAgentGateResult(
+                task_id=spec.task_id,
+                gate=spec.gate,
+                status="blocked",
+                probes={"P_planning": planning_probe},
+                handoff_packet_path=packet_path,
+                attempts=0,
+            )
+
         request = _lead_request(spec)
+        if state is not None:
+            state.write_event(
+                run_id=spec.run_id,
+                source="dual_agent",
+                kind="dual_agent_interaction_message",
+                payload=AgentMailboxMessage(
+                    task_id=spec.task_id,
+                    gate=spec.gate,
+                    sender="codex",
+                    recipient="claude_code",
+                    message_type="gate_request",
+                    content=spec.instruction,
+                    artifacts=planning_artifact_refs(spec.planning_artifacts),
+                    metadata={
+                        "expected_specialists": list(spec.expected_specialists),
+                        "expected_decisions": list(spec.expected_decisions),
+                        "expected_objections": list(spec.expected_objections),
+                    },
+                ).to_event_payload(),
+            )
         packet_path = write_handoff_packet(
             request,
             planning_artifacts=spec.planning_artifacts,
@@ -188,10 +267,46 @@ def run_dual_agent_gate(
             lead_result = invoke_claude_lead(corrective, runner=runner)
             attempts = 2
 
+        if state is not None:
+            outcome_payload = (
+                lead_result.outcome.model_dump()
+                if lead_result.outcome is not None else None
+            )
+            state.write_event(
+                run_id=spec.run_id,
+                source="dual_agent",
+                kind="dual_agent_interaction_message",
+                payload=AgentMailboxMessage(
+                    task_id=spec.task_id,
+                    gate=spec.gate,
+                    sender="claude_code",
+                    recipient="codex",
+                    message_type="gate_response",
+                    content=(
+                        lead_result.outcome.summary
+                        if lead_result.outcome is not None
+                        else lead_result.probe.reason
+                    ),
+                    confidence=outcome_confidence_report(
+                        outcome_payload,
+                        source="claude_code",
+                    ),
+                    artifacts=planning_artifact_refs(spec.planning_artifacts),
+                    metadata={
+                        "probe": lead_result.probe.__dict__,
+                        "attempts": attempts,
+                        "model": lead_result.model,
+                        "cost_usd": lead_result.cost_usd,
+                        "outcome": outcome_payload,
+                    },
+                ).to_event_payload(),
+            )
+
         probes: dict[str, ProbeResult] = {}
         probes["P2"] = _p2_from_lead_result(lead_result)
         probes["P3"] = lead_result.probe
         probes["P1"] = verify_planning_artifact_boundaries(packet_path)
+        probes["P_planning"] = planning_probe
 
         status = "accepted" if all(p.ok for p in probes.values()) else "blocked"
         return DualAgentGateResult(
@@ -229,7 +344,7 @@ async def run_dual_agent_gate_with_escalation(
     notifier: Any,
     runner: Runner = subprocess.run,
 ) -> DualAgentGateResult:
-    result = run_dual_agent_gate(spec, runner=runner)
+    result = run_dual_agent_gate(spec, runner=runner, state=state)
     if result.status == "accepted":
         return result
     escalation = await _maybe_request_validation_escalation(
@@ -272,7 +387,7 @@ def resume_pending_gates(
             )
         if signal is None:
             continue
-        results.append(run_dual_agent_gate(spec, runner=runner))
+        results.append(run_dual_agent_gate(spec, runner=runner, state=state))
     return results
 
 

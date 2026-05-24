@@ -13,6 +13,9 @@ from supervisor.state import State
 from supervisor.target.types import ScopeContract
 
 
+FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "planning_validator"
+
+
 def _cfg(tmp_path) -> Config:
     return Config(**{
         "target": {
@@ -80,18 +83,32 @@ def _write_planning_artifacts(tmp_path: Path, *, include_implementation_plan: bo
     artifact_dir = tmp_path / "docs" / "dual-agent" / "gate-1"
     artifact_dir.mkdir(parents=True)
     files = {
-        "prd": artifact_dir / "prd.md",
-        "tdd_plan": artifact_dir / "tdd.md",
-        "grill_findings": artifact_dir / "grill-findings.md",
-        "issues": artifact_dir / "issues.md",
+        "prd": (artifact_dir / "prd.md", FIXTURE_ROOT / "prd" / "good.md"),
+        "tdd_plan": (artifact_dir / "tdd.md", FIXTURE_ROOT / "tdd_plan" / "good.md"),
+        "grill_findings": (
+            artifact_dir / "grill-findings.md",
+            FIXTURE_ROOT / "grill_findings" / "good.md",
+        ),
+        "issues": (artifact_dir / "issues.md", FIXTURE_ROOT / "issues" / "good.md"),
     }
     if include_implementation_plan:
-        files["implementation_plan"] = artifact_dir / "implementation-plan.md"
+        files["implementation_plan"] = (
+            artifact_dir / "implementation-plan.md",
+            FIXTURE_ROOT / "implementation_plan" / "good.md",
+        )
     artifacts = []
-    for kind, path in files.items():
-        path.write_text(f"# {kind}\n", encoding="utf-8")
+    for kind, (path, fixture) in files.items():
+        path.write_text(fixture.read_text(encoding="utf-8"), encoding="utf-8")
         artifacts.append({"path": str(path), "kind": kind, "mutable_by_worker": False})
     return artifacts
+
+
+def _stub_prd_artifact() -> list[dict]:
+    return [{
+        "path": str(FIXTURE_ROOT / "prd" / "sneaky.md"),
+        "kind": "prd",
+        "mutable_by_worker": False,
+    }]
 
 
 def _write_accepted_gate(
@@ -165,6 +182,8 @@ async def test_codex_supervisor_mcp_exposes_dual_agent_gate_tools(tmp_path):
         "read_gate_transcript",
         "read_outcome",
         "export_gate_artifacts",
+        "run_dual_agent_workflow",
+        "read_dual_agent_workflow_resume_prompt",
         "check_budget",
         "escalate_deadlock",
         "poll_resume_signal",
@@ -239,6 +258,80 @@ async def test_codex_supervisor_mcp_blocks_strict_outcome_gate_without_required_
         task_id="gate-1",
     ))
     assert outcome["result"]["artifact_rigor"]["missing_artifacts"] == result["artifact_rigor"]["missing_artifacts"]
+
+
+@pytest.mark.asyncio
+async def test_start_dual_agent_gate_relaxed_artifact_policy_still_blocks_stub_planning(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
+    from supervisor.dual_agent_runner import build_lead_replay_stdout
+
+    state = State(str(tmp_path / "state.db"))
+    runner_calls = []
+
+    def fake_runner(argv, **kwargs):
+        runner_calls.append(argv)
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=build_lead_replay_stdout(_outcome_block()),
+            stderr="",
+        )
+
+    server = build_codex_supervisor_mcp_server(
+        _cfg(tmp_path),
+        state,
+        mcp_cls=_FakeMCP,
+        runner=fake_runner,
+    )
+
+    result = await _maybe_await(server.tools["start_dual_agent_gate"](
+        task_id="gate-1",
+        run_id="run-1",
+        gate="prd_review",
+        instruction="Review PRD.",
+        cwd=str(tmp_path),
+        planning_artifacts=_stub_prd_artifact(),
+        artifact_policy="relaxed",
+    ))
+
+    assert runner_calls == []
+    assert result["status"] == "blocked"
+    assert result["artifact_rigor"]["reason"] == "artifact_policy_relaxed"
+    assert result["probes"]["P_planning"]["reason"] == "planning_validation_failed"
+
+
+@pytest.mark.asyncio
+async def test_read_gate_transcript_includes_planning_validation_receipts(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
+
+    state = State(str(tmp_path / "state.db"))
+    server = build_codex_supervisor_mcp_server(
+        _cfg(tmp_path),
+        state,
+        mcp_cls=_FakeMCP,
+        runner=lambda argv, **kwargs: subprocess.CompletedProcess(argv, 0, stdout="", stderr=""),
+    )
+
+    result = await _maybe_await(server.tools["start_dual_agent_gate"](
+        task_id="gate-1",
+        run_id="run-1",
+        gate="prd_review",
+        instruction="Review PRD.",
+        cwd=str(tmp_path),
+        planning_artifacts=_stub_prd_artifact(),
+        artifact_policy="relaxed",
+    ))
+    transcript = await _maybe_await(server.tools["read_gate_transcript"](
+        run_id="run-1",
+        task_id="gate-1",
+    ))
+
+    assert result["status"] == "blocked"
+    assert transcript["status"] == "ok"
+    assert transcript["planning_validations"]
+    receipt = transcript["planning_validations"][0]
+    assert receipt["verdict"] == "blocked"
+    assert "PRD-002" in receipt["checks"]
 
 
 @pytest.mark.asyncio

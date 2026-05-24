@@ -15,11 +15,34 @@ from pathlib import Path
 from typing import Any, Callable
 
 from supervisor.config import Config
+from supervisor.agent_mailbox import (
+    AgentMailboxMessage,
+    codex_confidence_report,
+    outcome_confidence_report,
+    planning_artifact_refs,
+)
+from supervisor.cursor_agent import (
+    CursorInvocationRequest,
+    CursorInvocationResult,
+    CursorRunner,
+    cursor_accepts,
+    invoke_cursor_agent,
+)
 from supervisor.dual_agent import GateRound, evaluate_deadlock_budget
 from supervisor.dual_agent_artifacts import (
     ScreenshotArtifact,
     default_dual_agent_artifact_dir,
     export_dual_agent_run_artifacts,
+)
+from supervisor.dual_agent_workflow import (
+    WORKFLOW_GATES,
+    claude_accepts,
+    ensure_workflow_source_artifacts,
+    mandatory_artifact_status,
+    verify_workflow_claims,
+    workflow_visual_evidence_policy,
+    workflow_milestone_text,
+    workflow_resume_prompt,
 )
 from supervisor.dual_agent_runner import (
     DualAgentGateResult,
@@ -67,12 +90,14 @@ class CodexSupervisorMcpAPI:
         *,
         runner: Runner = subprocess.run,
         codex_runner: Runner = subprocess.run,
+        cursor_runner: CursorRunner | None = None,
         notifier: Any | None = None,
     ) -> None:
         self.cfg = cfg
         self.state = state
         self.runner = runner
         self.codex_runner = codex_runner
+        self.cursor_runner = cursor_runner or invoke_cursor_agent
         self.notifier = notifier
 
     async def start_dual_agent_gate(
@@ -149,7 +174,7 @@ class CodexSupervisorMcpAPI:
                 runner=self.runner,
             )
         else:
-            result = run_dual_agent_gate(spec, runner=self.runner)
+            result = run_dual_agent_gate(spec, runner=self.runner, state=self.state)
         payload = _gate_result_payload(result)
         payload["artifact_rigor"] = artifact_preflight
         self.state.write_event(
@@ -249,6 +274,450 @@ class CodexSupervisorMcpAPI:
             screenshots=screenshots,
         )
         return payload
+
+    async def run_dual_agent_workflow(
+        self,
+        *,
+        cwd: str,
+        task_id: str,
+        run_id: str,
+        intent: str,
+        user_facing: bool = False,
+        max_rounds_per_gate: int = 5,
+        quality: str = "best",
+        timeout_s: int = 900,
+        planning_artifacts: list[dict[str, Any]] | None = None,
+        screenshots: list[dict[str, Any]] | None = None,
+        verified_claims: list[str] | None = None,
+        cursor_review: bool = False,
+        cursor_model: str | None = None,
+    ) -> dict[str, Any]:
+        max_rounds = max(1, int(max_rounds_per_gate))
+        screenshot_payloads = screenshots or []
+        source_artifacts = ensure_workflow_source_artifacts(
+            cwd=cwd,
+            task_id=task_id,
+            intent=intent,
+        )
+        gate_artifacts = _merge_planning_artifacts(
+            list(source_artifacts.planning_artifacts),
+            planning_artifacts or [],
+        )
+        visual_policy = workflow_visual_evidence_policy(
+            intent=intent,
+            task_id=task_id,
+            user_facing=user_facing,
+            planning_artifacts=gate_artifacts,
+        )
+        effective_user_facing = bool(visual_policy["required"])
+        self.state.upsert_dual_agent_workflow(
+            run_id=run_id,
+            task_id=task_id,
+            cwd=str(Path(cwd).expanduser()),
+            intent=intent,
+            current_gate=WORKFLOW_GATES[0],
+            status="running",
+            max_rounds_per_gate=max_rounds,
+            user_facing=effective_user_facing,
+        )
+        notifier = self._notifier()
+        await self._emit_workflow_milestone(
+            notifier=notifier,
+            run_id=run_id,
+            task_id=task_id,
+            milestone="started",
+        )
+
+        steps: list[dict[str, Any]] = []
+        final_payload: dict[str, Any] | None = None
+        for gate in WORKFLOW_GATES:
+            self.state.update_dual_agent_workflow(
+                run_id=run_id,
+                task_id=task_id,
+                status="running",
+                current_gate=gate,
+            )
+            await self._emit_workflow_milestone(
+                notifier=notifier,
+                run_id=run_id,
+                task_id=task_id,
+                milestone="gate_started",
+                gate=gate,
+            )
+            accepted = False
+            attempts = 0
+            corrective_context = ""
+            gate_rounds: list[GateRound] = []
+            for round_index in range(1, max_rounds + 1):
+                attempts = round_index
+                payload = await self.start_dual_agent_gate(
+                    task_id=task_id,
+                    run_id=run_id,
+                    gate=gate,  # type: ignore[arg-type]
+                    instruction=_workflow_gate_instruction(
+                        gate=gate,
+                        intent=intent,
+                        corrective_context=corrective_context,
+                    ),
+                    cwd=cwd,
+                    expected_specialists=[],
+                    expected_decisions=[],
+                    expected_objections=[],
+                    quality=quality,
+                    timeout_s=timeout_s,
+                    planning_artifacts=gate_artifacts,
+                    artifact_policy="strict",
+                    user_facing=effective_user_facing and gate == "outcome_review",
+                    screenshots=screenshot_payloads,
+                )
+                final_payload = payload
+                claim_probe = None
+                cursor_result: CursorInvocationResult | None = None
+                if gate == "outcome_review" and payload.get("status") == "accepted":
+                    claim_probe = verify_workflow_claims(
+                        outcome_payload=payload.get("outcome"),
+                        user_facing=effective_user_facing,
+                        screenshots=screenshot_payloads,
+                        verified_claims=verified_claims,
+                    )
+                    payload["claim_verification"] = asdict(claim_probe)
+                if cursor_review and payload.get("status") == "accepted":
+                    self._write_interaction_message(
+                        run_id=run_id,
+                        message=AgentMailboxMessage(
+                            task_id=task_id,
+                            gate=gate,
+                            round_index=round_index,
+                            sender="codex",
+                            recipient="cursor",
+                            message_type="review_request",
+                            content=_cursor_review_instruction(
+                                gate=gate,
+                                intent=intent,
+                                corrective_context=corrective_context,
+                            ),
+                            artifacts=planning_artifact_refs(gate_artifacts),
+                            metadata={
+                                "claude_outcome": payload.get("outcome"),
+                                "review_policy": "Cursor reviews only after Claude gate acceptance.",
+                            },
+                        ),
+                    )
+                    cursor_result = self.cursor_runner(
+                        CursorInvocationRequest(
+                            task_id=task_id,
+                            gate=gate,  # type: ignore[arg-type]
+                            instruction=_cursor_review_instruction(
+                                gate=gate,
+                                intent=intent,
+                                corrective_context=corrective_context,
+                            ),
+                            cwd=cwd,
+                            claude_outcome=payload.get("outcome")
+                            if isinstance(payload.get("outcome"), dict)
+                            else None,
+                            planning_artifacts=tuple(
+                                artifact
+                                for artifact in (
+                                    _maybe_artifact(item)
+                                    for item in gate_artifacts
+                                )
+                                if artifact is not None
+                            ),
+                            quality=quality,
+                            model=cursor_model,
+                            timeout_s=timeout_s,
+                        )
+                    )
+                    cursor_payload = _cursor_result_payload(cursor_result)
+                    payload["cursor_review"] = cursor_payload
+                    self._write_interaction_message(
+                        run_id=run_id,
+                        message=AgentMailboxMessage(
+                            task_id=task_id,
+                            gate=gate,
+                            round_index=round_index,
+                            sender="cursor",
+                            recipient="codex",
+                            message_type="review_response",
+                            content=(
+                                cursor_result.outcome.summary
+                                if cursor_result.outcome is not None
+                                else cursor_result.probe.reason
+                            ),
+                            confidence=outcome_confidence_report(
+                                cursor_result.outcome.model_dump()
+                                if cursor_result.outcome is not None else None,
+                                source="cursor",
+                            ),
+                            artifacts=planning_artifact_refs(gate_artifacts),
+                            metadata={
+                                "cursor_review": cursor_payload,
+                            },
+                        ),
+                    )
+                    self.state.write_event(
+                        run_id=run_id,
+                        source="dual_agent",
+                        kind="tri_agent_cursor_review",
+                        payload={
+                            "task_id": task_id,
+                            "gate": gate,
+                            "cursor_review": cursor_payload,
+                        },
+                    )
+
+                claude_decision = (
+                    "accept"
+                    if payload.get("status") == "accepted" and claude_accepts(payload.get("outcome"))
+                    else "revise"
+                )
+                cursor_decision = (
+                    "accept"
+                    if not cursor_review or cursor_accepts(cursor_result)
+                    else "revise"
+                )
+                codex_decision = (
+                    "accept"
+                    if (
+                        payload.get("status") == "accepted"
+                        and (claim_probe is None or claim_probe.ok)
+                        and cursor_decision == "accept"
+                    )
+                    else "deny" if payload.get("status") == "blocked"
+                    else "revise"
+                )
+                objection = (
+                    "both agents accepted"
+                    if (
+                        codex_decision == "accept"
+                        and claude_decision == "accept"
+                        and cursor_decision == "accept"
+                    )
+                    else _workflow_round_objection(
+                        payload=payload,
+                        claim_probe=asdict(claim_probe) if claim_probe is not None else None,
+                        cursor_review=_cursor_result_payload(cursor_result)
+                        if cursor_result is not None else None,
+                        round_index=round_index,
+                        max_rounds=max_rounds,
+                    )
+                )
+                round_result = self.record_gate_round(
+                    run_id=run_id,
+                    task_id=task_id,
+                    gate=gate,  # type: ignore[arg-type]
+                    round_index=round_index,
+                    codex_decision=codex_decision,
+                    claude_decision=claude_decision,
+                    codex_confidence=0.95 if codex_decision == "accept" else 0.7,
+                    claude_confidence=_outcome_confidence(payload),
+                    objection=objection,
+                    cwd=cwd,
+                )
+                self._write_interaction_message(
+                    run_id=run_id,
+                    message=AgentMailboxMessage(
+                        task_id=task_id,
+                        gate=gate,
+                        round_index=round_index,
+                        sender="codex",
+                        recipient="supervisor",
+                        message_type="gate_decision",
+                        content=objection,
+                        confidence=codex_confidence_report(
+                            decision=codex_decision,
+                            gate_status=str(payload.get("status") or ""),
+                            probe_statuses={
+                                probe_id: str(probe.get("status") or "")
+                                for probe_id, probe in (payload.get("probes") or {}).items()
+                                if isinstance(probe, dict)
+                            },
+                            claim_verification=asdict(claim_probe) if claim_probe is not None else None,
+                            cursor_review=_cursor_result_payload(cursor_result)
+                            if cursor_result is not None else None,
+                        ),
+                        artifacts=planning_artifact_refs(gate_artifacts),
+                        metadata={
+                            "codex_decision": codex_decision,
+                            "claude_decision": claude_decision,
+                            "cursor_decision": cursor_decision,
+                            "round_event_id": round_result["event_id"],
+                        },
+                    ),
+                )
+                gate_rounds.append(_gate_round_from_payload(round_result["round"]))
+
+                if payload.get("status") == "blocked":
+                    self.state.record_dual_agent_workflow_step(
+                        run_id=run_id,
+                        task_id=task_id,
+                        gate=gate,
+                        status="blocked",
+                        attempt_count=attempts,
+                        latest_event_id=int(round_result["event_id"]),
+                    )
+                    self.state.update_dual_agent_workflow(
+                        run_id=run_id,
+                        task_id=task_id,
+                        status="blocked",
+                        current_gate=gate,
+                    )
+                    await self._emit_workflow_milestone(
+                        notifier=notifier,
+                        run_id=run_id,
+                        task_id=task_id,
+                        milestone="gate_blocked",
+                        gate=gate,
+                    )
+                    await self._emit_workflow_milestone(
+                        notifier=notifier,
+                        run_id=run_id,
+                        task_id=task_id,
+                        milestone="needs_user_input",
+                        gate=gate,
+                    )
+                    return self._workflow_result(
+                        run_id=run_id,
+                        task_id=task_id,
+                        status="blocked",
+                        current_gate=gate,
+                        steps=steps + [_workflow_step_dict(gate, "blocked", attempts)],
+                        final_gate_result=payload,
+                        cwd=cwd,
+                        screenshots=screenshot_payloads,
+                        visual_evidence_policy=visual_policy,
+                    )
+
+                if codex_decision == "accept" and claude_decision == "accept":
+                    accepted = True
+                    self.state.record_dual_agent_workflow_step(
+                        run_id=run_id,
+                        task_id=task_id,
+                        gate=gate,
+                        status="accepted",
+                        attempt_count=attempts,
+                        latest_event_id=int(round_result["event_id"]),
+                    )
+                    step = _workflow_step_dict(gate, "accepted", attempts)
+                    steps.append(step)
+                    await self._emit_workflow_milestone(
+                        notifier=notifier,
+                        run_id=run_id,
+                        task_id=task_id,
+                        milestone="gate_accepted",
+                        gate=gate,
+                    )
+                    break
+
+                final_payload = self._write_workflow_gate_override(
+                    run_id=run_id,
+                    task_id=task_id,
+                    gate=gate,
+                    attempts=attempts,
+                    reason="claim_verification_failed"
+                    if claim_probe is not None and not claim_probe.ok
+                    else "agents_not_converged",
+                    source_payload=payload,
+                    claim_probe=asdict(claim_probe) if claim_probe is not None else None,
+                )
+                corrective_context = objection
+
+            if not accepted:
+                if notifier is not None:
+                    escalation = await request_deadlock_escalation(
+                        state=self.state,
+                        notifier=notifier,
+                        run_id=run_id,
+                        task_id=task_id,
+                        gate=gate,  # type: ignore[arg-type]
+                        rounds=gate_rounds,
+                        per_gate_cap=max_rounds,
+                        task_budget=max_rounds,
+                    )
+                    if final_payload is not None:
+                        final_payload["workflow_deadlock_escalation"] = redact(asdict(escalation))
+                self.state.record_dual_agent_workflow_step(
+                    run_id=run_id,
+                    task_id=task_id,
+                    gate=gate,
+                    status="blocked",
+                    attempt_count=attempts,
+                    latest_event_id=self.state.latest_event_id(run_id),
+                )
+                self.state.update_dual_agent_workflow(
+                    run_id=run_id,
+                    task_id=task_id,
+                    status="blocked",
+                    current_gate=gate,
+                )
+                await self._emit_workflow_milestone(
+                    notifier=notifier,
+                    run_id=run_id,
+                    task_id=task_id,
+                        milestone="v5_exhausted",
+                        gate=gate,
+                    )
+                await self._emit_workflow_milestone(
+                    notifier=notifier,
+                    run_id=run_id,
+                    task_id=task_id,
+                    milestone="needs_user_input",
+                    gate=gate,
+                )
+                return self._workflow_result(
+                    run_id=run_id,
+                    task_id=task_id,
+                    status="blocked",
+                    current_gate=gate,
+                    steps=steps + [_workflow_step_dict(gate, "blocked", attempts)],
+                    final_gate_result=final_payload,
+                    cwd=cwd,
+                    screenshots=screenshot_payloads,
+                    visual_evidence_policy=visual_policy,
+                )
+
+        artifact_status = mandatory_artifact_status(cwd=cwd, task_id=task_id)
+        status = "accepted" if artifact_status["status"] == "ok" else "failed"
+        self.state.update_dual_agent_workflow(
+            run_id=run_id,
+            task_id=task_id,
+            status=status,
+            current_gate="outcome_review",
+        )
+        await self._emit_workflow_milestone(
+            notifier=notifier,
+            run_id=run_id,
+            task_id=task_id,
+            milestone="accepted" if status == "accepted" else "failed",
+        )
+        if status != "accepted":
+            await self._emit_workflow_milestone(
+                notifier=notifier,
+                run_id=run_id,
+                task_id=task_id,
+                milestone="needs_user_input",
+            )
+        return self._workflow_result(
+            run_id=run_id,
+            task_id=task_id,
+            status=status,
+            current_gate="outcome_review",
+            steps=steps,
+            final_gate_result=final_payload,
+            cwd=cwd,
+            screenshots=screenshot_payloads,
+            mandatory_artifacts=artifact_status,
+            visual_evidence_policy=visual_policy,
+        )
+
+    def read_dual_agent_workflow_resume_prompt(
+        self,
+        *,
+        run_id: str,
+        task_id: str,
+    ) -> dict[str, Any]:
+        return workflow_resume_prompt(self.state, run_id=run_id, task_id=task_id)
 
     def record_gate_round(
         self,
@@ -365,11 +834,20 @@ class CodexSupervisorMcpAPI:
         rows = self.state._conn.execute(
             """SELECT * FROM events
                WHERE run_id=? AND source='dual_agent'
-                 AND kind IN ('dual_agent_gate_round', 'dual_agent_gate_result')
+                 AND kind IN (
+                   'dual_agent_gate_round',
+                   'dual_agent_gate_result',
+                   'dual_agent_planning_validation',
+                   'dual_agent_interaction_message',
+                   'tri_agent_cursor_review'
+                 )
                ORDER BY event_id ASC""",
             (run_id,),
         ).fetchall()
         rounds: list[dict[str, Any]] = []
+        planning_validations: list[dict[str, Any]] = []
+        interactions: list[dict[str, Any]] = []
+        cursor_reviews: list[dict[str, Any]] = []
         latest_result: dict[str, Any] | None = None
         latest_result_event_id: int | None = None
         for row in rows:
@@ -384,16 +862,38 @@ class CodexSupervisorMcpAPI:
                     "gate": payload.get("gate"),
                     **round_payload,
                 }))
+            elif row["kind"] == "dual_agent_planning_validation":
+                planning_validations.append(redact({
+                    "event_id": row["event_id"],
+                    "occurred_at": row["ts"],
+                    **payload,
+                }))
+            elif row["kind"] == "dual_agent_interaction_message":
+                interactions.append(redact({
+                    "event_id": row["event_id"],
+                    "occurred_at": row["ts"],
+                    **payload,
+                }))
+            elif row["kind"] == "tri_agent_cursor_review":
+                cursor_reviews.append(redact({
+                    "event_id": row["event_id"],
+                    "occurred_at": row["ts"],
+                    "gate": payload.get("gate"),
+                    "cursor_review": payload.get("cursor_review"),
+                }))
             elif row["kind"] == "dual_agent_gate_result":
                 latest_result = redact(payload)
                 latest_result_event_id = int(row["event_id"])
 
-        if not rounds and latest_result is None:
+        if not rounds and not planning_validations and latest_result is None:
             return {
                 "status": "not_found",
                 "run_id": run_id,
                 "task_id": task_id,
                 "rounds": [],
+                "planning_validations": [],
+                "interactions": [],
+                "cursor_reviews": [],
                 "result": None,
                 "handoff_packet_path": None,
             }
@@ -402,6 +902,9 @@ class CodexSupervisorMcpAPI:
             "run_id": run_id,
             "task_id": task_id,
             "rounds": rounds,
+            "planning_validations": planning_validations,
+            "interactions": interactions,
+            "cursor_reviews": cursor_reviews,
             "result_event_id": latest_result_event_id,
             "result": latest_result,
             "handoff_packet_path": (
@@ -487,6 +990,116 @@ class CodexSupervisorMcpAPI:
             "stderr_tail": (completed.stderr or "")[-4000:],
         })
 
+    async def _emit_workflow_milestone(
+        self,
+        *,
+        notifier: Any | None,
+        run_id: str,
+        task_id: str,
+        milestone: str,
+        gate: str | None = None,
+    ) -> None:
+        text = workflow_milestone_text(task_id=task_id, milestone=milestone, gate=gate)
+        self.state.write_event(
+            run_id=run_id,
+            source="dual_agent",
+            kind="dual_agent_workflow_milestone",
+            payload={
+                "task_id": task_id,
+                "milestone": milestone,
+                "gate": gate,
+                "text": text,
+            },
+        )
+        if notifier is None:
+            return
+        send = getattr(notifier, "send_message", None)
+        if send is not None:
+            await send(text)
+
+    def _write_interaction_message(
+        self,
+        *,
+        run_id: str,
+        message: AgentMailboxMessage,
+    ) -> int:
+        return self.state.write_event(
+            run_id=run_id,
+            source="dual_agent",
+            kind="dual_agent_interaction_message",
+            payload=message.to_event_payload(),
+        )
+
+    def _write_workflow_gate_override(
+        self,
+        *,
+        run_id: str,
+        task_id: str,
+        gate: str,
+        attempts: int,
+        reason: str,
+        source_payload: dict[str, Any],
+        claim_probe: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        payload = {
+            "task_id": task_id,
+            "gate": gate,
+            "status": "blocked",
+            "attempts": attempts,
+            "handoff_packet_path": source_payload.get("handoff_packet_path"),
+            "probes": source_payload.get("probes") or {},
+            "outcome": source_payload.get("outcome"),
+            "cursor_review": source_payload.get("cursor_review"),
+            "claim_verification": claim_probe,
+            "escalation": {
+                "type": "workflow_lifecycle",
+                "reason": reason,
+                "claim_verification": claim_probe,
+            },
+            "artifact_rigor": source_payload.get("artifact_rigor"),
+        }
+        event_id = self.state.write_event(
+            run_id=run_id,
+            source="dual_agent",
+            kind="dual_agent_gate_result",
+            payload=payload,
+        )
+        return {**payload, "event_id": event_id}
+
+    def _workflow_result(
+        self,
+        *,
+        run_id: str,
+        task_id: str,
+        status: str,
+        current_gate: str,
+        steps: list[dict[str, Any]],
+        final_gate_result: dict[str, Any] | None,
+        cwd: str,
+        screenshots: list[dict[str, Any]],
+        visual_evidence_policy: dict[str, Any],
+        mandatory_artifacts: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        artifact_export = self.export_gate_artifacts(
+            run_id=run_id,
+            task_id=task_id,
+            cwd=cwd,
+            screenshots=screenshots,
+        )
+        mandatory = mandatory_artifacts or mandatory_artifact_status(cwd=cwd, task_id=task_id)
+        return redact({
+            "status": status,
+            "run_id": run_id,
+            "task_id": task_id,
+            "current_gate": current_gate,
+            "steps": steps,
+            "final_gate_result": final_gate_result,
+            "visual_evidence_policy": visual_evidence_policy,
+            "artifact_export": artifact_export,
+            "mandatory_artifacts": mandatory,
+            "resume": workflow_resume_prompt(self.state, run_id=run_id, task_id=task_id),
+        })
+
     def _gate_spec(
         self,
         *,
@@ -543,6 +1156,7 @@ def build_codex_supervisor_mcp_server(
     mcp_cls: Any | None = None,
     runner: Runner = subprocess.run,
     codex_runner: Runner = subprocess.run,
+    cursor_runner: CursorRunner | None = None,
     notifier: Any | None = None,
 ) -> Any:
     if mcp_cls is None:
@@ -554,6 +1168,7 @@ def build_codex_supervisor_mcp_server(
         state,
         runner=runner,
         codex_runner=codex_runner,
+        cursor_runner=cursor_runner,
         notifier=notifier,
     )
     mcp = mcp_cls("codex_supervisor")
@@ -715,6 +1330,42 @@ def build_codex_supervisor_mcp_server(
         )
 
     @mcp.tool()
+    async def run_dual_agent_workflow(
+        cwd: str,
+        task_id: str,
+        run_id: str,
+        intent: str,
+        user_facing: bool = False,
+        max_rounds_per_gate: int = 5,
+        quality: str = "best",
+        timeout_s: int = 900,
+        planning_artifacts: list[dict[str, Any]] | None = None,
+        screenshots: list[dict[str, Any]] | None = None,
+        verified_claims: list[str] | None = None,
+        cursor_review: bool = False,
+        cursor_model: str | None = None,
+    ) -> dict[str, Any]:
+        return await tool_api.run_dual_agent_workflow(
+            cwd=cwd,
+            task_id=task_id,
+            run_id=run_id,
+            intent=intent,
+            user_facing=user_facing,
+            max_rounds_per_gate=max_rounds_per_gate,
+            quality=quality,
+            timeout_s=timeout_s,
+            planning_artifacts=planning_artifacts,
+            screenshots=screenshots,
+            verified_claims=verified_claims,
+            cursor_review=cursor_review,
+            cursor_model=cursor_model,
+        )
+
+    @mcp.tool()
+    def read_dual_agent_workflow_resume_prompt(run_id: str, task_id: str) -> dict[str, Any]:
+        return tool_api.read_dual_agent_workflow_resume_prompt(run_id=run_id, task_id=task_id)
+
+    @mcp.tool()
     def start_codex_session(
         prompt: str,
         cwd: str,
@@ -817,6 +1468,120 @@ def _gate_round_from_payload(payload: dict[str, Any]) -> GateRound:
         claude_confidence=float(payload["claude_confidence"]),
         objection=payload.get("objection"),
     )
+
+
+def _workflow_gate_instruction(
+    *,
+    gate: str,
+    intent: str,
+    corrective_context: str,
+) -> str:
+    lines = [
+        f"Supervisor-owned workflow gate: {gate}.",
+        "",
+        "Intent:",
+        intent.strip(),
+        "",
+        "Review this gate against the current source artifacts and return a typed dual_agent_outcome.",
+        "Use decisions/objections to say whether the gate should accept, revise, or deny.",
+    ]
+    if corrective_context:
+        lines.extend([
+            "",
+            "Corrective context from the previous round:",
+            corrective_context.strip(),
+        ])
+    return "\n".join(lines)
+
+
+def _cursor_review_instruction(
+    *,
+    gate: str,
+    intent: str,
+    corrective_context: str,
+) -> str:
+    lines = [
+        f"Independently review the {gate} gate for this tri-agent workflow.",
+        "Accept only if the gate should advance after reading the artifacts and Claude outcome.",
+        "",
+        "Intent:",
+        intent.strip(),
+    ]
+    if corrective_context:
+        lines.extend([
+            "",
+            "Corrective context from the previous round:",
+            corrective_context.strip(),
+        ])
+    return "\n".join(lines)
+
+
+def _workflow_round_objection(
+    *,
+    payload: dict[str, Any],
+    claim_probe: dict[str, Any] | None,
+    cursor_review: dict[str, Any] | None,
+    round_index: int,
+    max_rounds: int,
+) -> str:
+    if payload.get("status") == "blocked":
+        escalation = payload.get("escalation") if isinstance(payload.get("escalation"), dict) else {}
+        return str(escalation.get("reason") or "gate blocked")
+    if claim_probe is not None and claim_probe.get("status") != "green":
+        return str(claim_probe.get("reason") or "claim verification failed")
+    if cursor_review is not None and not cursor_review.get("accepted"):
+        probe = cursor_review.get("probe") if isinstance(cursor_review.get("probe"), dict) else {}
+        reason = probe.get("reason") or "cursor reviewer did not accept"
+        return f"cursor_review_failed: {reason}"
+    if round_index >= max_rounds:
+        return "max_rounds_per_gate exhausted without both agents accepting"
+    return "agents have not both accepted yet; revise and continue"
+
+
+def _cursor_result_payload(result: CursorInvocationResult) -> dict[str, Any]:
+    return redact({
+        "accepted": cursor_accepts(result),
+        "probe": asdict(result.probe),
+        "outcome": result.outcome.model_dump() if result.outcome is not None else None,
+        "agent_id": result.agent_id,
+        "run_id": result.run_id,
+        "status": result.status,
+        "model": result.model,
+        "duration_ms": result.duration_ms,
+        "transcript_tail": result.transcript[-4000:],
+    })
+
+
+def _workflow_step_dict(gate: str, status: str, attempts: int) -> dict[str, Any]:
+    return {
+        "gate": gate,
+        "status": status,
+        "attempt_count": attempts,
+    }
+
+
+def _outcome_confidence(payload: dict[str, Any]) -> float:
+    outcome = payload.get("outcome") if isinstance(payload.get("outcome"), dict) else {}
+    try:
+        value = float(outcome.get("confidence"))
+    except (TypeError, ValueError):
+        return 0.7
+    return max(0.0, min(1.0, value))
+
+
+def _merge_planning_artifacts(
+    base: list[dict[str, Any]],
+    extra: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in [*base, *extra]:
+        key = (str(item.get("kind") or ""), str(item.get("path") or ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(item)
+    return merged
 
 
 def _artifact_preflight(

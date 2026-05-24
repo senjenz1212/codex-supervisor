@@ -167,6 +167,37 @@ CREATE TABLE IF NOT EXISTS run_watches (
   UNIQUE(chat_id, run_id)
 );
 CREATE INDEX IF NOT EXISTS idx_run_watches_run ON run_watches(run_id, status);
+
+CREATE TABLE IF NOT EXISTS dual_agent_workflows (
+  run_id              TEXT NOT NULL,
+  task_id             TEXT NOT NULL,
+  cwd                 TEXT NOT NULL,
+  intent              TEXT NOT NULL,
+  current_gate        TEXT,
+  status              TEXT NOT NULL,
+  max_rounds_per_gate INTEGER NOT NULL,
+  user_facing         INTEGER NOT NULL,
+  created_at          INTEGER NOT NULL,
+  updated_at          INTEGER NOT NULL,
+  PRIMARY KEY(run_id, task_id)
+);
+CREATE INDEX IF NOT EXISTS idx_dual_agent_workflows_status
+  ON dual_agent_workflows(status, updated_at);
+
+CREATE TABLE IF NOT EXISTS dual_agent_workflow_steps (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id         TEXT NOT NULL,
+  task_id        TEXT NOT NULL,
+  gate           TEXT NOT NULL,
+  status         TEXT NOT NULL,
+  attempt_count  INTEGER NOT NULL,
+  latest_event_id INTEGER,
+  created_at     INTEGER NOT NULL,
+  updated_at     INTEGER NOT NULL,
+  UNIQUE(run_id, task_id, gate)
+);
+CREATE INDEX IF NOT EXISTS idx_dual_agent_workflow_steps_task
+  ON dual_agent_workflow_steps(run_id, task_id, gate);
 """
 
 
@@ -333,7 +364,13 @@ class State:
             """SELECT event_id, ts, kind, payload_json
                FROM events
                WHERE run_id=?
-                 AND kind IN ('dual_agent_gate_round', 'dual_agent_gate_result')
+                 AND kind IN (
+                   'dual_agent_gate_round',
+                   'dual_agent_gate_result',
+                   'dual_agent_planning_validation',
+                   'dual_agent_interaction_message',
+                   'tri_agent_cursor_review'
+                 )
                ORDER BY event_id ASC""",
             (run_id,),
         ))
@@ -415,6 +452,127 @@ class State:
             (int(event_id), int(time.time()), int(time.time()), watch_id),
         )
         self._conn.commit()
+
+    # --- dual-agent workflow state ---
+    def upsert_dual_agent_workflow(
+        self,
+        *,
+        run_id: str,
+        task_id: str,
+        cwd: str,
+        intent: str,
+        current_gate: str | None,
+        status: str,
+        max_rounds_per_gate: int,
+        user_facing: bool,
+    ) -> None:
+        now = int(time.time())
+        self._conn.execute(
+            """INSERT INTO dual_agent_workflows(
+                   run_id, task_id, cwd, intent, current_gate, status,
+                   max_rounds_per_gate, user_facing, created_at, updated_at)
+               VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(run_id, task_id) DO UPDATE SET
+                   cwd=excluded.cwd,
+                   intent=excluded.intent,
+                   current_gate=excluded.current_gate,
+                   status=excluded.status,
+                   max_rounds_per_gate=excluded.max_rounds_per_gate,
+                   user_facing=excluded.user_facing,
+                   updated_at=excluded.updated_at""",
+            (
+                run_id,
+                task_id,
+                cwd,
+                intent,
+                current_gate,
+                status,
+                int(max_rounds_per_gate),
+                1 if user_facing else 0,
+                now,
+                now,
+            ),
+        )
+        self._conn.commit()
+
+    def update_dual_agent_workflow(
+        self,
+        *,
+        run_id: str,
+        task_id: str,
+        status: str | None = None,
+        current_gate: str | None = None,
+    ) -> None:
+        assignments = ["updated_at=?"]
+        params: list[Any] = [int(time.time())]
+        if status is not None:
+            assignments.append("status=?")
+            params.append(status)
+        if current_gate is not None:
+            assignments.append("current_gate=?")
+            params.append(current_gate)
+        params.extend([run_id, task_id])
+        self._conn.execute(
+            f"""UPDATE dual_agent_workflows
+                   SET {", ".join(assignments)}
+                 WHERE run_id=? AND task_id=?""",
+            params,
+        )
+        self._conn.commit()
+
+    def get_dual_agent_workflow(self, *, run_id: str, task_id: str) -> sqlite3.Row | None:
+        return self._conn.execute(
+            """SELECT * FROM dual_agent_workflows
+               WHERE run_id=? AND task_id=?""",
+            (run_id, task_id),
+        ).fetchone()
+
+    def record_dual_agent_workflow_step(
+        self,
+        *,
+        run_id: str,
+        task_id: str,
+        gate: str,
+        status: str,
+        attempt_count: int,
+        latest_event_id: int | None = None,
+    ) -> None:
+        now = int(time.time())
+        self._conn.execute(
+            """INSERT INTO dual_agent_workflow_steps(
+                   run_id, task_id, gate, status, attempt_count,
+                   latest_event_id, created_at, updated_at)
+               VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(run_id, task_id, gate) DO UPDATE SET
+                   status=excluded.status,
+                   attempt_count=excluded.attempt_count,
+                   latest_event_id=excluded.latest_event_id,
+                   updated_at=excluded.updated_at""",
+            (
+                run_id,
+                task_id,
+                gate,
+                status,
+                int(attempt_count),
+                latest_event_id,
+                now,
+                now,
+            ),
+        )
+        self._conn.commit()
+
+    def list_dual_agent_workflow_steps(
+        self,
+        *,
+        run_id: str,
+        task_id: str,
+    ) -> list[sqlite3.Row]:
+        return list(self._conn.execute(
+            """SELECT * FROM dual_agent_workflow_steps
+               WHERE run_id=? AND task_id=?
+               ORDER BY id ASC""",
+            (run_id, task_id),
+        ))
 
     # --- verdicts ---
     def write_verdict(self, *, run_id: str, phase: str, layer: str | None,

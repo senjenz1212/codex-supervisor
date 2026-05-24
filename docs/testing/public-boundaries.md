@@ -222,6 +222,15 @@ asks instead of silently blocking. `Continue` answers must be claimable exactly
 once before re-dispatching the matching gate. Paused dual-agent actions must
 emit at most one stale digest after the stale threshold and remain paused.
 
+## dual_agent_planning_validator
+
+Validate explicit dual-agent planning artifact paths through
+`supervisor.planning_validator` without live Claude, Cursor, Telegram, Browser,
+Computer Use, or LLM calls. Tests must prove good/stub/sneaky fixtures for PRD,
+issues, TDD plan, grill findings, and implementation plan produce replayable
+check IDs; implementation-plan traceability references must resolve to real PRD
+promise IDs and TDD test names.
+
 ## codex_supervisor_mcp
 
 Codex consumes supervisor control through the stdio MCP entrypoint

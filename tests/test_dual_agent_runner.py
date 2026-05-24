@@ -26,6 +26,9 @@ from supervisor.dual_agent_lead import OutcomeValidationPolicy, PlanningArtifact
 from supervisor.state import State
 
 
+FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "planning_validator"
+
+
 def _outcome_block(task_id: str = "gate-1", *, decision: str = "accept plan") -> str:
     payload = {
         "task_id": task_id,
@@ -42,6 +45,45 @@ def _outcome_block(task_id: str = "gate-1", *, decision: str = "accept plan") ->
         "claims": [],
     }
     return f"<dual_agent_outcome>{json.dumps(payload)}</dual_agent_outcome>"
+
+
+def _planning_artifact_fixture(kind: str, fixture_name: str = "good") -> PlanningArtifact:
+    return PlanningArtifact(
+        path=FIXTURE_ROOT / kind / f"{fixture_name}.md",
+        kind=kind,  # type: ignore[arg-type]
+        mutable_by_worker=False,
+    )
+
+
+def _good_planning_artifacts() -> tuple[PlanningArtifact, ...]:
+    return (
+        _planning_artifact_fixture("prd"),
+        _planning_artifact_fixture("issues"),
+        _planning_artifact_fixture("tdd_plan"),
+        _planning_artifact_fixture("grill_findings"),
+        _planning_artifact_fixture("implementation_plan"),
+    )
+
+
+def _write_good_planning_artifacts(tmp_path: Path) -> tuple[PlanningArtifact, ...]:
+    artifact_dir = tmp_path / "docs" / "dual-agent" / "gate-fixture" / "source"
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    mapping = {
+        "prd": "prd.md",
+        "issues": "issues.md",
+        "tdd_plan": "tdd.md",
+        "grill_findings": "grill-findings.md",
+        "implementation_plan": "implementation-plan.md",
+    }
+    artifacts = []
+    for kind, filename in mapping.items():
+        target = artifact_dir / filename
+        target.write_text(
+            (FIXTURE_ROOT / kind / "good.md").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        artifacts.append(PlanningArtifact(path=target, kind=kind))  # type: ignore[arg-type]
+    return tuple(artifacts)
 
 
 def test_p2_replay_fixture_family_exercises_large_stdout_without_truncation(tmp_path):
@@ -79,6 +121,36 @@ def test_p2_replay_fixture_family_exercises_large_stdout_without_truncation(tmp_
         assert result.probes["P2"].ok
         assert result.probes["P3"].ok
         assert result.probes["P2"].details["captured_bytes"] == fixture.stdout_path.stat().st_size
+
+
+def test_run_dual_agent_gate_blocks_stub_prd_before_claude_invocation(tmp_path):
+    calls = 0
+
+    def fake_runner(argv, **kwargs):
+        nonlocal calls
+        calls += 1
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=build_lead_replay_stdout("Should not run.\n" + _outcome_block()),
+            stderr="",
+        )
+
+    spec = DualAgentGateSpec(
+        task_id="gate-stub-prd",
+        run_id="run-planning",
+        gate="prd_review",
+        instruction="Review PRD.",
+        cwd=tmp_path,
+        planning_artifacts=(_planning_artifact_fixture("prd", "stub"),),
+    )
+
+    result = run_dual_agent_gate(spec, runner=fake_runner)
+
+    assert result.status == "blocked"
+    assert result.attempts == 0
+    assert result.probes["P_planning"].reason == "planning_validation_failed"
+    assert calls == 0
 
 
 @pytest.mark.asyncio
@@ -172,9 +244,7 @@ async def test_p4_deadlock_escalation_sends_telegram_prompt_and_callback_resolve
 
 
 def test_cs24_gate_runner_writes_handoff_invokes_lead_and_verifies_planning_boundaries(tmp_path):
-    prd = tmp_path / "docs" / "prd.md"
-    prd.parent.mkdir()
-    prd.write_text("# PRD\nOriginal.\n")
+    planning_artifacts = _write_good_planning_artifacts(tmp_path)
     stdout = build_lead_replay_stdout(
         "Lead reviewed packet.\n" + _outcome_block(decision="accept plan"),
         model="claude-opus-4-7",
@@ -189,7 +259,7 @@ def test_cs24_gate_runner_writes_handoff_invokes_lead_and_verifies_planning_boun
         gate="prd_review",
         instruction="Review the PRD packet.",
         cwd=tmp_path,
-        planning_artifacts=(PlanningArtifact(path=prd, kind="prd"),),
+        planning_artifacts=planning_artifacts,
         expected_specialists=("Planner",),
         expected_decisions=("accept plan",),
         expected_objections=(),
@@ -203,7 +273,7 @@ def test_cs24_gate_runner_writes_handoff_invokes_lead_and_verifies_planning_boun
     assert result.probes["P2"].ok
     assert result.probes["P3"].ok
     packet = json.loads(result.handoff_packet_path.read_text())
-    assert packet["planning_artifacts"][0]["path"] == "docs/prd.md"
+    assert packet["planning_artifacts"][0]["kind"] == "prd"
 
 
 def test_cs24_gate_runner_refuses_existing_handoff_lock_without_invoking_lead(tmp_path):
@@ -259,6 +329,7 @@ def test_cs24_gate_runner_removes_handoff_lock_after_success(tmp_path):
         gate="prd_review",
         instruction="Review PRD.",
         cwd=tmp_path,
+        planning_artifacts=_write_good_planning_artifacts(tmp_path),
         expected_specialists=("Planner",),
         expected_decisions=("accept plan",),
         expected_objections=(),
@@ -283,6 +354,7 @@ def test_cs24_gate_runner_removes_handoff_lock_after_blocked_worker_result(tmp_p
         gate="outcome_review",
         instruction="Review outcome.",
         cwd=tmp_path,
+        planning_artifacts=_write_good_planning_artifacts(tmp_path),
     )
 
     result = run_dual_agent_gate(spec, runner=fake_runner)
@@ -318,6 +390,7 @@ def test_cs24_gate_runner_retries_malformed_outcome_once_then_accepts(tmp_path):
         gate="outcome_review",
         instruction="Review the outcome.",
         cwd=tmp_path,
+        planning_artifacts=_write_good_planning_artifacts(tmp_path),
         expected_specialists=("Planner",),
         expected_decisions=("accept plan",),
         expected_objections=(),
@@ -350,6 +423,7 @@ def test_cs24_gate_runner_stops_sequence_on_blocked_gate(tmp_path):
             gate="prd_review",
             instruction="Review PRD.",
             cwd=tmp_path,
+            planning_artifacts=_write_good_planning_artifacts(tmp_path),
         ),
         DualAgentGateSpec(
             task_id="gate-never-runs",
@@ -421,6 +495,7 @@ async def test_blocked_gate_abort_policies_escalate_validation_failures(
         gate="outcome_review",
         instruction="Review outcome.",
         cwd=tmp_path,
+        planning_artifacts=_write_good_planning_artifacts(tmp_path),
         expected_specialists=("Planner",),
         expected_decisions=("accept plan",),
         expected_objections=(),
@@ -533,6 +608,7 @@ async def test_validation_failure_callback_resolves_retry_request(tmp_path):
             gate="outcome_review",
             instruction="Retry validation.",
             cwd=tmp_path,
+            planning_artifacts=_write_good_planning_artifacts(tmp_path),
             expected_specialists=("Planner",),
             expected_decisions=("accept plan",),
             expected_objections=(),
@@ -607,6 +683,7 @@ async def test_deadlock_continue_signal_is_claimed_once_and_redispatches_gate(tm
             gate="tdd_review",
             instruction="Resume the gate.",
             cwd=tmp_path,
+            planning_artifacts=_write_good_planning_artifacts(tmp_path),
             expected_specialists=("Planner",),
             expected_decisions=("accept plan",),
             expected_objections=(),

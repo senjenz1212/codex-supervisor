@@ -251,7 +251,23 @@ class Outcome(BaseModel):
     tests: list[str] | None = None
     test_status: Literal["passed", "failed", "unknown"] | None = None
     confidence: float | None = None
+    confidence_rationale: str | None = None
+    confidence_criteria: list[str] = Field(default_factory=list)
     claims: list[str] = Field(default_factory=list)
+
+    @field_validator("test_status", mode="before")
+    @classmethod
+    def _normalize_test_status(cls, value: Any) -> Any:
+        if not isinstance(value, str):
+            return value
+        normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
+        if normalized in {"pass", "passes", "passing"}:
+            return "passed"
+        if normalized in {"fail", "fails", "failing"}:
+            return "failed"
+        if normalized in {"not_run", "not_applicable", "n/a", "na", "none"}:
+            return "unknown"
+        return value
 
     @field_validator("confidence")
     @classmethod

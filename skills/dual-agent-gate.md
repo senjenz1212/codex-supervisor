@@ -14,11 +14,26 @@ Claude Code as the implementer.
 - `mcp__codex_supervisor__read_gate_transcript(run_id, task_id)`
 - `mcp__codex_supervisor__export_gate_artifacts(run_id, task_id, cwd, output_dir, screenshots)`
 - `mcp__codex_supervisor__start_codex_session(prompt, cwd, model, reasoning_effort, execute, timeout_s)`
+- `mcp__codex_supervisor__run_dual_agent_workflow(cwd, task_id, run_id, intent, user_facing, max_rounds_per_gate, quality, timeout_s, planning_artifacts, screenshots, verified_claims, cursor_review, cursor_model)`
+- `mcp__codex_supervisor__read_dual_agent_workflow_resume_prompt(run_id, task_id)`
 
 ## Gate Policy
 
 Codex owns PRD, TDD, and review gates. Claude Code owns implementation through
 `/lead`. Both agents participate at major decision points.
+
+Prefer `run_dual_agent_workflow` when the user wants the whole implementation
+process. It makes the supervisor own the lifecycle order, max-round cap,
+artifact generation, final artifact export, and final claim checks. Use the
+lower-level gate tools only when manually repairing, inspecting, or testing a
+single gate.
+
+Set `cursor_review=true` only when the user explicitly wants tri-agent review.
+In that mode Cursor is an independent reviewer/challenger. Claude Code remains
+the implementer through `/lead`; Cursor must return the same typed
+`dual_agent_outcome` contract and should not edit files. If Cursor does not
+accept, the supervisor treats the gate as not converged and applies the same
+max-round and escalation rules.
 
 Before implementation, Codex must run the repo's `prd-to-tdd` workflow, not an
 ad hoc PRD/TDD prompt. That workflow creates or updates durable artifacts:
@@ -47,8 +62,12 @@ documents through `planning_artifacts` with `mutable_by_worker=false`, and keep
 gate. Strict implementation, execution, and outcome-review gates require PRD,
 TDD, grill findings, issues, and implementation-plan artifacts as applicable;
 otherwise the tool returns `required_artifacts_missing` and does not launch
-Claude Code. This pins checksums in the handoff packet so Claude Code cannot
-silently rewrite the spec to match the implementation.
+Claude Code. The runner also enforces deterministic planning-substance checks
+below MCP preflight: stub, TBD, generated, unresolved-grill, or traceability-broken
+artifacts block before `/lead` is invoked, even when MCP artifact preflight is
+relaxed. This pins checksums in the handoff packet so Claude Code cannot
+silently rewrite the spec to match the implementation, and it records
+`dual_agent_planning_validation` receipts for later transcript review.
 Claude Code is launched in the same worktree with built-in tools enabled from
 the first gate (`--tools default`, `--permission-mode bypassPermissions`) so it
 can inspect files, run tests, and review diffs directly instead of relying only
@@ -86,10 +105,10 @@ For each major decision gate:
     auto-exports readable Markdown artifacts into
     `docs/dual-agent/<task_id>/`; call `export_gate_artifacts` manually only to
     refresh or add external evidence.
-12. For user-facing UI or visual changes, Codex must capture screenshots through
-    Browser or Computer Use, review the visual state against the acceptance
-    criteria, call the outcome-review gate with `user_facing=True`, and pass
-    visual evidence as
+12. For user-facing UI, Vela, Slack, Calendar, live-provider, or otherwise
+    visual changes, Codex must capture screenshots through Browser or Computer Use,
+    review the visible state against the acceptance criteria, call the
+    outcome-review gate with `user_facing=True`, and pass visual evidence as
     `screenshots=[{"path": "...", "label": "...", "note": "...", "source": "computer_use", "validation": {"status": "passed", "notes": "..."}}]`.
     `source` must be `computer_use` or `browser`, and `validation.status` must
     be passed/accepted/ok. Strict user-facing gates block with
@@ -97,6 +116,10 @@ For each major decision gate:
     the generated `screenshots.md` plus code diff and test output in the final
     outcome-review gate. Do not accept a user-facing change on code/tests alone
     when the visual state is inspectable.
+    `run_dual_agent_workflow` also auto-upgrades intents/artifacts mentioning
+    Vela, Slack, Calendar, screenshots, visual review, user-visible surfaces, or
+    live providers into visual-evidence-required mode, so omitting
+    `user_facing=True` no longer bypasses the screenshot gate.
 
 ## Defaults
 

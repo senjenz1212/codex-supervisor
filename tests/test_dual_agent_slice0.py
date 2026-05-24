@@ -299,6 +299,32 @@ def test_p3_worker_outcome_adapter_preserves_specialists_decisions_and_objection
     assert outcome.changed_files == ["supervisor/dual_agent.py", "tests/test_dual_agent_slice0.py"]
 
 
+def test_p3_worker_outcome_adapter_normalizes_live_test_status_aliases():
+    payload = {
+        "task_id": "slice0",
+        "summary": "Live SDK reviewer accepted.",
+        "specialists": [{"name": "Cursor Reviewer", "decision": "accept"}],
+        "decisions": ["accept"],
+        "objections": [],
+        "changed_files": [],
+        "tests": [],
+        "test_status": "pass",
+        "confidence": 0.91,
+    }
+    transcript = f"<dual_agent_outcome>{json.dumps(payload)}</dual_agent_outcome>"
+
+    result, outcome = evaluate_outcome_fidelity(
+        transcript,
+        expected_specialists=("Cursor Reviewer",),
+        expected_decisions=("accept",),
+        expected_objections=(),
+    )
+
+    assert result.ok
+    assert outcome is not None
+    assert outcome.test_status == "passed"
+
+
 def test_p3_fails_when_adapter_drops_worker_signal():
     payload = {
         "task_id": "slice0",

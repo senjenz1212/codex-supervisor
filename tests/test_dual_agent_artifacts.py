@@ -11,6 +11,9 @@ from supervisor.dual_agent_artifacts import ScreenshotArtifact, export_dual_agen
 from supervisor.state import State
 
 
+FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "planning_validator"
+
+
 def _state(tmp_path: Path) -> State:
     return State(str(tmp_path / "state.db"))
 
@@ -347,7 +350,7 @@ async def test_codex_supervisor_mcp_exports_artifacts_and_accepts_planning_artif
     artifact_dir = tmp_path / "docs" / "dual-agent" / "gate-1"
     artifact_dir.mkdir(parents=True)
     prd = artifact_dir / "prd.md"
-    prd.write_text("# PRD\n")
+    prd.write_text((FIXTURE_ROOT / "prd" / "good.md").read_text(encoding="utf-8"), encoding="utf-8")
     screenshot = tmp_path / "desktop.png"
     screenshot.write_bytes(
         b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"

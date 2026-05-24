@@ -175,6 +175,38 @@ def _interactions_markdown(run_id: str, task_id: str, events: list[dict[str, Any
 def _interaction_event_markdown(index: int, event: dict[str, Any]) -> str:
     title = _title_from_gate(event["gate"])
     payload = event["payload"]
+    if event["kind"] == "dual_agent_interaction_message":
+        confidence = payload.get("confidence") if isinstance(payload.get("confidence"), dict) else {}
+        return "\n".join([
+            f"## {index}. {title}",
+            "",
+            f"- event_id: `{event['event_id']}`",
+            f"- ts: `{event['ts']}`",
+            f"- interaction_type: `{payload.get('message_type')}`",
+            f"- sender: `{payload.get('sender')}`",
+            f"- recipient: `{payload.get('recipient')}`",
+            f"- round_index: `{payload.get('round_index')}`",
+            "",
+            "### Message",
+            "",
+            _text_or_none(payload.get("content")),
+            "",
+            "### Confidence",
+            "",
+            f"- value: `{confidence.get('value')}`",
+            f"- source: `{confidence.get('source')}`",
+            f"- rationale: {_text_or_none(confidence.get('rationale'))}",
+            "",
+            "Criteria:",
+            "",
+            _list_markdown(confidence.get("criteria")),
+            "",
+            "Evidence:",
+            "",
+            _list_markdown(confidence.get("evidence")),
+            "",
+        ])
+
     if event["kind"] == "dual_agent_gate_round":
         round_payload = payload.get("round") if isinstance(payload.get("round"), dict) else {}
         return "\n".join([
@@ -259,6 +291,35 @@ def _event_markdown(event: dict[str, Any]) -> str:
             "### Objection",
             "",
             _text_or_none(round_payload.get("objection")),
+            "",
+        ])
+        return "\n".join(lines)
+
+    if event["kind"] == "dual_agent_interaction_message":
+        confidence = payload.get("confidence") if isinstance(payload.get("confidence"), dict) else {}
+        lines.extend([
+            f"- message_type: `{payload.get('message_type')}`",
+            f"- sender: `{payload.get('sender')}`",
+            f"- recipient: `{payload.get('recipient')}`",
+            f"- round_index: `{payload.get('round_index')}`",
+            "",
+            "### Message",
+            "",
+            _text_or_none(payload.get("content")),
+            "",
+            "### Confidence",
+            "",
+            f"- value: `{confidence.get('value')}`",
+            f"- source: `{confidence.get('source')}`",
+            f"- rationale: {_text_or_none(confidence.get('rationale'))}",
+            "",
+            "### Criteria",
+            "",
+            _list_markdown(confidence.get("criteria")),
+            "",
+            "### Evidence",
+            "",
+            _list_markdown(confidence.get("evidence")),
             "",
         ])
         return "\n".join(lines)
