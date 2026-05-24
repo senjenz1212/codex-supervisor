@@ -1,7 +1,7 @@
-# Dual-Agent Artifacts: dual-agent-full-access-20260523-162230
+# Dual-Agent Artifacts: dual-agent-screenshot-artifacts-20260523-185133
 
-- run_id: `dual-agent-full-access-20260523-162230`
-- task_id: `dual-agent-full-access-20260523-162230`
+- run_id: `dual-agent-screenshot-artifacts-20260523-185133`
+- task_id: `dual-agent-screenshot-artifacts-20260523-185133`
 - source: supervisor SQLite event ledger
 
 ## Files

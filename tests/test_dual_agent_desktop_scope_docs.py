@@ -20,6 +20,10 @@ def test_dual_agent_skill_uses_desktop_chat_when_telegram_is_absent():
     assert "docs/dual-agent/<task_id>/" in text
     assert "`--tools default`" in text
     assert "`--permission-mode bypassPermissions`" in text
+    assert "screenshots.md" in text
+    assert "Browser or Computer Use" in text
+    assert "code diff and test output" in text
+    assert "Do not accept a user-facing change on code/tests alone" in text
 
 
 def test_desktop_probe_doc_covers_g1_g2_g3_and_corrects_execute_flag():

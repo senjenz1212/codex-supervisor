@@ -17,12 +17,20 @@ class DualAgentArtifactExport:
     files: tuple[Path, ...]
 
 
+@dataclass(frozen=True)
+class ScreenshotArtifact:
+    path: str | Path
+    label: str
+    note: str = ""
+
+
 def export_dual_agent_run_artifacts(
     state: State,
     *,
     run_id: str,
     task_id: str,
     output_dir: str | Path,
+    screenshots: tuple[ScreenshotArtifact, ...] = (),
 ) -> DualAgentArtifactExport:
     events = _read_task_events(state, run_id=run_id, task_id=task_id)
     out_dir = Path(output_dir)
@@ -36,18 +44,21 @@ def export_dual_agent_run_artifacts(
         out_dir / "tdd.md",
         out_dir / "grill-findings.md",
         out_dir / "issues.md",
+        out_dir / "screenshots.md",
         out_dir / "outcome-review.md",
         out_dir / "transcript.md",
     )
     by_gate = _events_by_gate(events)
+    screenshot_files = _copy_screenshots(out_dir, screenshots)
     files[0].write_text(_index_markdown(run_id, task_id, by_gate), encoding="utf-8")
     files[1].write_text(_gate_markdown("PRD Gate", by_gate.get("prd_review", ())), encoding="utf-8")
     files[2].write_text(_gate_markdown("TDD Gate", by_gate.get("tdd_review", ())), encoding="utf-8")
     files[3].write_text(_grill_markdown(events), encoding="utf-8")
     files[4].write_text(_issues_markdown(events), encoding="utf-8")
-    files[5].write_text(_gate_markdown("Outcome Review Gate", by_gate.get("outcome_review", ())), encoding="utf-8")
-    files[6].write_text(_transcript_markdown(run_id, task_id, events), encoding="utf-8")
-    return DualAgentArtifactExport(status="ok", output_dir=out_dir, files=files)
+    files[5].write_text(_screenshots_markdown(screenshot_files), encoding="utf-8")
+    files[6].write_text(_gate_markdown("Outcome Review Gate", by_gate.get("outcome_review", ())), encoding="utf-8")
+    files[7].write_text(_transcript_markdown(run_id, task_id, events), encoding="utf-8")
+    return DualAgentArtifactExport(status="ok", output_dir=out_dir, files=(*files, *tuple(path for path, _, _ in screenshot_files)))
 
 
 def default_dual_agent_artifact_dir(cwd: str | Path, task_id: str) -> Path:
@@ -102,6 +113,7 @@ def _index_markdown(
         "- [TDD](tdd.md)",
         "- [Grill Findings](grill-findings.md)",
         "- [Issues](issues.md)",
+        "- [Screenshots](screenshots.md)",
         "- [Outcome Review](outcome-review.md)",
         "- [Transcript](transcript.md)",
         "",
@@ -241,6 +253,56 @@ def _issues_markdown(events: list[dict[str, Any]]) -> str:
         "- run the TDD grill",
         "",
     ])
+
+
+def _copy_screenshots(
+    output_dir: Path,
+    screenshots: tuple[ScreenshotArtifact, ...],
+) -> list[tuple[Path, str, str]]:
+    copied: list[tuple[Path, str, str]] = []
+    if not screenshots:
+        return copied
+    screenshot_dir = output_dir / "screenshots"
+    screenshot_dir.mkdir(parents=True, exist_ok=True)
+    for index, screenshot in enumerate(screenshots, start=1):
+        source = Path(screenshot.path).expanduser().resolve()
+        if not source.exists() or not source.is_file():
+            raise FileNotFoundError(f"screenshot artifact missing: {source}")
+        label = _clean_text(screenshot.label) or f"Screenshot {index}"
+        suffix = source.suffix if source.suffix else ".png"
+        filename = f"{index:02d}-{_safe_path_component(label).lower()}{suffix}"
+        target = screenshot_dir / filename
+        target.write_bytes(source.read_bytes())
+        copied.append((target, label, _clean_text(screenshot.note)))
+    return copied
+
+
+def _screenshots_markdown(screenshots: list[tuple[Path, str, str]]) -> str:
+    lines = [
+        "# Screenshots",
+        "",
+        "Screenshots are generated or captured by Codex and stored as review evidence for user-facing changes.",
+        "Outcome review should consider these images together with code diffs and test results.",
+        "",
+    ]
+    if not screenshots:
+        lines.extend([
+            "No screenshot artifacts were supplied for this export.",
+            "",
+        ])
+        return "\n".join(lines)
+
+    for path, label, note in screenshots:
+        rel = f"screenshots/{path.name}"
+        lines.extend([
+            f"## {label}",
+            "",
+            f"![{label}]({rel})",
+            "",
+        ])
+        if note:
+            lines.extend([note, ""])
+    return "\n".join(lines)
 
 
 def _specialists_markdown(value: Any) -> str:

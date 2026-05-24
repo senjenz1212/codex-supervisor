@@ -10,6 +10,7 @@
 - [TDD](tdd.md)
 - [Grill Findings](grill-findings.md)
 - [Issues](issues.md)
+- [Screenshots](screenshots.md)
 - [Outcome Review](outcome-review.md)
 - [Transcript](transcript.md)
 

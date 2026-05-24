@@ -17,6 +17,7 @@ from typing import Any, Callable
 from supervisor.config import Config
 from supervisor.dual_agent import GateRound, evaluate_deadlock_budget
 from supervisor.dual_agent_artifacts import (
+    ScreenshotArtifact,
     default_dual_agent_artifact_dir,
     export_dual_agent_run_artifacts,
 )
@@ -309,6 +310,7 @@ class CodexSupervisorMcpAPI:
         task_id: str,
         cwd: str,
         output_dir: str | None = None,
+        screenshots: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         target_dir = Path(output_dir).expanduser() if output_dir else default_dual_agent_artifact_dir(cwd, task_id)
         result = export_dual_agent_run_artifacts(
@@ -316,6 +318,14 @@ class CodexSupervisorMcpAPI:
             run_id=run_id,
             task_id=task_id,
             output_dir=target_dir,
+            screenshots=tuple(
+                artifact
+                for artifact in (
+                    _maybe_screenshot(item)
+                    for item in (screenshots or [])
+                )
+                if artifact is not None
+            ),
         )
         cwd_path = Path(cwd).resolve()
         return {
@@ -573,12 +583,14 @@ def build_codex_supervisor_mcp_server(
         task_id: str,
         cwd: str,
         output_dir: str | None = None,
+        screenshots: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         return tool_api.export_gate_artifacts(
             run_id=run_id,
             task_id=task_id,
             cwd=cwd,
             output_dir=output_dir,
+            screenshots=screenshots,
         )
 
     @mcp.tool()
@@ -672,6 +684,17 @@ def _maybe_artifact(payload: dict[str, Any]) -> PlanningArtifact | None:
         path=Path(str(path)).expanduser(),
         kind=str(kind),  # type: ignore[arg-type]
         mutable_by_worker=bool(payload.get("mutable_by_worker", False)),
+    )
+
+
+def _maybe_screenshot(payload: dict[str, Any]) -> ScreenshotArtifact | None:
+    path = payload.get("path")
+    if not path:
+        return None
+    return ScreenshotArtifact(
+        path=Path(str(path)).expanduser(),
+        label=str(payload.get("label") or Path(str(path)).stem),
+        note=str(payload.get("note") or ""),
     )
 
 

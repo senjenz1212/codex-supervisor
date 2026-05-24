@@ -12,7 +12,7 @@ Claude Code as the implementer.
 - `mcp__codex_supervisor__poll_resume_signal(task_id, run_id, gate, instruction, cwd, expected_specialists, expected_decisions, expected_objections, quality, model, budget_usd, timeout_s)`
 - `mcp__codex_supervisor__read_outcome(run_id, task_id)`
 - `mcp__codex_supervisor__read_gate_transcript(run_id, task_id)`
-- `mcp__codex_supervisor__export_gate_artifacts(run_id, task_id, cwd, output_dir)`
+- `mcp__codex_supervisor__export_gate_artifacts(run_id, task_id, cwd, output_dir, screenshots)`
 - `mcp__codex_supervisor__start_codex_session(prompt, cwd, model, reasoning_effort, execute, timeout_s)`
 
 ## Gate Policy
@@ -68,6 +68,12 @@ For each major decision gate:
 11. After each accepted PRD, TDD, implementation, or outcome-review milestone,
     call `export_gate_artifacts` so the operator has readable Markdown artifacts
     in `docs/dual-agent/<task_id>/`.
+12. For user-facing UI or visual changes, Codex should capture screenshots
+    through Browser or Computer Use, pass them to `export_gate_artifacts` as
+    `screenshots=[{"path": "...", "label": "...", "note": "..."}]`, and include
+    the generated `screenshots.md` plus code diff and test output in the final
+    outcome-review gate. Do not accept a user-facing change on code/tests alone
+    when the visual state is inspectable.
 
 ## Defaults
 
@@ -85,6 +91,9 @@ For each major decision gate:
 - Treat `docs/dual-agent/<task_id>/` as the durable artifact folder for the
   run. The supervisor SQLite ledger remains the source of truth; these files are
   readable projections and planning artifacts.
+- Store visual evidence under `docs/dual-agent/<task_id>/screenshots/` through
+  `export_gate_artifacts`; review `screenshots.md` together with code, tests,
+  and gate transcript before final acceptance.
 
 ## Stop Conditions
 
