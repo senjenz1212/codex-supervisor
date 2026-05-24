@@ -16,6 +16,9 @@ def test_dual_agent_skill_uses_desktop_chat_when_telegram_is_absent():
     assert "`prd-to-tdd` workflow" in text
     assert "`grill-with-docs` gates" in text
     assert "planning_artifacts" in text
+    assert "artifact_policy=\"strict\"" in text
+    assert "user_facing=True" in text
+    assert "required_artifacts_missing" in text
     assert "export_gate_artifacts" in text
     assert "docs/dual-agent/<task_id>/" in text
     assert "`--tools default`" in text

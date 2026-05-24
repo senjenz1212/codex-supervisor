@@ -206,6 +206,10 @@ def _event_markdown(event: dict[str, Any]) -> str:
         "",
         _probes_markdown(payload.get("probes")),
         "",
+        "### Artifact Rigor",
+        "",
+        _artifact_rigor_markdown(payload.get("artifact_rigor")),
+        "",
     ])
     return "\n".join(lines)
 
@@ -333,6 +337,38 @@ def _probes_markdown(value: Any) -> str:
             f"- `{probe_id}`: `{probe.get('status')}` / `{probe.get('reason')}`"
         )
     return "\n".join(rows)
+
+
+def _artifact_rigor_markdown(value: Any) -> str:
+    if not isinstance(value, dict) or not value:
+        return "- None recorded."
+    rows = []
+    for key in [
+        "status",
+        "reason",
+        "artifact_policy",
+        "required_artifacts",
+        "present_artifacts",
+        "missing_artifacts",
+        "missing_artifact_paths",
+        "user_facing",
+        "screenshots",
+        "missing_screenshot_paths",
+    ]:
+        if key not in value:
+            continue
+        rows.append(f"- {key}: {_inline_markdown_value(value.get(key))}")
+    return "\n".join(rows) if rows else "- None recorded."
+
+
+def _inline_markdown_value(value: Any) -> str:
+    if isinstance(value, list):
+        if not value:
+            return "`[]`"
+        return ", ".join(f"`{_clean_text(item)}`" for item in value)
+    if isinstance(value, bool):
+        return f"`{value}`"
+    return f"`{_clean_text(value)}`"
 
 
 def _list_markdown(value: Any) -> str:

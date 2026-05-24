@@ -68,6 +68,24 @@ async def _maybe_await(value):
     return value
 
 
+def _write_planning_artifacts(tmp_path: Path, *, include_implementation_plan: bool = True) -> list[dict]:
+    artifact_dir = tmp_path / "docs" / "dual-agent" / "gate-1"
+    artifact_dir.mkdir(parents=True)
+    files = {
+        "prd": artifact_dir / "prd.md",
+        "tdd_plan": artifact_dir / "tdd.md",
+        "grill_findings": artifact_dir / "grill-findings.md",
+        "issues": artifact_dir / "issues.md",
+    }
+    if include_implementation_plan:
+        files["implementation_plan"] = artifact_dir / "implementation-plan.md"
+    artifacts = []
+    for kind, path in files.items():
+        path.write_text(f"# {kind}\n", encoding="utf-8")
+        artifacts.append({"path": str(path), "kind": kind, "mutable_by_worker": False})
+    return artifacts
+
+
 @pytest.mark.asyncio
 async def test_codex_supervisor_mcp_exposes_dual_agent_gate_tools(tmp_path):
     from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
@@ -130,6 +148,187 @@ async def test_codex_supervisor_mcp_exposes_dual_agent_gate_tools(tmp_path):
     ))
     assert outcome["status"] == "ok"
     assert outcome["result"]["status"] == "accepted"
+
+
+@pytest.mark.asyncio
+async def test_codex_supervisor_mcp_blocks_strict_outcome_gate_without_required_artifacts(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
+
+    state = State(str(tmp_path / "state.db"))
+    runner_calls = []
+
+    def fake_runner(argv, **kwargs):
+        runner_calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+    server = build_codex_supervisor_mcp_server(
+        _cfg(tmp_path),
+        state,
+        mcp_cls=_FakeMCP,
+        runner=fake_runner,
+    )
+
+    result = await _maybe_await(server.tools["start_dual_agent_gate"](
+        task_id="gate-1",
+        run_id="run-1",
+        gate="outcome_review",
+        instruction="Review the implementation outcome.",
+        cwd=str(tmp_path),
+    ))
+
+    assert runner_calls == []
+    assert result["status"] == "blocked"
+    assert result["escalation"]["type"] == "artifact_rigor"
+    assert result["artifact_rigor"]["status"] == "blocked"
+    assert result["artifact_rigor"]["missing_artifacts"] == [
+        "prd",
+        "tdd_plan",
+        "grill_findings",
+        "issues",
+        "implementation_plan",
+    ]
+    assert result["artifact_export"]["status"] == "ok"
+    assert (tmp_path / "docs" / "dual-agent" / "gate-1" / "outcome-review.md").exists()
+
+    outcome = await _maybe_await(server.tools["read_outcome"](
+        run_id="run-1",
+        task_id="gate-1",
+    ))
+    assert outcome["result"]["artifact_rigor"]["missing_artifacts"] == result["artifact_rigor"]["missing_artifacts"]
+
+
+@pytest.mark.asyncio
+async def test_codex_supervisor_mcp_accepts_strict_outcome_gate_with_required_artifacts(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
+    from supervisor.dual_agent_runner import build_lead_replay_stdout
+
+    state = State(str(tmp_path / "state.db"))
+    planning_artifacts = _write_planning_artifacts(tmp_path)
+
+    def fake_runner(argv, **kwargs):
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=build_lead_replay_stdout(_outcome_block()),
+            stderr="",
+        )
+
+    server = build_codex_supervisor_mcp_server(
+        _cfg(tmp_path),
+        state,
+        mcp_cls=_FakeMCP,
+        runner=fake_runner,
+    )
+
+    result = await _maybe_await(server.tools["start_dual_agent_gate"](
+        task_id="gate-1",
+        run_id="run-1",
+        gate="outcome_review",
+        instruction="Review the implementation outcome.",
+        cwd=str(tmp_path),
+        expected_specialists=["Planner"],
+        expected_decisions=["accept plan"],
+        expected_objections=[],
+        planning_artifacts=planning_artifacts,
+    ))
+
+    assert result["status"] == "accepted"
+    assert result["artifact_rigor"]["status"] == "ok"
+    assert result["artifact_rigor"]["required_artifacts"] == [
+        "prd",
+        "tdd_plan",
+        "grill_findings",
+        "issues",
+        "implementation_plan",
+    ]
+    assert "docs/dual-agent/gate-1/index.md" in result["artifact_export"]["files"]
+
+    outcome = await _maybe_await(server.tools["read_outcome"](
+        run_id="run-1",
+        task_id="gate-1",
+    ))
+    assert outcome["result"]["artifact_rigor"]["status"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_codex_supervisor_mcp_blocks_user_facing_gate_without_screenshots(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
+
+    state = State(str(tmp_path / "state.db"))
+    planning_artifacts = _write_planning_artifacts(tmp_path)
+
+    def fake_runner(argv, **kwargs):
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+    server = build_codex_supervisor_mcp_server(
+        _cfg(tmp_path),
+        state,
+        mcp_cls=_FakeMCP,
+        runner=fake_runner,
+    )
+
+    result = await _maybe_await(server.tools["start_dual_agent_gate"](
+        task_id="gate-1",
+        run_id="run-1",
+        gate="outcome_review",
+        instruction="Review the user-facing implementation outcome.",
+        cwd=str(tmp_path),
+        planning_artifacts=planning_artifacts,
+        user_facing=True,
+    ))
+
+    assert result["status"] == "blocked"
+    assert result["artifact_rigor"]["missing_artifacts"] == ["screenshots"]
+    assert result["artifact_rigor"]["user_facing"] is True
+
+
+@pytest.mark.asyncio
+async def test_codex_supervisor_mcp_accepts_user_facing_gate_with_screenshots(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
+    from supervisor.dual_agent_runner import build_lead_replay_stdout
+
+    state = State(str(tmp_path / "state.db"))
+    planning_artifacts = _write_planning_artifacts(tmp_path)
+    screenshot = tmp_path / "final-state.png"
+    screenshot.write_bytes(b"fake-png")
+
+    def fake_runner(argv, **kwargs):
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=build_lead_replay_stdout(_outcome_block()),
+            stderr="",
+        )
+
+    server = build_codex_supervisor_mcp_server(
+        _cfg(tmp_path),
+        state,
+        mcp_cls=_FakeMCP,
+        runner=fake_runner,
+    )
+
+    result = await _maybe_await(server.tools["start_dual_agent_gate"](
+        task_id="gate-1",
+        run_id="run-1",
+        gate="outcome_review",
+        instruction="Review the user-facing implementation outcome.",
+        cwd=str(tmp_path),
+        expected_specialists=["Planner"],
+        expected_decisions=["accept plan"],
+        expected_objections=[],
+        planning_artifacts=planning_artifacts,
+        user_facing=True,
+        screenshots=[{
+            "path": str(screenshot),
+            "label": "Final state",
+            "note": "Captured by Codex before outcome review.",
+        }],
+    ))
+
+    assert result["status"] == "accepted"
+    assert result["artifact_rigor"]["status"] == "ok"
+    assert "docs/dual-agent/gate-1/screenshots.md" in result["artifact_export"]["files"]
+    assert "docs/dual-agent/gate-1/screenshots/01-final-state.png" in result["artifact_export"]["files"]
 
 
 @pytest.mark.asyncio

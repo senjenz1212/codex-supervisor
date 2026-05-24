@@ -38,6 +38,13 @@ from supervisor.telegram import TelegramNotifier, telegram_enabled
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 DEFAULT_CODEX_MODEL = "gpt-5.5"
 DEFAULT_CODEX_REASONING_EFFORT = "xhigh"
+STRICT_ARTIFACT_GATES = {"implementation_plan", "execution", "outcome_review"}
+STRICT_ARTIFACT_REQUIREMENTS = {
+    "implementation_plan": ("prd", "tdd_plan", "grill_findings", "issues"),
+    "execution": ("prd", "tdd_plan", "grill_findings", "issues", "implementation_plan"),
+    "outcome_review": ("prd", "tdd_plan", "grill_findings", "issues", "implementation_plan"),
+}
+RELAXED_ARTIFACT_POLICIES = {"relaxed", "audit", "off"}
 
 
 class CodexSupervisorMcpAPI:
@@ -72,7 +79,37 @@ class CodexSupervisorMcpAPI:
         budget_usd: float = 5.0,
         timeout_s: int = 600,
         planning_artifacts: list[dict[str, Any]] | None = None,
+        artifact_policy: str = "strict",
+        user_facing: bool = False,
+        screenshots: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
+        artifact_preflight = _artifact_preflight(
+            gate=str(gate),
+            planning_artifacts=planning_artifacts or [],
+            artifact_policy=artifact_policy,
+            user_facing=user_facing,
+            screenshots=screenshots or [],
+        )
+        if artifact_preflight["status"] == "blocked":
+            payload = _artifact_blocked_payload(
+                task_id=task_id,
+                gate=str(gate),
+                artifact_preflight=artifact_preflight,
+            )
+            self.state.write_event(
+                run_id=run_id,
+                source="dual_agent",
+                kind="dual_agent_gate_result",
+                payload=payload,
+            )
+            payload["artifact_export"] = self.export_gate_artifacts(
+                run_id=run_id,
+                task_id=task_id,
+                cwd=cwd,
+                screenshots=screenshots,
+            )
+            return redact(payload)
+
         spec = self._gate_spec(
             task_id=task_id,
             run_id=run_id,
@@ -99,11 +136,18 @@ class CodexSupervisorMcpAPI:
         else:
             result = run_dual_agent_gate(spec, runner=self.runner)
         payload = _gate_result_payload(result)
+        payload["artifact_rigor"] = artifact_preflight
         self.state.write_event(
             run_id=run_id,
             source="dual_agent",
             kind="dual_agent_gate_result",
             payload=payload,
+        )
+        payload["artifact_export"] = self.export_gate_artifacts(
+            run_id=run_id,
+            task_id=task_id,
+            cwd=cwd,
+            screenshots=screenshots,
         )
         return payload
 
@@ -123,7 +167,37 @@ class CodexSupervisorMcpAPI:
         budget_usd: float = 5.0,
         timeout_s: int = 600,
         planning_artifacts: list[dict[str, Any]] | None = None,
+        artifact_policy: str = "strict",
+        user_facing: bool = False,
+        screenshots: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
+        artifact_preflight = _artifact_preflight(
+            gate=str(gate),
+            planning_artifacts=planning_artifacts or [],
+            artifact_policy=artifact_policy,
+            user_facing=user_facing,
+            screenshots=screenshots or [],
+        )
+        if artifact_preflight["status"] == "blocked":
+            payload = _artifact_blocked_payload(
+                task_id=task_id,
+                gate=str(gate),
+                artifact_preflight=artifact_preflight,
+            )
+            self.state.write_event(
+                run_id=run_id,
+                source="dual_agent",
+                kind="dual_agent_gate_result",
+                payload=payload,
+            )
+            payload["artifact_export"] = self.export_gate_artifacts(
+                run_id=run_id,
+                task_id=task_id,
+                cwd=cwd,
+                screenshots=screenshots,
+            )
+            return redact(payload)
+
         spec = self._gate_spec(
             task_id=task_id,
             run_id=run_id,
@@ -143,11 +217,18 @@ class CodexSupervisorMcpAPI:
         if not results:
             return {"status": "no_signal", "task_id": task_id, "run_id": run_id}
         payload = _gate_result_payload(results[0])
+        payload["artifact_rigor"] = artifact_preflight
         self.state.write_event(
             run_id=run_id,
             source="dual_agent",
             kind="dual_agent_gate_result",
             payload=payload,
+        )
+        payload["artifact_export"] = self.export_gate_artifacts(
+            run_id=run_id,
+            task_id=task_id,
+            cwd=cwd,
+            screenshots=screenshots,
         )
         return payload
 
@@ -163,6 +244,7 @@ class CodexSupervisorMcpAPI:
         codex_confidence: float,
         claude_confidence: float,
         objection: str | None = None,
+        cwd: str | None = None,
     ) -> dict[str, Any]:
         round_payload = _gate_round_payload(
             round_index=round_index,
@@ -182,7 +264,7 @@ class CodexSupervisorMcpAPI:
                 "round": round_payload,
             },
         )
-        return {
+        result = {
             "status": "recorded",
             "event_id": event_id,
             "run_id": run_id,
@@ -190,6 +272,13 @@ class CodexSupervisorMcpAPI:
             "gate": gate,
             "round": round_payload,
         }
+        if cwd is not None:
+            result["artifact_export"] = self.export_gate_artifacts(
+                run_id=run_id,
+                task_id=task_id,
+                cwd=cwd,
+            )
+        return result
 
     def check_budget(
         self,
@@ -466,6 +555,9 @@ def build_codex_supervisor_mcp_server(
         budget_usd: float = 5.0,
         timeout_s: int = 600,
         planning_artifacts: list[dict[str, Any]] | None = None,
+        artifact_policy: str = "strict",
+        user_facing: bool = False,
+        screenshots: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         return await tool_api.start_dual_agent_gate(
             task_id=task_id,
@@ -481,6 +573,9 @@ def build_codex_supervisor_mcp_server(
             budget_usd=budget_usd,
             timeout_s=timeout_s,
             planning_artifacts=planning_artifacts,
+            artifact_policy=artifact_policy,
+            user_facing=user_facing,
+            screenshots=screenshots,
         )
 
     @mcp.tool()
@@ -498,6 +593,9 @@ def build_codex_supervisor_mcp_server(
         budget_usd: float = 5.0,
         timeout_s: int = 600,
         planning_artifacts: list[dict[str, Any]] | None = None,
+        artifact_policy: str = "strict",
+        user_facing: bool = False,
+        screenshots: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         return tool_api.poll_resume_signal(
             task_id=task_id,
@@ -513,6 +611,9 @@ def build_codex_supervisor_mcp_server(
             budget_usd=budget_usd,
             timeout_s=timeout_s,
             planning_artifacts=planning_artifacts,
+            artifact_policy=artifact_policy,
+            user_facing=user_facing,
+            screenshots=screenshots,
         )
 
     @mcp.tool()
@@ -526,6 +627,7 @@ def build_codex_supervisor_mcp_server(
         codex_confidence: float,
         claude_confidence: float,
         objection: str | None = None,
+        cwd: str | None = None,
     ) -> dict[str, Any]:
         return tool_api.record_gate_round(
             run_id=run_id,
@@ -537,6 +639,7 @@ def build_codex_supervisor_mcp_server(
             codex_confidence=codex_confidence,
             claude_confidence=claude_confidence,
             objection=objection,
+            cwd=cwd,
         )
 
     @mcp.tool()
@@ -645,6 +748,29 @@ def _gate_result_payload(result: DualAgentGateResult) -> dict[str, Any]:
     return redact(payload)
 
 
+def _artifact_blocked_payload(
+    *,
+    task_id: str,
+    gate: str,
+    artifact_preflight: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "task_id": task_id,
+        "gate": gate,
+        "status": "blocked",
+        "attempts": 0,
+        "handoff_packet_path": None,
+        "probes": {},
+        "outcome": None,
+        "escalation": {
+            "type": "artifact_rigor",
+            "reason": "required_artifacts_missing",
+            "details": artifact_preflight,
+        },
+        "artifact_rigor": artifact_preflight,
+    }
+
+
 def _gate_round_payload(
     *,
     round_index: int,
@@ -673,6 +799,138 @@ def _gate_round_from_payload(payload: dict[str, Any]) -> GateRound:
         claude_confidence=float(payload["claude_confidence"]),
         objection=payload.get("objection"),
     )
+
+
+def _artifact_preflight(
+    *,
+    gate: str,
+    planning_artifacts: list[dict[str, Any]],
+    artifact_policy: str,
+    user_facing: bool,
+    screenshots: list[dict[str, Any]],
+) -> dict[str, Any]:
+    policy = str(artifact_policy or "strict").strip().lower()
+    required = list(STRICT_ARTIFACT_REQUIREMENTS.get(gate, ()))
+    present, missing_paths = _planning_artifact_roles(planning_artifacts)
+    screenshot_paths, missing_screenshot_paths = _valid_screenshot_paths(screenshots)
+
+    if policy != "strict":
+        if policy not in RELAXED_ARTIFACT_POLICIES:
+            return {
+                "status": "blocked",
+                "reason": "unsupported_artifact_policy",
+                "gate": gate,
+                "artifact_policy": artifact_policy,
+                "required_artifacts": required,
+                "present_artifacts": sorted(present),
+                "missing_artifacts": [],
+                "missing_artifact_paths": missing_paths,
+                "user_facing": user_facing,
+                "screenshots": screenshot_paths,
+                "missing_screenshot_paths": missing_screenshot_paths,
+            }
+        return {
+            "status": "ok",
+            "reason": "artifact_policy_relaxed",
+            "gate": gate,
+            "artifact_policy": policy,
+            "required_artifacts": required,
+            "present_artifacts": sorted(present),
+            "missing_artifacts": [role for role in required if role not in present],
+            "missing_artifact_paths": missing_paths,
+            "user_facing": user_facing,
+            "screenshots": screenshot_paths,
+            "missing_screenshot_paths": missing_screenshot_paths,
+        }
+
+    missing = [role for role in required if role not in present]
+    if user_facing and not screenshot_paths:
+        missing.append("screenshots")
+    elif missing_screenshot_paths:
+        missing.append("screenshots")
+
+    return {
+        "status": "blocked" if missing else "ok",
+        "reason": "required_artifacts_missing" if missing else "required_artifacts_present",
+        "gate": gate,
+        "artifact_policy": policy,
+        "required_artifacts": required,
+        "present_artifacts": sorted(present),
+        "missing_artifacts": missing,
+        "missing_artifact_paths": missing_paths,
+        "user_facing": user_facing,
+        "screenshots": screenshot_paths,
+        "missing_screenshot_paths": missing_screenshot_paths,
+    }
+
+
+def _planning_artifact_roles(
+    planning_artifacts: list[dict[str, Any]],
+) -> tuple[set[str], list[str]]:
+    roles: set[str] = set()
+    missing_paths: list[str] = []
+    for artifact in planning_artifacts:
+        path_value = artifact.get("path")
+        role = _planning_artifact_role(artifact)
+        if role is None:
+            continue
+        if not path_value:
+            missing_paths.append(f"{role}:<missing-path>")
+            continue
+        path = Path(str(path_value)).expanduser()
+        if not path.exists() or not path.is_file():
+            missing_paths.append(str(path))
+            continue
+        roles.add(role)
+    return roles, missing_paths
+
+
+def _planning_artifact_role(artifact: dict[str, Any]) -> str | None:
+    kind = _normalise_artifact_kind(artifact.get("kind"))
+    path = str(artifact.get("path") or "").lower()
+    if kind in {
+        "decision_brief",
+        "prd",
+        "tdd_plan",
+        "grill_findings",
+        "issues",
+        "implementation_plan",
+        "outcome",
+    }:
+        return kind
+    if "grill" in path:
+        return "grill_findings"
+    if "issue" in path:
+        return "issues"
+    if "implementation-plan" in path or "implementation_plan" in path:
+        return "implementation_plan"
+    if "tdd" in path:
+        return "tdd_plan"
+    if "prd" in path:
+        return "prd"
+    return None
+
+
+def _normalise_artifact_kind(value: Any) -> str:
+    return str(value or "").strip().lower().replace("-", "_")
+
+
+def _valid_screenshot_paths(
+    screenshots: list[dict[str, Any]],
+) -> tuple[list[str], list[str]]:
+    valid: list[str] = []
+    missing: list[str] = []
+    for screenshot in screenshots:
+        path_value = screenshot.get("path")
+        if not path_value:
+            missing.append("<missing-path>")
+            continue
+        path = Path(str(path_value)).expanduser()
+        if not path.exists() or not path.is_file():
+            missing.append(str(path))
+            continue
+        valid.append(str(path))
+    return valid, missing
 
 
 def _maybe_artifact(payload: dict[str, Any]) -> PlanningArtifact | None:

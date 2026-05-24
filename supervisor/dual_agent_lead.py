@@ -38,6 +38,8 @@ PlanningArtifactKind = Literal[
     "decision_brief",
     "prd",
     "tdd_plan",
+    "grill_findings",
+    "issues",
     "implementation_plan",
     "outcome",
     "other",

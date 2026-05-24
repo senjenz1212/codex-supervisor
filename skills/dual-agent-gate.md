@@ -5,11 +5,11 @@ Claude Code as the implementer.
 
 ## Tools
 
-- `mcp__codex_supervisor__start_dual_agent_gate(task_id, run_id, gate, instruction, cwd, expected_specialists, expected_decisions, expected_objections, quality, model, budget_usd, timeout_s)`
-- `mcp__codex_supervisor__record_gate_round(run_id, task_id, gate, round_index, codex_decision, claude_decision, codex_confidence, claude_confidence, objection)`
+- `mcp__codex_supervisor__start_dual_agent_gate(task_id, run_id, gate, instruction, cwd, expected_specialists, expected_decisions, expected_objections, quality, model, budget_usd, timeout_s, planning_artifacts, artifact_policy, user_facing, screenshots)`
+- `mcp__codex_supervisor__record_gate_round(run_id, task_id, gate, round_index, codex_decision, claude_decision, codex_confidence, claude_confidence, objection, cwd)`
 - `mcp__codex_supervisor__check_budget(rounds, per_gate_cap, task_budget)`
 - `mcp__codex_supervisor__escalate_deadlock(run_id, task_id, gate, rounds, per_gate_cap, task_budget)`
-- `mcp__codex_supervisor__poll_resume_signal(task_id, run_id, gate, instruction, cwd, expected_specialists, expected_decisions, expected_objections, quality, model, budget_usd, timeout_s)`
+- `mcp__codex_supervisor__poll_resume_signal(task_id, run_id, gate, instruction, cwd, expected_specialists, expected_decisions, expected_objections, quality, model, budget_usd, timeout_s, planning_artifacts, artifact_policy, user_facing, screenshots)`
 - `mcp__codex_supervisor__read_outcome(run_id, task_id)`
 - `mcp__codex_supervisor__read_gate_transcript(run_id, task_id)`
 - `mcp__codex_supervisor__export_gate_artifacts(run_id, task_id, cwd, output_dir, screenshots)`
@@ -34,9 +34,13 @@ advance from PRD to TDD, or from TDD to implementation, until the corresponding
 grill findings are resolved or explicitly waived in the artifact.
 
 When calling `start_dual_agent_gate`, pass the current PRD/TDD/grill/issue
-documents through `planning_artifacts` with `mutable_by_worker=false` unless the
-user explicitly approves worker edits. This pins checksums in the handoff packet
-so Claude Code cannot silently rewrite the spec to match the implementation.
+documents through `planning_artifacts` with `mutable_by_worker=false`, and keep
+`artifact_policy="strict"` unless the user explicitly approves relaxing the
+gate. Strict implementation, execution, and outcome-review gates require PRD,
+TDD, grill findings, issues, and implementation-plan artifacts as applicable;
+otherwise the tool returns `required_artifacts_missing` and does not launch
+Claude Code. This pins checksums in the handoff packet so Claude Code cannot
+silently rewrite the spec to match the implementation.
 Claude Code is launched in the same worktree with built-in tools enabled from
 the first gate (`--tools default`, `--permission-mode bypassPermissions`) so it
 can inspect files, run tests, and review diffs directly instead of relying only
@@ -46,8 +50,10 @@ For each major decision gate:
 
 1. State the gate, the decision to make, and the acceptance criteria.
 2. Ask Claude Code for critique or implementation feedback through
-   `start_dual_agent_gate`.
-3. Record each Codex/Claude disagreement with `record_gate_round`.
+   `start_dual_agent_gate`, passing `artifact_policy="strict"` and the current
+   `planning_artifacts`.
+3. Record each Codex/Claude disagreement with `record_gate_round`; pass `cwd`
+   so the readable artifacts are refreshed after the round is recorded.
 4. After each round, call `check_budget`.
 5. If budget is exhausted and the agents still disagree, call
    `escalate_deadlock`. Do not choose a winner silently.
@@ -66,10 +72,13 @@ For each major decision gate:
 10. Read the final gate result with `read_outcome` when you only need the
     latest outcome without the dialogue history.
 11. After each accepted PRD, TDD, implementation, or outcome-review milestone,
-    call `export_gate_artifacts` so the operator has readable Markdown artifacts
-    in `docs/dual-agent/<task_id>/`.
+    confirm `artifact_export.status == "ok"` in the tool result. The gate tool
+    auto-exports readable Markdown artifacts into
+    `docs/dual-agent/<task_id>/`; call `export_gate_artifacts` manually only to
+    refresh or add external evidence.
 12. For user-facing UI or visual changes, Codex should capture screenshots
-    through Browser or Computer Use, pass them to `export_gate_artifacts` as
+    through Browser or Computer Use, call the outcome-review gate with
+    `user_facing=True`, and pass screenshots as
     `screenshots=[{"path": "...", "label": "...", "note": "..."}]`, and include
     the generated `screenshots.md` plus code diff and test output in the final
     outcome-review gate. Do not accept a user-facing change on code/tests alone

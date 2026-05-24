@@ -206,6 +206,52 @@ def test_export_dual_agent_run_artifacts_copies_screenshots_and_writes_manifest(
     assert copied in result.files
 
 
+def test_export_dual_agent_run_artifacts_includes_artifact_rigor_details(tmp_path):
+    state = _state(tmp_path)
+    _insert_event(
+        state,
+        kind="dual_agent_gate_result",
+        payload={
+            "task_id": "task-1",
+            "gate": "outcome_review",
+            "status": "blocked",
+            "attempts": 0,
+            "handoff_packet_path": None,
+            "probes": {},
+            "outcome": None,
+            "escalation": {
+                "type": "artifact_rigor",
+                "reason": "required_artifacts_missing",
+            },
+            "artifact_rigor": {
+                "status": "blocked",
+                "reason": "required_artifacts_missing",
+                "required_artifacts": ["prd", "tdd_plan", "grill_findings", "issues"],
+                "present_artifacts": ["prd"],
+                "missing_artifacts": ["tdd_plan", "grill_findings", "issues"],
+                "user_facing": True,
+                "screenshots": [],
+            },
+        },
+    )
+
+    result = export_dual_agent_run_artifacts(
+        state,
+        run_id="run-1",
+        task_id="task-1",
+        output_dir=tmp_path / "docs" / "dual-agent" / "task-1",
+    )
+
+    outcome_review = (result.output_dir / "outcome-review.md").read_text()
+
+    assert "### Artifact Rigor" in outcome_review
+    assert "- status: `blocked`" in outcome_review
+    assert "- reason: `required_artifacts_missing`" in outcome_review
+    assert "- required_artifacts: `prd`, `tdd_plan`, `grill_findings`, `issues`" in outcome_review
+    assert "- missing_artifacts: `tdd_plan`, `grill_findings`, `issues`" in outcome_review
+    assert "- user_facing: `True`" in outcome_review
+
+
 def test_export_dual_agent_run_artifacts_reports_not_found_without_writing(tmp_path):
     state = _state(tmp_path)
     output_dir = tmp_path / "missing"
