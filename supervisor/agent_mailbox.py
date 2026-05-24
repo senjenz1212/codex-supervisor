@@ -26,7 +26,16 @@ class AgentMailboxMessage:
     message_type: str
     content: str
     round_index: int | None = None
+    persona_id: str = ""
+    addresses: tuple[str, ...] = ()
     confidence: ConfidenceReport | None = None
+    claims: tuple[str, ...] = ()
+    objections: tuple[str, ...] = ()
+    questions: tuple[str, ...] = ()
+    tool_receipts: tuple[dict[str, Any], ...] = ()
+    evidence_refs: tuple[dict[str, Any], ...] = ()
+    raw_transcript_refs: tuple[dict[str, Any], ...] = ()
+    would_change_if: str = ""
     artifacts: tuple[dict[str, Any], ...] = ()
     metadata: dict[str, Any] = field(default_factory=dict)
 

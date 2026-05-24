@@ -155,12 +155,12 @@ def _transcript_markdown(run_id: str, task_id: str, events: list[dict[str, Any]]
 
 def _interactions_markdown(run_id: str, task_id: str, events: list[dict[str, Any]]) -> str:
     sections = [
-        f"# Codex / Claude Code Interactions: {task_id}",
+        f"# Agent Interactions: {task_id}",
         "",
         f"- run_id: `{run_id}`",
         f"- task_id: `{task_id}`",
         "- source: supervisor SQLite event ledger",
-        "- purpose: readable projection of the Codex/Claude decision dialogue",
+        "- purpose: readable projection of the Codex, Claude Code, and optional Cursor decision dialogue",
         "",
     ]
     if not events:
@@ -186,6 +186,8 @@ def _interaction_event_markdown(index: int, event: dict[str, Any]) -> str:
             f"- sender: `{payload.get('sender')}`",
             f"- recipient: `{payload.get('recipient')}`",
             f"- round_index: `{payload.get('round_index')}`",
+            f"- persona_id: `{_clean_text(payload.get('persona_id'))}`",
+            f"- addresses: {_inline_markdown_value(payload.get('addresses') or [])}",
             "",
             "### Message",
             "",
@@ -205,6 +207,7 @@ def _interaction_event_markdown(index: int, event: dict[str, Any]) -> str:
             "",
             _list_markdown(confidence.get("evidence")),
             "",
+            *_interaction_trace_sections(payload),
         ])
 
     if event["kind"] == "dual_agent_gate_round":
@@ -232,6 +235,13 @@ def _interaction_event_markdown(index: int, event: dict[str, Any]) -> str:
             _text_or_none(round_payload.get("objection")),
             "",
         ])
+
+    if event["kind"] == "tri_agent_cursor_review":
+        return _cursor_review_event_markdown(
+            heading=f"## {index}. {title}",
+            event=event,
+            include_kind=False,
+        )
 
     outcome = payload.get("outcome") if isinstance(payload.get("outcome"), dict) else {}
     return "\n".join([
@@ -298,10 +308,13 @@ def _event_markdown(event: dict[str, Any]) -> str:
     if event["kind"] == "dual_agent_interaction_message":
         confidence = payload.get("confidence") if isinstance(payload.get("confidence"), dict) else {}
         lines.extend([
+            f"- interaction_type: `{payload.get('message_type')}`",
             f"- message_type: `{payload.get('message_type')}`",
             f"- sender: `{payload.get('sender')}`",
             f"- recipient: `{payload.get('recipient')}`",
             f"- round_index: `{payload.get('round_index')}`",
+            f"- persona_id: `{_clean_text(payload.get('persona_id'))}`",
+            f"- addresses: {_inline_markdown_value(payload.get('addresses') or [])}",
             "",
             "### Message",
             "",
@@ -321,8 +334,16 @@ def _event_markdown(event: dict[str, Any]) -> str:
             "",
             _list_markdown(confidence.get("evidence")),
             "",
+            *_interaction_trace_sections(payload),
         ])
         return "\n".join(lines)
+
+    if event["kind"] == "tri_agent_cursor_review":
+        return _cursor_review_event_markdown(
+            heading=f"## event_id: {event['event_id']}",
+            event=event,
+            include_kind=True,
+        )
 
     outcome = payload.get("outcome") if isinstance(payload.get("outcome"), dict) else {}
     lines.extend([
@@ -364,6 +385,106 @@ def _event_markdown(event: dict[str, Any]) -> str:
         "",
     ])
     return "\n".join(lines)
+
+
+def _cursor_review_event_markdown(
+    *,
+    heading: str,
+    event: dict[str, Any],
+    include_kind: bool,
+) -> str:
+    payload = event["payload"]
+    cursor_review = payload.get("cursor_review") if isinstance(payload.get("cursor_review"), dict) else {}
+    probe = cursor_review.get("probe") if isinstance(cursor_review.get("probe"), dict) else {}
+    outcome = cursor_review.get("outcome") if isinstance(cursor_review.get("outcome"), dict) else {}
+    lines = [
+        heading,
+        "",
+        f"- event_id: `{event['event_id']}`",
+        f"- ts: `{event['ts']}`",
+    ]
+    if include_kind:
+        lines.extend([
+            f"- kind: `{event['kind']}`",
+            f"- gate: `{event['gate']}`",
+        ])
+    lines.extend([
+        "- interaction_type: `cursor_review`",
+        f"- gate: `{event['gate']}`",
+        f"- accepted: `{cursor_review.get('accepted')}`",
+        f"- model: `{_clean_text(cursor_review.get('model'))}`",
+        f"- cursor_run_id: `{_clean_text(cursor_review.get('run_id'))}`",
+        f"- agent_id: `{_clean_text(cursor_review.get('agent_id'))}`",
+        f"- duration_ms: `{_clean_text(cursor_review.get('duration_ms'))}`",
+        "",
+        "### Cursor Probe",
+        "",
+        f"- probe_id: `{_clean_text(probe.get('probe_id'))}`",
+        f"- status: `{_clean_text(probe.get('status'))}`",
+        f"- reason: `{_clean_text(probe.get('reason'))}`",
+        "",
+        "### Cursor Outcome",
+        "",
+        _text_or_none(outcome.get("summary")),
+        "",
+        "Claims:",
+        "",
+        _list_markdown(outcome.get("claims")),
+        "",
+        "Decisions:",
+        "",
+        _list_markdown(outcome.get("decisions")),
+        "",
+        "Objections:",
+        "",
+        _list_markdown(outcome.get("objections")),
+        "",
+        "Specialists:",
+        "",
+        _specialists_markdown(outcome.get("specialists")),
+        "",
+    ])
+    if cursor_review.get("transcript_tail"):
+        lines.extend([
+            "### Transcript Tail",
+            "",
+            _text_or_none(cursor_review.get("transcript_tail")),
+            "",
+        ])
+    return "\n".join(lines)
+
+
+def _interaction_trace_sections(payload: dict[str, Any]) -> list[str]:
+    return [
+        "### Claims",
+        "",
+        _list_markdown(payload.get("claims")),
+        "",
+        "### Objections",
+        "",
+        _list_markdown(payload.get("objections")),
+        "",
+        "### Questions",
+        "",
+        _list_markdown(payload.get("questions")),
+        "",
+        "### Tool Receipts",
+        "",
+        _list_markdown(payload.get("tool_receipts")),
+        "",
+        "### Evidence Refs",
+        "",
+        _list_markdown(payload.get("evidence_refs")),
+        "",
+        "### Raw Transcript Refs",
+        "",
+        _list_markdown(payload.get("raw_transcript_refs")),
+        "",
+        "### Would Change If",
+        "",
+        _text_or_none(payload.get("would_change_if")),
+        "",
+    ]
 
 
 def _grill_markdown(events: list[dict[str, Any]]) -> str:

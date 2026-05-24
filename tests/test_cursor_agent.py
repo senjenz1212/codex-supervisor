@@ -19,6 +19,13 @@ def test_build_cursor_prompt_is_review_only_and_uses_typed_outcome_contract(tmp_
         instruction="Challenge the test plan.",
         cwd=tmp_path,
         claude_outcome={"summary": "Claude accepted."},
+        tool_receipts=(
+            {
+                "receipt_id": "pytest-focused",
+                "kind": "test",
+                "status": "passed",
+            },
+        ),
     )
 
     prompt = build_cursor_prompt(request)
@@ -28,6 +35,8 @@ def test_build_cursor_prompt_is_review_only_and_uses_typed_outcome_contract(tmp_
     assert "Cursor Reviewer" in prompt
     assert "Always end with <dual_agent_outcome>" in prompt
     assert "Claude outcome JSON" in prompt
+    assert "Evidence receipts" in prompt
+    assert "pytest-focused" in prompt
 
 
 def test_cursor_accepts_requires_green_probe_and_accept_decision():

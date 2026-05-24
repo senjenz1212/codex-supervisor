@@ -289,11 +289,13 @@ class CodexSupervisorMcpAPI:
         planning_artifacts: list[dict[str, Any]] | None = None,
         screenshots: list[dict[str, Any]] | None = None,
         verified_claims: list[str] | None = None,
+        tool_receipts: list[dict[str, Any]] | None = None,
         cursor_review: bool = False,
         cursor_model: str | None = None,
     ) -> dict[str, Any]:
         max_rounds = max(1, int(max_rounds_per_gate))
         screenshot_payloads = screenshots or []
+        receipt_payloads = _normalise_receipt_payloads(tool_receipts or [])
         source_artifacts = ensure_workflow_source_artifacts(
             cwd=cwd,
             task_id=task_id,
@@ -379,10 +381,11 @@ class CodexSupervisorMcpAPI:
                         user_facing=effective_user_facing,
                         screenshots=screenshot_payloads,
                         verified_claims=verified_claims,
+                        tool_receipts=receipt_payloads,
                     )
                     payload["claim_verification"] = asdict(claim_probe)
                 if cursor_review and payload.get("status") == "accepted":
-                    self._write_interaction_message(
+                    review_request_event_id = self._write_interaction_message(
                         run_id=run_id,
                         message=AgentMailboxMessage(
                             task_id=task_id,
@@ -391,11 +394,22 @@ class CodexSupervisorMcpAPI:
                             sender="codex",
                             recipient="cursor",
                             message_type="review_request",
+                            persona_id="codex.lifecycle_reviewer",
                             content=_cursor_review_instruction(
                                 gate=gate,
                                 intent=intent,
                                 corrective_context=corrective_context,
                             ),
+                            addresses=_interaction_addresses(payload),
+                            claims=_outcome_claims(payload),
+                            objections=_outcome_objections(payload),
+                            questions=(
+                                "Do the planning artifacts, Claude outcome, and evidence receipts justify advancing this gate?",
+                            ),
+                            tool_receipts=tuple(receipt_payloads),
+                            evidence_refs=_receipt_evidence_refs(receipt_payloads, screenshot_payloads),
+                            raw_transcript_refs=_raw_transcript_refs(payload),
+                            would_change_if="Cursor finds an unresolved blocker, missing receipt, or contradiction in the evidence.",
                             artifacts=planning_artifact_refs(gate_artifacts),
                             metadata={
                                 "claude_outcome": payload.get("outcome"),
@@ -427,6 +441,7 @@ class CodexSupervisorMcpAPI:
                             quality=quality,
                             model=cursor_model,
                             timeout_s=timeout_s,
+                            tool_receipts=tuple(receipt_payloads),
                         )
                     )
                     cursor_payload = _cursor_result_payload(cursor_result)
@@ -440,16 +455,33 @@ class CodexSupervisorMcpAPI:
                             sender="cursor",
                             recipient="codex",
                             message_type="review_response",
+                            persona_id="cursor.independent_reviewer",
                             content=(
                                 cursor_result.outcome.summary
                                 if cursor_result.outcome is not None
                                 else cursor_result.probe.reason
                             ),
+                            addresses=(f"event:{review_request_event_id}",),
                             confidence=outcome_confidence_report(
                                 cursor_result.outcome.model_dump()
                                 if cursor_result.outcome is not None else None,
                                 source="cursor",
                             ),
+                            claims=tuple(cursor_result.outcome.claims)
+                            if cursor_result.outcome is not None else (),
+                            objections=tuple(cursor_result.outcome.objections)
+                            if cursor_result.outcome is not None else (cursor_result.probe.reason,),
+                            questions=(),
+                            tool_receipts=tuple(receipt_payloads),
+                            evidence_refs=_receipt_evidence_refs(receipt_payloads, screenshot_payloads),
+                            raw_transcript_refs=(
+                                {
+                                    "kind": "cursor_transcript_tail",
+                                    "ref": f"tri_agent_cursor_review:{task_id}:{gate}:{round_index}",
+                                    "chars": min(len(cursor_result.transcript), 4000),
+                                },
+                            ),
+                            would_change_if="Claude or Codex provides evidence resolving Cursor's objections.",
                             artifacts=planning_artifact_refs(gate_artifacts),
                             metadata={
                                 "cursor_review": cursor_payload,
@@ -517,30 +549,45 @@ class CodexSupervisorMcpAPI:
                 )
                 self._write_interaction_message(
                     run_id=run_id,
-                    message=AgentMailboxMessage(
-                        task_id=task_id,
-                        gate=gate,
-                        round_index=round_index,
-                        sender="codex",
-                        recipient="supervisor",
-                        message_type="gate_decision",
-                        content=objection,
-                        confidence=codex_confidence_report(
-                            decision=codex_decision,
-                            gate_status=str(payload.get("status") or ""),
-                            probe_statuses={
-                                probe_id: str(probe.get("status") or "")
+                        message=AgentMailboxMessage(
+                            task_id=task_id,
+                            gate=gate,
+                            round_index=round_index,
+                            sender="codex",
+                            recipient="supervisor",
+                            message_type="gate_decision",
+                            persona_id="codex.lifecycle_reviewer",
+                            content=objection,
+                            addresses=(f"event:{round_result['event_id']}",),
+                            confidence=codex_confidence_report(
+                                decision=codex_decision,
+                                gate_status=str(payload.get("status") or ""),
+                                probe_statuses={
+                                    probe_id: str(probe.get("status") or "")
                                 for probe_id, probe in (payload.get("probes") or {}).items()
                                 if isinstance(probe, dict)
                             },
                             claim_verification=asdict(claim_probe) if claim_probe is not None else None,
-                            cursor_review=_cursor_result_payload(cursor_result)
-                            if cursor_result is not None else None,
-                        ),
-                        artifacts=planning_artifact_refs(gate_artifacts),
-                        metadata={
-                            "codex_decision": codex_decision,
-                            "claude_decision": claude_decision,
+                                cursor_review=_cursor_result_payload(cursor_result)
+                                if cursor_result is not None else None,
+                            ),
+                            claims=(
+                                f"codex_decision={codex_decision}",
+                                f"claude_decision={claude_decision}",
+                                f"cursor_decision={cursor_decision}",
+                            ),
+                            objections=() if codex_decision == "accept" else (objection,),
+                            questions=(
+                                "What corrective input should be applied before the next attempt?",
+                            ) if codex_decision != "accept" else (),
+                            tool_receipts=tuple(receipt_payloads),
+                            evidence_refs=_receipt_evidence_refs(receipt_payloads, screenshot_payloads),
+                            raw_transcript_refs=_raw_transcript_refs(payload),
+                            would_change_if="All required probes, claim receipts, and optional Cursor review accept.",
+                            artifacts=planning_artifact_refs(gate_artifacts),
+                            metadata={
+                                "codex_decision": codex_decision,
+                                "claude_decision": claude_decision,
                             "cursor_decision": cursor_decision,
                             "round_event_id": round_result["event_id"],
                         },
@@ -1342,6 +1389,7 @@ def build_codex_supervisor_mcp_server(
         planning_artifacts: list[dict[str, Any]] | None = None,
         screenshots: list[dict[str, Any]] | None = None,
         verified_claims: list[str] | None = None,
+        tool_receipts: list[dict[str, Any]] | None = None,
         cursor_review: bool = False,
         cursor_model: str | None = None,
     ) -> dict[str, Any]:
@@ -1357,6 +1405,7 @@ def build_codex_supervisor_mcp_server(
             planning_artifacts=planning_artifacts,
             screenshots=screenshots,
             verified_claims=verified_claims,
+            tool_receipts=tool_receipts,
             cursor_review=cursor_review,
             cursor_model=cursor_model,
         )
@@ -1550,6 +1599,103 @@ def _cursor_result_payload(result: CursorInvocationResult) -> dict[str, Any]:
         "duration_ms": result.duration_ms,
         "transcript_tail": result.transcript[-4000:],
     })
+
+
+def _normalise_receipt_payloads(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    normalised: list[dict[str, Any]] = []
+    for receipt in receipts:
+        if isinstance(receipt, dict):
+            normalised.append(dict(receipt))
+    return normalised
+
+
+def _interaction_addresses(payload: dict[str, Any]) -> tuple[str, ...]:
+    addresses: list[str] = []
+    handoff = payload.get("handoff_packet_path")
+    if handoff:
+        addresses.append(f"handoff:{handoff}")
+    result_event_id = payload.get("event_id")
+    if result_event_id:
+        addresses.append(f"event:{result_event_id}")
+    return tuple(addresses)
+
+
+def _outcome_claims(payload: dict[str, Any]) -> tuple[str, ...]:
+    outcome = payload.get("outcome") if isinstance(payload.get("outcome"), dict) else {}
+    claims = [
+        str(item)
+        for item in outcome.get("claims") or []
+        if str(item).strip()
+    ]
+    decisions = [
+        f"decision:{item}"
+        for item in outcome.get("decisions") or []
+        if str(item).strip()
+    ]
+    return tuple([*claims, *decisions])
+
+
+def _outcome_objections(payload: dict[str, Any]) -> tuple[str, ...]:
+    outcome = payload.get("outcome") if isinstance(payload.get("outcome"), dict) else {}
+    return tuple(
+        str(item)
+        for item in outcome.get("objections") or []
+        if str(item).strip()
+    )
+
+
+def _receipt_evidence_refs(
+    receipts: list[dict[str, Any]],
+    screenshots: list[dict[str, Any]],
+) -> tuple[dict[str, Any], ...]:
+    refs: list[dict[str, Any]] = []
+    for receipt in receipts:
+        receipt_id = receipt.get("receipt_id") or receipt.get("id")
+        if not receipt_id:
+            continue
+        refs.append({
+            "kind": str(receipt.get("kind") or receipt.get("type") or "receipt"),
+            "ref": f"receipt:{receipt_id}",
+            "status": str(receipt.get("status") or receipt.get("result") or ""),
+        })
+    for index, screenshot in enumerate(screenshots, start=1):
+        path = screenshot.get("path") if isinstance(screenshot, dict) else None
+        if not path:
+            continue
+        refs.append({
+            "kind": "screenshot",
+            "ref": str(path),
+            "status": str(
+                screenshot.get("validation_status")
+                or (
+                    screenshot.get("validation", {}).get("status")
+                    if isinstance(screenshot.get("validation"), dict)
+                    else ""
+                )
+                or ""
+            ),
+            "label": str(screenshot.get("label") or f"screenshot-{index}"),
+        })
+    return tuple(refs)
+
+
+def _raw_transcript_refs(payload: dict[str, Any]) -> tuple[dict[str, Any], ...]:
+    refs: list[dict[str, Any]] = []
+    handoff = payload.get("handoff_packet_path")
+    if handoff:
+        refs.append({
+            "kind": "claude_handoff_packet",
+            "ref": str(handoff),
+        })
+    outcome = payload.get("outcome") if isinstance(payload.get("outcome"), dict) else {}
+    tests = outcome.get("tests") or []
+    if tests:
+        refs.append({
+            "kind": "claude_reported_tests",
+            "ref": "outcome.tests",
+            "count": len(tests),
+        })
+    return tuple(refs)
 
 
 def _workflow_step_dict(gate: str, status: str, attempts: int) -> dict[str, Any]:

@@ -74,7 +74,7 @@ def _cfg(tmp_path: Path) -> Config:
 def _outcome_block(task_id: str, *, decision: str = "accept", claims: list[str] | None = None) -> str:
     payload = {
         "task_id": task_id,
-        "summary": "Implemented workflow driver. Tests passed.",
+        "summary": "Workflow response complete.",
         "specialists": [{"name": "Planner", "decision": decision}],
         "decisions": [decision],
         "objections": [] if decision == "accept" else ["Needs another revision."],
@@ -93,6 +93,37 @@ def _tiny_png() -> bytes:
         b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02"
         b"\x00\x00\x00\x90wS\xde"
     )
+
+
+def _tool_receipts(*, include_push: bool = False) -> list[dict]:
+    receipts = [
+        {
+            "receipt_id": "pytest-focused",
+            "kind": "test",
+            "status": "passed",
+            "command": "uv run pytest tests/test_dual_agent_workflow_driver.py",
+            "claims": ["tests passed"],
+        },
+        {
+            "receipt_id": "git-diff",
+            "kind": "git_diff",
+            "status": "present",
+            "changed_files": [
+                "supervisor/dual_agent_workflow.py",
+                "tests/test_dual_agent_workflow_driver.py",
+            ],
+            "claims": ["implemented"],
+        },
+    ]
+    if include_push:
+        receipts.append({
+            "receipt_id": "unity-push",
+            "kind": "git_remote",
+            "status": "pushed",
+            "remote": "unity",
+            "claims": ["pushed"],
+        })
+    return receipts
 
 
 def _server(
@@ -221,6 +252,7 @@ async def test_run_dual_agent_workflow_happy_path_owns_full_lifecycle(tmp_path):
         run_id="workflow-run",
         intent="Build the supervisor-owned workflow driver.",
         max_rounds_per_gate=5,
+        tool_receipts=_tool_receipts(),
     ))
 
     assert result["status"] == "accepted"
@@ -315,6 +347,7 @@ async def test_run_dual_agent_workflow_with_cursor_review_accepts_all_gates(tmp_
         intent="Use Cursor as the third reviewer.",
         max_rounds_per_gate=1,
         cursor_review=True,
+        tool_receipts=_tool_receipts(),
     ))
 
     assert result["status"] == "accepted"
@@ -427,6 +460,7 @@ async def test_run_dual_agent_workflow_retries_malformed_outcome_once(tmp_path):
         run_id="workflow-run",
         intent="Retry a malformed worker outcome.",
         max_rounds_per_gate=1,
+        tool_receipts=_tool_receipts(),
     ))
 
     assert result["status"] == "accepted"
@@ -518,6 +552,7 @@ async def test_run_dual_agent_workflow_can_rerun_after_corrective_input(tmp_path
         run_id="workflow-run",
         intent="Correction supplied; rerun safely.",
         max_rounds_per_gate=1,
+        tool_receipts=_tool_receipts(),
     ))
 
     assert second["status"] == "accepted"
@@ -597,6 +632,7 @@ async def test_run_dual_agent_workflow_auto_visual_policy_accepts_computer_use_e
             },
         }],
         max_rounds_per_gate=1,
+        tool_receipts=_tool_receipts(),
     ))
 
     assert result["status"] == "accepted"
@@ -619,6 +655,7 @@ async def test_run_dual_agent_workflow_verifies_final_claims(tmp_path):
         run_id="workflow-run",
         intent="Claim remote push without evidence.",
         max_rounds_per_gate=1,
+        verified_claims=["pushed"],
     ))
 
     assert result["status"] == "blocked"
@@ -627,6 +664,64 @@ async def test_run_dual_agent_workflow_verifies_final_claims(tmp_path):
     assert "pushed_without_remote_receipt" in result["final_gate_result"]["claim_verification"]["details"]["failures"]
     workflow = state.get_dual_agent_workflow(run_id="workflow-run", task_id="workflow-1")
     assert workflow["status"] == "blocked"
+
+
+@pytest.mark.asyncio
+async def test_run_dual_agent_workflow_requires_test_and_diff_receipts_for_claims(tmp_path):
+    server, _state = _server(tmp_path, claims=["tests passed", "implemented"])
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Claim tests and implementation without receipts.",
+        max_rounds_per_gate=1,
+    ))
+
+    assert result["status"] == "blocked"
+    failures = result["final_gate_result"]["claim_verification"]["details"]["failures"]
+    assert "tests_passed_without_test_receipt" in failures
+    assert "implemented_without_diff_receipt" in failures
+
+
+@pytest.mark.asyncio
+async def test_run_dual_agent_workflow_rejects_unrelated_receipts_for_claims(tmp_path):
+    server, _state = _server(tmp_path, claims=["tests passed", "implemented"])
+    unrelated_receipts = _tool_receipts()
+    for receipt in unrelated_receipts:
+        receipt["claims"] = ["unrelated cleanup"]
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Reject stale receipts that do not map to the current claims.",
+        max_rounds_per_gate=1,
+        tool_receipts=unrelated_receipts,
+    ))
+
+    assert result["status"] == "blocked"
+    failures = result["final_gate_result"]["claim_verification"]["details"]["failures"]
+    assert "tests_passed_without_test_receipt" in failures
+    assert "implemented_without_diff_receipt" in failures
+
+
+@pytest.mark.asyncio
+async def test_run_dual_agent_workflow_accepts_receipt_backed_claims(tmp_path):
+    server, _state = _server(tmp_path, claims=["tests passed", "implemented", "pushed"])
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Accept only with receipts.",
+        max_rounds_per_gate=1,
+        tool_receipts=_tool_receipts(include_push=True),
+    ))
+
+    assert result["status"] == "accepted"
+    receipt_payload = result["final_gate_result"]["claim_verification"]["details"]["receipts"]
+    assert {receipt["kind"] for receipt in receipt_payload} >= {"test", "git_diff", "git_remote"}
 
 
 @pytest.mark.asyncio
@@ -649,3 +744,8 @@ async def test_workflow_resume_prompt_tool_is_state_derived(tmp_path):
     assert "Continue run_id=workflow-run" in prompt["prompt"]
     assert "task_id=workflow-1" in prompt["prompt"]
     assert "next_safe_action=inspect blocker" in prompt["prompt"]
+    assert prompt["latest_event_id"] > 0
+    assert prompt["steps"][0]["gate"] == "prd_review"
+    assert prompt["blocker"]["gate"] == "prd_review"
+    assert prompt["artifact_output_dir"].endswith("docs/dual-agent/workflow-1")
+    assert "read_gate_transcript" in prompt["prompt"]

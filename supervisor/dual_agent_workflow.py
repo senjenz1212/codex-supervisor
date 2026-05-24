@@ -162,18 +162,44 @@ def workflow_resume_prompt(state: State, *, run_id: str, task_id: str) -> dict[s
 
     last_step = steps[-1] if steps else None
     current_gate = str(workflow["current_gate"] or "")
+    step_payloads = [
+        {
+            "gate": str(step["gate"]),
+            "status": str(step["status"]),
+            "attempt_count": int(step["attempt_count"]),
+            "latest_event_id": step["latest_event_id"],
+        }
+        for step in steps
+    ]
+    latest_event_id = state.latest_event_id(run_id)
+    artifact_output_dir = default_dual_agent_artifact_dir(str(workflow["cwd"]), task_id)
+    blocker = None
+    if str(workflow["status"]) in {"blocked", "failed"}:
+        blocker = {
+            "gate": current_gate or (str(last_step["gate"]) if last_step is not None else ""),
+            "status": str(workflow["status"]),
+            "latest_event_id": (
+                int(last_step["latest_event_id"])
+                if last_step is not None and last_step["latest_event_id"] is not None
+                else latest_event_id
+            ),
+        }
     next_safe_action = _next_safe_action(
         workflow_status=str(workflow["status"]),
         current_gate=current_gate,
         last_step_status=str(last_step["status"]) if last_step is not None else "",
     )
+    transcript_command = f"read_gate_transcript(run_id={run_id}, task_id={task_id})"
     prompt = "\n".join([
         "Use codex_supervisor.",
         f"Continue run_id={run_id}",
         f"task_id={task_id}",
         f"current_gate={current_gate or 'unknown'}",
         f"last_status={workflow['status']}",
+        f"latest_event_id={latest_event_id}",
         f"next_safe_action={next_safe_action}",
+        f"artifact_output_dir={artifact_output_dir}",
+        f"first inspect: {transcript_command}",
     ])
     return {
         "status": "ok",
@@ -181,6 +207,11 @@ def workflow_resume_prompt(state: State, *, run_id: str, task_id: str) -> dict[s
         "task_id": task_id,
         "current_gate": current_gate,
         "last_status": workflow["status"],
+        "steps": step_payloads,
+        "latest_event_id": latest_event_id,
+        "blocker": blocker,
+        "artifact_output_dir": str(artifact_output_dir),
+        "transcript_command": transcript_command,
         "next_safe_action": next_safe_action,
         "prompt": prompt,
     }
@@ -203,11 +234,13 @@ def verify_workflow_claims(
     user_facing: bool,
     screenshots: list[dict[str, Any]],
     verified_claims: list[str] | None = None,
+    tool_receipts: list[dict[str, Any]] | None = None,
 ) -> ProbeResult:
     if not isinstance(outcome_payload, dict):
         return ProbeResult("P11", "red", "missing_outcome_for_claim_verification")
     outcome = Outcome(**outcome_payload)
-    verified = {claim.lower() for claim in (verified_claims or [])}
+    receipts = _normalise_tool_receipts(tool_receipts or [], screenshots=screenshots)
+    legacy_verified = sorted({claim.lower() for claim in (verified_claims or [])})
     failures: list[str] = []
     claims = [claim.lower() for claim in outcome.claims]
     claims.extend(str(decision).lower() for decision in outcome.decisions)
@@ -217,20 +250,62 @@ def verify_workflow_claims(
     if "tests passed" in joined or "test passed" in joined:
         if outcome.test_status != "passed" or not outcome.tests:
             failures.append("tests_passed_without_test_evidence")
+        if not _has_receipt(
+            receipts,
+            kinds={"test", "pytest", "unit_test"},
+            statuses=_PASSING_RECEIPT_STATUSES,
+            claim="tests passed",
+            require_claim=True,
+        ):
+            failures.append("tests_passed_without_test_receipt")
     if "visual review passed" in joined or "visual validation passed" in joined or user_facing:
         if not _has_visual_evidence(screenshots):
             failures.append("visual_review_without_screenshot_evidence")
+        if not _has_receipt(
+            receipts,
+            kinds={"visual", "screenshot", "computer_use", "browser"},
+            statuses=_PASSING_RECEIPT_STATUSES,
+            claim="visual review passed",
+        ):
+            failures.append("visual_review_without_visual_receipt")
     if "implemented" in joined:
         if not outcome.changed_files:
             failures.append("implemented_without_changed_files")
+        if not _has_receipt(
+            receipts,
+            kinds={"git_diff", "changed_files", "implementation"},
+            statuses=_PRESENT_RECEIPT_STATUSES,
+            claim="implemented",
+            require_claim=True,
+            changed_files=outcome.changed_files or [],
+        ):
+            failures.append("implemented_without_diff_receipt")
     if "no files changed" in joined and outcome.changed_files:
         failures.append("no_files_changed_claim_with_changed_files")
-    if "pushed" in joined and "pushed" not in verified:
+    if "no files changed" in joined and not _has_receipt(
+        receipts,
+        kinds={"git_status"},
+        statuses={"clean", *_PASSING_RECEIPT_STATUSES},
+        claim="no files changed",
+        require_claim=True,
+    ):
+        failures.append("no_files_changed_without_git_status_receipt")
+    if "pushed" in joined and not _has_receipt(
+        receipts,
+        kinds={"git_remote", "push", "git_push"},
+        statuses={"pushed", *_PASSING_RECEIPT_STATUSES},
+        claim="pushed",
+        require_claim=True,
+    ):
         failures.append("pushed_without_remote_receipt")
 
+    details = {
+        "receipts": receipts,
+        "legacy_verified_claims": legacy_verified,
+    }
     if failures:
-        return ProbeResult("P11", "red", "workflow_claim_verification_failed", {"failures": failures})
-    return ProbeResult("P11", "green", "workflow_claims_verified")
+        return ProbeResult("P11", "red", "workflow_claim_verification_failed", {**details, "failures": failures})
+    return ProbeResult("P11", "green", "workflow_claims_verified", details)
 
 
 def workflow_milestone_text(*, task_id: str, milestone: str, gate: str | None = None) -> str:
@@ -271,6 +346,127 @@ def _has_visual_evidence(screenshots: list[dict[str, Any]]) -> bool:
         if source and status in {"passed", "pass", "accepted", "accept", "ok"}:
             return True
     return False
+
+
+_PASSING_RECEIPT_STATUSES = {"passed", "pass", "accepted", "accept", "ok", "success", "succeeded"}
+_PRESENT_RECEIPT_STATUSES = {*_PASSING_RECEIPT_STATUSES, "present", "changed", "exists"}
+
+
+def _normalise_tool_receipts(
+    tool_receipts: list[dict[str, Any]],
+    *,
+    screenshots: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    receipts: list[dict[str, Any]] = []
+    for receipt in tool_receipts:
+        if not isinstance(receipt, dict):
+            continue
+        item = dict(receipt)
+        item["kind"] = _normalise_receipt_value(item.get("kind") or item.get("type"))
+        item["status"] = _normalise_receipt_value(item.get("status") or item.get("result"))
+        receipts.append(item)
+
+    for index, screenshot in enumerate(screenshots, start=1):
+        if not isinstance(screenshot, dict):
+            continue
+        validation = screenshot.get("validation")
+        validation_payload = validation if isinstance(validation, dict) else {}
+        status = _normalise_receipt_value(
+            screenshot.get("validation_status")
+            or validation_payload.get("status")
+            or validation_payload.get("result")
+        )
+        source = _normalise_receipt_value(
+            screenshot.get("source")
+            or screenshot.get("captured_by")
+            or screenshot.get("tool")
+        )
+        if source and status:
+            receipts.append({
+                "receipt_id": screenshot.get("receipt_id") or f"screenshot-{index}",
+                "kind": "visual",
+                "status": status,
+                "source": source,
+                "path": screenshot.get("path"),
+                "label": screenshot.get("label"),
+            })
+    return receipts
+
+
+def _has_receipt(
+    receipts: list[dict[str, Any]],
+    *,
+    kinds: set[str],
+    statuses: set[str],
+    claim: str | None = None,
+    require_claim: bool = False,
+    changed_files: list[str] | None = None,
+) -> bool:
+    for receipt in receipts:
+        kind = _normalise_receipt_value(receipt.get("kind") or receipt.get("type"))
+        status = _normalise_receipt_value(receipt.get("status") or receipt.get("result"))
+        if kind not in kinds or status not in statuses:
+            continue
+        if claim is not None and not _receipt_matches_claim(
+            receipt,
+            claim,
+            require_claim=require_claim,
+        ):
+            continue
+        if changed_files and not _receipt_covers_changed_files(receipt, changed_files):
+            continue
+        return True
+    return False
+
+
+def _normalise_receipt_value(value: Any) -> str:
+    return str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+
+
+def _receipt_matches_claim(
+    receipt: dict[str, Any],
+    claim: str,
+    *,
+    require_claim: bool,
+) -> bool:
+    claim_values = receipt.get("claims") or receipt.get("claim")
+    if claim_values is None:
+        return not require_claim
+    if isinstance(claim_values, str):
+        claim_items = [claim_values]
+    elif isinstance(claim_values, (list, tuple, set)):
+        claim_items = [str(item) for item in claim_values]
+    else:
+        claim_items = [str(claim_values)]
+    expected = _normalise_claim_text(claim)
+    return any(_claim_text_matches(_normalise_claim_text(item), expected) for item in claim_items)
+
+
+def _claim_text_matches(value: str, expected: str) -> bool:
+    if not value or not expected:
+        return False
+    return value == expected or expected in value or value in expected
+
+
+def _receipt_covers_changed_files(
+    receipt: dict[str, Any],
+    changed_files: list[str],
+) -> bool:
+    receipt_files = receipt.get("changed_files") or receipt.get("files") or receipt.get("paths")
+    if receipt_files is None:
+        return True
+    if isinstance(receipt_files, str):
+        receipt_file_set = {receipt_files}
+    elif isinstance(receipt_files, (list, tuple, set)):
+        receipt_file_set = {str(item) for item in receipt_files}
+    else:
+        receipt_file_set = {str(receipt_files)}
+    expected = {str(path) for path in changed_files if str(path).strip()}
+    return bool(expected & receipt_file_set)
+
+
+def _normalise_claim_text(value: Any) -> str:
+    return " ".join(str(value or "").strip().lower().replace("_", " ").replace("-", " ").split())
 
 
 def _next_safe_action(

@@ -14,7 +14,8 @@ def test_dual_agent_skill_uses_desktop_chat_when_telegram_is_absent():
     assert "read_gate_transcript" in text
     assert "Before advancing or summarizing" in text
     assert "interactions.md" in text
-    assert "Codex/Claude dialogue" in text
+    assert "clean agent dialogue" in text
+    assert "Codex, Claude Code, and Cursor" in text
     assert "`prd-to-tdd` workflow" in text
     assert "`grill-with-docs` gates" in text
     assert "planning_artifacts" in text

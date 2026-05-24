@@ -7,6 +7,7 @@ the acceptance boundary.
 from __future__ import annotations
 
 import os
+import json
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,6 +30,7 @@ class CursorInvocationRequest:
     timeout_s: int = 600
     api_key: str | None = None
     mode: str = "plan"
+    tool_receipts: tuple[dict[str, Any], ...] = ()
     expected_specialists: tuple[str, ...] = ("Cursor Reviewer",)
     expected_decisions: tuple[str, ...] = ()
     expected_objections: tuple[str, ...] = ()
@@ -68,6 +70,12 @@ def build_cursor_prompt(request: CursorInvocationRequest) -> str:
         for artifact in request.planning_artifacts
     ]
     artifacts = "\n".join(artifact_lines) if artifact_lines else "- none"
+    receipt_lines = [
+        f"- {receipt.get('receipt_id') or receipt.get('id') or 'receipt'}: "
+        f"{_receipt_prompt_payload(receipt)}"
+        for receipt in request.tool_receipts
+    ]
+    receipts = "\n".join(receipt_lines) if receipt_lines else "- none"
     claude_outcome = request.claude_outcome or {}
     return "\n".join([
         f"Tri-agent review gate: {request.gate}.",
@@ -81,6 +89,9 @@ def build_cursor_prompt(request: CursorInvocationRequest) -> str:
         "",
         "Planning artifacts:",
         artifacts,
+        "",
+        "Evidence receipts:",
+        receipts,
         "",
         "Claude outcome JSON:",
         str(claude_outcome),
@@ -208,3 +219,27 @@ def _outcome_block_contract() -> str:
         "confidence_criteria array, and claims array. "
         "Every specialist object must include a string name and a string decision."
     )
+
+
+def _receipt_prompt_payload(receipt: dict[str, Any]) -> str:
+    allowed = {
+        key: receipt.get(key)
+        for key in (
+            "receipt_id",
+            "id",
+            "kind",
+            "type",
+            "status",
+            "result",
+            "claims",
+            "command",
+            "changed_files",
+            "remote",
+            "branch",
+            "commit",
+            "path",
+            "label",
+        )
+        if receipt.get(key) not in (None, "", [], {})
+    }
+    return json.dumps(allowed or receipt, sort_keys=True, default=str)

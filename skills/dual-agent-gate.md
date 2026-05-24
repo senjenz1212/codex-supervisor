@@ -14,7 +14,7 @@ Claude Code as the implementer.
 - `mcp__codex_supervisor__read_gate_transcript(run_id, task_id)`
 - `mcp__codex_supervisor__export_gate_artifacts(run_id, task_id, cwd, output_dir, screenshots)`
 - `mcp__codex_supervisor__start_codex_session(prompt, cwd, model, reasoning_effort, execute, timeout_s)`
-- `mcp__codex_supervisor__run_dual_agent_workflow(cwd, task_id, run_id, intent, user_facing, max_rounds_per_gate, quality, timeout_s, planning_artifacts, screenshots, verified_claims, cursor_review, cursor_model)`
+- `mcp__codex_supervisor__run_dual_agent_workflow(cwd, task_id, run_id, intent, user_facing, max_rounds_per_gate, quality, timeout_s, planning_artifacts, screenshots, verified_claims, tool_receipts, cursor_review, cursor_model)`
 - `mcp__codex_supervisor__read_dual_agent_workflow_resume_prompt(run_id, task_id)`
 
 ## Gate Policy
@@ -94,10 +94,10 @@ For each major decision gate:
 8. Call `poll_resume_signal` only when Telegram is configured and a
    `Continue` or `Retry` callback was actually recorded.
 9. Before advancing or summarizing for the user, call `read_gate_transcript`
-   and use it to show the clean Codex/Claude dialogue: rounds, decisions,
-   confidences, objections, and final outcome. Also point the operator to
-   `interactions.md`, the readable Codex/Claude dialogue projection generated
-   in the artifact folder.
+   and use it to show the clean agent dialogue: Codex, Claude Code, and Cursor
+   rounds when Cursor review is enabled; decisions, confidences, objections,
+   receipts, and final outcome. Also point the operator to `interactions.md`,
+   the readable dialogue projection generated in the artifact folder.
 10. Read the final gate result with `read_outcome` when you only need the
     latest outcome without the dialogue history.
 11. After each accepted PRD, TDD, implementation, or outcome-review milestone,

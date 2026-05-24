@@ -167,7 +167,7 @@ def test_export_dual_agent_run_artifacts_writes_readable_gate_documents(tmp_path
     assert "No screenshot artifacts were supplied for this export." in (result.output_dir / "screenshots.md").read_text()
     assert "Outcome accepted." in (result.output_dir / "outcome-review.md").read_text()
     interactions = (result.output_dir / "interactions.md").read_text()
-    assert "# Codex / Claude Code Interactions: task-1" in interactions
+    assert "# Agent Interactions: task-1" in interactions
     assert "## 1. PRD Review" in interactions
     assert "Codex -> Claude Code" in interactions
     assert "Claude Code -> Codex" in interactions
@@ -178,6 +178,132 @@ def test_export_dual_agent_run_artifacts_writes_readable_gate_documents(tmp_path
     assert "## 4. Outcome Review" in interactions
     assert "Outcome summary: Outcome accepted." in interactions
     assert "prd_review" in (result.output_dir / "transcript.md").read_text()
+
+
+def test_export_dual_agent_run_artifacts_renders_interaction_receipts(tmp_path):
+    state = _state(tmp_path)
+    _insert_event(
+        state,
+        kind="dual_agent_interaction_message",
+        payload={
+            "schema_version": "dual-agent-interaction/v1",
+            "task_id": "task-1",
+            "gate": "outcome_review",
+            "sender": "codex",
+            "recipient": "cursor",
+            "message_type": "review_request",
+            "content": "Challenge the receipt coverage.",
+            "round_index": 1,
+            "persona_id": "codex.lifecycle_reviewer",
+            "addresses": ["event:12"],
+            "confidence": {
+                "value": 0.83,
+                "source": "deterministic_policy",
+                "criteria": ["receipt_required"],
+                "rationale": "Codex needs Cursor to review missing push evidence.",
+                "evidence": ["receipt:test:passed"],
+            },
+            "claims": ["tests passed"],
+            "objections": ["push receipt missing"],
+            "questions": ["Does the push receipt map to this commit?"],
+            "tool_receipts": [{
+                "receipt_id": "pytest-focused",
+                "kind": "test",
+                "status": "passed",
+                "command": "uv run pytest -q",
+            }],
+            "evidence_refs": [{
+                "kind": "pytest",
+                "ref": "receipt:pytest-focused",
+                "status": "passed",
+            }],
+            "raw_transcript_refs": [{
+                "kind": "claude_stdout",
+                "ref": ".handoff/task-1.stdout",
+                "sha256": "abc123",
+            }],
+            "would_change_if": "A matching git_remote receipt appears.",
+            "artifacts": [],
+            "metadata": {},
+        },
+    )
+
+    result = export_dual_agent_run_artifacts(
+        state,
+        run_id="run-1",
+        task_id="task-1",
+        output_dir=tmp_path / "docs" / "dual-agent" / "task-1",
+    )
+
+    interactions = (result.output_dir / "interactions.md").read_text()
+    transcript = (result.output_dir / "transcript.md").read_text()
+    for text in (interactions, transcript):
+        assert "interaction_type: `review_request`" in text
+        assert "persona_id: `codex.lifecycle_reviewer`" in text
+        assert "tests passed" in text
+        assert "push receipt missing" in text
+        assert "Does the push receipt map to this commit?" in text
+        assert "pytest-focused" in text
+        assert "receipt:pytest-focused" in text
+        assert ".handoff/task-1.stdout" in text
+        assert "A matching git_remote receipt appears." in text
+
+
+def test_export_dual_agent_run_artifacts_renders_cursor_review_events(tmp_path):
+    state = _state(tmp_path)
+    _insert_event(
+        state,
+        kind="tri_agent_cursor_review",
+        payload={
+            "task_id": "task-1",
+            "gate": "tdd_review",
+            "cursor_review": {
+                "accepted": False,
+                "probe": {
+                    "probe_id": "CURSOR",
+                    "status": "red",
+                    "reason": "cursor_review_failed",
+                    "details": {"missing": ["receipt:git-diff"]},
+                },
+                "outcome": {
+                    "task_id": "task-1",
+                    "summary": "Cursor found missing diff evidence.",
+                    "specialists": [{"name": "Cursor Reviewer", "decision": "revise"}],
+                    "decisions": ["revise"],
+                    "objections": ["diff receipt missing"],
+                    "changed_files": [],
+                    "tests": [],
+                    "test_status": "unknown",
+                    "confidence": 0.72,
+                    "claims": ["receipt coverage incomplete"],
+                },
+                "agent_id": "cursor-agent-1",
+                "run_id": "cursor-run-1",
+                "status": "completed",
+                "model": "composer-2.5",
+                "duration_ms": 1234,
+                "transcript_tail": "Cursor transcript tail.",
+            },
+        },
+    )
+
+    result = export_dual_agent_run_artifacts(
+        state,
+        run_id="run-1",
+        task_id="task-1",
+        output_dir=tmp_path / "docs" / "dual-agent" / "task-1",
+    )
+
+    interactions = (result.output_dir / "interactions.md").read_text()
+    transcript = (result.output_dir / "transcript.md").read_text()
+    for text in (interactions, transcript):
+        assert "interaction_type: `cursor_review`" in text
+        assert "accepted: `False`" in text
+        assert "Cursor found missing diff evidence." in text
+        assert "receipt coverage incomplete" in text
+        assert "diff receipt missing" in text
+        assert "composer-2.5" in text
+        assert "Cursor transcript tail." in text
 
 
 def test_export_dual_agent_run_artifacts_copies_screenshots_and_writes_manifest(tmp_path):
