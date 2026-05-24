@@ -36,6 +36,7 @@ class AgentMailboxMessage:
     evidence_refs: tuple[dict[str, Any], ...] = ()
     raw_transcript_refs: tuple[dict[str, Any], ...] = ()
     would_change_if: str = ""
+    review_packet: dict[str, Any] | None = None
     artifacts: tuple[dict[str, Any], ...] = ()
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -134,6 +135,52 @@ def codex_confidence_report(
         rationale=rationale,
         evidence=tuple(evidence),
     )
+
+
+def codex_review_packet(
+    *,
+    task_id: str,
+    gate: str,
+    decision: str,
+    confidence: ConfidenceReport,
+    probe_statuses: dict[str, str],
+    claim_verification: dict[str, Any] | None,
+    cursor_review: dict[str, Any] | None,
+    objection: str,
+    evidence_refs: tuple[dict[str, Any], ...] = (),
+) -> dict[str, Any]:
+    """Build Codex's structured reviewer packet for audit and replay."""
+    requirements: list[dict[str, Any]] = []
+    for probe_id, status in sorted(probe_statuses.items()):
+        requirements.append({
+            "requirement_id": f"probe.{probe_id}",
+            "status": "pass" if status == "green" else "fail",
+            "evidence": [f"{probe_id}:{status}"],
+        })
+    if claim_verification is not None:
+        requirements.append({
+            "requirement_id": "claim_verification.P11",
+            "status": "pass" if claim_verification.get("status") == "green" else "fail",
+            "evidence": [str(claim_verification.get("reason") or "")],
+        })
+    if cursor_review is not None:
+        requirements.append({
+            "requirement_id": "cursor_review",
+            "status": "pass" if bool(cursor_review.get("accepted")) else "fail",
+            "evidence": [str((cursor_review.get("probe") or {}).get("reason") or "")],
+        })
+    return {
+        "schema_version": "codex-review-packet/v1",
+        "task_id": task_id,
+        "gate": gate,
+        "reviewer": "codex",
+        "decision": decision,
+        "confidence": asdict(confidence),
+        "requirements": requirements,
+        "objections": [] if decision == "accept" else [objection],
+        "evidence_refs": list(evidence_refs),
+        "would_change_if": "Every requirement is pass and both reviewers accept.",
+    }
 
 
 def planning_artifact_refs(planning_artifacts: list[dict[str, Any]] | tuple[Any, ...]) -> tuple[dict[str, Any], ...]:

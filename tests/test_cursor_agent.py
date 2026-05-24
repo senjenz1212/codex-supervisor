@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
 from pathlib import Path
 
 from supervisor.cursor_agent import (
@@ -86,3 +89,27 @@ def test_select_cursor_model_defaults_to_documented_composer_model():
     assert select_cursor_model(quality="best") == "composer-2.5"
     assert select_cursor_model(quality="cheap") == "composer-2.5"
     assert select_cursor_model(quality="best", explicit_model="custom") == "custom"
+
+
+def test_probe_cursor_sdk_live_writes_skipped_fixture_without_key(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("CURSOR_API_KEY", raising=False)
+    output_dir = tmp_path / "cursor-probe"
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/probe_cursor_sdk_live.py",
+            "--output-dir",
+            str(output_dir),
+        ],
+        cwd=Path(__file__).parents[1],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    summary = json.loads((output_dir / "summary.json").read_text(encoding="utf-8"))
+    assert summary["status"] == "skipped"
+    assert summary["reason"] == "missing_cursor_api_key"
+    assert summary["api_key_present"] is False
+    assert "CURSOR_API_KEY" not in completed.stdout

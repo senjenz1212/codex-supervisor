@@ -97,6 +97,7 @@ def _tiny_png() -> bytes:
 
 def _tool_receipts(*, include_push: bool = False) -> list[dict]:
     receipts = [
+        *_skill_receipts(),
         {
             "receipt_id": "pytest-focused",
             "kind": "test",
@@ -124,6 +125,26 @@ def _tool_receipts(*, include_push: bool = False) -> list[dict]:
             "claims": ["pushed"],
         })
     return receipts
+
+
+def _skill_receipts() -> list[dict]:
+    return [
+        {
+            "receipt_id": f"skill-{stage}",
+            "kind": "skill_run",
+            "status": "passed",
+            "skill": skill,
+            "stage": stage,
+            "claims": ["prd-tdd skill executed"],
+        }
+        for stage, skill in [
+            ("to_prd", "to-prd"),
+            ("prd_grill", "grill-with-docs"),
+            ("to_issues", "to-issues"),
+            ("tdd", "tdd"),
+            ("tdd_grill", "grill-with-docs"),
+        ]
+    ]
 
 
 def _server(
@@ -322,12 +343,57 @@ async def test_run_dual_agent_workflow_blocks_auto_seeded_planning_stubs(tmp_pat
         run_id="workflow-run",
         intent="Build the supervisor-owned workflow driver.",
         max_rounds_per_gate=5,
+        tool_receipts=_skill_receipts(),
     ))
 
     assert result["status"] == "blocked"
     assert result["current_gate"] == "prd_review"
     assert result["final_gate_result"]["probes"]["P_planning"]["reason"] == "planning_validation_failed"
     assert runner_calls == []
+
+
+@pytest.mark.asyncio
+async def test_run_dual_agent_workflow_requires_prd_tdd_skill_receipts(tmp_path):
+    server, state = _server(tmp_path)
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Attempt workflow without PRD/TDD skill receipts.",
+        max_rounds_per_gate=1,
+    ))
+
+    assert result["status"] == "blocked"
+    assert result["current_gate"] == "workflow_start"
+    assert result["final_gate_result"]["probes"]["P12"]["reason"] == "missing_prd_tdd_skill_receipts"
+    assert result["final_gate_result"]["trace_envelope"]["failure_taxonomy"]["category"] == "governance"
+    workflow = state.get_dual_agent_workflow(run_id="workflow-run", task_id="workflow-1")
+    assert workflow["status"] == "blocked"
+
+
+@pytest.mark.asyncio
+async def test_run_dual_agent_workflow_records_skill_receipt_validation(tmp_path):
+    server, state = _server(tmp_path)
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Run workflow with PRD/TDD skill receipts.",
+        max_rounds_per_gate=1,
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert result["status"] == "accepted"
+    events = [
+        json.loads(row["payload_json"])
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "dual_agent_skill_receipt_validation"
+    ]
+    assert events
+    assert events[0]["probe"]["status"] == "green"
+    assert events[0]["trace_envelope"]["policy_verdict"] == "accepted"
 
 
 @pytest.mark.asyncio
@@ -381,6 +447,7 @@ async def test_run_dual_agent_workflow_with_cursor_review_blocks_on_cursor_rejec
         intent="Cursor should block unresolved concerns.",
         max_rounds_per_gate=1,
         cursor_review=True,
+        tool_receipts=_tool_receipts(),
     ))
 
     assert result["status"] == "blocked"
@@ -406,6 +473,7 @@ async def test_run_dual_agent_workflow_enforces_v5_without_prompt_following(tmp_
         run_id="workflow-run",
         intent="Force a disagreement fixture.",
         max_rounds_per_gate=2,
+        tool_receipts=_skill_receipts(),
     ))
 
     assert result["status"] == "blocked"
@@ -497,6 +565,7 @@ async def test_run_dual_agent_workflow_blocks_on_claude_failure_and_requests_inp
         run_id="workflow-run",
         intent="Surface worker failure.",
         max_rounds_per_gate=1,
+        tool_receipts=_skill_receipts(),
     ))
 
     assert result["status"] == "blocked"
@@ -542,6 +611,7 @@ async def test_run_dual_agent_workflow_can_rerun_after_corrective_input(tmp_path
         run_id="workflow-run",
         intent="First run blocks, second run accepts after correction.",
         max_rounds_per_gate=1,
+        tool_receipts=_skill_receipts(),
     ))
     assert first["status"] == "blocked"
 
@@ -571,6 +641,7 @@ async def test_run_dual_agent_workflow_blocks_user_facing_without_visual_evidenc
         intent="Review a user-facing UI change.",
         user_facing=True,
         max_rounds_per_gate=1,
+        tool_receipts=_tool_receipts(),
     ))
 
     assert result["status"] == "blocked"
@@ -595,6 +666,7 @@ async def test_run_dual_agent_workflow_auto_requires_visual_evidence_for_vela_li
             "Do not claim live provider success without screenshots."
         ),
         max_rounds_per_gate=1,
+        tool_receipts=_tool_receipts(),
     ))
 
     assert result["status"] == "blocked"
@@ -656,6 +728,7 @@ async def test_run_dual_agent_workflow_verifies_final_claims(tmp_path):
         intent="Claim remote push without evidence.",
         max_rounds_per_gate=1,
         verified_claims=["pushed"],
+        tool_receipts=_skill_receipts(),
     ))
 
     assert result["status"] == "blocked"
@@ -676,6 +749,7 @@ async def test_run_dual_agent_workflow_requires_test_and_diff_receipts_for_claim
         run_id="workflow-run",
         intent="Claim tests and implementation without receipts.",
         max_rounds_per_gate=1,
+        tool_receipts=_skill_receipts(),
     ))
 
     assert result["status"] == "blocked"
@@ -733,6 +807,7 @@ async def test_workflow_resume_prompt_tool_is_state_derived(tmp_path):
         run_id="workflow-run",
         intent="Create a blocked workflow.",
         max_rounds_per_gate=1,
+        tool_receipts=_skill_receipts(),
     ))
 
     prompt = await _maybe_await(server.tools["read_dual_agent_workflow_resume_prompt"](

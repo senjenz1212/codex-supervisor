@@ -20,6 +20,7 @@ from typing import Any
 
 from .target.types import ScopeContract
 from .redaction import redact
+from .trace_envelope import stamp_trace_envelope
 
 
 # Built-in baseline. Always merged into the stored never_touch_patterns
@@ -338,7 +339,12 @@ class State:
 
     # --- events ---
     def write_event(self, *, run_id: str, source: str, kind: str, payload: dict) -> int:
-        safe = redact(payload)
+        safe = redact(stamp_trace_envelope(
+            run_id=run_id,
+            source=source,
+            kind=kind,
+            payload=payload,
+        ))
         cur = self._conn.execute(
             "INSERT INTO events(run_id, ts, source, kind, payload_json) VALUES(?, ?, ?, ?, ?)",
             (run_id, int(time.time()), source, kind, json.dumps(safe)),
@@ -368,6 +374,7 @@ class State:
                    'dual_agent_gate_round',
                    'dual_agent_gate_result',
                    'dual_agent_planning_validation',
+                   'dual_agent_skill_receipt_validation',
                    'dual_agent_interaction_message',
                    'tri_agent_cursor_review'
                  )

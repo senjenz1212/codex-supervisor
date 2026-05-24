@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from supervisor.agent_mailbox import AgentMailboxMessage, ConfidenceReport
+from supervisor.agent_mailbox import (
+    AgentMailboxMessage,
+    ConfidenceReport,
+    codex_confidence_report,
+    codex_review_packet,
+)
 
 
 def test_agent_mailbox_message_carries_trace_fields():
@@ -47,6 +52,7 @@ def test_agent_mailbox_message_carries_trace_fields():
             },
         ),
         would_change_if="A matching git_remote receipt appears.",
+        review_packet={"schema_version": "codex-review-packet/v1", "decision": "revise"},
         artifacts=({"kind": "prd", "path": "docs/prd.md"},),
     )
 
@@ -62,3 +68,31 @@ def test_agent_mailbox_message_carries_trace_fields():
     assert payload["evidence_refs"][0]["ref"] == "receipt:test-1"
     assert payload["raw_transcript_refs"][0]["kind"] == "claude_stdout"
     assert payload["would_change_if"] == "A matching git_remote receipt appears."
+    assert payload["review_packet"]["schema_version"] == "codex-review-packet/v1"
+
+
+def test_codex_confidence_report_and_review_packet_explain_decision():
+    report = codex_confidence_report(
+        decision="deny",
+        gate_status="accepted",
+        probe_statuses={"P1": "green", "P2": "green", "P11": "red"},
+        claim_verification={"status": "red", "reason": "workflow_claim_verification_failed"},
+        cursor_review=None,
+    )
+    packet = codex_review_packet(
+        task_id="trace-task",
+        gate="outcome_review",
+        decision="deny",
+        confidence=report,
+        probe_statuses={"P1": "green", "P2": "green", "P11": "red"},
+        claim_verification={"status": "red", "reason": "workflow_claim_verification_failed"},
+        cursor_review=None,
+        objection="claim verification failed",
+        evidence_refs=({"kind": "pytest", "ref": "receipt:pytest"},),
+    )
+
+    assert report.value == 0.75
+    assert "blocked_or_failed_probes=P11" in report.criteria
+    assert packet["schema_version"] == "codex-review-packet/v1"
+    assert packet["decision"] == "deny"
+    assert {"requirement_id": "probe.P11", "status": "fail", "evidence": ["P11:red"]} in packet["requirements"]

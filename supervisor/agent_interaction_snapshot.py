@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from .state import State
+from .failure_taxonomy import BLOCKING_PROBE_IDS
 
 
 SnapshotStatus = Literal["ok", "not_found", "partial"]
@@ -527,7 +528,7 @@ def _round_severity(codex_decision: str, claude_decision: str) -> InboxSeverity:
 
 
 def _result_has_validation_issue(result: _ResultEvent) -> bool:
-    for probe_id in ("P2", "P3"):
+    for probe_id in BLOCKING_PROBE_IDS:
         probe = result.probes.get(probe_id)
         if not isinstance(probe, dict):
             continue
@@ -662,7 +663,7 @@ def _red_probe_blocker(
 ) -> Blocker | None:
     if result is None:
         return None
-    for probe_id in ("P2", "P3"):
+    for probe_id in BLOCKING_PROBE_IDS:
         probe = result.probes.get(probe_id)
         if not isinstance(probe, dict):
             continue

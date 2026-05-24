@@ -18,6 +18,7 @@ from supervisor.config import Config
 from supervisor.agent_mailbox import (
     AgentMailboxMessage,
     codex_confidence_report,
+    codex_review_packet,
     outcome_confidence_report,
     planning_artifact_refs,
 )
@@ -39,6 +40,7 @@ from supervisor.dual_agent_workflow import (
     claude_accepts,
     ensure_workflow_source_artifacts,
     mandatory_artifact_status,
+    verify_prd_tdd_skill_receipts,
     verify_workflow_claims,
     workflow_visual_evidence_policy,
     workflow_milestone_text,
@@ -55,6 +57,7 @@ from supervisor.dual_agent_runner import (
 from supervisor.dual_agent_lead import GateName, PlanningArtifact
 from supervisor.redaction import redact
 from supervisor.state import State
+from supervisor.trace_envelope import stamp_trace_envelope
 from supervisor.telegram import TelegramNotifier, telegram_enabled
 
 
@@ -290,6 +293,7 @@ class CodexSupervisorMcpAPI:
         screenshots: list[dict[str, Any]] | None = None,
         verified_claims: list[str] | None = None,
         tool_receipts: list[dict[str, Any]] | None = None,
+        require_skill_receipts: bool = True,
         cursor_review: bool = False,
         cursor_model: str | None = None,
     ) -> dict[str, Any]:
@@ -312,6 +316,7 @@ class CodexSupervisorMcpAPI:
             planning_artifacts=gate_artifacts,
         )
         effective_user_facing = bool(visual_policy["required"])
+        skill_probe = verify_prd_tdd_skill_receipts(receipt_payloads) if require_skill_receipts else None
         self.state.upsert_dual_agent_workflow(
             run_id=run_id,
             task_id=task_id,
@@ -329,6 +334,76 @@ class CodexSupervisorMcpAPI:
             task_id=task_id,
             milestone="started",
         )
+        if skill_probe is not None:
+            self.state.write_event(
+                run_id=run_id,
+                source="dual_agent",
+                kind="dual_agent_skill_receipt_validation",
+                payload={
+                    "task_id": task_id,
+                    "gate": "workflow_start",
+                    "status": "accepted" if skill_probe.ok else "blocked",
+                    "probe": asdict(skill_probe),
+                    "tool_receipts": receipt_payloads,
+                },
+            )
+            if not skill_probe.ok:
+                final_payload = {
+                    "task_id": task_id,
+                    "gate": "workflow_start",
+                    "status": "blocked",
+                    "attempts": 0,
+                    "handoff_packet_path": None,
+                    "probes": {"P12": asdict(skill_probe)},
+                    "outcome": None,
+                    "escalation": {
+                        "type": "skill_receipt_validation",
+                        "reason": skill_probe.reason,
+                        "details": skill_probe.details,
+                    },
+                    "artifact_rigor": {
+                        "status": "blocked",
+                        "reason": "missing_prd_tdd_skill_receipts",
+                    },
+                }
+                self.state.write_event(
+                    run_id=run_id,
+                    source="dual_agent",
+                    kind="dual_agent_gate_result",
+                    payload=final_payload,
+                )
+                self.state.record_dual_agent_workflow_step(
+                    run_id=run_id,
+                    task_id=task_id,
+                    gate="workflow_start",
+                    status="blocked",
+                    attempt_count=0,
+                    latest_event_id=self.state.latest_event_id(run_id),
+                )
+                self.state.update_dual_agent_workflow(
+                    run_id=run_id,
+                    task_id=task_id,
+                    status="blocked",
+                    current_gate="workflow_start",
+                )
+                await self._emit_workflow_milestone(
+                    notifier=notifier,
+                    run_id=run_id,
+                    task_id=task_id,
+                    milestone="needs_user_input",
+                    gate="workflow_start",
+                )
+                return self._workflow_result(
+                    run_id=run_id,
+                    task_id=task_id,
+                    status="blocked",
+                    current_gate="workflow_start",
+                    steps=[_workflow_step_dict("workflow_start", "blocked", 0)],
+                    final_gate_result=final_payload,
+                    cwd=cwd,
+                    screenshots=screenshot_payloads,
+                    visual_evidence_policy=visual_policy,
+                )
 
         steps: list[dict[str, Any]] = []
         final_payload: dict[str, Any] | None = None
@@ -519,6 +594,11 @@ class CodexSupervisorMcpAPI:
                     else "deny" if payload.get("status") == "blocked"
                     else "revise"
                 )
+                probe_statuses = {
+                    probe_id: str(probe.get("status") or "")
+                    for probe_id, probe in (payload.get("probes") or {}).items()
+                    if isinstance(probe, dict)
+                }
                 objection = (
                     "both agents accepted"
                     if (
@@ -535,6 +615,34 @@ class CodexSupervisorMcpAPI:
                         max_rounds=max_rounds,
                     )
                 )
+                cursor_payload = (
+                    _cursor_result_payload(cursor_result)
+                    if cursor_result is not None else None
+                )
+                claim_payload = asdict(claim_probe) if claim_probe is not None else None
+                evidence_refs = _receipt_evidence_refs(receipt_payloads, screenshot_payloads)
+                codex_report = codex_confidence_report(
+                    decision=codex_decision,
+                    gate_status=str(payload.get("status") or ""),
+                    probe_statuses=probe_statuses,
+                    claim_verification=claim_payload,
+                    cursor_review=cursor_payload,
+                )
+                claude_report = outcome_confidence_report(
+                    payload.get("outcome") if isinstance(payload.get("outcome"), dict) else None,
+                    source="claude_code",
+                )
+                review_packet = codex_review_packet(
+                    task_id=task_id,
+                    gate=gate,
+                    decision=codex_decision,
+                    confidence=codex_report,
+                    probe_statuses=probe_statuses,
+                    claim_verification=claim_payload,
+                    cursor_review=cursor_payload,
+                    objection=objection,
+                    evidence_refs=evidence_refs,
+                )
                 round_result = self.record_gate_round(
                     run_id=run_id,
                     task_id=task_id,
@@ -542,8 +650,8 @@ class CodexSupervisorMcpAPI:
                     round_index=round_index,
                     codex_decision=codex_decision,
                     claude_decision=claude_decision,
-                    codex_confidence=0.95 if codex_decision == "accept" else 0.7,
-                    claude_confidence=_outcome_confidence(payload),
+                    codex_confidence=codex_report.value if codex_report.value is not None else 0.0,
+                    claude_confidence=claude_report.value if claude_report.value is not None else 0.0,
                     objection=objection,
                     cwd=cwd,
                 )
@@ -559,18 +667,7 @@ class CodexSupervisorMcpAPI:
                             persona_id="codex.lifecycle_reviewer",
                             content=objection,
                             addresses=(f"event:{round_result['event_id']}",),
-                            confidence=codex_confidence_report(
-                                decision=codex_decision,
-                                gate_status=str(payload.get("status") or ""),
-                                probe_statuses={
-                                    probe_id: str(probe.get("status") or "")
-                                for probe_id, probe in (payload.get("probes") or {}).items()
-                                if isinstance(probe, dict)
-                            },
-                            claim_verification=asdict(claim_probe) if claim_probe is not None else None,
-                                cursor_review=_cursor_result_payload(cursor_result)
-                                if cursor_result is not None else None,
-                            ),
+                            confidence=codex_report,
                             claims=(
                                 f"codex_decision={codex_decision}",
                                 f"claude_decision={claude_decision}",
@@ -581,9 +678,10 @@ class CodexSupervisorMcpAPI:
                                 "What corrective input should be applied before the next attempt?",
                             ) if codex_decision != "accept" else (),
                             tool_receipts=tuple(receipt_payloads),
-                            evidence_refs=_receipt_evidence_refs(receipt_payloads, screenshot_payloads),
+                            evidence_refs=evidence_refs,
                             raw_transcript_refs=_raw_transcript_refs(payload),
                             would_change_if="All required probes, claim receipts, and optional Cursor review accept.",
+                            review_packet=review_packet,
                             artifacts=planning_artifact_refs(gate_artifacts),
                             metadata={
                                 "codex_decision": codex_decision,
@@ -885,6 +983,7 @@ class CodexSupervisorMcpAPI:
                    'dual_agent_gate_round',
                    'dual_agent_gate_result',
                    'dual_agent_planning_validation',
+                   'dual_agent_skill_receipt_validation',
                    'dual_agent_interaction_message',
                    'tri_agent_cursor_review'
                  )
@@ -893,6 +992,7 @@ class CodexSupervisorMcpAPI:
         ).fetchall()
         rounds: list[dict[str, Any]] = []
         planning_validations: list[dict[str, Any]] = []
+        skill_receipt_validations: list[dict[str, Any]] = []
         interactions: list[dict[str, Any]] = []
         cursor_reviews: list[dict[str, Any]] = []
         latest_result: dict[str, Any] | None = None
@@ -915,6 +1015,12 @@ class CodexSupervisorMcpAPI:
                     "occurred_at": row["ts"],
                     **payload,
                 }))
+            elif row["kind"] == "dual_agent_skill_receipt_validation":
+                skill_receipt_validations.append(redact({
+                    "event_id": row["event_id"],
+                    "occurred_at": row["ts"],
+                    **payload,
+                }))
             elif row["kind"] == "dual_agent_interaction_message":
                 interactions.append(redact({
                     "event_id": row["event_id"],
@@ -932,13 +1038,14 @@ class CodexSupervisorMcpAPI:
                 latest_result = redact(payload)
                 latest_result_event_id = int(row["event_id"])
 
-        if not rounds and not planning_validations and latest_result is None:
+        if not rounds and not planning_validations and not skill_receipt_validations and latest_result is None:
             return {
                 "status": "not_found",
                 "run_id": run_id,
                 "task_id": task_id,
                 "rounds": [],
                 "planning_validations": [],
+                "skill_receipt_validations": [],
                 "interactions": [],
                 "cursor_reviews": [],
                 "result": None,
@@ -950,6 +1057,7 @@ class CodexSupervisorMcpAPI:
             "task_id": task_id,
             "rounds": rounds,
             "planning_validations": planning_validations,
+            "skill_receipt_validations": skill_receipt_validations,
             "interactions": interactions,
             "cursor_reviews": cursor_reviews,
             "result_event_id": latest_result_event_id,
@@ -1127,6 +1235,13 @@ class CodexSupervisorMcpAPI:
         visual_evidence_policy: dict[str, Any],
         mandatory_artifacts: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        if final_gate_result is not None:
+            final_gate_result = stamp_trace_envelope(
+                run_id=run_id,
+                source="dual_agent",
+                kind="dual_agent_gate_result",
+                payload=final_gate_result,
+            )
         artifact_export = self.export_gate_artifacts(
             run_id=run_id,
             task_id=task_id,
@@ -1390,6 +1505,7 @@ def build_codex_supervisor_mcp_server(
         screenshots: list[dict[str, Any]] | None = None,
         verified_claims: list[str] | None = None,
         tool_receipts: list[dict[str, Any]] | None = None,
+        require_skill_receipts: bool = True,
         cursor_review: bool = False,
         cursor_model: str | None = None,
     ) -> dict[str, Any]:
@@ -1406,6 +1522,7 @@ def build_codex_supervisor_mcp_server(
             screenshots=screenshots,
             verified_claims=verified_claims,
             tool_receipts=tool_receipts,
+            require_skill_receipts=require_skill_receipts,
             cursor_review=cursor_review,
             cursor_model=cursor_model,
         )
@@ -1711,7 +1828,7 @@ def _outcome_confidence(payload: dict[str, Any]) -> float:
     try:
         value = float(outcome.get("confidence"))
     except (TypeError, ValueError):
-        return 0.7
+        return 0.0
     return max(0.0, min(1.0, value))
 
 

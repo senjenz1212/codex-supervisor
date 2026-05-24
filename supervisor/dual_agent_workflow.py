@@ -51,6 +51,14 @@ VISUAL_EVIDENCE_TERMS: tuple[str, ...] = (
     "visual",
 )
 
+REQUIRED_PRD_TDD_SKILL_STAGES: tuple[str, ...] = (
+    "to_prd",
+    "prd_grill",
+    "to_issues",
+    "tdd",
+    "tdd_grill",
+)
+
 
 @dataclass(frozen=True)
 class SourceArtifactSet:
@@ -308,6 +316,40 @@ def verify_workflow_claims(
     return ProbeResult("P11", "green", "workflow_claims_verified", details)
 
 
+def verify_prd_tdd_skill_receipts(
+    tool_receipts: list[dict[str, Any]] | None,
+    *,
+    required_stages: tuple[str, ...] = REQUIRED_PRD_TDD_SKILL_STAGES,
+) -> ProbeResult:
+    receipts = _normalise_tool_receipts(tool_receipts or [], screenshots=[])
+    observed: dict[str, dict[str, Any]] = {}
+    for receipt in receipts:
+        kind = _normalise_receipt_value(receipt.get("kind") or receipt.get("type"))
+        if kind not in {"skill_run", "prd_tdd_skill", "skill"}:
+            continue
+        status = _normalise_receipt_value(receipt.get("status") or receipt.get("result"))
+        if status not in _PASSING_RECEIPT_STATUSES:
+            continue
+        stage = _skill_receipt_stage(receipt)
+        if stage:
+            observed.setdefault(stage, receipt)
+
+    missing = [stage for stage in required_stages if stage not in observed]
+    details = {
+        "required_stages": list(required_stages),
+        "observed_stages": sorted(observed),
+        "receipts": [observed[stage] for stage in sorted(observed)],
+    }
+    if missing:
+        return ProbeResult(
+            "P12",
+            "red",
+            "missing_prd_tdd_skill_receipts",
+            {**details, "missing_stages": missing},
+        )
+    return ProbeResult("P12", "green", "prd_tdd_skill_receipts_verified", details)
+
+
 def workflow_milestone_text(*, task_id: str, milestone: str, gate: str | None = None) -> str:
     gate_text = f" gate={gate}" if gate else ""
     return f"[{task_id}] dual-agent workflow {milestone}{gate_text}"
@@ -421,6 +463,20 @@ def _has_receipt(
 
 def _normalise_receipt_value(value: Any) -> str:
     return str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+
+
+def _skill_receipt_stage(receipt: dict[str, Any]) -> str:
+    stage = _normalise_receipt_value(receipt.get("stage") or receipt.get("phase"))
+    skill = _normalise_receipt_value(receipt.get("skill") or receipt.get("skill_name"))
+    if stage:
+        return stage
+    if skill == "to_prd":
+        return "to_prd"
+    if skill == "to_issues":
+        return "to_issues"
+    if skill == "tdd":
+        return "tdd"
+    return ""
 
 
 def _receipt_matches_claim(

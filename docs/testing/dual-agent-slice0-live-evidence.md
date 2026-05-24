@@ -282,3 +282,27 @@ Known caveats:
 - The first script collected 12 interactions but no explicit round rows; Codex
   then recorded one accepted `dual_agent_gate_round` per gate and refreshed the
   artifact export.
+
+## 2026-05-24 Cursor SDK Live Probe Diagnostic
+
+Command shape:
+
+```text
+uv run python scripts/probe_cursor_sdk_live.py --output-dir docs/dual-agent/live-cursor-sdk-probe-20260524-01
+```
+
+Result:
+
+- Status: `skipped`
+- Reason: `missing_cursor_api_key`
+- `cursor_sdk` import: `ok`
+- `CURSOR_API_KEY` present in process environment: `false`
+- Fixture: `docs/dual-agent/live-cursor-sdk-probe-20260524-01/summary.json`
+
+Interpretation:
+
+- The live Cursor SDK probe harness exists and records a durable diagnostic
+  fixture even when credentials are absent.
+- This is not a green live Cursor review. A green proof still requires
+  `CURSOR_API_KEY` to be present in the process environment and a completed
+  Cursor outcome fixture.

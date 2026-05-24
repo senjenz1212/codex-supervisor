@@ -349,11 +349,12 @@ def test_accepted_three_round_sequence_is_complete_and_latest_gate_is_result_gat
     assert result.blocker is None
 
 
-@pytest.mark.parametrize("probe_id", ["P2", "P3"])
-def test_red_probe_beats_accepted_completion_for_p2_and_p3_only(tmp_path, probe_id):
+@pytest.mark.parametrize("probe_id", ["P2", "P3", "P11", "P12", "P_planning"])
+def test_blocking_red_probe_beats_accepted_completion(tmp_path, probe_id):
     state = _state(tmp_path)
     _insert_event(state, payload=_round_payload(codex_decision="accept", claude_decision="accept"), ts=1000)
     payload = _result_payload()
+    payload["probes"].setdefault(probe_id, {"probe_id": probe_id, "status": "green", "reason": "ok", "details": {}})
     payload["probes"][probe_id]["status"] = "red"
     payload["probes"][probe_id]["reason"] = "lead_invocation_failed"
     _insert_event(state, kind="dual_agent_gate_result", payload=payload, ts=1001)
@@ -366,7 +367,7 @@ def test_red_probe_beats_accepted_completion_for_p2_and_p3_only(tmp_path, probe_
     assert result.blocker.code == "lead_invocation_failed"
 
 
-def test_non_p2_p3_red_probe_is_ignored(tmp_path):
+def test_non_blocking_red_probe_is_ignored(tmp_path):
     state = _state(tmp_path)
     _insert_event(state, payload=_round_payload(codex_decision="accept", claude_decision="accept"), ts=1000)
     payload = _result_payload()

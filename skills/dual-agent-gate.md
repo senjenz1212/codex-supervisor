@@ -14,7 +14,7 @@ Claude Code as the implementer.
 - `mcp__codex_supervisor__read_gate_transcript(run_id, task_id)`
 - `mcp__codex_supervisor__export_gate_artifacts(run_id, task_id, cwd, output_dir, screenshots)`
 - `mcp__codex_supervisor__start_codex_session(prompt, cwd, model, reasoning_effort, execute, timeout_s)`
-- `mcp__codex_supervisor__run_dual_agent_workflow(cwd, task_id, run_id, intent, user_facing, max_rounds_per_gate, quality, timeout_s, planning_artifacts, screenshots, verified_claims, tool_receipts, cursor_review, cursor_model)`
+- `mcp__codex_supervisor__run_dual_agent_workflow(cwd, task_id, run_id, intent, user_facing, max_rounds_per_gate, quality, timeout_s, planning_artifacts, screenshots, verified_claims, tool_receipts, require_skill_receipts, cursor_review, cursor_model)`
 - `mcp__codex_supervisor__read_dual_agent_workflow_resume_prompt(run_id, task_id)`
 
 ## Gate Policy
@@ -47,6 +47,19 @@ ad hoc PRD/TDD prompt. That workflow creates or updates durable artifacts:
 The `prd-to-tdd` workflow includes the two `grill-with-docs` gates. Do not
 advance from PRD to TDD, or from TDD to implementation, until the corresponding
 grill findings are resolved or explicitly waived in the artifact.
+
+When using `run_dual_agent_workflow`, pass PRD/TDD skill execution receipts in
+`tool_receipts`. The workflow defaults `require_skill_receipts=true` and blocks
+at `workflow_start` unless it sees passing `skill_run` receipts for:
+
+- `stage="to_prd"` / `skill="to-prd"`
+- `stage="prd_grill"` / `skill="grill-with-docs"`
+- `stage="to_issues"` / `skill="to-issues"`
+- `stage="tdd"` / `skill="tdd"`
+- `stage="tdd_grill"` / `skill="grill-with-docs"`
+
+These receipts prove the PRD-to-TDD process ran; planning validation still
+checks that the resulting artifacts are substantive and traceable.
 
 The supervisor ledger enforces the gate sequence in strict mode. Before
 `implementation_plan`, the ledger must already contain accepted `prd_review`,

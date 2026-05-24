@@ -208,6 +208,7 @@ def _interaction_event_markdown(index: int, event: dict[str, Any]) -> str:
             _list_markdown(confidence.get("evidence")),
             "",
             *_interaction_trace_sections(payload),
+            *_trace_envelope_section(payload),
         ])
 
     if event["kind"] == "dual_agent_gate_round":
@@ -335,6 +336,26 @@ def _event_markdown(event: dict[str, Any]) -> str:
             _list_markdown(confidence.get("evidence")),
             "",
             *_interaction_trace_sections(payload),
+            *_trace_envelope_section(payload),
+        ])
+        return "\n".join(lines)
+
+    if event["kind"] == "dual_agent_skill_receipt_validation":
+        probe = payload.get("probe") if isinstance(payload.get("probe"), dict) else {}
+        lines.extend([
+            f"- status: `{payload.get('status')}`",
+            "",
+            "### Skill Receipt Validation",
+            "",
+            f"- probe_id: `{_clean_text(probe.get('probe_id'))}`",
+            f"- status: `{_clean_text(probe.get('status'))}`",
+            f"- reason: `{_clean_text(probe.get('reason'))}`",
+            "",
+            "Details:",
+            "",
+            _inline_markdown_value(probe.get("details") or {}),
+            "",
+            *_trace_envelope_section(payload),
         ])
         return "\n".join(lines)
 
@@ -383,6 +404,7 @@ def _event_markdown(event: dict[str, Any]) -> str:
         "",
         _artifact_rigor_markdown(payload.get("artifact_rigor")),
         "",
+        *_trace_envelope_section(payload),
     ])
     return "\n".join(lines)
 
@@ -484,7 +506,33 @@ def _interaction_trace_sections(payload: dict[str, Any]) -> list[str]:
         "",
         _text_or_none(payload.get("would_change_if")),
         "",
+        "### Review Packet",
+        "",
+        _inline_markdown_value(payload.get("review_packet") or {}),
+        "",
     ]
+
+
+def _trace_envelope_section(payload: dict[str, Any]) -> list[str]:
+    envelope = payload.get("trace_envelope") if isinstance(payload.get("trace_envelope"), dict) else {}
+    if not envelope:
+        return []
+    failure = envelope.get("failure_taxonomy")
+    lines = [
+        "### Trace Envelope",
+        "",
+        f"- policy_verdict: `{_clean_text(envelope.get('policy_verdict'))}`",
+    ]
+    if isinstance(failure, dict):
+        lines.extend([
+            f"- failure_category: `{_clean_text(failure.get('category'))}`",
+            f"- failure_subcategory: `{_clean_text(failure.get('subcategory'))}`",
+            f"- failure_code: `{_clean_text(failure.get('code'))}`",
+        ])
+    else:
+        lines.append("- failure_taxonomy: `None`")
+    lines.append("")
+    return lines
 
 
 def _grill_markdown(events: list[dict[str, Any]]) -> str:

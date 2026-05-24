@@ -146,6 +146,25 @@ def _write_accepted_gate(
     )
 
 
+def _skill_receipts() -> list[dict]:
+    return [
+        {
+            "receipt_id": f"skill-{stage}",
+            "kind": "skill_run",
+            "status": "passed",
+            "skill": skill,
+            "stage": stage,
+        }
+        for stage, skill in [
+            ("to_prd", "to-prd"),
+            ("prd_grill", "grill-with-docs"),
+            ("to_issues", "to-issues"),
+            ("tdd", "tdd"),
+            ("tdd_grill", "grill-with-docs"),
+        ]
+    ]
+
+
 @pytest.mark.asyncio
 async def test_codex_supervisor_mcp_exposes_dual_agent_gate_tools(tmp_path):
     from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
@@ -332,6 +351,74 @@ async def test_read_gate_transcript_includes_planning_validation_receipts(tmp_pa
     receipt = transcript["planning_validations"][0]
     assert receipt["verdict"] == "blocked"
     assert "PRD-002" in receipt["checks"]
+
+
+@pytest.mark.asyncio
+async def test_read_gate_transcript_includes_skill_receipt_validation(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
+    from supervisor.dual_agent_runner import build_lead_replay_stdout
+
+    state = State(str(tmp_path / "state.db"))
+    source_dir = tmp_path / "docs" / "dual-agent" / "workflow-1" / "source"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    for kind, filename in {
+        "prd": "prd.md",
+        "grill_findings": "grill-findings.md",
+        "issues": "issues.md",
+        "tdd_plan": "tdd.md",
+        "implementation_plan": "implementation-plan.md",
+    }.items():
+        (source_dir / filename).write_text(
+            (FIXTURE_ROOT / kind / "good.md").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+
+    def fake_runner(argv, **kwargs):
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=build_lead_replay_stdout(_outcome_block("workflow-1")),
+            stderr="",
+        )
+
+    server = build_codex_supervisor_mcp_server(
+        _cfg(tmp_path),
+        state,
+        mcp_cls=_FakeMCP,
+        runner=fake_runner,
+    )
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Run with skill receipts.",
+        max_rounds_per_gate=1,
+        tool_receipts=[
+            *_skill_receipts(),
+            {
+                "receipt_id": "pytest-focused",
+                "kind": "test",
+                "status": "passed",
+                "claims": ["tests passed"],
+            },
+            {
+                "receipt_id": "git-diff",
+                "kind": "git_diff",
+                "status": "present",
+                "claims": ["implemented"],
+                "changed_files": ["supervisor/dual_agent.py"],
+            },
+        ],
+    ))
+    transcript = await _maybe_await(server.tools["read_gate_transcript"](
+        run_id="workflow-run",
+        task_id="workflow-1",
+    ))
+
+    assert result["status"] == "accepted"
+    assert transcript["skill_receipt_validations"][0]["probe"]["status"] == "green"
+    assert transcript["skill_receipt_validations"][0]["trace_envelope"]["policy_verdict"] == "accepted"
 
 
 @pytest.mark.asyncio

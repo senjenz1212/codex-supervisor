@@ -1,0 +1,8 @@
+{
+  "api_key_present": false,
+  "created_at": 1779666427,
+  "cursor_sdk_import": "ok",
+  "probe": "live_cursor_sdk_probe",
+  "reason": "missing_cursor_api_key",
+  "status": "skipped"
+}
