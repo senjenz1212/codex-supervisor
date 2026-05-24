@@ -76,7 +76,9 @@ For each major decision gate:
    `Continue` or `Retry` callback was actually recorded.
 9. Before advancing or summarizing for the user, call `read_gate_transcript`
    and use it to show the clean Codex/Claude dialogue: rounds, decisions,
-   confidences, objections, and final outcome.
+   confidences, objections, and final outcome. Also point the operator to
+   `interactions.md`, the readable Codex/Claude dialogue projection generated
+   in the artifact folder.
 10. Read the final gate result with `read_outcome` when you only need the
     latest outcome without the dialogue history.
 11. After each accepted PRD, TDD, implementation, or outcome-review milestone,
@@ -108,6 +110,8 @@ For each major decision gate:
 - Treat `docs/dual-agent/<task_id>/` as the durable artifact folder for the
   run. The supervisor SQLite ledger remains the source of truth; these files are
   readable projections and planning artifacts.
+- Use `docs/dual-agent/<task_id>/interactions.md` as the primary human-readable
+  interaction record. Use `transcript.md` when raw ledger detail is needed.
 - Store visual evidence under `docs/dual-agent/<task_id>/screenshots/` through
   `export_gate_artifacts`; review `screenshots.md` together with code, tests,
   and gate transcript before final acceptance.

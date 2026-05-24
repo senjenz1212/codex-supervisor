@@ -153,6 +153,7 @@ def test_export_dual_agent_run_artifacts_writes_readable_gate_documents(tmp_path
         "issues.md",
         "screenshots.md",
         "outcome-review.md",
+        "interactions.md",
         "transcript.md",
     ]
     assert "PRD accepted after tightening." in (result.output_dir / "prd.md").read_text()
@@ -162,6 +163,17 @@ def test_export_dual_agent_run_artifacts_writes_readable_gate_documents(tmp_path
     assert "No issue artifacts were recorded in the dual-agent ledger." in (result.output_dir / "issues.md").read_text()
     assert "No screenshot artifacts were supplied for this export." in (result.output_dir / "screenshots.md").read_text()
     assert "Outcome accepted." in (result.output_dir / "outcome-review.md").read_text()
+    interactions = (result.output_dir / "interactions.md").read_text()
+    assert "# Codex / Claude Code Interactions: task-1" in interactions
+    assert "## 1. PRD Review" in interactions
+    assert "Codex -> Claude Code" in interactions
+    assert "Claude Code -> Codex" in interactions
+    assert "Codex decision: `revise`" in interactions
+    assert "Claude decision: `revise`" in interactions
+    assert "Acceptance criteria missing." in interactions
+    assert "Outcome summary: PRD accepted after tightening." in interactions
+    assert "## 4. Outcome Review" in interactions
+    assert "Outcome summary: Outcome accepted." in interactions
     assert "prd_review" in (result.output_dir / "transcript.md").read_text()
 
 

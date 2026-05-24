@@ -46,6 +46,7 @@ def export_dual_agent_run_artifacts(
         out_dir / "issues.md",
         out_dir / "screenshots.md",
         out_dir / "outcome-review.md",
+        out_dir / "interactions.md",
         out_dir / "transcript.md",
     )
     by_gate = _events_by_gate(events)
@@ -57,7 +58,8 @@ def export_dual_agent_run_artifacts(
     files[4].write_text(_issues_markdown(events), encoding="utf-8")
     files[5].write_text(_screenshots_markdown(screenshot_files), encoding="utf-8")
     files[6].write_text(_gate_markdown("Outcome Review Gate", by_gate.get("outcome_review", ())), encoding="utf-8")
-    files[7].write_text(_transcript_markdown(run_id, task_id, events), encoding="utf-8")
+    files[7].write_text(_interactions_markdown(run_id, task_id, events), encoding="utf-8")
+    files[8].write_text(_transcript_markdown(run_id, task_id, events), encoding="utf-8")
     return DualAgentArtifactExport(status="ok", output_dir=out_dir, files=(*files, *tuple(path for path, _, _ in screenshot_files)))
 
 
@@ -115,6 +117,7 @@ def _index_markdown(
         "- [Issues](issues.md)",
         "- [Screenshots](screenshots.md)",
         "- [Outcome Review](outcome-review.md)",
+        "- [Interactions](interactions.md)",
         "- [Transcript](transcript.md)",
         "",
         "## Gates",
@@ -145,6 +148,91 @@ def _transcript_markdown(run_id: str, task_id: str, events: list[dict[str, Any]]
     for event in events:
         sections.append(_event_markdown(event))
     return "\n".join(sections)
+
+
+def _interactions_markdown(run_id: str, task_id: str, events: list[dict[str, Any]]) -> str:
+    sections = [
+        f"# Codex / Claude Code Interactions: {task_id}",
+        "",
+        f"- run_id: `{run_id}`",
+        f"- task_id: `{task_id}`",
+        "- source: supervisor SQLite event ledger",
+        "- purpose: readable projection of the Codex/Claude decision dialogue",
+        "",
+    ]
+    if not events:
+        sections.extend(["No interaction events recorded.", ""])
+        return "\n".join(sections)
+
+    for index, event in enumerate(events, start=1):
+        sections.append(_interaction_event_markdown(index, event))
+    return "\n".join(sections)
+
+
+def _interaction_event_markdown(index: int, event: dict[str, Any]) -> str:
+    title = _title_from_gate(event["gate"])
+    payload = event["payload"]
+    if event["kind"] == "dual_agent_gate_round":
+        round_payload = payload.get("round") if isinstance(payload.get("round"), dict) else {}
+        return "\n".join([
+            f"## {index}. {title}",
+            "",
+            f"- event_id: `{event['event_id']}`",
+            f"- ts: `{event['ts']}`",
+            f"- interaction_type: `round`",
+            f"- round_index: `{round_payload.get('round_index')}`",
+            "",
+            "### Codex -> Claude Code",
+            "",
+            f"- Codex decision: `{round_payload.get('codex_decision')}`",
+            f"- Codex confidence: `{round_payload.get('codex_confidence')}`",
+            "",
+            "### Claude Code -> Codex",
+            "",
+            f"- Claude decision: `{round_payload.get('claude_decision')}`",
+            f"- Claude confidence: `{round_payload.get('claude_confidence')}`",
+            "",
+            "### Disagreement / Grill Finding",
+            "",
+            _text_or_none(round_payload.get("objection")),
+            "",
+        ])
+
+    outcome = payload.get("outcome") if isinstance(payload.get("outcome"), dict) else {}
+    return "\n".join([
+        f"## {index}. {title}",
+        "",
+        f"- event_id: `{event['event_id']}`",
+        f"- ts: `{event['ts']}`",
+        f"- interaction_type: `gate_result`",
+        f"- status: `{payload.get('status')}`",
+        f"- attempts: `{payload.get('attempts')}`",
+        "",
+        "### Claude Code -> Codex",
+        "",
+        f"Outcome summary: {_text_or_none(outcome.get('summary'))}",
+        "",
+        "Decisions:",
+        "",
+        _list_markdown(outcome.get("decisions")),
+        "",
+        "Specialists:",
+        "",
+        _specialists_markdown(outcome.get("specialists")),
+        "",
+        "Objections:",
+        "",
+        _list_markdown(outcome.get("objections")),
+        "",
+        "### Validation",
+        "",
+        _probes_markdown(payload.get("probes")),
+        "",
+        "### Artifact Rigor",
+        "",
+        _artifact_rigor_markdown(payload.get("artifact_rigor")),
+        "",
+    ])
 
 
 def _event_markdown(event: dict[str, Any]) -> str:
@@ -396,6 +484,14 @@ def _clean_text(value: Any) -> str:
 def _safe_path_component(value: str) -> str:
     safe = re.sub(r"[^A-Za-z0-9._-]+", "-", value).strip("-")
     return safe or "dual-agent-task"
+
+
+def _title_from_gate(value: str) -> str:
+    words = re.sub(r"[_-]+", " ", value).strip().split()
+    if not words:
+        return "Unknown Gate"
+    acronyms = {"prd": "PRD", "tdd": "TDD"}
+    return " ".join(acronyms.get(word.lower(), word.title()) for word in words)
 
 
 def _ascii_text(value: str) -> str:
