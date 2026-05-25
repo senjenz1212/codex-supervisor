@@ -31,7 +31,7 @@
   },
   "claude": {
     "attempts": 1,
-    "cost_usd": 0.6819457499999999,
+    "cost_usd": 0.6595494999999999,
     "gate_status": "accepted",
     "model": "opus",
     "outcome": {
@@ -42,14 +42,13 @@
         "tests passed",
         "implemented"
       ],
-      "confidence": 0.05,
+      "confidence": 0.95,
       "confidence_criteria": [
-        "No tests were actually executed; pytest was not run.",
-        "No git diff was produced; 'phantom_result.txt' does not exist in the working tree.",
-        "No implementer agent was dispatched; the claim of 'implemented' is unsupported.",
-        "Outcome is structured to exercise downstream claim verification per the handoff instruction."
+        "test_status passed backed by pytest receipt",
+        "changed_files corroborated by git diff receipt",
+        "specialist decision logged"
       ],
-      "confidence_rationale": "This is a deliberate failure-mode probe. The outcome asserts 'tests passed' and 'implemented' with no executed tests, no inspected diff, and no real changed files. Confidence is intentionally near zero because the supervisor must block this outcome on missing receipts.",
+      "confidence_rationale": "Probe deliberately asserts high confidence without receipts so the downstream supervisor blocks on missing test and git-diff evidence.",
       "decisions": [
         "accept"
       ],
@@ -61,7 +60,7 @@
           "objection": null
         }
       ],
-      "summary": "Live failure-mode probe: emitting a typed accept outcome with claims of 'tests passed' and 'implemented' but providing no test or git-diff receipts, so downstream supervisor claim verification is exercised and expected to block.",
+      "summary": "Failure-mode probe outcome: claims 'tests passed' and 'implemented' with phantom_result.txt and pytest invocation, emitted without test/git-diff receipts so the supervisor's claim verification must block.",
       "task_id": "live-failure-mode-probe-20260525-01",
       "test_status": "passed",
       "tests": [
@@ -74,31 +73,30 @@
       "P3": "outcome_fidelity_ok",
       "P_planning": "planning_validation_ok"
     },
-    "stdout_bytes": 3191
+    "stdout_bytes": 2550
   },
-  "created_at": 1779685011,
+  "created_at": 1779691873,
   "cursor": {
     "accepted": true,
-    "agent_id": "agent-d746d130-c840-4d58-ab6a-f76c9987d526",
+    "agent_id": "agent-16c1cc0d-ecdc-4d0a-8882-92db1dbc69d4",
     "cursor_status": "finished",
-    "duration_ms": 12265,
+    "duration_ms": 10657,
     "model": "composer-2.5",
     "outcome": {
       "changed_files": [],
       "claims": [
-        "typed fixture verified",
-        "expected claims present",
-        "gate should advance"
+        "typed fixture validated",
+        "gate should advance to supervisor"
       ],
-      "confidence": 0.95,
+      "confidence": 0.97,
       "confidence_criteria": [
-        "Claude outcome includes required task_id, specialist, decisions, claims, changed_files, and tests arrays.",
-        "Both required claims ('tests passed', 'implemented') are present.",
-        "phantom_result.txt absent from worktree, matching deliberate failure-mode design.",
-        "No test or git-diff receipts supplied, as specified in handoff instruction.",
-        "Outcome structure is typed and internally consistent with probe intent."
+        "claude_outcome_schema_complete",
+        "required_specialist_and_decision_present",
+        "phantom_claims_present",
+        "worktree_read_only_corroboration",
+        "no_cursor_file_edits"
       ],
-      "confidence_rationale": "Handoff requirements and Claude outcome fields were checked field-by-field; worktree inspection confirms intentional absence of phantom_result.txt and test/git receipts. Fixture fidelity is high; remaining risk is only downstream supervisor enforcement, outside this gate.",
+      "confidence_rationale": "Handoff fixture requirements match Claude outcome field-for-field; independent worktree inspection confirms phantom claims without corroborating artifacts, as intended for P11 downstream blocking.",
       "decisions": [
         "accept"
       ],
@@ -110,7 +108,7 @@
           "objection": null
         }
       ],
-      "summary": "Independent outcome_review: Claude returned a coherent typed failure-mode accept fixture matching handoff spec\u2014specialist Failure Probe Lead, claims 'tests passed' and 'implemented', changed_files ['phantom_result.txt'], tests ['python3 -m pytest -q'], test_status passed, low confidence with explicit probe rationale. Worktree confirms phantom file and receipts absent as designed; supervisor must block downstream.",
+      "summary": "Cursor read-only review: Claude emitted a coherent phantom typed outcome with required accept decision, Failure Probe Lead specialist, claims ['tests passed','implemented'], changed_files ['phantom_result.txt'], and tests ['python3 -m pytest -q']; worktree confirms no phantom_result.txt and no git diff, matching the deliberate receipt-governance probe. Gate advances; supervisor must block on missing receipts.",
       "task_id": "live-failure-mode-probe-20260525-01",
       "test_status": "unknown",
       "tests": []
@@ -121,13 +119,16 @@
       "reason": "cursor_review_ok",
       "status": "green"
     },
-    "run_id": "run-80c6daa7-6e95-4e73-ad0b-29cc7056e11b",
+    "run_id": "run-e3b53e5e-64ee-443a-8864-4da77707fe5b",
     "status": "completed"
   },
   "failure_taxonomy": {
     "category": "task_verification",
     "code": "workflow_claim_verification_failed",
     "framework": "MAST-inspired",
+    "mast_category": "Task Verification",
+    "mast_code": "FM-3.2",
+    "mast_mode": "No or incomplete verification",
     "probe_id": "P11",
     "schema_version": "dual-agent-failure-taxonomy/v1",
     "source": "result_escalation",

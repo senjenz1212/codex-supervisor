@@ -33,6 +33,7 @@ from supervisor.dual_agent_runner import DualAgentGateSpec, run_dual_agent_gate
 from supervisor.dual_agent_workflow import verify_workflow_claims
 from supervisor.redaction import redact
 from supervisor.state import State
+from supervisor.trace_envelope import ensure_tool_call_timing, timed_tool_call
 
 
 TASK_ID = "live-failure-mode-probe-20260525-01"
@@ -81,29 +82,46 @@ def main() -> int:
             timeout_s=max(1, int(args.timeout_s)),
         )
 
-        gate_result = run_dual_agent_gate(spec, state=state)
+        with timed_tool_call("start_dual_agent_gate") as gate_tool_call:
+            gate_result = run_dual_agent_gate(spec, state=state)
+        gate_tool_call.update({
+            "status": gate_result.status,
+            "attempts": gate_result.attempts,
+            "handoff_packet_path": str(gate_result.handoff_packet_path),
+        })
         outcome_payload = (
             gate_result.outcome.model_dump()
             if gate_result.outcome is not None else None
         )
-        claim_probe = verify_workflow_claims(
-            outcome_payload=outcome_payload,
-            user_facing=False,
-            screenshots=[],
-            tool_receipts=[],
-        )
+        with timed_tool_call("verify_workflow_claims") as claim_tool_call:
+            claim_probe = verify_workflow_claims(
+                outcome_payload=outcome_payload,
+                user_facing=False,
+                screenshots=[],
+                tool_receipts=[],
+            )
+        claim_tool_call.update({
+            "status": claim_probe.status,
+            "probe_id": claim_probe.probe_id,
+            "reason": claim_probe.reason,
+        })
+        claim_tool_call = ensure_tool_call_timing(claim_tool_call)
 
         cursor_result = None
+        cursor_tool_call: dict[str, Any] | None = None
         if not args.skip_cursor and os.environ.get("CURSOR_API_KEY") and outcome_payload is not None:
-            cursor_result = invoke_cursor_agent(CursorInvocationRequest(
-                task_id=TASK_ID,
-                gate="outcome_review",
-                instruction=_cursor_instruction(),
-                cwd=sandbox,
-                claude_outcome=outcome_payload,
-                expected_specialists=("Cursor Reviewer",),
-                timeout_s=max(1, min(int(args.timeout_s), 300)),
-            ))
+            with timed_tool_call("invoke_cursor_agent") as cursor_tool_call:
+                cursor_result = invoke_cursor_agent(CursorInvocationRequest(
+                    task_id=TASK_ID,
+                    gate="outcome_review",
+                    instruction=_cursor_instruction(),
+                    cwd=sandbox,
+                    claude_outcome=outcome_payload,
+                    expected_specialists=("Cursor Reviewer",),
+                    timeout_s=max(1, min(int(args.timeout_s), 300)),
+                ))
+            cursor_tool_call.update(_cursor_tool_call_fields(cursor_result))
+            cursor_tool_call = ensure_tool_call_timing(cursor_tool_call)
             state.write_event(
                 run_id=RUN_ID,
                 source="dual_agent",
@@ -123,16 +141,7 @@ def main() -> int:
                     "model": cursor_result.model,
                     "duration_ms": cursor_result.duration_ms,
                     "transcript_tail": cursor_result.transcript[-4000:],
-                    "tool_calls": [
-                        {
-                            "name": "invoke_cursor_agent",
-                            "status": cursor_result.status,
-                            "agent_id": cursor_result.agent_id,
-                            "run_id": cursor_result.run_id,
-                            "model": cursor_result.model,
-                            "duration_ms": cursor_result.duration_ms,
-                        },
-                    ],
+                    "tool_calls": [cursor_tool_call],
                 },
             )
 
@@ -150,18 +159,20 @@ def main() -> int:
             "handoff_packet_path": str(gate_result.handoff_packet_path),
             "probes": probes,
             "tool_calls": [
-                {
+                ensure_tool_call_timing({
+                    **gate_tool_call,
                     "name": "start_dual_agent_gate",
                     "status": gate_result.status,
                     "attempts": gate_result.attempts,
                     "handoff_packet_path": str(gate_result.handoff_packet_path),
-                },
-                {
+                }),
+                ensure_tool_call_timing({
+                    **claim_tool_call,
                     "name": "verify_workflow_claims",
                     "status": claim_probe.status,
                     "probe_id": claim_probe.probe_id,
                     "reason": claim_probe.reason,
-                },
+                }),
             ],
             "outcome": outcome_payload,
             "claim_verification": asdict(claim_probe),
@@ -200,11 +211,11 @@ def main() -> int:
                     ),
                 )),
                 "tool_calls": [
-                    {
+                    ensure_tool_call_timing({
                         "name": "record_gate_round",
                         "status": "recorded",
                         "round_index": 1,
-                    },
+                    }),
                 ],
             },
         )
@@ -280,12 +291,13 @@ def main() -> int:
                 metadata={
                     "claim_verification": asdict(claim_probe),
                     "tool_calls": [
-                        {
+                        ensure_tool_call_timing({
+                            **claim_tool_call,
                             "name": "verify_workflow_claims",
                             "status": claim_probe.status,
                             "probe_id": claim_probe.probe_id,
                             "reason": claim_probe.reason,
-                        },
+                        }),
                     ],
                 },
             ).to_event_payload(),
@@ -449,6 +461,16 @@ def _cursor_summary(result: CursorInvocationResult | None) -> dict[str, Any]:
         "cursor_status": result.status,
         "model": result.model,
         "duration_ms": result.duration_ms,
+    }
+
+
+def _cursor_tool_call_fields(result: CursorInvocationResult) -> dict[str, Any]:
+    return {
+        "status": result.status,
+        "agent_id": result.agent_id,
+        "run_id": result.run_id,
+        "model": result.model,
+        "cursor_duration_ms": result.duration_ms,
     }
 
 

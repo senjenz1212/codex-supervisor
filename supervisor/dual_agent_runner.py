@@ -48,6 +48,7 @@ from .planning_validator import (
     validate_planning_artifacts,
 )
 from .state import State
+from .trace_envelope import ensure_tool_call_timing, timed_tool_call
 
 
 @dataclass(frozen=True)
@@ -174,11 +175,12 @@ def run_dual_agent_gate(
             attempts=0,
         )
     try:
-        planning_result = validate_planning_artifacts(
-            spec.planning_artifacts,
-            required_kinds=required_planning_kinds_for_gate(spec.gate),
-            gate=spec.gate,
-        )
+        with timed_tool_call("validate_planning_artifacts") as planning_tool_call:
+            planning_result = validate_planning_artifacts(
+                spec.planning_artifacts,
+                required_kinds=required_planning_kinds_for_gate(spec.gate),
+                gate=spec.gate,
+            )
         planning_probe = planning_validation_probe(planning_result, task_id=spec.task_id)
         planning_event_id: int | None = None
         if state is not None:
@@ -190,6 +192,7 @@ def run_dual_agent_gate(
                 _probe_tool_call(
                     name="validate_planning_artifacts",
                     probe=planning_probe,
+                    base=planning_tool_call,
                 ),
             ]
             planning_event_id = state.write_event(
@@ -227,6 +230,7 @@ def run_dual_agent_gate(
                                     name="validate_planning_artifacts",
                                     probe=planning_probe,
                                     event_id=planning_event_id,
+                                    base=planning_tool_call,
                                 ),
                             ],
                         },
@@ -242,12 +246,14 @@ def run_dual_agent_gate(
             )
 
         request = _lead_request(spec)
-        packet_path = write_handoff_packet(
-            request,
-            planning_artifacts=spec.planning_artifacts,
-            lead_skill_path=spec.lead_skill_path,
-            outcome_validation_policy=spec.outcome_validation_policy,
-        )
+        with timed_tool_call("write_handoff_packet") as handoff_tool_call:
+            packet_path = write_handoff_packet(
+                request,
+                planning_artifacts=spec.planning_artifacts,
+                lead_skill_path=spec.lead_skill_path,
+                outcome_validation_policy=spec.outcome_validation_policy,
+            )
+        handoff_tool_call.update({"status": "completed", "path": str(packet_path)})
         request = _lead_request(spec, packet_path=packet_path)
         request_event_id: int | None = None
         if state is not None:
@@ -277,17 +283,18 @@ def run_dual_agent_gate(
                                 name="validate_planning_artifacts",
                                 probe=planning_probe,
                                 event_id=planning_event_id,
+                                base=planning_tool_call,
                             ),
-                            {
-                                "name": "write_handoff_packet",
-                                "status": "completed",
-                                "path": str(packet_path),
-                            },
+                            ensure_tool_call_timing(handoff_tool_call),
                         ],
                     },
                 ).to_event_payload(),
             )
-        lead_result = invoke_claude_lead(request, runner=runner)
+        lead_tool_calls: list[dict[str, Any]] = []
+        with timed_tool_call("invoke_claude_lead") as lead_tool_call:
+            lead_result = invoke_claude_lead(request, runner=runner)
+        lead_tool_call.update(_lead_invocation_tool_fields(lead_result, attempts=1))
+        lead_tool_calls.append(ensure_tool_call_timing(lead_tool_call))
         attempts = 1
         if _should_retry_outcome(lead_result.probe, spec.outcome_validation_policy):
             corrective = _lead_request(
@@ -301,14 +308,41 @@ def run_dual_agent_gate(
                       "Repeat required decisions in the top-level decisions array."
                 ),
             )
-            lead_result = invoke_claude_lead(corrective, runner=runner)
+            with timed_tool_call("invoke_claude_lead") as retry_tool_call:
+                lead_result = invoke_claude_lead(corrective, runner=runner)
             attempts = 2
+            retry_tool_call.update(_lead_invocation_tool_fields(lead_result, attempts=2))
+            lead_tool_calls.append(ensure_tool_call_timing(retry_tool_call))
 
         probes: dict[str, ProbeResult] = {}
-        probes["P2"] = _p2_from_lead_result(lead_result)
-        probes["P3"] = lead_result.probe
-        probes["P1"] = verify_planning_artifact_boundaries(packet_path)
+        with timed_tool_call("evaluate_worker_invocation") as p2_tool_call:
+            probes["P2"] = _p2_from_lead_result(lead_result)
+        p2_tool_call = _probe_tool_call(
+            name="evaluate_worker_invocation",
+            probe=probes["P2"],
+            base=p2_tool_call,
+        )
+        with timed_tool_call("evaluate_outcome_fidelity") as p3_tool_call:
+            probes["P3"] = lead_result.probe
+        p3_tool_call = _probe_tool_call(
+            name="evaluate_outcome_fidelity",
+            probe=probes["P3"],
+            base=p3_tool_call,
+        )
+        with timed_tool_call("verify_planning_artifact_boundaries") as p1_tool_call:
+            probes["P1"] = verify_planning_artifact_boundaries(packet_path)
+        p1_tool_call = _probe_tool_call(
+            name="verify_planning_artifact_boundaries",
+            probe=probes["P1"],
+            base=p1_tool_call,
+        )
         probes["P_planning"] = planning_probe
+        response_tool_calls = [
+            *lead_tool_calls,
+            p2_tool_call,
+            p3_tool_call,
+            p1_tool_call,
+        ]
 
         if state is not None:
             outcome_payload = (
@@ -402,6 +436,7 @@ def run_dual_agent_gate(
                             lead_result=lead_result,
                             attempts=attempts,
                             probes=probes,
+                            tool_calls=response_tool_calls,
                         ),
                     },
                 ).to_event_payload(),
@@ -750,16 +785,33 @@ def _probe_tool_call(
     name: str,
     probe: ProbeResult,
     event_id: int | None = None,
+    base: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    payload: dict[str, Any] = {
+    payload: dict[str, Any] = dict(base or {})
+    payload.update({
         "name": name,
         "status": probe.status,
         "probe_id": probe.probe_id,
         "reason": probe.reason,
-    }
+    })
     if event_id is not None:
         payload["event_id"] = event_id
-    return payload
+    return ensure_tool_call_timing(payload)
+
+
+def _lead_invocation_tool_fields(
+    lead_result: LeadInvocationResult,
+    *,
+    attempts: int,
+) -> dict[str, Any]:
+    return {
+        "status": "completed" if lead_result.probe.ok else "failed",
+        "attempts": attempts,
+        "model": lead_result.model,
+        "cost_usd": lead_result.cost_usd,
+        "stdout_bytes": lead_result.stdout_bytes,
+        "stderr_bytes": lead_result.stderr_bytes,
+    }
 
 
 def _lead_response_tool_calls(
@@ -767,9 +819,12 @@ def _lead_response_tool_calls(
     lead_result: LeadInvocationResult,
     attempts: int,
     probes: dict[str, ProbeResult],
+    tool_calls: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
+    if tool_calls is not None:
+        return [ensure_tool_call_timing(call) for call in tool_calls]
     return [
-        {
+        ensure_tool_call_timing({
             "name": "invoke_claude_lead",
             "status": "completed" if probes["P2"].ok else "failed",
             "attempts": attempts,
@@ -777,7 +832,7 @@ def _lead_response_tool_calls(
             "cost_usd": lead_result.cost_usd,
             "stdout_bytes": lead_result.stdout_bytes,
             "stderr_bytes": lead_result.stderr_bytes,
-        },
+        }),
         _probe_tool_call(name="evaluate_worker_invocation", probe=probes["P2"]),
         _probe_tool_call(name="evaluate_outcome_fidelity", probe=probes["P3"]),
         _probe_tool_call(name="verify_planning_artifact_boundaries", probe=probes["P1"]),

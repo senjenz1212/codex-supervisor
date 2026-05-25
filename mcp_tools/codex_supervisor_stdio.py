@@ -57,7 +57,7 @@ from supervisor.dual_agent_runner import (
 from supervisor.dual_agent_lead import GateName, PlanningArtifact
 from supervisor.redaction import redact
 from supervisor.state import State
-from supervisor.trace_envelope import stamp_trace_envelope
+from supervisor.trace_envelope import ensure_tool_call_timing, stamp_trace_envelope, timed_tool_call
 from supervisor.telegram import TelegramNotifier, telegram_enabled
 
 
@@ -169,16 +169,22 @@ class CodexSupervisorMcpAPI:
             planning_artifacts=planning_artifacts,
         )
         notifier = self._notifier()
-        if notifier is not None:
-            result = await run_dual_agent_gate_with_escalation(
-                spec,
-                state=self.state,
-                notifier=notifier,
-                runner=self.runner,
-            )
-        else:
-            result = run_dual_agent_gate(spec, runner=self.runner, state=self.state)
-        payload = _gate_result_payload(result)
+        with timed_tool_call("start_dual_agent_gate") as gate_tool_call:
+            if notifier is not None:
+                result = await run_dual_agent_gate_with_escalation(
+                    spec,
+                    state=self.state,
+                    notifier=notifier,
+                    runner=self.runner,
+                )
+            else:
+                result = run_dual_agent_gate(spec, runner=self.runner, state=self.state)
+        gate_tool_call.update({
+            "status": result.status,
+            "attempts": result.attempts,
+            "handoff_packet_path": str(result.handoff_packet_path),
+        })
+        payload = _gate_result_payload(result, gate_tool_call=gate_tool_call)
         payload["artifact_rigor"] = artifact_preflight
         self.state.write_event(
             run_id=run_id,
@@ -494,33 +500,36 @@ class CodexSupervisorMcpAPI:
                             },
                         ),
                     )
-                    cursor_result = self.cursor_runner(
-                        CursorInvocationRequest(
-                            task_id=task_id,
-                            gate=gate,  # type: ignore[arg-type]
-                            instruction=_cursor_review_instruction(
-                                gate=gate,
-                                intent=intent,
-                                corrective_context=corrective_context,
-                            ),
-                            cwd=cwd,
-                            claude_outcome=payload.get("outcome")
-                            if isinstance(payload.get("outcome"), dict)
-                            else None,
-                            planning_artifacts=tuple(
-                                artifact
-                                for artifact in (
-                                    _maybe_artifact(item)
-                                    for item in gate_artifacts
-                                )
-                                if artifact is not None
-                            ),
-                            quality=quality,
-                            model=cursor_model,
-                            timeout_s=timeout_s,
-                            tool_receipts=tuple(receipt_payloads),
+                    with timed_tool_call("invoke_cursor_agent") as cursor_tool_call:
+                        cursor_result = self.cursor_runner(
+                            CursorInvocationRequest(
+                                task_id=task_id,
+                                gate=gate,  # type: ignore[arg-type]
+                                instruction=_cursor_review_instruction(
+                                    gate=gate,
+                                    intent=intent,
+                                    corrective_context=corrective_context,
+                                ),
+                                cwd=cwd,
+                                claude_outcome=payload.get("outcome")
+                                if isinstance(payload.get("outcome"), dict)
+                                else None,
+                                planning_artifacts=tuple(
+                                    artifact
+                                    for artifact in (
+                                        _maybe_artifact(item)
+                                        for item in gate_artifacts
+                                    )
+                                    if artifact is not None
+                                ),
+                                quality=quality,
+                                model=cursor_model,
+                                timeout_s=timeout_s,
+                                tool_receipts=tuple(receipt_payloads),
+                            )
                         )
-                    )
+                    cursor_tool_call.update(_cursor_tool_call_fields(cursor_result))
+                    cursor_tool_call = ensure_tool_call_timing(cursor_tool_call)
                     cursor_payload = _cursor_result_payload(cursor_result)
                     payload["cursor_review"] = cursor_payload
                     self._write_interaction_message(
@@ -562,16 +571,7 @@ class CodexSupervisorMcpAPI:
                             artifacts=planning_artifact_refs(gate_artifacts),
                             metadata={
                                 "cursor_review": cursor_payload,
-                                "tool_calls": [
-                                    {
-                                        "name": "invoke_cursor_agent",
-                                        "status": cursor_result.status,
-                                        "agent_id": cursor_result.agent_id,
-                                        "run_id": cursor_result.run_id,
-                                        "model": cursor_result.model,
-                                        "duration_ms": cursor_result.duration_ms,
-                                    },
-                                ],
+                                "tool_calls": [cursor_tool_call],
                             },
                         ),
                     )
@@ -583,16 +583,7 @@ class CodexSupervisorMcpAPI:
                             "task_id": task_id,
                             "gate": gate,
                             "cursor_review": cursor_payload,
-                            "tool_calls": [
-                                {
-                                    "name": "invoke_cursor_agent",
-                                    "status": cursor_result.status,
-                                    "agent_id": cursor_result.agent_id,
-                                    "run_id": cursor_result.run_id,
-                                    "model": cursor_result.model,
-                                    "duration_ms": cursor_result.duration_ms,
-                                },
-                            ],
+                            "tool_calls": [cursor_tool_call],
                         },
                     )
 
@@ -1597,7 +1588,11 @@ def main(argv: list[str] | None = None) -> None:
     server.run(transport="stdio")
 
 
-def _gate_result_payload(result: DualAgentGateResult) -> dict[str, Any]:
+def _gate_result_payload(
+    result: DualAgentGateResult,
+    *,
+    gate_tool_call: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     payload = {
         "task_id": result.task_id,
         "gate": result.gate,
@@ -1608,22 +1603,28 @@ def _gate_result_payload(result: DualAgentGateResult) -> dict[str, Any]:
             key: asdict(value)
             for key, value in result.probes.items()
         },
-        "tool_calls": _gate_result_tool_calls(result),
+        "tool_calls": _gate_result_tool_calls(result, gate_tool_call=gate_tool_call),
         "outcome": result.outcome.model_dump() if result.outcome is not None else None,
         "escalation": asdict(result.escalation) if result.escalation is not None else None,
     }
     return redact(payload)
 
 
-def _gate_result_tool_calls(result: DualAgentGateResult) -> list[dict[str, Any]]:
-    calls: list[dict[str, Any]] = [{
+def _gate_result_tool_calls(
+    result: DualAgentGateResult,
+    *,
+    gate_tool_call: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    call = dict(gate_tool_call or {})
+    call.update({
         "name": "start_dual_agent_gate",
         "status": result.status,
         "attempts": result.attempts,
         "handoff_packet_path": str(result.handoff_packet_path),
-    }]
+    })
+    calls: list[dict[str, Any]] = [ensure_tool_call_timing(call)]
     if result.lead_result is not None:
-        calls.append({
+        calls.append(ensure_tool_call_timing({
             "name": "invoke_claude_lead",
             "status": "completed" if result.probes.get("P2", result.lead_result.probe).ok else "failed",
             "attempts": result.attempts,
@@ -1631,14 +1632,14 @@ def _gate_result_tool_calls(result: DualAgentGateResult) -> list[dict[str, Any]]
             "cost_usd": result.lead_result.cost_usd,
             "stdout_bytes": result.lead_result.stdout_bytes,
             "stderr_bytes": result.lead_result.stderr_bytes,
-        })
+        }))
     for probe_id, probe in result.probes.items():
-        calls.append({
+        calls.append(ensure_tool_call_timing({
             "name": f"probe:{probe_id}",
             "status": probe.status,
             "probe_id": probe.probe_id,
             "reason": probe.reason,
-        })
+        }))
     return calls
 
 
@@ -1775,6 +1776,16 @@ def _cursor_result_payload(result: CursorInvocationResult) -> dict[str, Any]:
         "duration_ms": result.duration_ms,
         "transcript_tail": result.transcript[-4000:],
     })
+
+
+def _cursor_tool_call_fields(result: CursorInvocationResult) -> dict[str, Any]:
+    return {
+        "status": result.status,
+        "agent_id": result.agent_id,
+        "run_id": result.run_id,
+        "model": result.model,
+        "cursor_duration_ms": result.duration_ms,
+    }
 
 
 def _normalise_receipt_payloads(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:

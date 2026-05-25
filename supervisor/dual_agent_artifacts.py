@@ -8,7 +8,7 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
-from .failure_taxonomy import FAILURE_TAXONOMY_VERSION
+from .failure_taxonomy import FAILURE_TAXONOMY_VERSION, detect_sequence_failures
 from .state import State
 from .trace_envelope import TRACE_ENVELOPE_SCHEMA_VERSION
 
@@ -219,6 +219,7 @@ def _replay_manifest(
         "event_kinds": sorted({str(event["kind"]) for event in events}),
         "handoff_packets": _handoff_packet_manifest(events),
         "failure_summary": _run_failure_summary(events),
+        "sequence_failures": detect_sequence_failures(events),
     }
 
 
@@ -387,6 +388,7 @@ def _interaction_event_markdown(index: int, event: dict[str, Any]) -> str:
         "",
         _artifact_rigor_markdown(payload.get("artifact_rigor")),
         "",
+        *_trace_envelope_section(payload),
     ])
 
 
@@ -699,6 +701,9 @@ def _trace_envelope_section(payload: dict[str, Any]) -> list[str]:
             f"- failure_category: `{_clean_text(failure.get('category'))}`",
             f"- failure_subcategory: `{_clean_text(failure.get('subcategory'))}`",
             f"- failure_code: `{_clean_text(failure.get('code'))}`",
+            f"- mast_code: `{_clean_text(failure.get('mast_code'))}`",
+            f"- mast_mode: `{_clean_text(failure.get('mast_mode'))}`",
+            f"- mast_category: `{_clean_text(failure.get('mast_category'))}`",
         ])
     else:
         lines.append("- failure_taxonomy: `None`")

@@ -246,9 +246,24 @@ def test_export_dual_agent_run_artifacts_renders_interaction_receipts(tmp_path):
                 "source": "dual_agent",
                 "event_kind": "dual_agent_interaction_message",
                 "policy_verdict": "observed",
-                "failure_taxonomy": None,
+                "failure_taxonomy": {
+                    "schema_version": "dual-agent-failure-taxonomy/v1",
+                    "framework": "MAST-inspired",
+                    "category": "task_verification",
+                    "subcategory": "missing_or_stale_receipt",
+                    "code": "workflow_claim_verification_failed",
+                    "mast_code": "FM-3.2",
+                    "mast_mode": "No or incomplete verification",
+                    "mast_category": "Task Verification",
+                },
                 "tool_calls": [
-                    {"name": "start_dual_agent_gate", "status": "completed"},
+                    {
+                        "name": "start_dual_agent_gate",
+                        "status": "completed",
+                        "started_at_ms": 1000,
+                        "ended_at_ms": 1035,
+                        "duration_ms": 35,
+                    },
                 ],
                 "artifacts": [],
                 "claims": ["tests passed"],
@@ -277,6 +292,9 @@ def test_export_dual_agent_run_artifacts_renders_interaction_receipts(tmp_path):
         assert ".handoff/task-1.stdout" in text
         assert "A matching git_remote receipt appears." in text
         assert "start_dual_agent_gate" in text
+        assert "FM-3.2" in text
+        assert "No or incomplete verification" in text
+        assert "duration_ms" in text
 
 
 def test_export_dual_agent_run_artifacts_renders_cursor_review_events(tmp_path):
@@ -511,6 +529,14 @@ def test_export_dual_agent_run_artifacts_writes_replay_manifest_with_handoff_con
 
 def test_export_dual_agent_run_artifacts_writes_run_level_failure_summary(tmp_path):
     state = _state(tmp_path)
+    taxonomy = {
+        "category": "task_verification",
+        "subcategory": "missing_or_stale_receipt",
+        "code": "workflow_claim_verification_failed",
+        "mast_code": "FM-3.2",
+        "mast_mode": "No or incomplete verification",
+        "mast_category": "Task Verification",
+    }
     event_id = _insert_event(
         state,
         kind="dual_agent_gate_result",
@@ -529,11 +555,7 @@ def test_export_dual_agent_run_artifacts_writes_run_level_failure_summary(tmp_pa
                 "source": "dual_agent",
                 "event_kind": "dual_agent_gate_result",
                 "policy_verdict": "blocked",
-                "failure_taxonomy": {
-                    "category": "task_verification",
-                    "subcategory": "missing_or_stale_receipt",
-                    "code": "workflow_claim_verification_failed",
-                },
+                "failure_taxonomy": taxonomy,
                 "tool_calls": [],
                 "artifacts": [],
                 "claims": [],
@@ -553,12 +575,94 @@ def test_export_dual_agent_run_artifacts_writes_run_level_failure_summary(tmp_pa
     assert manifest["failure_summary"] == {
         "event_id": event_id,
         "policy_verdict": "blocked",
-        "failure_taxonomy": {
-            "category": "task_verification",
-            "subcategory": "missing_or_stale_receipt",
-            "code": "workflow_claim_verification_failed",
-        },
+        "failure_taxonomy": taxonomy,
     }
+    interactions = (result.output_dir / "interactions.md").read_text()
+    assert "FM-3.2" in interactions
+    assert "No or incomplete verification" in interactions
+
+
+def test_export_dual_agent_run_artifacts_writes_sequence_failure_diagnostics(tmp_path):
+    state = _state(tmp_path)
+    first = _insert_event(
+        state,
+        kind="dual_agent_gate_result",
+        payload={
+            **_result_payload(gate="outcome_review", summary="Accepted too soon.", decisions=["accept"]),
+            "required_probes": ["P1", "P2", "P3", "CURSOR"],
+            "probes": {
+                "P1": {"probe_id": "P1", "status": "green", "reason": "ok", "details": {}},
+                "P2": {"probe_id": "P2", "status": "green", "reason": "ok", "details": {}},
+                "P3": {"probe_id": "P3", "status": "green", "reason": "ok", "details": {}},
+            },
+            "handoff_packet_sha256": "same-packet",
+        },
+    )
+    duplicate = _insert_event(
+        state,
+        kind="dual_agent_gate_result",
+        payload={
+            **_result_payload(gate="outcome_review", summary="Accepted too soon.", decisions=["accept"]),
+            "handoff_packet_sha256": "same-packet",
+        },
+        ts=1001,
+    )
+    round_event = _insert_event(
+        state,
+        kind="dual_agent_gate_round",
+        payload=_round_payload(
+            gate="outcome_review",
+            round_index=2,
+            codex_decision="deny",
+            claude_decision="accept",
+            objection="no tests added",
+        ),
+        ts=1002,
+    )
+    claude_response = _insert_event(
+        state,
+        kind="dual_agent_interaction_message",
+        payload={
+            "schema_version": "dual-agent-interaction/v1",
+            "task_id": "task-1",
+            "gate": "outcome_review",
+            "sender": "claude_code",
+            "recipient": "codex",
+            "message_type": "gate_response",
+            "content": "Ready to proceed.",
+            "addresses": [],
+            "claims": [],
+            "objections": [],
+            "metadata": {},
+        },
+        ts=1003,
+    )
+    cursor_reject = _insert_event(
+        state,
+        kind="tri_agent_cursor_review",
+        payload={
+            "task_id": "task-1",
+            "gate": "outcome_review",
+            "accepted": False,
+            "probe": {"probe_id": "CURSOR", "status": "red", "reason": "cursor_review_failed"},
+        },
+        ts=1004,
+    )
+
+    result = export_dual_agent_run_artifacts(
+        state,
+        run_id="run-1",
+        task_id="task-1",
+        output_dir=tmp_path / "docs" / "dual-agent" / "task-1",
+    )
+
+    manifest = json.loads((result.output_dir / "replay" / "manifest.json").read_text())
+    failures = manifest["sequence_failures"]
+    by_code = {failure["mast_code"]: failure for failure in failures}
+    assert by_code["FM-3.1"]["event_ids"] == [first]
+    assert by_code["FM-1.3"]["event_ids"] == [first, duplicate]
+    assert by_code["FM-2.5"]["event_ids"] == [round_event, claude_response]
+    assert by_code["FM-3.3"]["event_ids"] == [cursor_reject]
 
 
 def test_export_dual_agent_run_artifacts_copies_screenshots_and_writes_manifest(tmp_path):

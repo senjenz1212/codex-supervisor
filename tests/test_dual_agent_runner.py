@@ -369,6 +369,9 @@ def test_gate_runner_records_direct_interaction_persona_addresses_and_tool_calls
     assert request["trace_envelope"]["tool_calls"]
     assert request["trace_envelope"]["tool_calls"][0]["name"] == "validate_planning_artifacts"
     assert request["trace_envelope"]["tool_calls"][1]["name"] == "write_handoff_packet"
+    for call in request["trace_envelope"]["tool_calls"]:
+        assert {"started_at_ms", "ended_at_ms", "duration_ms"} <= set(call)
+        assert call["ended_at_ms"] >= call["started_at_ms"]
 
     assert response["persona_id"] == "claude_code.lead_worker"
     assert f"event:{request['event_id']}" in response["addresses"]
@@ -382,6 +385,10 @@ def test_gate_runner_records_direct_interaction_persona_addresses_and_tool_calls
     ]
     assert response["trace_envelope"]["tool_calls"][0]["model"] == "claude-opus-4-7"
     assert response["trace_envelope"]["tool_calls"][0]["cost_usd"] == 0.42
+    for call in response["trace_envelope"]["tool_calls"]:
+        assert {"started_at_ms", "ended_at_ms", "duration_ms"} <= set(call)
+        assert call["ended_at_ms"] >= call["started_at_ms"]
+    assert response["trace_envelope"]["tool_calls"][0]["duration_ms"] >= 0
 
 
 def test_gate_runner_planning_probe_details_keep_task_id(tmp_path):

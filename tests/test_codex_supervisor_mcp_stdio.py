@@ -893,6 +893,9 @@ async def test_codex_supervisor_mcp_reads_clean_gate_transcript(tmp_path):
     )
     first_round_payload = json.loads(first_round_row["payload_json"])
     assert first_round_payload["trace_envelope"]["tool_calls"][0]["name"] == "record_gate_round"
+    assert {"started_at_ms", "ended_at_ms", "duration_ms"} <= set(
+        first_round_payload["trace_envelope"]["tool_calls"][0]
+    )
     assert transcript["result"]["status"] == "accepted"
     assert transcript["result"]["outcome"]["task_id"] == "transcript-task"
     assert transcript["handoff_packet_path"] == gate_result["handoff_packet_path"]

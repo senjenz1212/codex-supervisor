@@ -1,8 +1,10 @@
 """Universal trace envelope helpers for supervisor ledger events."""
 from __future__ import annotations
 
+from contextlib import contextmanager
 from copy import deepcopy
-from typing import Any
+import time
+from typing import Any, Callable, Iterator
 
 from .failure_taxonomy import failure_taxonomy_for_payload
 
@@ -20,6 +22,15 @@ def stamp_trace_envelope(
     """Return a payload copy with a non-breaking trace envelope attached."""
     stamped = deepcopy(payload)
     if "trace_envelope" in stamped:
+        envelope = stamped.get("trace_envelope")
+        if isinstance(envelope, dict):
+            tool_calls = envelope.get("tool_calls")
+            if isinstance(tool_calls, list):
+                envelope["tool_calls"] = [
+                    ensure_tool_call_timing(item)
+                    for item in tool_calls
+                    if isinstance(item, dict)
+                ]
         return stamped
     if source != "dual_agent" and not kind.startswith(("dual_agent_", "tri_agent_")):
         return stamped
@@ -46,10 +57,10 @@ def stamp_trace_envelope(
 
 def _policy_verdict(payload: dict[str, Any], failure_taxonomy: dict[str, Any] | None) -> str:
     status = _text(payload.get("status")).lower()
-    if status in {"accepted", "blocked", "failed", "rejected"}:
-        return status
     if failure_taxonomy is not None:
         return "blocked"
+    if status in {"accepted", "blocked", "failed", "rejected"}:
+        return status
     milestone = _text(payload.get("milestone")).lower()
     if milestone:
         return f"milestone:{milestone}"
@@ -59,10 +70,58 @@ def _policy_verdict(payload: dict[str, Any], failure_taxonomy: dict[str, Any] | 
 def _tool_calls(payload: dict[str, Any]) -> list[dict[str, Any]]:
     direct = payload.get("tool_calls")
     if isinstance(direct, list):
-        return [item for item in direct if isinstance(item, dict)]
+        return [ensure_tool_call_timing(item) for item in direct if isinstance(item, dict)]
     metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
     calls = metadata.get("tool_calls") if isinstance(metadata, dict) else None
-    return [item for item in calls if isinstance(item, dict)] if isinstance(calls, list) else []
+    return [ensure_tool_call_timing(item) for item in calls if isinstance(item, dict)] if isinstance(calls, list) else []
+
+
+@contextmanager
+def timed_tool_call(
+    name: str,
+    *,
+    wall_clock_ms: Callable[[], int] | None = None,
+    monotonic_ns: Callable[[], int] | None = None,
+    **extra: Any,
+) -> Iterator[dict[str, Any]]:
+    """Yield a trace tool-call record and stamp timing on exit."""
+    wall = wall_clock_ms or _current_time_ms
+    monotonic = monotonic_ns or time.monotonic_ns
+    started_at_ms = int(wall())
+    started_ns = int(monotonic())
+    record: dict[str, Any] = {
+        "name": name,
+        "started_at_ms": started_at_ms,
+        **extra,
+    }
+    try:
+        yield record
+    finally:
+        duration_ms = max(0, (int(monotonic()) - started_ns) // 1_000_000)
+        record["duration_ms"] = duration_ms
+        record["ended_at_ms"] = started_at_ms + duration_ms
+
+
+def ensure_tool_call_timing(call: dict[str, Any]) -> dict[str, Any]:
+    """Return a tool-call record with the standard timing fields present."""
+    record = dict(call)
+    started = _int_or_none(record.get("started_at_ms"))
+    duration = _int_or_none(record.get("duration_ms"))
+    ended = _int_or_none(record.get("ended_at_ms"))
+    if started is None and ended is not None and duration is not None:
+        started = max(0, ended - duration)
+    if started is None:
+        started = _current_time_ms()
+    if duration is None and ended is not None:
+        duration = max(0, ended - started)
+    if duration is None:
+        duration = 0
+    if ended is None:
+        ended = started + duration
+    record["started_at_ms"] = int(started)
+    record["duration_ms"] = int(duration)
+    record["ended_at_ms"] = int(ended)
+    return record
 
 
 def _artifacts(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -97,3 +156,20 @@ def _receipts(payload: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _current_time_ms() -> int:
+    return int(time.time() * 1000)
+
+
+def _int_or_none(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    try:
+        return int(str(value))
+    except (TypeError, ValueError):
+        return None
