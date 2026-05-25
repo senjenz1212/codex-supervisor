@@ -144,6 +144,31 @@ def test_invoke_claude_lead_parses_json_output_and_validates_outcome(tmp_path):
     assert calls[0]["env"]["ANTHROPIC_BASE_URL"] == "https://uai-litellm.internal.unity.com"
 
 
+def test_invoke_claude_lead_uses_requested_model_when_stdout_omits_model(tmp_path):
+    stdout = json.dumps({
+        "result": "lead prose\n" + _outcome_block(),
+        "total_cost_usd": 0.03,
+    })
+
+    def fake_runner(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
+
+    request = LeadInvocationRequest(
+        task_id="slice0-lead",
+        gate="prd_review",
+        instruction="Review the PRD gate.",
+        cwd=tmp_path,
+        expected_specialists=("Planner",),
+        expected_decisions=("keep the gate narrow",),
+        expected_objections=(),
+    )
+
+    result = invoke_claude_lead(request, runner=fake_runner)
+
+    assert result.probe.ok
+    assert result.model == "opus"
+
+
 def test_invoke_claude_lead_reports_subprocess_failure(tmp_path):
     def fake_runner(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(

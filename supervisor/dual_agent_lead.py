@@ -318,6 +318,7 @@ def invoke_claude_lead(
     runner: Runner = subprocess.run,
 ) -> LeadInvocationResult:
     command = build_claude_lead_command(request)
+    requested_model = _command_value(command, "--model")
     env = dict(os.environ)
     env.update(request.explicit_env)
     try:
@@ -346,6 +347,7 @@ def invoke_claude_lead(
             stdout_bytes=len(stdout.encode()),
             stderr_bytes=len(stderr.encode()),
             transcript="",
+            model=requested_model,
         )
 
     stdout = _coerce_text(proc.stdout)
@@ -367,6 +369,7 @@ def invoke_claude_lead(
             stdout_bytes=stdout_bytes,
             stderr_bytes=stderr_bytes,
             transcript="",
+            model=requested_model,
         )
 
     payload_probe, transcript, model, cost_usd = _extract_claude_json_payload(stdout)
@@ -380,7 +383,7 @@ def invoke_claude_lead(
             stdout_bytes=stdout_bytes,
             stderr_bytes=stderr_bytes,
             transcript="",
-            model=model,
+            model=model or requested_model,
             cost_usd=cost_usd,
         )
     probe, outcome = evaluate_outcome_fidelity(
@@ -398,9 +401,20 @@ def invoke_claude_lead(
         stdout_bytes=stdout_bytes,
         stderr_bytes=stderr_bytes,
         transcript=transcript,
-        model=model,
+        model=model or requested_model,
         cost_usd=cost_usd,
     )
+
+
+def _command_value(command: list[str], flag: str) -> str | None:
+    try:
+        index = command.index(flag)
+    except ValueError:
+        return None
+    try:
+        return command[index + 1]
+    except IndexError:
+        return None
 
 
 def _extract_claude_json_payload(

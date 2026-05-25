@@ -17,9 +17,9 @@
     "--tools",
     "default"
   ],
-  "cost_usd": 0.67359825,
-  "model": null,
+  "cost_usd": 0.6819457499999999,
+  "model": "opus",
   "returncode": 0,
   "stderr_bytes": 0,
-  "stdout_bytes": 3131
+  "stdout_bytes": 3191
 }

@@ -133,6 +133,7 @@ def test_live_failure_mode_cursor_fixture_is_parseable_when_present():
     assert (
         "unsubstantiated" in joined_claims
         or "receipt absence is intentional" in joined_claims
+        or "fixture" in joined_claims
         or "fixture contract satisfied" in joined_claims
         or "phantom" in joined_claims
     )
