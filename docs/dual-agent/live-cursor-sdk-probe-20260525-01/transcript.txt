@@ -1,0 +1,39 @@
+## Cursor Reviewer — Gate: `outcome_review`
+
+**Task:** `live-cursor-sdk-probe`
+**Role:** Independent reviewer (read-only; no edits)
+
+### Worktree inspection
+
+The repository is minimal. Aside from `.git` metadata, the only tracked content file is `README.md` at the repository root.
+
+```1:3:/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-supervisor-cursor-probe-ajsjxj5k/sandbox-repo/README.md
+# Cursor SDK Live Probe
+
+Cursor should review this repository without editing it.
+```
+
+No source code, build config, tests, or planning artifacts are present. The README explicitly instructs review-only behavior with no implementation ask.
+
+### Gate criteria
+
+| Criterion | Result |
+|-----------|--------|
+| `README.md` exists | **Verified** — present and readable |
+| Implementation required | **No** — probe task; README requests review only |
+| Planning artifacts | None (acceptable for this gate) |
+| Evidence receipts | None (acceptable for this gate) |
+
+### Challenge of Claude outcome
+
+Claude’s claim that `README.md` exists is **confirmed** by direct filesystem inspection. The `accept` decision aligns with the gate rule: accept when README exists and no implementation is required.
+
+### Objections
+
+None.
+
+### Decision
+
+**Accept** — gate should advance.
+
+<dual_agent_outcome>{"task_id":"live-cursor-sdk-probe","summary":"README.md exists at repo root; no implementation required for this probe task. Gate criteria satisfied.","specialists":[{"name":"Cursor Reviewer","decision":"accept"}],"decisions":["accept"],"objections":[],"changed_files":[],"tests":[],"test_status":"not_applicable","confidence":0.98,"confidence_rationale":"Direct read-only inspection confirmed README.md is the sole content file and explicitly scopes the task to review-only with no implementation requirement.","confidence_criteria":["README.md present on filesystem","No implementation artifacts or requirements found","Gate rule matched independently of Claude outcome"],"claims":["README.md exists","No implementation required","Gate should advance"]}</dual_agent_outcome>

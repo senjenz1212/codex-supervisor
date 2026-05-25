@@ -24,6 +24,7 @@ SECRET_CASES = [
     ("bearer_token",   "eyJabcdefXYZ.tail",      "Authorization: Bearer eyJabcdefXYZ.tail"),
     ("password_eq",    "hunter22pass",           "DB_PASSWORD=hunter22pass"),
     ("token_eq",       "github-pat-secretvalue", "GITHUB_TOKEN=github-pat-secretvalue"),
+    ("cursor_key",     "crsr_1234567890abcdef",  "Cursor SDK error printed crsr_1234567890abcdef"),
     ("private_pem",    "MIIEvAIBADANBgkqhk1234", "-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhk1234\n-----END PRIVATE KEY-----"),
 ]
 

@@ -1,0 +1,25 @@
+{
+  "argv_redacted": [
+    "claude",
+    "--no-session-persistence",
+    "-p",
+    "[PROMPT_REDACTED]",
+    "--output-format",
+    "json",
+    "--model",
+    "opus",
+    "--max-budget-usd",
+    "100",
+    "--permission-mode",
+    "bypassPermissions",
+    "--effort",
+    "max",
+    "--tools",
+    "default"
+  ],
+  "cost_usd": 0.68671075,
+  "model": null,
+  "returncode": 0,
+  "stderr_bytes": 0,
+  "stdout_bytes": 2978
+}

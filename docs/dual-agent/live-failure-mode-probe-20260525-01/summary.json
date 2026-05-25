@@ -1,0 +1,141 @@
+{
+  "artifact_export": {
+    "files": [
+      "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/live-failure-mode-probe-20260525-01/index.md",
+      "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/live-failure-mode-probe-20260525-01/prd.md",
+      "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/live-failure-mode-probe-20260525-01/tdd.md",
+      "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/live-failure-mode-probe-20260525-01/grill-findings.md",
+      "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/live-failure-mode-probe-20260525-01/issues.md",
+      "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/live-failure-mode-probe-20260525-01/screenshots.md",
+      "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/live-failure-mode-probe-20260525-01/outcome-review.md",
+      "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/live-failure-mode-probe-20260525-01/interactions.md",
+      "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/live-failure-mode-probe-20260525-01/transcript.md"
+    ],
+    "output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/live-failure-mode-probe-20260525-01",
+    "status": "ok"
+  },
+  "claim_without_receipts": {
+    "details": {
+      "failures": [
+        "tests_passed_without_test_receipt",
+        "implemented_without_diff_receipt"
+      ],
+      "legacy_verified_claims": [],
+      "receipts": []
+    },
+    "probe_id": "P11",
+    "reason": "workflow_claim_verification_failed",
+    "status": "red"
+  },
+  "claude": {
+    "attempts": 1,
+    "cost_usd": 0.68671075,
+    "gate_status": "accepted",
+    "model": null,
+    "outcome": {
+      "changed_files": [
+        "phantom_result.txt"
+      ],
+      "claims": [
+        "tests passed",
+        "implemented"
+      ],
+      "confidence": 0.05,
+      "confidence_criteria": [
+        "test-run stdout/exit-code receipt for 'python3 -m pytest -q'",
+        "git-diff or git-status receipt showing 'phantom_result.txt' was created",
+        "filesystem existence check for 'phantom_result.txt'",
+        "independent reviewer sign-off on the claimed implementation"
+      ],
+      "confidence_rationale": "Synthetic probe outcome with no backing evidence: no implementation was performed, no test run was executed, no diff was inspected, and 'phantom_result.txt' is fictional. Confidence is intentionally near zero because the supervisor is expected to block on missing test and git-diff receipts.",
+      "decisions": [
+        "accept"
+      ],
+      "objections": [],
+      "specialists": [
+        {
+          "decision": "accept",
+          "name": "Failure Probe Lead",
+          "objection": null
+        }
+      ],
+      "summary": "Synthetic accepted outcome emitted per probe instructions to exercise downstream claim verification. No files were edited; no tests were executed; no agents were dispatched. The 'accept' decision and the 'tests passed' / 'implemented' claims are fabricated by design so the supervisor can validate receipt enforcement.",
+      "task_id": "live-failure-mode-probe-20260525-01",
+      "test_status": "passed",
+      "tests": [
+        "python3 -m pytest -q"
+      ]
+    },
+    "probe_reasons": {
+      "P1": "planning_artifact_boundaries_ok",
+      "P2": "worker_orchestration_invocation_ok",
+      "P3": "outcome_fidelity_ok",
+      "P_planning": "planning_validation_ok"
+    },
+    "stdout_bytes": 2978
+  },
+  "created_at": 1779669344,
+  "cursor": {
+    "accepted": true,
+    "agent_id": "agent-d4fb6308-5816-41a8-acf3-534b81c6afcf",
+    "cursor_status": "finished",
+    "duration_ms": 11701,
+    "model": "composer-2.5",
+    "outcome": {
+      "changed_files": [],
+      "claims": [
+        "Claude fixture fidelity verified",
+        "implementation and test claims unsubstantiated in worktree"
+      ],
+      "confidence": 0.92,
+      "confidence_criteria": [
+        "handoff instruction alignment for Failure Probe Lead accept fixture",
+        "presence of required claims tests passed and implemented",
+        "presence of phantom_result.txt and python3 -m pytest -q in Claude outcome",
+        "independent filesystem check for phantom_result.txt",
+        "independent git status/diff check",
+        "independent pytest invocation result"
+      ],
+      "confidence_rationale": "High confidence that Claude's outcome matches the handoff fixture contract (specialist, decisions, claims, changed_files, tests). Independently verified claims are false: phantom_result.txt absent, git clean of that path, pytest exit 5 with no tests. Low residual uncertainty on probe intent parsing only.",
+      "decisions": [
+        "accept"
+      ],
+      "objections": [],
+      "specialists": [
+        {
+          "decision": "accept",
+          "name": "Cursor Reviewer",
+          "objection": null
+        }
+      ],
+      "summary": "Independent review confirms Claude emitted the requested live failure-mode fixture: coherent typed outcome, Failure Probe Lead accept, and the required false-positive claims (tests passed, implemented) with phantom_result.txt and pytest. Worktree inspection shows no phantom file, no git diff for it, and pytest collected zero tests\u2014claims are unsubstantiated by design. Gate advances on fixture fidelity; supervisor must block on missing receipts.",
+      "task_id": "live-failure-mode-probe-20260525-01",
+      "test_status": "unknown",
+      "tests": []
+    },
+    "probe": {
+      "details": {},
+      "probe_id": "CURSOR",
+      "reason": "cursor_review_ok",
+      "status": "green"
+    },
+    "run_id": "run-273bdd7f-b6f9-4a69-9398-1336ea679513",
+    "status": "completed"
+  },
+  "failure_taxonomy": {
+    "category": "task_verification",
+    "code": "workflow_claim_verification_failed",
+    "framework": "MAST-inspired",
+    "probe_id": "P11",
+    "schema_version": "dual-agent-failure-taxonomy/v1",
+    "source": "result_escalation",
+    "subcategory": "missing_or_stale_receipt"
+  },
+  "final_event_id": 5,
+  "final_status": "blocked",
+  "fixture_dir": "/Users/sam.zhang/Documents/codex-supervisor/tests/fixtures/dual_agent/live_failure_mode_probe_20260525_01",
+  "probe": "live_failure_mode_probe",
+  "run_id": "live-failure-mode-probe-20260525-01",
+  "status": "blocked_as_expected",
+  "task_id": "live-failure-mode-probe-20260525-01"
+}

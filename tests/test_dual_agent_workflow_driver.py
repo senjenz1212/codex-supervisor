@@ -314,6 +314,50 @@ async def test_run_dual_agent_workflow_happy_path_owns_full_lifecycle(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_run_dual_agent_workflow_passes_budget_to_each_lead_gate(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
+    from supervisor.dual_agent_runner import build_lead_replay_stdout
+
+    _write_good_workflow_source_artifacts(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    runner_calls: list[list[str]] = []
+
+    def fake_runner(argv, **kwargs):
+        runner_calls.append(list(argv))
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=build_lead_replay_stdout(
+                "Workflow response.\n" + _outcome_block("workflow-1"),
+            ),
+            stderr="",
+        )
+
+    server = build_codex_supervisor_mcp_server(
+        _cfg(tmp_path),
+        state,
+        mcp_cls=_FakeMCP,
+        runner=fake_runner,
+    )
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Run workflow with a non-default live probe budget.",
+        max_rounds_per_gate=1,
+        budget_usd=42.5,
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert result["status"] == "accepted"
+    assert len(runner_calls) == 6
+    for argv in runner_calls:
+        budget_flag_index = argv.index("--max-budget-usd")
+        assert argv[budget_flag_index + 1] == "42.5"
+
+
+@pytest.mark.asyncio
 async def test_run_dual_agent_workflow_blocks_auto_seeded_planning_stubs(tmp_path):
     from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
     from supervisor.dual_agent_runner import build_lead_replay_stdout

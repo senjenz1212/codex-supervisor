@@ -303,6 +303,84 @@ Interpretation:
 
 - The live Cursor SDK probe harness exists and records a durable diagnostic
   fixture even when credentials are absent.
-- This is not a green live Cursor review. A green proof still requires
-  `CURSOR_API_KEY` to be present in the process environment and a completed
-  Cursor outcome fixture.
+- This diagnostic is superseded by the 2026-05-25 green live Cursor probe
+  below.
+
+## 2026-05-25 Cursor SDK Live Probe
+
+Command shape:
+
+```text
+uv run python scripts/probe_cursor_sdk_live.py --output-dir docs/dual-agent/live-cursor-sdk-probe-20260525-01 --timeout-s 300
+```
+
+Result:
+
+- Status: `completed`
+- Probe: `CURSOR green cursor_review_ok`
+- Cursor status: `finished`
+- Model: `composer-2.5`
+- Duration: `8720ms`
+- Accepted: `true`
+- `CURSOR_API_KEY` present in process environment: `true` (boolean only; key
+  value is not stored)
+- Fixture:
+  `docs/dual-agent/live-cursor-sdk-probe-20260525-01/summary.json`
+- Replay fixture:
+  `tests/fixtures/dual_agent/live_cursor_sdk_probe_20260525_01/`
+
+Interpretation:
+
+- Cursor SDK integration is live-proven for a single read-only reviewer gate.
+- Cursor returned a valid `Cursor Reviewer` typed outcome, accepted the review,
+  and reported no changed files.
+- This proves the SDK boundary and redacted fixture capture. It is not a full
+  product workflow by itself; full workflow behavior is covered by workflow
+  tests and the live failure-mode probe below.
+
+## 2026-05-25 Live Tri-Agent Failure-Mode Probe
+
+Command shape:
+
+```text
+uv run python scripts/probe_live_failure_mode.py --output-dir docs/dual-agent/live-failure-mode-probe-20260525-01 --fixture-dir tests/fixtures/dual_agent/live_failure_mode_probe_20260525_01 --timeout-s 900 --budget-usd 100
+```
+
+Scope:
+
+- Cwd: disposable temporary git repository.
+- Claude Code: live `/lead` through `run_dual_agent_gate`.
+- Cursor: live SDK read-only reviewer through `invoke_cursor_agent`.
+- Codex/supervisor: deterministic P11 claim verification with no test or
+  git-diff receipts supplied.
+- Source artifacts:
+  `docs/dual-agent/live-failure-mode-probe-20260525-01/source/`.
+
+Result:
+
+- Final status: `blocked`
+- Probe status: `blocked_as_expected`
+- Claude gate status: `accepted`
+- Claude probes: `P1 planning_artifact_boundaries_ok`,
+  `P2 worker_orchestration_invocation_ok`, `P3 outcome_fidelity_ok`,
+  `P_planning planning_validation_ok`
+- Cursor probe: `CURSOR green cursor_review_ok`
+- Cursor accepted fixture fidelity while noting the implementation/test claims
+  were unsubstantiated in the worktree.
+- Supervisor claim verification: `P11 red workflow_claim_verification_failed`
+  with `tests_passed_without_test_receipt` and
+  `implemented_without_diff_receipt`.
+- Failure taxonomy:
+  `task_verification / missing_or_stale_receipt`
+- Fixture:
+  `tests/fixtures/dual_agent/live_failure_mode_probe_20260525_01/`
+
+Interpretation:
+
+- This is the missing live failure-mode proof for the narrow scope.
+- It demonstrates the core harness rule: even when Claude returns an accepted
+  typed outcome and Cursor accepts the fixture as a reviewer, the supervisor
+  ledger blocks completion when claims lack receipts.
+- `tests/test_dual_agent_live_lead_fixture.py` replays the captured Claude
+  stdout, parses both Cursor transcripts, and asserts the P11 blocked taxonomy
+  remains stable.

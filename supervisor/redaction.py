@@ -37,6 +37,9 @@ _PATTERNS: list[tuple[re.Pattern[str], str]] = [
     # GitHub personal access tokens.
     (re.compile(r"gh[pousr]_[A-Za-z0-9]{16,}"),
      "[REDACTED_GITHUB_TOKEN]"),
+    # Cursor API keys.
+    (re.compile(r"crsr_[A-Za-z0-9]{16,}"),
+     "[REDACTED_CURSOR_KEY]"),
     # KEY=VALUE / KEY: VALUE where KEY ends in a secret-like suffix.
     (re.compile(
         r"((?i:[A-Z][A-Z0-9_]*?(?:_KEY|_TOKEN|_SECRET|_PASSWORD|PASSWORD))"

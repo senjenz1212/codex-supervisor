@@ -1,0 +1,48 @@
+{
+  "accepted": true,
+  "agent_id": "agent-9e92af74-adef-43f6-b876-ba98d4b1921b",
+  "api_key_present": true,
+  "created_at": 1779668467,
+  "cursor_sdk_import": "ok",
+  "cursor_status": "finished",
+  "duration_ms": 8720,
+  "model": "composer-2.5",
+  "outcome": {
+    "changed_files": [],
+    "claims": [
+      "README.md exists",
+      "No implementation required",
+      "Gate should advance"
+    ],
+    "confidence": 0.98,
+    "confidence_criteria": [
+      "README.md present on filesystem",
+      "No implementation artifacts or requirements found",
+      "Gate rule matched independently of Claude outcome"
+    ],
+    "confidence_rationale": "Direct read-only inspection confirmed README.md is the sole content file and explicitly scopes the task to review-only with no implementation requirement.",
+    "decisions": [
+      "accept"
+    ],
+    "objections": [],
+    "specialists": [
+      {
+        "decision": "accept",
+        "name": "Cursor Reviewer",
+        "objection": null
+      }
+    ],
+    "summary": "README.md exists at repo root; no implementation required for this probe task. Gate criteria satisfied.",
+    "task_id": "live-cursor-sdk-probe",
+    "test_status": "unknown",
+    "tests": []
+  },
+  "probe": {
+    "details": {},
+    "probe_id": "CURSOR",
+    "reason": "cursor_review_ok",
+    "status": "green"
+  },
+  "run_id": "run-71cc2297-6e06-4c85-b9a8-e1dcebb2640e",
+  "status": "completed"
+}

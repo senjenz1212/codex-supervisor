@@ -106,9 +106,13 @@ re-run `start_dual_agent_gate` with corrective input.
   The remaining live check is whether Codex actually captures the UI correctly
   for a given product surface; the supervisor enforces the evidence contract.
 - Live Cursor SDK probe support lives in `scripts/probe_cursor_sdk_live.py`.
-  The script writes a diagnostic fixture even when `CURSOR_API_KEY` is absent;
-  a green live Cursor run remains deferred until the key is present in the
-  process environment.
+  The 2026-05-25 run completed with `CURSOR green cursor_review_ok` and a
+  redacted replay fixture under
+  `tests/fixtures/dual_agent/live_cursor_sdk_probe_20260525_01/`.
+- The 2026-05-25 tri-agent failure-mode probe completed with live Claude and
+  live Cursor both producing valid typed outcomes, then the supervisor blocked
+  on `P11 workflow_claim_verification_failed` because no test or git-diff
+  receipts backed the implementation claims.
 - P9 requires Sam's phone and connected-host setup; it is a product-surface
   smoke check, not a hard-stop probe.
 - Day 0 cockpit ADR selects current Cortex as the first cockpit target; later
