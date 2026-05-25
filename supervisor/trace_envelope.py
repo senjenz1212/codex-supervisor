@@ -104,9 +104,12 @@ def timed_tool_call(
         }
         raise
     finally:
-        duration_ms = max(0, (int(monotonic()) - started_ns) // 1_000_000)
+        duration_us = max(0, (int(monotonic()) - started_ns) // 1_000)
+        duration_ms = duration_us // 1_000
         record["duration_ms"] = duration_ms
+        record["duration_us"] = duration_us
         record["ended_at_ms"] = started_at_ms + duration_ms
+        record.setdefault("tool_call_id", _default_tool_call_id(record))
 
 
 def ensure_tool_call_timing(call: dict[str, Any]) -> dict[str, Any]:
@@ -114,21 +117,44 @@ def ensure_tool_call_timing(call: dict[str, Any]) -> dict[str, Any]:
     record = dict(call)
     started = _int_or_none(record.get("started_at_ms"))
     duration = _int_or_none(record.get("duration_ms"))
+    duration_us = _int_or_none(record.get("duration_us"))
     ended = _int_or_none(record.get("ended_at_ms"))
     if started is None and ended is not None and duration is not None:
         started = max(0, ended - duration)
     if started is None:
         started = _current_time_ms()
+    if duration is None and duration_us is not None:
+        duration = duration_us // 1_000
     if duration is None and ended is not None:
         duration = max(0, ended - started)
     if duration is None:
         duration = 0
+    if duration_us is None:
+        duration_us = duration * 1_000
     if ended is None:
         ended = started + duration
     record["started_at_ms"] = int(started)
     record["duration_ms"] = int(duration)
+    record["duration_us"] = int(duration_us)
     record["ended_at_ms"] = int(ended)
+    record.setdefault("tool_call_id", _default_tool_call_id(record))
     return record
+
+
+def _default_tool_call_id(record: dict[str, Any]) -> str:
+    name = _slug(_text(record.get("name")) or "tool")
+    started = _int_or_none(record.get("started_at_ms")) or 0
+    duration_us = _int_or_none(record.get("duration_us"))
+    if duration_us is None:
+        duration_us = (_int_or_none(record.get("duration_ms")) or 0) * 1_000
+    raw_probe = _text(record.get("probe_id"))
+    probe = _slug(raw_probe) if raw_probe else ""
+    suffix = f"#{probe}" if probe else ""
+    return f"{name}#{started}#{duration_us}{suffix}"
+
+
+def _slug(value: str) -> str:
+    return "".join(ch if ch.isalnum() else "_" for ch in value.lower()).strip("_") or "tool"
 
 
 def _artifacts(payload: dict[str, Any]) -> list[dict[str, Any]]:

@@ -17,9 +17,21 @@
     "--tools",
     "default"
   ],
-  "cost_usd": 0.68832225,
+  "cost_usd": 0.26538174999999997,
   "model": "opus",
   "returncode": 0,
   "stderr_bytes": 0,
-  "stdout_bytes": 2502
+  "stdout_bytes": 2550,
+  "token_usage": {
+    "cache_creation_input_tokens": 21695,
+    "cache_read_input_tokens": 159556,
+    "context_window": 200000,
+    "input_tokens": 7,
+    "max_output_tokens": 64000,
+    "output_tokens": 1999,
+    "tokens_in": 181258,
+    "tokens_out": 1999
+  },
+  "tokens_in": 181258,
+  "tokens_out": 1999
 }

@@ -85,6 +85,9 @@ class LeadInvocationResult:
     transcript: str
     model: str | None = None
     cost_usd: float | None = None
+    tokens_in: int | None = None
+    tokens_out: int | None = None
+    token_usage: dict[str, Any] = field(default_factory=dict)
 
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
@@ -372,7 +375,7 @@ def invoke_claude_lead(
             model=requested_model,
         )
 
-    payload_probe, transcript, model, cost_usd = _extract_claude_json_payload(stdout)
+    payload_probe, transcript, model, cost_usd, token_usage = _extract_claude_json_payload(stdout)
     if payload_probe is not None:
         return LeadInvocationResult(
             probe=payload_probe,
@@ -385,6 +388,9 @@ def invoke_claude_lead(
             transcript="",
             model=model or requested_model,
             cost_usd=cost_usd,
+            tokens_in=_int_from_mapping(token_usage, "tokens_in"),
+            tokens_out=_int_from_mapping(token_usage, "tokens_out"),
+            token_usage=token_usage,
         )
     probe, outcome = evaluate_outcome_fidelity(
         transcript,
@@ -403,6 +409,9 @@ def invoke_claude_lead(
         transcript=transcript,
         model=model or requested_model,
         cost_usd=cost_usd,
+        tokens_in=_int_from_mapping(token_usage, "tokens_in"),
+        tokens_out=_int_from_mapping(token_usage, "tokens_out"),
+        token_usage=token_usage,
     )
 
 
@@ -419,11 +428,11 @@ def _command_value(command: list[str], flag: str) -> str | None:
 
 def _extract_claude_json_payload(
     stdout: str,
-) -> tuple[ProbeResult | None, str, str | None, float | None]:
+) -> tuple[ProbeResult | None, str, str | None, float | None, dict[str, Any]]:
     try:
         payload = json.loads(stdout)
     except json.JSONDecodeError:
-        return None, stdout, None, None
+        return None, stdout, None, None, {}
     if not isinstance(payload, dict):
         return (
             ProbeResult(
@@ -435,9 +444,11 @@ def _extract_claude_json_payload(
             "",
             None,
             None,
+            {},
         )
     transcript = payload.get("result")
     if not isinstance(transcript, str):
+        token_usage = _token_usage_from_payload(payload)
         return (
             ProbeResult(
                 "P2",
@@ -448,10 +459,12 @@ def _extract_claude_json_payload(
             "",
             _model_from_payload(payload),
             _cost_from_payload(payload),
+            token_usage,
         )
     model = _model_from_payload(payload)
     cost_usd = _cost_from_payload(payload)
-    return None, transcript, model, cost_usd
+    token_usage = _token_usage_from_payload(payload)
+    return None, transcript, model, cost_usd, token_usage
 
 
 def _model_from_payload(payload: dict[str, Any]) -> str | None:
@@ -464,6 +477,73 @@ def _model_from_payload(payload: dict[str, Any]) -> str | None:
 def _cost_from_payload(payload: dict[str, Any]) -> float | None:
     cost = payload.get("total_cost_usd", payload.get("cost_usd"))
     return float(cost) if isinstance(cost, (int, float)) else None
+
+
+def _token_usage_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    usage = payload.get("usage")
+    if not isinstance(usage, dict):
+        usage = {}
+    model_usage = _model_usage_from_payload(payload)
+    input_tokens = _int_token(usage.get("input_tokens"), model_usage.get("inputTokens"))
+    cache_creation = _int_token(
+        usage.get("cache_creation_input_tokens"),
+        model_usage.get("cacheCreationInputTokens"),
+    )
+    cache_read = _int_token(
+        usage.get("cache_read_input_tokens"),
+        model_usage.get("cacheReadInputTokens"),
+    )
+    output_tokens = _int_token(usage.get("output_tokens"), model_usage.get("outputTokens"))
+    token_parts = [
+        value for value in (input_tokens, cache_creation, cache_read)
+        if value is not None
+    ]
+    tokens_in = sum(token_parts) if token_parts else None
+    out: dict[str, Any] = {}
+    for key, value in (
+        ("input_tokens", input_tokens),
+        ("cache_creation_input_tokens", cache_creation),
+        ("cache_read_input_tokens", cache_read),
+        ("output_tokens", output_tokens),
+        ("tokens_in", tokens_in),
+        ("tokens_out", output_tokens),
+        ("context_window", _int_token(model_usage.get("contextWindow"))),
+        ("max_output_tokens", _int_token(model_usage.get("maxOutputTokens"))),
+    ):
+        if value is not None:
+            out[key] = value
+    return out
+
+
+def _model_usage_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    model_usage = payload.get("modelUsage")
+    if not isinstance(model_usage, dict) or not model_usage:
+        return {}
+    model = _model_from_payload(payload)
+    if model and isinstance(model_usage.get(model), dict):
+        return model_usage[model]
+    first = next(iter(model_usage.values()))
+    return first if isinstance(first, dict) else {}
+
+
+def _int_token(*values: Any) -> int | None:
+    for value in values:
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            return int(value)
+        try:
+            return int(str(value))
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _int_from_mapping(payload: dict[str, Any], key: str) -> int | None:
+    value = payload.get(key)
+    return value if isinstance(value, int) else None
 
 
 def _handoff_artifact(

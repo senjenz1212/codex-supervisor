@@ -972,16 +972,22 @@ def _tool_call_triage_markdown(calls: list[dict[str, Any]]) -> str:
     if not calls:
         return "- None recorded."
     rows = [
-        "| event | name | status | duration_ms | probe_id | receipt_ids | args | result_summary | error |",
-        "|---:|---|---|---:|---|---|---|---|---|",
+        "| event | tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |",
+        "|---:|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|",
     ]
     for call in calls:
         rows.append(
-            "| {event_id} | {name} | {status} | {duration_ms} | {probe_id} | {receipt_ids} | {args} | {result} | {error} |".format(
+            "| {event_id} | {tool_call_id} | {parent_tool_call_id} | {references_tool_call_id} | {name} | {status} | {duration_ms} | {duration_us} | {tokens_in} | {tokens_out} | {probe_id} | {receipt_ids} | {args} | {result} | {error} |".format(
                 event_id=_table_cell(call.get("event_id")),
+                tool_call_id=_table_cell(call.get("tool_call_id")),
+                parent_tool_call_id=_table_cell(call.get("parent_tool_call_id")),
+                references_tool_call_id=_table_cell(call.get("references_tool_call_id")),
                 name=_table_cell(call.get("name")),
                 status=_table_cell(call.get("status")),
                 duration_ms=_table_cell(call.get("duration_ms")),
+                duration_us=_table_cell(call.get("duration_us")),
+                tokens_in=_table_cell(call.get("tokens_in")),
+                tokens_out=_table_cell(call.get("tokens_out")),
                 probe_id=_table_cell(call.get("probe_id")),
                 receipt_ids=_table_cell(call.get("receipt_ids")),
                 args=_table_cell(call.get("args")),
@@ -997,15 +1003,21 @@ def _tool_calls_markdown(value: list[Any]) -> str:
     if not calls:
         return "- None recorded."
     lines = [
-        "| name | status | duration_ms | probe_id | receipt_ids | args | result_summary | error |",
-        "|---|---|---:|---|---|---|---|---|",
+        "| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |",
+        "|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|",
     ]
     for call in calls:
         lines.append(
-            "| {name} | {status} | {duration} | {probe_id} | {receipt_ids} | {args} | {result} | {error} |".format(
+            "| {tool_call_id} | {parent_tool_call_id} | {references_tool_call_id} | {name} | {status} | {duration} | {duration_us} | {tokens_in} | {tokens_out} | {probe_id} | {receipt_ids} | {args} | {result} | {error} |".format(
+                tool_call_id=_table_cell(call.get("tool_call_id")),
+                parent_tool_call_id=_table_cell(call.get("parent_tool_call_id")),
+                references_tool_call_id=_table_cell(call.get("references_tool_call_id")),
                 name=_table_cell(call.get("name")),
                 status=_table_cell(call.get("status")),
                 duration=_table_cell(call.get("duration_ms")),
+                duration_us=_table_cell(call.get("duration_us")),
+                tokens_in=_table_cell(call.get("tokens_in")),
+                tokens_out=_table_cell(call.get("tokens_out")),
                 probe_id=_table_cell(call.get("probe_id")),
                 receipt_ids=_table_cell(call.get("receipt_ids")),
                 args=_table_cell(call.get("args")),

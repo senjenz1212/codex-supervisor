@@ -326,11 +326,19 @@ def test_gate_runner_records_claude_response_trace_fields(tmp_path):
 def test_gate_runner_records_direct_interaction_persona_addresses_and_tool_calls(tmp_path):
     state = State(str(tmp_path / "state.db"))
     planning_artifacts = _write_good_planning_artifacts(tmp_path)
-    stdout = build_lead_replay_stdout(
-        "Lead reviewed packet.\n" + _outcome_block(claims=["tests passed", "implemented"]),
-        model="claude-opus-4-7",
-        cost_usd=0.42,
-    )
+    stdout = json.dumps({
+        "type": "result",
+        "subtype": "success",
+        "result": "Lead reviewed packet.\n" + _outcome_block(claims=["tests passed", "implemented"]),
+        "model": "claude-opus-4-7",
+        "total_cost_usd": 0.42,
+        "usage": {
+            "input_tokens": 11,
+            "cache_creation_input_tokens": 22,
+            "cache_read_input_tokens": 33,
+            "output_tokens": 44,
+        },
+    })
 
     def fake_runner(argv, **kwargs):
         return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
@@ -386,13 +394,19 @@ def test_gate_runner_records_direct_interaction_persona_addresses_and_tool_calls
     assert response["trace_envelope"]["tool_calls"][0]["model"] == "claude-opus-4-7"
     assert response["trace_envelope"]["tool_calls"][0]["cost_usd"] == 0.42
     for call in response["trace_envelope"]["tool_calls"]:
-        assert {"started_at_ms", "ended_at_ms", "duration_ms"} <= set(call)
+        assert {"started_at_ms", "ended_at_ms", "duration_ms", "duration_us", "tool_call_id"} <= set(call)
         assert call["ended_at_ms"] >= call["started_at_ms"]
         assert "args" in call
         assert "result_summary" in call
     assert response["trace_envelope"]["tool_calls"][0]["duration_ms"] >= 0
     assert response["trace_envelope"]["tool_calls"][0]["args"]["task_id"] == "gate-1"
     assert response["trace_envelope"]["tool_calls"][0]["result_summary"]["outcome_present"] is True
+    assert response["trace_envelope"]["tool_calls"][0]["tokens_in"] == 66
+    assert response["trace_envelope"]["tool_calls"][0]["tokens_out"] == 44
+    parent_id = response["trace_envelope"]["tool_calls"][0]["tool_call_id"]
+    assert response["trace_envelope"]["tool_calls"][1]["parent_tool_call_id"] == parent_id
+    assert response["trace_envelope"]["tool_calls"][2]["parent_tool_call_id"] == parent_id
+    assert response["trace_envelope"]["tool_calls"][3]["parent_tool_call_id"] == parent_id
 
 
 def test_gate_runner_planning_probe_details_keep_task_id(tmp_path):

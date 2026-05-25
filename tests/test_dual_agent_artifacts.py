@@ -789,7 +789,7 @@ def test_export_dual_agent_run_artifacts_writes_fast_triage_page_and_source_link
     assert "supervisor_final_status: `blocked`" in triage
     assert "tests_passed_without_test_receipt" in triage
     assert "implemented_without_diff_receipt" in triage
-    assert "| event | name | status | duration_ms | probe_id | receipt_ids | args | result_summary | error |" in triage
+    assert "| event | tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |" in triage
     assert "verify_workflow_claims" in triage
     assert "claude_gate_status" in triage
     assert "supervisor_final_status" in triage

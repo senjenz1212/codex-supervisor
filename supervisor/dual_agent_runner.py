@@ -341,11 +341,13 @@ def run_dual_agent_gate(
             attempts = 2
             retry_tool_call.update(_lead_invocation_tool_fields(lead_result, attempts=2))
             lead_tool_calls.append(ensure_tool_call_timing(retry_tool_call))
+        lead_parent_tool_call_id = lead_tool_calls[-1].get("tool_call_id") if lead_tool_calls else None
 
         probes: dict[str, ProbeResult] = {}
         with timed_tool_call(
             "evaluate_worker_invocation",
             args={"task_id": spec.task_id, "gate": spec.gate, "probe_id": "P2"},
+            parent_tool_call_id=lead_parent_tool_call_id,
         ) as p2_tool_call:
             probes["P2"] = _p2_from_lead_result(lead_result)
         p2_tool_call = _probe_tool_call(
@@ -356,6 +358,7 @@ def run_dual_agent_gate(
         with timed_tool_call(
             "evaluate_outcome_fidelity",
             args={"task_id": spec.task_id, "gate": spec.gate, "probe_id": "P3"},
+            parent_tool_call_id=lead_parent_tool_call_id,
         ) as p3_tool_call:
             probes["P3"] = lead_result.probe
         p3_tool_call = _probe_tool_call(
@@ -371,6 +374,7 @@ def run_dual_agent_gate(
                 "probe_id": "P1",
                 "handoff_packet_path": str(packet_path),
             },
+            parent_tool_call_id=lead_parent_tool_call_id,
         ) as p1_tool_call:
             probes["P1"] = verify_planning_artifact_boundaries(packet_path)
         p1_tool_call = _probe_tool_call(
@@ -878,6 +882,9 @@ def _lead_invocation_tool_fields(
         "attempts": attempts,
         "model": lead_result.model,
         "cost_usd": lead_result.cost_usd,
+        "tokens_in": lead_result.tokens_in,
+        "tokens_out": lead_result.tokens_out,
+        "token_usage": lead_result.token_usage,
         "stdout_bytes": lead_result.stdout_bytes,
         "stderr_bytes": lead_result.stderr_bytes,
         "result_summary": {
@@ -887,6 +894,8 @@ def _lead_invocation_tool_fields(
             "outcome_present": lead_result.outcome is not None,
             "model": lead_result.model,
             "cost_usd": lead_result.cost_usd,
+            "tokens_in": lead_result.tokens_in,
+            "tokens_out": lead_result.tokens_out,
             "stdout_bytes": lead_result.stdout_bytes,
             "stderr_bytes": lead_result.stderr_bytes,
         },
@@ -902,19 +911,36 @@ def _lead_response_tool_calls(
 ) -> list[dict[str, Any]]:
     if tool_calls is not None:
         return [ensure_tool_call_timing(call) for call in tool_calls]
-    return [
-        ensure_tool_call_timing({
+    lead_call = ensure_tool_call_timing({
             "name": "invoke_claude_lead",
             "status": "completed" if probes["P2"].ok else "failed",
             "attempts": attempts,
             "model": lead_result.model,
             "cost_usd": lead_result.cost_usd,
+            "tokens_in": lead_result.tokens_in,
+            "tokens_out": lead_result.tokens_out,
+            "token_usage": lead_result.token_usage,
             "stdout_bytes": lead_result.stdout_bytes,
             "stderr_bytes": lead_result.stderr_bytes,
-        }),
-        _probe_tool_call(name="evaluate_worker_invocation", probe=probes["P2"]),
-        _probe_tool_call(name="evaluate_outcome_fidelity", probe=probes["P3"]),
-        _probe_tool_call(name="verify_planning_artifact_boundaries", probe=probes["P1"]),
+        })
+    parent = lead_call.get("tool_call_id")
+    return [
+        lead_call,
+        _probe_tool_call(
+            name="evaluate_worker_invocation",
+            probe=probes["P2"],
+            base={"parent_tool_call_id": parent},
+        ),
+        _probe_tool_call(
+            name="evaluate_outcome_fidelity",
+            probe=probes["P3"],
+            base={"parent_tool_call_id": parent},
+        ),
+        _probe_tool_call(
+            name="verify_planning_artifact_boundaries",
+            probe=probes["P1"],
+            base={"parent_tool_call_id": parent},
+        ),
     ]
 
 

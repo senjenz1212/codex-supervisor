@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from supervisor.failure_taxonomy import MAST_FAILURE_MODES, blocking_probe_failure, classify_failure
+from supervisor.failure_taxonomy import (
+    MAST_FAILURE_MODES,
+    blocking_probe_failure,
+    classify_failure,
+    detect_sequence_failures,
+    failure_taxonomy_for_payload,
+)
 from supervisor.trace_envelope import stamp_trace_envelope, timed_tool_call
 
 
@@ -77,6 +83,84 @@ def test_failure_taxonomy_maps_all_mast_modes_without_losing_supervisor_fields()
     assert internal["mast_mode"] is None
 
 
+def test_failure_taxonomy_triggers_all_mast_modes_through_payload_or_sequence_rules():
+    payload_cases = {
+        "FM-1.1": {"status": "blocked", "reason": "disobey_task_spec"},
+        "FM-1.2": {"status": "blocked", "reason": "role_violation_covenant"},
+        "FM-1.4": {"status": "blocked", "reason": "lost_conversation_history"},
+        "FM-1.5": {"status": "blocked", "reason": "agents_not_converged_max_rounds"},
+        "FM-2.1": {"status": "blocked", "reason": "conversation_reset"},
+        "FM-2.2": {"status": "blocked", "reason": "ambiguous_input_no_clarification"},
+        "FM-2.3": {"status": "blocked", "reason": "scope_violation_off_scope"},
+        "FM-2.4": {"status": "blocked", "reason": "information_withholding"},
+        "FM-2.6": {"status": "blocked", "reason": "reasoning_action_mismatch"},
+        "FM-3.2": {
+            "status": "blocked",
+            "probes": {
+                "P11": {
+                    "probe_id": "P11",
+                    "status": "red",
+                    "reason": "workflow_claim_verification_failed",
+                },
+            },
+        },
+    }
+    observed = {
+        failure_taxonomy_for_payload(kind="dual_agent_gate_result", payload=payload)["mast_code"]
+        for payload in payload_cases.values()
+    }
+
+    sequence_failures = detect_sequence_failures([
+        {
+            "event_id": 1,
+            "kind": "dual_agent_gate_result",
+            "gate": "outcome_review",
+            "payload": {
+                "status": "accepted",
+                "required_probes": ["P1", "CURSOR"],
+                "probes": {"P1": {"status": "green", "reason": "ok"}},
+                "handoff_packet_sha256": "same",
+            },
+        },
+        {
+            "event_id": 2,
+            "kind": "dual_agent_gate_result",
+            "gate": "outcome_review",
+            "payload": {
+                "status": "accepted",
+                "required_probes": ["P1", "CURSOR"],
+                "probes": {"P1": {"status": "green", "reason": "ok"}},
+                "handoff_packet_sha256": "same",
+            },
+        },
+        {
+            "event_id": 3,
+            "kind": "dual_agent_gate_round",
+            "gate": "outcome_review",
+            "payload": {"round": {"objection": "tests missing"}},
+        },
+        {
+            "event_id": 4,
+            "kind": "dual_agent_interaction_message",
+            "gate": "outcome_review",
+            "payload": {
+                "sender": "claude_code",
+                "content": "Proceeding without addressing prior critique.",
+                "addresses": [],
+            },
+        },
+        {
+            "event_id": 5,
+            "kind": "tri_agent_cursor_review",
+            "gate": "outcome_review",
+            "payload": {"accepted": False},
+        },
+    ])
+    observed.update(failure["mast_code"] for failure in sequence_failures)
+
+    assert observed == set(MAST_FAILURE_MODES)
+
+
 def test_trace_envelope_stamps_dual_agent_payloads_without_wrapping_original_shape():
     payload = stamp_trace_envelope(
         run_id="run-1",
@@ -151,7 +235,9 @@ def test_timed_tool_call_stamps_wall_clock_and_monotonic_duration():
     assert record["model"] == "opus"
     assert record["started_at_ms"] == 1_000
     assert record["duration_ms"] == 135
+    assert record["duration_us"] == 135_000
     assert record["ended_at_ms"] == 1_135
+    assert record["tool_call_id"].startswith("invoke_claude_lead#1000#")
 
 
 def test_timed_tool_call_stamps_exception_metadata_before_reraising():
@@ -171,7 +257,7 @@ def test_timed_tool_call_stamps_exception_metadata_before_reraising():
         "type": "RuntimeError",
         "message": "boom",
     }
-    assert {"started_at_ms", "ended_at_ms", "duration_ms"} <= set(record)
+    assert {"started_at_ms", "ended_at_ms", "duration_ms", "duration_us", "tool_call_id"} <= set(record)
 
 
 def test_trace_envelope_extracts_tool_calls_from_metadata_or_payload():
@@ -205,8 +291,54 @@ def test_trace_envelope_extracts_tool_calls_from_metadata_or_payload():
     for envelope in (from_metadata["trace_envelope"], from_payload["trace_envelope"]):
         assert envelope["tool_calls"]
         for call in envelope["tool_calls"]:
-            assert {"started_at_ms", "ended_at_ms", "duration_ms"} <= set(call)
+            assert {"started_at_ms", "ended_at_ms", "duration_ms", "duration_us", "tool_call_id"} <= set(call)
             assert call["ended_at_ms"] >= call["started_at_ms"]
             assert call["duration_ms"] >= 0
     assert from_metadata["trace_envelope"]["tool_calls"][0]["name"] == "invoke_claude_lead"
     assert from_payload["trace_envelope"]["tool_calls"][0]["name"] == "start_dual_agent_gate"
+
+
+def test_trace_envelope_assigns_stable_tool_call_ids_for_duplicate_references():
+    first = stamp_trace_envelope(
+        run_id="run-1",
+        source="dual_agent",
+        kind="dual_agent_gate_result",
+        payload={
+            "task_id": "task-1",
+            "gate": "outcome_review",
+            "tool_calls": [
+                {
+                    "name": "verify_workflow_claims",
+                    "status": "red",
+                    "probe_id": "P11",
+                    "started_at_ms": 42,
+                    "duration_ms": 0,
+                },
+            ],
+        },
+    )
+    second = stamp_trace_envelope(
+        run_id="run-1",
+        source="dual_agent",
+        kind="dual_agent_interaction_message",
+        payload={
+            "task_id": "task-1",
+            "gate": "outcome_review",
+            "metadata": {
+                "tool_calls": [
+                    {
+                        "name": "verify_workflow_claims",
+                        "status": "red",
+                        "probe_id": "P11",
+                        "started_at_ms": 42,
+                        "duration_ms": 0,
+                    },
+                ],
+            },
+        },
+    )
+
+    first_call = first["trace_envelope"]["tool_calls"][0]
+    second_call = second["trace_envelope"]["tool_calls"][0]
+    assert first_call["duration_us"] == 0
+    assert first_call["tool_call_id"] == second_call["tool_call_id"]

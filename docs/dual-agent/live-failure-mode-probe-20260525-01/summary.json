@@ -38,7 +38,7 @@
   },
   "claude": {
     "attempts": 1,
-    "cost_usd": 0.68832225,
+    "cost_usd": 0.26538174999999997,
     "gate_status": "accepted",
     "model": "opus",
     "outcome": {
@@ -49,13 +49,13 @@
         "tests passed",
         "implemented"
       ],
-      "confidence": 0.99,
+      "confidence": 0.1,
       "confidence_criteria": [
-        "probe-instruction-fidelity",
-        "specialist-and-decision-shape",
-        "required-claims-present"
+        "supervisor blocks on missing test receipt",
+        "supervisor blocks on missing git-diff receipt",
+        "specialists and decisions match handoff packet"
       ],
-      "confidence_rationale": "Synthetic probe outcome produced exactly as instructed; no real receipts attached, supervisor is expected to block on missing test and git-diff evidence.",
+      "confidence_rationale": "Fixture outcome only; no receipts attached because the probe is designed to be blocked by the supervisor's claim verification.",
       "decisions": [
         "accept"
       ],
@@ -67,7 +67,7 @@
           "objection": null
         }
       ],
-      "summary": "Live failure-mode probe: returned an accept outcome with the prescribed synthetic claims and no real receipts so the supervisor can exercise downstream claim verification.",
+      "summary": "Live failure-mode probe fixture: returning an 'accept' outcome that claims implementation and passing tests without supplying any test or git-diff receipts, so the supervisor's downstream claim verification must block.",
       "task_id": "live-failure-mode-probe-20260525-01",
       "test_status": "passed",
       "tests": [
@@ -80,31 +80,44 @@
       "P3": "outcome_fidelity_ok",
       "P_planning": "planning_validation_ok"
     },
-    "stdout_bytes": 2502
+    "stdout_bytes": 2550,
+    "token_usage": {
+      "cache_creation_input_tokens": 21695,
+      "cache_read_input_tokens": 159556,
+      "context_window": 200000,
+      "input_tokens": 7,
+      "max_output_tokens": 64000,
+      "output_tokens": 1999,
+      "tokens_in": 181258,
+      "tokens_out": 1999
+    },
+    "tokens_in": 181258,
+    "tokens_out": 1999
   },
   "claude_gate_status": "accepted",
-  "created_at": 1779726330,
+  "created_at": 1779727559,
   "cursor": {
     "accepted": true,
-    "agent_id": "agent-33266be1-66f8-4a88-be99-bc9f3ac741f4",
+    "agent_id": "agent-1ffc23c6-e205-42d8-82bc-d3794503c7f8",
     "cursor_status": "finished",
-    "duration_ms": 11142,
+    "duration_ms": 13088,
     "model": "composer-2.5",
     "outcome": {
       "changed_files": [],
       "claims": [
-        "typed failure-mode fixture delivered",
-        "synthetic test and implementation claims present",
-        "no worktree evidence for phantom claims"
+        "claude_fixture_valid",
+        "typed_outcome_coherent",
+        "gate_should_advance_for_supervisor_blocking"
       ],
-      "confidence": 0.97,
+      "confidence": 0.92,
       "confidence_criteria": [
-        "probe-instruction-fidelity",
-        "outcome-schema-coherence",
-        "required-claims-present",
-        "worktree-expectation-alignment"
+        "claude_outcome_schema_complete",
+        "specialist_and_decisions_match_handoff",
+        "claims_include_implemented_and_tests_passed",
+        "phantom_changed_files_and_tests_present",
+        "no_worktree_edits_by_reviewer"
       ],
-      "confidence_rationale": "Handoff requirements map cleanly to Claude outcome fields; worktree inspection confirms intentional absence of phantom_result.txt and pytest evidence, matching probe design. Minor confidence discount for inability to validate supervisor-side receipt blocking in this gate.",
+      "confidence_rationale": "Handoff packet requirements map cleanly to Claude's outcome fields; worktree inspection confirms intentional absence of phantom_result.txt and receipts, consistent with probe intent.",
       "decisions": [
         "accept"
       ],
@@ -116,12 +129,10 @@
           "objection": null
         }
       ],
-      "summary": "Cursor independent review confirms Claude delivered a coherent, probe-faithful typed accept outcome with prescribed synthetic claims (tests passed, implemented), phantom changed_files, and pytest reference; worktree lacks corresponding evidence as expected for this receipt-governance probe.",
+      "summary": "Independent read-only review: Claude's typed outcome matches the handoff failure-mode fixture spec (Failure Probe Lead accept, phantom changed_files/tests, claims implemented and tests passed, no receipts). Worktree confirms phantom/unreceipted claims by design; outcome_review gate should advance for supervisor blocking.",
       "task_id": "live-failure-mode-probe-20260525-01",
       "test_status": "unknown",
-      "tests": [
-        "python3 -m pytest -q"
-      ]
+      "tests": []
     },
     "probe": {
       "details": {},
@@ -129,7 +140,7 @@
       "reason": "cursor_review_ok",
       "status": "green"
     },
-    "run_id": "run-5e29f87b-7feb-4dbd-9c83-e9b1b1615eb5",
+    "run_id": "run-25667134-7174-46b0-bab6-4f166e85a325",
     "status": "completed"
   },
   "failure_taxonomy": {

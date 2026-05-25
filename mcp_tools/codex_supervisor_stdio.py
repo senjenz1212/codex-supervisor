@@ -1675,32 +1675,44 @@ def _gate_result_tool_calls(
             key: value.status for key, value in result.probes.items()
         },
     })
-    calls: list[dict[str, Any]] = [ensure_tool_call_timing(call)]
+    gate_call = ensure_tool_call_timing(call)
+    gate_tool_call_id = gate_call.get("tool_call_id")
+    calls: list[dict[str, Any]] = [gate_call]
+    lead_tool_call_id: str | None = None
     if result.lead_result is not None:
-        calls.append(ensure_tool_call_timing({
+        lead_call = ensure_tool_call_timing({
             "name": "invoke_claude_lead",
             "status": "completed" if result.probes.get("P2", result.lead_result.probe).ok else "failed",
             "attempts": result.attempts,
+            "parent_tool_call_id": gate_tool_call_id,
             "args": {
                 "task_id": result.task_id,
                 "gate": result.gate,
             },
             "model": result.lead_result.model,
             "cost_usd": result.lead_result.cost_usd,
+            "tokens_in": result.lead_result.tokens_in,
+            "tokens_out": result.lead_result.tokens_out,
+            "token_usage": result.lead_result.token_usage,
             "stdout_bytes": result.lead_result.stdout_bytes,
             "stderr_bytes": result.lead_result.stderr_bytes,
             "result_summary": {
                 "probe_status": result.lead_result.probe.status,
                 "probe_reason": result.lead_result.probe.reason,
                 "outcome_present": result.outcome is not None,
+                "tokens_in": result.lead_result.tokens_in,
+                "tokens_out": result.lead_result.tokens_out,
             },
-        }))
+        })
+        lead_tool_call_id = str(lead_call.get("tool_call_id") or "")
+        calls.append(lead_call)
     for probe_id, probe in result.probes.items():
         calls.append(ensure_tool_call_timing({
             "name": f"probe:{probe_id}",
             "status": probe.status,
             "probe_id": probe.probe_id,
             "reason": probe.reason,
+            "parent_tool_call_id": lead_tool_call_id or gate_tool_call_id,
             "args": {"probe_id": probe_id},
             "result_summary": {
                 "probe_id": probe.probe_id,

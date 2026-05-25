@@ -377,6 +377,7 @@ def main() -> int:
                             "status": claim_probe.status,
                             "probe_id": claim_probe.probe_id,
                             "reason": claim_probe.reason,
+                            "references_tool_call_id": claim_tool_call.get("tool_call_id"),
                             "result_summary": {
                                 "probe_id": claim_probe.probe_id,
                                 "status": claim_probe.status,
@@ -433,6 +434,9 @@ def main() -> int:
                 },
                 "model": gate_result.lead_result.model if gate_result.lead_result else None,
                 "cost_usd": gate_result.lead_result.cost_usd if gate_result.lead_result else None,
+                "tokens_in": gate_result.lead_result.tokens_in if gate_result.lead_result else None,
+                "tokens_out": gate_result.lead_result.tokens_out if gate_result.lead_result else None,
+                "token_usage": gate_result.lead_result.token_usage if gate_result.lead_result else {},
                 "stdout_bytes": gate_result.lead_result.stdout_bytes if gate_result.lead_result else 0,
                 "outcome": outcome_payload,
             },
@@ -520,6 +524,9 @@ def _write_live_fixtures(
                 "stderr_bytes": lead.stderr_bytes,
                 "model": lead.model,
                 "cost_usd": lead.cost_usd,
+                "tokens_in": lead.tokens_in,
+                "tokens_out": lead.tokens_out,
+                "token_usage": lead.token_usage,
                 "returncode": 0 if lead.probe.ok else None,
             },
         )

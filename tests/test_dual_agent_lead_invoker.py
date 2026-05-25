@@ -113,6 +113,18 @@ def test_invoke_claude_lead_parses_json_output_and_validates_outcome(tmp_path):
         "result": "lead prose\n" + _outcome_block(),
         "model": "claude-opus-4-7",
         "total_cost_usd": 0.03,
+        "usage": {
+            "input_tokens": 10,
+            "cache_creation_input_tokens": 20,
+            "cache_read_input_tokens": 30,
+            "output_tokens": 7,
+        },
+        "modelUsage": {
+            "claude-opus-4-7": {
+                "contextWindow": 200000,
+                "maxOutputTokens": 64000,
+            },
+        },
     })
 
     def fake_runner(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -137,6 +149,13 @@ def test_invoke_claude_lead_parses_json_output_and_validates_outcome(tmp_path):
     assert result.outcome.task_id == "slice0-lead"
     assert result.model == "claude-opus-4-7"
     assert result.cost_usd == 0.03
+    assert result.tokens_in == 60
+    assert result.tokens_out == 7
+    assert result.token_usage["input_tokens"] == 10
+    assert result.token_usage["cache_creation_input_tokens"] == 20
+    assert result.token_usage["cache_read_input_tokens"] == 30
+    assert result.token_usage["context_window"] == 200000
+    assert result.token_usage["max_output_tokens"] == 64000
     assert result.stdout_bytes == len(stdout.encode())
     assert calls[0]["cwd"] == str(tmp_path)
     assert calls[0]["capture_output"] is True
