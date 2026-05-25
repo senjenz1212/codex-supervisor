@@ -158,6 +158,8 @@ def test_export_dual_agent_run_artifacts_writes_readable_gate_documents(tmp_path
         "outcome-review.md",
         "interactions.md",
         "transcript.md",
+        "transcript.jsonl",
+        "manifest.json",
     ]
     assert "PRD accepted after tightening." in (result.output_dir / "prd.md").read_text()
     assert f"event_id: {prd_round}" in (result.output_dir / "prd.md").read_text()
@@ -178,6 +180,13 @@ def test_export_dual_agent_run_artifacts_writes_readable_gate_documents(tmp_path
     assert "## 4. Outcome Review" in interactions
     assert "Outcome summary: Outcome accepted." in interactions
     assert "prd_review" in (result.output_dir / "transcript.md").read_text()
+    transcript_jsonl = (result.output_dir / "transcript.jsonl").read_text()
+    assert '"event_id": ' in transcript_jsonl
+    manifest = json.loads((result.output_dir / "replay" / "manifest.json").read_text())
+    assert manifest["run_id"] == "run-1"
+    assert manifest["task_id"] == "task-1"
+    assert manifest["events_count"] == 4
+    assert manifest["files"]["transcript_jsonl"] == "transcript.jsonl"
 
 
 def test_export_dual_agent_run_artifacts_renders_interaction_receipts(tmp_path):
@@ -304,6 +313,98 @@ def test_export_dual_agent_run_artifacts_renders_cursor_review_events(tmp_path):
         assert "diff receipt missing" in text
         assert "composer-2.5" in text
         assert "Cursor transcript tail." in text
+
+
+def test_export_dual_agent_run_artifacts_renders_top_level_cursor_review_events(tmp_path):
+    state = _state(tmp_path)
+    _insert_event(
+        state,
+        kind="tri_agent_cursor_review",
+        payload={
+            "task_id": "task-1",
+            "gate": "outcome_review",
+            "accepted": True,
+            "probe": {
+                "probe_id": "CURSOR",
+                "status": "green",
+                "reason": "cursor_review_ok",
+                "details": {},
+            },
+            "outcome": {
+                "task_id": "task-1",
+                "summary": "Cursor accepted fixture fidelity while noting missing receipts.",
+                "specialists": [{"name": "Cursor Reviewer", "decision": "accept"}],
+                "decisions": ["accept"],
+                "objections": [],
+                "changed_files": [],
+                "tests": [],
+                "test_status": "unknown",
+                "confidence": 0.92,
+                "claims": ["implementation and test claims unsubstantiated in worktree"],
+            },
+            "agent_id": "cursor-agent-live",
+            "cursor_run_id": "cursor-run-live",
+            "status": "completed",
+            "model": "composer-2.5",
+            "duration_ms": 11701,
+            "transcript_tail": "Top-level Cursor transcript tail.",
+        },
+    )
+
+    result = export_dual_agent_run_artifacts(
+        state,
+        run_id="run-1",
+        task_id="task-1",
+        output_dir=tmp_path / "docs" / "dual-agent" / "task-1",
+    )
+
+    interactions = (result.output_dir / "interactions.md").read_text()
+    transcript = (result.output_dir / "transcript.md").read_text()
+    transcript_jsonl = (result.output_dir / "transcript.jsonl").read_text()
+    for text in (interactions, transcript):
+        assert "accepted: `True`" in text
+        assert "cursor-agent-live" in text
+        assert "cursor-run-live" in text
+        assert "composer-2.5" in text
+        assert "11701" in text
+        assert "Cursor accepted fixture fidelity while noting missing receipts." in text
+        assert "implementation and test claims unsubstantiated in worktree" in text
+        assert "Top-level Cursor transcript tail." in text
+    assert '"cursor_run_id": "cursor-run-live"' in transcript_jsonl
+
+
+def test_export_dual_agent_run_artifacts_writes_replay_manifest_with_handoff_content(tmp_path):
+    state = _state(tmp_path)
+    handoff = tmp_path / ".handoff" / "task-1.json"
+    handoff.parent.mkdir()
+    handoff.write_text('{"task_id": "task-1", "gate": "outcome_review"}\n', encoding="utf-8")
+    event_id = _insert_event(
+        state,
+        kind="dual_agent_gate_result",
+        payload={
+            **_result_payload(
+                gate="outcome_review",
+                summary="Outcome accepted.",
+                decisions=["accept"],
+            ),
+            "handoff_packet_path": str(handoff),
+        },
+    )
+
+    result = export_dual_agent_run_artifacts(
+        state,
+        run_id="run-1",
+        task_id="task-1",
+        output_dir=tmp_path / "docs" / "dual-agent" / "task-1",
+    )
+
+    manifest = json.loads((result.output_dir / "replay" / "manifest.json").read_text())
+
+    assert manifest["event_ids"] == [event_id]
+    assert manifest["handoff_packets"][0]["path"] == str(handoff)
+    assert manifest["handoff_packets"][0]["status"] == "captured"
+    assert manifest["handoff_packets"][0]["content"] == handoff.read_text(encoding="utf-8")
+    assert len(manifest["handoff_packets"][0]["sha256"]) == 64
 
 
 def test_export_dual_agent_run_artifacts_copies_screenshots_and_writes_manifest(tmp_path):

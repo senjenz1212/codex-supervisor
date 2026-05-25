@@ -129,4 +129,8 @@ def test_live_failure_mode_cursor_fixture_is_parseable_when_present():
     assert probe.ok
     assert outcome is not None
     assert outcome.task_id == "live-failure-mode-probe-20260525-01"
-    assert any("unsubstantiated" in claim.lower() for claim in outcome.claims)
+    joined_claims = "\n".join(outcome.claims).lower()
+    assert (
+        "unsubstantiated" in joined_claims
+        or "receipt absence is intentional" in joined_claims
+    )

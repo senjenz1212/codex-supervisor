@@ -204,6 +204,43 @@ def main() -> int:
                     },
                     source="codex",
                 ),
+                claims=tuple(str(item) for item in (outcome_payload or {}).get("claims") or []),
+                objections=tuple(
+                    str(item)
+                    for item in claim_probe.details.get("failures", [])
+                ),
+                evidence_refs=(
+                    {
+                        "kind": "validation_probe",
+                        "ref": "P11",
+                        "status": claim_probe.status,
+                        "reason": claim_probe.reason,
+                    },
+                    {
+                        "kind": "missing_receipt",
+                        "ref": "tests passed",
+                        "status": "missing",
+                    },
+                    {
+                        "kind": "missing_receipt",
+                        "ref": "implemented",
+                        "status": "missing",
+                    },
+                ),
+                raw_transcript_refs=(
+                    {
+                        "kind": "claude_stdout_fixture",
+                        "ref": str(fixture_dir / "lead-01.stdout.json"),
+                    },
+                    {
+                        "kind": "cursor_transcript_fixture",
+                        "ref": str(fixture_dir / "cursor-transcript.txt"),
+                    },
+                ),
+                would_change_if=(
+                    "A passing test receipt mapped to 'tests passed' and a "
+                    "present git-diff receipt mapped to 'implemented' were supplied."
+                ),
                 metadata={"claim_verification": asdict(claim_probe)},
             ).to_event_payload(),
         )

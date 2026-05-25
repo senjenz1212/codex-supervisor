@@ -4,10 +4,13 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
+from .failure_taxonomy import FAILURE_TAXONOMY_VERSION
 from .state import State
+from .trace_envelope import TRACE_ENVELOPE_SCHEMA_VERSION
 
 
 @dataclass(frozen=True)
@@ -51,9 +54,13 @@ def export_dual_agent_run_artifacts(
         out_dir / "outcome-review.md",
         out_dir / "interactions.md",
         out_dir / "transcript.md",
+        out_dir / "transcript.jsonl",
+        out_dir / "replay" / "manifest.json",
     )
     by_gate = _events_by_gate(events)
     screenshot_files = _copy_screenshots(out_dir, screenshots)
+    files[10].parent.mkdir(parents=True, exist_ok=True)
+    transcript_jsonl = _transcript_jsonl(events)
     files[0].write_text(_index_markdown(run_id, task_id, by_gate), encoding="utf-8")
     files[1].write_text(_gate_markdown("PRD Gate", by_gate.get("prd_review", ())), encoding="utf-8")
     files[2].write_text(_gate_markdown("TDD Gate", by_gate.get("tdd_review", ())), encoding="utf-8")
@@ -63,6 +70,20 @@ def export_dual_agent_run_artifacts(
     files[6].write_text(_gate_markdown("Outcome Review Gate", by_gate.get("outcome_review", ())), encoding="utf-8")
     files[7].write_text(_interactions_markdown(run_id, task_id, events), encoding="utf-8")
     files[8].write_text(_transcript_markdown(run_id, task_id, events), encoding="utf-8")
+    files[9].write_text(transcript_jsonl, encoding="utf-8")
+    files[10].write_text(
+        json.dumps(
+            _replay_manifest(
+                run_id=run_id,
+                task_id=task_id,
+                events=events,
+                transcript_jsonl=transcript_jsonl,
+            ),
+            indent=2,
+            sort_keys=True,
+        ) + "\n",
+        encoding="utf-8",
+    )
     return DualAgentArtifactExport(status="ok", output_dir=out_dir, files=(*files, *tuple(path for path, _ in screenshot_files)))
 
 
@@ -122,6 +143,8 @@ def _index_markdown(
         "- [Outcome Review](outcome-review.md)",
         "- [Interactions](interactions.md)",
         "- [Transcript](transcript.md)",
+        "- [Machine Transcript](transcript.jsonl)",
+        "- [Replay Manifest](replay/manifest.json)",
         "",
         "## Gates",
         "",
@@ -151,6 +174,84 @@ def _transcript_markdown(run_id: str, task_id: str, events: list[dict[str, Any]]
     for event in events:
         sections.append(_event_markdown(event))
     return "\n".join(sections)
+
+
+def _transcript_jsonl(events: list[dict[str, Any]]) -> str:
+    lines = [
+        json.dumps(event, sort_keys=True, default=str)
+        for event in events
+    ]
+    return "\n".join(lines) + ("\n" if lines else "")
+
+
+def _replay_manifest(
+    *,
+    run_id: str,
+    task_id: str,
+    events: list[dict[str, Any]],
+    transcript_jsonl: str,
+) -> dict[str, Any]:
+    event_ids = [int(event["event_id"]) for event in events]
+    return {
+        "schema_version": "dual-agent-replay-manifest/v1",
+        "run_id": run_id,
+        "task_id": task_id,
+        "events_count": len(events),
+        "event_ids": event_ids,
+        "state": {
+            "first_event_id": min(event_ids) if event_ids else 0,
+            "last_event_id": max(event_ids) if event_ids else 0,
+            "events_count_at_capture": len(events),
+            "transcript_jsonl_sha256": sha256(transcript_jsonl.encode()).hexdigest(),
+        },
+        "schema_versions": {
+            "trace_envelope": TRACE_ENVELOPE_SCHEMA_VERSION,
+            "failure_taxonomy": FAILURE_TAXONOMY_VERSION,
+            "agent_interaction": "dual-agent-interaction/v1",
+            "replay_manifest": "dual-agent-replay-manifest/v1",
+        },
+        "files": {
+            "index": "index.md",
+            "interactions": "interactions.md",
+            "transcript_markdown": "transcript.md",
+            "transcript_jsonl": "transcript.jsonl",
+        },
+        "event_kinds": sorted({str(event["kind"]) for event in events}),
+        "handoff_packets": _handoff_packet_manifest(events),
+    }
+
+
+def _handoff_packet_manifest(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_path: dict[str, list[int]] = {}
+    for event in events:
+        payload = event["payload"]
+        path = payload.get("handoff_packet_path")
+        if not path:
+            continue
+        by_path.setdefault(str(path), []).append(int(event["event_id"]))
+
+    packets: list[dict[str, Any]] = []
+    for path_text, event_ids in sorted(by_path.items()):
+        path = Path(path_text).expanduser()
+        item: dict[str, Any] = {
+            "path": path_text,
+            "event_ids": event_ids,
+        }
+        if path.exists() and path.is_file():
+            content = path.read_text(encoding="utf-8", errors="replace")
+            item.update({
+                "status": "captured",
+                "sha256": sha256(content.encode()).hexdigest(),
+                "content": content,
+            })
+        else:
+            item.update({
+                "status": "missing_at_export",
+                "sha256": None,
+                "content": None,
+            })
+        packets.append(item)
+    return packets
 
 
 def _interactions_markdown(run_id: str, task_id: str, events: list[dict[str, Any]]) -> str:
@@ -416,7 +517,7 @@ def _cursor_review_event_markdown(
     include_kind: bool,
 ) -> str:
     payload = event["payload"]
-    cursor_review = payload.get("cursor_review") if isinstance(payload.get("cursor_review"), dict) else {}
+    cursor_review = _cursor_review_payload(payload)
     probe = cursor_review.get("probe") if isinstance(cursor_review.get("probe"), dict) else {}
     outcome = cursor_review.get("outcome") if isinstance(cursor_review.get("outcome"), dict) else {}
     lines = [
@@ -474,6 +575,23 @@ def _cursor_review_event_markdown(
             "",
         ])
     return "\n".join(lines)
+
+
+def _cursor_review_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    nested = payload.get("cursor_review")
+    if isinstance(nested, dict) and nested:
+        return nested
+    return {
+        "accepted": payload.get("accepted"),
+        "probe": payload.get("probe"),
+        "outcome": payload.get("outcome"),
+        "agent_id": payload.get("agent_id"),
+        "run_id": payload.get("run_id") or payload.get("cursor_run_id"),
+        "status": payload.get("status") or payload.get("cursor_status"),
+        "model": payload.get("model"),
+        "duration_ms": payload.get("duration_ms"),
+        "transcript_tail": payload.get("transcript_tail"),
+    }
 
 
 def _interaction_trace_sections(payload: dict[str, Any]) -> list[str]:

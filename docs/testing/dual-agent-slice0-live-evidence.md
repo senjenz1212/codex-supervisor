@@ -374,6 +374,10 @@ Result:
   `task_verification / missing_or_stale_receipt`
 - Fixture:
   `tests/fixtures/dual_agent/live_failure_mode_probe_20260525_01/`
+- Replay aids:
+  `docs/dual-agent/live-failure-mode-probe-20260525-01/transcript.jsonl`
+  and
+  `docs/dual-agent/live-failure-mode-probe-20260525-01/replay/manifest.json`
 
 Interpretation:
 
@@ -381,6 +385,9 @@ Interpretation:
 - It demonstrates the core harness rule: even when Claude returns an accepted
   typed outcome and Cursor accepts the fixture as a reviewer, the supervisor
   ledger blocks completion when claims lack receipts.
+- The replay manifest captures event ids, schema versions, JSONL transcript
+  hash, and the live handoff packet content plus SHA while the temporary
+  sandbox still exists.
 - `tests/test_dual_agent_live_lead_fixture.py` replays the captured Claude
   stdout, parses both Cursor transcripts, and asserts the P11 blocked taxonomy
   remains stable.

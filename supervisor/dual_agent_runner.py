@@ -291,6 +291,58 @@ def run_dual_agent_gate(
                         outcome_payload,
                         source="claude_code",
                     ),
+                    claims=tuple(
+                        str(item)
+                        for item in (
+                            outcome_payload.get("claims") if isinstance(outcome_payload, dict) else []
+                        ) or []
+                    ),
+                    objections=tuple(
+                        str(item)
+                        for item in (
+                            outcome_payload.get("objections") if isinstance(outcome_payload, dict) else []
+                        ) or []
+                    ),
+                    evidence_refs=tuple([
+                        *(
+                            {
+                                "kind": "reported_test",
+                                "ref": str(item),
+                                "status": (
+                                    str(outcome_payload.get("test_status"))
+                                    if isinstance(outcome_payload, dict)
+                                    else ""
+                                ),
+                            }
+                            for item in (
+                                outcome_payload.get("tests") if isinstance(outcome_payload, dict) else []
+                            ) or []
+                        ),
+                        *(
+                            {
+                                "kind": "reported_changed_file",
+                                "ref": str(item),
+                            }
+                            for item in (
+                                outcome_payload.get("changed_files") if isinstance(outcome_payload, dict) else []
+                            ) or []
+                        ),
+                    ]),
+                    raw_transcript_refs=(
+                        {
+                            "kind": "claude_stdout",
+                            "ref": "lead_result.stdout",
+                            "bytes": lead_result.stdout_bytes,
+                        },
+                        {
+                            "kind": "claude_handoff_packet",
+                            "ref": str(packet_path),
+                        },
+                    ),
+                    would_change_if=(
+                        "A subsequent gate response changes the typed outcome, "
+                        "or supervisor probes reject this response."
+                    ),
                     artifacts=planning_artifact_refs(spec.planning_artifacts),
                     metadata={
                         "probe": lead_result.probe.__dict__,

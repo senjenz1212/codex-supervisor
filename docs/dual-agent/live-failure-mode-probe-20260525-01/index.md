@@ -14,6 +14,8 @@
 - [Outcome Review](outcome-review.md)
 - [Interactions](interactions.md)
 - [Transcript](transcript.md)
+- [Machine Transcript](transcript.jsonl)
+- [Replay Manifest](replay/manifest.json)
 
 ## Gates
 

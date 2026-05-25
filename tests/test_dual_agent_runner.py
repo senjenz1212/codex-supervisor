@@ -29,7 +29,12 @@ from supervisor.state import State
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "planning_validator"
 
 
-def _outcome_block(task_id: str = "gate-1", *, decision: str = "accept plan") -> str:
+def _outcome_block(
+    task_id: str = "gate-1",
+    *,
+    decision: str = "accept plan",
+    claims: list[str] | None = None,
+) -> str:
     payload = {
         "task_id": task_id,
         "summary": "Gate accepted.",
@@ -42,7 +47,7 @@ def _outcome_block(task_id: str = "gate-1", *, decision: str = "accept plan") ->
         "tests": ["pytest tests/test_dual_agent_runner.py"],
         "test_status": "passed",
         "confidence": 0.96,
-        "claims": [],
+        "claims": claims or [],
     }
     return f"<dual_agent_outcome>{json.dumps(payload)}</dual_agent_outcome>"
 
@@ -274,6 +279,48 @@ def test_cs24_gate_runner_writes_handoff_invokes_lead_and_verifies_planning_boun
     assert result.probes["P3"].ok
     packet = json.loads(result.handoff_packet_path.read_text())
     assert packet["planning_artifacts"][0]["kind"] == "prd"
+
+
+def test_gate_runner_records_claude_response_trace_fields(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    planning_artifacts = _write_good_planning_artifacts(tmp_path)
+    stdout = build_lead_replay_stdout(
+        "Lead reviewed packet.\n" + _outcome_block(claims=["tests passed", "implemented"]),
+        model="claude-opus-4-7",
+    )
+
+    def fake_runner(argv, **kwargs):
+        return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
+
+    spec = DualAgentGateSpec(
+        task_id="gate-1",
+        run_id="run-cs24",
+        gate="prd_review",
+        instruction="Review the PRD packet.",
+        cwd=tmp_path,
+        planning_artifacts=planning_artifacts,
+        expected_specialists=("Planner",),
+        expected_decisions=("accept plan",),
+        expected_objections=(),
+    )
+
+    run_dual_agent_gate(spec, runner=fake_runner, state=state)
+    messages = [
+        json.loads(row["payload_json"])
+        for row in state.read_dual_agent_gate_events("run-cs24")
+        if row["kind"] == "dual_agent_interaction_message"
+    ]
+    response = next(message for message in messages if message["sender"] == "claude_code")
+
+    assert response["claims"] == ["tests passed", "implemented"]
+    assert {"kind": "reported_test", "ref": "pytest tests/test_dual_agent_runner.py", "status": "passed"} in (
+        response["evidence_refs"]
+    )
+    assert {"kind": "reported_changed_file", "ref": "docs/prd.md"} in response["evidence_refs"]
+    assert response["raw_transcript_refs"][0]["kind"] == "claude_stdout"
+    assert response["raw_transcript_refs"][0]["bytes"] > 0
+    assert response["raw_transcript_refs"][1]["kind"] == "claude_handoff_packet"
+    assert response["would_change_if"]
 
 
 def test_cs24_gate_runner_refuses_existing_handoff_lock_without_invoking_lead(tmp_path):
