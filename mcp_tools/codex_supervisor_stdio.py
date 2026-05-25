@@ -562,6 +562,16 @@ class CodexSupervisorMcpAPI:
                             artifacts=planning_artifact_refs(gate_artifacts),
                             metadata={
                                 "cursor_review": cursor_payload,
+                                "tool_calls": [
+                                    {
+                                        "name": "invoke_cursor_agent",
+                                        "status": cursor_result.status,
+                                        "agent_id": cursor_result.agent_id,
+                                        "run_id": cursor_result.run_id,
+                                        "model": cursor_result.model,
+                                        "duration_ms": cursor_result.duration_ms,
+                                    },
+                                ],
                             },
                         ),
                     )
@@ -573,6 +583,16 @@ class CodexSupervisorMcpAPI:
                             "task_id": task_id,
                             "gate": gate,
                             "cursor_review": cursor_payload,
+                            "tool_calls": [
+                                {
+                                    "name": "invoke_cursor_agent",
+                                    "status": cursor_result.status,
+                                    "agent_id": cursor_result.agent_id,
+                                    "run_id": cursor_result.run_id,
+                                    "model": cursor_result.model,
+                                    "duration_ms": cursor_result.duration_ms,
+                                },
+                            ],
                         },
                     )
 
@@ -896,6 +916,13 @@ class CodexSupervisorMcpAPI:
                 "task_id": task_id,
                 "gate": gate,
                 "round": round_payload,
+                "tool_calls": [
+                    {
+                        "name": "record_gate_round",
+                        "status": "recorded",
+                        "round_index": round_index,
+                    },
+                ],
             },
         )
         result = {
@@ -1581,10 +1608,38 @@ def _gate_result_payload(result: DualAgentGateResult) -> dict[str, Any]:
             key: asdict(value)
             for key, value in result.probes.items()
         },
+        "tool_calls": _gate_result_tool_calls(result),
         "outcome": result.outcome.model_dump() if result.outcome is not None else None,
         "escalation": asdict(result.escalation) if result.escalation is not None else None,
     }
     return redact(payload)
+
+
+def _gate_result_tool_calls(result: DualAgentGateResult) -> list[dict[str, Any]]:
+    calls: list[dict[str, Any]] = [{
+        "name": "start_dual_agent_gate",
+        "status": result.status,
+        "attempts": result.attempts,
+        "handoff_packet_path": str(result.handoff_packet_path),
+    }]
+    if result.lead_result is not None:
+        calls.append({
+            "name": "invoke_claude_lead",
+            "status": "completed" if result.probes.get("P2", result.lead_result.probe).ok else "failed",
+            "attempts": result.attempts,
+            "model": result.lead_result.model,
+            "cost_usd": result.lead_result.cost_usd,
+            "stdout_bytes": result.lead_result.stdout_bytes,
+            "stderr_bytes": result.lead_result.stderr_bytes,
+        })
+    for probe_id, probe in result.probes.items():
+        calls.append({
+            "name": f"probe:{probe_id}",
+            "status": probe.status,
+            "probe_id": probe.probe_id,
+            "reason": probe.reason,
+        })
+    return calls
 
 
 def _artifact_blocked_payload(

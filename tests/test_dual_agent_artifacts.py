@@ -233,7 +233,27 @@ def test_export_dual_agent_run_artifacts_renders_interaction_receipts(tmp_path):
             }],
             "would_change_if": "A matching git_remote receipt appears.",
             "artifacts": [],
-            "metadata": {},
+            "metadata": {
+                "tool_calls": [
+                    {"name": "start_dual_agent_gate", "status": "completed"},
+                ],
+            },
+            "trace_envelope": {
+                "schema_version": "dual-agent-trace-envelope/v1",
+                "run_id": "run-1",
+                "task_id": "task-1",
+                "gate": "outcome_review",
+                "source": "dual_agent",
+                "event_kind": "dual_agent_interaction_message",
+                "policy_verdict": "observed",
+                "failure_taxonomy": None,
+                "tool_calls": [
+                    {"name": "start_dual_agent_gate", "status": "completed"},
+                ],
+                "artifacts": [],
+                "claims": ["tests passed"],
+                "receipts": [],
+            },
         },
     )
 
@@ -256,6 +276,7 @@ def test_export_dual_agent_run_artifacts_renders_interaction_receipts(tmp_path):
         assert "receipt:pytest-focused" in text
         assert ".handoff/task-1.stdout" in text
         assert "A matching git_remote receipt appears." in text
+        assert "start_dual_agent_gate" in text
 
 
 def test_export_dual_agent_run_artifacts_renders_cursor_review_events(tmp_path):
@@ -348,6 +369,22 @@ def test_export_dual_agent_run_artifacts_renders_top_level_cursor_review_events(
             "model": "composer-2.5",
             "duration_ms": 11701,
             "transcript_tail": "Top-level Cursor transcript tail.",
+            "trace_envelope": {
+                "schema_version": "dual-agent-trace-envelope/v1",
+                "run_id": "run-1",
+                "task_id": "task-1",
+                "gate": "outcome_review",
+                "source": "dual_agent",
+                "event_kind": "tri_agent_cursor_review",
+                "policy_verdict": "observed",
+                "failure_taxonomy": None,
+                "tool_calls": [
+                    {"name": "invoke_cursor_agent", "status": "completed"},
+                ],
+                "artifacts": [],
+                "claims": [],
+                "receipts": [],
+            },
         },
     )
 
@@ -370,7 +407,72 @@ def test_export_dual_agent_run_artifacts_renders_top_level_cursor_review_events(
         assert "Cursor accepted fixture fidelity while noting missing receipts." in text
         assert "implementation and test claims unsubstantiated in worktree" in text
         assert "Top-level Cursor transcript tail." in text
+        assert "invoke_cursor_agent" in text
     assert '"cursor_run_id": "cursor-run-live"' in transcript_jsonl
+
+
+def test_export_dual_agent_run_artifacts_renders_planning_validation_events(tmp_path):
+    state = _state(tmp_path)
+    _insert_event(
+        state,
+        kind="dual_agent_planning_validation",
+        payload={
+            "task_id": "task-1",
+            "gate": "outcome_review",
+            "validator_version": "1.0.0",
+            "artifact_hashes": {"prd": "a" * 64},
+            "checks": {
+                "PRD-001": "pass",
+                "TDD-001": "fail: missing test names",
+            },
+            "verdict": "blocked",
+            "artifacts": [
+                {
+                    "kind": "prd",
+                    "path": "/tmp/prd.md",
+                    "sha256": "a" * 64,
+                    "status": "accepted",
+                },
+            ],
+            "trace_envelope": {
+                "schema_version": "dual-agent-trace-envelope/v1",
+                "run_id": "run-1",
+                "task_id": "task-1",
+                "gate": "outcome_review",
+                "source": "dual_agent",
+                "event_kind": "dual_agent_planning_validation",
+                "policy_verdict": "blocked",
+                "failure_taxonomy": {
+                    "category": "system_design",
+                    "subcategory": "invalid_or_missing_artifact",
+                    "code": "planning_validation_failed",
+                },
+                "tool_calls": [
+                    {"name": "validate_planning_artifacts", "status": "red"},
+                ],
+                "artifacts": [],
+                "claims": [],
+                "receipts": [],
+            },
+        },
+    )
+
+    result = export_dual_agent_run_artifacts(
+        state,
+        run_id="run-1",
+        task_id="task-1",
+        output_dir=tmp_path / "docs" / "dual-agent" / "task-1",
+    )
+
+    interactions = (result.output_dir / "interactions.md").read_text()
+    transcript = (result.output_dir / "transcript.md").read_text()
+    for text in (interactions, transcript):
+        assert "interaction_type: `planning_validation`" in text
+        assert "validator_version: `1.0.0`" in text
+        assert "verdict: `blocked`" in text
+        assert "TDD-001: fail: missing test names" in text
+        assert "/tmp/prd.md" in text
+        assert "validate_planning_artifacts" in text
 
 
 def test_export_dual_agent_run_artifacts_writes_replay_manifest_with_handoff_content(tmp_path):
@@ -405,6 +507,58 @@ def test_export_dual_agent_run_artifacts_writes_replay_manifest_with_handoff_con
     assert manifest["handoff_packets"][0]["status"] == "captured"
     assert manifest["handoff_packets"][0]["content"] == handoff.read_text(encoding="utf-8")
     assert len(manifest["handoff_packets"][0]["sha256"]) == 64
+
+
+def test_export_dual_agent_run_artifacts_writes_run_level_failure_summary(tmp_path):
+    state = _state(tmp_path)
+    event_id = _insert_event(
+        state,
+        kind="dual_agent_gate_result",
+        payload={
+            **_result_payload(
+                gate="outcome_review",
+                status="blocked",
+                summary="Claims lacked receipts.",
+                decisions=["revise"],
+            ),
+            "trace_envelope": {
+                "schema_version": "dual-agent-trace-envelope/v1",
+                "run_id": "run-1",
+                "task_id": "task-1",
+                "gate": "outcome_review",
+                "source": "dual_agent",
+                "event_kind": "dual_agent_gate_result",
+                "policy_verdict": "blocked",
+                "failure_taxonomy": {
+                    "category": "task_verification",
+                    "subcategory": "missing_or_stale_receipt",
+                    "code": "workflow_claim_verification_failed",
+                },
+                "tool_calls": [],
+                "artifacts": [],
+                "claims": [],
+                "receipts": [],
+            },
+        },
+    )
+
+    result = export_dual_agent_run_artifacts(
+        state,
+        run_id="run-1",
+        task_id="task-1",
+        output_dir=tmp_path / "docs" / "dual-agent" / "task-1",
+    )
+
+    manifest = json.loads((result.output_dir / "replay" / "manifest.json").read_text())
+    assert manifest["failure_summary"] == {
+        "event_id": event_id,
+        "policy_verdict": "blocked",
+        "failure_taxonomy": {
+            "category": "task_verification",
+            "subcategory": "missing_or_stale_receipt",
+            "code": "workflow_claim_verification_failed",
+        },
+    }
 
 
 def test_export_dual_agent_run_artifacts_copies_screenshots_and_writes_manifest(tmp_path):

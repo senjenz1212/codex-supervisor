@@ -323,6 +323,83 @@ def test_gate_runner_records_claude_response_trace_fields(tmp_path):
     assert response["would_change_if"]
 
 
+def test_gate_runner_records_direct_interaction_persona_addresses_and_tool_calls(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    planning_artifacts = _write_good_planning_artifacts(tmp_path)
+    stdout = build_lead_replay_stdout(
+        "Lead reviewed packet.\n" + _outcome_block(claims=["tests passed", "implemented"]),
+        model="claude-opus-4-7",
+        cost_usd=0.42,
+    )
+
+    def fake_runner(argv, **kwargs):
+        return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
+
+    spec = DualAgentGateSpec(
+        task_id="gate-1",
+        run_id="run-direct-trace",
+        gate="prd_review",
+        instruction="Review the PRD packet.",
+        cwd=tmp_path,
+        planning_artifacts=planning_artifacts,
+        expected_specialists=("Planner",),
+        expected_decisions=("accept plan",),
+        expected_objections=(),
+    )
+
+    result = run_dual_agent_gate(spec, runner=fake_runner, state=state)
+
+    messages = [
+        {"event_id": int(row["event_id"]), **json.loads(row["payload_json"])}
+        for row in state.read_dual_agent_gate_events("run-direct-trace")
+        if row["kind"] == "dual_agent_interaction_message"
+    ]
+    planning_event = next(
+        json.loads(row["payload_json"])
+        for row in state.read_dual_agent_gate_events("run-direct-trace")
+        if row["kind"] == "dual_agent_planning_validation"
+    )
+    request = next(message for message in messages if message["message_type"] == "gate_request")
+    response = next(message for message in messages if message["message_type"] == "gate_response")
+
+    assert result.status == "accepted"
+    assert planning_event["trace_envelope"]["tool_calls"][0]["name"] == "validate_planning_artifacts"
+    assert request["persona_id"] == "codex.lifecycle_reviewer"
+    assert f"handoff:{result.handoff_packet_path}" in request["addresses"]
+    assert request["trace_envelope"]["tool_calls"]
+    assert request["trace_envelope"]["tool_calls"][0]["name"] == "validate_planning_artifacts"
+    assert request["trace_envelope"]["tool_calls"][1]["name"] == "write_handoff_packet"
+
+    assert response["persona_id"] == "claude_code.lead_worker"
+    assert f"event:{request['event_id']}" in response["addresses"]
+    assert f"handoff:{result.handoff_packet_path}" in response["addresses"]
+    tool_call_names = [call["name"] for call in response["trace_envelope"]["tool_calls"]]
+    assert tool_call_names == [
+        "invoke_claude_lead",
+        "evaluate_worker_invocation",
+        "evaluate_outcome_fidelity",
+        "verify_planning_artifact_boundaries",
+    ]
+    assert response["trace_envelope"]["tool_calls"][0]["model"] == "claude-opus-4-7"
+    assert response["trace_envelope"]["tool_calls"][0]["cost_usd"] == 0.42
+
+
+def test_gate_runner_planning_probe_details_keep_task_id(tmp_path):
+    spec = DualAgentGateSpec(
+        task_id="gate-stub-prd",
+        run_id="run-planning",
+        gate="prd_review",
+        instruction="Review PRD.",
+        cwd=tmp_path,
+        planning_artifacts=(_planning_artifact_fixture("prd", "stub"),),
+    )
+
+    result = run_dual_agent_gate(spec, runner=make_replay_runner(FIXTURE_ROOT / "prd" / "good.md"))
+
+    assert result.status == "blocked"
+    assert result.probes["P_planning"].details["task_id"] == "gate-stub-prd"
+
+
 def test_cs24_gate_runner_refuses_existing_handoff_lock_without_invoking_lead(tmp_path):
     handoff_dir = tmp_path / ".handoff"
     handoff_dir.mkdir()

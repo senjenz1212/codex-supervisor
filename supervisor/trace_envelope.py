@@ -57,9 +57,12 @@ def _policy_verdict(payload: dict[str, Any], failure_taxonomy: dict[str, Any] | 
 
 
 def _tool_calls(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    direct = payload.get("tool_calls")
+    if isinstance(direct, list):
+        return [item for item in direct if isinstance(item, dict)]
     metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
     calls = metadata.get("tool_calls") if isinstance(metadata, dict) else None
-    return list(calls) if isinstance(calls, list) else []
+    return [item for item in calls if isinstance(item, dict)] if isinstance(calls, list) else []
 
 
 def _artifacts(payload: dict[str, Any]) -> list[dict[str, Any]]:

@@ -218,6 +218,7 @@ def _replay_manifest(
         },
         "event_kinds": sorted({str(event["kind"]) for event in events}),
         "handoff_packets": _handoff_packet_manifest(events),
+        "failure_summary": _run_failure_summary(events),
     }
 
 
@@ -276,6 +277,13 @@ def _interactions_markdown(run_id: str, task_id: str, events: list[dict[str, Any
 def _interaction_event_markdown(index: int, event: dict[str, Any]) -> str:
     title = _title_from_gate(event["gate"])
     payload = event["payload"]
+    if event["kind"] == "dual_agent_planning_validation":
+        return _planning_validation_event_markdown(
+            heading=f"## {index}. {title}",
+            event=event,
+            include_kind=False,
+        )
+
     if event["kind"] == "dual_agent_interaction_message":
         confidence = payload.get("confidence") if isinstance(payload.get("confidence"), dict) else {}
         return "\n".join([
@@ -460,6 +468,13 @@ def _event_markdown(event: dict[str, Any]) -> str:
         ])
         return "\n".join(lines)
 
+    if event["kind"] == "dual_agent_planning_validation":
+        return _planning_validation_event_markdown(
+            heading=f"## event_id: {event['event_id']}",
+            event=event,
+            include_kind=True,
+        )
+
     if event["kind"] == "tri_agent_cursor_review":
         return _cursor_review_event_markdown(
             heading=f"## event_id: {event['event_id']}",
@@ -504,6 +519,43 @@ def _event_markdown(event: dict[str, Any]) -> str:
         "### Artifact Rigor",
         "",
         _artifact_rigor_markdown(payload.get("artifact_rigor")),
+        "",
+        *_trace_envelope_section(payload),
+    ])
+    return "\n".join(lines)
+
+
+def _planning_validation_event_markdown(
+    *,
+    heading: str,
+    event: dict[str, Any],
+    include_kind: bool,
+) -> str:
+    payload = event["payload"]
+    lines = [
+        heading,
+        "",
+        f"- event_id: `{event['event_id']}`",
+        f"- ts: `{event['ts']}`",
+    ]
+    if include_kind:
+        lines.extend([
+            f"- kind: `{event['kind']}`",
+            f"- gate: `{event['gate']}`",
+        ])
+    lines.extend([
+        "- interaction_type: `planning_validation`",
+        f"- gate: `{event['gate']}`",
+        f"- validator_version: `{_clean_text(payload.get('validator_version'))}`",
+        f"- verdict: `{_clean_text(payload.get('verdict'))}`",
+        "",
+        "### Checks",
+        "",
+        _planning_checks_markdown(payload.get("checks")),
+        "",
+        "### Artifacts",
+        "",
+        _list_markdown(payload.get("artifacts")),
         "",
         *_trace_envelope_section(payload),
     ])
@@ -574,6 +626,7 @@ def _cursor_review_event_markdown(
             _text_or_none(cursor_review.get("transcript_tail")),
             "",
         ])
+    lines.extend(_trace_envelope_section(payload))
     return "\n".join(lines)
 
 
@@ -649,8 +702,32 @@ def _trace_envelope_section(payload: dict[str, Any]) -> list[str]:
         ])
     else:
         lines.append("- failure_taxonomy: `None`")
+    tool_calls = envelope.get("tool_calls")
+    if isinstance(tool_calls, list) and tool_calls:
+        lines.extend([
+            "",
+            "Tool calls:",
+            "",
+            _list_markdown(tool_calls),
+        ])
     lines.append("")
     return lines
+
+
+def _run_failure_summary(events: list[dict[str, Any]]) -> dict[str, Any] | None:
+    for event in reversed(events):
+        envelope = event["payload"].get("trace_envelope")
+        if not isinstance(envelope, dict):
+            continue
+        failure = envelope.get("failure_taxonomy")
+        verdict = _clean_text(envelope.get("policy_verdict"))
+        if verdict == "blocked" or isinstance(failure, dict):
+            return {
+                "event_id": int(event["event_id"]),
+                "policy_verdict": verdict,
+                "failure_taxonomy": failure,
+            }
+    return None
 
 
 def _grill_markdown(events: list[dict[str, Any]]) -> str:
@@ -781,6 +858,15 @@ def _specialists_markdown(value: Any) -> str:
         objection = _clean_text(item.get("objection"))
         suffix = f" — objection: {objection}" if objection else ""
         rows.append(f"- `{name}`: `{decision}`{suffix}")
+    return "\n".join(rows)
+
+
+def _planning_checks_markdown(value: Any) -> str:
+    if not isinstance(value, dict) or not value:
+        return "- None recorded."
+    rows = []
+    for check_id, status in sorted(value.items()):
+        rows.append(f"- {_clean_text(check_id)}: {_clean_text(status)}")
     return "\n".join(rows)
 
 

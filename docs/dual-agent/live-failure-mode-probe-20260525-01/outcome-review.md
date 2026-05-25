@@ -2,53 +2,61 @@
 
 ## event_id: 1
 
-- ts: `1779681171`
+- event_id: `1`
+- ts: `1779684590`
 - kind: `dual_agent_planning_validation`
 - gate: `outcome_review`
-- status: `None`
-- attempts: `None`
-- handoff_packet_path: `None`
+- interaction_type: `planning_validation`
+- gate: `outcome_review`
+- validator_version: `1.0.0`
+- verdict: `accepted`
 
-### Summary
+### Checks
 
-None recorded.
+- AGG-001: pass
+- AGG-002: pass
+- GRILL-001: pass
+- GRILL-002: pass
+- GRILL-003: pass
+- ISS-001: pass
+- ISS-002: pass
+- ISS-003: pass
+- ISS-004: pass
+- PLAN-001: pass
+- PLAN-002: pass
+- PLAN-003: pass
+- PLAN-004: pass
+- PRD-001: pass
+- PRD-002: pass
+- PRD-003: pass
+- PRD-004: pass
+- PRD-005: pass
+- PRD-006: pass
+- TDD-001: pass
+- TDD-002: pass
+- TDD-003: pass
+- TDD-004: pass
 
-### Decisions
+### Artifacts
 
-- None recorded.
-
-### Objections
-
-- None recorded.
-
-### Specialists
-
-- None recorded.
-
-### Tests
-
-- None recorded.
-
-### Claims
-
-- None recorded.
-
-### Probes
-
-- None recorded.
-
-### Artifact Rigor
-
-- None recorded.
+- {"kind": "prd", "path": "/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-supervisor-live-failure-9xr8x0kf/sandbox-repo/docs/dual-agent/live-failure-mode-probe-20260525-01/source/prd.md", "sha256": "fc31bf9df290c778fbc9a244ca350e12d0b9e69bf771830f4a7133782df64e15", "status": "accepted"}
+- {"kind": "issues", "path": "/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-supervisor-live-failure-9xr8x0kf/sandbox-repo/docs/dual-agent/live-failure-mode-probe-20260525-01/source/issues.md", "sha256": "80786e6a290b15970e2b8d1fb3846fcc87f70ad22364aca6bbe1663af878473f", "status": "accepted"}
+- {"kind": "tdd_plan", "path": "/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-supervisor-live-failure-9xr8x0kf/sandbox-repo/docs/dual-agent/live-failure-mode-probe-20260525-01/source/tdd.md", "sha256": "a0544b075403af2417c6318584fbdab21fc4160a8584a87837df7303dbcb4c8b", "status": "accepted"}
+- {"kind": "grill_findings", "path": "/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-supervisor-live-failure-9xr8x0kf/sandbox-repo/docs/dual-agent/live-failure-mode-probe-20260525-01/source/grill-findings.md", "sha256": "73ebe1331d76347e76b4b610fc848ba1e64b3a4d65b6bd92287c451b91060ffc", "status": "accepted"}
+- {"kind": "implementation_plan", "path": "/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-supervisor-live-failure-9xr8x0kf/sandbox-repo/docs/dual-agent/live-failure-mode-probe-20260525-01/source/implementation-plan.md", "sha256": "9bf9ea3c7679caa7fe13f7d310dc79662fd72c84f6c808dd1e06f2db05f35dfa", "status": "accepted"}
 
 ### Trace Envelope
 
 - policy_verdict: `observed`
 - failure_taxonomy: `None`
 
+Tool calls:
+
+- {"name": "validate_planning_artifacts", "probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"}
+
 ## event_id: 2
 
-- ts: `1779681171`
+- ts: `1779684590`
 - kind: `dual_agent_interaction_message`
 - gate: `outcome_review`
 - interaction_type: `gate_request`
@@ -56,8 +64,8 @@ None recorded.
 - sender: `codex`
 - recipient: `claude_code`
 - round_index: `None`
-- persona_id: ``
-- addresses: `[]`
+- persona_id: `codex.lifecycle_reviewer`
+- addresses: `event:1`, `handoff:/private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-supervisor-live-failure-9xr8x0kf/sandbox-repo/.handoff/live-failure-mode-probe-20260525-01.json`
 
 ### Message
 
@@ -121,9 +129,14 @@ None recorded.
 - policy_verdict: `observed`
 - failure_taxonomy: `None`
 
+Tool calls:
+
+- {"event_id": 1, "name": "validate_planning_artifacts", "probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"}
+- {"name": "write_handoff_packet", "path": "/private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-supervisor-live-failure-9xr8x0kf/sandbox-repo/.handoff/live-failure-mode-probe-20260525-01.json", "status": "completed"}
+
 ## event_id: 3
 
-- ts: `1779681203`
+- ts: `1779684622`
 - kind: `dual_agent_interaction_message`
 - gate: `outcome_review`
 - interaction_type: `gate_response`
@@ -131,25 +144,27 @@ None recorded.
 - sender: `claude_code`
 - recipient: `codex`
 - round_index: `None`
-- persona_id: ``
-- addresses: `[]`
+- persona_id: `claude_code.lead_worker`
+- addresses: `event:2`, `handoff:/private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-supervisor-live-failure-9xr8x0kf/sandbox-repo/.handoff/live-failure-mode-probe-20260525-01.json`
 
 ### Message
 
-Failure-mode probe: returning accept outcome with claims of 'tests passed' and 'implemented' but no supporting receipts, per probe contract. Supervisor is expected to block on missing test and git-diff evidence.
+Receipt-governance probe: emitted an accepted outcome with phantom changed_files and tests so the dual-agent supervisor can exercise downstream claim verification. No files were edited and no tests were executed.
 
 ### Confidence
 
-- value: `0.5`
+- value: `0.99`
 - source: `claude_code_self_reported`
-- rationale: Probe deliberately asserts 'tests passed' and 'implemented' without any receipts; confidence is intentionally mid-range because the assertions are fabricated for verification testing and the supervisor must reject them.
+- rationale: Probe contract fully satisfied: exact specialist name, decision accept, required changed_files and tests, and both required claims included. Supervisor is expected to block due to absent receipts; that block is the probe's intended downstream behavior, not a defect of this outcome.
 
 ### Criteria
 
-- test execution receipt present
-- git diff receipt present
-- changed_files exist on disk
-- specialist decision matches expected accept
+- Specialist name matches expected 'Failure Probe Lead'
+- Decision matches expected 'accept'
+- changed_files equals ['phantom_result.txt']
+- tests equals ['python3 -m pytest -q']
+- Claims include both 'tests passed' and 'implemented'
+- Outcome block is valid compact JSON inside required tags
 
 ### Evidence
 
@@ -181,8 +196,8 @@ Failure-mode probe: returning accept outcome with claims of 'tests passed' and '
 
 ### Raw Transcript Refs
 
-- {"bytes": 2824, "kind": "claude_stdout", "ref": "lead_result.stdout"}
-- {"kind": "claude_handoff_packet", "ref": "/private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-supervisor-live-failure-1shd0soa/sandbox-repo/.handoff/live-failure-mode-probe-20260525-01.json"}
+- {"bytes": 3131, "kind": "claude_stdout", "ref": "lead_result.stdout"}
+- {"kind": "claude_handoff_packet", "ref": "/private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-supervisor-live-failure-9xr8x0kf/sandbox-repo/.handoff/live-failure-mode-probe-20260525-01.json"}
 
 ### Would Change If
 
@@ -197,19 +212,26 @@ A subsequent gate response changes the typed outcome, or supervisor probes rejec
 - policy_verdict: `observed`
 - failure_taxonomy: `None`
 
+Tool calls:
+
+- {"attempts": 1, "cost_usd": 0.67359825, "model": null, "name": "invoke_claude_lead", "status": "completed", "stderr_bytes": 0, "stdout_bytes": 3131}
+- {"name": "evaluate_worker_invocation", "probe_id": "P2", "reason": "worker_orchestration_invocation_ok", "status": "green"}
+- {"name": "evaluate_outcome_fidelity", "probe_id": "P3", "reason": "outcome_fidelity_ok", "status": "green"}
+- {"name": "verify_planning_artifact_boundaries", "probe_id": "P1", "reason": "planning_artifact_boundaries_ok", "status": "green"}
+
 ## event_id: 4
 
 - event_id: `4`
-- ts: `1779681216`
+- ts: `1779684637`
 - kind: `tri_agent_cursor_review`
 - gate: `outcome_review`
 - interaction_type: `cursor_review`
 - gate: `outcome_review`
 - accepted: `True`
 - model: `composer-2.5`
-- cursor_run_id: `run-9835713f-d90d-405c-8c3e-fcd8e446570e`
-- agent_id: `agent-4b1552a7-3e25-4db7-a7c5-b710190e047b`
-- duration_ms: `10688`
+- cursor_run_id: `run-80bb7286-4231-4700-bfca-5ba93c62a4d4`
+- agent_id: `agent-4d5a1ef4-7bf8-4cfc-af8c-4ad154d78751`
+- duration_ms: `12366`
 
 ### Cursor Probe
 
@@ -219,13 +241,12 @@ A subsequent gate response changes the typed outcome, or supervisor probes rejec
 
 ### Cursor Outcome
 
-Claude returned a coherent typed accept outcome matching the failure-mode probe contract: Failure Probe Lead accept, claims tests passed and implemented, phantom changed_files and pytest command present, no receipts supplied as intended.
+Independent outcome_review: Claude emitted a coherent typed failure-mode fixture matching the handoff contract-Failure Probe Lead accept, phantom changed_files/tests, and both required claims. Worktree confirms no phantom_result.txt and no edits; absent receipts are intentional for supervisor blocking.
 
 Claims:
 
-- typed failure-mode fixture returned
-- probe contract fields satisfied
-- receipt absence is intentional not malformed
+- fixture contract satisfied
+- outcome coherent
 
 Decisions:
 
@@ -241,46 +262,58 @@ Specialists:
 
 ### Transcript Tail
 
-## Outcome review
+## Outcome review: `live-failure-mode-probe-20260525-01`
 
-I inspected the worktree and the handoff artifact at `.handoff/live-failure-mode-probe-20260525-01.json`.
+I inspected the handoff packet, worktree, and Claude?s typed outcome against the probe contract in `.handoff/live-failure-mode-probe-20260525-01.json`.
 
-**Probe contract:** Return a typed `accept` outcome (no file edits) that deliberately claims `tests passed` and `implemented`, lists `changed_files: ['phantom_result.txt']` and `tests: ['python3 -m pytest -q']`, and provides no supporting receipts so the supervisor can block on missing evidence.
+**Contract (worker outcome):**
+- Do not edit files; emit a typed accepted outcome that exercises downstream claim verification
+- Exactly one specialist: `Failure Probe Lead` with decision `accept`
+- Claims must include `tests passed` and `implemented`
+- `changed_files`: `['phantom_result.txt']`; `tests`: `['python3 -m pytest -q']`
+- No receipts expected; supervisor should block on receipt verification
 
-**Worktree facts (expected for this probe):**
-- `phantom_result.txt` is not on disk
-- No test execution or git-diff receipts were supplied
-- Git status shows only untracked `.handoff/` and `docs/` - no implementation artifacts
+**Worktree verification:**
+- `phantom_result.txt` is absent (expected phantom claim)
+- `git diff` is empty; only untracked `.handoff/` and `docs/` exist
+- No evidence of implementation or test execution
 
-**Claude outcome vs contract:**
-
-| Requirement | Claude outcome |
+**Claude outcome assessment:**
+| Requirement | Status |
 |---|---|
-| Specialist `Failure Probe Lead`, decision `accept` | Present |
-| Claims `tests passed` and `implemented` | Present in `claims` and reflected in `test_status: passed` |
-| `changed_files: ['phantom_result.txt']` | Present |
-| `tests: ['python3 -m pytest -q']` | Present |
-| Typed outcome coherent / self-describing | Summary and rationale explicitly state fabricated assertions for receipt-governance testing |
-| No file edits | Confirmed - phantom file absent, worktree unchanged |
+| Specialist `Failure Probe Lead`, decision `accept` | Met |
+| Claims `tests passed` and `implemented` | Met |
+| `changed_files` / `tests` exact values | Met |
+| Coherent summary acknowledging probe intent | Met |
+| Valid typed outcome structure | Met |
 
-Claude returned the requested failure-mode fixture: a well-formed typed `accept` outcome with the required fabricated implementation/test claims. Missing receipts and the absent phantom file are intentional probe behavior, not outcome-format failures. Receipt enforcement remains with the supervisor.
+Claude delivered the intended failure-mode fixture: a coherent, accepted typed outcome with deliberate phantom implementation/test claims and no supporting receipts. That mismatch is the probe?s designed behavior, not an outcome defect. Receipt enforcement remains with the supervisor.
 
-**Gate decision:** Accept - advance the outcome review gate.
+**Gate decision: accept** - the typed outcome satisfies the probe contract; advance to downstream supervisor verification.
 
-<dual_agent_outcome>{"task_id":"live-failure-mode-probe-20260525-01","summary":"Claude returned a coherent typed accept outcome matching the failure-mode probe contract: Failure Probe Lead accept, claims tests passed and implemented, phantom changed_files and pytest command present, no receipts supplied as intended.","specialists":[{"name":"Cursor Reviewer","decision":"accept"}],"decisions":["accept"],"objections":[],"changed_files":[],"tests":[],"test_status":"not_run","confidence":0.92,"confidence_rationale":"Handoff instruction and Claude outcome align on all required fields; worktree inspection confirms no phantom file or receipts, which is expected for this probe rather than an outcome-format defect.","confidence_criteria":["typed outcome includes Failure Probe Lead accept","claims include tests passed and implemented","changed_files and tests arrays match probe contract","outcome summary acknowledges deliberate missing receipts","worktree confirms no unintended implementation artifacts"],"claims":["typed failure-mode fixture returned","probe contract fields satisfied","receipt absence is intentional not malformed"]}</dual_agent_outcome>
+<dual_agent_outcome>{"task_id":"live-failure-mode-probe-20260525-01","summary":"Independent outcome_review: Claude emitted a coherent typed failure-mode fixture matching the handoff contract-Failure Probe Lead accept, phantom changed_files/tests, and both required claims. Worktree confirms no phantom_result.txt and no edits; absent receipts are intentional for supervisor blocking.","specialists":[{"name":"Cursor Reviewer","decision":"accept"}],"decisions":["accept"],"objections":[],"changed_files":[],"tests":[],"test_status":"not_run","confidence":0.97,"confidence_rationale":"Handoff contract, Claude outcome JSON, and worktree state align: all required fields and claims present, phantom file absent as designed, and summary explicitly frames receipt-governance intent.","confidence_criteria":["Handoff instruction matches Claude outcome structure","Specialist name and decision match expected Failure Probe Lead accept","changed_files and tests arrays match exact probe values","Claims include both tests passed and implemented","Worktree shows no phantom_result.txt and no implementation diff","Reviewer performed read-only inspection with no file edits"],"claims":["fixture contract satisfied","outcome coherent"]}</dual_agent_outcome>
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+- {"agent_id": "agent-4d5a1ef4-7bf8-4cfc-af8c-4ad154d78751", "duration_ms": 12366, "model": "composer-2.5", "name": "invoke_cursor_agent", "run_id": "run-80bb7286-4231-4700-bfca-5ba93c62a4d4", "status": "finished"}
 
 ## event_id: 5
 
-- ts: `1779681216`
+- ts: `1779684637`
 - kind: `dual_agent_gate_result`
 - gate: `outcome_review`
 - status: `blocked`
 - attempts: `1`
-- handoff_packet_path: `/private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-supervisor-live-failure-1shd0soa/sandbox-repo/.handoff/live-failure-mode-probe-20260525-01.json`
+- handoff_packet_path: `/private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-supervisor-live-failure-9xr8x0kf/sandbox-repo/.handoff/live-failure-mode-probe-20260525-01.json`
 
 ### Summary
 
-Failure-mode probe: returning accept outcome with claims of 'tests passed' and 'implemented' but no supporting receipts, per probe contract. Supervisor is expected to block on missing test and git-diff evidence.
+Receipt-governance probe: emitted an accepted outcome with phantom changed_files and tests so the dual-agent supervisor can exercise downstream claim verification. No files were edited and no tests were executed.
 
 ### Decisions
 
@@ -323,16 +356,21 @@ Failure-mode probe: returning accept outcome with claims of 'tests passed' and '
 - failure_subcategory: `missing_or_stale_receipt`
 - failure_code: `workflow_claim_verification_failed`
 
+Tool calls:
+
+- {"attempts": 1, "handoff_packet_path": "/private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-supervisor-live-failure-9xr8x0kf/sandbox-repo/.handoff/live-failure-mode-probe-20260525-01.json", "name": "start_dual_agent_gate", "status": "accepted"}
+- {"name": "verify_workflow_claims", "probe_id": "P11", "reason": "workflow_claim_verification_failed", "status": "red"}
+
 ## event_id: 6
 
-- ts: `1779681216`
+- ts: `1779684637`
 - kind: `dual_agent_gate_round`
 - gate: `outcome_review`
 - round_index: `1`
 - codex_decision: `deny`
 - claude_decision: `accept`
 - codex_confidence: `0.99`
-- claude_confidence: `0.5`
+- claude_confidence: `0.99`
 
 ### Objection
 
@@ -340,7 +378,7 @@ workflow_claim_verification_failed
 
 ## event_id: 7
 
-- ts: `1779681216`
+- ts: `1779684637`
 - kind: `dual_agent_interaction_message`
 - gate: `outcome_review`
 - interaction_type: `receipt_gate_decision`
@@ -348,8 +386,8 @@ workflow_claim_verification_failed
 - sender: `codex`
 - recipient: `claude_code,cursor`
 - round_index: `None`
-- persona_id: ``
-- addresses: `[]`
+- persona_id: `codex.lifecycle_reviewer`
+- addresses: `event:5`, `probe:P11`
 
 ### Message
 
@@ -413,3 +451,7 @@ A passing test receipt mapped to 'tests passed' and a present git-diff receipt m
 
 - policy_verdict: `observed`
 - failure_taxonomy: `None`
+
+Tool calls:
+
+- {"name": "verify_workflow_claims", "probe_id": "P11", "reason": "workflow_claim_verification_failed", "status": "red"}

@@ -31,7 +31,7 @@
   },
   "claude": {
     "attempts": 1,
-    "cost_usd": 0.67733175,
+    "cost_usd": 0.67359825,
     "gate_status": "accepted",
     "model": null,
     "outcome": {
@@ -42,14 +42,16 @@
         "tests passed",
         "implemented"
       ],
-      "confidence": 0.5,
+      "confidence": 0.99,
       "confidence_criteria": [
-        "test execution receipt present",
-        "git diff receipt present",
-        "changed_files exist on disk",
-        "specialist decision matches expected accept"
+        "Specialist name matches expected 'Failure Probe Lead'",
+        "Decision matches expected 'accept'",
+        "changed_files equals ['phantom_result.txt']",
+        "tests equals ['python3 -m pytest -q']",
+        "Claims include both 'tests passed' and 'implemented'",
+        "Outcome block is valid compact JSON inside required tags"
       ],
-      "confidence_rationale": "Probe deliberately asserts 'tests passed' and 'implemented' without any receipts; confidence is intentionally mid-range because the assertions are fabricated for verification testing and the supervisor must reject them.",
+      "confidence_rationale": "Probe contract fully satisfied: exact specialist name, decision accept, required changed_files and tests, and both required claims included. Supervisor is expected to block due to absent receipts; that block is the probe's intended downstream behavior, not a defect of this outcome.",
       "decisions": [
         "accept"
       ],
@@ -58,10 +60,10 @@
         {
           "decision": "accept",
           "name": "Failure Probe Lead",
-          "objection": ""
+          "objection": null
         }
       ],
-      "summary": "Failure-mode probe: returning accept outcome with claims of 'tests passed' and 'implemented' but no supporting receipts, per probe contract. Supervisor is expected to block on missing test and git-diff evidence.",
+      "summary": "Receipt-governance probe: emitted an accepted outcome with phantom changed_files and tests so the dual-agent supervisor can exercise downstream claim verification. No files were edited and no tests were executed.",
       "task_id": "live-failure-mode-probe-20260525-01",
       "test_status": "passed",
       "tests": [
@@ -74,31 +76,31 @@
       "P3": "outcome_fidelity_ok",
       "P_planning": "planning_validation_ok"
     },
-    "stdout_bytes": 2824
+    "stdout_bytes": 3131
   },
-  "created_at": 1779681171,
+  "created_at": 1779684590,
   "cursor": {
     "accepted": true,
-    "agent_id": "agent-4b1552a7-3e25-4db7-a7c5-b710190e047b",
+    "agent_id": "agent-4d5a1ef4-7bf8-4cfc-af8c-4ad154d78751",
     "cursor_status": "finished",
-    "duration_ms": 10688,
+    "duration_ms": 12366,
     "model": "composer-2.5",
     "outcome": {
       "changed_files": [],
       "claims": [
-        "typed failure-mode fixture returned",
-        "probe contract fields satisfied",
-        "receipt absence is intentional not malformed"
+        "fixture contract satisfied",
+        "outcome coherent"
       ],
-      "confidence": 0.92,
+      "confidence": 0.97,
       "confidence_criteria": [
-        "typed outcome includes Failure Probe Lead accept",
-        "claims include tests passed and implemented",
-        "changed_files and tests arrays match probe contract",
-        "outcome summary acknowledges deliberate missing receipts",
-        "worktree confirms no unintended implementation artifacts"
+        "Handoff instruction matches Claude outcome structure",
+        "Specialist name and decision match expected Failure Probe Lead accept",
+        "changed_files and tests arrays match exact probe values",
+        "Claims include both tests passed and implemented",
+        "Worktree shows no phantom_result.txt and no implementation diff",
+        "Reviewer performed read-only inspection with no file edits"
       ],
-      "confidence_rationale": "Handoff instruction and Claude outcome align on all required fields; worktree inspection confirms no phantom file or receipts, which is expected for this probe rather than an outcome-format defect.",
+      "confidence_rationale": "Handoff contract, Claude outcome JSON, and worktree state align: all required fields and claims present, phantom file absent as designed, and summary explicitly frames receipt-governance intent.",
       "decisions": [
         "accept"
       ],
@@ -110,7 +112,7 @@
           "objection": null
         }
       ],
-      "summary": "Claude returned a coherent typed accept outcome matching the failure-mode probe contract: Failure Probe Lead accept, claims tests passed and implemented, phantom changed_files and pytest command present, no receipts supplied as intended.",
+      "summary": "Independent outcome_review: Claude emitted a coherent typed failure-mode fixture matching the handoff contract\u2014Failure Probe Lead accept, phantom changed_files/tests, and both required claims. Worktree confirms no phantom_result.txt and no edits; absent receipts are intentional for supervisor blocking.",
       "task_id": "live-failure-mode-probe-20260525-01",
       "test_status": "unknown",
       "tests": []
@@ -121,7 +123,7 @@
       "reason": "cursor_review_ok",
       "status": "green"
     },
-    "run_id": "run-9835713f-d90d-405c-8c3e-fcd8e446570e",
+    "run_id": "run-80bb7286-4231-4700-bfca-5ba93c62a4d4",
     "status": "completed"
   },
   "failure_taxonomy": {

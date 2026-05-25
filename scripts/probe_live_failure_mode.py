@@ -123,6 +123,16 @@ def main() -> int:
                     "model": cursor_result.model,
                     "duration_ms": cursor_result.duration_ms,
                     "transcript_tail": cursor_result.transcript[-4000:],
+                    "tool_calls": [
+                        {
+                            "name": "invoke_cursor_agent",
+                            "status": cursor_result.status,
+                            "agent_id": cursor_result.agent_id,
+                            "run_id": cursor_result.run_id,
+                            "model": cursor_result.model,
+                            "duration_ms": cursor_result.duration_ms,
+                        },
+                    ],
                 },
             )
 
@@ -139,6 +149,20 @@ def main() -> int:
             "attempts": gate_result.attempts,
             "handoff_packet_path": str(gate_result.handoff_packet_path),
             "probes": probes,
+            "tool_calls": [
+                {
+                    "name": "start_dual_agent_gate",
+                    "status": gate_result.status,
+                    "attempts": gate_result.attempts,
+                    "handoff_packet_path": str(gate_result.handoff_packet_path),
+                },
+                {
+                    "name": "verify_workflow_claims",
+                    "status": claim_probe.status,
+                    "probe_id": claim_probe.probe_id,
+                    "reason": claim_probe.reason,
+                },
+            ],
             "outcome": outcome_payload,
             "claim_verification": asdict(claim_probe),
             "cursor_review": _cursor_summary(cursor_result),
@@ -175,6 +199,13 @@ def main() -> int:
                         else "all required probes accepted"
                     ),
                 )),
+                "tool_calls": [
+                    {
+                        "name": "record_gate_round",
+                        "status": "recorded",
+                        "round_index": 1,
+                    },
+                ],
             },
         )
         state.write_event(
@@ -187,6 +218,11 @@ def main() -> int:
                 sender="codex",
                 recipient="claude_code,cursor",
                 message_type="receipt_gate_decision",
+                persona_id="codex.lifecycle_reviewer",
+                addresses=(
+                    f"event:{final_event_id}",
+                    "probe:P11",
+                ),
                 content=(
                     "Supervisor blocked the accepted model outcome because "
                     "implementation/test claims had no matching receipts."
@@ -241,7 +277,17 @@ def main() -> int:
                     "A passing test receipt mapped to 'tests passed' and a "
                     "present git-diff receipt mapped to 'implemented' were supplied."
                 ),
-                metadata={"claim_verification": asdict(claim_probe)},
+                metadata={
+                    "claim_verification": asdict(claim_probe),
+                    "tool_calls": [
+                        {
+                            "name": "verify_workflow_claims",
+                            "status": claim_probe.status,
+                            "probe_id": claim_probe.probe_id,
+                            "reason": claim_probe.reason,
+                        },
+                    ],
+                },
             ).to_event_payload(),
         )
 

@@ -887,6 +887,12 @@ async def test_codex_supervisor_mcp_reads_clean_gate_transcript(tmp_path):
     assert transcript["rounds"][0]["claude_decision"] == "accept"
     assert transcript["rounds"][0]["objection"] == "No tests added."
     assert transcript["rounds"][0]["event_id"] < transcript["rounds"][1]["event_id"]
+    first_round_row = state.get_event(
+        run_id="transcript-run",
+        event_id=transcript["rounds"][0]["event_id"],
+    )
+    first_round_payload = json.loads(first_round_row["payload_json"])
+    assert first_round_payload["trace_envelope"]["tool_calls"][0]["name"] == "record_gate_round"
     assert transcript["result"]["status"] == "accepted"
     assert transcript["result"]["outcome"]["task_id"] == "transcript-task"
     assert transcript["handoff_packet_path"] == gate_result["handoff_packet_path"]

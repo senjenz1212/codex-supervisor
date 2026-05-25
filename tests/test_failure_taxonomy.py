@@ -60,3 +60,39 @@ def test_trace_envelope_stamps_dual_agent_payloads_without_wrapping_original_sha
     assert payload["trace_envelope"]["schema_version"] == "dual-agent-trace-envelope/v1"
     assert payload["trace_envelope"]["policy_verdict"] == "blocked"
     assert payload["trace_envelope"]["failure_taxonomy"]["category"] == "task_verification"
+
+
+def test_trace_envelope_extracts_tool_calls_from_metadata_or_payload():
+    from_metadata = stamp_trace_envelope(
+        run_id="run-1",
+        source="dual_agent",
+        kind="dual_agent_interaction_message",
+        payload={
+            "task_id": "task-1",
+            "gate": "outcome_review",
+            "metadata": {
+                "tool_calls": [
+                    {"name": "invoke_claude_lead", "status": "green"},
+                ],
+            },
+        },
+    )
+    from_payload = stamp_trace_envelope(
+        run_id="run-1",
+        source="dual_agent",
+        kind="dual_agent_gate_result",
+        payload={
+            "task_id": "task-1",
+            "gate": "outcome_review",
+            "tool_calls": [
+                {"name": "start_dual_agent_gate", "status": "blocked"},
+            ],
+        },
+    )
+
+    assert from_metadata["trace_envelope"]["tool_calls"] == [
+        {"name": "invoke_claude_lead", "status": "green"},
+    ]
+    assert from_payload["trace_envelope"]["tool_calls"] == [
+        {"name": "start_dual_agent_gate", "status": "blocked"},
+    ]

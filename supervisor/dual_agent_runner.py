@@ -179,17 +179,25 @@ def run_dual_agent_gate(
             required_kinds=required_planning_kinds_for_gate(spec.gate),
             gate=spec.gate,
         )
+        planning_probe = planning_validation_probe(planning_result, task_id=spec.task_id)
+        planning_event_id: int | None = None
         if state is not None:
-            state.write_event(
+            planning_payload = planning_result.to_event_payload(
+                task_id=spec.task_id,
+                gate=spec.gate,
+            )
+            planning_payload["tool_calls"] = [
+                _probe_tool_call(
+                    name="validate_planning_artifacts",
+                    probe=planning_probe,
+                ),
+            ]
+            planning_event_id = state.write_event(
                 run_id=spec.run_id,
                 source="dual_agent",
                 kind="dual_agent_planning_validation",
-                payload=planning_result.to_event_payload(
-                    task_id=spec.task_id,
-                    gate=spec.gate,
-                ),
+                payload=planning_payload,
             )
-        planning_probe = planning_validation_probe(planning_result)
         if not planning_result.ok:
             if state is not None:
                 state.write_event(
@@ -202,7 +210,11 @@ def run_dual_agent_gate(
                         sender="supervisor",
                         recipient="codex",
                         message_type="gate_blocked_before_worker",
+                        persona_id="supervisor.planning_validator",
                         content="Planning validation blocked the gate before Claude Code /lead was invoked.",
+                        addresses=_addresses(
+                            f"event:{planning_event_id}" if planning_event_id is not None else "",
+                        ),
                         confidence=None,
                         artifacts=planning_artifact_refs(spec.planning_artifacts),
                         metadata={
@@ -210,6 +222,13 @@ def run_dual_agent_gate(
                                 task_id=spec.task_id,
                                 gate=spec.gate,
                             ),
+                            "tool_calls": [
+                                _probe_tool_call(
+                                    name="validate_planning_artifacts",
+                                    probe=planning_probe,
+                                    event_id=planning_event_id,
+                                ),
+                            ],
                         },
                     ).to_event_payload(),
                 )
@@ -223,8 +242,16 @@ def run_dual_agent_gate(
             )
 
         request = _lead_request(spec)
+        packet_path = write_handoff_packet(
+            request,
+            planning_artifacts=spec.planning_artifacts,
+            lead_skill_path=spec.lead_skill_path,
+            outcome_validation_policy=spec.outcome_validation_policy,
+        )
+        request = _lead_request(spec, packet_path=packet_path)
+        request_event_id: int | None = None
         if state is not None:
-            state.write_event(
+            request_event_id = state.write_event(
                 run_id=spec.run_id,
                 source="dual_agent",
                 kind="dual_agent_interaction_message",
@@ -234,22 +261,32 @@ def run_dual_agent_gate(
                     sender="codex",
                     recipient="claude_code",
                     message_type="gate_request",
+                    persona_id="codex.lifecycle_reviewer",
                     content=spec.instruction,
+                    addresses=_addresses(
+                        f"event:{planning_event_id}" if planning_event_id is not None else "",
+                        f"handoff:{packet_path}",
+                    ),
                     artifacts=planning_artifact_refs(spec.planning_artifacts),
                     metadata={
                         "expected_specialists": list(spec.expected_specialists),
                         "expected_decisions": list(spec.expected_decisions),
                         "expected_objections": list(spec.expected_objections),
+                        "tool_calls": [
+                            _probe_tool_call(
+                                name="validate_planning_artifacts",
+                                probe=planning_probe,
+                                event_id=planning_event_id,
+                            ),
+                            {
+                                "name": "write_handoff_packet",
+                                "status": "completed",
+                                "path": str(packet_path),
+                            },
+                        ],
                     },
                 ).to_event_payload(),
             )
-        packet_path = write_handoff_packet(
-            request,
-            planning_artifacts=spec.planning_artifacts,
-            lead_skill_path=spec.lead_skill_path,
-            outcome_validation_policy=spec.outcome_validation_policy,
-        )
-        request = _lead_request(spec, packet_path=packet_path)
         lead_result = invoke_claude_lead(request, runner=runner)
         attempts = 1
         if _should_retry_outcome(lead_result.probe, spec.outcome_validation_policy):
@@ -267,6 +304,12 @@ def run_dual_agent_gate(
             lead_result = invoke_claude_lead(corrective, runner=runner)
             attempts = 2
 
+        probes: dict[str, ProbeResult] = {}
+        probes["P2"] = _p2_from_lead_result(lead_result)
+        probes["P3"] = lead_result.probe
+        probes["P1"] = verify_planning_artifact_boundaries(packet_path)
+        probes["P_planning"] = planning_probe
+
         if state is not None:
             outcome_payload = (
                 lead_result.outcome.model_dump()
@@ -282,10 +325,15 @@ def run_dual_agent_gate(
                     sender="claude_code",
                     recipient="codex",
                     message_type="gate_response",
+                    persona_id="claude_code.lead_worker",
                     content=(
                         lead_result.outcome.summary
                         if lead_result.outcome is not None
                         else lead_result.probe.reason
+                    ),
+                    addresses=_addresses(
+                        f"event:{request_event_id}" if request_event_id is not None else "",
+                        f"handoff:{packet_path}",
                     ),
                     confidence=outcome_confidence_report(
                         outcome_payload,
@@ -350,15 +398,14 @@ def run_dual_agent_gate(
                         "model": lead_result.model,
                         "cost_usd": lead_result.cost_usd,
                         "outcome": outcome_payload,
+                        "tool_calls": _lead_response_tool_calls(
+                            lead_result=lead_result,
+                            attempts=attempts,
+                            probes=probes,
+                        ),
                     },
                 ).to_event_payload(),
             )
-
-        probes: dict[str, ProbeResult] = {}
-        probes["P2"] = _p2_from_lead_result(lead_result)
-        probes["P3"] = lead_result.probe
-        probes["P1"] = verify_planning_artifact_boundaries(packet_path)
-        probes["P_planning"] = planning_probe
 
         status = "accepted" if all(p.ok for p in probes.values()) else "blocked"
         return DualAgentGateResult(
@@ -692,6 +739,49 @@ def claim_retry_signal(
 
 def _handoff_lock_path(spec: DualAgentGateSpec) -> Path:
     return Path(spec.cwd).resolve() / ".handoff" / ".dual-agent.lock"
+
+
+def _addresses(*values: str) -> tuple[str, ...]:
+    return tuple(value for value in values if value)
+
+
+def _probe_tool_call(
+    *,
+    name: str,
+    probe: ProbeResult,
+    event_id: int | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "name": name,
+        "status": probe.status,
+        "probe_id": probe.probe_id,
+        "reason": probe.reason,
+    }
+    if event_id is not None:
+        payload["event_id"] = event_id
+    return payload
+
+
+def _lead_response_tool_calls(
+    *,
+    lead_result: LeadInvocationResult,
+    attempts: int,
+    probes: dict[str, ProbeResult],
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "name": "invoke_claude_lead",
+            "status": "completed" if probes["P2"].ok else "failed",
+            "attempts": attempts,
+            "model": lead_result.model,
+            "cost_usd": lead_result.cost_usd,
+            "stdout_bytes": lead_result.stdout_bytes,
+            "stderr_bytes": lead_result.stderr_bytes,
+        },
+        _probe_tool_call(name="evaluate_worker_invocation", probe=probes["P2"]),
+        _probe_tool_call(name="evaluate_outcome_fidelity", probe=probes["P3"]),
+        _probe_tool_call(name="verify_planning_artifact_boundaries", probe=probes["P1"]),
+    ]
 
 
 def _acquire_handoff_lock(

@@ -215,19 +215,19 @@ def validate_planning_artifacts(
     )
 
 
-def planning_validation_probe(result: PlanningValidationResult) -> ProbeResult:
+def planning_validation_probe(result: PlanningValidationResult, *, task_id: str = "") -> ProbeResult:
     if result.ok:
         return ProbeResult(
             "P_planning",
             "green",
             "planning_validation_ok",
-            result.to_event_payload(task_id="", gate=result.gate),
+            result.to_event_payload(task_id=task_id, gate=result.gate),
         )
     return ProbeResult(
         "P_planning",
         "red",
         "planning_validation_failed",
-        result.to_event_payload(task_id="", gate=result.gate),
+        result.to_event_payload(task_id=task_id, gate=result.gate),
     )
 
 
