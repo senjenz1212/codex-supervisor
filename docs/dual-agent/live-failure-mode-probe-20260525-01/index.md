@@ -6,8 +6,9 @@
 
 ## Files
 
-- [PRD](prd.md)
-- [TDD](tdd.md)
+- [Triage](triage.md)
+- [PRD Gate](prd.md)
+- [TDD Gate](tdd.md)
 - [Grill Findings](grill-findings.md)
 - [Issues](issues.md)
 - [Screenshots](screenshots.md)
@@ -16,6 +17,14 @@
 - [Transcript](transcript.md)
 - [Machine Transcript](transcript.jsonl)
 - [Replay Manifest](replay/manifest.json)
+
+## Source Artifacts
+
+- [Source PRD](source/prd.md)
+- [Source TDD](source/tdd.md)
+- [Source Issues](source/issues.md)
+- [Source Grill Findings](source/grill-findings.md)
+- [Source Implementation Plan](source/implementation-plan.md)
 
 ## Gates
 

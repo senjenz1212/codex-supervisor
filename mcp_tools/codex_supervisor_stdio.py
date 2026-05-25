@@ -169,7 +169,17 @@ class CodexSupervisorMcpAPI:
             planning_artifacts=planning_artifacts,
         )
         notifier = self._notifier()
-        with timed_tool_call("start_dual_agent_gate") as gate_tool_call:
+        with timed_tool_call(
+            "start_dual_agent_gate",
+            args={
+                "task_id": task_id,
+                "gate": gate,
+                "artifact_policy": artifact_policy,
+                "planning_artifact_count": len(planning_artifacts or []),
+                "user_facing": user_facing,
+                "screenshot_count": len(screenshots or []),
+            },
+        ) as gate_tool_call:
             if notifier is not None:
                 result = await run_dual_agent_gate_with_escalation(
                     spec,
@@ -180,9 +190,16 @@ class CodexSupervisorMcpAPI:
             else:
                 result = run_dual_agent_gate(spec, runner=self.runner, state=self.state)
         gate_tool_call.update({
-            "status": result.status,
+            "status": "completed",
             "attempts": result.attempts,
             "handoff_packet_path": str(result.handoff_packet_path),
+            "result_summary": {
+                "claude_gate_status": result.status,
+                "supervisor_final_status": result.status,
+                "probe_statuses": {
+                    key: value.status for key, value in result.probes.items()
+                },
+            },
         })
         payload = _gate_result_payload(result, gate_tool_call=gate_tool_call)
         payload["artifact_rigor"] = artifact_preflight
@@ -500,7 +517,19 @@ class CodexSupervisorMcpAPI:
                             },
                         ),
                     )
-                    with timed_tool_call("invoke_cursor_agent") as cursor_tool_call:
+                    with timed_tool_call(
+                        "invoke_cursor_agent",
+                        args={
+                            "task_id": task_id,
+                            "gate": gate,
+                            "quality": quality,
+                            "model": cursor_model,
+                            "timeout_s": timeout_s,
+                            "planning_artifact_count": len(gate_artifacts),
+                            "receipt_count": len(receipt_payloads),
+                        },
+                        receipt_ids=_receipt_ids(receipt_payloads),
+                    ) as cursor_tool_call:
                         cursor_result = self.cursor_runner(
                             CursorInvocationRequest(
                                 task_id=task_id,
@@ -899,6 +928,23 @@ class CodexSupervisorMcpAPI:
             claude_confidence=claude_confidence,
             objection=objection,
         )
+        round_tool_call = ensure_tool_call_timing({
+            "name": "record_gate_round",
+            "status": "recorded",
+            "args": {
+                "task_id": task_id,
+                "gate": gate,
+                "round_index": round_index,
+                "codex_decision": codex_decision,
+                "claude_decision": claude_decision,
+            },
+            "result_summary": {
+                "round_index": round_index,
+                "codex_decision": codex_decision,
+                "claude_decision": claude_decision,
+                "has_objection": bool(objection),
+            },
+        })
         event_id = self.state.write_event(
             run_id=run_id,
             source="dual_agent",
@@ -907,13 +953,7 @@ class CodexSupervisorMcpAPI:
                 "task_id": task_id,
                 "gate": gate,
                 "round": round_payload,
-                "tool_calls": [
-                    {
-                        "name": "record_gate_round",
-                        "status": "recorded",
-                        "round_index": round_index,
-                    },
-                ],
+                "tool_calls": [round_tool_call],
             },
         )
         result = {
@@ -1597,6 +1637,8 @@ def _gate_result_payload(
         "task_id": result.task_id,
         "gate": result.gate,
         "status": result.status,
+        "claude_gate_status": result.status,
+        "supervisor_final_status": result.status,
         "attempts": result.attempts,
         "handoff_packet_path": str(result.handoff_packet_path),
         "probes": {
@@ -1618,9 +1660,20 @@ def _gate_result_tool_calls(
     call = dict(gate_tool_call or {})
     call.update({
         "name": "start_dual_agent_gate",
-        "status": result.status,
+        "status": call.get("status") or "completed",
         "attempts": result.attempts,
         "handoff_packet_path": str(result.handoff_packet_path),
+    })
+    call.setdefault("args", {
+        "task_id": result.task_id,
+        "gate": result.gate,
+    })
+    call.setdefault("result_summary", {
+        "claude_gate_status": result.status,
+        "supervisor_final_status": result.status,
+        "probe_statuses": {
+            key: value.status for key, value in result.probes.items()
+        },
     })
     calls: list[dict[str, Any]] = [ensure_tool_call_timing(call)]
     if result.lead_result is not None:
@@ -1628,10 +1681,19 @@ def _gate_result_tool_calls(
             "name": "invoke_claude_lead",
             "status": "completed" if result.probes.get("P2", result.lead_result.probe).ok else "failed",
             "attempts": result.attempts,
+            "args": {
+                "task_id": result.task_id,
+                "gate": result.gate,
+            },
             "model": result.lead_result.model,
             "cost_usd": result.lead_result.cost_usd,
             "stdout_bytes": result.lead_result.stdout_bytes,
             "stderr_bytes": result.lead_result.stderr_bytes,
+            "result_summary": {
+                "probe_status": result.lead_result.probe.status,
+                "probe_reason": result.lead_result.probe.reason,
+                "outcome_present": result.outcome is not None,
+            },
         }))
     for probe_id, probe in result.probes.items():
         calls.append(ensure_tool_call_timing({
@@ -1639,6 +1701,12 @@ def _gate_result_tool_calls(
             "status": probe.status,
             "probe_id": probe.probe_id,
             "reason": probe.reason,
+            "args": {"probe_id": probe_id},
+            "result_summary": {
+                "probe_id": probe.probe_id,
+                "status": probe.status,
+                "reason": probe.reason,
+            },
         }))
     return calls
 
@@ -1653,6 +1721,8 @@ def _artifact_blocked_payload(
         "task_id": task_id,
         "gate": gate,
         "status": "blocked",
+        "claude_gate_status": "not_invoked",
+        "supervisor_final_status": "blocked",
         "attempts": 0,
         "handoff_packet_path": None,
         "probes": {},
@@ -1785,6 +1855,12 @@ def _cursor_tool_call_fields(result: CursorInvocationResult) -> dict[str, Any]:
         "run_id": result.run_id,
         "model": result.model,
         "cursor_duration_ms": result.duration_ms,
+        "result_summary": {
+            "accepted": cursor_accepts(result),
+            "probe_status": result.probe.status,
+            "probe_reason": result.probe.reason,
+            "outcome_present": result.outcome is not None,
+        },
     }
 
 
@@ -1794,6 +1870,15 @@ def _normalise_receipt_payloads(receipts: list[dict[str, Any]]) -> list[dict[str
         if isinstance(receipt, dict):
             normalised.append(dict(receipt))
     return normalised
+
+
+def _receipt_ids(receipts: list[dict[str, Any]]) -> list[str]:
+    ids: list[str] = []
+    for receipt in receipts:
+        receipt_id = receipt.get("receipt_id") or receipt.get("id") or receipt.get("kind")
+        if receipt_id:
+            ids.append(str(receipt_id))
+    return ids
 
 
 def _interaction_addresses(payload: dict[str, Any]) -> tuple[str, ...]:

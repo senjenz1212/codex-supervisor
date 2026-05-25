@@ -388,7 +388,11 @@ def test_gate_runner_records_direct_interaction_persona_addresses_and_tool_calls
     for call in response["trace_envelope"]["tool_calls"]:
         assert {"started_at_ms", "ended_at_ms", "duration_ms"} <= set(call)
         assert call["ended_at_ms"] >= call["started_at_ms"]
+        assert "args" in call
+        assert "result_summary" in call
     assert response["trace_envelope"]["tool_calls"][0]["duration_ms"] >= 0
+    assert response["trace_envelope"]["tool_calls"][0]["args"]["task_id"] == "gate-1"
+    assert response["trace_envelope"]["tool_calls"][0]["result_summary"]["outcome_present"] is True
 
 
 def test_gate_runner_planning_probe_details_keep_task_id(tmp_path):

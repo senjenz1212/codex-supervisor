@@ -82,35 +82,111 @@ def main() -> int:
             timeout_s=max(1, int(args.timeout_s)),
         )
 
-        with timed_tool_call("start_dual_agent_gate") as gate_tool_call:
+        with timed_tool_call(
+            "start_dual_agent_gate",
+            args={
+                "task_id": TASK_ID,
+                "gate": "outcome_review",
+                "planning_artifact_count": len(planning_artifacts),
+                "timeout_s": max(1, int(args.timeout_s)),
+            },
+        ) as gate_tool_call:
             gate_result = run_dual_agent_gate(spec, state=state)
         gate_tool_call.update({
-            "status": gate_result.status,
+            "status": "completed",
             "attempts": gate_result.attempts,
             "handoff_packet_path": str(gate_result.handoff_packet_path),
+            "result_summary": {
+                "claude_gate_status": gate_result.status,
+                "probe_statuses": {
+                    key: value.status for key, value in gate_result.probes.items()
+                },
+            },
         })
         outcome_payload = (
             gate_result.outcome.model_dump()
             if gate_result.outcome is not None else None
         )
-        with timed_tool_call("verify_workflow_claims") as claim_tool_call:
-            claim_probe = verify_workflow_claims(
-                outcome_payload=outcome_payload,
-                user_facing=False,
-                screenshots=[],
-                tool_receipts=[],
+        claim_verification_reached = (
+            gate_result.status == "accepted"
+            and outcome_payload is not None
+        )
+        if claim_verification_reached:
+            with timed_tool_call(
+                "verify_workflow_claims",
+                args={
+                    "task_id": TASK_ID,
+                    "user_facing": False,
+                    "screenshot_count": 0,
+                    "receipt_count": 0,
+                    "claim_count": len((outcome_payload or {}).get("claims") or []),
+                },
+                receipt_ids=[],
+            ) as claim_tool_call:
+                claim_probe = verify_workflow_claims(
+                    outcome_payload=outcome_payload,
+                    user_facing=False,
+                    screenshots=[],
+                    tool_receipts=[],
+                )
+            claim_tool_call.update({
+                "status": claim_probe.status,
+                "probe_id": claim_probe.probe_id,
+                "reason": claim_probe.reason,
+                "result_summary": {
+                    "probe_id": claim_probe.probe_id,
+                    "status": claim_probe.status,
+                    "reason": claim_probe.reason,
+                    "failures": claim_probe.details.get("failures", []),
+                },
+            })
+            claim_tool_call = ensure_tool_call_timing(claim_tool_call)
+        else:
+            claim_probe = ProbeResult(
+                "P11",
+                "green",
+                "claim_verification_not_reached",
+                {
+                    "skipped": True,
+                    "claude_gate_status": gate_result.status,
+                    "outcome_present": outcome_payload is not None,
+                },
             )
-        claim_tool_call.update({
-            "status": claim_probe.status,
-            "probe_id": claim_probe.probe_id,
-            "reason": claim_probe.reason,
-        })
-        claim_tool_call = ensure_tool_call_timing(claim_tool_call)
+            claim_tool_call = ensure_tool_call_timing({
+                "name": "verify_workflow_claims",
+                "status": "skipped",
+                "probe_id": claim_probe.probe_id,
+                "reason": claim_probe.reason,
+                "args": {
+                    "task_id": TASK_ID,
+                    "user_facing": False,
+                    "screenshot_count": 0,
+                    "receipt_count": 0,
+                    "claim_count": 0,
+                },
+                "receipt_ids": [],
+                "result_summary": {
+                    "probe_id": claim_probe.probe_id,
+                    "status": "skipped",
+                    "reason": claim_probe.reason,
+                    "skipped": True,
+                },
+            })
 
         cursor_result = None
         cursor_tool_call: dict[str, Any] | None = None
         if not args.skip_cursor and os.environ.get("CURSOR_API_KEY") and outcome_payload is not None:
-            with timed_tool_call("invoke_cursor_agent") as cursor_tool_call:
+            with timed_tool_call(
+                "invoke_cursor_agent",
+                args={
+                    "task_id": TASK_ID,
+                    "gate": "outcome_review",
+                    "timeout_s": max(1, min(int(args.timeout_s), 300)),
+                    "expected_specialists": ["Cursor Reviewer"],
+                    "claude_outcome_claim_count": len((outcome_payload or {}).get("claims") or []),
+                },
+                receipt_ids=[],
+            ) as cursor_tool_call:
                 cursor_result = invoke_cursor_agent(CursorInvocationRequest(
                     task_id=TASK_ID,
                     gate="outcome_review",
@@ -150,11 +226,19 @@ def main() -> int:
         if cursor_result is not None:
             probes["CURSOR"] = asdict(cursor_result.probe)
 
-        final_status = "blocked" if not claim_probe.ok else gate_result.status
+        outcome_present = outcome_payload is not None
+        primary_failure = _final_failure(
+            gate_result,
+            claim_probe,
+            outcome_present=outcome_present,
+        )
+        final_status = "blocked" if primary_failure["reason"] != "no_failure_observed" else gate_result.status
         final_payload = {
             "task_id": TASK_ID,
             "gate": "outcome_review",
             "status": final_status,
+            "claude_gate_status": gate_result.status,
+            "supervisor_final_status": final_status,
             "attempts": gate_result.attempts,
             "handoff_packet_path": str(gate_result.handoff_packet_path),
             "probes": probes,
@@ -162,9 +246,13 @@ def main() -> int:
                 ensure_tool_call_timing({
                     **gate_tool_call,
                     "name": "start_dual_agent_gate",
-                    "status": gate_result.status,
+                    "status": "completed",
                     "attempts": gate_result.attempts,
                     "handoff_packet_path": str(gate_result.handoff_packet_path),
+                    "result_summary": {
+                        "claude_gate_status": gate_result.status,
+                        "supervisor_final_status": final_status,
+                    },
                 }),
                 ensure_tool_call_timing({
                     **claim_tool_call,
@@ -176,14 +264,12 @@ def main() -> int:
             ],
             "outcome": outcome_payload,
             "claim_verification": asdict(claim_probe),
-            "cursor_review": _cursor_summary(cursor_result),
+            "cursor_review": _cursor_summary(cursor_result, outcome_present=outcome_present),
             "escalation": {
                 "type": "workflow_lifecycle",
-                "reason": (
-                    "workflow_claim_verification_failed"
-                    if not claim_probe.ok else "no_failure_observed"
-                ),
-                "probe_id": "P11",
+                "reason": primary_failure["reason"],
+                "probe_id": primary_failure["probe_id"],
+                "details": primary_failure["details"],
             },
         }
         final_event_id = state.write_event(
@@ -214,7 +300,16 @@ def main() -> int:
                     ensure_tool_call_timing({
                         "name": "record_gate_round",
                         "status": "recorded",
-                        "round_index": 1,
+                        "args": {
+                            "task_id": TASK_ID,
+                            "gate": "outcome_review",
+                            "round_index": 1,
+                        },
+                        "result_summary": {
+                            "round_index": 1,
+                            "codex_decision": "deny" if not claim_probe.ok else "accept",
+                            "claude_decision": _claude_decision(outcome_payload),
+                        },
                     }),
                 ],
             },
@@ -232,22 +327,21 @@ def main() -> int:
                 persona_id="codex.lifecycle_reviewer",
                 addresses=(
                     f"event:{final_event_id}",
-                    "probe:P11",
+                    f"probe:{primary_failure['probe_id']}",
                 ),
-                content=(
-                    "Supervisor blocked the accepted model outcome because "
-                    "implementation/test claims had no matching receipts."
+                content=_receipt_gate_decision_message(
+                    gate_status=gate_result.status,
+                    outcome_present=outcome_present,
+                    primary_failure=primary_failure,
                 ),
                 confidence=outcome_confidence_report(
                     {
                         "confidence": 0.99,
-                        "confidence_rationale": "P11 deterministic claim verification failed.",
-                        "confidence_criteria": [
-                            "Claude outcome claimed tests passed",
-                            "Claude outcome claimed implementation completed",
-                            "No test receipt mapped to tests passed",
-                            "No git diff receipt mapped to implemented",
-                        ],
+                        "confidence_rationale": _receipt_gate_confidence_rationale(primary_failure),
+                        "confidence_criteria": _receipt_gate_confidence_criteria(
+                            primary_failure,
+                            outcome_present=outcome_present,
+                        ),
                     },
                     source="codex",
                 ),
@@ -256,23 +350,9 @@ def main() -> int:
                     str(item)
                     for item in claim_probe.details.get("failures", [])
                 ),
-                evidence_refs=(
-                    {
-                        "kind": "validation_probe",
-                        "ref": "P11",
-                        "status": claim_probe.status,
-                        "reason": claim_probe.reason,
-                    },
-                    {
-                        "kind": "missing_receipt",
-                        "ref": "tests passed",
-                        "status": "missing",
-                    },
-                    {
-                        "kind": "missing_receipt",
-                        "ref": "implemented",
-                        "status": "missing",
-                    },
+                evidence_refs=_receipt_gate_evidence_refs(
+                    primary_failure,
+                    claim_probe,
                 ),
                 raw_transcript_refs=(
                     {
@@ -297,19 +377,25 @@ def main() -> int:
                             "status": claim_probe.status,
                             "probe_id": claim_probe.probe_id,
                             "reason": claim_probe.reason,
+                            "result_summary": {
+                                "probe_id": claim_probe.probe_id,
+                                "status": claim_probe.status,
+                                "reason": claim_probe.reason,
+                                "failures": claim_probe.details.get("failures", []),
+                            },
                         }),
                     ],
                 },
             ).to_event_payload(),
         )
 
+        _copy_source_artifacts(sandbox, output_dir, TASK_ID)
         artifact_export = export_dual_agent_run_artifacts(
             state,
             run_id=RUN_ID,
             task_id=TASK_ID,
             output_dir=output_dir,
         )
-        _copy_source_artifacts(sandbox, output_dir, TASK_ID)
         _write_live_fixtures(
             fixture_dir=fixture_dir,
             gate_result=gate_result,
@@ -319,10 +405,20 @@ def main() -> int:
         summary = {
             "probe": "live_failure_mode_probe",
             "created_at": started,
-            "status": "blocked_as_expected" if _expected_failure(gate_result, claim_probe) else "unexpected",
+            "status": (
+                "blocked_as_expected"
+                if _expected_failure(
+                    gate_result,
+                    claim_probe,
+                    outcome_present=outcome_present,
+                )
+                else "unexpected"
+            ),
             "run_id": RUN_ID,
             "task_id": TASK_ID,
             "final_status": final_status,
+            "claude_gate_status": gate_result.status,
+            "supervisor_final_status": final_status,
             "final_event_id": final_event_id,
             "failure_taxonomy": (
                 (final_event_payload.get("trace_envelope") or {}).get("failure_taxonomy")
@@ -340,8 +436,9 @@ def main() -> int:
                 "stdout_bytes": gate_result.lead_result.stdout_bytes if gate_result.lead_result else 0,
                 "outcome": outcome_payload,
             },
-            "cursor": _cursor_summary(cursor_result),
+            "cursor": _cursor_summary(cursor_result, outcome_present=outcome_present),
             "claim_without_receipts": asdict(claim_probe),
+            "final_failure": primary_failure,
             "artifact_export": {
                 "status": artifact_export.status,
                 "output_dir": str(artifact_export.output_dir),
@@ -444,11 +541,18 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(redact(payload), indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def _cursor_summary(result: CursorInvocationResult | None) -> dict[str, Any]:
+def _cursor_summary(
+    result: CursorInvocationResult | None,
+    *,
+    outcome_present: bool | None = None,
+) -> dict[str, Any]:
     if result is None:
+        reason = "missing_cursor_api_key_or_skipped"
+        if os.environ.get("CURSOR_API_KEY") and outcome_present is False:
+            reason = "missing_claude_outcome_or_skipped"
         return {
             "status": "skipped",
-            "reason": "missing_cursor_api_key_or_skipped",
+            "reason": reason,
             "api_key_present": bool(os.environ.get("CURSOR_API_KEY")),
         }
     return {
@@ -471,14 +575,156 @@ def _cursor_tool_call_fields(result: CursorInvocationResult) -> dict[str, Any]:
         "run_id": result.run_id,
         "model": result.model,
         "cursor_duration_ms": result.duration_ms,
+        "result_summary": {
+            "accepted": cursor_accepts(result),
+            "probe_status": result.probe.status,
+            "probe_reason": result.probe.reason,
+            "outcome_present": result.outcome is not None,
+        },
     }
 
 
-def _expected_failure(gate_result: Any, claim_probe: ProbeResult) -> bool:
+def _final_failure(
+    gate_result: Any,
+    claim_probe: ProbeResult,
+    *,
+    outcome_present: bool,
+) -> dict[str, Any]:
+    """Return the primary blocking failure for the live failure-mode probe."""
+    if gate_result.status != "accepted" or not outcome_present:
+        probe = _first_red_gate_probe(gate_result)
+        if probe is not None:
+            return {
+                "reason": probe.reason,
+                "probe_id": probe.probe_id,
+                "details": probe.details,
+            }
+        if not outcome_present:
+            return {
+                "reason": "missing_outcome_for_claim_verification",
+                "probe_id": "P3",
+                "details": {},
+            }
+        return {
+            "reason": f"claude_gate_{gate_result.status}",
+            "probe_id": "",
+            "details": {},
+        }
+    if not claim_probe.ok:
+        return {
+            "reason": claim_probe.reason,
+            "probe_id": claim_probe.probe_id,
+            "details": claim_probe.details,
+        }
+    return {
+        "reason": "no_failure_observed",
+        "probe_id": "",
+        "details": {},
+    }
+
+
+def _first_red_gate_probe(gate_result: Any) -> ProbeResult | None:
+    probes = getattr(gate_result, "probes", {}) or {}
+    for probe_id in ("P2", "P3", "P1", "P_planning", "CURSOR", "P12"):
+        probe = probes.get(probe_id)
+        if isinstance(probe, ProbeResult) and not probe.ok:
+            return probe
+    for probe in probes.values():
+        if isinstance(probe, ProbeResult) and not probe.ok:
+            return probe
+    return None
+
+
+def _expected_failure(
+    gate_result: Any,
+    claim_probe: ProbeResult,
+    *,
+    outcome_present: bool,
+) -> bool:
     return (
         gate_result.status == "accepted"
+        and outcome_present
         and not claim_probe.ok
         and claim_probe.reason == "workflow_claim_verification_failed"
+    )
+
+
+def _receipt_gate_decision_message(
+    *,
+    gate_status: str,
+    outcome_present: bool,
+    primary_failure: dict[str, Any],
+) -> str:
+    if gate_status == "accepted" and outcome_present:
+        return (
+            "Supervisor blocked the accepted model outcome because "
+            "implementation/test claims had no matching receipts."
+        )
+    return (
+        "Supervisor blocked before claim acceptance because the primary gate "
+        f"failure was {primary_failure['probe_id']}/{primary_failure['reason']}."
+    )
+
+
+def _receipt_gate_confidence_rationale(primary_failure: dict[str, Any]) -> str:
+    if primary_failure["probe_id"] == "P11":
+        return "P11 deterministic claim verification failed."
+    return (
+        "The live probe did not reach the intended receipt-verification path; "
+        f"the primary failure was {primary_failure['probe_id']}/{primary_failure['reason']}."
+    )
+
+
+def _receipt_gate_confidence_criteria(
+    primary_failure: dict[str, Any],
+    *,
+    outcome_present: bool,
+) -> list[str]:
+    if primary_failure["probe_id"] == "P11":
+        return [
+            "Claude outcome claimed tests passed",
+            "Claude outcome claimed implementation completed",
+            "No test receipt mapped to tests passed",
+            "No git diff receipt mapped to implemented",
+        ]
+    return [
+        f"Primary blocking probe: {primary_failure['probe_id']}",
+        f"Primary blocking reason: {primary_failure['reason']}",
+        f"Claude outcome present: {outcome_present}",
+        "Do not relabel tool invocation failures as missing receipt failures",
+    ]
+
+
+def _receipt_gate_evidence_refs(
+    primary_failure: dict[str, Any],
+    claim_probe: ProbeResult,
+) -> tuple[dict[str, Any], ...]:
+    if primary_failure["probe_id"] == "P11":
+        return (
+            {
+                "kind": "validation_probe",
+                "ref": "P11",
+                "status": claim_probe.status,
+                "reason": claim_probe.reason,
+            },
+            {
+                "kind": "missing_receipt",
+                "ref": "tests passed",
+                "status": "missing",
+            },
+            {
+                "kind": "missing_receipt",
+                "ref": "implemented",
+                "status": "missing",
+            },
+        )
+    return (
+        {
+            "kind": "validation_probe",
+            "ref": primary_failure["probe_id"],
+            "status": "red",
+            "reason": primary_failure["reason"],
+        },
     )
 
 

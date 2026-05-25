@@ -175,7 +175,15 @@ def run_dual_agent_gate(
             attempts=0,
         )
     try:
-        with timed_tool_call("validate_planning_artifacts") as planning_tool_call:
+        with timed_tool_call(
+            "validate_planning_artifacts",
+            args={
+                "task_id": spec.task_id,
+                "gate": spec.gate,
+                "artifact_count": len(spec.planning_artifacts),
+                "required_kinds": sorted(required_planning_kinds_for_gate(spec.gate)),
+            },
+        ) as planning_tool_call:
             planning_result = validate_planning_artifacts(
                 spec.planning_artifacts,
                 required_kinds=required_planning_kinds_for_gate(spec.gate),
@@ -246,14 +254,28 @@ def run_dual_agent_gate(
             )
 
         request = _lead_request(spec)
-        with timed_tool_call("write_handoff_packet") as handoff_tool_call:
+        with timed_tool_call(
+            "write_handoff_packet",
+            args={
+                "task_id": spec.task_id,
+                "gate": spec.gate,
+                "artifact_count": len(spec.planning_artifacts),
+            },
+        ) as handoff_tool_call:
             packet_path = write_handoff_packet(
                 request,
                 planning_artifacts=spec.planning_artifacts,
                 lead_skill_path=spec.lead_skill_path,
                 outcome_validation_policy=spec.outcome_validation_policy,
             )
-        handoff_tool_call.update({"status": "completed", "path": str(packet_path)})
+        handoff_tool_call.update({
+            "status": "completed",
+            "path": str(packet_path),
+            "result_summary": {
+                "handoff_packet_path": str(packet_path),
+                "artifact_count": len(spec.planning_artifacts),
+            },
+        })
         request = _lead_request(spec, packet_path=packet_path)
         request_event_id: int | None = None
         if state is not None:
@@ -291,7 +313,10 @@ def run_dual_agent_gate(
                 ).to_event_payload(),
             )
         lead_tool_calls: list[dict[str, Any]] = []
-        with timed_tool_call("invoke_claude_lead") as lead_tool_call:
+        with timed_tool_call(
+            "invoke_claude_lead",
+            args=_lead_invocation_args(spec, attempts=1),
+        ) as lead_tool_call:
             lead_result = invoke_claude_lead(request, runner=runner)
         lead_tool_call.update(_lead_invocation_tool_fields(lead_result, attempts=1))
         lead_tool_calls.append(ensure_tool_call_timing(lead_tool_call))
@@ -308,28 +333,45 @@ def run_dual_agent_gate(
                       "Repeat required decisions in the top-level decisions array."
                 ),
             )
-            with timed_tool_call("invoke_claude_lead") as retry_tool_call:
+            with timed_tool_call(
+                "invoke_claude_lead",
+                args=_lead_invocation_args(spec, attempts=2, corrective_retry=True),
+            ) as retry_tool_call:
                 lead_result = invoke_claude_lead(corrective, runner=runner)
             attempts = 2
             retry_tool_call.update(_lead_invocation_tool_fields(lead_result, attempts=2))
             lead_tool_calls.append(ensure_tool_call_timing(retry_tool_call))
 
         probes: dict[str, ProbeResult] = {}
-        with timed_tool_call("evaluate_worker_invocation") as p2_tool_call:
+        with timed_tool_call(
+            "evaluate_worker_invocation",
+            args={"task_id": spec.task_id, "gate": spec.gate, "probe_id": "P2"},
+        ) as p2_tool_call:
             probes["P2"] = _p2_from_lead_result(lead_result)
         p2_tool_call = _probe_tool_call(
             name="evaluate_worker_invocation",
             probe=probes["P2"],
             base=p2_tool_call,
         )
-        with timed_tool_call("evaluate_outcome_fidelity") as p3_tool_call:
+        with timed_tool_call(
+            "evaluate_outcome_fidelity",
+            args={"task_id": spec.task_id, "gate": spec.gate, "probe_id": "P3"},
+        ) as p3_tool_call:
             probes["P3"] = lead_result.probe
         p3_tool_call = _probe_tool_call(
             name="evaluate_outcome_fidelity",
             probe=probes["P3"],
             base=p3_tool_call,
         )
-        with timed_tool_call("verify_planning_artifact_boundaries") as p1_tool_call:
+        with timed_tool_call(
+            "verify_planning_artifact_boundaries",
+            args={
+                "task_id": spec.task_id,
+                "gate": spec.gate,
+                "probe_id": "P1",
+                "handoff_packet_path": str(packet_path),
+            },
+        ) as p1_tool_call:
             probes["P1"] = verify_planning_artifact_boundaries(packet_path)
         p1_tool_call = _probe_tool_call(
             name="verify_planning_artifact_boundaries",
@@ -794,9 +836,36 @@ def _probe_tool_call(
         "probe_id": probe.probe_id,
         "reason": probe.reason,
     })
+    payload.setdefault("args", {"probe_id": probe.probe_id})
+    payload.setdefault("result_summary", {
+        "probe_id": probe.probe_id,
+        "status": probe.status,
+        "reason": probe.reason,
+    })
     if event_id is not None:
         payload["event_id"] = event_id
     return ensure_tool_call_timing(payload)
+
+
+def _lead_invocation_args(
+    spec: DualAgentGateSpec,
+    *,
+    attempts: int,
+    corrective_retry: bool = False,
+) -> dict[str, Any]:
+    return {
+        "task_id": spec.task_id,
+        "gate": spec.gate,
+        "quality": spec.quality,
+        "model": spec.model,
+        "budget_usd": spec.budget_usd,
+        "timeout_s": spec.timeout_s,
+        "attempt": attempts,
+        "corrective_retry": corrective_retry,
+        "expected_specialists": list(spec.expected_specialists),
+        "expected_decisions": list(spec.expected_decisions),
+        "expected_objections": list(spec.expected_objections),
+    }
 
 
 def _lead_invocation_tool_fields(
@@ -811,6 +880,16 @@ def _lead_invocation_tool_fields(
         "cost_usd": lead_result.cost_usd,
         "stdout_bytes": lead_result.stdout_bytes,
         "stderr_bytes": lead_result.stderr_bytes,
+        "result_summary": {
+            "probe_id": lead_result.probe.probe_id,
+            "probe_status": lead_result.probe.status,
+            "probe_reason": lead_result.probe.reason,
+            "outcome_present": lead_result.outcome is not None,
+            "model": lead_result.model,
+            "cost_usd": lead_result.cost_usd,
+            "stdout_bytes": lead_result.stdout_bytes,
+            "stderr_bytes": lead_result.stderr_bytes,
+        },
     }
 
 

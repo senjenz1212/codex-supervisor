@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
@@ -46,6 +47,7 @@ def export_dual_agent_run_artifacts(
     out_dir.mkdir(parents=True, exist_ok=True)
     files = (
         out_dir / "index.md",
+        out_dir / "triage.md",
         out_dir / "prd.md",
         out_dir / "tdd.md",
         out_dir / "grill-findings.md",
@@ -56,35 +58,51 @@ def export_dual_agent_run_artifacts(
         out_dir / "transcript.md",
         out_dir / "transcript.jsonl",
         out_dir / "replay" / "manifest.json",
+        out_dir / "replay" / "workspace-snapshot.json",
     )
     by_gate = _events_by_gate(events)
     screenshot_files = _copy_screenshots(out_dir, screenshots)
-    files[10].parent.mkdir(parents=True, exist_ok=True)
+    files[11].parent.mkdir(parents=True, exist_ok=True)
     transcript_jsonl = _transcript_jsonl(events)
+    workspace_snapshot = _workspace_snapshot_manifest(events)
     files[0].write_text(_index_markdown(run_id, task_id, by_gate), encoding="utf-8")
-    files[1].write_text(_gate_markdown("PRD Gate", by_gate.get("prd_review", ())), encoding="utf-8")
-    files[2].write_text(_gate_markdown("TDD Gate", by_gate.get("tdd_review", ())), encoding="utf-8")
-    files[3].write_text(_grill_markdown(events), encoding="utf-8")
-    files[4].write_text(_issues_markdown(events), encoding="utf-8")
-    files[5].write_text(_screenshots_markdown(screenshot_files), encoding="utf-8")
-    files[6].write_text(_gate_markdown("Outcome Review Gate", by_gate.get("outcome_review", ())), encoding="utf-8")
-    files[7].write_text(_interactions_markdown(run_id, task_id, events), encoding="utf-8")
-    files[8].write_text(_transcript_markdown(run_id, task_id, events), encoding="utf-8")
-    files[9].write_text(transcript_jsonl, encoding="utf-8")
-    files[10].write_text(
+    files[1].write_text(_triage_markdown(run_id, task_id, events), encoding="utf-8")
+    files[2].write_text(_gate_markdown("PRD Gate", by_gate.get("prd_review", ())), encoding="utf-8")
+    files[3].write_text(_gate_markdown("TDD Gate", by_gate.get("tdd_review", ())), encoding="utf-8")
+    files[4].write_text(_grill_markdown(events), encoding="utf-8")
+    files[5].write_text(_issues_markdown(events), encoding="utf-8")
+    files[6].write_text(_screenshots_markdown(screenshot_files), encoding="utf-8")
+    files[7].write_text(_gate_markdown("Outcome Review Gate", by_gate.get("outcome_review", ())), encoding="utf-8")
+    files[8].write_text(_interactions_markdown(run_id, task_id, events), encoding="utf-8")
+    files[9].write_text(_transcript_markdown(run_id, task_id, events), encoding="utf-8")
+    files[10].write_text(transcript_jsonl, encoding="utf-8")
+    files[11].write_text(
         json.dumps(
             _replay_manifest(
                 run_id=run_id,
                 task_id=task_id,
                 events=events,
                 transcript_jsonl=transcript_jsonl,
+                workspace_snapshot=workspace_snapshot,
             ),
             indent=2,
             sort_keys=True,
         ) + "\n",
         encoding="utf-8",
     )
-    return DualAgentArtifactExport(status="ok", output_dir=out_dir, files=(*files, *tuple(path for path, _ in screenshot_files)))
+    files[12].write_text(
+        json.dumps(workspace_snapshot, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return DualAgentArtifactExport(
+        status="ok",
+        output_dir=out_dir,
+        files=(
+            *files,
+            *tuple(path for path, _ in screenshot_files),
+            *_source_artifact_files(out_dir),
+        ),
+    )
 
 
 def default_dual_agent_artifact_dir(cwd: str | Path, task_id: str) -> Path:
@@ -135,8 +153,9 @@ def _index_markdown(
         "",
         "## Files",
         "",
-        "- [PRD](prd.md)",
-        "- [TDD](tdd.md)",
+        "- [Triage](triage.md)",
+        "- [PRD Gate](prd.md)",
+        "- [TDD Gate](tdd.md)",
         "- [Grill Findings](grill-findings.md)",
         "- [Issues](issues.md)",
         "- [Screenshots](screenshots.md)",
@@ -145,6 +164,14 @@ def _index_markdown(
         "- [Transcript](transcript.md)",
         "- [Machine Transcript](transcript.jsonl)",
         "- [Replay Manifest](replay/manifest.json)",
+        "",
+        "## Source Artifacts",
+        "",
+        "- [Source PRD](source/prd.md)",
+        "- [Source TDD](source/tdd.md)",
+        "- [Source Issues](source/issues.md)",
+        "- [Source Grill Findings](source/grill-findings.md)",
+        "- [Source Implementation Plan](source/implementation-plan.md)",
         "",
         "## Gates",
         "",
@@ -184,12 +211,81 @@ def _transcript_jsonl(events: list[dict[str, Any]]) -> str:
     return "\n".join(lines) + ("\n" if lines else "")
 
 
+def _triage_markdown(run_id: str, task_id: str, events: list[dict[str, Any]]) -> str:
+    failure = _run_failure_summary(events)
+    final_event = _latest_gate_result_event(events)
+    final_payload = final_event["payload"] if final_event is not None else {}
+    taxonomy = failure.get("failure_taxonomy") if isinstance(failure, dict) else None
+    claim_probe = final_payload.get("claim_verification") if isinstance(final_payload.get("claim_verification"), dict) else {}
+    claim_details = claim_probe.get("details") if isinstance(claim_probe.get("details"), dict) else {}
+    failures = claim_details.get("failures") if isinstance(claim_details.get("failures"), list) else []
+    claude_gate_status = _clean_text(final_payload.get("claude_gate_status") or final_payload.get("status"))
+    supervisor_final_status = _clean_text(final_payload.get("supervisor_final_status") or final_payload.get("status"))
+    top_calls = sorted(
+        _all_trace_tool_calls(events),
+        key=lambda item: int(item.get("duration_ms") or 0),
+        reverse=True,
+    )[:5]
+    next_action = _next_safe_action(taxonomy, failures)
+
+    lines = [
+        f"# Triage: {task_id}",
+        "",
+        f"- run_id: `{run_id}`",
+        f"- task_id: `{task_id}`",
+        f"- final_event_id: `{failure.get('event_id') if isinstance(failure, dict) else ''}`",
+        f"- policy_verdict: `{failure.get('policy_verdict') if isinstance(failure, dict) else 'observed'}`",
+        f"- claude_gate_status: `{claude_gate_status}`",
+        f"- supervisor_final_status: `{supervisor_final_status}`",
+        "",
+        "## Root Cause",
+        "",
+    ]
+    if isinstance(taxonomy, dict):
+        lines.extend([
+            f"- failure_code: `{_clean_text(taxonomy.get('code'))}`",
+            f"- failure_category: `{_clean_text(taxonomy.get('category'))}`",
+            f"- failure_subcategory: `{_clean_text(taxonomy.get('subcategory'))}`",
+            f"- mast_code: `{_clean_text(taxonomy.get('mast_code'))}`",
+            f"- mast_mode: `{_clean_text(taxonomy.get('mast_mode'))}`",
+        ])
+    else:
+        lines.append("- No blocking failure taxonomy recorded.")
+
+    lines.extend([
+        "",
+        "## Blocking Details",
+        "",
+        _list_markdown(failures),
+        "",
+        "## Slowest Tool Calls",
+        "",
+        _tool_call_triage_markdown(top_calls),
+        "",
+        "## Evidence Pointers",
+        "",
+        "- [Interactions](interactions.md)",
+        "- [Transcript](transcript.md)",
+        "- [Machine Transcript](transcript.jsonl)",
+        "- [Replay Manifest](replay/manifest.json)",
+        "- [Source PRD](source/prd.md)",
+        "- [Source TDD](source/tdd.md)",
+        "",
+        "## Next Safe Action",
+        "",
+        next_action,
+        "",
+    ])
+    return "\n".join(lines)
+
+
 def _replay_manifest(
     *,
     run_id: str,
     task_id: str,
     events: list[dict[str, Any]],
     transcript_jsonl: str,
+    workspace_snapshot: dict[str, Any],
 ) -> dict[str, Any]:
     event_ids = [int(event["event_id"]) for event in events]
     return {
@@ -215,9 +311,11 @@ def _replay_manifest(
             "interactions": "interactions.md",
             "transcript_markdown": "transcript.md",
             "transcript_jsonl": "transcript.jsonl",
+            "workspace_snapshot": "replay/workspace-snapshot.json",
         },
         "event_kinds": sorted({str(event["kind"]) for event in events}),
         "handoff_packets": _handoff_packet_manifest(events),
+        "workspace_snapshot": workspace_snapshot,
         "failure_summary": _run_failure_summary(events),
         "sequence_failures": detect_sequence_failures(events),
     }
@@ -254,6 +352,115 @@ def _handoff_packet_manifest(events: list[dict[str, Any]]) -> list[dict[str, Any
             })
         packets.append(item)
     return packets
+
+
+def _workspace_snapshot_manifest(events: list[dict[str, Any]]) -> dict[str, Any]:
+    handoff = _first_handoff_content(events)
+    root_text = _clean_text(handoff.get("cwd")) if isinstance(handoff, dict) else ""
+    if not root_text:
+        return {"status": "not_found", "reason": "handoff_cwd_missing"}
+    root = Path(root_text).expanduser()
+    if not root.exists() or not root.is_dir():
+        return {"status": "missing_at_export", "root": root_text}
+
+    status_short = _run_git(root, "status", "--short")
+    diff = _run_git(root, "diff", "--no-ext-diff") or ""
+    head = _run_git(root, "rev-parse", "--short", "HEAD")
+    diff_stat = _run_git(root, "diff", "--stat", "--no-ext-diff")
+    return {
+        "status": "captured",
+        "root": str(root),
+        "git": {
+            "head": head,
+            "status_short": status_short,
+            "diff_sha256": sha256(diff.encode()).hexdigest(),
+            "diff_bytes": len(diff.encode()),
+            "diff_stat": diff_stat,
+        },
+        "file_tree_sha256": _file_tree_sha256(root),
+        "source_artifact_hashes": _source_artifact_hashes(root, handoff),
+    }
+
+
+def _first_handoff_content(events: list[dict[str, Any]]) -> dict[str, Any]:
+    for event in events:
+        path_text = _clean_text(event["payload"].get("handoff_packet_path"))
+        if not path_text:
+            continue
+        path = Path(path_text).expanduser()
+        if not path.exists() or not path.is_file():
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8", errors="replace") or "{}")
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            return payload
+    return {}
+
+
+def _run_git(root: Path, *args: str) -> str:
+    try:
+        completed = subprocess.run(
+            ["git", *args],
+            cwd=root,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    if completed.returncode != 0:
+        return ""
+    return completed.stdout.strip()
+
+
+def _file_tree_sha256(root: Path) -> str:
+    digest = sha256()
+    for path in sorted(root.rglob("*")):
+        if not path.is_file() or _excluded_snapshot_path(path, root):
+            continue
+        rel = path.relative_to(root).as_posix()
+        data = path.read_bytes()
+        digest.update(rel.encode())
+        digest.update(b"\0")
+        digest.update(str(len(data)).encode())
+        digest.update(b"\0")
+        digest.update(sha256(data).hexdigest().encode())
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
+def _source_artifact_hashes(root: Path, handoff: dict[str, Any]) -> dict[str, str]:
+    artifacts = handoff.get("planning_artifacts") if isinstance(handoff, dict) else []
+    if not isinstance(artifacts, list):
+        return {}
+    hashes: dict[str, str] = {}
+    for artifact in artifacts:
+        if not isinstance(artifact, dict):
+            continue
+        kind = _clean_text(artifact.get("kind"))
+        path_text = _clean_text(artifact.get("path"))
+        if not kind or not path_text:
+            continue
+        path = root / path_text
+        if path.exists() and path.is_file() and not _excluded_snapshot_path(path, root):
+            hashes[kind] = sha256(path.read_bytes()).hexdigest()
+        elif _clean_text(artifact.get("sha256")):
+            hashes[kind] = _clean_text(artifact.get("sha256"))
+    return hashes
+
+
+def _excluded_snapshot_path(path: Path, root: Path) -> bool:
+    rel = path.relative_to(root).as_posix()
+    parts = set(rel.split("/"))
+    if parts & {".git", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"}:
+        return True
+    name = path.name.lower()
+    if name.startswith(".env") or name.endswith((".pem", ".key", ".p12", ".pfx")):
+        return True
+    return any(token in name for token in ("secret", "credential", "token"))
 
 
 def _interactions_markdown(run_id: str, task_id: str, events: list[dict[str, Any]]) -> str:
@@ -713,7 +920,7 @@ def _trace_envelope_section(payload: dict[str, Any]) -> list[str]:
             "",
             "Tool calls:",
             "",
-            _list_markdown(tool_calls),
+            _tool_calls_markdown(tool_calls),
         ])
     lines.append("")
     return lines
@@ -733,6 +940,95 @@ def _run_failure_summary(events: list[dict[str, Any]]) -> dict[str, Any] | None:
                 "failure_taxonomy": failure,
             }
     return None
+
+
+def _latest_gate_result_event(events: list[dict[str, Any]]) -> dict[str, Any] | None:
+    for event in reversed(events):
+        if event["kind"] == "dual_agent_gate_result":
+            return event
+    return None
+
+
+def _all_trace_tool_calls(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    calls: list[dict[str, Any]] = []
+    for event in events:
+        envelope = event["payload"].get("trace_envelope")
+        if not isinstance(envelope, dict):
+            continue
+        tool_calls = envelope.get("tool_calls")
+        if not isinstance(tool_calls, list):
+            continue
+        for call in tool_calls:
+            if not isinstance(call, dict):
+                continue
+            item = dict(call)
+            item["event_id"] = int(event["event_id"])
+            item["event_kind"] = event["kind"]
+            calls.append(item)
+    return calls
+
+
+def _tool_call_triage_markdown(calls: list[dict[str, Any]]) -> str:
+    if not calls:
+        return "- None recorded."
+    rows = [
+        "| event | name | status | duration_ms | probe_id | receipt_ids | args | result_summary | error |",
+        "|---:|---|---|---:|---|---|---|---|---|",
+    ]
+    for call in calls:
+        rows.append(
+            "| {event_id} | {name} | {status} | {duration_ms} | {probe_id} | {receipt_ids} | {args} | {result} | {error} |".format(
+                event_id=_table_cell(call.get("event_id")),
+                name=_table_cell(call.get("name")),
+                status=_table_cell(call.get("status")),
+                duration_ms=_table_cell(call.get("duration_ms")),
+                probe_id=_table_cell(call.get("probe_id")),
+                receipt_ids=_table_cell(call.get("receipt_ids")),
+                args=_table_cell(call.get("args")),
+                result=_table_cell(call.get("result_summary")),
+                error=_table_cell(call.get("error")),
+            )
+        )
+    return "\n".join(rows)
+
+
+def _tool_calls_markdown(value: list[Any]) -> str:
+    calls = [item for item in value if isinstance(item, dict)]
+    if not calls:
+        return "- None recorded."
+    lines = [
+        "| name | status | duration_ms | probe_id | receipt_ids | args | result_summary | error |",
+        "|---|---|---:|---|---|---|---|---|",
+    ]
+    for call in calls:
+        lines.append(
+            "| {name} | {status} | {duration} | {probe_id} | {receipt_ids} | {args} | {result} | {error} |".format(
+                name=_table_cell(call.get("name")),
+                status=_table_cell(call.get("status")),
+                duration=_table_cell(call.get("duration_ms")),
+                probe_id=_table_cell(call.get("probe_id")),
+                receipt_ids=_table_cell(call.get("receipt_ids")),
+                args=_table_cell(call.get("args")),
+                result=_table_cell(call.get("result_summary")),
+                error=_table_cell(call.get("error")),
+            )
+        )
+    return "\n".join(lines)
+
+
+def _next_safe_action(taxonomy: Any, failures: list[Any]) -> str:
+    code = taxonomy.get("code") if isinstance(taxonomy, dict) else ""
+    if code == "workflow_claim_verification_failed":
+        return (
+            "Provide matching test and git-diff receipts, then rerun outcome review. "
+            f"Missing evidence: {_inline_markdown_value(failures)}."
+        )
+    if isinstance(taxonomy, dict):
+        return (
+            "Inspect the failure event, resolve the named taxonomy blocker, "
+            "then rerun the blocked gate."
+        )
+    return "Inspect the latest gate result and replay manifest before advancing."
 
 
 def _grill_markdown(events: list[dict[str, Any]]) -> str:
@@ -810,6 +1106,13 @@ def _copy_screenshots(
             ),
         ))
     return copied
+
+
+def _source_artifact_files(output_dir: Path) -> tuple[Path, ...]:
+    source_dir = output_dir / "source"
+    if not source_dir.exists() or not source_dir.is_dir():
+        return ()
+    return tuple(path for path in sorted(source_dir.rglob("*")) if path.is_file())
 
 
 def _screenshots_markdown(screenshots: list[tuple[Path, ScreenshotArtifact]]) -> str:
@@ -924,6 +1227,13 @@ def _inline_markdown_value(value: Any) -> str:
     if isinstance(value, bool):
         return f"`{value}`"
     return f"`{_clean_text(value)}`"
+
+
+def _table_cell(value: Any) -> str:
+    text = _clean_text(value)
+    if not text:
+        return ""
+    return text.replace("|", "\\|").replace("\n", " ")
 
 
 def _list_markdown(value: Any) -> str:

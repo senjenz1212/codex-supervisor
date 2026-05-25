@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+from hashlib import sha256
 from pathlib import Path
 
 import pytest
@@ -150,6 +152,7 @@ def test_export_dual_agent_run_artifacts_writes_readable_gate_documents(tmp_path
     assert result.output_dir == tmp_path / "docs" / "dual-agent" / "task-1"
     assert [path.name for path in result.files] == [
         "index.md",
+        "triage.md",
         "prd.md",
         "tdd.md",
         "grill-findings.md",
@@ -160,6 +163,7 @@ def test_export_dual_agent_run_artifacts_writes_readable_gate_documents(tmp_path
         "transcript.md",
         "transcript.jsonl",
         "manifest.json",
+        "workspace-snapshot.json",
     ]
     assert "PRD accepted after tightening." in (result.output_dir / "prd.md").read_text()
     assert f"event_id: {prd_round}" in (result.output_dir / "prd.md").read_text()
@@ -527,6 +531,85 @@ def test_export_dual_agent_run_artifacts_writes_replay_manifest_with_handoff_con
     assert len(manifest["handoff_packets"][0]["sha256"]) == 64
 
 
+def test_export_dual_agent_run_artifacts_writes_workspace_snapshot_manifest(tmp_path):
+    state = _state(tmp_path)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, text=True)
+    (repo / "README.md").write_text("seed\n", encoding="utf-8")
+    subprocess.run(["git", "add", "README.md"], cwd=repo, check=True, capture_output=True, text=True)
+    subprocess.run(
+        ["git", "commit", "-m", "seed"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "GIT_AUTHOR_NAME": "Test",
+            "GIT_AUTHOR_EMAIL": "test@example.com",
+            "GIT_COMMITTER_NAME": "Test",
+            "GIT_COMMITTER_EMAIL": "test@example.com",
+        },
+    )
+    (repo / "README.md").write_text("seed\nchanged\n", encoding="utf-8")
+    source = repo / "docs" / "dual-agent" / "task-1" / "source"
+    source.mkdir(parents=True)
+    prd = source / "prd.md"
+    prd.write_text("# PRD\n\nreal artifact body\n", encoding="utf-8")
+    handoff = repo / ".handoff" / "task-1.json"
+    handoff.parent.mkdir()
+    handoff.write_text(
+        json.dumps({
+            "task_id": "task-1",
+            "gate": "outcome_review",
+            "cwd": str(repo),
+            "planning_artifacts": [
+                {
+                    "kind": "prd",
+                    "path": "docs/dual-agent/task-1/source/prd.md",
+                    "sha256": sha256(prd.read_text(encoding="utf-8").encode()).hexdigest(),
+                    "mutable_by_worker": False,
+                },
+            ],
+        }) + "\n",
+        encoding="utf-8",
+    )
+    _insert_event(
+        state,
+        kind="dual_agent_gate_result",
+        payload={
+            **_result_payload(
+                gate="outcome_review",
+                summary="Outcome accepted.",
+                decisions=["accept"],
+            ),
+            "handoff_packet_path": str(handoff),
+        },
+    )
+
+    result = export_dual_agent_run_artifacts(
+        state,
+        run_id="run-1",
+        task_id="task-1",
+        output_dir=tmp_path / "docs" / "dual-agent" / "task-1",
+    )
+
+    manifest = json.loads((result.output_dir / "replay" / "manifest.json").read_text())
+    snapshot_file = json.loads((result.output_dir / "replay" / "workspace-snapshot.json").read_text())
+    snapshot = manifest["workspace_snapshot"]
+    assert snapshot_file == snapshot
+    assert snapshot["status"] == "captured"
+    assert snapshot["root"] == str(repo)
+    assert snapshot["git"]["head"]
+    assert "README.md" in snapshot["git"]["status_short"]
+    assert len(snapshot["git"]["diff_sha256"]) == 64
+    assert len(snapshot["file_tree_sha256"]) == 64
+    assert snapshot["source_artifact_hashes"]["prd"] == sha256(
+        prd.read_text(encoding="utf-8").encode()
+    ).hexdigest()
+
+
 def test_export_dual_agent_run_artifacts_writes_run_level_failure_summary(tmp_path):
     state = _state(tmp_path)
     taxonomy = {
@@ -580,6 +663,138 @@ def test_export_dual_agent_run_artifacts_writes_run_level_failure_summary(tmp_pa
     interactions = (result.output_dir / "interactions.md").read_text()
     assert "FM-3.2" in interactions
     assert "No or incomplete verification" in interactions
+
+
+def test_export_dual_agent_run_artifacts_writes_fast_triage_page_and_source_links(tmp_path):
+    state = _state(tmp_path)
+    _insert_event(
+        state,
+        kind="dual_agent_gate_result",
+        payload={
+            **_result_payload(
+                gate="outcome_review",
+                status="blocked",
+                summary="Claims lacked receipts.",
+                decisions=["accept"],
+            ),
+            "claude_gate_status": "accepted",
+            "supervisor_final_status": "blocked",
+            "claim_verification": {
+                "probe_id": "P11",
+                "status": "red",
+                "reason": "workflow_claim_verification_failed",
+                "details": {
+                    "failures": [
+                        "tests_passed_without_test_receipt",
+                        "implemented_without_diff_receipt",
+                    ],
+                    "receipts": [],
+                },
+            },
+            "tool_calls": [
+                {
+                    "name": "start_dual_agent_gate",
+                    "status": "completed",
+                    "duration_ms": 2200,
+                    "started_at_ms": 1000,
+                    "ended_at_ms": 3200,
+                    "result_summary": {
+                        "claude_gate_status": "accepted",
+                        "supervisor_final_status": "blocked",
+                    },
+                },
+                {
+                    "name": "verify_workflow_claims",
+                    "status": "red",
+                    "duration_ms": 13,
+                    "started_at_ms": 3201,
+                    "ended_at_ms": 3214,
+                    "receipt_ids": [],
+                    "result_summary": {
+                        "reason": "workflow_claim_verification_failed",
+                        "failures": [
+                            "tests_passed_without_test_receipt",
+                            "implemented_without_diff_receipt",
+                        ],
+                    },
+                },
+            ],
+            "trace_envelope": {
+                "schema_version": "dual-agent-trace-envelope/v1",
+                "run_id": "run-1",
+                "task_id": "task-1",
+                "gate": "outcome_review",
+                "source": "dual_agent",
+                "event_kind": "dual_agent_gate_result",
+                "policy_verdict": "blocked",
+                "failure_taxonomy": {
+                    "category": "task_verification",
+                    "subcategory": "missing_or_stale_receipt",
+                    "code": "workflow_claim_verification_failed",
+                    "mast_code": "FM-3.2",
+                    "mast_mode": "No or incomplete verification",
+                    "mast_category": "Task Verification",
+                },
+                "tool_calls": [
+                    {
+                        "name": "start_dual_agent_gate",
+                        "status": "completed",
+                        "duration_ms": 2200,
+                        "started_at_ms": 1000,
+                        "ended_at_ms": 3200,
+                        "result_summary": {
+                            "claude_gate_status": "accepted",
+                            "supervisor_final_status": "blocked",
+                        },
+                    },
+                    {
+                        "name": "verify_workflow_claims",
+                        "status": "red",
+                        "duration_ms": 13,
+                        "started_at_ms": 3201,
+                        "ended_at_ms": 3214,
+                        "receipt_ids": [],
+                        "result_summary": {
+                            "reason": "workflow_claim_verification_failed",
+                            "failures": [
+                                "tests_passed_without_test_receipt",
+                                "implemented_without_diff_receipt",
+                            ],
+                        },
+                    },
+                ],
+                "artifacts": [],
+                "claims": [],
+                "receipts": [],
+            },
+        },
+    )
+
+    result = export_dual_agent_run_artifacts(
+        state,
+        run_id="run-1",
+        task_id="task-1",
+        output_dir=tmp_path / "docs" / "dual-agent" / "task-1",
+    )
+
+    assert (result.output_dir / "triage.md") in result.files
+    index = (result.output_dir / "index.md").read_text()
+    triage = (result.output_dir / "triage.md").read_text()
+    assert "[Triage](triage.md)" in index
+    assert "[Source PRD](source/prd.md)" in index
+    assert "[Source TDD](source/tdd.md)" in index
+    assert "workflow_claim_verification_failed" in triage
+    assert "FM-3.2" in triage
+    assert "claude_gate_status: `accepted`" in triage
+    assert "supervisor_final_status: `blocked`" in triage
+    assert "tests_passed_without_test_receipt" in triage
+    assert "implemented_without_diff_receipt" in triage
+    assert "| event | name | status | duration_ms | probe_id | receipt_ids | args | result_summary | error |" in triage
+    assert "verify_workflow_claims" in triage
+    assert "claude_gate_status" in triage
+    assert "supervisor_final_status" in triage
+    assert "Next Safe Action" in triage
+    assert (result.output_dir / "replay" / "workspace-snapshot.json") in result.files
 
 
 def test_export_dual_agent_run_artifacts_writes_sequence_failure_diagnostics(tmp_path):

@@ -96,6 +96,13 @@ def timed_tool_call(
     }
     try:
         yield record
+    except BaseException as exc:
+        record["status"] = "error"
+        record["error"] = {
+            "type": type(exc).__name__,
+            "message": str(exc),
+        }
+        raise
     finally:
         duration_ms = max(0, (int(monotonic()) - started_ns) // 1_000_000)
         record["duration_ms"] = duration_ms

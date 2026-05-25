@@ -154,6 +154,26 @@ def test_timed_tool_call_stamps_wall_clock_and_monotonic_duration():
     assert record["ended_at_ms"] == 1_135
 
 
+def test_timed_tool_call_stamps_exception_metadata_before_reraising():
+    record = None
+
+    try:
+        with timed_tool_call("explode") as call:
+            record = call
+            raise RuntimeError("boom")
+    except RuntimeError:
+        pass
+
+    assert record is not None
+    assert record["name"] == "explode"
+    assert record["status"] == "error"
+    assert record["error"] == {
+        "type": "RuntimeError",
+        "message": "boom",
+    }
+    assert {"started_at_ms", "ended_at_ms", "duration_ms"} <= set(record)
+
+
 def test_trace_envelope_extracts_tool_calls_from_metadata_or_payload():
     from_metadata = stamp_trace_envelope(
         run_id="run-1",

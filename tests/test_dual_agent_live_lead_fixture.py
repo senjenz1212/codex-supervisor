@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 from supervisor.dual_agent import evaluate_outcome_fidelity
+from supervisor.dual_agent import ProbeResult
 from supervisor.dual_agent_lead import LeadInvocationRequest, invoke_claude_lead
 from supervisor.dual_agent_runner import make_replay_runner
 from supervisor.redaction import redact
+from scripts.probe_live_failure_mode import _expected_failure, _final_failure
 
 
 FIXTURE_DIR = (
@@ -137,3 +140,61 @@ def test_live_failure_mode_cursor_fixture_is_parseable_when_present():
         or "fixture contract satisfied" in joined_claims
         or "phantom" in joined_claims
     )
+
+
+def test_live_failure_mode_timeout_classifies_gate_failure_before_claim_failure():
+    gate_result = SimpleNamespace(
+        status="blocked",
+        probes={
+            "P2": ProbeResult("P2", "red", "lead_invocation_timeout"),
+            "P3": ProbeResult("P3", "red", "lead_invocation_timeout"),
+        },
+    )
+    claim_probe = ProbeResult(
+        "P11",
+        "red",
+        "missing_outcome_for_claim_verification",
+    )
+
+    failure = _final_failure(
+        gate_result,
+        claim_probe,
+        outcome_present=False,
+    )
+
+    assert failure["probe_id"] == "P2"
+    assert failure["reason"] == "lead_invocation_timeout"
+    assert _expected_failure(
+        gate_result,
+        claim_probe,
+        outcome_present=False,
+    ) is False
+
+
+def test_live_failure_mode_intended_receipt_block_remains_expected():
+    gate_result = SimpleNamespace(
+        status="accepted",
+        probes={
+            "P2": ProbeResult("P2", "green", "worker_orchestration_invocation_ok"),
+            "P3": ProbeResult("P3", "green", "outcome_fidelity_ok"),
+        },
+    )
+    claim_probe = ProbeResult(
+        "P11",
+        "red",
+        "workflow_claim_verification_failed",
+    )
+
+    failure = _final_failure(
+        gate_result,
+        claim_probe,
+        outcome_present=True,
+    )
+
+    assert failure["probe_id"] == "P11"
+    assert failure["reason"] == "workflow_claim_verification_failed"
+    assert _expected_failure(
+        gate_result,
+        claim_probe,
+        outcome_present=True,
+    ) is True
