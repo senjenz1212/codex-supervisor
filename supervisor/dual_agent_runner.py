@@ -39,6 +39,7 @@ from .dual_agent_lead import (
     compute_file_sha256,
     handoff_packet_path,
     invoke_claude_lead,
+    select_lead_model,
     verify_planning_artifact_boundaries,
     write_handoff_packet,
 )
@@ -94,6 +95,7 @@ class DualAgentGateSpec:
     timeout_s: int = 600
     lead_skill_path: str | Path | None = None
     outcome_validation_policy: OutcomeValidationPolicy = field(default_factory=OutcomeValidationPolicy)
+    required_planning_kinds: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -181,12 +183,12 @@ def run_dual_agent_gate(
                 "task_id": spec.task_id,
                 "gate": spec.gate,
                 "artifact_count": len(spec.planning_artifacts),
-                "required_kinds": sorted(required_planning_kinds_for_gate(spec.gate)),
+                "required_kinds": sorted(_required_planning_kinds(spec)),
             },
         ) as planning_tool_call:
             planning_result = validate_planning_artifacts(
                 spec.planning_artifacts,
-                required_kinds=required_planning_kinds_for_gate(spec.gate),
+                required_kinds=_required_planning_kinds(spec),
                 gate=spec.gate,
             )
         planning_probe = planning_validation_probe(planning_result, task_id=spec.task_id)
@@ -515,6 +517,12 @@ def run_dual_agent_gates(
         if result.status != "accepted":
             break
     return results
+
+
+def _required_planning_kinds(spec: DualAgentGateSpec) -> tuple[str, ...]:
+    if spec.required_planning_kinds is not None:
+        return spec.required_planning_kinds
+    return required_planning_kinds_for_gate(spec.gate)
 
 
 async def run_dual_agent_gate_with_escalation(
@@ -857,11 +865,19 @@ def _lead_invocation_args(
     attempts: int,
     corrective_retry: bool = False,
 ) -> dict[str, Any]:
+    requested_model = select_lead_model(
+        spec.gate,
+        quality=spec.quality,
+        explicit_model=spec.model,
+    )
     return {
         "task_id": spec.task_id,
         "gate": spec.gate,
         "quality": spec.quality,
-        "model": spec.model,
+        "model": requested_model,
+        "requested_model": requested_model,
+        "model_source": "explicit" if spec.model else f"quality_default:{spec.quality}",
+        "explicit_model": spec.model,
         "budget_usd": spec.budget_usd,
         "timeout_s": spec.timeout_s,
         "attempt": attempts,

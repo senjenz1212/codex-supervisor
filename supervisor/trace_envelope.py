@@ -115,6 +115,17 @@ def timed_tool_call(
 def ensure_tool_call_timing(call: dict[str, Any]) -> dict[str, Any]:
     """Return a tool-call record with the standard timing fields present."""
     record = dict(call)
+    result_summary = record.get("result_summary")
+    if isinstance(result_summary, dict):
+        record.setdefault("probe_id", result_summary.get("probe_id") or result_summary.get("probe"))
+        status = _text(record.get("status")).lower()
+        if status and status not in {"completed", "green", "accepted", "recorded", "finished", "skipped"}:
+            record.setdefault(
+                "error",
+                result_summary.get("reason")
+                or result_summary.get("probe_reason")
+                or result_summary.get("error"),
+            )
     started = _int_or_none(record.get("started_at_ms"))
     duration = _int_or_none(record.get("duration_ms"))
     duration_us = _int_or_none(record.get("duration_us"))

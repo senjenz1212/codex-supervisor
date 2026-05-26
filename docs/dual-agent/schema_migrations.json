@@ -1,0 +1,23 @@
+{
+  "schema_version": "dual-agent-schema-migrations/v1",
+  "policy": "forward_only",
+  "artifact_schema_migrations": [
+    {
+      "schema": "manifest",
+      "from_version": "dual-agent-replay-manifest/v0",
+      "to_version": "dual-agent-replay-manifest/v1",
+      "migration": "manifest.v0_to_v1",
+      "field_renames": {},
+      "removed_fields": [],
+      "status": "read_compatible"
+    }
+  ],
+  "state_schema_migrations": [
+    {
+      "version": 1,
+      "name": "actions.resume_requested_at",
+      "status": "registered",
+      "forward_only": true
+    }
+  ]
+}

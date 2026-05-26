@@ -9,9 +9,13 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
-from .failure_taxonomy import FAILURE_TAXONOMY_VERSION, detect_sequence_failures
+from .failure_taxonomy import (
+    FAILURE_TAXONOMY_VERSION,
+    detect_sequence_failures,
+    mast_coverage_matrix,
+)
 from .state import State
-from .trace_envelope import TRACE_ENVELOPE_SCHEMA_VERSION
+from .trace_envelope import TRACE_ENVELOPE_SCHEMA_VERSION, ensure_tool_call_timing
 
 
 @dataclass(frozen=True)
@@ -57,14 +61,17 @@ def export_dual_agent_run_artifacts(
         out_dir / "interactions.md",
         out_dir / "transcript.md",
         out_dir / "transcript.jsonl",
+        out_dir / "mast-coverage.md",
         out_dir / "replay" / "manifest.json",
         out_dir / "replay" / "workspace-snapshot.json",
+        out_dir / "replay" / "mast-coverage.json",
     )
     by_gate = _events_by_gate(events)
     screenshot_files = _copy_screenshots(out_dir, screenshots)
-    files[11].parent.mkdir(parents=True, exist_ok=True)
+    files[12].parent.mkdir(parents=True, exist_ok=True)
     transcript_jsonl = _transcript_jsonl(events)
     workspace_snapshot = _workspace_snapshot_manifest(events)
+    mast_coverage = mast_coverage_matrix(events)
     files[0].write_text(_index_markdown(run_id, task_id, by_gate), encoding="utf-8")
     files[1].write_text(_triage_markdown(run_id, task_id, events), encoding="utf-8")
     files[2].write_text(_gate_markdown("PRD Gate", by_gate.get("prd_review", ())), encoding="utf-8")
@@ -76,7 +83,8 @@ def export_dual_agent_run_artifacts(
     files[8].write_text(_interactions_markdown(run_id, task_id, events), encoding="utf-8")
     files[9].write_text(_transcript_markdown(run_id, task_id, events), encoding="utf-8")
     files[10].write_text(transcript_jsonl, encoding="utf-8")
-    files[11].write_text(
+    files[11].write_text(_mast_coverage_markdown(mast_coverage), encoding="utf-8")
+    files[12].write_text(
         json.dumps(
             _replay_manifest(
                 run_id=run_id,
@@ -84,14 +92,19 @@ def export_dual_agent_run_artifacts(
                 events=events,
                 transcript_jsonl=transcript_jsonl,
                 workspace_snapshot=workspace_snapshot,
+                mast_coverage=mast_coverage,
             ),
             indent=2,
             sort_keys=True,
         ) + "\n",
         encoding="utf-8",
     )
-    files[12].write_text(
+    files[13].write_text(
         json.dumps(workspace_snapshot, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    files[14].write_text(
+        json.dumps(mast_coverage, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     return DualAgentArtifactExport(
@@ -163,6 +176,7 @@ def _index_markdown(
         "- [Interactions](interactions.md)",
         "- [Transcript](transcript.md)",
         "- [Machine Transcript](transcript.jsonl)",
+        "- [MAST Coverage](mast-coverage.md)",
         "- [Replay Manifest](replay/manifest.json)",
         "",
         "## Source Artifacts",
@@ -226,6 +240,7 @@ def _triage_markdown(run_id: str, task_id: str, events: list[dict[str, Any]]) ->
         key=lambda item: int(item.get("duration_ms") or 0),
         reverse=True,
     )[:5]
+    totals = _tool_call_totals(events)
     next_action = _next_safe_action(taxonomy, failures)
 
     lines = [
@@ -237,6 +252,15 @@ def _triage_markdown(run_id: str, task_id: str, events: list[dict[str, Any]]) ->
         f"- policy_verdict: `{failure.get('policy_verdict') if isinstance(failure, dict) else 'observed'}`",
         f"- claude_gate_status: `{claude_gate_status}`",
         f"- supervisor_final_status: `{supervisor_final_status}`",
+        "",
+        "## Run Totals",
+        "",
+        f"- unique_tool_calls: `{totals['unique_tool_calls']}`",
+        f"- total_duration_ms: `{totals['total_duration_ms']}`",
+        f"- total_duration_us: `{totals['total_duration_us']}`",
+        f"- total_tokens_in: `{totals['total_tokens_in']}`",
+        f"- total_tokens_out: `{totals['total_tokens_out']}`",
+        f"- total_cost_usd: `{totals['total_cost_usd']}`",
         "",
         "## Root Cause",
         "",
@@ -267,6 +291,7 @@ def _triage_markdown(run_id: str, task_id: str, events: list[dict[str, Any]]) ->
         "- [Interactions](interactions.md)",
         "- [Transcript](transcript.md)",
         "- [Machine Transcript](transcript.jsonl)",
+        "- [MAST Coverage](mast-coverage.md)",
         "- [Replay Manifest](replay/manifest.json)",
         "- [Source PRD](source/prd.md)",
         "- [Source TDD](source/tdd.md)",
@@ -286,6 +311,7 @@ def _replay_manifest(
     events: list[dict[str, Any]],
     transcript_jsonl: str,
     workspace_snapshot: dict[str, Any],
+    mast_coverage: list[dict[str, Any]],
 ) -> dict[str, Any]:
     event_ids = [int(event["event_id"]) for event in events]
     return {
@@ -311,6 +337,8 @@ def _replay_manifest(
             "interactions": "interactions.md",
             "transcript_markdown": "transcript.md",
             "transcript_jsonl": "transcript.jsonl",
+            "mast_coverage_markdown": "mast-coverage.md",
+            "mast_coverage_json": "replay/mast-coverage.json",
             "workspace_snapshot": "replay/workspace-snapshot.json",
         },
         "event_kinds": sorted({str(event["kind"]) for event in events}),
@@ -318,6 +346,8 @@ def _replay_manifest(
         "workspace_snapshot": workspace_snapshot,
         "failure_summary": _run_failure_summary(events),
         "sequence_failures": detect_sequence_failures(events),
+        "mast_coverage": mast_coverage,
+        "tool_call_totals": _tool_call_totals(events),
     }
 
 
@@ -370,8 +400,12 @@ def _workspace_snapshot_manifest(events: list[dict[str, Any]]) -> dict[str, Any]
     return {
         "status": "captured",
         "root": str(root),
+        "root_source": "handoff_cwd",
         "git": {
             "head": head,
+            "head_sha": head,
+            "head_ref": "HEAD",
+            "head_label": "handoff_cwd_head",
             "status_short": status_short,
             "diff_sha256": sha256(diff.encode()).hexdigest(),
             "diff_bytes": len(diff.encode()),
@@ -781,6 +815,7 @@ def _cursor_review_event_markdown(
     cursor_review = _cursor_review_payload(payload)
     probe = cursor_review.get("probe") if isinstance(cursor_review.get("probe"), dict) else {}
     outcome = cursor_review.get("outcome") if isinstance(cursor_review.get("outcome"), dict) else {}
+    reasoning_ref = _cursor_reasoning_ref(cursor_review)
     lines = [
         heading,
         "",
@@ -800,6 +835,11 @@ def _cursor_review_event_markdown(
         f"- cursor_run_id: `{_clean_text(cursor_review.get('run_id'))}`",
         f"- agent_id: `{_clean_text(cursor_review.get('agent_id'))}`",
         f"- duration_ms: `{_clean_text(cursor_review.get('duration_ms'))}`",
+        f"- full_reasoning: `transcript.jsonl event {event['event_id']} transcript_tail`",
+    ])
+    if reasoning_ref:
+        lines.append(f"- full_reasoning_ref: `{reasoning_ref}`")
+    lines.extend([
         "",
         "### Cursor Probe",
         "",
@@ -853,7 +893,20 @@ def _cursor_review_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "model": payload.get("model"),
         "duration_ms": payload.get("duration_ms"),
         "transcript_tail": payload.get("transcript_tail"),
+        "raw_transcript_refs": payload.get("raw_transcript_refs"),
     }
+
+
+def _cursor_reasoning_ref(cursor_review: dict[str, Any]) -> str:
+    refs = cursor_review.get("raw_transcript_refs")
+    if not isinstance(refs, list):
+        return ""
+    for ref in refs:
+        if not isinstance(ref, dict):
+            continue
+        if _clean_text(ref.get("kind")) == "cursor_transcript_fixture":
+            return _clean_text(ref.get("ref"))
+    return ""
 
 
 def _interaction_trace_sections(payload: dict[str, Any]) -> list[str]:
@@ -961,11 +1014,129 @@ def _all_trace_tool_calls(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
         for call in tool_calls:
             if not isinstance(call, dict):
                 continue
-            item = dict(call)
+            item = _normalise_trace_tool_call(call)
             item["event_id"] = int(event["event_id"])
             item["event_kind"] = event["kind"]
             calls.append(item)
     return calls
+
+
+def _normalise_trace_tool_call(call: dict[str, Any]) -> dict[str, Any]:
+    item = ensure_tool_call_timing(call)
+    result = item.get("result_summary") if isinstance(item.get("result_summary"), dict) else {}
+    name = _clean_text(item.get("name"))
+    if not item.get("probe_id"):
+        if result.get("probe_id") or result.get("probe"):
+            item["probe_id"] = result.get("probe_id") or result.get("probe")
+        elif name == "verify_workflow_claims":
+            item["probe_id"] = "P11"
+        elif name == "validate_planning_artifacts":
+            item["probe_id"] = "P_planning"
+    failures = result.get("failures") if isinstance(result.get("failures"), list) else []
+    receipt_ids = item.get("receipt_ids")
+    if (receipt_ids is None or receipt_ids == []) and failures:
+        item["receipt_ids"] = [
+            f"missing:{_clean_text(failure)}"
+            for failure in failures
+            if _clean_text(failure)
+        ]
+    if not item.get("error") and _clean_text(item.get("status")).lower() in {"red", "failed", "blocked", "error"}:
+        item["error"] = (
+            result.get("reason")
+            or result.get("probe_reason")
+            or result.get("error")
+            or item.get("reason")
+        )
+    if item.get("requested_model") is not None:
+        args = item.get("args") if isinstance(item.get("args"), dict) else {}
+        if "requested_model" not in args:
+            item["args"] = {**args, "requested_model": item.get("requested_model")}
+    if item.get("cost_usd") is None and result.get("cost_usd") is not None:
+        item["cost_usd"] = result.get("cost_usd")
+    return item
+
+
+def _tool_call_totals(events: list[dict[str, Any]]) -> dict[str, Any]:
+    by_id: dict[str, dict[str, Any]] = {}
+    for call in _all_trace_tool_calls(events):
+        key = _clean_text(call.get("tool_call_id")) or (
+            f"{call.get('event_id')}:{call.get('name')}:{call.get('started_at_ms')}"
+        )
+        if key in by_id:
+            by_id[key] = _merge_tool_call_for_totals(by_id[key], call)
+        else:
+            by_id[key] = call
+    unique = list(by_id.values())
+    return {
+        "unique_tool_calls": len(unique),
+        "total_duration_ms": sum(_int_value(call.get("duration_ms")) for call in unique),
+        "total_duration_us": sum(_int_value(call.get("duration_us")) for call in unique),
+        "total_tokens_in": sum(_int_value(call.get("tokens_in")) for call in unique),
+        "total_tokens_out": sum(_int_value(call.get("tokens_out")) for call in unique),
+        "total_cost_usd": round(sum(_tool_call_cost(call) for call in unique), 6),
+    }
+
+
+def _merge_tool_call_for_totals(
+    existing: dict[str, Any],
+    candidate: dict[str, Any],
+) -> dict[str, Any]:
+    merged = dict(existing)
+    for key, value in candidate.items():
+        if _has_value(value) and not _has_value(merged.get(key)):
+            merged[key] = value
+
+    existing_result = (
+        merged.get("result_summary")
+        if isinstance(merged.get("result_summary"), dict)
+        else {}
+    )
+    candidate_result = (
+        candidate.get("result_summary")
+        if isinstance(candidate.get("result_summary"), dict)
+        else {}
+    )
+    if candidate_result:
+        merged["result_summary"] = {
+            **candidate_result,
+            **existing_result,
+        }
+
+    for key in ("duration_ms", "duration_us", "tokens_in", "tokens_out", "cost_usd"):
+        if _float_value(candidate.get(key)) > _float_value(merged.get(key)):
+            merged[key] = candidate.get(key)
+    return merged
+
+
+def _has_value(value: Any) -> bool:
+    return value not in (None, "", [], {})
+
+
+def _mast_coverage_markdown(rows: list[dict[str, Any]]) -> str:
+    lines = [
+        "# MAST Coverage",
+        "",
+        "This matrix lists every deterministic MAST-inspired mode the supervisor knows how to classify, plus whether the current run observed it.",
+        "",
+        "| code | category | mode | live_status | deterministic_status | trigger_surface | entrypoint | deterministic_probe | observed_sources |",
+        "|---|---|---|---|---|---|---|---|---|",
+    ]
+    for row in rows:
+        lines.append(
+            "| {code} | {category} | {mode} | {status} | {deterministic_status} | {surface} | {entrypoint} | {probe} | {sources} |".format(
+                code=_table_cell(row.get("mast_code")),
+                category=_table_cell(row.get("mast_category")),
+                mode=_table_cell(row.get("mast_mode")),
+                status=_table_cell(row.get("status")),
+                deterministic_status=_table_cell(row.get("deterministic_status")),
+                surface=_table_cell(row.get("trigger_surface")),
+                entrypoint=_table_cell(row.get("entrypoint")),
+                probe=_table_cell(row.get("deterministic_probe")),
+                sources=_table_cell(row.get("sources")),
+            )
+        )
+    lines.append("")
+    return "\n".join(lines)
 
 
 def _tool_call_triage_markdown(calls: list[dict[str, Any]]) -> str:
@@ -999,7 +1170,7 @@ def _tool_call_triage_markdown(calls: list[dict[str, Any]]) -> str:
 
 
 def _tool_calls_markdown(value: list[Any]) -> str:
-    calls = [item for item in value if isinstance(item, dict)]
+    calls = [_normalise_trace_tool_call(item) for item in value if isinstance(item, dict)]
     if not calls:
         return "- None recorded."
     lines = [
@@ -1246,6 +1417,27 @@ def _table_cell(value: Any) -> str:
     if not text:
         return ""
     return text.replace("|", "\\|").replace("\n", " ")
+
+
+def _int_value(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _float_value(value: Any) -> float:
+    try:
+        return float(value or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _tool_call_cost(call: dict[str, Any]) -> float:
+    if call.get("cost_usd") is not None:
+        return _float_value(call.get("cost_usd"))
+    result = call.get("result_summary") if isinstance(call.get("result_summary"), dict) else {}
+    return _float_value(result.get("cost_usd"))
 
 
 def _list_markdown(value: Any) -> str:

@@ -148,27 +148,99 @@ def codex_review_packet(
     cursor_review: dict[str, Any] | None,
     objection: str,
     evidence_refs: tuple[dict[str, Any], ...] = (),
+    tool_receipts: tuple[dict[str, Any], ...] | list[dict[str, Any]] = (),
 ) -> dict[str, Any]:
     """Build Codex's structured reviewer packet for audit and replay."""
     requirements: list[dict[str, Any]] = []
-    for probe_id, status in sorted(probe_statuses.items()):
-        requirements.append({
-            "requirement_id": f"probe.{probe_id}",
-            "status": "pass" if status == "green" else "fail",
-            "evidence": [f"{probe_id}:{status}"],
+    findings: list[dict[str, Any]] = []
+
+    def add_finding(
+        *,
+        severity: str,
+        code: str,
+        title: str,
+        requirement_id: str,
+        evidence: list[str],
+        receipt_replay: dict[str, Any] | None = None,
+    ) -> None:
+        findings.append({
+            "finding_id": f"finding-{len(findings) + 1:03d}",
+            "severity": severity,
+            "code": code,
+            "title": title,
+            "requirement_id": requirement_id,
+            "ref": requirement_id,
+            "fix": title,
+            "evidence": evidence,
+            "receipt_replay": receipt_replay or {
+                "failures": [],
+                "observed_receipt_ids": _receipt_ids(tool_receipts),
+            },
         })
+
+    for probe_id, status in sorted(probe_statuses.items()):
+        requirement_id = f"probe.{probe_id}"
+        evidence = [f"{probe_id}:{status}"]
+        requirements.append({
+            "requirement_id": requirement_id,
+            "status": "pass" if status == "green" else "fail",
+            "evidence": evidence,
+        })
+        if status != "green" and not (probe_id == "P11" and claim_verification is not None):
+            add_finding(
+                severity="CRITICAL" if probe_id in {"P3", "P11", "P12"} else "IMPORTANT",
+                code=probe_id,
+                title=f"probe {probe_id} failed",
+                requirement_id=requirement_id,
+                evidence=evidence,
+            )
     if claim_verification is not None:
+        details = claim_verification.get("details") if isinstance(claim_verification, dict) else {}
+        details = details if isinstance(details, dict) else {}
+        failures = [
+            str(item)
+            for item in details.get("failures", [])
+            if item is not None
+        ]
+        observed_receipt_ids = _receipt_ids(details.get("receipts", [])) or _receipt_ids(tool_receipts)
+        evidence = [str(claim_verification.get("reason") or "")]
         requirements.append({
             "requirement_id": "claim_verification.P11",
             "status": "pass" if claim_verification.get("status") == "green" else "fail",
-            "evidence": [str(claim_verification.get("reason") or "")],
+            "evidence": evidence,
         })
+        if claim_verification.get("status") != "green":
+            add_finding(
+                severity="CRITICAL",
+                code="P11",
+                title="claim verification failed",
+                requirement_id="claim_verification.P11",
+                evidence=evidence,
+                receipt_replay={
+                    "failures": failures,
+                    "observed_receipt_ids": observed_receipt_ids,
+                },
+            )
     if cursor_review is not None:
+        evidence = [str((cursor_review.get("probe") or {}).get("reason") or "")]
         requirements.append({
             "requirement_id": "cursor_review",
             "status": "pass" if bool(cursor_review.get("accepted")) else "fail",
-            "evidence": [str((cursor_review.get("probe") or {}).get("reason") or "")],
+            "evidence": evidence,
         })
+        if not bool(cursor_review.get("accepted")):
+            add_finding(
+                severity="IMPORTANT",
+                code="CURSOR",
+                title="cursor review rejected the gate",
+                requirement_id="cursor_review",
+                evidence=evidence,
+            )
+    blocking_findings = [
+        finding["finding_id"]
+        for finding in findings
+        if str(finding.get("severity") or "").upper() in {"CRITICAL", "IMPORTANT"}
+    ]
     return {
         "schema_version": "codex-review-packet/v1",
         "task_id": task_id,
@@ -177,10 +249,29 @@ def codex_review_packet(
         "decision": decision,
         "confidence": asdict(confidence),
         "requirements": requirements,
+        "findings": findings,
+        "round_policy": {
+            "force_next_round": bool(blocking_findings),
+            "blocking_findings": blocking_findings,
+            "close_allowed": not blocking_findings,
+        },
         "objections": [] if decision == "accept" else [objection],
         "evidence_refs": list(evidence_refs),
         "would_change_if": "Every requirement is pass and both reviewers accept.",
     }
+
+
+def _receipt_ids(receipts: Any) -> list[str]:
+    ids: list[str] = []
+    if not isinstance(receipts, (list, tuple)):
+        return ids
+    for receipt in receipts:
+        if not isinstance(receipt, dict):
+            continue
+        receipt_id = str(receipt.get("receipt_id") or receipt.get("id") or "").strip()
+        if receipt_id:
+            ids.append(receipt_id)
+    return ids
 
 
 def planning_artifact_refs(planning_artifacts: list[dict[str, Any]] | tuple[Any, ...]) -> tuple[dict[str, Any], ...]:

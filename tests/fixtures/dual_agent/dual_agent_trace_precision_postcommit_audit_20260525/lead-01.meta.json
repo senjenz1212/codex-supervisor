@@ -1,0 +1,24 @@
+{
+  "cost_usd": 2.5984395,
+  "model": "opus",
+  "probe": {
+    "details": {},
+    "probe_id": "P3",
+    "reason": "outcome_fidelity_ok",
+    "status": "green"
+  },
+  "stderr_bytes": 0,
+  "stdout_bytes": 9666,
+  "token_usage": {
+    "cache_creation_input_tokens": 163686,
+    "cache_read_input_tokens": 2534304,
+    "context_window": 200000,
+    "input_tokens": 25,
+    "max_output_tokens": 64000,
+    "output_tokens": 12325,
+    "tokens_in": 2698015,
+    "tokens_out": 12325
+  },
+  "tokens_in": 2698015,
+  "tokens_out": 12325
+}

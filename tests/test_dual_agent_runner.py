@@ -400,6 +400,9 @@ def test_gate_runner_records_direct_interaction_persona_addresses_and_tool_calls
         assert "result_summary" in call
     assert response["trace_envelope"]["tool_calls"][0]["duration_ms"] >= 0
     assert response["trace_envelope"]["tool_calls"][0]["args"]["task_id"] == "gate-1"
+    assert response["trace_envelope"]["tool_calls"][0]["args"]["model"] == "opus"
+    assert response["trace_envelope"]["tool_calls"][0]["args"]["requested_model"] == "opus"
+    assert response["trace_envelope"]["tool_calls"][0]["args"]["model_source"] == "quality_default:best"
     assert response["trace_envelope"]["tool_calls"][0]["result_summary"]["outcome_present"] is True
     assert response["trace_envelope"]["tool_calls"][0]["tokens_in"] == 66
     assert response["trace_envelope"]["tool_calls"][0]["tokens_out"] == 44

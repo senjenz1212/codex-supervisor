@@ -10,6 +10,7 @@ import pytest
 
 from mcp_tools.codex_supervisor_stdio import _maybe_artifact
 from supervisor.dual_agent_artifacts import ScreenshotArtifact, export_dual_agent_run_artifacts
+from supervisor.replay_versions import check_replay_schema_versions
 from supervisor.state import State
 
 
@@ -162,8 +163,10 @@ def test_export_dual_agent_run_artifacts_writes_readable_gate_documents(tmp_path
         "interactions.md",
         "transcript.md",
         "transcript.jsonl",
+        "mast-coverage.md",
         "manifest.json",
         "workspace-snapshot.json",
+        "mast-coverage.json",
     ]
     assert "PRD accepted after tightening." in (result.output_dir / "prd.md").read_text()
     assert f"event_id: {prd_round}" in (result.output_dir / "prd.md").read_text()
@@ -275,7 +278,6 @@ def test_export_dual_agent_run_artifacts_renders_interaction_receipts(tmp_path):
             },
         },
     )
-
     result = export_dual_agent_run_artifacts(
         state,
         run_id="run-1",
@@ -391,6 +393,12 @@ def test_export_dual_agent_run_artifacts_renders_top_level_cursor_review_events(
             "model": "composer-2.5",
             "duration_ms": 11701,
             "transcript_tail": "Top-level Cursor transcript tail.",
+            "raw_transcript_refs": [
+                {
+                    "kind": "cursor_transcript_fixture",
+                    "ref": "tests/fixtures/dual_agent/cursor-transcript.txt",
+                },
+            ],
             "trace_envelope": {
                 "schema_version": "dual-agent-trace-envelope/v1",
                 "run_id": "run-1",
@@ -401,7 +409,12 @@ def test_export_dual_agent_run_artifacts_renders_top_level_cursor_review_events(
                 "policy_verdict": "observed",
                 "failure_taxonomy": None,
                 "tool_calls": [
-                    {"name": "invoke_cursor_agent", "status": "completed"},
+                    {
+                        "name": "invoke_cursor_agent",
+                        "status": "completed",
+                        "requested_model": "composer-2.5",
+                        "result_summary": {"probe_id": "CURSOR"},
+                    },
                 ],
                 "artifacts": [],
                 "claims": [],
@@ -429,7 +442,11 @@ def test_export_dual_agent_run_artifacts_renders_top_level_cursor_review_events(
         assert "Cursor accepted fixture fidelity while noting missing receipts." in text
         assert "implementation and test claims unsubstantiated in worktree" in text
         assert "Top-level Cursor transcript tail." in text
+        assert "full_reasoning: `transcript.jsonl event 1 transcript_tail`" in text
+        assert "full_reasoning_ref: `tests/fixtures/dual_agent/cursor-transcript.txt`" in text
         assert "invoke_cursor_agent" in text
+        assert "CURSOR" in text
+        assert "requested_model" in text
     assert '"cursor_run_id": "cursor-run-live"' in transcript_jsonl
 
 
@@ -529,6 +546,7 @@ def test_export_dual_agent_run_artifacts_writes_replay_manifest_with_handoff_con
     assert manifest["handoff_packets"][0]["status"] == "captured"
     assert manifest["handoff_packets"][0]["content"] == handoff.read_text(encoding="utf-8")
     assert len(manifest["handoff_packets"][0]["sha256"]) == 64
+    assert check_replay_schema_versions(manifest)["status"] == "compatible"
 
 
 def test_export_dual_agent_run_artifacts_writes_workspace_snapshot_manifest(tmp_path):
@@ -602,6 +620,9 @@ def test_export_dual_agent_run_artifacts_writes_workspace_snapshot_manifest(tmp_
     assert snapshot["status"] == "captured"
     assert snapshot["root"] == str(repo)
     assert snapshot["git"]["head"]
+    assert snapshot["git"]["head_sha"] == snapshot["git"]["head"]
+    assert snapshot["git"]["head_ref"] == "HEAD"
+    assert snapshot["git"]["head_label"] == "handoff_cwd_head"
     assert "README.md" in snapshot["git"]["status_short"]
     assert len(snapshot["git"]["diff_sha256"]) == 64
     assert len(snapshot["file_tree_sha256"]) == 64
@@ -646,7 +667,6 @@ def test_export_dual_agent_run_artifacts_writes_run_level_failure_summary(tmp_pa
             },
         },
     )
-
     result = export_dual_agent_run_artifacts(
         state,
         run_id="run-1",
@@ -770,6 +790,51 @@ def test_export_dual_agent_run_artifacts_writes_fast_triage_page_and_source_link
         },
     )
 
+    _insert_event(
+        state,
+        kind="dual_agent_interaction_message",
+        payload={
+            "task_id": "task-1",
+            "gate": "outcome_review",
+            "sender": "codex",
+            "recipient": "claude_code",
+            "message_type": "receipt_gate_decision",
+            "content": "Blocked on missing receipts.",
+            "trace_envelope": {
+                "schema_version": "dual-agent-trace-envelope/v1",
+                "run_id": "run-1",
+                "task_id": "task-1",
+                "gate": "outcome_review",
+                "source": "dual_agent",
+                "event_kind": "dual_agent_interaction_message",
+                "policy_verdict": "observed",
+                "failure_taxonomy": None,
+                "tool_calls": [
+                    {
+                        "name": "verify_workflow_claims",
+                        "status": "red",
+                        "duration_ms": 13,
+                        "started_at_ms": 3201,
+                        "ended_at_ms": 3214,
+                        "tokens_in": 5,
+                        "tokens_out": 7,
+                        "cost_usd": 0.12,
+                        "result_summary": {
+                            "reason": "workflow_claim_verification_failed",
+                            "failures": [
+                                "tests_passed_without_test_receipt",
+                                "implemented_without_diff_receipt",
+                            ],
+                        },
+                    },
+                ],
+                "artifacts": [],
+                "claims": [],
+                "receipts": [],
+            },
+        },
+    )
+
     result = export_dual_agent_run_artifacts(
         state,
         run_id="run-1",
@@ -787,14 +852,32 @@ def test_export_dual_agent_run_artifacts_writes_fast_triage_page_and_source_link
     assert "FM-3.2" in triage
     assert "claude_gate_status: `accepted`" in triage
     assert "supervisor_final_status: `blocked`" in triage
+    assert "## Run Totals" in triage
+    assert "- unique_tool_calls: `2`" in triage
     assert "tests_passed_without_test_receipt" in triage
     assert "implemented_without_diff_receipt" in triage
+    assert "missing:tests_passed_without_test_receipt" in triage
+    assert "missing:implemented_without_diff_receipt" in triage
+    assert "workflow_claim_verification_failed" in triage
     assert "| event | tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |" in triage
     assert "verify_workflow_claims" in triage
     assert "claude_gate_status" in triage
     assert "supervisor_final_status" in triage
     assert "Next Safe Action" in triage
     assert (result.output_dir / "replay" / "workspace-snapshot.json") in result.files
+    assert (result.output_dir / "mast-coverage.md") in result.files
+    coverage = (result.output_dir / "mast-coverage.md").read_text()
+    assert "| FM-3.2 | Task Verification | No or incomplete verification | observed_in_run | covered_by_deterministic_probe |" in coverage
+    assert "| FM-1.3 | Specification Issues | Step repetition | not_observed_in_run | covered_by_deterministic_probe |" in coverage
+    manifest = json.loads((result.output_dir / "replay" / "manifest.json").read_text())
+    assert manifest["tool_call_totals"]["unique_tool_calls"] == 2
+    assert manifest["tool_call_totals"]["total_tokens_in"] == 5
+    assert manifest["tool_call_totals"]["total_tokens_out"] == 7
+    assert manifest["tool_call_totals"]["total_cost_usd"] == 0.12
+    assert manifest["mast_coverage"][0]["mast_code"] == "FM-1.1"
+    assert manifest["mast_coverage"][0]["deterministic_status"] == "covered_by_deterministic_probe"
+    mast_coverage_json = json.loads((result.output_dir / "replay" / "mast-coverage.json").read_text())
+    assert mast_coverage_json == manifest["mast_coverage"]
 
 
 def test_export_dual_agent_run_artifacts_writes_sequence_failure_diagnostics(tmp_path):
@@ -877,7 +960,12 @@ def test_export_dual_agent_run_artifacts_writes_sequence_failure_diagnostics(tmp
     assert by_code["FM-3.1"]["event_ids"] == [first]
     assert by_code["FM-1.3"]["event_ids"] == [first, duplicate]
     assert by_code["FM-2.5"]["event_ids"] == [round_event, claude_response]
-    assert by_code["FM-3.3"]["event_ids"] == [cursor_reject]
+    assert by_code["FM-3.3"]["event_ids"] == [duplicate, cursor_reject]
+    coverage = (result.output_dir / "mast-coverage.md").read_text()
+    assert "| FM-1.3 | Specification Issues | Step repetition | observed_in_run | covered_by_deterministic_probe |" in coverage
+    assert "| FM-2.5 | Inter-Agent Misalignment | Ignored other agent input | observed_in_run | covered_by_deterministic_probe |" in coverage
+    assert "| FM-3.1 | Task Verification | Premature termination | observed_in_run | covered_by_deterministic_probe |" in coverage
+    assert "| FM-3.3 | Task Verification | Incorrect verification | observed_in_run | covered_by_deterministic_probe |" in coverage
 
 
 def test_export_dual_agent_run_artifacts_copies_screenshots_and_writes_manifest(tmp_path):
@@ -925,6 +1013,52 @@ def test_export_dual_agent_run_artifacts_copies_screenshots_and_writes_manifest(
     assert "- validation_status: `passed`" in manifest.read_text()
     assert "Visual state matches the acceptance criteria." in manifest.read_text()
     assert copied in result.files
+
+
+def test_export_dual_agent_run_artifacts_labels_handoff_workspace_head(tmp_path):
+    repo = tmp_path / "sandbox"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, text=True)
+    (repo / "README.md").write_text("# sandbox\n")
+    subprocess.run(["git", "add", "README.md"], cwd=repo, check=True, capture_output=True, text=True)
+    subprocess.run(
+        ["git", "commit", "-m", "seed"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "GIT_AUTHOR_NAME": "Test",
+            "GIT_AUTHOR_EMAIL": "test@example.com",
+            "GIT_COMMITTER_NAME": "Test",
+            "GIT_COMMITTER_EMAIL": "test@example.com",
+        },
+    )
+    handoff_dir = repo / ".handoff"
+    handoff_dir.mkdir()
+    handoff = handoff_dir / "task-1.json"
+    handoff.write_text(json.dumps({"cwd": str(repo), "planning_artifacts": []}))
+    state = _state(tmp_path)
+    _insert_event(
+        state,
+        kind="dual_agent_gate_result",
+        payload={
+            **_result_payload(gate="outcome_review", summary="ok", decisions=["accept"]),
+            "handoff_packet_path": str(handoff),
+        },
+    )
+
+    result = export_dual_agent_run_artifacts(
+        state,
+        run_id="run-1",
+        task_id="task-1",
+        output_dir=tmp_path / "docs" / "dual-agent" / "task-1",
+    )
+
+    snapshot = json.loads((result.output_dir / "replay" / "workspace-snapshot.json").read_text())
+    assert snapshot["root_source"] == "handoff_cwd"
+    assert snapshot["git"]["head_label"] == "handoff_cwd_head"
 
 
 def test_export_dual_agent_run_artifacts_includes_artifact_rigor_details(tmp_path):

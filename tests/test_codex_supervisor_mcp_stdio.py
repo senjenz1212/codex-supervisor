@@ -320,6 +320,54 @@ async def test_start_dual_agent_gate_relaxed_artifact_policy_still_blocks_stub_p
 
 
 @pytest.mark.asyncio
+async def test_start_dual_agent_gate_forwards_route_specific_requirements(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
+    from supervisor.dual_agent_runner import build_lead_replay_stdout
+
+    state = State(str(tmp_path / "state.db"))
+    runner_calls = []
+    prd_path = tmp_path / "prd.md"
+    prd_path.write_text((FIXTURE_ROOT / "prd" / "good.md").read_text(encoding="utf-8"), encoding="utf-8")
+
+    def fake_runner(argv, **kwargs):
+        runner_calls.append(argv)
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=build_lead_replay_stdout(_outcome_block()),
+            stderr="",
+        )
+
+    server = build_codex_supervisor_mcp_server(
+        _cfg(tmp_path),
+        state,
+        mcp_cls=_FakeMCP,
+        runner=fake_runner,
+    )
+
+    result = await _maybe_await(server.tools["start_dual_agent_gate"](
+        task_id="gate-1",
+        run_id="run-1",
+        gate="execution",
+        instruction="Run a reduced-route execution gate.",
+        cwd=str(tmp_path),
+        planning_artifacts=[{
+            "path": str(prd_path),
+            "kind": "prd",
+            "mutable_by_worker": False,
+        }],
+        required_artifacts=["prd"],
+        required_prerequisite_gates=[],
+        required_planning_kinds=["prd"],
+    ))
+
+    assert runner_calls
+    assert result["status"] == "accepted"
+    assert result["artifact_rigor"]["required_artifacts"] == ["prd"]
+    assert result["artifact_rigor"]["required_prerequisite_gates"] == []
+
+
+@pytest.mark.asyncio
 async def test_read_gate_transcript_includes_planning_validation_receipts(tmp_path):
     from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
 

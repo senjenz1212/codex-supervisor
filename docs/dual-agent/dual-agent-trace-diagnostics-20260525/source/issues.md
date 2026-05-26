@@ -39,6 +39,8 @@ Allowed outcomes:
 
 - replay manifest contains deterministic sequence failure entries
 - entries include event ids and MAST code/mode
+- `mast-coverage.md` and `replay/mast-coverage.json` list every MAST mode with
+  deterministic trigger surface, entrypoint, and observed run evidence
 
 Forbidden outcomes:
 
@@ -90,8 +92,11 @@ calls.
 Allowed outcomes:
 
 - Markdown shows MAST code/mode and timing
-- manifest includes sequence failures
-- live failure-mode probe artifacts are refreshed
+- triage shows aggregate run totals, missing-receipt links, probe ids, and
+  failure reasons in the slowest-tool table
+- manifest includes sequence failures and per-mode MAST coverage pointers
+- live failure-mode probe artifacts are refreshed when credentials are present,
+  or the refresh is explicitly reported as credential-gated
 
 Forbidden outcomes:
 

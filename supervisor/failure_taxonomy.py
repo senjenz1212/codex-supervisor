@@ -23,6 +23,79 @@ MAST_FAILURE_MODES: dict[str, dict[str, str]] = {
     "FM-3.3": {"category": "Task Verification", "mode": "Incorrect verification"},
 }
 
+MAST_COVERAGE_CASES: dict[str, dict[str, str]] = {
+    "FM-1.1": {
+        "trigger_surface": "payload",
+        "entrypoint": "failure_taxonomy_for_payload",
+        "reason_or_scenario": "blocked payload reason `disobey_task_spec` or planning artifact failure",
+    },
+    "FM-1.2": {
+        "trigger_surface": "payload",
+        "entrypoint": "failure_taxonomy_for_payload -> classify_failure",
+        "reason_or_scenario": "blocked payload reason `role_violation_covenant`",
+    },
+    "FM-1.3": {
+        "trigger_surface": "sequence",
+        "entrypoint": "detect_sequence_failures",
+        "reason_or_scenario": "same gate and handoff packet observed twice",
+    },
+    "FM-1.4": {
+        "trigger_surface": "payload",
+        "entrypoint": "classify_failure",
+        "reason_or_scenario": "blocked payload reason `lost_conversation_history`",
+    },
+    "FM-1.5": {
+        "trigger_surface": "payload",
+        "entrypoint": "classify_failure",
+        "reason_or_scenario": "blocked payload reason `agents_not_converged_max_rounds`",
+    },
+    "FM-2.1": {
+        "trigger_surface": "payload",
+        "entrypoint": "classify_failure",
+        "reason_or_scenario": "blocked payload reason `conversation_reset`",
+    },
+    "FM-2.2": {
+        "trigger_surface": "payload",
+        "entrypoint": "classify_failure",
+        "reason_or_scenario": "blocked payload reason `ambiguous_input_no_clarification`",
+    },
+    "FM-2.3": {
+        "trigger_surface": "payload",
+        "entrypoint": "classify_failure",
+        "reason_or_scenario": "blocked payload reason `scope_violation_off_scope`",
+    },
+    "FM-2.4": {
+        "trigger_surface": "payload",
+        "entrypoint": "failure_taxonomy_for_payload",
+        "reason_or_scenario": "Cursor or reviewer disagreement probe fails",
+    },
+    "FM-2.5": {
+        "trigger_surface": "sequence",
+        "entrypoint": "detect_sequence_failures",
+        "reason_or_scenario": "Claude response does not address a prior Codex objection",
+    },
+    "FM-2.6": {
+        "trigger_surface": "payload",
+        "entrypoint": "failure_taxonomy_for_payload",
+        "reason_or_scenario": "outcome fidelity or message protocol failure",
+    },
+    "FM-3.1": {
+        "trigger_surface": "payload+sequence",
+        "entrypoint": "failure_taxonomy_for_payload + detect_sequence_failures",
+        "reason_or_scenario": "accepted gate is missing a required probe",
+    },
+    "FM-3.2": {
+        "trigger_surface": "payload",
+        "entrypoint": "failure_taxonomy_for_payload",
+        "reason_or_scenario": "claim verification or evidence receipt probe fails",
+    },
+    "FM-3.3": {
+        "trigger_surface": "sequence",
+        "entrypoint": "detect_sequence_failures",
+        "reason_or_scenario": "Cursor rejects after the gate was accepted",
+    },
+}
+
 
 def failure_taxonomy_for_payload(
     *,
@@ -255,11 +328,64 @@ def detect_sequence_failures(events: list[dict[str, Any]]) -> list[dict[str, Any
             if accepted is False and gate in accepted_gate_by_gate:
                 failures.append(_sequence_failure(
                     "false_green_incorrect_verification",
-                    [event_id],
+                    [accepted_gate_by_gate[gate], event_id],
                     {"accepted_gate_event_id": accepted_gate_by_gate[gate]},
                 ))
 
     return failures
+
+
+def mast_coverage_matrix(events: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    """Return all MAST modes with deterministic probe surfaces and run evidence."""
+    observed: dict[str, list[dict[str, Any]]] = {code: [] for code in MAST_FAILURE_MODES}
+    for event in events or []:
+        event_id = int(event.get("event_id") or 0)
+        kind = _text(event.get("kind"))
+        payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+        envelope = payload.get("trace_envelope") if isinstance(payload.get("trace_envelope"), dict) else {}
+        envelope_taxonomy = envelope.get("failure_taxonomy") if isinstance(envelope.get("failure_taxonomy"), dict) else None
+        if isinstance(envelope_taxonomy, dict) and envelope_taxonomy.get("mast_code") in observed:
+            observed[str(envelope_taxonomy["mast_code"])].append({
+                "source": "trace_envelope",
+                "event_id": event_id,
+                "event_kind": kind,
+            })
+        taxonomy = failure_taxonomy_for_payload(kind=kind, payload=payload)
+        if isinstance(taxonomy, dict) and taxonomy.get("mast_code") in observed:
+            observed[str(taxonomy["mast_code"])].append({
+                "source": "payload",
+                "event_id": event_id,
+                "event_kind": kind,
+            })
+    for failure in detect_sequence_failures(events or []):
+        mast_code = failure.get("mast_code")
+        if mast_code not in observed:
+            continue
+        observed[str(mast_code)].append({
+            "source": "sequence",
+            "event_ids": list(failure.get("event_ids") or []),
+            "details": failure.get("details") or {},
+        })
+
+    rows: list[dict[str, Any]] = []
+    for mast_code, definition in sorted(MAST_FAILURE_MODES.items()):
+        coverage = MAST_COVERAGE_CASES.get(mast_code, {})
+        sources = observed.get(mast_code, [])
+        rows.append({
+            "mast_code": mast_code,
+            "mast_category": definition["category"],
+            "mast_mode": definition["mode"],
+            "status": "observed_in_run" if sources else "not_observed_in_run",
+            "deterministic_status": (
+                "covered_by_deterministic_probe"
+                if coverage else "missing_deterministic_probe"
+            ),
+            "trigger_surface": coverage.get("trigger_surface", ""),
+            "entrypoint": coverage.get("entrypoint", ""),
+            "deterministic_probe": coverage.get("reason_or_scenario", ""),
+            "sources": sources,
+        })
+    return rows
 
 
 def _missing_required_probes(payload: dict[str, Any], probes: dict[str, Any]) -> list[str]:

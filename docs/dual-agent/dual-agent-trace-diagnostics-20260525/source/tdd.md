@@ -66,6 +66,8 @@ Behavior:
 - create fixture events for accepted result missing required probes
 - create fixture events for Cursor rejection after acceptance
 - assert `replay/manifest.json` includes MAST-coded sequence diagnostics
+- assert `mast-coverage.md` and `replay/mast-coverage.json` expose the
+  observed sequence modes and all unobserved modes
 
 ## Public Boundary RED 5 - Artifact Projection
 
@@ -81,13 +83,37 @@ Behavior:
 
 - create an event with a MAST-coded taxonomy and timed tool call
 - assert `interactions.md` and `transcript.md` show MAST code/mode and timing
+- assert `triage.md` shows run totals, missing-receipt ids, probe ids, and
+  error reasons for red tool calls
 
-## Live Evidence
+## Public Boundary RED 6 - MAST Coverage Matrix
 
-After unit tests pass:
+Boundary: failure taxonomy and artifact export
+
+Test file: `tests/test_failure_taxonomy.py` and `tests/test_dual_agent_artifacts.py`
+
+First RED:
+
+`test_mast_coverage_matrix_reports_every_mode_and_sequence_sources`
+
+Behavior:
+
+- build fixture events for payload and sequence MAST failures
+- assert all 14 MAST modes have rows
+- assert FM-1.3, FM-2.5, FM-3.1, and FM-3.3 record sequence sources
+- assert FM-1.2 is payload-covered unless a role-drift sequence detector is
+  added later
+
+## Credential-Gated Live Evidence
+
+After unit tests pass, if live Claude/Cursor credentials are present:
 
 - rerun `scripts/probe_live_failure_mode.py`
 - preserve refreshed `summary.json`, `interactions.md`, `transcript.md`,
   `transcript.jsonl`, `replay/manifest.json`, and fixtures
 - confirm final status remains `blocked_as_expected`
 - confirm Claude and Cursor tool calls include timing
+
+If credentials are absent, do not claim a refreshed live proof. Record the
+deterministic test evidence and leave the live rerun as the next credentialed
+probe.

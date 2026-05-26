@@ -96,3 +96,52 @@ def test_codex_confidence_report_and_review_packet_explain_decision():
     assert packet["schema_version"] == "codex-review-packet/v1"
     assert packet["decision"] == "deny"
     assert {"requirement_id": "probe.P11", "status": "fail", "evidence": ["P11:red"]} in packet["requirements"]
+    assert packet["round_policy"]["force_next_round"] is True
+    assert packet["round_policy"]["blocking_findings"] == ["finding-001"]
+    assert packet["findings"][0]["severity"] == "CRITICAL"
+    assert packet["findings"][0]["code"] == "P11"
+    assert packet["findings"][0]["receipt_replay"]["failures"] == []
+
+
+def test_codex_review_packet_links_claim_failures_to_receipt_replay():
+    report = codex_confidence_report(
+        decision="deny",
+        gate_status="accepted",
+        probe_statuses={"P1": "green", "P2": "green", "P3": "green"},
+        claim_verification={
+            "status": "red",
+            "reason": "workflow_claim_verification_failed",
+            "details": {
+                "failures": ["implemented_without_diff_receipt"],
+                "receipts": [{"receipt_id": "pytest-focused", "kind": "test"}],
+            },
+        },
+        cursor_review=None,
+    )
+
+    packet = codex_review_packet(
+        task_id="trace-task",
+        gate="outcome_review",
+        decision="deny",
+        confidence=report,
+        probe_statuses={"P1": "green", "P2": "green", "P3": "green"},
+        claim_verification={
+            "status": "red",
+            "reason": "workflow_claim_verification_failed",
+            "details": {
+                "failures": ["implemented_without_diff_receipt"],
+                "receipts": [{"receipt_id": "pytest-focused", "kind": "test"}],
+            },
+        },
+        cursor_review=None,
+        objection="claim verification failed",
+        evidence_refs=({"kind": "git_diff", "ref": "receipt:missing"},),
+        tool_receipts=({"receipt_id": "pytest-focused", "kind": "test"},),
+    )
+
+    finding = packet["findings"][0]
+    assert finding["severity"] == "CRITICAL"
+    assert finding["title"] == "claim verification failed"
+    assert finding["receipt_replay"]["failures"] == ["implemented_without_diff_receipt"]
+    assert finding["receipt_replay"]["observed_receipt_ids"] == ["pytest-focused"]
+    assert packet["round_policy"]["force_next_round"] is True

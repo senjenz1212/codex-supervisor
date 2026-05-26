@@ -19,6 +19,32 @@ WORKFLOW_GATES: tuple[str, ...] = (
     "outcome_review",
 )
 
+WORKFLOW_GATES_BY_COMPLEXITY: dict[str, tuple[str, ...]] = {
+    "trivial": ("execution", "outcome_review"),
+    "small": ("prd_review", "execution", "outcome_review"),
+    "large": WORKFLOW_GATES,
+    "vague": WORKFLOW_GATES,
+}
+
+REQUIRED_PLANNING_KINDS_BY_COMPLEXITY: dict[str, dict[str, tuple[str, ...]]] = {
+    "trivial": {
+        "execution": (),
+        "outcome_review": (),
+    },
+    "small": {
+        "prd_review": ("prd",),
+        "execution": ("prd",),
+        "outcome_review": ("prd",),
+    },
+}
+
+MANDATORY_ARTIFACTS_BY_COMPLEXITY: dict[str, tuple[str, ...]] = {
+    "trivial": ("interactions.md", "outcome-review.md", "transcript.md"),
+    "small": ("source/prd.md", "interactions.md", "outcome-review.md", "transcript.md"),
+    "large": (),
+    "vague": (),
+}
+
 SOURCE_ARTIFACTS: tuple[tuple[str, str, str], ...] = (
     ("prd", "source/prd.md", "PRD"),
     ("grill_findings", "source/grill-findings.md", "Grill Findings"),
@@ -60,6 +86,37 @@ REQUIRED_PRD_TDD_SKILL_STAGES: tuple[str, ...] = (
 )
 
 
+def select_workflow_route(
+    *,
+    intent: str,
+    user_facing: bool,
+    task_complexity: str | None = None,
+) -> dict[str, Any]:
+    """Select the workflow depth deterministically from caller hint + intent."""
+    requested = _normalise_complexity(task_complexity)
+    reasons: list[str] = []
+    if requested:
+        complexity = requested
+        reasons.append(f"explicit:{requested}")
+    else:
+        complexity = _infer_complexity(intent=intent, user_facing=user_facing, reasons=reasons)
+
+    gates = WORKFLOW_GATES_BY_COMPLEXITY[complexity]
+    skill_stages = _required_skill_stages_for_complexity(complexity)
+    return {
+        "schema_version": "dual-agent-workflow-route/v1",
+        "task_complexity": complexity,
+        "planning_depth": complexity,
+        "gates": list(gates),
+        "gate_count": len(gates),
+        "required_skill_stages": list(skill_stages),
+        "requires_skill_receipts": bool(skill_stages),
+        "force_cursor_review": complexity == "vague",
+        "requires_brainstorm": complexity == "vague",
+        "reasons": reasons or ["default:large"],
+    }
+
+
 @dataclass(frozen=True)
 class SourceArtifactSet:
     output_dir: Path
@@ -96,17 +153,26 @@ def ensure_workflow_source_artifacts(
     )
 
 
-def mandatory_artifact_status(*, cwd: str | Path, task_id: str) -> dict[str, Any]:
+def mandatory_artifact_status(
+    *,
+    cwd: str | Path,
+    task_id: str,
+    task_complexity: str = "large",
+) -> dict[str, Any]:
     output_dir = default_dual_agent_artifact_dir(cwd, task_id)
+    required = MANDATORY_ARTIFACTS_BY_COMPLEXITY.get(
+        task_complexity,
+        (),
+    ) or MANDATORY_ARTIFACTS
     missing = [
         relative
-        for relative in MANDATORY_ARTIFACTS
+        for relative in required
         if not (output_dir / relative).exists()
     ]
     return {
         "status": "ok" if not missing else "blocked",
         "output_dir": str(output_dir),
-        "required": list(MANDATORY_ARTIFACTS),
+        "required": list(required),
         "missing": missing,
     }
 
@@ -368,6 +434,69 @@ def _seed_artifact_text(*, title: str, intent: str) -> str:
     ])
 
 
+def required_planning_kinds_for_complexity(*, gate: str, task_complexity: str) -> tuple[str, ...] | None:
+    mapping = REQUIRED_PLANNING_KINDS_BY_COMPLEXITY.get(task_complexity)
+    if mapping is None:
+        return None
+    return mapping.get(gate, ())
+
+
+def required_artifacts_for_complexity(*, gate: str, task_complexity: str) -> tuple[str, ...] | None:
+    kinds = required_planning_kinds_for_complexity(gate=gate, task_complexity=task_complexity)
+    return None if kinds is None else kinds
+
+
+def prerequisites_for_route(*, gate: str, route_gates: tuple[str, ...]) -> tuple[str, ...]:
+    if gate not in route_gates:
+        return ()
+    index = route_gates.index(gate)
+    if index == 0:
+        return ()
+    return (route_gates[index - 1],)
+
+
+def _normalise_complexity(value: str | None) -> str:
+    normalized = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "": "",
+        "auto": "",
+        "lite": "trivial",
+        "tiny": "trivial",
+        "simple": "trivial",
+        "standard": "large",
+        "default": "large",
+        "deep": "large",
+    }
+    normalized = aliases.get(normalized, normalized)
+    return normalized if normalized in WORKFLOW_GATES_BY_COMPLEXITY else ""
+
+
+def _infer_complexity(*, intent: str, user_facing: bool, reasons: list[str]) -> str:
+    text = str(intent or "").lower()
+    if user_facing or any(term in text for term in VISUAL_EVIDENCE_TERMS):
+        reasons.append("user_facing_or_live_surface")
+        return "large"
+    if any(term in text for term in ("vague", "unclear", "brainstorm", "explore", "unknown")):
+        reasons.append("ambiguous_intent")
+        return "vague"
+    if any(term in text for term in ("one-line", "one line", "typo", "rename", "copy tweak", "config tweak")):
+        reasons.append("small_surface_hint")
+        return "trivial"
+    if any(term in text for term in ("small", "single file", "single-file", "helper")):
+        reasons.append("single_slice_hint")
+        return "small"
+    reasons.append("default_large")
+    return "large"
+
+
+def _required_skill_stages_for_complexity(complexity: str) -> tuple[str, ...]:
+    if complexity == "trivial":
+        return ()
+    if complexity == "small":
+        return ("to_prd", "prd_grill")
+    return REQUIRED_PRD_TDD_SKILL_STAGES
+
+
 def _matched_visual_terms(text: str) -> list[str]:
     normalized = text.lower().replace("_", "-")
     return [term for term in VISUAL_EVIDENCE_TERMS if term in normalized]
@@ -501,7 +630,15 @@ def _receipt_matches_claim(
 def _claim_text_matches(value: str, expected: str) -> bool:
     if not value or not expected:
         return False
-    return value == expected or expected in value or value in expected
+    if value == expected:
+        return True
+    aliases = {
+        "tests passed": {"test passed", "pytest passed", "focused tests passed"},
+        "implemented": {"implementation present", "changes implemented"},
+        "pushed": {"git pushed", "remote pushed", "pushed to remote"},
+        "no files changed": {"clean working tree", "git status clean"},
+    }
+    return value in aliases.get(expected, set())
 
 
 def _receipt_covers_changed_files(
@@ -510,7 +647,7 @@ def _receipt_covers_changed_files(
 ) -> bool:
     receipt_files = receipt.get("changed_files") or receipt.get("files") or receipt.get("paths")
     if receipt_files is None:
-        return True
+        return not bool(changed_files)
     if isinstance(receipt_files, str):
         receipt_file_set = {receipt_files}
     elif isinstance(receipt_files, (list, tuple, set)):
@@ -518,7 +655,7 @@ def _receipt_covers_changed_files(
     else:
         receipt_file_set = {str(receipt_files)}
     expected = {str(path) for path in changed_files if str(path).strip()}
-    return bool(expected & receipt_file_set)
+    return expected <= receipt_file_set
 
 
 def _normalise_claim_text(value: Any) -> str:

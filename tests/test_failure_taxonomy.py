@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from supervisor.failure_taxonomy import (
     MAST_FAILURE_MODES,
     blocking_probe_failure,
     classify_failure,
     detect_sequence_failures,
     failure_taxonomy_for_payload,
+    mast_coverage_matrix,
 )
 from supervisor.trace_envelope import stamp_trace_envelope, timed_tool_call
 
@@ -159,6 +162,93 @@ def test_failure_taxonomy_triggers_all_mast_modes_through_payload_or_sequence_ru
     observed.update(failure["mast_code"] for failure in sequence_failures)
 
     assert observed == set(MAST_FAILURE_MODES)
+
+
+def test_mast_coverage_matrix_reports_every_mode_and_sequence_sources():
+    events = [
+        {
+            "event_id": 1,
+            "kind": "dual_agent_gate_result",
+            "gate": "outcome_review",
+            "payload": {
+                "status": "blocked",
+                "reason": "role_violation_covenant",
+            },
+        },
+        {
+            "event_id": 2,
+            "kind": "dual_agent_gate_result",
+            "gate": "outcome_review",
+            "payload": {
+                "status": "accepted",
+                "required_probes": ["P1", "CURSOR"],
+                "probes": {"P1": {"status": "green", "reason": "ok"}},
+                "handoff_packet_sha256": "same",
+            },
+        },
+        {
+            "event_id": 3,
+            "kind": "dual_agent_gate_result",
+            "gate": "outcome_review",
+            "payload": {
+                "status": "accepted",
+                "probes": {"P1": {"status": "green", "reason": "ok"}},
+                "handoff_packet_sha256": "same",
+            },
+        },
+        {
+            "event_id": 4,
+            "kind": "dual_agent_gate_round",
+            "gate": "outcome_review",
+            "payload": {"round": {"objection": "no tests added"}},
+        },
+        {
+            "event_id": 5,
+            "kind": "dual_agent_interaction_message",
+            "gate": "outcome_review",
+            "payload": {
+                "sender": "claude_code",
+                "content": "Proceeding without addressing prior critique.",
+                "addresses": [],
+            },
+        },
+        {
+            "event_id": 6,
+            "kind": "tri_agent_cursor_review",
+            "gate": "outcome_review",
+            "payload": {"accepted": False},
+        },
+    ]
+
+    matrix = mast_coverage_matrix(events)
+    by_code = {row["mast_code"]: row for row in matrix}
+
+    assert set(by_code) == set(MAST_FAILURE_MODES)
+    assert by_code["FM-1.2"]["status"] == "observed_in_run"
+    assert by_code["FM-1.2"]["deterministic_status"] == "covered_by_deterministic_probe"
+    assert by_code["FM-1.2"]["entrypoint"] == "failure_taxonomy_for_payload -> classify_failure"
+    assert by_code["FM-1.2"]["sources"] == [
+        {"source": "payload", "event_id": 1, "event_kind": "dual_agent_gate_result"}
+    ]
+    assert by_code["FM-1.3"]["status"] == "observed_in_run"
+    assert by_code["FM-1.3"]["sources"][0]["source"] == "sequence"
+    assert by_code["FM-2.5"]["sources"][0]["event_ids"] == [4, 5]
+    assert by_code["FM-3.1"]["status"] == "observed_in_run"
+    assert by_code["FM-3.1"]["entrypoint"] == "failure_taxonomy_for_payload + detect_sequence_failures"
+    assert by_code["FM-3.3"]["status"] == "observed_in_run"
+    assert by_code["FM-2.1"]["status"] == "not_observed_in_run"
+    assert by_code["FM-2.1"]["deterministic_status"] == "covered_by_deterministic_probe"
+    assert by_code["FM-2.1"]["deterministic_probe"]
+
+
+def test_mast_coverage_matrix_doc_names_every_mode():
+    text = Path("docs/testing/dual-agent-mast-coverage-matrix.md").read_text()
+
+    for mast_code, definition in MAST_FAILURE_MODES.items():
+        assert f"| `{mast_code}` |" in text
+        assert definition["mode"] in text
+    assert "mast-coverage.md" in text
+    assert "replay/mast-coverage.json" in text
 
 
 def test_trace_envelope_stamps_dual_agent_payloads_without_wrapping_original_shape():

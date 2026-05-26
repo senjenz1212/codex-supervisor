@@ -10,7 +10,7 @@ import pytest
 from supervisor.config import Config
 from supervisor.cursor_agent import CursorInvocationResult
 from supervisor.dual_agent import Outcome, ProbeResult
-from supervisor.dual_agent_workflow import workflow_visual_evidence_policy
+from supervisor.dual_agent_workflow import select_workflow_route, workflow_visual_evidence_policy
 from supervisor.state import State
 
 
@@ -236,6 +236,21 @@ def test_workflow_visual_evidence_policy_scans_planning_artifacts(tmp_path):
     assert policy["artifact_matches"][0]["kind"] == "prd"
 
 
+def test_select_workflow_route_uses_explicit_trivial_depth():
+    route = select_workflow_route(
+        intent="One-line config tweak.",
+        user_facing=False,
+        task_complexity="trivial",
+    )
+
+    assert route["schema_version"] == "dual-agent-workflow-route/v1"
+    assert route["task_complexity"] == "trivial"
+    assert route["gates"] == ["execution", "outcome_review"]
+    assert route["required_skill_stages"] == []
+    assert route["requires_skill_receipts"] is False
+    assert route["force_cursor_review"] is False
+
+
 def _cursor_review_result(task_id: str, *, decision: str = "accept") -> CursorInvocationResult:
     outcome = Outcome(
         task_id=task_id,
@@ -277,6 +292,7 @@ async def test_run_dual_agent_workflow_happy_path_owns_full_lifecycle(tmp_path):
     ))
 
     assert result["status"] == "accepted"
+    assert result["workflow_route"]["task_complexity"] == "large"
     assert [step["gate"] for step in result["steps"]] == [
         "prd_review",
         "issues_review",
@@ -311,6 +327,96 @@ async def test_run_dual_agent_workflow_happy_path_owns_full_lifecycle(tmp_path):
     assert all(round_payload["objection"] == "both agents accepted" for round_payload in rounds)
     assert any("dual-agent workflow started" in message for message in notifier.messages)
     assert any("dual-agent workflow accepted" in message for message in notifier.messages)
+
+
+@pytest.mark.asyncio
+async def test_run_dual_agent_workflow_records_trivial_route_and_skips_planning_gates(tmp_path):
+    server, state = _server(tmp_path, claims=["tests passed", "implemented"])
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="One-line config tweak.",
+        max_rounds_per_gate=1,
+        task_complexity="trivial",
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert result["status"] == "accepted"
+    assert result["workflow_route"]["task_complexity"] == "trivial"
+    assert [step["gate"] for step in result["steps"]] == ["execution", "outcome_review"]
+    route_events = [
+        json.loads(row["payload_json"])
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "dual_agent_workflow_route"
+    ]
+    assert route_events
+    assert route_events[0]["task_complexity"] == "trivial"
+    skill_events = [
+        row for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "dual_agent_skill_receipt_validation"
+    ]
+    assert skill_events == []
+    transcript = await _maybe_await(server.tools["read_gate_transcript"](
+        run_id="workflow-run",
+        task_id="workflow-1",
+    ))
+    assert transcript["workflow_routes"][0]["task_complexity"] == "trivial"
+
+
+@pytest.mark.asyncio
+async def test_run_dual_agent_workflow_small_route_requires_only_prd_skill_receipts(tmp_path):
+    server, _state = _server(tmp_path, claims=["tests passed", "implemented"])
+    receipts = [
+        receipt for receipt in _tool_receipts()
+        if receipt.get("kind") != "skill_run"
+        or receipt.get("stage") in {"to_prd", "prd_grill"}
+    ]
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Small single-file helper change.",
+        max_rounds_per_gate=1,
+        task_complexity="small",
+        tool_receipts=receipts,
+    ))
+
+    assert result["status"] == "accepted"
+    assert result["workflow_route"]["task_complexity"] == "small"
+    assert result["workflow_route"]["required_skill_stages"] == ["to_prd", "prd_grill"]
+    assert [step["gate"] for step in result["steps"]] == [
+        "prd_review",
+        "execution",
+        "outcome_review",
+    ]
+
+
+def test_select_workflow_route_infers_modes_and_aliases():
+    assert select_workflow_route(
+        intent="Fix a typo.",
+        user_facing=False,
+    )["task_complexity"] == "trivial"
+    assert select_workflow_route(
+        intent="Small single-file helper change.",
+        user_facing=False,
+    )["task_complexity"] == "small"
+    assert select_workflow_route(
+        intent="Ambiguous brainstorm request.",
+        user_facing=False,
+    )["task_complexity"] == "vague"
+    assert select_workflow_route(
+        intent="Unknown work.",
+        user_facing=False,
+        task_complexity="standard",
+    )["task_complexity"] == "large"
+    assert select_workflow_route(
+        intent="General backend work.",
+        user_facing=False,
+        task_complexity="nonsense",
+    )["task_complexity"] == "large"
 
 
 @pytest.mark.asyncio
@@ -478,6 +584,35 @@ async def test_run_dual_agent_workflow_with_cursor_review_accepts_all_gates(tmp_
 
 
 @pytest.mark.asyncio
+async def test_run_dual_agent_workflow_vague_route_forces_cursor_review(tmp_path):
+    cursor_calls = []
+
+    def fake_cursor_runner(request):
+        cursor_calls.append(request)
+        return _cursor_review_result(request.task_id)
+
+    server, _state = _server(tmp_path, cursor_runner=fake_cursor_runner)
+    screenshot = tmp_path / "result.png"
+    screenshot.write_bytes(_tiny_png())
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Explore a vague workflow before deciding the implementation shape.",
+        screenshots=[{"path": str(screenshot), "source": "computer_use", "validation": {"status": "passed"}}],
+        task_complexity="vague",
+        max_rounds_per_gate=1,
+        cursor_review=False,
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert result["status"] == "accepted"
+    assert result["workflow_route"]["force_cursor_review"] is True
+    assert len(cursor_calls) == 6
+
+
+@pytest.mark.asyncio
 async def test_run_dual_agent_workflow_with_cursor_review_blocks_on_cursor_rejection(tmp_path):
     def fake_cursor_runner(request):
         return _cursor_review_result(request.task_id, decision="revise")
@@ -504,6 +639,69 @@ async def test_run_dual_agent_workflow_with_cursor_review_blocks_on_cursor_rejec
         if row["kind"] == "dual_agent_gate_round"
     ]
     assert rounds[-1]["objection"] == "cursor_review_failed: cursor_review_ok"
+
+
+@pytest.mark.asyncio
+async def test_run_dual_agent_workflow_review_packet_blocker_forces_next_round(tmp_path, monkeypatch):
+    import mcp_tools.codex_supervisor_stdio as stdio
+
+    server, state = _server(tmp_path)
+
+    def blocking_review_packet(**kwargs):
+        return {
+            "schema_version": "codex-review-packet/v1",
+            "task_id": kwargs["task_id"],
+            "gate": kwargs["gate"],
+            "reviewer": "codex",
+            "decision": kwargs["decision"],
+            "confidence": {},
+            "requirements": [],
+            "findings": [{
+                "finding_id": "finding-999",
+                "severity": "CRITICAL",
+                "code": "FM-3.3",
+                "title": "forced blocker",
+            }],
+            "round_policy": {
+                "force_next_round": True,
+                "blocking_findings": ["finding-999"],
+                "close_allowed": False,
+            },
+            "objections": ["forced blocker"],
+            "evidence_refs": [],
+            "would_change_if": "The injected blocker is cleared.",
+        }
+
+    monkeypatch.setattr(stdio, "codex_review_packet", blocking_review_packet)
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Accepted gate should still respect review packet blockers.",
+        max_rounds_per_gate=1,
+        task_complexity="trivial",
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert result["status"] == "blocked"
+    rounds = [
+        json.loads(row["payload_json"])["round"]
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "dual_agent_gate_round"
+    ]
+    assert rounds[0]["codex_decision"] == "revise"
+    assert rounds[0]["objection"] == "blocking_review_findings: finding-999"
+    interactions = [
+        json.loads(row["payload_json"])
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "dual_agent_interaction_message"
+    ]
+    decision_messages = [
+        event for event in interactions
+        if event.get("message_type") == "gate_decision"
+    ]
+    assert decision_messages[0]["review_packet"]["round_policy"]["force_next_round"] is True
 
 
 @pytest.mark.asyncio
@@ -821,6 +1019,72 @@ async def test_run_dual_agent_workflow_rejects_unrelated_receipts_for_claims(tmp
     assert result["status"] == "blocked"
     failures = result["final_gate_result"]["claim_verification"]["details"]["failures"]
     assert "tests_passed_without_test_receipt" in failures
+    assert "implemented_without_diff_receipt" in failures
+
+
+@pytest.mark.asyncio
+async def test_run_dual_agent_workflow_rejects_diff_receipt_without_changed_file_replay(tmp_path):
+    server, _state = _server(tmp_path, claims=["tests passed", "implemented"])
+    receipts = _tool_receipts()
+    for receipt in receipts:
+        if receipt.get("receipt_id") == "git-diff":
+            receipt.pop("changed_files", None)
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Reject implementation receipts that do not name changed files.",
+        max_rounds_per_gate=1,
+        tool_receipts=receipts,
+    ))
+
+    assert result["status"] == "blocked"
+    failures = result["final_gate_result"]["claim_verification"]["details"]["failures"]
+    assert "implemented_without_diff_receipt" in failures
+
+
+@pytest.mark.asyncio
+async def test_run_dual_agent_workflow_rejects_partial_changed_file_receipt(tmp_path):
+    server, _state = _server(tmp_path, claims=["tests passed", "implemented"])
+    receipts = _tool_receipts()
+    for receipt in receipts:
+        if receipt.get("receipt_id") == "git-diff":
+            receipt["changed_files"] = ["supervisor/dual_agent_workflow.py"]
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Reject stale implementation receipts with incomplete file coverage.",
+        max_rounds_per_gate=1,
+        tool_receipts=receipts,
+    ))
+
+    assert result["status"] == "blocked"
+    failures = result["final_gate_result"]["claim_verification"]["details"]["failures"]
+    assert "implemented_without_diff_receipt" in failures
+
+
+@pytest.mark.asyncio
+async def test_run_dual_agent_workflow_rejects_vague_substring_claim_receipts(tmp_path):
+    server, _state = _server(tmp_path, claims=["tests passed", "implemented"])
+    receipts = _tool_receipts()
+    for receipt in receipts:
+        if receipt.get("receipt_id") == "git-diff":
+            receipt["claims"] = ["implemented previous task"]
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Reject receipts that only mention implementation as a substring.",
+        max_rounds_per_gate=1,
+        tool_receipts=receipts,
+    ))
+
+    assert result["status"] == "blocked"
+    failures = result["final_gate_result"]["claim_verification"]["details"]["failures"]
     assert "implemented_without_diff_receipt" in failures
 
 

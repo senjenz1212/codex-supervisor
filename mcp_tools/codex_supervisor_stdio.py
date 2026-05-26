@@ -40,6 +40,10 @@ from supervisor.dual_agent_workflow import (
     claude_accepts,
     ensure_workflow_source_artifacts,
     mandatory_artifact_status,
+    prerequisites_for_route,
+    required_artifacts_for_complexity,
+    required_planning_kinds_for_complexity,
+    select_workflow_route,
     verify_prd_tdd_skill_receipts,
     verify_workflow_claims,
     workflow_visual_evidence_policy,
@@ -122,6 +126,9 @@ class CodexSupervisorMcpAPI:
         artifact_policy: str = "strict",
         user_facing: bool = False,
         screenshots: list[dict[str, Any]] | None = None,
+        required_artifacts: tuple[str, ...] | list[str] | None = None,
+        required_prerequisite_gates: tuple[str, ...] | list[str] | None = None,
+        required_planning_kinds: tuple[str, ...] | list[str] | None = None,
     ) -> dict[str, Any]:
         artifact_preflight = _artifact_preflight(
             state=self.state,
@@ -132,6 +139,8 @@ class CodexSupervisorMcpAPI:
             artifact_policy=artifact_policy,
             user_facing=user_facing,
             screenshots=screenshots or [],
+            required_artifacts=required_artifacts,
+            required_prerequisite_gates=required_prerequisite_gates,
         )
         if artifact_preflight["status"] == "blocked":
             payload = _artifact_blocked_payload(
@@ -167,6 +176,7 @@ class CodexSupervisorMcpAPI:
             budget_usd=budget_usd,
             timeout_s=timeout_s,
             planning_artifacts=planning_artifacts,
+            required_planning_kinds=required_planning_kinds,
         )
         notifier = self._notifier()
         with timed_tool_call(
@@ -236,6 +246,9 @@ class CodexSupervisorMcpAPI:
         artifact_policy: str = "strict",
         user_facing: bool = False,
         screenshots: list[dict[str, Any]] | None = None,
+        required_artifacts: list[str] | None = None,
+        required_prerequisite_gates: list[str] | None = None,
+        required_planning_kinds: list[str] | None = None,
     ) -> dict[str, Any]:
         artifact_preflight = _artifact_preflight(
             state=self.state,
@@ -320,6 +333,7 @@ class CodexSupervisorMcpAPI:
         require_skill_receipts: bool = True,
         cursor_review: bool = False,
         cursor_model: str | None = None,
+        task_complexity: str | None = None,
     ) -> dict[str, Any]:
         max_rounds = max(1, int(max_rounds_per_gate))
         screenshot_payloads = screenshots or []
@@ -340,16 +354,45 @@ class CodexSupervisorMcpAPI:
             planning_artifacts=gate_artifacts,
         )
         effective_user_facing = bool(visual_policy["required"])
-        skill_probe = verify_prd_tdd_skill_receipts(receipt_payloads) if require_skill_receipts else None
+        workflow_route = select_workflow_route(
+            intent=intent,
+            user_facing=effective_user_facing,
+            task_complexity=task_complexity,
+        )
+        route_gates = tuple(str(gate) for gate in workflow_route["gates"])
+        required_skill_stages = tuple(str(stage) for stage in workflow_route["required_skill_stages"])
+        effective_cursor_review = bool(cursor_review or workflow_route["force_cursor_review"])
+        skill_probe = (
+            verify_prd_tdd_skill_receipts(
+                receipt_payloads,
+                required_stages=required_skill_stages,
+            )
+            if require_skill_receipts and required_skill_stages
+            else None
+        )
         self.state.upsert_dual_agent_workflow(
             run_id=run_id,
             task_id=task_id,
             cwd=str(Path(cwd).expanduser()),
             intent=intent,
-            current_gate=WORKFLOW_GATES[0],
+            current_gate=route_gates[0],
             status="running",
             max_rounds_per_gate=max_rounds,
             user_facing=effective_user_facing,
+        )
+        self.state.write_event(
+            run_id=run_id,
+            source="dual_agent",
+            kind="dual_agent_workflow_route",
+            payload={
+                **workflow_route,
+                "task_id": task_id,
+                "run_id": run_id,
+                "intent": intent,
+                "effective_user_facing": effective_user_facing,
+                "requested_cursor_review": bool(cursor_review),
+                "effective_cursor_review": effective_cursor_review,
+            },
         )
         notifier = self._notifier()
         await self._emit_workflow_milestone(
@@ -427,11 +470,12 @@ class CodexSupervisorMcpAPI:
                     cwd=cwd,
                     screenshots=screenshot_payloads,
                     visual_evidence_policy=visual_policy,
+                    workflow_route=workflow_route,
                 )
 
         steps: list[dict[str, Any]] = []
         final_payload: dict[str, Any] | None = None
-        for gate in WORKFLOW_GATES:
+        for gate in route_gates:
             self.state.update_dual_agent_workflow(
                 run_id=run_id,
                 task_id=task_id,
@@ -471,6 +515,18 @@ class CodexSupervisorMcpAPI:
                     artifact_policy="strict",
                     user_facing=effective_user_facing and gate == "outcome_review",
                     screenshots=screenshot_payloads,
+                    required_artifacts=required_artifacts_for_complexity(
+                        gate=gate,
+                        task_complexity=str(workflow_route["task_complexity"]),
+                    ),
+                    required_prerequisite_gates=prerequisites_for_route(
+                        gate=gate,
+                        route_gates=route_gates,
+                    ),
+                    required_planning_kinds=required_planning_kinds_for_complexity(
+                        gate=gate,
+                        task_complexity=str(workflow_route["task_complexity"]),
+                    ),
                 )
                 final_payload = payload
                 claim_probe = None
@@ -484,7 +540,7 @@ class CodexSupervisorMcpAPI:
                         tool_receipts=receipt_payloads,
                     )
                     payload["claim_verification"] = asdict(claim_probe)
-                if cursor_review and payload.get("status") == "accepted":
+                if effective_cursor_review and payload.get("status") == "accepted":
                     review_request_event_id = self._write_interaction_message(
                         run_id=run_id,
                         message=AgentMailboxMessage(
@@ -623,7 +679,7 @@ class CodexSupervisorMcpAPI:
                 )
                 cursor_decision = (
                     "accept"
-                    if not cursor_review or cursor_accepts(cursor_result)
+                    if not effective_cursor_review or cursor_accepts(cursor_result)
                     else "revise"
                 )
                 codex_decision = (
@@ -684,7 +740,37 @@ class CodexSupervisorMcpAPI:
                     cursor_review=cursor_payload,
                     objection=objection,
                     evidence_refs=evidence_refs,
+                    tool_receipts=tuple(receipt_payloads),
                 )
+                if (
+                    codex_decision == "accept"
+                    and review_packet.get("round_policy", {}).get("force_next_round")
+                ):
+                    codex_decision = "revise"
+                    blocking = review_packet.get("round_policy", {}).get("blocking_findings") or []
+                    objection = (
+                        f"blocking_review_findings: {', '.join(str(item) for item in blocking)}"
+                        if blocking else "blocking_review_findings"
+                    )
+                    codex_report = codex_confidence_report(
+                        decision=codex_decision,
+                        gate_status=str(payload.get("status") or ""),
+                        probe_statuses=probe_statuses,
+                        claim_verification=claim_payload,
+                        cursor_review=cursor_payload,
+                    )
+                    review_packet = codex_review_packet(
+                        task_id=task_id,
+                        gate=gate,
+                        decision=codex_decision,
+                        confidence=codex_report,
+                        probe_statuses=probe_statuses,
+                        claim_verification=claim_payload,
+                        cursor_review=cursor_payload,
+                        objection=objection,
+                        evidence_refs=evidence_refs,
+                        tool_receipts=tuple(receipt_payloads),
+                    )
                 round_result = self.record_gate_round(
                     run_id=run_id,
                     task_id=task_id,
@@ -774,6 +860,7 @@ class CodexSupervisorMcpAPI:
                         cwd=cwd,
                         screenshots=screenshot_payloads,
                         visual_evidence_policy=visual_policy,
+                        workflow_route=workflow_route,
                     )
 
                 if codex_decision == "accept" and claude_decision == "accept":
@@ -862,9 +949,14 @@ class CodexSupervisorMcpAPI:
                     cwd=cwd,
                     screenshots=screenshot_payloads,
                     visual_evidence_policy=visual_policy,
+                    workflow_route=workflow_route,
                 )
 
-        artifact_status = mandatory_artifact_status(cwd=cwd, task_id=task_id)
+        artifact_status = mandatory_artifact_status(
+            cwd=cwd,
+            task_id=task_id,
+            task_complexity=str(workflow_route["task_complexity"]),
+        )
         status = "accepted" if artifact_status["status"] == "ok" else "failed"
         self.state.update_dual_agent_workflow(
             run_id=run_id,
@@ -896,6 +988,7 @@ class CodexSupervisorMcpAPI:
             screenshots=screenshot_payloads,
             mandatory_artifacts=artifact_status,
             visual_evidence_policy=visual_policy,
+            workflow_route=workflow_route,
         )
 
     def read_dual_agent_workflow_resume_prompt(
@@ -1044,6 +1137,7 @@ class CodexSupervisorMcpAPI:
                    'dual_agent_gate_result',
                    'dual_agent_planning_validation',
                    'dual_agent_skill_receipt_validation',
+                   'dual_agent_workflow_route',
                    'dual_agent_interaction_message',
                    'tri_agent_cursor_review'
                  )
@@ -1053,6 +1147,7 @@ class CodexSupervisorMcpAPI:
         rounds: list[dict[str, Any]] = []
         planning_validations: list[dict[str, Any]] = []
         skill_receipt_validations: list[dict[str, Any]] = []
+        workflow_routes: list[dict[str, Any]] = []
         interactions: list[dict[str, Any]] = []
         cursor_reviews: list[dict[str, Any]] = []
         latest_result: dict[str, Any] | None = None
@@ -1081,6 +1176,12 @@ class CodexSupervisorMcpAPI:
                     "occurred_at": row["ts"],
                     **payload,
                 }))
+            elif row["kind"] == "dual_agent_workflow_route":
+                workflow_routes.append(redact({
+                    "event_id": row["event_id"],
+                    "occurred_at": row["ts"],
+                    **payload,
+                }))
             elif row["kind"] == "dual_agent_interaction_message":
                 interactions.append(redact({
                     "event_id": row["event_id"],
@@ -1098,7 +1199,10 @@ class CodexSupervisorMcpAPI:
                 latest_result = redact(payload)
                 latest_result_event_id = int(row["event_id"])
 
-        if not rounds and not planning_validations and not skill_receipt_validations and latest_result is None:
+        if (
+            not rounds and not planning_validations and not skill_receipt_validations
+            and not workflow_routes and latest_result is None
+        ):
             return {
                 "status": "not_found",
                 "run_id": run_id,
@@ -1106,6 +1210,7 @@ class CodexSupervisorMcpAPI:
                 "rounds": [],
                 "planning_validations": [],
                 "skill_receipt_validations": [],
+                "workflow_routes": [],
                 "interactions": [],
                 "cursor_reviews": [],
                 "result": None,
@@ -1118,6 +1223,7 @@ class CodexSupervisorMcpAPI:
             "rounds": rounds,
             "planning_validations": planning_validations,
             "skill_receipt_validations": skill_receipt_validations,
+            "workflow_routes": workflow_routes,
             "interactions": interactions,
             "cursor_reviews": cursor_reviews,
             "result_event_id": latest_result_event_id,
@@ -1293,6 +1399,7 @@ class CodexSupervisorMcpAPI:
         cwd: str,
         screenshots: list[dict[str, Any]],
         visual_evidence_policy: dict[str, Any],
+        workflow_route: dict[str, Any] | None = None,
         mandatory_artifacts: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if final_gate_result is not None:
@@ -1308,7 +1415,11 @@ class CodexSupervisorMcpAPI:
             cwd=cwd,
             screenshots=screenshots,
         )
-        mandatory = mandatory_artifacts or mandatory_artifact_status(cwd=cwd, task_id=task_id)
+        mandatory = mandatory_artifacts or mandatory_artifact_status(
+            cwd=cwd,
+            task_id=task_id,
+            task_complexity=str((workflow_route or {}).get("task_complexity") or "large"),
+        )
         return redact({
             "status": status,
             "run_id": run_id,
@@ -1317,6 +1428,7 @@ class CodexSupervisorMcpAPI:
             "steps": steps,
             "final_gate_result": final_gate_result,
             "visual_evidence_policy": visual_evidence_policy,
+            "workflow_route": workflow_route,
             "artifact_export": artifact_export,
             "mandatory_artifacts": mandatory,
             "resume": workflow_resume_prompt(self.state, run_id=run_id, task_id=task_id),
@@ -1338,6 +1450,7 @@ class CodexSupervisorMcpAPI:
         budget_usd: float,
         timeout_s: int,
         planning_artifacts: list[dict[str, Any]] | None,
+        required_planning_kinds: tuple[str, ...] | list[str] | None = None,
     ) -> DualAgentGateSpec:
         return DualAgentGateSpec(
             task_id=task_id,
@@ -1352,6 +1465,10 @@ class CodexSupervisorMcpAPI:
             model=model,
             budget_usd=budget_usd,
             timeout_s=timeout_s,
+            required_planning_kinds=(
+                tuple(str(kind) for kind in required_planning_kinds)
+                if required_planning_kinds is not None else None
+            ),
             planning_artifacts=tuple(
                 artifact
                 for artifact in (
@@ -1413,6 +1530,9 @@ def build_codex_supervisor_mcp_server(
         artifact_policy: str = "strict",
         user_facing: bool = False,
         screenshots: list[dict[str, Any]] | None = None,
+        required_artifacts: list[str] | None = None,
+        required_prerequisite_gates: list[str] | None = None,
+        required_planning_kinds: list[str] | None = None,
     ) -> dict[str, Any]:
         return await tool_api.start_dual_agent_gate(
             task_id=task_id,
@@ -1431,6 +1551,9 @@ def build_codex_supervisor_mcp_server(
             artifact_policy=artifact_policy,
             user_facing=user_facing,
             screenshots=screenshots,
+            required_artifacts=required_artifacts,
+            required_prerequisite_gates=required_prerequisite_gates,
+            required_planning_kinds=required_planning_kinds,
         )
 
     @mcp.tool()
@@ -1569,6 +1692,7 @@ def build_codex_supervisor_mcp_server(
         require_skill_receipts: bool = True,
         cursor_review: bool = False,
         cursor_model: str | None = None,
+        task_complexity: str | None = None,
     ) -> dict[str, Any]:
         return await tool_api.run_dual_agent_workflow(
             cwd=cwd,
@@ -1587,6 +1711,7 @@ def build_codex_supervisor_mcp_server(
             require_skill_receipts=require_skill_receipts,
             cursor_review=cursor_review,
             cursor_model=cursor_model,
+            task_complexity=task_complexity,
         )
 
     @mcp.tool()
@@ -2024,10 +2149,20 @@ def _artifact_preflight(
     artifact_policy: str,
     user_facing: bool,
     screenshots: list[dict[str, Any]],
+    required_artifacts: tuple[str, ...] | list[str] | None = None,
+    required_prerequisite_gates: tuple[str, ...] | list[str] | None = None,
 ) -> dict[str, Any]:
     policy = str(artifact_policy or "strict").strip().lower()
-    required = list(STRICT_ARTIFACT_REQUIREMENTS.get(gate, ()))
-    required_prerequisites = list(GATE_PREREQUISITES.get(gate, ()))
+    required = (
+        [str(item) for item in required_artifacts]
+        if required_artifacts is not None
+        else list(STRICT_ARTIFACT_REQUIREMENTS.get(gate, ()))
+    )
+    required_prerequisites = (
+        [str(item) for item in required_prerequisite_gates]
+        if required_prerequisite_gates is not None
+        else list(GATE_PREREQUISITES.get(gate, ()))
+    )
     present, missing_paths = _planning_artifact_roles(planning_artifacts)
     screenshot_paths, missing_screenshot_paths = _valid_screenshot_paths(screenshots)
     visual_validation = _visual_validation_evidence(screenshots, required=user_facing)

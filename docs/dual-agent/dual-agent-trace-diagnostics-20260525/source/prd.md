@@ -24,9 +24,9 @@ P2. The classifier represents all 14 MAST modes through deterministic reason
 strings while preserving existing supervisor categories and internal non-MAST
 categories.
 
-P3. Replay exports include deterministic cross-event detections for the
-supervisor-verifiable modes: step repetition, ignored prior input, premature
-termination, and incorrect verification.
+P3. Replay exports include deterministic cross-event detections and a first
+class coverage matrix for the supervisor-verifiable modes: step repetition,
+ignored prior input, premature termination, and incorrect verification.
 
 P4. Every `trace_envelope.tool_calls` item has `started_at_ms`,
 `ended_at_ms`, and `duration_ms`.
@@ -34,8 +34,8 @@ P4. Every `trace_envelope.tool_calls` item has `started_at_ms`,
 P5. Model and SDK calls record real wall-clock timing where the supervisor owns
 the invocation boundary.
 
-P6. Human-readable artifacts expose MAST codes and tool timing without requiring
-the operator to open raw JSON first.
+P6. Human-readable artifacts expose MAST codes, per-mode coverage, run totals,
+and tool timing without requiring the operator to open raw JSON first.
 
 ## Non-Goals
 
@@ -80,8 +80,9 @@ the operator to open raw JSON first.
   objections, accepted results with skipped required probes, or Cursor rejecting
   a result that Codex accepted.
 - Public boundary: `dual_agent_runner` and artifact export.
-- Allowed outcomes: `replay/manifest.json` contains sequence failure entries
-  with event ids and MAST codes.
+- Allowed outcomes: `replay/manifest.json`, `mast-coverage.md`, and
+  `replay/mast-coverage.json` contain sequence failure entries, deterministic
+  trigger surfaces, event ids, and MAST codes.
 - Forbidden outcomes: operators must manually compare events to notice these
   failures.
 
@@ -108,13 +109,14 @@ the operator to open raw JSON first.
 
 ### P6 - Human Artifact Projection
 
-- User-visible promise: `interactions.md`, `transcript.md`, and
-  `replay/manifest.json` expose the new fields clearly.
+- User-visible promise: `interactions.md`, `transcript.md`, `triage.md`,
+  `mast-coverage.md`, and `replay/manifest.json` expose the new fields clearly.
 - Representative action: export artifacts for a run with MAST failure and tool
   calls.
 - Public boundary: artifact export.
-- Allowed outcomes: Markdown shows MAST code/mode and timing; manifest includes
-  sequence detections.
+- Allowed outcomes: Markdown shows MAST code/mode, timing, missing-receipt
+  links, run totals, and per-mode coverage; manifest includes sequence
+  detections and points at `replay/mast-coverage.json`.
 - Forbidden outcomes: machine JSON has the fields but Markdown hides them.
 
 ## Acceptance Criteria
@@ -126,8 +128,9 @@ the operator to open raw JSON first.
 - `timed_tool_call` or an equivalent deterministic helper exists and is tested
   with fake clocks.
 - All tool calls stamped into `trace_envelope` include timing fields.
-- Live failure-mode probe is rerun and still blocks with
-  `workflow_claim_verification_failed`.
+- Live failure-mode probe remains runnable and, when Claude/Cursor credentials
+  are present, still blocks with `workflow_claim_verification_failed`; skipped
+  live reruns are reported as credential-gated rather than claimed as evidence.
 - Cursor remains a reviewer/challenger, not the acceptance boundary.
 
 ## Risks And Open Questions

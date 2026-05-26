@@ -1,0 +1,19 @@
+{
+  "file_tree_sha256": "ecc6cd1254e076a3a34d2ba05170de4caf00d27aec3f00bfa8f8831877f57a89",
+  "git": {
+    "diff_bytes": 0,
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "diff_stat": "",
+    "head": "f9a6f81",
+    "status_short": "?? docs/dual-agent/dual-agent-trace-precision-postcommit-audit-20260525/\n?? docs/dual-agent/vela-colleague-routing-plan-20260524/"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "source_artifact_hashes": {
+    "grill_findings": "4bb646fd2bf056c6be4ec17d97fdf652933b2d3a9f8a65e4bc6b9696c9280781",
+    "implementation_plan": "a42d09d69eabdbd43db5479bc9fa89834dd83314516863bcae993c22685815fe",
+    "issues": "740080a913f4dd5592722991632f4d8a994ffeccfea653d9258cd32059c2e86f",
+    "prd": "7283797a350b31fa431612512170b2e0a0fa188e6f4777c464c7268877936af9",
+    "tdd_plan": "d805932d64569e86e83e210c848681cb05b7847ff3b14fa26402ed8f4b5a2331"
+  },
+  "status": "captured"
+}

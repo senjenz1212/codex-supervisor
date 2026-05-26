@@ -20,6 +20,7 @@ from typing import Any
 
 from .target.types import ScopeContract
 from .redaction import redact
+from .schema_migrations import run_forward_migrations
 from .trace_envelope import stamp_trace_envelope
 
 
@@ -229,20 +230,10 @@ class State:
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA synchronous=NORMAL")
         self._conn.executescript(SCHEMA)
-        self._ensure_actions_resume_requested_at()
+        run_forward_migrations(self._conn)
         self._conn.commit()
         self._lock = asyncio.Lock()
         self.decisions: asyncio.Queue[Decision] = asyncio.Queue()
-
-    def _ensure_actions_resume_requested_at(self) -> None:
-        columns = {
-            row["name"]
-            for row in self._conn.execute("PRAGMA table_info(actions)").fetchall()
-        }
-        if "resume_requested_at" not in columns:
-            self._conn.execute(
-                "ALTER TABLE actions ADD COLUMN resume_requested_at INTEGER"
-            )
 
     # --- run registration (public boundary: run_registration_api) ---
     def register_run(self, *, run_id: str, session_id: str, rollout_path: str,
@@ -375,6 +366,7 @@ class State:
                    'dual_agent_gate_result',
                    'dual_agent_planning_validation',
                    'dual_agent_skill_receipt_validation',
+                   'dual_agent_workflow_route',
                    'dual_agent_interaction_message',
                    'tri_agent_cursor_review'
                  )

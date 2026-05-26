@@ -1,0 +1,147 @@
+{
+  "artifact_export": {
+    "files": [
+      "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/dual-agent-trace-precision-postcommit-audit-20260525/index.md",
+      "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/dual-agent-trace-precision-postcommit-audit-20260525/triage.md",
+      "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/dual-agent-trace-precision-postcommit-audit-20260525/prd.md",
+      "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/dual-agent-trace-precision-postcommit-audit-20260525/tdd.md",
+      "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/dual-agent-trace-precision-postcommit-audit-20260525/grill-findings.md",
+      "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/dual-agent-trace-precision-postcommit-audit-20260525/issues.md",
+      "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/dual-agent-trace-precision-postcommit-audit-20260525/screenshots.md",
+      "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/dual-agent-trace-precision-postcommit-audit-20260525/outcome-review.md",
+      "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/dual-agent-trace-precision-postcommit-audit-20260525/interactions.md",
+      "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/dual-agent-trace-precision-postcommit-audit-20260525/transcript.md",
+      "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/dual-agent-trace-precision-postcommit-audit-20260525/transcript.jsonl",
+      "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/dual-agent-trace-precision-postcommit-audit-20260525/replay/manifest.json",
+      "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/dual-agent-trace-precision-postcommit-audit-20260525/replay/workspace-snapshot.json",
+      "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/dual-agent-trace-precision-postcommit-audit-20260525/source/grill-findings.md",
+      "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/dual-agent-trace-precision-postcommit-audit-20260525/source/implementation-plan.md",
+      "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/dual-agent-trace-precision-postcommit-audit-20260525/source/issues.md",
+      "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/dual-agent-trace-precision-postcommit-audit-20260525/source/prd.md",
+      "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/dual-agent-trace-precision-postcommit-audit-20260525/source/tdd.md"
+    ],
+    "output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/dual-agent-trace-precision-postcommit-audit-20260525",
+    "status": "ok"
+  },
+  "audit_target": {
+    "commit": "f9a6f81"
+  },
+  "claude": {
+    "attempts": 1,
+    "cost_usd": 2.5984395,
+    "gate_status": "accepted",
+    "model": "opus",
+    "outcome": {
+      "changed_files": [],
+      "claims": [
+        "all 14 MAST modes are represented in MAST_FAILURE_MODES and exercised by tests via payload classification and sequence detection",
+        "tool_call_id is deterministic across duplicate emissions of the same logical call so parent/reference links remain stable",
+        "P2, P3, and P1 probe tool calls carry parent_tool_call_id equal to the final invoke_claude_lead tool_call_id, including after a corrective retry",
+        "tokens_in correctly aggregates input + cache_creation_input + cache_read_input tokens; tokens_out equals output_tokens; both flow into lead invocation tool-call result_summary and into recorded interaction trace envelopes",
+        "schema-drift Claude responses still surface token_usage and model on the P2 ProbeResult path",
+        "artifact markdown (triage and call tables) and JSONL transcripts both expose tool_call_id, parent_tool_call_id, references_tool_call_id, duration_ms, duration_us, tokens_in, tokens_out, probe_id, MAST taxonomy, sequence failures and replay manifests",
+        "the verify_workflow_claims self-reference in the failure-mode artifact is acceptable duplicate-reference modeling: the decision-level entry is the same logical tool call augmented with decision metadata, so a self-reference is an identity link; no renderer or replay path is broken by it",
+        "tests/test_failure_taxonomy.py, tests/test_dual_agent_lead_invoker.py, tests/test_dual_agent_runner.py, and tests/test_dual_agent_artifacts.py all pass (59/59)"
+      ],
+      "confidence": 0.93,
+      "confidence_criteria": [
+        "all 14 MAST modes mapped and tested",
+        "probe parent_tool_call_id links to final invoke_claude_lead call including retry case",
+        "token_usage aggregation matches concrete asserted values (60/7 and 66/44)",
+        "duration_us and duration_ms both populated and consistent (us = ms*1000)",
+        "tool_call_id deterministic across duplicate emissions",
+        "artifact tables expose the new precision columns",
+        "tests in the four target files all pass",
+        "verify_workflow_claims self-reference judged against correctness rather than aesthetics"
+      ],
+      "confidence_rationale": "All targeted code paths line up with tests that were re-run green; the deliberately-flagged self-reference edge is correctly characterizable as cosmetic and explicitly does not block any traversal, MAST classification, or replay manifest path; -0.07 reserved because the audit relied on the existing test suite plus targeted reads rather than re-deriving every replay manifest emission path end-to-end, and a stricter reviewer might want the self-reference patched before close.",
+      "decisions": [
+        "accept"
+      ],
+      "objections": [
+        "verify_workflow_claims self-reference in scripts/probe_live_failure_mode.py:373-388 is cosmetic and should be cleaned up in a follow-up but does not require patching now"
+      ],
+      "specialists": [
+        {
+          "decision": "accept",
+          "name": "Trace Precision Reviewer",
+          "objection": "verify_workflow_claims decision-entry self-references its own tool_call_id in failure-mode artifacts (cosmetic; recommend dropping or distinct-suffixing in a follow-up; not a correctness blocker)"
+        }
+      ],
+      "summary": "Post-commit audit of f9a6f81 accepts the trace-precision slice. duration_us/ms, tool_call_id, parent_tool_call_id, token capture (incl. cache_creation/read), retry-aware parent linking, artifact column expansion, and all 14 MAST modes are correctly modeled and tested (59/59 pass). The verify_workflow_claims self-reference in failure-mode artifacts is acceptable duplicate-reference modeling and at worst a cosmetic follow-up; no production-code patch is required.",
+      "task_id": "dual-agent-trace-precision-postcommit-audit-20260525",
+      "test_status": "passed",
+      "tests": [
+        "python -m pytest tests/test_failure_taxonomy.py tests/test_dual_agent_lead_invoker.py tests/test_dual_agent_runner.py tests/test_dual_agent_artifacts.py -x --tb=short"
+      ]
+    },
+    "probe_reasons": {
+      "P1": "planning_artifact_boundaries_ok",
+      "P2": "worker_orchestration_invocation_ok",
+      "P3": "outcome_fidelity_ok",
+      "P_planning": "planning_validation_ok"
+    },
+    "token_usage": {
+      "cache_creation_input_tokens": 163686,
+      "cache_read_input_tokens": 2534304,
+      "context_window": 200000,
+      "input_tokens": 25,
+      "max_output_tokens": 64000,
+      "output_tokens": 12325,
+      "tokens_in": 2698015,
+      "tokens_out": 12325
+    },
+    "tokens_in": 2698015,
+    "tokens_out": 12325
+  },
+  "claude_event_id": 3,
+  "codex": {
+    "blockers": [
+      {
+        "probe": {
+          "details": {
+            "error": "missing_api_key: [REDACTED] requires api_key (set CURSOR_API_KEY or pass api_key=[REDACTED] for remote bridges set allow_api_key_env_fallback=True to opt in to env-var fallback)."
+          },
+          "probe_id": "CURSOR",
+          "reason": "cursor_invocation_failed",
+          "status": "red"
+        },
+        "reason": "cursor_invocation_failed",
+        "source": "cursor"
+      }
+    ],
+    "event_addresses": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "final_status": "blocked"
+  },
+  "created_at": 1779729164,
+  "cursor": {
+    "accepted": false,
+    "agent_id": null,
+    "duration_ms": null,
+    "invoked": true,
+    "model": null,
+    "outcome": null,
+    "probe": {
+      "details": {
+        "error": "missing_api_key: [REDACTED] requires api_key (set CURSOR_API_KEY or pass api_key=[REDACTED] for remote bridges set allow_api_key_env_fallback=True to opt in to env-var fallback)."
+      },
+      "probe_id": "CURSOR",
+      "reason": "cursor_invocation_failed",
+      "status": "red"
+    },
+    "run_id": null,
+    "status": null
+  },
+  "cursor_event_id": 4,
+  "final_event_id": 5,
+  "fixture_dir": "/Users/sam.zhang/Documents/codex-supervisor/tests/fixtures/dual_agent/dual_agent_trace_precision_postcommit_audit_20260525",
+  "probe": "trace_precision_postcommit_tri_agent_audit",
+  "run_id": "dual-agent-trace-precision-postcommit-audit-20260525",
+  "status": "blocked",
+  "task_id": "dual-agent-trace-precision-postcommit-audit-20260525"
+}

@@ -13,11 +13,16 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from supervisor.agent_mailbox import AgentMailboxMessage, outcome_confidence_report
 from supervisor.cursor_agent import (
@@ -25,6 +30,7 @@ from supervisor.cursor_agent import (
     CursorInvocationResult,
     cursor_accepts,
     invoke_cursor_agent,
+    select_cursor_model,
 )
 from supervisor.dual_agent import GateRound, ProbeResult
 from supervisor.dual_agent_artifacts import export_dual_agent_run_artifacts
@@ -36,16 +42,17 @@ from supervisor.state import State
 from supervisor.trace_envelope import ensure_tool_call_timing, timed_tool_call
 
 
-TASK_ID = "live-failure-mode-probe-20260525-01"
-RUN_ID = TASK_ID
+DEFAULT_TASK_ID = "live-failure-mode-probe-20260525-01"
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Probe live receipt-backed failure behavior.")
-    parser.add_argument("--output-dir", default=f"docs/dual-agent/{TASK_ID}")
+    parser.add_argument("--task-id", default=DEFAULT_TASK_ID)
+    parser.add_argument("--run-id", default=None)
+    parser.add_argument("--output-dir", default=None)
     parser.add_argument(
         "--fixture-dir",
-        default=f"tests/fixtures/dual_agent/{TASK_ID.replace('-', '_')}",
+        default=None,
     )
     parser.add_argument("--timeout-s", type=int, default=900)
     parser.add_argument("--budget-usd", type=float, default=100.0)
@@ -56,9 +63,11 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    task_id = str(args.task_id or DEFAULT_TASK_ID)
+    run_id = str(args.run_id or task_id)
     repo_root = Path.cwd().resolve()
-    output_dir = (repo_root / args.output_dir).resolve()
-    fixture_dir = (repo_root / args.fixture_dir).resolve()
+    output_dir = (repo_root / (args.output_dir or f"docs/dual-agent/{task_id}")).resolve()
+    fixture_dir = (repo_root / (args.fixture_dir or f"tests/fixtures/dual_agent/{task_id.replace('-', '_')}")).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     fixture_dir.mkdir(parents=True, exist_ok=True)
 
@@ -67,10 +76,10 @@ def main() -> int:
         sandbox = Path(tmp) / "sandbox-repo"
         _init_repo(sandbox)
         state = State(str(Path(tmp) / "state.db"))
-        planning_artifacts = _write_source_artifacts(sandbox, TASK_ID)
+        planning_artifacts = _write_source_artifacts(sandbox, task_id)
         spec = DualAgentGateSpec(
-            task_id=TASK_ID,
-            run_id=RUN_ID,
+            task_id=task_id,
+            run_id=run_id,
             gate="outcome_review",
             instruction=_claude_instruction(),
             cwd=sandbox,
@@ -83,9 +92,9 @@ def main() -> int:
         )
 
         with timed_tool_call(
-            "start_dual_agent_gate",
-            args={
-                "task_id": TASK_ID,
+                "start_dual_agent_gate",
+                args={
+                "task_id": task_id,
                 "gate": "outcome_review",
                 "planning_artifact_count": len(planning_artifacts),
                 "timeout_s": max(1, int(args.timeout_s)),
@@ -113,15 +122,14 @@ def main() -> int:
         )
         if claim_verification_reached:
             with timed_tool_call(
-                "verify_workflow_claims",
-                args={
-                    "task_id": TASK_ID,
+                    "verify_workflow_claims",
+                    args={
+                    "task_id": task_id,
                     "user_facing": False,
                     "screenshot_count": 0,
                     "receipt_count": 0,
                     "claim_count": len((outcome_payload or {}).get("claims") or []),
                 },
-                receipt_ids=[],
             ) as claim_tool_call:
                 claim_probe = verify_workflow_claims(
                     outcome_payload=outcome_payload,
@@ -158,13 +166,12 @@ def main() -> int:
                 "probe_id": claim_probe.probe_id,
                 "reason": claim_probe.reason,
                 "args": {
-                    "task_id": TASK_ID,
+                    "task_id": task_id,
                     "user_facing": False,
                     "screenshot_count": 0,
                     "receipt_count": 0,
                     "claim_count": 0,
                 },
-                "receipt_ids": [],
                 "result_summary": {
                     "probe_id": claim_probe.probe_id,
                     "status": "skipped",
@@ -176,19 +183,20 @@ def main() -> int:
         cursor_result = None
         cursor_tool_call: dict[str, Any] | None = None
         if not args.skip_cursor and os.environ.get("CURSOR_API_KEY") and outcome_payload is not None:
+            requested_cursor_model = select_cursor_model(quality="best")
             with timed_tool_call(
-                "invoke_cursor_agent",
-                args={
-                    "task_id": TASK_ID,
+                    "invoke_cursor_agent",
+                    args={
+                    "task_id": task_id,
                     "gate": "outcome_review",
                     "timeout_s": max(1, min(int(args.timeout_s), 300)),
                     "expected_specialists": ["Cursor Reviewer"],
                     "claude_outcome_claim_count": len((outcome_payload or {}).get("claims") or []),
+                    "requested_model": requested_cursor_model,
                 },
-                receipt_ids=[],
             ) as cursor_tool_call:
                 cursor_result = invoke_cursor_agent(CursorInvocationRequest(
-                    task_id=TASK_ID,
+                    task_id=task_id,
                     gate="outcome_review",
                     instruction=_cursor_instruction(),
                     cwd=sandbox,
@@ -196,14 +204,17 @@ def main() -> int:
                     expected_specialists=("Cursor Reviewer",),
                     timeout_s=max(1, min(int(args.timeout_s), 300)),
                 ))
-            cursor_tool_call.update(_cursor_tool_call_fields(cursor_result))
+            cursor_tool_call.update(_cursor_tool_call_fields(
+                cursor_result,
+                requested_model=requested_cursor_model,
+            ))
             cursor_tool_call = ensure_tool_call_timing(cursor_tool_call)
             state.write_event(
-                run_id=RUN_ID,
+                run_id=run_id,
                 source="dual_agent",
                 kind="tri_agent_cursor_review",
                 payload={
-                    "task_id": TASK_ID,
+                    "task_id": task_id,
                     "gate": "outcome_review",
                     "accepted": cursor_accepts(cursor_result),
                     "probe": asdict(cursor_result.probe),
@@ -217,6 +228,12 @@ def main() -> int:
                     "model": cursor_result.model,
                     "duration_ms": cursor_result.duration_ms,
                     "transcript_tail": cursor_result.transcript[-4000:],
+                    "raw_transcript_refs": [
+                        {
+                            "kind": "cursor_transcript_fixture",
+                            "ref": str(fixture_dir / "cursor-transcript.txt"),
+                        },
+                    ],
                     "tool_calls": [cursor_tool_call],
                 },
             )
@@ -234,7 +251,7 @@ def main() -> int:
         )
         final_status = "blocked" if primary_failure["reason"] != "no_failure_observed" else gate_result.status
         final_payload = {
-            "task_id": TASK_ID,
+            "task_id": task_id,
             "gate": "outcome_review",
             "status": final_status,
             "claude_gate_status": gate_result.status,
@@ -273,17 +290,17 @@ def main() -> int:
             },
         }
         final_event_id = state.write_event(
-            run_id=RUN_ID,
+            run_id=run_id,
             source="dual_agent",
             kind="dual_agent_gate_result",
             payload=final_payload,
         )
         state.write_event(
-            run_id=RUN_ID,
+            run_id=run_id,
             source="dual_agent",
             kind="dual_agent_gate_round",
             payload={
-                "task_id": TASK_ID,
+                "task_id": task_id,
                 "gate": "outcome_review",
                 "round": asdict(GateRound(
                     round_index=1,
@@ -301,7 +318,7 @@ def main() -> int:
                         "name": "record_gate_round",
                         "status": "recorded",
                         "args": {
-                            "task_id": TASK_ID,
+                            "task_id": task_id,
                             "gate": "outcome_review",
                             "round_index": 1,
                         },
@@ -315,11 +332,11 @@ def main() -> int:
             },
         )
         state.write_event(
-            run_id=RUN_ID,
+            run_id=run_id,
             source="dual_agent",
             kind="dual_agent_interaction_message",
             payload=AgentMailboxMessage(
-                task_id=TASK_ID,
+                task_id=task_id,
                 gate="outcome_review",
                 sender="codex",
                 recipient="claude_code,cursor",
@@ -390,11 +407,11 @@ def main() -> int:
             ).to_event_payload(),
         )
 
-        _copy_source_artifacts(sandbox, output_dir, TASK_ID)
+        _copy_source_artifacts(sandbox, output_dir, task_id)
         artifact_export = export_dual_agent_run_artifacts(
             state,
-            run_id=RUN_ID,
-            task_id=TASK_ID,
+            run_id=run_id,
+            task_id=task_id,
             output_dir=output_dir,
         )
         _write_live_fixtures(
@@ -402,7 +419,7 @@ def main() -> int:
             gate_result=gate_result,
             cursor_result=cursor_result,
         )
-        final_event_payload = _event_payload(state, final_event_id)
+        final_event_payload = _event_payload(state, run_id=run_id, event_id=final_event_id)
         summary = {
             "probe": "live_failure_mode_probe",
             "created_at": started,
@@ -415,8 +432,8 @@ def main() -> int:
                 )
                 else "unexpected"
             ),
-            "run_id": RUN_ID,
-            "task_id": TASK_ID,
+            "run_id": run_id,
+            "task_id": task_id,
             "final_status": final_status,
             "claude_gate_status": gate_result.status,
             "supervisor_final_status": final_status,
@@ -537,8 +554,8 @@ def _write_live_fixtures(
         )
 
 
-def _event_payload(state: State, event_id: int) -> dict[str, Any]:
-    row = state.get_event(run_id=RUN_ID, event_id=event_id)
+def _event_payload(state: State, *, run_id: str, event_id: int) -> dict[str, Any]:
+    row = state.get_event(run_id=run_id, event_id=event_id)
     if row is not None:
         return json.loads(row["payload_json"] or "{}")
     return {}
@@ -575,15 +592,22 @@ def _cursor_summary(
     }
 
 
-def _cursor_tool_call_fields(result: CursorInvocationResult) -> dict[str, Any]:
+def _cursor_tool_call_fields(
+    result: CursorInvocationResult,
+    *,
+    requested_model: str | None = None,
+) -> dict[str, Any]:
     return {
         "status": result.status,
         "agent_id": result.agent_id,
         "run_id": result.run_id,
+        "requested_model": requested_model,
         "model": result.model,
         "cursor_duration_ms": result.duration_ms,
+        "probe_id": result.probe.probe_id,
         "result_summary": {
             "accepted": cursor_accepts(result),
+            "probe_id": result.probe.probe_id,
             "probe_status": result.probe.status,
             "probe_reason": result.probe.reason,
             "outcome_present": result.outcome is not None,

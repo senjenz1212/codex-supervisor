@@ -1,0 +1,91 @@
+{
+  "event_ids": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+  ],
+  "event_kinds": [
+    "dual_agent_gate_result",
+    "dual_agent_gate_round",
+    "dual_agent_interaction_message",
+    "dual_agent_planning_validation",
+    "tri_agent_cursor_review"
+  ],
+  "events_count": 7,
+  "failure_summary": {
+    "event_id": 5,
+    "failure_taxonomy": {
+      "category": "inter_agent_misalignment",
+      "code": "cursor_invocation_failed",
+      "details": {
+        "error": "missing_api_key: [REDACTED] requires api_key (set CURSOR_API_KEY or pass api_key=[REDACTED] for remote bridges set allow_api_key_env_fallback=True to opt in to env-var fallback)."
+      },
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.4",
+      "mast_mode": "Information withholding",
+      "probe_id": "CURSOR",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "validation_probe",
+      "subcategory": "reviewer_disagreement"
+    },
+    "policy_verdict": "blocked"
+  },
+  "files": {
+    "index": "index.md",
+    "interactions": "interactions.md",
+    "transcript_jsonl": "transcript.jsonl",
+    "transcript_markdown": "transcript.md",
+    "workspace_snapshot": "replay/workspace-snapshot.json"
+  },
+  "handoff_packets": [
+    {
+      "content": "{\n  \"cwd\": \"/Users/sam.zhang/Documents/codex-supervisor\",\n  \"expected_decisions\": [],\n  \"expected_objections\": [],\n  \"expected_specialists\": [\n    \"Trace Precision Reviewer\"\n  ],\n  \"gate\": \"outcome_review\",\n  \"instruction\": \"Post-commit tri-agent audit for commit f9a6f81 (`Harden dual-agent trace precision`).\\n\\nYou are Claude Code acting as a rigorous reviewer, not as implementer. Inspect the current repository and the committed diff for f9a6f81. Ground your review in code and tests. Do not edit files.\\n\\nFocus areas:\\n1. Trace precision in `supervisor/trace_envelope.py`: `duration_us`, `duration_ms`, `tool_call_id`, `parent_tool_call_id`, and duplicate/reference semantics.\\n2. Claude token capture in `supervisor/dual_agent_lead.py`: `tokens_in`, `tokens_out`, `token_usage`, usage parsing for successful and schema-drift invocations.\\n3. Runner links in `supervisor/dual_agent_runner.py`: P1/P2/P3 parent to the Claude invocation, and retry behavior uses the final Claude call as parent.\\n4. Artifact rendering in `supervisor/dual_agent_artifacts.py`: markdown and JSONL expose tool call ids, parent/reference ids, durations, tokens, MAST codes, sequence failures, and replay manifests accurately.\\n5. MAST coverage in `supervisor/failure_taxonomy.py` and `tests/test_failure_taxonomy.py`: all 14 MAST modes are represented and cross-event detections are tested.\\n6. Explicit suspicious edge to judge: the regenerated receipt decision can show `verify_workflow_claims` with `references_tool_call_id` equal to its own `tool_call_id` in the failure-mode artifact. Decide whether that is acceptable duplicate-reference modeling, a cosmetic artifact issue, or a correctness bug requiring a patch.\\n7. Check tests around `tests/test_failure_taxonomy.py`, `tests/test_dual_agent_lead_invoker.py`, `tests/test_dual_agent_runner.py`, and `tests/test_dual_agent_artifacts.py`.\\n\\nReturn `accept` only if the committed trace-precision slice is correct enough to stand and this post-commit audit can proceed without code changes. Return `deny` if any correctness issue requires patching.\",\n  \"lead_skill\": null,\n  \"outcome_validation_policy\": {\n    \"fidelity_failure\": \"abort_to_operator\",\n    \"malformed_outcome\": \"retry_once_with_corrective_packet\",\n    \"subprocess_failure\": \"abort_to_operator\",\n    \"timeout\": \"abort_to_operator\"\n  },\n  \"packet_schema_version\": \"dual-agent-handoff/v1\",\n  \"planning_artifacts\": [\n    {\n      \"kind\": \"prd\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/dual-agent-trace-precision-postcommit-audit-20260525/source/prd.md\",\n      \"sha256\": \"7283797a350b31fa431612512170b2e0a0fa188e6f4777c464c7268877936af9\"\n    },\n    {\n      \"kind\": \"issues\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/dual-agent-trace-precision-postcommit-audit-20260525/source/issues.md\",\n      \"sha256\": \"740080a913f4dd5592722991632f4d8a994ffeccfea653d9258cd32059c2e86f\"\n    },\n    {\n      \"kind\": \"tdd_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/dual-agent-trace-precision-postcommit-audit-20260525/source/tdd.md\",\n      \"sha256\": \"d805932d64569e86e83e210c848681cb05b7847ff3b14fa26402ed8f4b5a2331\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/dual-agent-trace-precision-postcommit-audit-20260525/source/grill-findings.md\",\n      \"sha256\": \"4bb646fd2bf056c6be4ec17d97fdf652933b2d3a9f8a65e4bc6b9696c9280781\"\n    },\n    {\n      \"kind\": \"implementation_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/dual-agent-trace-precision-postcommit-audit-20260525/source/implementation-plan.md\",\n      \"sha256\": \"a42d09d69eabdbd43db5479bc9fa89834dd83314516863bcae993c22685815fe\"\n    }\n  ],\n  \"suggested_skills\": [\n    \"/lead\"\n  ],\n  \"task_id\": \"dual-agent-trace-precision-postcommit-audit-20260525\"\n}\n",
+      "event_ids": [
+        5
+      ],
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/dual-agent-trace-precision-postcommit-audit-20260525.json",
+      "sha256": "aaed1ffaac671db96d5b9c9564a2056f94631585222d22b5283cbeaed408772b",
+      "status": "captured"
+    }
+  ],
+  "run_id": "dual-agent-trace-precision-postcommit-audit-20260525",
+  "schema_version": "dual-agent-replay-manifest/v1",
+  "schema_versions": {
+    "agent_interaction": "dual-agent-interaction/v1",
+    "failure_taxonomy": "dual-agent-failure-taxonomy/v1",
+    "replay_manifest": "dual-agent-replay-manifest/v1",
+    "trace_envelope": "dual-agent-trace-envelope/v1"
+  },
+  "sequence_failures": [],
+  "state": {
+    "events_count_at_capture": 7,
+    "first_event_id": 1,
+    "last_event_id": 7,
+    "transcript_jsonl_sha256": "087d3ca8ba298ab4acd03e4a79d655d5e624a40805dd74cac628108b86ec75ac"
+  },
+  "task_id": "dual-agent-trace-precision-postcommit-audit-20260525",
+  "workspace_snapshot": {
+    "file_tree_sha256": "ecc6cd1254e076a3a34d2ba05170de4caf00d27aec3f00bfa8f8831877f57a89",
+    "git": {
+      "diff_bytes": 0,
+      "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "diff_stat": "",
+      "head": "f9a6f81",
+      "status_short": "?? docs/dual-agent/dual-agent-trace-precision-postcommit-audit-20260525/\n?? docs/dual-agent/vela-colleague-routing-plan-20260524/"
+    },
+    "root": "/Users/sam.zhang/Documents/codex-supervisor",
+    "source_artifact_hashes": {
+      "grill_findings": "4bb646fd2bf056c6be4ec17d97fdf652933b2d3a9f8a65e4bc6b9696c9280781",
+      "implementation_plan": "a42d09d69eabdbd43db5479bc9fa89834dd83314516863bcae993c22685815fe",
+      "issues": "740080a913f4dd5592722991632f4d8a994ffeccfea653d9258cd32059c2e86f",
+      "prd": "7283797a350b31fa431612512170b2e0a0fa188e6f4777c464c7268877936af9",
+      "tdd_plan": "d805932d64569e86e83e210c848681cb05b7847ff3b14fa26402ed8f4b5a2331"
+    },
+    "status": "captured"
+  }
+}
