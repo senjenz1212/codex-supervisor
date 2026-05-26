@@ -450,6 +450,88 @@ def test_export_dual_agent_run_artifacts_renders_top_level_cursor_review_events(
     assert '"cursor_run_id": "cursor-run-live"' in transcript_jsonl
 
 
+def test_export_dual_agent_run_artifacts_renders_not_invoked_gate_without_blank_claude_section(tmp_path):
+    state = _state(tmp_path)
+    _insert_event(
+        state,
+        kind="dual_agent_gate_result",
+        payload={
+            "task_id": "task-1",
+            "gate": "outcome_review",
+            "status": "blocked",
+            "claude_gate_status": "not_invoked",
+            "supervisor_final_status": "blocked",
+            "attempts": 0,
+            "handoff_packet_path": None,
+            "probes": {},
+            "outcome": None,
+            "escalation": {
+                "type": "artifact_rigor",
+                "reason": "required_artifacts_missing",
+            },
+            "artifact_rigor": {
+                "status": "blocked",
+                "reason": "required_artifacts_missing",
+                "missing_artifacts": ["prd"],
+            },
+        },
+    )
+
+    result = export_dual_agent_run_artifacts(
+        state,
+        run_id="run-1",
+        task_id="task-1",
+        output_dir=tmp_path / "docs" / "dual-agent" / "task-1",
+    )
+
+    interactions = (result.output_dir / "interactions.md").read_text()
+    assert "### Supervisor Block" in interactions
+    assert "Claude Code was not invoked." in interactions
+    assert "required_artifacts_missing" in interactions
+    assert "Outcome summary: None recorded." not in interactions
+
+
+def test_export_dual_agent_run_artifacts_renders_cursor_failure_reason_when_outcome_missing(tmp_path):
+    state = _state(tmp_path)
+    _insert_event(
+        state,
+        kind="tri_agent_cursor_review",
+        payload={
+            "task_id": "task-1",
+            "gate": "outcome_review",
+            "cursor_review": {
+                "accepted": False,
+                "probe": {
+                    "probe_id": "CURSOR",
+                    "status": "red",
+                    "reason": "cursor_invocation_failed",
+                    "details": {"error": "missing_api_key"},
+                },
+                "outcome": None,
+                "agent_id": None,
+                "run_id": None,
+                "status": None,
+                "model": None,
+                "duration_ms": None,
+                "transcript_tail": "",
+            },
+        },
+    )
+
+    result = export_dual_agent_run_artifacts(
+        state,
+        run_id="run-1",
+        task_id="task-1",
+        output_dir=tmp_path / "docs" / "dual-agent" / "task-1",
+    )
+
+    interactions = (result.output_dir / "interactions.md").read_text()
+    assert "No typed Cursor outcome parsed." in interactions
+    assert "### Cursor Failure" in interactions
+    assert "- reason: `cursor_invocation_failed`" in interactions
+    assert "missing_api_key" in interactions
+
+
 def test_export_dual_agent_run_artifacts_renders_planning_validation_events(tmp_path):
     state = _state(tmp_path)
     _insert_event(
@@ -878,6 +960,49 @@ def test_export_dual_agent_run_artifacts_writes_fast_triage_page_and_source_link
     assert manifest["mast_coverage"][0]["deterministic_status"] == "covered_by_deterministic_probe"
     mast_coverage_json = json.loads((result.output_dir / "replay" / "mast-coverage.json").read_text())
     assert mast_coverage_json == manifest["mast_coverage"]
+
+
+def test_export_dual_agent_run_artifacts_writes_final_event_id_for_accepted_triage(tmp_path):
+    state = _state(tmp_path)
+    event_id = _insert_event(
+        state,
+        kind="dual_agent_gate_result",
+        payload={
+            **_result_payload(
+                gate="outcome_review",
+                status="accepted",
+                summary="Both reviewers accepted.",
+                decisions=["accept"],
+            ),
+            "claude_gate_status": "accepted",
+            "supervisor_final_status": "accepted",
+            "trace_envelope": {
+                "schema_version": "dual-agent-trace-envelope/v1",
+                "run_id": "run-1",
+                "task_id": "task-1",
+                "gate": "outcome_review",
+                "source": "dual_agent",
+                "event_kind": "dual_agent_gate_result",
+                "policy_verdict": "observed",
+                "failure_taxonomy": None,
+                "tool_calls": [],
+                "artifacts": [],
+                "claims": [],
+                "receipts": [],
+            },
+        },
+    )
+
+    result = export_dual_agent_run_artifacts(
+        state,
+        run_id="run-1",
+        task_id="task-1",
+        output_dir=tmp_path / "docs" / "dual-agent" / "task-1",
+    )
+
+    triage = (result.output_dir / "triage.md").read_text()
+    assert f"- final_event_id: `{event_id}`" in triage
+    assert "- supervisor_final_status: `accepted`" in triage
 
 
 def test_export_dual_agent_run_artifacts_writes_sequence_failure_diagnostics(tmp_path):

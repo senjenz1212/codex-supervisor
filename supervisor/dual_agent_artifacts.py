@@ -248,7 +248,7 @@ def _triage_markdown(run_id: str, task_id: str, events: list[dict[str, Any]]) ->
         "",
         f"- run_id: `{run_id}`",
         f"- task_id: `{task_id}`",
-        f"- final_event_id: `{failure.get('event_id') if isinstance(failure, dict) else ''}`",
+        f"- final_event_id: `{_triage_final_event_id(failure, final_event)}`",
         f"- policy_verdict: `{failure.get('policy_verdict') if isinstance(failure, dict) else 'observed'}`",
         f"- claude_gate_status: `{claude_gate_status}`",
         f"- supervisor_final_status: `{supervisor_final_status}`",
@@ -596,6 +596,27 @@ def _interaction_event_markdown(index: int, event: dict[str, Any]) -> str:
         )
 
     outcome = payload.get("outcome") if isinstance(payload.get("outcome"), dict) else {}
+    if not outcome:
+        return "\n".join([
+            f"## {index}. {title}",
+            "",
+            f"- event_id: `{event['event_id']}`",
+            f"- ts: `{event['ts']}`",
+            f"- interaction_type: `gate_result`",
+            f"- status: `{payload.get('status')}`",
+            f"- attempts: `{payload.get('attempts')}`",
+            "",
+            *_gate_result_no_outcome_sections(payload),
+            "### Validation",
+            "",
+            _probes_markdown(payload.get("probes")),
+            "",
+            "### Artifact Rigor",
+            "",
+            _artifact_rigor_markdown(payload.get("artifact_rigor")),
+            "",
+            *_trace_envelope_section(payload),
+        ])
     return "\n".join([
         f"## {index}. {title}",
         "",
@@ -726,6 +747,24 @@ def _event_markdown(event: dict[str, Any]) -> str:
         )
 
     outcome = payload.get("outcome") if isinstance(payload.get("outcome"), dict) else {}
+    if not outcome:
+        lines.extend([
+            f"- status: `{payload.get('status')}`",
+            f"- attempts: `{payload.get('attempts')}`",
+            f"- handoff_packet_path: `{payload.get('handoff_packet_path')}`",
+            "",
+            *_gate_result_no_outcome_sections(payload),
+            "### Probes",
+            "",
+            _probes_markdown(payload.get("probes")),
+            "",
+            "### Artifact Rigor",
+            "",
+            _artifact_rigor_markdown(payload.get("artifact_rigor")),
+            "",
+            *_trace_envelope_section(payload),
+        ])
+        return "\n".join(lines)
     lines.extend([
         f"- status: `{payload.get('status')}`",
         f"- attempts: `{payload.get('attempts')}`",
@@ -849,7 +888,7 @@ def _cursor_review_event_markdown(
         "",
         "### Cursor Outcome",
         "",
-        _text_or_none(outcome.get("summary")),
+        _cursor_outcome_summary_markdown(cursor_review, outcome),
         "",
         "Claims:",
         "",
@@ -876,6 +915,91 @@ def _cursor_review_event_markdown(
             "",
         ])
     lines.extend(_trace_envelope_section(payload))
+    return "\n".join(lines)
+
+
+def _gate_result_no_outcome_sections(payload: dict[str, Any]) -> list[str]:
+    reason = _gate_result_block_reason(payload)
+    claude_status = _clean_text(payload.get("claude_gate_status"))
+    if _claude_not_invoked(payload):
+        lines = [
+            "### Supervisor Block",
+            "",
+            "Claude Code was not invoked.",
+            "",
+            f"- reason: `{reason}`",
+        ]
+        if claude_status:
+            lines.append(f"- claude_gate_status: `{claude_status}`")
+        lines.append("")
+        return lines
+    lines = [
+        "### Claude Code -> Codex",
+        "",
+        "No typed Claude outcome parsed.",
+        "",
+        "### Failure Details",
+        "",
+        f"- reason: `{reason}`",
+    ]
+    if claude_status:
+        lines.append(f"- claude_gate_status: `{claude_status}`")
+    lines.append("")
+    return lines
+
+
+def _claude_not_invoked(payload: dict[str, Any]) -> bool:
+    if _clean_text(payload.get("claude_gate_status")) == "not_invoked":
+        return True
+    probes = payload.get("probes") if isinstance(payload.get("probes"), dict) else {}
+    return int(payload.get("attempts") or 0) == 0 and "P2" not in probes
+
+
+def _gate_result_block_reason(payload: dict[str, Any]) -> str:
+    probes = payload.get("probes") if isinstance(payload.get("probes"), dict) else {}
+    for probe_id in ("P2", "P3", "P_planning", "P1"):
+        probe = probes.get(probe_id)
+        if (
+            isinstance(probe, dict)
+            and _clean_text(probe.get("status")) == "red"
+            and _clean_text(probe.get("reason"))
+        ):
+            return _clean_text(probe.get("reason"))
+    escalation = payload.get("escalation") if isinstance(payload.get("escalation"), dict) else {}
+    reason = _clean_text(escalation.get("reason"))
+    if reason:
+        return reason
+    artifact_rigor = payload.get("artifact_rigor") if isinstance(payload.get("artifact_rigor"), dict) else {}
+    reason = _clean_text(artifact_rigor.get("reason"))
+    if reason:
+        return reason
+    for probe_id in ("P2", "P3", "P_planning", "P1"):
+        probe = probes.get(probe_id)
+        if isinstance(probe, dict) and _clean_text(probe.get("reason")):
+            return _clean_text(probe.get("reason"))
+    return _clean_text(payload.get("status")) or "unknown"
+
+
+def _cursor_outcome_summary_markdown(
+    cursor_review: dict[str, Any],
+    outcome: dict[str, Any],
+) -> str:
+    summary = _clean_text(outcome.get("summary"))
+    if summary:
+        return summary
+    probe = cursor_review.get("probe") if isinstance(cursor_review.get("probe"), dict) else {}
+    lines = [
+        "No typed Cursor outcome parsed.",
+        "",
+        "### Cursor Failure",
+        "",
+        f"- probe_id: `{_clean_text(probe.get('probe_id'))}`",
+        f"- status: `{_clean_text(probe.get('status'))}`",
+        f"- reason: `{_clean_text(probe.get('reason'))}`",
+    ]
+    details = probe.get("details")
+    if _has_value(details):
+        lines.append(f"- details: {_inline_markdown_value(details)}")
     return "\n".join(lines)
 
 
@@ -993,6 +1117,17 @@ def _run_failure_summary(events: list[dict[str, Any]]) -> dict[str, Any] | None:
                 "failure_taxonomy": failure,
             }
     return None
+
+
+def _triage_final_event_id(
+    failure: dict[str, Any] | None,
+    final_event: dict[str, Any] | None,
+) -> str:
+    if isinstance(failure, dict) and failure.get("event_id") is not None:
+        return str(failure["event_id"])
+    if isinstance(final_event, dict) and final_event.get("event_id") is not None:
+        return str(final_event["event_id"])
+    return ""
 
 
 def _latest_gate_result_event(events: list[dict[str, Any]]) -> dict[str, Any] | None:
