@@ -124,6 +124,8 @@ class CodexSupervisorMcpAPI:
         model: str | None = None,
         budget_usd: float = 5.0,
         timeout_s: int = 600,
+        execution_layer_mode: str = "lead_direct",
+        dynamic_workflow_task_class: str | None = None,
         planning_artifacts: list[dict[str, Any]] | None = None,
         artifact_policy: str = "strict",
         user_facing: bool = False,
@@ -177,6 +179,8 @@ class CodexSupervisorMcpAPI:
             model=model,
             budget_usd=budget_usd,
             timeout_s=timeout_s,
+            execution_layer_mode=execution_layer_mode,  # type: ignore[arg-type]
+            dynamic_workflow_task_class=dynamic_workflow_task_class,  # type: ignore[arg-type]
             planning_artifacts=planning_artifacts,
             required_planning_kinds=required_planning_kinds,
         )
@@ -190,6 +194,8 @@ class CodexSupervisorMcpAPI:
                 "planning_artifact_count": len(planning_artifacts or []),
                 "user_facing": user_facing,
                 "screenshot_count": len(screenshots or []),
+                "execution_layer_mode": execution_layer_mode,
+                "dynamic_workflow_task_class": dynamic_workflow_task_class,
             },
         ) as gate_tool_call:
             if notifier is not None:
@@ -244,6 +250,8 @@ class CodexSupervisorMcpAPI:
         model: str | None = None,
         budget_usd: float = 5.0,
         timeout_s: int = 600,
+        execution_layer_mode: str = "lead_direct",
+        dynamic_workflow_task_class: str | None = None,
         planning_artifacts: list[dict[str, Any]] | None = None,
         artifact_policy: str = "strict",
         user_facing: bool = False,
@@ -295,6 +303,8 @@ class CodexSupervisorMcpAPI:
             model=model,
             budget_usd=budget_usd,
             timeout_s=timeout_s,
+            execution_layer_mode=execution_layer_mode,  # type: ignore[arg-type]
+            dynamic_workflow_task_class=dynamic_workflow_task_class,  # type: ignore[arg-type]
             planning_artifacts=planning_artifacts,
         )
         results = resume_pending_gates([spec], state=self.state, runner=self.runner)
@@ -328,6 +338,8 @@ class CodexSupervisorMcpAPI:
         quality: str = "best",
         budget_usd: float = 100.0,
         timeout_s: int = 900,
+        execution_layer_mode: str = "lead_direct",
+        dynamic_workflow_task_class: str | None = None,
         planning_artifacts: list[dict[str, Any]] | None = None,
         screenshots: list[dict[str, Any]] | None = None,
         verified_claims: list[str] | None = None,
@@ -379,6 +391,8 @@ class CodexSupervisorMcpAPI:
             "effective_cursor_review": effective_cursor_review,
             "cursor_review_profile": cursor_review_profile,
             "cursor_review_gates": list(selected_cursor_gates),
+            "execution_layer_mode": execution_layer_mode,
+            "dynamic_workflow_task_class": dynamic_workflow_task_class,
         }
         skill_probe = (
             verify_prd_tdd_skill_receipts(
@@ -530,6 +544,8 @@ class CodexSupervisorMcpAPI:
                     quality=quality,
                     budget_usd=budget_usd,
                     timeout_s=timeout_s,
+                    execution_layer_mode=execution_layer_mode,
+                    dynamic_workflow_task_class=dynamic_workflow_task_class,
                     planning_artifacts=gate_artifacts,
                     artifact_policy="strict",
                     user_facing=effective_user_facing and gate == "outcome_review",
@@ -1468,6 +1484,8 @@ class CodexSupervisorMcpAPI:
         model: str | None,
         budget_usd: float,
         timeout_s: int,
+        execution_layer_mode: str,
+        dynamic_workflow_task_class: str | None,
         planning_artifacts: list[dict[str, Any]] | None,
         required_planning_kinds: tuple[str, ...] | list[str] | None = None,
     ) -> DualAgentGateSpec:
@@ -1484,6 +1502,8 @@ class CodexSupervisorMcpAPI:
             model=model,
             budget_usd=budget_usd,
             timeout_s=timeout_s,
+            execution_layer_mode=execution_layer_mode,  # type: ignore[arg-type]
+            dynamic_workflow_task_class=dynamic_workflow_task_class,  # type: ignore[arg-type]
             required_planning_kinds=(
                 tuple(str(kind) for kind in required_planning_kinds)
                 if required_planning_kinds is not None else None
@@ -1549,6 +1569,8 @@ def build_codex_supervisor_mcp_server(
         model: str | None = None,
         budget_usd: float = 5.0,
         timeout_s: int = 600,
+        execution_layer_mode: str = "lead_direct",
+        dynamic_workflow_task_class: str | None = None,
         planning_artifacts: list[dict[str, Any]] | None = None,
         artifact_policy: str = "strict",
         user_facing: bool = False,
@@ -1570,6 +1592,8 @@ def build_codex_supervisor_mcp_server(
             model=model,
             budget_usd=budget_usd,
             timeout_s=timeout_s,
+            execution_layer_mode=execution_layer_mode,
+            dynamic_workflow_task_class=dynamic_workflow_task_class,
             planning_artifacts=planning_artifacts,
             artifact_policy=artifact_policy,
             user_facing=user_facing,
@@ -1593,6 +1617,8 @@ def build_codex_supervisor_mcp_server(
         model: str | None = None,
         budget_usd: float = 5.0,
         timeout_s: int = 600,
+        execution_layer_mode: str = "lead_direct",
+        dynamic_workflow_task_class: str | None = None,
         planning_artifacts: list[dict[str, Any]] | None = None,
         artifact_policy: str = "strict",
         user_facing: bool = False,
@@ -1611,6 +1637,8 @@ def build_codex_supervisor_mcp_server(
             model=model,
             budget_usd=budget_usd,
             timeout_s=timeout_s,
+            execution_layer_mode=execution_layer_mode,
+            dynamic_workflow_task_class=dynamic_workflow_task_class,
             planning_artifacts=planning_artifacts,
             artifact_policy=artifact_policy,
             user_facing=user_facing,
@@ -1708,6 +1736,8 @@ def build_codex_supervisor_mcp_server(
         quality: str = "best",
         budget_usd: float = 100.0,
         timeout_s: int = 900,
+        execution_layer_mode: str = "lead_direct",
+        dynamic_workflow_task_class: str | None = None,
         planning_artifacts: list[dict[str, Any]] | None = None,
         screenshots: list[dict[str, Any]] | None = None,
         verified_claims: list[str] | None = None,
@@ -1729,6 +1759,8 @@ def build_codex_supervisor_mcp_server(
             quality=quality,
             budget_usd=budget_usd,
             timeout_s=timeout_s,
+            execution_layer_mode=execution_layer_mode,
+            dynamic_workflow_task_class=dynamic_workflow_task_class,
             planning_artifacts=planning_artifacts,
             screenshots=screenshots,
             verified_claims=verified_claims,

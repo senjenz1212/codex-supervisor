@@ -152,6 +152,24 @@ def _skill_receipts() -> list[dict]:
     ]
 
 
+def test_workflow_kwargs_from_payload_preserves_dynamic_workflow_preview_fields():
+    from mcp_tools.codex_supervisor_workflow_cli import workflow_kwargs_from_payload
+
+    kwargs = workflow_kwargs_from_payload({
+        "cwd": "/tmp/workspace",
+        "task_id": "workflow-1",
+        "run_id": "workflow-run",
+        "intent": "Run a fan-out task under the supervisor boundary.",
+        "execution_layer_mode": "dynamic_workflow_preview",
+        "dynamic_workflow_task_class": "codebase_audit",
+        "irrelevant_field": "must not leak into workflow kwargs",
+    })
+
+    assert kwargs["execution_layer_mode"] == "dynamic_workflow_preview"
+    assert kwargs["dynamic_workflow_task_class"] == "codebase_audit"
+    assert "irrelevant_field" not in kwargs
+
+
 def _server(
     tmp_path: Path,
     *,
@@ -430,6 +448,8 @@ async def test_workflow_cli_payload_runs_same_supervisor_api(tmp_path):
             "run_id": "workflow-run",
             "intent": "Run through the non-MCP fallback transport.",
             "max_rounds_per_gate": 1,
+            "execution_layer_mode": "dynamic_workflow_preview",
+            "dynamic_workflow_task_class": "codebase_audit",
             "tool_receipts": _tool_receipts(),
         },
         cfg=_cfg(tmp_path),
@@ -439,6 +459,8 @@ async def test_workflow_cli_payload_runs_same_supervisor_api(tmp_path):
     )
 
     assert result["status"] == "accepted"
+    assert result["workflow_route"]["execution_layer_mode"] == "dynamic_workflow_preview"
+    assert result["workflow_route"]["dynamic_workflow_task_class"] == "codebase_audit"
     assert runner_calls
     workflow = state.get_dual_agent_workflow(run_id="workflow-run", task_id="workflow-1")
     assert workflow["status"] == "accepted"
@@ -578,6 +600,55 @@ async def test_run_dual_agent_workflow_passes_budget_to_each_lead_gate(tmp_path)
     for argv in runner_calls:
         budget_flag_index = argv.index("--max-budget-usd")
         assert argv[budget_flag_index + 1] == "42.5"
+
+
+@pytest.mark.asyncio
+async def test_run_dual_agent_workflow_can_pass_dynamic_workflow_preview_policy(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
+    from supervisor.dual_agent_runner import build_lead_replay_stdout
+
+    _write_good_workflow_source_artifacts(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+
+    def fake_runner(argv, **kwargs):
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=build_lead_replay_stdout(
+                "Workflow response.\n" + _outcome_block("workflow-1"),
+            ),
+            stderr="",
+        )
+
+    server = build_codex_supervisor_mcp_server(
+        _cfg(tmp_path),
+        state,
+        mcp_cls=_FakeMCP,
+        runner=fake_runner,
+        cursor_runner=_accepting_cursor_runner,
+    )
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Run a codebase-audit fan-out task behind the lead boundary.",
+        max_rounds_per_gate=1,
+        execution_layer_mode="dynamic_workflow_preview",
+        dynamic_workflow_task_class="codebase_audit",
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert result["status"] == "accepted"
+    assert result["workflow_route"]["execution_layer_mode"] == "dynamic_workflow_preview"
+    assert result["workflow_route"]["dynamic_workflow_task_class"] == "codebase_audit"
+    packet = json.loads((tmp_path / ".handoff" / "workflow-1.json").read_text())
+    policy = packet["execution_layer_policy"]
+    assert policy["supervision_layer"] == "codex_plus_lead"
+    assert policy["lead_execution_layer"] == "lead_worker_may_use_dynamic_workflow"
+    assert policy["codex_supervises_final_artifact"] is True
+    assert "per_subagent_budget_caps_verified" in policy["preview_required_gates"]
+    assert "throwaway_worktree_comparison_recorded" in policy["preview_required_gates"]
 
 
 @pytest.mark.asyncio

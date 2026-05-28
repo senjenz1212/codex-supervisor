@@ -403,6 +403,8 @@ def test_gate_runner_records_direct_interaction_persona_addresses_and_tool_calls
     assert response["trace_envelope"]["tool_calls"][0]["args"]["model"] == "opus"
     assert response["trace_envelope"]["tool_calls"][0]["args"]["requested_model"] == "opus"
     assert response["trace_envelope"]["tool_calls"][0]["args"]["model_source"] == "quality_default:best"
+    assert response["trace_envelope"]["tool_calls"][0]["args"]["execution_layer_mode"] == "lead_direct"
+    assert response["trace_envelope"]["tool_calls"][0]["args"]["dynamic_workflow_task_class"] is None
     assert response["trace_envelope"]["tool_calls"][0]["result_summary"]["outcome_present"] is True
     assert response["trace_envelope"]["tool_calls"][0]["tokens_in"] == 66
     assert response["trace_envelope"]["tool_calls"][0]["tokens_out"] == 44

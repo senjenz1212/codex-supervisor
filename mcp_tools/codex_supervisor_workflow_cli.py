@@ -31,6 +31,8 @@ WORKFLOW_KEYS = {
     "quality",
     "budget_usd",
     "timeout_s",
+    "execution_layer_mode",
+    "dynamic_workflow_task_class",
     "planning_artifacts",
     "screenshots",
     "verified_claims",

@@ -29,6 +29,8 @@ from .agent_mailbox import (
     planning_artifact_refs,
 )
 from .dual_agent_lead import (
+    DynamicWorkflowTaskClass,
+    ExecutionLayerMode,
     GateName,
     LeadInvocationRequest,
     LeadInvocationResult,
@@ -93,6 +95,8 @@ class DualAgentGateSpec:
     model: str | None = None
     budget_usd: float = 5.0
     timeout_s: int = 600
+    execution_layer_mode: ExecutionLayerMode = "lead_direct"
+    dynamic_workflow_task_class: DynamicWorkflowTaskClass | None = None
     lead_skill_path: str | Path | None = None
     outcome_validation_policy: OutcomeValidationPolicy = field(default_factory=OutcomeValidationPolicy)
     required_planning_kinds: tuple[str, ...] | None = None
@@ -880,6 +884,8 @@ def _lead_invocation_args(
         "explicit_model": spec.model,
         "budget_usd": spec.budget_usd,
         "timeout_s": spec.timeout_s,
+        "execution_layer_mode": spec.execution_layer_mode,
+        "dynamic_workflow_task_class": spec.dynamic_workflow_task_class,
         "attempt": attempts,
         "corrective_retry": corrective_retry,
         "expected_specialists": list(spec.expected_specialists),
@@ -1056,6 +1062,8 @@ def _lead_request(
         model=spec.model,
         budget_usd=spec.budget_usd,
         timeout_s=spec.timeout_s,
+        execution_layer_mode=spec.execution_layer_mode,
+        dynamic_workflow_task_class=spec.dynamic_workflow_task_class,
         handoff_packet_path=packet_path,
     )
 
