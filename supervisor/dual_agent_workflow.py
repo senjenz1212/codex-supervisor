@@ -64,6 +64,13 @@ MANDATORY_ARTIFACTS: tuple[str, ...] = (
     "transcript.md",
 )
 
+CURSOR_REVIEW_GATES_BY_PROFILE: dict[str, tuple[str, ...]] = {
+    "off": (),
+    "default": ("outcome_review",),
+    "rigorous": ("tdd_review", "implementation_plan", "outcome_review"),
+    "vague": ("prd_review", "tdd_review", "implementation_plan", "outcome_review"),
+}
+
 VISUAL_EVIDENCE_TERMS: tuple[str, ...] = (
     "browser",
     "calendar",
@@ -73,7 +80,6 @@ VISUAL_EVIDENCE_TERMS: tuple[str, ...] = (
     "live provider",
     "screenshot",
     "slack",
-    "vela",
     "visual",
 )
 
@@ -115,6 +121,34 @@ def select_workflow_route(
         "requires_brainstorm": complexity == "vague",
         "reasons": reasons or ["default:large"],
     }
+
+
+def cursor_review_gates_for_workflow(
+    *,
+    route_gates: tuple[str, ...],
+    task_complexity: str,
+    cursor_review: bool,
+    cursor_review_profile: str | None = None,
+    cursor_review_gates: list[str] | tuple[str, ...] | None = None,
+) -> tuple[str, ...]:
+    """Return the gates where Cursor should act as an independent reviewer."""
+    route_gate_set = set(route_gates)
+    if cursor_review_gates is not None:
+        return tuple(gate for gate in cursor_review_gates if gate in route_gate_set)
+
+    profile = _normalise_cursor_review_profile(cursor_review_profile)
+    if profile == "auto":
+        profile = "vague" if task_complexity == "vague" else "default"
+    if task_complexity == "vague" and profile in {"off", "default"}:
+        profile = "vague"
+    if not cursor_review and task_complexity != "vague":
+        profile = "off"
+
+    return tuple(
+        gate
+        for gate in CURSOR_REVIEW_GATES_BY_PROFILE[profile]
+        if gate in route_gate_set
+    )
 
 
 @dataclass(frozen=True)
@@ -469,6 +503,19 @@ def _normalise_complexity(value: str | None) -> str:
     }
     normalized = aliases.get(normalized, normalized)
     return normalized if normalized in WORKFLOW_GATES_BY_COMPLEXITY else ""
+
+
+def _normalise_cursor_review_profile(value: str | None) -> str:
+    normalized = str(value or "auto").strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "none": "off",
+        "disabled": "off",
+        "false": "off",
+        "no": "off",
+    }
+    normalized = aliases.get(normalized, normalized)
+    allowed = {*CURSOR_REVIEW_GATES_BY_PROFILE.keys(), "auto"}
+    return normalized if normalized in allowed else "auto"
 
 
 def _infer_complexity(*, intent: str, user_facing: bool, reasons: list[str]) -> str:

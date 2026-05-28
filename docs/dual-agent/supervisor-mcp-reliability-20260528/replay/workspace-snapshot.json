@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "b17cb0d79e432576c546e89335aaf9623114f5e31f587fa9eac12c05b1643cde",
+  "git": {
+    "diff_bytes": 33866,
+    "diff_sha256": "7b37995001b9e0c5b2b02ee5be7765494ab51e08eb083af1c05ef7e9d2a14271",
+    "diff_stat": "docs/how-to/dual-agent-from-new-chat.md          |  51 +++++-\n docs/testing/dual-agent-harness-health-matrix.md |   2 +-\n docs/testing/dual-agent-slice0-coverage-index.md |   2 +-\n mcp_tools/codex_supervisor_stdio.py              |  51 +++++-\n pyproject.toml                                   |   1 +\n supervisor/dual_agent_workflow.py                |  49 +++++-\n tests/test_codex_supervisor_mcp_stdio.py         |  48 ++++++\n tests/test_dual_agent_workflow_driver.py         | 198 +++++++++++++++++++++--\n 8 files changed, 375 insertions(+), 27 deletions(-)",
+    "head": "b0cf9ba",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "b0cf9ba",
+    "status_short": "M docs/how-to/dual-agent-from-new-chat.md\n M docs/testing/dual-agent-harness-health-matrix.md\n M docs/testing/dual-agent-slice0-coverage-index.md\n M mcp_tools/codex_supervisor_stdio.py\n M pyproject.toml\n M supervisor/dual_agent_workflow.py\n M tests/test_codex_supervisor_mcp_stdio.py\n M tests/test_dual_agent_workflow_driver.py\n?? .scratch/tri-agent-cursor-review-live.db-shm\n?? .scratch/tri-agent-cursor-review-live.db-wal\n?? docs/dual-agent/live-cursor-sdk-probe-20260526-redo/\n?? docs/dual-agent/live-cursor-sdk-probe-20260526-user-key/\n?? docs/dual-agent/supervisor-mcp-reliability-20260528/\n?? docs/dual-agent/vela-colleague-routing-plan-20260524/\n?? mcp_tools/codex_supervisor_workflow_cli.py"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "29af60965160997fd6c87c2e62649701ca262c1400cd83dcf5d920b1d7fbc8b9",
+    "implementation_plan": "aca5caaf66ab3511cd0648ce4f4fc82420375f003423aa51cf74d83e2f5fbaed",
+    "issues": "54163786d6db71b3a39157adbd45a70fe2e7cf6c962da66597977c0485c58a27",
+    "prd": "3a1935e3c4f8a75bcc65482b21029c17e3aa636ddd93be5eb298973e1b6e2cf5",
+    "tdd_plan": "0e2c8bf31edcd8445f55cb3e3f59aeb04dde098371a0216d033618c9135715b9"
+  },
+  "status": "captured"
+}

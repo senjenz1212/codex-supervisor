@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -10,7 +11,11 @@ import pytest
 from supervisor.config import Config
 from supervisor.cursor_agent import CursorInvocationResult
 from supervisor.dual_agent import Outcome, ProbeResult
-from supervisor.dual_agent_workflow import select_workflow_route, workflow_visual_evidence_policy
+from supervisor.dual_agent_workflow import (
+    cursor_review_gates_for_workflow,
+    select_workflow_route,
+    workflow_visual_evidence_policy,
+)
 from supervisor.state import State
 
 
@@ -176,7 +181,7 @@ def _server(
         state,
         mcp_cls=_FakeMCP,
         runner=fake_runner,
-        cursor_runner=cursor_runner,
+        cursor_runner=cursor_runner or _accepting_cursor_runner,
         notifier=notifier,
     )
     return server, state
@@ -200,7 +205,7 @@ def _write_good_workflow_source_artifacts(tmp_path: Path, task_id: str = "workfl
         )
 
 
-def test_workflow_visual_evidence_policy_requires_evidence_for_vela_only_intent():
+def test_workflow_visual_evidence_policy_does_not_require_evidence_for_product_name_only():
     policy = workflow_visual_evidence_policy(
         intent="Fix Vela colleague behavior without claiming live success prematurely.",
         task_id="workflow-1",
@@ -208,9 +213,9 @@ def test_workflow_visual_evidence_policy_requires_evidence_for_vela_only_intent(
         planning_artifacts=[],
     )
 
-    assert policy["required"] is True
-    assert policy["source"] == "auto_live_surface"
-    assert "vela" in policy["matched_terms"]
+    assert policy["required"] is False
+    assert policy["source"] == "not_user_facing"
+    assert policy["matched_terms"] == []
 
 
 def test_workflow_visual_evidence_policy_scans_planning_artifacts(tmp_path):
@@ -251,6 +256,71 @@ def test_select_workflow_route_uses_explicit_trivial_depth():
     assert route["force_cursor_review"] is False
 
 
+def test_cursor_review_gate_profiles_are_policy_not_prompt():
+    route_gates = (
+        "prd_review",
+        "issues_review",
+        "tdd_review",
+        "implementation_plan",
+        "execution",
+        "outcome_review",
+    )
+
+    assert cursor_review_gates_for_workflow(
+        route_gates=route_gates,
+        task_complexity="large",
+        cursor_review=True,
+        cursor_review_profile="default",
+    ) == ("outcome_review",)
+    assert cursor_review_gates_for_workflow(
+        route_gates=route_gates,
+        task_complexity="large",
+        cursor_review=True,
+        cursor_review_profile="rigorous",
+    ) == ("tdd_review", "implementation_plan", "outcome_review")
+    assert cursor_review_gates_for_workflow(
+        route_gates=route_gates,
+        task_complexity="vague",
+        cursor_review=False,
+        cursor_review_profile="default",
+    ) == ("prd_review", "tdd_review", "implementation_plan", "outcome_review")
+    assert cursor_review_gates_for_workflow(
+        route_gates=route_gates,
+        task_complexity="large",
+        cursor_review=True,
+        cursor_review_gates=["issues_review", "outcome_review", "not_a_gate"],
+    ) == ("issues_review", "outcome_review")
+
+
+def test_workflow_cli_loads_codex_mcp_env_without_overriding_existing(tmp_path, monkeypatch):
+    from mcp_tools.codex_supervisor_workflow_cli import load_codex_mcp_env
+
+    monkeypatch.setenv("CURSOR_API_KEY", "existing")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    codex_config = tmp_path / "config.toml"
+    codex_config.write_text(
+        "\n".join([
+            "[mcp_servers.codex_supervisor]",
+            'command = "/tmp/codex-supervisor-mcp"',
+            "",
+            "[mcp_servers.codex_supervisor.env]",
+            'CURSOR_API_KEY = "from-config"',
+            'ANTHROPIC_API_KEY = "from-config-anthropic"',
+            "",
+            "[mcp_servers.other.env]",
+            'SHOULD_NOT_LOAD = "nope"',
+        ]),
+        encoding="utf-8",
+    )
+
+    loaded = load_codex_mcp_env(codex_config)
+
+    assert os.environ["CURSOR_API_KEY"] == "existing"
+    assert os.environ["ANTHROPIC_API_KEY"] == "from-config-anthropic"
+    assert loaded == {"ANTHROPIC_API_KEY": "from-config-anthropic"}
+    assert "SHOULD_NOT_LOAD" not in os.environ
+
+
 def _cursor_review_result(task_id: str, *, decision: str = "accept") -> CursorInvocationResult:
     outcome = Outcome(
         task_id=task_id,
@@ -274,6 +344,10 @@ def _cursor_review_result(task_id: str, *, decision: str = "accept") -> CursorIn
         model="composer-2.5",
         duration_ms=10,
     )
+
+
+def _accepting_cursor_runner(request) -> CursorInvocationResult:
+    return _cursor_review_result(request.task_id)
 
 
 @pytest.mark.asyncio
@@ -327,6 +401,48 @@ async def test_run_dual_agent_workflow_happy_path_owns_full_lifecycle(tmp_path):
     assert all(round_payload["objection"] == "both agents accepted" for round_payload in rounds)
     assert any("dual-agent workflow started" in message for message in notifier.messages)
     assert any("dual-agent workflow accepted" in message for message in notifier.messages)
+
+
+@pytest.mark.asyncio
+async def test_workflow_cli_payload_runs_same_supervisor_api(tmp_path):
+    from mcp_tools.codex_supervisor_workflow_cli import run_workflow_payload
+    from supervisor.dual_agent_runner import build_lead_replay_stdout
+
+    _write_good_workflow_source_artifacts(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    runner_calls: list[list[str]] = []
+
+    def fake_runner(argv, **kwargs):
+        runner_calls.append(list(argv))
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=build_lead_replay_stdout(
+                "Workflow response.\n" + _outcome_block("workflow-1"),
+            ),
+            stderr="",
+        )
+
+    result = await run_workflow_payload(
+        {
+            "cwd": str(tmp_path),
+            "task_id": "workflow-1",
+            "run_id": "workflow-run",
+            "intent": "Run through the non-MCP fallback transport.",
+            "max_rounds_per_gate": 1,
+            "tool_receipts": _tool_receipts(),
+        },
+        cfg=_cfg(tmp_path),
+        state=state,
+        runner=fake_runner,
+        cursor_runner=_accepting_cursor_runner,
+    )
+
+    assert result["status"] == "accepted"
+    assert runner_calls
+    workflow = state.get_dual_agent_workflow(run_id="workflow-run", task_id="workflow-1")
+    assert workflow["status"] == "accepted"
+    assert (tmp_path / "docs" / "dual-agent" / "workflow-1" / "outcome-review.md").exists()
 
 
 @pytest.mark.asyncio
@@ -444,6 +560,7 @@ async def test_run_dual_agent_workflow_passes_budget_to_each_lead_gate(tmp_path)
         state,
         mcp_cls=_FakeMCP,
         runner=fake_runner,
+        cursor_runner=_accepting_cursor_runner,
     )
 
     result = await _maybe_await(server.tools["run_dual_agent_workflow"](
@@ -485,6 +602,7 @@ async def test_run_dual_agent_workflow_blocks_auto_seeded_planning_stubs(tmp_pat
         state,
         mcp_cls=_FakeMCP,
         runner=fake_runner,
+        cursor_runner=_accepting_cursor_runner,
     )
 
     result = await _maybe_await(server.tools["run_dual_agent_workflow"](
@@ -547,7 +665,7 @@ async def test_run_dual_agent_workflow_records_skill_receipt_validation(tmp_path
 
 
 @pytest.mark.asyncio
-async def test_run_dual_agent_workflow_with_cursor_review_accepts_all_gates(tmp_path):
+async def test_run_dual_agent_workflow_runs_cursor_review_by_default(tmp_path):
     cursor_calls = []
 
     def fake_cursor_runner(request):
@@ -562,25 +680,72 @@ async def test_run_dual_agent_workflow_with_cursor_review_accepts_all_gates(tmp_
         run_id="workflow-run",
         intent="Use Cursor as the third reviewer.",
         max_rounds_per_gate=1,
-        cursor_review=True,
         tool_receipts=_tool_receipts(),
     ))
 
     assert result["status"] == "accepted"
-    assert len(cursor_calls) == 6
+    assert len(cursor_calls) == 1
+    assert cursor_calls[0].gate == "outcome_review"
+    assert result["workflow_route"]["requested_cursor_review"] is True
+    assert result["workflow_route"]["effective_cursor_review"] is True
+    assert result["workflow_route"]["cursor_review_gates"] == ["outcome_review"]
     cursor_events = [
         json.loads(row["payload_json"])
         for row in state.read_dual_agent_gate_events("workflow-run")
         if row["kind"] == "tri_agent_cursor_review"
     ]
-    assert len(cursor_events) == 6
+    assert len(cursor_events) == 1
+    assert cursor_events[0]["gate"] == "outcome_review"
     assert all(event["cursor_review"]["accepted"] for event in cursor_events)
 
     transcript = await _maybe_await(server.tools["read_gate_transcript"](
         run_id="workflow-run",
         task_id="workflow-1",
     ))
-    assert len(transcript["cursor_reviews"]) == 6
+    assert len(transcript["cursor_reviews"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_run_dual_agent_workflow_rigorous_cursor_profile_reviews_quality_gates(tmp_path):
+    cursor_calls = []
+
+    def fake_cursor_runner(request):
+        cursor_calls.append(request)
+        return _cursor_review_result(request.task_id)
+
+    server, state = _server(tmp_path, cursor_runner=fake_cursor_runner)
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Run a rigorous backend eval uplift review.",
+        max_rounds_per_gate=1,
+        cursor_review_profile="rigorous",
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert result["status"] == "accepted"
+    assert [request.gate for request in cursor_calls] == [
+        "tdd_review",
+        "implementation_plan",
+        "outcome_review",
+    ]
+    assert result["workflow_route"]["cursor_review_gates"] == [
+        "tdd_review",
+        "implementation_plan",
+        "outcome_review",
+    ]
+    cursor_events = [
+        json.loads(row["payload_json"])
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "tri_agent_cursor_review"
+    ]
+    assert [event["gate"] for event in cursor_events] == [
+        "tdd_review",
+        "implementation_plan",
+        "outcome_review",
+    ]
 
 
 @pytest.mark.asyncio
@@ -609,7 +774,12 @@ async def test_run_dual_agent_workflow_vague_route_forces_cursor_review(tmp_path
 
     assert result["status"] == "accepted"
     assert result["workflow_route"]["force_cursor_review"] is True
-    assert len(cursor_calls) == 6
+    assert [request.gate for request in cursor_calls] == [
+        "prd_review",
+        "tdd_review",
+        "implementation_plan",
+        "outcome_review",
+    ]
 
 
 @pytest.mark.asyncio
@@ -630,7 +800,7 @@ async def test_run_dual_agent_workflow_with_cursor_review_blocks_on_cursor_rejec
     ))
 
     assert result["status"] == "blocked"
-    assert result["current_gate"] == "prd_review"
+    assert result["current_gate"] == "outcome_review"
     assert result["final_gate_result"]["cursor_review"]["accepted"] is False
     assert result["final_gate_result"]["escalation"]["reason"] == "agents_not_converged"
     rounds = [
@@ -762,6 +932,7 @@ async def test_run_dual_agent_workflow_retries_malformed_outcome_once(tmp_path):
         state,
         mcp_cls=_FakeMCP,
         runner=fake_runner,
+        cursor_runner=_accepting_cursor_runner,
     )
 
     result = await _maybe_await(server.tools["run_dual_agent_workflow"](
@@ -845,6 +1016,7 @@ async def test_run_dual_agent_workflow_can_rerun_after_corrective_input(tmp_path
         state,
         mcp_cls=_FakeMCP,
         runner=fake_runner,
+        cursor_runner=_accepting_cursor_runner,
     )
 
     first = await _maybe_await(server.tools["run_dual_agent_workflow"](

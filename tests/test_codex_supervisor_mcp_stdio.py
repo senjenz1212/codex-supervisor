@@ -3,6 +3,7 @@ from __future__ import annotations
 import inspect
 import json
 import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
@@ -36,6 +37,52 @@ def _cfg(tmp_path) -> Config:
         },
         "telegram": {"bot_token": "fake", "chat_id": "42"},
     })
+
+
+def test_codex_supervisor_mcp_stdio_tools_call_keeps_protocol_stream_clean(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(_cfg(tmp_path).model_dump_json(), encoding="utf-8")
+    request = "\n".join([
+        json.dumps({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "stdio-smoke", "version": "0"},
+            },
+        }),
+        json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}),
+        json.dumps({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": "check_budget",
+                "arguments": {"rounds": [], "per_gate_cap": 1, "task_budget": 1},
+            },
+        }),
+        "",
+    ])
+
+    completed = subprocess.run(
+        [sys.executable, "-m", "mcp_tools.codex_supervisor_stdio", "--config", str(config_path)],
+        input=request,
+        text=True,
+        capture_output=True,
+        timeout=10,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    stdout_lines = [line for line in completed.stdout.splitlines() if line.strip()]
+    assert len(stdout_lines) == 2
+    assert "Processing request of type" not in completed.stderr
+    assert completed.stderr.strip() == ""
+    for line in stdout_lines:
+        payload = json.loads(line)
+        assert payload["jsonrpc"] == "2.0"
 
 
 def _outcome_block(task_id: str = "gate-1", decision: str = "accept plan") -> str:
@@ -442,6 +489,7 @@ async def test_read_gate_transcript_includes_skill_receipt_validation(tmp_path):
         run_id="workflow-run",
         intent="Run with skill receipts.",
         max_rounds_per_gate=1,
+        cursor_review=False,
         tool_receipts=[
             *_skill_receipts(),
             {

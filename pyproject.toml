@@ -27,6 +27,7 @@ dev = ["pytest>=8.0", "pytest-asyncio>=0.24"]
 
 [project.scripts]
 codex-supervisor-mcp = "mcp_tools.codex_supervisor_stdio:main"
+codex-supervisor-workflow = "mcp_tools.codex_supervisor_workflow_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

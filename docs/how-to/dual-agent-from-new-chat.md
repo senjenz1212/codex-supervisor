@@ -163,10 +163,47 @@ screenshots=[{
 Strict mode blocks user-facing outcome review without valid screenshot evidence,
 Browser/Computer Use provenance, and a passed visual validation status.
 
-## If The New Chat Does Not Have MCP
+## Reliable Transport Paths
 
-If the chat cannot call MCP tools, it cannot run or continue gates. It can only
-review exported artifacts:
+Use MCP as the primary path because it keeps the workflow inside the chat:
+
+```text
+mcp__codex_supervisor__run_dual_agent_workflow
+```
+
+If MCP returns `Transport closed`, do not treat that as a supervisor verdict.
+Run the same supervisor-owned workflow through the fallback CLI from
+`/Users/sam.zhang/Documents/codex-supervisor`:
+
+```bash
+cat > /tmp/dual-agent-request.json <<'JSON'
+{
+  "cwd": "<ABSOLUTE_TARGET_WORKTREE>",
+  "run_id": "<RUN_ID>",
+  "task_id": "<TASK_ID>",
+  "intent": "<WHAT THE WORKFLOW SHOULD REVIEW>",
+  "cursor_review": true,
+  "cursor_review_profile": "rigorous",
+  "task_complexity": "vague",
+  "tool_receipts": []
+}
+JSON
+
+uv run codex-supervisor-workflow \
+  --config ~/.codex-supervisor/config.yaml \
+  --request /tmp/dual-agent-request.json \
+  --output "<ABSOLUTE_TARGET_WORKTREE>/docs/dual-agent/<TASK_ID>/workflow-result.json"
+```
+
+This fallback loads the `codex_supervisor` MCP env block from
+`~/.codex/config.toml` plus `~/.codex-supervisor/secrets.env` by default, uses
+the same `CodexSupervisorMcpAPI.run_dual_agent_workflow` boundary as MCP, writes
+to the same SQLite ledger, and exports the same `docs/dual-agent/<TASK_ID>/`
+artifacts. It is a transport fallback, not a weaker review mode. If you need
+shell failure for automation, add `--fail-on-blocked`.
+
+If neither MCP nor the fallback CLI can run, the chat can only review exported
+artifacts:
 
 - `docs/dual-agent/<TASK_ID>/interactions.md`
 - `docs/dual-agent/<TASK_ID>/outcome-review.md`
@@ -175,13 +212,17 @@ review exported artifacts:
 - `docs/dual-agent/<TASK_ID>/source/tdd.md`
 - `docs/dual-agent/<TASK_ID>/source/issues.md`
 
-In that mode, ask the chat to review artifacts only. Do not treat it as a live
-dual-agent run.
+In that artifact-only mode, ask the chat to review artifacts only. Do not treat
+it as a live dual-agent run.
 
 ## Common Failures
 
 - Tool unavailable: re-run `codex mcp get codex_supervisor`; if missing,
   register the MCP server again.
+- `Transport closed`: first retry once; if it repeats, use
+  `uv run codex-supervisor-workflow` and record the fallback result path in the
+  final report. If the MCP server code or registration changed during the same
+  Desktop session, restart Codex Desktop before trusting another MCP retry.
 - `gate_prerequisites_missing`: inspect `interactions.md` and run the missing
   earlier gate instead of skipping forward.
 - `required_artifacts_missing`: create or pass the missing planning artifacts.

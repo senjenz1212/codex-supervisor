@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import subprocess
 import time
 from dataclasses import asdict
@@ -38,6 +39,7 @@ from supervisor.dual_agent_artifacts import (
 from supervisor.dual_agent_workflow import (
     WORKFLOW_GATES,
     claude_accepts,
+    cursor_review_gates_for_workflow,
     ensure_workflow_source_artifacts,
     mandatory_artifact_status,
     prerequisites_for_route,
@@ -331,7 +333,9 @@ class CodexSupervisorMcpAPI:
         verified_claims: list[str] | None = None,
         tool_receipts: list[dict[str, Any]] | None = None,
         require_skill_receipts: bool = True,
-        cursor_review: bool = False,
+        cursor_review: bool = True,
+        cursor_review_profile: str = "default",
+        cursor_review_gates: list[str] | None = None,
         cursor_model: str | None = None,
         task_complexity: str | None = None,
     ) -> dict[str, Any]:
@@ -361,7 +365,21 @@ class CodexSupervisorMcpAPI:
         )
         route_gates = tuple(str(gate) for gate in workflow_route["gates"])
         required_skill_stages = tuple(str(stage) for stage in workflow_route["required_skill_stages"])
-        effective_cursor_review = bool(cursor_review or workflow_route["force_cursor_review"])
+        selected_cursor_gates = cursor_review_gates_for_workflow(
+            route_gates=route_gates,
+            task_complexity=str(workflow_route["task_complexity"]),
+            cursor_review=cursor_review,
+            cursor_review_profile=cursor_review_profile,
+            cursor_review_gates=cursor_review_gates,
+        )
+        effective_cursor_review = bool(selected_cursor_gates)
+        workflow_route = {
+            **workflow_route,
+            "requested_cursor_review": bool(cursor_review),
+            "effective_cursor_review": effective_cursor_review,
+            "cursor_review_profile": cursor_review_profile,
+            "cursor_review_gates": list(selected_cursor_gates),
+        }
         skill_probe = (
             verify_prd_tdd_skill_receipts(
                 receipt_payloads,
@@ -476,6 +494,7 @@ class CodexSupervisorMcpAPI:
         steps: list[dict[str, Any]] = []
         final_payload: dict[str, Any] | None = None
         for gate in route_gates:
+            cursor_reviews_this_gate = gate in selected_cursor_gates
             self.state.update_dual_agent_workflow(
                 run_id=run_id,
                 task_id=task_id,
@@ -540,7 +559,7 @@ class CodexSupervisorMcpAPI:
                         tool_receipts=receipt_payloads,
                     )
                     payload["claim_verification"] = asdict(claim_probe)
-                if effective_cursor_review and payload.get("status") == "accepted":
+                if cursor_reviews_this_gate and payload.get("status") == "accepted":
                     review_request_event_id = self._write_interaction_message(
                         run_id=run_id,
                         message=AgentMailboxMessage(
@@ -679,7 +698,7 @@ class CodexSupervisorMcpAPI:
                 )
                 cursor_decision = (
                     "accept"
-                    if not effective_cursor_review or cursor_accepts(cursor_result)
+                    if not cursor_reviews_this_gate or cursor_accepts(cursor_result)
                     else "revise"
                 )
                 codex_decision = (
@@ -1510,7 +1529,11 @@ def build_codex_supervisor_mcp_server(
         cursor_runner=cursor_runner,
         notifier=notifier,
     )
-    mcp = mcp_cls("codex_supervisor")
+    _configure_mcp_transport_logging()
+    try:
+        mcp = mcp_cls("codex_supervisor", log_level="ERROR")
+    except TypeError:
+        mcp = mcp_cls("codex_supervisor")
 
     @mcp.tool()
     async def start_dual_agent_gate(
@@ -1690,7 +1713,9 @@ def build_codex_supervisor_mcp_server(
         verified_claims: list[str] | None = None,
         tool_receipts: list[dict[str, Any]] | None = None,
         require_skill_receipts: bool = True,
-        cursor_review: bool = False,
+        cursor_review: bool = True,
+        cursor_review_profile: str = "default",
+        cursor_review_gates: list[str] | None = None,
         cursor_model: str | None = None,
         task_complexity: str | None = None,
     ) -> dict[str, Any]:
@@ -1710,6 +1735,8 @@ def build_codex_supervisor_mcp_server(
             tool_receipts=tool_receipts,
             require_skill_receipts=require_skill_receipts,
             cursor_review=cursor_review,
+            cursor_review_profile=cursor_review_profile,
+            cursor_review_gates=cursor_review_gates,
             cursor_model=cursor_model,
             task_complexity=task_complexity,
         )
@@ -1751,6 +1778,18 @@ def main(argv: list[str] | None = None) -> None:
     state = State(cfg.supervisor.state_db)
     server = build_codex_supervisor_mcp_server(cfg, state)
     server.run(transport="stdio")
+
+
+def _configure_mcp_transport_logging() -> None:
+    """Keep stdio transports protocol-only and move MCP chatter below warning."""
+    for logger_name in (
+        "mcp",
+        "mcp.server",
+        "mcp.server.lowlevel",
+        "mcp.server.lowlevel.server",
+        "mcp.server.fastmcp",
+    ):
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
 
 
 def _gate_result_payload(
