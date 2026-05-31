@@ -1,0 +1,24 @@
+{
+  "file_tree_sha256": "df7da5f120cdb293d2d0dd79fc67ee83a89de612df5804a5dbe9748e70f3e923",
+  "git": {
+    "diff_bytes": 55980,
+    "diff_sha256": "00064392ecd9d49dd3dce1143b05214729628e7e416112ea1b23a5d029b1e4d6",
+    "diff_stat": "mcp_tools/codex_supervisor_stdio.py        | 499 +++++++++++++++++++++++++----\n mcp_tools/codex_supervisor_workflow_cli.py |   1 +\n supervisor/agent_mailbox.py                |  17 +-\n supervisor/config.py                       |   1 +\n supervisor/dual_agent.py                   |  16 +-\n supervisor/dual_agent_artifacts.py         |  81 +++++\n supervisor/state.py                        |   7 +-\n tests/test_dual_agent_runner.py            |  43 +++\n tests/test_dual_agent_workflow_driver.py   | 265 +++++++++++++--\n 9 files changed, 833 insertions(+), 97 deletions(-)",
+    "head": "0fc2328",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "0fc2328",
+    "status_short": "M mcp_tools/codex_supervisor_stdio.py\n M mcp_tools/codex_supervisor_workflow_cli.py\n M supervisor/agent_mailbox.py\n M supervisor/config.py\n M supervisor/dual_agent.py\n M supervisor/dual_agent_artifacts.py\n M supervisor/state.py\n M tests/test_dual_agent_runner.py\n M tests/test_dual_agent_workflow_driver.py\n?? docs/dual-agent/reviewer-unavailable-recovery-20260531/"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "c07c3d2378a8b5f5855a0f03110c1f7c1b2d3b98fc4ba35c02079620890e87fe",
+    "implementation_plan": "7aacdd81ca22bc525c38f2245926ea56b7a41cc8b2cccfd01de7d2b38e2f6d56",
+    "issues": "48bd0226a4709473f5ba523fbb04f975e2a4f3496d4e96d8e63f1810b768a63d",
+    "other": "de42429b5d57b3dbf3a7ea72a5cf969dbf148ad8d32394d0f712c739840c40c6",
+    "prd": "bb20901d8f3f2016474944ee0b6e3f05fa89093bebf10ed39796e93dc1fed116",
+    "tdd_plan": "40571f0f2214e9d76ceeb81401c12aa0b1273130eca4fe2eb2363826a07b5b9c"
+  },
+  "status": "captured"
+}

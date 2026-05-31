@@ -169,6 +169,8 @@ def _dynamic_workflow_receipts(tmp_path: Path | None = None) -> list[dict]:
             {
                 "task_id": "workflow-1:audit-1",
                 "persona_id": "reviewer.codebase_audit",
+                "agent_runtime": "supervisor_subprocess",
+                "agent_id": "agent-audit-1",
                 "timeout_s": 300,
                 "budget_usd": 1.5,
                 "permission_mode": "readOnly",
@@ -219,6 +221,8 @@ def _dynamic_subagent_result_receipts(
         "status": "passed",
         "task_id": "workflow-1:audit-1",
         "persona_id": "reviewer.codebase_audit",
+        "agent_runtime": "supervisor_subprocess",
+        "agent_id": "agent-audit-1",
         "decision": decision,
         "severity": severity,
         "objections": [] if decision == "accept" else ["critical unresolved mismatch"],
@@ -279,6 +283,7 @@ def test_workflow_kwargs_from_payload_preserves_dynamic_workflow_preview_fields(
         "required_roles": ["codebase_audit", "independent_reviewer"],
         "solo_exception_for_artifact_only_gates": True,
         "required_evidence_grade": "runtime_native",
+        "reviewer_unavailable_policy": "proceed_degraded",
         "irrelevant_field": "must not leak into workflow kwargs",
     })
 
@@ -289,6 +294,7 @@ def test_workflow_kwargs_from_payload_preserves_dynamic_workflow_preview_fields(
     assert kwargs["required_roles"] == ["codebase_audit", "independent_reviewer"]
     assert kwargs["solo_exception_for_artifact_only_gates"] is True
     assert kwargs["required_evidence_grade"] == "runtime_native"
+    assert kwargs["reviewer_unavailable_policy"] == "proceed_degraded"
     assert "irrelevant_field" not in kwargs
 
 
@@ -501,6 +507,32 @@ def _cursor_review_result(task_id: str, *, decision: str = "accept") -> CursorIn
 
 def _accepting_cursor_runner(request) -> CursorInvocationResult:
     return _cursor_review_result(request.task_id)
+
+
+def _cursor_contract_unmet_runner(request) -> CursorInvocationResult:
+    return CursorInvocationResult(
+        probe=ProbeResult(
+            "CURSOR",
+            "red",
+            "reviewer_contract_unmet",
+            {
+                "original_reason": "missing dual_agent_outcome block",
+                "recoverable": True,
+                "attempts": 4,
+            },
+        ),
+        outcome=None,
+        transcript="",
+        agent_id="agent-contract",
+        run_id="run-contract",
+        status="finished",
+        model="composer-2.5",
+        duration_ms=30,
+        failure_classification="reviewer_contract_unmet",
+        recoverable=True,
+        attempts=4,
+        retry_reasons=("missing dual_agent_outcome block",) * 4,
+    )
 
 
 @pytest.mark.asyncio
@@ -1379,32 +1411,7 @@ async def test_run_dual_agent_workflow_with_cursor_review_blocks_on_cursor_rejec
 async def test_run_dual_agent_workflow_records_cursor_contract_failure_as_recoverable_infra(
     tmp_path,
 ):
-    def fake_cursor_runner(request):
-        return CursorInvocationResult(
-            probe=ProbeResult(
-                "CURSOR",
-                "red",
-                "reviewer_contract_unmet",
-                {
-                    "original_reason": "missing dual_agent_outcome block",
-                    "recoverable": True,
-                    "attempts": 4,
-                },
-            ),
-            outcome=None,
-            transcript="",
-            agent_id="agent-contract",
-            run_id="run-contract",
-            status="finished",
-            model="composer-2.5",
-            duration_ms=30,
-            failure_classification="reviewer_contract_unmet",
-            recoverable=True,
-            attempts=4,
-            retry_reasons=("missing dual_agent_outcome block",) * 4,
-        )
-
-    server, state = _server(tmp_path, cursor_runner=fake_cursor_runner)
+    server, state = _server(tmp_path, cursor_runner=_cursor_contract_unmet_runner)
 
     result = await _maybe_await(server.tools["run_dual_agent_workflow"](
         cwd=str(tmp_path),
@@ -1413,6 +1420,7 @@ async def test_run_dual_agent_workflow_records_cursor_contract_failure_as_recove
         intent="Malformed Cursor output should become typed infrastructure evidence.",
         max_rounds_per_gate=5,
         cursor_review=True,
+        reviewer_unavailable_policy="block",
         tool_receipts=_tool_receipts(),
     ))
 
@@ -1463,6 +1471,211 @@ async def test_run_dual_agent_workflow_records_cursor_contract_failure_as_recove
     assert transcript["cursor_reviews"][0]["cursor_review"]["failure_classification"] == (
         "reviewer_contract_unmet"
     )
+
+
+@pytest.mark.asyncio
+async def test_reviewer_unavailable_block_policy_stays_blocked_for_high_stakes(tmp_path):
+    notifier = _Notifier()
+    server, state = _server(
+        tmp_path,
+        cursor_runner=_cursor_contract_unmet_runner,
+        notifier=notifier,
+    )
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Explicit block policy remains a terminal block even on high-stakes gates.",
+        max_rounds_per_gate=1,
+        cursor_review=True,
+        reviewer_unavailable_policy="block",
+        agentic_lead_policy="required",
+        min_subagents=1,
+        tool_receipts=[*_tool_receipts(), *_dynamic_subagent_result_receipts(tmp_path)],
+    ))
+
+    assert result["status"] == "blocked"
+    assert result["current_gate"] == "outcome_review"
+    assert "workflow_reviewer_unavailable_escalation" not in result["final_gate_result"]
+    assert result["final_gate_result"]["escalation"]["reason"] == "reviewer_contract_unmet"
+
+    recovery_events = [
+        json.loads(row["payload_json"])
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "dual_agent_reviewer_unavailable_recovery"
+    ]
+    assert recovery_events
+    assert recovery_events[-1]["status"] == "blocked"
+    assert recovery_events[-1]["policy"] == "block"
+    assert recovery_events[-1]["forced_by_safety"] is True
+    assert recovery_events[-1]["reviewer_verdict_counted_as_accept"] is False
+    assert not notifier.prompts
+
+
+@pytest.mark.asyncio
+async def test_reviewer_unavailable_proceed_degraded_advances_with_degraded_receipt(tmp_path):
+    server, state = _server(tmp_path, cursor_runner=_cursor_contract_unmet_runner)
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Proceed degraded only when Cursor infrastructure is unavailable.",
+        max_rounds_per_gate=1,
+        cursor_review=True,
+        cursor_review_profile="rigorous",
+        reviewer_unavailable_policy="proceed_degraded",
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert result["status"] == "accepted"
+    assert result["steps"][-1]["gate"] == "outcome_review"
+    assert result["steps"][-1]["status"] == "accepted"
+
+    cursor_reviews = [
+        json.loads(row["payload_json"])["cursor_review"]
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "tri_agent_cursor_review"
+    ]
+    assert cursor_reviews
+    assert all(review["accepted"] is False for review in cursor_reviews)
+    assert all(
+        review["reviewer_unavailable_recovery"]["evidence_grade"] == "degraded"
+        for review in cursor_reviews
+    )
+    assert all(
+        review["reviewer_unavailable_recovery"]["reviewer_verdict_counted_as_accept"] is False
+        for review in cursor_reviews
+    )
+
+    recovery_events = [
+        json.loads(row["payload_json"])
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "dual_agent_reviewer_unavailable_recovery"
+    ]
+    assert recovery_events
+    assert {event["status"] for event in recovery_events} == {"proceeded_degraded"}
+    assert all(event["evidence_grade"] == "degraded" for event in recovery_events)
+
+    transcript = await _maybe_await(server.tools["read_gate_transcript"](
+        run_id="workflow-run",
+        task_id="workflow-1",
+    ))
+    assert transcript["reviewer_unavailable_recoveries"]
+
+
+@pytest.mark.asyncio
+async def test_reviewer_unavailable_default_escalates_and_resume_continue_advances(tmp_path):
+    notifier = _Notifier()
+    server, state = _server(
+        tmp_path,
+        cursor_runner=_cursor_contract_unmet_runner,
+        notifier=notifier,
+    )
+
+    first = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Default reviewer unavailable policy should be resumable.",
+        max_rounds_per_gate=1,
+        cursor_review=True,
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert first["status"] == "blocked"
+    assert first["current_gate"] == "outcome_review"
+    escalation = first["final_gate_result"]["workflow_reviewer_unavailable_escalation"]
+    assert escalation["status"] == "paused_for_human"
+    assert escalation["policy"] == "escalate"
+    assert "reviewer unavailable" in notifier.prompts[-1]["question"].lower()
+
+    action = state._conn.execute(
+        """SELECT * FROM actions
+           WHERE run_id=? AND action_type='dual_agent_gate_deadlock'
+           ORDER BY id DESC LIMIT 1""",
+        ("workflow-run",),
+    ).fetchone()
+    assert action is not None
+    state.mark_action_resume_requested(action["id"], payload_update={"answer": "Continue"})
+
+    second = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Human authorized degraded proceed after reviewer unavailable escalation.",
+        max_rounds_per_gate=1,
+        cursor_review=True,
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert second["status"] == "accepted"
+    recovery_events = [
+        json.loads(row["payload_json"])
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "dual_agent_reviewer_unavailable_recovery"
+    ]
+    assert recovery_events[-1]["status"] == "proceeded_degraded"
+    assert recovery_events[-1]["authorization"]["status"] == "resumed"
+
+
+@pytest.mark.asyncio
+async def test_reviewer_unavailable_proceed_degraded_escalates_for_agentic_required(tmp_path):
+    notifier = _Notifier()
+    server, state = _server(
+        tmp_path,
+        cursor_runner=_cursor_contract_unmet_runner,
+        notifier=notifier,
+    )
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Agentic-required review unavailable must escalate.",
+        max_rounds_per_gate=1,
+        cursor_review=True,
+        reviewer_unavailable_policy="proceed_degraded",
+        agentic_lead_policy="required",
+        min_subagents=1,
+        tool_receipts=[*_tool_receipts(), *_dynamic_subagent_result_receipts(tmp_path)],
+    ))
+
+    assert result["status"] == "blocked"
+    assert result["current_gate"] == "outcome_review"
+    escalation = result["final_gate_result"]["workflow_reviewer_unavailable_escalation"]
+    assert escalation["status"] == "paused_for_human"
+    assert escalation["policy"] == "proceed_degraded"
+    assert escalation["forced_by_safety"] is True
+
+
+@pytest.mark.asyncio
+async def test_reviewer_unavailable_runtime_native_escalates(tmp_path):
+    notifier = _Notifier()
+    server, state = _server(
+        tmp_path,
+        cursor_runner=_cursor_contract_unmet_runner,
+        notifier=notifier,
+    )
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Runtime-native evidence requirement must escalate reviewer unavailable.",
+        max_rounds_per_gate=1,
+        cursor_review=True,
+        reviewer_unavailable_policy="proceed_degraded",
+        required_evidence_grade="runtime_native",
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert result["status"] == "blocked"
+    assert result["current_gate"] == "outcome_review"
+    escalation = result["final_gate_result"]["workflow_reviewer_unavailable_escalation"]
+    assert escalation["status"] == "paused_for_human"
+    assert escalation["forced_by_safety"] is True
 
 
 @pytest.mark.asyncio

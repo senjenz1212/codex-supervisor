@@ -96,6 +96,7 @@ GATE_PREREQUISITES = {
 RELAXED_ARTIFACT_POLICIES = {"relaxed", "audit", "off"}
 VISUAL_VALIDATION_SOURCES = {"browser", "browser_use", "browser-use", "computer_use", "computer-use", "computer"}
 VISUAL_VALIDATION_PASSED = {"passed", "pass", "accepted", "accept", "ok"}
+REVIEWER_UNAVAILABLE_POLICIES = {"block", "escalate", "proceed_degraded"}
 
 
 class CodexSupervisorMcpAPI:
@@ -420,6 +421,7 @@ class CodexSupervisorMcpAPI:
         required_roles: list[str] | None = None,
         solo_exception_for_artifact_only_gates: bool | None = None,
         required_evidence_grade: str | None = None,
+        reviewer_unavailable_policy: str | None = None,
         planning_artifacts: list[dict[str, Any]] | None = None,
         screenshots: list[dict[str, Any]] | None = None,
         verified_claims: list[str] | None = None,
@@ -440,6 +442,10 @@ class CodexSupervisorMcpAPI:
             required_roles=required_roles,
             solo_exception_for_artifact_only_gates=solo_exception_for_artifact_only_gates,
             required_evidence_grade=required_evidence_grade,
+        )
+        reviewer_policy = _reviewer_unavailable_policy_config(
+            self.cfg,
+            reviewer_unavailable_policy=reviewer_unavailable_policy,
         )
         max_rounds = max(1, int(max_rounds_per_gate))
         screenshot_payloads = screenshots or []
@@ -485,6 +491,7 @@ class CodexSupervisorMcpAPI:
             "dynamic_workflow_task_class": dynamic_workflow_task_class,
             "requires_dynamic_workflow_receipts": _is_dynamic_workflow_preview(execution_layer_mode),
             "agentic_lead_policy": _workflow_agentic_policy_route(agentic_policy),
+            "reviewer_unavailable_policy": reviewer_policy,
             "requires_agentic_lead_policy_receipts": _is_agentic_lead_policy_active(
                 agentic_policy["agentic_lead_policy"]
             ),
@@ -910,6 +917,7 @@ class CodexSupervisorMcpAPI:
                 final_payload = payload
                 claim_probe = None
                 cursor_result: CursorInvocationResult | None = None
+                cursor_tool_calls: list[dict[str, Any]] = []
                 if gate == "outcome_review" and payload.get("status") == "accepted":
                     claim_probe = verify_workflow_claims(
                         outcome_payload=payload.get("outcome"),
@@ -1001,9 +1009,10 @@ class CodexSupervisorMcpAPI:
                                 timeout_s=timeout_s,
                                 tool_receipts=tuple(receipt_payloads),
                             )
-                        )
+                    )
                     cursor_tool_call.update(_cursor_tool_call_fields(cursor_result))
                     cursor_tool_call = ensure_tool_call_timing(cursor_tool_call)
+                    cursor_tool_calls = [cursor_tool_call]
                     cursor_payload = _cursor_result_payload(cursor_result)
                     payload["cursor_review"] = cursor_payload
                     cursor_response_would_change_if = (
@@ -1059,18 +1068,6 @@ class CodexSupervisorMcpAPI:
                             },
                         ),
                     )
-                    self.state.write_event(
-                        run_id=run_id,
-                        source="dual_agent",
-                        kind="tri_agent_cursor_review",
-                        payload={
-                            "task_id": task_id,
-                            "gate": gate,
-                            "cursor_review": cursor_payload,
-                            "tool_calls": [cursor_tool_call],
-                        },
-                    )
-
                 claude_decision = (
                     "accept"
                     if payload.get("status") == "accepted" and claude_accepts(payload.get("outcome"))
@@ -1090,8 +1087,51 @@ class CodexSupervisorMcpAPI:
                     cursor_payload is not None
                     and _cursor_review_recoverable_infrastructure_failure(cursor_payload)
                 )
+                reviewer_unavailable_recovery: dict[str, Any] | None = None
+                available_reviewers_accept = (
+                    payload.get("status") == "accepted"
+                    and claude_decision == "accept"
+                    and (claim_probe is None or claim_probe.ok)
+                )
+                if cursor_infrastructure_failure and cursor_payload is not None:
+                    reviewer_unavailable_recovery = _reviewer_unavailable_recovery_plan(
+                        state=self.state,
+                        run_id=run_id,
+                        task_id=task_id,
+                        gate=str(gate),
+                        policy=reviewer_policy,
+                        classification=_cursor_review_failure_classification(cursor_payload),
+                        available_reviewers_accept=available_reviewers_accept,
+                        agentic_policy=agentic_policy,
+                        required_evidence_grade=agentic_policy["required_evidence_grade"],
+                        user_facing=effective_user_facing and gate == "outcome_review",
+                    )
+                    cursor_payload = {
+                        **cursor_payload,
+                        "reviewer_unavailable_recovery": reviewer_unavailable_recovery,
+                    }
+                    payload["cursor_review"] = cursor_payload
+                if cursor_payload is not None and cursor_reviews_this_gate:
+                    self.state.write_event(
+                        run_id=run_id,
+                        source="dual_agent",
+                        kind="tri_agent_cursor_review",
+                        payload={
+                            "task_id": task_id,
+                            "gate": gate,
+                            "cursor_review": cursor_payload,
+                            "tool_calls": cursor_tool_calls,
+                        },
+                    )
                 codex_decision = (
                     "accept"
+                    if (
+                        cursor_infrastructure_failure
+                        and reviewer_unavailable_recovery is not None
+                        and reviewer_unavailable_recovery["decision"] == "proceed_degraded"
+                        and available_reviewers_accept
+                    )
+                    else "accept"
                     if (
                         payload.get("status") == "accepted"
                         and (claim_probe is None or claim_probe.ok)
@@ -1232,55 +1272,174 @@ class CodexSupervisorMcpAPI:
 
                 if cursor_infrastructure_failure:
                     classification = _cursor_review_failure_classification(cursor_payload)
-                    final_payload = self._write_workflow_gate_override(
-                        run_id=run_id,
-                        task_id=task_id,
-                        gate=gate,
-                        attempts=attempts,
-                        reason=classification,
-                        source_payload=payload,
-                        claim_probe=claim_payload,
-                    )
-                    self.state.record_dual_agent_workflow_step(
-                        run_id=run_id,
-                        task_id=task_id,
-                        gate=gate,
-                        status="blocked",
-                        attempt_count=attempts,
-                        latest_event_id=self.state.latest_event_id(run_id),
-                    )
-                    self.state.update_dual_agent_workflow(
-                        run_id=run_id,
-                        task_id=task_id,
-                        status="blocked",
-                        current_gate=gate,
-                    )
-                    await self._emit_workflow_milestone(
-                        notifier=notifier,
-                        run_id=run_id,
-                        task_id=task_id,
-                        milestone="gate_blocked",
-                        gate=gate,
-                    )
-                    await self._emit_workflow_milestone(
-                        notifier=notifier,
-                        run_id=run_id,
-                        task_id=task_id,
-                        milestone="needs_user_input",
-                        gate=gate,
-                    )
-                    return self._workflow_result(
-                        run_id=run_id,
-                        task_id=task_id,
-                        status="blocked",
-                        current_gate=gate,
-                        steps=steps + [_workflow_step_dict(gate, "blocked", attempts)],
-                        final_gate_result=final_payload,
-                        cwd=cwd,
-                        screenshots=screenshot_payloads,
-                        visual_evidence_policy=visual_policy,
-                        workflow_route=workflow_route,
-                    )
+                    recovery = reviewer_unavailable_recovery or {}
+                    if recovery.get("decision") == "proceed_degraded":
+                        recovery_event = self._record_reviewer_unavailable_recovery(
+                            run_id=run_id,
+                            task_id=task_id,
+                            gate=str(gate),
+                            status="proceeded_degraded",
+                            policy=reviewer_policy,
+                            classification=classification,
+                            cursor_review=cursor_payload,
+                            recovery=recovery,
+                            available_reviewers={
+                                "claude": claude_decision,
+                                "codex": codex_decision,
+                            },
+                        )
+                        cursor_payload["reviewer_unavailable_recovery"] = {
+                            **recovery,
+                            "event_id": recovery_event["event_id"],
+                        }
+                        payload["cursor_review"] = cursor_payload
+                    elif reviewer_policy == "block":
+                        recovery_event = self._record_reviewer_unavailable_recovery(
+                            run_id=run_id,
+                            task_id=task_id,
+                            gate=str(gate),
+                            status="blocked",
+                            policy=reviewer_policy,
+                            classification=classification,
+                            cursor_review=cursor_payload,
+                            recovery=recovery,
+                            available_reviewers={
+                                "claude": claude_decision,
+                                "codex": codex_decision,
+                            },
+                        )
+                        cursor_payload["reviewer_unavailable_recovery"] = {
+                            **recovery,
+                            "event_id": recovery_event["event_id"],
+                        }
+                        payload["cursor_review"] = cursor_payload
+                        final_payload = self._write_workflow_gate_override(
+                            run_id=run_id,
+                            task_id=task_id,
+                            gate=gate,
+                            attempts=attempts,
+                            reason=classification,
+                            source_payload=payload,
+                            claim_probe=claim_payload,
+                        )
+                        self.state.record_dual_agent_workflow_step(
+                            run_id=run_id,
+                            task_id=task_id,
+                            gate=gate,
+                            status="blocked",
+                            attempt_count=attempts,
+                            latest_event_id=self.state.latest_event_id(run_id),
+                        )
+                        self.state.update_dual_agent_workflow(
+                            run_id=run_id,
+                            task_id=task_id,
+                            status="blocked",
+                            current_gate=gate,
+                        )
+                        await self._emit_workflow_milestone(
+                            notifier=notifier,
+                            run_id=run_id,
+                            task_id=task_id,
+                            milestone="gate_blocked",
+                            gate=gate,
+                        )
+                        await self._emit_workflow_milestone(
+                            notifier=notifier,
+                            run_id=run_id,
+                            task_id=task_id,
+                            milestone="needs_user_input",
+                            gate=gate,
+                        )
+                        return self._workflow_result(
+                            run_id=run_id,
+                            task_id=task_id,
+                            status="blocked",
+                            current_gate=gate,
+                            steps=steps + [_workflow_step_dict(gate, "blocked", attempts)],
+                            final_gate_result=final_payload,
+                            cwd=cwd,
+                            screenshots=screenshot_payloads,
+                            visual_evidence_policy=visual_policy,
+                            workflow_route=workflow_route,
+                        )
+                    else:
+                        escalation = await self._request_reviewer_unavailable_escalation(
+                            notifier=notifier,
+                            run_id=run_id,
+                            task_id=task_id,
+                            gate=str(gate),
+                            policy=reviewer_policy,
+                            classification=classification,
+                            cursor_review=cursor_payload,
+                            recovery=recovery,
+                            available_reviewers={
+                                "claude": claude_decision,
+                                "codex": codex_decision,
+                            },
+                        )
+                        recovery_event = self._record_reviewer_unavailable_recovery(
+                            run_id=run_id,
+                            task_id=task_id,
+                            gate=str(gate),
+                            status="paused_for_human",
+                            policy=reviewer_policy,
+                            classification=classification,
+                            cursor_review=cursor_payload,
+                            recovery={**recovery, "escalation": escalation},
+                            available_reviewers={
+                                "claude": claude_decision,
+                                "codex": codex_decision,
+                            },
+                        )
+                        cursor_payload["reviewer_unavailable_recovery"] = {
+                            **recovery,
+                            "event_id": recovery_event["event_id"],
+                            "escalation": escalation,
+                        }
+                        payload["cursor_review"] = cursor_payload
+                        final_payload = self._write_workflow_gate_override(
+                            run_id=run_id,
+                            task_id=task_id,
+                            gate=gate,
+                            attempts=attempts,
+                            reason=classification,
+                            source_payload=payload,
+                            claim_probe=claim_payload,
+                        )
+                        final_payload["workflow_reviewer_unavailable_escalation"] = escalation
+                        self.state.record_dual_agent_workflow_step(
+                            run_id=run_id,
+                            task_id=task_id,
+                            gate=gate,
+                            status="blocked",
+                            attempt_count=attempts,
+                            latest_event_id=self.state.latest_event_id(run_id),
+                        )
+                        self.state.update_dual_agent_workflow(
+                            run_id=run_id,
+                            task_id=task_id,
+                            status="blocked",
+                            current_gate=gate,
+                        )
+                        await self._emit_workflow_milestone(
+                            notifier=notifier,
+                            run_id=run_id,
+                            task_id=task_id,
+                            milestone="needs_user_input",
+                            gate=gate,
+                        )
+                        return self._workflow_result(
+                            run_id=run_id,
+                            task_id=task_id,
+                            status="blocked",
+                            current_gate=gate,
+                            steps=steps + [_workflow_step_dict(gate, "blocked", attempts)],
+                            final_gate_result=final_payload,
+                            cwd=cwd,
+                            screenshots=screenshot_payloads,
+                            visual_evidence_policy=visual_policy,
+                            workflow_route=workflow_route,
+                        )
 
                 if (
                     payload.get("status") == "blocked"
@@ -1474,6 +1633,7 @@ class CodexSupervisorMcpAPI:
         required_roles: list[str] | None = None,
         solo_exception_for_artifact_only_gates: bool | None = None,
         required_evidence_grade: str | None = None,
+        reviewer_unavailable_policy: str | None = None,
         planning_artifacts: list[dict[str, Any]] | None = None,
         screenshots: list[dict[str, Any]] | None = None,
         verified_claims: list[str] | None = None,
@@ -1495,6 +1655,10 @@ class CodexSupervisorMcpAPI:
             required_roles=required_roles,
             solo_exception_for_artifact_only_gates=solo_exception_for_artifact_only_gates,
             required_evidence_grade=required_evidence_grade,
+        )
+        reviewer_policy = _reviewer_unavailable_policy_config(
+            self.cfg,
+            reviewer_unavailable_policy=reviewer_unavailable_policy,
         )
         job_id = f"workflow-{uuid.uuid4().hex[:12]}"
         cwd_path = Path(cwd).expanduser().resolve()
@@ -1522,6 +1686,7 @@ class CodexSupervisorMcpAPI:
                 "solo_exception_for_artifact_only_gates"
             ],
             "required_evidence_grade": agentic_policy["required_evidence_grade"],
+            "reviewer_unavailable_policy": reviewer_policy,
             "planning_artifacts": planning_artifacts,
             "screenshots": screenshots,
             "verified_claims": verified_claims,
@@ -1845,6 +2010,7 @@ class CodexSupervisorMcpAPI:
                    'dual_agent_dynamic_workflow_receipt_validation',
                    'dual_agent_dynamic_workflow_manifest',
                    'dual_agent_dynamic_workflow_synthesis',
+                   'dual_agent_reviewer_unavailable_recovery',
                    'dual_agent_workflow_job',
                    'dual_agent_workflow_route',
                    'dual_agent_interaction_message',
@@ -1859,6 +2025,7 @@ class CodexSupervisorMcpAPI:
         dynamic_workflow_receipt_validations: list[dict[str, Any]] = []
         dynamic_workflow_manifests: list[dict[str, Any]] = []
         dynamic_workflow_syntheses: list[dict[str, Any]] = []
+        reviewer_unavailable_recoveries: list[dict[str, Any]] = []
         workflow_jobs: list[dict[str, Any]] = []
         workflow_routes: list[dict[str, Any]] = []
         interactions: list[dict[str, Any]] = []
@@ -1907,6 +2074,12 @@ class CodexSupervisorMcpAPI:
                     "occurred_at": row["ts"],
                     **payload,
                 }))
+            elif row["kind"] == "dual_agent_reviewer_unavailable_recovery":
+                reviewer_unavailable_recoveries.append(redact({
+                    "event_id": row["event_id"],
+                    "occurred_at": row["ts"],
+                    **payload,
+                }))
             elif row["kind"] == "dual_agent_workflow_job":
                 workflow_jobs.append(redact({
                     "event_id": row["event_id"],
@@ -1939,7 +2112,8 @@ class CodexSupervisorMcpAPI:
         if (
             not rounds and not planning_validations and not skill_receipt_validations
             and not dynamic_workflow_receipt_validations and not dynamic_workflow_manifests
-            and not dynamic_workflow_syntheses and not workflow_jobs and not workflow_routes
+            and not dynamic_workflow_syntheses and not reviewer_unavailable_recoveries
+            and not workflow_jobs and not workflow_routes
             and latest_result is None
         ):
             return {
@@ -1952,6 +2126,7 @@ class CodexSupervisorMcpAPI:
                 "dynamic_workflow_receipt_validations": [],
                 "dynamic_workflow_manifests": [],
                 "dynamic_workflow_syntheses": [],
+                "reviewer_unavailable_recoveries": [],
                 "workflow_jobs": [],
                 "workflow_routes": [],
                 "interactions": [],
@@ -1969,6 +2144,7 @@ class CodexSupervisorMcpAPI:
             "dynamic_workflow_receipt_validations": dynamic_workflow_receipt_validations,
             "dynamic_workflow_manifests": dynamic_workflow_manifests,
             "dynamic_workflow_syntheses": dynamic_workflow_syntheses,
+            "reviewer_unavailable_recoveries": reviewer_unavailable_recoveries,
             "workflow_jobs": workflow_jobs,
             "workflow_routes": workflow_routes,
             "interactions": interactions,
@@ -2346,6 +2522,122 @@ class CodexSupervisorMcpAPI:
             ),
         )
 
+    def _record_reviewer_unavailable_recovery(
+        self,
+        *,
+        run_id: str,
+        task_id: str,
+        gate: str,
+        status: str,
+        policy: str,
+        classification: str,
+        cursor_review: dict[str, Any] | None,
+        recovery: dict[str, Any],
+        available_reviewers: dict[str, Any],
+    ) -> dict[str, Any]:
+        payload = {
+            "task_id": task_id,
+            "gate": gate,
+            "status": status,
+            "policy": policy,
+            "classification": classification,
+            "evidence_grade": "degraded",
+            "reviewer_verdict_counted_as_accept": False,
+            "available_reviewers": available_reviewers,
+            "cursor_review": cursor_review,
+            "authorization": recovery.get("authorization"),
+            "forced_by_safety": bool(recovery.get("forced_by_safety")),
+            "safety_reasons": list(recovery.get("safety_reasons") or []),
+            "decision": recovery.get("decision"),
+            "recovery": recovery,
+        }
+        event_id = self.state.write_event(
+            run_id=run_id,
+            source="dual_agent",
+            kind="dual_agent_reviewer_unavailable_recovery",
+            payload=payload,
+        )
+        return {"event_id": event_id, **payload}
+
+    async def _request_reviewer_unavailable_escalation(
+        self,
+        *,
+        notifier: Any | None,
+        run_id: str,
+        task_id: str,
+        gate: str,
+        policy: str,
+        classification: str,
+        cursor_review: dict[str, Any] | None,
+        recovery: dict[str, Any],
+        available_reviewers: dict[str, Any],
+    ) -> dict[str, Any]:
+        current = int(time.time())
+        nonce = uuid.uuid4().hex[:16]
+        options = ["Pause", "Kill", "Continue"]
+        safety_reasons = list(recovery.get("safety_reasons") or [])
+        question = (
+            f"[{task_id}] Reviewer unavailable during dual-agent workflow.\n"
+            f"gate={gate}\n"
+            f"policy={policy}\n"
+            f"classification={classification}\n"
+            "Cursor did not return a usable verdict. Continue authorizes "
+            "proceed-degraded on Claude+Codex only; the missing Cursor verdict "
+            "is recorded as degraded evidence, not as accept."
+        )
+        if safety_reasons:
+            question += "\nSafety escalation reasons: " + ", ".join(safety_reasons)
+        ask_id = self.state.create_ask(
+            run_id,
+            question,
+            options,
+            nonce=nonce,
+            expires_at=current + 3600,
+        )
+        action_id = self.state.record_action(
+            run_id=run_id,
+            action_type="dual_agent_gate_deadlock",
+            requested_by="dual_agent_workflow",
+            payload={
+                "task_id": task_id,
+                "gate": gate,
+                "ask_id": ask_id,
+                "nonce": nonce,
+                "options": options,
+                "escalation_type": "reviewer_unavailable",
+                "reason": "reviewer_unavailable",
+                "classification": classification,
+                "policy": policy,
+                "forced_by_safety": bool(recovery.get("forced_by_safety")),
+                "safety_reasons": safety_reasons,
+                "available_reviewers": available_reviewers,
+                "cursor_review": cursor_review,
+                "reviewer_verdict_counted_as_accept": False,
+                "evidence_grade": "degraded",
+            },
+            status="paused_for_human",
+        )
+        if notifier is not None:
+            await notifier.send_approval_prompt(
+                ask_id=ask_id,
+                question=question,
+                options=options,
+                nonce=nonce,
+            )
+        return redact({
+            "status": "paused_for_human",
+            "policy": policy,
+            "classification": classification,
+            "forced_by_safety": bool(recovery.get("forced_by_safety")),
+            "safety_reasons": safety_reasons,
+            "action_id": action_id,
+            "ask_id": ask_id,
+            "nonce": nonce,
+            "options": options,
+            "reviewer_verdict_counted_as_accept": False,
+            "evidence_grade": "degraded",
+        })
+
     def _notifier(self) -> Any | None:
         if self.notifier is not None:
             return self.notifier
@@ -2595,6 +2887,7 @@ def build_codex_supervisor_mcp_server(
         required_roles: list[str] | None = None,
         solo_exception_for_artifact_only_gates: bool | None = None,
         required_evidence_grade: str | None = None,
+        reviewer_unavailable_policy: str | None = None,
         planning_artifacts: list[dict[str, Any]] | None = None,
         screenshots: list[dict[str, Any]] | None = None,
         verified_claims: list[str] | None = None,
@@ -2623,6 +2916,7 @@ def build_codex_supervisor_mcp_server(
             required_roles=required_roles,
             solo_exception_for_artifact_only_gates=solo_exception_for_artifact_only_gates,
             required_evidence_grade=required_evidence_grade,
+            reviewer_unavailable_policy=reviewer_unavailable_policy,
             planning_artifacts=planning_artifacts,
             screenshots=screenshots,
             verified_claims=verified_claims,
@@ -2653,6 +2947,7 @@ def build_codex_supervisor_mcp_server(
         required_roles: list[str] | None = None,
         solo_exception_for_artifact_only_gates: bool | None = None,
         required_evidence_grade: str | None = None,
+        reviewer_unavailable_policy: str | None = None,
         planning_artifacts: list[dict[str, Any]] | None = None,
         screenshots: list[dict[str, Any]] | None = None,
         verified_claims: list[str] | None = None,
@@ -2682,6 +2977,7 @@ def build_codex_supervisor_mcp_server(
             required_roles=required_roles,
             solo_exception_for_artifact_only_gates=solo_exception_for_artifact_only_gates,
             required_evidence_grade=required_evidence_grade,
+            reviewer_unavailable_policy=reviewer_unavailable_policy,
             planning_artifacts=planning_artifacts,
             screenshots=screenshots,
             verified_claims=verified_claims,
@@ -3067,6 +3363,83 @@ def _normalise_receipt_payloads(receipts: list[dict[str, Any]]) -> list[dict[str
         if isinstance(receipt, dict):
             normalised.append(dict(receipt))
     return normalised
+
+
+def _reviewer_unavailable_policy_config(
+    cfg: Config,
+    *,
+    reviewer_unavailable_policy: str | None,
+) -> str:
+    configured = getattr(cfg.supervisor, "reviewer_unavailable_policy", "escalate")
+    requested = configured if reviewer_unavailable_policy is None else reviewer_unavailable_policy
+    return _canonical_reviewer_unavailable_policy(requested)
+
+
+def _canonical_reviewer_unavailable_policy(value: str | None) -> str:
+    text = str(value or "escalate").strip().lower().replace("-", "_").replace(" ", "_")
+    return text if text in REVIEWER_UNAVAILABLE_POLICIES else "escalate"
+
+
+def _reviewer_unavailable_recovery_plan(
+    *,
+    state: State,
+    run_id: str,
+    task_id: str,
+    gate: str,
+    policy: str,
+    classification: str,
+    available_reviewers_accept: bool,
+    agentic_policy: dict[str, Any],
+    required_evidence_grade: str,
+    user_facing: bool,
+) -> dict[str, Any]:
+    canonical_policy = _canonical_reviewer_unavailable_policy(policy)
+    safety_reasons: list[str] = []
+    if str(agentic_policy.get("agentic_lead_policy") or "off") == "required":
+        safety_reasons.append("agentic_lead_policy_required")
+    if _canonical_evidence_grade(required_evidence_grade) == "runtime_native":
+        safety_reasons.append("required_evidence_grade_runtime_native")
+    if user_facing:
+        safety_reasons.append("user_facing_or_visual_evidence_required")
+
+    authorization = None
+    if canonical_policy == "escalate" or (canonical_policy != "block" and safety_reasons):
+        authorization = state.claim_resume_signal(run_id=run_id, task_id=task_id)
+
+    forced_by_safety = bool(safety_reasons)
+    if not available_reviewers_accept:
+        decision = "block"
+        reason = "available_reviewers_not_accepted"
+    elif canonical_policy == "block":
+        decision = "block"
+        reason = "policy_block"
+    elif authorization is not None:
+        decision = "proceed_degraded"
+        reason = "human_authorized_proceed_degraded"
+    elif forced_by_safety:
+        decision = "escalate"
+        reason = "safety_escalation_required"
+    elif canonical_policy == "proceed_degraded":
+        decision = "proceed_degraded"
+        reason = "policy_proceed_degraded"
+    else:
+        decision = "escalate"
+        reason = "policy_escalate"
+
+    return {
+        "schema_version": "reviewer-unavailable-recovery/v1",
+        "decision": decision,
+        "reason": reason,
+        "policy": canonical_policy,
+        "classification": classification,
+        "evidence_grade": "degraded",
+        "reviewer_verdict_counted_as_accept": False,
+        "available_reviewers_accept": bool(available_reviewers_accept),
+        "forced_by_safety": forced_by_safety,
+        "safety_reasons": safety_reasons,
+        "authorization": authorization,
+        "gate": gate,
+    }
 
 
 def _agentic_lead_policy_config(

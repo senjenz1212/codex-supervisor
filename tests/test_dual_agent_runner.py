@@ -466,6 +466,49 @@ def test_gate_runner_blocks_when_lead_critical_review_requests_revision(tmp_path
     assert result.probes["P4"].reason == "outcome_critical_review_blocked"
 
 
+def test_gate_runner_accepts_prefixed_accept_decision_with_blocking_words_in_rationale(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    planning_artifacts = _write_good_planning_artifacts(tmp_path)
+
+    def fake_runner(argv, **kwargs):
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=build_lead_replay_stdout(
+                "Lead accepts with a rationale that names safety rails.\n"
+                + _outcome_block(
+                    decision=(
+                        "accept: real Cursor revise/deny verdicts still block, "
+                        "and degraded mode never counts a missing reviewer verdict as accept"
+                    ),
+                    critical_review={
+                        "decision": "accept",
+                        "severity": "none",
+                        "strongest_objection": "none",
+                    },
+                )
+            ),
+            stderr="",
+        )
+
+    result = run_dual_agent_gate(
+        DualAgentGateSpec(
+            task_id="gate-prefixed-accept",
+            run_id="run-prefixed-accept",
+            gate="prd_review",
+            instruction="Review PRD.",
+            cwd=tmp_path,
+            planning_artifacts=planning_artifacts,
+            required_planning_kinds=(),
+        ),
+        runner=fake_runner,
+        state=state,
+    )
+
+    assert result.status == "accepted"
+    assert result.probes["P4"].status == "green"
+
+
 def test_gate_runner_planning_probe_details_keep_task_id(tmp_path):
     spec = DualAgentGateSpec(
         task_id="gate-stub-prd",

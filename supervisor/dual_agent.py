@@ -410,17 +410,27 @@ def _outcome_dict(outcome: Outcome | dict[str, Any] | None) -> dict[str, Any] | 
 
 def _outcome_decision_texts(outcome: dict[str, Any]) -> list[str]:
     decisions = [
-        str(value)
+        _normalise_decision_text(str(value))
         for value in outcome.get("decisions") or []
         if str(value).strip()
     ]
     for specialist in outcome.get("specialists") or []:
         if isinstance(specialist, dict) and str(specialist.get("decision") or "").strip():
-            decisions.append(str(specialist.get("decision")))
+            decisions.append(_normalise_decision_text(str(specialist.get("decision"))))
     critical_review = outcome.get("critical_review")
     if isinstance(critical_review, dict) and str(critical_review.get("decision") or "").strip():
-        decisions.append(str(critical_review.get("decision")))
+        decisions.append(_normalise_decision_text(str(critical_review.get("decision"))))
     return decisions
+
+
+def _normalise_decision_text(value: str) -> str:
+    text = value.strip()
+    match = re.match(
+        r"^(accept|accepted|approve|approved|deny|denied|block|blocked|revise|reject|rejected|fail|failed)\s*[:\-–—]",
+        text,
+        flags=re.IGNORECASE,
+    )
+    return match.group(1).lower() if match else text
 
 
 def _has_decision_token(value: str, tokens: tuple[str, ...]) -> bool:
