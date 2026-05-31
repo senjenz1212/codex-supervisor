@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "8528d9083a91ad176ba790055ea62576b9fd1a4fae13e22f8bab406af9c56867",
+  "git": {
+    "diff_bytes": 0,
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "diff_stat": "",
+    "head": "f38e118",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "f38e118",
+    "status_short": "?? docs/dual-agent/cursor-review-reliability-20260531/"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "b8e42fc2ab915d389c9d96b0307c31fd3fe9751ccc4eb9da561336785a81c227",
+    "implementation_plan": "0d22d9e8281f3e855f2ef6be29330cccde0f61732fb544c95dfc9e4d9dd86ec8",
+    "issues": "a8310d1e3cca14cc2e797d02329484ef3c21634f102a8ecb290008912e346fc8",
+    "prd": "6fdddc0e2f6ef058aabc4bac7a38af763e1890950e483c16d129e4a0e1e05a67",
+    "tdd_plan": "dbe5ede3328ccbd361be31b1ee15518202aa9ef0438463d1f055c019e1d93bf4"
+  },
+  "status": "captured"
+}
