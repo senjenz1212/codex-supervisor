@@ -1,6 +1,6 @@
 # Dual-Agent Artifacts: cursor-review-reliability-20260531
 
-- run_id: `codex-cursor-review-reliability-20260531`
+- run_id: `codex-cursor-review-reliability-20260531-after-implementation`
 - task_id: `cursor-review-reliability-20260531`
 - source: supervisor SQLite event ledger
 
@@ -32,6 +32,6 @@
 
 - `issues_review`: 6 event(s)
 - `prd_review`: 6 event(s)
-- `tdd_review`: 50 event(s)
+- `tdd_review`: 10 event(s)
 - `unknown`: 1 event(s)
 - `workflow_start`: 1 event(s)

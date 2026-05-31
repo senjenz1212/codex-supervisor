@@ -1,0 +1,475 @@
+{
+  "artifact_export": {
+    "files": [
+      "docs/dual-agent/cursor-review-reliability-20260531/index.md",
+      "docs/dual-agent/cursor-review-reliability-20260531/triage.md",
+      "docs/dual-agent/cursor-review-reliability-20260531/prd.md",
+      "docs/dual-agent/cursor-review-reliability-20260531/tdd.md",
+      "docs/dual-agent/cursor-review-reliability-20260531/grill-findings.md",
+      "docs/dual-agent/cursor-review-reliability-20260531/issues.md",
+      "docs/dual-agent/cursor-review-reliability-20260531/screenshots.md",
+      "docs/dual-agent/cursor-review-reliability-20260531/outcome-review.md",
+      "docs/dual-agent/cursor-review-reliability-20260531/interactions.md",
+      "docs/dual-agent/cursor-review-reliability-20260531/transcript.md",
+      "docs/dual-agent/cursor-review-reliability-20260531/transcript.jsonl",
+      "docs/dual-agent/cursor-review-reliability-20260531/mast-coverage.md",
+      "docs/dual-agent/cursor-review-reliability-20260531/replay/manifest.json",
+      "docs/dual-agent/cursor-review-reliability-20260531/replay/workspace-snapshot.json",
+      "docs/dual-agent/cursor-review-reliability-20260531/replay/mast-coverage.json",
+      "docs/dual-agent/cursor-review-reliability-20260531/source/grill-findings-tdd.md",
+      "docs/dual-agent/cursor-review-reliability-20260531/source/grill-findings.md",
+      "docs/dual-agent/cursor-review-reliability-20260531/source/implementation-plan.md",
+      "docs/dual-agent/cursor-review-reliability-20260531/source/issues.md",
+      "docs/dual-agent/cursor-review-reliability-20260531/source/prd.md",
+      "docs/dual-agent/cursor-review-reliability-20260531/source/tdd.md"
+    ],
+    "output_dir": "docs/dual-agent/cursor-review-reliability-20260531",
+    "run_id": "codex-cursor-review-reliability-20260531-after-implementation",
+    "status": "ok",
+    "task_id": "cursor-review-reliability-20260531"
+  },
+  "current_gate": "tdd_review",
+  "final_gate_result": {
+    "artifact_rigor": {
+      "accepted_prerequisite_gates": [
+        "issues_review"
+      ],
+      "artifact_policy": "strict",
+      "gate": "tdd_review",
+      "gate_statuses": {
+        "issues_review": "accepted",
+        "prd_review": "accepted"
+      },
+      "missing_artifact_paths": [],
+      "missing_artifacts": [],
+      "missing_prerequisite_gates": [],
+      "missing_screenshot_paths": [],
+      "present_artifacts": [
+        "grill_findings",
+        "implementation_plan",
+        "issues",
+        "prd",
+        "tdd_plan"
+      ],
+      "reason": "required_artifacts_present",
+      "required_artifacts": [
+        "prd",
+        "issues",
+        "tdd_plan",
+        "grill_findings"
+      ],
+      "required_prerequisite_gates": [
+        "issues_review"
+      ],
+      "screenshots": [],
+      "status": "ok",
+      "user_facing": false,
+      "visual_validation": {
+        "allowed_sources": [
+          "browser",
+          "browser-use",
+          "browser_use",
+          "computer",
+          "computer-use",
+          "computer_use"
+        ],
+        "evidence": [],
+        "failures": [],
+        "reason": "no_screenshots_supplied",
+        "status": "not_required"
+      }
+    },
+    "attempts": 1,
+    "claim_verification": null,
+    "cursor_review": {
+      "accepted": false,
+      "agent_id": "agent-51c870a6-7d57-4354-92ed-7ad7d386c757",
+      "attempts": 4,
+      "critical_review": {
+        "assumptions_to_verify": [],
+        "contradictions_checked": [],
+        "decision": "revise",
+        "evidence_refs": [],
+        "missing_evidence": [],
+        "schema_version": "critical-review/v1",
+        "severity": "none",
+        "strongest_objection": "none",
+        "what_would_change_my_mind": "Claude or Codex provides evidence resolving Cursor's objections."
+      },
+      "duration_ms": 1219,
+      "failure_classification": "reviewer_contract_unmet",
+      "model": "composer-2.5",
+      "outcome": null,
+      "probe": {
+        "details": {
+          "attempts": 4,
+          "original_reason": "missing dual_agent_outcome block",
+          "recoverable": true,
+          "retry_reasons": [
+            "missing dual_agent_outcome block",
+            "missing dual_agent_outcome block",
+            "missing dual_agent_outcome block",
+            "missing dual_agent_outcome block"
+          ]
+        },
+        "probe_id": "CURSOR",
+        "reason": "reviewer_contract_unmet",
+        "status": "red"
+      },
+      "recoverable": true,
+      "retry_reasons": [
+        "missing dual_agent_outcome block",
+        "missing dual_agent_outcome block",
+        "missing dual_agent_outcome block",
+        "missing dual_agent_outcome block"
+      ],
+      "run_id": "run-1181bf62-cfca-4cc2-a25d-6923a3435f78",
+      "status": "error",
+      "transcript_tail": "[cursor attempt 1/4]\n\n\n[cursor attempt 2/4]\n\n\n[cursor attempt 3/4]\n\n\n[cursor attempt 4/4]\n"
+    },
+    "escalation": {
+      "claim_verification": null,
+      "reason": "reviewer_contract_unmet",
+      "type": "workflow_lifecycle"
+    },
+    "event_id": 310751,
+    "gate": "tdd_review",
+    "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/cursor-review-reliability-20260531.json",
+    "outcome": {
+      "changed_files": [
+        "supervisor/cursor_agent.py",
+        "mcp_tools/codex_supervisor_stdio.py",
+        "supervisor/agent_mailbox.py",
+        "tests/test_cursor_agent.py",
+        "tests/test_dual_agent_workflow_driver.py"
+      ],
+      "claims": [
+        "All 5 PRD promises have mapped tests",
+        "First RED hits invoke_cursor_agent boundary",
+        "No missing verdict is counted as accept",
+        "Reviewer verdict persisted to ledger and readable without live Cursor"
+      ],
+      "confidence": 0.82,
+      "confidence_criteria": [
+        "TDD plan covers all PRD promises",
+        "Forbidden outcomes are test-guarded",
+        "Durability asserted through a read",
+        "Suite executes green (UNVERIFIED)"
+      ],
+      "confidence_rationale": "Strong static evidence: tests exist and map to all promises, source guardrails confirmed, infra-vs-quality cleanly separated. Held below 0.9 because I did not execute the suite (approval required) and there is a minor plan-name/taxonomy divergence.",
+      "critical_review": {
+        "assumptions_to_verify": [
+          "read_dual_agent_gate_events durably persists tri_agent_cursor_review before any transport read in production paths",
+          "contract_retry_limit default is bounded in run_dual_agent_workflow callers"
+        ],
+        "contradictions_checked": [
+          "Plan ISS-2 name (infrastructure_unavailable) vs implemented classification (reviewer_contract_unmet) \u2014 intentional taxonomy split, consistent with PRD allowed outcomes",
+          "Whether infra recovery weakens revise/deny \u2014 driver:1367 confirms it does not"
+        ],
+        "decision": "accept",
+        "missing_evidence": [
+          "pytest pass/fail output for the two focused test files",
+          "confirmation no infra-path test is skipped when cursor_sdk is absent"
+        ],
+        "severity": "low",
+        "strongest_objection": "The single acceptance criterion 'suite stays green' was not executed; static verification cannot rule out a runtime failure or fixture skip (e.g. cursor_sdk import) masking a red test.",
+        "what_would_change_my_mind": "A pytest run showing any of the five mapped tests fail or skip, or evidence a missing verdict can reach an accept path."
+      },
+      "decisions": [
+        "accept"
+      ],
+      "objections": [
+        "Plan ISS-2 test name says infrastructure_unavailable but the path is classified reviewer_contract_unmet; plan precision gap resolved in implementation",
+        "4 of 5 implemented test names diverge from plan names (accuracy improvement; treat plan names as descriptive)"
+      ],
+      "specialists": [
+        {
+          "decision": "accept",
+          "name": "lead-tdd-reviewer",
+          "objection": "Plan under-pins contract_unmet vs infrastructure_unavailable discriminator; resolved correctly in code"
+        }
+      ],
+      "summary": "TDD plan is boundary-first (invoke_cursor_agent), guards forbidden outcomes (outcome=None, no missing-verdict-as-accept), tests durability through read_gate_transcript, bounds retries with deterministic terminal classification, and protects valid revise/deny regressions. Implementation faithfully realizes the plan. Accept; suite-green criterion not executed (approval needed).",
+      "task_id": "cursor-review-reliability-20260531",
+      "test_status": "unknown",
+      "tests": [
+        "tests/test_cursor_agent.py::test_invoke_cursor_agent_retries_missing_outcome_with_contract_packet",
+        "tests/test_cursor_agent.py::test_invoke_cursor_agent_returns_recoverable_contract_artifact_after_retry_cap",
+        "tests/test_cursor_agent.py::test_invoke_cursor_agent_classifies_parseable_contract_miss_after_retry_cap",
+        "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_records_cursor_contract_failure_as_recoverable_infra",
+        "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_with_cursor_review_blocks_on_cursor_rejection"
+      ]
+    },
+    "probes": {
+      "P1": {
+        "details": {},
+        "probe_id": "P1",
+        "reason": "planning_artifact_boundaries_ok",
+        "status": "green"
+      },
+      "P2": {
+        "details": {
+          "captured_bytes": 8632,
+          "captured_token_estimate": 2149,
+          "orchestration_surface": "/lead"
+        },
+        "probe_id": "P2",
+        "reason": "worker_orchestration_invocation_ok",
+        "status": "green"
+      },
+      "P3": {
+        "details": {},
+        "probe_id": "P3",
+        "reason": "outcome_fidelity_ok",
+        "status": "green"
+      },
+      "P4": {
+        "details": {
+          "decisions": [
+            "accept",
+            "accept",
+            "accept"
+          ]
+        },
+        "probe_id": "P4",
+        "reason": "outcome_gate_decision_ok",
+        "status": "green"
+      },
+      "P_planning": {
+        "details": {
+          "artifact_hashes": {
+            "grill_findings": "555b43e61b03773c3437a6f3524493d0e2f012dac00987002c489f8094d5c895",
+            "issues": "a8310d1e3cca14cc2e797d02329484ef3c21634f102a8ecb290008912e346fc8",
+            "prd": "6fdddc0e2f6ef058aabc4bac7a38af763e1890950e483c16d129e4a0e1e05a67",
+            "tdd_plan": "dbe5ede3328ccbd361be31b1ee15518202aa9ef0438463d1f055c019e1d93bf4"
+          },
+          "artifacts": [
+            {
+              "kind": "prd",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/cursor-review-reliability-20260531/source/prd.md",
+              "sha256": "6fdddc0e2f6ef058aabc4bac7a38af763e1890950e483c16d129e4a0e1e05a67",
+              "status": "accepted"
+            },
+            {
+              "kind": "issues",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/cursor-review-reliability-20260531/source/issues.md",
+              "sha256": "a8310d1e3cca14cc2e797d02329484ef3c21634f102a8ecb290008912e346fc8",
+              "status": "accepted"
+            },
+            {
+              "kind": "tdd_plan",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/cursor-review-reliability-20260531/source/tdd.md",
+              "sha256": "dbe5ede3328ccbd361be31b1ee15518202aa9ef0438463d1f055c019e1d93bf4",
+              "status": "accepted"
+            },
+            {
+              "kind": "grill_findings",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/cursor-review-reliability-20260531/source/grill-findings.md",
+              "sha256": "555b43e61b03773c3437a6f3524493d0e2f012dac00987002c489f8094d5c895",
+              "status": "accepted"
+            }
+          ],
+          "checks": {
+            "AGG-001": "pass",
+            "AGG-002": "pass",
+            "GRILL-001": "pass",
+            "GRILL-002": "pass",
+            "GRILL-003": "pass",
+            "ISS-001": "pass",
+            "ISS-002": "pass",
+            "ISS-003": "pass",
+            "ISS-004": "pass",
+            "PRD-001": "pass",
+            "PRD-002": "pass",
+            "PRD-003": "pass",
+            "PRD-004": "pass",
+            "PRD-005": "pass",
+            "PRD-006": "pass",
+            "TDD-001": "pass",
+            "TDD-002": "pass",
+            "TDD-003": "pass",
+            "TDD-004": "pass"
+          },
+          "gate": "tdd_review",
+          "task_id": "cursor-review-reliability-20260531",
+          "validator_version": "1.0.0",
+          "verdict": "accepted"
+        },
+        "probe_id": "P_planning",
+        "reason": "planning_validation_ok",
+        "status": "green"
+      }
+    },
+    "status": "blocked",
+    "task_id": "cursor-review-reliability-20260531",
+    "trace_envelope": {
+      "artifacts": [],
+      "claims": [
+        "All 5 PRD promises have mapped tests",
+        "First RED hits invoke_cursor_agent boundary",
+        "No missing verdict is counted as accept",
+        "Reviewer verdict persisted to ledger and readable without live Cursor"
+      ],
+      "event_kind": "dual_agent_gate_result",
+      "failure_taxonomy": {
+        "category": "system_design",
+        "code": "reviewer_contract_unmet",
+        "framework": "MAST-inspired",
+        "mast_category": null,
+        "mast_code": null,
+        "mast_mode": null,
+        "probe_id": "",
+        "schema_version": "dual-agent-failure-taxonomy/v1",
+        "source": "result_escalation",
+        "subcategory": "unknown"
+      },
+      "gate": "tdd_review",
+      "policy_verdict": "blocked",
+      "receipts": [],
+      "run_id": "codex-cursor-review-reliability-20260531-after-implementation",
+      "schema_version": "dual-agent-trace-envelope/v1",
+      "source": "dual_agent",
+      "task_id": "cursor-review-reliability-20260531",
+      "tool_calls": []
+    }
+  },
+  "mandatory_artifacts": {
+    "missing": [],
+    "output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/cursor-review-reliability-20260531",
+    "required": [
+      "source/prd.md",
+      "source/grill-findings.md",
+      "source/issues.md",
+      "source/tdd.md",
+      "source/grill-findings-tdd.md",
+      "source/implementation-plan.md",
+      "interactions.md",
+      "outcome-review.md",
+      "transcript.md"
+    ],
+    "status": "ok"
+  },
+  "resume": {
+    "artifact_output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/cursor-review-reliability-20260531",
+    "blocker": {
+      "gate": "tdd_review",
+      "latest_event_id": 310751,
+      "status": "blocked"
+    },
+    "current_gate": "tdd_review",
+    "last_status": "blocked",
+    "latest_event_id": 310753,
+    "next_safe_action": "inspect blocker, provide corrective input, then rerun run_dual_agent_workflow",
+    "prompt": "Use codex_supervisor.\nContinue run_id=codex-cursor-review-reliability-20260531-after-implementation\ntask_id=cursor-review-reliability-20260531\ncurrent_gate=tdd_review\nlast_status=blocked\nlatest_event_id=310753\nnext_safe_action=inspect blocker, provide corrective input, then rerun run_dual_agent_workflow\nartifact_output_dir=/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/cursor-review-reliability-20260531\nfirst inspect: read_gate_transcript(run_id=codex-cursor-review-reliability-20260531-after-implementation, task_id=cursor-review-reliability-20260531)",
+    "run_id": "codex-cursor-review-reliability-20260531-after-implementation",
+    "status": "ok",
+    "steps": [
+      {
+        "attempt_count": 1,
+        "gate": "prd_review",
+        "latest_event_id": 310694,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "issues_review",
+        "latest_event_id": 310705,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "tdd_review",
+        "latest_event_id": 310751,
+        "status": "blocked"
+      }
+    ],
+    "task_id": "cursor-review-reliability-20260531",
+    "transcript_command": "read_gate_transcript(run_id=codex-cursor-review-reliability-20260531-after-implementation, task_id=cursor-review-reliability-20260531)"
+  },
+  "run_id": "codex-cursor-review-reliability-20260531-after-implementation",
+  "status": "blocked",
+  "steps": [
+    {
+      "attempt_count": 1,
+      "gate": "prd_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "issues_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "tdd_review",
+      "status": "blocked"
+    }
+  ],
+  "task_id": "cursor-review-reliability-20260531",
+  "visual_evidence_policy": {
+    "artifact_matches": [],
+    "matched_terms": [],
+    "required": false,
+    "source": "not_user_facing"
+  },
+  "workflow_route": {
+    "agentic_lead_policy": {
+      "min_subagents": 0,
+      "policy": "off",
+      "required_evidence_grade": "self_reported",
+      "required_roles": [],
+      "solo_exception_for_artifact_only_gates": false
+    },
+    "cursor_review_gates": [
+      "tdd_review",
+      "implementation_plan",
+      "outcome_review"
+    ],
+    "cursor_review_profile": "rigorous",
+    "dynamic_workflow_task_class": null,
+    "effective_cursor_review": true,
+    "execution_layer_mode": "lead_direct",
+    "force_cursor_review": false,
+    "gate_count": 6,
+    "gates": [
+      "prd_review",
+      "issues_review",
+      "tdd_review",
+      "implementation_plan",
+      "execution",
+      "outcome_review"
+    ],
+    "planning_depth": "large",
+    "reasons": [
+      "default_large"
+    ],
+    "requested_cursor_review": true,
+    "required_skill_stages": [
+      "to_prd",
+      "prd_grill",
+      "to_issues",
+      "tdd",
+      "tdd_grill"
+    ],
+    "requires_agentic_lead_policy_receipts": false,
+    "requires_brainstorm": false,
+    "requires_dynamic_workflow_receipts": false,
+    "requires_skill_receipts": true,
+    "resume": {
+      "mode": "fresh",
+      "pending_gates": [
+        "prd_review",
+        "issues_review",
+        "tdd_review",
+        "implementation_plan",
+        "execution",
+        "outcome_review"
+      ],
+      "schema_version": "dual-agent-workflow-resume/v1",
+      "skipped_gates": [],
+      "skipped_steps": []
+    },
+    "schema_version": "dual-agent-workflow-route/v1",
+    "task_complexity": "large"
+  }
+}

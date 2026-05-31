@@ -1,9 +1,9 @@
 # PRD Gate
 
-## event_id: 309818
+## event_id: 310671
 
-- event_id: `309818`
-- ts: `1780256099`
+- event_id: `310671`
+- ts: `1780258079`
 - kind: `dual_agent_planning_validation`
 - gate: `prd_review`
 - interaction_type: `planning_validation`
@@ -35,11 +35,11 @@ Tool calls:
 
 | tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
 |---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
-| validate_planning_artifacts#1780256099975#2191 |  |  | validate_planning_artifacts | green | 2 | 2191 |  |  | P_planning |  | {"artifact_count": 6, "gate": "prd_review", "required_kinds": ["prd"], "task_id": "cursor-review-reliability-20260531"} | {"probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"} |  |
+| validate_planning_artifacts#1780258079620#1658 |  |  | validate_planning_artifacts | green | 1 | 1658 |  |  | P_planning |  | {"artifact_count": 6, "gate": "prd_review", "required_kinds": ["prd"], "task_id": "cursor-review-reliability-20260531"} | {"probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"} |  |
 
-## event_id: 309819
+## event_id: 310672
 
-- ts: `1780256099`
+- ts: `1780258079`
 - kind: `dual_agent_interaction_message`
 - gate: `prd_review`
 - interaction_type: `gate_request`
@@ -48,7 +48,7 @@ Tool calls:
 - recipient: `claude_code`
 - round_index: `None`
 - persona_id: `codex.lifecycle_reviewer`
-- addresses: `event:309818`, `handoff:/Users/sam.zhang/Documents/codex-supervisor/.handoff/cursor-review-reliability-20260531.json`
+- addresses: `event:310671`, `handoff:/Users/sam.zhang/Documents/codex-supervisor/.handoff/cursor-review-reliability-20260531.json`
 
 ### Message
 
@@ -119,12 +119,12 @@ Tool calls:
 
 | tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
 |---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
-| validate_planning_artifacts#1780256099975#2191 |  |  | validate_planning_artifacts | green | 2 | 2191 |  |  | P_planning |  | {"artifact_count": 6, "gate": "prd_review", "required_kinds": ["prd"], "task_id": "cursor-review-reliability-20260531"} | {"probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"} |  |
-| write_handoff_packet#1780256099979#3385 |  |  | write_handoff_packet | completed | 3 | 3385 |  |  |  |  | {"artifact_count": 6, "gate": "prd_review", "task_id": "cursor-review-reliability-20260531"} | {"artifact_count": 6, "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/cursor-review-reliability-20260531.json"} |  |
+| validate_planning_artifacts#1780258079620#1658 |  |  | validate_planning_artifacts | green | 1 | 1658 |  |  | P_planning |  | {"artifact_count": 6, "gate": "prd_review", "required_kinds": ["prd"], "task_id": "cursor-review-reliability-20260531"} | {"probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"} |  |
+| write_handoff_packet#1780258079623#2199 |  |  | write_handoff_packet | completed | 2 | 2199 |  |  |  |  | {"artifact_count": 6, "gate": "prd_review", "task_id": "cursor-review-reliability-20260531"} | {"artifact_count": 6, "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/cursor-review-reliability-20260531.json"} |  |
 
-## event_id: 309846
+## event_id: 310692
 
-- ts: `1780256219`
+- ts: `1780258217`
 - kind: `dual_agent_interaction_message`
 - gate: `prd_review`
 - interaction_type: `gate_response`
@@ -133,45 +133,54 @@ Tool calls:
 - recipient: `codex`
 - round_index: `None`
 - persona_id: `claude_code.lead_worker`
-- addresses: `event:309819`, `handoff:/Users/sam.zhang/Documents/codex-supervisor/.handoff/cursor-review-reliability-20260531.json`
+- addresses: `event:310672`, `handoff:/Users/sam.zhang/Documents/codex-supervisor/.handoff/cursor-review-reliability-20260531.json`
 
 ### Message
 
-PRD for Cursor reviewer reliability is accurate and grounded: verified the conflation bug in cursor_agent.py (no retry after missing outcome) and codex_supervisor_stdio.py (_workflow_round_objection treats missing verdict and real revise/deny identically as cursor_review_failed). Five promise contracts map to real boundaries; all grill findings resolved. Accept to TDD with four non-blocking objections to pin recovery semantics, classification triggers, and retry bound.
+Post-implementation review of Cursor reviewer reliability. All five PRD promises (P1 corrective retry, P2 typed terminal miss without fabrication, P3 real revise/deny still blocks, P4 infra-vs-quality classification, P5 durable ledger evidence) are implemented in supervisor/cursor_agent.py, mcp_tools/codex_supervisor_stdio.py, and supervisor/agent_mailbox.py, each backed by a statically consistent test. Non-goals respected. Gate should ACCEPT; only unconfirmed item is local suite execution (permission-blocked).
 
 ### Confidence
 
 - value: `0.82`
 - source: `claude_code_self_reported`
-- rationale: Problem statement and all named boundaries verified directly against current source; PRD promises are testable and grill findings resolved. Confidence held below 0.9 because P4's recovery semantics and the two infrastructure-classification triggers are under-specified, leaving design decisions that could drift in TDD if not pinned to the intent.
+- rationale: Code and tests are tightly and consistently coupled (exact reason/objection strings match across implementation and assertions), and every PRD promise traces to a concrete construct plus a test. Confidence is held below 0.9 because I could not execute the test suite (permission-blocked), so 'suite stays green' rests on static consistency rather than an observed green run.
 
 ### Criteria
 
-- Problem statement verified against cursor_agent.py and codex_supervisor_stdio.py: met
-- All PRD public boundaries exist in source: met
-- Grill findings resolved: met
-- Recovery policy fully unambiguous in PRD: not met (deferred to TDD)
-- Classification trigger boundary defined: not met (deferred to TDD)
+- all PRD promises mapped to implementation and tests
+- retry classifier matched to real probe reasons
+- terminal failures emit typed classification with no fabricated outcome
+- gate blocks (never accepts) on infrastructure failure
+- suite executed green: NOT verified locally
 
 ### Evidence
 
-- accept: advance prd_review to TDD with four recorded objections
-- Problem statement verified true against cursor_agent.py:135 and codex_supervisor_stdio.py:2909-2912
-- P5 durability is structurally sound: ledger write precedes separate transcript read
+- tests/test_cursor_agent.py::test_invoke_cursor_agent_retries_missing_outcome_with_contract_packet
+- tests/test_cursor_agent.py::test_invoke_cursor_agent_retries_parseable_but_contract_incomplete_outcome
+- tests/test_cursor_agent.py::test_invoke_cursor_agent_returns_recoverable_contract_artifact_after_retry_cap
+- tests/test_cursor_agent.py::test_invoke_cursor_agent_classifies_parseable_contract_miss_after_retry_cap
+- tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_with_cursor_review_blocks_on_cursor_rejection[revise]
+- tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_with_cursor_review_blocks_on_cursor_rejection[deny]
+- tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_records_cursor_contract_failure_as_recoverable_infra
+- supervisor/cursor_agent.py
+- mcp_tools/codex_supervisor_stdio.py
+- supervisor/agent_mailbox.py
+- tests/test_cursor_agent.py
+- tests/test_dual_agent_workflow_driver.py
+- accept
 
 ### Claims
 
-- PRD problem statement is factually accurate against current source
-- Five promise contracts (P1-P5) reference real public boundaries with allowed/forbidden outcomes
-- Out-of-scope correctly excludes raw MCP auto-reconnect and AND-semantics changes
-- Remaining ambiguities are bounded by intent constraints (no auto-accept, no bypass) and deferrable to TDD
+- All P1-P5 PRD promises are implemented and covered by tests
+- No missing verdict is counted as accept
+- Real Cursor revise/deny still blocks the gate (AND semantics preserved)
+- Terminal contract miss produces typed reviewer_contract_unmet/reviewer_infrastructure_unavailable without a fabricated outcome
+- Reviewer classification is written to the ledger before transcript export
 
 ### Objections
 
-- P4 recovery path wording ('retries/falls back or escalates') is wider than the intent; infra-classified misses must stay blocked as typed/durable artifact, never auto-advance
-- reviewer_contract_unmet vs reviewer_infrastructure_unavailable trigger boundary is undefined in the PRD
-- Bounded retry count unspecified in PRD (handoff policy implies retry_once); TDD needs concrete bound
-- PRD-local P1-P5 labels collide with system probes P1/P2/P3/P13/P14 named in non-goals (clarity only)
+- Acceptance criterion 'suite stays green' not directly verified: pytest execution was permission-blocked in this session
+- P5 durability is proven via ledger-event assertion rather than an injected Transport-closed fault during the reviewer-contract transcript read
 
 ### Questions
 
@@ -179,7 +188,7 @@ PRD for Cursor reviewer reliability is accurate and grounded: verified the confl
 
 ### Critical Review
 
-`{"assumptions_to_verify": ["TDD encodes recovery as block-with-typed-artifact, matching intent, not P4's looser wording", "infrastructure_unavailable maps to SDK/invocation failures (cursor_agent.py:123/130) and contract_unmet to unparseable-after-retries", "retry bound is the handoff's retry_once_with_corrective_packet"], "contradictions_checked": ["Checked whether P3 AND-verdict preservation conflicts with P4 recovery: no contradiction, P3 governs valid outcomes, P4 governs missing outcomes", "Checked whether P5 durability is already satisfied: ledger write precedes separate read, so the new work is persisting the infra classification into the same event, consistent with the promise", "Checked whether 'documented recovery path' contradicts 'no missing verdict counted as accept': reconciled - recovery = classification + durability + operator escalation, not auto-advance"], "decision": "accept", "evidence_refs": [], "missing_evidence": ["Explicit PRD statement that infra-classified misses block (abort_to_operator) rather than fall back", "Mapping rule for reviewer_contract_unmet vs reviewer_infrastructure_unavailable", "Concrete retry bound in the PRD body"], "schema_version": "critical-review/v1", "severity": "low", "strongest_objection": "P4's allowed outcomes permit 'retries/falls back under policy or escalates deterministically', which is a wider degree of freedom than the binding intent allows; a literal TDD reading of P4 could implement a Cursor-less fallback that effectively advances a gate without independent review.", "what_would_change_my_mind": "Evidence that P4's fallback wording is intended to auto-advance a gate without Cursor review, or that the ledger write does not actually precede read_gate_transcript, would move this from accept to deny."}`
+`{"assumptions_to_verify": ["pytest passes for the two suites on this run", "read_gate_transcript surfaces the persisted cursor_review classification after an actual live transport failure, not only a clean read"], "contradictions_checked": ["Whether missing verdict could be counted as accept (no: gate sets status=blocked)", "Whether infra recovery weakens real revise/deny (no: failure_classification is None for valid verdicts, objection comes from outcome.objections)", "Whether terminal failure fabricates an outcome (no: outcome=None on all infra/contract paths)", "Whether retry reasons are real probe outputs (yes: confirmed in supervisor/dual_agent.py)"], "decision": "accept", "evidence_refs": [], "missing_evidence": ["A locally executed green run of tests/test_cursor_agent.py and tests/test_dual_agent_workflow_driver.py", "A direct fault-injection test simulating Transport closed during the reviewer-contract transcript read"], "schema_version": "critical-review/v1", "severity": "low", "strongest_objection": "The acceptance criteria require the test suite to stay green, but I was unable to run pytest in this session (permission denied), so the green-suite guarantee is inferred from static code/test consistency rather than observed.", "what_would_change_my_mind": "A red test run, or evidence that an infrastructure classification path can reach an 'accepted' gate status, would flip this to revise."}`
 
 ### Tool Receipts
 
@@ -187,11 +196,22 @@ PRD for Cursor reviewer reliability is accurate and grounded: verified the confl
 
 ### Evidence Refs
 
-- None recorded.
+- {"kind": "reported_test", "ref": "tests/test_cursor_agent.py::test_invoke_cursor_agent_retries_missing_outcome_with_contract_packet", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_cursor_agent.py::test_invoke_cursor_agent_retries_parseable_but_contract_incomplete_outcome", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_cursor_agent.py::test_invoke_cursor_agent_returns_recoverable_contract_artifact_after_retry_cap", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_cursor_agent.py::test_invoke_cursor_agent_classifies_parseable_contract_miss_after_retry_cap", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_with_cursor_review_blocks_on_cursor_rejection[revise]", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_with_cursor_review_blocks_on_cursor_rejection[deny]", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_records_cursor_contract_failure_as_recoverable_infra", "status": "unknown"}
+- {"kind": "reported_changed_file", "ref": "supervisor/cursor_agent.py"}
+- {"kind": "reported_changed_file", "ref": "mcp_tools/codex_supervisor_stdio.py"}
+- {"kind": "reported_changed_file", "ref": "supervisor/agent_mailbox.py"}
+- {"kind": "reported_changed_file", "ref": "tests/test_cursor_agent.py"}
+- {"kind": "reported_changed_file", "ref": "tests/test_dual_agent_workflow_driver.py"}
 
 ### Raw Transcript Refs
 
-- {"bytes": 8794, "kind": "claude_stdout", "ref": "lead_result.stdout"}
+- {"bytes": 10009, "kind": "claude_stdout", "ref": "lead_result.stdout"}
 - {"kind": "claude_handoff_packet", "ref": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/cursor-review-reliability-20260531.json"}
 
 ### Would Change If
@@ -211,15 +231,15 @@ Tool calls:
 
 | tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
 |---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
-| invoke_claude_lead#1780256099987#119802860 |  |  | invoke_claude_lead | completed | 119802 | 119802860 | 524872 | 8388 | P3 |  | {"attempt": 1, "budget_usd": 100.0, "corrective_retry": false, "dynamic_workflow_task_class": null, "execution_layer_mode": "lead_direct", "expected_decisions": [], "expected_objections": [], "expected_specialists": [], "explicit_model": null, "gate": "prd_review", "model": "opus", "model_source": "quality_default:best", "quality": "best", "requested_model": "opus", "task_id": "cursor-review-reliability-20260531", "timeout_s": 900} | {"cost_usd": 3.3249277500000005, "model": "opus", "outcome_present": true, "probe_id": "P3", "probe_reason": "outcome_fidelity_ok", "probe_status": "green", "stderr_bytes": 0, "stdout_bytes": 8794, "tokens_in": 524872, "tokens_out": 8388} |  |
-| evaluate_worker_invocation#1780256219790#84 | invoke_claude_lead#1780256099987#119802860 |  | evaluate_worker_invocation | green | 0 | 84 |  |  | P2 |  | {"gate": "prd_review", "probe_id": "P2", "task_id": "cursor-review-reliability-20260531"} | {"probe_id": "P2", "reason": "worker_orchestration_invocation_ok", "status": "green"} |  |
-| evaluate_outcome_fidelity#1780256219790#2 | invoke_claude_lead#1780256099987#119802860 |  | evaluate_outcome_fidelity | green | 0 | 2 |  |  | P3 |  | {"gate": "prd_review", "probe_id": "P3", "task_id": "cursor-review-reliability-20260531"} | {"probe_id": "P3", "reason": "outcome_fidelity_ok", "status": "green"} |  |
-| verify_planning_artifact_boundaries#1780256219790#3539 | invoke_claude_lead#1780256099987#119802860 |  | verify_planning_artifact_boundaries | green | 3 | 3539 |  |  | P1 |  | {"gate": "prd_review", "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/cursor-review-reliability-20260531.json", "probe_id": "P1", "task_id": "cursor-review-reliability-20260531"} | {"probe_id": "P1", "reason": "planning_artifact_boundaries_ok", "status": "green"} |  |
-| evaluate_outcome_gate_decision#1780256219794#491 | invoke_claude_lead#1780256099987#119802860 |  | evaluate_outcome_gate_decision | green | 0 | 491 |  |  | P4 |  | {"gate": "prd_review", "probe_id": "P4", "task_id": "cursor-review-reliability-20260531"} | {"probe_id": "P4", "reason": "outcome_gate_decision_ok", "status": "green"} |  |
+| invoke_claude_lead#1780258079627#137515730 |  |  | invoke_claude_lead | completed | 137515 | 137515730 | 1061857 | 9300 | P3 |  | {"attempt": 1, "budget_usd": 100.0, "corrective_retry": false, "dynamic_workflow_task_class": null, "execution_layer_mode": "lead_direct", "expected_decisions": [], "expected_objections": [], "expected_specialists": [], "explicit_model": null, "gate": "prd_review", "model": "opus", "model_source": "quality_default:best", "quality": "best", "requested_model": "opus", "task_id": "cursor-review-reliability-20260531", "timeout_s": 900} | {"cost_usd": 4.6035825, "model": "opus", "outcome_present": true, "probe_id": "P3", "probe_reason": "outcome_fidelity_ok", "probe_status": "green", "stderr_bytes": 0, "stdout_bytes": 10009, "tokens_in": 1061857, "tokens_out": 9300} |  |
+| evaluate_worker_invocation#1780258217142#123 | invoke_claude_lead#1780258079627#137515730 |  | evaluate_worker_invocation | green | 0 | 123 |  |  | P2 |  | {"gate": "prd_review", "probe_id": "P2", "task_id": "cursor-review-reliability-20260531"} | {"probe_id": "P2", "reason": "worker_orchestration_invocation_ok", "status": "green"} |  |
+| evaluate_outcome_fidelity#1780258217142#0 | invoke_claude_lead#1780258079627#137515730 |  | evaluate_outcome_fidelity | green | 0 | 0 |  |  | P3 |  | {"gate": "prd_review", "probe_id": "P3", "task_id": "cursor-review-reliability-20260531"} | {"probe_id": "P3", "reason": "outcome_fidelity_ok", "status": "green"} |  |
+| verify_planning_artifact_boundaries#1780258217142#4338 | invoke_claude_lead#1780258079627#137515730 |  | verify_planning_artifact_boundaries | green | 4 | 4338 |  |  | P1 |  | {"gate": "prd_review", "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/cursor-review-reliability-20260531.json", "probe_id": "P1", "task_id": "cursor-review-reliability-20260531"} | {"probe_id": "P1", "reason": "planning_artifact_boundaries_ok", "status": "green"} |  |
+| evaluate_outcome_gate_decision#1780258217146#632 | invoke_claude_lead#1780258079627#137515730 |  | evaluate_outcome_gate_decision | green | 0 | 632 |  |  | P4 |  | {"gate": "prd_review", "probe_id": "P4", "task_id": "cursor-review-reliability-20260531"} | {"probe_id": "P4", "reason": "outcome_gate_decision_ok", "status": "green"} |  |
 
-## event_id: 309847
+## event_id: 310693
 
-- ts: `1780256219`
+- ts: `1780258217`
 - kind: `dual_agent_gate_result`
 - gate: `prd_review`
 - status: `accepted`
@@ -228,35 +248,38 @@ Tool calls:
 
 ### Summary
 
-PRD for Cursor reviewer reliability is accurate and grounded: verified the conflation bug in cursor_agent.py (no retry after missing outcome) and codex_supervisor_stdio.py (_workflow_round_objection treats missing verdict and real revise/deny identically as cursor_review_failed). Five promise contracts map to real boundaries; all grill findings resolved. Accept to TDD with four non-blocking objections to pin recovery semantics, classification triggers, and retry bound.
+Post-implementation review of Cursor reviewer reliability. All five PRD promises (P1 corrective retry, P2 typed terminal miss without fabrication, P3 real revise/deny still blocks, P4 infra-vs-quality classification, P5 durable ledger evidence) are implemented in supervisor/cursor_agent.py, mcp_tools/codex_supervisor_stdio.py, and supervisor/agent_mailbox.py, each backed by a statically consistent test. Non-goals respected. Gate should ACCEPT; only unconfirmed item is local suite execution (permission-blocked).
 
 ### Decisions
 
-- accept: advance prd_review to TDD with four recorded objections
-- Problem statement verified true against cursor_agent.py:135 and codex_supervisor_stdio.py:2909-2912
-- P5 durability is structurally sound: ledger write precedes separate transcript read
+- accept
 
 ### Objections
 
-- P4 recovery path wording ('retries/falls back or escalates') is wider than the intent; infra-classified misses must stay blocked as typed/durable artifact, never auto-advance
-- reviewer_contract_unmet vs reviewer_infrastructure_unavailable trigger boundary is undefined in the PRD
-- Bounded retry count unspecified in PRD (handoff policy implies retry_once); TDD needs concrete bound
-- PRD-local P1-P5 labels collide with system probes P1/P2/P3/P13/P14 named in non-goals (clarity only)
+- Acceptance criterion 'suite stays green' not directly verified: pytest execution was permission-blocked in this session
+- P5 durability is proven via ledger-event assertion rather than an injected Transport-closed fault during the reviewer-contract transcript read
 
 ### Specialists
 
-- `lead-prd-reviewer`: `accept` — objection: P4 recovery semantics are looser than the binding intent; TDD must encode no-auto-advance/no-bypass classification, not P4's 'falls back or escalates' degree of freedom
+- `Lead Gate Reviewer`: `accept` — objection: Suite not executed locally; test_status unverified by reviewer
 
 ### Tests
 
-- None recorded.
+- tests/test_cursor_agent.py::test_invoke_cursor_agent_retries_missing_outcome_with_contract_packet
+- tests/test_cursor_agent.py::test_invoke_cursor_agent_retries_parseable_but_contract_incomplete_outcome
+- tests/test_cursor_agent.py::test_invoke_cursor_agent_returns_recoverable_contract_artifact_after_retry_cap
+- tests/test_cursor_agent.py::test_invoke_cursor_agent_classifies_parseable_contract_miss_after_retry_cap
+- tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_with_cursor_review_blocks_on_cursor_rejection[revise]
+- tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_with_cursor_review_blocks_on_cursor_rejection[deny]
+- tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_records_cursor_contract_failure_as_recoverable_infra
 
 ### Claims
 
-- PRD problem statement is factually accurate against current source
-- Five promise contracts (P1-P5) reference real public boundaries with allowed/forbidden outcomes
-- Out-of-scope correctly excludes raw MCP auto-reconnect and AND-semantics changes
-- Remaining ambiguities are bounded by intent constraints (no auto-accept, no bypass) and deferrable to TDD
+- All P1-P5 PRD promises are implemented and covered by tests
+- No missing verdict is counted as accept
+- Real Cursor revise/deny still blocks the gate (AND semantics preserved)
+- Terminal contract miss produces typed reviewer_contract_unmet/reviewer_infrastructure_unavailable without a fabricated outcome
+- Reviewer classification is written to the ledger before transcript export
 
 ### Probes
 
@@ -293,17 +316,17 @@ Tool calls:
 
 | tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
 |---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
-| start_dual_agent_gate#1780256099974#119825281 |  |  | start_dual_agent_gate | completed | 119825 | 119825281 |  |  |  |  | {"agentic_lead_policy": "off", "artifact_policy": "strict", "dynamic_workflow_task_class": null, "execution_layer_mode": "lead_direct", "gate": "prd_review", "min_subagents": 0, "planning_artifact_count": 6, "required_evidence_grade": "self_reported", "required_roles": [], "screenshot_count": 0, "task_id": "cursor-review-reliability-20260531", "user_facing": false} | {"claude_gate_status": "accepted", "probe_statuses": {"P1": "green", "P2": "green", "P3": "green", "P4": "green", "P_planning": "green"}, "supervisor_final_status": "accepted"} |  |
-| invoke_claude_lead#1780256219800#0 | start_dual_agent_gate#1780256099974#119825281 |  | invoke_claude_lead | completed | 0 | 0 | 524872 | 8388 |  |  | {"gate": "prd_review", "task_id": "cursor-review-reliability-20260531"} | {"outcome_present": true, "probe_reason": "outcome_fidelity_ok", "probe_status": "green", "tokens_in": 524872, "tokens_out": 8388} |  |
-| probe_p2#1780256219800#0#p2 | invoke_claude_lead#1780256219800#0 |  | probe:P2 | green | 0 | 0 |  |  | P2 |  | {"probe_id": "P2"} | {"probe_id": "P2", "reason": "worker_orchestration_invocation_ok", "status": "green"} |  |
-| probe_p3#1780256219800#0#p3 | invoke_claude_lead#1780256219800#0 |  | probe:P3 | green | 0 | 0 |  |  | P3 |  | {"probe_id": "P3"} | {"probe_id": "P3", "reason": "outcome_fidelity_ok", "status": "green"} |  |
-| probe_p1#1780256219800#0#p1 | invoke_claude_lead#1780256219800#0 |  | probe:P1 | green | 0 | 0 |  |  | P1 |  | {"probe_id": "P1"} | {"probe_id": "P1", "reason": "planning_artifact_boundaries_ok", "status": "green"} |  |
-| probe_p4#1780256219800#0#p4 | invoke_claude_lead#1780256219800#0 |  | probe:P4 | green | 0 | 0 |  |  | P4 |  | {"probe_id": "P4"} | {"probe_id": "P4", "reason": "outcome_gate_decision_ok", "status": "green"} |  |
-| probe_p_planning#1780256219800#0#p_planning | invoke_claude_lead#1780256219800#0 |  | probe:P_planning | green | 0 | 0 |  |  | P_planning |  | {"probe_id": "P_planning"} | {"probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"} |  |
+| start_dual_agent_gate#1780258079619#137539451 |  |  | start_dual_agent_gate | completed | 137539 | 137539451 |  |  |  |  | {"agentic_lead_policy": "off", "artifact_policy": "strict", "dynamic_workflow_task_class": null, "execution_layer_mode": "lead_direct", "gate": "prd_review", "min_subagents": 0, "planning_artifact_count": 6, "required_evidence_grade": "self_reported", "required_roles": [], "screenshot_count": 0, "task_id": "cursor-review-reliability-20260531", "user_facing": false} | {"claude_gate_status": "accepted", "probe_statuses": {"P1": "green", "P2": "green", "P3": "green", "P4": "green", "P_planning": "green"}, "supervisor_final_status": "accepted"} |  |
+| invoke_claude_lead#1780258217157#0 | start_dual_agent_gate#1780258079619#137539451 |  | invoke_claude_lead | completed | 0 | 0 | 1061857 | 9300 |  |  | {"gate": "prd_review", "task_id": "cursor-review-reliability-20260531"} | {"outcome_present": true, "probe_reason": "outcome_fidelity_ok", "probe_status": "green", "tokens_in": 1061857, "tokens_out": 9300} |  |
+| probe_p2#1780258217157#0#p2 | invoke_claude_lead#1780258217157#0 |  | probe:P2 | green | 0 | 0 |  |  | P2 |  | {"probe_id": "P2"} | {"probe_id": "P2", "reason": "worker_orchestration_invocation_ok", "status": "green"} |  |
+| probe_p3#1780258217157#0#p3 | invoke_claude_lead#1780258217157#0 |  | probe:P3 | green | 0 | 0 |  |  | P3 |  | {"probe_id": "P3"} | {"probe_id": "P3", "reason": "outcome_fidelity_ok", "status": "green"} |  |
+| probe_p1#1780258217157#0#p1 | invoke_claude_lead#1780258217157#0 |  | probe:P1 | green | 0 | 0 |  |  | P1 |  | {"probe_id": "P1"} | {"probe_id": "P1", "reason": "planning_artifact_boundaries_ok", "status": "green"} |  |
+| probe_p4#1780258217157#0#p4 | invoke_claude_lead#1780258217157#0 |  | probe:P4 | green | 0 | 0 |  |  | P4 |  | {"probe_id": "P4"} | {"probe_id": "P4", "reason": "outcome_gate_decision_ok", "status": "green"} |  |
+| probe_p_planning#1780258217157#0#p_planning | invoke_claude_lead#1780258217157#0 |  | probe:P_planning | green | 0 | 0 |  |  | P_planning |  | {"probe_id": "P_planning"} | {"probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"} |  |
 
-## event_id: 309848
+## event_id: 310694
 
-- ts: `1780256220`
+- ts: `1780258217`
 - kind: `dual_agent_gate_round`
 - gate: `prd_review`
 - round_index: `1`
@@ -316,9 +339,9 @@ Tool calls:
 
 both agents accepted
 
-## event_id: 309849
+## event_id: 310695
 
-- ts: `1780256220`
+- ts: `1780258217`
 - kind: `dual_agent_interaction_message`
 - gate: `prd_review`
 - interaction_type: `gate_decision`
@@ -327,7 +350,7 @@ both agents accepted
 - recipient: `supervisor`
 - round_index: `1`
 - persona_id: `codex.lifecycle_reviewer`
-- addresses: `event:309848`
+- addresses: `event:310694`
 
 ### Message
 
@@ -393,6 +416,7 @@ both agents accepted
 ### Raw Transcript Refs
 
 - {"kind": "claude_handoff_packet", "ref": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/cursor-review-reliability-20260531.json"}
+- {"count": 7, "kind": "claude_reported_tests", "ref": "outcome.tests"}
 
 ### Would Change If
 
