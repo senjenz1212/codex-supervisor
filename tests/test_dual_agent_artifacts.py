@@ -243,6 +243,16 @@ def test_export_dual_agent_run_artifacts_renders_interaction_receipts(tmp_path):
                 "sha256": "abc123",
             }],
             "would_change_if": "A matching git_remote receipt appears.",
+            "critical_review": {
+                "schema_version": "critical-review/v1",
+                "strongest_objection": "push receipt missing",
+                "missing_evidence": ["git_remote receipt"],
+                "contradictions_checked": ["reported tests vs receipts"],
+                "assumptions_to_verify": ["branch was pushed"],
+                "what_would_change_my_mind": "A matching git_remote receipt appears.",
+                "decision": "revise",
+                "severity": "important",
+            },
             "artifacts": [],
             "metadata": {
                 "tool_calls": [
@@ -301,6 +311,9 @@ def test_export_dual_agent_run_artifacts_renders_interaction_receipts(tmp_path):
         assert "receipt:pytest-focused" in text
         assert ".handoff/task-1.stdout" in text
         assert "A matching git_remote receipt appears." in text
+        assert "### Critical Review" in text
+        assert "push receipt missing" in text
+        assert "reported tests vs receipts" in text
         assert "start_dual_agent_gate" in text
         assert "FM-3.2" in text
         assert "No or incomplete verification" in text

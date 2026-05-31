@@ -130,6 +130,14 @@ class SupervisorCfg(BaseModel):
     nudge_cooldown_s: int = 300
 
 
+class AgenticLeadCfg(BaseModel):
+    policy: Literal["off", "allowed", "required"] = "off"
+    min_subagents: int = 0
+    required_roles: list[str] = Field(default_factory=list)
+    solo_exception_for_artifact_only_gates: bool = False
+    required_evidence_grade: Literal["self_reported", "lead_captured", "runtime_native"] = "self_reported"
+
+
 class LocalFallbackCfg(BaseModel):
     enabled: bool = False
     base_url: str = "http://localhost:8000/v1"
@@ -193,6 +201,7 @@ class Config(BaseModel):
 
     orchestrator: OrchestratorCfg
     supervisor: SupervisorCfg
+    agentic_lead: AgenticLeadCfg = Field(default_factory=AgenticLeadCfg)
     modes: ModesCfg = Field(default_factory=ModesCfg)
     models: ModelsCfg
     telegram: TelegramCfg

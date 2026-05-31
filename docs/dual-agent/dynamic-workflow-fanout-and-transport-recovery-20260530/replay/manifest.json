@@ -1,0 +1,358 @@
+{
+  "event_ids": [
+    305186,
+    305188,
+    305190,
+    305191,
+    305230,
+    305231,
+    305232,
+    305233,
+    305236,
+    305237,
+    305277,
+    305278,
+    305279,
+    305280,
+    305287,
+    305288,
+    305427,
+    305428,
+    305429,
+    305430,
+    305431,
+    305432,
+    305433,
+    305434
+  ],
+  "event_kinds": [
+    "dual_agent_gate_result",
+    "dual_agent_gate_round",
+    "dual_agent_interaction_message",
+    "dual_agent_planning_validation",
+    "dual_agent_skill_receipt_validation",
+    "dual_agent_workflow_route",
+    "tri_agent_cursor_review"
+  ],
+  "events_count": 24,
+  "failure_summary": {
+    "event_id": 305434,
+    "failure_taxonomy": {
+      "category": "inter_agent_misalignment",
+      "code": "agents_not_converged",
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.5",
+      "mast_mode": "Unaware of termination conditions",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "result_escalation",
+      "subcategory": "decision_deadlock"
+    },
+    "policy_verdict": "blocked"
+  },
+  "files": {
+    "index": "index.md",
+    "interactions": "interactions.md",
+    "mast_coverage_json": "replay/mast-coverage.json",
+    "mast_coverage_markdown": "mast-coverage.md",
+    "transcript_jsonl": "transcript.jsonl",
+    "transcript_markdown": "transcript.md",
+    "workspace_snapshot": "replay/workspace-snapshot.json"
+  },
+  "handoff_packets": [
+    {
+      "content": "{\n  \"cwd\": \"/Users/sam.zhang/Documents/codex-supervisor\",\n  \"execution_layer_policy\": {\n    \"allowed_dynamic_workflow_task_classes\": [],\n    \"codex_supervises_final_artifact\": true,\n    \"dynamic_workflow_task_class\": null,\n    \"lead_execution_layer\": \"single_lead_worker\",\n    \"mode\": \"lead_direct\",\n    \"preview_required_gates\": [],\n    \"supervision_layer\": \"codex_plus_lead\"\n  },\n  \"expected_decisions\": [],\n  \"expected_objections\": [],\n  \"expected_specialists\": [],\n  \"gate\": \"tdd_review\",\n  \"instruction\": \"Supervisor-owned workflow gate: tdd_review.\\n\\nIntent:\\nTri-agent final review of the dynamic workflow fan-out, replay-verified receipts, stale lock reclaim, workflow resume, durable submit/poll job recovery, optional Claude SDK import health, and artifact traceability deliverables. Review only; do not edit files. Accept only if the deliverables are solid, repo-grounded, and do not overclaim raw MCP transport reconnection or live dynamic subagent launching.\\n\\nReview this gate against the current source artifacts and return a typed dual_agent_outcome.\\nUse decisions/objections to say whether the gate should accept, revise, or deny.\",\n  \"lead_skill\": null,\n  \"outcome_validation_policy\": {\n    \"fidelity_failure\": \"abort_to_operator\",\n    \"malformed_outcome\": \"retry_once_with_corrective_packet\",\n    \"subprocess_failure\": \"abort_to_operator\",\n    \"timeout\": \"abort_to_operator\"\n  },\n  \"packet_schema_version\": \"dual-agent-handoff/v1\",\n  \"planning_artifacts\": [\n    {\n      \"kind\": \"prd\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/dynamic-workflow-fanout-and-transport-recovery-20260530/source/prd.md\",\n      \"sha256\": \"1b87546675ebbd1e87361ef63d608f08e0257528babc0bf4f4d0fbedc7ff23ca\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/dynamic-workflow-fanout-and-transport-recovery-20260530/source/grill-findings.md\",\n      \"sha256\": \"14abe0acdf6b8d84413c6f55ae9ebaec197cfc3f9664046a3700fe5412a1e02f\"\n    },\n    {\n      \"kind\": \"issues\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/dynamic-workflow-fanout-and-transport-recovery-20260530/source/issues.md\",\n      \"sha256\": \"79c54fe8458f2455173f7a0f5e6701c864125e3f34bf9b94f6ef01e3f59b63bb\"\n    },\n    {\n      \"kind\": \"tdd_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/dynamic-workflow-fanout-and-transport-recovery-20260530/source/tdd.md\",\n      \"sha256\": \"b6eac1b233f4f308c1b7c90c630502013c8753da5729d090705c9e004519ec57\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/dynamic-workflow-fanout-and-transport-recovery-20260530/source/grill-findings-tdd.md\",\n      \"sha256\": \"1c3b00052b512629e9df22f63905362c6fe2adcc91e2f4f690753ef7ab7952d4\"\n    },\n    {\n      \"kind\": \"implementation_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/dynamic-workflow-fanout-and-transport-recovery-20260530/source/implementation-plan.md\",\n      \"sha256\": \"dd57085b37ff9a535266feaaffe3ed76b5c50b27d53280a5693abddb44dbac08\"\n    }\n  ],\n  \"suggested_skills\": [\n    \"/lead\"\n  ],\n  \"task_id\": \"dynamic-workflow-fanout-and-transport-recovery-20260530\"\n}\n",
+      "event_ids": [
+        305231,
+        305278,
+        305428,
+        305434
+      ],
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/dynamic-workflow-fanout-and-transport-recovery-20260530.json",
+      "sha256": "3f246fd3b37fa183c9e6ca025ecb0bb96774f029565bb42fc32ec946393acbc1",
+      "status": "captured"
+    }
+  ],
+  "mast_coverage": [
+    {
+      "deterministic_probe": "blocked payload reason `disobey_task_spec` or planning artifact failure",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.1",
+      "mast_mode": "Disobey task specification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `role_violation_covenant`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload -> classify_failure",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.2",
+      "mast_mode": "Disobey role specification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "same gate and handoff packet observed twice",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "detect_sequence_failures",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "sources": [
+        {
+          "details": {
+            "signature": [
+              "tdd_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/dynamic-workflow-fanout-and-transport-recovery-20260530.json"
+            ]
+          },
+          "event_ids": [
+            305428,
+            305434
+          ],
+          "source": "sequence"
+        }
+      ],
+      "status": "observed_in_run",
+      "trigger_surface": "sequence"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `lost_conversation_history`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.4",
+      "mast_mode": "Loss of conversation history",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `agents_not_converged_max_rounds`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.5",
+      "mast_mode": "Unaware of termination conditions",
+      "sources": [
+        {
+          "event_id": 305434,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 305434,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        }
+      ],
+      "status": "observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `conversation_reset`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.1",
+      "mast_mode": "Conversation reset",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `ambiguous_input_no_clarification`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.2",
+      "mast_mode": "Fail to ask for clarification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `scope_violation_off_scope`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.3",
+      "mast_mode": "Task derailment",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "Cursor or reviewer disagreement probe fails",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.4",
+      "mast_mode": "Information withholding",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "Claude response does not address a prior Codex objection",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "detect_sequence_failures",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "sequence"
+    },
+    {
+      "deterministic_probe": "outcome fidelity or message protocol failure",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.6",
+      "mast_mode": "Reasoning-action mismatch",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "accepted gate is missing a required probe",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload + detect_sequence_failures",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.1",
+      "mast_mode": "Premature termination",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload+sequence"
+    },
+    {
+      "deterministic_probe": "claim verification or evidence receipt probe fails",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.2",
+      "mast_mode": "No or incomplete verification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "Cursor rejects after the gate was accepted",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "detect_sequence_failures",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.3",
+      "mast_mode": "Incorrect verification",
+      "sources": [
+        {
+          "details": {
+            "accepted_gate_event_id": 305428
+          },
+          "event_ids": [
+            305428,
+            305431
+          ],
+          "source": "sequence"
+        }
+      ],
+      "status": "observed_in_run",
+      "trigger_surface": "sequence"
+    }
+  ],
+  "run_id": "dynamic-workflow-fanout-and-transport-recovery-20260530-triagent-review-20260530-2230",
+  "schema_version": "dual-agent-replay-manifest/v1",
+  "schema_versions": {
+    "agent_interaction": "dual-agent-interaction/v1",
+    "failure_taxonomy": "dual-agent-failure-taxonomy/v1",
+    "replay_manifest": "dual-agent-replay-manifest/v1",
+    "trace_envelope": "dual-agent-trace-envelope/v1"
+  },
+  "sequence_failures": [
+    {
+      "category": "task_verification",
+      "code": "false_green_incorrect_verification",
+      "details": {
+        "accepted_gate_event_id": 305428
+      },
+      "event_ids": [
+        305428,
+        305431
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.3",
+      "mast_mode": "Incorrect verification",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "incorrect_verification"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "tdd_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/dynamic-workflow-fanout-and-transport-recovery-20260530.json"
+        ]
+      },
+      "event_ids": [
+        305428,
+        305434
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    }
+  ],
+  "state": {
+    "events_count_at_capture": 24,
+    "first_event_id": 305186,
+    "last_event_id": 305434,
+    "transcript_jsonl_sha256": "6d6fcc8132e3171f3e2d693d65d95f231b44942c48de06462b03964c17a3692f"
+  },
+  "task_id": "dynamic-workflow-fanout-and-transport-recovery-20260530",
+  "tool_call_totals": {
+    "total_cost_usd": 79.356505,
+    "total_duration_ms": 1524435,
+    "total_duration_us": 1524443181,
+    "total_tokens_in": 6650904,
+    "total_tokens_out": 70772,
+    "unique_tool_calls": 40
+  },
+  "workspace_snapshot": {
+    "file_tree_sha256": "86a634bb98e45152ecc5c0ad51654cb5115f0a7f5d43ec0140a609622f3c7458",
+    "git": {
+      "diff_bytes": 83197,
+      "diff_sha256": "3be91d030d7b66ee29543068d8c0a8c1d3a1448854c55ef523ed37b4d275f510",
+      "diff_stat": "docs/testing/public-boundaries.md        |   7 +-\n mcp_tools/codex_supervisor_stdio.py      | 513 ++++++++++++++++++++++++++++++-\n supervisor/agent_invoker.py              |  35 ++-\n supervisor/dual_agent_lead.py            |   1 +\n supervisor/dual_agent_runner.py          | 117 ++++++-\n supervisor/dynamic_workflow_receipts.py  | 126 +++++++-\n supervisor/state.py                      | 108 +++++++\n tests/test_agent_invoker_review.py       |  24 +-\n tests/test_codex_supervisor_mcp_stdio.py |   2 +\n tests/test_dual_agent_runner.py          |  80 +++++\n tests/test_dual_agent_workflow_driver.py | 406 +++++++++++++++++++++++-\n tests/test_dynamic_workflow_receipts.py  | 134 ++++++++\n 12 files changed, 1510 insertions(+), 43 deletions(-)",
+      "head": "857ccb6",
+      "head_label": "handoff_cwd_head",
+      "head_ref": "HEAD",
+      "head_sha": "857ccb6",
+      "status_short": "M docs/testing/public-boundaries.md\n M mcp_tools/codex_supervisor_stdio.py\n M supervisor/agent_invoker.py\n M supervisor/dual_agent_lead.py\n M supervisor/dual_agent_runner.py\n M supervisor/dynamic_workflow_receipts.py\n M supervisor/state.py\n M tests/test_agent_invoker_review.py\n M tests/test_codex_supervisor_mcp_stdio.py\n M tests/test_dual_agent_runner.py\n M tests/test_dual_agent_workflow_driver.py\n M tests/test_dynamic_workflow_receipts.py\n?? CODE-REVIEW-inflight-progress.md\n?? docs/dual-agent/dynamic-workflow-fanout-and-transport-recovery-20260530/\n?? docs/testing/prd-to-tdd-translation-audit-dynamic-workflow-fanout-and-transport-recovery-20260530.md\n?? supervisor/dynamic_workflow.py"
+    },
+    "root": "/Users/sam.zhang/Documents/codex-supervisor",
+    "root_source": "handoff_cwd",
+    "source_artifact_hashes": {
+      "grill_findings": "1c3b00052b512629e9df22f63905362c6fe2adcc91e2f4f690753ef7ab7952d4",
+      "implementation_plan": "dd57085b37ff9a535266feaaffe3ed76b5c50b27d53280a5693abddb44dbac08",
+      "issues": "79c54fe8458f2455173f7a0f5e6701c864125e3f34bf9b94f6ef01e3f59b63bb",
+      "prd": "1b87546675ebbd1e87361ef63d608f08e0257528babc0bf4f4d0fbedc7ff23ca",
+      "tdd_plan": "b6eac1b233f4f308c1b7c90c630502013c8753da5729d090705c9e004519ec57"
+    },
+    "status": "captured"
+  }
+}

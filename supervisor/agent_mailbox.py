@@ -6,6 +6,67 @@ from typing import Any
 
 
 AGENT_INTERACTION_SCHEMA_VERSION = "dual-agent-interaction/v1"
+CRITICAL_REVIEW_SCHEMA_VERSION = "critical-review/v1"
+
+
+def critical_review_prompt(subject: str = "handoff") -> str:
+    return (
+        "Critical review: before accepting, try to disprove the "
+        f"{subject}. Identify the strongest reason this should not advance, "
+        "missing evidence, contradictions checked, assumptions to verify, and "
+        "what would change your decision. Keep this concise and auditable; do "
+        "not include private chain-of-thought."
+    )
+
+
+def normalize_critical_review(
+    value: Any,
+    *,
+    decision: str = "",
+    objections: tuple[str, ...] = (),
+    evidence_refs: tuple[dict[str, Any], ...] | list[dict[str, Any]] = (),
+    would_change_if: str = "",
+) -> dict[str, Any]:
+    source = value if isinstance(value, dict) else {}
+    strongest = _text(source.get("strongest_objection"))
+    if not strongest:
+        strongest = next((item for item in objections if item), "none")
+    return {
+        "schema_version": str(source.get("schema_version") or CRITICAL_REVIEW_SCHEMA_VERSION),
+        "strongest_objection": strongest,
+        "missing_evidence": _text_list(source.get("missing_evidence")),
+        "contradictions_checked": _text_list(source.get("contradictions_checked")),
+        "assumptions_to_verify": _text_list(source.get("assumptions_to_verify")),
+        "what_would_change_my_mind": _text(
+            source.get("what_would_change_my_mind") or would_change_if
+        ),
+        "decision": _text(source.get("decision") or decision),
+        "severity": _text(source.get("severity") or ("important" if objections else "none")),
+        "evidence_refs": list(source.get("evidence_refs") or evidence_refs or []),
+    }
+
+
+def critical_review_from_outcome(
+    outcome: dict[str, Any] | None,
+    *,
+    decision: str = "",
+    evidence_refs: tuple[dict[str, Any], ...] | list[dict[str, Any]] = (),
+    would_change_if: str = "",
+) -> dict[str, Any]:
+    if not isinstance(outcome, dict):
+        return normalize_critical_review(
+            {},
+            decision=decision,
+            evidence_refs=evidence_refs,
+            would_change_if=would_change_if,
+        )
+    return normalize_critical_review(
+        outcome.get("critical_review"),
+        decision=decision or _first_text(outcome.get("decisions")),
+        objections=tuple(str(item) for item in outcome.get("objections") or ()),
+        evidence_refs=evidence_refs,
+        would_change_if=would_change_if,
+    )
 
 
 @dataclass(frozen=True)
@@ -36,6 +97,7 @@ class AgentMailboxMessage:
     evidence_refs: tuple[dict[str, Any], ...] = ()
     raw_transcript_refs: tuple[dict[str, Any], ...] = ()
     would_change_if: str = ""
+    critical_review: dict[str, Any] | None = None
     review_packet: dict[str, Any] | None = None
     artifacts: tuple[dict[str, Any], ...] = ()
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -241,6 +303,10 @@ def codex_review_packet(
         for finding in findings
         if str(finding.get("severity") or "").upper() in {"CRITICAL", "IMPORTANT"}
     ]
+    strongest_objection = objection if decision != "accept" else "none"
+    if findings:
+        strongest_objection = str(findings[0].get("title") or strongest_objection)
+    what_would_change = "Every requirement is pass and both reviewers accept."
     return {
         "schema_version": "codex-review-packet/v1",
         "task_id": task_id,
@@ -257,7 +323,33 @@ def codex_review_packet(
         },
         "objections": [] if decision == "accept" else [objection],
         "evidence_refs": list(evidence_refs),
-        "would_change_if": "Every requirement is pass and both reviewers accept.",
+        "would_change_if": what_would_change,
+        "critical_review": normalize_critical_review(
+            {
+                "strongest_objection": strongest_objection,
+                "missing_evidence": [
+                    str(finding.get("title") or "")
+                    for finding in findings
+                    if str(finding.get("title") or "").strip()
+                ],
+                "contradictions_checked": [
+                    "supervisor probes",
+                    "claim verification",
+                    "cursor review",
+                ],
+                "assumptions_to_verify": [],
+                "what_would_change_my_mind": what_would_change,
+                "decision": decision,
+                "severity": (
+                    str(findings[0].get("severity") or "none").lower()
+                    if findings else "none"
+                ),
+                "evidence_refs": list(evidence_refs),
+            },
+            decision=decision,
+            evidence_refs=evidence_refs,
+            would_change_if=what_would_change,
+        ),
     }
 
 
@@ -272,6 +364,25 @@ def _receipt_ids(receipts: Any) -> list[str]:
         if receipt_id:
             ids.append(receipt_id)
     return ids
+
+
+def _text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _text_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value.strip()] if value.strip() else []
+    if isinstance(value, (list, tuple, set)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return [str(value).strip()] if str(value).strip() else []
+
+
+def _first_text(value: Any) -> str:
+    items = _text_list(value)
+    return items[0] if items else ""
 
 
 def planning_artifact_refs(planning_artifacts: list[dict[str, Any]] | tuple[Any, ...]) -> tuple[dict[str, Any], ...]:

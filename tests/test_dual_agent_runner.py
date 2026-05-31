@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -34,6 +35,7 @@ def _outcome_block(
     *,
     decision: str = "accept plan",
     claims: list[str] | None = None,
+    critical_review: dict | None = None,
 ) -> str:
     payload = {
         "task_id": task_id,
@@ -49,6 +51,8 @@ def _outcome_block(
         "confidence": 0.96,
         "claims": claims or [],
     }
+    if critical_review is not None:
+        payload["critical_review"] = critical_review
     return f"<dual_agent_outcome>{json.dumps(payload)}</dual_agent_outcome>"
 
 
@@ -321,6 +325,9 @@ def test_gate_runner_records_claude_response_trace_fields(tmp_path):
     assert response["raw_transcript_refs"][0]["bytes"] > 0
     assert response["raw_transcript_refs"][1]["kind"] == "claude_handoff_packet"
     assert response["would_change_if"]
+    assert response["critical_review"]["schema_version"] == "critical-review/v1"
+    assert response["critical_review"]["strongest_objection"] == "none"
+    assert response["critical_review"]["decision"] == "accept plan"
 
 
 def test_gate_runner_records_direct_interaction_persona_addresses_and_tool_calls(tmp_path):
@@ -390,6 +397,7 @@ def test_gate_runner_records_direct_interaction_persona_addresses_and_tool_calls
         "evaluate_worker_invocation",
         "evaluate_outcome_fidelity",
         "verify_planning_artifact_boundaries",
+        "evaluate_outcome_gate_decision",
     ]
     assert response["trace_envelope"]["tool_calls"][0]["model"] == "claude-opus-4-7"
     assert response["trace_envelope"]["tool_calls"][0]["cost_usd"] == 0.42
@@ -412,6 +420,50 @@ def test_gate_runner_records_direct_interaction_persona_addresses_and_tool_calls
     assert response["trace_envelope"]["tool_calls"][1]["parent_tool_call_id"] == parent_id
     assert response["trace_envelope"]["tool_calls"][2]["parent_tool_call_id"] == parent_id
     assert response["trace_envelope"]["tool_calls"][3]["parent_tool_call_id"] == parent_id
+    assert response["trace_envelope"]["tool_calls"][4]["parent_tool_call_id"] == parent_id
+
+
+def test_gate_runner_blocks_when_lead_critical_review_requests_revision(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    planning_artifacts = _write_good_planning_artifacts(tmp_path)
+
+    def fake_runner(argv, **kwargs):
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=build_lead_replay_stdout(
+                "Lead found a blocker.\n"
+                + _outcome_block(
+                    critical_review={
+                        "decision": "revise",
+                        "severity": "important",
+                        "strongest_objection": "broken symlink references raw debug capture",
+                    },
+                )
+            ),
+            stderr="",
+        )
+
+    result = run_dual_agent_gate(
+        DualAgentGateSpec(
+            task_id="gate-critical-review",
+            run_id="run-critical-review",
+            gate="outcome_review",
+            instruction="Review outcome.",
+            cwd=tmp_path,
+            planning_artifacts=planning_artifacts,
+            expected_specialists=("Planner",),
+            expected_decisions=("accept plan",),
+            expected_objections=(),
+            required_planning_kinds=(),
+        ),
+        runner=fake_runner,
+        state=state,
+    )
+
+    assert result.status == "blocked"
+    assert result.probes["P4"].status == "red"
+    assert result.probes["P4"].reason == "outcome_critical_review_blocked"
 
 
 def test_gate_runner_planning_probe_details_keep_task_id(tmp_path):
@@ -460,6 +512,85 @@ def test_cs24_gate_runner_refuses_existing_handoff_lock_without_invoking_lead(tm
     assert result.status == "blocked"
     assert result.attempts == 0
     assert result.handoff_packet_path == tmp_path / ".handoff" / "gate-locked.json"
+    assert result.probes["P1"].reason == "handoff_lock_held"
+    assert calls == 0
+    assert lock_path.exists()
+
+
+def test_cs24_gate_runner_reclaims_dead_handoff_lock_without_invoking_user(tmp_path):
+    handoff_dir = tmp_path / ".handoff"
+    handoff_dir.mkdir()
+    lock_path = handoff_dir / ".dual-agent.lock"
+    lock_path.write_text(json.dumps({
+        "run_id": "dead-run",
+        "task_id": "dead-task",
+        "pid": 99_999_999,
+        "created_at": int(time.time()),
+    }))
+    calls = 0
+
+    def fake_runner(argv, **kwargs):
+        nonlocal calls
+        calls += 1
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=build_lead_replay_stdout("Accepted.\n" + _outcome_block("gate-reclaimed")),
+            stderr="",
+        )
+
+    spec = DualAgentGateSpec(
+        task_id="gate-reclaimed",
+        run_id="run-cs24",
+        gate="prd_review",
+        instruction="Review PRD.",
+        cwd=tmp_path,
+        planning_artifacts=_write_good_planning_artifacts(tmp_path),
+        expected_specialists=("Planner",),
+        expected_decisions=("accept plan",),
+        expected_objections=(),
+    )
+
+    result = run_dual_agent_gate(spec, runner=fake_runner)
+
+    assert result.status == "accepted"
+    assert calls == 1
+    assert not lock_path.exists()
+
+
+def test_cs24_gate_runner_preserves_live_handoff_lock(tmp_path):
+    handoff_dir = tmp_path / ".handoff"
+    handoff_dir.mkdir()
+    lock_path = handoff_dir / ".dual-agent.lock"
+    lock_path.write_text(json.dumps({
+        "run_id": "live-run",
+        "task_id": "live-task",
+        "pid": os.getpid(),
+        "created_at": int(time.time()),
+    }))
+    calls = 0
+
+    def fake_runner(argv, **kwargs):
+        nonlocal calls
+        calls += 1
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=build_lead_replay_stdout("Should not run.\n" + _outcome_block("gate-live-lock")),
+            stderr="",
+        )
+
+    spec = DualAgentGateSpec(
+        task_id="gate-live-lock",
+        run_id="run-cs24",
+        gate="prd_review",
+        instruction="Review PRD.",
+        cwd=tmp_path,
+    )
+
+    result = run_dual_agent_gate(spec, runner=fake_runner)
+
+    assert result.status == "blocked"
     assert result.probes["P1"].reason == "handoff_lock_held"
     assert calls == 0
     assert lock_path.exists()

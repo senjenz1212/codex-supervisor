@@ -85,7 +85,11 @@ def test_codex_supervisor_mcp_stdio_tools_call_keeps_protocol_stream_clean(tmp_p
         assert payload["jsonrpc"] == "2.0"
 
 
-def _outcome_block(task_id: str = "gate-1", decision: str = "accept plan") -> str:
+def _outcome_block(
+    task_id: str = "gate-1",
+    decision: str = "accept plan",
+    critical_review: dict | None = None,
+) -> str:
     payload = {
         "task_id": task_id,
         "summary": "Implemented through /lead.",
@@ -97,6 +101,8 @@ def _outcome_block(task_id: str = "gate-1", decision: str = "accept plan") -> st
         "test_status": "passed",
         "confidence": 0.94,
     }
+    if critical_review is not None:
+        payload["critical_review"] = critical_review
     return f"<dual_agent_outcome>{json.dumps(payload)}</dual_agent_outcome>"
 
 
@@ -249,6 +255,8 @@ async def test_codex_supervisor_mcp_exposes_dual_agent_gate_tools(tmp_path):
         "read_outcome",
         "export_gate_artifacts",
         "run_dual_agent_workflow",
+        "submit_dual_agent_workflow_job",
+        "poll_dual_agent_workflow_job",
         "read_dual_agent_workflow_resume_prompt",
         "check_budget",
         "escalate_deadlock",
@@ -277,6 +285,56 @@ async def test_codex_supervisor_mcp_exposes_dual_agent_gate_tools(tmp_path):
     ))
     assert outcome["status"] == "ok"
     assert outcome["result"]["status"] == "accepted"
+
+
+@pytest.mark.asyncio
+async def test_start_dual_agent_gate_blocks_lead_reported_revision(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
+    from supervisor.dual_agent_runner import build_lead_replay_stdout
+
+    state = State(str(tmp_path / "state.db"))
+
+    def fake_runner(argv, **kwargs):
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=build_lead_replay_stdout(
+                _outcome_block(
+                    task_id="gate-critical-review",
+                    critical_review={
+                        "decision": "revise",
+                        "severity": "important",
+                        "strongest_objection": "publish set still contains raw debug reference",
+                    },
+                )
+            ),
+            stderr="",
+        )
+
+    server = build_codex_supervisor_mcp_server(
+        _cfg(tmp_path),
+        state,
+        mcp_cls=_FakeMCP,
+        runner=fake_runner,
+    )
+
+    result = await _maybe_await(server.tools["start_dual_agent_gate"](
+        task_id="gate-critical-review",
+        run_id="run-critical-review",
+        gate="prd_review",
+        instruction="Run the gate.",
+        cwd=str(tmp_path),
+        expected_specialists=["Planner"],
+        expected_decisions=["accept plan"],
+        expected_objections=[],
+        planning_artifacts=_write_planning_artifacts(tmp_path),
+        required_planning_kinds=[],
+    ))
+
+    assert result["status"] == "blocked"
+    assert result["supervisor_final_status"] == "blocked"
+    assert result["claude_gate_status"] == "blocked"
+    assert result["probes"]["P4"]["reason"] == "outcome_critical_review_blocked"
 
 
 @pytest.mark.asyncio

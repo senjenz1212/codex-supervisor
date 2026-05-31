@@ -4,7 +4,6 @@ from pathlib import Path
 
 import pytest
 
-from supervisor.agent_invoker import AgentInvoker
 from supervisor.config import Config
 from supervisor.state import Decision, State
 
@@ -23,6 +22,27 @@ def _cfg(tmp_path) -> Config:
         },
         "telegram": {"bot_token": "fake", "chat_id": "42"},
     })
+
+
+def test_agent_invoker_imports_without_claude_agent_sdk(monkeypatch):
+    import builtins
+    import importlib
+    import sys
+
+    sys.modules.pop("supervisor.agent_invoker", None)
+    sys.modules.pop("claude_agent_sdk", None)
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "claude_agent_sdk":
+            raise ModuleNotFoundError("No module named 'claude_agent_sdk'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    module = importlib.import_module("supervisor.agent_invoker")
+
+    assert module.AgentInvoker is not None
 
 
 class _FakeOptions:
@@ -64,7 +84,7 @@ async def test_review_updates_invoker_uses_read_only_grounding_tools(monkeypatch
     monkeypatch.setattr(agent_invoker, "ClaudeSDKClient", _FakeClient)
 
     state = State(str(tmp_path / "state.db"))
-    invoker = AgentInvoker(
+    invoker = agent_invoker.AgentInvoker(
         _cfg(tmp_path),
         state,
         Path("skills"),

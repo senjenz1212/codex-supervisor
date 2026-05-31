@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "f8d8fc963e25418dbf27fbb33562ecb5402f369bff75e73ce92dc9e7b54a092b",
+  "git": {
+    "diff_bytes": 172796,
+    "diff_sha256": "98022a5591b4d1425145e55b8b980bdb10075f7f44f817b6cece437853090f8f",
+    "diff_stat": "docs/testing/public-boundaries.md          |  26 +-\n mcp_tools/codex_supervisor_stdio.py        | 810 ++++++++++++++++++++++++++++-\n mcp_tools/codex_supervisor_workflow_cli.py |   5 +\n supervisor/agent_invoker.py                |  35 +-\n supervisor/agent_mailbox.py                | 113 +++-\n supervisor/config.py                       |   9 +\n supervisor/cursor_agent.py                 |  13 +-\n supervisor/dual_agent.py                   |  82 +++\n supervisor/dual_agent_artifacts.py         |   4 +\n supervisor/dual_agent_lead.py              |  34 +-\n supervisor/dual_agent_runner.py            | 150 +++++-\n supervisor/dual_agent_workflow.py          |  11 +-\n supervisor/dynamic_workflow_receipts.py    | 423 ++++++++++++++-\n supervisor/state.py                        | 108 ++++\n tests/test_agent_invoker_review.py         |  24 +-\n tests/test_agent_mailbox.py                |  34 ++\n tests/test_codex_supervisor_mcp_stdio.py   |  60 ++-\n tests/test_cursor_agent.py                 |   2 +\n tests/test_dual_agent_artifacts.py         |  13 +\n tests/test_dual_agent_lead_invoker.py      |  30 ++\n tests/test_dual_agent_runner.py            | 131 +++++\n tests/test_dual_agent_workflow_driver.py   | 500 +++++++++++++++++-\n tests/test_dynamic_workflow_receipts.py    | 238 +++++++++\n 23 files changed, 2781 insertions(+), 74 deletions(-)",
+    "head": "857ccb6",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "857ccb6",
+    "status_short": "M docs/testing/public-boundaries.md\n M mcp_tools/codex_supervisor_stdio.py\n M mcp_tools/codex_supervisor_workflow_cli.py\n M supervisor/agent_invoker.py\n M supervisor/agent_mailbox.py\n M supervisor/config.py\n M supervisor/cursor_agent.py\n M supervisor/dual_agent.py\n M supervisor/dual_agent_artifacts.py\n M supervisor/dual_agent_lead.py\n M supervisor/dual_agent_runner.py\n M supervisor/dual_agent_workflow.py\n M supervisor/dynamic_workflow_receipts.py\n M supervisor/state.py\n M tests/test_agent_invoker_review.py\n M tests/test_agent_mailbox.py\n M tests/test_codex_supervisor_mcp_stdio.py\n M tests/test_cursor_agent.py\n M tests/test_dual_agent_artifacts.py\n M tests/test_dual_agent_lead_invoker.py\n M tests/test_dual_agent_runner.py\n M tests/test_dual_agent_workflow_driver.py\n M tests/test_dynamic_workflow_receipts.py\n?? docs/dual-agent/agentic-lead-provenance-foundation-20260531/\n?? docs/dual-agent/dynamic-workflow-fanout-and-transport-recovery-20260530/\n?? docs/testing/prd-to-tdd-translation-audit-dynamic-workflow-fanout-and-transport-recovery-20260530.md\n?? supervisor/agentic_eval.py\n?? supervisor/agentic_workers.py\n?? supervisor/dynamic_workflow.py\n?? tests/test_agentic_eval.py\n?? tests/test_agentic_workers.py"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "03710b36b58d4c1b89f6ffd5b849352f42ffe8badba30f5688565e13eaea9cfb",
+    "implementation_plan": "b31857e07886cb5ce83f35b9ab0685c5f482f99883f35743ca1fe44f90b27807",
+    "issues": "4d0ea161429ba5c335b09ddd8b9bcf63df8511fbe4518ffb04e65d8f0038879c",
+    "prd": "73ba3126ae963f0b2201cff0b2b7e415382240e57174854c0c5422c1d3d6615e",
+    "tdd_plan": "d56805aaa4f63e89fe823b9ce26af2c605ce5672703ce161891ca7ac9ad6c58c"
+  },
+  "status": "captured"
+}

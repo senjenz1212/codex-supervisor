@@ -252,7 +252,9 @@ Codex consumes supervisor control through the stdio MCP entrypoint
 Tests must verify the server exposes the dual-agent gate tools Codex needs:
 `start_dual_agent_gate`, `record_gate_round`, `check_budget`,
 `escalate_deadlock`, `poll_resume_signal`, `read_outcome`,
-`read_gate_transcript`, and `start_codex_session`. The MCP boundary must
+`read_gate_transcript`, `run_dual_agent_workflow`,
+`submit_dual_agent_workflow_job`, `poll_dual_agent_workflow_job`, and
+`start_codex_session`. The MCP boundary must
 persist gate results and round decisions to the supervisor event ledger so
 later tools can read outcomes and reconstruct the dialogue without relying on
 chat memory. `start_codex_session` must default to the strongest configured
@@ -265,3 +267,25 @@ Dynamic workflow preview must remain an execution layer under Codex plus Claude
 Code supervision: `run_dual_agent_workflow` must write
 `dual_agent_dynamic_workflow_receipt_validation` and block with P13 unless
 machine-readable receipts cover the preview gates.
+Long workflows should use `submit_dual_agent_workflow_job` when operator
+transport reliability matters; submit must return a durable job id quickly, and
+poll must recover the result from recorded request/result/log refs.
+
+## agentic_worker_execution
+
+Run supervisor-owned agentic worker execution and cleanup through
+`supervisor.agentic_workers`. Tests must verify worker stdout, stderr,
+transcript, output, and log refs are written under durable
+`.handoff/agentic-workers/<task>/<worker>/` paths; refs are hashed for replay;
+runtime metadata includes `agent_runtime`, `agent_id`, `permission_mode`,
+`tool_pins`, timeout, and budget; and timeout cleanup preserves the same durable
+log refs. Cleanup tests must inject PID liveness and termination functions so
+unit tests do not kill real processes.
+
+## agentic_eval_report
+
+Build agentic lead comparison reports through `supervisor.agentic_eval`.
+Tests must compare `lead_direct`, `agentic_allowed`, and `agentic_required`
+rows across wall-clock, cost, retries, rejected gates, missed issues, and
+operator interventions. Reports must never authorize an agentic default change
+without an explicit operator review gate.

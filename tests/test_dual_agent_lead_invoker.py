@@ -64,6 +64,8 @@ def test_build_lead_command_uses_non_bare_claude_so_slash_lead_can_resolve(tmp_p
     assert prompt.startswith("/lead Gate mode: prd_review.")
     assert "Task id: slice0-lead." in prompt
     assert "Always end with <dual_agent_outcome>" in prompt
+    assert "Critical review:" in prompt
+    assert "critical_review object" in prompt
     assert "Every specialist object must include a string name and a string decision" in prompt
     assert "do not use null for specialist decisions" in prompt
     assert "--bare" not in argv
@@ -432,6 +434,13 @@ def test_write_handoff_packet_pins_schema_planning_checksums_and_lead_skill(tmp_
         "codex_supervises_final_artifact": True,
         "preview_required_gates": [],
         "allowed_dynamic_workflow_task_classes": [],
+        "agentic_lead_policy": {
+            "policy": "off",
+            "min_subagents": 0,
+            "required_roles": [],
+            "solo_exception_for_artifact_only_gates": False,
+            "required_evidence_grade": "self_reported",
+        },
     }
     assert payload["outcome_validation_policy"] == {
         "malformed_outcome": "retry_once_with_corrective_packet",
@@ -467,6 +476,27 @@ def test_dynamic_workflow_preview_is_serialized_as_execution_layer_not_supervisi
     assert "throwaway_worktree_comparison_recorded" in packet.execution_layer_policy.preview_required_gates
     assert "Codex plus the lead remain the supervision layer" in prompt
     assert "native workflow fan-out must not replace gate review" in prompt
+
+
+def test_handoff_packet_carries_agentic_lead_policy(tmp_path):
+    request = LeadInvocationRequest(
+        task_id="slice0-lead",
+        gate="execution",
+        instruction="Synthesize supervisor-spawned worker evidence.",
+        cwd=tmp_path,
+        agentic_lead_policy="required",
+        min_subagents=2,
+        required_roles=("codebase_audit", "independent_reviewer"),
+        required_evidence_grade="runtime_native",
+    )
+
+    packet = build_handoff_packet(request)
+
+    policy = packet.execution_layer_policy.agentic_lead_policy
+    assert policy.policy == "required"
+    assert policy.min_subagents == 2
+    assert policy.required_roles == ["codebase_audit", "independent_reviewer"]
+    assert policy.required_evidence_grade == "runtime_native"
 
 
 def test_build_lead_prompt_references_handoff_packet_instead_of_raw_context(tmp_path):

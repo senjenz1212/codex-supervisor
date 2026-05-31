@@ -19,6 +19,7 @@ import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .dual_agent import Outcome, ProbeResult, evaluate_outcome_fidelity
+from .agent_mailbox import critical_review_prompt
 
 
 HANDOFF_PACKET_SCHEMA_VERSION = "dual-agent-handoff/v1"
@@ -59,6 +60,8 @@ OutcomeValidationAction = Literal[
 ]
 ClaudeEffort = Literal["low", "medium", "high", "xhigh", "max"]
 ExecutionLayerMode = Literal["lead_direct", "dynamic_workflow_preview"]
+AgenticLeadPolicyMode = Literal["off", "allowed", "required"]
+EvidenceGrade = Literal["self_reported", "lead_captured", "runtime_native"]
 DynamicWorkflowTaskClass = Literal[
     "codebase_audit",
     "large_migration",
@@ -97,6 +100,11 @@ class LeadInvocationRequest:
     effort: ClaudeEffort = "max"
     execution_layer_mode: ExecutionLayerMode = "lead_direct"
     dynamic_workflow_task_class: DynamicWorkflowTaskClass | None = None
+    agentic_lead_policy: AgenticLeadPolicyMode = "off"
+    min_subagents: int = 0
+    required_roles: tuple[str, ...] = ()
+    solo_exception_for_artifact_only_gates: bool = False
+    required_evidence_grade: EvidenceGrade = "self_reported"
     explicit_env: dict[str, str] = field(default_factory=dict)
     handoff_packet_path: str | Path | None = None
 
@@ -147,6 +155,14 @@ class OutcomeValidationPolicy(BaseModel):
     timeout: OutcomeValidationAction = "abort_to_operator"
 
 
+class AgenticLeadPolicyConfig(BaseModel):
+    policy: AgenticLeadPolicyMode = "off"
+    min_subagents: int = 0
+    required_roles: list[str] = Field(default_factory=list)
+    solo_exception_for_artifact_only_gates: bool = False
+    required_evidence_grade: EvidenceGrade = "self_reported"
+
+
 class ExecutionLayerPolicy(BaseModel):
     mode: ExecutionLayerMode = "lead_direct"
     dynamic_workflow_task_class: DynamicWorkflowTaskClass | None = None
@@ -155,6 +171,7 @@ class ExecutionLayerPolicy(BaseModel):
     codex_supervises_final_artifact: bool = True
     preview_required_gates: list[str] = Field(default_factory=list)
     allowed_dynamic_workflow_task_classes: list[str] = Field(default_factory=list)
+    agentic_lead_policy: AgenticLeadPolicyConfig = Field(default_factory=AgenticLeadPolicyConfig)
 
     @model_validator(mode="after")
     def _dynamic_workflow_requires_task_class(self) -> "ExecutionLayerPolicy":
@@ -239,6 +256,7 @@ def build_lead_prompt(request: LeadInvocationRequest) -> str:
         f"{execution_layer}"
         f"{expected}\n\n"
         "Use the strongest available reasoning for this gate. Keep routine progress concise. "
+        f"{critical_review_prompt('gate handoff')} "
         f"{_outcome_block_contract()}"
     )
 
@@ -249,7 +267,10 @@ def _outcome_block_contract() -> str:
         "The JSON must include: task_id string, summary string, specialists array, "
         "decisions array, objections array, changed_files array, tests array, "
         "test_status string, confidence number from 0 to 1, confidence_rationale string, "
-        "confidence_criteria array, and claims array. "
+        "confidence_criteria array, claims array, and critical_review object. "
+        "critical_review must include strongest_objection string, missing_evidence array, "
+        "contradictions_checked array, assumptions_to_verify array, "
+        "what_would_change_my_mind string, decision string, and severity string. "
         "Every specialist object must include a string name and a string decision; "
         "do not use null for specialist decisions. Repeat each required decision in "
         "the top-level decisions array."
@@ -287,6 +308,13 @@ def build_handoff_packet(
 
 
 def _execution_layer_policy(request: LeadInvocationRequest) -> ExecutionLayerPolicy:
+    agentic_policy = AgenticLeadPolicyConfig(
+        policy=request.agentic_lead_policy,
+        min_subagents=max(0, int(request.min_subagents)),
+        required_roles=[str(role) for role in request.required_roles if str(role).strip()],
+        solo_exception_for_artifact_only_gates=bool(request.solo_exception_for_artifact_only_gates),
+        required_evidence_grade=request.required_evidence_grade,
+    )
     if request.execution_layer_mode == "dynamic_workflow_preview":
         return ExecutionLayerPolicy(
             mode="dynamic_workflow_preview",
@@ -298,9 +326,11 @@ def _execution_layer_policy(request: LeadInvocationRequest) -> ExecutionLayerPol
                 "large_migration",
                 "cortex_pod_four_reviewer_fanout",
                 "eval_fixture_population",
+                "other_fanout",
             ],
+            agentic_lead_policy=agentic_policy,
         )
-    return ExecutionLayerPolicy()
+    return ExecutionLayerPolicy(agentic_lead_policy=agentic_policy)
 
 
 def write_handoff_packet(

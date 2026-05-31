@@ -4,6 +4,7 @@ import inspect
 import json
 import os
 import subprocess
+from hashlib import sha256
 from pathlib import Path
 
 import pytest
@@ -133,7 +134,36 @@ def _tool_receipts(*, include_push: bool = False) -> list[dict]:
     return receipts
 
 
-def _dynamic_workflow_receipts() -> list[dict]:
+def _hash_file(path: Path) -> str:
+    return sha256(path.read_bytes()).hexdigest()
+
+
+def _write_dynamic_replay_files(tmp_path: Path, *, suffix: str = "audit-1") -> dict[str, str]:
+    files = {
+        "manifest_ref": tmp_path / "docs" / "dual-agent" / "workflow-1" / "replay" / "dynamic-workflow-manifest.json",
+        "transcript_ref": tmp_path / "artifacts" / "dynamic" / suffix / "transcript.jsonl",
+        "output_ref": tmp_path / "artifacts" / "dynamic" / suffix / "output.json",
+        "replay_ref": tmp_path / "docs" / "dual-agent" / "workflow-1" / "replay" / f"{suffix}-manifest.json",
+        "worktree_comparison_ref": tmp_path / "docs" / "dual-agent" / "workflow-1" / f"dynamic-comparison-{suffix}.md",
+    }
+    contents = {
+        "manifest_ref": '{"schema_version":"dynamic-workflow-manifest/v1"}\n',
+        "transcript_ref": '{"event":"review","decision":"accept"}\n',
+        "output_ref": '{"decision":"accept","changed_files":[]}\n',
+        "replay_ref": '{"schema_version":"dual-agent-replay/v1"}\n',
+        "worktree_comparison_ref": "# Dynamic Comparison\n\naccepted\n",
+    }
+    result: dict[str, str] = {}
+    for key, path in files.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(contents[key], encoding="utf-8")
+        result[key] = str(path.relative_to(tmp_path))
+        result[f"{key.removesuffix('_ref')}_sha256"] = _hash_file(path)
+    return result
+
+
+def _dynamic_workflow_receipts(tmp_path: Path | None = None) -> list[dict]:
+    refs = _write_dynamic_replay_files(tmp_path) if tmp_path is not None else {}
     shared = {
         "subagents": [
             {
@@ -143,19 +173,26 @@ def _dynamic_workflow_receipts() -> list[dict]:
                 "budget_usd": 1.5,
                 "permission_mode": "readOnly",
                 "tool_pins": ["rg", "sed", "pytest --collect-only"],
-                "transcript_ref": "artifacts/dynamic/audit-1/transcript.jsonl",
-                "output_hash": "sha256:abc123",
+                "transcript_ref": refs.get("transcript_ref", "artifacts/dynamic/audit-1/transcript.jsonl"),
+                "transcript_sha256": refs.get("transcript_sha256"),
+                "output_ref": refs.get("output_ref"),
+                "output_sha256": refs.get("output_sha256"),
+                "output_hash": f"sha256:{refs['output_sha256']}" if refs else "sha256:abc123",
                 "changed_files": [],
             }
         ],
+        "manifest_ref": refs.get("manifest_ref"),
+        "manifest_sha256": refs.get("manifest_sha256"),
         "supervision_layer": "codex_plus_lead",
         "lead_integrator": "claude_code_lead",
         "output_schema": "dynamic-workflow-output/v1",
-        "output_hash": "sha256:abc123",
+        "output_hash": f"sha256:{refs['output_sha256']}" if refs else "sha256:abc123",
         "headless": True,
         "no_session_persistence": True,
-        "replay_ref": "docs/dual-agent/workflow-1/replay/manifest.json",
-        "worktree_comparison_ref": "docs/dual-agent/workflow-1/dynamic-comparison.md",
+        "replay_ref": refs.get("replay_ref", "docs/dual-agent/workflow-1/replay/manifest.json"),
+        "replay_sha256": refs.get("replay_sha256"),
+        "worktree_comparison_ref": refs.get("worktree_comparison_ref", "docs/dual-agent/workflow-1/dynamic-comparison.md"),
+        "worktree_comparison_sha256": refs.get("worktree_comparison_sha256"),
     }
     return [
         {
@@ -167,6 +204,44 @@ def _dynamic_workflow_receipts() -> list[dict]:
         }
         for gate in DEFAULT_DYNAMIC_WORKFLOW_PREVIEW_GATES
     ]
+
+
+def _dynamic_subagent_result_receipts(
+    tmp_path: Path,
+    *,
+    decision: str = "accept",
+    severity: str = "none",
+) -> list[dict]:
+    refs = _write_dynamic_replay_files(tmp_path)
+    return [{
+        "receipt_id": "subagent-audit-1",
+        "kind": "dynamic_subagent_result",
+        "status": "passed",
+        "task_id": "workflow-1:audit-1",
+        "persona_id": "reviewer.codebase_audit",
+        "decision": decision,
+        "severity": severity,
+        "objections": [] if decision == "accept" else ["critical unresolved mismatch"],
+        "critical_review": {
+            "schema_version": "critical-review/v1",
+            "strongest_objection": "none" if decision == "accept" else "critical unresolved mismatch",
+            "missing_evidence": [],
+            "contradictions_checked": ["manifest registration", "subagent output receipt"],
+            "assumptions_to_verify": ["subagent read-only claim matches transcript"],
+            "what_would_change_my_mind": "Replay verification contradicts the subagent output.",
+            "decision": decision,
+            "severity": severity,
+        },
+        "timeout_s": 300,
+        "budget_usd": 1.5,
+        "permission_mode": "readOnly",
+        "tool_pins": ["rg", "sed", "pytest --collect-only"],
+        "output_schema": "dynamic-workflow-output/v1",
+        "changed_files": [],
+        "headless": True,
+        "no_session_persistence": True,
+        **refs,
+    }]
 
 
 def _skill_receipts() -> list[dict]:
@@ -199,11 +274,21 @@ def test_workflow_kwargs_from_payload_preserves_dynamic_workflow_preview_fields(
         "intent": "Run a fan-out task under the supervisor boundary.",
         "execution_layer_mode": "dynamic_workflow_preview",
         "dynamic_workflow_task_class": "codebase_audit",
+        "agentic_lead_policy": "required",
+        "min_subagents": 2,
+        "required_roles": ["codebase_audit", "independent_reviewer"],
+        "solo_exception_for_artifact_only_gates": True,
+        "required_evidence_grade": "runtime_native",
         "irrelevant_field": "must not leak into workflow kwargs",
     })
 
     assert kwargs["execution_layer_mode"] == "dynamic_workflow_preview"
     assert kwargs["dynamic_workflow_task_class"] == "codebase_audit"
+    assert kwargs["agentic_lead_policy"] == "required"
+    assert kwargs["min_subagents"] == 2
+    assert kwargs["required_roles"] == ["codebase_audit", "independent_reviewer"]
+    assert kwargs["solo_exception_for_artifact_only_gates"] is True
+    assert kwargs["required_evidence_grade"] == "runtime_native"
     assert "irrelevant_field" not in kwargs
 
 
@@ -489,7 +574,7 @@ async def test_workflow_cli_payload_runs_same_supervisor_api(tmp_path):
             "max_rounds_per_gate": 1,
             "execution_layer_mode": "dynamic_workflow_preview",
             "dynamic_workflow_task_class": "codebase_audit",
-            "tool_receipts": [*_tool_receipts(), *_dynamic_workflow_receipts()],
+            "tool_receipts": [*_tool_receipts(), *_dynamic_workflow_receipts(tmp_path)],
         },
         cfg=_cfg(tmp_path),
         state=state,
@@ -504,6 +589,100 @@ async def test_workflow_cli_payload_runs_same_supervisor_api(tmp_path):
     workflow = state.get_dual_agent_workflow(run_id="workflow-run", task_id="workflow-1")
     assert workflow["status"] == "accepted"
     assert (tmp_path / "docs" / "dual-agent" / "workflow-1" / "outcome-review.md").exists()
+
+
+@pytest.mark.asyncio
+async def test_submit_dual_agent_workflow_job_spawns_detached_worker_and_records_job(monkeypatch, tmp_path):
+    import mcp_tools.codex_supervisor_stdio as stdio
+
+    server, state = _server(tmp_path)
+    popen_calls: list[dict] = []
+
+    class FakePopen:
+        pid = 43210
+
+        def __init__(self, argv, **kwargs):
+            popen_calls.append({"argv": list(argv), "kwargs": kwargs})
+
+    monkeypatch.setattr(stdio.subprocess, "Popen", FakePopen)
+
+    result = await _maybe_await(server.tools["submit_dual_agent_workflow_job"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Run long workflow out of band.",
+        max_rounds_per_gate=1,
+        execution_layer_mode="dynamic-workflow-preview",
+        dynamic_workflow_task_class="codebase-audit",
+        tool_receipts=_tool_receipts(),
+        config_path=str(tmp_path / "config.yaml"),
+    ))
+
+    assert result["status"] == "running"
+    assert result["poll_tool"] == "poll_dual_agent_workflow_job"
+    assert popen_calls
+    assert popen_calls[0]["argv"][1:3] == ["-m", "mcp_tools.codex_supervisor_workflow_cli"]
+    assert popen_calls[0]["kwargs"]["start_new_session"] is True
+
+    request = json.loads(Path(result["request_path"]).read_text(encoding="utf-8"))
+    assert request["execution_layer_mode"] == "dynamic_workflow_preview"
+    assert request["dynamic_workflow_task_class"] == "codebase_audit"
+
+    job = state.get_dual_agent_workflow_job(job_id=result["job_id"])
+    assert job is not None
+    assert job["status"] == "running"
+    assert job["pid"] == 43210
+
+    transcript = await _maybe_await(server.tools["read_gate_transcript"](
+        run_id="workflow-run",
+        task_id="workflow-1",
+    ))
+    assert transcript["workflow_jobs"][0]["status"] == "running"
+
+
+@pytest.mark.asyncio
+async def test_poll_dual_agent_workflow_job_reads_durable_result_after_transport_loss(tmp_path):
+    server, state = _server(tmp_path)
+    job_dir = tmp_path / ".handoff" / "workflow-jobs" / "job-1"
+    job_dir.mkdir(parents=True)
+    request_path = job_dir / "request.json"
+    result_path = job_dir / "result.json"
+    log_path = job_dir / "worker.log"
+    request_path.write_text("{}", encoding="utf-8")
+    result_path.write_text(
+        json.dumps({
+            "status": "accepted",
+            "run_id": "workflow-run",
+            "task_id": "workflow-1",
+            "steps": [{"gate": "outcome_review", "status": "accepted"}],
+        }),
+        encoding="utf-8",
+    )
+    log_path.write_text("worker completed\n", encoding="utf-8")
+    state.upsert_dual_agent_workflow_job(
+        job_id="job-1",
+        run_id="workflow-run",
+        task_id="workflow-1",
+        cwd=str(tmp_path),
+        status="running",
+        pid=987654,
+        request_path=str(request_path),
+        result_path=str(result_path),
+        log_path=str(log_path),
+    )
+
+    result = await _maybe_await(server.tools["poll_dual_agent_workflow_job"](job_id="job-1"))
+
+    assert result["status"] == "accepted"
+    assert result["result"]["steps"] == [{"gate": "outcome_review", "status": "accepted"}]
+    job = state.get_dual_agent_workflow_job(job_id="job-1")
+    assert job["status"] == "accepted"
+
+    transcript = await _maybe_await(server.tools["read_gate_transcript"](
+        run_id="workflow-run",
+        task_id="workflow-1",
+    ))
+    assert transcript["workflow_jobs"][0]["status"] == "accepted"
 
 
 @pytest.mark.asyncio
@@ -675,7 +854,7 @@ async def test_run_dual_agent_workflow_can_pass_dynamic_workflow_preview_policy(
         max_rounds_per_gate=1,
         execution_layer_mode="dynamic_workflow_preview",
         dynamic_workflow_task_class="codebase_audit",
-        tool_receipts=[*_tool_receipts(), *_dynamic_workflow_receipts()],
+        tool_receipts=[*_tool_receipts(), *_dynamic_workflow_receipts(tmp_path)],
     ))
 
     assert result["status"] == "accepted"
@@ -691,6 +870,201 @@ async def test_run_dual_agent_workflow_can_pass_dynamic_workflow_preview_policy(
 
 
 @pytest.mark.asyncio
+async def test_run_dual_agent_workflow_blocks_dynamic_preview_with_forged_replay_refs(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
+    from supervisor.dual_agent_runner import build_lead_replay_stdout
+
+    _write_good_workflow_source_artifacts(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    runner_calls = []
+
+    def fake_runner(argv, **kwargs):
+        runner_calls.append(argv)
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=build_lead_replay_stdout(
+                "Workflow response.\n" + _outcome_block("workflow-1"),
+            ),
+            stderr="",
+        )
+
+    server = build_codex_supervisor_mcp_server(
+        _cfg(tmp_path),
+        state,
+        mcp_cls=_FakeMCP,
+        runner=fake_runner,
+        cursor_runner=_accepting_cursor_runner,
+    )
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Run a forged dynamic preview receipt.",
+        max_rounds_per_gate=1,
+        execution_layer_mode="dynamic_workflow_preview",
+        dynamic_workflow_task_class="codebase_audit",
+        tool_receipts=[*_tool_receipts(), *_dynamic_workflow_receipts()],
+    ))
+
+    assert result["status"] == "blocked"
+    assert result["current_gate"] == "workflow_start"
+    assert result["final_gate_result"]["probes"]["P13"]["reason"] == "missing_dynamic_workflow_receipts"
+    assert "missing_manifest_sha256" in str(result["final_gate_result"]["probes"]["P13"]["details"])
+    assert runner_calls == []
+
+
+@pytest.mark.asyncio
+async def test_run_dual_agent_workflow_generates_dynamic_manifest_and_auto_receipts(tmp_path):
+    server, state = _server(tmp_path)
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Run a codebase-audit fan-out task behind the lead boundary.",
+        max_rounds_per_gate=1,
+        execution_layer_mode="dynamic_workflow_preview",
+        dynamic_workflow_task_class="codebase_audit",
+        tool_receipts=[*_tool_receipts(), *_dynamic_subagent_result_receipts(tmp_path)],
+    ))
+
+    assert result["status"] == "accepted"
+    manifest = result["workflow_route"]["dynamic_workflow_manifest"]
+    assert manifest["task_class"] == "codebase_audit"
+    assert manifest["subagents"][0]["persona_id"] == "reviewer.codebase_audit"
+    assert result["workflow_route"]["dynamic_workflow_synthesis"]["status"] == "accepted"
+    decision = result["workflow_route"]["dynamic_workflow_synthesis"]["decisions"][0]
+    assert decision["critical_review"]["schema_version"] == "critical-review/v1"
+    assert decision["critical_review"]["contradictions_checked"] == [
+        "manifest registration",
+        "subagent output receipt",
+    ]
+
+    transcript = await _maybe_await(server.tools["read_gate_transcript"](
+        run_id="workflow-run",
+        task_id="workflow-1",
+    ))
+    validations = transcript["dynamic_workflow_receipt_validations"]
+    assert validations[0]["probe"]["status"] == "green"
+    assert any(
+        receipt.get("kind") == "dynamic_workflow_receipt"
+        for receipt in validations[0]["tool_receipts"]
+    )
+    manifest_events = [
+        json.loads(row["payload_json"])
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "dual_agent_dynamic_workflow_manifest"
+    ]
+    assert manifest_events
+    assert manifest_events[0]["manifest_sha256"]
+
+
+@pytest.mark.asyncio
+async def test_agentic_required_blocks_solo_execution_before_lead(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
+    from supervisor.dual_agent_runner import build_lead_replay_stdout
+
+    _write_good_workflow_source_artifacts(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    runner_calls = []
+
+    def fake_runner(argv, **kwargs):
+        runner_calls.append(argv)
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=build_lead_replay_stdout("Should not run.\n" + _outcome_block("workflow-1")),
+            stderr="",
+        )
+
+    server = build_codex_supervisor_mcp_server(
+        _cfg(tmp_path),
+        state,
+        mcp_cls=_FakeMCP,
+        runner=fake_runner,
+        cursor_runner=_accepting_cursor_runner,
+    )
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Require agentic provenance before lead synthesis.",
+        max_rounds_per_gate=1,
+        task_complexity="trivial",
+        tool_receipts=[
+            *_tool_receipts(),
+            {
+                "receipt_id": "lead-solo",
+                "kind": "agentic_lead_execution",
+                "status": "passed",
+                "execution_mode": "solo",
+            },
+        ],
+        agentic_lead_policy="required",
+        min_subagents=1,
+        required_roles=["codebase_audit"],
+        required_evidence_grade="runtime_native",
+    ))
+
+    assert result["status"] == "blocked"
+    assert result["current_gate"] == "workflow_start"
+    assert result["final_gate_result"]["probes"]["P13"]["reason"] == "agentic_lead_policy_blocked"
+    assert "agentic_lead_solo_execution" in str(result["final_gate_result"]["probes"]["P13"]["details"])
+    assert runner_calls == []
+
+
+@pytest.mark.asyncio
+async def test_dynamic_reviewer_synthesis_blocks_on_critical_disagreement(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
+    from supervisor.dual_agent_runner import build_lead_replay_stdout
+
+    _write_good_workflow_source_artifacts(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    runner_calls = []
+
+    def fake_runner(argv, **kwargs):
+        runner_calls.append(argv)
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=build_lead_replay_stdout(
+                "Workflow response.\n" + _outcome_block("workflow-1"),
+            ),
+            stderr="",
+        )
+
+    server = build_codex_supervisor_mcp_server(
+        _cfg(tmp_path),
+        state,
+        mcp_cls=_FakeMCP,
+        runner=fake_runner,
+        cursor_runner=_accepting_cursor_runner,
+    )
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Run a fan-out task with a critical reviewer disagreement.",
+        max_rounds_per_gate=1,
+        execution_layer_mode="dynamic_workflow_preview",
+        dynamic_workflow_task_class="codebase_audit",
+        tool_receipts=[
+            *_tool_receipts(),
+            *_dynamic_subagent_result_receipts(tmp_path, decision="block", severity="critical"),
+        ],
+    ))
+
+    assert result["status"] == "blocked"
+    assert result["current_gate"] == "workflow_start"
+    assert result["final_gate_result"]["escalation"]["reason"] == "dynamic_workflow_synthesis_blocked"
+    assert runner_calls == []
+
+
+@pytest.mark.asyncio
 async def test_run_dual_agent_workflow_blocks_dynamic_preview_without_p13_receipts(tmp_path):
     server, state = _server(tmp_path)
 
@@ -701,13 +1075,14 @@ async def test_run_dual_agent_workflow_blocks_dynamic_preview_without_p13_receip
         intent="Run a codebase-audit fan-out task behind the lead boundary.",
         max_rounds_per_gate=1,
         execution_layer_mode="dynamic-workflow-preview",
-        dynamic_workflow_task_class="codebase_audit",
+        dynamic_workflow_task_class="codebase-audit",
         tool_receipts=_tool_receipts(),
     ))
 
     assert result["status"] == "blocked"
     assert result["current_gate"] == "workflow_start"
     assert result["workflow_route"]["execution_layer_mode"] == "dynamic_workflow_preview"
+    assert result["workflow_route"]["dynamic_workflow_task_class"] == "codebase_audit"
     assert result["final_gate_result"]["probes"]["P13"]["reason"] == "missing_dynamic_workflow_receipts"
     workflow = state.get_dual_agent_workflow(run_id="workflow-run", task_id="workflow-1")
     assert workflow["status"] == "blocked"
@@ -725,7 +1100,7 @@ async def test_read_gate_transcript_includes_dynamic_workflow_receipt_validation
         max_rounds_per_gate=1,
         execution_layer_mode="dynamic_workflow_preview",
         dynamic_workflow_task_class="codebase_audit",
-        tool_receipts=[*_tool_receipts(), *_dynamic_workflow_receipts()],
+        tool_receipts=[*_tool_receipts(), *_dynamic_workflow_receipts(tmp_path)],
     ))
     assert result["status"] == "accepted"
 
@@ -857,12 +1232,25 @@ async def test_run_dual_agent_workflow_runs_cursor_review_by_default(tmp_path):
     assert len(cursor_events) == 1
     assert cursor_events[0]["gate"] == "outcome_review"
     assert all(event["cursor_review"]["accepted"] for event in cursor_events)
+    assert cursor_events[0]["cursor_review"]["critical_review"]["schema_version"] == "critical-review/v1"
 
     transcript = await _maybe_await(server.tools["read_gate_transcript"](
         run_id="workflow-run",
         task_id="workflow-1",
     ))
     assert len(transcript["cursor_reviews"]) == 1
+    interactions = [
+        json.loads(row["payload_json"])
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "dual_agent_interaction_message"
+    ]
+    review_request = next(event for event in interactions if event["message_type"] == "review_request")
+    review_response = next(event for event in interactions if event["message_type"] == "review_response")
+    gate_decision = next(event for event in interactions if event["message_type"] == "gate_decision")
+    assert "Critical review:" in review_request["content"]
+    assert review_request["critical_review"]["schema_version"] == "critical-review/v1"
+    assert review_response["critical_review"]["schema_version"] == "critical-review/v1"
+    assert gate_decision["critical_review"]["schema_version"] == "critical-review/v1"
 
 
 @pytest.mark.asyncio
@@ -1202,6 +1590,98 @@ async def test_run_dual_agent_workflow_can_rerun_after_corrective_input(tmp_path
     assert second["status"] == "accepted"
     workflow = state.get_dual_agent_workflow(run_id="workflow-run", task_id="workflow-1")
     assert workflow["status"] == "accepted"
+
+
+@pytest.mark.asyncio
+async def test_run_dual_agent_workflow_resumes_after_transport_loss_from_pending_gate(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
+    from supervisor.dual_agent_runner import build_lead_replay_stdout
+
+    _write_good_workflow_source_artifacts(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    for gate in ("prd_review", "issues_review", "tdd_review"):
+        state.write_event(
+            run_id="workflow-run",
+            source="dual_agent",
+            kind="dual_agent_gate_result",
+            payload={
+                "task_id": "workflow-1",
+                "gate": gate,
+                "status": "accepted",
+                "attempts": 1,
+                "handoff_packet_path": f"/tmp/.handoff/{gate}.json",
+                "probes": {},
+                "outcome": {
+                    "task_id": "workflow-1",
+                    "summary": f"{gate} accepted before transport closed.",
+                    "specialists": [{"name": "Reviewer", "decision": "accept"}],
+                    "decisions": ["accept"],
+                    "objections": [],
+                    "changed_files": [],
+                    "tests": [],
+                    "test_status": "passed",
+                    "confidence": 0.95,
+                    "claims": [],
+                },
+                "escalation": None,
+            },
+        )
+        state.record_dual_agent_workflow_step(
+            run_id="workflow-run",
+            task_id="workflow-1",
+            gate=gate,
+            status="accepted",
+            attempt_count=1,
+            latest_event_id=None,
+        )
+    runner_calls: list[str] = []
+
+    def fake_runner(argv, **kwargs):
+        prompt = argv[argv.index("-p") + 1]
+        gate = prompt.split("Gate mode: ", 1)[1].split(".", 1)[0]
+        runner_calls.append(gate)
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=build_lead_replay_stdout(
+                "Workflow response.\n" + _outcome_block("workflow-1"),
+            ),
+            stderr="",
+        )
+
+    server = build_codex_supervisor_mcp_server(
+        _cfg(tmp_path),
+        state,
+        mcp_cls=_FakeMCP,
+        runner=fake_runner,
+        cursor_runner=_accepting_cursor_runner,
+    )
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Resume after the previous MCP transport closed.",
+        max_rounds_per_gate=1,
+        cursor_review=False,
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert result["status"] == "accepted"
+    assert runner_calls == ["implementation_plan", "execution", "outcome_review"]
+    assert [step["gate"] for step in result["steps"]] == [
+        "prd_review",
+        "issues_review",
+        "tdd_review",
+        "implementation_plan",
+        "execution",
+        "outcome_review",
+    ]
+    assert result["workflow_route"]["resume"]["skipped_gates"] == [
+        "prd_review",
+        "issues_review",
+        "tdd_review",
+    ]
 
 
 @pytest.mark.asyncio

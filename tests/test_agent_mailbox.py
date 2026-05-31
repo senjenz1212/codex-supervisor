@@ -5,6 +5,7 @@ from supervisor.agent_mailbox import (
     ConfidenceReport,
     codex_confidence_report,
     codex_review_packet,
+    critical_review_from_outcome,
 )
 
 
@@ -52,6 +53,16 @@ def test_agent_mailbox_message_carries_trace_fields():
             },
         ),
         would_change_if="A matching git_remote receipt appears.",
+        critical_review={
+            "schema_version": "critical-review/v1",
+            "strongest_objection": "push receipt missing",
+            "missing_evidence": ["git_remote receipt"],
+            "contradictions_checked": ["reported tests vs receipts"],
+            "assumptions_to_verify": ["branch was pushed"],
+            "what_would_change_my_mind": "A matching git_remote receipt appears.",
+            "decision": "revise",
+            "severity": "important",
+        },
         review_packet={"schema_version": "codex-review-packet/v1", "decision": "revise"},
         artifacts=({"kind": "prd", "path": "docs/prd.md"},),
     )
@@ -68,6 +79,8 @@ def test_agent_mailbox_message_carries_trace_fields():
     assert payload["evidence_refs"][0]["ref"] == "receipt:test-1"
     assert payload["raw_transcript_refs"][0]["kind"] == "claude_stdout"
     assert payload["would_change_if"] == "A matching git_remote receipt appears."
+    assert payload["critical_review"]["strongest_objection"] == "push receipt missing"
+    assert payload["critical_review"]["missing_evidence"] == ["git_remote receipt"]
     assert payload["review_packet"]["schema_version"] == "codex-review-packet/v1"
 
 
@@ -101,6 +114,9 @@ def test_codex_confidence_report_and_review_packet_explain_decision():
     assert packet["findings"][0]["severity"] == "CRITICAL"
     assert packet["findings"][0]["code"] == "P11"
     assert packet["findings"][0]["receipt_replay"]["failures"] == []
+    assert packet["critical_review"]["schema_version"] == "critical-review/v1"
+    assert packet["critical_review"]["strongest_objection"] == "claim verification failed"
+    assert packet["critical_review"]["decision"] == "deny"
 
 
 def test_codex_review_packet_links_claim_failures_to_receipt_replay():
@@ -145,3 +161,21 @@ def test_codex_review_packet_links_claim_failures_to_receipt_replay():
     assert finding["receipt_replay"]["failures"] == ["implemented_without_diff_receipt"]
     assert finding["receipt_replay"]["observed_receipt_ids"] == ["pytest-focused"]
     assert packet["round_policy"]["force_next_round"] is True
+
+
+def test_critical_review_from_outcome_normalizes_missing_agent_fields():
+    review = critical_review_from_outcome(
+        {
+            "decisions": ["revise"],
+            "objections": ["missing transcript ref"],
+        },
+        evidence_refs=({"kind": "transcript", "ref": "receipt:missing"},),
+        would_change_if="A matching transcript receipt is attached.",
+    )
+
+    assert review["schema_version"] == "critical-review/v1"
+    assert review["strongest_objection"] == "missing transcript ref"
+    assert review["decision"] == "revise"
+    assert review["severity"] == "important"
+    assert review["evidence_refs"][0]["ref"] == "receipt:missing"
+    assert review["what_would_change_my_mind"] == "A matching transcript receipt is attached."
