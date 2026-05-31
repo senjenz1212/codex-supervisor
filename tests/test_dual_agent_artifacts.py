@@ -9,7 +9,11 @@ from pathlib import Path
 import pytest
 
 from mcp_tools.codex_supervisor_stdio import _maybe_artifact
-from supervisor.dual_agent_artifacts import ScreenshotArtifact, export_dual_agent_run_artifacts
+from supervisor.dual_agent_artifacts import (
+    ScreenshotArtifact,
+    _file_tree_sha256,
+    export_dual_agent_run_artifacts,
+)
 from supervisor.replay_versions import check_replay_schema_versions
 from supervisor.state import State
 
@@ -239,6 +243,16 @@ def test_export_dual_agent_run_artifacts_renders_interaction_receipts(tmp_path):
                 "sha256": "abc123",
             }],
             "would_change_if": "A matching git_remote receipt appears.",
+            "critical_review": {
+                "schema_version": "critical-review/v1",
+                "strongest_objection": "push receipt missing",
+                "missing_evidence": ["git_remote receipt"],
+                "contradictions_checked": ["reported tests vs receipts"],
+                "assumptions_to_verify": ["branch was pushed"],
+                "what_would_change_my_mind": "A matching git_remote receipt appears.",
+                "decision": "revise",
+                "severity": "important",
+            },
             "artifacts": [],
             "metadata": {
                 "tool_calls": [
@@ -297,6 +311,9 @@ def test_export_dual_agent_run_artifacts_renders_interaction_receipts(tmp_path):
         assert "receipt:pytest-focused" in text
         assert ".handoff/task-1.stdout" in text
         assert "A matching git_remote receipt appears." in text
+        assert "### Critical Review" in text
+        assert "push receipt missing" in text
+        assert "reported tests vs receipts" in text
         assert "start_dual_agent_gate" in text
         assert "FM-3.2" in text
         assert "No or incomplete verification" in text
@@ -596,6 +613,83 @@ def test_export_dual_agent_run_artifacts_renders_planning_validation_events(tmp_
         assert "validate_planning_artifacts" in text
 
 
+def test_export_dual_agent_run_artifacts_renders_dynamic_workflow_receipt_validation(tmp_path):
+    state = _state(tmp_path)
+    state.write_event(
+        run_id="run-1",
+        source="dual_agent",
+        kind="dual_agent_dynamic_workflow_receipt_validation",
+        payload={
+            "task_id": "task-1",
+            "gate": "workflow_start",
+            "status": "blocked",
+            "probe": {
+                "probe_id": "P13",
+                "status": "red",
+                "reason": "missing_dynamic_workflow_receipts",
+                "details": {
+                    "dynamic_workflow_task_class": "codebase_audit",
+                    "required_gates": [
+                        "codex_and_lead_remain_supervision_layer",
+                        "per_subagent_budget_caps_verified",
+                    ],
+                    "verified_gates": [],
+                    "missing_gates": [
+                        "codex_and_lead_remain_supervision_layer",
+                        "per_subagent_budget_caps_verified",
+                    ],
+                    "receipt_ids": [],
+                },
+            },
+            "tool_calls": [
+                {"name": "verify_dynamic_workflow_receipts", "status": "red"},
+            ],
+        },
+    )
+
+    result = export_dual_agent_run_artifacts(
+        state,
+        run_id="run-1",
+        task_id="task-1",
+        output_dir=tmp_path / "docs" / "dual-agent" / "task-1",
+    )
+
+    interactions = (result.output_dir / "interactions.md").read_text()
+    transcript = (result.output_dir / "transcript.md").read_text()
+    for text in (interactions, transcript):
+        assert "interaction_type: `dynamic_workflow_receipt_validation`" in text
+        assert "P13 Dynamic Workflow Receipt Validation" in text
+        assert "missing_dynamic_workflow_receipts" in text
+        assert "verify_dynamic_workflow_receipts" in text
+
+
+def test_export_dual_agent_run_artifacts_links_tdd_grill_source_artifact(tmp_path):
+    state = _state(tmp_path)
+    state.write_event(
+        run_id="run-1",
+        source="dual_agent",
+        kind="dual_agent_gate_result",
+        payload=_result_payload(
+            gate="outcome_review",
+            summary="Accepted.",
+            decisions=["accept"],
+        ),
+    )
+
+    result = export_dual_agent_run_artifacts(
+        state,
+        run_id="run-1",
+        task_id="task-1",
+        output_dir=tmp_path / "docs" / "dual-agent" / "task-1",
+    )
+
+    index = (result.output_dir / "index.md").read_text()
+    assert "Source PRD Grill Findings" in index
+    assert "source/grill-findings.md" in index
+    assert "Source TDD Grill Findings" in index
+    assert "source/grill-findings-tdd.md" in index
+
+
 def test_export_dual_agent_run_artifacts_writes_replay_manifest_with_handoff_content(tmp_path):
     state = _state(tmp_path)
     handoff = tmp_path / ".handoff" / "task-1.json"
@@ -711,6 +805,24 @@ def test_export_dual_agent_run_artifacts_writes_workspace_snapshot_manifest(tmp_
     assert snapshot["source_artifact_hashes"]["prd"] == sha256(
         prd.read_text(encoding="utf-8").encode()
     ).hexdigest()
+
+
+def test_workspace_snapshot_hash_ignores_runtime_cache_dirs(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, text=True)
+    (repo / "README.md").write_text("seed\n", encoding="utf-8")
+    subprocess.run(["git", "add", "README.md"], cwd=repo, check=True, capture_output=True, text=True)
+
+    cache = repo / ".claude"
+    cache.mkdir()
+    (cache / "large-cache.bin").write_bytes(b"a" * 1024)
+    before = _file_tree_sha256(repo)
+
+    (cache / "large-cache.bin").write_bytes(b"b" * 1024)
+    after = _file_tree_sha256(repo)
+
+    assert after == before
 
 
 def test_export_dual_agent_run_artifacts_writes_run_level_failure_summary(tmp_path):

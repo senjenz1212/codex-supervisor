@@ -8,6 +8,8 @@ import pytest
 
 from supervisor.dual_agent_lead import (
     HANDOFF_PACKET_SCHEMA_VERSION,
+    CLAUDE_OPUS_ULTIMATE_EXTRA_BODY,
+    CLAUDE_OPUS_UNDERLYING_MODEL,
     LeadInvocationRequest,
     OutcomeValidationPolicy,
     PlanningArtifact,
@@ -62,12 +64,14 @@ def test_build_lead_command_uses_non_bare_claude_so_slash_lead_can_resolve(tmp_p
     assert prompt.startswith("/lead Gate mode: prd_review.")
     assert "Task id: slice0-lead." in prompt
     assert "Always end with <dual_agent_outcome>" in prompt
+    assert "Critical review:" in prompt
+    assert "critical_review object" in prompt
     assert "Every specialist object must include a string name and a string decision" in prompt
     assert "do not use null for specialist decisions" in prompt
     assert "--bare" not in argv
     assert argv[:2] == ["claude", "--no-session-persistence"]
     assert argv[argv.index("--model") + 1] == "opus"
-    assert argv[argv.index("--effort") + 1] == "max"
+    assert "--effort" not in argv
     assert argv[argv.index("--permission-mode") + 1] == "bypassPermissions"
     assert argv[argv.index("--tools") + 1] == "default"
     assert argv[argv.index("-p") + 1] == prompt
@@ -95,7 +99,10 @@ def test_lead_invocation_defaults_to_same_worktree_tool_access(tmp_path):
     assert isinstance(argv, list)
     assert argv[argv.index("--tools") + 1] == "default"
     assert argv[argv.index("--permission-mode") + 1] == "bypassPermissions"
+    assert "--effort" not in argv
     assert calls[0]["cwd"] == str(tmp_path)
+    assert calls[0]["env"]["ANTHROPIC_DEFAULT_OPUS_MODEL"] == CLAUDE_OPUS_UNDERLYING_MODEL
+    assert calls[0]["env"]["CLAUDE_CODE_EXTRA_BODY"] == json.dumps(CLAUDE_OPUS_ULTIMATE_EXTRA_BODY)
 
 
 def test_select_lead_model_prefers_best_models_for_all_best_quality_work():
@@ -161,6 +168,47 @@ def test_invoke_claude_lead_parses_json_output_and_validates_outcome(tmp_path):
     assert calls[0]["capture_output"] is True
     assert calls[0]["text"] is True
     assert calls[0]["env"]["ANTHROPIC_BASE_URL"] == "https://uai-litellm.internal.unity.com"
+    assert calls[0]["env"]["ANTHROPIC_DEFAULT_OPUS_MODEL"] == CLAUDE_OPUS_UNDERLYING_MODEL
+    assert calls[0]["env"]["CLAUDE_CODE_EXTRA_BODY"] == json.dumps(CLAUDE_OPUS_ULTIMATE_EXTRA_BODY)
+
+
+def test_non_opus_ultimate_model_keeps_cli_effort_flag(tmp_path):
+    request = LeadInvocationRequest(
+        task_id="slice0-lead",
+        gate="prd_review",
+        instruction="Review the PRD gate.",
+        cwd=tmp_path,
+        model="sonnet",
+        effort="max",
+    )
+
+    argv = build_claude_lead_command(request)
+
+    assert argv[argv.index("--model") + 1] == "sonnet"
+    assert argv[argv.index("--effort") + 1] == "max"
+
+
+def test_opus_ultimate_extra_body_overrides_stale_environment_value(tmp_path):
+    calls: list[dict[str, object]] = []
+    stdout = json.dumps({"result": _outcome_block()})
+
+    def fake_runner(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append({"argv": argv, **kwargs})
+        return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
+
+    request = LeadInvocationRequest(
+        task_id="slice0-lead",
+        gate="outcome_review",
+        instruction="Review the implementation.",
+        cwd=tmp_path,
+        explicit_env={"CLAUDE_CODE_EXTRA_BODY": '{"thinking":{"type":"old"}}'},
+    )
+
+    result = invoke_claude_lead(request, runner=fake_runner)
+
+    assert result.probe.ok
+    assert calls[0]["env"]["ANTHROPIC_DEFAULT_OPUS_MODEL"] == CLAUDE_OPUS_UNDERLYING_MODEL
+    assert calls[0]["env"]["CLAUDE_CODE_EXTRA_BODY"] == json.dumps(CLAUDE_OPUS_ULTIMATE_EXTRA_BODY)
 
 
 def test_invoke_claude_lead_uses_requested_model_when_stdout_omits_model(tmp_path):
@@ -210,6 +258,28 @@ def test_invoke_claude_lead_reports_subprocess_failure(tmp_path):
     assert result.probe.reason == "lead_invocation_failed"
     assert result.probe.details["returncode"] == 2
     assert result.stderr == '{"error":"missing /lead","result":"not an outcome"}'
+    assert result.outcome is None
+
+
+def test_invoke_claude_lead_reports_spawn_failure_as_probe(tmp_path):
+    def fake_runner(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise FileNotFoundError("claude")
+
+    request = LeadInvocationRequest(
+        task_id="slice0-lead",
+        gate="intent",
+        instruction="Review intent.",
+        cwd=tmp_path,
+    )
+
+    result = invoke_claude_lead(request, runner=fake_runner)
+
+    assert not result.probe.ok
+    assert result.probe.reason == "lead_invocation_failed"
+    assert result.probe.details["error_type"] == "FileNotFoundError"
+    assert result.probe.details["error"] == "claude"
+    assert result.stdout == ""
+    assert result.stderr == ""
     assert result.outcome is None
 
 
@@ -356,12 +426,77 @@ def test_write_handoff_packet_pins_schema_planning_checksums_and_lead_skill(tmp_
     assert payload["lead_skill"]["path"] == str(lead_skill.resolve())
     assert payload["lead_skill"]["sha256"] == compute_file_sha256(lead_skill)
     assert payload["lead_skill"]["version"] == "0.2.1"
+    assert payload["execution_layer_policy"] == {
+        "mode": "lead_direct",
+        "dynamic_workflow_task_class": None,
+        "supervision_layer": "codex_plus_lead",
+        "lead_execution_layer": "single_lead_worker",
+        "codex_supervises_final_artifact": True,
+        "preview_required_gates": [],
+        "allowed_dynamic_workflow_task_classes": [],
+        "agentic_lead_policy": {
+            "policy": "off",
+            "min_subagents": 0,
+            "required_roles": [],
+            "solo_exception_for_artifact_only_gates": False,
+            "required_evidence_grade": "self_reported",
+        },
+    }
     assert payload["outcome_validation_policy"] == {
         "malformed_outcome": "retry_once_with_corrective_packet",
         "fidelity_failure": "abort_to_operator",
         "subprocess_failure": "abort_to_operator",
         "timeout": "abort_to_operator",
     }
+
+
+def test_dynamic_workflow_preview_is_serialized_as_execution_layer_not_supervision_layer(tmp_path):
+    request = LeadInvocationRequest(
+        task_id="slice0-lead",
+        gate="execution",
+        instruction="Run a fan-out audit behind the lead boundary.",
+        cwd=tmp_path,
+        execution_layer_mode="dynamic_workflow_preview",
+        dynamic_workflow_task_class="codebase_audit",
+    )
+
+    packet = build_handoff_packet(request)
+    prompt = build_lead_prompt(request)
+
+    assert packet.execution_layer_policy.mode == "dynamic_workflow_preview"
+    assert packet.execution_layer_policy.dynamic_workflow_task_class == "codebase_audit"
+    assert packet.execution_layer_policy.supervision_layer == "codex_plus_lead"
+    assert packet.execution_layer_policy.lead_execution_layer == "lead_worker_may_use_dynamic_workflow"
+    assert packet.execution_layer_policy.codex_supervises_final_artifact is True
+    assert "per_subagent_budget_caps_verified" in packet.execution_layer_policy.preview_required_gates
+    assert "permission_mode_and_tool_pins_verified" in packet.execution_layer_policy.preview_required_gates
+    assert "machine_readable_output_verified" in packet.execution_layer_policy.preview_required_gates
+    assert "headless_no_session_persistence_verified" in packet.execution_layer_policy.preview_required_gates
+    assert "replay_or_ci_determinism_verified" in packet.execution_layer_policy.preview_required_gates
+    assert "throwaway_worktree_comparison_recorded" in packet.execution_layer_policy.preview_required_gates
+    assert "Codex plus the lead remain the supervision layer" in prompt
+    assert "native workflow fan-out must not replace gate review" in prompt
+
+
+def test_handoff_packet_carries_agentic_lead_policy(tmp_path):
+    request = LeadInvocationRequest(
+        task_id="slice0-lead",
+        gate="execution",
+        instruction="Synthesize supervisor-spawned worker evidence.",
+        cwd=tmp_path,
+        agentic_lead_policy="required",
+        min_subagents=2,
+        required_roles=("codebase_audit", "independent_reviewer"),
+        required_evidence_grade="runtime_native",
+    )
+
+    packet = build_handoff_packet(request)
+
+    policy = packet.execution_layer_policy.agentic_lead_policy
+    assert policy.policy == "required"
+    assert policy.min_subagents == 2
+    assert policy.required_roles == ["codebase_audit", "independent_reviewer"]
+    assert policy.required_evidence_grade == "runtime_native"
 
 
 def test_build_lead_prompt_references_handoff_packet_instead_of_raw_context(tmp_path):

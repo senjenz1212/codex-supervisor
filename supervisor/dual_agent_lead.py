@@ -16,12 +16,21 @@ from pathlib import Path
 from typing import Any, Callable, Literal
 
 import yaml
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .dual_agent import Outcome, ProbeResult, evaluate_outcome_fidelity
+from .agent_mailbox import critical_review_prompt
 
 
 HANDOFF_PACKET_SCHEMA_VERSION = "dual-agent-handoff/v1"
+CLAUDE_OPUS_ULTIMATE_MODEL = "opus"
+CLAUDE_OPUS_UNDERLYING_MODEL = "claude-opus-4-8"
+CLAUDE_BALANCED_MODEL = "sonnet"
+CLAUDE_CHEAP_MODEL = "haiku"
+CLAUDE_OPUS_ULTIMATE_EXTRA_BODY = {
+    "thinking": {"type": "adaptive"},
+    "output_config": {"effort": "xhigh"},
+}
 
 GateName = Literal[
     "intent",
@@ -50,6 +59,26 @@ OutcomeValidationAction = Literal[
     "abort_to_operator",
 ]
 ClaudeEffort = Literal["low", "medium", "high", "xhigh", "max"]
+ExecutionLayerMode = Literal["lead_direct", "dynamic_workflow_preview"]
+AgenticLeadPolicyMode = Literal["off", "allowed", "required"]
+EvidenceGrade = Literal["self_reported", "lead_captured", "runtime_native"]
+DynamicWorkflowTaskClass = Literal[
+    "codebase_audit",
+    "large_migration",
+    "cortex_pod_four_reviewer_fanout",
+    "eval_fixture_population",
+    "other_fanout",
+]
+
+DEFAULT_DYNAMIC_WORKFLOW_PREVIEW_GATES: tuple[str, ...] = (
+    "codex_and_lead_remain_supervision_layer",
+    "per_subagent_budget_caps_verified",
+    "permission_mode_and_tool_pins_verified",
+    "machine_readable_output_verified",
+    "headless_no_session_persistence_verified",
+    "replay_or_ci_determinism_verified",
+    "throwaway_worktree_comparison_recorded",
+)
 
 
 @dataclass(frozen=True)
@@ -69,6 +98,13 @@ class LeadInvocationRequest:
     permission_mode: str = "bypassPermissions"
     tools: str = "default"
     effort: ClaudeEffort = "max"
+    execution_layer_mode: ExecutionLayerMode = "lead_direct"
+    dynamic_workflow_task_class: DynamicWorkflowTaskClass | None = None
+    agentic_lead_policy: AgenticLeadPolicyMode = "off"
+    min_subagents: int = 0
+    required_roles: tuple[str, ...] = ()
+    solo_exception_for_artifact_only_gates: bool = False
+    required_evidence_grade: EvidenceGrade = "self_reported"
     explicit_env: dict[str, str] = field(default_factory=dict)
     handoff_packet_path: str | Path | None = None
 
@@ -119,6 +155,31 @@ class OutcomeValidationPolicy(BaseModel):
     timeout: OutcomeValidationAction = "abort_to_operator"
 
 
+class AgenticLeadPolicyConfig(BaseModel):
+    policy: AgenticLeadPolicyMode = "off"
+    min_subagents: int = 0
+    required_roles: list[str] = Field(default_factory=list)
+    solo_exception_for_artifact_only_gates: bool = False
+    required_evidence_grade: EvidenceGrade = "self_reported"
+
+
+class ExecutionLayerPolicy(BaseModel):
+    mode: ExecutionLayerMode = "lead_direct"
+    dynamic_workflow_task_class: DynamicWorkflowTaskClass | None = None
+    supervision_layer: str = "codex_plus_lead"
+    lead_execution_layer: str = "single_lead_worker"
+    codex_supervises_final_artifact: bool = True
+    preview_required_gates: list[str] = Field(default_factory=list)
+    allowed_dynamic_workflow_task_classes: list[str] = Field(default_factory=list)
+    agentic_lead_policy: AgenticLeadPolicyConfig = Field(default_factory=AgenticLeadPolicyConfig)
+
+    @model_validator(mode="after")
+    def _dynamic_workflow_requires_task_class(self) -> "ExecutionLayerPolicy":
+        if self.mode == "dynamic_workflow_preview" and self.dynamic_workflow_task_class is None:
+            raise ValueError("dynamic_workflow_preview requires dynamic_workflow_task_class")
+        return self
+
+
 class HandoffPacket(BaseModel):
     packet_schema_version: str = HANDOFF_PACKET_SCHEMA_VERSION
     task_id: str
@@ -131,6 +192,7 @@ class HandoffPacket(BaseModel):
     suggested_skills: list[str] = Field(default_factory=lambda: ["/lead"])
     planning_artifacts: list[HandoffPlanningArtifact] = Field(default_factory=list)
     lead_skill: LeadSkillPin | None = None
+    execution_layer_policy: ExecutionLayerPolicy = Field(default_factory=ExecutionLayerPolicy)
     outcome_validation_policy: OutcomeValidationPolicy = Field(default_factory=OutcomeValidationPolicy)
 
     @field_validator("packet_schema_version")
@@ -150,10 +212,10 @@ def select_lead_model(
     if explicit_model:
         return explicit_model
     if quality == "cheap":
-        return "haiku"
+        return CLAUDE_CHEAP_MODEL
     if quality == "balanced":
-        return "sonnet"
-    return "opus"
+        return CLAUDE_BALANCED_MODEL
+    return CLAUDE_OPUS_ULTIMATE_MODEL
 
 
 def build_lead_prompt(request: LeadInvocationRequest) -> str:
@@ -179,12 +241,22 @@ def build_lead_prompt(request: LeadInvocationRequest) -> str:
             "Treat the handoff packet as the bounded context source. "
             "Do not rewrite planning artifacts unless explicitly instructed.\n"
         )
+    execution_layer = ""
+    if request.execution_layer_mode == "dynamic_workflow_preview":
+        execution_layer = (
+            "\nExecution layer: dynamic workflow preview is allowed only behind the lead worker. "
+            "Codex plus the lead remain the supervision layer; native workflow fan-out must not "
+            "replace gate review, outcome validation, receipts, or the final Codex-supervised artifact. "
+            "Use it only for fan-out execution work and report the preview gates in the outcome claims.\n"
+        )
     return (
         f"/lead Gate mode: {request.gate}. Task id: {request.task_id}.\n"
         f"{request.instruction.strip()}\n\n"
         f"{handoff}"
+        f"{execution_layer}"
         f"{expected}\n\n"
         "Use the strongest available reasoning for this gate. Keep routine progress concise. "
+        f"{critical_review_prompt('gate handoff')} "
         f"{_outcome_block_contract()}"
     )
 
@@ -195,7 +267,10 @@ def _outcome_block_contract() -> str:
         "The JSON must include: task_id string, summary string, specialists array, "
         "decisions array, objections array, changed_files array, tests array, "
         "test_status string, confidence number from 0 to 1, confidence_rationale string, "
-        "confidence_criteria array, and claims array. "
+        "confidence_criteria array, claims array, and critical_review object. "
+        "critical_review must include strongest_objection string, missing_evidence array, "
+        "contradictions_checked array, assumptions_to_verify array, "
+        "what_would_change_my_mind string, decision string, and severity string. "
         "Every specialist object must include a string name and a string decision; "
         "do not use null for specialist decisions. Repeat each required decision in "
         "the top-level decisions array."
@@ -227,8 +302,35 @@ def build_handoff_packet(
         suggested_skills=list(suggested_skills),
         planning_artifacts=artifacts,
         lead_skill=lead_skill,
+        execution_layer_policy=_execution_layer_policy(request),
         outcome_validation_policy=outcome_validation_policy or OutcomeValidationPolicy(),
     )
+
+
+def _execution_layer_policy(request: LeadInvocationRequest) -> ExecutionLayerPolicy:
+    agentic_policy = AgenticLeadPolicyConfig(
+        policy=request.agentic_lead_policy,
+        min_subagents=max(0, int(request.min_subagents)),
+        required_roles=[str(role) for role in request.required_roles if str(role).strip()],
+        solo_exception_for_artifact_only_gates=bool(request.solo_exception_for_artifact_only_gates),
+        required_evidence_grade=request.required_evidence_grade,
+    )
+    if request.execution_layer_mode == "dynamic_workflow_preview":
+        return ExecutionLayerPolicy(
+            mode="dynamic_workflow_preview",
+            dynamic_workflow_task_class=request.dynamic_workflow_task_class,
+            lead_execution_layer="lead_worker_may_use_dynamic_workflow",
+            preview_required_gates=list(DEFAULT_DYNAMIC_WORKFLOW_PREVIEW_GATES),
+            allowed_dynamic_workflow_task_classes=[
+                "codebase_audit",
+                "large_migration",
+                "cortex_pod_four_reviewer_fanout",
+                "eval_fixture_population",
+                "other_fanout",
+            ],
+            agentic_lead_policy=agentic_policy,
+        )
+    return ExecutionLayerPolicy(agentic_lead_policy=agentic_policy)
 
 
 def write_handoff_packet(
@@ -295,7 +397,7 @@ def build_claude_lead_command(request: LeadInvocationRequest) -> list[str]:
         quality=request.quality,
         explicit_model=request.model,
     )
-    return [
+    command = [
         request.cli_command,
         "--no-session-persistence",
         "-p",
@@ -308,11 +410,11 @@ def build_claude_lead_command(request: LeadInvocationRequest) -> list[str]:
         _format_budget(request.budget_usd),
         "--permission-mode",
         request.permission_mode,
-        "--effort",
-        request.effort,
-        "--tools",
-        request.tools,
     ]
+    if not _uses_adaptive_opus_effort(model):
+        command.extend(["--effort", request.effort])
+    command.extend(["--tools", request.tools])
+    return command
 
 
 def invoke_claude_lead(
@@ -324,6 +426,9 @@ def invoke_claude_lead(
     requested_model = _command_value(command, "--model")
     env = dict(os.environ)
     env.update(request.explicit_env)
+    if requested_model is not None and _uses_adaptive_opus_effort(requested_model):
+        env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = CLAUDE_OPUS_UNDERLYING_MODEL
+        env["CLAUDE_CODE_EXTRA_BODY"] = json.dumps(CLAUDE_OPUS_ULTIMATE_EXTRA_BODY)
     try:
         proc = runner(
             command,
@@ -349,6 +454,26 @@ def invoke_claude_lead(
             stderr=stderr,
             stdout_bytes=len(stdout.encode()),
             stderr_bytes=len(stderr.encode()),
+            transcript="",
+            model=requested_model,
+        )
+    except (OSError, subprocess.SubprocessError) as e:
+        return LeadInvocationResult(
+            probe=ProbeResult(
+                "P2",
+                "red",
+                "lead_invocation_failed",
+                {
+                    "error_type": type(e).__name__,
+                    "error": str(e),
+                },
+            ),
+            outcome=None,
+            command=command,
+            stdout="",
+            stderr="",
+            stdout_bytes=0,
+            stderr_bytes=0,
             transcript="",
             model=requested_model,
         )
@@ -424,6 +549,14 @@ def _command_value(command: list[str], flag: str) -> str | None:
         return command[index + 1]
     except IndexError:
         return None
+
+
+def _uses_adaptive_opus_effort(model: str) -> bool:
+    return (
+        model == CLAUDE_OPUS_ULTIMATE_MODEL
+        or model == CLAUDE_OPUS_UNDERLYING_MODEL
+        or model.startswith(f"{CLAUDE_OPUS_UNDERLYING_MODEL}-")
+    )
 
 
 def _extract_claude_json_payload(

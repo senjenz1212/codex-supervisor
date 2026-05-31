@@ -21,14 +21,20 @@ from .dual_agent import (
     ProbeResult,
     WorkerInvocationProbeInput,
     evaluate_deadlock_budget,
+    evaluate_outcome_gate_decision,
     evaluate_worker_invocation,
 )
 from .agent_mailbox import (
     AgentMailboxMessage,
+    critical_review_from_outcome,
     outcome_confidence_report,
     planning_artifact_refs,
 )
 from .dual_agent_lead import (
+    DynamicWorkflowTaskClass,
+    AgenticLeadPolicyMode,
+    EvidenceGrade,
+    ExecutionLayerMode,
     GateName,
     LeadInvocationRequest,
     LeadInvocationResult,
@@ -50,6 +56,9 @@ from .planning_validator import (
 )
 from .state import State
 from .trace_envelope import ensure_tool_call_timing, timed_tool_call
+
+
+HANDOFF_LOCK_RECLAIM_GRACE_S = 60
 
 
 @dataclass(frozen=True)
@@ -93,6 +102,13 @@ class DualAgentGateSpec:
     model: str | None = None
     budget_usd: float = 5.0
     timeout_s: int = 600
+    execution_layer_mode: ExecutionLayerMode = "lead_direct"
+    dynamic_workflow_task_class: DynamicWorkflowTaskClass | None = None
+    agentic_lead_policy: AgenticLeadPolicyMode = "off"
+    min_subagents: int = 0
+    required_roles: tuple[str, ...] = ()
+    solo_exception_for_artifact_only_gates: bool = False
+    required_evidence_grade: EvidenceGrade = "self_reported"
     lead_skill_path: str | Path | None = None
     outcome_validation_policy: OutcomeValidationPolicy = field(default_factory=OutcomeValidationPolicy)
     required_planning_kinds: tuple[str, ...] | None = None
@@ -384,12 +400,24 @@ def run_dual_agent_gate(
             probe=probes["P1"],
             base=p1_tool_call,
         )
+        with timed_tool_call(
+            "evaluate_outcome_gate_decision",
+            args={"task_id": spec.task_id, "gate": spec.gate, "probe_id": "P4"},
+            parent_tool_call_id=lead_parent_tool_call_id,
+        ) as p4_tool_call:
+            probes["P4"] = evaluate_outcome_gate_decision(lead_result.outcome)
+        p4_tool_call = _probe_tool_call(
+            name="evaluate_outcome_gate_decision",
+            probe=probes["P4"],
+            base=p4_tool_call,
+        )
         probes["P_planning"] = planning_probe
         response_tool_calls = [
             *lead_tool_calls,
             p2_tool_call,
             p3_tool_call,
             p1_tool_call,
+            p4_tool_call,
         ]
 
         if state is not None:
@@ -472,6 +500,13 @@ def run_dual_agent_gate(
                     would_change_if=(
                         "A subsequent gate response changes the typed outcome, "
                         "or supervisor probes reject this response."
+                    ),
+                    critical_review=critical_review_from_outcome(
+                        outcome_payload,
+                        would_change_if=(
+                            "A subsequent gate response changes the typed outcome, "
+                            "or supervisor probes reject this response."
+                        ),
                     ),
                     artifacts=planning_artifact_refs(spec.planning_artifacts),
                     metadata={
@@ -880,6 +915,8 @@ def _lead_invocation_args(
         "explicit_model": spec.model,
         "budget_usd": spec.budget_usd,
         "timeout_s": spec.timeout_s,
+        "execution_layer_mode": spec.execution_layer_mode,
+        "dynamic_workflow_task_class": spec.dynamic_workflow_task_class,
         "attempt": attempts,
         "corrective_retry": corrective_retry,
         "expected_specialists": list(spec.expected_specialists),
@@ -975,9 +1012,55 @@ def _acquire_handoff_lock(
         "created_at": int(time.time()),
         "handoff_packet_path": str(packet_path),
     }
-    try:
-        fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-    except FileExistsError:
+    for attempt in range(2):
+        try:
+            fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            owner = _read_handoff_lock(lock_path)
+            reclaim_reason = _handoff_lock_reclaim_reason(owner, spec=spec)
+            if reclaim_reason and attempt == 0:
+                try:
+                    lock_path.unlink()
+                except FileNotFoundError:
+                    continue
+                except OSError as e:
+                    return ProbeResult(
+                        "P1",
+                        "red",
+                        "handoff_lock_error",
+                        {
+                            "lock_path": str(lock_path),
+                            "handoff_packet_path": str(packet_path),
+                            "error": str(e),
+                            "lock_owner": owner,
+                        },
+                    )
+                continue
+            return ProbeResult(
+                "P1",
+                "red",
+                "handoff_lock_held",
+                {
+                    "lock_path": str(lock_path),
+                    "handoff_packet_path": str(packet_path),
+                    "lock_owner": owner,
+                    "age_s": _handoff_lock_age_s(owner),
+                    "reclaimed": False,
+                },
+            )
+        except OSError as e:
+            return ProbeResult(
+                "P1",
+                "red",
+                "handoff_lock_error",
+                {
+                    "lock_path": str(lock_path),
+                    "handoff_packet_path": str(packet_path),
+                    "error": str(e),
+                },
+            )
+        break
+    else:
         return ProbeResult(
             "P1",
             "red",
@@ -985,17 +1068,7 @@ def _acquire_handoff_lock(
             {
                 "lock_path": str(lock_path),
                 "handoff_packet_path": str(packet_path),
-            },
-        )
-    except OSError as e:
-        return ProbeResult(
-            "P1",
-            "red",
-            "handoff_lock_error",
-            {
-                "lock_path": str(lock_path),
-                "handoff_packet_path": str(packet_path),
-                "error": str(e),
+                "reclaimed": False,
             },
         )
     try:
@@ -1010,6 +1083,56 @@ def _release_handoff_lock(lock_path: Path) -> None:
         lock_path.unlink()
     except FileNotFoundError:
         pass
+
+
+def _read_handoff_lock(lock_path: Path) -> dict[str, Any]:
+    try:
+        text = lock_path.read_text(encoding="utf-8")
+    except OSError as e:
+        return {"read_error": str(e)}
+    try:
+        payload = json.loads(text or "{}")
+    except json.JSONDecodeError as e:
+        return {"parse_error": str(e), "raw": text[:500]}
+    return payload if isinstance(payload, dict) else {"parse_error": "lock_not_object"}
+
+
+def _handoff_lock_reclaim_reason(owner: dict[str, Any], *, spec: DualAgentGateSpec) -> str:
+    pid = _int_or_none(owner.get("pid"))
+    if pid is not None and pid > 0:
+        return "" if _pid_alive(pid) else "dead_pid"
+    age_s = _handoff_lock_age_s(owner)
+    if age_s is not None and age_s > int(spec.timeout_s) + HANDOFF_LOCK_RECLAIM_GRACE_S:
+        return "stale_lock_ttl"
+    return ""
+
+
+def _handoff_lock_age_s(owner: dict[str, Any]) -> int | None:
+    created_at = _int_or_none(owner.get("created_at"))
+    if created_at is None:
+        return None
+    return max(0, int(time.time()) - created_at)
+
+
+def _pid_alive(pid: int) -> bool:
+    if pid == os.getpid():
+        return True
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def _int_or_none(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 async def send_stale_paused_digests(
@@ -1056,6 +1179,13 @@ def _lead_request(
         model=spec.model,
         budget_usd=spec.budget_usd,
         timeout_s=spec.timeout_s,
+        execution_layer_mode=spec.execution_layer_mode,
+        dynamic_workflow_task_class=spec.dynamic_workflow_task_class,
+        agentic_lead_policy=spec.agentic_lead_policy,
+        min_subagents=spec.min_subagents,
+        required_roles=spec.required_roles,
+        solo_exception_for_artifact_only_gates=spec.solo_exception_for_artifact_only_gates,
+        required_evidence_grade=spec.required_evidence_grade,
         handoff_packet_path=packet_path,
     )
 

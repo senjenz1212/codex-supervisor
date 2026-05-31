@@ -13,8 +13,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from .dual_agent import Outcome, ProbeResult, evaluate_outcome_fidelity
+from .dual_agent import Outcome, ProbeResult, evaluate_outcome_fidelity, outcome_accepts
 from .dual_agent_lead import GateName, ModelQuality, PlanningArtifact
+from .agent_mailbox import critical_review_prompt
 
 
 @dataclass(frozen=True)
@@ -83,6 +84,7 @@ def build_cursor_prompt(request: CursorInvocationRequest) -> str:
         "",
         "Role: Cursor is an independent reviewer/challenger, not the implementer.",
         "Do not edit files. Inspect the worktree and artifacts, then judge the gate.",
+        critical_review_prompt("Claude outcome and gate evidence"),
         "",
         "Instruction:",
         request.instruction.strip(),
@@ -104,9 +106,7 @@ def build_cursor_prompt(request: CursorInvocationRequest) -> str:
 def cursor_accepts(result: CursorInvocationResult | None) -> bool:
     if result is None or not result.probe.ok or result.outcome is None:
         return False
-    decisions = [value.lower() for value in result.outcome.decisions]
-    decisions.extend(specialist.decision.lower() for specialist in result.outcome.specialists)
-    return any("accept" in decision for decision in decisions)
+    return outcome_accepts(result.outcome)
 
 
 def invoke_cursor_agent(
@@ -216,7 +216,10 @@ def _outcome_block_contract() -> str:
         "The JSON must include: task_id string, summary string, specialists array, "
         "decisions array, objections array, changed_files array, tests array, "
         "test_status string, confidence number from 0 to 1, confidence_rationale string, "
-        "confidence_criteria array, and claims array. "
+        "confidence_criteria array, claims array, and critical_review object. "
+        "critical_review must include strongest_objection string, missing_evidence array, "
+        "contradictions_checked array, assumptions_to_verify array, "
+        "what_would_change_my_mind string, decision string, and severity string. "
         "Every specialist object must include a string name and a string decision."
     )
 

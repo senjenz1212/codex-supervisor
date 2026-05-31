@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from pathlib import Path
 
 import pytest
 
@@ -140,3 +141,149 @@ async def test_rollout_watcher_sweep_drains_known_file_growth_without_watch_even
     assert row["kind"] == "task_complete"
     assert "missed append" in row["payload_json"]
     assert state.get_tail_offset(str(rollout)) == rollout.stat().st_size
+
+
+@pytest.mark.asyncio
+async def test_rollout_watcher_callback_failure_records_health_without_replaying_line(tmp_path):
+    sessions_root = tmp_path / "sessions"
+    registry_dir = tmp_path / "runs"
+    rollout_dir = sessions_root / "2026" / "05" / "19"
+    rollout_dir.mkdir(parents=True)
+    registry_dir.mkdir()
+
+    session_id = "bbbbbbbb-1111-2222-3333-444444444444"
+    rollout = rollout_dir / f"rollout-2026-05-19T10-00-00-{session_id}.jsonl"
+    rollout.write_text(json.dumps({"type": "message", "text": "callback fails"}) + "\n")
+
+    state = State(str(tmp_path / "state.db"))
+
+    async def failing_callback(run_id: str, event: dict):
+        raise RuntimeError("telegram progress transport closed")
+
+    watcher = RolloutWatcher(
+        sessions_root=str(sessions_root),
+        registry_dir=str(registry_dir),
+        state=state,
+        on_event=failing_callback,
+    )
+
+    await watcher._drain_file(rollout)
+    await watcher._drain_file(rollout)
+
+    events = state._conn.execute(
+        "SELECT kind, payload_json FROM events ORDER BY event_id ASC"
+    ).fetchall()
+    assert [row["kind"] for row in events].count("message") == 1
+    assert state.get_tail_offset(str(rollout)) == rollout.stat().st_size
+    health = [
+        json.loads(row["payload_json"])
+        for row in events
+        if row["kind"] == "supervisor_subsystem_health"
+    ]
+    assert health
+    assert health[0]["subsystem"] == "rollout_watcher.on_event"
+    assert health[0]["status"] == "degraded"
+    assert health[0]["reason"] == "callback_exception"
+
+
+@pytest.mark.asyncio
+async def test_rollout_watcher_guarded_sweep_records_failure_and_continues(tmp_path):
+    sessions_root = tmp_path / "sessions"
+    registry_dir = tmp_path / "runs"
+    sessions_root.mkdir()
+    registry_dir.mkdir()
+    state = State(str(tmp_path / "state.db"))
+    watcher = RolloutWatcher(
+        sessions_root=str(sessions_root),
+        registry_dir=str(registry_dir),
+        state=state,
+    )
+
+    async def failing_sweep_once():
+        raise RuntimeError("watchfiles backend dropped")
+
+    watcher.sweep_once = failing_sweep_once  # type: ignore[method-assign]
+
+    await watcher.guarded_sweep_once()
+
+    row = state._conn.execute(
+        "SELECT payload_json FROM events WHERE kind='supervisor_subsystem_health'"
+    ).fetchone()
+    assert row is not None
+    payload = json.loads(row["payload_json"])
+    assert payload["subsystem"] == "rollout_watcher.sweep"
+    assert payload["status"] == "degraded"
+    assert payload["reason"] == "sweep_exception"
+
+
+@pytest.mark.asyncio
+async def test_rollout_watcher_malformed_json_records_health_and_advances_offset(tmp_path):
+    sessions_root = tmp_path / "sessions"
+    registry_dir = tmp_path / "runs"
+    rollout_dir = sessions_root / "2026" / "05" / "19"
+    rollout_dir.mkdir(parents=True)
+    registry_dir.mkdir()
+
+    session_id = "cccccccc-1111-2222-3333-444444444444"
+    rollout = rollout_dir / f"rollout-2026-05-19T10-00-00-{session_id}.jsonl"
+    rollout.write_text("{not valid json}\n")
+
+    state = State(str(tmp_path / "state.db"))
+    watcher = RolloutWatcher(
+        sessions_root=str(sessions_root),
+        registry_dir=str(registry_dir),
+        state=state,
+    )
+
+    await watcher._drain_file(rollout)
+    await watcher._drain_file(rollout)
+
+    rows = state._conn.execute(
+        "SELECT kind, payload_json FROM events ORDER BY event_id ASC"
+    ).fetchall()
+    assert [row["kind"] for row in rows] == ["supervisor_subsystem_health"]
+    payload = json.loads(rows[0]["payload_json"])
+    assert payload["subsystem"] == "rollout_watcher.parse"
+    assert payload["status"] == "degraded"
+    assert payload["reason"] == "json_decode_exception"
+    assert state.get_tail_offset(str(rollout)) == rollout.stat().st_size
+
+
+@pytest.mark.asyncio
+async def test_rollout_watcher_read_failure_records_health(tmp_path, monkeypatch):
+    sessions_root = tmp_path / "sessions"
+    registry_dir = tmp_path / "runs"
+    rollout_dir = sessions_root / "2026" / "05" / "19"
+    rollout_dir.mkdir(parents=True)
+    registry_dir.mkdir()
+
+    session_id = "dddddddd-1111-2222-3333-444444444444"
+    rollout = rollout_dir / f"rollout-2026-05-19T10-00-00-{session_id}.jsonl"
+    rollout.write_text(json.dumps({"type": "message"}) + "\n")
+
+    state = State(str(tmp_path / "state.db"))
+    watcher = RolloutWatcher(
+        sessions_root=str(sessions_root),
+        registry_dir=str(registry_dir),
+        state=state,
+    )
+    real_open = open
+
+    def failing_open(path, *args, **kwargs):
+        if Path(path) == rollout:
+            raise OSError("temporary filesystem transport failure")
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.open", failing_open)
+
+    await watcher._drain_file(rollout)
+
+    row = state._conn.execute(
+        "SELECT payload_json FROM events WHERE kind='supervisor_subsystem_health'"
+    ).fetchone()
+    assert row is not None
+    payload = json.loads(row["payload_json"])
+    assert payload["subsystem"] == "rollout_watcher.drain"
+    assert payload["status"] == "degraded"
+    assert payload["reason"] == "read_exception"
+    assert state.get_tail_offset(str(rollout)) == 0

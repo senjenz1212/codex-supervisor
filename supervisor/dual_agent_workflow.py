@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .dual_agent import Outcome, ProbeResult
+from .dual_agent import Outcome, ProbeResult, outcome_accepts
 from .dual_agent_artifacts import default_dual_agent_artifact_dir
 from .state import State
 
@@ -50,6 +50,7 @@ SOURCE_ARTIFACTS: tuple[tuple[str, str, str], ...] = (
     ("grill_findings", "source/grill-findings.md", "Grill Findings"),
     ("issues", "source/issues.md", "Issues"),
     ("tdd_plan", "source/tdd.md", "TDD Plan"),
+    ("grill_findings", "source/grill-findings-tdd.md", "TDD Grill Findings"),
     ("implementation_plan", "source/implementation-plan.md", "Implementation Plan"),
 )
 
@@ -58,6 +59,7 @@ MANDATORY_ARTIFACTS: tuple[str, ...] = (
     "source/grill-findings.md",
     "source/issues.md",
     "source/tdd.md",
+    "source/grill-findings-tdd.md",
     "source/implementation-plan.md",
     "interactions.md",
     "outcome-review.md",
@@ -326,14 +328,7 @@ def workflow_resume_prompt(state: State, *, run_id: str, task_id: str) -> dict[s
 
 
 def claude_accepts(outcome: dict[str, Any] | None) -> bool:
-    if not isinstance(outcome, dict):
-        return False
-    decisions = [str(value).lower() for value in outcome.get("decisions") or []]
-    specialists = outcome.get("specialists") or []
-    for specialist in specialists:
-        if isinstance(specialist, dict):
-            decisions.append(str(specialist.get("decision") or "").lower())
-    return any("accept" in decision for decision in decisions)
+    return outcome_accepts(outcome)
 
 
 def verify_workflow_claims(

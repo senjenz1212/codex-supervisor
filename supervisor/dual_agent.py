@@ -22,6 +22,18 @@ from .state import State
 HARD_STOP_PROBES = ("P0", "P1", "P2", "P3", "P4")
 DESKTOP_VISIBILITY = "history_only"
 BOUNDED_TEST_FOLLOWUP = "No tests appear to cover this change. Is this intentional?"
+_BLOCKING_DECISION_TOKENS = (
+    "deny",
+    "denied",
+    "block",
+    "blocked",
+    "revise",
+    "reject",
+    "rejected",
+    "fail",
+    "failed",
+)
+_ACCEPT_DECISION_TOKENS = ("accept", "accepted", "approve", "approved")
 
 
 def _host(value: str | None) -> str:
@@ -254,6 +266,7 @@ class Outcome(BaseModel):
     confidence_rationale: str | None = None
     confidence_criteria: list[str] = Field(default_factory=list)
     claims: list[str] = Field(default_factory=list)
+    critical_review: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("test_status", mode="before")
     @classmethod
@@ -344,6 +357,75 @@ def evaluate_outcome_fidelity(
     if any(missing.values()):
         return ProbeResult("P3", "red", "outcome_signal_loss", missing), outcome
     return ProbeResult("P3", "green", "outcome_fidelity_ok"), outcome
+
+
+def outcome_accepts(outcome: Outcome | dict[str, Any] | None) -> bool:
+    """Return true only when acceptance is explicit and no blocking decision exists."""
+    normalized = _outcome_dict(outcome)
+    if normalized is None:
+        return False
+    decisions = _outcome_decision_texts(normalized)
+    return any(_has_decision_token(item, _ACCEPT_DECISION_TOKENS) for item in decisions) and not any(
+        _has_decision_token(item, _BLOCKING_DECISION_TOKENS) for item in decisions
+    )
+
+
+def evaluate_outcome_gate_decision(outcome: Outcome | dict[str, Any] | None) -> ProbeResult:
+    """P4: lead cannot advance a gate when its typed outcome asks for revision."""
+    normalized = _outcome_dict(outcome)
+    if normalized is None:
+        return ProbeResult("P4", "red", "missing_outcome_for_gate_decision")
+    decisions = _outcome_decision_texts(normalized)
+    blocking = [
+        item
+        for item in decisions
+        if _has_decision_token(item, _BLOCKING_DECISION_TOKENS)
+    ]
+    if blocking:
+        return ProbeResult(
+            "P4",
+            "red",
+            "outcome_critical_review_blocked",
+            {"blocking_decisions": blocking},
+        )
+    if not any(_has_decision_token(item, _ACCEPT_DECISION_TOKENS) for item in decisions):
+        return ProbeResult(
+            "P4",
+            "red",
+            "outcome_missing_accept_decision",
+            {"decisions": decisions},
+        )
+    return ProbeResult("P4", "green", "outcome_gate_decision_ok", {"decisions": decisions})
+
+
+def _outcome_dict(outcome: Outcome | dict[str, Any] | None) -> dict[str, Any] | None:
+    if outcome is None:
+        return None
+    if isinstance(outcome, Outcome):
+        return outcome.model_dump()
+    if isinstance(outcome, dict):
+        return outcome
+    return None
+
+
+def _outcome_decision_texts(outcome: dict[str, Any]) -> list[str]:
+    decisions = [
+        str(value)
+        for value in outcome.get("decisions") or []
+        if str(value).strip()
+    ]
+    for specialist in outcome.get("specialists") or []:
+        if isinstance(specialist, dict) and str(specialist.get("decision") or "").strip():
+            decisions.append(str(specialist.get("decision")))
+    critical_review = outcome.get("critical_review")
+    if isinstance(critical_review, dict) and str(critical_review.get("decision") or "").strip():
+        decisions.append(str(critical_review.get("decision")))
+    return decisions
+
+
+def _has_decision_token(value: str, tokens: tuple[str, ...]) -> bool:
+    lowered = value.lower()
+    return any(re.search(rf"\b{re.escape(token)}\b", lowered) for token in tokens)
 
 
 @dataclass(frozen=True)

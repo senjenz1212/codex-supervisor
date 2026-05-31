@@ -5,7 +5,7 @@ from typing import Any
 
 
 FAILURE_TAXONOMY_VERSION = "dual-agent-failure-taxonomy/v1"
-BLOCKING_PROBE_IDS = frozenset({"P2", "P3", "P11", "P12", "P_planning", "CURSOR"})
+BLOCKING_PROBE_IDS = frozenset({"P2", "P3", "P11", "P12", "P13", "P_planning", "CURSOR"})
 MAST_FAILURE_MODES: dict[str, dict[str, str]] = {
     "FM-1.1": {"category": "Specification Issues", "mode": "Disobey task specification"},
     "FM-1.2": {"category": "Specification Issues", "mode": "Disobey role specification"},
@@ -227,6 +227,8 @@ def classify_failure(
         mast_code = "FM-1.1"
     elif probe_id == "P12" or "skill" in normalized:
         category, subcategory = "governance", "missing_skill_provenance"
+    elif probe_id == "P13" or "dynamic_workflow" in normalized:
+        category, subcategory = "governance", "missing_dynamic_workflow_provenance"
     elif probe_id == "P11" or "receipt" in normalized or "claim" in normalized:
         category, subcategory = "task_verification", "missing_or_stale_receipt"
         mast_code = "FM-3.2"

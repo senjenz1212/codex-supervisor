@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "b1cc0976131f3a088d870cc727d8385cf0b0c4f0d73c926ddc2ef232b7482470",
+  "git": {
+    "diff_bytes": 72379,
+    "diff_sha256": "1d7026b0be6bc6ebfa9df9d4abae33008592fb31cef92c513919e9712dd1d12f",
+    "diff_stat": "daemon.py                                        |  55 ++++-\n docs/testing/dual-agent-slice0-coverage-index.md |   5 +\n docs/testing/public-boundaries.md                |  18 ++\n mcp_tools/codex_supervisor_stdio.py              | 254 ++++++++++++++++++++++-\n supervisor/action_executor.py                    |   9 +-\n supervisor/dual_agent_artifacts.py               | 120 ++++++++++-\n supervisor/dual_agent_lead.py                    |  20 ++\n supervisor/dual_agent_workflow.py                |   2 +\n supervisor/failure_taxonomy.py                   |   4 +-\n supervisor/rollout_watcher.py                    | 116 ++++++++++-\n supervisor/state.py                              |  84 ++++++--\n tests/test_action_executor.py                    |  45 ++++\n tests/test_codex_supervisor_mcp_stdio.py         |  45 ++++\n tests/test_dual_agent_artifacts.py               | 101 ++++++++-\n tests/test_dual_agent_lead_invoker.py            |  22 ++\n tests/test_dual_agent_workflow_driver.py         |  95 ++++++++-\n tests/test_failure_taxonomy.py                   |   8 +\n tests/test_rollout_watcher_live.py               | 147 +++++++++++++\n 18 files changed, 1112 insertions(+), 38 deletions(-)",
+    "head": "cdc67e4",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "cdc67e4",
+    "status_short": "M daemon.py\n M docs/testing/dual-agent-slice0-coverage-index.md\n M docs/testing/public-boundaries.md\n M mcp_tools/codex_supervisor_stdio.py\n M supervisor/action_executor.py\n M supervisor/dual_agent_artifacts.py\n M supervisor/dual_agent_lead.py\n M supervisor/dual_agent_workflow.py\n M supervisor/failure_taxonomy.py\n M supervisor/rollout_watcher.py\n M supervisor/state.py\n M tests/test_action_executor.py\n M tests/test_codex_supervisor_mcp_stdio.py\n M tests/test_dual_agent_artifacts.py\n M tests/test_dual_agent_lead_invoker.py\n M tests/test_dual_agent_workflow_driver.py\n M tests/test_failure_taxonomy.py\n M tests/test_rollout_watcher_live.py\n?? docs/dual-agent/supervisor-runtime-reliability-and-dynamic-receipts-20260530/\n?? supervisor/dynamic_workflow_receipts.py\n?? supervisor/runtime_health.py\n?? tests/test_dynamic_workflow_receipts.py\n?? tests/test_runtime_health.py\n?? tests/test_state_event_ledger.py"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "f744b8addad28ba7a1a58484bbe88ed8adf071d2e7e55ce3ace74c37433b45b6",
+    "implementation_plan": "b3b380d0881aebb4fea464c41a29b32ddaf3e9e008deeddbdc26c9d60b7dde89",
+    "issues": "5ab4c1ce4a4047f0e0676688f68aacf5346e11158dacab8a09f4492191c8ac52",
+    "prd": "f2584682ca97a2e12256169814a2a0e85ce576a3deee50de85508d223ff320eb",
+    "tdd_plan": "e26e3efb83030781ee6a7af4e85fdfdf1b0e70d7696b1b1deb9112824c2e2cd2"
+  },
+  "status": "captured"
+}

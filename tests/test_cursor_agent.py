@@ -37,6 +37,8 @@ def test_build_cursor_prompt_is_review_only_and_uses_typed_outcome_contract(tmp_
     assert "Do not edit files" in prompt
     assert "Cursor Reviewer" in prompt
     assert "Always end with <dual_agent_outcome>" in prompt
+    assert "Critical review:" in prompt
+    assert "critical_review object" in prompt
     assert "Claude outcome JSON" in prompt
     assert "Evidence receipts" in prompt
     assert "pytest-focused" in prompt

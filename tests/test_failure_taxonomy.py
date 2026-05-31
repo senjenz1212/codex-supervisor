@@ -24,6 +24,11 @@ def test_failure_taxonomy_classifies_receipt_and_skill_gaps():
         probe_id="P12",
         source="workflow_start",
     )
+    dynamic_gap = classify_failure(
+        reason="missing_dynamic_workflow_receipts",
+        probe_id="P13",
+        source="workflow_start",
+    )
 
     assert receipt_gap["category"] == "task_verification"
     assert receipt_gap["subcategory"] == "missing_or_stale_receipt"
@@ -32,6 +37,9 @@ def test_failure_taxonomy_classifies_receipt_and_skill_gaps():
     assert skill_gap["category"] == "governance"
     assert skill_gap["subcategory"] == "missing_skill_provenance"
     assert skill_gap["mast_code"] is None
+    assert dynamic_gap["category"] == "governance"
+    assert dynamic_gap["subcategory"] == "missing_dynamic_workflow_provenance"
+    assert dynamic_gap["mast_code"] is None
 
 
 def test_blocking_probe_failure_includes_planning_and_claim_probes_but_not_p4():

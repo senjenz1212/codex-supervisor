@@ -10,12 +10,17 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions
-
 from .config import Config
 from .state import State, Decision
 
 log = logging.getLogger(__name__)
+
+ClaudeSDKClient: Any | None = None
+ClaudeAgentOptions: Any | None = None
+
+
+class MissingClaudeAgentSdk(RuntimeError):
+    """Raised when the optional Claude Agent SDK is needed but unavailable."""
 
 
 SKILL_FOR_DECISION = {
@@ -52,7 +57,8 @@ class AgentInvoker:
         skill_text = (self.skills_dir / f"{skill_name}.md").read_text()
 
         model = self._model_for(d.kind)
-        options = ClaudeAgentOptions(
+        client_cls, options_cls = _load_claude_agent_sdk()
+        options = options_cls(
             system_prompt=skill_text,
             model=model,
             max_turns=12,
@@ -67,7 +73,7 @@ class AgentInvoker:
         log.info("invoking agent: kind=%s run=%s skill=%s",
                  d.kind, d.run_id, skill_name)
 
-        async with ClaudeSDKClient(options=options) as client:
+        async with client_cls(options=options) as client:
             await client.query(user_message)
             outputs: list[str] = []
             async for msg in client.receive_response():
@@ -118,3 +124,24 @@ class AgentInvoker:
             f"Follow the procedure in your system prompt. Use your MCP tools as needed. "
             f"End your response with a single JSON block summarizing the action you took."
         )
+
+
+def _load_claude_agent_sdk() -> tuple[Any, Any]:
+    global ClaudeSDKClient, ClaudeAgentOptions
+    if ClaudeSDKClient is not None and ClaudeAgentOptions is not None:
+        return ClaudeSDKClient, ClaudeAgentOptions
+    try:
+        from claude_agent_sdk import (  # type: ignore[import-not-found]
+            ClaudeAgentOptions as _ClaudeAgentOptions,
+            ClaudeSDKClient as _ClaudeSDKClient,
+        )
+    except ModuleNotFoundError as e:
+        if e.name == "claude_agent_sdk":
+            raise MissingClaudeAgentSdk(
+                "claude_agent_sdk is optional; install codex-supervisor[agent] "
+                "to run AgentInvoker decisions."
+            ) from e
+        raise
+    ClaudeSDKClient = _ClaudeSDKClient
+    ClaudeAgentOptions = _ClaudeAgentOptions
+    return ClaudeSDKClient, ClaudeAgentOptions

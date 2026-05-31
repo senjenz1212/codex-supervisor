@@ -32,6 +32,20 @@ contract written for that run.
 Ingest raw target events through an adapter or fixture tailer and inspect the
 normalized event stream and persisted offsets.
 
+## supervisor_runtime_loop
+
+Run a long-lived daemon subsystem through the restartable runtime wrapper and
+verify failures are written as health events before the subsystem restarts.
+Tests must fake the subsystem coroutine; they must not call live Claude, Codex,
+Telegram, filesystem watches, or HTTP servers.
+
+## supervisor_event_ledger
+
+Append parent-side events through `State.write_event` and inspect the durable
+SQLite event stream. Tests must verify trace-envelope stamping, redaction, and
+safe concurrent parent writes through the public append method rather than
+writing directly to SQLite.
+
 ## redaction_pipeline
 
 Pass raw event, hook, verdict, action, and Telegram payload text through the
@@ -238,7 +252,9 @@ Codex consumes supervisor control through the stdio MCP entrypoint
 Tests must verify the server exposes the dual-agent gate tools Codex needs:
 `start_dual_agent_gate`, `record_gate_round`, `check_budget`,
 `escalate_deadlock`, `poll_resume_signal`, `read_outcome`,
-`read_gate_transcript`, and `start_codex_session`. The MCP boundary must
+`read_gate_transcript`, `run_dual_agent_workflow`,
+`submit_dual_agent_workflow_job`, `poll_dual_agent_workflow_job`, and
+`start_codex_session`. The MCP boundary must
 persist gate results and round decisions to the supervisor event ledger so
 later tools can read outcomes and reconstruct the dialogue without relying on
 chat memory. `start_codex_session` must default to the strongest configured
@@ -247,3 +263,29 @@ Codex model and high reasoning (`gpt-5.5` with
 Codex Desktop initiated no-Telegram scope, a blocked gate
 must escalate through Desktop chat and re-run `start_dual_agent_gate`; it must
 not wait on `poll_resume_signal` unless a Telegram callback exists.
+Dynamic workflow preview must remain an execution layer under Codex plus Claude
+Code supervision: `run_dual_agent_workflow` must write
+`dual_agent_dynamic_workflow_receipt_validation` and block with P13 unless
+machine-readable receipts cover the preview gates.
+Long workflows should use `submit_dual_agent_workflow_job` when operator
+transport reliability matters; submit must return a durable job id quickly, and
+poll must recover the result from recorded request/result/log refs.
+
+## agentic_worker_execution
+
+Run supervisor-owned agentic worker execution and cleanup through
+`supervisor.agentic_workers`. Tests must verify worker stdout, stderr,
+transcript, output, and log refs are written under durable
+`.handoff/agentic-workers/<task>/<worker>/` paths; refs are hashed for replay;
+runtime metadata includes `agent_runtime`, `agent_id`, `permission_mode`,
+`tool_pins`, timeout, and budget; and timeout cleanup preserves the same durable
+log refs. Cleanup tests must inject PID liveness and termination functions so
+unit tests do not kill real processes.
+
+## agentic_eval_report
+
+Build agentic lead comparison reports through `supervisor.agentic_eval`.
+Tests must compare `lead_direct`, `agentic_allowed`, and `agentic_required`
+rows across wall-clock, cost, retries, rejected gates, missed issues, and
+operator interventions. Reports must never authorize an agentic default change
+without an explicit operator review gate.

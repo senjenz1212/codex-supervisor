@@ -182,9 +182,10 @@ def _index_markdown(
         "## Source Artifacts",
         "",
         "- [Source PRD](source/prd.md)",
-        "- [Source TDD](source/tdd.md)",
+        "- [Source PRD Grill Findings](source/grill-findings.md)",
         "- [Source Issues](source/issues.md)",
-        "- [Source Grill Findings](source/grill-findings.md)",
+        "- [Source TDD](source/tdd.md)",
+        "- [Source TDD Grill Findings](source/grill-findings-tdd.md)",
         "- [Source Implementation Plan](source/implementation-plan.md)",
         "",
         "## Gates",
@@ -294,7 +295,11 @@ def _triage_markdown(run_id: str, task_id: str, events: list[dict[str, Any]]) ->
         "- [MAST Coverage](mast-coverage.md)",
         "- [Replay Manifest](replay/manifest.json)",
         "- [Source PRD](source/prd.md)",
+        "- [Source PRD Grill Findings](source/grill-findings.md)",
+        "- [Source Issues](source/issues.md)",
         "- [Source TDD](source/tdd.md)",
+        "- [Source TDD Grill Findings](source/grill-findings-tdd.md)",
+        "- [Source Implementation Plan](source/implementation-plan.md)",
         "",
         "## Next Safe Action",
         "",
@@ -452,7 +457,7 @@ def _run_git(root: Path, *args: str) -> str:
 
 def _file_tree_sha256(root: Path) -> str:
     digest = sha256()
-    for path in sorted(root.rglob("*")):
+    for path in _snapshot_file_paths(root):
         if not path.is_file() or _excluded_snapshot_path(path, root):
             continue
         rel = path.relative_to(root).as_posix()
@@ -464,6 +469,34 @@ def _file_tree_sha256(root: Path) -> str:
         digest.update(sha256(data).hexdigest().encode())
         digest.update(b"\n")
     return digest.hexdigest()
+
+
+def _snapshot_file_paths(root: Path) -> list[Path]:
+    git_paths = _git_visible_paths(root)
+    if git_paths is not None:
+        return git_paths
+    return sorted(root.rglob("*"))
+
+
+def _git_visible_paths(root: Path) -> list[Path] | None:
+    try:
+        completed = subprocess.run(
+            ["git", "ls-files", "-z", "--cached", "--modified", "--others", "--exclude-standard"],
+            cwd=root,
+            check=False,
+            capture_output=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if completed.returncode != 0:
+        return None
+    paths = [
+        root / raw.decode("utf-8", errors="replace")
+        for raw in completed.stdout.split(b"\0")
+        if raw
+    ]
+    return sorted(paths)
 
 
 def _source_artifact_hashes(root: Path, handoff: dict[str, Any]) -> dict[str, str]:
@@ -489,7 +522,17 @@ def _source_artifact_hashes(root: Path, handoff: dict[str, Any]) -> dict[str, st
 def _excluded_snapshot_path(path: Path, root: Path) -> bool:
     rel = path.relative_to(root).as_posix()
     parts = set(rel.split("/"))
-    if parts & {".git", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"}:
+    if parts & {
+        ".git",
+        ".venv",
+        ".claude",
+        ".cortex",
+        "node_modules",
+        "__pycache__",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+    }:
         return True
     name = path.name.lower()
     if name.startswith(".env") or name.endswith((".pem", ".key", ".p12", ".pfx")):
@@ -521,6 +564,13 @@ def _interaction_event_markdown(index: int, event: dict[str, Any]) -> str:
     payload = event["payload"]
     if event["kind"] == "dual_agent_planning_validation":
         return _planning_validation_event_markdown(
+            heading=f"## {index}. {title}",
+            event=event,
+            include_kind=False,
+        )
+
+    if event["kind"] == "dual_agent_dynamic_workflow_receipt_validation":
+        return _dynamic_workflow_receipt_validation_event_markdown(
             heading=f"## {index}. {title}",
             event=event,
             include_kind=False,
@@ -732,6 +782,13 @@ def _event_markdown(event: dict[str, Any]) -> str:
         ])
         return "\n".join(lines)
 
+    if event["kind"] == "dual_agent_dynamic_workflow_receipt_validation":
+        return _dynamic_workflow_receipt_validation_event_markdown(
+            heading=f"## event_id: {event['event_id']}",
+            event=event,
+            include_kind=True,
+        )
+
     if event["kind"] == "dual_agent_planning_validation":
         return _planning_validation_event_markdown(
             heading=f"## event_id: {event['event_id']}",
@@ -838,6 +895,59 @@ def _planning_validation_event_markdown(
         "### Artifacts",
         "",
         _list_markdown(payload.get("artifacts")),
+        "",
+        *_trace_envelope_section(payload),
+    ])
+    return "\n".join(lines)
+
+
+def _dynamic_workflow_receipt_validation_event_markdown(
+    *,
+    heading: str,
+    event: dict[str, Any],
+    include_kind: bool,
+) -> str:
+    payload = event["payload"]
+    probe = payload.get("probe") if isinstance(payload.get("probe"), dict) else {}
+    details = probe.get("details") if isinstance(probe.get("details"), dict) else {}
+    lines = [
+        heading,
+        "",
+        f"- event_id: `{event['event_id']}`",
+        f"- ts: `{event['ts']}`",
+    ]
+    if include_kind:
+        lines.extend([
+            f"- kind: `{event['kind']}`",
+            f"- gate: `{event['gate']}`",
+        ])
+    lines.extend([
+        "- interaction_type: `dynamic_workflow_receipt_validation`",
+        f"- gate: `{event['gate']}`",
+        f"- status: `{payload.get('status')}`",
+        "",
+        "### P13 Dynamic Workflow Receipt Validation",
+        "",
+        f"- probe_id: `{_clean_text(probe.get('probe_id'))}`",
+        f"- status: `{_clean_text(probe.get('status'))}`",
+        f"- reason: `{_clean_text(probe.get('reason'))}`",
+        f"- dynamic_workflow_task_class: `{_clean_text(details.get('dynamic_workflow_task_class'))}`",
+        "",
+        "Required gates:",
+        "",
+        _list_markdown(details.get("required_gates")),
+        "",
+        "Verified gates:",
+        "",
+        _list_markdown(details.get("verified_gates")),
+        "",
+        "Missing gates:",
+        "",
+        _list_markdown(details.get("missing_gates")),
+        "",
+        "Receipt ids:",
+        "",
+        _list_markdown(details.get("receipt_ids")),
         "",
         *_trace_envelope_section(payload),
     ])
@@ -1047,6 +1157,10 @@ def _interaction_trace_sections(payload: dict[str, Any]) -> list[str]:
         "",
         _list_markdown(payload.get("questions")),
         "",
+        "### Critical Review",
+        "",
+        _inline_markdown_value(payload.get("critical_review") or {}),
+        "",
         "### Tool Receipts",
         "",
         _list_markdown(payload.get("tool_receipts")),
@@ -1165,6 +1279,8 @@ def _normalise_trace_tool_call(call: dict[str, Any]) -> dict[str, Any]:
             item["probe_id"] = result.get("probe_id") or result.get("probe")
         elif name == "verify_workflow_claims":
             item["probe_id"] = "P11"
+        elif name == "verify_dynamic_workflow_receipts":
+            item["probe_id"] = "P13"
         elif name == "validate_planning_artifacts":
             item["probe_id"] = "P_planning"
     failures = result.get("failures") if isinstance(result.get("failures"), list) else []

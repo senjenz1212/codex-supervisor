@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "86a634bb98e45152ecc5c0ad51654cb5115f0a7f5d43ec0140a609622f3c7458",
+  "git": {
+    "diff_bytes": 83197,
+    "diff_sha256": "3be91d030d7b66ee29543068d8c0a8c1d3a1448854c55ef523ed37b4d275f510",
+    "diff_stat": "docs/testing/public-boundaries.md        |   7 +-\n mcp_tools/codex_supervisor_stdio.py      | 513 ++++++++++++++++++++++++++++++-\n supervisor/agent_invoker.py              |  35 ++-\n supervisor/dual_agent_lead.py            |   1 +\n supervisor/dual_agent_runner.py          | 117 ++++++-\n supervisor/dynamic_workflow_receipts.py  | 126 +++++++-\n supervisor/state.py                      | 108 +++++++\n tests/test_agent_invoker_review.py       |  24 +-\n tests/test_codex_supervisor_mcp_stdio.py |   2 +\n tests/test_dual_agent_runner.py          |  80 +++++\n tests/test_dual_agent_workflow_driver.py | 406 +++++++++++++++++++++++-\n tests/test_dynamic_workflow_receipts.py  | 134 ++++++++\n 12 files changed, 1510 insertions(+), 43 deletions(-)",
+    "head": "857ccb6",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "857ccb6",
+    "status_short": "M docs/testing/public-boundaries.md\n M mcp_tools/codex_supervisor_stdio.py\n M supervisor/agent_invoker.py\n M supervisor/dual_agent_lead.py\n M supervisor/dual_agent_runner.py\n M supervisor/dynamic_workflow_receipts.py\n M supervisor/state.py\n M tests/test_agent_invoker_review.py\n M tests/test_codex_supervisor_mcp_stdio.py\n M tests/test_dual_agent_runner.py\n M tests/test_dual_agent_workflow_driver.py\n M tests/test_dynamic_workflow_receipts.py\n?? CODE-REVIEW-inflight-progress.md\n?? docs/dual-agent/dynamic-workflow-fanout-and-transport-recovery-20260530/\n?? docs/testing/prd-to-tdd-translation-audit-dynamic-workflow-fanout-and-transport-recovery-20260530.md\n?? supervisor/dynamic_workflow.py"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "1c3b00052b512629e9df22f63905362c6fe2adcc91e2f4f690753ef7ab7952d4",
+    "implementation_plan": "dd57085b37ff9a535266feaaffe3ed76b5c50b27d53280a5693abddb44dbac08",
+    "issues": "79c54fe8458f2455173f7a0f5e6701c864125e3f34bf9b94f6ef01e3f59b63bb",
+    "prd": "1b87546675ebbd1e87361ef63d608f08e0257528babc0bf4f4d0fbedc7ff23ca",
+    "tdd_plan": "b6eac1b233f4f308c1b7c90c630502013c8753da5729d090705c9e004519ec57"
+  },
+  "status": "captured"
+}

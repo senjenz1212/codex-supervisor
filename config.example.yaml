@@ -84,8 +84,8 @@ models:
   anthropic_base_url: ${ANTHROPIC_BASE_URL}
   realtime_critique_model: claude-haiku-4-5-20251001
   drift_l3_model: claude-haiku-4-5-20251001
-  drift_l4_model: claude-sonnet-4-6
-  post_run_eval_model: claude-sonnet-4-6
+  drift_l4_model: claude-opus-4-8
+  post_run_eval_model: claude-opus-4-8
 
   openai_api_key: ${OPENAI_API_KEY}
   openai_base_url: ${OPENAI_BASE_URL}

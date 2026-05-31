@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sqlite3
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -200,6 +201,24 @@ CREATE TABLE IF NOT EXISTS dual_agent_workflow_steps (
 );
 CREATE INDEX IF NOT EXISTS idx_dual_agent_workflow_steps_task
   ON dual_agent_workflow_steps(run_id, task_id, gate);
+
+CREATE TABLE IF NOT EXISTS dual_agent_workflow_jobs (
+  job_id       TEXT PRIMARY KEY,
+  run_id       TEXT NOT NULL,
+  task_id      TEXT NOT NULL,
+  cwd          TEXT NOT NULL,
+  status       TEXT NOT NULL,
+  pid          INTEGER,
+  request_path TEXT NOT NULL,
+  result_path  TEXT NOT NULL,
+  log_path     TEXT NOT NULL,
+  returncode   INTEGER,
+  error        TEXT,
+  created_at   INTEGER NOT NULL,
+  updated_at   INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dual_agent_workflow_jobs_task
+  ON dual_agent_workflow_jobs(run_id, task_id, status);
 """
 
 
@@ -233,6 +252,7 @@ class State:
         run_forward_migrations(self._conn)
         self._conn.commit()
         self._lock = asyncio.Lock()
+        self._write_lock = threading.RLock()
         self.decisions: asyncio.Queue[Decision] = asyncio.Queue()
 
     # --- run registration (public boundary: run_registration_api) ---
@@ -329,19 +349,81 @@ class State:
         ).fetchone()
 
     # --- events ---
-    def write_event(self, *, run_id: str, source: str, kind: str, payload: dict) -> int:
-        safe = redact(stamp_trace_envelope(
+    def _event_payload(self, *, run_id: str, source: str, kind: str, payload: dict) -> dict:
+        return redact(stamp_trace_envelope(
             run_id=run_id,
             source=source,
             kind=kind,
             payload=payload,
         ))
+
+    def _insert_event_unlocked(
+        self,
+        *,
+        run_id: str,
+        source: str,
+        kind: str,
+        payload: dict,
+    ) -> int:
         cur = self._conn.execute(
             "INSERT INTO events(run_id, ts, source, kind, payload_json) VALUES(?, ?, ?, ?, ?)",
-            (run_id, int(time.time()), source, kind, json.dumps(safe)),
+            (run_id, int(time.time()), source, kind, json.dumps(payload)),
         )
-        self._conn.commit()
         return cur.lastrowid or 0
+
+    def _set_tail_offset_unlocked(self, path: str, byte_offset: int) -> None:
+        self._conn.execute(
+            """INSERT INTO tail_offsets(path, byte_offset, updated_at)
+               VALUES(?, ?, ?)
+               ON CONFLICT(path) DO UPDATE SET byte_offset=excluded.byte_offset,
+                                                updated_at=excluded.updated_at""",
+            (path, byte_offset, int(time.time())),
+        )
+
+    def write_event(self, *, run_id: str, source: str, kind: str, payload: dict) -> int:
+        with self._write_lock:
+            event_payload = self._event_payload(
+                run_id=run_id,
+                source=source,
+                kind=kind,
+                payload=payload,
+            )
+            event_id = self._insert_event_unlocked(
+                run_id=run_id,
+                source=source,
+                kind=kind,
+                payload=event_payload,
+            )
+            self._conn.commit()
+            return event_id
+
+    def write_event_and_tail_offset(
+        self,
+        *,
+        run_id: str,
+        source: str,
+        kind: str,
+        payload: dict,
+        path: str,
+        byte_offset: int,
+    ) -> int:
+        """Append an event and advance its rollout tail offset in one commit."""
+        with self._write_lock:
+            event_payload = self._event_payload(
+                run_id=run_id,
+                source=source,
+                kind=kind,
+                payload=payload,
+            )
+            event_id = self._insert_event_unlocked(
+                run_id=run_id,
+                source=source,
+                kind=kind,
+                payload=event_payload,
+            )
+            self._set_tail_offset_unlocked(path, byte_offset)
+            self._conn.commit()
+            return event_id
 
     def recent_events(self, run_id: str, n: int = 20) -> list[dict]:
         cur = self._conn.execute(
@@ -366,6 +448,10 @@ class State:
                    'dual_agent_gate_result',
                    'dual_agent_planning_validation',
                    'dual_agent_skill_receipt_validation',
+                   'dual_agent_dynamic_workflow_receipt_validation',
+                   'dual_agent_dynamic_workflow_manifest',
+                   'dual_agent_dynamic_workflow_synthesis',
+                   'dual_agent_workflow_job',
                    'dual_agent_workflow_route',
                    'dual_agent_interaction_message',
                    'tri_agent_cursor_review'
@@ -572,6 +658,93 @@ class State:
                ORDER BY id ASC""",
             (run_id, task_id),
         ))
+
+    def upsert_dual_agent_workflow_job(
+        self,
+        *,
+        job_id: str,
+        run_id: str,
+        task_id: str,
+        cwd: str,
+        status: str,
+        request_path: str,
+        result_path: str,
+        log_path: str,
+        pid: int | None = None,
+        returncode: int | None = None,
+        error: str | None = None,
+    ) -> None:
+        now = int(time.time())
+        with self._write_lock:
+            self._conn.execute(
+                """INSERT INTO dual_agent_workflow_jobs(
+                       job_id, run_id, task_id, cwd, status, pid,
+                       request_path, result_path, log_path, returncode,
+                       error, created_at, updated_at)
+                   VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(job_id) DO UPDATE SET
+                       status=excluded.status,
+                       pid=excluded.pid,
+                       returncode=excluded.returncode,
+                       error=excluded.error,
+                       updated_at=excluded.updated_at""",
+                (
+                    job_id,
+                    run_id,
+                    task_id,
+                    cwd,
+                    status,
+                    pid,
+                    request_path,
+                    result_path,
+                    log_path,
+                    returncode,
+                    error,
+                    now,
+                    now,
+                ),
+            )
+            self._conn.commit()
+
+    def update_dual_agent_workflow_job(
+        self,
+        *,
+        job_id: str,
+        status: str | None = None,
+        pid: int | None = None,
+        returncode: int | None = None,
+        error: str | None = None,
+    ) -> None:
+        assignments = ["updated_at=?"]
+        params: list[Any] = [int(time.time())]
+        if status is not None:
+            assignments.append("status=?")
+            params.append(status)
+        if pid is not None:
+            assignments.append("pid=?")
+            params.append(pid)
+        if returncode is not None:
+            assignments.append("returncode=?")
+            params.append(returncode)
+        if error is not None:
+            assignments.append("error=?")
+            params.append(error)
+        params.append(job_id)
+        with self._write_lock:
+            self._conn.execute(
+                f"""UPDATE dual_agent_workflow_jobs
+                       SET {", ".join(assignments)}
+                     WHERE job_id=?""",
+                params,
+            )
+            self._conn.commit()
+
+    def get_dual_agent_workflow_job(self, *, job_id: str) -> sqlite3.Row | None:
+        return self._conn.execute(
+            """SELECT * FROM dual_agent_workflow_jobs
+               WHERE job_id=?""",
+            (job_id,),
+        ).fetchone()
 
     # --- verdicts ---
     def write_verdict(self, *, run_id: str, phase: str, layer: str | None,
@@ -843,14 +1016,9 @@ class State:
         return row["byte_offset"] if row else 0
 
     def set_tail_offset(self, path: str, byte_offset: int) -> None:
-        self._conn.execute(
-            """INSERT INTO tail_offsets(path, byte_offset, updated_at)
-               VALUES(?, ?, ?)
-               ON CONFLICT(path) DO UPDATE SET byte_offset=excluded.byte_offset,
-                                                updated_at=excluded.updated_at""",
-            (path, byte_offset, int(time.time())),
-        )
-        self._conn.commit()
+        with self._write_lock:
+            self._set_tail_offset_unlocked(path, byte_offset)
+            self._conn.commit()
 
     # --- supervisor Telegram turns ---
     def record_supervisor_turn(self, *, chat_id: str | None, message_text: str,
