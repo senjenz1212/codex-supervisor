@@ -1081,6 +1081,15 @@ class CodexSupervisorMcpAPI:
                     if not cursor_reviews_this_gate or cursor_accepts(cursor_result)
                     else "revise"
                 )
+                cursor_payload = (
+                    _cursor_result_payload(cursor_result)
+                    if cursor_result is not None else None
+                )
+                claim_payload = asdict(claim_probe) if claim_probe is not None else None
+                cursor_infrastructure_failure = (
+                    cursor_payload is not None
+                    and _cursor_review_recoverable_infrastructure_failure(cursor_payload)
+                )
                 codex_decision = (
                     "accept"
                     if (
@@ -1107,18 +1116,12 @@ class CodexSupervisorMcpAPI:
                     )
                     else _workflow_round_objection(
                         payload=payload,
-                        claim_probe=asdict(claim_probe) if claim_probe is not None else None,
-                        cursor_review=_cursor_result_payload(cursor_result)
-                        if cursor_result is not None else None,
+                        claim_probe=claim_payload,
+                        cursor_review=cursor_payload,
                         round_index=round_index,
                         max_rounds=max_rounds,
                     )
                 )
-                cursor_payload = (
-                    _cursor_result_payload(cursor_result)
-                    if cursor_result is not None else None
-                )
-                claim_payload = asdict(claim_probe) if claim_probe is not None else None
                 evidence_refs = _receipt_evidence_refs(receipt_payloads, screenshot_payloads)
                 codex_report = codex_confidence_report(
                     decision=codex_decision,
@@ -1226,6 +1229,58 @@ class CodexSupervisorMcpAPI:
                     ),
                 )
                 gate_rounds.append(_gate_round_from_payload(round_result["round"]))
+
+                if cursor_infrastructure_failure:
+                    classification = _cursor_review_failure_classification(cursor_payload)
+                    final_payload = self._write_workflow_gate_override(
+                        run_id=run_id,
+                        task_id=task_id,
+                        gate=gate,
+                        attempts=attempts,
+                        reason=classification,
+                        source_payload=payload,
+                        claim_probe=claim_payload,
+                    )
+                    self.state.record_dual_agent_workflow_step(
+                        run_id=run_id,
+                        task_id=task_id,
+                        gate=gate,
+                        status="blocked",
+                        attempt_count=attempts,
+                        latest_event_id=self.state.latest_event_id(run_id),
+                    )
+                    self.state.update_dual_agent_workflow(
+                        run_id=run_id,
+                        task_id=task_id,
+                        status="blocked",
+                        current_gate=gate,
+                    )
+                    await self._emit_workflow_milestone(
+                        notifier=notifier,
+                        run_id=run_id,
+                        task_id=task_id,
+                        milestone="gate_blocked",
+                        gate=gate,
+                    )
+                    await self._emit_workflow_milestone(
+                        notifier=notifier,
+                        run_id=run_id,
+                        task_id=task_id,
+                        milestone="needs_user_input",
+                        gate=gate,
+                    )
+                    return self._workflow_result(
+                        run_id=run_id,
+                        task_id=task_id,
+                        status="blocked",
+                        current_gate=gate,
+                        steps=steps + [_workflow_step_dict(gate, "blocked", attempts)],
+                        final_gate_result=final_payload,
+                        cwd=cwd,
+                        screenshots=screenshot_payloads,
+                        visual_evidence_policy=visual_policy,
+                        workflow_route=workflow_route,
+                    )
 
                 if (
                     payload.get("status") == "blocked"
@@ -2907,8 +2962,19 @@ def _workflow_round_objection(
     if claim_probe is not None and claim_probe.get("status") != "green":
         return str(claim_probe.get("reason") or "claim verification failed")
     if cursor_review is not None and not cursor_review.get("accepted"):
+        if _cursor_review_recoverable_infrastructure_failure(cursor_review):
+            return (
+                "cursor_reviewer_infrastructure: "
+                f"{_cursor_review_failure_classification(cursor_review)}"
+            )
+        outcome = cursor_review.get("outcome") if isinstance(cursor_review.get("outcome"), dict) else {}
+        outcome_objections = outcome.get("objections") if isinstance(outcome.get("objections"), list) else []
+        reason = "; ".join(str(item) for item in outcome_objections if str(item).strip())
+        if not reason:
+            decisions = outcome.get("decisions") if isinstance(outcome.get("decisions"), list) else []
+            reason = "; ".join(str(item) for item in decisions if str(item).strip())
         probe = cursor_review.get("probe") if isinstance(cursor_review.get("probe"), dict) else {}
-        reason = probe.get("reason") or "cursor reviewer did not accept"
+        reason = reason or probe.get("reason") or "cursor reviewer did not accept"
         return f"cursor_review_failed: {reason}"
     if round_index >= max_rounds:
         return "max_rounds_per_gate exhausted without both agents accepting"
@@ -2932,6 +2998,10 @@ def _cursor_result_payload(result: CursorInvocationResult) -> dict[str, Any]:
         "accepted": cursor_accepts(result),
         "probe": asdict(result.probe),
         "outcome": outcome_payload,
+        "failure_classification": result.failure_classification,
+        "recoverable": result.recoverable,
+        "attempts": result.attempts,
+        "retry_reasons": list(result.retry_reasons),
         "critical_review": critical_review_from_outcome(
             outcome_payload,
             decision="accept" if cursor_accepts(result) else "revise",
@@ -2953,12 +3023,41 @@ def _cursor_tool_call_fields(result: CursorInvocationResult) -> dict[str, Any]:
         "run_id": result.run_id,
         "model": result.model,
         "cursor_duration_ms": result.duration_ms,
+        "failure_classification": result.failure_classification,
+        "recoverable": result.recoverable,
+        "attempts": result.attempts,
+        "retry_reasons": list(result.retry_reasons),
         "result_summary": {
             "accepted": cursor_accepts(result),
             "probe_status": result.probe.status,
             "probe_reason": result.probe.reason,
             "outcome_present": result.outcome is not None,
+            "failure_classification": result.failure_classification,
+            "recoverable": result.recoverable,
         },
+    }
+
+
+def _cursor_review_failure_classification(cursor_review: dict[str, Any] | None) -> str:
+    if not isinstance(cursor_review, dict):
+        return ""
+    classification = str(cursor_review.get("failure_classification") or "").strip()
+    if classification:
+        return classification
+    probe = cursor_review.get("probe") if isinstance(cursor_review.get("probe"), dict) else {}
+    reason = str(probe.get("reason") or "").strip()
+    if reason in {"reviewer_contract_unmet", "reviewer_infrastructure_unavailable"}:
+        return reason
+    return ""
+
+
+def _cursor_review_recoverable_infrastructure_failure(
+    cursor_review: dict[str, Any] | None,
+) -> bool:
+    classification = _cursor_review_failure_classification(cursor_review)
+    return classification in {
+        "reviewer_contract_unmet",
+        "reviewer_infrastructure_unavailable",
     }
 
 
