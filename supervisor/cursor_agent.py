@@ -9,13 +9,18 @@ from __future__ import annotations
 import os
 import json
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 from .dual_agent import Outcome, ProbeResult, evaluate_outcome_fidelity, outcome_accepts
 from .dual_agent_lead import GateName, ModelQuality, PlanningArtifact
 from .agent_mailbox import critical_review_prompt
+
+CursorFailureClassification = Literal[
+    "reviewer_contract_unmet",
+    "reviewer_infrastructure_unavailable",
+]
 
 
 @dataclass(frozen=True)
@@ -35,6 +40,7 @@ class CursorInvocationRequest:
     expected_specialists: tuple[str, ...] = ("Cursor Reviewer",)
     expected_decisions: tuple[str, ...] = ()
     expected_objections: tuple[str, ...] = ()
+    contract_retry_limit: int = 3
 
 
 @dataclass(frozen=True)
@@ -47,6 +53,10 @@ class CursorInvocationResult:
     status: str | None = None
     model: str | None = None
     duration_ms: int | None = None
+    failure_classification: CursorFailureClassification | None = None
+    recoverable: bool = False
+    attempts: int = 1
+    retry_reasons: tuple[str, ...] = ()
 
 
 CursorRunner = Callable[[CursorInvocationRequest], CursorInvocationResult]
@@ -115,49 +125,119 @@ def invoke_cursor_agent(
     status_runner: StatusRunner = subprocess.run,
 ) -> CursorInvocationResult:
     before_status = _git_status(request.cwd, status_runner=status_runner)
-    try:
-        transcript, metadata = _run_cursor_sdk(request)
-    except ModuleNotFoundError as e:
-        if e.name == "cursor_sdk":
-            return CursorInvocationResult(
-                probe=ProbeResult("CURSOR", "red", "cursor_sdk_missing"),
-                outcome=None,
-                transcript="",
-            )
-        raise
-    except Exception as e:  # pragma: no cover - exact SDK exception classes vary.
-        return CursorInvocationResult(
-            probe=ProbeResult("CURSOR", "red", "cursor_invocation_failed", {"error": str(e)}),
-            outcome=None,
-            transcript="",
-        )
+    max_attempts = 1 + max(0, int(request.contract_retry_limit))
+    attempt_transcripts: list[str] = []
+    retry_reasons: list[str] = []
+    last_probe: ProbeResult | None = None
+    last_outcome: Outcome | None = None
+    last_metadata: dict[str, Any] = {}
 
-    probe, outcome = evaluate_outcome_fidelity(
-        transcript,
-        expected_specialists=request.expected_specialists,
-        expected_decisions=request.expected_decisions,
-        expected_objections=request.expected_objections,
-    )
-    after_status = _git_status(request.cwd, status_runner=status_runner)
-    if before_status is not None and after_status is not None and before_status != after_status:
-        probe = ProbeResult(
+    for attempt in range(1, max_attempts + 1):
+        attempt_request = request
+        if attempt > 1:
+            previous_reason = last_probe.reason if last_probe is not None else "unknown"
+            attempt_request = replace(
+                request,
+                instruction=_contract_corrective_instruction(
+                    request.instruction,
+                    previous_reason=previous_reason,
+                    attempt=attempt,
+                    max_attempts=max_attempts,
+                ),
+            )
+        try:
+            transcript, metadata = _run_cursor_sdk(attempt_request)
+        except ModuleNotFoundError as e:
+            if e.name == "cursor_sdk":
+                return _cursor_infrastructure_result(
+                    reason="cursor_sdk_missing",
+                    attempts=attempt,
+                    retry_reasons=tuple(retry_reasons),
+                )
+            raise
+        except Exception as e:  # pragma: no cover - exact SDK exception classes vary.
+            return _cursor_infrastructure_result(
+                reason="cursor_invocation_failed",
+                attempts=attempt,
+                retry_reasons=tuple(retry_reasons),
+                details={"error": str(e)},
+            )
+
+        attempt_transcripts.append(
+            f"[cursor attempt {attempt}/{max_attempts}]\n{transcript}"
+        )
+        last_metadata = metadata
+        probe, outcome = evaluate_outcome_fidelity(
+            transcript,
+            expected_specialists=request.expected_specialists,
+            expected_decisions=request.expected_decisions,
+            expected_objections=request.expected_objections,
+        )
+        if probe.ok and outcome is not None:
+            probe = _evaluate_cursor_contract_completeness(outcome)
+        last_probe = probe
+        last_outcome = outcome
+        if _should_retry_cursor_outcome(probe):
+            retry_reasons.append(probe.reason)
+            if attempt < max_attempts:
+                continue
+
+        after_status = _git_status(request.cwd, status_runner=status_runner)
+        if before_status is not None and after_status is not None and before_status != after_status:
+            last_probe = ProbeResult(
+                "CURSOR",
+                "red",
+                "cursor_modified_worktree",
+                {"before": before_status, "after": after_status},
+            )
+            last_outcome = None
+        elif last_probe.ok:
+            last_probe = ProbeResult("CURSOR", "green", "cursor_review_ok", last_probe.details)
+
+        break
+
+    transcript = "\n\n".join(attempt_transcripts)
+    assert last_probe is not None
+    if _should_retry_cursor_outcome(last_probe):
+        original_reason = last_probe.reason
+        last_probe = ProbeResult(
             "CURSOR",
             "red",
-            "cursor_modified_worktree",
-            {"before": before_status, "after": after_status},
+            "reviewer_contract_unmet",
+            {
+                **last_probe.details,
+                "original_reason": original_reason,
+                "attempts": len(attempt_transcripts),
+                "retry_reasons": list(retry_reasons),
+                "recoverable": True,
+            },
         )
-    elif probe.ok:
-        probe = ProbeResult("CURSOR", "green", "cursor_review_ok", probe.details)
+        return CursorInvocationResult(
+            probe=last_probe,
+            outcome=None,
+            transcript=transcript,
+            agent_id=last_metadata.get("agent_id"),
+            run_id=last_metadata.get("run_id"),
+            status=last_metadata.get("status"),
+            model=last_metadata.get("model"),
+            duration_ms=last_metadata.get("duration_ms"),
+            failure_classification="reviewer_contract_unmet",
+            recoverable=True,
+            attempts=len(attempt_transcripts),
+            retry_reasons=tuple(retry_reasons),
+        )
 
     return CursorInvocationResult(
-        probe=probe,
-        outcome=outcome,
+        probe=last_probe,
+        outcome=last_outcome,
         transcript=transcript,
-        agent_id=metadata.get("agent_id"),
-        run_id=metadata.get("run_id"),
-        status=metadata.get("status"),
-        model=metadata.get("model"),
-        duration_ms=metadata.get("duration_ms"),
+        agent_id=last_metadata.get("agent_id"),
+        run_id=last_metadata.get("run_id"),
+        status=last_metadata.get("status"),
+        model=last_metadata.get("model"),
+        duration_ms=last_metadata.get("duration_ms"),
+        attempts=max(1, len(attempt_transcripts)),
+        retry_reasons=tuple(retry_reasons),
     )
 
 
@@ -208,6 +288,92 @@ def _model_id(model: Any) -> str | None:
         return model
     value = getattr(model, "id", None)
     return str(value) if value is not None else str(model)
+
+
+def _should_retry_cursor_outcome(probe: ProbeResult) -> bool:
+    return (
+        probe.reason == "missing dual_agent_outcome block"
+        or probe.reason.startswith("invalid dual_agent_outcome block")
+        or probe.reason == "outcome_missing_required_fields"
+        or probe.reason == "outcome_signal_loss"
+    )
+
+
+def _evaluate_cursor_contract_completeness(outcome: Outcome) -> ProbeResult:
+    missing_fields: list[str] = []
+    if not str(outcome.confidence_rationale or "").strip():
+        missing_fields.append("confidence_rationale")
+    if not outcome.confidence_criteria:
+        missing_fields.append("confidence_criteria")
+    critical_review = outcome.critical_review if isinstance(outcome.critical_review, dict) else {}
+    for field_name in ("missing_evidence", "contradictions_checked", "assumptions_to_verify"):
+        if field_name not in critical_review or not isinstance(critical_review.get(field_name), list):
+            missing_fields.append(f"critical_review.{field_name}")
+    for field_name in (
+        "strongest_objection",
+        "what_would_change_my_mind",
+        "decision",
+        "severity",
+    ):
+        if not str(critical_review.get(field_name) or "").strip():
+            missing_fields.append(f"critical_review.{field_name}")
+    if missing_fields:
+        return ProbeResult(
+            "CURSOR",
+            "red",
+            "outcome_missing_required_fields",
+            {"fields": missing_fields},
+        )
+    return ProbeResult("CURSOR", "green", "cursor_review_ok")
+
+
+def _contract_corrective_instruction(
+    instruction: str,
+    *,
+    previous_reason: str,
+    attempt: int,
+    max_attempts: int,
+) -> str:
+    return "\n\n".join([
+        instruction.strip(),
+        (
+            f"Corrective retry {attempt}/{max_attempts}: the previous Cursor review "
+            f"failed the typed outcome contract: {previous_reason}. Return a valid "
+            "<dual_agent_outcome>{...compact JSON...}</dual_agent_outcome> block. "
+            "Do not omit the block. Do not use null values for specialist decisions. "
+            "Repeat required decisions in the top-level decisions array."
+        ),
+        _outcome_block_contract(),
+    ])
+
+
+def _cursor_infrastructure_result(
+    *,
+    reason: str,
+    attempts: int,
+    retry_reasons: tuple[str, ...],
+    details: dict[str, Any] | None = None,
+) -> CursorInvocationResult:
+    return CursorInvocationResult(
+        probe=ProbeResult(
+            "CURSOR",
+            "red",
+            "reviewer_infrastructure_unavailable",
+            {
+                "original_reason": reason,
+                "attempts": attempts,
+                "retry_reasons": list(retry_reasons),
+                "recoverable": True,
+                **(details or {}),
+            },
+        ),
+        outcome=None,
+        transcript="",
+        failure_classification="reviewer_infrastructure_unavailable",
+        recoverable=True,
+        attempts=attempts,
+        retry_reasons=retry_reasons,
+    )
 
 
 def _outcome_block_contract() -> str:

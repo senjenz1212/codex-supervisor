@@ -474,7 +474,18 @@ def _cursor_review_result(task_id: str, *, decision: str = "accept") -> CursorIn
         tests=[],
         test_status="unknown",
         confidence=0.91,
+        confidence_rationale="Cursor reviewed the gate evidence independently.",
+        confidence_criteria=["typed outcome complete", "review decision present"],
         claims=[],
+        critical_review={
+            "strongest_objection": "none" if decision == "accept" else "unresolved concern",
+            "missing_evidence": [],
+            "contradictions_checked": ["gate evidence"],
+            "assumptions_to_verify": [],
+            "what_would_change_my_mind": "New contradictory evidence.",
+            "decision": decision,
+            "severity": "none" if decision == "accept" else "important",
+        },
     )
     return CursorInvocationResult(
         probe=ProbeResult("CURSOR", "green", "cursor_review_ok"),
@@ -1330,10 +1341,14 @@ async def test_run_dual_agent_workflow_vague_route_forces_cursor_review(tmp_path
     ]
 
 
+@pytest.mark.parametrize("decision", ["revise", "deny"])
 @pytest.mark.asyncio
-async def test_run_dual_agent_workflow_with_cursor_review_blocks_on_cursor_rejection(tmp_path):
+async def test_run_dual_agent_workflow_with_cursor_review_blocks_on_cursor_rejection(
+    tmp_path,
+    decision,
+):
     def fake_cursor_runner(request):
-        return _cursor_review_result(request.task_id, decision="revise")
+        return _cursor_review_result(request.task_id, decision=decision)
 
     server, state = _server(tmp_path, cursor_runner=fake_cursor_runner)
 
@@ -1350,13 +1365,104 @@ async def test_run_dual_agent_workflow_with_cursor_review_blocks_on_cursor_rejec
     assert result["status"] == "blocked"
     assert result["current_gate"] == "outcome_review"
     assert result["final_gate_result"]["cursor_review"]["accepted"] is False
+    assert result["final_gate_result"]["cursor_review"]["failure_classification"] is None
     assert result["final_gate_result"]["escalation"]["reason"] == "agents_not_converged"
     rounds = [
         json.loads(row["payload_json"])["round"]
         for row in state.read_dual_agent_gate_events("workflow-run")
         if row["kind"] == "dual_agent_gate_round"
     ]
-    assert rounds[-1]["objection"] == "cursor_review_failed: cursor_review_ok"
+    assert rounds[-1]["objection"] == "cursor_review_failed: Cursor found an unresolved concern."
+
+
+@pytest.mark.asyncio
+async def test_run_dual_agent_workflow_records_cursor_contract_failure_as_recoverable_infra(
+    tmp_path,
+):
+    def fake_cursor_runner(request):
+        return CursorInvocationResult(
+            probe=ProbeResult(
+                "CURSOR",
+                "red",
+                "reviewer_contract_unmet",
+                {
+                    "original_reason": "missing dual_agent_outcome block",
+                    "recoverable": True,
+                    "attempts": 4,
+                },
+            ),
+            outcome=None,
+            transcript="",
+            agent_id="agent-contract",
+            run_id="run-contract",
+            status="finished",
+            model="composer-2.5",
+            duration_ms=30,
+            failure_classification="reviewer_contract_unmet",
+            recoverable=True,
+            attempts=4,
+            retry_reasons=("missing dual_agent_outcome block",) * 4,
+        )
+
+    server, state = _server(tmp_path, cursor_runner=fake_cursor_runner)
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Malformed Cursor output should become typed infrastructure evidence.",
+        max_rounds_per_gate=5,
+        cursor_review=True,
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert result["status"] == "blocked"
+    assert result["current_gate"] == "outcome_review"
+    assert result["final_gate_result"]["escalation"]["reason"] == "reviewer_contract_unmet"
+    assert result["final_gate_result"]["cursor_review"]["failure_classification"] == "reviewer_contract_unmet"
+    assert result["final_gate_result"]["cursor_review"]["recoverable"] is True
+    assert result["final_gate_result"]["cursor_review"]["accepted"] is False
+    assert result["steps"][-1]["attempt_count"] == 1
+
+    cursor_events = [
+        json.loads(row["payload_json"])
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "tri_agent_cursor_review"
+    ]
+    assert len(cursor_events) == 1
+    assert cursor_events[0]["cursor_review"]["failure_classification"] == "reviewer_contract_unmet"
+    assert cursor_events[0]["cursor_review"]["probe"]["reason"] == "reviewer_contract_unmet"
+
+    rounds = [
+        json.loads(row["payload_json"])
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "dual_agent_gate_round"
+    ]
+    outcome_rounds = [event["round"] for event in rounds if event["gate"] == "outcome_review"]
+    assert len(outcome_rounds) == 1
+    assert outcome_rounds[0]["objection"] == "cursor_reviewer_infrastructure: reviewer_contract_unmet"
+
+    gate_results = [
+        json.loads(row["payload_json"])
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "dual_agent_gate_result"
+    ]
+    blocked_gate_results = [
+        payload
+        for payload in gate_results
+        if payload.get("gate") == "outcome_review" and payload.get("status") == "blocked"
+    ]
+    assert len(blocked_gate_results) == 1
+    assert blocked_gate_results[0]["escalation"]["reason"] == "reviewer_contract_unmet"
+
+    transcript = await _maybe_await(server.tools["read_gate_transcript"](
+        run_id="workflow-run",
+        task_id="workflow-1",
+    ))
+    assert len(transcript["cursor_reviews"]) == 1
+    assert transcript["cursor_reviews"][0]["cursor_review"]["failure_classification"] == (
+        "reviewer_contract_unmet"
+    )
 
 
 @pytest.mark.asyncio

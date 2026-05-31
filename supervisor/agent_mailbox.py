@@ -176,10 +176,20 @@ def codex_confidence_report(
         value = 0.8
         rationale = "Codex denied advancement because final claims lacked matching evidence."
     elif cursor_review is not None and not bool(cursor_review.get("accepted")):
-        criteria.append("cursor_reviewer_rejected")
-        evidence.append(str(cursor_review.get("reason") or "cursor_review_failed"))
-        value = 0.8
-        rationale = "Codex denied advancement because Cursor raised an unresolved review objection."
+        classification = _cursor_review_failure_classification(cursor_review)
+        if classification:
+            criteria.append("cursor_reviewer_infrastructure_failure")
+            evidence.append(classification)
+            value = 0.82
+            rationale = (
+                "Codex blocked advancement because Cursor review produced a "
+                "recoverable infrastructure failure, not a valid review verdict."
+            )
+        else:
+            criteria.append("cursor_reviewer_rejected")
+            evidence.append(str(cursor_review.get("reason") or "cursor_review_failed"))
+            value = 0.8
+            rationale = "Codex denied advancement because Cursor raised an unresolved review objection."
     elif decision == "accept" and gate_status == "accepted":
         criteria.extend([
             "all_supervisor_probes_green",
@@ -284,7 +294,8 @@ def codex_review_packet(
                 },
             )
     if cursor_review is not None:
-        evidence = [str((cursor_review.get("probe") or {}).get("reason") or "")]
+        classification = _cursor_review_failure_classification(cursor_review)
+        evidence = [classification or str((cursor_review.get("probe") or {}).get("reason") or "")]
         requirements.append({
             "requirement_id": "cursor_review",
             "status": "pass" if bool(cursor_review.get("accepted")) else "fail",
@@ -293,8 +304,11 @@ def codex_review_packet(
         if not bool(cursor_review.get("accepted")):
             add_finding(
                 severity="IMPORTANT",
-                code="CURSOR",
-                title="cursor review rejected the gate",
+                code="CURSOR_INFRA" if classification else "CURSOR",
+                title=(
+                    f"cursor review infrastructure failure: {classification}"
+                    if classification else "cursor review rejected the gate"
+                ),
                 requirement_id="cursor_review",
                 evidence=evidence,
             )
@@ -364,6 +378,19 @@ def _receipt_ids(receipts: Any) -> list[str]:
         if receipt_id:
             ids.append(receipt_id)
     return ids
+
+
+def _cursor_review_failure_classification(cursor_review: dict[str, Any] | None) -> str:
+    if not isinstance(cursor_review, dict):
+        return ""
+    classification = str(cursor_review.get("failure_classification") or "").strip()
+    if classification:
+        return classification
+    probe = cursor_review.get("probe") if isinstance(cursor_review.get("probe"), dict) else {}
+    reason = str(probe.get("reason") or "").strip()
+    if reason in {"reviewer_contract_unmet", "reviewer_infrastructure_unavailable"}:
+        return reason
+    return ""
 
 
 def _text(value: Any) -> str:

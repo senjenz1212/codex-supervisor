@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "28466ec85c5077508f30ce2020141a519fd3e3a97349ef311998136f85cf6edb",
+  "git": {
+    "diff_bytes": 1858497,
+    "diff_sha256": "86da57e0c41d8678ec33cc9ec28a2754083f9bd15f5fb9915cf26098ee44b27a",
+    "diff_stat": ".../grill-findings.md                              |   51 +-\n .../cursor-review-reliability-20260531/index.md    |    4 +-\n .../interactions.md                                | 3449 ++----------------\n .../mast-coverage.md                               |    8 +-\n .../cursor-review-reliability-20260531/prd.md      |  156 +-\n .../replay/manifest.json                           |  784 +----\n .../replay/mast-coverage.json                      |  268 +-\n .../replay/workspace-snapshot.json                 |   14 +-\n .../cursor-review-reliability-20260531/tdd.md      | 3401 +-----------------\n .../transcript.jsonl                               |   86 +-\n .../transcript.md                                  | 3675 ++------------------\n .../cursor-review-reliability-20260531/triage.md   |   40 +-\n mcp_tools/codex_supervisor_stdio.py                |  117 +-\n supervisor/agent_mailbox.py                        |   41 +-\n supervisor/cursor_agent.py                         |  238 +-\n tests/test_cursor_agent.py                         |  197 ++\n tests/test_dual_agent_workflow_driver.py           |  112 +-\n 17 files changed, 1491 insertions(+), 11150 deletions(-)",
+    "head": "30bda18",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "30bda18",
+    "status_short": "M docs/dual-agent/cursor-review-reliability-20260531/grill-findings.md\n M docs/dual-agent/cursor-review-reliability-20260531/index.md\n M docs/dual-agent/cursor-review-reliability-20260531/interactions.md\n M docs/dual-agent/cursor-review-reliability-20260531/mast-coverage.md\n M docs/dual-agent/cursor-review-reliability-20260531/prd.md\n M docs/dual-agent/cursor-review-reliability-20260531/replay/manifest.json\n M docs/dual-agent/cursor-review-reliability-20260531/replay/mast-coverage.json\n M docs/dual-agent/cursor-review-reliability-20260531/replay/workspace-snapshot.json\n M docs/dual-agent/cursor-review-reliability-20260531/tdd.md\n M docs/dual-agent/cursor-review-reliability-20260531/transcript.jsonl\n M docs/dual-agent/cursor-review-reliability-20260531/transcript.md\n M docs/dual-agent/cursor-review-reliability-20260531/triage.md\n M mcp_tools/codex_supervisor_stdio.py\n M supervisor/agent_mailbox.py\n M supervisor/cursor_agent.py\n M tests/test_cursor_agent.py\n M tests/test_dual_agent_workflow_driver.py"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "b8e42fc2ab915d389c9d96b0307c31fd3fe9751ccc4eb9da561336785a81c227",
+    "implementation_plan": "0d22d9e8281f3e855f2ef6be29330cccde0f61732fb544c95dfc9e4d9dd86ec8",
+    "issues": "a8310d1e3cca14cc2e797d02329484ef3c21634f102a8ecb290008912e346fc8",
+    "prd": "6fdddc0e2f6ef058aabc4bac7a38af763e1890950e483c16d129e4a0e1e05a67",
+    "tdd_plan": "dbe5ede3328ccbd361be31b1ee15518202aa9ef0438463d1f055c019e1d93bf4"
+  },
+  "status": "captured"
+}
