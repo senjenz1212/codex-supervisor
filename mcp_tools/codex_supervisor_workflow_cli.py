@@ -38,6 +38,7 @@ WORKFLOW_KEYS = {
     "required_roles",
     "solo_exception_for_artifact_only_gates",
     "required_evidence_grade",
+    "reviewer_unavailable_policy",
     "planning_artifacts",
     "screenshots",
     "verified_claims",

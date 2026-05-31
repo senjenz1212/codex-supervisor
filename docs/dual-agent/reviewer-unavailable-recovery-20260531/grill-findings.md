@@ -1,0 +1,113 @@
+# Grill Findings
+
+These findings are derived from dual-agent gate objections in the ledger.
+Future duo-agent runs should also create this file through the `prd-to-tdd` skill's `grill-with-docs` gates before implementation.
+
+- event_id 312466 `prd_review`: P6/G3 promise user-facing high-stakes paths escalate, but TDD and ISS-4 only RED-test agentic_lead_policy=required and runtime_native; user-facing category has no test
+- event_id 312466 `prd_review`: Replay sha256 integrity not verified (shasum required approval); cannot confirm live source matches handoff packet hashes
+- event_id 312466 `prd_review`: P3 reuse of existing resume-signal machinery asserted but not confirmed in source
+- event_id 312467 `prd_review`: agents have not both accepted yet; revise and continue
+- event_id 312469 `prd_review`: P6/G3 promise user-facing high-stakes paths escalate, but TDD and ISS-4 only RED-test agentic_lead_policy=required and runtime_native; user-facing category has no test
+- event_id 312469 `prd_review`: Replay sha256 integrity not verified (shasum required approval); cannot confirm live source matches handoff packet hashes
+- event_id 312469 `prd_review`: P3 reuse of existing resume-signal machinery asserted but not confirmed in source
+- event_id 312474 `prd_review`: P6 and user story 5 promise protection for a 'user-facing/high-stakes' evidence path, but ISS-4 and the TDD plan only cover agentic_lead_policy=required and required_evidence_grade=runtime_native; the high-stakes category has no concrete predicate or test
+- event_id 312475 `prd_review`: both agents accepted
+- event_id 312495 `issues_review`: P6/G3 promise escalation for agentic-required, runtime-native, AND user-facing/high-stakes evidence, but ISS-4 acceptance criteria and TDD only cover agentic_lead_policy=required and required_evidence_grade=runtime_native; user-facing/high-stakes path has no explicit AC or test
+- event_id 312495 `issues_review`: P2 forbidden outcome 'advances when Claude/Codex did not accept' has no explicit negative test; relies on pre-existing AND-verdict path
+- event_id 312496 `issues_review`: both agents accepted
+- event_id 312515 `tdd_review`: P5 'under all policies' under-tested: real Cursor revise/deny is not exercised with proceed_degraded set; the most dangerous real-rejection-vs-unavailable conflation is uncovered
+- event_id 312515 `tdd_review`: P6 user-facing/high-stakes evidence escalation has no test; plan covers only agentic-required and runtime-native although PRD P6 and grill G3/TG4 require user-facing too
+- event_id 312515 `tdd_review`: P1 'default is escalate' has no dedicated boundary assertion; only implied via the P3 resume test
+- event_id 312516 `tdd_review`: agents have not both accepted yet; revise and continue
+- event_id 312518 `tdd_review`: P5 'under all policies' under-tested: real Cursor revise/deny is not exercised with proceed_degraded set; the most dangerous real-rejection-vs-unavailable conflation is uncovered
+- event_id 312518 `tdd_review`: P6 user-facing/high-stakes evidence escalation has no test; plan covers only agentic-required and runtime-native although PRD P6 and grill G3/TG4 require user-facing too
+- event_id 312518 `tdd_review`: P1 'default is escalate' has no dedicated boundary assertion; only implied via the P3 resume test
+- event_id 312536 `tdd_review`: P6 promises escalation for agentic-required, runtime-native, AND user-facing/high-stakes paths; TDD plan only enumerates RED cases for agentic-required (#5) and runtime-native (#6). The user_facing path is implemented (stdio:3402-3403) but untested in plan and absent from ISS-4 acceptance criteria.
+- event_id 312536 `tdd_review`: Minor traceability: ISS-4 acceptance criteria do not mention the user_facing escalation criterion that PRD P6 requires.
+- event_id 312537 `tdd_review`: agents have not both accepted yet; revise and continue
+- event_id 312539 `tdd_review`: P6 promises escalation for agentic-required, runtime-native, AND user-facing/high-stakes paths; TDD plan only enumerates RED cases for agentic-required (#5) and runtime-native (#6). The user_facing path is implemented (stdio:3402-3403) but untested in plan and absent from ISS-4 acceptance criteria.
+- event_id 312539 `tdd_review`: Minor traceability: ISS-4 acceptance criteria do not mention the user_facing escalation criterion that PRD P6 requires.
+- event_id 312557 `tdd_review`: P4 block-mode-contract-miss coverage is folded into the real Cursor-rejection test (line 1423) rather than a standalone test as the plan specified; coverage exists but is less direct
+- event_id 312561 `tdd_review`: cursor_reviewer_infrastructure: reviewer_contract_unmet
+- event_id 312564 `tdd_review`: P4 block-mode-contract-miss coverage is folded into the real Cursor-rejection test (line 1423) rather than a standalone test as the plan specified; coverage exists but is less direct
+- event_id 312597 `tdd_review`: Traceability stale: P1 and P4 tests folded into ..._preserves_dynamic_workflow_preview_fields and ..._records_cursor_contract_failure_as_recoverable_infra; named standalone tests do not exist in code
+- event_id 312598 `tdd_review`: agents have not both accepted yet; revise and continue
+- event_id 312600 `tdd_review`: Traceability stale: P1 and P4 tests folded into ..._preserves_dynamic_workflow_preview_fields and ..._records_cursor_contract_failure_as_recoverable_infra; named standalone tests do not exist in code
+- event_id 312614 `tdd_review`: Minor traceability: TDD plan names test_workflow_kwargs_from_payload_preserves_reviewer_unavailable_policy (P1) and test_reviewer_unavailable_block_policy_preserves_current_block (P4) which do not exist verbatim; equivalent coverage exists at test_dual_agent_workflow_driver.py:271 and :1423
+- event_id 312614 `tdd_review`: Cursor reviewer verdict is degraded/unavailable and is recorded as degraded evidence, never as accept
+- event_id 312626 `tdd_review`: cursor_reviewer_infrastructure: reviewer_contract_unmet
+- event_id 312648 `implementation_plan`: Artifact sha256 verification blocked: shasum required approval, so source files could not be cryptographically matched to handoff packet hashes
+- event_id 312648 `implementation_plan`: Plan names tests/test_codex_supervisor_mcp_stdio.py but active modified test file is tests/test_dual_agent_workflow_driver.py - minor file-ownership drift
+- event_id 312648 `implementation_plan`: 2 of 7 traceability tests (P1 CLI preservation, P4 block policy) absent by name; implementation exists but tests pending
+- event_id 312652 `implementation_plan`: cursor_reviewer_infrastructure: reviewer_contract_unmet
+- event_id 312655 `implementation_plan`: Artifact sha256 verification blocked: shasum required approval, so source files could not be cryptographically matched to handoff packet hashes
+- event_id 312655 `implementation_plan`: Plan names tests/test_codex_supervisor_mcp_stdio.py but active modified test file is tests/test_dual_agent_workflow_driver.py - minor file-ownership drift
+- event_id 312655 `implementation_plan`: 2 of 7 traceability tests (P1 CLI preservation, P4 block policy) absent by name; implementation exists but tests pending
+- event_id 312686 `implementation_plan`: P1 test test_workflow_kwargs_from_payload_preserves_reviewer_unavailable_policy is absent
+- event_id 312686 `implementation_plan`: P4 test test_reviewer_unavailable_block_policy_preserves_current_block is absent
+- event_id 312686 `implementation_plan`: Cursor independent review is degraded/unavailable; missing verdict must remain non-accept
+- event_id 312686 `implementation_plan`: Artifact sha256 integrity could not be verified (shasum blocked)
+- event_id 312692 `implementation_plan`: cursor_reviewer_infrastructure: reviewer_contract_unmet
+- event_id 312714 `execution`: test_status is unknown: pytest could not be run (approval denied); accept is by code/diff inspection plus test presence, not by a green suite run
+- event_id 312714 `execution`: supervisor/state.py:452-455 introduces tab/space mixed indentation on new ledger-kind lines (cosmetic, no functional impact)
+- event_id 312715 `execution`: both agents accepted
+- event_id 312734 `outcome_review`: pytest could not be executed (sandbox approval not granted); test green status is unobserved
+- event_id 312734 `outcome_review`: implementation-plan traceability map references two test names (P1,P4) that were folded into differently-named tests
+- event_id 312738 `outcome_review`: workflow_claim_verification_failed
+- event_id 312741 `outcome_review`: pytest could not be executed (sandbox approval not granted); test green status is unobserved
+- event_id 312741 `outcome_review`: implementation-plan traceability map references two test names (P1,P4) that were folded into differently-named tests
+- event_id 312899 `outcome_review`: full-suite pytest was NOT executed: this sandbox permits only read-only Bash (git/grep/find) and blocks code execution at the permission layer; test_status=unknown so the intent's 'full-suite receipts' is unmet for live-green and must be confirmed by CI or operator
+- event_id 312899 `outcome_review`: implementation-plan traceability map names two tests (test_workflow_kwargs_from_payload_preserves_reviewer_unavailable_policy for P1, test_reviewer_unavailable_block_policy_preserves_current_block for P4) that were folded into differently-named existing tests; coverage is present (P1 at line 297, P4 at lines 1423-1431) but the doc map is stale
+- event_id 312899 `outcome_review`: supervisor/state.py:449 added IN-list lines mix a leading tab with spaces; harmless inside the SQL string literal but inconsistent indentation
+- event_id 312900 `outcome_review`: agents have not both accepted yet; revise and continue
+- event_id 312902 `outcome_review`: full-suite pytest was NOT executed: this sandbox permits only read-only Bash (git/grep/find) and blocks code execution at the permission layer; test_status=unknown so the intent's 'full-suite receipts' is unmet for live-green and must be confirmed by CI or operator
+- event_id 312902 `outcome_review`: implementation-plan traceability map names two tests (test_workflow_kwargs_from_payload_preserves_reviewer_unavailable_policy for P1, test_reviewer_unavailable_block_policy_preserves_current_block for P4) that were folded into differently-named existing tests; coverage is present (P1 at line 297, P4 at lines 1423-1431) but the doc map is stale
+- event_id 312902 `outcome_review`: supervisor/state.py:449 added IN-list lines mix a leading tab with spaces; harmless inside the SQL string literal but inconsistent indentation
+- event_id 312931 `outcome_review`: Required full-suite test receipt is missing because pytest execution is denied by the permission layer; this repeats the prior round's outcome-review evidence gap and blocks an evidence-backed accept
+- event_id 312931 `outcome_review`: Core recovery orchestration in mcp_tools/codex_supervisor_stdio.py (499 changed lines) was not read directly, only validated indirectly through tests
+- event_id 312931 `outcome_review`: state.py introduces tab-indented lines in the action-type literal (style nit, syntactically safe)
+- event_id 312932 `outcome_review`: agents have not both accepted yet; revise and continue
+- event_id 312934 `outcome_review`: Required full-suite test receipt is missing because pytest execution is denied by the permission layer; this repeats the prior round's outcome-review evidence gap and blocks an evidence-backed accept
+- event_id 312934 `outcome_review`: Core recovery orchestration in mcp_tools/codex_supervisor_stdio.py (499 changed lines) was not read directly, only validated indirectly through tests
+- event_id 312934 `outcome_review`: state.py introduces tab-indented lines in the action-type literal (style nit, syntactically safe)
+- event_id 312984 `outcome_review`: Full-suite receipt missing: pytest auto-denied for both lead and subagent; cannot confirm green suite, which the gate intent explicitly requires
+- event_id 312984 `outcome_review`: TDD traceability deviation: planned tests test_workflow_kwargs_from_payload_preserves_reviewer_unavailable_policy and test_reviewer_unavailable_block_policy_preserves_current_block do not exist verbatim; behavior folded into other tests
+- event_id 312984 `outcome_review`: Minor: state.py allowlist edit introduced tab/space indentation mixing (cosmetic)
+- event_id 312985 `outcome_review`: agents have not both accepted yet; revise and continue
+- event_id 312987 `outcome_review`: Full-suite receipt missing: pytest auto-denied for both lead and subagent; cannot confirm green suite, which the gate intent explicitly requires
+- event_id 312987 `outcome_review`: TDD traceability deviation: planned tests test_workflow_kwargs_from_payload_preserves_reviewer_unavailable_policy and test_reviewer_unavailable_block_policy_preserves_current_block do not exist verbatim; behavior folded into other tests
+- event_id 312987 `outcome_review`: Minor: state.py allowlist edit introduced tab/space indentation mixing (cosmetic)
+- event_id 313014 `outcome_review`: Mandated full-suite receipt is absent: pytest -q and the two traceability files were denied approval, so test_status cannot be passed
+- event_id 313014 `outcome_review`: Prior round failed with workflow_claim_verification_failed + blocked_without_probe_reason; accepting on unrun tests would repeat that false-green loop
+- event_id 313014 `outcome_review`: state.py injected tab characters into the SQL IN(...) kind list (cosmetic)
+- event_id 313015 `outcome_review`: agents have not both accepted yet; revise and continue
+- event_id 313017 `outcome_review`: Mandated full-suite receipt is absent: pytest -q and the two traceability files were denied approval, so test_status cannot be passed
+- event_id 313017 `outcome_review`: Prior round failed with workflow_claim_verification_failed + blocked_without_probe_reason; accepting on unrun tests would repeat that false-green loop
+- event_id 313017 `outcome_review`: state.py injected tab characters into the SQL IN(...) kind list (cosmetic)
+- event_id 313043 `outcome_review`: Mandatory full-suite test receipts could not be produced (pytest blocked by permissions); accepting on diff-inspection alone would repeat the prior outcome-review evidence gap.
+- event_id 313043 `outcome_review`: Cursor reviewer verdict remains absent/unavailable; per intent it must not be counted as accept (verified: reviewer_verdict_counted_as_accept=False throughout).
+- event_id 313044 `outcome_review`: max_rounds_per_gate exhausted without both agents accepting
+- event_id 313046 `outcome_review`: Mandatory full-suite test receipts could not be produced (pytest blocked by permissions); accepting on diff-inspection alone would repeat the prior outcome-review evidence gap.
+- event_id 313046 `outcome_review`: Cursor reviewer verdict remains absent/unavailable; per intent it must not be counted as accept (verified: reviewer_verdict_counted_as_accept=False throughout).
+- event_id 313130 `outcome_review`: Independent pytest re-run blocked by sandbox approval; decision relies on full-diff review, direct reading of test assertions, and supervisor-attested durable evidence
+- event_id 313130 `outcome_review`: Plan traceability names two tests (P1/P4) that do not exist by those names; behavior is covered by other tests (lines 297 and 1411) - documentation drift only
+- event_id 313130 `outcome_review`: state.py:449 introduces tab characters inside the SQL kind-list string (cosmetic)
+- event_id 313134 `outcome_review`: cursor_reviewer_infrastructure: reviewer_contract_unmet
+- event_id 313137 `outcome_review`: Independent pytest re-run blocked by sandbox approval; decision relies on full-diff review, direct reading of test assertions, and supervisor-attested durable evidence
+- event_id 313137 `outcome_review`: Plan traceability names two tests (P1/P4) that do not exist by those names; behavior is covered by other tests (lines 297 and 1411) - documentation drift only
+- event_id 313137 `outcome_review`: state.py:449 introduces tab characters inside the SQL kind-list string (cosmetic)
+- event_id 313232 `outcome_review`: P6 defect: claim_resume_signal (state.py:839-875) does not match the specific escalation; reviewer-unavailable reuses action_type='dual_agent_gate_deadlock' (stdio.py:2599) with an unchecked escalation_type discriminator, so a stale legacy Continue on the same run+task could authorize a degraded proceed on an agentic-required/runtime_native gate (stdio.py:3406-3420).
+- event_id 313232 `outcome_review`: Missing regression test for cross-channel resume-signal reuse and for proceed_degraded when Claude does not accept.
+- event_id 313232 `outcome_review`: Lead could not independently execute pytest (approval-gated); relies on supervisor-owned evidence.
+- event_id 313233 `outcome_review`: agents have not both accepted yet; revise and continue
+- event_id 313235 `outcome_review`: P6 defect: claim_resume_signal (state.py:839-875) does not match the specific escalation; reviewer-unavailable reuses action_type='dual_agent_gate_deadlock' (stdio.py:2599) with an unchecked escalation_type discriminator, so a stale legacy Continue on the same run+task could authorize a degraded proceed on an agentic-required/runtime_native gate (stdio.py:3406-3420).
+- event_id 313235 `outcome_review`: Missing regression test for cross-channel resume-signal reuse and for proceed_degraded when Claude does not accept.
+- event_id 313235 `outcome_review`: Lead could not independently execute pytest (approval-gated); relies on supervisor-owned evidence.
+- event_id 313500 `outcome_review`: P4 violation: reviewer_unavailable_policy=block with a safety reason (agentic_lead_policy=required, runtime_native, or user_facing) takes the escalation path instead of returning a clean blocked result; the recovery plan records decision=block while the handler raises a human ask, and the block branch ordering prevents any Continue from ever reaching proceed_degraded -> dead-end loop. Untested combination.
+- event_id 313500 `outcome_review`: Minor: resume signal claimed before available_reviewers_accept check (stdio ~3406) can consume a human authorization while still blocking.
+- event_id 313500 `outcome_review`: Minor: _normalise_decision_text keeps only the leading verdict token, dropping trailing contradictory text.
+- event_id 313501 `outcome_review`: agents have not both accepted yet; revise and continue
+- event_id 313503 `outcome_review`: P4 violation: reviewer_unavailable_policy=block with a safety reason (agentic_lead_policy=required, runtime_native, or user_facing) takes the escalation path instead of returning a clean blocked result; the recovery plan records decision=block while the handler raises a human ask, and the block branch ordering prevents any Continue from ever reaching proceed_degraded -> dead-end loop. Untested combination.
+- event_id 313503 `outcome_review`: Minor: resume signal claimed before available_reviewers_accept check (stdio ~3406) can consume a human authorization while still blocking.
+- event_id 313503 `outcome_review`: Minor: _normalise_decision_text keeps only the leading verdict token, dropping trailing contradictory text.
+- event_id 314214 `outcome_review`: cursor_reviewer_infrastructure: reviewer_contract_unmet

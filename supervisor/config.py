@@ -128,6 +128,7 @@ class SupervisorCfg(BaseModel):
     drift_check_interval_s: int = 30
     stall_threshold_s: int = 90
     nudge_cooldown_s: int = 300
+    reviewer_unavailable_policy: Literal["block", "escalate", "proceed_degraded"] = "escalate"
 
 
 class AgenticLeadCfg(BaseModel):

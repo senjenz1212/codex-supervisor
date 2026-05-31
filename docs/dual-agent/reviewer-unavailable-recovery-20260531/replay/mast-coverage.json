@@ -1,0 +1,880 @@
+[
+  {
+    "deterministic_probe": "blocked payload reason `disobey_task_spec` or planning artifact failure",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "failure_taxonomy_for_payload",
+    "mast_category": "Specification Issues",
+    "mast_code": "FM-1.1",
+    "mast_mode": "Disobey task specification",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "blocked payload reason `role_violation_covenant`",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "failure_taxonomy_for_payload -> classify_failure",
+    "mast_category": "Specification Issues",
+    "mast_code": "FM-1.2",
+    "mast_mode": "Disobey role specification",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "same gate and handoff packet observed twice",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "detect_sequence_failures",
+    "mast_category": "Specification Issues",
+    "mast_code": "FM-1.3",
+    "mast_mode": "Step repetition",
+    "sources": [
+      {
+        "details": {
+          "signature": [
+            "prd_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-unavailable-recovery-20260531.json"
+          ]
+        },
+        "event_ids": [
+          312466,
+          312469
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "prd_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-unavailable-recovery-20260531.json"
+          ]
+        },
+        "event_ids": [
+          312466,
+          312474
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "tdd_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-unavailable-recovery-20260531.json"
+          ]
+        },
+        "event_ids": [
+          312515,
+          312518
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "tdd_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-unavailable-recovery-20260531.json"
+          ]
+        },
+        "event_ids": [
+          312515,
+          312536
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "tdd_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-unavailable-recovery-20260531.json"
+          ]
+        },
+        "event_ids": [
+          312515,
+          312539
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "tdd_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-unavailable-recovery-20260531.json"
+          ]
+        },
+        "event_ids": [
+          312515,
+          312557
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "tdd_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-unavailable-recovery-20260531.json"
+          ]
+        },
+        "event_ids": [
+          312515,
+          312564
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "tdd_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-unavailable-recovery-20260531.json"
+          ]
+        },
+        "event_ids": [
+          312515,
+          312597
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "tdd_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-unavailable-recovery-20260531.json"
+          ]
+        },
+        "event_ids": [
+          312515,
+          312600
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "tdd_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-unavailable-recovery-20260531.json"
+          ]
+        },
+        "event_ids": [
+          312515,
+          312614
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "implementation_plan",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-unavailable-recovery-20260531.json"
+          ]
+        },
+        "event_ids": [
+          312648,
+          312655
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "implementation_plan",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-unavailable-recovery-20260531.json"
+          ]
+        },
+        "event_ids": [
+          312648,
+          312686
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-unavailable-recovery-20260531.json"
+          ]
+        },
+        "event_ids": [
+          312734,
+          312741
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-unavailable-recovery-20260531.json"
+          ]
+        },
+        "event_ids": [
+          312734,
+          312899
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-unavailable-recovery-20260531.json"
+          ]
+        },
+        "event_ids": [
+          312734,
+          312902
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-unavailable-recovery-20260531.json"
+          ]
+        },
+        "event_ids": [
+          312734,
+          312931
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-unavailable-recovery-20260531.json"
+          ]
+        },
+        "event_ids": [
+          312734,
+          312934
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-unavailable-recovery-20260531.json"
+          ]
+        },
+        "event_ids": [
+          312734,
+          312984
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-unavailable-recovery-20260531.json"
+          ]
+        },
+        "event_ids": [
+          312734,
+          312987
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-unavailable-recovery-20260531.json"
+          ]
+        },
+        "event_ids": [
+          312734,
+          313014
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-unavailable-recovery-20260531.json"
+          ]
+        },
+        "event_ids": [
+          312734,
+          313017
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-unavailable-recovery-20260531.json"
+          ]
+        },
+        "event_ids": [
+          312734,
+          313043
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-unavailable-recovery-20260531.json"
+          ]
+        },
+        "event_ids": [
+          312734,
+          313046
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-unavailable-recovery-20260531.json"
+          ]
+        },
+        "event_ids": [
+          312734,
+          313130
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-unavailable-recovery-20260531.json"
+          ]
+        },
+        "event_ids": [
+          312734,
+          313137
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-unavailable-recovery-20260531.json"
+          ]
+        },
+        "event_ids": [
+          312734,
+          313232
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-unavailable-recovery-20260531.json"
+          ]
+        },
+        "event_ids": [
+          312734,
+          313235
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-unavailable-recovery-20260531.json"
+          ]
+        },
+        "event_ids": [
+          312734,
+          313500
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-unavailable-recovery-20260531.json"
+          ]
+        },
+        "event_ids": [
+          312734,
+          313503
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-unavailable-recovery-20260531.json"
+          ]
+        },
+        "event_ids": [
+          312734,
+          314205
+        ],
+        "source": "sequence"
+      }
+    ],
+    "status": "observed_in_run",
+    "trigger_surface": "sequence"
+  },
+  {
+    "deterministic_probe": "blocked payload reason `lost_conversation_history`",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "classify_failure",
+    "mast_category": "Specification Issues",
+    "mast_code": "FM-1.4",
+    "mast_mode": "Loss of conversation history",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "blocked payload reason `agents_not_converged_max_rounds`",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "classify_failure",
+    "mast_category": "Specification Issues",
+    "mast_code": "FM-1.5",
+    "mast_mode": "Unaware of termination conditions",
+    "sources": [
+      {
+        "event_id": 312469,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 312469,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 312518,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 312518,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 312539,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 312539,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 312600,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 312600,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 312902,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 312902,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 312934,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 312934,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 312987,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 312987,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 313017,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 313017,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 313046,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 313046,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 313235,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 313235,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 313503,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 313503,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      }
+    ],
+    "status": "observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "blocked payload reason `conversation_reset`",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "classify_failure",
+    "mast_category": "Inter-Agent Misalignment",
+    "mast_code": "FM-2.1",
+    "mast_mode": "Conversation reset",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "blocked payload reason `ambiguous_input_no_clarification`",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "classify_failure",
+    "mast_category": "Inter-Agent Misalignment",
+    "mast_code": "FM-2.2",
+    "mast_mode": "Fail to ask for clarification",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "blocked payload reason `scope_violation_off_scope`",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "classify_failure",
+    "mast_category": "Inter-Agent Misalignment",
+    "mast_code": "FM-2.3",
+    "mast_mode": "Task derailment",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "Cursor or reviewer disagreement probe fails",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "failure_taxonomy_for_payload",
+    "mast_category": "Inter-Agent Misalignment",
+    "mast_code": "FM-2.4",
+    "mast_mode": "Information withholding",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "Claude response does not address a prior Codex objection",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "detect_sequence_failures",
+    "mast_category": "Inter-Agent Misalignment",
+    "mast_code": "FM-2.5",
+    "mast_mode": "Ignored other agent input",
+    "sources": [
+      {
+        "details": {
+          "objection": "agents have not both accepted yet; revise and continue"
+        },
+        "event_ids": [
+          312467,
+          312473
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "agents have not both accepted yet; revise and continue"
+        },
+        "event_ids": [
+          312516,
+          312535
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "agents have not both accepted yet; revise and continue"
+        },
+        "event_ids": [
+          312537,
+          312556
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "cursor_reviewer_infrastructure: reviewer_contract_unmet"
+        },
+        "event_ids": [
+          312561,
+          312596
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "agents have not both accepted yet; revise and continue"
+        },
+        "event_ids": [
+          312598,
+          312613
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "cursor_reviewer_infrastructure: reviewer_contract_unmet"
+        },
+        "event_ids": [
+          312652,
+          312685
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "workflow_claim_verification_failed"
+        },
+        "event_ids": [
+          312738,
+          312898
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "agents have not both accepted yet; revise and continue"
+        },
+        "event_ids": [
+          312900,
+          312930
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "agents have not both accepted yet; revise and continue"
+        },
+        "event_ids": [
+          312932,
+          312983
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "agents have not both accepted yet; revise and continue"
+        },
+        "event_ids": [
+          312985,
+          313013
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "agents have not both accepted yet; revise and continue"
+        },
+        "event_ids": [
+          313015,
+          313042
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "max_rounds_per_gate exhausted without both agents accepting"
+        },
+        "event_ids": [
+          313044,
+          313129
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "cursor_reviewer_infrastructure: reviewer_contract_unmet"
+        },
+        "event_ids": [
+          313134,
+          313231
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "agents have not both accepted yet; revise and continue"
+        },
+        "event_ids": [
+          313233,
+          313499
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "agents have not both accepted yet; revise and continue"
+        },
+        "event_ids": [
+          313501,
+          314204
+        ],
+        "source": "sequence"
+      }
+    ],
+    "status": "observed_in_run",
+    "trigger_surface": "sequence"
+  },
+  {
+    "deterministic_probe": "outcome fidelity or message protocol failure",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "failure_taxonomy_for_payload",
+    "mast_category": "Inter-Agent Misalignment",
+    "mast_code": "FM-2.6",
+    "mast_mode": "Reasoning-action mismatch",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "accepted gate is missing a required probe",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "failure_taxonomy_for_payload + detect_sequence_failures",
+    "mast_category": "Task Verification",
+    "mast_code": "FM-3.1",
+    "mast_mode": "Premature termination",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload+sequence"
+  },
+  {
+    "deterministic_probe": "claim verification or evidence receipt probe fails",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "failure_taxonomy_for_payload",
+    "mast_category": "Task Verification",
+    "mast_code": "FM-3.2",
+    "mast_mode": "No or incomplete verification",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "Cursor rejects after the gate was accepted",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "detect_sequence_failures",
+    "mast_category": "Task Verification",
+    "mast_code": "FM-3.3",
+    "mast_mode": "Incorrect verification",
+    "sources": [
+      {
+        "details": {
+          "accepted_gate_event_id": 312557
+        },
+        "event_ids": [
+          312557,
+          312560
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "accepted_gate_event_id": 312614
+        },
+        "event_ids": [
+          312614,
+          312625
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "accepted_gate_event_id": 312648
+        },
+        "event_ids": [
+          312648,
+          312651
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "accepted_gate_event_id": 312686
+        },
+        "event_ids": [
+          312686,
+          312691
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "accepted_gate_event_id": 312734
+        },
+        "event_ids": [
+          312734,
+          312737
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "accepted_gate_event_id": 313130
+        },
+        "event_ids": [
+          313130,
+          313133
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "accepted_gate_event_id": 314205
+        },
+        "event_ids": [
+          314205,
+          314213
+        ],
+        "source": "sequence"
+      }
+    ],
+    "status": "observed_in_run",
+    "trigger_surface": "sequence"
+  }
+]

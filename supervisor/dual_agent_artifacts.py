@@ -645,6 +645,13 @@ def _interaction_event_markdown(index: int, event: dict[str, Any]) -> str:
             include_kind=False,
         )
 
+    if event["kind"] == "dual_agent_reviewer_unavailable_recovery":
+        return _reviewer_unavailable_recovery_event_markdown(
+            heading=f"## {index}. {title}",
+            event=event,
+            include_kind=False,
+        )
+
     outcome = payload.get("outcome") if isinstance(payload.get("outcome"), dict) else {}
     if not outcome:
         return "\n".join([
@@ -798,6 +805,13 @@ def _event_markdown(event: dict[str, Any]) -> str:
 
     if event["kind"] == "tri_agent_cursor_review":
         return _cursor_review_event_markdown(
+            heading=f"## event_id: {event['event_id']}",
+            event=event,
+            include_kind=True,
+        )
+
+    if event["kind"] == "dual_agent_reviewer_unavailable_recovery":
+        return _reviewer_unavailable_recovery_event_markdown(
             heading=f"## event_id: {event['event_id']}",
             event=event,
             include_kind=True,
@@ -1022,6 +1036,73 @@ def _cursor_review_event_markdown(
             "### Transcript Tail",
             "",
             _text_or_none(cursor_review.get("transcript_tail")),
+            "",
+        ])
+    recovery = cursor_review.get("reviewer_unavailable_recovery")
+    if isinstance(recovery, dict):
+        lines.extend([
+            "### Reviewer Unavailable Recovery",
+            "",
+            f"- decision: `{_clean_text(recovery.get('decision'))}`",
+            f"- policy: `{_clean_text(recovery.get('policy'))}`",
+            f"- evidence_grade: `{_clean_text(recovery.get('evidence_grade'))}`",
+            f"- reviewer_verdict_counted_as_accept: `{recovery.get('reviewer_verdict_counted_as_accept')}`",
+            f"- forced_by_safety: `{recovery.get('forced_by_safety')}`",
+            "",
+        ])
+    lines.extend(_trace_envelope_section(payload))
+    return "\n".join(lines)
+
+
+def _reviewer_unavailable_recovery_event_markdown(
+    *,
+    heading: str,
+    event: dict[str, Any],
+    include_kind: bool,
+) -> str:
+    payload = event["payload"]
+    recovery = payload.get("recovery") if isinstance(payload.get("recovery"), dict) else {}
+    authorization = payload.get("authorization") if isinstance(payload.get("authorization"), dict) else {}
+    lines = [
+        heading,
+        "",
+        f"- event_id: `{event['event_id']}`",
+        f"- ts: `{event['ts']}`",
+    ]
+    if include_kind:
+        lines.extend([
+            f"- kind: `{event['kind']}`",
+            f"- gate: `{event['gate']}`",
+        ])
+    lines.extend([
+        "- interaction_type: `reviewer_unavailable_recovery`",
+        f"- gate: `{event['gate']}`",
+        f"- status: `{_clean_text(payload.get('status'))}`",
+        f"- policy: `{_clean_text(payload.get('policy'))}`",
+        f"- classification: `{_clean_text(payload.get('classification'))}`",
+        f"- evidence_grade: `{_clean_text(payload.get('evidence_grade'))}`",
+        f"- reviewer_verdict_counted_as_accept: `{payload.get('reviewer_verdict_counted_as_accept')}`",
+        f"- forced_by_safety: `{payload.get('forced_by_safety')}`",
+        "",
+        "### Available Reviewers",
+        "",
+        _inline_markdown_value(payload.get("available_reviewers") or {}),
+        "",
+        "### Safety Reasons",
+        "",
+        _list_markdown(payload.get("safety_reasons")),
+        "",
+        "### Recovery Decision",
+        "",
+        f"- decision: `{_clean_text(recovery.get('decision') or payload.get('decision'))}`",
+        f"- reason: `{_clean_text(recovery.get('reason'))}`",
+        "",
+    ])
+    if authorization:
+        lines.extend([
+            "### Authorization",
+            "",
+            _inline_markdown_value(authorization),
             "",
         ])
     lines.extend(_trace_envelope_section(payload))

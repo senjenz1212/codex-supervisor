@@ -449,9 +449,10 @@ class State:
                    'dual_agent_planning_validation',
                    'dual_agent_skill_receipt_validation',
                    'dual_agent_dynamic_workflow_receipt_validation',
-                   'dual_agent_dynamic_workflow_manifest',
-                   'dual_agent_dynamic_workflow_synthesis',
-                   'dual_agent_workflow_job',
+		                   'dual_agent_dynamic_workflow_manifest',
+		                   'dual_agent_dynamic_workflow_synthesis',
+		                   'dual_agent_reviewer_unavailable_recovery',
+		                   'dual_agent_workflow_job',
                    'dual_agent_workflow_route',
                    'dual_agent_interaction_message',
                    'tri_agent_cursor_review'

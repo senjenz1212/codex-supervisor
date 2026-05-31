@@ -295,13 +295,26 @@ def codex_review_packet(
             )
     if cursor_review is not None:
         classification = _cursor_review_failure_classification(cursor_review)
+        recovery = (
+            cursor_review.get("reviewer_unavailable_recovery")
+            if isinstance(cursor_review.get("reviewer_unavailable_recovery"), dict)
+            else {}
+        )
+        degraded_reviewer_unavailable = (
+            recovery.get("decision") == "proceed_degraded"
+            and recovery.get("reviewer_verdict_counted_as_accept") is False
+        )
         evidence = [classification or str((cursor_review.get("probe") or {}).get("reason") or "")]
         requirements.append({
             "requirement_id": "cursor_review",
-            "status": "pass" if bool(cursor_review.get("accepted")) else "fail",
+            "status": "pass"
+            if bool(cursor_review.get("accepted"))
+            else "degraded"
+            if degraded_reviewer_unavailable
+            else "fail",
             "evidence": evidence,
         })
-        if not bool(cursor_review.get("accepted")):
+        if not bool(cursor_review.get("accepted")) and not degraded_reviewer_unavailable:
             add_finding(
                 severity="IMPORTANT",
                 code="CURSOR_INFRA" if classification else "CURSOR",
