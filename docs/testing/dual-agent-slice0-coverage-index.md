@@ -41,6 +41,7 @@ Source PRD: `docs/prd/dual-agent-slice0-reality-check-prd.md`
 | P9 ChatGPT mobile control smoke | Manual/live smoke only; intentionally not in deterministic suite | Deferred |
 | P10 parallel isolation | `test_p10_parallel_isolation_requires_task_prefix_and_unique_worktree`, `test_p10_fails_on_shared_worktree_or_ambiguous_telegram` | Covered |
 | P11 claim verification | `test_p11_claim_verification_flags_unverified_agent_claims` | Covered |
+| P13 dynamic workflow receipt gate | `test_verify_dynamic_workflow_receipts_rejects_missing_preview_gates`, `test_verify_dynamic_workflow_receipts_accepts_complete_preview_manifest`, `test_run_dual_agent_workflow_blocks_dynamic_preview_without_p13_receipts`, `test_read_gate_transcript_includes_dynamic_workflow_receipt_validation`, and artifact-export coverage prove dynamic workflow preview blocks without machine-readable receipts and exposes validation in the ledger, transcript, and markdown artifacts. | Covered |
 | Desktop GUI live reflection retired | `test_hard_stop_summary_blocks_until_all_required_probes_are_green` asserts `history_only` | Covered |
 
 ## Public Boundary
@@ -79,6 +80,10 @@ complexity can select a reduced gate sequence for trivial/small work while the
 default large route preserves the full lifecycle. Codex review packets include
 severity-ranked findings and a `round_policy` so CRITICAL/IMPORTANT findings
 force another round instead of being flattened into a binary accept/block.
+Dynamic workflow preview additionally requires P13 receipts at `workflow_start`;
+missing receipts block before Claude `/lead` invocation, and passing receipts
+are included in transcripts and exported artifacts through
+`dual_agent_dynamic_workflow_receipt_validation`.
 Live
 Claude/Codex/Telegram/ChatGPT/Desktop probes must be adapted into the same
 fixture shapes before they can unblock CS24. Secret handling in Slice 0 is a

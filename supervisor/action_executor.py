@@ -381,7 +381,14 @@ async def resolve_approval(
         session_id=payload.get("session_id", ""),
         payload=payload,
     )
-    result = await adapter.execute_action(target_action)
+    try:
+        result = await adapter.execute_action(target_action)
+    except Exception as e:
+        result = {
+            "delivered": False,
+            "reason": "adapter_exception",
+            "error": str(e),
+        }
     delivered = bool(result.get("delivered"))
     status = "delivered" if delivered else "failed"
     state.complete_action(row["id"], status, {

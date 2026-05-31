@@ -19,6 +19,7 @@ from typing import Any, Callable, Awaitable
 from watchfiles import awatch, Change
 
 from .state import State
+from .runtime_health import record_subsystem_health
 from .target.types import ScopeContract
 
 log = logging.getLogger(__name__)
@@ -55,7 +56,7 @@ class RolloutWatcher:
                     if not ROLLOUT_RE.search(p.name):
                         continue
                     if change in (Change.added, Change.modified):
-                        await self._drain_file(p)
+                        await self._drain_file_guarded(p)
                     elif change == Change.deleted:
                         self.offsets.pop(p, None)
         finally:
@@ -65,7 +66,22 @@ class RolloutWatcher:
     async def _periodic_sweep(self) -> None:
         while True:
             await asyncio.sleep(max(1, self.sweep_interval_s))
+            await self.guarded_sweep_once()
+
+    async def guarded_sweep_once(self) -> None:
+        try:
             await self.sweep_once()
+        except Exception as e:
+            log.exception("RolloutWatcher sweep failed: %s", e)
+            self._record_health(
+                subsystem="rollout_watcher.sweep",
+                status="degraded",
+                reason="sweep_exception",
+                details={
+                    "exception_type": type(e).__name__,
+                    "error": str(e),
+                },
+            )
 
     async def sweep_once(self) -> None:
         """Poll known/recent rollout files for growth missed by filesystem watches."""
@@ -80,7 +96,7 @@ class RolloutWatcher:
                 self.offsets[p] = stat.st_size
                 self.state.set_tail_offset(str(p), stat.st_size)
                 continue
-            await self._drain_file(p)
+            await self._drain_file_guarded(p)
 
     async def _initial_backfill(self) -> None:
         """Drain recent/known files, but skip old unseen historical rollouts.
@@ -101,7 +117,23 @@ class RolloutWatcher:
                 self.offsets[p] = stat.st_size
                 self.state.set_tail_offset(str(p), stat.st_size)
                 continue
-            await self._drain_file(p)
+            await self._drain_file_guarded(p)
+
+    async def _drain_file_guarded(self, path: Path) -> None:
+        try:
+            await self._drain_file(path)
+        except Exception as e:
+            log.exception("RolloutWatcher drain failed for %s: %s", path, e)
+            self._record_health(
+                subsystem="rollout_watcher.drain",
+                status="degraded",
+                reason="drain_exception",
+                details={
+                    "path": str(path),
+                    "exception_type": type(e).__name__,
+                    "error": str(e),
+                },
+            )
 
     async def _drain_file(self, path: Path) -> None:
         try:
@@ -130,6 +162,16 @@ class RolloutWatcher:
                     lines.append(raw)
         except OSError as e:
             log.warning("read failed for %s: %s", path, e)
+            self._record_health(
+                subsystem="rollout_watcher.drain",
+                status="degraded",
+                reason="read_exception",
+                details={
+                    "path": str(path),
+                    "exception_type": type(e).__name__,
+                    "error": str(e),
+                },
+            )
             return
 
         session_id = self._session_id_from_path(path)
@@ -149,17 +191,51 @@ class RolloutWatcher:
                 continue
             try:
                 event = json.loads(line)
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
                 self.offsets[path] = parsed_offset
-                self.state.set_tail_offset(str(path), parsed_offset)
+                self._record_health(
+                    run_id=run_id,
+                    subsystem="rollout_watcher.parse",
+                    status="degraded",
+                    reason="json_decode_exception",
+                    details={
+                        "path": str(path),
+                        "byte_offset": parsed_offset,
+                        "exception_type": type(e).__name__,
+                        "error": str(e),
+                    },
+                    tail_path=str(path),
+                    tail_offset=parsed_offset,
+                )
                 continue
             kind = self._extract_kind(event)
-            event_id = self.state.write_event(run_id=run_id, source="rollout",
-                                              kind=kind, payload=event)
+            event_id = self.state.write_event_and_tail_offset(
+                run_id=run_id,
+                source="rollout",
+                kind=kind,
+                payload=event,
+                path=str(path),
+                byte_offset=parsed_offset,
+            )
             self.offsets[path] = parsed_offset
-            self.state.set_tail_offset(str(path), parsed_offset)
             if self.on_event:
-                await self.on_event(run_id, {"id": event_id, "kind": kind, **event})
+                try:
+                    await self.on_event(run_id, {"id": event_id, "kind": kind, **event})
+                except Exception as e:
+                    log.exception("RolloutWatcher on_event failed for %s: %s", path, e)
+                    self._record_health(
+                        run_id=run_id,
+                        subsystem="rollout_watcher.on_event",
+                        status="degraded",
+                        reason="callback_exception",
+                        details={
+                            "path": str(path),
+                            "event_id": event_id,
+                            "event_kind": kind,
+                            "exception_type": type(e).__name__,
+                            "error": str(e),
+                        },
+                    )
             # Terminal events end the run and trigger post-run evaluation.
             if kind in ("turn.failed", "thread.completed", "session.ended"):
                 status = "failed" if kind == "turn.failed" else "completed"
@@ -202,6 +278,28 @@ class RolloutWatcher:
             target_kind="codex", config_snapshot=config_snapshot,
         )
         return run_id
+
+    def _record_health(
+        self,
+        *,
+        subsystem: str,
+        status: str,
+        reason: str,
+        details: dict[str, Any] | None = None,
+        run_id: str | None = None,
+        tail_path: str | None = None,
+        tail_offset: int | None = None,
+    ) -> None:
+        record_subsystem_health(
+            self.state,
+            subsystem=subsystem,
+            status=status,
+            reason=reason,
+            details=details,
+            run_id=run_id or "rollout_watcher",
+            tail_path=tail_path,
+            tail_offset=tail_offset,
+        )
 
     @staticmethod
     def _extract_kind(event: dict[str, Any]) -> str:

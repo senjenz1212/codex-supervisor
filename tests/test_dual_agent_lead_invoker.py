@@ -259,6 +259,28 @@ def test_invoke_claude_lead_reports_subprocess_failure(tmp_path):
     assert result.outcome is None
 
 
+def test_invoke_claude_lead_reports_spawn_failure_as_probe(tmp_path):
+    def fake_runner(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise FileNotFoundError("claude")
+
+    request = LeadInvocationRequest(
+        task_id="slice0-lead",
+        gate="intent",
+        instruction="Review intent.",
+        cwd=tmp_path,
+    )
+
+    result = invoke_claude_lead(request, runner=fake_runner)
+
+    assert not result.probe.ok
+    assert result.probe.reason == "lead_invocation_failed"
+    assert result.probe.details["error_type"] == "FileNotFoundError"
+    assert result.probe.details["error"] == "claude"
+    assert result.stdout == ""
+    assert result.stderr == ""
+    assert result.outcome is None
+
+
 def test_invoke_claude_lead_reports_timeout_without_auto_retry(tmp_path):
     def fake_runner(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         raise subprocess.TimeoutExpired(argv, timeout=3, output="partial stdout", stderr=b"partial stderr")

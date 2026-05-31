@@ -52,6 +52,7 @@ from supervisor.dual_agent_workflow import (
     workflow_milestone_text,
     workflow_resume_prompt,
 )
+from supervisor.dynamic_workflow_receipts import verify_dynamic_workflow_receipts
 from supervisor.dual_agent_runner import (
     DualAgentGateResult,
     DualAgentGateSpec,
@@ -127,6 +128,7 @@ class CodexSupervisorMcpAPI:
         execution_layer_mode: str = "lead_direct",
         dynamic_workflow_task_class: str | None = None,
         planning_artifacts: list[dict[str, Any]] | None = None,
+        tool_receipts: list[dict[str, Any]] | None = None,
         artifact_policy: str = "strict",
         user_facing: bool = False,
         screenshots: list[dict[str, Any]] | None = None,
@@ -134,6 +136,7 @@ class CodexSupervisorMcpAPI:
         required_prerequisite_gates: tuple[str, ...] | list[str] | None = None,
         required_planning_kinds: tuple[str, ...] | list[str] | None = None,
     ) -> dict[str, Any]:
+        execution_layer_mode = _canonical_execution_layer_mode(execution_layer_mode)
         artifact_preflight = _artifact_preflight(
             state=self.state,
             run_id=run_id,
@@ -165,6 +168,20 @@ class CodexSupervisorMcpAPI:
                 screenshots=screenshots,
             )
             return redact(payload)
+
+        dynamic_receipt_block = self._dynamic_workflow_receipt_block(
+            run_id=run_id,
+            task_id=task_id,
+            gate=str(gate),
+            execution_layer_mode=execution_layer_mode,
+            dynamic_workflow_task_class=dynamic_workflow_task_class,
+            tool_receipts=tool_receipts,
+            cwd=cwd,
+            screenshots=screenshots,
+            artifact_rigor=artifact_preflight,
+        )
+        if dynamic_receipt_block is not None:
+            return dynamic_receipt_block
 
         spec = self._gate_spec(
             task_id=task_id,
@@ -253,6 +270,7 @@ class CodexSupervisorMcpAPI:
         execution_layer_mode: str = "lead_direct",
         dynamic_workflow_task_class: str | None = None,
         planning_artifacts: list[dict[str, Any]] | None = None,
+        tool_receipts: list[dict[str, Any]] | None = None,
         artifact_policy: str = "strict",
         user_facing: bool = False,
         screenshots: list[dict[str, Any]] | None = None,
@@ -260,6 +278,7 @@ class CodexSupervisorMcpAPI:
         required_prerequisite_gates: list[str] | None = None,
         required_planning_kinds: list[str] | None = None,
     ) -> dict[str, Any]:
+        execution_layer_mode = _canonical_execution_layer_mode(execution_layer_mode)
         artifact_preflight = _artifact_preflight(
             state=self.state,
             run_id=run_id,
@@ -289,6 +308,20 @@ class CodexSupervisorMcpAPI:
                 screenshots=screenshots,
             )
             return redact(payload)
+
+        dynamic_receipt_block = self._dynamic_workflow_receipt_block(
+            run_id=run_id,
+            task_id=task_id,
+            gate=str(gate),
+            execution_layer_mode=execution_layer_mode,
+            dynamic_workflow_task_class=dynamic_workflow_task_class,
+            tool_receipts=tool_receipts,
+            cwd=cwd,
+            screenshots=screenshots,
+            artifact_rigor=artifact_preflight,
+        )
+        if dynamic_receipt_block is not None:
+            return dynamic_receipt_block
 
         spec = self._gate_spec(
             task_id=task_id,
@@ -351,6 +384,7 @@ class CodexSupervisorMcpAPI:
         cursor_model: str | None = None,
         task_complexity: str | None = None,
     ) -> dict[str, Any]:
+        execution_layer_mode = _canonical_execution_layer_mode(execution_layer_mode)
         max_rounds = max(1, int(max_rounds_per_gate))
         screenshot_payloads = screenshots or []
         receipt_payloads = _normalise_receipt_payloads(tool_receipts or [])
@@ -393,6 +427,7 @@ class CodexSupervisorMcpAPI:
             "cursor_review_gates": list(selected_cursor_gates),
             "execution_layer_mode": execution_layer_mode,
             "dynamic_workflow_task_class": dynamic_workflow_task_class,
+            "requires_dynamic_workflow_receipts": _is_dynamic_workflow_preview(execution_layer_mode),
         }
         skill_probe = (
             verify_prd_tdd_skill_receipts(
@@ -402,6 +437,33 @@ class CodexSupervisorMcpAPI:
             if require_skill_receipts and required_skill_stages
             else None
         )
+        with timed_tool_call(
+            "verify_dynamic_workflow_receipts",
+            args={
+                "task_id": task_id,
+                "execution_layer_mode": execution_layer_mode,
+                "dynamic_workflow_task_class": dynamic_workflow_task_class,
+                "receipt_count": len(receipt_payloads),
+            },
+            receipt_ids=_receipt_ids(receipt_payloads),
+        ) as dynamic_receipt_tool_call:
+            dynamic_workflow_probe = verify_dynamic_workflow_receipts(
+                execution_layer_mode=execution_layer_mode,
+                dynamic_workflow_task_class=dynamic_workflow_task_class,
+                tool_receipts=receipt_payloads,
+            )
+        dynamic_receipt_tool_call.update({
+            "status": dynamic_workflow_probe.status,
+            "probe_id": dynamic_workflow_probe.probe_id,
+            "reason": dynamic_workflow_probe.reason,
+            "result_summary": {
+                "probe_id": dynamic_workflow_probe.probe_id,
+                "status": dynamic_workflow_probe.status,
+                "reason": dynamic_workflow_probe.reason,
+                "missing_gates": dynamic_workflow_probe.details.get("missing_gates", []),
+                "verified_gates": dynamic_workflow_probe.details.get("verified_gates", []),
+            },
+        })
         self.state.upsert_dual_agent_workflow(
             run_id=run_id,
             task_id=task_id,
@@ -505,6 +567,79 @@ class CodexSupervisorMcpAPI:
                     workflow_route=workflow_route,
                 )
 
+        if _is_dynamic_workflow_preview(execution_layer_mode):
+            self.state.write_event(
+                run_id=run_id,
+                source="dual_agent",
+                kind="dual_agent_dynamic_workflow_receipt_validation",
+                payload={
+                    "task_id": task_id,
+                    "gate": "workflow_start",
+                    "status": "accepted" if dynamic_workflow_probe.ok else "blocked",
+                    "probe": asdict(dynamic_workflow_probe),
+                    "tool_receipts": receipt_payloads,
+                    "tool_calls": [ensure_tool_call_timing(dynamic_receipt_tool_call)],
+                },
+            )
+            if not dynamic_workflow_probe.ok:
+                final_payload = {
+                    "task_id": task_id,
+                    "gate": "workflow_start",
+                    "status": "blocked",
+                    "attempts": 0,
+                    "handoff_packet_path": None,
+                    "probes": {"P13": asdict(dynamic_workflow_probe)},
+                    "outcome": None,
+                    "escalation": {
+                        "type": "dynamic_workflow_receipt_validation",
+                        "reason": dynamic_workflow_probe.reason,
+                        "details": dynamic_workflow_probe.details,
+                    },
+                    "artifact_rigor": {
+                        "status": "blocked",
+                        "reason": "missing_dynamic_workflow_receipts",
+                    },
+                }
+                self.state.write_event(
+                    run_id=run_id,
+                    source="dual_agent",
+                    kind="dual_agent_gate_result",
+                    payload=final_payload,
+                )
+                self.state.record_dual_agent_workflow_step(
+                    run_id=run_id,
+                    task_id=task_id,
+                    gate="workflow_start",
+                    status="blocked",
+                    attempt_count=0,
+                    latest_event_id=self.state.latest_event_id(run_id),
+                )
+                self.state.update_dual_agent_workflow(
+                    run_id=run_id,
+                    task_id=task_id,
+                    status="blocked",
+                    current_gate="workflow_start",
+                )
+                await self._emit_workflow_milestone(
+                    notifier=notifier,
+                    run_id=run_id,
+                    task_id=task_id,
+                    milestone="needs_user_input",
+                    gate="workflow_start",
+                )
+                return self._workflow_result(
+                    run_id=run_id,
+                    task_id=task_id,
+                    status="blocked",
+                    current_gate="workflow_start",
+                    steps=[_workflow_step_dict("workflow_start", "blocked", 0)],
+                    final_gate_result=final_payload,
+                    cwd=cwd,
+                    screenshots=screenshot_payloads,
+                    visual_evidence_policy=visual_policy,
+                    workflow_route=workflow_route,
+                )
+
         steps: list[dict[str, Any]] = []
         final_payload: dict[str, Any] | None = None
         for gate in route_gates:
@@ -547,6 +682,7 @@ class CodexSupervisorMcpAPI:
                     execution_layer_mode=execution_layer_mode,
                     dynamic_workflow_task_class=dynamic_workflow_task_class,
                     planning_artifacts=gate_artifacts,
+                    tool_receipts=receipt_payloads,
                     artifact_policy="strict",
                     user_facing=effective_user_facing and gate == "outcome_review",
                     screenshots=screenshot_payloads,
@@ -1172,6 +1308,7 @@ class CodexSupervisorMcpAPI:
                    'dual_agent_gate_result',
                    'dual_agent_planning_validation',
                    'dual_agent_skill_receipt_validation',
+                   'dual_agent_dynamic_workflow_receipt_validation',
                    'dual_agent_workflow_route',
                    'dual_agent_interaction_message',
                    'tri_agent_cursor_review'
@@ -1182,6 +1319,7 @@ class CodexSupervisorMcpAPI:
         rounds: list[dict[str, Any]] = []
         planning_validations: list[dict[str, Any]] = []
         skill_receipt_validations: list[dict[str, Any]] = []
+        dynamic_workflow_receipt_validations: list[dict[str, Any]] = []
         workflow_routes: list[dict[str, Any]] = []
         interactions: list[dict[str, Any]] = []
         cursor_reviews: list[dict[str, Any]] = []
@@ -1211,6 +1349,12 @@ class CodexSupervisorMcpAPI:
                     "occurred_at": row["ts"],
                     **payload,
                 }))
+            elif row["kind"] == "dual_agent_dynamic_workflow_receipt_validation":
+                dynamic_workflow_receipt_validations.append(redact({
+                    "event_id": row["event_id"],
+                    "occurred_at": row["ts"],
+                    **payload,
+                }))
             elif row["kind"] == "dual_agent_workflow_route":
                 workflow_routes.append(redact({
                     "event_id": row["event_id"],
@@ -1236,7 +1380,8 @@ class CodexSupervisorMcpAPI:
 
         if (
             not rounds and not planning_validations and not skill_receipt_validations
-            and not workflow_routes and latest_result is None
+            and not dynamic_workflow_receipt_validations and not workflow_routes
+            and latest_result is None
         ):
             return {
                 "status": "not_found",
@@ -1245,6 +1390,7 @@ class CodexSupervisorMcpAPI:
                 "rounds": [],
                 "planning_validations": [],
                 "skill_receipt_validations": [],
+                "dynamic_workflow_receipt_validations": [],
                 "workflow_routes": [],
                 "interactions": [],
                 "cursor_reviews": [],
@@ -1258,6 +1404,7 @@ class CodexSupervisorMcpAPI:
             "rounds": rounds,
             "planning_validations": planning_validations,
             "skill_receipt_validations": skill_receipt_validations,
+            "dynamic_workflow_receipt_validations": dynamic_workflow_receipt_validations,
             "workflow_routes": workflow_routes,
             "interactions": interactions,
             "cursor_reviews": cursor_reviews,
@@ -1422,6 +1569,99 @@ class CodexSupervisorMcpAPI:
         )
         return {**payload, "event_id": event_id}
 
+    def _dynamic_workflow_receipt_block(
+        self,
+        *,
+        run_id: str,
+        task_id: str,
+        gate: str,
+        execution_layer_mode: str,
+        dynamic_workflow_task_class: str | None,
+        tool_receipts: list[dict[str, Any]] | None,
+        cwd: str,
+        screenshots: list[dict[str, Any]] | None,
+        artifact_rigor: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        if not _is_dynamic_workflow_preview(execution_layer_mode):
+            return None
+
+        receipt_payloads = _normalise_receipt_payloads(tool_receipts or [])
+        with timed_tool_call(
+            "verify_dynamic_workflow_receipts",
+            args={
+                "task_id": task_id,
+                "gate": gate,
+                "execution_layer_mode": execution_layer_mode,
+                "dynamic_workflow_task_class": dynamic_workflow_task_class,
+                "receipt_count": len(receipt_payloads),
+            },
+            receipt_ids=_receipt_ids(receipt_payloads),
+        ) as dynamic_receipt_tool_call:
+            probe = verify_dynamic_workflow_receipts(
+                execution_layer_mode=execution_layer_mode,
+                dynamic_workflow_task_class=dynamic_workflow_task_class,
+                tool_receipts=receipt_payloads,
+            )
+        dynamic_receipt_tool_call.update({
+            "status": probe.status,
+            "probe_id": probe.probe_id,
+            "reason": probe.reason,
+            "result_summary": {
+                "probe_id": probe.probe_id,
+                "status": probe.status,
+                "reason": probe.reason,
+                "missing_gates": probe.details.get("missing_gates", []),
+                "verified_gates": probe.details.get("verified_gates", []),
+            },
+        })
+        self.state.write_event(
+            run_id=run_id,
+            source="dual_agent",
+            kind="dual_agent_dynamic_workflow_receipt_validation",
+            payload={
+                "task_id": task_id,
+                "gate": gate,
+                "status": "accepted" if probe.ok else "blocked",
+                "probe": asdict(probe),
+                "tool_receipts": receipt_payloads,
+                "tool_calls": [ensure_tool_call_timing(dynamic_receipt_tool_call)],
+            },
+        )
+        if probe.ok:
+            return None
+
+        payload = {
+            "task_id": task_id,
+            "gate": gate,
+            "status": "blocked",
+            "claude_gate_status": "not_invoked",
+            "supervisor_final_status": "blocked",
+            "attempts": 0,
+            "handoff_packet_path": None,
+            "probes": {"P13": asdict(probe)},
+            "outcome": None,
+            "escalation": {
+                "type": "dynamic_workflow_receipt_validation",
+                "reason": probe.reason,
+                "details": probe.details,
+            },
+            "artifact_rigor": artifact_rigor,
+            "tool_calls": [ensure_tool_call_timing(dynamic_receipt_tool_call)],
+        }
+        self.state.write_event(
+            run_id=run_id,
+            source="dual_agent",
+            kind="dual_agent_gate_result",
+            payload=payload,
+        )
+        payload["artifact_export"] = self.export_gate_artifacts(
+            run_id=run_id,
+            task_id=task_id,
+            cwd=cwd,
+            screenshots=screenshots,
+        )
+        return redact(payload)
+
     def _workflow_result(
         self,
         *,
@@ -1572,6 +1812,7 @@ def build_codex_supervisor_mcp_server(
         execution_layer_mode: str = "lead_direct",
         dynamic_workflow_task_class: str | None = None,
         planning_artifacts: list[dict[str, Any]] | None = None,
+        tool_receipts: list[dict[str, Any]] | None = None,
         artifact_policy: str = "strict",
         user_facing: bool = False,
         screenshots: list[dict[str, Any]] | None = None,
@@ -1595,6 +1836,7 @@ def build_codex_supervisor_mcp_server(
             execution_layer_mode=execution_layer_mode,
             dynamic_workflow_task_class=dynamic_workflow_task_class,
             planning_artifacts=planning_artifacts,
+            tool_receipts=tool_receipts,
             artifact_policy=artifact_policy,
             user_facing=user_facing,
             screenshots=screenshots,
@@ -1620,6 +1862,7 @@ def build_codex_supervisor_mcp_server(
         execution_layer_mode: str = "lead_direct",
         dynamic_workflow_task_class: str | None = None,
         planning_artifacts: list[dict[str, Any]] | None = None,
+        tool_receipts: list[dict[str, Any]] | None = None,
         artifact_policy: str = "strict",
         user_facing: bool = False,
         screenshots: list[dict[str, Any]] | None = None,
@@ -1640,6 +1883,7 @@ def build_codex_supervisor_mcp_server(
             execution_layer_mode=execution_layer_mode,
             dynamic_workflow_task_class=dynamic_workflow_task_class,
             planning_artifacts=planning_artifacts,
+            tool_receipts=tool_receipts,
             artifact_policy=artifact_policy,
             user_facing=user_facing,
             screenshots=screenshots,
@@ -2078,6 +2322,14 @@ def _normalise_receipt_payloads(receipts: list[dict[str, Any]]) -> list[dict[str
         if isinstance(receipt, dict):
             normalised.append(dict(receipt))
     return normalised
+
+
+def _is_dynamic_workflow_preview(value: str | None) -> bool:
+    return str(value or "").strip().lower().replace("-", "_").replace(" ", "_") == "dynamic_workflow_preview"
+
+
+def _canonical_execution_layer_mode(value: str | None) -> str:
+    return "dynamic_workflow_preview" if _is_dynamic_workflow_preview(value) else str(value or "lead_direct")
 
 
 def _receipt_ids(receipts: list[dict[str, Any]]) -> list[str]:

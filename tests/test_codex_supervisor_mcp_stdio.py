@@ -280,6 +280,51 @@ async def test_codex_supervisor_mcp_exposes_dual_agent_gate_tools(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_start_dual_agent_gate_blocks_dynamic_preview_without_p13_receipts(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
+    from supervisor.dual_agent_runner import build_lead_replay_stdout
+
+    state = State(str(tmp_path / "state.db"))
+    runner_calls = []
+
+    def fake_runner(argv, **kwargs):
+        runner_calls.append(argv)
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=build_lead_replay_stdout(_outcome_block()),
+            stderr="",
+        )
+
+    server = build_codex_supervisor_mcp_server(
+        _cfg(tmp_path),
+        state,
+        mcp_cls=_FakeMCP,
+        runner=fake_runner,
+    )
+
+    result = await _maybe_await(server.tools["start_dual_agent_gate"](
+        task_id="gate-1",
+        run_id="run-1",
+        gate="prd_review",
+        instruction="Run a dynamic workflow preview gate.",
+        cwd=str(tmp_path),
+        execution_layer_mode="dynamic-workflow-preview",
+        dynamic_workflow_task_class="codebase_audit",
+        planning_artifacts=_write_planning_artifacts(tmp_path),
+    ))
+
+    assert runner_calls == []
+    assert result["status"] == "blocked"
+    assert result["probes"]["P13"]["reason"] == "missing_dynamic_workflow_receipts"
+    transcript = await _maybe_await(server.tools["read_gate_transcript"](
+        run_id="run-1",
+        task_id="gate-1",
+    ))
+    assert transcript["dynamic_workflow_receipt_validations"][0]["probe"]["status"] == "red"
+
+
+@pytest.mark.asyncio
 async def test_codex_supervisor_mcp_blocks_strict_outcome_gate_without_required_artifacts(tmp_path):
     from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
 

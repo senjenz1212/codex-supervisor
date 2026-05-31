@@ -50,6 +50,7 @@ SOURCE_ARTIFACTS: tuple[tuple[str, str, str], ...] = (
     ("grill_findings", "source/grill-findings.md", "Grill Findings"),
     ("issues", "source/issues.md", "Issues"),
     ("tdd_plan", "source/tdd.md", "TDD Plan"),
+    ("grill_findings", "source/grill-findings-tdd.md", "TDD Grill Findings"),
     ("implementation_plan", "source/implementation-plan.md", "Implementation Plan"),
 )
 
@@ -58,6 +59,7 @@ MANDATORY_ARTIFACTS: tuple[str, ...] = (
     "source/grill-findings.md",
     "source/issues.md",
     "source/tdd.md",
+    "source/grill-findings-tdd.md",
     "source/implementation-plan.md",
     "interactions.md",
     "outcome-review.md",

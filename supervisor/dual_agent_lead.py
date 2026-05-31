@@ -427,6 +427,26 @@ def invoke_claude_lead(
             transcript="",
             model=requested_model,
         )
+    except (OSError, subprocess.SubprocessError) as e:
+        return LeadInvocationResult(
+            probe=ProbeResult(
+                "P2",
+                "red",
+                "lead_invocation_failed",
+                {
+                    "error_type": type(e).__name__,
+                    "error": str(e),
+                },
+            ),
+            outcome=None,
+            command=command,
+            stdout="",
+            stderr="",
+            stdout_bytes=0,
+            stderr_bytes=0,
+            transcript="",
+            model=requested_model,
+        )
 
     stdout = _coerce_text(proc.stdout)
     stderr = _coerce_text(proc.stderr)

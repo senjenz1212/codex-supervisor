@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sqlite3
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -233,6 +234,7 @@ class State:
         run_forward_migrations(self._conn)
         self._conn.commit()
         self._lock = asyncio.Lock()
+        self._write_lock = threading.RLock()
         self.decisions: asyncio.Queue[Decision] = asyncio.Queue()
 
     # --- run registration (public boundary: run_registration_api) ---
@@ -329,19 +331,81 @@ class State:
         ).fetchone()
 
     # --- events ---
-    def write_event(self, *, run_id: str, source: str, kind: str, payload: dict) -> int:
-        safe = redact(stamp_trace_envelope(
+    def _event_payload(self, *, run_id: str, source: str, kind: str, payload: dict) -> dict:
+        return redact(stamp_trace_envelope(
             run_id=run_id,
             source=source,
             kind=kind,
             payload=payload,
         ))
+
+    def _insert_event_unlocked(
+        self,
+        *,
+        run_id: str,
+        source: str,
+        kind: str,
+        payload: dict,
+    ) -> int:
         cur = self._conn.execute(
             "INSERT INTO events(run_id, ts, source, kind, payload_json) VALUES(?, ?, ?, ?, ?)",
-            (run_id, int(time.time()), source, kind, json.dumps(safe)),
+            (run_id, int(time.time()), source, kind, json.dumps(payload)),
         )
-        self._conn.commit()
         return cur.lastrowid or 0
+
+    def _set_tail_offset_unlocked(self, path: str, byte_offset: int) -> None:
+        self._conn.execute(
+            """INSERT INTO tail_offsets(path, byte_offset, updated_at)
+               VALUES(?, ?, ?)
+               ON CONFLICT(path) DO UPDATE SET byte_offset=excluded.byte_offset,
+                                                updated_at=excluded.updated_at""",
+            (path, byte_offset, int(time.time())),
+        )
+
+    def write_event(self, *, run_id: str, source: str, kind: str, payload: dict) -> int:
+        with self._write_lock:
+            event_payload = self._event_payload(
+                run_id=run_id,
+                source=source,
+                kind=kind,
+                payload=payload,
+            )
+            event_id = self._insert_event_unlocked(
+                run_id=run_id,
+                source=source,
+                kind=kind,
+                payload=event_payload,
+            )
+            self._conn.commit()
+            return event_id
+
+    def write_event_and_tail_offset(
+        self,
+        *,
+        run_id: str,
+        source: str,
+        kind: str,
+        payload: dict,
+        path: str,
+        byte_offset: int,
+    ) -> int:
+        """Append an event and advance its rollout tail offset in one commit."""
+        with self._write_lock:
+            event_payload = self._event_payload(
+                run_id=run_id,
+                source=source,
+                kind=kind,
+                payload=payload,
+            )
+            event_id = self._insert_event_unlocked(
+                run_id=run_id,
+                source=source,
+                kind=kind,
+                payload=event_payload,
+            )
+            self._set_tail_offset_unlocked(path, byte_offset)
+            self._conn.commit()
+            return event_id
 
     def recent_events(self, run_id: str, n: int = 20) -> list[dict]:
         cur = self._conn.execute(
@@ -366,6 +430,7 @@ class State:
                    'dual_agent_gate_result',
                    'dual_agent_planning_validation',
                    'dual_agent_skill_receipt_validation',
+                   'dual_agent_dynamic_workflow_receipt_validation',
                    'dual_agent_workflow_route',
                    'dual_agent_interaction_message',
                    'tri_agent_cursor_review'
@@ -843,14 +908,9 @@ class State:
         return row["byte_offset"] if row else 0
 
     def set_tail_offset(self, path: str, byte_offset: int) -> None:
-        self._conn.execute(
-            """INSERT INTO tail_offsets(path, byte_offset, updated_at)
-               VALUES(?, ?, ?)
-               ON CONFLICT(path) DO UPDATE SET byte_offset=excluded.byte_offset,
-                                                updated_at=excluded.updated_at""",
-            (path, byte_offset, int(time.time())),
-        )
-        self._conn.commit()
+        with self._write_lock:
+            self._set_tail_offset_unlocked(path, byte_offset)
+            self._conn.commit()
 
     # --- supervisor Telegram turns ---
     def record_supervisor_turn(self, *, chat_id: str | None, message_text: str,

@@ -32,6 +32,20 @@ contract written for that run.
 Ingest raw target events through an adapter or fixture tailer and inspect the
 normalized event stream and persisted offsets.
 
+## supervisor_runtime_loop
+
+Run a long-lived daemon subsystem through the restartable runtime wrapper and
+verify failures are written as health events before the subsystem restarts.
+Tests must fake the subsystem coroutine; they must not call live Claude, Codex,
+Telegram, filesystem watches, or HTTP servers.
+
+## supervisor_event_ledger
+
+Append parent-side events through `State.write_event` and inspect the durable
+SQLite event stream. Tests must verify trace-envelope stamping, redaction, and
+safe concurrent parent writes through the public append method rather than
+writing directly to SQLite.
+
 ## redaction_pipeline
 
 Pass raw event, hook, verdict, action, and Telegram payload text through the
@@ -247,3 +261,7 @@ Codex model and high reasoning (`gpt-5.5` with
 Codex Desktop initiated no-Telegram scope, a blocked gate
 must escalate through Desktop chat and re-run `start_dual_agent_gate`; it must
 not wait on `poll_resume_signal` unless a Telegram callback exists.
+Dynamic workflow preview must remain an execution layer under Codex plus Claude
+Code supervision: `run_dual_agent_workflow` must write
+`dual_agent_dynamic_workflow_receipt_validation` and block with P13 unless
+machine-readable receipts cover the preview gates.

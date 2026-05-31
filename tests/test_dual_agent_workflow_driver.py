@@ -16,6 +16,7 @@ from supervisor.dual_agent_workflow import (
     select_workflow_route,
     workflow_visual_evidence_policy,
 )
+from supervisor.dual_agent_lead import DEFAULT_DYNAMIC_WORKFLOW_PREVIEW_GATES
 from supervisor.state import State
 
 
@@ -132,6 +133,42 @@ def _tool_receipts(*, include_push: bool = False) -> list[dict]:
     return receipts
 
 
+def _dynamic_workflow_receipts() -> list[dict]:
+    shared = {
+        "subagents": [
+            {
+                "task_id": "workflow-1:audit-1",
+                "persona_id": "reviewer.codebase_audit",
+                "timeout_s": 300,
+                "budget_usd": 1.5,
+                "permission_mode": "readOnly",
+                "tool_pins": ["rg", "sed", "pytest --collect-only"],
+                "transcript_ref": "artifacts/dynamic/audit-1/transcript.jsonl",
+                "output_hash": "sha256:abc123",
+                "changed_files": [],
+            }
+        ],
+        "supervision_layer": "codex_plus_lead",
+        "lead_integrator": "claude_code_lead",
+        "output_schema": "dynamic-workflow-output/v1",
+        "output_hash": "sha256:abc123",
+        "headless": True,
+        "no_session_persistence": True,
+        "replay_ref": "docs/dual-agent/workflow-1/replay/manifest.json",
+        "worktree_comparison_ref": "docs/dual-agent/workflow-1/dynamic-comparison.md",
+    }
+    return [
+        {
+            "receipt_id": f"dyn-{gate}",
+            "kind": "dynamic_workflow_receipt",
+            "status": "passed",
+            "gate": gate,
+            **shared,
+        }
+        for gate in DEFAULT_DYNAMIC_WORKFLOW_PREVIEW_GATES
+    ]
+
+
 def _skill_receipts() -> list[dict]:
     return [
         {
@@ -213,9 +250,11 @@ def _write_good_workflow_source_artifacts(tmp_path: Path, task_id: str = "workfl
         "grill_findings": "grill-findings.md",
         "issues": "issues.md",
         "tdd_plan": "tdd.md",
+        "tdd_grill_findings": "grill-findings-tdd.md",
         "implementation_plan": "implementation-plan.md",
     }
-    for kind, filename in mapping.items():
+    for key, filename in mapping.items():
+        kind = "grill_findings" if key == "tdd_grill_findings" else key
         target = source_dir / filename
         target.write_text(
             (FIXTURE_ROOT / kind / "good.md").read_text(encoding="utf-8"),
@@ -450,7 +489,7 @@ async def test_workflow_cli_payload_runs_same_supervisor_api(tmp_path):
             "max_rounds_per_gate": 1,
             "execution_layer_mode": "dynamic_workflow_preview",
             "dynamic_workflow_task_class": "codebase_audit",
-            "tool_receipts": _tool_receipts(),
+            "tool_receipts": [*_tool_receipts(), *_dynamic_workflow_receipts()],
         },
         cfg=_cfg(tmp_path),
         state=state,
@@ -636,7 +675,7 @@ async def test_run_dual_agent_workflow_can_pass_dynamic_workflow_preview_policy(
         max_rounds_per_gate=1,
         execution_layer_mode="dynamic_workflow_preview",
         dynamic_workflow_task_class="codebase_audit",
-        tool_receipts=_tool_receipts(),
+        tool_receipts=[*_tool_receipts(), *_dynamic_workflow_receipts()],
     ))
 
     assert result["status"] == "accepted"
@@ -649,6 +688,56 @@ async def test_run_dual_agent_workflow_can_pass_dynamic_workflow_preview_policy(
     assert policy["codex_supervises_final_artifact"] is True
     assert "per_subagent_budget_caps_verified" in policy["preview_required_gates"]
     assert "throwaway_worktree_comparison_recorded" in policy["preview_required_gates"]
+
+
+@pytest.mark.asyncio
+async def test_run_dual_agent_workflow_blocks_dynamic_preview_without_p13_receipts(tmp_path):
+    server, state = _server(tmp_path)
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Run a codebase-audit fan-out task behind the lead boundary.",
+        max_rounds_per_gate=1,
+        execution_layer_mode="dynamic-workflow-preview",
+        dynamic_workflow_task_class="codebase_audit",
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert result["status"] == "blocked"
+    assert result["current_gate"] == "workflow_start"
+    assert result["workflow_route"]["execution_layer_mode"] == "dynamic_workflow_preview"
+    assert result["final_gate_result"]["probes"]["P13"]["reason"] == "missing_dynamic_workflow_receipts"
+    workflow = state.get_dual_agent_workflow(run_id="workflow-run", task_id="workflow-1")
+    assert workflow["status"] == "blocked"
+
+
+@pytest.mark.asyncio
+async def test_read_gate_transcript_includes_dynamic_workflow_receipt_validation(tmp_path):
+    server, _state = _server(tmp_path)
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Run a codebase-audit fan-out task behind the lead boundary.",
+        max_rounds_per_gate=1,
+        execution_layer_mode="dynamic_workflow_preview",
+        dynamic_workflow_task_class="codebase_audit",
+        tool_receipts=[*_tool_receipts(), *_dynamic_workflow_receipts()],
+    ))
+    assert result["status"] == "accepted"
+
+    transcript = await _maybe_await(server.tools["read_gate_transcript"](
+        run_id="workflow-run",
+        task_id="workflow-1",
+    ))
+
+    validations = transcript["dynamic_workflow_receipt_validations"]
+    assert validations
+    assert validations[0]["probe"]["probe_id"] == "P13"
+    assert validations[0]["probe"]["status"] == "green"
 
 
 @pytest.mark.asyncio

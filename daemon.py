@@ -26,6 +26,7 @@ from supervisor.config import Config
 from supervisor.state import State
 from supervisor.drift_detector import DriftDetector
 from supervisor.hook_server import build_app, serve
+from supervisor.runtime_health import run_fatal_subsystem, run_restartable_subsystem
 from supervisor.target.factory import build_target_adapter
 from supervisor.telegram import TelegramNotifier, TelegramPoller, telegram_enabled
 
@@ -174,11 +175,32 @@ async def main() -> int:
     )
 
     tasks = [
-        asyncio.create_task(drift_detector.run(), name="drift_detector"),
-        asyncio.create_task(serve(cfg, app), name="hook_server"),
+        asyncio.create_task(
+            run_restartable_subsystem(
+                "drift_detector",
+                drift_detector.run,
+                state=state,
+            ),
+            name="drift_detector",
+        ),
+        asyncio.create_task(
+            run_fatal_subsystem(
+                "hook_server",
+                lambda: serve(cfg, app),
+                state=state,
+            ),
+            name="hook_server",
+        ),
     ]
     if telegram_poller is not None:
-        tasks.append(asyncio.create_task(telegram_poller.run(), name="telegram_poller"))
+        tasks.append(asyncio.create_task(
+            run_restartable_subsystem(
+                "telegram_poller",
+                telegram_poller.run,
+                state=state,
+            ),
+            name="telegram_poller",
+        ))
     if notifier is not None:
         tasks.append(asyncio.create_task(
             notifier.send_startup(
@@ -188,7 +210,14 @@ async def main() -> int:
             name="telegram_startup_notice",
         ))
     if invoker is not None:
-        tasks.append(asyncio.create_task(invoker.run(), name="agent_invoker"))
+        tasks.append(asyncio.create_task(
+            run_restartable_subsystem(
+                "agent_invoker",
+                invoker.run,
+                state=state,
+            ),
+            name="agent_invoker",
+        ))
     codex_cfg = (
         cfg.target.codex
         if cfg.target is not None and cfg.target.codex is not None
@@ -203,9 +232,23 @@ async def main() -> int:
             on_event=progress_streamer.handle_event if progress_streamer else None,
             sweep_interval_s=cfg.supervisor.rollout_sweep_interval_s,
         )
-        tasks.append(asyncio.create_task(rollout_watcher.run(), name="rollout_watcher"))
+        tasks.append(asyncio.create_task(
+            run_restartable_subsystem(
+                "rollout_watcher",
+                rollout_watcher.run,
+                state=state,
+            ),
+            name="rollout_watcher",
+        ))
         if process_monitor:
-            tasks.append(asyncio.create_task(process_monitor.run(), name="process_monitor"))
+            tasks.append(asyncio.create_task(
+                run_restartable_subsystem(
+                    "process_monitor",
+                    process_monitor.run,
+                    state=state,
+                ),
+                name="process_monitor",
+            ))
     else:
         log.info("target=%s has no live event tailer wired yet; hook server only", target_kind)
 

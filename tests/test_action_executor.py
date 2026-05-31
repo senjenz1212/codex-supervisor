@@ -58,6 +58,14 @@ class _UnavailableTelegram:
         raise RuntimeError("telegram unavailable")
 
 
+class _FailingAdapter:
+    async def execute_action(self, action) -> dict:
+        raise RuntimeError("adapter down")
+
+    def supports_feature(self, feature: str) -> bool:
+        return True
+
+
 class _Tripwire:
     def __init__(self, name: str): self._name = name
     def __call__(self, *a, **kw):
@@ -323,6 +331,43 @@ async def test_valid_approval_executes_steering_once_and_dedupes(monkeypatch, tm
         "SELECT * FROM actions WHERE action_type='inject_steering'"
     ).fetchone()
     assert row["status"] == "delivered"
+
+
+@pytest.mark.asyncio
+async def test_valid_approval_records_adapter_exception(monkeypatch, tmp_path):
+    """An approved steering action should fail closed in the ledger if the
+    target adapter raises while dispatching it."""
+    _install_tripwires(monkeypatch)
+    state = _make_state(tmp_path)
+    telegram = _FakeTelegramSender()
+
+    from supervisor.action_executor import execute_actions, resolve_approval
+
+    results = execute_actions(
+        [_STEERING_ACTION],
+        state=state,
+        adapter=_FakeAdapter(),
+        telegram_sender=telegram,
+    )
+    assert results[0]["status"] == "pending_approval"
+    ask = state._conn.execute("SELECT * FROM telegram_asks").fetchone()
+
+    approved = await resolve_approval(
+        ask_id=ask["ask_id"],
+        answer="Approve",
+        nonce=ask["nonce"],
+        state=state,
+        adapter=_FailingAdapter(),
+    )
+
+    assert approved["status"] == "failed"
+    assert approved["adapter_result"]["reason"] == "adapter_exception"
+    row = state._conn.execute(
+        "SELECT * FROM actions WHERE action_type='inject_steering'"
+    ).fetchone()
+    assert row["status"] == "failed"
+    payload = json.loads(row["payload_json"])
+    assert payload["adapter_result"]["reason"] == "adapter_exception"
 
 
 @pytest.mark.asyncio
