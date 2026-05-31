@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "acc787f11e470c29811044c9a3f5221bbb9f90791ab2daf10df71ea4a9a2cd22",
+  "git": {
+    "diff_bytes": 0,
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "diff_stat": "",
+    "head": "04f27c5",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "04f27c5",
+    "status_short": "?? docs/dual-agent/agentic-lead-executor-wiring-20260531/"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "00ad211f84323ea7555fd6178c707e4e001e136919b75ec6e61937d2e020238b",
+    "implementation_plan": "cbfd48921cb801666595d7ee10fa2b78536edc9e6e75ef418d2e650d4e9c4a34",
+    "issues": "6592bfa66558a26eb32b414debb742b9fe65d427d7bf9cc326bb08e5bf2d6fbc",
+    "prd": "606ddb18d8ebdbef8b070de1b832d8c0d21bead0f86e6270bd3dbc3fe60fa013",
+    "tdd_plan": "a0fdbae0b4d8d757498d1d40e83e13e3b41b5c13f9083736dd7b2ee280537e23"
+  },
+  "status": "captured"
+}
