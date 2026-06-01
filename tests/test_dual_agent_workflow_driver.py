@@ -284,6 +284,9 @@ def test_workflow_kwargs_from_payload_preserves_dynamic_workflow_preview_fields(
         "solo_exception_for_artifact_only_gates": True,
         "required_evidence_grade": "runtime_native",
         "reviewer_unavailable_policy": "proceed_degraded",
+        "reviewer_model": "gemini-3.1-pro-preview",
+        "reviewer_output_mode": "litellm_structured",
+        "reviewer_max_tokens": 4096,
         "irrelevant_field": "must not leak into workflow kwargs",
     })
 
@@ -295,6 +298,9 @@ def test_workflow_kwargs_from_payload_preserves_dynamic_workflow_preview_fields(
     assert kwargs["solo_exception_for_artifact_only_gates"] is True
     assert kwargs["required_evidence_grade"] == "runtime_native"
     assert kwargs["reviewer_unavailable_policy"] == "proceed_degraded"
+    assert kwargs["reviewer_model"] == "gemini-3.1-pro-preview"
+    assert kwargs["reviewer_output_mode"] == "litellm_structured"
+    assert kwargs["reviewer_max_tokens"] == 4096
     assert "irrelevant_field" not in kwargs
 
 
@@ -533,6 +539,80 @@ def _cursor_contract_unmet_runner(request) -> CursorInvocationResult:
         attempts=4,
         retry_reasons=("missing dual_agent_outcome block",) * 4,
     )
+
+
+@pytest.mark.asyncio
+async def test_workflow_invokes_reviewer_after_claude_accept_with_non_claude_default(
+    tmp_path,
+):
+    requests = []
+
+    def fake_cursor_runner(request):
+        requests.append(request)
+        return CursorInvocationResult(
+            probe=ProbeResult("CURSOR", "green", "cursor_review_ok"),
+            outcome=_cursor_review_result(request.task_id).outcome,
+            transcript="",
+            run_id="chatcmpl-1",
+            status="finished",
+            model=request.reviewer_model,
+            reviewer_runtime="litellm_structured",
+            reviewer_output_mode=request.reviewer_output_mode,
+        )
+
+    server, _state = _server(tmp_path, cursor_runner=fake_cursor_runner)
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Default reviewer should be Gemini structured and downstream of Claude.",
+        max_rounds_per_gate=1,
+        cursor_review=True,
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert result["status"] == "accepted"
+    assert result["workflow_route"]["reviewer_model"] == "gemini-3.1-pro-preview"
+    assert result["workflow_route"]["reviewer_output_mode"] == "litellm_structured"
+    assert result["workflow_route"]["reviewer_max_tokens"] == 4096
+    assert requests
+    assert all(request.reviewer_model == "gemini-3.1-pro-preview" for request in requests)
+    assert all(request.reviewer_output_mode == "litellm_structured" for request in requests)
+    assert all(request.claude_outcome is not None for request in requests)
+    cursor_payload = result["final_gate_result"]["cursor_review"]
+    assert cursor_payload["reviewer_runtime"] == "litellm_structured"
+    assert cursor_payload["reviewer_output_mode"] == "litellm_structured"
+
+
+@pytest.mark.asyncio
+async def test_cursor_sdk_output_mode_routes_legacy_model_to_reviewer_request(tmp_path):
+    requests = []
+
+    def fake_cursor_runner(request):
+        requests.append(request)
+        return _cursor_review_result(request.task_id)
+
+    server, _state = _server(tmp_path, cursor_runner=fake_cursor_runner)
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Explicit Cursor SDK route should remain available.",
+        max_rounds_per_gate=1,
+        cursor_review=True,
+        reviewer_output_mode="cursor_sdk",
+        cursor_model="composer-custom",
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert result["status"] == "accepted"
+    assert result["workflow_route"]["reviewer_model"] == "composer-custom"
+    assert result["workflow_route"]["reviewer_output_mode"] == "cursor_sdk"
+    assert requests
+    assert all(request.reviewer_output_mode == "cursor_sdk" for request in requests)
+    assert all(request.model == "composer-custom" for request in requests)
 
 
 @pytest.mark.asyncio

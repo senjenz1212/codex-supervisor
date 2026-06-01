@@ -48,6 +48,9 @@ WORKFLOW_KEYS = {
     "cursor_review_profile",
     "cursor_review_gates",
     "cursor_model",
+    "reviewer_model",
+    "reviewer_output_mode",
+    "reviewer_max_tokens",
     "task_complexity",
 }
 REQUIRED_WORKFLOW_KEYS = {"cwd", "task_id", "run_id", "intent"}

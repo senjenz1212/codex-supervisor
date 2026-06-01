@@ -1,0 +1,198 @@
+{
+  "cwd": "/Users/sam.zhang/Documents/codex-supervisor",
+  "task_id": "reviewer-contract-reliability-20260531",
+  "run_id": "codex-reviewer-contract-reliability-20260531-implemented",
+  "intent": "Make the independent reviewer RELIABLY emit the typed <dual_agent_outcome> contract, so proceed_degraded becomes the rare exception again rather than the norm -- restoring a real cross-vendor independent verdict.\n\nEXACT PROBLEM: the independent reviewer runs composer-2.5 with a free-text instruction to emit the contract. Even with retries and corrective re-prompts, current Cursor SDK live probes return errored, empty transcripts and fail the contract. Phase 0 evidence in docs/dual-agent/reviewer-contract-reliability-20260531/source/phase0-probe.md shows Cursor SDK plan mode 0/4, Cursor SDK agent mode 0/4, and LiteLLM Gemini 3.1 Pro strict JSON schema 3/3 fidelity-passing outcomes.\n\nSCOPE:\n1. Make independent reviewer model and output enforcement configurable, defaulting to the Phase 0 reliable route.\n2. Implement the structured LiteLLM/Gemini reviewer path while keeping the existing Cursor SDK path available as explicit compatibility mode.\n3. Preserve the same typed Outcome contract, evaluate_outcome_fidelity, critical_review completeness, read-only guard, downstream reviewer separation, and real revise/deny blocking semantics.\n4. Keep reviewer_unavailable_policy recovery for genuine transient infrastructure failures.\n\nNON-GOALS: no reviewer registry, no multi-reviewer fan-out, no agentic executor wiring, no durable substrate work, no gate weakening.\n\nIMPLEMENTATION STATUS: The structured reviewer route, config/threading changes, Cursor SDK compatibility mode, metadata, and deterministic tests have now been implemented in the working tree. Review the code diff and test receipts as implementation evidence, not plan-only authorization. Do not accept if the diff or tests fail the PRD/TDD contract.",
+  "quality": "best",
+  "execution_layer_mode": "lead_direct",
+  "require_skill_receipts": true,
+  "cursor_review": true,
+  "cursor_review_profile": "rigorous",
+  "timeout_s": 900,
+  "planning_artifacts": [
+    {
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-contract-reliability-20260531/source/prd.md",
+      "kind": "prd",
+      "mutable_by_worker": false
+    },
+    {
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-contract-reliability-20260531/source/grill-findings.md",
+      "kind": "grill_findings",
+      "mutable_by_worker": false
+    },
+    {
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-contract-reliability-20260531/source/issues.md",
+      "kind": "issues",
+      "mutable_by_worker": false
+    },
+    {
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-contract-reliability-20260531/source/tdd.md",
+      "kind": "tdd_plan",
+      "mutable_by_worker": false
+    },
+    {
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-contract-reliability-20260531/source/grill-findings-tdd.md",
+      "kind": "grill_findings",
+      "mutable_by_worker": false
+    },
+    {
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-contract-reliability-20260531/source/implementation-plan.md",
+      "kind": "implementation_plan",
+      "mutable_by_worker": false
+    },
+    {
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-contract-reliability-20260531/source/phase0-probe.md",
+      "kind": "other",
+      "mutable_by_worker": false
+    }
+  ],
+  "tool_receipts": [
+    {
+      "receipt_id": "skill-to-prd-reviewer-contract-reliability-20260531",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "to-prd",
+      "stage": "to_prd",
+      "claims": [
+        "prd-tdd skill executed",
+        "PRD promise contracts produced"
+      ],
+      "artifacts": [
+        "docs/dual-agent/reviewer-contract-reliability-20260531/source/prd.md",
+        "docs/dual-agent/reviewer-contract-reliability-20260531/source/phase0-probe.md"
+      ]
+    },
+    {
+      "receipt_id": "skill-prd-grill-reviewer-contract-reliability-20260531",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "grill-with-docs",
+      "stage": "prd_grill",
+      "claims": [
+        "prd-tdd skill executed",
+        "PRD grill findings resolved or waived"
+      ],
+      "artifacts": [
+        "docs/dual-agent/reviewer-contract-reliability-20260531/source/grill-findings.md"
+      ]
+    },
+    {
+      "receipt_id": "skill-to-issues-reviewer-contract-reliability-20260531",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "to-issues",
+      "stage": "to_issues",
+      "claims": [
+        "prd-tdd skill executed",
+        "issues map to PRD promises"
+      ],
+      "artifacts": [
+        "docs/dual-agent/reviewer-contract-reliability-20260531/source/issues.md"
+      ]
+    },
+    {
+      "receipt_id": "skill-tdd-reviewer-contract-reliability-20260531",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "tdd",
+      "stage": "tdd",
+      "claims": [
+        "prd-tdd skill executed",
+        "public-boundary RED tests planned"
+      ],
+      "artifacts": [
+        "docs/dual-agent/reviewer-contract-reliability-20260531/source/tdd.md"
+      ]
+    },
+    {
+      "receipt_id": "skill-tdd-grill-reviewer-contract-reliability-20260531",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "grill-with-docs",
+      "stage": "tdd_grill",
+      "claims": [
+        "prd-tdd skill executed",
+        "TDD grill findings resolved"
+      ],
+      "artifacts": [
+        "docs/dual-agent/reviewer-contract-reliability-20260531/source/grill-findings-tdd.md"
+      ]
+    },
+    {
+      "receipt_id": "pytest-focused-reviewer-contract-20260531",
+      "kind": "test_run",
+      "status": "passed",
+      "command": "uv run pytest tests/test_cursor_agent.py tests/test_dual_agent_workflow_driver.py::test_workflow_kwargs_from_payload_preserves_dynamic_workflow_preview_fields tests/test_dual_agent_workflow_driver.py::test_workflow_invokes_reviewer_after_claude_accept_with_non_claude_default tests/test_dual_agent_workflow_driver.py::test_cursor_sdk_output_mode_routes_legacy_model_to_reviewer_request -q",
+      "result": "21 passed in 3.97s",
+      "artifacts": [
+        "docs/dual-agent/reviewer-contract-reliability-20260531/test-evidence.md"
+      ],
+      "claims": [
+        "tests passed"
+      ]
+    },
+    {
+      "receipt_id": "pytest-expanded-reviewer-contract-20260531",
+      "kind": "test_run",
+      "status": "passed",
+      "command": "uv run pytest tests/test_cursor_agent.py tests/test_dual_agent_workflow_driver.py tests/test_codex_supervisor_mcp_stdio.py tests/test_target_config_load.py -q",
+      "result": "99 passed in 66.25s",
+      "artifacts": [
+        "docs/dual-agent/reviewer-contract-reliability-20260531/test-evidence.md"
+      ],
+      "claims": [
+        "tests passed"
+      ]
+    },
+    {
+      "receipt_id": "pytest-full-reviewer-contract-20260531",
+      "kind": "test_run",
+      "status": "passed",
+      "command": "uv run --extra dev pytest -q",
+      "result": "539 passed in 71.79s",
+      "artifacts": [
+        "docs/dual-agent/reviewer-contract-reliability-20260531/test-evidence.md"
+      ],
+      "claims": [
+        "tests passed"
+      ]
+    },
+    {
+      "receipt_id": "git-diff-reviewer-contract-20260531",
+      "kind": "git_diff",
+      "status": "present",
+      "diff_sha256": "76fc42d1b4004a2abae87f66ab637db945e0e4b58be0130edac4d07646e5aadb",
+      "changed_files": [
+        "config.example.yaml",
+        "mcp_tools/codex_supervisor_stdio.py",
+        "mcp_tools/codex_supervisor_workflow_cli.py",
+        "supervisor/config.py",
+        "supervisor/cursor_agent.py",
+        "tests/test_cursor_agent.py",
+        "tests/test_dual_agent_workflow_driver.py"
+      ],
+      "artifacts": [
+        "docs/dual-agent/reviewer-contract-reliability-20260531/test-evidence.md"
+      ],
+      "claims": [
+        "implemented"
+      ]
+    },
+    {
+      "receipt_id": "pytest-direct-structured-gateway-reviewer-contract-20260531",
+      "kind": "test_run",
+      "status": "passed",
+      "command": "uv run pytest tests/test_cursor_agent.py -q",
+      "result": "18 passed in 0.76s",
+      "claims": [
+        "tests passed"
+      ],
+      "artifacts": [
+        "docs/dual-agent/reviewer-contract-reliability-20260531/test-evidence.md"
+      ]
+    }
+  ],
+  "reviewer_model": "gemini-3.1-pro-preview",
+  "reviewer_output_mode": "litellm_structured",
+  "reviewer_max_tokens": 4096
+}

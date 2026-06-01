@@ -1,0 +1,96 @@
+{
+  "cwd": "/Users/sam.zhang/Documents/codex-supervisor",
+  "task_id": "reviewer-contract-reliability-20260531",
+  "run_id": "codex-reviewer-contract-reliability-20260531",
+  "intent": "Make the independent reviewer RELIABLY emit the typed <dual_agent_outcome> contract, so proceed_degraded becomes the rare exception again rather than the norm -- restoring a real cross-vendor independent verdict.\n\nEXACT PROBLEM: the independent reviewer runs composer-2.5 with a free-text instruction to emit the contract. Even with retries and corrective re-prompts, current Cursor SDK live probes return errored, empty transcripts and fail the contract. Phase 0 evidence in docs/dual-agent/reviewer-contract-reliability-20260531/source/phase0-probe.md shows Cursor SDK plan mode 0/4, Cursor SDK agent mode 0/4, and LiteLLM Gemini 3.1 Pro strict JSON schema 3/3 fidelity-passing outcomes.\n\nSCOPE:\n1. Make independent reviewer model and output enforcement configurable, defaulting to the Phase 0 reliable route.\n2. Implement the structured LiteLLM/Gemini reviewer path while keeping the existing Cursor SDK path available as explicit compatibility mode.\n3. Preserve the same typed Outcome contract, evaluate_outcome_fidelity, critical_review completeness, read-only guard, downstream reviewer separation, and real revise/deny blocking semantics.\n4. Keep reviewer_unavailable_policy recovery for genuine transient infrastructure failures.\n\nNON-GOALS: no reviewer registry, no multi-reviewer fan-out, no agentic executor wiring, no durable substrate work, no gate weakening.",
+  "quality": "best",
+  "execution_layer_mode": "lead_direct",
+  "require_skill_receipts": true,
+  "cursor_review": true,
+  "cursor_review_profile": "rigorous",
+  "timeout_s": 900,
+  "planning_artifacts": [
+    {
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-contract-reliability-20260531/source/prd.md",
+      "kind": "prd",
+      "mutable_by_worker": false
+    },
+    {
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-contract-reliability-20260531/source/grill-findings.md",
+      "kind": "grill_findings",
+      "mutable_by_worker": false
+    },
+    {
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-contract-reliability-20260531/source/issues.md",
+      "kind": "issues",
+      "mutable_by_worker": false
+    },
+    {
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-contract-reliability-20260531/source/tdd.md",
+      "kind": "tdd_plan",
+      "mutable_by_worker": false
+    },
+    {
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-contract-reliability-20260531/source/grill-findings-tdd.md",
+      "kind": "grill_findings",
+      "mutable_by_worker": false
+    },
+    {
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-contract-reliability-20260531/source/implementation-plan.md",
+      "kind": "implementation_plan",
+      "mutable_by_worker": false
+    },
+    {
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-contract-reliability-20260531/source/phase0-probe.md",
+      "kind": "other",
+      "mutable_by_worker": false
+    }
+  ],
+  "tool_receipts": [
+    {
+      "receipt_id": "skill-to-prd-reviewer-contract-reliability-20260531",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "to-prd",
+      "stage": "to_prd",
+      "claims": ["prd-tdd skill executed", "PRD promise contracts produced"],
+      "artifacts": ["docs/dual-agent/reviewer-contract-reliability-20260531/source/prd.md", "docs/dual-agent/reviewer-contract-reliability-20260531/source/phase0-probe.md"]
+    },
+    {
+      "receipt_id": "skill-prd-grill-reviewer-contract-reliability-20260531",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "grill-with-docs",
+      "stage": "prd_grill",
+      "claims": ["prd-tdd skill executed", "PRD grill findings resolved or waived"],
+      "artifacts": ["docs/dual-agent/reviewer-contract-reliability-20260531/source/grill-findings.md"]
+    },
+    {
+      "receipt_id": "skill-to-issues-reviewer-contract-reliability-20260531",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "to-issues",
+      "stage": "to_issues",
+      "claims": ["prd-tdd skill executed", "issues map to PRD promises"],
+      "artifacts": ["docs/dual-agent/reviewer-contract-reliability-20260531/source/issues.md"]
+    },
+    {
+      "receipt_id": "skill-tdd-reviewer-contract-reliability-20260531",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "tdd",
+      "stage": "tdd",
+      "claims": ["prd-tdd skill executed", "public-boundary RED tests planned"],
+      "artifacts": ["docs/dual-agent/reviewer-contract-reliability-20260531/source/tdd.md"]
+    },
+    {
+      "receipt_id": "skill-tdd-grill-reviewer-contract-reliability-20260531",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "grill-with-docs",
+      "stage": "tdd_grill",
+      "claims": ["prd-tdd skill executed", "TDD grill findings resolved"],
+      "artifacts": ["docs/dual-agent/reviewer-contract-reliability-20260531/source/grill-findings-tdd.md"]
+    }
+  ]
+}

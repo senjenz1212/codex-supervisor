@@ -1,0 +1,37 @@
+{
+  "accepted": false,
+  "agent_id": "agent-eb9191e7-4c74-41fd-9eab-31bd8598c049",
+  "api_key_present": true,
+  "attempts": 4,
+  "created_at": 1780269247,
+  "cursor_status": "error",
+  "duration_ms": 1093,
+  "mode": "agent",
+  "model": "composer-2.5",
+  "outcome": null,
+  "probe": "cursor_sdk_agent_mode_probe",
+  "probe_result": {
+    "details": {
+      "attempts": 4,
+      "original_reason": "missing dual_agent_outcome block",
+      "recoverable": true,
+      "retry_reasons": [
+        "missing dual_agent_outcome block",
+        "missing dual_agent_outcome block",
+        "missing dual_agent_outcome block",
+        "missing dual_agent_outcome block"
+      ]
+    },
+    "probe_id": "CURSOR",
+    "reason": "reviewer_contract_unmet",
+    "status": "red"
+  },
+  "retry_reasons": [
+    "missing dual_agent_outcome block",
+    "missing dual_agent_outcome block",
+    "missing dual_agent_outcome block",
+    "missing dual_agent_outcome block"
+  ],
+  "run_id": "run-76bffee8-3152-4885-9bd1-8b876b942ed1",
+  "status": "blocked"
+}

@@ -1,0 +1,24 @@
+{
+  "file_tree_sha256": "8a66e8af07596ca53c94d34aa325d786874b5473f0126b9c349113f955a8a170",
+  "git": {
+    "diff_bytes": 41493,
+    "diff_sha256": "04a3cae14554e42388f587c7819a32a00dc3ba091339304a4f4481f76bb0c890",
+    "diff_stat": "config.example.yaml                        |   4 +\n mcp_tools/codex_supervisor_stdio.py        |  93 +++++++++\n mcp_tools/codex_supervisor_workflow_cli.py |   3 +\n supervisor/config.py                       |   3 +\n supervisor/cursor_agent.py                 | 187 ++++++++++++++++-\n tests/test_cursor_agent.py                 | 323 +++++++++++++++++++++++++++++\n tests/test_dual_agent_workflow_driver.py   |  80 +++++++\n 7 files changed, 689 insertions(+), 4 deletions(-)",
+    "head": "38b3b8f",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "38b3b8f",
+    "status_short": "M config.example.yaml\n M mcp_tools/codex_supervisor_stdio.py\n M mcp_tools/codex_supervisor_workflow_cli.py\n M supervisor/config.py\n M supervisor/cursor_agent.py\n M tests/test_cursor_agent.py\n M tests/test_dual_agent_workflow_driver.py\n?? docs/dual-agent/reviewer-contract-reliability-20260531/"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "0d988521bd7f6b8469a81bebe809688aa607bd31c04f0a8f6d753bc20fa7b37e",
+    "implementation_plan": "fd3abb83f1db336e1eade79f4c07c3c663317530081c04898f2c49ffabeafbf2",
+    "issues": "b887ce379070ccaa062cb15a5c6352e41c9ba479aadd925ae8ae78ed61e84117",
+    "other": "e231a35ac8dbdfc642c5a65291cb45c07a4626bdfe51e34963ecc5b4d54bebea",
+    "prd": "ac94a81816b02ca55d1dd202eaebd8d5f1a16d9faa8c55c2f2b119785e2a8efc",
+    "tdd_plan": "004a4e3a7f4b729909ce6de2305f2e1372f50b2da3fc927787db7121ccbd3746"
+  },
+  "status": "captured"
+}

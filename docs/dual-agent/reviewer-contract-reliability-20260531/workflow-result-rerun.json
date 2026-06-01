@@ -1,0 +1,554 @@
+{
+  "artifact_export": {
+    "files": [
+      "docs/dual-agent/reviewer-contract-reliability-20260531/index.md",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/triage.md",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/prd.md",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/tdd.md",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/grill-findings.md",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/issues.md",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/screenshots.md",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/outcome-review.md",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/interactions.md",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/transcript.md",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/transcript.jsonl",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/mast-coverage.md",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/replay/manifest.json",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/replay/workspace-snapshot.json",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/replay/mast-coverage.json",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/source/grill-findings-tdd.md",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/source/grill-findings.md",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/source/implementation-plan.md",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/source/issues.md",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/source/phase0-probe.md",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/source/prd.md",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/source/tdd.md"
+    ],
+    "output_dir": "docs/dual-agent/reviewer-contract-reliability-20260531",
+    "run_id": "codex-reviewer-contract-reliability-20260531",
+    "status": "ok",
+    "task_id": "reviewer-contract-reliability-20260531"
+  },
+  "current_gate": "tdd_review",
+  "final_gate_result": {
+    "artifact_rigor": {
+      "accepted_prerequisite_gates": [
+        "issues_review"
+      ],
+      "artifact_policy": "strict",
+      "gate": "tdd_review",
+      "gate_statuses": {
+        "issues_review": "accepted",
+        "prd_review": "accepted",
+        "tdd_review": "blocked"
+      },
+      "missing_artifact_paths": [],
+      "missing_artifacts": [],
+      "missing_prerequisite_gates": [],
+      "missing_screenshot_paths": [],
+      "present_artifacts": [
+        "grill_findings",
+        "implementation_plan",
+        "issues",
+        "prd",
+        "tdd_plan"
+      ],
+      "reason": "required_artifacts_present",
+      "required_artifacts": [
+        "prd",
+        "issues",
+        "tdd_plan",
+        "grill_findings"
+      ],
+      "required_prerequisite_gates": [
+        "issues_review"
+      ],
+      "screenshots": [],
+      "status": "ok",
+      "user_facing": false,
+      "visual_validation": {
+        "allowed_sources": [
+          "browser",
+          "browser-use",
+          "browser_use",
+          "computer",
+          "computer-use",
+          "computer_use"
+        ],
+        "evidence": [],
+        "failures": [],
+        "reason": "no_screenshots_supplied",
+        "status": "not_required"
+      }
+    },
+    "attempts": 1,
+    "claim_verification": null,
+    "cursor_review": {
+      "accepted": false,
+      "agent_id": "agent-e961c4c2-9d45-475e-99fc-6f629a690dfb",
+      "attempts": 4,
+      "critical_review": {
+        "assumptions_to_verify": [],
+        "contradictions_checked": [],
+        "decision": "revise",
+        "evidence_refs": [],
+        "missing_evidence": [],
+        "schema_version": "critical-review/v1",
+        "severity": "none",
+        "strongest_objection": "none",
+        "what_would_change_my_mind": "Claude or Codex provides evidence resolving Cursor's objections."
+      },
+      "duration_ms": 1084,
+      "failure_classification": "reviewer_contract_unmet",
+      "model": "composer-2.5",
+      "outcome": null,
+      "probe": {
+        "details": {
+          "attempts": 4,
+          "original_reason": "missing dual_agent_outcome block",
+          "recoverable": true,
+          "retry_reasons": [
+            "missing dual_agent_outcome block",
+            "missing dual_agent_outcome block",
+            "missing dual_agent_outcome block",
+            "missing dual_agent_outcome block"
+          ]
+        },
+        "probe_id": "CURSOR",
+        "reason": "reviewer_contract_unmet",
+        "status": "red"
+      },
+      "recoverable": true,
+      "retry_reasons": [
+        "missing dual_agent_outcome block",
+        "missing dual_agent_outcome block",
+        "missing dual_agent_outcome block",
+        "missing dual_agent_outcome block"
+      ],
+      "reviewer_unavailable_recovery": {
+        "authorization": null,
+        "available_reviewers_accept": true,
+        "classification": "reviewer_contract_unmet",
+        "decision": "escalate",
+        "escalation": {
+          "action_id": 1301,
+          "ask_id": 34,
+          "classification": "reviewer_contract_unmet",
+          "evidence_grade": "degraded",
+          "forced_by_safety": false,
+          "nonce": "6070c13988c744a0",
+          "options": [
+            "Pause",
+            "Kill",
+            "Continue"
+          ],
+          "policy": "escalate",
+          "reviewer_verdict_counted_as_accept": false,
+          "safety_reasons": [],
+          "status": "paused_for_human"
+        },
+        "event_id": 316792,
+        "evidence_grade": "degraded",
+        "forced_by_safety": false,
+        "gate": "tdd_review",
+        "policy": "escalate",
+        "reason": "policy_escalate",
+        "reviewer_verdict_counted_as_accept": false,
+        "safety_reasons": [],
+        "schema_version": "reviewer-unavailable-recovery/v1"
+      },
+      "run_id": "run-b0a87565-bd32-4324-b141-2eaa1f1dd5f4",
+      "status": "error",
+      "transcript_tail": "[cursor attempt 1/4]\n\n\n[cursor attempt 2/4]\n\n\n[cursor attempt 3/4]\n\n\n[cursor attempt 4/4]\n"
+    },
+    "escalation": {
+      "claim_verification": null,
+      "reason": "reviewer_contract_unmet",
+      "type": "workflow_lifecycle"
+    },
+    "event_id": 316793,
+    "gate": "tdd_review",
+    "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-contract-reliability-20260531.json",
+    "outcome": {
+      "changed_files": [],
+      "claims": [
+        "All PRD promises P1-P6 and slices ISS-1-ISS-4 have at least one named test",
+        "Tests mock model I/O below the reviewer boundary; live Phase 0 evidence kept as fixtures so suite needs no gateway credentials",
+        "Structured route validates through the same fidelity + completeness checks rather than a loosened parser",
+        "Cursor SDK live failure is empty errored runtime output (~1.1s), not recoverable formatting"
+      ],
+      "confidence": 0.84,
+      "confidence_criteria": [
+        "Phase 0 probe summaries on disk match the documented 0/8 vs 3/3 outcome",
+        "All named public boundaries exist in supervisor/ and mcp_tools/",
+        "Every promise and slice maps to a named test",
+        "Forbidden outcomes (fake accept, swallowed exception, rejection-as-unavailable, reviewer-before-Claude) each have a test",
+        "No test can pass by loosening evaluate_outcome_fidelity or critical-review completeness"
+      ],
+      "confidence_rationale": "Independently verified Phase 0 artifacts on disk against the prose and confirmed every named public boundary and reuse target exists in the source tree. Coverage is complete and the contract is reused not weakened. Held below 0.9 because two empirically-motivated edge tests (negative casing, lead_direct-defaults) are unpinned and the planned RED suite has not yet been executed (tests do not exist yet).",
+      "critical_review": {
+        "assumptions_to_verify": [
+          "The structured LiteLLM path will not bypass the strict-schema enum enforcement on any fallback branch",
+          "Existing proceed_degraded/escalate recovery tests remain green after the default route flips to litellm_structured",
+          "Threading the Gemini route through the cursor-named request/result objects does not silently overload cursor_model semantics"
+        ],
+        "contradictions_checked": [
+          "Prose claim 'Cursor 0/4 plan, 0/4 agent' vs summary.json: consistent",
+          "Prose claim 'Gemini 3/3 fidelity-passing' vs summary.json success_count=3 all finish_reason=stop: consistent",
+          "Claim that named boundaries exist vs grep of source tree: consistent (initial empty grep was a tool indexing quirk resolved with explicit paths)",
+          "Claim 'parser-strictness is not the cause' vs cursor_status=error with empty transcript and ~1.1s duration: consistent"
+        ],
+        "decision": "accept",
+        "missing_evidence": [
+          "A named negative test for non-lowercase decision enum rejection",
+          "An explicit test asserting lead_direct defaults are unchanged",
+          "An end-to-end workflow test exercising proceed_degraded/escalate through the new structured route rather than relying solely on the pre-existing recovery suite"
+        ],
+        "severity": "low",
+        "strongest_objection": "Phase 0 empirically showed decision-casing was a real cause of contract failure, yet no named test asserts the supervisor rejects a non-lowercase decision independent of the gateway's strict schema; if any compatibility or fallback path skips the strict schema, casing could regress without a failing test.",
+        "what_would_change_my_mind": "Evidence that a non-strict-schema fallback exists in the planned implementation with no test guarding decision casing, or a coverage gap allowing a missing/invalid structured outcome to be counted as accept, would move this from accept to revise."
+      },
+      "decisions": [
+        "accept: TDD plan may proceed to implementation",
+        "accept: first RED correctly targets invoke_cursor_agent, the empirically failing reviewer boundary",
+        "accept: contract reuse (evaluate_outcome_fidelity + critical-review completeness) is preserved, no gate weakening",
+        "accept: coverage map complete across P1-P6 and ISS-1-ISS-4 including compatibility, read-only guard, truncation, deny parity, non-Claude lineage"
+      ],
+      "objections": [
+        "LOW: no named test asserts supervisor-side rejection of a non-lowercase decision enum, the exact casing failure Phase 0 identified; add a negative-casing test",
+        "LOW: P1/ISS-1 'lead_direct defaults unchanged' is not pinned by a named test case, relies implicitly on existing config regression"
+      ],
+      "specialists": [
+        {
+          "decision": "accept",
+          "name": "Lead gate reviewer",
+          "objection": "Missing named negative test for non-lowercase decision enum rejection, despite casing being a proven Phase 0 failure mode"
+        }
+      ],
+      "summary": "TDD plan for the configurable structured-LiteLLM reviewer route is evidence-backed and contract-preserving. First RED test hits the real failing boundary (invoke_cursor_agent); all named public boundaries and reuse targets (evaluate_outcome_fidelity, _evaluate_cursor_contract_completeness, workflow_kwargs_from_payload, run_dual_agent_workflow) verified to exist. Phase 0 probe artifacts on disk match prose exactly (Cursor 0/4 both modes with cursor_status=error fast-fail; Gemini 3/3 finish_reason=stop, outcome_fidelity_ok). Every promise P1-P6 and slice ISS-1-ISS-4 maps to a named test. Accept with two low-severity additive notes.",
+      "task_id": "reviewer-contract-reliability-20260531",
+      "test_status": "unknown",
+      "tests": [
+        "test_select_reviewer_defaults_to_phase0_structured_gemini (planned RED)",
+        "test_workflow_kwargs_from_payload_preserves_reviewer_fields (planned RED)",
+        "test_structured_litellm_reviewer_returns_fidelity_passing_outcome (planned RED)",
+        "test_cursor_sdk_output_mode_routes_to_cursor_sdk_runner (planned RED)",
+        "test_structured_litellm_reviewer_preserves_read_only_guard (planned RED)",
+        "test_structured_litellm_reviewer_enforces_contract_completeness (planned RED)",
+        "test_structured_litellm_reviewer_revise_blocks_workflow (planned RED)",
+        "test_structured_litellm_reviewer_deny_blocks_workflow (planned RED)",
+        "test_structured_litellm_failure_classifies_as_infrastructure_unavailable (planned RED)",
+        "test_structured_litellm_invalid_json_classifies_as_contract_unmet (planned RED)",
+        "test_structured_litellm_truncation_classifies_as_contract_unmet (planned RED)",
+        "test_reviewer_route_metadata_is_recorded (planned RED)",
+        "test_workflow_invokes_reviewer_after_claude_accept_with_non_claude_default (planned RED)"
+      ]
+    },
+    "probes": {
+      "P1": {
+        "details": {},
+        "probe_id": "P1",
+        "reason": "planning_artifact_boundaries_ok",
+        "status": "green"
+      },
+      "P2": {
+        "details": {
+          "captured_bytes": 12206,
+          "captured_token_estimate": 3048,
+          "orchestration_surface": "/lead"
+        },
+        "probe_id": "P2",
+        "reason": "worker_orchestration_invocation_ok",
+        "status": "green"
+      },
+      "P3": {
+        "details": {},
+        "probe_id": "P3",
+        "reason": "outcome_fidelity_ok",
+        "status": "green"
+      },
+      "P4": {
+        "details": {
+          "decisions": [
+            "accept",
+            "accept",
+            "accept",
+            "accept",
+            "accept",
+            "accept"
+          ]
+        },
+        "probe_id": "P4",
+        "reason": "outcome_gate_decision_ok",
+        "status": "green"
+      },
+      "P_planning": {
+        "details": {
+          "artifact_hashes": {
+            "grill_findings": "ac7a28171fbdc69fb4115dac7c9920f87ae2349b2832c452b156e2b44acf5de2",
+            "issues": "b887ce379070ccaa062cb15a5c6352e41c9ba479aadd925ae8ae78ed61e84117",
+            "prd": "ac94a81816b02ca55d1dd202eaebd8d5f1a16d9faa8c55c2f2b119785e2a8efc",
+            "tdd_plan": "004a4e3a7f4b729909ce6de2305f2e1372f50b2da3fc927787db7121ccbd3746"
+          },
+          "artifacts": [
+            {
+              "kind": "prd",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-contract-reliability-20260531/source/prd.md",
+              "sha256": "ac94a81816b02ca55d1dd202eaebd8d5f1a16d9faa8c55c2f2b119785e2a8efc",
+              "status": "accepted"
+            },
+            {
+              "kind": "issues",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-contract-reliability-20260531/source/issues.md",
+              "sha256": "b887ce379070ccaa062cb15a5c6352e41c9ba479aadd925ae8ae78ed61e84117",
+              "status": "accepted"
+            },
+            {
+              "kind": "tdd_plan",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-contract-reliability-20260531/source/tdd.md",
+              "sha256": "004a4e3a7f4b729909ce6de2305f2e1372f50b2da3fc927787db7121ccbd3746",
+              "status": "accepted"
+            },
+            {
+              "kind": "grill_findings",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-contract-reliability-20260531/source/grill-findings.md",
+              "sha256": "ac7a28171fbdc69fb4115dac7c9920f87ae2349b2832c452b156e2b44acf5de2",
+              "status": "accepted"
+            }
+          ],
+          "checks": {
+            "AGG-001": "pass",
+            "AGG-002": "pass",
+            "GRILL-001": "pass",
+            "GRILL-002": "pass",
+            "GRILL-003": "pass",
+            "ISS-001": "pass",
+            "ISS-002": "pass",
+            "ISS-003": "pass",
+            "ISS-004": "pass",
+            "PRD-001": "pass",
+            "PRD-002": "pass",
+            "PRD-003": "pass",
+            "PRD-004": "pass",
+            "PRD-005": "pass",
+            "PRD-006": "pass",
+            "TDD-001": "pass",
+            "TDD-002": "pass",
+            "TDD-003": "pass",
+            "TDD-004": "pass"
+          },
+          "gate": "tdd_review",
+          "task_id": "reviewer-contract-reliability-20260531",
+          "validator_version": "1.0.0",
+          "verdict": "accepted"
+        },
+        "probe_id": "P_planning",
+        "reason": "planning_validation_ok",
+        "status": "green"
+      }
+    },
+    "status": "blocked",
+    "task_id": "reviewer-contract-reliability-20260531",
+    "trace_envelope": {
+      "artifacts": [],
+      "claims": [
+        "All PRD promises P1-P6 and slices ISS-1-ISS-4 have at least one named test",
+        "Tests mock model I/O below the reviewer boundary; live Phase 0 evidence kept as fixtures so suite needs no gateway credentials",
+        "Structured route validates through the same fidelity + completeness checks rather than a loosened parser",
+        "Cursor SDK live failure is empty errored runtime output (~1.1s), not recoverable formatting"
+      ],
+      "event_kind": "dual_agent_gate_result",
+      "failure_taxonomy": {
+        "category": "system_design",
+        "code": "reviewer_contract_unmet",
+        "framework": "MAST-inspired",
+        "mast_category": null,
+        "mast_code": null,
+        "mast_mode": null,
+        "probe_id": "",
+        "schema_version": "dual-agent-failure-taxonomy/v1",
+        "source": "result_escalation",
+        "subcategory": "unknown"
+      },
+      "gate": "tdd_review",
+      "policy_verdict": "blocked",
+      "receipts": [],
+      "run_id": "codex-reviewer-contract-reliability-20260531",
+      "schema_version": "dual-agent-trace-envelope/v1",
+      "source": "dual_agent",
+      "task_id": "reviewer-contract-reliability-20260531",
+      "tool_calls": []
+    },
+    "workflow_reviewer_unavailable_escalation": {
+      "action_id": 1301,
+      "ask_id": 34,
+      "classification": "reviewer_contract_unmet",
+      "evidence_grade": "degraded",
+      "forced_by_safety": false,
+      "nonce": "6070c13988c744a0",
+      "options": [
+        "Pause",
+        "Kill",
+        "Continue"
+      ],
+      "policy": "escalate",
+      "reviewer_verdict_counted_as_accept": false,
+      "safety_reasons": [],
+      "status": "paused_for_human"
+    }
+  },
+  "mandatory_artifacts": {
+    "missing": [],
+    "output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-contract-reliability-20260531",
+    "required": [
+      "source/prd.md",
+      "source/grill-findings.md",
+      "source/issues.md",
+      "source/tdd.md",
+      "source/grill-findings-tdd.md",
+      "source/implementation-plan.md",
+      "interactions.md",
+      "outcome-review.md",
+      "transcript.md"
+    ],
+    "status": "ok"
+  },
+  "resume": {
+    "artifact_output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-contract-reliability-20260531",
+    "blocker": {
+      "gate": "tdd_review",
+      "latest_event_id": 316793,
+      "status": "blocked"
+    },
+    "current_gate": "tdd_review",
+    "last_status": "blocked",
+    "latest_event_id": 316794,
+    "next_safe_action": "inspect blocker, provide corrective input, then rerun run_dual_agent_workflow",
+    "prompt": "Use codex_supervisor.\nContinue run_id=codex-reviewer-contract-reliability-20260531\ntask_id=reviewer-contract-reliability-20260531\ncurrent_gate=tdd_review\nlast_status=blocked\nlatest_event_id=316794\nnext_safe_action=inspect blocker, provide corrective input, then rerun run_dual_agent_workflow\nartifact_output_dir=/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-contract-reliability-20260531\nfirst inspect: read_gate_transcript(run_id=codex-reviewer-contract-reliability-20260531, task_id=reviewer-contract-reliability-20260531)",
+    "run_id": "codex-reviewer-contract-reliability-20260531",
+    "status": "ok",
+    "steps": [
+      {
+        "attempt_count": 1,
+        "gate": "prd_review",
+        "latest_event_id": 314887,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "issues_review",
+        "latest_event_id": 314965,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "tdd_review",
+        "latest_event_id": 316793,
+        "status": "blocked"
+      }
+    ],
+    "task_id": "reviewer-contract-reliability-20260531",
+    "transcript_command": "read_gate_transcript(run_id=codex-reviewer-contract-reliability-20260531, task_id=reviewer-contract-reliability-20260531)"
+  },
+  "run_id": "codex-reviewer-contract-reliability-20260531",
+  "status": "blocked",
+  "steps": [
+    {
+      "attempt_count": 1,
+      "gate": "prd_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "issues_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "tdd_review",
+      "status": "blocked"
+    }
+  ],
+  "task_id": "reviewer-contract-reliability-20260531",
+  "visual_evidence_policy": {
+    "artifact_matches": [],
+    "matched_terms": [],
+    "required": false,
+    "source": "not_user_facing"
+  },
+  "workflow_route": {
+    "agentic_lead_policy": {
+      "min_subagents": 0,
+      "policy": "off",
+      "required_evidence_grade": "self_reported",
+      "required_roles": [],
+      "solo_exception_for_artifact_only_gates": false
+    },
+    "cursor_review_gates": [
+      "tdd_review",
+      "implementation_plan",
+      "outcome_review"
+    ],
+    "cursor_review_profile": "rigorous",
+    "dynamic_workflow_task_class": null,
+    "effective_cursor_review": true,
+    "execution_layer_mode": "lead_direct",
+    "force_cursor_review": false,
+    "gate_count": 6,
+    "gates": [
+      "prd_review",
+      "issues_review",
+      "tdd_review",
+      "implementation_plan",
+      "execution",
+      "outcome_review"
+    ],
+    "planning_depth": "large",
+    "reasons": [
+      "default_large"
+    ],
+    "requested_cursor_review": true,
+    "required_skill_stages": [
+      "to_prd",
+      "prd_grill",
+      "to_issues",
+      "tdd",
+      "tdd_grill"
+    ],
+    "requires_agentic_lead_policy_receipts": false,
+    "requires_brainstorm": false,
+    "requires_dynamic_workflow_receipts": false,
+    "requires_skill_receipts": true,
+    "resume": {
+      "mode": "resume_from_prior_steps",
+      "pending_gates": [
+        "tdd_review",
+        "implementation_plan",
+        "execution",
+        "outcome_review"
+      ],
+      "schema_version": "dual-agent-workflow-resume/v1",
+      "skipped_gates": [
+        "prd_review",
+        "issues_review"
+      ],
+      "skipped_steps": [
+        {
+          "attempt_count": 1,
+          "gate": "prd_review",
+          "latest_event_id": 314887,
+          "status": "accepted"
+        },
+        {
+          "attempt_count": 1,
+          "gate": "issues_review",
+          "latest_event_id": 314965,
+          "status": "accepted"
+        }
+      ]
+    },
+    "reviewer_unavailable_policy": "escalate",
+    "schema_version": "dual-agent-workflow-route/v1",
+    "task_complexity": "large"
+  }
+}

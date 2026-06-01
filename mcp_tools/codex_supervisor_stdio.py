@@ -431,6 +431,9 @@ class CodexSupervisorMcpAPI:
         cursor_review_profile: str = "default",
         cursor_review_gates: list[str] | None = None,
         cursor_model: str | None = None,
+        reviewer_model: str | None = None,
+        reviewer_output_mode: str | None = None,
+        reviewer_max_tokens: int | None = None,
         task_complexity: str | None = None,
     ) -> dict[str, Any]:
         execution_layer_mode = _canonical_execution_layer_mode(execution_layer_mode)
@@ -446,6 +449,20 @@ class CodexSupervisorMcpAPI:
         reviewer_policy = _reviewer_unavailable_policy_config(
             self.cfg,
             reviewer_unavailable_policy=reviewer_unavailable_policy,
+        )
+        reviewer_output_mode_value = _reviewer_output_mode_config(
+            self.cfg,
+            reviewer_output_mode=reviewer_output_mode,
+        )
+        reviewer_model_value = _reviewer_model_config(
+            self.cfg,
+            reviewer_model=reviewer_model,
+            cursor_model=cursor_model,
+            reviewer_output_mode=reviewer_output_mode_value,
+        )
+        reviewer_max_tokens_value = _reviewer_max_tokens_config(
+            self.cfg,
+            reviewer_max_tokens=reviewer_max_tokens,
         )
         max_rounds = max(1, int(max_rounds_per_gate))
         screenshot_payloads = screenshots or []
@@ -487,6 +504,9 @@ class CodexSupervisorMcpAPI:
             "effective_cursor_review": effective_cursor_review,
             "cursor_review_profile": cursor_review_profile,
             "cursor_review_gates": list(selected_cursor_gates),
+            "reviewer_model": reviewer_model_value,
+            "reviewer_output_mode": reviewer_output_mode_value,
+            "reviewer_max_tokens": reviewer_max_tokens_value,
             "execution_layer_mode": execution_layer_mode,
             "dynamic_workflow_task_class": dynamic_workflow_task_class,
             "requires_dynamic_workflow_receipts": _is_dynamic_workflow_preview(execution_layer_mode),
@@ -977,6 +997,9 @@ class CodexSupervisorMcpAPI:
                             "gate": gate,
                             "quality": quality,
                             "model": cursor_model,
+                            "reviewer_model": reviewer_model_value,
+                            "reviewer_output_mode": reviewer_output_mode_value,
+                            "reviewer_max_tokens": reviewer_max_tokens_value,
                             "timeout_s": timeout_s,
                             "planning_artifact_count": len(gate_artifacts),
                             "receipt_count": len(receipt_payloads),
@@ -1006,6 +1029,11 @@ class CodexSupervisorMcpAPI:
                                 ),
                                 quality=quality,
                                 model=cursor_model,
+                                reviewer_model=reviewer_model_value,
+                                reviewer_output_mode=reviewer_output_mode_value,  # type: ignore[arg-type]
+                                reviewer_max_tokens=reviewer_max_tokens_value,
+                                openai_api_key=self.cfg.models.openai_api_key,
+                                openai_base_url=self.cfg.models.openai_base_url,
                                 timeout_s=timeout_s,
                                 tool_receipts=tuple(receipt_payloads),
                             )
@@ -1643,6 +1671,9 @@ class CodexSupervisorMcpAPI:
         cursor_review_profile: str = "default",
         cursor_review_gates: list[str] | None = None,
         cursor_model: str | None = None,
+        reviewer_model: str | None = None,
+        reviewer_output_mode: str | None = None,
+        reviewer_max_tokens: int | None = None,
         task_complexity: str | None = None,
         config_path: str | None = None,
     ) -> dict[str, Any]:
@@ -1659,6 +1690,20 @@ class CodexSupervisorMcpAPI:
         reviewer_policy = _reviewer_unavailable_policy_config(
             self.cfg,
             reviewer_unavailable_policy=reviewer_unavailable_policy,
+        )
+        reviewer_output_mode_value = _reviewer_output_mode_config(
+            self.cfg,
+            reviewer_output_mode=reviewer_output_mode,
+        )
+        reviewer_model_value = _reviewer_model_config(
+            self.cfg,
+            reviewer_model=reviewer_model,
+            cursor_model=cursor_model,
+            reviewer_output_mode=reviewer_output_mode_value,
+        )
+        reviewer_max_tokens_value = _reviewer_max_tokens_config(
+            self.cfg,
+            reviewer_max_tokens=reviewer_max_tokens,
         )
         job_id = f"workflow-{uuid.uuid4().hex[:12]}"
         cwd_path = Path(cwd).expanduser().resolve()
@@ -1696,6 +1741,9 @@ class CodexSupervisorMcpAPI:
             "cursor_review_profile": cursor_review_profile,
             "cursor_review_gates": cursor_review_gates,
             "cursor_model": cursor_model,
+            "reviewer_model": reviewer_model_value,
+            "reviewer_output_mode": reviewer_output_mode_value,
+            "reviewer_max_tokens": reviewer_max_tokens_value,
             "task_complexity": task_complexity,
         }
         request_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -2897,6 +2945,9 @@ def build_codex_supervisor_mcp_server(
         cursor_review_profile: str = "default",
         cursor_review_gates: list[str] | None = None,
         cursor_model: str | None = None,
+        reviewer_model: str | None = None,
+        reviewer_output_mode: str | None = None,
+        reviewer_max_tokens: int | None = None,
         task_complexity: str | None = None,
     ) -> dict[str, Any]:
         return await tool_api.run_dual_agent_workflow(
@@ -2926,6 +2977,9 @@ def build_codex_supervisor_mcp_server(
             cursor_review_profile=cursor_review_profile,
             cursor_review_gates=cursor_review_gates,
             cursor_model=cursor_model,
+            reviewer_model=reviewer_model,
+            reviewer_output_mode=reviewer_output_mode,
+            reviewer_max_tokens=reviewer_max_tokens,
             task_complexity=task_complexity,
         )
 
@@ -2957,6 +3011,9 @@ def build_codex_supervisor_mcp_server(
         cursor_review_profile: str = "default",
         cursor_review_gates: list[str] | None = None,
         cursor_model: str | None = None,
+        reviewer_model: str | None = None,
+        reviewer_output_mode: str | None = None,
+        reviewer_max_tokens: int | None = None,
         task_complexity: str | None = None,
         config_path: str | None = None,
     ) -> dict[str, Any]:
@@ -2987,6 +3044,9 @@ def build_codex_supervisor_mcp_server(
             cursor_review_profile=cursor_review_profile,
             cursor_review_gates=cursor_review_gates,
             cursor_model=cursor_model,
+            reviewer_model=reviewer_model,
+            reviewer_output_mode=reviewer_output_mode,
+            reviewer_max_tokens=reviewer_max_tokens,
             task_complexity=task_complexity,
             config_path=config_path,
         )
@@ -3307,6 +3367,8 @@ def _cursor_result_payload(result: CursorInvocationResult) -> dict[str, Any]:
         "run_id": result.run_id,
         "status": result.status,
         "model": result.model,
+        "reviewer_runtime": result.reviewer_runtime,
+        "reviewer_output_mode": result.reviewer_output_mode,
         "duration_ms": result.duration_ms,
         "transcript_tail": result.transcript[-4000:],
     })
@@ -3318,6 +3380,8 @@ def _cursor_tool_call_fields(result: CursorInvocationResult) -> dict[str, Any]:
         "agent_id": result.agent_id,
         "run_id": result.run_id,
         "model": result.model,
+        "reviewer_runtime": result.reviewer_runtime,
+        "reviewer_output_mode": result.reviewer_output_mode,
         "cursor_duration_ms": result.duration_ms,
         "failure_classification": result.failure_classification,
         "recoverable": result.recoverable,
@@ -3330,6 +3394,8 @@ def _cursor_tool_call_fields(result: CursorInvocationResult) -> dict[str, Any]:
             "outcome_present": result.outcome is not None,
             "failure_classification": result.failure_classification,
             "recoverable": result.recoverable,
+            "reviewer_runtime": result.reviewer_runtime,
+            "reviewer_output_mode": result.reviewer_output_mode,
         },
     }
 
@@ -3378,6 +3444,33 @@ def _reviewer_unavailable_policy_config(
 def _canonical_reviewer_unavailable_policy(value: str | None) -> str:
     text = str(value or "escalate").strip().lower().replace("-", "_").replace(" ", "_")
     return text if text in REVIEWER_UNAVAILABLE_POLICIES else "escalate"
+
+
+def _reviewer_model_config(
+    cfg: Config,
+    *,
+    reviewer_model: str | None,
+    cursor_model: str | None,
+    reviewer_output_mode: str,
+) -> str:
+    if reviewer_output_mode == "cursor_sdk":
+        requested = reviewer_model or cursor_model or "composer-2.5"
+        return str(requested)
+    requested = reviewer_model or getattr(cfg.supervisor, "reviewer_model", "") or cursor_model
+    return str(requested or "gemini-3.1-pro-preview")
+
+
+def _reviewer_output_mode_config(cfg: Config, *, reviewer_output_mode: str | None) -> str:
+    requested = reviewer_output_mode or getattr(cfg.supervisor, "reviewer_output_mode", "")
+    text = str(requested or "litellm_structured").strip().lower().replace("-", "_").replace(" ", "_")
+    return text if text in {"litellm_structured", "cursor_sdk"} else "litellm_structured"
+
+
+def _reviewer_max_tokens_config(cfg: Config, *, reviewer_max_tokens: int | None) -> int:
+    requested = reviewer_max_tokens
+    if requested is None:
+        requested = int(getattr(cfg.supervisor, "reviewer_max_tokens", 4096) or 4096)
+    return max(1, int(requested))
 
 
 def _reviewer_unavailable_recovery_plan(

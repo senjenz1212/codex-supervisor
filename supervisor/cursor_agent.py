@@ -21,6 +21,9 @@ CursorFailureClassification = Literal[
     "reviewer_contract_unmet",
     "reviewer_infrastructure_unavailable",
 ]
+ReviewerOutputMode = Literal["litellm_structured", "cursor_sdk"]
+DEFAULT_STRUCTURED_REVIEWER_MODEL = "gemini-3.1-pro-preview"
+DEFAULT_STRUCTURED_REVIEWER_MAX_TOKENS = 4096
 
 
 @dataclass(frozen=True)
@@ -33,6 +36,11 @@ class CursorInvocationRequest:
     planning_artifacts: tuple[PlanningArtifact, ...] = ()
     quality: ModelQuality = "best"
     model: str | None = None
+    reviewer_model: str | None = None
+    reviewer_output_mode: ReviewerOutputMode = "litellm_structured"
+    reviewer_max_tokens: int = DEFAULT_STRUCTURED_REVIEWER_MAX_TOKENS
+    openai_api_key: str | None = None
+    openai_base_url: str | None = None
     timeout_s: int = 600
     api_key: str | None = None
     mode: str = "plan"
@@ -52,6 +60,8 @@ class CursorInvocationResult:
     run_id: str | None = None
     status: str | None = None
     model: str | None = None
+    reviewer_runtime: str | None = None
+    reviewer_output_mode: str | None = None
     duration_ms: int | None = None
     failure_classification: CursorFailureClassification | None = None
     recoverable: bool = False
@@ -73,6 +83,20 @@ def select_cursor_model(
     # Cursor's current documented SDK examples use composer-2.5 for both local
     # and cloud agents. Keep one default until model discovery is wired.
     return "composer-2.5"
+
+
+def select_reviewer_model(
+    *,
+    quality: ModelQuality,
+    reviewer_output_mode: ReviewerOutputMode = "litellm_structured",
+    reviewer_model: str | None = None,
+    cursor_model: str | None = None,
+) -> str:
+    if reviewer_model:
+        return reviewer_model
+    if reviewer_output_mode == "cursor_sdk":
+        return select_cursor_model(quality=quality, explicit_model=cursor_model)
+    return DEFAULT_STRUCTURED_REVIEWER_MODEL
 
 
 def build_cursor_prompt(request: CursorInvocationRequest) -> str:
@@ -146,21 +170,26 @@ def invoke_cursor_agent(
                 ),
             )
         try:
-            transcript, metadata = _run_cursor_sdk(attempt_request)
+            if attempt_request.reviewer_output_mode == "cursor_sdk":
+                transcript, metadata = _run_cursor_sdk(attempt_request)
+            else:
+                transcript, metadata = _run_litellm_structured(attempt_request)
         except ModuleNotFoundError as e:
-            if e.name == "cursor_sdk":
+            if e.name in {"cursor_sdk", "openai"}:
                 return _cursor_infrastructure_result(
-                    reason="cursor_sdk_missing",
+                    reason=f"{e.name}_missing",
                     attempts=attempt,
                     retry_reasons=tuple(retry_reasons),
+                    reviewer_output_mode=attempt_request.reviewer_output_mode,
                 )
             raise
         except Exception as e:  # pragma: no cover - exact SDK exception classes vary.
             return _cursor_infrastructure_result(
-                reason="cursor_invocation_failed",
+                reason="reviewer_invocation_failed",
                 attempts=attempt,
                 retry_reasons=tuple(retry_reasons),
                 details={"error": str(e)},
+                reviewer_output_mode=attempt_request.reviewer_output_mode,
             )
 
         attempt_transcripts.append(
@@ -175,6 +204,13 @@ def invoke_cursor_agent(
         )
         if probe.ok and outcome is not None:
             probe = _evaluate_cursor_contract_completeness(outcome)
+        if probe.ok and str(last_metadata.get("finish_reason") or "") == "length":
+            probe = ProbeResult(
+                "CURSOR",
+                "red",
+                "structured_reviewer_truncated",
+                {"finish_reason": "length"},
+            )
         last_probe = probe
         last_outcome = outcome
         if _should_retry_cursor_outcome(probe):
@@ -221,6 +257,8 @@ def invoke_cursor_agent(
             status=last_metadata.get("status"),
             model=last_metadata.get("model"),
             duration_ms=last_metadata.get("duration_ms"),
+            reviewer_runtime=last_metadata.get("reviewer_runtime"),
+            reviewer_output_mode=last_metadata.get("reviewer_output_mode"),
             failure_classification="reviewer_contract_unmet",
             recoverable=True,
             attempts=len(attempt_transcripts),
@@ -236,6 +274,8 @@ def invoke_cursor_agent(
         status=last_metadata.get("status"),
         model=last_metadata.get("model"),
         duration_ms=last_metadata.get("duration_ms"),
+        reviewer_runtime=last_metadata.get("reviewer_runtime"),
+        reviewer_output_mode=last_metadata.get("reviewer_output_mode"),
         attempts=max(1, len(attempt_transcripts)),
         retry_reasons=tuple(retry_reasons),
     )
@@ -260,9 +300,144 @@ def _run_cursor_sdk(request: CursorInvocationRequest) -> tuple[str, dict[str, An
             "run_id": getattr(run, "id", None),
             "status": getattr(run, "status", None),
             "model": _model_id(getattr(run, "model", None) or getattr(agent, "model", None)),
+            "reviewer_runtime": "cursor_sdk",
+            "reviewer_output_mode": "cursor_sdk",
             "duration_ms": getattr(run, "duration_ms", None),
         }
     return transcript, metadata
+
+
+def _run_litellm_structured(request: CursorInvocationRequest) -> tuple[str, dict[str, Any]]:
+    from openai import OpenAI
+
+    api_key = request.openai_api_key or os.environ.get("OPENAI_API_KEY")
+    base_url = request.openai_base_url or os.environ.get("OPENAI_BASE_URL")
+    if not api_key:
+        raise RuntimeError("missing OPENAI_API_KEY for structured reviewer")
+
+    client_kwargs: dict[str, Any] = {"api_key": api_key}
+    if base_url:
+        client_kwargs["base_url"] = base_url
+    client = OpenAI(**client_kwargs)
+    model = select_reviewer_model(
+        quality=request.quality,
+        reviewer_output_mode="litellm_structured",
+        reviewer_model=request.reviewer_model,
+        cursor_model=request.model,
+    )
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are an independent reviewer. Return only JSON that "
+                    "matches the provided schema. Do not edit files."
+                ),
+            },
+            {"role": "user", "content": build_cursor_prompt(request)},
+        ],
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "dual_agent_outcome",
+                "strict": True,
+                "schema": _structured_outcome_json_schema(),
+            },
+        },
+        temperature=0,
+        max_tokens=max(1, int(request.reviewer_max_tokens)),
+    )
+    choice = response.choices[0]
+    message = choice.message
+    content = getattr(message, "content", None) or ""
+    transcript = f"<dual_agent_outcome>{content}</dual_agent_outcome>"
+    usage = getattr(response, "usage", None)
+    metadata = {
+        "agent_id": None,
+        "run_id": getattr(response, "id", None),
+        "status": "finished",
+        "model": model,
+        "reviewer_runtime": "litellm_structured",
+        "reviewer_output_mode": "litellm_structured",
+        "duration_ms": None,
+        "finish_reason": getattr(choice, "finish_reason", None),
+        "prompt_tokens": getattr(usage, "prompt_tokens", None),
+        "completion_tokens": getattr(usage, "completion_tokens", None),
+    }
+    return transcript, metadata
+
+
+def _structured_outcome_json_schema() -> dict[str, Any]:
+    critical_review_schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "strongest_objection": {"type": "string"},
+            "missing_evidence": {"type": "array", "items": {"type": "string"}},
+            "contradictions_checked": {"type": "array", "items": {"type": "string"}},
+            "assumptions_to_verify": {"type": "array", "items": {"type": "string"}},
+            "what_would_change_my_mind": {"type": "string"},
+            "decision": {"type": "string", "enum": ["accept", "revise", "deny"]},
+            "severity": {"type": "string"},
+        },
+        "required": [
+            "strongest_objection",
+            "missing_evidence",
+            "contradictions_checked",
+            "assumptions_to_verify",
+            "what_would_change_my_mind",
+            "decision",
+            "severity",
+        ],
+    }
+    specialist_schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "name": {"type": "string"},
+            "decision": {"type": "string", "enum": ["accept", "revise", "deny"]},
+            "objection": {"type": "string"},
+        },
+        "required": ["name", "decision", "objection"],
+    }
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "task_id": {"type": "string"},
+            "summary": {"type": "string"},
+            "specialists": {"type": "array", "items": specialist_schema},
+            "decisions": {
+                "type": "array",
+                "items": {"type": "string", "enum": ["accept", "revise", "deny"]},
+            },
+            "objections": {"type": "array", "items": {"type": "string"}},
+            "changed_files": {"type": "array", "items": {"type": "string"}},
+            "tests": {"type": "array", "items": {"type": "string"}},
+            "test_status": {"type": "string", "enum": ["passed", "failed", "unknown"]},
+            "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+            "confidence_rationale": {"type": "string"},
+            "confidence_criteria": {"type": "array", "items": {"type": "string"}},
+            "claims": {"type": "array", "items": {"type": "string"}},
+            "critical_review": critical_review_schema,
+        },
+        "required": [
+            "task_id",
+            "summary",
+            "specialists",
+            "decisions",
+            "objections",
+            "changed_files",
+            "tests",
+            "test_status",
+            "confidence",
+            "confidence_rationale",
+            "confidence_criteria",
+            "claims",
+            "critical_review",
+        ],
+    }
 
 
 def _git_status(cwd: str | Path, *, status_runner: StatusRunner) -> str | None:
@@ -296,6 +471,7 @@ def _should_retry_cursor_outcome(probe: ProbeResult) -> bool:
         or probe.reason.startswith("invalid dual_agent_outcome block")
         or probe.reason == "outcome_missing_required_fields"
         or probe.reason == "outcome_signal_loss"
+        or probe.reason == "structured_reviewer_truncated"
     )
 
 
@@ -353,6 +529,7 @@ def _cursor_infrastructure_result(
     attempts: int,
     retry_reasons: tuple[str, ...],
     details: dict[str, Any] | None = None,
+    reviewer_output_mode: str | None = None,
 ) -> CursorInvocationResult:
     return CursorInvocationResult(
         probe=ProbeResult(
@@ -373,6 +550,8 @@ def _cursor_infrastructure_result(
         recoverable=True,
         attempts=attempts,
         retry_reasons=retry_reasons,
+        reviewer_output_mode=reviewer_output_mode,
+        reviewer_runtime=reviewer_output_mode,
     )
 
 

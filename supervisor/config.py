@@ -129,6 +129,9 @@ class SupervisorCfg(BaseModel):
     stall_threshold_s: int = 90
     nudge_cooldown_s: int = 300
     reviewer_unavailable_policy: Literal["block", "escalate", "proceed_degraded"] = "escalate"
+    reviewer_model: str = "gemini-3.1-pro-preview"
+    reviewer_output_mode: Literal["litellm_structured", "cursor_sdk"] = "litellm_structured"
+    reviewer_max_tokens: int = 4096
 
 
 class AgenticLeadCfg(BaseModel):

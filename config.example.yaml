@@ -57,6 +57,10 @@ supervisor:
   drift_check_interval_s: 30
   stall_threshold_s: 90
   nudge_cooldown_s: 300
+  reviewer_unavailable_policy: escalate
+  reviewer_model: gemini-3.1-pro-preview
+  reviewer_output_mode: litellm_structured
+  reviewer_max_tokens: 4096
 
 modes:
   rollout_ingestion: enforce

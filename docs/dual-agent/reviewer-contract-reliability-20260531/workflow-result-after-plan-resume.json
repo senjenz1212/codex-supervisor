@@ -1,0 +1,1047 @@
+{
+  "artifact_export": {
+    "files": [
+      "docs/dual-agent/reviewer-contract-reliability-20260531/index.md",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/triage.md",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/prd.md",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/tdd.md",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/grill-findings.md",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/issues.md",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/screenshots.md",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/outcome-review.md",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/interactions.md",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/transcript.md",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/transcript.jsonl",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/mast-coverage.md",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/replay/manifest.json",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/replay/workspace-snapshot.json",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/replay/mast-coverage.json",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/source/grill-findings-tdd.md",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/source/grill-findings.md",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/source/implementation-plan.md",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/source/issues.md",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/source/phase0-probe.md",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/source/prd.md",
+      "docs/dual-agent/reviewer-contract-reliability-20260531/source/tdd.md"
+    ],
+    "output_dir": "docs/dual-agent/reviewer-contract-reliability-20260531",
+    "run_id": "codex-reviewer-contract-reliability-20260531",
+    "status": "ok",
+    "task_id": "reviewer-contract-reliability-20260531"
+  },
+  "current_gate": "outcome_review",
+  "final_gate_result": {
+    "artifact_export": {
+      "files": [
+        "docs/dual-agent/reviewer-contract-reliability-20260531/index.md",
+        "docs/dual-agent/reviewer-contract-reliability-20260531/triage.md",
+        "docs/dual-agent/reviewer-contract-reliability-20260531/prd.md",
+        "docs/dual-agent/reviewer-contract-reliability-20260531/tdd.md",
+        "docs/dual-agent/reviewer-contract-reliability-20260531/grill-findings.md",
+        "docs/dual-agent/reviewer-contract-reliability-20260531/issues.md",
+        "docs/dual-agent/reviewer-contract-reliability-20260531/screenshots.md",
+        "docs/dual-agent/reviewer-contract-reliability-20260531/outcome-review.md",
+        "docs/dual-agent/reviewer-contract-reliability-20260531/interactions.md",
+        "docs/dual-agent/reviewer-contract-reliability-20260531/transcript.md",
+        "docs/dual-agent/reviewer-contract-reliability-20260531/transcript.jsonl",
+        "docs/dual-agent/reviewer-contract-reliability-20260531/mast-coverage.md",
+        "docs/dual-agent/reviewer-contract-reliability-20260531/replay/manifest.json",
+        "docs/dual-agent/reviewer-contract-reliability-20260531/replay/workspace-snapshot.json",
+        "docs/dual-agent/reviewer-contract-reliability-20260531/replay/mast-coverage.json",
+        "docs/dual-agent/reviewer-contract-reliability-20260531/source/grill-findings-tdd.md",
+        "docs/dual-agent/reviewer-contract-reliability-20260531/source/grill-findings.md",
+        "docs/dual-agent/reviewer-contract-reliability-20260531/source/implementation-plan.md",
+        "docs/dual-agent/reviewer-contract-reliability-20260531/source/issues.md",
+        "docs/dual-agent/reviewer-contract-reliability-20260531/source/phase0-probe.md",
+        "docs/dual-agent/reviewer-contract-reliability-20260531/source/prd.md",
+        "docs/dual-agent/reviewer-contract-reliability-20260531/source/tdd.md"
+      ],
+      "output_dir": "docs/dual-agent/reviewer-contract-reliability-20260531",
+      "run_id": "codex-reviewer-contract-reliability-20260531",
+      "status": "ok",
+      "task_id": "reviewer-contract-reliability-20260531"
+    },
+    "artifact_rigor": {
+      "accepted_prerequisite_gates": [
+        "execution"
+      ],
+      "artifact_policy": "strict",
+      "gate": "outcome_review",
+      "gate_statuses": {
+        "execution": "accepted",
+        "implementation_plan": "accepted",
+        "issues_review": "accepted",
+        "outcome_review": "blocked",
+        "prd_review": "accepted",
+        "tdd_review": "accepted"
+      },
+      "missing_artifact_paths": [],
+      "missing_artifacts": [],
+      "missing_prerequisite_gates": [],
+      "missing_screenshot_paths": [],
+      "present_artifacts": [
+        "grill_findings",
+        "implementation_plan",
+        "issues",
+        "prd",
+        "tdd_plan"
+      ],
+      "reason": "required_artifacts_present",
+      "required_artifacts": [
+        "prd",
+        "tdd_plan",
+        "grill_findings",
+        "issues",
+        "implementation_plan"
+      ],
+      "required_prerequisite_gates": [
+        "execution"
+      ],
+      "screenshots": [],
+      "status": "ok",
+      "user_facing": false,
+      "visual_validation": {
+        "allowed_sources": [
+          "browser",
+          "browser-use",
+          "browser_use",
+          "computer",
+          "computer-use",
+          "computer_use"
+        ],
+        "evidence": [],
+        "failures": [],
+        "reason": "no_screenshots_supplied",
+        "status": "not_required"
+      }
+    },
+    "attempts": 2,
+    "claim_verification": {
+      "details": {
+        "legacy_verified_claims": [],
+        "receipts": [
+          {
+            "artifacts": [
+              "docs/dual-agent/reviewer-contract-reliability-20260531/source/prd.md",
+              "docs/dual-agent/reviewer-contract-reliability-20260531/source/phase0-probe.md"
+            ],
+            "claims": [
+              "prd-tdd skill executed",
+              "PRD promise contracts produced"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-to-prd-reviewer-contract-reliability-20260531",
+            "skill": "to-prd",
+            "stage": "to_prd",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/reviewer-contract-reliability-20260531/source/grill-findings.md"
+            ],
+            "claims": [
+              "prd-tdd skill executed",
+              "PRD grill findings resolved or waived"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-prd-grill-reviewer-contract-reliability-20260531",
+            "skill": "grill-with-docs",
+            "stage": "prd_grill",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/reviewer-contract-reliability-20260531/source/issues.md"
+            ],
+            "claims": [
+              "prd-tdd skill executed",
+              "issues map to PRD promises"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-to-issues-reviewer-contract-reliability-20260531",
+            "skill": "to-issues",
+            "stage": "to_issues",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/reviewer-contract-reliability-20260531/source/tdd.md"
+            ],
+            "claims": [
+              "prd-tdd skill executed",
+              "public-boundary RED tests planned"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-tdd-reviewer-contract-reliability-20260531",
+            "skill": "tdd",
+            "stage": "tdd",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/reviewer-contract-reliability-20260531/source/grill-findings-tdd.md"
+            ],
+            "claims": [
+              "prd-tdd skill executed",
+              "TDD grill findings resolved"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-tdd-grill-reviewer-contract-reliability-20260531",
+            "skill": "grill-with-docs",
+            "stage": "tdd_grill",
+            "status": "passed"
+          }
+        ]
+      },
+      "probe_id": "P11",
+      "reason": "workflow_claims_verified",
+      "status": "green"
+    },
+    "claude_gate_status": "accepted",
+    "cursor_review": {
+      "accepted": true,
+      "agent_id": "agent-994728bb-7c17-4c16-ab57-d282c0b7f694",
+      "attempts": 1,
+      "critical_review": {
+        "assumptions_to_verify": [
+          "evaluate_outcome_fidelity remains authoritative for structured path and is not bypassed",
+          "Gateway failures classify as reviewer_infrastructure_unavailable; invalid/truncated JSON as reviewer_contract_unmet",
+          "Read-only git-status guard wraps structured LiteLLM route identically to Cursor SDK",
+          "Valid revise/deny outcomes remain in AND blocking algebra, never routed to proceed_degraded"
+        ],
+        "contradictions_checked": [
+          "Prior round Claude revise (no implementation) vs current scoped accept: resolved as plan-authorization reframing, not contradiction",
+          "Execution gate marked accepted vs empty git diff: flagged as workflow anomaly, not evidence of shipped code",
+          "Phase 0 0/8 Cursor and 3/3 Gemini claims vs summary.json on disk: consistent",
+          "Claude claim of anchor reuse vs source: evaluate_outcome_fidelity, contract completeness, read-only guard all present"
+        ],
+        "decision": "accept",
+        "evidence_refs": [],
+        "missing_evidence": [
+          "Implementation of reviewer_model/reviewer_output_mode in config and structured LiteLLM path in cursor_agent.py",
+          "Passing runs of the 13 TDD-named deterministic tests",
+          "Explicit test proving wrapper validate-only behavior (no field repair/synthesis)",
+          "Concrete default max_tokens for structured Gemini route"
+        ],
+        "schema_version": "critical-review/v1",
+        "severity": "low",
+        "strongest_objection": "Accepting outcome_review could be misread as certifying the slice goal (reliable typed contract emission) when the worktree contains only planning docs and untracked artifacts\u2014zero supervisor code changes and no passing named tests.",
+        "what_would_change_my_mind": "Evidence that implementation repairs/synthesizes verdict fields, bypasses fidelity checks, misclassifies valid revise/deny as infrastructure, drops read-only guard, or that default token budget causes chronic truncation would flip to revise/deny at execution."
+      },
+      "duration_ms": 35899,
+      "failure_classification": null,
+      "model": "composer-2.5",
+      "outcome": {
+        "changed_files": [],
+        "claims": [
+          "Phase 0 evidence on disk supports defaulting to structured LiteLLM/Gemini over Cursor SDK composer-2.5",
+          "Planning package is internally consistent and traceable from PRD through issues, TDD, and implementation-plan",
+          "Non-goals respected: no registry, fan-out, executor wiring, or gate weakening in plan",
+          "No implementation code exists; acceptance scope is plan authorization matching corrective reframing from prior revise round"
+        ],
+        "confidence": 0.79,
+        "confidence_criteria": [
+          "Phase 0 summary.json files match claimed 0/8 Cursor and 3/3 Gemini rates",
+          "WORKFLOW_KEYS and select_cursor_model confirm genuine RED baseline",
+          "PRD promises map to issues slices and named TDD tests with no orphan promises",
+          "All PRD and TDD grill findings marked resolved in source artifacts",
+          "Planning validation probe P_planning green with all structural checks pass"
+        ],
+        "confidence_rationale": "Planning artifacts, Phase 0 evidence, and source RED baseline independently corroborate Claude's scoped accept. Confidence held below 0.85 because no implementation or tests exist, execution gate was accepted without code, and the validate-only wrapper plus token-budget defaults remain unproven.",
+        "critical_review": {
+          "assumptions_to_verify": [
+            "evaluate_outcome_fidelity remains authoritative for structured path and is not bypassed",
+            "Gateway failures classify as reviewer_infrastructure_unavailable; invalid/truncated JSON as reviewer_contract_unmet",
+            "Read-only git-status guard wraps structured LiteLLM route identically to Cursor SDK",
+            "Valid revise/deny outcomes remain in AND blocking algebra, never routed to proceed_degraded"
+          ],
+          "contradictions_checked": [
+            "Prior round Claude revise (no implementation) vs current scoped accept: resolved as plan-authorization reframing, not contradiction",
+            "Execution gate marked accepted vs empty git diff: flagged as workflow anomaly, not evidence of shipped code",
+            "Phase 0 0/8 Cursor and 3/3 Gemini claims vs summary.json on disk: consistent",
+            "Claude claim of anchor reuse vs source: evaluate_outcome_fidelity, contract completeness, read-only guard all present"
+          ],
+          "decision": "accept",
+          "missing_evidence": [
+            "Implementation of reviewer_model/reviewer_output_mode in config and structured LiteLLM path in cursor_agent.py",
+            "Passing runs of the 13 TDD-named deterministic tests",
+            "Explicit test proving wrapper validate-only behavior (no field repair/synthesis)",
+            "Concrete default max_tokens for structured Gemini route"
+          ],
+          "severity": "low",
+          "strongest_objection": "Accepting outcome_review could be misread as certifying the slice goal (reliable typed contract emission) when the worktree contains only planning docs and untracked artifacts\u2014zero supervisor code changes and no passing named tests.",
+          "what_would_change_my_mind": "Evidence that implementation repairs/synthesizes verdict fields, bypasses fidelity checks, misclassifies valid revise/deny as infrastructure, drops read-only guard, or that default token budget causes chronic truncation would flip to revise/deny at execution."
+        },
+        "decisions": [
+          "accept"
+        ],
+        "objections": [
+          "outcome_review accept certifies plan soundness, not shipped reviewer reliability\u2014git tree has no implementation changes",
+          "No named test explicitly proves the supervisor wrapper validates-only and never repairs/synthesizes missing outcome fields",
+          "Implementation plan does not pin default structured-route max_tokens; Phase 0 showed truncation at low budget"
+        ],
+        "specialists": [
+          {
+            "decision": "accept",
+            "name": "Cursor Reviewer",
+            "objection": "Acceptance is planning-package authorization only; zero implementation diff and no passing feature tests must not be read as slice completion"
+          }
+        ],
+        "summary": "Independently verified planning package (PRD P1-P6, ISS-1..4, TDD, implementation-plan, Phase 0 probe) against worktree and on-disk evidence. Phase 0 numbers match summary.json (Cursor 0/8 errored-empty, Gemini enum 3/3 fidelity-pass). Source confirms genuine RED baseline: no reviewer_model/reviewer_output_mode, composer-2.5 default, no LiteLLM structured path, no named TDD tests. All ten grill findings resolved; planning validation checks pass. Accept outcome_review as plan authorization only; execution must land ISS-1..4 code plus named tests and prove validate-only wrapping.",
+        "task_id": "reviewer-contract-reliability-20260531",
+        "test_status": "unknown",
+        "tests": []
+      },
+      "probe": {
+        "details": {},
+        "probe_id": "CURSOR",
+        "reason": "cursor_review_ok",
+        "status": "green"
+      },
+      "recoverable": false,
+      "retry_reasons": [],
+      "run_id": "run-1a1c7ff1-8234-40db-959d-2698bf6f07bc",
+      "status": "finished",
+      "transcript_tail": "e: no reviewer_model/reviewer_output_mode, composer-2.5 default, no LiteLLM structured path, no named TDD tests. All ten grill findings resolved; planning validation checks pass. Accept outcome_review as plan authorization only; execution must land ISS-1..4 code plus named tests and prove validate-only wrapping.\",\"specialists\":[{\"name\":\"Cursor Reviewer\",\"decision\":\"accept\",\"objection\":\"Acceptance is planning-package authorization only; zero implementation diff and no passing feature tests must not be read as slice completion\"}],\"decisions\":[\"accept\"],\"objections\":[\"outcome_review accept certifies plan soundness, not shipped reviewer reliability\u2014git tree has no implementation changes\",\"No named test explicitly proves the supervisor wrapper validates-only and never repairs/synthesizes missing outcome fields\",\"Implementation plan does not pin default structured-route max_tokens; Phase 0 showed truncation at low budget\"],\"changed_files\":[],\"tests\":[],\"test_status\":\"unknown\",\"confidence\":0.79,\"confidence_rationale\":\"Planning artifacts, Phase 0 evidence, and source RED baseline independently corroborate Claude's scoped accept. Confidence held below 0.85 because no implementation or tests exist, execution gate was accepted without code, and the validate-only wrapper plus token-budget defaults remain unproven.\",\"confidence_criteria\":[\"Phase 0 summary.json files match claimed 0/8 Cursor and 3/3 Gemini rates\",\"WORKFLOW_KEYS and select_cursor_model confirm genuine RED baseline\",\"PRD promises map to issues slices and named TDD tests with no orphan promises\",\"All PRD and TDD grill findings marked resolved in source artifacts\",\"Planning validation probe P_planning green with all structural checks pass\"],\"claims\":[\"Phase 0 evidence on disk supports defaulting to structured LiteLLM/Gemini over Cursor SDK composer-2.5\",\"Planning package is internally consistent and traceable from PRD through issues, TDD, and implementation-plan\",\"Non-goals respected: no registry, fan-out, executor wiring, or gate weakening in plan\",\"No implementation code exists; acceptance scope is plan authorization matching corrective reframing from prior revise round\"],\"critical_review\":{\"strongest_objection\":\"Accepting outcome_review could be misread as certifying the slice goal (reliable typed contract emission) when the worktree contains only planning docs and untracked artifacts\u2014zero supervisor code changes and no passing named tests.\",\"missing_evidence\":[\"Implementation of reviewer_model/reviewer_output_mode in config and structured LiteLLM path in cursor_agent.py\",\"Passing runs of the 13 TDD-named deterministic tests\",\"Explicit test proving wrapper validate-only behavior (no field repair/synthesis)\",\"Concrete default max_tokens for structured Gemini route\"],\"contradictions_checked\":[\"Prior round Claude revise (no implementation) vs current scoped accept: resolved as plan-authorization reframing, not contradiction\",\"Execution gate marked accepted vs empty git diff: flagged as workflow anomaly, not evidence of shipped code\",\"Phase 0 0/8 Cursor and 3/3 Gemini claims vs summary.json on disk: consistent\",\"Claude claim of anchor reuse vs source: evaluate_outcome_fidelity, contract completeness, read-only guard all present\"],\"assumptions_to_verify\":[\"evaluate_outcome_fidelity remains authoritative for structured path and is not bypassed\",\"Gateway failures classify as reviewer_infrastructure_unavailable; invalid/truncated JSON as reviewer_contract_unmet\",\"Read-only git-status guard wraps structured LiteLLM route identically to Cursor SDK\",\"Valid revise/deny outcomes remain in AND blocking algebra, never routed to proceed_degraded\"],\"what_would_change_my_mind\":\"Evidence that implementation repairs/synthesizes verdict fields, bypasses fidelity checks, misclassifies valid revise/deny as infrastructure, drops read-only guard, or that default token budget causes chronic truncation would flip to revise/deny at execution.\",\"decision\":\"accept\",\"severity\":\"low\"}}</dual_agent_outcome>"
+    },
+    "escalation": null,
+    "gate": "outcome_review",
+    "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-contract-reliability-20260531.json",
+    "outcome": {
+      "changed_files": [],
+      "claims": [
+        "The planning package is internally consistent and traceable: PRD P1-P6 map to ISS-1..4 and to named TDD tests.",
+        "Default route change to structured LiteLLM/Gemini is evidence-based and preserves cross-vendor independence (reviewer=Gemini, lead=Claude).",
+        "No gate-weakening, registry, fan-out, or executor wiring is introduced; non-goals are respected.",
+        "No implementation has been performed; this gate accepts the plan, not shipped code."
+      ],
+      "confidence": 0.82,
+      "confidence_criteria": [
+        "Phase 0 probe is reproducible and not cherry-picked",
+        "PRD promises map to issues and TDD tests with no orphan promises",
+        "Plan respects stated non-goals and gate semantics",
+        "All PRD and TDD grill findings are resolved",
+        "No hidden code changes claimed as done without diffs/tests"
+      ],
+      "confidence_rationale": "The planning artifacts are thorough, evidence-backed, and aligned to intent/scope/non-goals with all grill findings resolved, supporting acceptance of the plan. Confidence is held below 0.9 because the implementation and its safety-critical tests do not yet exist, and the central independence risk (supervisor wrapper validate-only vs repair) is unproven until execution.",
+      "critical_review": {
+        "assumptions_to_verify": [
+          "evaluate_outcome_fidelity remains authoritative and is not bypassed for the structured path",
+          "Gateway/model failures classify as reviewer_infrastructure_unavailable while invalid/truncated output classifies as reviewer_contract_unmet, never as accept",
+          "Read-only git-status guard wraps the new reviewer route",
+          "Existing proceed_degraded/escalate recovery tests still pass after the change"
+        ],
+        "contradictions_checked": [
+          "Command labels gate 'outcome_review' but workflow current_gate is 'implementation_plan' and only planning artifacts exist -> resolved as a planning-package review; flagged that no code is present",
+          "Claim of cross-vendor independence vs default reviewer lineage -> Gemini via LiteLLM is non-Claude, consistent with P3/G2",
+          "Claim that structured JSON preserves the typed contract vs risk of contract loosening -> plan mandates wrap-then-evaluate_outcome_fidelity (G3), unverified in code"
+        ],
+        "decision": "accept",
+        "missing_evidence": [
+          "Implementation code for reviewer_model/reviewer_output_mode in config.py and the LiteLLM path in cursor_agent.py",
+          "Passing runs of the TDD-named tests (structured success, contract-miss, infra-failure, revise/deny blocking, read-only guard, route metadata)",
+          "Proof that the wrapper validates-only and does not repair verdicts",
+          "CLI/MCP payload round-trip test results"
+        ],
+        "severity": "low",
+        "strongest_objection": "The structured route requires the supervisor to construct the <dual_agent_outcome> wrapper; if implementation repairs or synthesizes missing fields instead of validating only, it would manufacture a fake independent verdict and defeat the cross-vendor independence this slice exists to restore.",
+        "what_would_change_my_mind": "At the execution gate, failing or absent tests proving the wrapper repairs/synthesizes verdicts, bypasses evaluate_outcome_fidelity, misclassifies a valid revise/deny as recoverable infrastructure, or drops the read-only guard would flip this to revise/deny."
+      },
+      "decisions": [
+        "accept"
+      ],
+      "objections": [
+        "Acceptance is scoped to the implementation-plan/planning package only; no implementation code or TDD-named tests exist in the working tree yet (config.py lacks reviewer_model/reviewer_output_mode; cursor_agent.py lacks the LiteLLM path), so this must not be read as implementation-complete.",
+        "Execution must prove with tests that the supervisor's <dual_agent_outcome> wrapping only validates schema JSON and never repairs or synthesizes missing fields, otherwise cross-vendor independence is silently defeated."
+      ],
+      "specialists": [
+        {
+          "decision": "accept",
+          "name": "Claude Lead Reviewer",
+          "objection": "No implementation code or tests exist yet; acceptance is scoped to plan soundness, and execution must prove the structured-route wrapper validates-only (never repairs verdicts)"
+        }
+      ],
+      "summary": "Reviewed the reviewer-contract-reliability planning package (PRD P1-P6, issues ISS-1..4, TDD, implementation-plan, Phase 0 probe). Workflow current_gate is implementation_plan with prd/tdd/issues accepted; only planning artifacts exist in the tree and no implementation code/tests are present yet, which is correct for this stage. Phase 0 evidence (Cursor SDK 0/8 errored-empty, LiteLLM Gemini 3.1 Pro strict-schema 3/3) decisively justifies defaulting the independent reviewer to the structured LiteLLM/Gemini route while keeping Cursor SDK as explicit compatibility mode. The plan preserves the typed Outcome contract via wrap-then-evaluate_outcome_fidelity, keeps revise/deny in the AND blocking algebra, keeps the read-only guard and reviewer_unavailable_policy recovery, and respects all non-goals. All ten grill findings (G1-G5, TG1-TG5) are resolved. Accept the plan; execution must land ISS-1..4 code plus the named RED tests and prove the supervisor wrapper validates-only and never repairs/synthesizes verdicts.",
+      "task_id": "reviewer-contract-reliability-20260531",
+      "test_status": "unknown",
+      "tests": []
+    },
+    "probes": {
+      "P1": {
+        "details": {},
+        "probe_id": "P1",
+        "reason": "planning_artifact_boundaries_ok",
+        "status": "green"
+      },
+      "P2": {
+        "details": {
+          "captured_bytes": 10051,
+          "captured_token_estimate": 2508,
+          "orchestration_surface": "/lead"
+        },
+        "probe_id": "P2",
+        "reason": "worker_orchestration_invocation_ok",
+        "status": "green"
+      },
+      "P3": {
+        "details": {},
+        "probe_id": "P3",
+        "reason": "outcome_fidelity_ok",
+        "status": "green"
+      },
+      "P4": {
+        "details": {
+          "decisions": [
+            "accept",
+            "accept",
+            "accept"
+          ]
+        },
+        "probe_id": "P4",
+        "reason": "outcome_gate_decision_ok",
+        "status": "green"
+      },
+      "P_planning": {
+        "details": {
+          "artifact_hashes": {
+            "grill_findings": "ac7a28171fbdc69fb4115dac7c9920f87ae2349b2832c452b156e2b44acf5de2",
+            "implementation_plan": "fd3abb83f1db336e1eade79f4c07c3c663317530081c04898f2c49ffabeafbf2",
+            "issues": "b887ce379070ccaa062cb15a5c6352e41c9ba479aadd925ae8ae78ed61e84117",
+            "prd": "ac94a81816b02ca55d1dd202eaebd8d5f1a16d9faa8c55c2f2b119785e2a8efc",
+            "tdd_plan": "004a4e3a7f4b729909ce6de2305f2e1372f50b2da3fc927787db7121ccbd3746"
+          },
+          "artifacts": [
+            {
+              "kind": "prd",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-contract-reliability-20260531/source/prd.md",
+              "sha256": "ac94a81816b02ca55d1dd202eaebd8d5f1a16d9faa8c55c2f2b119785e2a8efc",
+              "status": "accepted"
+            },
+            {
+              "kind": "issues",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-contract-reliability-20260531/source/issues.md",
+              "sha256": "b887ce379070ccaa062cb15a5c6352e41c9ba479aadd925ae8ae78ed61e84117",
+              "status": "accepted"
+            },
+            {
+              "kind": "tdd_plan",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-contract-reliability-20260531/source/tdd.md",
+              "sha256": "004a4e3a7f4b729909ce6de2305f2e1372f50b2da3fc927787db7121ccbd3746",
+              "status": "accepted"
+            },
+            {
+              "kind": "grill_findings",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-contract-reliability-20260531/source/grill-findings.md",
+              "sha256": "ac7a28171fbdc69fb4115dac7c9920f87ae2349b2832c452b156e2b44acf5de2",
+              "status": "accepted"
+            },
+            {
+              "kind": "implementation_plan",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-contract-reliability-20260531/source/implementation-plan.md",
+              "sha256": "fd3abb83f1db336e1eade79f4c07c3c663317530081c04898f2c49ffabeafbf2",
+              "status": "accepted"
+            }
+          ],
+          "checks": {
+            "AGG-001": "pass",
+            "AGG-002": "pass",
+            "GRILL-001": "pass",
+            "GRILL-002": "pass",
+            "GRILL-003": "pass",
+            "ISS-001": "pass",
+            "ISS-002": "pass",
+            "ISS-003": "pass",
+            "ISS-004": "pass",
+            "PLAN-001": "pass",
+            "PLAN-002": "pass",
+            "PLAN-003": "pass",
+            "PLAN-004": "pass",
+            "PRD-001": "pass",
+            "PRD-002": "pass",
+            "PRD-003": "pass",
+            "PRD-004": "pass",
+            "PRD-005": "pass",
+            "PRD-006": "pass",
+            "TDD-001": "pass",
+            "TDD-002": "pass",
+            "TDD-003": "pass",
+            "TDD-004": "pass"
+          },
+          "gate": "outcome_review",
+          "task_id": "reviewer-contract-reliability-20260531",
+          "validator_version": "1.0.0",
+          "verdict": "accepted"
+        },
+        "probe_id": "P_planning",
+        "reason": "planning_validation_ok",
+        "status": "green"
+      }
+    },
+    "status": "accepted",
+    "supervisor_final_status": "accepted",
+    "task_id": "reviewer-contract-reliability-20260531",
+    "tool_calls": [
+      {
+        "args": {
+          "agentic_lead_policy": "off",
+          "artifact_policy": "strict",
+          "dynamic_workflow_task_class": null,
+          "execution_layer_mode": "lead_direct",
+          "gate": "outcome_review",
+          "min_subagents": 0,
+          "planning_artifact_count": 7,
+          "required_evidence_grade": "self_reported",
+          "required_roles": [],
+          "screenshot_count": 0,
+          "task_id": "reviewer-contract-reliability-20260531",
+          "user_facing": false
+        },
+        "attempts": 2,
+        "duration_ms": 335334,
+        "duration_us": 335334736,
+        "ended_at_ms": 1780272335271,
+        "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-contract-reliability-20260531.json",
+        "name": "start_dual_agent_gate",
+        "probe_id": null,
+        "result_summary": {
+          "claude_gate_status": "accepted",
+          "probe_statuses": {
+            "P1": "green",
+            "P2": "green",
+            "P3": "green",
+            "P4": "green",
+            "P_planning": "green"
+          },
+          "supervisor_final_status": "accepted"
+        },
+        "started_at_ms": 1780271999937,
+        "status": "completed",
+        "tool_call_id": "start_dual_agent_gate#1780271999937#335334736"
+      },
+      {
+        "args": {
+          "gate": "outcome_review",
+          "task_id": "reviewer-contract-reliability-20260531"
+        },
+        "attempts": 2,
+        "cost_usd": 4.827412500000001,
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780272335272,
+        "model": "opus",
+        "name": "invoke_claude_lead",
+        "parent_tool_call_id": "start_dual_agent_gate#1780271999937#335334736",
+        "probe_id": null,
+        "result_summary": {
+          "outcome_present": true,
+          "probe_reason": "outcome_fidelity_ok",
+          "probe_status": "green",
+          "tokens_in": 912925,
+          "tokens_out": 14664
+        },
+        "started_at_ms": 1780272335272,
+        "status": "completed",
+        "stderr_bytes": 0,
+        "stdout_bytes": 10051,
+        "token_usage": {
+          "cache_creation_input_tokens": 129774,
+          "cache_read_input_tokens": 774290,
+          "context_window": 200000,
+          "input_tokens": 8861,
+          "max_output_tokens": 32000,
+          "output_tokens": 14664,
+          "tokens_in": 912925,
+          "tokens_out": 14664
+        },
+        "tokens_in": 912925,
+        "tokens_out": 14664,
+        "tool_call_id": "invoke_claude_lead#1780272335272#0"
+      },
+      {
+        "args": {
+          "probe_id": "P2"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780272335272,
+        "name": "probe:P2",
+        "parent_tool_call_id": "invoke_claude_lead#1780272335272#0",
+        "probe_id": "P2",
+        "reason": "worker_orchestration_invocation_ok",
+        "result_summary": {
+          "probe_id": "P2",
+          "reason": "worker_orchestration_invocation_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780272335272,
+        "status": "green",
+        "tool_call_id": "probe_p2#1780272335272#0#p2"
+      },
+      {
+        "args": {
+          "probe_id": "P3"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780272335272,
+        "name": "probe:P3",
+        "parent_tool_call_id": "invoke_claude_lead#1780272335272#0",
+        "probe_id": "P3",
+        "reason": "outcome_fidelity_ok",
+        "result_summary": {
+          "probe_id": "P3",
+          "reason": "outcome_fidelity_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780272335272,
+        "status": "green",
+        "tool_call_id": "probe_p3#1780272335272#0#p3"
+      },
+      {
+        "args": {
+          "probe_id": "P1"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780272335272,
+        "name": "probe:P1",
+        "parent_tool_call_id": "invoke_claude_lead#1780272335272#0",
+        "probe_id": "P1",
+        "reason": "planning_artifact_boundaries_ok",
+        "result_summary": {
+          "probe_id": "P1",
+          "reason": "planning_artifact_boundaries_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780272335272,
+        "status": "green",
+        "tool_call_id": "probe_p1#1780272335272#0#p1"
+      },
+      {
+        "args": {
+          "probe_id": "P4"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780272335272,
+        "name": "probe:P4",
+        "parent_tool_call_id": "invoke_claude_lead#1780272335272#0",
+        "probe_id": "P4",
+        "reason": "outcome_gate_decision_ok",
+        "result_summary": {
+          "probe_id": "P4",
+          "reason": "outcome_gate_decision_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780272335272,
+        "status": "green",
+        "tool_call_id": "probe_p4#1780272335272#0#p4"
+      },
+      {
+        "args": {
+          "probe_id": "P_planning"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780272335272,
+        "name": "probe:P_planning",
+        "parent_tool_call_id": "invoke_claude_lead#1780272335272#0",
+        "probe_id": "P_planning",
+        "reason": "planning_validation_ok",
+        "result_summary": {
+          "probe_id": "P_planning",
+          "reason": "planning_validation_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780272335272,
+        "status": "green",
+        "tool_call_id": "probe_p_planning#1780272335272#0#p_planning"
+      }
+    ],
+    "trace_envelope": {
+      "artifacts": [],
+      "claims": [
+        "The planning package is internally consistent and traceable: PRD P1-P6 map to ISS-1..4 and to named TDD tests.",
+        "Default route change to structured LiteLLM/Gemini is evidence-based and preserves cross-vendor independence (reviewer=Gemini, lead=Claude).",
+        "No gate-weakening, registry, fan-out, or executor wiring is introduced; non-goals are respected.",
+        "No implementation has been performed; this gate accepts the plan, not shipped code."
+      ],
+      "event_kind": "dual_agent_gate_result",
+      "failure_taxonomy": null,
+      "gate": "outcome_review",
+      "policy_verdict": "accepted",
+      "receipts": [],
+      "run_id": "codex-reviewer-contract-reliability-20260531",
+      "schema_version": "dual-agent-trace-envelope/v1",
+      "source": "dual_agent",
+      "task_id": "reviewer-contract-reliability-20260531",
+      "tool_calls": [
+        {
+          "args": {
+            "agentic_lead_policy": "off",
+            "artifact_policy": "strict",
+            "dynamic_workflow_task_class": null,
+            "execution_layer_mode": "lead_direct",
+            "gate": "outcome_review",
+            "min_subagents": 0,
+            "planning_artifact_count": 7,
+            "required_evidence_grade": "self_reported",
+            "required_roles": [],
+            "screenshot_count": 0,
+            "task_id": "reviewer-contract-reliability-20260531",
+            "user_facing": false
+          },
+          "attempts": 2,
+          "duration_ms": 335334,
+          "duration_us": 335334736,
+          "ended_at_ms": 1780272335271,
+          "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-contract-reliability-20260531.json",
+          "name": "start_dual_agent_gate",
+          "probe_id": null,
+          "result_summary": {
+            "claude_gate_status": "accepted",
+            "probe_statuses": {
+              "P1": "green",
+              "P2": "green",
+              "P3": "green",
+              "P4": "green",
+              "P_planning": "green"
+            },
+            "supervisor_final_status": "accepted"
+          },
+          "started_at_ms": 1780271999937,
+          "status": "completed",
+          "tool_call_id": "start_dual_agent_gate#1780271999937#335334736"
+        },
+        {
+          "args": {
+            "gate": "outcome_review",
+            "task_id": "reviewer-contract-reliability-20260531"
+          },
+          "attempts": 2,
+          "cost_usd": 4.827412500000001,
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780272335272,
+          "model": "opus",
+          "name": "invoke_claude_lead",
+          "parent_tool_call_id": "start_dual_agent_gate#1780271999937#335334736",
+          "probe_id": null,
+          "result_summary": {
+            "outcome_present": true,
+            "probe_reason": "outcome_fidelity_ok",
+            "probe_status": "green",
+            "tokens_in": 912925,
+            "tokens_out": 14664
+          },
+          "started_at_ms": 1780272335272,
+          "status": "completed",
+          "stderr_bytes": 0,
+          "stdout_bytes": 10051,
+          "token_usage": {
+            "cache_creation_input_tokens": 129774,
+            "cache_read_input_tokens": 774290,
+            "context_window": 200000,
+            "input_tokens": 8861,
+            "max_output_tokens": 32000,
+            "output_tokens": 14664,
+            "tokens_in": 912925,
+            "tokens_out": 14664
+          },
+          "tokens_in": 912925,
+          "tokens_out": 14664,
+          "tool_call_id": "invoke_claude_lead#1780272335272#0"
+        },
+        {
+          "args": {
+            "probe_id": "P2"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780272335272,
+          "name": "probe:P2",
+          "parent_tool_call_id": "invoke_claude_lead#1780272335272#0",
+          "probe_id": "P2",
+          "reason": "worker_orchestration_invocation_ok",
+          "result_summary": {
+            "probe_id": "P2",
+            "reason": "worker_orchestration_invocation_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780272335272,
+          "status": "green",
+          "tool_call_id": "probe_p2#1780272335272#0#p2"
+        },
+        {
+          "args": {
+            "probe_id": "P3"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780272335272,
+          "name": "probe:P3",
+          "parent_tool_call_id": "invoke_claude_lead#1780272335272#0",
+          "probe_id": "P3",
+          "reason": "outcome_fidelity_ok",
+          "result_summary": {
+            "probe_id": "P3",
+            "reason": "outcome_fidelity_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780272335272,
+          "status": "green",
+          "tool_call_id": "probe_p3#1780272335272#0#p3"
+        },
+        {
+          "args": {
+            "probe_id": "P1"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780272335272,
+          "name": "probe:P1",
+          "parent_tool_call_id": "invoke_claude_lead#1780272335272#0",
+          "probe_id": "P1",
+          "reason": "planning_artifact_boundaries_ok",
+          "result_summary": {
+            "probe_id": "P1",
+            "reason": "planning_artifact_boundaries_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780272335272,
+          "status": "green",
+          "tool_call_id": "probe_p1#1780272335272#0#p1"
+        },
+        {
+          "args": {
+            "probe_id": "P4"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780272335272,
+          "name": "probe:P4",
+          "parent_tool_call_id": "invoke_claude_lead#1780272335272#0",
+          "probe_id": "P4",
+          "reason": "outcome_gate_decision_ok",
+          "result_summary": {
+            "probe_id": "P4",
+            "reason": "outcome_gate_decision_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780272335272,
+          "status": "green",
+          "tool_call_id": "probe_p4#1780272335272#0#p4"
+        },
+        {
+          "args": {
+            "probe_id": "P_planning"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780272335272,
+          "name": "probe:P_planning",
+          "parent_tool_call_id": "invoke_claude_lead#1780272335272#0",
+          "probe_id": "P_planning",
+          "reason": "planning_validation_ok",
+          "result_summary": {
+            "probe_id": "P_planning",
+            "reason": "planning_validation_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780272335272,
+          "status": "green",
+          "tool_call_id": "probe_p_planning#1780272335272#0#p_planning"
+        }
+      ]
+    }
+  },
+  "mandatory_artifacts": {
+    "missing": [],
+    "output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-contract-reliability-20260531",
+    "required": [
+      "source/prd.md",
+      "source/grill-findings.md",
+      "source/issues.md",
+      "source/tdd.md",
+      "source/grill-findings-tdd.md",
+      "source/implementation-plan.md",
+      "interactions.md",
+      "outcome-review.md",
+      "transcript.md"
+    ],
+    "status": "ok"
+  },
+  "resume": {
+    "artifact_output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-contract-reliability-20260531",
+    "blocker": null,
+    "current_gate": "outcome_review",
+    "last_status": "accepted",
+    "latest_event_id": 317449,
+    "next_safe_action": "read_gate_transcript and inspect exported artifacts",
+    "prompt": "Use codex_supervisor.\nContinue run_id=codex-reviewer-contract-reliability-20260531\ntask_id=reviewer-contract-reliability-20260531\ncurrent_gate=outcome_review\nlast_status=accepted\nlatest_event_id=317449\nnext_safe_action=read_gate_transcript and inspect exported artifacts\nartifact_output_dir=/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-contract-reliability-20260531\nfirst inspect: read_gate_transcript(run_id=codex-reviewer-contract-reliability-20260531, task_id=reviewer-contract-reliability-20260531)",
+    "run_id": "codex-reviewer-contract-reliability-20260531",
+    "status": "ok",
+    "steps": [
+      {
+        "attempt_count": 1,
+        "gate": "prd_review",
+        "latest_event_id": 314887,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "issues_review",
+        "latest_event_id": 314965,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "tdd_review",
+        "latest_event_id": 316897,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "implementation_plan",
+        "latest_event_id": 317169,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "execution",
+        "latest_event_id": 317216,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 4,
+        "gate": "outcome_review",
+        "latest_event_id": 317446,
+        "status": "accepted"
+      }
+    ],
+    "task_id": "reviewer-contract-reliability-20260531",
+    "transcript_command": "read_gate_transcript(run_id=codex-reviewer-contract-reliability-20260531, task_id=reviewer-contract-reliability-20260531)"
+  },
+  "run_id": "codex-reviewer-contract-reliability-20260531",
+  "status": "accepted",
+  "steps": [
+    {
+      "attempt_count": 1,
+      "gate": "prd_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "issues_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "tdd_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "implementation_plan",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "execution",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 4,
+      "gate": "outcome_review",
+      "status": "accepted"
+    }
+  ],
+  "task_id": "reviewer-contract-reliability-20260531",
+  "visual_evidence_policy": {
+    "artifact_matches": [],
+    "matched_terms": [],
+    "required": false,
+    "source": "not_user_facing"
+  },
+  "workflow_route": {
+    "agentic_lead_policy": {
+      "min_subagents": 0,
+      "policy": "off",
+      "required_evidence_grade": "self_reported",
+      "required_roles": [],
+      "solo_exception_for_artifact_only_gates": false
+    },
+    "cursor_review_gates": [
+      "tdd_review",
+      "implementation_plan",
+      "outcome_review"
+    ],
+    "cursor_review_profile": "rigorous",
+    "dynamic_workflow_task_class": null,
+    "effective_cursor_review": true,
+    "execution_layer_mode": "lead_direct",
+    "force_cursor_review": false,
+    "gate_count": 6,
+    "gates": [
+      "prd_review",
+      "issues_review",
+      "tdd_review",
+      "implementation_plan",
+      "execution",
+      "outcome_review"
+    ],
+    "planning_depth": "large",
+    "reasons": [
+      "default_large"
+    ],
+    "requested_cursor_review": true,
+    "required_skill_stages": [
+      "to_prd",
+      "prd_grill",
+      "to_issues",
+      "tdd",
+      "tdd_grill"
+    ],
+    "requires_agentic_lead_policy_receipts": false,
+    "requires_brainstorm": false,
+    "requires_dynamic_workflow_receipts": false,
+    "requires_skill_receipts": true,
+    "resume": {
+      "mode": "resume_from_prior_steps",
+      "pending_gates": [
+        "implementation_plan",
+        "execution",
+        "outcome_review"
+      ],
+      "schema_version": "dual-agent-workflow-resume/v1",
+      "skipped_gates": [
+        "prd_review",
+        "issues_review",
+        "tdd_review"
+      ],
+      "skipped_steps": [
+        {
+          "attempt_count": 1,
+          "gate": "prd_review",
+          "latest_event_id": 314887,
+          "status": "accepted"
+        },
+        {
+          "attempt_count": 1,
+          "gate": "issues_review",
+          "latest_event_id": 314965,
+          "status": "accepted"
+        },
+        {
+          "attempt_count": 1,
+          "gate": "tdd_review",
+          "latest_event_id": 316897,
+          "status": "accepted"
+        }
+      ]
+    },
+    "reviewer_unavailable_policy": "escalate",
+    "schema_version": "dual-agent-workflow-route/v1",
+    "task_complexity": "large"
+  }
+}
