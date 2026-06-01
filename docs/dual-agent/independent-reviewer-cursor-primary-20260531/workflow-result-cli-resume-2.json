@@ -1,0 +1,496 @@
+{
+  "artifact_export": {
+    "files": [
+      "docs/dual-agent/independent-reviewer-cursor-primary-20260531/index.md",
+      "docs/dual-agent/independent-reviewer-cursor-primary-20260531/triage.md",
+      "docs/dual-agent/independent-reviewer-cursor-primary-20260531/prd.md",
+      "docs/dual-agent/independent-reviewer-cursor-primary-20260531/tdd.md",
+      "docs/dual-agent/independent-reviewer-cursor-primary-20260531/grill-findings.md",
+      "docs/dual-agent/independent-reviewer-cursor-primary-20260531/issues.md",
+      "docs/dual-agent/independent-reviewer-cursor-primary-20260531/screenshots.md",
+      "docs/dual-agent/independent-reviewer-cursor-primary-20260531/outcome-review.md",
+      "docs/dual-agent/independent-reviewer-cursor-primary-20260531/interactions.md",
+      "docs/dual-agent/independent-reviewer-cursor-primary-20260531/transcript.md",
+      "docs/dual-agent/independent-reviewer-cursor-primary-20260531/transcript.jsonl",
+      "docs/dual-agent/independent-reviewer-cursor-primary-20260531/mast-coverage.md",
+      "docs/dual-agent/independent-reviewer-cursor-primary-20260531/replay/manifest.json",
+      "docs/dual-agent/independent-reviewer-cursor-primary-20260531/replay/workspace-snapshot.json",
+      "docs/dual-agent/independent-reviewer-cursor-primary-20260531/replay/mast-coverage.json",
+      "docs/dual-agent/independent-reviewer-cursor-primary-20260531/source/grill-findings-tdd.md",
+      "docs/dual-agent/independent-reviewer-cursor-primary-20260531/source/grill-findings.md",
+      "docs/dual-agent/independent-reviewer-cursor-primary-20260531/source/implementation-plan.md",
+      "docs/dual-agent/independent-reviewer-cursor-primary-20260531/source/issues.md",
+      "docs/dual-agent/independent-reviewer-cursor-primary-20260531/source/prd.md",
+      "docs/dual-agent/independent-reviewer-cursor-primary-20260531/source/tdd.md"
+    ],
+    "output_dir": "docs/dual-agent/independent-reviewer-cursor-primary-20260531",
+    "run_id": "codex-independent-reviewer-cursor-primary-20260531",
+    "status": "ok",
+    "task_id": "independent-reviewer-cursor-primary-20260531"
+  },
+  "current_gate": "execution",
+  "final_gate_result": {
+    "artifact_rigor": {
+      "accepted_prerequisite_gates": [
+        "implementation_plan"
+      ],
+      "artifact_policy": "strict",
+      "gate": "execution",
+      "gate_statuses": {
+        "execution": "blocked",
+        "implementation_plan": "accepted",
+        "issues_review": "accepted",
+        "prd_review": "accepted",
+        "tdd_review": "accepted"
+      },
+      "missing_artifact_paths": [],
+      "missing_artifacts": [],
+      "missing_prerequisite_gates": [],
+      "missing_screenshot_paths": [],
+      "present_artifacts": [
+        "grill_findings",
+        "implementation_plan",
+        "issues",
+        "prd",
+        "tdd_plan"
+      ],
+      "reason": "required_artifacts_present",
+      "required_artifacts": [
+        "prd",
+        "tdd_plan",
+        "grill_findings",
+        "issues",
+        "implementation_plan"
+      ],
+      "required_prerequisite_gates": [
+        "implementation_plan"
+      ],
+      "screenshots": [],
+      "status": "ok",
+      "user_facing": false,
+      "visual_validation": {
+        "allowed_sources": [
+          "browser",
+          "browser-use",
+          "browser_use",
+          "computer",
+          "computer-use",
+          "computer_use"
+        ],
+        "evidence": [],
+        "failures": [],
+        "reason": "no_screenshots_supplied",
+        "status": "not_required"
+      }
+    },
+    "attempts": 5,
+    "claim_verification": null,
+    "cursor_review": null,
+    "escalation": {
+      "claim_verification": null,
+      "reason": "agents_not_converged",
+      "type": "workflow_lifecycle"
+    },
+    "event_id": 320306,
+    "gate": "execution",
+    "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/independent-reviewer-cursor-primary-20260531.json",
+    "outcome": {
+      "changed_files": [],
+      "claims": [
+        "The execution gate has not implemented the intent; the central P1 default flip is absent and contradicted by current source",
+        "Planning artifacts are complete and coherent and phase0 probe evidence supports feasibility, so the correct verdict is revise rather than deny"
+      ],
+      "confidence": 0.9,
+      "confidence_criteria": [
+        "git diff/status confirm no source changes (observed)",
+        "config.py default reviewer mode read directly (observed = litellm_structured)",
+        "cursor_agent.py grep shows no timeout/fallback/diagnostics (observed)",
+        "probe script grep shows no forced cursor_sdk / Codex MCP env load (observed)",
+        "no new test files exist (observed)"
+      ],
+      "confidence_rationale": "Verdict rests on deterministic, directly observed source facts: an empty diff against HEAD and config.py:133 retaining the litellm_structured default, both contradicting the gate's stated intent. Residual uncertainty is only whether implementation exists on an unprovided branch/worktree, which the handoff did not reference.",
+      "critical_review": {
+        "assumptions_to_verify": [
+          "That the implementation was expected to land in this repo working tree and not on an unprovided branch",
+          "That HEAD c073201 is the intended baseline for this gate"
+        ],
+        "contradictions_checked": [
+          "Intent says make cursor_sdk default vs config.py:133 still litellm_structured -> contradiction confirmed",
+          "Plan claims edits to 6 modules + tests vs git diff empty -> contradiction confirmed",
+          "Prior commit c073201 added reviewer_runtime/persona naming, which could look like partial P5 progress, but does not flip the default or add fallback/timeout -> does not satisfy intent"
+        ],
+        "decision": "revise",
+        "missing_evidence": [
+          "Confirmation that no separate branch/worktree holds the implementation diff referenced by the gate",
+          "A test-evidence.md or pytest receipt for the planned reviewer/workflow tests",
+          "Any ADR file at docs/adr/20260531-independent-reviewer-boundary.md"
+        ],
+        "severity": "high",
+        "strongest_objection": "For an execution gate, the working tree shows zero source changes and the single most important promise (P1: cursor_sdk as default) is literally inverted in supervisor/config.py:133 \u2014 an empty diff cannot satisfy an implementation gate.",
+        "what_would_change_my_mind": "A real source diff (or branch reference) showing config.py defaulting to cursor_sdk, a supervisor-side timeout-bounded Cursor SDK call with diagnostics, a post-failure litellm_structured fallback labeled lower-assurance, a truthful probe, and passing deterministic tests."
+      },
+      "decisions": [
+        "revise"
+      ],
+      "objections": [
+        "P1 contradicted: supervisor/config.py:133 default reviewer_output_mode is still 'litellm_structured', not 'cursor_sdk'",
+        "P3/P4 unmet: supervisor/cursor_agent.py has no supervisor-side SDK timeout wrapper, no cursor->litellm fallback path, no prompt-size/duration/raw-metadata diagnostics, no degraded/assurance labeling",
+        "P2 partial: scripts/probe_cursor_sdk_live.py does not force reviewer_output_mode='cursor_sdk' nor load CURSOR_API_KEY from Codex MCP config",
+        "P7 unmet: none of the TDD-named tests exist and no new test files were added",
+        "Empty git diff against HEAD means the execution gate produced planning artifacts only, not the planned code changes"
+      ],
+      "specialists": [
+        {
+          "decision": "revise",
+          "name": "lead_gate_reviewer",
+          "objection": "No implementation diff exists; P1 config default still litellm_structured"
+        }
+      ],
+      "summary": "Execution gate cannot accept: required source changes have not landed. Working tree is clean against HEAD (empty diff, nothing staged), only the planning docs directory is untracked. supervisor/config.py:133 still defaults reviewer_output_mode to litellm_structured, the direct opposite of the gate's headline intent (cursor_sdk primary). cursor_agent.py lacks the timeout wrapper, post-failure fallback, and prompt-size/diagnostics instrumentation required by P3/P4. The probe does not force cursor_sdk or load CURSOR_API_KEY from Codex MCP config (P2 partial). No new tests exist (P7). Decision: revise.",
+      "task_id": "independent-reviewer-cursor-primary-20260531",
+      "test_status": "unknown",
+      "tests": []
+    },
+    "probes": {
+      "P1": {
+        "details": {},
+        "probe_id": "P1",
+        "reason": "planning_artifact_boundaries_ok",
+        "status": "green"
+      },
+      "P2": {
+        "details": {
+          "captured_bytes": 9004,
+          "captured_token_estimate": 2247,
+          "orchestration_surface": "/lead"
+        },
+        "probe_id": "P2",
+        "reason": "worker_orchestration_invocation_ok",
+        "status": "green"
+      },
+      "P3": {
+        "details": {},
+        "probe_id": "P3",
+        "reason": "outcome_fidelity_ok",
+        "status": "green"
+      },
+      "P4": {
+        "details": {
+          "blocking_decisions": [
+            "revise",
+            "revise",
+            "revise"
+          ]
+        },
+        "probe_id": "P4",
+        "reason": "outcome_critical_review_blocked",
+        "status": "red"
+      },
+      "P_planning": {
+        "details": {
+          "artifact_hashes": {
+            "grill_findings": "e91aba59d5f69de62b29eaaba4ca40cb4240cdd145b1c85ec919155207ec1d7b",
+            "implementation_plan": "c368914264082b665fce94cac7f8894539aee3dbebecf4fcf60e9e8bbad94b96",
+            "issues": "782c95a6da04b334a0e3163907b85aaf80fdd1497c4cb23c5f481498aa6388bb",
+            "prd": "b267b07910ab135e80a5ad38d301c49169dee5028c9e3ced1370c636052d6cd1",
+            "tdd_plan": "fc2e213160f533917096b43a1076fc15fa947b2d7ddc3e930397991530020e11"
+          },
+          "artifacts": [
+            {
+              "kind": "prd",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/independent-reviewer-cursor-primary-20260531/source/prd.md",
+              "sha256": "b267b07910ab135e80a5ad38d301c49169dee5028c9e3ced1370c636052d6cd1",
+              "status": "accepted"
+            },
+            {
+              "kind": "issues",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/independent-reviewer-cursor-primary-20260531/source/issues.md",
+              "sha256": "782c95a6da04b334a0e3163907b85aaf80fdd1497c4cb23c5f481498aa6388bb",
+              "status": "accepted"
+            },
+            {
+              "kind": "tdd_plan",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/independent-reviewer-cursor-primary-20260531/source/tdd.md",
+              "sha256": "fc2e213160f533917096b43a1076fc15fa947b2d7ddc3e930397991530020e11",
+              "status": "accepted"
+            },
+            {
+              "kind": "grill_findings",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/independent-reviewer-cursor-primary-20260531/source/grill-findings.md",
+              "sha256": "e91aba59d5f69de62b29eaaba4ca40cb4240cdd145b1c85ec919155207ec1d7b",
+              "status": "accepted"
+            },
+            {
+              "kind": "implementation_plan",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/independent-reviewer-cursor-primary-20260531/source/implementation-plan.md",
+              "sha256": "c368914264082b665fce94cac7f8894539aee3dbebecf4fcf60e9e8bbad94b96",
+              "status": "accepted"
+            }
+          ],
+          "checks": {
+            "AGG-001": "pass",
+            "AGG-002": "pass",
+            "GRILL-001": "pass",
+            "GRILL-002": "pass",
+            "GRILL-003": "pass",
+            "ISS-001": "pass",
+            "ISS-002": "pass",
+            "ISS-003": "pass",
+            "ISS-004": "pass",
+            "PLAN-001": "pass",
+            "PLAN-002": "pass",
+            "PLAN-003": "pass",
+            "PLAN-004": "pass",
+            "PRD-001": "pass",
+            "PRD-002": "pass",
+            "PRD-003": "pass",
+            "PRD-004": "pass",
+            "PRD-005": "pass",
+            "PRD-006": "pass",
+            "TDD-001": "pass",
+            "TDD-002": "pass",
+            "TDD-003": "pass",
+            "TDD-004": "pass"
+          },
+          "gate": "execution",
+          "task_id": "independent-reviewer-cursor-primary-20260531",
+          "validator_version": "1.0.0",
+          "verdict": "accepted"
+        },
+        "probe_id": "P_planning",
+        "reason": "planning_validation_ok",
+        "status": "green"
+      }
+    },
+    "status": "blocked",
+    "task_id": "independent-reviewer-cursor-primary-20260531",
+    "trace_envelope": {
+      "artifacts": [],
+      "claims": [
+        "The execution gate has not implemented the intent; the central P1 default flip is absent and contradicted by current source",
+        "Planning artifacts are complete and coherent and phase0 probe evidence supports feasibility, so the correct verdict is revise rather than deny"
+      ],
+      "event_kind": "dual_agent_gate_result",
+      "failure_taxonomy": {
+        "category": "inter_agent_misalignment",
+        "code": "agents_not_converged",
+        "framework": "MAST-inspired",
+        "mast_category": "Specification Issues",
+        "mast_code": "FM-1.5",
+        "mast_mode": "Unaware of termination conditions",
+        "probe_id": "",
+        "schema_version": "dual-agent-failure-taxonomy/v1",
+        "source": "result_escalation",
+        "subcategory": "decision_deadlock"
+      },
+      "gate": "execution",
+      "policy_verdict": "blocked",
+      "receipts": [],
+      "run_id": "codex-independent-reviewer-cursor-primary-20260531",
+      "schema_version": "dual-agent-trace-envelope/v1",
+      "source": "dual_agent",
+      "task_id": "independent-reviewer-cursor-primary-20260531",
+      "tool_calls": []
+    },
+    "workflow_deadlock_escalation": {
+      "action_id": 1303,
+      "ask_id": 36,
+      "nonce": "c3efe7b9ddcc4ffc",
+      "probe": {
+        "details": {
+          "action_id": null,
+          "escalation_type": "kill_or_pause"
+        },
+        "probe_id": "P4",
+        "reason": "paused_for_human",
+        "status": "green"
+      },
+      "status": "paused_for_human"
+    }
+  },
+  "mandatory_artifacts": {
+    "missing": [],
+    "output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/independent-reviewer-cursor-primary-20260531",
+    "required": [
+      "source/prd.md",
+      "source/grill-findings.md",
+      "source/issues.md",
+      "source/tdd.md",
+      "source/grill-findings-tdd.md",
+      "source/implementation-plan.md",
+      "interactions.md",
+      "outcome-review.md",
+      "transcript.md"
+    ],
+    "status": "ok"
+  },
+  "resume": {
+    "artifact_output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/independent-reviewer-cursor-primary-20260531",
+    "blocker": {
+      "gate": "execution",
+      "latest_event_id": 320306,
+      "status": "blocked"
+    },
+    "current_gate": "execution",
+    "last_status": "blocked",
+    "latest_event_id": 320308,
+    "next_safe_action": "inspect blocker, provide corrective input, then rerun run_dual_agent_workflow",
+    "prompt": "Use codex_supervisor.\nContinue run_id=codex-independent-reviewer-cursor-primary-20260531\ntask_id=independent-reviewer-cursor-primary-20260531\ncurrent_gate=execution\nlast_status=blocked\nlatest_event_id=320308\nnext_safe_action=inspect blocker, provide corrective input, then rerun run_dual_agent_workflow\nartifact_output_dir=/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/independent-reviewer-cursor-primary-20260531\nfirst inspect: read_gate_transcript(run_id=codex-independent-reviewer-cursor-primary-20260531, task_id=independent-reviewer-cursor-primary-20260531)",
+    "run_id": "codex-independent-reviewer-cursor-primary-20260531",
+    "status": "ok",
+    "steps": [
+      {
+        "attempt_count": 1,
+        "gate": "prd_review",
+        "latest_event_id": 320028,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "issues_review",
+        "latest_event_id": 320106,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "tdd_review",
+        "latest_event_id": 320198,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "implementation_plan",
+        "latest_event_id": 320249,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 5,
+        "gate": "execution",
+        "latest_event_id": 320306,
+        "status": "blocked"
+      }
+    ],
+    "task_id": "independent-reviewer-cursor-primary-20260531",
+    "transcript_command": "read_gate_transcript(run_id=codex-independent-reviewer-cursor-primary-20260531, task_id=independent-reviewer-cursor-primary-20260531)"
+  },
+  "run_id": "codex-independent-reviewer-cursor-primary-20260531",
+  "status": "blocked",
+  "steps": [
+    {
+      "attempt_count": 1,
+      "gate": "prd_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "issues_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "tdd_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "implementation_plan",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 5,
+      "gate": "execution",
+      "status": "blocked"
+    }
+  ],
+  "task_id": "independent-reviewer-cursor-primary-20260531",
+  "visual_evidence_policy": {
+    "artifact_matches": [],
+    "matched_terms": [],
+    "required": false,
+    "source": "not_user_facing"
+  },
+  "workflow_route": {
+    "agentic_lead_policy": {
+      "min_subagents": 0,
+      "policy": "off",
+      "required_evidence_grade": "self_reported",
+      "required_roles": [],
+      "solo_exception_for_artifact_only_gates": false
+    },
+    "cursor_review_gates": [
+      "tdd_review",
+      "implementation_plan",
+      "outcome_review"
+    ],
+    "cursor_review_profile": "rigorous",
+    "dynamic_workflow_task_class": null,
+    "effective_cursor_review": true,
+    "execution_layer_mode": "lead_direct",
+    "force_cursor_review": false,
+    "gate_count": 6,
+    "gates": [
+      "prd_review",
+      "issues_review",
+      "tdd_review",
+      "implementation_plan",
+      "execution",
+      "outcome_review"
+    ],
+    "planning_depth": "large",
+    "reasons": [
+      "explicit:large"
+    ],
+    "requested_cursor_review": true,
+    "required_skill_stages": [
+      "to_prd",
+      "prd_grill",
+      "to_issues",
+      "tdd",
+      "tdd_grill"
+    ],
+    "requires_agentic_lead_policy_receipts": false,
+    "requires_brainstorm": false,
+    "requires_dynamic_workflow_receipts": false,
+    "requires_skill_receipts": true,
+    "resume": {
+      "mode": "resume_from_prior_steps",
+      "pending_gates": [
+        "implementation_plan",
+        "execution",
+        "outcome_review"
+      ],
+      "schema_version": "dual-agent-workflow-resume/v1",
+      "skipped_gates": [
+        "prd_review",
+        "issues_review",
+        "tdd_review"
+      ],
+      "skipped_steps": [
+        {
+          "attempt_count": 1,
+          "gate": "prd_review",
+          "latest_event_id": 320028,
+          "status": "accepted"
+        },
+        {
+          "attempt_count": 1,
+          "gate": "issues_review",
+          "latest_event_id": 320106,
+          "status": "accepted"
+        },
+        {
+          "attempt_count": 1,
+          "gate": "tdd_review",
+          "latest_event_id": 320198,
+          "status": "accepted"
+        }
+      ]
+    },
+    "reviewer_max_tokens": 4096,
+    "reviewer_model": "gemini-3.1-pro-preview",
+    "reviewer_output_mode": "litellm_structured",
+    "reviewer_unavailable_policy": "escalate",
+    "schema_version": "dual-agent-workflow-route/v1",
+    "task_complexity": "large"
+  }
+}

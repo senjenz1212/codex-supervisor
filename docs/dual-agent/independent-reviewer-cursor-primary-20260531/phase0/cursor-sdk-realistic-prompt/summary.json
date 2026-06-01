@@ -1,0 +1,17 @@
+{
+  "accepted": false,
+  "api_key_present": true,
+  "attempts_completed": 0,
+  "created_at": 1780278360,
+  "failure_classification": "reviewer_infrastructure_unavailable",
+  "model": "composer-2.5",
+  "outcome_present": false,
+  "planning_artifact_count": 9,
+  "probe": "cursor_sdk_realistic_prompt_probe",
+  "prompt_chars": 23662,
+  "receipt_count": 3,
+  "reason": "cursor_sdk_wait_exceeded_requested_timeout_and_required_external_kill",
+  "recoverable": true,
+  "reviewer_output_mode": "cursor_sdk",
+  "status": "timed_out"
+}

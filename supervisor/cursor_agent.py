@@ -6,11 +6,15 @@ the acceptance boundary.
 """
 from __future__ import annotations
 
+import contextlib
+import hashlib
 import os
 import json
+import signal
 import subprocess
 from dataclasses import dataclass, replace
 from pathlib import Path
+import threading
 from typing import Any, Callable, Literal
 
 from .dual_agent import Outcome, ProbeResult, evaluate_outcome_fidelity, outcome_accepts
@@ -37,7 +41,7 @@ class CursorInvocationRequest:
     quality: ModelQuality = "best"
     model: str | None = None
     reviewer_model: str | None = None
-    reviewer_output_mode: ReviewerOutputMode = "litellm_structured"
+    reviewer_output_mode: ReviewerOutputMode = "cursor_sdk"
     reviewer_max_tokens: int = DEFAULT_STRUCTURED_REVIEWER_MAX_TOKENS
     openai_api_key: str | None = None
     openai_base_url: str | None = None
@@ -63,6 +67,10 @@ class CursorInvocationResult:
     reviewer_runtime: str | None = None
     reviewer_output_mode: str | None = None
     duration_ms: int | None = None
+    reviewer_assurance: str | None = None
+    fallback_from_runtime: str | None = None
+    fallback_reason: str | None = None
+    diagnostics: dict[str, Any] | None = None
     failure_classification: CursorFailureClassification | None = None
     recoverable: bool = False
     attempts: int = 1
@@ -71,6 +79,10 @@ class CursorInvocationResult:
 
 CursorRunner = Callable[[CursorInvocationRequest], CursorInvocationResult]
 StatusRunner = Callable[..., subprocess.CompletedProcess[str]]
+
+
+class CursorSdkTimeoutError(TimeoutError):
+    """Raised when the supervisor-side watchdog bounds Cursor SDK execution."""
 
 
 def select_cursor_model(
@@ -171,26 +183,38 @@ def invoke_cursor_agent(
             )
         try:
             if attempt_request.reviewer_output_mode == "cursor_sdk":
-                transcript, metadata = _run_cursor_sdk(attempt_request)
+                with _cursor_sdk_timeout(attempt_request.timeout_s):
+                    transcript, metadata = _run_cursor_sdk(attempt_request)
             else:
                 transcript, metadata = _run_litellm_structured(attempt_request)
+        except CursorSdkTimeoutError:
+            primary_failure = _cursor_infrastructure_result(
+                reason="cursor_sdk_timeout",
+                attempts=attempt,
+                retry_reasons=tuple(retry_reasons),
+                details={"timeout_s": max(1, int(attempt_request.timeout_s))},
+                reviewer_output_mode=attempt_request.reviewer_output_mode,
+            )
+            return _fallback_or_primary_failure(primary_failure, request, status_runner=status_runner)
         except ModuleNotFoundError as e:
             if e.name in {"cursor_sdk", "openai"}:
-                return _cursor_infrastructure_result(
+                primary_failure = _cursor_infrastructure_result(
                     reason=f"{e.name}_missing",
                     attempts=attempt,
                     retry_reasons=tuple(retry_reasons),
                     reviewer_output_mode=attempt_request.reviewer_output_mode,
                 )
+                return _fallback_or_primary_failure(primary_failure, request, status_runner=status_runner)
             raise
         except Exception as e:  # pragma: no cover - exact SDK exception classes vary.
-            return _cursor_infrastructure_result(
+            primary_failure = _cursor_infrastructure_result(
                 reason="reviewer_invocation_failed",
                 attempts=attempt,
                 retry_reasons=tuple(retry_reasons),
                 details={"error": str(e)},
                 reviewer_output_mode=attempt_request.reviewer_output_mode,
             )
+            return _fallback_or_primary_failure(primary_failure, request, status_runner=status_runner)
 
         attempt_transcripts.append(
             f"[cursor attempt {attempt}/{max_attempts}]\n{transcript}"
@@ -248,7 +272,7 @@ def invoke_cursor_agent(
                 "recoverable": True,
             },
         )
-        return CursorInvocationResult(
+        contract_failure = CursorInvocationResult(
             probe=last_probe,
             outcome=None,
             transcript=transcript,
@@ -259,11 +283,14 @@ def invoke_cursor_agent(
             duration_ms=last_metadata.get("duration_ms"),
             reviewer_runtime=last_metadata.get("reviewer_runtime"),
             reviewer_output_mode=last_metadata.get("reviewer_output_mode"),
+            reviewer_assurance=_reviewer_assurance(last_metadata),
+            diagnostics=_metadata_diagnostics(last_metadata),
             failure_classification="reviewer_contract_unmet",
             recoverable=True,
             attempts=len(attempt_transcripts),
             retry_reasons=tuple(retry_reasons),
         )
+        return _fallback_or_primary_failure(contract_failure, request, status_runner=status_runner)
 
     return CursorInvocationResult(
         probe=last_probe,
@@ -276,15 +303,183 @@ def invoke_cursor_agent(
         duration_ms=last_metadata.get("duration_ms"),
         reviewer_runtime=last_metadata.get("reviewer_runtime"),
         reviewer_output_mode=last_metadata.get("reviewer_output_mode"),
+        reviewer_assurance=_reviewer_assurance(last_metadata),
+        diagnostics=_metadata_diagnostics(last_metadata),
         attempts=max(1, len(attempt_transcripts)),
         retry_reasons=tuple(retry_reasons),
     )
+
+
+def _fallback_or_primary_failure(
+    primary_failure: CursorInvocationResult,
+    request: CursorInvocationRequest,
+    *,
+    status_runner: StatusRunner,
+) -> CursorInvocationResult:
+    if request.reviewer_output_mode != "cursor_sdk":
+        return _with_failure_diagnostics(primary_failure)
+    if primary_failure.failure_classification != "reviewer_infrastructure_unavailable":
+        return _with_failure_diagnostics(primary_failure)
+    if not _structured_fallback_available(request):
+        return _with_failure_diagnostics(
+            primary_failure,
+            extra={"fallback": {"attempted": False, "reason": "missing_openai_api_key"}},
+        )
+
+    fallback_reason = _fallback_reason(primary_failure)
+    fallback_request = replace(request, reviewer_output_mode="litellm_structured")
+    fallback_result = invoke_cursor_agent(fallback_request, status_runner=status_runner)
+    fallback_payload = _result_diagnostics(fallback_result)
+    primary_payload = _result_diagnostics(primary_failure)
+
+    if fallback_result.probe.ok and fallback_result.outcome is not None:
+        return replace(
+            fallback_result,
+            reviewer_assurance="fallback_text_only",
+            fallback_from_runtime="cursor_sdk",
+            fallback_reason=fallback_reason,
+            diagnostics={
+                **(fallback_result.diagnostics or {}),
+                "fallback": {
+                    "attempted": True,
+                    "from_runtime": "cursor_sdk",
+                    "to_runtime": "litellm_structured",
+                    "reason": fallback_reason,
+                    "primary_failure": primary_payload,
+                },
+            },
+            retry_reasons=tuple([
+                *primary_failure.retry_reasons,
+                *fallback_result.retry_reasons,
+            ]),
+        )
+
+    return _with_failure_diagnostics(
+        primary_failure,
+        extra={
+            "fallback": {
+                "attempted": True,
+                "from_runtime": "cursor_sdk",
+                "to_runtime": "litellm_structured",
+                "reason": fallback_reason,
+                "primary_failure": primary_payload,
+                "fallback_failure": fallback_payload,
+            },
+        },
+    )
+
+
+def _structured_fallback_available(request: CursorInvocationRequest) -> bool:
+    return bool(request.openai_api_key)
+
+
+def _fallback_reason(result: CursorInvocationResult) -> str:
+    details = result.probe.details if isinstance(result.probe.details, dict) else {}
+    original = str(details.get("original_reason") or "").strip()
+    return original or str(result.failure_classification or result.probe.reason or "cursor_sdk_failed")
+
+
+def _with_failure_diagnostics(
+    result: CursorInvocationResult,
+    *,
+    extra: dict[str, Any] | None = None,
+) -> CursorInvocationResult:
+    diagnostics = {
+        **(result.diagnostics or {}),
+        "failure": _result_diagnostics(result),
+        **(extra or {}),
+    }
+    return replace(
+        result,
+        reviewer_assurance=result.reviewer_assurance or "unavailable",
+        diagnostics=diagnostics,
+    )
+
+
+def _result_diagnostics(result: CursorInvocationResult) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "probe": {
+            "probe_id": result.probe.probe_id,
+            "status": result.probe.status,
+            "reason": result.probe.reason,
+            "details": result.probe.details,
+        },
+        "failure_classification": result.failure_classification,
+        "recoverable": result.recoverable,
+        "attempts": result.attempts,
+        "retry_reasons": list(result.retry_reasons),
+        "reviewer_runtime": result.reviewer_runtime,
+        "reviewer_output_mode": result.reviewer_output_mode,
+        "reviewer_assurance": result.reviewer_assurance,
+        "model": result.model,
+        "status": result.status,
+    }
+    if result.diagnostics:
+        payload["diagnostics"] = result.diagnostics
+    return payload
+
+
+@contextlib.contextmanager
+def _cursor_sdk_timeout(timeout_s: int):
+    seconds = max(1, int(timeout_s))
+    if (
+        threading.current_thread() is not threading.main_thread()
+        or not hasattr(signal, "SIGALRM")
+        or not hasattr(signal, "setitimer")
+    ):
+        yield
+        return
+
+    previous_handler = signal.getsignal(signal.SIGALRM)
+    previous_timer = signal.getitimer(signal.ITIMER_REAL)
+
+    def _raise_timeout(signum, frame):  # type: ignore[no-untyped-def]
+        raise CursorSdkTimeoutError(f"cursor_sdk_timeout after {seconds}s")
+
+    signal.signal(signal.SIGALRM, _raise_timeout)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
+        if previous_timer[0] > 0:
+            signal.setitimer(signal.ITIMER_REAL, previous_timer[0], previous_timer[1])
+
+
+def _reviewer_assurance(metadata: dict[str, Any]) -> str | None:
+    explicit = str(metadata.get("reviewer_assurance") or "").strip()
+    if explicit:
+        return explicit
+    runtime = str(metadata.get("reviewer_runtime") or metadata.get("reviewer_output_mode") or "").strip()
+    if runtime == "cursor_sdk":
+        return "tool_backed_primary"
+    if runtime == "litellm_structured":
+        return "structured_text_only"
+    return None
+
+
+def _metadata_diagnostics(metadata: dict[str, Any]) -> dict[str, Any] | None:
+    keys = (
+        "prompt_chars",
+        "prompt_sha256",
+        "finish_reason",
+        "prompt_tokens",
+        "completion_tokens",
+    )
+    diagnostics = {
+        key: metadata.get(key)
+        for key in keys
+        if metadata.get(key) not in (None, "", [], {})
+    }
+    return diagnostics or None
 
 
 def _run_cursor_sdk(request: CursorInvocationRequest) -> tuple[str, dict[str, Any]]:
     from cursor_sdk import Agent, LocalAgentOptions
 
     api_key = request.api_key or os.environ.get("CURSOR_API_KEY")
+    prompt = build_cursor_prompt(request)
     kwargs: dict[str, Any] = {
         "model": select_cursor_model(quality=request.quality, explicit_model=request.model),
         "local": LocalAgentOptions(cwd=str(Path(request.cwd).expanduser())),
@@ -293,7 +488,7 @@ def _run_cursor_sdk(request: CursorInvocationRequest) -> tuple[str, dict[str, An
         kwargs["api_key"] = api_key
 
     with Agent.create(**kwargs) as agent:
-        run = agent.send(build_cursor_prompt(request), {"mode": request.mode})
+        run = agent.send(prompt, {"mode": request.mode})
         transcript = run.text()
         metadata = {
             "agent_id": getattr(agent, "agent_id", None),
@@ -303,6 +498,8 @@ def _run_cursor_sdk(request: CursorInvocationRequest) -> tuple[str, dict[str, An
             "reviewer_runtime": "cursor_sdk",
             "reviewer_output_mode": "cursor_sdk",
             "duration_ms": getattr(run, "duration_ms", None),
+            "prompt_chars": len(prompt),
+            "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
         }
     return transcript, metadata
 
@@ -315,6 +512,7 @@ def _run_litellm_structured(request: CursorInvocationRequest) -> tuple[str, dict
     if not api_key:
         raise RuntimeError("missing OPENAI_API_KEY for structured reviewer")
 
+    prompt = build_cursor_prompt(request)
     client_kwargs: dict[str, Any] = {"api_key": api_key}
     if base_url:
         client_kwargs["base_url"] = base_url
@@ -335,7 +533,7 @@ def _run_litellm_structured(request: CursorInvocationRequest) -> tuple[str, dict
                     "matches the provided schema. Do not edit files."
                 ),
             },
-            {"role": "user", "content": build_cursor_prompt(request)},
+            {"role": "user", "content": prompt},
         ],
         response_format={
             "type": "json_schema",
@@ -364,6 +562,8 @@ def _run_litellm_structured(request: CursorInvocationRequest) -> tuple[str, dict
         "finish_reason": getattr(choice, "finish_reason", None),
         "prompt_tokens": getattr(usage, "prompt_tokens", None),
         "completion_tokens": getattr(usage, "completion_tokens", None),
+        "prompt_chars": len(prompt),
+        "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
     }
     return transcript, metadata
 
@@ -531,6 +731,14 @@ def _cursor_infrastructure_result(
     details: dict[str, Any] | None = None,
     reviewer_output_mode: str | None = None,
 ) -> CursorInvocationResult:
+    diagnostics = {
+        "failure": {
+            "original_reason": reason,
+            "reviewer_output_mode": reviewer_output_mode,
+            "attempts": attempts,
+            **(details or {}),
+        }
+    }
     return CursorInvocationResult(
         probe=ProbeResult(
             "CURSOR",
@@ -552,6 +760,8 @@ def _cursor_infrastructure_result(
         retry_reasons=retry_reasons,
         reviewer_output_mode=reviewer_output_mode,
         reviewer_runtime=reviewer_output_mode,
+        reviewer_assurance="unavailable",
+        diagnostics=diagnostics,
     )
 
 

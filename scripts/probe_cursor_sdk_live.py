@@ -16,6 +16,7 @@ import tempfile
 import time
 from pathlib import Path
 
+from mcp_tools.codex_supervisor_workflow_cli import load_codex_mcp_env
 from supervisor.cursor_agent import CursorInvocationRequest, invoke_cursor_agent
 from supervisor.redaction import redact
 
@@ -24,16 +25,30 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Probe live Cursor SDK review boundary.")
     parser.add_argument("--output-dir", default="", help="Directory for summary.json and transcript.txt.")
     parser.add_argument("--timeout-s", type=int, default=300)
+    parser.add_argument(
+        "--codex-config",
+        default=str(Path.home() / ".codex" / "config.toml"),
+        help="Codex config whose MCP env block can supply CURSOR_API_KEY.",
+    )
+    parser.add_argument(
+        "--no-codex-mcp-env",
+        action="store_true",
+        help="Do not load env vars from [mcp_servers.codex_supervisor.env].",
+    )
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir or _default_output_dir()).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
+    loaded_codex_keys: list[str] = []
+    if not args.no_codex_mcp_env:
+        loaded_codex_keys = sorted(load_codex_mcp_env(Path(args.codex_config).expanduser()))
 
     summary: dict = {
         "probe": "live_cursor_sdk_probe",
         "created_at": int(time.time()),
         "cursor_sdk_import": "ok" if importlib.util.find_spec("cursor_sdk") else "missing",
         "api_key_present": bool(os.environ.get("CURSOR_API_KEY")),
+        "loaded_codex_mcp_env_keys": loaded_codex_keys,
     }
     if not summary["api_key_present"]:
         summary.update({
@@ -77,6 +92,7 @@ def main() -> int:
             },
             timeout_s=max(1, int(args.timeout_s)),
             expected_decisions=("accept",),
+            reviewer_output_mode="cursor_sdk",
         )
         result = invoke_cursor_agent(request)
         summary.update({
@@ -88,6 +104,12 @@ def main() -> int:
             "cursor_status": result.status,
             "model": result.model,
             "duration_ms": result.duration_ms,
+            "reviewer_runtime": result.reviewer_runtime,
+            "reviewer_output_mode": result.reviewer_output_mode,
+            "reviewer_assurance": result.reviewer_assurance,
+            "fallback_from_runtime": result.fallback_from_runtime,
+            "fallback_reason": result.fallback_reason,
+            "diagnostics": result.diagnostics,
             "outcome": result.outcome.model_dump() if result.outcome is not None else None,
         })
         _write_fixture(output_dir, summary, transcript=result.transcript)

@@ -1,0 +1,51 @@
+[
+  {
+    "receipt_id": "skill-to-prd-independent-reviewer-cursor-primary-20260531",
+    "kind": "skill_run",
+    "status": "passed",
+    "skill": "to-prd",
+    "stage": "to_prd",
+    "claims": ["prd-tdd skill executed", "PRD promise contracts produced", "phase0 live Cursor evidence attached"],
+    "artifacts": [
+      "docs/dual-agent/independent-reviewer-cursor-primary-20260531/source/prd.md",
+      "docs/dual-agent/independent-reviewer-cursor-primary-20260531/phase0/cursor-sdk-realistic-prompt/summary.json",
+      "docs/dual-agent/independent-reviewer-cursor-primary-20260531/phase0/cursor-sdk-realistic-prompt/probe-notes.md"
+    ]
+  },
+  {
+    "receipt_id": "skill-prd-grill-independent-reviewer-cursor-primary-20260531",
+    "kind": "skill_run",
+    "status": "passed",
+    "skill": "grill-with-docs",
+    "stage": "prd_grill",
+    "claims": ["prd-tdd skill executed", "PRD grill findings resolved"],
+    "artifacts": ["docs/dual-agent/independent-reviewer-cursor-primary-20260531/source/grill-findings.md"]
+  },
+  {
+    "receipt_id": "skill-to-issues-independent-reviewer-cursor-primary-20260531",
+    "kind": "skill_run",
+    "status": "passed",
+    "skill": "to-issues",
+    "stage": "to_issues",
+    "claims": ["prd-tdd skill executed", "issues map to PRD promises"],
+    "artifacts": ["docs/dual-agent/independent-reviewer-cursor-primary-20260531/source/issues.md"]
+  },
+  {
+    "receipt_id": "skill-tdd-independent-reviewer-cursor-primary-20260531",
+    "kind": "skill_run",
+    "status": "passed",
+    "skill": "tdd",
+    "stage": "tdd",
+    "claims": ["prd-tdd skill executed", "public-boundary RED tests planned"],
+    "artifacts": ["docs/dual-agent/independent-reviewer-cursor-primary-20260531/source/tdd.md"]
+  },
+  {
+    "receipt_id": "skill-tdd-grill-independent-reviewer-cursor-primary-20260531",
+    "kind": "skill_run",
+    "status": "passed",
+    "skill": "grill-with-docs",
+    "stage": "tdd_grill",
+    "claims": ["prd-tdd skill executed", "TDD grill findings resolved"],
+    "artifacts": ["docs/dual-agent/independent-reviewer-cursor-primary-20260531/source/grill-findings-tdd.md"]
+  }
+]

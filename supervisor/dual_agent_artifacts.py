@@ -1299,6 +1299,28 @@ def _trace_envelope_section(payload: dict[str, Any]) -> list[str]:
 
 
 def _run_failure_summary(events: list[dict[str, Any]]) -> dict[str, Any] | None:
+    latest_gate_result = _latest_gate_result_event(events)
+    if latest_gate_result is not None:
+        payload = latest_gate_result.get("payload") if isinstance(latest_gate_result.get("payload"), dict) else {}
+        envelope = payload.get("trace_envelope") if isinstance(payload.get("trace_envelope"), dict) else {}
+        verdict = _clean_text(envelope.get("policy_verdict"))
+        failure = envelope.get("failure_taxonomy")
+        status = _clean_text(payload.get("status"))
+        supervisor_status = _clean_text(payload.get("supervisor_final_status") or status)
+        if (
+            status == "accepted"
+            and supervisor_status == "accepted"
+            and verdict != "blocked"
+            and not isinstance(failure, dict)
+        ):
+            return None
+        if verdict == "blocked" or isinstance(failure, dict):
+            return {
+                "event_id": int(latest_gate_result["event_id"]),
+                "policy_verdict": verdict,
+                "failure_taxonomy": failure,
+            }
+
     for event in reversed(events):
         envelope = event["payload"].get("trace_envelope")
         if not isinstance(envelope, dict):

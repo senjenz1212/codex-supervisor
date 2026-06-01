@@ -306,7 +306,8 @@ def codex_review_packet(
         )
         evidence = [classification or str((cursor_review.get("probe") or {}).get("reason") or "")]
         requirements.append({
-            "requirement_id": "cursor_review",
+            "requirement_id": "independent_reviewer",
+            "legacy_requirement_id": "cursor_review",
             "status": "pass"
             if bool(cursor_review.get("accepted"))
             else "degraded"
@@ -319,10 +320,10 @@ def codex_review_packet(
                 severity="IMPORTANT",
                 code="CURSOR_INFRA" if classification else "CURSOR",
                 title=(
-                    f"cursor review infrastructure failure: {classification}"
-                    if classification else "cursor review rejected the gate"
+                    f"independent reviewer infrastructure failure: {classification}"
+                    if classification else "independent reviewer rejected the gate"
                 ),
-                requirement_id="cursor_review",
+                requirement_id="independent_reviewer",
                 evidence=evidence,
             )
     blocking_findings = [

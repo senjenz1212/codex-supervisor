@@ -1117,6 +1117,100 @@ def test_export_dual_agent_run_artifacts_writes_final_event_id_for_accepted_tria
     assert "- supervisor_final_status: `accepted`" in triage
 
 
+def test_export_dual_agent_run_artifacts_ignores_recovered_block_in_triage(tmp_path):
+    state = _state(tmp_path)
+    _insert_event(
+        state,
+        kind="dual_agent_gate_result",
+        payload={
+            **_result_payload(
+                gate="outcome_review",
+                status="blocked",
+                summary="Claim verification failed.",
+                decisions=["accept"],
+            ),
+            "claude_gate_status": "accepted",
+            "supervisor_final_status": "blocked",
+            "claim_verification": {
+                "status": "red",
+                "reason": "workflow_claim_verification_failed",
+                "details": {
+                    "failures": ["implemented_without_diff_receipt"],
+                },
+            },
+            "trace_envelope": {
+                "schema_version": "dual-agent-trace-envelope/v1",
+                "run_id": "run-1",
+                "task_id": "task-1",
+                "gate": "outcome_review",
+                "source": "dual_agent",
+                "event_kind": "dual_agent_gate_result",
+                "policy_verdict": "blocked",
+                "failure_taxonomy": {
+                    "code": "claim_verification_failed",
+                    "category": "task_verification",
+                    "subcategory": "missing_or_stale_receipt",
+                    "mast_code": "FM-3.2",
+                    "mast_mode": "No or incomplete verification",
+                },
+                "tool_calls": [],
+                "artifacts": [],
+                "claims": [],
+                "receipts": [],
+            },
+        },
+        ts=1000,
+    )
+    event_id = _insert_event(
+        state,
+        kind="dual_agent_gate_result",
+        payload={
+            **_result_payload(
+                gate="outcome_review",
+                status="accepted",
+                summary="Claim verification recovered.",
+                decisions=["accept"],
+            ),
+            "claude_gate_status": "accepted",
+            "supervisor_final_status": "accepted",
+            "claim_verification": {
+                "status": "green",
+                "reason": "workflow_claims_verified",
+                "details": {},
+            },
+            "trace_envelope": {
+                "schema_version": "dual-agent-trace-envelope/v1",
+                "run_id": "run-1",
+                "task_id": "task-1",
+                "gate": "outcome_review",
+                "source": "dual_agent",
+                "event_kind": "dual_agent_gate_result",
+                "policy_verdict": "accepted",
+                "failure_taxonomy": None,
+                "tool_calls": [],
+                "artifacts": [],
+                "claims": [],
+                "receipts": [],
+            },
+        },
+        ts=1001,
+    )
+
+    result = export_dual_agent_run_artifacts(
+        state,
+        run_id="run-1",
+        task_id="task-1",
+        output_dir=tmp_path / "docs" / "dual-agent" / "task-1",
+    )
+
+    triage = (result.output_dir / "triage.md").read_text()
+    assert f"- final_event_id: `{event_id}`" in triage
+    assert "- policy_verdict: `observed`" in triage
+    assert "- supervisor_final_status: `accepted`" in triage
+    assert "No blocking failure taxonomy recorded." in triage
+    assert "implemented_without_diff_receipt" not in triage
+
+
 def test_export_dual_agent_run_artifacts_writes_sequence_failure_diagnostics(tmp_path):
     state = _state(tmp_path)
     first = _insert_event(

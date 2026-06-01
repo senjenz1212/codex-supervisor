@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "a113463b97b7507bc6b9375b9e4aab953e8b56c13bea8c931e61d710e13dd38c",
+  "git": {
+    "diff_bytes": 54476,
+    "diff_sha256": "de189d70093b0d145b3e5c41a694bcb789f0de2c4608db629524be572a26e108",
+    "diff_stat": "mcp_tools/codex_supervisor_stdio.py      |  30 +++-\n scripts/probe_cursor_sdk_live.py         |  22 +++\n supervisor/agent_mailbox.py              |   9 +-\n supervisor/config.py                     |   2 +-\n supervisor/cursor_agent.py               | 224 +++++++++++++++++++++++-\n supervisor/dual_agent_artifacts.py       |  22 +++\n tests/test_cursor_agent.py               | 281 ++++++++++++++++++++++++++++++-\n tests/test_dual_agent_artifacts.py       |  94 +++++++++++\n tests/test_dual_agent_workflow_driver.py |  70 ++++++--\n 9 files changed, 726 insertions(+), 28 deletions(-)",
+    "head": "c073201",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "c073201",
+    "status_short": "M mcp_tools/codex_supervisor_stdio.py\n M scripts/probe_cursor_sdk_live.py\n M supervisor/agent_mailbox.py\n M supervisor/config.py\n M supervisor/cursor_agent.py\n M supervisor/dual_agent_artifacts.py\n M tests/test_cursor_agent.py\n M tests/test_dual_agent_artifacts.py\n M tests/test_dual_agent_workflow_driver.py\n?? docs/adr/20260531-independent-reviewer-boundary.md\n?? docs/dual-agent/independent-reviewer-cursor-primary-20260531/"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "c5843bd7533456fc2fc2f65ed5b7989939b38f96e526b97f7b1a243a6f4f3ad5",
+    "implementation_plan": "c368914264082b665fce94cac7f8894539aee3dbebecf4fcf60e9e8bbad94b96",
+    "issues": "782c95a6da04b334a0e3163907b85aaf80fdd1497c4cb23c5f481498aa6388bb",
+    "prd": "b267b07910ab135e80a5ad38d301c49169dee5028c9e3ced1370c636052d6cd1",
+    "tdd_plan": "fc2e213160f533917096b43a1076fc15fa947b2d7ddc3e930397991530020e11"
+  },
+  "status": "captured"
+}

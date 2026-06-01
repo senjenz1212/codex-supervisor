@@ -1043,6 +1043,7 @@ class CodexSupervisorMcpAPI:
                     cursor_tool_calls = [cursor_tool_call]
                     cursor_payload = _cursor_result_payload(cursor_result)
                     payload["cursor_review"] = cursor_payload
+                    payload["independent_reviewer"] = cursor_payload
                     cursor_response_would_change_if = (
                         "Claude or Codex provides evidence resolving Cursor's objections."
                     )
@@ -1092,6 +1093,7 @@ class CodexSupervisorMcpAPI:
                             artifacts=planning_artifact_refs(gate_artifacts),
                             metadata={
                                 "cursor_review": cursor_payload,
+                                "independent_reviewer": cursor_payload,
                                 "tool_calls": [cursor_tool_call],
                             },
                         ),
@@ -1139,6 +1141,7 @@ class CodexSupervisorMcpAPI:
                         "reviewer_unavailable_recovery": reviewer_unavailable_recovery,
                     }
                     payload["cursor_review"] = cursor_payload
+                    payload["independent_reviewer"] = cursor_payload
                 if cursor_payload is not None and cursor_reviews_this_gate:
                     self.state.write_event(
                         run_id=run_id,
@@ -1148,6 +1151,7 @@ class CodexSupervisorMcpAPI:
                             "task_id": task_id,
                             "gate": gate,
                             "cursor_review": cursor_payload,
+                            "independent_reviewer": cursor_payload,
                             "tool_calls": cursor_tool_calls,
                         },
                     )
@@ -1321,6 +1325,7 @@ class CodexSupervisorMcpAPI:
                             "event_id": recovery_event["event_id"],
                         }
                         payload["cursor_review"] = cursor_payload
+                        payload["independent_reviewer"] = cursor_payload
                     elif reviewer_policy == "block":
                         recovery_event = self._record_reviewer_unavailable_recovery(
                             run_id=run_id,
@@ -1341,6 +1346,7 @@ class CodexSupervisorMcpAPI:
                             "event_id": recovery_event["event_id"],
                         }
                         payload["cursor_review"] = cursor_payload
+                        payload["independent_reviewer"] = cursor_payload
                         final_payload = self._write_workflow_gate_override(
                             run_id=run_id,
                             task_id=task_id,
@@ -1425,6 +1431,7 @@ class CodexSupervisorMcpAPI:
                             "escalation": escalation,
                         }
                         payload["cursor_review"] = cursor_payload
+                        payload["independent_reviewer"] = cursor_payload
                         final_payload = self._write_workflow_gate_override(
                             run_id=run_id,
                             task_id=task_id,
@@ -2152,6 +2159,8 @@ class CodexSupervisorMcpAPI:
                     "occurred_at": row["ts"],
                     "gate": payload.get("gate"),
                     "cursor_review": payload.get("cursor_review"),
+                    "independent_reviewer": payload.get("independent_reviewer")
+                    or payload.get("cursor_review"),
                 }))
             elif row["kind"] == "dual_agent_gate_result":
                 latest_result = redact(payload)
@@ -2342,6 +2351,8 @@ class CodexSupervisorMcpAPI:
             "probes": source_payload.get("probes") or {},
             "outcome": source_payload.get("outcome"),
             "cursor_review": source_payload.get("cursor_review"),
+            "independent_reviewer": source_payload.get("independent_reviewer")
+            or source_payload.get("cursor_review"),
             "claim_verification": claim_probe,
             "escalation": {
                 "type": "workflow_lifecycle",
@@ -2593,6 +2604,7 @@ class CodexSupervisorMcpAPI:
             "reviewer_verdict_counted_as_accept": False,
             "available_reviewers": available_reviewers,
             "cursor_review": cursor_review,
+            "independent_reviewer": cursor_review,
             "authorization": recovery.get("authorization"),
             "forced_by_safety": bool(recovery.get("forced_by_safety")),
             "safety_reasons": list(recovery.get("safety_reasons") or []),
@@ -2660,6 +2672,7 @@ class CodexSupervisorMcpAPI:
                 "safety_reasons": safety_reasons,
                 "available_reviewers": available_reviewers,
                 "cursor_review": cursor_review,
+                "independent_reviewer": cursor_review,
                 "reviewer_verdict_counted_as_accept": False,
                 "evidence_grade": "degraded",
             },
@@ -2684,6 +2697,7 @@ class CodexSupervisorMcpAPI:
             "options": options,
             "reviewer_verdict_counted_as_accept": False,
             "evidence_grade": "degraded",
+            "independent_reviewer": cursor_review,
         })
 
     def _notifier(self) -> Any | None:
@@ -3351,6 +3365,7 @@ def _payload_blocked_for_lead_revision(payload: dict[str, Any]) -> bool:
 def _cursor_result_payload(result: CursorInvocationResult) -> dict[str, Any]:
     outcome_payload = result.outcome.model_dump() if result.outcome is not None else None
     return redact({
+        "schema_version": "independent-reviewer-result/v1",
         "accepted": cursor_accepts(result),
         "probe": asdict(result.probe),
         "outcome": outcome_payload,
@@ -3369,6 +3384,10 @@ def _cursor_result_payload(result: CursorInvocationResult) -> dict[str, Any]:
         "model": result.model,
         "reviewer_runtime": result.reviewer_runtime,
         "reviewer_output_mode": result.reviewer_output_mode,
+        "reviewer_assurance": result.reviewer_assurance,
+        "fallback_from_runtime": result.fallback_from_runtime,
+        "fallback_reason": result.fallback_reason,
+        "diagnostics": result.diagnostics,
         "duration_ms": result.duration_ms,
         "transcript_tail": result.transcript[-4000:],
     })
@@ -3382,6 +3401,10 @@ def _cursor_tool_call_fields(result: CursorInvocationResult) -> dict[str, Any]:
         "model": result.model,
         "reviewer_runtime": result.reviewer_runtime,
         "reviewer_output_mode": result.reviewer_output_mode,
+        "reviewer_assurance": result.reviewer_assurance,
+        "fallback_from_runtime": result.fallback_from_runtime,
+        "fallback_reason": result.fallback_reason,
+        "diagnostics": result.diagnostics,
         "cursor_duration_ms": result.duration_ms,
         "failure_classification": result.failure_classification,
         "recoverable": result.recoverable,
@@ -3396,6 +3419,9 @@ def _cursor_tool_call_fields(result: CursorInvocationResult) -> dict[str, Any]:
             "recoverable": result.recoverable,
             "reviewer_runtime": result.reviewer_runtime,
             "reviewer_output_mode": result.reviewer_output_mode,
+            "reviewer_assurance": result.reviewer_assurance,
+            "fallback_from_runtime": result.fallback_from_runtime,
+            "fallback_reason": result.fallback_reason,
         },
     }
 
@@ -3462,8 +3488,8 @@ def _reviewer_model_config(
 
 def _reviewer_output_mode_config(cfg: Config, *, reviewer_output_mode: str | None) -> str:
     requested = reviewer_output_mode or getattr(cfg.supervisor, "reviewer_output_mode", "")
-    text = str(requested or "litellm_structured").strip().lower().replace("-", "_").replace(" ", "_")
-    return text if text in {"litellm_structured", "cursor_sdk"} else "litellm_structured"
+    text = str(requested or "cursor_sdk").strip().lower().replace("-", "_").replace(" ", "_")
+    return text if text in {"litellm_structured", "cursor_sdk"} else "cursor_sdk"
 
 
 def _reviewer_max_tokens_config(cfg: Config, *, reviewer_max_tokens: int | None) -> int:

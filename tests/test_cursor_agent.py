@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -97,14 +99,20 @@ def test_select_cursor_model_defaults_to_documented_composer_model():
     assert select_cursor_model(quality="best", explicit_model="custom") == "custom"
 
 
-def test_select_reviewer_defaults_to_phase0_structured_gemini():
-    assert select_reviewer_model(quality="best") == "gemini-3.1-pro-preview"
+def test_select_reviewer_defaults_to_cursor_sdk_primary():
+    assert select_reviewer_model(quality="best", reviewer_output_mode="cursor_sdk") == "composer-2.5"
+    assert CursorInvocationRequest(
+        task_id="tri-agent",
+        gate="tdd_review",
+        instruction="Review the TDD plan.",
+        cwd=Path("."),
+    ).reviewer_output_mode == "cursor_sdk"
     assert (
         select_reviewer_model(
             quality="best",
-            reviewer_output_mode="cursor_sdk",
+            reviewer_output_mode="litellm_structured",
         )
-        == "composer-2.5"
+        == "gemini-3.1-pro-preview"
     )
     assert (
         select_reviewer_model(
@@ -235,7 +243,11 @@ def test_run_litellm_structured_calls_openai_schema_gateway(tmp_path: Path, monk
         "finish_reason": "stop",
         "prompt_tokens": 123,
         "completion_tokens": 45,
+        "prompt_chars": metadata["prompt_chars"],
+        "prompt_sha256": metadata["prompt_sha256"],
     }
+    assert metadata["prompt_chars"] > 0
+    assert len(str(metadata["prompt_sha256"])) == 64
 
 
 def test_structured_litellm_reviewer_returns_fidelity_passing_outcome(
@@ -253,6 +265,7 @@ def test_structured_litellm_reviewer_returns_fidelity_passing_outcome(
         gate="tdd_review",
         instruction="Review the TDD plan.",
         cwd=tmp_path,
+        reviewer_output_mode="litellm_structured",
         contract_retry_limit=0,
     ))
 
@@ -284,6 +297,7 @@ def test_structured_litellm_reviewer_preserves_read_only_guard(
             gate="tdd_review",
             instruction="Review the TDD plan.",
             cwd=tmp_path,
+            reviewer_output_mode="litellm_structured",
             contract_retry_limit=0,
         ),
         status_runner=status_runner,
@@ -320,6 +334,7 @@ def test_structured_litellm_reviewer_enforces_contract_completeness(
         gate="tdd_review",
         instruction="Review the TDD plan.",
         cwd=tmp_path,
+        reviewer_output_mode="litellm_structured",
         contract_retry_limit=0,
     ))
 
@@ -340,6 +355,7 @@ def test_structured_litellm_reviewer_revise_blocks_workflow(tmp_path: Path, monk
         gate="outcome_review",
         instruction="Review the outcome.",
         cwd=tmp_path,
+        reviewer_output_mode="litellm_structured",
         contract_retry_limit=0,
     ))
 
@@ -361,6 +377,7 @@ def test_structured_litellm_reviewer_deny_blocks_workflow(tmp_path: Path, monkey
         gate="outcome_review",
         instruction="Review the outcome.",
         cwd=tmp_path,
+        reviewer_output_mode="litellm_structured",
         contract_retry_limit=0,
     ))
 
@@ -384,6 +401,7 @@ def test_structured_litellm_failure_classifies_as_infrastructure_unavailable(
         gate="tdd_review",
         instruction="Review the TDD plan.",
         cwd=tmp_path,
+        reviewer_output_mode="litellm_structured",
         contract_retry_limit=0,
     ))
 
@@ -406,6 +424,7 @@ def test_structured_litellm_invalid_json_classifies_as_contract_unmet(
         gate="tdd_review",
         instruction="Review the TDD plan.",
         cwd=tmp_path,
+        reviewer_output_mode="litellm_structured",
         contract_retry_limit=0,
     ))
 
@@ -432,12 +451,241 @@ def test_structured_litellm_truncation_classifies_as_contract_unmet(
         gate="tdd_review",
         instruction="Review the TDD plan.",
         cwd=tmp_path,
+        reviewer_output_mode="litellm_structured",
         contract_retry_limit=0,
     ))
 
     assert result.probe.reason == "reviewer_contract_unmet"
     assert result.probe.details["original_reason"] == "structured_reviewer_truncated"
     assert result.failure_classification == "reviewer_contract_unmet"
+
+
+def test_cursor_sdk_is_default_invocation_and_records_diagnostics(tmp_path: Path, monkeypatch):
+    calls: list[CursorInvocationRequest] = []
+
+    def fake_run(request: CursorInvocationRequest):
+        calls.append(request)
+        outcome = _complete_cursor_outcome(task_id=request.task_id)
+        return f"<dual_agent_outcome>{outcome.model_dump_json()}</dual_agent_outcome>", {
+            "agent_id": "agent-cursor",
+            "run_id": "run-cursor",
+            "status": "finished",
+            "model": "composer-2.5",
+            "reviewer_runtime": "cursor_sdk",
+            "reviewer_output_mode": "cursor_sdk",
+            "duration_ms": 12,
+            "prompt_chars": 2048,
+            "prompt_sha256": "a" * 64,
+        }
+
+    monkeypatch.setattr(cursor_agent, "_run_cursor_sdk", fake_run)
+
+    result = invoke_cursor_agent(CursorInvocationRequest(
+        task_id="tri-agent",
+        gate="tdd_review",
+        instruction="Review the TDD plan.",
+        cwd=tmp_path,
+        contract_retry_limit=0,
+    ))
+
+    assert calls and calls[0].reviewer_output_mode == "cursor_sdk"
+    assert result.probe.ok
+    assert result.reviewer_runtime == "cursor_sdk"
+    assert result.reviewer_output_mode == "cursor_sdk"
+    assert result.reviewer_assurance == "tool_backed_primary"
+    assert result.diagnostics == {"prompt_chars": 2048, "prompt_sha256": "a" * 64}
+
+
+def test_cursor_sdk_timeout_classifies_as_reviewer_infrastructure_unavailable(
+    tmp_path: Path,
+    monkeypatch,
+):
+    monkeypatch.setenv("OPENAI_API_KEY", "ambient-key-must-not-trigger-fallback")
+
+    def slow_run(request: CursorInvocationRequest):
+        time.sleep(3)
+        outcome = _complete_cursor_outcome(task_id=request.task_id)
+        return f"<dual_agent_outcome>{outcome.model_dump_json()}</dual_agent_outcome>", {}
+
+    monkeypatch.setattr(cursor_agent, "_run_cursor_sdk", slow_run)
+    started = time.monotonic()
+
+    result = invoke_cursor_agent(CursorInvocationRequest(
+        task_id="tri-agent",
+        gate="tdd_review",
+        instruction="Review the TDD plan.",
+        cwd=tmp_path,
+        timeout_s=1,
+        contract_retry_limit=0,
+    ))
+
+    assert time.monotonic() - started < 2.5
+    assert result.probe.reason == "reviewer_infrastructure_unavailable"
+    assert result.probe.details["original_reason"] == "cursor_sdk_timeout"
+    assert result.probe.details["timeout_s"] == 1
+    assert result.failure_classification == "reviewer_infrastructure_unavailable"
+    assert result.reviewer_assurance == "unavailable"
+    assert result.diagnostics["fallback"]["attempted"] is False
+
+
+def test_cursor_sdk_fallback_requires_explicit_request_key(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "ambient-key-must-not-trigger-fallback")
+
+    def failing_cursor(request: CursorInvocationRequest):
+        raise RuntimeError("cursor transport closed")
+
+    def fallback_run(request: CursorInvocationRequest):
+        raise AssertionError("ambient OPENAI_API_KEY must not trigger fallback")
+
+    monkeypatch.setattr(cursor_agent, "_run_cursor_sdk", failing_cursor)
+    monkeypatch.setattr(cursor_agent, "_run_litellm_structured", fallback_run)
+
+    result = invoke_cursor_agent(CursorInvocationRequest(
+        task_id="tri-agent",
+        gate="outcome_review",
+        instruction="Review the outcome.",
+        cwd=tmp_path,
+        contract_retry_limit=0,
+    ))
+
+    assert result.probe.reason == "reviewer_infrastructure_unavailable"
+    assert result.diagnostics["fallback"] == {
+        "attempted": False,
+        "reason": "missing_openai_api_key",
+    }
+
+
+def test_cursor_sdk_failure_falls_back_to_litellm_structured_with_lower_assurance(
+    tmp_path: Path,
+    monkeypatch,
+):
+    def failing_cursor(request: CursorInvocationRequest):
+        raise RuntimeError("cursor transport closed")
+
+    def fallback_run(request: CursorInvocationRequest):
+        outcome = _complete_cursor_outcome(task_id=request.task_id)
+        return f"<dual_agent_outcome>{outcome.model_dump_json()}</dual_agent_outcome>", _litellm_metadata()
+
+    monkeypatch.setattr(cursor_agent, "_run_cursor_sdk", failing_cursor)
+    monkeypatch.setattr(cursor_agent, "_run_litellm_structured", fallback_run)
+
+    result = invoke_cursor_agent(CursorInvocationRequest(
+        task_id="tri-agent",
+        gate="outcome_review",
+        instruction="Review the outcome.",
+        cwd=tmp_path,
+        openai_api_key="fallback-key",
+        contract_retry_limit=0,
+    ))
+
+    assert result.probe.ok
+    assert cursor_accepts(result)
+    assert result.reviewer_runtime == "litellm_structured"
+    assert result.reviewer_output_mode == "litellm_structured"
+    assert result.reviewer_assurance == "fallback_text_only"
+    assert result.fallback_from_runtime == "cursor_sdk"
+    assert result.fallback_reason == "reviewer_invocation_failed"
+    assert result.diagnostics["fallback"]["primary_failure"]["probe"]["reason"] == (
+        "reviewer_infrastructure_unavailable"
+    )
+
+
+def test_cursor_sdk_both_primary_and_fallback_fail_remains_recoverable(
+    tmp_path: Path,
+    monkeypatch,
+):
+    def failing_cursor(request: CursorInvocationRequest):
+        raise RuntimeError("cursor transport closed")
+
+    def failing_fallback(request: CursorInvocationRequest):
+        raise RuntimeError("structured gateway closed")
+
+    monkeypatch.setattr(cursor_agent, "_run_cursor_sdk", failing_cursor)
+    monkeypatch.setattr(cursor_agent, "_run_litellm_structured", failing_fallback)
+
+    result = invoke_cursor_agent(CursorInvocationRequest(
+        task_id="tri-agent",
+        gate="outcome_review",
+        instruction="Review the outcome.",
+        cwd=tmp_path,
+        openai_api_key="fallback-key",
+        contract_retry_limit=0,
+    ))
+
+    assert result.probe.reason == "reviewer_infrastructure_unavailable"
+    assert result.failure_classification == "reviewer_infrastructure_unavailable"
+    assert result.recoverable is True
+    assert result.diagnostics["fallback"]["attempted"] is True
+    assert result.diagnostics["fallback"]["fallback_failure"]["probe"]["reason"] == (
+        "reviewer_infrastructure_unavailable"
+    )
+
+
+def test_cursor_sdk_contract_miss_does_not_fall_back_even_with_explicit_key(
+    tmp_path: Path,
+    monkeypatch,
+):
+    def invalid_cursor_contract(request: CursorInvocationRequest):
+        return "No typed outcome here.", {
+            "agent_id": "agent-cursor",
+            "run_id": "run-cursor",
+            "status": "finished",
+            "model": "composer-2.5",
+            "reviewer_runtime": "cursor_sdk",
+            "reviewer_output_mode": "cursor_sdk",
+            "duration_ms": 12,
+            "prompt_chars": 2048,
+            "prompt_sha256": "b" * 64,
+        }
+
+    def fallback_run(request: CursorInvocationRequest):
+        raise AssertionError("contract failures must not fall back to LiteLLM")
+
+    monkeypatch.setattr(cursor_agent, "_run_cursor_sdk", invalid_cursor_contract)
+    monkeypatch.setattr(cursor_agent, "_run_litellm_structured", fallback_run)
+
+    result = invoke_cursor_agent(CursorInvocationRequest(
+        task_id="tri-agent",
+        gate="outcome_review",
+        instruction="Review the outcome.",
+        cwd=tmp_path,
+        openai_api_key="fallback-key",
+        contract_retry_limit=0,
+    ))
+
+    assert result.probe.reason == "reviewer_contract_unmet"
+    assert result.failure_classification == "reviewer_contract_unmet"
+    assert result.recoverable is True
+    assert result.reviewer_runtime == "cursor_sdk"
+    assert result.reviewer_assurance == "tool_backed_primary"
+    assert "fallback" not in result.diagnostics
+
+
+def test_cursor_sdk_fallback_revise_still_blocks(tmp_path: Path, monkeypatch):
+    def failing_cursor(request: CursorInvocationRequest):
+        raise RuntimeError("cursor transport closed")
+
+    def fallback_run(request: CursorInvocationRequest):
+        outcome = _complete_cursor_outcome(task_id=request.task_id, decision="revise")
+        return f"<dual_agent_outcome>{outcome.model_dump_json()}</dual_agent_outcome>", _litellm_metadata()
+
+    monkeypatch.setattr(cursor_agent, "_run_cursor_sdk", failing_cursor)
+    monkeypatch.setattr(cursor_agent, "_run_litellm_structured", fallback_run)
+
+    result = invoke_cursor_agent(CursorInvocationRequest(
+        task_id="tri-agent",
+        gate="outcome_review",
+        instruction="Review the outcome.",
+        cwd=tmp_path,
+        openai_api_key="fallback-key",
+        contract_retry_limit=0,
+    ))
+
+    assert result.probe.ok
+    assert result.outcome is not None
+    assert not cursor_accepts(result)
+    assert result.failure_classification is None
+    assert result.reviewer_assurance == "fallback_text_only"
 
 
 def test_invoke_cursor_agent_retries_missing_outcome_with_contract_packet(tmp_path: Path, monkeypatch):
@@ -529,6 +777,7 @@ def test_invoke_cursor_agent_returns_recoverable_contract_artifact_after_retry_c
     tmp_path: Path,
     monkeypatch,
 ):
+    monkeypatch.setenv("OPENAI_API_KEY", "ambient-key-must-not-trigger-fallback")
     calls: list[CursorInvocationRequest] = []
 
     def fake_run(request: CursorInvocationRequest):
@@ -572,6 +821,7 @@ def test_invoke_cursor_agent_classifies_parseable_contract_miss_after_retry_cap(
     tmp_path: Path,
     monkeypatch,
 ):
+    monkeypatch.setenv("OPENAI_API_KEY", "ambient-key-must-not-trigger-fallback")
     calls: list[CursorInvocationRequest] = []
 
     def fake_run(request: CursorInvocationRequest):
@@ -623,6 +873,7 @@ def test_probe_cursor_sdk_live_writes_skipped_fixture_without_key(tmp_path: Path
             "scripts/probe_cursor_sdk_live.py",
             "--output-dir",
             str(output_dir),
+            "--no-codex-mcp-env",
         ],
         cwd=Path(__file__).parents[1],
         capture_output=True,
@@ -635,3 +886,25 @@ def test_probe_cursor_sdk_live_writes_skipped_fixture_without_key(tmp_path: Path
     assert summary["reason"] == "missing_cursor_api_key"
     assert summary["api_key_present"] is False
     assert "CURSOR_API_KEY" not in completed.stdout
+
+
+def test_probe_env_loader_can_supply_cursor_api_key(tmp_path: Path, monkeypatch):
+    from mcp_tools.codex_supervisor_workflow_cli import load_codex_mcp_env
+
+    monkeypatch.delenv("CURSOR_API_KEY", raising=False)
+    codex_config = tmp_path / "config.toml"
+    codex_config.write_text(
+        "\n".join([
+            "[mcp_servers.codex_supervisor]",
+            'command = "/tmp/codex-supervisor-mcp"',
+            "",
+            "[mcp_servers.codex_supervisor.env]",
+            'CURSOR_API_KEY = "cursor-from-config"',
+        ]),
+        encoding="utf-8",
+    )
+
+    loaded = load_codex_mcp_env(codex_config)
+
+    assert loaded == {"CURSOR_API_KEY": "cursor-from-config"}
+    assert os.environ["CURSOR_API_KEY"] == "cursor-from-config"

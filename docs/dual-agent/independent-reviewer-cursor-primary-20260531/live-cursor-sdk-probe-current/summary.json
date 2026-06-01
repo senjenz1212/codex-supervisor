@@ -1,0 +1,82 @@
+{
+  "accepted": true,
+  "agent_id": "agent-4af115eb-c898-4a2d-9671-883ad4f01962",
+  "api_key_present": true,
+  "created_at": 1780283494,
+  "cursor_sdk_import": "ok",
+  "cursor_status": "finished",
+  "diagnostics": {
+    "prompt_chars": 1666,
+    "prompt_sha256": "c5586ef5c36f399ee1c609f23c4f9d8d67f9f6b354e89e61bbc5909ee2812141"
+  },
+  "duration_ms": 9506,
+  "fallback_from_runtime": null,
+  "fallback_reason": null,
+  "loaded_codex_mcp_env_keys": [
+    "CURSOR_API_KEY"
+  ],
+  "model": "composer-2.5",
+  "outcome": {
+    "changed_files": [],
+    "claims": [
+      "README.md exists",
+      "No implementation is required for this probe",
+      "Working tree is clean on main"
+    ],
+    "confidence": 0.95,
+    "confidence_criteria": [
+      "README.md_exists_verified",
+      "no_implementation_files_present",
+      "working_tree_clean",
+      "claude_claim_matches_worktree",
+      "gate_instruction_satisfied"
+    ],
+    "confidence_rationale": "Direct filesystem read verified README.md; repo contains no other implementation artifacts; git status clean. Only gap is absence of formal evidence receipts, which the task does not require.",
+    "critical_review": {
+      "assumptions_to_verify": [
+        "repository_is_intentional_minimal_fixture",
+        "gate_criterion_is_existence_only_not_content_richness"
+      ],
+      "contradictions_checked": [
+        "claude_readme_exists_claim_vs_worktree",
+        "repo_scope_vs_no_implementation_requirement",
+        "readme_instructions_vs_review_only_role"
+      ],
+      "decision": "accept",
+      "missing_evidence": [
+        "evidence_receipts",
+        "planning_artifacts",
+        "automated_test_output"
+      ],
+      "severity": "low",
+      "strongest_objection": "No evidence receipts were provided; gate acceptance relies solely on reviewer inspection rather than auditable artifacts.",
+      "what_would_change_my_mind": "README.md absent or empty, undisclosed implementation requirements in task spec, or non-probe source files implying unfinished work."
+    },
+    "decisions": [
+      "accept"
+    ],
+    "objections": [],
+    "specialists": [
+      {
+        "decision": "accept",
+        "name": "Cursor Reviewer",
+        "objection": null
+      }
+    ],
+    "summary": "Independent review confirms README.md exists in a minimal probe repo; no implementation is required or present. Gate advances.",
+    "task_id": "live-cursor-sdk-probe",
+    "test_status": "unknown",
+    "tests": []
+  },
+  "probe": {
+    "details": {},
+    "probe_id": "CURSOR",
+    "reason": "cursor_review_ok",
+    "status": "green"
+  },
+  "reviewer_assurance": "tool_backed_primary",
+  "reviewer_output_mode": "cursor_sdk",
+  "reviewer_runtime": "cursor_sdk",
+  "run_id": "run-96c62657-5964-46c2-be74-6332af0d5119",
+  "status": "completed"
+}

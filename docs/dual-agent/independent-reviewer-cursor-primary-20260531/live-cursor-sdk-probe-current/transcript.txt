@@ -1,0 +1,21 @@
+[cursor attempt 1/4]
+## Cursor Reviewer — outcome_review gate
+
+**Verdict:** Accept — gate criteria are met.
+
+**Worktree inspection**
+- `README.md` is present at repo root (3 lines; probe instructions).
+- No source, config, or test files beyond `.git/` metadata.
+- Working tree clean on `main` (`b12f65f seed cursor probe`).
+- README explicitly states review-only, no edits — consistent with “no implementation required.”
+
+**Claude outcome challenge**
+- **Claim checked:** `README.md exists` — **confirmed** by direct read.
+- **Decision checked:** `accept` — **supported**; only gate condition is README presence with no implementation scope.
+- **Strongest reason not to advance:** No formal evidence receipts or planning artifacts were supplied; acceptance rests on independent filesystem verification only. For this probe task that is sufficient, but it would not suffice for a production gate.
+- **Missing evidence:** Evidence receipts (none provided); automated test output (N/A for this repo).
+- **Contradictions checked:** Claude claim vs. worktree — no contradiction; repo contents vs. “no implementation required” — no contradiction.
+- **Assumptions verified:** Repo is intentionally minimal probe fixture; gate instruction matches README intent.
+- **What would change decision:** Missing or empty `README.md`, additional files implying required implementation, or task spec demanding content beyond existence.
+
+<dual_agent_outcome>{"task_id":"live-cursor-sdk-probe","summary":"Independent review confirms README.md exists in a minimal probe repo; no implementation is required or present. Gate advances.","specialists":[{"name":"Cursor Reviewer","decision":"accept"}],"decisions":["accept"],"objections":[],"changed_files":[],"tests":[],"test_status":"not_applicable","confidence":0.95,"confidence_rationale":"Direct filesystem read verified README.md; repo contains no other implementation artifacts; git status clean. Only gap is absence of formal evidence receipts, which the task does not require.","confidence_criteria":["README.md_exists_verified","no_implementation_files_present","working_tree_clean","claude_claim_matches_worktree","gate_instruction_satisfied"],"claims":["README.md exists","No implementation is required for this probe","Working tree is clean on main"],"critical_review":{"strongest_objection":"No evidence receipts were provided; gate acceptance relies solely on reviewer inspection rather than auditable artifacts.","missing_evidence":["evidence_receipts","planning_artifacts","automated_test_output"],"contradictions_checked":["claude_readme_exists_claim_vs_worktree","repo_scope_vs_no_implementation_requirement","readme_instructions_vs_review_only_role"],"assumptions_to_verify":["repository_is_intentional_minimal_fixture","gate_criterion_is_existence_only_not_content_richness"],"what_would_change_my_mind":"README.md absent or empty, undisclosed implementation requirements in task spec, or non-probe source files implying unfinished work.","decision":"accept","severity":"low"}}</dual_agent_outcome>

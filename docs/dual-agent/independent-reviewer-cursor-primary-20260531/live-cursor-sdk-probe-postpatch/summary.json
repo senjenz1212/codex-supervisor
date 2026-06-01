@@ -1,0 +1,80 @@
+{
+  "accepted": true,
+  "agent_id": "agent-d278782f-a6fb-4fa4-8d9b-13ac1942cc66",
+  "api_key_present": true,
+  "created_at": 1780281056,
+  "cursor_sdk_import": "ok",
+  "cursor_status": "finished",
+  "diagnostics": {
+    "prompt_chars": 1666,
+    "prompt_sha256": "c5586ef5c36f399ee1c609f23c4f9d8d67f9f6b354e89e61bbc5909ee2812141"
+  },
+  "duration_ms": 11742,
+  "fallback_from_runtime": null,
+  "fallback_reason": null,
+  "loaded_codex_mcp_env_keys": [
+    "CURSOR_API_KEY"
+  ],
+  "model": "composer-2.5",
+  "outcome": {
+    "changed_files": [],
+    "claims": [
+      "README.md exists",
+      "No implementation is required for this gate"
+    ],
+    "confidence": 0.97,
+    "confidence_criteria": [
+      "README.md exists on disk",
+      "No non-git implementation files present",
+      "Gate rule matches observed repo state",
+      "Claude claim independently confirmed"
+    ],
+    "confidence_rationale": "Direct filesystem verification of README.md and exhaustive worktree listing; accept rule is explicit and unambiguous.",
+    "critical_review": {
+      "assumptions_to_verify": [
+        "README-only repo satisfies no-implementation requirement",
+        "Gate accept rule is complete criteria for advance"
+      ],
+      "contradictions_checked": [
+        "Claude claim README.md exists vs filesystem",
+        "Accept decision vs no-implementation requirement",
+        "Worktree contents vs implied probe scope"
+      ],
+      "decision": "accept",
+      "missing_evidence": [
+        "Planning artifacts",
+        "Evidence receipts",
+        "Formal task specification beyond gate text"
+      ],
+      "severity": "low",
+      "strongest_objection": "No planning artifacts or evidence receipts limits auditability despite not being gate blockers.",
+      "what_would_change_my_mind": "Discovery of required implementation artifacts, failing README, or contradictory task requirements not reflected in the worktree."
+    },
+    "decisions": [
+      "accept"
+    ],
+    "objections": [],
+    "specialists": [
+      {
+        "decision": "accept",
+        "name": "Cursor Reviewer",
+        "objection": null
+      }
+    ],
+    "summary": "README.md verified at repo root; worktree is README-only with no implementation required. Gate criteria satisfied.",
+    "task_id": "live-cursor-sdk-probe",
+    "test_status": "unknown",
+    "tests": []
+  },
+  "probe": {
+    "details": {},
+    "probe_id": "CURSOR",
+    "reason": "cursor_review_ok",
+    "status": "green"
+  },
+  "reviewer_assurance": "tool_backed_primary",
+  "reviewer_output_mode": "cursor_sdk",
+  "reviewer_runtime": "cursor_sdk",
+  "run_id": "run-a4620bbf-967c-4d79-b7b2-2545f6ff7c2c",
+  "status": "completed"
+}

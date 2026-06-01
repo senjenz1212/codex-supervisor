@@ -507,6 +507,9 @@ def _cursor_review_result(task_id: str, *, decision: str = "accept") -> CursorIn
         run_id="run-cursor",
         status="finished",
         model="composer-2.5",
+        reviewer_runtime="cursor_sdk",
+        reviewer_output_mode="cursor_sdk",
+        reviewer_assurance="tool_backed_primary",
         duration_ms=10,
     )
 
@@ -542,7 +545,7 @@ def _cursor_contract_unmet_runner(request) -> CursorInvocationResult:
 
 
 @pytest.mark.asyncio
-async def test_workflow_invokes_reviewer_after_claude_accept_with_non_claude_default(
+async def test_workflow_invokes_cursor_sdk_reviewer_after_claude_accept_by_default(
     tmp_path,
 ):
     requests = []
@@ -553,11 +556,12 @@ async def test_workflow_invokes_reviewer_after_claude_accept_with_non_claude_def
             probe=ProbeResult("CURSOR", "green", "cursor_review_ok"),
             outcome=_cursor_review_result(request.task_id).outcome,
             transcript="",
-            run_id="chatcmpl-1",
+            run_id="run-cursor",
             status="finished",
             model=request.reviewer_model,
-            reviewer_runtime="litellm_structured",
+            reviewer_runtime="cursor_sdk",
             reviewer_output_mode=request.reviewer_output_mode,
+            reviewer_assurance="tool_backed_primary",
         )
 
     server, _state = _server(tmp_path, cursor_runner=fake_cursor_runner)
@@ -566,23 +570,25 @@ async def test_workflow_invokes_reviewer_after_claude_accept_with_non_claude_def
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
-        intent="Default reviewer should be Gemini structured and downstream of Claude.",
+        intent="Default reviewer should be Cursor SDK and downstream of Claude.",
         max_rounds_per_gate=1,
         cursor_review=True,
         tool_receipts=_tool_receipts(),
     ))
 
     assert result["status"] == "accepted"
-    assert result["workflow_route"]["reviewer_model"] == "gemini-3.1-pro-preview"
-    assert result["workflow_route"]["reviewer_output_mode"] == "litellm_structured"
+    assert result["workflow_route"]["reviewer_model"] == "composer-2.5"
+    assert result["workflow_route"]["reviewer_output_mode"] == "cursor_sdk"
     assert result["workflow_route"]["reviewer_max_tokens"] == 4096
     assert requests
-    assert all(request.reviewer_model == "gemini-3.1-pro-preview" for request in requests)
-    assert all(request.reviewer_output_mode == "litellm_structured" for request in requests)
+    assert all(request.reviewer_model == "composer-2.5" for request in requests)
+    assert all(request.reviewer_output_mode == "cursor_sdk" for request in requests)
     assert all(request.claude_outcome is not None for request in requests)
     cursor_payload = result["final_gate_result"]["cursor_review"]
-    assert cursor_payload["reviewer_runtime"] == "litellm_structured"
-    assert cursor_payload["reviewer_output_mode"] == "litellm_structured"
+    assert cursor_payload["reviewer_runtime"] == "cursor_sdk"
+    assert cursor_payload["reviewer_output_mode"] == "cursor_sdk"
+    assert cursor_payload["reviewer_assurance"] == "tool_backed_primary"
+    assert result["final_gate_result"]["independent_reviewer"] == cursor_payload
 
 
 @pytest.mark.asyncio
@@ -613,6 +619,50 @@ async def test_cursor_sdk_output_mode_routes_legacy_model_to_reviewer_request(tm
     assert requests
     assert all(request.reviewer_output_mode == "cursor_sdk" for request in requests)
     assert all(request.model == "composer-custom" for request in requests)
+
+
+@pytest.mark.asyncio
+async def test_explicit_litellm_reviewer_is_not_labeled_as_cursor_runtime(tmp_path):
+    requests = []
+
+    def fake_cursor_runner(request):
+        requests.append(request)
+        result = _cursor_review_result(request.task_id)
+        return CursorInvocationResult(
+            probe=result.probe,
+            outcome=result.outcome,
+            transcript=result.transcript,
+            run_id="chatcmpl-litellm",
+            status="finished",
+            model=request.reviewer_model,
+            reviewer_runtime="litellm_structured",
+            reviewer_output_mode="litellm_structured",
+            reviewer_assurance="structured_text_only",
+        )
+
+    server, _state = _server(tmp_path, cursor_runner=fake_cursor_runner)
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Explicit LiteLLM reviewer should stay lower assurance.",
+        max_rounds_per_gate=1,
+        cursor_review=True,
+        reviewer_output_mode="litellm_structured",
+        reviewer_model="gemini-test",
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert result["status"] == "accepted"
+    assert requests
+    assert all(request.reviewer_output_mode == "litellm_structured" for request in requests)
+    payload = result["final_gate_result"]["independent_reviewer"]
+    assert payload == result["final_gate_result"]["cursor_review"]
+    assert payload["reviewer_runtime"] == "litellm_structured"
+    assert payload["reviewer_output_mode"] == "litellm_structured"
+    assert payload["reviewer_assurance"] == "structured_text_only"
+    assert payload["model"] == "gemini-test"
 
 
 @pytest.mark.asyncio

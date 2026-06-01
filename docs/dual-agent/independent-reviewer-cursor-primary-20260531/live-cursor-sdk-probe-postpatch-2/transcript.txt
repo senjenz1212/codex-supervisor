@@ -1,0 +1,23 @@
+[cursor attempt 1/4]
+## Cursor Reviewer — outcome_review gate
+
+**Verdict:** Accept — gate should advance.
+
+**Inspection:** The worktree contains a single tracked artifact, `README.md`, with non-empty content instructing review-only behavior. No source code, tests, configs, or other implementation files are present.
+
+**Claude outcome check:** The claim `README.md exists` is **verified** on disk. The gate instruction (“accept if README.md exists and no implementation is required”) is satisfied.
+
+### Critical review (concise, auditable)
+
+| Field | Assessment |
+|---|---|
+| **Strongest objection** | No evidence receipts or planning artifacts were supplied; acceptance rests entirely on a minimal filesystem check, not on independent execution logs. |
+| **Missing evidence** | No CI/test receipts; no artifact hashes; no explicit task spec beyond the gate rule itself. |
+| **Contradictions checked** | Claude claims README exists ↔ confirmed present and readable; gate requires no implementation ↔ only README in repo; README text says “without editing it” ↔ aligns with review-only scope. |
+| **Assumptions to verify** | Assumed “no implementation required” means the task scope is README-only probe, not a hidden requirement elsewhere (none found in repo). |
+| **What would change my mind** | Discovery of required but missing implementation files, an empty/missing README, or a contradictory task spec mandating code changes. |
+| **Decision / severity** | `accept` / `low` — criteria met; residual risk is procedural (thin evidence), not substantive. |
+
+**Confidence:** 0.95 — direct filesystem verification; narrow, unambiguous gate rule.
+
+<dual_agent_outcome>{"task_id":"live-cursor-sdk-probe","summary":"README.md exists and is the sole repo artifact; no implementation required or present. Gate criteria satisfied.","specialists":[{"name":"Cursor Reviewer","decision":"accept"}],"decisions":["accept"],"objections":[],"changed_files":[],"tests":[],"test_status":"not_run","confidence":0.95,"confidence_rationale":"Direct read-only inspection confirms README.md exists with content and no implementation files are in the worktree. Gate rule is narrow and fully met.","confidence_criteria":["README.md present on disk","README.md non-empty","No implementation files in worktree","Gate rule explicitly allows accept on README-only repos","No contradictory task requirements found"],"claims":["README.md exists","No implementation required for this task","Worktree contains only README.md plus git metadata"],"critical_review":{"strongest_objection":"Acceptance relies on a minimal filesystem check with zero external evidence receipts or planning artifacts.","missing_evidence":["Evidence receipts","Planning artifacts","Automated test or CI verification"],"contradictions_checked":["Claude claim README.md exists vs filesystem: consistent","Gate no-implementation rule vs repo contents: consistent","README review-only instruction vs gate scope: consistent"],"assumptions_to_verify":["Task scope is README-only probe with no hidden implementation mandate","README content is sufficient for gate purpose"],"what_would_change_my_mind":"Missing README, empty README, required implementation files absent from repo, or explicit contradictory task spec requiring code changes.","decision":"accept","severity":"low"}}</dual_agent_outcome>
