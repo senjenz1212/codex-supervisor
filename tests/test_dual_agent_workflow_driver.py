@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
 import os
 import subprocess
+import time
 from hashlib import sha256
 from pathlib import Path
 
@@ -811,6 +813,190 @@ async def test_submit_dual_agent_workflow_job_spawns_detached_worker_and_records
         task_id="workflow-1",
     ))
     assert transcript["workflow_jobs"][0]["status"] == "running"
+
+
+@pytest.mark.asyncio
+async def test_submit_dual_agent_workflow_job_dedupes_same_client_token(monkeypatch, tmp_path):
+    import mcp_tools.codex_supervisor_stdio as stdio
+
+    server, state = _server(tmp_path)
+    popen_calls: list[list[str]] = []
+
+    class FakePopen:
+        pid = 43210
+
+        def __init__(self, argv, **kwargs):
+            popen_calls.append(list(argv))
+
+    monkeypatch.setattr(stdio.subprocess, "Popen", FakePopen)
+
+    kwargs = {
+        "cwd": str(tmp_path),
+        "task_id": "workflow-1",
+        "run_id": "workflow-run",
+        "intent": "Run long workflow out of band.",
+        "tool_receipts": _tool_receipts(),
+        "config_path": str(tmp_path / "config.yaml"),
+        "client_token": " retry-token ",
+    }
+
+    first = await _maybe_await(server.tools["submit_dual_agent_workflow_job"](**kwargs))
+    second = await _maybe_await(server.tools["submit_dual_agent_workflow_job"](**kwargs))
+
+    assert first["status"] == "running"
+    assert second["job_id"] == first["job_id"]
+    assert second["status"] == "running"
+    assert second["reattached"] is True
+    assert len(popen_calls) == 1
+    rows = state._conn.execute("SELECT COUNT(*) FROM dual_agent_workflow_jobs").fetchone()
+    assert rows[0] == 1
+
+
+@pytest.mark.asyncio
+async def test_submit_dual_agent_workflow_job_derives_idempotency_for_legacy_callers(monkeypatch, tmp_path):
+    import mcp_tools.codex_supervisor_stdio as stdio
+
+    server, _state = _server(tmp_path)
+    popen_calls: list[list[str]] = []
+
+    class FakePopen:
+        pid = 43210
+
+        def __init__(self, argv, **kwargs):
+            popen_calls.append(list(argv))
+
+    monkeypatch.setattr(stdio.subprocess, "Popen", FakePopen)
+
+    kwargs = {
+        "cwd": str(tmp_path),
+        "task_id": "workflow-1",
+        "run_id": "workflow-run",
+        "intent": "Run long workflow out of band.",
+        "tool_receipts": _tool_receipts(),
+        "config_path": str(tmp_path / "config.yaml"),
+    }
+
+    first = await _maybe_await(server.tools["submit_dual_agent_workflow_job"](**kwargs))
+    second = await _maybe_await(server.tools["submit_dual_agent_workflow_job"](**kwargs))
+
+    assert second["job_id"] == first["job_id"]
+    assert second["reattached"] is True
+    assert len(popen_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_submit_dual_agent_workflow_job_derived_tokens_differ_for_different_payloads(monkeypatch, tmp_path):
+    import mcp_tools.codex_supervisor_stdio as stdio
+
+    server, _state = _server(tmp_path)
+    popen_calls: list[list[str]] = []
+
+    class FakePopen:
+        pid = 43210
+
+        def __init__(self, argv, **kwargs):
+            popen_calls.append(list(argv))
+
+    monkeypatch.setattr(stdio.subprocess, "Popen", FakePopen)
+
+    base = {
+        "cwd": str(tmp_path),
+        "task_id": "workflow-1",
+        "run_id": "workflow-run",
+        "tool_receipts": _tool_receipts(),
+        "config_path": str(tmp_path / "config.yaml"),
+    }
+
+    first = await _maybe_await(server.tools["submit_dual_agent_workflow_job"](
+        **base,
+        intent="Run long workflow out of band.",
+    ))
+    second = await _maybe_await(server.tools["submit_dual_agent_workflow_job"](
+        **base,
+        intent="Run a different logical workflow.",
+    ))
+
+    assert second["job_id"] != first["job_id"]
+    assert "reattached" not in second
+    assert len(popen_calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_submit_dual_agent_workflow_job_keeps_different_tokens_independent(monkeypatch, tmp_path):
+    import mcp_tools.codex_supervisor_stdio as stdio
+
+    server, _state = _server(tmp_path)
+    popen_calls: list[list[str]] = []
+
+    class FakePopen:
+        pid = 43210
+
+        def __init__(self, argv, **kwargs):
+            popen_calls.append(list(argv))
+
+    monkeypatch.setattr(stdio.subprocess, "Popen", FakePopen)
+
+    base = {
+        "cwd": str(tmp_path),
+        "task_id": "workflow-1",
+        "run_id": "workflow-run",
+        "intent": "Run long workflow out of band.",
+        "tool_receipts": _tool_receipts(),
+        "config_path": str(tmp_path / "config.yaml"),
+    }
+
+    first = await _maybe_await(server.tools["submit_dual_agent_workflow_job"](
+        **base,
+        client_token="token-a",
+    ))
+    second = await _maybe_await(server.tools["submit_dual_agent_workflow_job"](
+        **base,
+        client_token="token-b",
+    ))
+
+    assert second["job_id"] != first["job_id"]
+    assert "reattached" not in second
+    assert len(popen_calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_submit_dual_agent_workflow_job_concurrent_same_token_launches_once(monkeypatch, tmp_path):
+    import mcp_tools.codex_supervisor_stdio as stdio
+
+    server, state = _server(tmp_path)
+    popen_calls: list[list[str]] = []
+
+    class FakePopen:
+        pid = 43210
+
+        def __init__(self, argv, **kwargs):
+            time.sleep(0.01)
+            popen_calls.append(list(argv))
+
+    monkeypatch.setattr(stdio.subprocess, "Popen", FakePopen)
+    kwargs = {
+        "cwd": str(tmp_path),
+        "task_id": "workflow-1",
+        "run_id": "workflow-run",
+        "intent": "Run long workflow out of band.",
+        "tool_receipts": _tool_receipts(),
+        "config_path": str(tmp_path / "config.yaml"),
+        "client_token": "same-concurrent-token",
+    }
+
+    async def submit_once():
+        return await asyncio.to_thread(
+            server.tools["submit_dual_agent_workflow_job"],
+            **kwargs,
+        )
+
+    results = await asyncio.gather(*(submit_once() for _ in range(8)))
+
+    job_ids = {result["job_id"] for result in results}
+    assert len(job_ids) == 1
+    assert len(popen_calls) == 1
+    rows = state._conn.execute("SELECT COUNT(*) FROM dual_agent_workflow_jobs").fetchone()
+    assert rows[0] == 1
 
 
 @pytest.mark.asyncio

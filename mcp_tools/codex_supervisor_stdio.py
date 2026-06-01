@@ -7,6 +7,7 @@ server through its external MCP configuration and receives ordinary MCP tools.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -97,6 +98,33 @@ RELAXED_ARTIFACT_POLICIES = {"relaxed", "audit", "off"}
 VISUAL_VALIDATION_SOURCES = {"browser", "browser_use", "browser-use", "computer_use", "computer-use", "computer"}
 VISUAL_VALIDATION_PASSED = {"passed", "pass", "accepted", "accept", "ok"}
 REVIEWER_UNAVAILABLE_POLICIES = {"block", "escalate", "proceed_degraded"}
+
+
+def _canonical_workflow_job_payload(payload: dict[str, Any]) -> str:
+    """Stable request identity for no-token detached workflow retries.
+
+    The field set is exactly the workflow request payload that will be written
+    to request.json and consumed by the CLI worker: semantic workflow knobs,
+    artifacts, reviewer settings, and receipts. It intentionally excludes
+    submit-only transport fields such as job_id, client_token, generated paths,
+    pid, and config_path so a transport retry reattaches to the same job.
+    """
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+
+def _workflow_job_idempotency_token(
+    *,
+    run_id: str,
+    payload: dict[str, Any],
+    client_token: str | None,
+) -> str:
+    supplied = (client_token or "").strip()
+    if supplied:
+        digest = hashlib.sha256(supplied.encode("utf-8")).hexdigest()
+        return f"client:{digest}"
+    canonical = _canonical_workflow_job_payload(payload)
+    digest = hashlib.sha256(f"{run_id}\n{canonical}".encode("utf-8")).hexdigest()
+    return f"derived:{digest}"
 
 
 class CodexSupervisorMcpAPI:
@@ -1683,6 +1711,7 @@ class CodexSupervisorMcpAPI:
         reviewer_max_tokens: int | None = None,
         task_complexity: str | None = None,
         config_path: str | None = None,
+        client_token: str | None = None,
     ) -> dict[str, Any]:
         execution_layer_mode = _canonical_execution_layer_mode(execution_layer_mode)
         dynamic_workflow_task_class = _canonical_dynamic_workflow_task_class(dynamic_workflow_task_class)
@@ -1712,13 +1741,7 @@ class CodexSupervisorMcpAPI:
             self.cfg,
             reviewer_max_tokens=reviewer_max_tokens,
         )
-        job_id = f"workflow-{uuid.uuid4().hex[:12]}"
         cwd_path = Path(cwd).expanduser().resolve()
-        job_dir = cwd_path / ".handoff" / "workflow-jobs" / job_id
-        request_path = job_dir / "request.json"
-        result_path = job_dir / "result.json"
-        log_path = job_dir / "worker.log"
-        job_dir.mkdir(parents=True, exist_ok=True)
         payload = {
             "cwd": str(cwd_path),
             "task_id": task_id,
@@ -1753,6 +1776,42 @@ class CodexSupervisorMcpAPI:
             "reviewer_max_tokens": reviewer_max_tokens_value,
             "task_complexity": task_complexity,
         }
+        idempotency_token = _workflow_job_idempotency_token(
+            run_id=run_id,
+            payload=payload,
+            client_token=client_token,
+        )
+        job_id = f"workflow-{uuid.uuid4().hex[:12]}"
+        job_dir = cwd_path / ".handoff" / "workflow-jobs" / job_id
+        request_path = job_dir / "request.json"
+        result_path = job_dir / "result.json"
+        log_path = job_dir / "worker.log"
+        reserved_job, created = self.state.reserve_dual_agent_workflow_job(
+            job_id=job_id,
+            run_id=run_id,
+            task_id=task_id,
+            cwd=str(cwd_path),
+            status="submitted",
+            request_path=str(request_path),
+            result_path=str(result_path),
+            log_path=str(log_path),
+            idempotency_token=idempotency_token,
+        )
+        if not created:
+            return redact({
+                "job_id": reserved_job["job_id"],
+                "run_id": reserved_job["run_id"],
+                "task_id": reserved_job["task_id"],
+                "status": reserved_job["status"],
+                "pid": reserved_job["pid"],
+                "request_path": reserved_job["request_path"],
+                "result_path": reserved_job["result_path"],
+                "log_path": reserved_job["log_path"],
+                "error": reserved_job["error"],
+                "reattached": True,
+                "poll_tool": "poll_dual_agent_workflow_job",
+            })
+        job_dir.mkdir(parents=True, exist_ok=True)
         request_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         command = [
             sys.executable,
@@ -1784,6 +1843,7 @@ class CodexSupervisorMcpAPI:
                 request_path=str(request_path),
                 result_path=str(result_path),
                 log_path=str(log_path),
+                idempotency_token=idempotency_token,
                 error=str(e),
             )
             self.state.write_event(
@@ -1822,6 +1882,7 @@ class CodexSupervisorMcpAPI:
             request_path=str(request_path),
             result_path=str(result_path),
             log_path=str(log_path),
+            idempotency_token=idempotency_token,
         )
         self.state.write_event(
             run_id=run_id,
@@ -3030,6 +3091,7 @@ def build_codex_supervisor_mcp_server(
         reviewer_max_tokens: int | None = None,
         task_complexity: str | None = None,
         config_path: str | None = None,
+        client_token: str | None = None,
     ) -> dict[str, Any]:
         return tool_api.submit_dual_agent_workflow_job(
             cwd=cwd,
@@ -3063,6 +3125,7 @@ def build_codex_supervisor_mcp_server(
             reviewer_max_tokens=reviewer_max_tokens,
             task_complexity=task_complexity,
             config_path=config_path,
+            client_token=client_token,
         )
 
     @mcp.tool()

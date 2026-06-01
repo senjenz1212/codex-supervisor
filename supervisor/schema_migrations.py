@@ -82,6 +82,22 @@ def _migration_actions_resume_requested_at(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE actions ADD COLUMN resume_requested_at INTEGER")
 
 
+def _migration_workflow_job_idempotency_token(conn: sqlite3.Connection) -> None:
+    if not _table_exists(conn, "dual_agent_workflow_jobs"):
+        return
+    columns = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(dual_agent_workflow_jobs)").fetchall()
+    }
+    if "idempotency_token" not in columns:
+        conn.execute("ALTER TABLE dual_agent_workflow_jobs ADD COLUMN idempotency_token TEXT")
+    conn.execute(
+        """CREATE UNIQUE INDEX IF NOT EXISTS idx_dual_agent_workflow_jobs_idempotency_token
+           ON dual_agent_workflow_jobs(idempotency_token)
+           WHERE idempotency_token IS NOT NULL"""
+    )
+
+
 def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
     row = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
@@ -113,4 +129,9 @@ def _row_str(row: sqlite3.Row | tuple, key: str, index: int) -> str:
 
 MIGRATIONS: tuple[SchemaMigration, ...] = (
     SchemaMigration(1, "actions.resume_requested_at", _migration_actions_resume_requested_at),
+    SchemaMigration(
+        2,
+        "dual_agent_workflow_jobs.idempotency_token",
+        _migration_workflow_job_idempotency_token,
+    ),
 )

@@ -213,6 +213,7 @@ CREATE TABLE IF NOT EXISTS dual_agent_workflow_jobs (
   request_path TEXT NOT NULL,
   result_path  TEXT NOT NULL,
   log_path     TEXT NOT NULL,
+  idempotency_token TEXT,
   returncode   INTEGER,
   error        TEXT,
   created_at   INTEGER NOT NULL,
@@ -702,6 +703,7 @@ class State:
         request_path: str,
         result_path: str,
         log_path: str,
+        idempotency_token: str | None = None,
         pid: int | None = None,
         returncode: int | None = None,
         error: str | None = None,
@@ -711,12 +713,16 @@ class State:
             self._conn.execute(
                 """INSERT INTO dual_agent_workflow_jobs(
                        job_id, run_id, task_id, cwd, status, pid,
-                       request_path, result_path, log_path, returncode,
-                       error, created_at, updated_at)
-                   VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                       request_path, result_path, log_path, idempotency_token,
+                       returncode, error, created_at, updated_at)
+                   VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(job_id) DO UPDATE SET
                        status=excluded.status,
                        pid=excluded.pid,
+                       idempotency_token=COALESCE(
+                           excluded.idempotency_token,
+                           dual_agent_workflow_jobs.idempotency_token
+                       ),
                        returncode=excluded.returncode,
                        error=excluded.error,
                        updated_at=excluded.updated_at""",
@@ -730,6 +736,7 @@ class State:
                     request_path,
                     result_path,
                     log_path,
+                    idempotency_token,
                     returncode,
                     error,
                     now,
@@ -737,6 +744,71 @@ class State:
                 ),
             )
             self._conn.commit()
+
+    def reserve_dual_agent_workflow_job(
+        self,
+        *,
+        job_id: str,
+        run_id: str,
+        task_id: str,
+        cwd: str,
+        status: str,
+        request_path: str,
+        result_path: str,
+        log_path: str,
+        idempotency_token: str,
+    ) -> tuple[sqlite3.Row, bool]:
+        """Atomically reserve a detached workflow job before launching its worker.
+
+        The idempotency token is the deduplication boundary for submit retries.
+        Callers must launch a subprocess only when this returns created=True.
+        """
+        now = int(time.time())
+        with self._write_lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                existing = self._conn.execute(
+                    """SELECT * FROM dual_agent_workflow_jobs
+                       WHERE idempotency_token=?""",
+                    (idempotency_token,),
+                ).fetchone()
+                if existing is not None:
+                    self._conn.commit()
+                    return existing, False
+
+                self._conn.execute(
+                    """INSERT INTO dual_agent_workflow_jobs(
+                           job_id, run_id, task_id, cwd, status, pid,
+                           request_path, result_path, log_path,
+                           idempotency_token, returncode, error,
+                           created_at, updated_at)
+                       VALUES(?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, NULL, NULL, ?, ?)""",
+                    (
+                        job_id,
+                        run_id,
+                        task_id,
+                        cwd,
+                        status,
+                        request_path,
+                        result_path,
+                        log_path,
+                        idempotency_token,
+                        now,
+                        now,
+                    ),
+                )
+                row = self._conn.execute(
+                    """SELECT * FROM dual_agent_workflow_jobs
+                       WHERE job_id=?""",
+                    (job_id,),
+                ).fetchone()
+                if row is None:
+                    raise RuntimeError("workflow job reservation was not persisted")
+                self._conn.commit()
+                return row, True
+            except Exception:
+                self._conn.rollback()
+                raise
 
     def update_dual_agent_workflow_job(
         self,

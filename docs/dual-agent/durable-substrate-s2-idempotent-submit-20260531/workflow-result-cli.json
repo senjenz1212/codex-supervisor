@@ -1,0 +1,1258 @@
+{
+  "artifact_export": {
+    "files": [
+      "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/index.md",
+      "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/triage.md",
+      "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/prd.md",
+      "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/tdd.md",
+      "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/grill-findings.md",
+      "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/issues.md",
+      "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/screenshots.md",
+      "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/outcome-review.md",
+      "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/interactions.md",
+      "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/transcript.md",
+      "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/transcript.jsonl",
+      "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/mast-coverage.md",
+      "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/replay/manifest.json",
+      "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/replay/workspace-snapshot.json",
+      "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/replay/mast-coverage.json",
+      "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/source/grill-findings-tdd.md",
+      "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/source/grill-findings.md",
+      "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/source/implementation-plan.md",
+      "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/source/issues.md",
+      "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/source/prd.md",
+      "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/source/tdd.md"
+    ],
+    "output_dir": "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531",
+    "run_id": "codex-durable-s2-idempotent-submit-20260531",
+    "status": "ok",
+    "task_id": "durable-substrate-s2-idempotent-submit-20260531"
+  },
+  "current_gate": "outcome_review",
+  "final_gate_result": {
+    "artifact_export": {
+      "files": [
+        "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/index.md",
+        "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/triage.md",
+        "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/prd.md",
+        "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/tdd.md",
+        "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/grill-findings.md",
+        "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/issues.md",
+        "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/screenshots.md",
+        "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/outcome-review.md",
+        "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/interactions.md",
+        "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/transcript.md",
+        "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/transcript.jsonl",
+        "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/mast-coverage.md",
+        "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/replay/manifest.json",
+        "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/replay/workspace-snapshot.json",
+        "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/replay/mast-coverage.json",
+        "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/source/grill-findings-tdd.md",
+        "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/source/grill-findings.md",
+        "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/source/implementation-plan.md",
+        "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/source/issues.md",
+        "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/source/prd.md",
+        "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/source/tdd.md"
+      ],
+      "output_dir": "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531",
+      "run_id": "codex-durable-s2-idempotent-submit-20260531",
+      "status": "ok",
+      "task_id": "durable-substrate-s2-idempotent-submit-20260531"
+    },
+    "artifact_rigor": {
+      "accepted_prerequisite_gates": [
+        "execution"
+      ],
+      "artifact_policy": "strict",
+      "gate": "outcome_review",
+      "gate_statuses": {
+        "execution": "accepted",
+        "implementation_plan": "accepted",
+        "issues_review": "accepted",
+        "outcome_review": "blocked",
+        "prd_review": "accepted",
+        "tdd_review": "accepted"
+      },
+      "missing_artifact_paths": [],
+      "missing_artifacts": [],
+      "missing_prerequisite_gates": [],
+      "missing_screenshot_paths": [],
+      "present_artifacts": [
+        "grill_findings",
+        "implementation_plan",
+        "issues",
+        "prd",
+        "tdd_plan"
+      ],
+      "reason": "required_artifacts_present",
+      "required_artifacts": [
+        "prd",
+        "tdd_plan",
+        "grill_findings",
+        "issues",
+        "implementation_plan"
+      ],
+      "required_prerequisite_gates": [
+        "execution"
+      ],
+      "screenshots": [],
+      "status": "ok",
+      "user_facing": false,
+      "visual_validation": {
+        "allowed_sources": [
+          "browser",
+          "browser-use",
+          "browser_use",
+          "computer",
+          "computer-use",
+          "computer_use"
+        ],
+        "evidence": [],
+        "failures": [],
+        "reason": "no_screenshots_supplied",
+        "status": "not_required"
+      }
+    },
+    "attempts": 1,
+    "claim_verification": {
+      "details": {
+        "legacy_verified_claims": [],
+        "receipts": [
+          {
+            "artifacts": [
+              "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/source/prd.md"
+            ],
+            "claims": [
+              "prd-tdd skill executed",
+              "PRD promise contracts produced"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-to-prd-durable-substrate-s2-idempotent-submit-20260531",
+            "skill": "to-prd",
+            "stage": "to_prd",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/source/grill-findings.md"
+            ],
+            "claims": [
+              "prd-tdd skill executed",
+              "PRD grill findings resolved or waived"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-prd-grill-durable-substrate-s2-idempotent-submit-20260531",
+            "skill": "grill-with-docs",
+            "stage": "prd_grill",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/source/issues.md"
+            ],
+            "claims": [
+              "prd-tdd skill executed",
+              "issues map to PRD promises"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-to-issues-durable-substrate-s2-idempotent-submit-20260531",
+            "skill": "to-issues",
+            "stage": "to_issues",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/source/tdd.md"
+            ],
+            "claims": [
+              "prd-tdd skill executed",
+              "public-boundary RED tests planned"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-tdd-durable-substrate-s2-idempotent-submit-20260531",
+            "skill": "tdd",
+            "stage": "tdd",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/source/grill-findings-tdd.md"
+            ],
+            "claims": [
+              "prd-tdd skill executed",
+              "TDD grill findings resolved"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-tdd-grill-durable-substrate-s2-idempotent-submit-20260531",
+            "skill": "grill-with-docs",
+            "stage": "tdd_grill",
+            "status": "passed"
+          },
+          {
+            "claims": [
+              "tests passed",
+              "S2 idempotent submit tests passed",
+              "schema migration tests passed"
+            ],
+            "command": "uv run pytest tests/test_dual_agent_workflow_driver.py tests/test_schema_migrations.py -q",
+            "kind": "test",
+            "receipt_id": "pytest-focused-durable-substrate-s2-idempotent-submit-20260531",
+            "status": "passed",
+            "summary": "67 passed in 61.87s"
+          },
+          {
+            "claims": [
+              "tests passed",
+              "full suite passed"
+            ],
+            "command": "uv run --extra dev pytest -q",
+            "kind": "test",
+            "receipt_id": "pytest-full-durable-substrate-s2-idempotent-submit-20260531",
+            "status": "passed",
+            "summary": "563 passed in 75.23s"
+          },
+          {
+            "changed_files": [
+              "mcp_tools/codex_supervisor_stdio.py",
+              "supervisor/schema_migrations.py",
+              "supervisor/state.py",
+              "tests/test_dual_agent_workflow_driver.py",
+              "tests/test_schema_migrations.py"
+            ],
+            "claims": [
+              "implemented",
+              "S2 implementation diff present"
+            ],
+            "kind": "git_diff",
+            "receipt_id": "git-diff-durable-substrate-s2-idempotent-submit-20260531",
+            "sha256": "0838fc40771a978968ecf583dd74f4ec0cf56cdd7873c5fae02ace8d8bf9109e",
+            "status": "present"
+          }
+        ]
+      },
+      "probe_id": "P11",
+      "reason": "workflow_claims_verified",
+      "status": "green"
+    },
+    "claude_gate_status": "accepted",
+    "cursor_review": {
+      "accepted": true,
+      "agent_id": "agent-7c8d8208-d7ea-4839-b8c3-49b261f61698",
+      "attempts": 1,
+      "critical_review": {
+        "assumptions_to_verify": [
+          "SQLite BEGIN IMMEDIATE serializes cross-process writers so concurrent submit reattaches rather than raises",
+          "Poll tool correctly surfaces failed-launch job state on reattach (inferred, not explicitly tested)"
+        ],
+        "contradictions_checked": [
+          "Reserve-before-launch ordering confirmed in submit path",
+          "Derived token excludes transport fields; hash built from payload before job_id/paths assigned",
+          "Claude test_status unknown contradicted workflow receipts; independent pytest run confirms passed",
+          "Migration v2 ALTER + partial unique index alters old DBs; duplicate token insert raises IntegrityError in test"
+        ],
+        "decision": "accept",
+        "evidence_refs": [],
+        "missing_evidence": [
+          "Test covering Popen failure then retry reattach behavior",
+          "Test that different config_path with same payload creates independent jobs",
+          "Cross-process concurrent same-token submit under separate State connections"
+        ],
+        "schema_version": "critical-review/v1",
+        "severity": "medium",
+        "strongest_objection": "On Popen failure the reserved row keeps its idempotency_token with status failed; for the derived-key path the same payload always yields the same token, so retries permanently reattach to a failed job and never relaunch without a fresh client_token.",
+        "what_would_change_my_mind": "Failing regression run; cross-process concurrent submit returning IntegrityError instead of reattach; or a scoped requirement that failed-launch jobs must be relaunchable under derived keys without a new token."
+      },
+      "diagnostics": {
+        "prompt_chars": 9986,
+        "prompt_sha256": "d1c13947a2d946acdf5d5a47a363838983ad8f3a406ff56bf44004062986bb04"
+      },
+      "duration_ms": 176011,
+      "failure_classification": null,
+      "fallback_from_runtime": null,
+      "fallback_reason": null,
+      "model": "composer-2.5",
+      "outcome": {
+        "changed_files": [
+          "mcp_tools/codex_supervisor_stdio.py",
+          "supervisor/state.py",
+          "supervisor/schema_migrations.py",
+          "tests/test_dual_agent_workflow_driver.py",
+          "tests/test_schema_migrations.py"
+        ],
+        "claims": [
+          "Submit is idempotent for explicit client_token and derived legacy keys",
+          "Reserve is atomic and precedes worker launch",
+          "workflow-<hex> job id format and existing callers preserved",
+          "v2 migration is additive and idempotent",
+          "Event-append idempotency deferred per scope",
+          "P5 poll/result-file regression remains green"
+        ],
+        "confidence": 0.89,
+        "confidence_criteria": [
+          "Reserve precedes Popen (code verified)",
+          "Atomic check-then-insert under write lock + unique index (code verified)",
+          "Job id format and legacy caller compatibility preserved (code + tests verified)",
+          "Focused S2 tests pass (67/67 independently run)",
+          "Full regression suite passes (563/563 independently run)"
+        ],
+        "confidence_rationale": "Implementation matches P1-P5 scope with targeted tests; reserve ordering and migration verified by reading; pytest focused and full suite independently passed. Confidence capped below 0.95 for untested Popen-failure reattach and config_path over-dedup edges.",
+        "critical_review": {
+          "assumptions_to_verify": [
+            "SQLite BEGIN IMMEDIATE serializes cross-process writers so concurrent submit reattaches rather than raises",
+            "Poll tool correctly surfaces failed-launch job state on reattach (inferred, not explicitly tested)"
+          ],
+          "contradictions_checked": [
+            "Reserve-before-launch ordering confirmed in submit path",
+            "Derived token excludes transport fields; hash built from payload before job_id/paths assigned",
+            "Claude test_status unknown contradicted workflow receipts; independent pytest run confirms passed",
+            "Migration v2 ALTER + partial unique index alters old DBs; duplicate token insert raises IntegrityError in test"
+          ],
+          "decision": "accept",
+          "missing_evidence": [
+            "Test covering Popen failure then retry reattach behavior",
+            "Test that different config_path with same payload creates independent jobs",
+            "Cross-process concurrent same-token submit under separate State connections"
+          ],
+          "severity": "medium",
+          "strongest_objection": "On Popen failure the reserved row keeps its idempotency_token with status failed; for the derived-key path the same payload always yields the same token, so retries permanently reattach to a failed job and never relaunch without a fresh client_token.",
+          "what_would_change_my_mind": "Failing regression run; cross-process concurrent submit returning IntegrityError instead of reattach; or a scoped requirement that failed-launch jobs must be relaunchable under derived keys without a new token."
+        },
+        "decisions": [
+          "accept"
+        ],
+        "objections": [
+          "Launch-failure poisoning: reserved row with idempotency_token persists on Popen failure; derived-key retries always reattach to the failed job (operability gap, deferred to S3 recovery semantics)",
+          "config_path excluded from canonical hash: identical payload with different config_path would over-dedupe to the first job's CLI config (untested edge)",
+          "Cross-process concurrent same-token dedup relies on SQLite BEGIN IMMEDIATE locking; only in-process thread concurrency is tested"
+        ],
+        "specialists": [
+          {
+            "decision": "accept",
+            "name": "Cursor Reviewer",
+            "objection": "Popen/reserve failure permanently poisons derived idempotency keys; legacy retries reattach to failed job and cannot relaunch without a new client_token"
+          }
+        ],
+        "summary": "S2 idempotent detached submit meets scoped PRD contracts: optional client_token, derived run_id+payload key, atomic reserve-before-Popen, preserved workflow-<hex> ids, v2 migration with partial unique index, and TDD-aligned tests. Independently verified 67 focused + 563 full-suite pytest passes. Accept with medium-severity operability flag on failed-launch key poisoning for derived-key callers.",
+        "task_id": "durable-substrate-s2-idempotent-submit-20260531",
+        "test_status": "passed",
+        "tests": [
+          "test_submit_dual_agent_workflow_job_dedupes_same_client_token",
+          "test_submit_dual_agent_workflow_job_derives_idempotency_for_legacy_callers",
+          "test_submit_dual_agent_workflow_job_derived_tokens_differ_for_different_payloads",
+          "test_submit_dual_agent_workflow_job_keeps_different_tokens_independent",
+          "test_submit_dual_agent_workflow_job_concurrent_same_token_launches_once",
+          "test_forward_migration_adds_workflow_job_idempotency",
+          "test_state_constructor_adds_workflow_job_idempotency_to_existing_db"
+        ]
+      },
+      "probe": {
+        "details": {},
+        "probe_id": "CURSOR",
+        "reason": "cursor_review_ok",
+        "status": "green"
+      },
+      "recoverable": false,
+      "retry_reasons": [],
+      "reviewer_assurance": "tool_backed_primary",
+      "reviewer_output_mode": "cursor_sdk",
+      "reviewer_runtime": "cursor_sdk",
+      "run_id": "run-04e98f5b-6d97-4347-8b5f-d94da9397a1a",
+      "schema_version": "independent-reviewer-result/v1",
+      "status": "finished",
+      "transcript_tail": "asses. Accept with medium-severity operability flag on failed-launch key poisoning for derived-key callers.\",\"specialists\":[{\"name\":\"Cursor Reviewer\",\"decision\":\"accept\",\"objection\":\"Popen/reserve failure permanently poisons derived idempotency keys; legacy retries reattach to failed job and cannot relaunch without a new client_token\"}],\"decisions\":[\"accept\"],\"objections\":[\"Launch-failure poisoning: reserved row with idempotency_token persists on Popen failure; derived-key retries always reattach to the failed job (operability gap, deferred to S3 recovery semantics)\",\"config_path excluded from canonical hash: identical payload with different config_path would over-dedupe to the first job's CLI config (untested edge)\",\"Cross-process concurrent same-token dedup relies on SQLite BEGIN IMMEDIATE locking; only in-process thread concurrency is tested\"],\"changed_files\":[\"mcp_tools/codex_supervisor_stdio.py\",\"supervisor/state.py\",\"supervisor/schema_migrations.py\",\"tests/test_dual_agent_workflow_driver.py\",\"tests/test_schema_migrations.py\"],\"tests\":[\"test_submit_dual_agent_workflow_job_dedupes_same_client_token\",\"test_submit_dual_agent_workflow_job_derives_idempotency_for_legacy_callers\",\"test_submit_dual_agent_workflow_job_derived_tokens_differ_for_different_payloads\",\"test_submit_dual_agent_workflow_job_keeps_different_tokens_independent\",\"test_submit_dual_agent_workflow_job_concurrent_same_token_launches_once\",\"test_forward_migration_adds_workflow_job_idempotency\",\"test_state_constructor_adds_workflow_job_idempotency_to_existing_db\"],\"test_status\":\"passed\",\"confidence\":0.89,\"confidence_rationale\":\"Implementation matches P1-P5 scope with targeted tests; reserve ordering and migration verified by reading; pytest focused and full suite independently passed. Confidence capped below 0.95 for untested Popen-failure reattach and config_path over-dedup edges.\",\"confidence_criteria\":[\"Reserve precedes Popen (code verified)\",\"Atomic check-then-insert under write lock + unique index (code verified)\",\"Job id format and legacy caller compatibility preserved (code + tests verified)\",\"Focused S2 tests pass (67/67 independently run)\",\"Full regression suite passes (563/563 independently run)\"],\"claims\":[\"Submit is idempotent for explicit client_token and derived legacy keys\",\"Reserve is atomic and precedes worker launch\",\"workflow-<hex> job id format and existing callers preserved\",\"v2 migration is additive and idempotent\",\"Event-append idempotency deferred per scope\",\"P5 poll/result-file regression remains green\"],\"critical_review\":{\"strongest_objection\":\"On Popen failure the reserved row keeps its idempotency_token with status failed; for the derived-key path the same payload always yields the same token, so retries permanently reattach to a failed job and never relaunch without a fresh client_token.\",\"missing_evidence\":[\"Test covering Popen failure then retry reattach behavior\",\"Test that different config_path with same payload creates independent jobs\",\"Cross-process concurrent same-token submit under separate State connections\"],\"contradictions_checked\":[\"Reserve-before-launch ordering confirmed in submit path\",\"Derived token excludes transport fields; hash built from payload before job_id/paths assigned\",\"Claude test_status unknown contradicted workflow receipts; independent pytest run confirms passed\",\"Migration v2 ALTER + partial unique index alters old DBs; duplicate token insert raises IntegrityError in test\"],\"assumptions_to_verify\":[\"SQLite BEGIN IMMEDIATE serializes cross-process writers so concurrent submit reattaches rather than raises\",\"Poll tool correctly surfaces failed-launch job state on reattach (inferred, not explicitly tested)\"],\"what_would_change_my_mind\":\"Failing regression run; cross-process concurrent submit returning IntegrityError instead of reattach; or a scoped requirement that failed-launch jobs must be relaunchable under derived keys without a new token.\",\"decision\":\"accept\",\"severity\":\"medium\"}}</dual_agent_outcome>"
+    },
+    "escalation": null,
+    "gate": "outcome_review",
+    "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s2-idempotent-submit-20260531.json",
+    "independent_reviewer": {
+      "accepted": true,
+      "agent_id": "agent-7c8d8208-d7ea-4839-b8c3-49b261f61698",
+      "attempts": 1,
+      "critical_review": {
+        "assumptions_to_verify": [
+          "SQLite BEGIN IMMEDIATE serializes cross-process writers so concurrent submit reattaches rather than raises",
+          "Poll tool correctly surfaces failed-launch job state on reattach (inferred, not explicitly tested)"
+        ],
+        "contradictions_checked": [
+          "Reserve-before-launch ordering confirmed in submit path",
+          "Derived token excludes transport fields; hash built from payload before job_id/paths assigned",
+          "Claude test_status unknown contradicted workflow receipts; independent pytest run confirms passed",
+          "Migration v2 ALTER + partial unique index alters old DBs; duplicate token insert raises IntegrityError in test"
+        ],
+        "decision": "accept",
+        "evidence_refs": [],
+        "missing_evidence": [
+          "Test covering Popen failure then retry reattach behavior",
+          "Test that different config_path with same payload creates independent jobs",
+          "Cross-process concurrent same-token submit under separate State connections"
+        ],
+        "schema_version": "critical-review/v1",
+        "severity": "medium",
+        "strongest_objection": "On Popen failure the reserved row keeps its idempotency_token with status failed; for the derived-key path the same payload always yields the same token, so retries permanently reattach to a failed job and never relaunch without a fresh client_token.",
+        "what_would_change_my_mind": "Failing regression run; cross-process concurrent submit returning IntegrityError instead of reattach; or a scoped requirement that failed-launch jobs must be relaunchable under derived keys without a new token."
+      },
+      "diagnostics": {
+        "prompt_chars": 9986,
+        "prompt_sha256": "d1c13947a2d946acdf5d5a47a363838983ad8f3a406ff56bf44004062986bb04"
+      },
+      "duration_ms": 176011,
+      "failure_classification": null,
+      "fallback_from_runtime": null,
+      "fallback_reason": null,
+      "model": "composer-2.5",
+      "outcome": {
+        "changed_files": [
+          "mcp_tools/codex_supervisor_stdio.py",
+          "supervisor/state.py",
+          "supervisor/schema_migrations.py",
+          "tests/test_dual_agent_workflow_driver.py",
+          "tests/test_schema_migrations.py"
+        ],
+        "claims": [
+          "Submit is idempotent for explicit client_token and derived legacy keys",
+          "Reserve is atomic and precedes worker launch",
+          "workflow-<hex> job id format and existing callers preserved",
+          "v2 migration is additive and idempotent",
+          "Event-append idempotency deferred per scope",
+          "P5 poll/result-file regression remains green"
+        ],
+        "confidence": 0.89,
+        "confidence_criteria": [
+          "Reserve precedes Popen (code verified)",
+          "Atomic check-then-insert under write lock + unique index (code verified)",
+          "Job id format and legacy caller compatibility preserved (code + tests verified)",
+          "Focused S2 tests pass (67/67 independently run)",
+          "Full regression suite passes (563/563 independently run)"
+        ],
+        "confidence_rationale": "Implementation matches P1-P5 scope with targeted tests; reserve ordering and migration verified by reading; pytest focused and full suite independently passed. Confidence capped below 0.95 for untested Popen-failure reattach and config_path over-dedup edges.",
+        "critical_review": {
+          "assumptions_to_verify": [
+            "SQLite BEGIN IMMEDIATE serializes cross-process writers so concurrent submit reattaches rather than raises",
+            "Poll tool correctly surfaces failed-launch job state on reattach (inferred, not explicitly tested)"
+          ],
+          "contradictions_checked": [
+            "Reserve-before-launch ordering confirmed in submit path",
+            "Derived token excludes transport fields; hash built from payload before job_id/paths assigned",
+            "Claude test_status unknown contradicted workflow receipts; independent pytest run confirms passed",
+            "Migration v2 ALTER + partial unique index alters old DBs; duplicate token insert raises IntegrityError in test"
+          ],
+          "decision": "accept",
+          "missing_evidence": [
+            "Test covering Popen failure then retry reattach behavior",
+            "Test that different config_path with same payload creates independent jobs",
+            "Cross-process concurrent same-token submit under separate State connections"
+          ],
+          "severity": "medium",
+          "strongest_objection": "On Popen failure the reserved row keeps its idempotency_token with status failed; for the derived-key path the same payload always yields the same token, so retries permanently reattach to a failed job and never relaunch without a fresh client_token.",
+          "what_would_change_my_mind": "Failing regression run; cross-process concurrent submit returning IntegrityError instead of reattach; or a scoped requirement that failed-launch jobs must be relaunchable under derived keys without a new token."
+        },
+        "decisions": [
+          "accept"
+        ],
+        "objections": [
+          "Launch-failure poisoning: reserved row with idempotency_token persists on Popen failure; derived-key retries always reattach to the failed job (operability gap, deferred to S3 recovery semantics)",
+          "config_path excluded from canonical hash: identical payload with different config_path would over-dedupe to the first job's CLI config (untested edge)",
+          "Cross-process concurrent same-token dedup relies on SQLite BEGIN IMMEDIATE locking; only in-process thread concurrency is tested"
+        ],
+        "specialists": [
+          {
+            "decision": "accept",
+            "name": "Cursor Reviewer",
+            "objection": "Popen/reserve failure permanently poisons derived idempotency keys; legacy retries reattach to failed job and cannot relaunch without a new client_token"
+          }
+        ],
+        "summary": "S2 idempotent detached submit meets scoped PRD contracts: optional client_token, derived run_id+payload key, atomic reserve-before-Popen, preserved workflow-<hex> ids, v2 migration with partial unique index, and TDD-aligned tests. Independently verified 67 focused + 563 full-suite pytest passes. Accept with medium-severity operability flag on failed-launch key poisoning for derived-key callers.",
+        "task_id": "durable-substrate-s2-idempotent-submit-20260531",
+        "test_status": "passed",
+        "tests": [
+          "test_submit_dual_agent_workflow_job_dedupes_same_client_token",
+          "test_submit_dual_agent_workflow_job_derives_idempotency_for_legacy_callers",
+          "test_submit_dual_agent_workflow_job_derived_tokens_differ_for_different_payloads",
+          "test_submit_dual_agent_workflow_job_keeps_different_tokens_independent",
+          "test_submit_dual_agent_workflow_job_concurrent_same_token_launches_once",
+          "test_forward_migration_adds_workflow_job_idempotency",
+          "test_state_constructor_adds_workflow_job_idempotency_to_existing_db"
+        ]
+      },
+      "probe": {
+        "details": {},
+        "probe_id": "CURSOR",
+        "reason": "cursor_review_ok",
+        "status": "green"
+      },
+      "recoverable": false,
+      "retry_reasons": [],
+      "reviewer_assurance": "tool_backed_primary",
+      "reviewer_output_mode": "cursor_sdk",
+      "reviewer_runtime": "cursor_sdk",
+      "run_id": "run-04e98f5b-6d97-4347-8b5f-d94da9397a1a",
+      "schema_version": "independent-reviewer-result/v1",
+      "status": "finished",
+      "transcript_tail": "asses. Accept with medium-severity operability flag on failed-launch key poisoning for derived-key callers.\",\"specialists\":[{\"name\":\"Cursor Reviewer\",\"decision\":\"accept\",\"objection\":\"Popen/reserve failure permanently poisons derived idempotency keys; legacy retries reattach to failed job and cannot relaunch without a new client_token\"}],\"decisions\":[\"accept\"],\"objections\":[\"Launch-failure poisoning: reserved row with idempotency_token persists on Popen failure; derived-key retries always reattach to the failed job (operability gap, deferred to S3 recovery semantics)\",\"config_path excluded from canonical hash: identical payload with different config_path would over-dedupe to the first job's CLI config (untested edge)\",\"Cross-process concurrent same-token dedup relies on SQLite BEGIN IMMEDIATE locking; only in-process thread concurrency is tested\"],\"changed_files\":[\"mcp_tools/codex_supervisor_stdio.py\",\"supervisor/state.py\",\"supervisor/schema_migrations.py\",\"tests/test_dual_agent_workflow_driver.py\",\"tests/test_schema_migrations.py\"],\"tests\":[\"test_submit_dual_agent_workflow_job_dedupes_same_client_token\",\"test_submit_dual_agent_workflow_job_derives_idempotency_for_legacy_callers\",\"test_submit_dual_agent_workflow_job_derived_tokens_differ_for_different_payloads\",\"test_submit_dual_agent_workflow_job_keeps_different_tokens_independent\",\"test_submit_dual_agent_workflow_job_concurrent_same_token_launches_once\",\"test_forward_migration_adds_workflow_job_idempotency\",\"test_state_constructor_adds_workflow_job_idempotency_to_existing_db\"],\"test_status\":\"passed\",\"confidence\":0.89,\"confidence_rationale\":\"Implementation matches P1-P5 scope with targeted tests; reserve ordering and migration verified by reading; pytest focused and full suite independently passed. Confidence capped below 0.95 for untested Popen-failure reattach and config_path over-dedup edges.\",\"confidence_criteria\":[\"Reserve precedes Popen (code verified)\",\"Atomic check-then-insert under write lock + unique index (code verified)\",\"Job id format and legacy caller compatibility preserved (code + tests verified)\",\"Focused S2 tests pass (67/67 independently run)\",\"Full regression suite passes (563/563 independently run)\"],\"claims\":[\"Submit is idempotent for explicit client_token and derived legacy keys\",\"Reserve is atomic and precedes worker launch\",\"workflow-<hex> job id format and existing callers preserved\",\"v2 migration is additive and idempotent\",\"Event-append idempotency deferred per scope\",\"P5 poll/result-file regression remains green\"],\"critical_review\":{\"strongest_objection\":\"On Popen failure the reserved row keeps its idempotency_token with status failed; for the derived-key path the same payload always yields the same token, so retries permanently reattach to a failed job and never relaunch without a fresh client_token.\",\"missing_evidence\":[\"Test covering Popen failure then retry reattach behavior\",\"Test that different config_path with same payload creates independent jobs\",\"Cross-process concurrent same-token submit under separate State connections\"],\"contradictions_checked\":[\"Reserve-before-launch ordering confirmed in submit path\",\"Derived token excludes transport fields; hash built from payload before job_id/paths assigned\",\"Claude test_status unknown contradicted workflow receipts; independent pytest run confirms passed\",\"Migration v2 ALTER + partial unique index alters old DBs; duplicate token insert raises IntegrityError in test\"],\"assumptions_to_verify\":[\"SQLite BEGIN IMMEDIATE serializes cross-process writers so concurrent submit reattaches rather than raises\",\"Poll tool correctly surfaces failed-launch job state on reattach (inferred, not explicitly tested)\"],\"what_would_change_my_mind\":\"Failing regression run; cross-process concurrent submit returning IntegrityError instead of reattach; or a scoped requirement that failed-launch jobs must be relaunchable under derived keys without a new token.\",\"decision\":\"accept\",\"severity\":\"medium\"}}</dual_agent_outcome>"
+    },
+    "outcome": {
+      "changed_files": [
+        "mcp_tools/codex_supervisor_stdio.py",
+        "supervisor/state.py",
+        "supervisor/schema_migrations.py",
+        "tests/test_dual_agent_workflow_driver.py",
+        "tests/test_schema_migrations.py"
+      ],
+      "claims": [
+        "Submit is idempotent for explicit client_token and derived legacy keys",
+        "Reserve is atomic and precedes worker launch",
+        "workflow-<hex> job id format and existing callers preserved",
+        "v2 migration is additive and idempotent",
+        "Event-append idempotency deferred per scope"
+      ],
+      "confidence": 0.82,
+      "confidence_criteria": [
+        "Reserve precedes Popen (verified by reading)",
+        "Atomic check-then-insert under write lock + unique index (verified by reading)",
+        "Job id format and caller compatibility preserved (verified by reading)",
+        "Tests pass when executed (NOT verified - pending approval)"
+      ],
+      "confidence_rationale": "Static review strongly supports correctness and full scope coverage with well-targeted tests, but the central dedup/one-launch behavior was not confirmed by an actual test run due to a pending permission, capping confidence below the verified tier.",
+      "critical_review": {
+        "assumptions_to_verify": [
+          "The five new tests actually pass under uv",
+          "_write_lock guards all writers to the shared connection so BEGIN IMMEDIATE check-then-insert is race-free in-process"
+        ],
+        "contradictions_checked": [
+          "Reserve-before-launch: confirmed, no double-spawn path found",
+          "Derived token excludes transport fields: confirmed payload built before job_id/paths",
+          "Migration alters old DBs: confirmed ALTER + partial unique index, not relying on CREATE TABLE IF NOT EXISTS",
+          "Different payloads/tokens stay independent: confirmed namespacing and tests"
+        ],
+        "decision": "accept",
+        "missing_evidence": [
+          "Actual pytest run output (pass/fail counts)",
+          "Full success-path response shape for the first/created submit",
+          "Behavior of poll tool when reattaching to a failed-launch job"
+        ],
+        "severity": "medium",
+        "strongest_objection": "On Popen failure the reserved row persists with its idempotency_token; for the derived-key path the same payload always yields the same token, so retries reattach to a failed job and never relaunch, permanently poisoning that key for legacy callers.",
+        "what_would_change_my_mind": "A failing regression run, or evidence that a concurrent/cross-process path can bypass the write lock and double-spawn, would move this from accept to revise/deny."
+      },
+      "decisions": [
+        "accept"
+      ],
+      "objections": [
+        "Launch-failure poisoning: on Popen failure the reserved row persists with its idempotency_token, so derived-key retries reattach to the failed job and never relaunch; only a fresh client_token escapes. Consistent with literal contract but an operability gap to flag for S3.",
+        "Test execution evidence is missing: regression suite could not be run (permission not granted), so dedup/one-launch claims are verified by static reading only."
+      ],
+      "specialists": [
+        {
+          "decision": "accept",
+          "name": "lead-static-reviewer",
+          "objection": "Popen launch failure permanently poisons the derived idempotency key (no relaunch possible without a new client_token)"
+        }
+      ],
+      "summary": "S2 idempotent detached-job submit is implemented to scope: optional client_token, derived run_id+canonical-payload key, atomic reserve-before-launch, preserved workflow-<hex> job id format, additive v2 migration with partial-unique index, and TDD-aligned tests. Static review passes; test execution is pending approval and is the only unverified item.",
+      "task_id": "durable-substrate-s2-idempotent-submit-20260531",
+      "test_status": "unknown",
+      "tests": [
+        "test_submit_dual_agent_workflow_job_dedupes_same_client_token",
+        "test_submit_dual_agent_workflow_job_derives_idempotency_for_legacy_callers",
+        "test_submit_dual_agent_workflow_job_derived_tokens_differ_for_different_payloads",
+        "test_submit_dual_agent_workflow_job_keeps_different_tokens_independent",
+        "test_submit_dual_agent_workflow_job_concurrent_same_token_launches_once",
+        "test_forward_migration_adds_workflow_job_idempotency",
+        "test_state_constructor_adds_workflow_job_idempotency_to_existing_db"
+      ]
+    },
+    "probes": {
+      "P1": {
+        "details": {},
+        "probe_id": "P1",
+        "reason": "planning_artifact_boundaries_ok",
+        "status": "green"
+      },
+      "P2": {
+        "details": {
+          "captured_bytes": 9499,
+          "captured_token_estimate": 2369,
+          "orchestration_surface": "/lead"
+        },
+        "probe_id": "P2",
+        "reason": "worker_orchestration_invocation_ok",
+        "status": "green"
+      },
+      "P3": {
+        "details": {},
+        "probe_id": "P3",
+        "reason": "outcome_fidelity_ok",
+        "status": "green"
+      },
+      "P4": {
+        "details": {
+          "decisions": [
+            "accept",
+            "accept",
+            "accept"
+          ]
+        },
+        "probe_id": "P4",
+        "reason": "outcome_gate_decision_ok",
+        "status": "green"
+      },
+      "P_planning": {
+        "details": {
+          "artifact_hashes": {
+            "grill_findings": "fb8eb99791bbc449d882655a6d57b29cbe61596ddc7b79c18c410b2731c39861",
+            "implementation_plan": "337191a55a903aba4b58251f60f6e4a08e983f67428c6b366748f3ed6b8e6fdb",
+            "issues": "929a16b89e62f0c71562180dcc4fd7fd13bbf77dfdd2b015baa20d89a8bffbde",
+            "prd": "3193424695493619636689ca0ffa83ee17e4e5f88e5a245e23f2fb9bb33d959f",
+            "tdd_plan": "41dc209e57ec2c187b77e30eacbebb2af7833d4edc645dbecb6d9ba41f4bb572"
+          },
+          "artifacts": [
+            {
+              "kind": "prd",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/source/prd.md",
+              "sha256": "3193424695493619636689ca0ffa83ee17e4e5f88e5a245e23f2fb9bb33d959f",
+              "status": "accepted"
+            },
+            {
+              "kind": "issues",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/source/issues.md",
+              "sha256": "929a16b89e62f0c71562180dcc4fd7fd13bbf77dfdd2b015baa20d89a8bffbde",
+              "status": "accepted"
+            },
+            {
+              "kind": "tdd_plan",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/source/tdd.md",
+              "sha256": "41dc209e57ec2c187b77e30eacbebb2af7833d4edc645dbecb6d9ba41f4bb572",
+              "status": "accepted"
+            },
+            {
+              "kind": "grill_findings",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/source/grill-findings.md",
+              "sha256": "fb8eb99791bbc449d882655a6d57b29cbe61596ddc7b79c18c410b2731c39861",
+              "status": "accepted"
+            },
+            {
+              "kind": "implementation_plan",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/source/implementation-plan.md",
+              "sha256": "337191a55a903aba4b58251f60f6e4a08e983f67428c6b366748f3ed6b8e6fdb",
+              "status": "accepted"
+            }
+          ],
+          "checks": {
+            "AGG-001": "pass",
+            "AGG-002": "pass",
+            "GRILL-001": "pass",
+            "GRILL-002": "pass",
+            "GRILL-003": "pass",
+            "ISS-001": "pass",
+            "ISS-002": "pass",
+            "ISS-003": "pass",
+            "ISS-004": "pass",
+            "PLAN-001": "pass",
+            "PLAN-002": "pass",
+            "PLAN-003": "pass",
+            "PLAN-004": "pass",
+            "PRD-001": "pass",
+            "PRD-002": "pass",
+            "PRD-003": "pass",
+            "PRD-004": "pass",
+            "PRD-005": "pass",
+            "PRD-006": "pass",
+            "TDD-001": "pass",
+            "TDD-002": "pass",
+            "TDD-003": "pass",
+            "TDD-004": "pass"
+          },
+          "gate": "outcome_review",
+          "task_id": "durable-substrate-s2-idempotent-submit-20260531",
+          "validator_version": "1.0.0",
+          "verdict": "accepted"
+        },
+        "probe_id": "P_planning",
+        "reason": "planning_validation_ok",
+        "status": "green"
+      }
+    },
+    "status": "accepted",
+    "supervisor_final_status": "accepted",
+    "task_id": "durable-substrate-s2-idempotent-submit-20260531",
+    "tool_calls": [
+      {
+        "args": {
+          "agentic_lead_policy": "off",
+          "artifact_policy": "strict",
+          "dynamic_workflow_task_class": null,
+          "execution_layer_mode": "lead_direct",
+          "gate": "outcome_review",
+          "min_subagents": 0,
+          "planning_artifact_count": 6,
+          "required_evidence_grade": "self_reported",
+          "required_roles": [],
+          "screenshot_count": 0,
+          "task_id": "durable-substrate-s2-idempotent-submit-20260531",
+          "user_facing": false
+        },
+        "attempts": 1,
+        "duration_ms": 118236,
+        "duration_us": 118236065,
+        "ended_at_ms": 1780298674808,
+        "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s2-idempotent-submit-20260531.json",
+        "name": "start_dual_agent_gate",
+        "probe_id": null,
+        "result_summary": {
+          "claude_gate_status": "accepted",
+          "probe_statuses": {
+            "P1": "green",
+            "P2": "green",
+            "P3": "green",
+            "P4": "green",
+            "P_planning": "green"
+          },
+          "supervisor_final_status": "accepted"
+        },
+        "started_at_ms": 1780298556572,
+        "status": "completed",
+        "tool_call_id": "start_dual_agent_gate#1780298556572#118236065"
+      },
+      {
+        "args": {
+          "gate": "outcome_review",
+          "task_id": "durable-substrate-s2-idempotent-submit-20260531"
+        },
+        "attempts": 1,
+        "cost_usd": 3.72518925,
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780298674809,
+        "model": "opus",
+        "name": "invoke_claude_lead",
+        "parent_tool_call_id": "start_dual_agent_gate#1780298556572#118236065",
+        "probe_id": null,
+        "result_summary": {
+          "outcome_present": true,
+          "probe_reason": "outcome_fidelity_ok",
+          "probe_status": "green",
+          "tokens_in": 752678,
+          "tokens_out": 8127
+        },
+        "started_at_ms": 1780298674809,
+        "status": "completed",
+        "stderr_bytes": 0,
+        "stdout_bytes": 9499,
+        "token_usage": {
+          "cache_creation_input_tokens": 115157,
+          "cache_read_input_tokens": 637507,
+          "context_window": 200000,
+          "input_tokens": 14,
+          "max_output_tokens": 32000,
+          "output_tokens": 8127,
+          "tokens_in": 752678,
+          "tokens_out": 8127
+        },
+        "tokens_in": 752678,
+        "tokens_out": 8127,
+        "tool_call_id": "invoke_claude_lead#1780298674809#0"
+      },
+      {
+        "args": {
+          "probe_id": "P2"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780298674809,
+        "name": "probe:P2",
+        "parent_tool_call_id": "invoke_claude_lead#1780298674809#0",
+        "probe_id": "P2",
+        "reason": "worker_orchestration_invocation_ok",
+        "result_summary": {
+          "probe_id": "P2",
+          "reason": "worker_orchestration_invocation_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780298674809,
+        "status": "green",
+        "tool_call_id": "probe_p2#1780298674809#0#p2"
+      },
+      {
+        "args": {
+          "probe_id": "P3"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780298674809,
+        "name": "probe:P3",
+        "parent_tool_call_id": "invoke_claude_lead#1780298674809#0",
+        "probe_id": "P3",
+        "reason": "outcome_fidelity_ok",
+        "result_summary": {
+          "probe_id": "P3",
+          "reason": "outcome_fidelity_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780298674809,
+        "status": "green",
+        "tool_call_id": "probe_p3#1780298674809#0#p3"
+      },
+      {
+        "args": {
+          "probe_id": "P1"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780298674809,
+        "name": "probe:P1",
+        "parent_tool_call_id": "invoke_claude_lead#1780298674809#0",
+        "probe_id": "P1",
+        "reason": "planning_artifact_boundaries_ok",
+        "result_summary": {
+          "probe_id": "P1",
+          "reason": "planning_artifact_boundaries_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780298674809,
+        "status": "green",
+        "tool_call_id": "probe_p1#1780298674809#0#p1"
+      },
+      {
+        "args": {
+          "probe_id": "P4"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780298674809,
+        "name": "probe:P4",
+        "parent_tool_call_id": "invoke_claude_lead#1780298674809#0",
+        "probe_id": "P4",
+        "reason": "outcome_gate_decision_ok",
+        "result_summary": {
+          "probe_id": "P4",
+          "reason": "outcome_gate_decision_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780298674809,
+        "status": "green",
+        "tool_call_id": "probe_p4#1780298674809#0#p4"
+      },
+      {
+        "args": {
+          "probe_id": "P_planning"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780298674809,
+        "name": "probe:P_planning",
+        "parent_tool_call_id": "invoke_claude_lead#1780298674809#0",
+        "probe_id": "P_planning",
+        "reason": "planning_validation_ok",
+        "result_summary": {
+          "probe_id": "P_planning",
+          "reason": "planning_validation_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780298674809,
+        "status": "green",
+        "tool_call_id": "probe_p_planning#1780298674809#0#p_planning"
+      }
+    ],
+    "trace_envelope": {
+      "artifacts": [],
+      "claims": [
+        "Submit is idempotent for explicit client_token and derived legacy keys",
+        "Reserve is atomic and precedes worker launch",
+        "workflow-<hex> job id format and existing callers preserved",
+        "v2 migration is additive and idempotent",
+        "Event-append idempotency deferred per scope"
+      ],
+      "event_kind": "dual_agent_gate_result",
+      "failure_taxonomy": null,
+      "gate": "outcome_review",
+      "policy_verdict": "accepted",
+      "receipts": [],
+      "run_id": "codex-durable-s2-idempotent-submit-20260531",
+      "schema_version": "dual-agent-trace-envelope/v1",
+      "source": "dual_agent",
+      "task_id": "durable-substrate-s2-idempotent-submit-20260531",
+      "tool_calls": [
+        {
+          "args": {
+            "agentic_lead_policy": "off",
+            "artifact_policy": "strict",
+            "dynamic_workflow_task_class": null,
+            "execution_layer_mode": "lead_direct",
+            "gate": "outcome_review",
+            "min_subagents": 0,
+            "planning_artifact_count": 6,
+            "required_evidence_grade": "self_reported",
+            "required_roles": [],
+            "screenshot_count": 0,
+            "task_id": "durable-substrate-s2-idempotent-submit-20260531",
+            "user_facing": false
+          },
+          "attempts": 1,
+          "duration_ms": 118236,
+          "duration_us": 118236065,
+          "ended_at_ms": 1780298674808,
+          "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s2-idempotent-submit-20260531.json",
+          "name": "start_dual_agent_gate",
+          "probe_id": null,
+          "result_summary": {
+            "claude_gate_status": "accepted",
+            "probe_statuses": {
+              "P1": "green",
+              "P2": "green",
+              "P3": "green",
+              "P4": "green",
+              "P_planning": "green"
+            },
+            "supervisor_final_status": "accepted"
+          },
+          "started_at_ms": 1780298556572,
+          "status": "completed",
+          "tool_call_id": "start_dual_agent_gate#1780298556572#118236065"
+        },
+        {
+          "args": {
+            "gate": "outcome_review",
+            "task_id": "durable-substrate-s2-idempotent-submit-20260531"
+          },
+          "attempts": 1,
+          "cost_usd": 3.72518925,
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780298674809,
+          "model": "opus",
+          "name": "invoke_claude_lead",
+          "parent_tool_call_id": "start_dual_agent_gate#1780298556572#118236065",
+          "probe_id": null,
+          "result_summary": {
+            "outcome_present": true,
+            "probe_reason": "outcome_fidelity_ok",
+            "probe_status": "green",
+            "tokens_in": 752678,
+            "tokens_out": 8127
+          },
+          "started_at_ms": 1780298674809,
+          "status": "completed",
+          "stderr_bytes": 0,
+          "stdout_bytes": 9499,
+          "token_usage": {
+            "cache_creation_input_tokens": 115157,
+            "cache_read_input_tokens": 637507,
+            "context_window": 200000,
+            "input_tokens": 14,
+            "max_output_tokens": 32000,
+            "output_tokens": 8127,
+            "tokens_in": 752678,
+            "tokens_out": 8127
+          },
+          "tokens_in": 752678,
+          "tokens_out": 8127,
+          "tool_call_id": "invoke_claude_lead#1780298674809#0"
+        },
+        {
+          "args": {
+            "probe_id": "P2"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780298674809,
+          "name": "probe:P2",
+          "parent_tool_call_id": "invoke_claude_lead#1780298674809#0",
+          "probe_id": "P2",
+          "reason": "worker_orchestration_invocation_ok",
+          "result_summary": {
+            "probe_id": "P2",
+            "reason": "worker_orchestration_invocation_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780298674809,
+          "status": "green",
+          "tool_call_id": "probe_p2#1780298674809#0#p2"
+        },
+        {
+          "args": {
+            "probe_id": "P3"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780298674809,
+          "name": "probe:P3",
+          "parent_tool_call_id": "invoke_claude_lead#1780298674809#0",
+          "probe_id": "P3",
+          "reason": "outcome_fidelity_ok",
+          "result_summary": {
+            "probe_id": "P3",
+            "reason": "outcome_fidelity_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780298674809,
+          "status": "green",
+          "tool_call_id": "probe_p3#1780298674809#0#p3"
+        },
+        {
+          "args": {
+            "probe_id": "P1"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780298674809,
+          "name": "probe:P1",
+          "parent_tool_call_id": "invoke_claude_lead#1780298674809#0",
+          "probe_id": "P1",
+          "reason": "planning_artifact_boundaries_ok",
+          "result_summary": {
+            "probe_id": "P1",
+            "reason": "planning_artifact_boundaries_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780298674809,
+          "status": "green",
+          "tool_call_id": "probe_p1#1780298674809#0#p1"
+        },
+        {
+          "args": {
+            "probe_id": "P4"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780298674809,
+          "name": "probe:P4",
+          "parent_tool_call_id": "invoke_claude_lead#1780298674809#0",
+          "probe_id": "P4",
+          "reason": "outcome_gate_decision_ok",
+          "result_summary": {
+            "probe_id": "P4",
+            "reason": "outcome_gate_decision_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780298674809,
+          "status": "green",
+          "tool_call_id": "probe_p4#1780298674809#0#p4"
+        },
+        {
+          "args": {
+            "probe_id": "P_planning"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780298674809,
+          "name": "probe:P_planning",
+          "parent_tool_call_id": "invoke_claude_lead#1780298674809#0",
+          "probe_id": "P_planning",
+          "reason": "planning_validation_ok",
+          "result_summary": {
+            "probe_id": "P_planning",
+            "reason": "planning_validation_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780298674809,
+          "status": "green",
+          "tool_call_id": "probe_p_planning#1780298674809#0#p_planning"
+        }
+      ]
+    }
+  },
+  "mandatory_artifacts": {
+    "missing": [],
+    "output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531",
+    "required": [
+      "source/prd.md",
+      "source/grill-findings.md",
+      "source/issues.md",
+      "source/tdd.md",
+      "source/grill-findings-tdd.md",
+      "source/implementation-plan.md",
+      "interactions.md",
+      "outcome-review.md",
+      "transcript.md"
+    ],
+    "status": "ok"
+  },
+  "resume": {
+    "artifact_output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531",
+    "blocker": null,
+    "current_gate": "outcome_review",
+    "last_status": "accepted",
+    "latest_event_id": 409575,
+    "next_safe_action": "read_gate_transcript and inspect exported artifacts",
+    "prompt": "Use codex_supervisor.\nContinue run_id=codex-durable-s2-idempotent-submit-20260531\ntask_id=durable-substrate-s2-idempotent-submit-20260531\ncurrent_gate=outcome_review\nlast_status=accepted\nlatest_event_id=409575\nnext_safe_action=read_gate_transcript and inspect exported artifacts\nartifact_output_dir=/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531\nfirst inspect: read_gate_transcript(run_id=codex-durable-s2-idempotent-submit-20260531, task_id=durable-substrate-s2-idempotent-submit-20260531)",
+    "run_id": "codex-durable-s2-idempotent-submit-20260531",
+    "status": "ok",
+    "steps": [
+      {
+        "attempt_count": 3,
+        "gate": "prd_review",
+        "latest_event_id": 407965,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "issues_review",
+        "latest_event_id": 408022,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "tdd_review",
+        "latest_event_id": 408156,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "implementation_plan",
+        "latest_event_id": 408445,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 2,
+        "gate": "execution",
+        "latest_event_id": 408569,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "outcome_review",
+        "latest_event_id": 409571,
+        "status": "accepted"
+      }
+    ],
+    "task_id": "durable-substrate-s2-idempotent-submit-20260531",
+    "transcript_command": "read_gate_transcript(run_id=codex-durable-s2-idempotent-submit-20260531, task_id=durable-substrate-s2-idempotent-submit-20260531)"
+  },
+  "run_id": "codex-durable-s2-idempotent-submit-20260531",
+  "status": "accepted",
+  "steps": [
+    {
+      "attempt_count": 3,
+      "gate": "prd_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "issues_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "tdd_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "implementation_plan",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 2,
+      "gate": "execution",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "outcome_review",
+      "status": "accepted"
+    }
+  ],
+  "task_id": "durable-substrate-s2-idempotent-submit-20260531",
+  "visual_evidence_policy": {
+    "artifact_matches": [],
+    "matched_terms": [],
+    "required": false,
+    "source": "not_user_facing"
+  },
+  "workflow_route": {
+    "agentic_lead_policy": {
+      "min_subagents": 0,
+      "policy": "off",
+      "required_evidence_grade": "self_reported",
+      "required_roles": [],
+      "solo_exception_for_artifact_only_gates": false
+    },
+    "cursor_review_gates": [
+      "tdd_review",
+      "implementation_plan",
+      "outcome_review"
+    ],
+    "cursor_review_profile": "rigorous",
+    "dynamic_workflow_task_class": null,
+    "effective_cursor_review": true,
+    "execution_layer_mode": "lead_direct",
+    "force_cursor_review": false,
+    "gate_count": 6,
+    "gates": [
+      "prd_review",
+      "issues_review",
+      "tdd_review",
+      "implementation_plan",
+      "execution",
+      "outcome_review"
+    ],
+    "planning_depth": "large",
+    "reasons": [
+      "default_large"
+    ],
+    "requested_cursor_review": true,
+    "required_skill_stages": [
+      "to_prd",
+      "prd_grill",
+      "to_issues",
+      "tdd",
+      "tdd_grill"
+    ],
+    "requires_agentic_lead_policy_receipts": false,
+    "requires_brainstorm": false,
+    "requires_dynamic_workflow_receipts": false,
+    "requires_skill_receipts": true,
+    "resume": {
+      "mode": "resume_from_prior_steps",
+      "pending_gates": [
+        "outcome_review"
+      ],
+      "schema_version": "dual-agent-workflow-resume/v1",
+      "skipped_gates": [
+        "prd_review",
+        "issues_review",
+        "tdd_review",
+        "implementation_plan",
+        "execution"
+      ],
+      "skipped_steps": [
+        {
+          "attempt_count": 3,
+          "gate": "prd_review",
+          "latest_event_id": 407965,
+          "status": "accepted"
+        },
+        {
+          "attempt_count": 1,
+          "gate": "issues_review",
+          "latest_event_id": 408022,
+          "status": "accepted"
+        },
+        {
+          "attempt_count": 1,
+          "gate": "tdd_review",
+          "latest_event_id": 408156,
+          "status": "accepted"
+        },
+        {
+          "attempt_count": 1,
+          "gate": "implementation_plan",
+          "latest_event_id": 408445,
+          "status": "accepted"
+        },
+        {
+          "attempt_count": 2,
+          "gate": "execution",
+          "latest_event_id": 408569,
+          "status": "accepted"
+        }
+      ]
+    },
+    "reviewer_max_tokens": 4096,
+    "reviewer_model": "composer-2.5",
+    "reviewer_output_mode": "cursor_sdk",
+    "reviewer_unavailable_policy": "escalate",
+    "schema_version": "dual-agent-workflow-route/v1",
+    "task_complexity": "large"
+  }
+}

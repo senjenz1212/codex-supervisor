@@ -1,0 +1,127 @@
+# Grill Findings
+
+These findings are derived from dual-agent gate objections in the ledger.
+Future duo-agent runs should also create this file through the `prd-to-tdd` skill's `grill-with-docs` gates before implementation.
+
+- event_id 407849 `prd_review`: gate blocked
+- event_id 407922 `prd_review`: P1/P3 promise contracts do not specify reserve-failure semantics; for a durability/retry-safety feature this is a contract-level omission, not an impl detail.
+- event_id 407922 `prd_review`: P2 leaves the canonical-hash field set undefined while the submit payload mixes raw args with config-resolved values that can drift between a transport drop and a retry, silently breaking dedup.
+- event_id 407922 `prd_review`: Minor: P5 wording conflates submit-time dedup response with poll behavior; the reattach is returned by submit, poll is unchanged.
+- event_id 407923 `prd_review`: agents have not both accepted yet; revise and continue
+- event_id 407925 `prd_review`: P1/P3 promise contracts do not specify reserve-failure semantics; for a durability/retry-safety feature this is a contract-level omission, not an impl detail.
+- event_id 407925 `prd_review`: P2 leaves the canonical-hash field set undefined while the submit payload mixes raw args with config-resolved values that can drift between a transport drop and a retry, silently breaking dedup.
+- event_id 407925 `prd_review`: Minor: P5 wording conflates submit-time dedup response with poll behavior; the reattach is returned by submit, poll is unchanged.
+- event_id 407946 `prd_review`: PRD does not enumerate which submit fields enter the canonical logical-request hash; volatile fields (budget_usd, timeout_s, model overrides) leaking in could break derived dedup (P2)
+- event_id 407946 `prd_review`: Reserve-then-crash before Popen leaves a claimed token with no launched worker; retry would reattach to a dead reservation. Sits at S3a recovery boundary (explicit non-goal) so deferral is acceptable but should be named
+- event_id 407947 `prd_review`: agents have not both accepted yet; revise and continue
+- event_id 407949 `prd_review`: PRD does not enumerate which submit fields enter the canonical logical-request hash; volatile fields (budget_usd, timeout_s, model overrides) leaking in could break derived dedup (P2)
+- event_id 407949 `prd_review`: Reserve-then-crash before Popen leaves a claimed token with no launched worker; retry would reattach to a dead reservation. Sits at S3a recovery boundary (explicit non-goal) so deferral is acceptable but should be named
+- event_id 407964 `prd_review`: Canonical request payload field-set is undefined: P2 dedupe and P4 non-collapse both depend on which fields enter the derived hash, but the field set is not enumerated (non-blocking; TDD-gate concern)
+- event_id 407964 `prd_review`: Token normalization rules unspecified: trim/case/max-length and whether client_token=[REDACTED] is absent vs valid (non-blocking)
+- event_id 407964 `prd_review`: Reattach-to-terminated-job: P1 returns current status unconditionally so a retry against a failed run reattaches to a dead job; likely intentional given S3a defers terminal handling (non-blocking)
+- event_id 407965 `prd_review`: both agents accepted
+- event_id 408021 `issues_review`: Slice 5 PRD traceability is imprecise: it maps the append-idempotency deferral to promise P5, but that deferral is a PRD Out-Of-Scope item, not P5 (poll/replay preservation). Revise-level, not deny.
+- event_id 408021 `issues_review`: Issues doc inherits the unverified premise that S1 has landed (schema-migration infrastructure for the old-DB migration in Slice 1/3). Non-blocking because the confirmed code gap is independent of S1.
+- event_id 408022 `issues_review`: both agents accepted
+- event_id 408096 `tdd_review`: Derived-token canonicalization scope is untested in both directions; only the same-payload dedupe happy path is covered (medium)
+- event_id 408096 `tdd_review`: Concurrency test asserts launch-count==1 but cannot prove atomicity by itself; atomicity must rest on unique index + conflict-catch (low)
+- event_id 408096 `tdd_review`: Migration does not explicitly assert multiple legacy NULL-token rows coexist under the partial unique index (low)
+- event_id 408156 `tdd_review`: both agents accepted
+- event_id 408441 `implementation_plan`: STRONGEST: reserve-before-Popen + 'return existing without launching' can permanently wedge a token on launch failure (failed/dead reserved row reattached forever); not addressed in plan/PRD/grill findings
+- event_id 408441 `implementation_plan`: Exact field-set for the canonical request hash is implicit; payload dict (sort_keys=True, no nonce) is the natural canonical form so risk is low but should be pinned down
+- event_id 408441 `implementation_plan`: Reattach behavior for an already-terminal job is undocumented; borders on S3a non-goal but PRD P1 'returns current status' arguably covers it
+- event_id 408445 `implementation_plan`: both agents accepted
+- event_id 408510 `execution`: Execution gate cannot accept: implementation not written (idempotency_token/client_token absent from all source and test files; present only in docs)
+- event_id 408510 `execution`: No new tests authored in tests/test_dual_agent_workflow_driver.py and zero regression commands run
+- event_id 408510 `execution`: Acceptable now would falsely certify unexecuted work
+- event_id 408511 `execution`: agents have not both accepted yet; revise and continue
+- event_id 408513 `execution`: Execution gate cannot accept: implementation not written (idempotency_token/client_token absent from all source and test files; present only in docs)
+- event_id 408513 `execution`: No new tests authored in tests/test_dual_agent_workflow_driver.py and zero regression commands run
+- event_id 408513 `execution`: Acceptable now would falsely certify unexecuted work
+- event_id 408568 `execution`: Atomicity: dedup must key on a unique idempotency_token index and reserve fully before Popen; existing ON CONFLICT(job_id) path is insufficient and must not be reused as the dedup mechanism
+- event_id 408568 `execution`: Event-append idempotency explicitly deferred (G4/TG4) - acceptable for S2 but must remain tracked as an open question
+- event_id 408568 `execution`: No implementation diff or test run exists yet, so test_status is unproven at this gate
+- event_id 408569 `execution`: both agents accepted
+- event_id 408598 `outcome_review`: submit_dual_agent_workflow_job (codex_supervisor_stdio.py:1715) still mints a fresh uuid per call with no client_token, dedup, or atomic reserve
+- event_id 408598 `outcome_review`: client_token absent from all .py files; impl-plan-named files (supervisor/state.py, schema_migrations.py) untouched
+- event_id 408598 `outcome_review`: No P1-P5 idempotency/migration tests added to tests/test_dual_agent_workflow_driver.py
+- event_id 408598 `outcome_review`: Contradiction: triage reports execution gate accepted ($64.56 spent) but git diff HEAD is empty
+- event_id 408599 `outcome_review`: agents have not both accepted yet; revise and continue
+- event_id 408601 `outcome_review`: submit_dual_agent_workflow_job (codex_supervisor_stdio.py:1715) still mints a fresh uuid per call with no client_token, dedup, or atomic reserve
+- event_id 408601 `outcome_review`: client_token absent from all .py files; impl-plan-named files (supervisor/state.py, schema_migrations.py) untouched
+- event_id 408601 `outcome_review`: No P1-P5 idempotency/migration tests added to tests/test_dual_agent_workflow_driver.py
+- event_id 408601 `outcome_review`: Contradiction: triage reports execution gate accepted ($64.56 spent) but git diff HEAD is empty
+- event_id 408622 `outcome_review`: No source changes: grep for idempotency/client_token across supervisor/state.py, supervisor/schema_migrations.py, mcp_tools/codex_supervisor_stdio.py returns zero matches
+- event_id 408622 `outcome_review`: submit_dual_agent_workflow_job:1715 still does job_id = f'workflow-{uuid.uuid4().hex[:12]}' unconditionally with no dedup or reserve
+- event_id 408622 `outcome_review`: Submit signature (lines 1652-1686) has no client_token parameter
+- event_id 408622 `outcome_review`: No forward migration added to supervisor/schema_migrations.py
+- event_id 408622 `outcome_review`: All five TDD tests (P1-P5) are absent from tests/
+- event_id 408622 `outcome_review`: git status shows only docs/ untracked; no implementation files modified
+- event_id 408623 `outcome_review`: agents have not both accepted yet; revise and continue
+- event_id 408625 `outcome_review`: No source changes: grep for idempotency/client_token across supervisor/state.py, supervisor/schema_migrations.py, mcp_tools/codex_supervisor_stdio.py returns zero matches
+- event_id 408625 `outcome_review`: submit_dual_agent_workflow_job:1715 still does job_id = f'workflow-{uuid.uuid4().hex[:12]}' unconditionally with no dedup or reserve
+- event_id 408625 `outcome_review`: Submit signature (lines 1652-1686) has no client_token parameter
+- event_id 408625 `outcome_review`: No forward migration added to supervisor/schema_migrations.py
+- event_id 408625 `outcome_review`: All five TDD tests (P1-P5) are absent from tests/
+- event_id 408625 `outcome_review`: git status shows only docs/ untracked; no implementation files modified
+- event_id 408637 `outcome_review`: submit_dual_agent_workflow_job still does job_id = f'workflow-{uuid.uuid4().hex[:12]}' unconditionally at codex_supervisor_stdio.py:1715 with no dedup, client_token, or atomic reserve
+- event_id 408637 `outcome_review`: grep for client_token|idempotency_token|idempotency_key returns zero matches across all .py files; supervisor/state.py and supervisor/schema_migrations.py untouched
+- event_id 408637 `outcome_review`: No forward migration added for the idempotency_token column or unique index
+- event_id 408637 `outcome_review`: All five planned TDD tests (P1-P5) are missing from tests/test_dual_agent_workflow_driver.py and tests/test_schema_migrations.py
+- event_id 408637 `outcome_review`: git diff HEAD empty; only docs/ untracked
+- event_id 408637 `outcome_review`: Ledger contradiction: gate_statuses shows execution=accepted but the execution produced no diff and no tests
+- event_id 408638 `outcome_review`: agents have not both accepted yet; revise and continue
+- event_id 408640 `outcome_review`: submit_dual_agent_workflow_job still does job_id = f'workflow-{uuid.uuid4().hex[:12]}' unconditionally at codex_supervisor_stdio.py:1715 with no dedup, client_token, or atomic reserve
+- event_id 408640 `outcome_review`: grep for client_token|idempotency_token|idempotency_key returns zero matches across all .py files; supervisor/state.py and supervisor/schema_migrations.py untouched
+- event_id 408640 `outcome_review`: No forward migration added for the idempotency_token column or unique index
+- event_id 408640 `outcome_review`: All five planned TDD tests (P1-P5) are missing from tests/test_dual_agent_workflow_driver.py and tests/test_schema_migrations.py
+- event_id 408640 `outcome_review`: git diff HEAD empty; only docs/ untracked
+- event_id 408640 `outcome_review`: Ledger contradiction: gate_statuses shows execution=accepted but the execution produced no diff and no tests
+- event_id 408669 `outcome_review`: Gate is outcome_review but no outcome exists: zero code, migration, or tests landed - only planning docs are present
+- event_id 408669 `outcome_review`: submit_dual_agent_workflow_job unconditionally generates job_id = workflow-<uuid> (line 1715); transport-drop retry still spawns a duplicate run - core S2 defect unaddressed
+- event_id 408669 `outcome_review`: None of P1-P5 acceptance tests exist; no atomic reserve; no unique idempotency-token index; no schema migration
+- event_id 408670 `outcome_review`: agents have not both accepted yet; revise and continue
+- event_id 408672 `outcome_review`: Gate is outcome_review but no outcome exists: zero code, migration, or tests landed - only planning docs are present
+- event_id 408672 `outcome_review`: submit_dual_agent_workflow_job unconditionally generates job_id = workflow-<uuid> (line 1715); transport-drop retry still spawns a duplicate run - core S2 defect unaddressed
+- event_id 408672 `outcome_review`: None of P1-P5 acceptance tests exist; no atomic reserve; no unique idempotency-token index; no schema migration
+- event_id 408723 `outcome_review`: Empty git diff against HEAD proves no code changed
+- event_id 408723 `outcome_review`: Zero client_token occurrences repo-wide
+- event_id 408723 `outcome_review`: No P1-P5 idempotency tests exist to run
+- event_id 408723 `outcome_review`: Contradiction: triage reports execution gate accepted (~$64.56 spent) but git diff HEAD is empty -> ledger acceptance is unbacked
+- event_id 408724 `outcome_review`: max_rounds_per_gate exhausted without both agents accepting
+- event_id 408726 `outcome_review`: Empty git diff against HEAD proves no code changed
+- event_id 408726 `outcome_review`: Zero client_token occurrences repo-wide
+- event_id 408726 `outcome_review`: No P1-P5 idempotency tests exist to run
+- event_id 408726 `outcome_review`: Contradiction: triage reports execution gate accepted (~$64.56 spent) but git diff HEAD is empty -> ledger acceptance is unbacked
+- event_id 409005 `outcome_review`: Live test evidence missing: uv run pytest required approval that was not granted, so test_status is unverified
+- event_id 409005 `outcome_review`: Failed subprocess launch persists the idempotency token, so a retry reattaches to a failed job and never relaunches (acceptable for strict idempotency, arguably S3a)
+- event_id 409005 `outcome_review`: Concurrency test exercises only in-process threads on one State instance; multi-process atomicity rests on BEGIN IMMEDIATE + unique index by design, not by test
+- event_id 409065 `outcome_review`: workflow_claim_verification_failed
+- event_id 409067 `outcome_review`: Live test evidence missing: uv run pytest required approval that was not granted, so test_status is unverified
+- event_id 409067 `outcome_review`: Failed subprocess launch persists the idempotency token, so a retry reattaches to a failed job and never relaunches (acceptable for strict idempotency, arguably S3a)
+- event_id 409067 `outcome_review`: Concurrency test exercises only in-process threads on one State instance; multi-process atomicity rests on BEGIN IMMEDIATE + unique index by design, not by test
+- event_id 409134 `outcome_review`: Targeted pytest suite (tests/test_dual_agent_workflow_driver.py, tests/test_schema_migrations.py) was not executed in this gate due to lack of command approval in a non-interactive environment; test_status=unknown. Supervisor must run it before merge to retire residual risk.
+- event_id 409175 `outcome_review`: workflow_claim_verification_failed
+- event_id 409177 `outcome_review`: Targeted pytest suite (tests/test_dual_agent_workflow_driver.py, tests/test_schema_migrations.py) was not executed in this gate due to lack of command approval in a non-interactive environment; test_status=unknown. Supervisor must run it before merge to retire residual risk.
+- event_id 409219 `outcome_review`: Test suite could not be executed in this gate; test_status is unknown, not passed
+- event_id 409219 `outcome_review`: Concurrent test relies on sqlite connection being check_same_thread=False; correct under asyncio.to_thread only if so, unconfirmed by execution
+- event_id 409220 `outcome_review`: agents have not both accepted yet; revise and continue
+- event_id 409222 `outcome_review`: Test suite could not be executed in this gate; test_status is unknown, not passed
+- event_id 409222 `outcome_review`: Concurrent test relies on sqlite connection being check_same_thread=False; correct under asyncio.to_thread only if so, unconfirmed by execution
+- event_id 409320 `outcome_review`: Popen-failure on first submit writes an errored job under the token; a retry reattaches to the failed job without launching, so a run that never started cannot self-heal via retry (out-of-scope recovery, non-blocking)
+- event_id 409320 `outcome_review`: test_status is unknown: uv run pytest required approval not granted this gate, so no live pass/fail was obtained
+- event_id 409393 `outcome_review`: workflow_claim_verification_failed
+- event_id 409395 `outcome_review`: Popen-failure on first submit writes an errored job under the token; a retry reattaches to the failed job without launching, so a run that never started cannot self-heal via retry (out-of-scope recovery, non-blocking)
+- event_id 409395 `outcome_review`: test_status is unknown: uv run pytest required approval not granted this gate, so no live pass/fail was obtained
+- event_id 409450 `outcome_review`: Regression tests were not executed (permission gate); accepting on static review alone would repeat workflow_claim_verification_failed
+- event_id 409450 `outcome_review`: Failed Popen leaves a reserved 'failed' row whose token makes the submit permanently un-retryable under the same token (acceptable under S2, flag as open question)
+- event_id 409450 `outcome_review`: mkdir/write_text run after reserve and outside the try block, so a filesystem error can leave a submitted row with a token but no request.json
+- event_id 409450 `outcome_review`: client_token is not scoped to run_id, so the same token across different run_ids collapses to one job
+- event_id 409451 `outcome_review`: max_rounds_per_gate exhausted without both agents accepting
+- event_id 409453 `outcome_review`: Regression tests were not executed (permission gate); accepting on static review alone would repeat workflow_claim_verification_failed
+- event_id 409453 `outcome_review`: Failed Popen leaves a reserved 'failed' row whose token makes the submit permanently un-retryable under the same token (acceptable under S2, flag as open question)
+- event_id 409453 `outcome_review`: mkdir/write_text run after reserve and outside the try block, so a filesystem error can leave a submitted row with a token but no request.json
+- event_id 409453 `outcome_review`: client_token is not scoped to run_id, so the same token across different run_ids collapses to one job
+- event_id 409537 `outcome_review`: Launch-failure poisoning: on Popen failure the reserved row persists with its idempotency_token, so derived-key retries reattach to the failed job and never relaunch; only a fresh client_token escapes. Consistent with literal contract but an operability gap to flag for S3.
+- event_id 409537 `outcome_review`: Test execution evidence is missing: regression suite could not be run (permission not granted), so dedup/one-launch claims are verified by static reading only.
+- event_id 409571 `outcome_review`: both agents accepted

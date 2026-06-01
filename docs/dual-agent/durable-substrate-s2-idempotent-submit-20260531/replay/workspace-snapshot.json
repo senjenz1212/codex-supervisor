@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "28f5d56987ab24a6eb3cc977ee28267a2511530a6be3e9de549178d2e66a2e0a",
+  "git": {
+    "diff_bytes": 23749,
+    "diff_sha256": "49bf171e194d3ac82ceb03f614d9c1a55d1fa8053f8b5a5077706cd150286c11",
+    "diff_stat": "mcp_tools/codex_supervisor_stdio.py      |  75 ++++++++++++-\n supervisor/schema_migrations.py          |  21 ++++\n supervisor/state.py                      |  78 ++++++++++++-\n tests/test_dual_agent_workflow_driver.py | 186 +++++++++++++++++++++++++++++++\n tests/test_schema_migrations.py          | 101 ++++++++++++++++-\n 5 files changed, 449 insertions(+), 12 deletions(-)",
+    "head": "d989c09",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "d989c09",
+    "status_short": "M mcp_tools/codex_supervisor_stdio.py\n M supervisor/schema_migrations.py\n M supervisor/state.py\n M tests/test_dual_agent_workflow_driver.py\n M tests/test_schema_migrations.py\n?? docs/dual-agent/durable-substrate-s2-idempotent-submit-20260531/"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "b76fbd17fd151c87f8f7f2115c399ea36006f25ded6bae2eb28f5fa1bae1de1d",
+    "implementation_plan": "337191a55a903aba4b58251f60f6e4a08e983f67428c6b366748f3ed6b8e6fdb",
+    "issues": "929a16b89e62f0c71562180dcc4fd7fd13bbf77dfdd2b015baa20d89a8bffbde",
+    "prd": "3193424695493619636689ca0ffa83ee17e4e5f88e5a245e23f2fb9bb33d959f",
+    "tdd_plan": "41dc209e57ec2c187b77e30eacbebb2af7833d4edc645dbecb6d9ba41f4bb572"
+  },
+  "status": "captured"
+}
