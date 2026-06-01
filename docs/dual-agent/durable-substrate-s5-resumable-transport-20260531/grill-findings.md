@@ -1,0 +1,106 @@
+# Grill Findings
+
+These findings are derived from dual-agent gate objections in the ledger.
+Future duo-agent runs should also create this file through the `prd-to-tdd` skill's `grill-with-docs` gates before implementation.
+
+- event_id 411866 `prd_review`: 'exactly-once' (P1) is a client-protocol property, not a server guarantee; tool guarantees no-duplicate-given-correct-cursor + at-least-once
+- event_id 411866 `prd_review`: P2 reattach can be defeated if client omits client_token and varies any payload field, deriving a different idempotency token and spawning a duplicate worker
+- event_id 411867 `prd_review`: both agents accepted
+- event_id 411944 `issues_review`: Advisory: Slice 1 AC has no explicit redaction assertion despite returning a redacted cursor page over potentially sensitive event payloads
+- event_id 411944 `issues_review`: Advisory: gap-tolerance is asserted at the state layer and documentation but not pinned by a tool-boundary AC in Slice 1/2
+- event_id 411945 `issues_review`: both agents accepted
+- event_id 412010 `tdd_review`: Gap-tolerance ('ascending and gap-tolerant') is named in intent/protocol doc but no test seeds non-contiguous event_ids; correctness rests on read_events_since using event_id > cursor rather than an enforcing test.
+- event_id 412010 `tdd_review`: PRD P1 forbids mutating the event stream during catch-up, but no test asserts event count is unchanged by a catch_up call.
+- event_id 412041 `tdd_review`: both agents accepted
+- event_id 412048 `implementation_plan`: gate blocked
+- event_id 412121 `implementation_plan`: gate blocked
+- event_id 412288 `implementation_plan`: Replay-determinism acceptance criterion lacks an explicit named verification command/step; covered only indirectly by read-only latest_event_id assertion
+- event_id 412288 `implementation_plan`: redact() handling of arbitrary nested event payloads is assumed, not proven; verify at execution to avoid payload leak
+- event_id 412288 `implementation_plan`: has_more=count==limit yields a false-positive on an exact-fit final page; documented as conservative hint, acceptable
+- event_id 412301 `implementation_plan`: both agents accepted
+- event_id 412351 `execution`: catch_up_dual_agent_workflow is absent from mcp_tools/ and tests/ (present only in docs/ planning+transcript files)
+- event_id 412351 `execution`: replay manifest workspace_snapshot.git.diff_bytes=0, diff_stat empty, HEAD still 02be0d1 (S3a) - no code change occurred
+- event_id 412351 `execution`: reconnect-protocol.md (P4/Slice 3) does not exist on disk
+- event_id 412351 `execution`: no integration test was added; acceptance requires drop->reconnect->catch-up exactly-once coverage
+- event_id 412351 `execution`: replay sequence_failures show FM-1.3 step repetition and FM-2.5 ignored objection; mast_coverage shows FM-1.1 disobey-task-spec observed_in_run - the run was blocked, not completed
+- event_id 412351 `execution`: outcome-review.md says 'No events recorded for this gate'; issues.md acceptance criteria all unchecked
+- event_id 412351 `execution`: skill receipts cover only planning stages (to_prd, prd_grill, to_issues, tdd, tdd_grill); no implementation/test receipt exists
+- event_id 412352 `execution`: agents have not both accepted yet; revise and continue
+- event_id 412354 `execution`: catch_up_dual_agent_workflow is absent from mcp_tools/ and tests/ (present only in docs/ planning+transcript files)
+- event_id 412354 `execution`: replay manifest workspace_snapshot.git.diff_bytes=0, diff_stat empty, HEAD still 02be0d1 (S3a) - no code change occurred
+- event_id 412354 `execution`: reconnect-protocol.md (P4/Slice 3) does not exist on disk
+- event_id 412354 `execution`: no integration test was added; acceptance requires drop->reconnect->catch-up exactly-once coverage
+- event_id 412354 `execution`: replay sequence_failures show FM-1.3 step repetition and FM-2.5 ignored objection; mast_coverage shows FM-1.1 disobey-task-spec observed_in_run - the run was blocked, not completed
+- event_id 412354 `execution`: outcome-review.md says 'No events recorded for this gate'; issues.md acceptance criteria all unchecked
+- event_id 412354 `execution`: skill receipts cover only planning stages (to_prd, prd_grill, to_issues, tdd, tdd_grill); no implementation/test receipt exists
+- event_id 412392 `execution`: No S5 implementation: catch_up absent from mcp_tools/ and tests/
+- event_id 412392 `execution`: No code change landed: git diff vs HEAD empty and replay diff_bytes=0, HEAD still at S3a 02be0d1
+- event_id 412392 `execution`: No integration test for drop->reconnect->catch-up exactly-once / no-duplicate-spawn
+- event_id 412392 `execution`: Ledger empty: outcome-review 'No events recorded', issues 'No issue artifacts recorded'
+- event_id 412392 `execution`: Run exhibited FM-1.1 disobey task spec, FM-1.3 step repetition, FM-2.5 ignored Codex objection
+- event_id 412392 `execution`: Full-suite-green and exported ledger/replay-artifact acceptance criteria unverified because nothing was implemented
+- event_id 412393 `execution`: agents have not both accepted yet; revise and continue
+- event_id 412395 `execution`: No S5 implementation: catch_up absent from mcp_tools/ and tests/
+- event_id 412395 `execution`: No code change landed: git diff vs HEAD empty and replay diff_bytes=0, HEAD still at S3a 02be0d1
+- event_id 412395 `execution`: No integration test for drop->reconnect->catch-up exactly-once / no-duplicate-spawn
+- event_id 412395 `execution`: Ledger empty: outcome-review 'No events recorded', issues 'No issue artifacts recorded'
+- event_id 412395 `execution`: Run exhibited FM-1.1 disobey task spec, FM-1.3 step repetition, FM-2.5 ignored Codex objection
+- event_id 412395 `execution`: Full-suite-green and exported ledger/replay-artifact acceptance criteria unverified because nothing was implemented
+- event_id 412442 `execution`: diff_bytes=0 and only docs/ untracked: no source change landed for S5
+- event_id 412442 `execution`: catch_up symbol absent from mcp_tools/, tests/, src/ - exists only in planning/transcript docs
+- event_id 412442 `execution`: No reconnect/catch-up integration test; 'reattached' tests are pre-existing S2, 'resumable' line is reviewer-policy prose
+- event_id 412442 `execution`: outcome-review.md: 'No events recorded for this gate'
+- event_id 412442 `execution`: issues.md: empty ledger, acceptance boxes absent
+- event_id 412442 `execution`: Replay MAST observed FM-1.1 disobey task spec, FM-1.3 step repetition, FM-1.5 termination unawareness, FM-2.5 ignored prior objection on the corrective re-run
+- event_id 412443 `execution`: agents have not both accepted yet; revise and continue
+- event_id 412445 `execution`: diff_bytes=0 and only docs/ untracked: no source change landed for S5
+- event_id 412445 `execution`: catch_up symbol absent from mcp_tools/, tests/, src/ - exists only in planning/transcript docs
+- event_id 412445 `execution`: No reconnect/catch-up integration test; 'reattached' tests are pre-existing S2, 'resumable' line is reviewer-policy prose
+- event_id 412445 `execution`: outcome-review.md: 'No events recorded for this gate'
+- event_id 412445 `execution`: issues.md: empty ledger, acceptance boxes absent
+- event_id 412445 `execution`: Replay MAST observed FM-1.1 disobey task spec, FM-1.3 step repetition, FM-1.5 termination unawareness, FM-2.5 ignored prior objection on the corrective re-run
+- event_id 412663 `execution`: Acceptance criterion 'deterministic replay preserved; ledger and replay artifacts exported' FAILED: workspace-snapshot.json reports diff_bytes=0, diff_stat empty, status_short lists only the untracked docs dir.
+- event_id 412663 `execution`: outcome-review.md: 'No events recorded for this gate'; issues.md: 'No issue artifacts were recorded' - the ledger captured nothing.
+- event_id 412663 `execution`: mast-coverage.json observed FM-1.1 (disobey task spec), FM-1.3 (execution gate repeated 4x), FM-1.5 (unaware of termination), FM-2.5 (ignored objection: 'gate blocked', 'agents have not both accepted yet') - the run failed to converge.
+- event_id 412663 `execution`: Skill receipts (574 passed, implemented S5) are self-reported and contradict the deterministic replay; per handoff fidelity_failure policy this aborts to operator.
+- event_id 412664 `execution`: agents have not both accepted yet; revise and continue
+- event_id 412666 `execution`: Acceptance criterion 'deterministic replay preserved; ledger and replay artifacts exported' FAILED: workspace-snapshot.json reports diff_bytes=0, diff_stat empty, status_short lists only the untracked docs dir.
+- event_id 412666 `execution`: outcome-review.md: 'No events recorded for this gate'; issues.md: 'No issue artifacts were recorded' - the ledger captured nothing.
+- event_id 412666 `execution`: mast-coverage.json observed FM-1.1 (disobey task spec), FM-1.3 (execution gate repeated 4x), FM-1.5 (unaware of termination), FM-2.5 (ignored objection: 'gate blocked', 'agents have not both accepted yet') - the run failed to converge.
+- event_id 412666 `execution`: Skill receipts (574 passed, implemented S5) are self-reported and contradict the deterministic replay; per handoff fidelity_failure policy this aborts to operator.
+- event_id 412715 `execution`: issues.md acceptance checkboxes are all unchecked across all 4 slices despite substantive implementation
+- event_id 412715 `execution`: replay manifest failure_summary.policy_verdict=blocked (blocked_without_probe_reason / resource_contention) with FM-1.3 step repetition and FM-2.5 ignored-objection observed across prior execution rounds
+- event_id 412715 `execution`: full pytest suite not independently run this round (approval denied); 92/574 pass rests on receipts only
+- event_id 412716 `execution`: agents have not both accepted yet; revise and continue
+- event_id 412718 `execution`: issues.md acceptance checkboxes are all unchecked across all 4 slices despite substantive implementation
+- event_id 412718 `execution`: replay manifest failure_summary.policy_verdict=blocked (blocked_without_probe_reason / resource_contention) with FM-1.3 step repetition and FM-2.5 ignored-objection observed across prior execution rounds
+- event_id 412718 `execution`: full pytest suite not independently run this round (approval denied); 92/574 pass rests on receipts only
+- event_id 412796 `execution`: Replay manifest failure_summary policy_verdict=blocked (event 412715); execution gate stuck in FM-1.3 step-repetition and FM-2.5 ignored-objection loop on 'agents have not both accepted yet'.
+- event_id 412796 `execution`: issues.md acceptance criteria checkboxes remain unchecked.
+- event_id 412796 `execution`: Full suite green claimed by receipt only; lead could not re-run (focused pytest command not approved).
+- event_id 412797 `execution`: both agents accepted
+- event_id 412802 `outcome_review`: required_artifacts_missing
+- event_id 413016 `outcome_review`: required_artifacts_missing
+- event_id 413089 `outcome_review`: Recorded outcome_review gate status is blocked (codex deny / claude revise, claude not_invoked); the dual-agent pair never both accepted, so the gate cannot be accepted as-is.
+- event_id 413089 `outcome_review`: required_artifacts_missing:screenshots with user_facing=True and visual_validation=no_visual_evidence directly contradicts the intent's 'no graphical user surface'; this is a policy misclassification, not a real gap.
+- event_id 413089 `outcome_review`: public-boundaries.md was edited to dodge the visual-evidence trigger rather than fixing the user_facing classification.
+- event_id 413089 `outcome_review`: Replay shows process churn: FM-1.3 step repetition (execution gate x10), FM-2.5 ignored objections (x7), FM-1.5 termination unawareness.
+- event_id 413090 `outcome_review`: agents have not both accepted yet; revise and continue
+- event_id 413092 `outcome_review`: Recorded outcome_review gate status is blocked (codex deny / claude revise, claude not_invoked); the dual-agent pair never both accepted, so the gate cannot be accepted as-is.
+- event_id 413092 `outcome_review`: required_artifacts_missing:screenshots with user_facing=True and visual_validation=no_visual_evidence directly contradicts the intent's 'no graphical user surface'; this is a policy misclassification, not a real gap.
+- event_id 413092 `outcome_review`: public-boundaries.md was edited to dodge the visual-evidence trigger rather than fixing the user_facing classification.
+- event_id 413092 `outcome_review`: Replay shows process churn: FM-1.3 step repetition (execution gate x10), FM-2.5 ignored objections (x7), FM-1.5 termination unawareness.
+- event_id 413183 `outcome_review`: outcome_review gate is blocked: required_artifacts_missing=screenshots from user_facing:True, contradicting intent's explicit 'no graphical user surface'
+- event_id 413183 `outcome_review`: agents not converged (codex=deny, claude=revise 0.0); FM-2.5 ignored-objection recurs across rounds
+- event_id 413183 `outcome_review`: full-suite-green is receipt-only; could not be independently verified (pytest approval not granted)
+- event_id 413184 `outcome_review`: agents have not both accepted yet; revise and continue
+- event_id 413186 `outcome_review`: outcome_review gate is blocked: required_artifacts_missing=screenshots from user_facing:True, contradicting intent's explicit 'no graphical user surface'
+- event_id 413186 `outcome_review`: agents not converged (codex=deny, claude=revise 0.0); FM-2.5 ignored-objection recurs across rounds
+- event_id 413186 `outcome_review`: full-suite-green is receipt-only; could not be independently verified (pytest approval not granted)
+- event_id 413237 `outcome_review`: required_artifacts_missing:screenshots is spurious; intent states no graphical user surface, so user_facing must be False
+- event_id 413237 `outcome_review`: Gate FM-1.1 (disobey task spec) is triggered by the gate policy itself, not by the worker artifacts
+- event_id 413238 `outcome_review`: max_rounds_per_gate exhausted without both agents accepting
+- event_id 413240 `outcome_review`: required_artifacts_missing:screenshots is spurious; intent states no graphical user surface, so user_facing must be False
+- event_id 413240 `outcome_review`: Gate FM-1.1 (disobey task spec) is triggered by the gate policy itself, not by the worker artifacts
+- event_id 413542 `outcome_review`: Full-suite green was not independently verified in-session because pytest required approval that was not granted; this is an environment limitation, not a worker defect, and must be confirmed by the operator before merge.
+- event_id 413889 `outcome_review`: both agents accepted

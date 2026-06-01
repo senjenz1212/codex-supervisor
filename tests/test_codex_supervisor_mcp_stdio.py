@@ -257,6 +257,7 @@ async def test_codex_supervisor_mcp_exposes_dual_agent_gate_tools(tmp_path):
         "run_dual_agent_workflow",
         "submit_dual_agent_workflow_job",
         "poll_dual_agent_workflow_job",
+        "catch_up_dual_agent_workflow",
         "read_dual_agent_workflow_resume_prompt",
         "check_budget",
         "escalate_deadlock",

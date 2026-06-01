@@ -253,8 +253,8 @@ Tests must verify the server exposes the dual-agent gate tools Codex needs:
 `start_dual_agent_gate`, `record_gate_round`, `check_budget`,
 `escalate_deadlock`, `poll_resume_signal`, `read_outcome`,
 `read_gate_transcript`, `run_dual_agent_workflow`,
-`submit_dual_agent_workflow_job`, `poll_dual_agent_workflow_job`, and
-`start_codex_session`. The MCP boundary must
+`submit_dual_agent_workflow_job`, `poll_dual_agent_workflow_job`,
+`catch_up_dual_agent_workflow`, and `start_codex_session`. The MCP boundary must
 persist gate results and round decisions to the supervisor event ledger so
 later tools can read outcomes and reconstruct the dialogue without relying on
 chat memory. `start_codex_session` must default to the strongest configured
@@ -270,6 +270,9 @@ machine-readable receipts cover the preview gates.
 Long workflows should use `submit_dual_agent_workflow_job` when operator
 transport reliability matters; submit must return a durable job id quickly, and
 poll must recover the result from recorded request/result/log refs.
+Reconnect-capable clients should persist their last delivered event id and use
+`catch_up_dual_agent_workflow` to replay missed ledger events after a transport
+drop before resuming poll.
 
 ## agentic_worker_execution
 

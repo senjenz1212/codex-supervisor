@@ -2049,6 +2049,33 @@ class CodexSupervisorMcpAPI:
             )
         return redact(payload)
 
+    def catch_up_dual_agent_workflow(
+        self,
+        *,
+        run_id: str,
+        last_event_id: int | None = 0,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        cursor = max(0, int(last_event_id or 0))
+        page_limit = int(limit)
+        events = self.state.read_events_since(
+            run_id,
+            after_event_id=cursor,
+            limit=page_limit,
+        )
+        next_event_id = cursor
+        if events:
+            next_event_id = max(int(event["event_id"]) for event in events)
+        return redact({
+            "status": "ok",
+            "run_id": run_id,
+            "last_event_id": cursor,
+            "events": events,
+            "count": len(events),
+            "next_event_id": next_event_id,
+            "has_more": page_limit > 0 and len(events) == page_limit,
+        })
+
     def read_dual_agent_workflow_resume_prompt(
         self,
         *,
@@ -3209,6 +3236,18 @@ def build_codex_supervisor_mcp_server(
     @mcp.tool()
     def poll_dual_agent_workflow_job(job_id: str) -> dict[str, Any]:
         return tool_api.poll_dual_agent_workflow_job(job_id=job_id)
+
+    @mcp.tool()
+    def catch_up_dual_agent_workflow(
+        run_id: str,
+        last_event_id: int | None = 0,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        return tool_api.catch_up_dual_agent_workflow(
+            run_id=run_id,
+            last_event_id=last_event_id,
+            limit=limit,
+        )
 
     @mcp.tool()
     def read_dual_agent_workflow_resume_prompt(run_id: str, task_id: str) -> dict[str, Any]:

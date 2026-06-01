@@ -1,0 +1,1254 @@
+{
+  "artifact_export": {
+    "files": [
+      "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/index.md",
+      "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/triage.md",
+      "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/prd.md",
+      "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/tdd.md",
+      "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/grill-findings.md",
+      "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/issues.md",
+      "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/screenshots.md",
+      "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/outcome-review.md",
+      "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/interactions.md",
+      "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/transcript.md",
+      "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/transcript.jsonl",
+      "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/mast-coverage.md",
+      "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/replay/manifest.json",
+      "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/replay/workspace-snapshot.json",
+      "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/replay/mast-coverage.json",
+      "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/source/grill-findings-tdd.md",
+      "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/source/grill-findings.md",
+      "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/source/implementation-plan.md",
+      "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/source/issues.md",
+      "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/source/prd.md",
+      "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/source/tdd.md"
+    ],
+    "output_dir": "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531",
+    "run_id": "codex-durable-s5-resumable-transport-20260531",
+    "status": "ok",
+    "task_id": "durable-substrate-s5-resumable-transport-20260531"
+  },
+  "current_gate": "outcome_review",
+  "final_gate_result": {
+    "artifact_export": {
+      "files": [
+        "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/index.md",
+        "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/triage.md",
+        "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/prd.md",
+        "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/tdd.md",
+        "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/grill-findings.md",
+        "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/issues.md",
+        "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/screenshots.md",
+        "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/outcome-review.md",
+        "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/interactions.md",
+        "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/transcript.md",
+        "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/transcript.jsonl",
+        "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/mast-coverage.md",
+        "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/replay/manifest.json",
+        "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/replay/workspace-snapshot.json",
+        "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/replay/mast-coverage.json",
+        "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/source/grill-findings-tdd.md",
+        "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/source/grill-findings.md",
+        "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/source/implementation-plan.md",
+        "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/source/issues.md",
+        "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/source/prd.md",
+        "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/source/tdd.md"
+      ],
+      "output_dir": "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531",
+      "run_id": "codex-durable-s5-resumable-transport-20260531",
+      "status": "ok",
+      "task_id": "durable-substrate-s5-resumable-transport-20260531"
+    },
+    "artifact_rigor": {
+      "accepted_prerequisite_gates": [
+        "execution"
+      ],
+      "artifact_policy": "strict",
+      "gate": "outcome_review",
+      "gate_statuses": {
+        "execution": "accepted",
+        "implementation_plan": "accepted",
+        "issues_review": "accepted",
+        "outcome_review": "blocked",
+        "prd_review": "accepted",
+        "tdd_review": "accepted"
+      },
+      "missing_artifact_paths": [],
+      "missing_artifacts": [],
+      "missing_prerequisite_gates": [],
+      "missing_screenshot_paths": [],
+      "present_artifacts": [
+        "grill_findings",
+        "implementation_plan",
+        "issues",
+        "prd",
+        "tdd_plan"
+      ],
+      "reason": "required_artifacts_present",
+      "required_artifacts": [
+        "prd",
+        "tdd_plan",
+        "grill_findings",
+        "issues",
+        "implementation_plan"
+      ],
+      "required_prerequisite_gates": [
+        "execution"
+      ],
+      "screenshots": [],
+      "status": "ok",
+      "user_facing": false,
+      "visual_validation": {
+        "allowed_sources": [
+          "browser",
+          "browser-use",
+          "browser_use",
+          "computer",
+          "computer-use",
+          "computer_use"
+        ],
+        "evidence": [],
+        "failures": [],
+        "reason": "no_screenshots_supplied",
+        "status": "not_required"
+      }
+    },
+    "attempts": 1,
+    "claim_verification": {
+      "details": {
+        "legacy_verified_claims": [],
+        "receipts": [
+          {
+            "artifacts": [
+              "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/source/prd.md"
+            ],
+            "claims": [
+              "prd-tdd skill executed",
+              "PRD promise contracts produced",
+              "transport mechanism resolved with repo evidence"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-to-prd-durable-substrate-s5-resumable-transport-20260531",
+            "skill": "to-prd",
+            "stage": "to_prd",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/source/grill-findings.md"
+            ],
+            "claims": [
+              "prd-tdd skill executed",
+              "PRD grill findings resolved or waived"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-prd-grill-durable-substrate-s5-resumable-transport-20260531",
+            "skill": "grill-with-docs",
+            "stage": "prd_grill",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/source/issues.md"
+            ],
+            "claims": [
+              "prd-tdd skill executed",
+              "issues map to PRD promises"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-to-issues-durable-substrate-s5-resumable-transport-20260531",
+            "skill": "to-issues",
+            "stage": "to_issues",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/source/tdd.md"
+            ],
+            "claims": [
+              "prd-tdd skill executed",
+              "public-boundary RED tests planned"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-tdd-durable-substrate-s5-resumable-transport-20260531",
+            "skill": "tdd",
+            "stage": "tdd",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/source/grill-findings-tdd.md"
+            ],
+            "claims": [
+              "prd-tdd skill executed",
+              "TDD grill findings resolved"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-tdd-grill-durable-substrate-s5-resumable-transport-20260531",
+            "skill": "grill-with-docs",
+            "stage": "tdd_grill",
+            "status": "passed"
+          },
+          {
+            "claims": [
+              "92 passed",
+              "catch_up tool tests passed",
+              "reconnect integration test passed",
+              "MCP registration test passed"
+            ],
+            "command": "uv run pytest tests/test_dual_agent_workflow_driver.py tests/test_codex_supervisor_mcp_stdio.py -q",
+            "kind": "test",
+            "receipt_id": "pytest-focused-durable-substrate-s5-resumable-transport-20260531",
+            "status": "passed"
+          },
+          {
+            "claims": [
+              "574 passed",
+              "full suite green"
+            ],
+            "command": "uv run --extra dev pytest -q",
+            "kind": "test",
+            "receipt_id": "pytest-full-durable-substrate-s5-resumable-transport-20260531",
+            "status": "passed"
+          },
+          {
+            "claims": [
+              "whitespace hygiene passed"
+            ],
+            "command": "git diff --check",
+            "kind": "test",
+            "receipt_id": "git-diff-check-durable-substrate-s5-resumable-transport-20260531",
+            "status": "passed"
+          },
+          {
+            "changed_files": [
+              "mcp_tools/codex_supervisor_stdio.py",
+              "tests/test_dual_agent_workflow_driver.py",
+              "tests/test_codex_supervisor_mcp_stdio.py",
+              "docs/testing/public-boundaries.md",
+              "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/"
+            ],
+            "claims": [
+              "implemented S5 catch-up tool",
+              "documented reconnect protocol",
+              "added public-boundary reconnect tests",
+              "corrected backend integration wording to avoid accidental GUI-evidence policy trigger"
+            ],
+            "kind": "git_diff",
+            "receipt_id": "git-diff-durable-substrate-s5-resumable-transport-20260531",
+            "status": "present"
+          }
+        ]
+      },
+      "probe_id": "P11",
+      "reason": "workflow_claims_verified",
+      "status": "green"
+    },
+    "claude_gate_status": "accepted",
+    "cursor_review": {
+      "accepted": true,
+      "agent_id": "agent-f6f1c6bc-e1b1-4a01-b292-c4309c883d23",
+      "attempts": 1,
+      "critical_review": {
+        "assumptions_to_verify": [
+          "Client advances last_event_id after each catch-up page to achieve exactly-once delivery (protocol doc states this; server returns stable pages)",
+          "S1/S2/S3a consumed slices behave as integration test exercises them through real server.tools"
+        ],
+        "contradictions_checked": [
+          "Prior outcome_review blocked on screenshots/user_facing:true \u2014 current artifact_rigor shows user_facing:false, missing_artifacts empty, visual_validation not_required; reconciled as resolved misclassification per intent",
+          "Replay manifest escalation agents_not_converged (FM-1.5) \u2014 belongs to prior deadlock, not current code defect",
+          "Claude claimed full-suite not observed \u2014 disproved: 574 passed in this session",
+          "git diff stat omits reconnect-protocol.md \u2014 file present on disk and passes presence test but untracked"
+        ],
+        "decision": "accept",
+        "evidence_refs": [],
+        "missing_evidence": [
+          "Live stdio MCP session drop/reconnect e2e (explicitly out of PRD scope but strongest unproven assumption)",
+          "reconnect-protocol.md committed to git \u2014 file exists untracked (??)"
+        ],
+        "schema_version": "critical-review/v1",
+        "severity": "low",
+        "strongest_objection": "Integration test injects missed events via state.write_event rather than exercising a real stdio MCP connection drop, so transport-layer disconnect behavior is assumed not proven end-to-end.",
+        "what_would_change_my_mind": "Any pytest failure in affected files or S1/S2/S3a paths; catch_up appending events; duplicate spawn on re-submit with same client_token; or artifact_rigor regressing to user_facing blocked."
+      },
+      "diagnostics": {
+        "prompt_chars": 12068,
+        "prompt_sha256": "98262b3fd37342ace2be64b13e8cf8205d9b1e5daab4014d48d64c34bdb9fbc7"
+      },
+      "duration_ms": 153265,
+      "failure_classification": null,
+      "fallback_from_runtime": null,
+      "fallback_reason": null,
+      "model": "composer-2.5",
+      "outcome": {
+        "changed_files": [
+          "mcp_tools/codex_supervisor_stdio.py",
+          "tests/test_dual_agent_workflow_driver.py",
+          "tests/test_codex_supervisor_mcp_stdio.py",
+          "docs/testing/public-boundaries.md",
+          "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/reconnect-protocol.md"
+        ],
+        "claims": [
+          "Implementation complete and correct at code+test level",
+          "catch_up is read-only and preserves deterministic replay",
+          "Idempotent re-submit returns same job without duplicate worker launch",
+          "Poll reads terminal outcome from ledger when completion happened during disconnect",
+          "Prior screenshot/user_facing block resolved in current artifact_rigor",
+          "Full suite green independently verified in this review session"
+        ],
+        "confidence": 0.95,
+        "confidence_criteria": [
+          "catch_up symbol present and MCP-registered (verified)",
+          "Read-only delegation to read_events_since with gap-tolerant cursor (verified)",
+          "Integration test covers reattach/no-dup-spawn/catch-up/ledger-first poll (verified)",
+          "Reconnect protocol documented with presence test (verified)",
+          "artifact_rigor status ok / user_facing false / not_required (verified)",
+          "Replay diff_bytes>0 with matching diff_stat (verified)",
+          "Full suite green (independently verified: 574 passed)"
+        ],
+        "confidence_rationale": "Implementation, integration test substance, protocol doc, artifact_rigor, and replay manifest corroborated by direct source read; full suite green independently observed (574 passed), resolving Claude's primary residual gap.",
+        "critical_review": {
+          "assumptions_to_verify": [
+            "Client advances last_event_id after each catch-up page to achieve exactly-once delivery (protocol doc states this; server returns stable pages)",
+            "S1/S2/S3a consumed slices behave as integration test exercises them through real server.tools"
+          ],
+          "contradictions_checked": [
+            "Prior outcome_review blocked on screenshots/user_facing:true \u2014 current artifact_rigor shows user_facing:false, missing_artifacts empty, visual_validation not_required; reconciled as resolved misclassification per intent",
+            "Replay manifest escalation agents_not_converged (FM-1.5) \u2014 belongs to prior deadlock, not current code defect",
+            "Claude claimed full-suite not observed \u2014 disproved: 574 passed in this session",
+            "git diff stat omits reconnect-protocol.md \u2014 file present on disk and passes presence test but untracked"
+          ],
+          "decision": "accept",
+          "missing_evidence": [
+            "Live stdio MCP session drop/reconnect e2e (explicitly out of PRD scope but strongest unproven assumption)",
+            "reconnect-protocol.md committed to git \u2014 file exists untracked (??)"
+          ],
+          "severity": "low",
+          "strongest_objection": "Integration test injects missed events via state.write_event rather than exercising a real stdio MCP connection drop, so transport-layer disconnect behavior is assumed not proven end-to-end.",
+          "what_would_change_my_mind": "Any pytest failure in affected files or S1/S2/S3a paths; catch_up appending events; duplicate spawn on re-submit with same client_token; or artifact_rigor regressing to user_facing blocked."
+        },
+        "decisions": [
+          "accept"
+        ],
+        "objections": [
+          "reconnect-protocol.md is untracked (??) \u2014 not in git diff stat though referenced by test and artifact dir"
+        ],
+        "specialists": [
+          {
+            "decision": "accept",
+            "name": "Cursor Reviewer",
+            "objection": "Integration test simulates disconnect in-process rather than through a live stdio MCP drop; reconnect-protocol.md is untracked in git though present on disk and covered by test"
+          }
+        ],
+        "summary": "S5 resumable-transport independently verified: catch_up_dual_agent_workflow is read-only over read_events_since; reconnect integration test proves reattach/no-duplicate-spawn/exactly-once catch-up/ledger-first poll; protocol documented; artifact_rigor ok/user_facing false; replay diff present; full suite 574 passed in this review session. ACCEPT.",
+        "task_id": "durable-substrate-s5-resumable-transport-20260531",
+        "test_status": "passed",
+        "tests": [
+          "tests/test_dual_agent_workflow_driver.py::test_catch_up_dual_agent_workflow_returns_cursor_page",
+          "tests/test_dual_agent_workflow_driver.py::test_resumable_transport_drop_reconnect_catches_up_and_polls_terminal_outcome",
+          "tests/test_dual_agent_workflow_driver.py::test_reconnect_protocol_doc_is_present",
+          "tests/test_codex_supervisor_mcp_stdio.py::test_codex_supervisor_mcp_exposes_dual_agent_gate_tools"
+        ]
+      },
+      "probe": {
+        "details": {},
+        "probe_id": "CURSOR",
+        "reason": "cursor_review_ok",
+        "status": "green"
+      },
+      "recoverable": false,
+      "retry_reasons": [],
+      "reviewer_assurance": "tool_backed_primary",
+      "reviewer_output_mode": "cursor_sdk",
+      "reviewer_runtime": "cursor_sdk",
+      "run_id": "run-38311b8d-c612-487f-bd82-b85b0ac3c670",
+      "schema_version": "independent-reviewer-result/v1",
+      "status": "finished",
+      "transcript_tail": "ate-spawn/exactly-once catch-up/ledger-first poll; protocol documented; artifact_rigor ok/user_facing false; replay diff present; full suite 574 passed in this review session. ACCEPT.\",\"specialists\":[{\"name\":\"Cursor Reviewer\",\"decision\":\"accept\",\"objection\":\"Integration test simulates disconnect in-process rather than through a live stdio MCP drop; reconnect-protocol.md is untracked in git though present on disk and covered by test\"}],\"decisions\":[\"accept\"],\"objections\":[\"reconnect-protocol.md is untracked (??) \u2014 not in git diff stat though referenced by test and artifact dir\"],\"changed_files\":[\"mcp_tools/codex_supervisor_stdio.py\",\"tests/test_dual_agent_workflow_driver.py\",\"tests/test_codex_supervisor_mcp_stdio.py\",\"docs/testing/public-boundaries.md\",\"docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/reconnect-protocol.md\"],\"tests\":[\"tests/test_dual_agent_workflow_driver.py::test_catch_up_dual_agent_workflow_returns_cursor_page\",\"tests/test_dual_agent_workflow_driver.py::test_resumable_transport_drop_reconnect_catches_up_and_polls_terminal_outcome\",\"tests/test_dual_agent_workflow_driver.py::test_reconnect_protocol_doc_is_present\",\"tests/test_codex_supervisor_mcp_stdio.py::test_codex_supervisor_mcp_exposes_dual_agent_gate_tools\"],\"test_status\":\"passed\",\"confidence\":0.95,\"confidence_rationale\":\"Implementation, integration test substance, protocol doc, artifact_rigor, and replay manifest corroborated by direct source read; full suite green independently observed (574 passed), resolving Claude's primary residual gap.\",\"confidence_criteria\":[\"catch_up symbol present and MCP-registered (verified)\",\"Read-only delegation to read_events_since with gap-tolerant cursor (verified)\",\"Integration test covers reattach/no-dup-spawn/catch-up/ledger-first poll (verified)\",\"Reconnect protocol documented with presence test (verified)\",\"artifact_rigor status ok / user_facing false / not_required (verified)\",\"Replay diff_bytes>0 with matching diff_stat (verified)\",\"Full suite green (independently verified: 574 passed)\"],\"claims\":[\"Implementation complete and correct at code+test level\",\"catch_up is read-only and preserves deterministic replay\",\"Idempotent re-submit returns same job without duplicate worker launch\",\"Poll reads terminal outcome from ledger when completion happened during disconnect\",\"Prior screenshot/user_facing block resolved in current artifact_rigor\",\"Full suite green independently verified in this review session\"],\"critical_review\":{\"strongest_objection\":\"Integration test injects missed events via state.write_event rather than exercising a real stdio MCP connection drop, so transport-layer disconnect behavior is assumed not proven end-to-end.\",\"missing_evidence\":[\"Live stdio MCP session drop/reconnect e2e (explicitly out of PRD scope but strongest unproven assumption)\",\"reconnect-protocol.md committed to git \u2014 file exists untracked (??)\"],\"contradictions_checked\":[\"Prior outcome_review blocked on screenshots/user_facing:true \u2014 current artifact_rigor shows user_facing:false, missing_artifacts empty, visual_validation not_required; reconciled as resolved misclassification per intent\",\"Replay manifest escalation agents_not_converged (FM-1.5) \u2014 belongs to prior deadlock, not current code defect\",\"Claude claimed full-suite not observed \u2014 disproved: 574 passed in this session\",\"git diff stat omits reconnect-protocol.md \u2014 file present on disk and passes presence test but untracked\"],\"assumptions_to_verify\":[\"Client advances last_event_id after each catch-up page to achieve exactly-once delivery (protocol doc states this; server returns stable pages)\",\"S1/S2/S3a consumed slices behave as integration test exercises them through real server.tools\"],\"what_would_change_my_mind\":\"Any pytest failure in affected files or S1/S2/S3a paths; catch_up appending events; duplicate spawn on re-submit with same client_token; or artifact_rigor regressing to user_facing blocked.\",\"decision\":\"accept\",\"severity\":\"low\"}}</dual_agent_outcome>"
+    },
+    "escalation": null,
+    "gate": "outcome_review",
+    "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s5-resumable-transport-20260531.json",
+    "independent_reviewer": {
+      "accepted": true,
+      "agent_id": "agent-f6f1c6bc-e1b1-4a01-b292-c4309c883d23",
+      "attempts": 1,
+      "critical_review": {
+        "assumptions_to_verify": [
+          "Client advances last_event_id after each catch-up page to achieve exactly-once delivery (protocol doc states this; server returns stable pages)",
+          "S1/S2/S3a consumed slices behave as integration test exercises them through real server.tools"
+        ],
+        "contradictions_checked": [
+          "Prior outcome_review blocked on screenshots/user_facing:true \u2014 current artifact_rigor shows user_facing:false, missing_artifacts empty, visual_validation not_required; reconciled as resolved misclassification per intent",
+          "Replay manifest escalation agents_not_converged (FM-1.5) \u2014 belongs to prior deadlock, not current code defect",
+          "Claude claimed full-suite not observed \u2014 disproved: 574 passed in this session",
+          "git diff stat omits reconnect-protocol.md \u2014 file present on disk and passes presence test but untracked"
+        ],
+        "decision": "accept",
+        "evidence_refs": [],
+        "missing_evidence": [
+          "Live stdio MCP session drop/reconnect e2e (explicitly out of PRD scope but strongest unproven assumption)",
+          "reconnect-protocol.md committed to git \u2014 file exists untracked (??)"
+        ],
+        "schema_version": "critical-review/v1",
+        "severity": "low",
+        "strongest_objection": "Integration test injects missed events via state.write_event rather than exercising a real stdio MCP connection drop, so transport-layer disconnect behavior is assumed not proven end-to-end.",
+        "what_would_change_my_mind": "Any pytest failure in affected files or S1/S2/S3a paths; catch_up appending events; duplicate spawn on re-submit with same client_token; or artifact_rigor regressing to user_facing blocked."
+      },
+      "diagnostics": {
+        "prompt_chars": 12068,
+        "prompt_sha256": "98262b3fd37342ace2be64b13e8cf8205d9b1e5daab4014d48d64c34bdb9fbc7"
+      },
+      "duration_ms": 153265,
+      "failure_classification": null,
+      "fallback_from_runtime": null,
+      "fallback_reason": null,
+      "model": "composer-2.5",
+      "outcome": {
+        "changed_files": [
+          "mcp_tools/codex_supervisor_stdio.py",
+          "tests/test_dual_agent_workflow_driver.py",
+          "tests/test_codex_supervisor_mcp_stdio.py",
+          "docs/testing/public-boundaries.md",
+          "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/reconnect-protocol.md"
+        ],
+        "claims": [
+          "Implementation complete and correct at code+test level",
+          "catch_up is read-only and preserves deterministic replay",
+          "Idempotent re-submit returns same job without duplicate worker launch",
+          "Poll reads terminal outcome from ledger when completion happened during disconnect",
+          "Prior screenshot/user_facing block resolved in current artifact_rigor",
+          "Full suite green independently verified in this review session"
+        ],
+        "confidence": 0.95,
+        "confidence_criteria": [
+          "catch_up symbol present and MCP-registered (verified)",
+          "Read-only delegation to read_events_since with gap-tolerant cursor (verified)",
+          "Integration test covers reattach/no-dup-spawn/catch-up/ledger-first poll (verified)",
+          "Reconnect protocol documented with presence test (verified)",
+          "artifact_rigor status ok / user_facing false / not_required (verified)",
+          "Replay diff_bytes>0 with matching diff_stat (verified)",
+          "Full suite green (independently verified: 574 passed)"
+        ],
+        "confidence_rationale": "Implementation, integration test substance, protocol doc, artifact_rigor, and replay manifest corroborated by direct source read; full suite green independently observed (574 passed), resolving Claude's primary residual gap.",
+        "critical_review": {
+          "assumptions_to_verify": [
+            "Client advances last_event_id after each catch-up page to achieve exactly-once delivery (protocol doc states this; server returns stable pages)",
+            "S1/S2/S3a consumed slices behave as integration test exercises them through real server.tools"
+          ],
+          "contradictions_checked": [
+            "Prior outcome_review blocked on screenshots/user_facing:true \u2014 current artifact_rigor shows user_facing:false, missing_artifacts empty, visual_validation not_required; reconciled as resolved misclassification per intent",
+            "Replay manifest escalation agents_not_converged (FM-1.5) \u2014 belongs to prior deadlock, not current code defect",
+            "Claude claimed full-suite not observed \u2014 disproved: 574 passed in this session",
+            "git diff stat omits reconnect-protocol.md \u2014 file present on disk and passes presence test but untracked"
+          ],
+          "decision": "accept",
+          "missing_evidence": [
+            "Live stdio MCP session drop/reconnect e2e (explicitly out of PRD scope but strongest unproven assumption)",
+            "reconnect-protocol.md committed to git \u2014 file exists untracked (??)"
+          ],
+          "severity": "low",
+          "strongest_objection": "Integration test injects missed events via state.write_event rather than exercising a real stdio MCP connection drop, so transport-layer disconnect behavior is assumed not proven end-to-end.",
+          "what_would_change_my_mind": "Any pytest failure in affected files or S1/S2/S3a paths; catch_up appending events; duplicate spawn on re-submit with same client_token; or artifact_rigor regressing to user_facing blocked."
+        },
+        "decisions": [
+          "accept"
+        ],
+        "objections": [
+          "reconnect-protocol.md is untracked (??) \u2014 not in git diff stat though referenced by test and artifact dir"
+        ],
+        "specialists": [
+          {
+            "decision": "accept",
+            "name": "Cursor Reviewer",
+            "objection": "Integration test simulates disconnect in-process rather than through a live stdio MCP drop; reconnect-protocol.md is untracked in git though present on disk and covered by test"
+          }
+        ],
+        "summary": "S5 resumable-transport independently verified: catch_up_dual_agent_workflow is read-only over read_events_since; reconnect integration test proves reattach/no-duplicate-spawn/exactly-once catch-up/ledger-first poll; protocol documented; artifact_rigor ok/user_facing false; replay diff present; full suite 574 passed in this review session. ACCEPT.",
+        "task_id": "durable-substrate-s5-resumable-transport-20260531",
+        "test_status": "passed",
+        "tests": [
+          "tests/test_dual_agent_workflow_driver.py::test_catch_up_dual_agent_workflow_returns_cursor_page",
+          "tests/test_dual_agent_workflow_driver.py::test_resumable_transport_drop_reconnect_catches_up_and_polls_terminal_outcome",
+          "tests/test_dual_agent_workflow_driver.py::test_reconnect_protocol_doc_is_present",
+          "tests/test_codex_supervisor_mcp_stdio.py::test_codex_supervisor_mcp_exposes_dual_agent_gate_tools"
+        ]
+      },
+      "probe": {
+        "details": {},
+        "probe_id": "CURSOR",
+        "reason": "cursor_review_ok",
+        "status": "green"
+      },
+      "recoverable": false,
+      "retry_reasons": [],
+      "reviewer_assurance": "tool_backed_primary",
+      "reviewer_output_mode": "cursor_sdk",
+      "reviewer_runtime": "cursor_sdk",
+      "run_id": "run-38311b8d-c612-487f-bd82-b85b0ac3c670",
+      "schema_version": "independent-reviewer-result/v1",
+      "status": "finished",
+      "transcript_tail": "ate-spawn/exactly-once catch-up/ledger-first poll; protocol documented; artifact_rigor ok/user_facing false; replay diff present; full suite 574 passed in this review session. ACCEPT.\",\"specialists\":[{\"name\":\"Cursor Reviewer\",\"decision\":\"accept\",\"objection\":\"Integration test simulates disconnect in-process rather than through a live stdio MCP drop; reconnect-protocol.md is untracked in git though present on disk and covered by test\"}],\"decisions\":[\"accept\"],\"objections\":[\"reconnect-protocol.md is untracked (??) \u2014 not in git diff stat though referenced by test and artifact dir\"],\"changed_files\":[\"mcp_tools/codex_supervisor_stdio.py\",\"tests/test_dual_agent_workflow_driver.py\",\"tests/test_codex_supervisor_mcp_stdio.py\",\"docs/testing/public-boundaries.md\",\"docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/reconnect-protocol.md\"],\"tests\":[\"tests/test_dual_agent_workflow_driver.py::test_catch_up_dual_agent_workflow_returns_cursor_page\",\"tests/test_dual_agent_workflow_driver.py::test_resumable_transport_drop_reconnect_catches_up_and_polls_terminal_outcome\",\"tests/test_dual_agent_workflow_driver.py::test_reconnect_protocol_doc_is_present\",\"tests/test_codex_supervisor_mcp_stdio.py::test_codex_supervisor_mcp_exposes_dual_agent_gate_tools\"],\"test_status\":\"passed\",\"confidence\":0.95,\"confidence_rationale\":\"Implementation, integration test substance, protocol doc, artifact_rigor, and replay manifest corroborated by direct source read; full suite green independently observed (574 passed), resolving Claude's primary residual gap.\",\"confidence_criteria\":[\"catch_up symbol present and MCP-registered (verified)\",\"Read-only delegation to read_events_since with gap-tolerant cursor (verified)\",\"Integration test covers reattach/no-dup-spawn/catch-up/ledger-first poll (verified)\",\"Reconnect protocol documented with presence test (verified)\",\"artifact_rigor status ok / user_facing false / not_required (verified)\",\"Replay diff_bytes>0 with matching diff_stat (verified)\",\"Full suite green (independently verified: 574 passed)\"],\"claims\":[\"Implementation complete and correct at code+test level\",\"catch_up is read-only and preserves deterministic replay\",\"Idempotent re-submit returns same job without duplicate worker launch\",\"Poll reads terminal outcome from ledger when completion happened during disconnect\",\"Prior screenshot/user_facing block resolved in current artifact_rigor\",\"Full suite green independently verified in this review session\"],\"critical_review\":{\"strongest_objection\":\"Integration test injects missed events via state.write_event rather than exercising a real stdio MCP connection drop, so transport-layer disconnect behavior is assumed not proven end-to-end.\",\"missing_evidence\":[\"Live stdio MCP session drop/reconnect e2e (explicitly out of PRD scope but strongest unproven assumption)\",\"reconnect-protocol.md committed to git \u2014 file exists untracked (??)\"],\"contradictions_checked\":[\"Prior outcome_review blocked on screenshots/user_facing:true \u2014 current artifact_rigor shows user_facing:false, missing_artifacts empty, visual_validation not_required; reconciled as resolved misclassification per intent\",\"Replay manifest escalation agents_not_converged (FM-1.5) \u2014 belongs to prior deadlock, not current code defect\",\"Claude claimed full-suite not observed \u2014 disproved: 574 passed in this session\",\"git diff stat omits reconnect-protocol.md \u2014 file present on disk and passes presence test but untracked\"],\"assumptions_to_verify\":[\"Client advances last_event_id after each catch-up page to achieve exactly-once delivery (protocol doc states this; server returns stable pages)\",\"S1/S2/S3a consumed slices behave as integration test exercises them through real server.tools\"],\"what_would_change_my_mind\":\"Any pytest failure in affected files or S1/S2/S3a paths; catch_up appending events; duplicate spawn on re-submit with same client_token; or artifact_rigor regressing to user_facing blocked.\",\"decision\":\"accept\",\"severity\":\"low\"}}</dual_agent_outcome>"
+    },
+    "outcome": {
+      "changed_files": [
+        "mcp_tools/codex_supervisor_stdio.py",
+        "tests/test_dual_agent_workflow_driver.py",
+        "tests/test_codex_supervisor_mcp_stdio.py",
+        "docs/testing/public-boundaries.md"
+      ],
+      "claims": [
+        "Implementation is complete and correct at code+test level",
+        "catch_up is read-only and preserves deterministic replay (no events appended during catch-up)",
+        "Idempotent re-submit returns the same job with no duplicate worker launch",
+        "Poll reads the terminal outcome from the ledger when completion happened during disconnect",
+        "The earlier screenshot/user_facing block is resolved in the current artifact_rigor",
+        "Full-suite green was NOT personally observed in this session"
+      ],
+      "confidence": 0.85,
+      "confidence_criteria": [
+        "Named symbol present in mcp_tools and tests (verified)",
+        "Implementation is read-only over State.read_events_since with correct cursor semantics (verified)",
+        "Integration test covers reattach/exactly-once-catch-up/ledger-first-poll acceptance criteria (verified)",
+        "Reconnect protocol documented with a presence test (verified)",
+        "Current artifact_rigor status ok / user_facing false / not_required (verified)",
+        "Replay diff_bytes>0 with matching diff_stat (verified)",
+        "Full suite green (NOT independently verified)"
+      ],
+      "confidence_rationale": "Implementation, integration test substance, protocol doc, and current artifact_rigor are all directly corroborated by source inspection, and the decision to ACCEPT on merit is robust. Held below 0.95 because full-suite green was not personally observed (pytest not approved in-session), so a regression elsewhere cannot be fully excluded.",
+      "critical_review": {
+        "assumptions_to_verify": [
+          "S1 read_events_since, S2 idempotent submit/reattach, and S3a ledger terminal outcome (the consumed slices) are present and green \u2014 the integration test exercises them through real server.tools, but I did not run it",
+          "No unrelated regression elsewhere in the suite"
+        ],
+        "contradictions_checked": [
+          "Replay manifest says blocked/agents_not_converged (FM-1.5) \u2014 reconciled as the prior deadlocked run caused by the now-resolved screenshot misclassification, which the intent directs me not to treat as a current blocker",
+          "Embedded prior outcome claimed 'only barrier is policy misclassification' \u2014 corroborated: current artifact_rigor now shows user_facing false / not_required, so that barrier is gone",
+          "Heavy FM-1.3 step-repetition / FM-2.5 ignored-objection entries \u2014 all belong to the prior looping run, not new evidence about the code"
+        ],
+        "decision": "accept",
+        "missing_evidence": [
+          "A pytest run I personally observe passing across the full suite (or at minimum the two affected test files)"
+        ],
+        "severity": "low",
+        "strongest_objection": "Acceptance criteria explicitly require full-suite green, and I could not run pytest in-session, so I cannot personally attest the suite passes; trusting handoff pytest receipts is disallowed by the gate-review heuristic.",
+        "what_would_change_my_mind": "A pytest run showing any failure (especially in the two affected files or the consumed S1/S2/S3a paths) would flip this to REVISE/DENY; conversely an observed green full suite would raise confidence to ~0.95."
+      },
+      "decisions": [
+        "accept"
+      ],
+      "objections": [
+        "Full-suite green was not independently verified in-session because pytest required approval that was not granted; this is an environment limitation, not a worker defect, and must be confirmed by the operator before merge."
+      ],
+      "specialists": [
+        {
+          "decision": "accept",
+          "name": "lead-gate-reviewer",
+          "objection": "Full-suite green not personally observed; pytest could not be run in-session"
+        }
+      ],
+      "summary": "S5 resumable-transport implementation verified complete and correct by direct source read: catch_up_dual_agent_workflow is read-only over State.read_events_since with correct non-contiguous cursor semantics; the reconnect integration test proves same-job reattach (no duplicate spawn), exactly-once catch-up, and ledger-first poll after a mid-run drop; reconnect-protocol.md is complete with a doc-presence test. Current artifact_rigor is status ok, user_facing false, not_required \u2014 the prior screenshot misclassification that deadlocked the earlier run is resolved. ACCEPT with one operator-verifiable residual: full-suite green could not be run in-session (pytest needs approval).",
+      "task_id": "durable-substrate-s5-resumable-transport-20260531",
+      "test_status": "unknown",
+      "tests": [
+        "tests/test_dual_agent_workflow_driver.py::test_catch_up_dual_agent_workflow_returns_cursor_page",
+        "tests/test_dual_agent_workflow_driver.py::test_resumable_transport_drop_reconnect_catches_up_and_polls_terminal_outcome",
+        "tests/test_dual_agent_workflow_driver.py::test_reconnect_protocol_doc_is_present"
+      ]
+    },
+    "probes": {
+      "P1": {
+        "details": {},
+        "probe_id": "P1",
+        "reason": "planning_artifact_boundaries_ok",
+        "status": "green"
+      },
+      "P2": {
+        "details": {
+          "captured_bytes": 11005,
+          "captured_token_estimate": 2747,
+          "orchestration_surface": "/lead"
+        },
+        "probe_id": "P2",
+        "reason": "worker_orchestration_invocation_ok",
+        "status": "green"
+      },
+      "P3": {
+        "details": {},
+        "probe_id": "P3",
+        "reason": "outcome_fidelity_ok",
+        "status": "green"
+      },
+      "P4": {
+        "details": {
+          "decisions": [
+            "accept",
+            "accept",
+            "accept"
+          ]
+        },
+        "probe_id": "P4",
+        "reason": "outcome_gate_decision_ok",
+        "status": "green"
+      },
+      "P_planning": {
+        "details": {
+          "artifact_hashes": {
+            "grill_findings": "b743428d1add48f911c8690115dbd959fd2686392983cd4c05f2c0acf1443e42",
+            "implementation_plan": "e2c24898d6f1082166967498ba37cb27b404929758bf4d521577d8edd212b14a",
+            "issues": "2893b3e012a684e4b06a8c6ca7182b030d414b0c2ff6c7caef9909875305e415",
+            "prd": "87346829c960d479b050ae793d9b511816357eda8bdec945b172ec218d61d7e6",
+            "tdd_plan": "7fc351140bd4349e3bb87ac308d60f8e7291e2c3c58fb7e2067d5247bccf649f"
+          },
+          "artifacts": [
+            {
+              "kind": "prd",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/source/prd.md",
+              "sha256": "87346829c960d479b050ae793d9b511816357eda8bdec945b172ec218d61d7e6",
+              "status": "accepted"
+            },
+            {
+              "kind": "issues",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/source/issues.md",
+              "sha256": "2893b3e012a684e4b06a8c6ca7182b030d414b0c2ff6c7caef9909875305e415",
+              "status": "accepted"
+            },
+            {
+              "kind": "tdd_plan",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/source/tdd.md",
+              "sha256": "7fc351140bd4349e3bb87ac308d60f8e7291e2c3c58fb7e2067d5247bccf649f",
+              "status": "accepted"
+            },
+            {
+              "kind": "grill_findings",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/source/grill-findings.md",
+              "sha256": "b743428d1add48f911c8690115dbd959fd2686392983cd4c05f2c0acf1443e42",
+              "status": "accepted"
+            },
+            {
+              "kind": "implementation_plan",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/source/implementation-plan.md",
+              "sha256": "e2c24898d6f1082166967498ba37cb27b404929758bf4d521577d8edd212b14a",
+              "status": "accepted"
+            }
+          ],
+          "checks": {
+            "AGG-001": "pass",
+            "AGG-002": "pass",
+            "GRILL-001": "pass",
+            "GRILL-002": "pass",
+            "GRILL-003": "pass",
+            "ISS-001": "pass",
+            "ISS-002": "pass",
+            "ISS-003": "pass",
+            "ISS-004": "pass",
+            "PLAN-001": "pass",
+            "PLAN-002": "pass",
+            "PLAN-003": "pass",
+            "PLAN-004": "pass",
+            "PRD-001": "pass",
+            "PRD-002": "pass",
+            "PRD-003": "pass",
+            "PRD-004": "pass",
+            "PRD-005": "pass",
+            "PRD-006": "pass",
+            "TDD-001": "pass",
+            "TDD-002": "pass",
+            "TDD-003": "pass",
+            "TDD-004": "pass"
+          },
+          "gate": "outcome_review",
+          "task_id": "durable-substrate-s5-resumable-transport-20260531",
+          "validator_version": "1.0.0",
+          "verdict": "accepted"
+        },
+        "probe_id": "P_planning",
+        "reason": "planning_validation_ok",
+        "status": "green"
+      }
+    },
+    "status": "accepted",
+    "supervisor_final_status": "accepted",
+    "task_id": "durable-substrate-s5-resumable-transport-20260531",
+    "tool_calls": [
+      {
+        "args": {
+          "agentic_lead_policy": "off",
+          "artifact_policy": "strict",
+          "dynamic_workflow_task_class": null,
+          "execution_layer_mode": "lead_direct",
+          "gate": "outcome_review",
+          "min_subagents": 0,
+          "planning_artifact_count": 6,
+          "required_evidence_grade": "self_reported",
+          "required_roles": [],
+          "screenshot_count": 0,
+          "task_id": "durable-substrate-s5-resumable-transport-20260531",
+          "user_facing": false
+        },
+        "attempts": 1,
+        "duration_ms": 239960,
+        "duration_us": 239960058,
+        "ended_at_ms": 1780332339972,
+        "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s5-resumable-transport-20260531.json",
+        "name": "start_dual_agent_gate",
+        "probe_id": null,
+        "result_summary": {
+          "claude_gate_status": "accepted",
+          "probe_statuses": {
+            "P1": "green",
+            "P2": "green",
+            "P3": "green",
+            "P4": "green",
+            "P_planning": "green"
+          },
+          "supervisor_final_status": "accepted"
+        },
+        "started_at_ms": 1780332100012,
+        "status": "completed",
+        "tool_call_id": "start_dual_agent_gate#1780332100012#239960058"
+      },
+      {
+        "args": {
+          "gate": "outcome_review",
+          "task_id": "durable-substrate-s5-resumable-transport-20260531"
+        },
+        "attempts": 1,
+        "cost_usd": 6.580581750000002,
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780332339972,
+        "model": "opus",
+        "name": "invoke_claude_lead",
+        "parent_tool_call_id": "start_dual_agent_gate#1780332100012#239960058",
+        "probe_id": null,
+        "result_summary": {
+          "outcome_present": true,
+          "probe_reason": "outcome_fidelity_ok",
+          "probe_status": "green",
+          "tokens_in": 1918780,
+          "tokens_out": 15266
+        },
+        "started_at_ms": 1780332339972,
+        "status": "completed",
+        "stderr_bytes": 0,
+        "stdout_bytes": 11005,
+        "token_usage": {
+          "cache_creation_input_tokens": 144679,
+          "cache_read_input_tokens": 1769527,
+          "context_window": 200000,
+          "input_tokens": 4574,
+          "max_output_tokens": 32000,
+          "output_tokens": 15266,
+          "tokens_in": 1918780,
+          "tokens_out": 15266
+        },
+        "tokens_in": 1918780,
+        "tokens_out": 15266,
+        "tool_call_id": "invoke_claude_lead#1780332339972#0"
+      },
+      {
+        "args": {
+          "probe_id": "P2"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780332339972,
+        "name": "probe:P2",
+        "parent_tool_call_id": "invoke_claude_lead#1780332339972#0",
+        "probe_id": "P2",
+        "reason": "worker_orchestration_invocation_ok",
+        "result_summary": {
+          "probe_id": "P2",
+          "reason": "worker_orchestration_invocation_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780332339972,
+        "status": "green",
+        "tool_call_id": "probe_p2#1780332339972#0#p2"
+      },
+      {
+        "args": {
+          "probe_id": "P3"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780332339972,
+        "name": "probe:P3",
+        "parent_tool_call_id": "invoke_claude_lead#1780332339972#0",
+        "probe_id": "P3",
+        "reason": "outcome_fidelity_ok",
+        "result_summary": {
+          "probe_id": "P3",
+          "reason": "outcome_fidelity_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780332339972,
+        "status": "green",
+        "tool_call_id": "probe_p3#1780332339972#0#p3"
+      },
+      {
+        "args": {
+          "probe_id": "P1"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780332339972,
+        "name": "probe:P1",
+        "parent_tool_call_id": "invoke_claude_lead#1780332339972#0",
+        "probe_id": "P1",
+        "reason": "planning_artifact_boundaries_ok",
+        "result_summary": {
+          "probe_id": "P1",
+          "reason": "planning_artifact_boundaries_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780332339972,
+        "status": "green",
+        "tool_call_id": "probe_p1#1780332339972#0#p1"
+      },
+      {
+        "args": {
+          "probe_id": "P4"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780332339972,
+        "name": "probe:P4",
+        "parent_tool_call_id": "invoke_claude_lead#1780332339972#0",
+        "probe_id": "P4",
+        "reason": "outcome_gate_decision_ok",
+        "result_summary": {
+          "probe_id": "P4",
+          "reason": "outcome_gate_decision_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780332339972,
+        "status": "green",
+        "tool_call_id": "probe_p4#1780332339972#0#p4"
+      },
+      {
+        "args": {
+          "probe_id": "P_planning"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780332339972,
+        "name": "probe:P_planning",
+        "parent_tool_call_id": "invoke_claude_lead#1780332339972#0",
+        "probe_id": "P_planning",
+        "reason": "planning_validation_ok",
+        "result_summary": {
+          "probe_id": "P_planning",
+          "reason": "planning_validation_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780332339972,
+        "status": "green",
+        "tool_call_id": "probe_p_planning#1780332339972#0#p_planning"
+      }
+    ],
+    "trace_envelope": {
+      "artifacts": [],
+      "claims": [
+        "Implementation is complete and correct at code+test level",
+        "catch_up is read-only and preserves deterministic replay (no events appended during catch-up)",
+        "Idempotent re-submit returns the same job with no duplicate worker launch",
+        "Poll reads the terminal outcome from the ledger when completion happened during disconnect",
+        "The earlier screenshot/user_facing block is resolved in the current artifact_rigor",
+        "Full-suite green was NOT personally observed in this session"
+      ],
+      "event_kind": "dual_agent_gate_result",
+      "failure_taxonomy": null,
+      "gate": "outcome_review",
+      "policy_verdict": "accepted",
+      "receipts": [],
+      "run_id": "codex-durable-s5-resumable-transport-20260531",
+      "schema_version": "dual-agent-trace-envelope/v1",
+      "source": "dual_agent",
+      "task_id": "durable-substrate-s5-resumable-transport-20260531",
+      "tool_calls": [
+        {
+          "args": {
+            "agentic_lead_policy": "off",
+            "artifact_policy": "strict",
+            "dynamic_workflow_task_class": null,
+            "execution_layer_mode": "lead_direct",
+            "gate": "outcome_review",
+            "min_subagents": 0,
+            "planning_artifact_count": 6,
+            "required_evidence_grade": "self_reported",
+            "required_roles": [],
+            "screenshot_count": 0,
+            "task_id": "durable-substrate-s5-resumable-transport-20260531",
+            "user_facing": false
+          },
+          "attempts": 1,
+          "duration_ms": 239960,
+          "duration_us": 239960058,
+          "ended_at_ms": 1780332339972,
+          "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s5-resumable-transport-20260531.json",
+          "name": "start_dual_agent_gate",
+          "probe_id": null,
+          "result_summary": {
+            "claude_gate_status": "accepted",
+            "probe_statuses": {
+              "P1": "green",
+              "P2": "green",
+              "P3": "green",
+              "P4": "green",
+              "P_planning": "green"
+            },
+            "supervisor_final_status": "accepted"
+          },
+          "started_at_ms": 1780332100012,
+          "status": "completed",
+          "tool_call_id": "start_dual_agent_gate#1780332100012#239960058"
+        },
+        {
+          "args": {
+            "gate": "outcome_review",
+            "task_id": "durable-substrate-s5-resumable-transport-20260531"
+          },
+          "attempts": 1,
+          "cost_usd": 6.580581750000002,
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780332339972,
+          "model": "opus",
+          "name": "invoke_claude_lead",
+          "parent_tool_call_id": "start_dual_agent_gate#1780332100012#239960058",
+          "probe_id": null,
+          "result_summary": {
+            "outcome_present": true,
+            "probe_reason": "outcome_fidelity_ok",
+            "probe_status": "green",
+            "tokens_in": 1918780,
+            "tokens_out": 15266
+          },
+          "started_at_ms": 1780332339972,
+          "status": "completed",
+          "stderr_bytes": 0,
+          "stdout_bytes": 11005,
+          "token_usage": {
+            "cache_creation_input_tokens": 144679,
+            "cache_read_input_tokens": 1769527,
+            "context_window": 200000,
+            "input_tokens": 4574,
+            "max_output_tokens": 32000,
+            "output_tokens": 15266,
+            "tokens_in": 1918780,
+            "tokens_out": 15266
+          },
+          "tokens_in": 1918780,
+          "tokens_out": 15266,
+          "tool_call_id": "invoke_claude_lead#1780332339972#0"
+        },
+        {
+          "args": {
+            "probe_id": "P2"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780332339972,
+          "name": "probe:P2",
+          "parent_tool_call_id": "invoke_claude_lead#1780332339972#0",
+          "probe_id": "P2",
+          "reason": "worker_orchestration_invocation_ok",
+          "result_summary": {
+            "probe_id": "P2",
+            "reason": "worker_orchestration_invocation_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780332339972,
+          "status": "green",
+          "tool_call_id": "probe_p2#1780332339972#0#p2"
+        },
+        {
+          "args": {
+            "probe_id": "P3"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780332339972,
+          "name": "probe:P3",
+          "parent_tool_call_id": "invoke_claude_lead#1780332339972#0",
+          "probe_id": "P3",
+          "reason": "outcome_fidelity_ok",
+          "result_summary": {
+            "probe_id": "P3",
+            "reason": "outcome_fidelity_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780332339972,
+          "status": "green",
+          "tool_call_id": "probe_p3#1780332339972#0#p3"
+        },
+        {
+          "args": {
+            "probe_id": "P1"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780332339972,
+          "name": "probe:P1",
+          "parent_tool_call_id": "invoke_claude_lead#1780332339972#0",
+          "probe_id": "P1",
+          "reason": "planning_artifact_boundaries_ok",
+          "result_summary": {
+            "probe_id": "P1",
+            "reason": "planning_artifact_boundaries_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780332339972,
+          "status": "green",
+          "tool_call_id": "probe_p1#1780332339972#0#p1"
+        },
+        {
+          "args": {
+            "probe_id": "P4"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780332339972,
+          "name": "probe:P4",
+          "parent_tool_call_id": "invoke_claude_lead#1780332339972#0",
+          "probe_id": "P4",
+          "reason": "outcome_gate_decision_ok",
+          "result_summary": {
+            "probe_id": "P4",
+            "reason": "outcome_gate_decision_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780332339972,
+          "status": "green",
+          "tool_call_id": "probe_p4#1780332339972#0#p4"
+        },
+        {
+          "args": {
+            "probe_id": "P_planning"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780332339972,
+          "name": "probe:P_planning",
+          "parent_tool_call_id": "invoke_claude_lead#1780332339972#0",
+          "probe_id": "P_planning",
+          "reason": "planning_validation_ok",
+          "result_summary": {
+            "probe_id": "P_planning",
+            "reason": "planning_validation_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780332339972,
+          "status": "green",
+          "tool_call_id": "probe_p_planning#1780332339972#0#p_planning"
+        }
+      ]
+    }
+  },
+  "mandatory_artifacts": {
+    "missing": [],
+    "output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-substrate-s5-resumable-transport-20260531",
+    "required": [
+      "source/prd.md",
+      "source/grill-findings.md",
+      "source/issues.md",
+      "source/tdd.md",
+      "source/grill-findings-tdd.md",
+      "source/implementation-plan.md",
+      "interactions.md",
+      "outcome-review.md",
+      "transcript.md"
+    ],
+    "status": "ok"
+  },
+  "resume": {
+    "artifact_output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-substrate-s5-resumable-transport-20260531",
+    "blocker": null,
+    "current_gate": "outcome_review",
+    "last_status": "accepted",
+    "latest_event_id": 413892,
+    "next_safe_action": "read_gate_transcript and inspect exported artifacts",
+    "prompt": "Use codex_supervisor.\nContinue run_id=codex-durable-s5-resumable-transport-20260531\ntask_id=durable-substrate-s5-resumable-transport-20260531\ncurrent_gate=outcome_review\nlast_status=accepted\nlatest_event_id=413892\nnext_safe_action=read_gate_transcript and inspect exported artifacts\nartifact_output_dir=/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-substrate-s5-resumable-transport-20260531\nfirst inspect: read_gate_transcript(run_id=codex-durable-s5-resumable-transport-20260531, task_id=durable-substrate-s5-resumable-transport-20260531)",
+    "run_id": "codex-durable-s5-resumable-transport-20260531",
+    "status": "ok",
+    "steps": [
+      {
+        "attempt_count": 1,
+        "gate": "prd_review",
+        "latest_event_id": 411867,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "issues_review",
+        "latest_event_id": 411945,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "tdd_review",
+        "latest_event_id": 412041,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "implementation_plan",
+        "latest_event_id": 412301,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 3,
+        "gate": "execution",
+        "latest_event_id": 412797,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "outcome_review",
+        "latest_event_id": 413889,
+        "status": "accepted"
+      }
+    ],
+    "task_id": "durable-substrate-s5-resumable-transport-20260531",
+    "transcript_command": "read_gate_transcript(run_id=codex-durable-s5-resumable-transport-20260531, task_id=durable-substrate-s5-resumable-transport-20260531)"
+  },
+  "run_id": "codex-durable-s5-resumable-transport-20260531",
+  "status": "accepted",
+  "steps": [
+    {
+      "attempt_count": 1,
+      "gate": "prd_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "issues_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "tdd_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "implementation_plan",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 3,
+      "gate": "execution",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "outcome_review",
+      "status": "accepted"
+    }
+  ],
+  "task_id": "durable-substrate-s5-resumable-transport-20260531",
+  "visual_evidence_policy": {
+    "artifact_matches": [],
+    "matched_terms": [],
+    "required": false,
+    "source": "not_user_facing"
+  },
+  "workflow_route": {
+    "agentic_lead_policy": {
+      "min_subagents": 0,
+      "policy": "off",
+      "required_evidence_grade": "self_reported",
+      "required_roles": [],
+      "solo_exception_for_artifact_only_gates": false
+    },
+    "cursor_review_gates": [
+      "tdd_review",
+      "implementation_plan",
+      "outcome_review"
+    ],
+    "cursor_review_profile": "rigorous",
+    "dynamic_workflow_task_class": null,
+    "effective_cursor_review": true,
+    "execution_layer_mode": "lead_direct",
+    "force_cursor_review": false,
+    "gate_count": 6,
+    "gates": [
+      "prd_review",
+      "issues_review",
+      "tdd_review",
+      "implementation_plan",
+      "execution",
+      "outcome_review"
+    ],
+    "planning_depth": "large",
+    "reasons": [
+      "default_large"
+    ],
+    "requested_cursor_review": true,
+    "required_skill_stages": [
+      "to_prd",
+      "prd_grill",
+      "to_issues",
+      "tdd",
+      "tdd_grill"
+    ],
+    "requires_agentic_lead_policy_receipts": false,
+    "requires_brainstorm": false,
+    "requires_dynamic_workflow_receipts": false,
+    "requires_skill_receipts": true,
+    "resume": {
+      "mode": "resume_from_prior_steps",
+      "pending_gates": [
+        "outcome_review"
+      ],
+      "schema_version": "dual-agent-workflow-resume/v1",
+      "skipped_gates": [
+        "prd_review",
+        "issues_review",
+        "tdd_review",
+        "implementation_plan",
+        "execution"
+      ],
+      "skipped_steps": [
+        {
+          "attempt_count": 1,
+          "gate": "prd_review",
+          "latest_event_id": 411867,
+          "status": "accepted"
+        },
+        {
+          "attempt_count": 1,
+          "gate": "issues_review",
+          "latest_event_id": 411945,
+          "status": "accepted"
+        },
+        {
+          "attempt_count": 1,
+          "gate": "tdd_review",
+          "latest_event_id": 412041,
+          "status": "accepted"
+        },
+        {
+          "attempt_count": 1,
+          "gate": "implementation_plan",
+          "latest_event_id": 412301,
+          "status": "accepted"
+        },
+        {
+          "attempt_count": 3,
+          "gate": "execution",
+          "latest_event_id": 412797,
+          "status": "accepted"
+        }
+      ]
+    },
+    "reviewer_max_tokens": 4096,
+    "reviewer_model": "composer-2.5",
+    "reviewer_output_mode": "cursor_sdk",
+    "reviewer_unavailable_policy": "escalate",
+    "schema_version": "dual-agent-workflow-route/v1",
+    "task_complexity": "large"
+  }
+}

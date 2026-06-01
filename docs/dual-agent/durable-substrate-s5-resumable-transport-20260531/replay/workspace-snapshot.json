@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "91e2a46e58dcd6f50168e7ac66544e9616b786c404abb1b26f2a1441266c8653",
+  "git": {
+    "diff_bytes": 10665,
+    "diff_sha256": "da90e46371e8a7013e024ac8294ec252657e2f3e1b02f2cdf84faab8658ca1df",
+    "diff_stat": "docs/testing/public-boundaries.md        |   7 +-\n mcp_tools/codex_supervisor_stdio.py      |  39 +++++++\n tests/test_codex_supervisor_mcp_stdio.py |   1 +\n tests/test_dual_agent_workflow_driver.py | 177 +++++++++++++++++++++++++++++++\n 4 files changed, 222 insertions(+), 2 deletions(-)",
+    "head": "02be0d1",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "02be0d1",
+    "status_short": "M docs/testing/public-boundaries.md\n M mcp_tools/codex_supervisor_stdio.py\n M tests/test_codex_supervisor_mcp_stdio.py\n M tests/test_dual_agent_workflow_driver.py\n?? docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "d69f9a4f7383c6c13cfbde8b6c8abe8b5b8cb95b122222cb57d3abb715820cfe",
+    "implementation_plan": "e2c24898d6f1082166967498ba37cb27b404929758bf4d521577d8edd212b14a",
+    "issues": "2893b3e012a684e4b06a8c6ca7182b030d414b0c2ff6c7caef9909875305e415",
+    "prd": "87346829c960d479b050ae793d9b511816357eda8bdec945b172ec218d61d7e6",
+    "tdd_plan": "7fc351140bd4349e3bb87ac308d60f8e7291e2c3c58fb7e2067d5247bccf649f"
+  },
+  "status": "captured"
+}

@@ -1000,6 +1000,183 @@ async def test_submit_dual_agent_workflow_job_concurrent_same_token_launches_onc
 
 
 @pytest.mark.asyncio
+async def test_catch_up_dual_agent_workflow_returns_cursor_page(tmp_path):
+    server, state = _server(tmp_path)
+    first = state.write_event(
+        run_id="workflow-run",
+        source="dual_agent",
+        kind="dual_agent_workflow_job",
+        payload={"task_id": "workflow-1", "status": "running", "seq": 1},
+    )
+    state.write_event(
+        run_id="other-run",
+        source="dual_agent",
+        kind="dual_agent_workflow_job",
+        payload={"task_id": "other", "status": "noise"},
+    )
+    second = state.write_event(
+        run_id="workflow-run",
+        source="dual_agent",
+        kind="dual_agent_workflow_job",
+        payload={"task_id": "workflow-1", "status": "progress", "seq": 2},
+    )
+    state.write_event(
+        run_id="other-run",
+        source="dual_agent",
+        kind="dual_agent_workflow_job",
+        payload={"task_id": "other", "status": "noise-2"},
+    )
+    third = state.write_event(
+        run_id="workflow-run",
+        source="dual_agent",
+        kind="dual_agent_workflow_job",
+        payload={"task_id": "workflow-1", "status": "progress", "seq": 3},
+    )
+    before_max = state._conn.execute("SELECT MAX(event_id) FROM events").fetchone()[0]
+
+    page = await _maybe_await(server.tools["catch_up_dual_agent_workflow"](
+        run_id="workflow-run",
+        last_event_id=first,
+        limit=2,
+    ))
+
+    assert [event["event_id"] for event in page["events"]] == [second, third]
+    assert third - first > 2
+    assert page["next_event_id"] == third
+    assert page["count"] == 2
+    assert page["has_more"] is True
+    assert state._conn.execute("SELECT MAX(event_id) FROM events").fetchone()[0] == before_max
+
+    empty = await _maybe_await(server.tools["catch_up_dual_agent_workflow"](
+        run_id="workflow-run",
+        last_event_id=page["next_event_id"],
+        limit=100,
+    ))
+
+    assert empty["events"] == []
+    assert empty["next_event_id"] == third
+    assert empty["has_more"] is False
+
+
+@pytest.mark.asyncio
+async def test_resumable_transport_drop_reconnect_catches_up_and_polls_terminal_outcome(
+    monkeypatch,
+    tmp_path,
+):
+    import mcp_tools.codex_supervisor_stdio as stdio
+
+    server, state = _server(tmp_path)
+    popen_calls: list[list[str]] = []
+
+    class FakePopen:
+        pid = 43210
+
+        def __init__(self, argv, **kwargs):
+            popen_calls.append(list(argv))
+
+    monkeypatch.setattr(stdio.subprocess, "Popen", FakePopen)
+    kwargs = {
+        "cwd": str(tmp_path),
+        "task_id": "workflow-1",
+        "run_id": "workflow-run",
+        "intent": "Run long workflow out of band.",
+        "tool_receipts": _tool_receipts(),
+        "config_path": str(tmp_path / "config.yaml"),
+        "client_token": "stable-reconnect-token",
+    }
+
+    first_submit = await _maybe_await(server.tools["submit_dual_agent_workflow_job"](**kwargs))
+    last_seen_event_id = state.latest_event_id("workflow-run")
+    missed_progress = state.write_event(
+        run_id="workflow-run",
+        source="dual_agent",
+        kind="dual_agent_workflow_job",
+        payload={
+            "task_id": "workflow-1",
+            "job_id": first_submit["job_id"],
+            "status": "progress",
+            "seq": 1,
+        },
+    )
+    state.write_event(
+        run_id="other-run",
+        source="dual_agent",
+        kind="dual_agent_workflow_job",
+        payload={"task_id": "other", "status": "gap"},
+    )
+    missed_progress_2 = state.write_event(
+        run_id="workflow-run",
+        source="dual_agent",
+        kind="dual_agent_workflow_job",
+        payload={
+            "task_id": "workflow-1",
+            "job_id": first_submit["job_id"],
+            "status": "progress",
+            "seq": 2,
+        },
+    )
+    terminal_outcome = {
+        "status": "accepted",
+        "run_id": "workflow-run",
+        "task_id": "workflow-1",
+        "steps": [{"gate": "outcome_review", "status": "accepted"}],
+    }
+    state.complete_dual_agent_workflow_job(
+        job_id=first_submit["job_id"],
+        status="accepted",
+        terminal_outcome=terminal_outcome,
+    )
+    result_path = Path(first_submit["result_path"])
+    if result_path.exists():
+        result_path.unlink()
+
+    second_submit = await _maybe_await(server.tools["submit_dual_agent_workflow_job"](**kwargs))
+    catch_up = await _maybe_await(server.tools["catch_up_dual_agent_workflow"](
+        run_id="workflow-run",
+        last_event_id=last_seen_event_id,
+        limit=20,
+    ))
+    poll = await _maybe_await(server.tools["poll_dual_agent_workflow_job"](
+        job_id=first_submit["job_id"],
+    ))
+    empty = await _maybe_await(server.tools["catch_up_dual_agent_workflow"](
+        run_id="workflow-run",
+        last_event_id=catch_up["next_event_id"],
+        limit=20,
+    ))
+
+    assert second_submit["job_id"] == first_submit["job_id"]
+    assert second_submit["reattached"] is True
+    assert len(popen_calls) == 1
+    caught_ids = [event["event_id"] for event in catch_up["events"]]
+    assert caught_ids == sorted(set(caught_ids))
+    assert missed_progress in caught_ids
+    assert missed_progress_2 in caught_ids
+    assert any(
+        event["kind"] == "dual_agent_workflow_terminal_outcome"
+        for event in catch_up["events"]
+    )
+    assert empty["events"] == []
+    assert poll["status"] == "accepted"
+    assert poll["result"] == terminal_outcome
+
+
+def test_reconnect_protocol_doc_is_present():
+    protocol = Path(
+        "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/"
+        "reconnect-protocol.md"
+    ).read_text(encoding="utf-8")
+
+    assert "client_token" in protocol
+    assert "last_event_id" in protocol
+    assert "submit_dual_agent_workflow_job" in protocol
+    assert "catch_up_dual_agent_workflow" in protocol
+    assert "poll_dual_agent_workflow_job" in protocol
+    assert "monotonic but not contiguous" in protocol
+    assert "read-only" in protocol
+
+
+@pytest.mark.asyncio
 async def test_poll_dual_agent_workflow_job_reads_durable_result_after_transport_loss(tmp_path):
     server, state = _server(tmp_path)
     job_dir = tmp_path / ".handoff" / "workflow-jobs" / "job-1"
