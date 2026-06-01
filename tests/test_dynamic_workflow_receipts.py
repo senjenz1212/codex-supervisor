@@ -320,6 +320,136 @@ def test_agentic_required_accepts_supervisor_owned_runtime_native_receipts(tmp_p
     assert subagent["agent_id"] == "agent-audit-1"
 
 
+def test_agentic_required_blocks_failed_supervisor_owned_worker_receipts(tmp_path):
+    from supervisor.dynamic_workflow_receipts import verify_dynamic_workflow_receipts
+
+    receipt = _agentic_runtime_native_receipt(tmp_path)
+    receipt["status"] = "timeout"
+    receipt["decision"] = "revise"
+
+    probe = verify_dynamic_workflow_receipts(
+        execution_layer_mode="lead_direct",
+        dynamic_workflow_task_class=None,
+        tool_receipts=[receipt],
+        cwd=tmp_path,
+        agentic_lead_policy="required",
+        min_subagents=1,
+        required_roles=["codebase_audit"],
+        required_evidence_grade="runtime_native",
+    )
+
+    assert probe.status == "red"
+    assert "subagent_status_not_passing" in str(probe.details["agentic_policy"]["blocking_findings"])
+
+
+def test_solo_exception_only_applies_to_artifact_only_gates(tmp_path):
+    from supervisor.dynamic_workflow_receipts import verify_dynamic_workflow_receipts
+
+    solo_receipt = {
+        "receipt_id": "lead-solo",
+        "kind": "agentic_lead_execution",
+        "status": "passed",
+        "execution_mode": "solo",
+    }
+
+    execution_probe = verify_dynamic_workflow_receipts(
+        execution_layer_mode="lead_direct",
+        dynamic_workflow_task_class=None,
+        tool_receipts=[solo_receipt],
+        cwd=tmp_path,
+        gate="execution",
+        agentic_lead_policy="required",
+        solo_exception_for_artifact_only_gates=True,
+    )
+    artifact_probe = verify_dynamic_workflow_receipts(
+        execution_layer_mode="lead_direct",
+        dynamic_workflow_task_class=None,
+        tool_receipts=[solo_receipt],
+        cwd=tmp_path,
+        gate="tdd_review",
+        agentic_lead_policy="required",
+        solo_exception_for_artifact_only_gates=True,
+    )
+
+    assert execution_probe.status == "red"
+    assert "agentic_lead_solo_execution" in str(execution_probe.details["agentic_policy"]["blocking_findings"])
+    assert execution_probe.details["agentic_policy"]["solo_exception_applies"] is False
+    assert artifact_probe.status == "green"
+    assert artifact_probe.details["agentic_policy"]["solo_exception_applies"] is True
+
+
+def test_docs_dual_agent_refs_do_not_count_as_runtime_native_worker_evidence(tmp_path):
+    from supervisor.dynamic_workflow_receipts import verify_dynamic_workflow_receipts
+
+    worker_dir = tmp_path / "docs" / "dual-agent" / "workflow-1" / "workers" / "audit-1"
+    worker_dir.mkdir(parents=True)
+    transcript = worker_dir / "transcript.jsonl"
+    output = worker_dir / "output.json"
+    transcript.write_text('{"event":"completed"}\n', encoding="utf-8")
+    output.write_text('{"decision":"accept"}\n', encoding="utf-8")
+    receipt = {
+        **_agentic_runtime_native_receipt(tmp_path),
+        "transcript_ref": str(transcript.relative_to(tmp_path)),
+        "transcript_sha256": _sha256(transcript),
+        "output_ref": str(output.relative_to(tmp_path)),
+        "output_sha256": _sha256(output),
+        "evidence_grade": "runtime_native",
+    }
+
+    probe = verify_dynamic_workflow_receipts(
+        execution_layer_mode="lead_direct",
+        dynamic_workflow_task_class=None,
+        tool_receipts=[receipt],
+        cwd=tmp_path,
+        agentic_lead_policy="required",
+        min_subagents=1,
+        required_roles=["codebase_audit"],
+        required_evidence_grade="runtime_native",
+    )
+
+    assert probe.status == "red"
+    subagent = probe.details["agentic_policy"]["subagents"][0]
+    assert subagent["declared_evidence_grade"] == "runtime_native"
+    assert subagent["evidence_grade"] == "lead_captured"
+    assert "required_evidence_grade_not_met" in str(probe.details["agentic_policy"]["blocking_findings"])
+
+
+def test_declared_runtime_native_from_non_supervisor_path_is_downgraded_and_blocked(tmp_path):
+    from supervisor.dynamic_workflow_receipts import verify_dynamic_workflow_receipts
+
+    captured_dir = tmp_path / "artifacts" / "lead-captured-workers" / "audit-1"
+    captured_dir.mkdir(parents=True)
+    transcript = captured_dir / "transcript.jsonl"
+    output = captured_dir / "output.json"
+    transcript.write_text('{"event":"completed","agent_id":"agent-audit-1"}\n', encoding="utf-8")
+    output.write_text('{"decision":"accept","changed_files":[]}\n', encoding="utf-8")
+    receipt = {
+        **_agentic_runtime_native_receipt(tmp_path),
+        "transcript_ref": str(transcript.relative_to(tmp_path)),
+        "transcript_sha256": _sha256(transcript),
+        "output_ref": str(output.relative_to(tmp_path)),
+        "output_sha256": _sha256(output),
+        "evidence_grade": "runtime_native",
+    }
+
+    probe = verify_dynamic_workflow_receipts(
+        execution_layer_mode="lead_direct",
+        dynamic_workflow_task_class=None,
+        tool_receipts=[receipt],
+        cwd=tmp_path,
+        agentic_lead_policy="required",
+        min_subagents=1,
+        required_roles=["codebase_audit"],
+        required_evidence_grade="runtime_native",
+    )
+
+    assert probe.status == "red"
+    subagent = probe.details["agentic_policy"]["subagents"][0]
+    assert subagent["declared_evidence_grade"] == "runtime_native"
+    assert subagent["evidence_grade"] == "lead_captured"
+    assert "required_evidence_grade_not_met" in str(probe.details["agentic_policy"]["blocking_findings"])
+
+
 def test_agentic_required_blocks_critical_independent_reviewer(tmp_path):
     from supervisor.dynamic_workflow_receipts import verify_dynamic_workflow_receipts
 

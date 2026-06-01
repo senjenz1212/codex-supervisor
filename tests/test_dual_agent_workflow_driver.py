@@ -780,6 +780,7 @@ async def test_submit_dual_agent_workflow_job_spawns_detached_worker_and_records
             popen_calls.append({"argv": list(argv), "kwargs": kwargs})
 
     monkeypatch.setattr(stdio.subprocess, "Popen", FakePopen)
+    monkeypatch.setattr(stdio, "_pid_alive", lambda pid: True)
 
     result = await _maybe_await(server.tools["submit_dual_agent_workflow_job"](
         cwd=str(tmp_path),
@@ -813,6 +814,51 @@ async def test_submit_dual_agent_workflow_job_spawns_detached_worker_and_records
         task_id="workflow-1",
     ))
     assert transcript["workflow_jobs"][0]["status"] == "running"
+
+
+@pytest.mark.asyncio
+async def test_submit_workflow_job_payload_round_trips_agentic_policy_fields(monkeypatch, tmp_path):
+    import mcp_tools.codex_supervisor_stdio as stdio
+    from mcp_tools.codex_supervisor_workflow_cli import workflow_kwargs_from_payload
+
+    server, _state = _server(tmp_path)
+
+    class FakePopen:
+        pid = 43210
+
+        def __init__(self, argv, **kwargs):
+            pass
+
+    monkeypatch.setattr(stdio.subprocess, "Popen", FakePopen)
+    monkeypatch.setattr(stdio, "_pid_alive", lambda pid: True)
+
+    result = await _maybe_await(server.tools["submit_dual_agent_workflow_job"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Run long workflow out of band with agentic policy.",
+        max_rounds_per_gate=1,
+        tool_receipts=_tool_receipts(),
+        agentic_lead_policy="required",
+        min_subagents=2,
+        required_roles=["codebase_audit", "independent_reviewer"],
+        solo_exception_for_artifact_only_gates=True,
+        required_evidence_grade="runtime_native",
+        config_path=str(tmp_path / "config.yaml"),
+    ))
+
+    request = json.loads(Path(result["request_path"]).read_text(encoding="utf-8"))
+    kwargs = workflow_kwargs_from_payload(request)
+
+    assert result["status"] == "running"
+    assert kwargs["agentic_lead_policy"] == "required"
+    assert kwargs["min_subagents"] == 2
+    assert kwargs["required_roles"] == ["codebase_audit", "independent_reviewer"]
+    assert kwargs["solo_exception_for_artifact_only_gates"] is True
+    assert kwargs["required_evidence_grade"] == "runtime_native"
+    poll = await _maybe_await(server.tools["poll_dual_agent_workflow_job"](job_id=result["job_id"]))
+    assert poll["status"] == "running"
+    assert poll["job_id"] == result["job_id"]
 
 
 @pytest.mark.asyncio
@@ -1809,6 +1855,243 @@ async def test_agentic_required_blocks_solo_execution_before_lead(tmp_path):
     assert result["final_gate_result"]["probes"]["P13"]["reason"] == "agentic_lead_policy_blocked"
     assert "agentic_lead_solo_execution" in str(result["final_gate_result"]["probes"]["P13"]["details"])
     assert runner_calls == []
+
+
+@pytest.mark.asyncio
+async def test_run_dual_agent_workflow_required_policy_still_blocks_without_executor_receipts(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
+    from supervisor.dual_agent_runner import build_lead_replay_stdout
+
+    _write_good_workflow_source_artifacts(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    planner_calls = []
+    lead_calls = []
+
+    def fake_runner(argv, **kwargs):
+        prompt = argv[argv.index("-p") + 1] if "-p" in argv else ""
+        if "Agentic worker roster planning" in prompt:
+            planner_calls.append(argv)
+            return subprocess.CompletedProcess(argv, 0, stdout="No roster available.\n", stderr="")
+        lead_calls.append(argv)
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=build_lead_replay_stdout("Should not run.\n" + _outcome_block("workflow-1")),
+            stderr="",
+        )
+
+    server = build_codex_supervisor_mcp_server(
+        _cfg(tmp_path),
+        state,
+        mcp_cls=_FakeMCP,
+        runner=fake_runner,
+        cursor_runner=_accepting_cursor_runner,
+    )
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Required policy must fail closed when Codex cannot produce executor receipts.",
+        max_rounds_per_gate=1,
+        task_complexity="trivial",
+        tool_receipts=_tool_receipts(),
+        agentic_lead_policy="required",
+        min_subagents=1,
+        required_roles=["codebase_audit"],
+        required_evidence_grade="runtime_native",
+    ))
+
+    assert result["status"] == "blocked"
+    assert result["current_gate"] == "workflow_start"
+    assert planner_calls
+    assert lead_calls == []
+    p13 = result["final_gate_result"]["probes"]["P13"]
+    assert p13["status"] == "red"
+    assert p13["reason"] == "agentic_lead_policy_blocked"
+    assert "insufficient_subagents" in str(p13["details"])
+    productions = [
+        json.loads(row["payload_json"])
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "dual_agent_agentic_worker_production"
+    ]
+    assert productions
+    assert productions[-1]["status"] == "blocked"
+    assert productions[-1]["receipt_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_run_dual_agent_workflow_required_policy_spawns_agentic_workers_and_accepts_runtime_native_receipts(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
+    from supervisor.dual_agent_runner import build_lead_replay_stdout
+
+    _write_good_workflow_source_artifacts(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    planner_calls = []
+    worker_calls = []
+    lead_calls = []
+
+    roster = {
+        "workers": [
+            {
+                "worker_id": "audit-1",
+                "role": "codebase_audit",
+                "persona_id": "reviewer.codebase_audit",
+                "permission_mode": "readOnly",
+                "tool_pins": ["rg", "sed"],
+                "prompt": "Inspect the agentic executor wiring and report risks only.",
+                "timeout_s": 60,
+                "budget_usd": 0.25,
+            }
+        ]
+    }
+
+    def fake_runner(argv, **kwargs):
+        prompt = argv[argv.index("-p") + 1] if "-p" in argv else ""
+        if "Agentic worker roster planning" in prompt:
+            planner_calls.append(argv)
+            return subprocess.CompletedProcess(
+                argv,
+                0,
+                stdout=build_lead_replay_stdout(
+                    "Roster planned.\n"
+                    f"<agentic_worker_roster>{json.dumps(roster)}</agentic_worker_roster>"
+                ),
+                stderr="",
+            )
+        if "Read-only agentic worker" in prompt:
+            worker_calls.append(argv)
+            return subprocess.CompletedProcess(argv, 0, stdout="worker accepted\n", stderr="")
+        lead_calls.append(argv)
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=build_lead_replay_stdout(
+                "Workflow response.\n" + _outcome_block("workflow-1"),
+            ),
+            stderr="",
+        )
+
+    server = build_codex_supervisor_mcp_server(
+        _cfg(tmp_path),
+        state,
+        mcp_cls=_FakeMCP,
+        runner=fake_runner,
+        cursor_runner=_accepting_cursor_runner,
+    )
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Require agentic provenance and run read-only workers inline.",
+        max_rounds_per_gate=1,
+        task_complexity="trivial",
+        tool_receipts=_tool_receipts(),
+        agentic_lead_policy="required",
+        min_subagents=1,
+        required_roles=["codebase_audit"],
+        required_evidence_grade="runtime_native",
+    ))
+
+    assert result["status"] == "accepted"
+    assert planner_calls
+    assert worker_calls
+    assert lead_calls
+    worker_dir = tmp_path / ".handoff" / "agentic-workers" / "workflow-1" / "audit-1"
+    assert (worker_dir / "output.json").is_file()
+    assert (worker_dir / "transcript.jsonl").is_file()
+
+    productions = [
+        json.loads(row["payload_json"])
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "dual_agent_agentic_worker_production"
+    ]
+    assert productions
+    assert productions[-1]["status"] == "passed"
+    assert productions[-1]["receipts"][0]["transcript_ref"].startswith(".handoff/agentic-workers/")
+
+    validations = [
+        json.loads(row["payload_json"])
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "dual_agent_dynamic_workflow_receipt_validation"
+    ]
+    assert validations
+    policy = validations[0]["probe"]["details"]["agentic_policy"]
+    assert policy["status"] == "accepted"
+    assert policy["subagents"][0]["evidence_grade"] == "runtime_native"
+
+
+@pytest.mark.asyncio
+async def test_run_dual_agent_workflow_allowed_policy_runs_producer_without_blocking_on_missing_receipts(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
+    from supervisor.dual_agent_runner import build_lead_replay_stdout
+
+    _write_good_workflow_source_artifacts(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    planner_calls = []
+    lead_calls = []
+
+    def fake_runner(argv, **kwargs):
+        prompt = argv[argv.index("-p") + 1] if "-p" in argv else ""
+        if "Agentic worker roster planning" in prompt:
+            planner_calls.append(argv)
+            return subprocess.CompletedProcess(argv, 0, stdout="No roster available.\n", stderr="")
+        lead_calls.append(argv)
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=build_lead_replay_stdout(
+                "Workflow response.\n" + _outcome_block("workflow-1"),
+            ),
+            stderr="",
+        )
+
+    server = build_codex_supervisor_mcp_server(
+        _cfg(tmp_path),
+        state,
+        mcp_cls=_FakeMCP,
+        runner=fake_runner,
+        cursor_runner=_accepting_cursor_runner,
+    )
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Allow agentic provenance without making missing worker receipts fatal.",
+        max_rounds_per_gate=1,
+        task_complexity="trivial",
+        tool_receipts=_tool_receipts(),
+        agentic_lead_policy="allowed",
+        min_subagents=1,
+        required_roles=["codebase_audit"],
+        required_evidence_grade="runtime_native",
+    ))
+
+    assert result["status"] == "accepted"
+    assert planner_calls
+    assert lead_calls
+
+    productions = [
+        json.loads(row["payload_json"])
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "dual_agent_agentic_worker_production"
+    ]
+    assert productions
+    assert productions[-1]["status"] == "blocked"
+    assert productions[-1]["receipt_count"] == 0
+
+    validations = [
+        json.loads(row["payload_json"])
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "dual_agent_dynamic_workflow_receipt_validation"
+    ]
+    assert validations
+    policy = validations[0]["probe"]["details"]["agentic_policy"]
+    assert policy["policy"] == "allowed"
+    assert policy["status"] == "accepted"
+    assert policy["blocking_findings"] == []
 
 
 @pytest.mark.asyncio

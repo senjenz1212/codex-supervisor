@@ -86,7 +86,7 @@ def test_agentic_worker_spawn_captures_supervisor_owned_runtime_native_receipt(t
     assert probe.details["agentic_policy"]["subagents"][0]["evidence_grade"] == "runtime_native"
 
 
-def test_agentic_worker_timeout_writes_durable_failed_receipt(tmp_path: Path):
+def test_agentic_timeout_receipt_blocks_runtime_native_and_preserves_failed_refs(tmp_path: Path):
     def timeout_runner(argv, **kwargs):
         raise subprocess.TimeoutExpired(argv, timeout=1, output="partial\n", stderr="late\n")
 
@@ -108,7 +108,26 @@ def test_agentic_worker_timeout_writes_durable_failed_receipt(tmp_path: Path):
     assert receipt["timeout_s"] == 1
     assert receipt["budget_usd"] == 0.2
     assert (tmp_path / receipt["transcript_ref"]).exists()
+    assert (tmp_path / receipt["output_ref"]).exists()
+    assert (tmp_path / receipt["stderr_ref"]).exists()
     assert "partial" in (tmp_path / receipt["stdout_ref"]).read_text(encoding="utf-8")
+    assert "late" in (tmp_path / receipt["stderr_ref"]).read_text(encoding="utf-8")
+
+    probe = verify_dynamic_workflow_receipts(
+        execution_layer_mode="lead_direct",
+        dynamic_workflow_task_class=None,
+        tool_receipts=[receipt],
+        cwd=tmp_path,
+        agentic_lead_policy="required",
+        min_subagents=1,
+        required_roles=["independent_reviewer"],
+        required_evidence_grade="runtime_native",
+    )
+
+    assert probe.status == "red"
+    policy = probe.details["agentic_policy"]
+    assert policy["subagents"][0]["status"] == "timeout"
+    assert "subagent_status_not_passing" in str(policy["blocking_findings"])
 
 
 def test_agentic_worker_fanout_returns_receipts_in_spec_order(tmp_path: Path):

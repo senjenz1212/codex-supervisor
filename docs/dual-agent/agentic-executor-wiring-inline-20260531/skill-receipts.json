@@ -1,0 +1,72 @@
+[
+  {
+    "receipt_id": "skill-to-prd-agentic-executor-wiring-inline-20260531",
+    "kind": "skill_run",
+    "status": "passed",
+    "skill": "to-prd",
+    "stage": "to_prd",
+    "artifacts": [
+      "docs/dual-agent/agentic-executor-wiring-inline-20260531/source/prd.md"
+    ],
+    "claims": [
+      "prd-tdd skill executed",
+      "PRD promise contracts produced"
+    ]
+  },
+  {
+    "receipt_id": "skill-prd-grill-agentic-executor-wiring-inline-20260531",
+    "kind": "skill_run",
+    "status": "passed",
+    "skill": "grill-with-docs",
+    "stage": "prd_grill",
+    "artifacts": [
+      "docs/dual-agent/agentic-executor-wiring-inline-20260531/source/grill-findings.md"
+    ],
+    "claims": [
+      "prd-tdd skill executed",
+      "PRD grill findings resolved or waived"
+    ]
+  },
+  {
+    "receipt_id": "skill-to-issues-agentic-executor-wiring-inline-20260531",
+    "kind": "skill_run",
+    "status": "passed",
+    "skill": "to-issues",
+    "stage": "to_issues",
+    "artifacts": [
+      "docs/dual-agent/agentic-executor-wiring-inline-20260531/source/issues.md"
+    ],
+    "claims": [
+      "prd-tdd skill executed",
+      "issues map to PRD promises"
+    ]
+  },
+  {
+    "receipt_id": "skill-tdd-agentic-executor-wiring-inline-20260531",
+    "kind": "skill_run",
+    "status": "passed",
+    "skill": "tdd",
+    "stage": "tdd",
+    "artifacts": [
+      "docs/dual-agent/agentic-executor-wiring-inline-20260531/source/tdd.md"
+    ],
+    "claims": [
+      "prd-tdd skill executed",
+      "public-boundary RED tests planned"
+    ]
+  },
+  {
+    "receipt_id": "skill-tdd-grill-agentic-executor-wiring-inline-20260531",
+    "kind": "skill_run",
+    "status": "passed",
+    "skill": "grill-with-docs",
+    "stage": "tdd_grill",
+    "artifacts": [
+      "docs/dual-agent/agentic-executor-wiring-inline-20260531/source/grill-findings-tdd.md"
+    ],
+    "claims": [
+      "prd-tdd skill executed",
+      "TDD grill findings resolved"
+    ]
+  }
+]

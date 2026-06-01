@@ -1,0 +1,62 @@
+{
+  "cwd": "/Users/sam.zhang/Documents/codex-supervisor",
+  "task_id": "agentic-executor-live-smoke-20260531",
+  "run_id": "codex-agentic-executor-live-smoke-20260531-rerun1",
+  "quality": "best",
+  "execution_layer_mode": "lead_direct",
+  "require_skill_receipts": false,
+  "cursor_review": false,
+  "timeout_s": 900,
+  "task_complexity": "trivial",
+  "agentic_lead_policy": "required",
+  "min_subagents": 1,
+  "required_roles": [
+    "codebase_audit"
+  ],
+  "required_evidence_grade": "runtime_native",
+  "intent": "Live smoke the inline supervisor-owned agentic producer path for agentic-executor-wiring-inline-20260531. Do not edit files. Run the required agentic policy path, produce at least one read-only codebase_audit worker receipt under .handoff/agentic-workers, and verify that P13 accepts runtime_native evidence before the lead synthesis continues.",
+  "tool_receipts": [
+    {
+      "receipt_id": "pytest-focused-agentic-executor-wiring-inline-20260531",
+      "kind": "test",
+      "status": "passed",
+      "command": "uv run pytest tests/test_agentic_executor.py tests/test_agentic_workers.py tests/test_dynamic_workflow_receipts.py tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_required_policy_spawns_agentic_workers_and_accepts_runtime_native_receipts tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_allowed_policy_runs_producer_without_blocking_on_missing_receipts tests/test_dual_agent_workflow_driver.py::test_agentic_required_blocks_solo_execution_before_lead tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_required_policy_still_blocks_without_executor_receipts tests/test_dual_agent_workflow_driver.py::test_submit_workflow_job_payload_round_trips_agentic_policy_fields -q",
+      "summary": "28 passed in 1.60s",
+      "artifacts": [
+        "docs/dual-agent/agentic-executor-wiring-inline-20260531/test-evidence.md"
+      ],
+      "claims": [
+        "tests passed",
+        "focused agentic executor wiring tests passed"
+      ]
+    },
+    {
+      "receipt_id": "pytest-full-agentic-executor-wiring-inline-20260531",
+      "kind": "test",
+      "status": "passed",
+      "command": "uv run --extra dev pytest -q",
+      "summary": "586 passed in 105.08s (0:01:45)",
+      "artifacts": [
+        "docs/dual-agent/agentic-executor-wiring-inline-20260531/test-evidence.md"
+      ],
+      "claims": [
+        "tests passed",
+        "full suite passed"
+      ]
+    },
+    {
+      "receipt_id": "hygiene-agentic-executor-wiring-inline-20260531",
+      "kind": "test",
+      "status": "passed",
+      "command": "git diff --check && uv run python -m py_compile supervisor/agentic_executor.py supervisor/agentic_workers.py supervisor/dynamic_workflow_receipts.py mcp_tools/codex_supervisor_stdio.py",
+      "summary": "passed",
+      "artifacts": [
+        "docs/dual-agent/agentic-executor-wiring-inline-20260531/test-evidence.md"
+      ],
+      "claims": [
+        "diff hygiene passed",
+        "py_compile passed"
+      ]
+    }
+  ]
+}

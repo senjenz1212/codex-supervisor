@@ -1,0 +1,262 @@
+{
+  "event_ids": [
+    416483,
+    416484,
+    416486,
+    416488,
+    416489,
+    416490,
+    416523,
+    416524,
+    416525
+  ],
+  "event_kinds": [
+    "dual_agent_agentic_worker_production",
+    "dual_agent_dynamic_workflow_receipt_validation",
+    "dual_agent_gate_result",
+    "dual_agent_gate_round",
+    "dual_agent_interaction_message",
+    "dual_agent_planning_validation",
+    "dual_agent_workflow_route"
+  ],
+  "events_count": 9,
+  "failure_summary": {
+    "event_id": 416524,
+    "failure_taxonomy": {
+      "category": "system_design",
+      "code": "blocked_without_probe_reason",
+      "framework": "MAST-inspired",
+      "mast_category": null,
+      "mast_code": null,
+      "mast_mode": null,
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "dual_agent_gate_result",
+      "subcategory": "resource_contention"
+    },
+    "policy_verdict": "blocked"
+  },
+  "files": {
+    "index": "index.md",
+    "interactions": "interactions.md",
+    "mast_coverage_json": "replay/mast-coverage.json",
+    "mast_coverage_markdown": "mast-coverage.md",
+    "transcript_jsonl": "transcript.jsonl",
+    "transcript_markdown": "transcript.md",
+    "workspace_snapshot": "replay/workspace-snapshot.json"
+  },
+  "handoff_packets": [
+    {
+      "content": "{\n  \"cwd\": \"/Users/sam.zhang/Documents/codex-supervisor\",\n  \"execution_layer_policy\": {\n    \"agentic_lead_policy\": {\n      \"min_subagents\": 1,\n      \"policy\": \"required\",\n      \"required_evidence_grade\": \"runtime_native\",\n      \"required_roles\": [\n        \"codebase_audit\"\n      ],\n      \"solo_exception_for_artifact_only_gates\": false\n    },\n    \"allowed_dynamic_workflow_task_classes\": [],\n    \"codex_supervises_final_artifact\": true,\n    \"dynamic_workflow_task_class\": null,\n    \"lead_execution_layer\": \"single_lead_worker\",\n    \"mode\": \"lead_direct\",\n    \"preview_required_gates\": [],\n    \"supervision_layer\": \"codex_plus_lead\"\n  },\n  \"expected_decisions\": [],\n  \"expected_objections\": [],\n  \"expected_specialists\": [],\n  \"gate\": \"execution\",\n  \"instruction\": \"Supervisor-owned workflow gate: execution.\\n\\nIntent:\\nLive smoke the inline supervisor-owned agentic producer path for agentic-executor-wiring-inline-20260531. Do not edit files. Run the required agentic policy path, produce at least one read-only codebase_audit worker receipt under .handoff/agentic-workers, and verify that P13 accepts runtime_native evidence before the lead synthesis continues.\\n\\nReview this gate against the current source artifacts and return a typed dual_agent_outcome.\\nUse decisions/objections to say whether the gate should accept, revise, or deny.\",\n  \"lead_skill\": null,\n  \"outcome_validation_policy\": {\n    \"fidelity_failure\": \"abort_to_operator\",\n    \"malformed_outcome\": \"retry_once_with_corrective_packet\",\n    \"subprocess_failure\": \"abort_to_operator\",\n    \"timeout\": \"abort_to_operator\"\n  },\n  \"packet_schema_version\": \"dual-agent-handoff/v1\",\n  \"planning_artifacts\": [\n    {\n      \"kind\": \"prd\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/agentic-executor-live-smoke-20260531/source/prd.md\",\n      \"sha256\": \"bdab85e37f139ebea11a5a72a29b3a7370e5bcc5aba3e81a8d74eaf69ff2e880\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/agentic-executor-live-smoke-20260531/source/grill-findings.md\",\n      \"sha256\": \"9063849b3cc3d4ed5364d04903ef9be9b4b3ebdc4c5d32558bd363e178756418\"\n    },\n    {\n      \"kind\": \"issues\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/agentic-executor-live-smoke-20260531/source/issues.md\",\n      \"sha256\": \"22d1b24aa6ebe38c1a48492100cec49c2b29434782034c30ae9c6e46d1242929\"\n    },\n    {\n      \"kind\": \"tdd_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/agentic-executor-live-smoke-20260531/source/tdd.md\",\n      \"sha256\": \"6ed4e8dd46344dbac5d1ab5115afa00ef18f57b27bd8894c04ca9e25866bbedf\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/agentic-executor-live-smoke-20260531/source/grill-findings-tdd.md\",\n      \"sha256\": \"5dc3f911d206a0c6d972335590f74483592490f2a457ab9fd1fe771b73836f20\"\n    },\n    {\n      \"kind\": \"implementation_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/agentic-executor-live-smoke-20260531/source/implementation-plan.md\",\n      \"sha256\": \"ab5c6b5c6264f8eca492215876405de5c3ed38a85ab7943be51e90216706d40e\"\n    }\n  ],\n  \"suggested_skills\": [\n    \"/lead\"\n  ],\n  \"task_id\": \"agentic-executor-live-smoke-20260531\"\n}\n",
+      "event_ids": [
+        416524
+      ],
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-executor-live-smoke-20260531.json",
+      "sha256": "f5f49a3fed24efabccf0f1ad20b5fe7273166ab118081a6f3212ed80434a3522",
+      "status": "captured"
+    }
+  ],
+  "mast_coverage": [
+    {
+      "deterministic_probe": "blocked payload reason `disobey_task_spec` or planning artifact failure",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.1",
+      "mast_mode": "Disobey task specification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `role_violation_covenant`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload -> classify_failure",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.2",
+      "mast_mode": "Disobey role specification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "same gate and handoff packet observed twice",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "detect_sequence_failures",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "sequence"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `lost_conversation_history`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.4",
+      "mast_mode": "Loss of conversation history",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `agents_not_converged_max_rounds`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.5",
+      "mast_mode": "Unaware of termination conditions",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `conversation_reset`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.1",
+      "mast_mode": "Conversation reset",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `ambiguous_input_no_clarification`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.2",
+      "mast_mode": "Fail to ask for clarification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `scope_violation_off_scope`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.3",
+      "mast_mode": "Task derailment",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "Cursor or reviewer disagreement probe fails",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.4",
+      "mast_mode": "Information withholding",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "Claude response does not address a prior Codex objection",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "detect_sequence_failures",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "sequence"
+    },
+    {
+      "deterministic_probe": "outcome fidelity or message protocol failure",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.6",
+      "mast_mode": "Reasoning-action mismatch",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "accepted gate is missing a required probe",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload + detect_sequence_failures",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.1",
+      "mast_mode": "Premature termination",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload+sequence"
+    },
+    {
+      "deterministic_probe": "claim verification or evidence receipt probe fails",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.2",
+      "mast_mode": "No or incomplete verification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "Cursor rejects after the gate was accepted",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "detect_sequence_failures",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.3",
+      "mast_mode": "Incorrect verification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "sequence"
+    }
+  ],
+  "run_id": "codex-agentic-executor-live-smoke-20260531-rerun1",
+  "schema_version": "dual-agent-replay-manifest/v1",
+  "schema_versions": {
+    "agent_interaction": "dual-agent-interaction/v1",
+    "failure_taxonomy": "dual-agent-failure-taxonomy/v1",
+    "replay_manifest": "dual-agent-replay-manifest/v1",
+    "trace_envelope": "dual-agent-trace-envelope/v1"
+  },
+  "sequence_failures": [],
+  "state": {
+    "events_count_at_capture": 9,
+    "first_event_id": 416483,
+    "last_event_id": 416525,
+    "transcript_jsonl_sha256": "c0930a0b6d4e9df5e826f077d69bf2b1eef6315674e2c7a8c91d28251a10f1e6"
+  },
+  "task_id": "agentic-executor-live-smoke-20260531",
+  "tool_call_totals": {
+    "total_cost_usd": 8.349946,
+    "total_duration_ms": 503062,
+    "total_duration_us": 503066119,
+    "total_tokens_in": 1302554,
+    "total_tokens_out": 27268,
+    "unique_tool_calls": 18
+  },
+  "workspace_snapshot": {
+    "file_tree_sha256": "94c6123f642f6c73f62271213b31780eb6cbdf1c37015f7a3e92231485dcbe3e",
+    "git": {
+      "diff_bytes": 32105,
+      "diff_sha256": "c559493c269b765834e90a3d834b572be1f260243713f4c9df9dd28101f79632",
+      "diff_stat": "mcp_tools/codex_supervisor_stdio.py      |  75 ++++++++\n supervisor/dynamic_workflow_receipts.py  |  20 ++-\n supervisor/state.py                      |   1 +\n tests/test_agentic_workers.py            |  21 ++-\n tests/test_dual_agent_workflow_driver.py | 283 +++++++++++++++++++++++++++++++\n tests/test_dynamic_workflow_receipts.py  | 130 ++++++++++++++\n 6 files changed, 527 insertions(+), 3 deletions(-)",
+      "head": "e19190b",
+      "head_label": "handoff_cwd_head",
+      "head_ref": "HEAD",
+      "head_sha": "e19190b",
+      "status_short": "M mcp_tools/codex_supervisor_stdio.py\n M supervisor/dynamic_workflow_receipts.py\n M supervisor/state.py\n M tests/test_agentic_workers.py\n M tests/test_dual_agent_workflow_driver.py\n M tests/test_dynamic_workflow_receipts.py\n?? docs/dual-agent/agentic-executor-live-smoke-20260531/\n?? docs/dual-agent/agentic-executor-wiring-inline-20260531/\n?? supervisor/agentic_executor.py\n?? tests/test_agentic_executor.py"
+    },
+    "root": "/Users/sam.zhang/Documents/codex-supervisor",
+    "root_source": "handoff_cwd",
+    "source_artifact_hashes": {
+      "grill_findings": "5dc3f911d206a0c6d972335590f74483592490f2a457ab9fd1fe771b73836f20",
+      "implementation_plan": "ab5c6b5c6264f8eca492215876405de5c3ed38a85ab7943be51e90216706d40e",
+      "issues": "22d1b24aa6ebe38c1a48492100cec49c2b29434782034c30ae9c6e46d1242929",
+      "prd": "bdab85e37f139ebea11a5a72a29b3a7370e5bcc5aba3e81a8d74eaf69ff2e880",
+      "tdd_plan": "6ed4e8dd46344dbac5d1ab5115afa00ef18f57b27bd8894c04ca9e25866bbedf"
+    },
+    "status": "captured"
+  }
+}

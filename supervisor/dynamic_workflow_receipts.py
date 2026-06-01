@@ -30,8 +30,8 @@ _EVIDENCE_GRADE_RANK = {
 _SUPERVISOR_OWNED_PREFIXES = (
     ".handoff/agentic-workers/",
     ".handoff/workflow-jobs/",
-    "docs/dual-agent/",
 )
+_ARTIFACT_ONLY_GATES = {"prd_review", "issues_review", "tdd_review", "implementation_plan"}
 
 
 def verify_dynamic_workflow_receipts(
@@ -47,6 +47,7 @@ def verify_dynamic_workflow_receipts(
     required_roles: list[str] | tuple[str, ...] | None = None,
     solo_exception_for_artifact_only_gates: bool = False,
     required_evidence_grade: str = "self_reported",
+    gate: str | None = None,
 ) -> ProbeResult:
     """Validate dynamic workflow preview receipts without asking a model."""
     mode = _norm(execution_layer_mode)
@@ -59,6 +60,7 @@ def verify_dynamic_workflow_receipts(
         required_roles=required_roles or (),
         solo_exception_for_artifact_only_gates=solo_exception_for_artifact_only_gates,
         required_evidence_grade=required_evidence_grade,
+        gate=gate,
     )
     if agentic_policy["status"] == "blocked":
         return ProbeResult(
@@ -183,6 +185,7 @@ def _evaluate_agentic_lead_policy(
     required_roles: list[str] | tuple[str, ...],
     solo_exception_for_artifact_only_gates: bool,
     required_evidence_grade: str,
+    gate: str | None,
 ) -> dict[str, Any]:
     policy_name = _norm(policy) or "off"
     required_grade = _norm(required_evidence_grade) or "self_reported"
@@ -202,8 +205,12 @@ def _evaluate_agentic_lead_policy(
     blocking: list[dict[str, Any]] = []
     lead_solo = _lead_solo_execution(receipts)
     enforce = policy_name == "required"
+    solo_exception_applies = bool(
+        solo_exception_for_artifact_only_gates
+        and _norm(gate) in _ARTIFACT_ONLY_GATES
+    )
 
-    if enforce and lead_solo and not solo_exception_for_artifact_only_gates:
+    if enforce and lead_solo and not solo_exception_applies:
         blocking.append({
             "reason": "agentic_lead_solo_execution",
             "receipts": lead_solo,
@@ -226,6 +233,12 @@ def _evaluate_agentic_lead_policy(
                 "reason": "subagent_replay_or_ref_invalid",
                 "task_id": subagent["task_id"],
                 "problems": subagent["replay_problems"],
+            })
+        if enforce and subagent["status"] not in _PASSING_STATUSES:
+            blocking.append({
+                "reason": "subagent_status_not_passing",
+                "task_id": subagent["task_id"],
+                "status": subagent["status"],
             })
         missing_runtime = [
             field
@@ -267,6 +280,8 @@ def _evaluate_agentic_lead_policy(
         "min_subagents": max(0, int(min_subagents)),
         "required_roles": required_role_keys,
         "solo_exception_for_artifact_only_gates": bool(solo_exception_for_artifact_only_gates),
+        "solo_exception_applies": solo_exception_applies,
+        "gate": _norm(gate),
         "required_evidence_grade": required_grade,
         "achieved_evidence_grade": achieved,
         "lead_solo_execution": lead_solo,
@@ -296,6 +311,7 @@ def _agentic_subagent_summary(subagent: dict[str, Any], *, cwd: Path | None, ind
         "task_id": _text(subagent.get("task_id")),
         "persona_id": _text(subagent.get("persona_id")),
         "role": _text(subagent.get("role")),
+        "status": _norm(subagent.get("status") or subagent.get("result")),
         "decision": _norm(subagent.get("decision") or subagent.get("result") or subagent.get("status")),
         "severity": _norm(subagent.get("severity")),
         "objections": _list_text(subagent.get("objections") or subagent.get("objection")),

@@ -1,0 +1,73 @@
+# Grill Findings
+
+These findings are derived from dual-agent gate objections in the ledger.
+Future duo-agent runs should also create this file through the `prd-to-tdd` skill's `grill-with-docs` gates before implementation.
+
+- event_id 415592 `prd_review`: Allowed-policy behavior has a named RED test but no P1-P6 promise line and no dedicated user story; required is over-represented in the contract
+- event_id 415592 `prd_review`: P6 bounds per-agent timeout/budget but does not bound total roster cardinality, leaving aggregate runtime/budget exposure for an inline synchronous gate call unpromised
+- event_id 415593 `prd_review`: agents have not both accepted yet; revise and continue
+- event_id 415595 `prd_review`: Allowed-policy behavior has a named RED test but no P1-P6 promise line and no dedicated user story; required is over-represented in the contract
+- event_id 415595 `prd_review`: P6 bounds per-agent timeout/budget but does not bound total roster cardinality, leaving aggregate runtime/budget exposure for an inline synchronous gate call unpromised
+- event_id 415614 `prd_review`: non-blocking: P6 states budget/timeout caps without naming default values; defer to tdd/implementation
+- event_id 415614 `prd_review`: non-blocking: 'required policy + all workers fail' outcome is only implied by P1-forbidden plus P6; could be stated explicitly
+- event_id 415614 `prd_review`: external: supervisor probe P4 (dual acceptance) requires independent reviewer sign-off, outside lead control
+- event_id 415615 `prd_review`: both agents accepted
+- event_id 415636 `issues_review`: ISS-3 bundles already-existing gate-threading/solo-scoping as regression with new P0/P1 work, and 5 of 8 named tests already exist in-tree, so the issues doc was authored alongside implementation rather than strictly before it; transparently labeled and coverage is intact, so non-blocking
+- event_id 415637 `issues_review`: both agents accepted
+- event_id 415660 `tdd_review`: tdd.md public-boundary list names agentic_workers but omits agentic_executor where producer+roster validation live (behaviorally covered, naming imprecise)
+- event_id 415660 `tdd_review`: ISS-3 tests are described as RED in tdd.md but issues.md:46 states the properties already exist; per finding 6 these should be labeled regression/characterization unless a concrete failing path is found
+- event_id 415660 `tdd_review`: P2 forbidden '/lead launches workers directly' and ISS-1 AC 'synthesis /lead receives receipts' lack dedicated named tests (former structural, latter partially implied by test 1)
+- event_id 415681 `tdd_review`: both agents accepted
+- event_id 415711 `implementation_plan`: Plan's Files-To-Touch lists supervisor/agentic_workers.py but omits supervisor/agentic_executor.py, the central file housing produce_agentic_worker_receipts; navigation/ownership accuracy lags real layout.
+- event_id 415711 `implementation_plan`: Full pytest suite was not executed in-session (requires approval); plan acceptance does not certify green tests, only plan soundness.
+- event_id 415712 `implementation_plan`: agents have not both accepted yet; revise and continue
+- event_id 415714 `implementation_plan`: Plan's Files-To-Touch lists supervisor/agentic_workers.py but omits supervisor/agentic_executor.py, the central file housing produce_agentic_worker_receipts; navigation/ownership accuracy lags real layout.
+- event_id 415714 `implementation_plan`: Full pytest suite was not executed in-session (requires approval); plan acceptance does not certify green tests, only plan soundness.
+- event_id 415734 `implementation_plan`: Test suite not executed in-session (approval-gated) so landed code greenness is uncertified; gate standard scopes plan acceptance to plan soundness only
+- event_id 415734 `implementation_plan`: Files-To-Touch lists dual_agent_runner.py and codex_supervisor_workflow_cli.py which do not appear modified in git status (minor plan/reality drift, non-blocking)
+- event_id 415754 `implementation_plan`: both agents accepted
+- event_id 415792 `execution`: Test suite not independently executed (Bash approval denied); 580-passed is a captured receipt, verified only structurally
+- event_id 415792 `execution`: ISS-2 named test test_agentic_roster_validation_rejects_writable_or_missing_required_roles absent; behavior implemented in validate_agentic_worker_roster but not directly unit-tested
+- event_id 415792 `execution`: ISS-5 named test test_agentic_worker_timeout_cleanup_runs_after_fanout_timeout absent by name; covered under test_orphaned_agentic_worker_cleanup_records_timeout_and_log_refs
+- event_id 415792 `execution`: issues.md acceptance checkboxes unchecked (immutable source artifact, cosmetic)
+- event_id 415793 `execution`: agents have not both accepted yet; revise and continue
+- event_id 415795 `execution`: Test suite not independently executed (Bash approval denied); 580-passed is a captured receipt, verified only structurally
+- event_id 415795 `execution`: ISS-2 named test test_agentic_roster_validation_rejects_writable_or_missing_required_roles absent; behavior implemented in validate_agentic_worker_roster but not directly unit-tested
+- event_id 415795 `execution`: ISS-5 named test test_agentic_worker_timeout_cleanup_runs_after_fanout_timeout absent by name; covered under test_orphaned_agentic_worker_cleanup_records_timeout_and_log_refs
+- event_id 415795 `execution`: issues.md acceptance checkboxes unchecked (immutable source artifact, cosmetic)
+- event_id 415892 `execution`: Full-suite green is from test-evidence.md receipt only; not independently executed in-session (operator-verifiable)
+- event_id 415892 `execution`: Replay manifest is blocked/not-converged (FM-1.5/FM-2.5/FM-1.3) but failure is procedural resource_contention, not a substantive code-defect probe
+- event_id 415893 `execution`: both agents accepted
+- event_id 415971 `outcome_review`: gate blocked
+- event_id 416042 `outcome_review`: ISS-1 P0 fail-closed variant (producer ran, zero receipts, still blocks before synthesis) has no dedicated test; only solo-block short-circuit is covered
+- event_id 416042 `outcome_review`: ISS-4 P1 CLI policy round-trip regression guard is genuinely missing
+- event_id 416042 `outcome_review`: Full-suite green unverified in-session (pytest not approved/run); claimed receipt untrusted per gate heuristic
+- event_id 416043 `outcome_review`: agents have not both accepted yet; revise and continue
+- event_id 416045 `outcome_review`: ISS-1 P0 fail-closed variant (producer ran, zero receipts, still blocks before synthesis) has no dedicated test; only solo-block short-circuit is covered
+- event_id 416045 `outcome_review`: ISS-4 P1 CLI policy round-trip regression guard is genuinely missing
+- event_id 416045 `outcome_review`: Full-suite green unverified in-session (pytest not approved/run); claimed receipt untrusted per gate heuristic
+- event_id 416089 `outcome_review`: P0 fail-closed variant (producer ran, zero receipts, still blocks before synthesis) has no dedicated test; only solo-block short-circuit is covered
+- event_id 416089 `outcome_review`: CLI policy round-trip regression guard genuinely missing
+- event_id 416089 `outcome_review`: Full-suite green unverified in-session; claimed receipt untrusted
+- event_id 416090 `outcome_review`: agents have not both accepted yet; revise and continue
+- event_id 416092 `outcome_review`: P0 fail-closed variant (producer ran, zero receipts, still blocks before synthesis) has no dedicated test; only solo-block short-circuit is covered
+- event_id 416092 `outcome_review`: CLI policy round-trip regression guard genuinely missing
+- event_id 416092 `outcome_review`: Full-suite green unverified in-session; claimed receipt untrusted
+- event_id 416141 `outcome_review`: ISS-4 (P1) named regression test test_submit_workflow_job_payload_round_trips_agentic_policy_fields does not exist and has no equivalent CLI round-trip coverage.
+- event_id 416141 `outcome_review`: Replay manifest records live FM-1.5 agents_not_converged_max_rounds and FM-2.5 ignored objection 'agents have not both accepted yet; revise and continue'.
+- event_id 416141 `outcome_review`: Full-suite 582-passed claim in test-evidence.md not independently verified in-session (pytest requires approval).
+- event_id 416142 `outcome_review`: agents have not both accepted yet; revise and continue
+- event_id 416144 `outcome_review`: ISS-4 (P1) named regression test test_submit_workflow_job_payload_round_trips_agentic_policy_fields does not exist and has no equivalent CLI round-trip coverage.
+- event_id 416144 `outcome_review`: Replay manifest records live FM-1.5 agents_not_converged_max_rounds and FM-2.5 ignored objection 'agents have not both accepted yet; revise and continue'.
+- event_id 416144 `outcome_review`: Full-suite 582-passed claim in test-evidence.md not independently verified in-session (pytest requires approval).
+- event_id 416345 `outcome_review`: Gate is live-blocked on a held/contended handoff lock and never ran its substantive review, so it cannot be accepted
+- event_id 416345 `outcome_review`: The first-real-graded-fan-out-path intent is unproven by a live run: the graded workflow ran with policy=off and produced no .handoff/agentic-workers receipts
+- event_id 416345 `outcome_review`: Full-suite green is worker-claimed only; not verified in-session
+- event_id 416345 `outcome_review`: Core module supervisor/agentic_executor.py is untracked, so its content is not captured in the replay diff hash
+- event_id 416346 `outcome_review`: agents have not both accepted yet; revise and continue
+- event_id 416348 `outcome_review`: Gate is live-blocked on a held/contended handoff lock and never ran its substantive review, so it cannot be accepted
+- event_id 416348 `outcome_review`: The first-real-graded-fan-out-path intent is unproven by a live run: the graded workflow ran with policy=off and produced no .handoff/agentic-workers receipts
+- event_id 416348 `outcome_review`: Full-suite green is worker-claimed only; not verified in-session
+- event_id 416348 `outcome_review`: Core module supervisor/agentic_executor.py is untracked, so its content is not captured in the replay diff hash
+- event_id 416618 `outcome_review`: Gate machine-verdict is blocked with outcome:null - the outcome_review probe never graded the code because P1 could not acquire the handoff lock; acceptance rests on independent source verification plus all prerequisite gates being accepted, not on a completed grade.
+- event_id 416647 `outcome_review`: both agents accepted

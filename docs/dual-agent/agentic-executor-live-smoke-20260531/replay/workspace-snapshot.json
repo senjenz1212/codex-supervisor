@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "94c6123f642f6c73f62271213b31780eb6cbdf1c37015f7a3e92231485dcbe3e",
+  "git": {
+    "diff_bytes": 32105,
+    "diff_sha256": "c559493c269b765834e90a3d834b572be1f260243713f4c9df9dd28101f79632",
+    "diff_stat": "mcp_tools/codex_supervisor_stdio.py      |  75 ++++++++\n supervisor/dynamic_workflow_receipts.py  |  20 ++-\n supervisor/state.py                      |   1 +\n tests/test_agentic_workers.py            |  21 ++-\n tests/test_dual_agent_workflow_driver.py | 283 +++++++++++++++++++++++++++++++\n tests/test_dynamic_workflow_receipts.py  | 130 ++++++++++++++\n 6 files changed, 527 insertions(+), 3 deletions(-)",
+    "head": "e19190b",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "e19190b",
+    "status_short": "M mcp_tools/codex_supervisor_stdio.py\n M supervisor/dynamic_workflow_receipts.py\n M supervisor/state.py\n M tests/test_agentic_workers.py\n M tests/test_dual_agent_workflow_driver.py\n M tests/test_dynamic_workflow_receipts.py\n?? docs/dual-agent/agentic-executor-live-smoke-20260531/\n?? docs/dual-agent/agentic-executor-wiring-inline-20260531/\n?? supervisor/agentic_executor.py\n?? tests/test_agentic_executor.py"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "5dc3f911d206a0c6d972335590f74483592490f2a457ab9fd1fe771b73836f20",
+    "implementation_plan": "ab5c6b5c6264f8eca492215876405de5c3ed38a85ab7943be51e90216706d40e",
+    "issues": "22d1b24aa6ebe38c1a48492100cec49c2b29434782034c30ae9c6e46d1242929",
+    "prd": "bdab85e37f139ebea11a5a72a29b3a7370e5bcc5aba3e81a8d74eaf69ff2e880",
+    "tdd_plan": "6ed4e8dd46344dbac5d1ab5115afa00ef18f57b27bd8894c04ca9e25866bbedf"
+  },
+  "status": "captured"
+}

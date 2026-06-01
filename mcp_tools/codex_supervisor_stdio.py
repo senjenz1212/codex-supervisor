@@ -60,6 +60,7 @@ from supervisor.dual_agent_workflow import (
 )
 from supervisor.dynamic_workflow_receipts import verify_dynamic_workflow_receipts
 from supervisor.dynamic_workflow import prepare_dynamic_workflow_preview
+from supervisor.agentic_executor import produce_agentic_worker_receipts
 from supervisor.dual_agent_runner import (
     DualAgentGateResult,
     DualAgentGateSpec,
@@ -569,6 +570,55 @@ class CodexSupervisorMcpAPI:
                 "dynamic_workflow_synthesis": dynamic_preparation.synthesis,
                 "synthesized_dynamic_receipt_count": len(dynamic_preparation.synthesized_receipts),
             }
+        agentic_worker_production = None
+        agentic_worker_tool_call: dict[str, Any] | None = None
+        if _is_agentic_lead_policy_active(agentic_policy["agentic_lead_policy"]):
+            with timed_tool_call(
+                "produce_agentic_worker_receipts",
+                args={
+                    "task_id": task_id,
+                    "run_id": run_id,
+                    "agentic_lead_policy": agentic_policy["agentic_lead_policy"],
+                    "min_subagents": agentic_policy["min_subagents"],
+                    "required_roles": agentic_policy["required_roles"],
+                    "existing_receipt_count": len(receipt_payloads),
+                },
+                receipt_ids=_receipt_ids(receipt_payloads),
+            ) as agentic_tool_call:
+                agentic_worker_production = produce_agentic_worker_receipts(
+                    cwd=cwd,
+                    task_id=task_id,
+                    run_id=run_id,
+                    intent=intent,
+                    agentic_policy=agentic_policy,
+                    existing_receipts=receipt_payloads,
+                    timeout_s=timeout_s,
+                    budget_usd=budget_usd,
+                    quality=quality,  # type: ignore[arg-type]
+                    runner=self.runner,
+                )
+            agentic_tool_call.update({
+                "status": agentic_worker_production.status,
+                "result_summary": {
+                    "status": agentic_worker_production.status,
+                    "receipt_count": len(agentic_worker_production.receipts),
+                    "blocking_findings": agentic_worker_production.blocking_findings,
+                },
+            })
+            agentic_worker_tool_call = ensure_tool_call_timing(agentic_tool_call)
+            if agentic_worker_production.receipts:
+                receipt_payloads = _normalise_receipt_payloads([
+                    *receipt_payloads,
+                    *agentic_worker_production.receipts,
+                ])
+            workflow_route = {
+                **workflow_route,
+                "agentic_worker_production": {
+                    "status": agentic_worker_production.status,
+                    "receipt_count": len(agentic_worker_production.receipts),
+                    "blocking_findings": agentic_worker_production.blocking_findings,
+                },
+            }
         prior_resume = _workflow_resume_state(
             self.state,
             run_id=run_id,
@@ -606,6 +656,7 @@ class CodexSupervisorMcpAPI:
                 dynamic_workflow_task_class=dynamic_workflow_task_class,
                 tool_receipts=receipt_payloads,
                 cwd=cwd,
+                gate="workflow_start",
                 **agentic_policy,
             )
         dynamic_receipt_tool_call.update({
@@ -658,6 +709,18 @@ class CodexSupervisorMcpAPI:
                     "manifest_sha256": dynamic_preparation.manifest_sha256,
                     "synthesis": dynamic_preparation.synthesis,
                     "synthesized_receipt_count": len(dynamic_preparation.synthesized_receipts),
+                },
+            )
+        if agentic_worker_production is not None:
+            self.state.write_event(
+                run_id=run_id,
+                source="dual_agent",
+                kind="dual_agent_agentic_worker_production",
+                payload={
+                    "task_id": task_id,
+                    "gate": "workflow_start",
+                    **agentic_worker_production.to_event_payload(),
+                    "tool_calls": [agentic_worker_tool_call] if agentic_worker_tool_call is not None else [],
                 },
             )
         notifier = self._notifier()
@@ -2222,6 +2285,7 @@ class CodexSupervisorMcpAPI:
                    'dual_agent_gate_result',
                    'dual_agent_planning_validation',
                    'dual_agent_skill_receipt_validation',
+                   'dual_agent_agentic_worker_production',
                    'dual_agent_dynamic_workflow_receipt_validation',
                    'dual_agent_dynamic_workflow_manifest',
                    'dual_agent_dynamic_workflow_synthesis',
@@ -2239,6 +2303,7 @@ class CodexSupervisorMcpAPI:
         rounds: list[dict[str, Any]] = []
         planning_validations: list[dict[str, Any]] = []
         skill_receipt_validations: list[dict[str, Any]] = []
+        agentic_worker_productions: list[dict[str, Any]] = []
         dynamic_workflow_receipt_validations: list[dict[str, Any]] = []
         dynamic_workflow_manifests: list[dict[str, Any]] = []
         dynamic_workflow_syntheses: list[dict[str, Any]] = []
@@ -2269,6 +2334,12 @@ class CodexSupervisorMcpAPI:
                 }))
             elif row["kind"] == "dual_agent_skill_receipt_validation":
                 skill_receipt_validations.append(redact({
+                    "event_id": row["event_id"],
+                    "occurred_at": row["ts"],
+                    **payload,
+                }))
+            elif row["kind"] == "dual_agent_agentic_worker_production":
+                agentic_worker_productions.append(redact({
                     "event_id": row["event_id"],
                     "occurred_at": row["ts"],
                     **payload,
@@ -2334,6 +2405,7 @@ class CodexSupervisorMcpAPI:
 
         if (
             not rounds and not planning_validations and not skill_receipt_validations
+            and not agentic_worker_productions
             and not dynamic_workflow_receipt_validations and not dynamic_workflow_manifests
             and not dynamic_workflow_syntheses and not reviewer_unavailable_recoveries
             and not workflow_jobs and not workflow_routes
@@ -2346,6 +2418,7 @@ class CodexSupervisorMcpAPI:
                 "rounds": [],
                 "planning_validations": [],
                 "skill_receipt_validations": [],
+                "agentic_worker_productions": [],
                 "dynamic_workflow_receipt_validations": [],
                 "dynamic_workflow_manifests": [],
                 "dynamic_workflow_syntheses": [],
@@ -2364,6 +2437,7 @@ class CodexSupervisorMcpAPI:
             "rounds": rounds,
             "planning_validations": planning_validations,
             "skill_receipt_validations": skill_receipt_validations,
+            "agentic_worker_productions": agentic_worker_productions,
             "dynamic_workflow_receipt_validations": dynamic_workflow_receipt_validations,
             "dynamic_workflow_manifests": dynamic_workflow_manifests,
             "dynamic_workflow_syntheses": dynamic_workflow_syntheses,
@@ -2576,6 +2650,7 @@ class CodexSupervisorMcpAPI:
                 dynamic_workflow_task_class=dynamic_workflow_task_class,
                 tool_receipts=receipt_payloads,
                 cwd=cwd,
+                gate=gate,
                 **agentic_policy,
             )
         dynamic_receipt_tool_call.update({

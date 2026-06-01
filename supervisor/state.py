@@ -488,6 +488,7 @@ class State:
                    'dual_agent_gate_result',
                    'dual_agent_planning_validation',
                    'dual_agent_skill_receipt_validation',
+                   'dual_agent_agentic_worker_production',
                    'dual_agent_dynamic_workflow_receipt_validation',
                    'dual_agent_dynamic_workflow_manifest',
                    'dual_agent_dynamic_workflow_synthesis',

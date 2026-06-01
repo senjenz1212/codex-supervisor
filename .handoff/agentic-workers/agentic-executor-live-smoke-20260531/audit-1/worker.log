@@ -1,0 +1,6 @@
+task_id=agentic-executor-live-smoke-20260531
+worker_id=audit-1
+role=codebase_audit
+status=passed
+exit_code=0
+error=

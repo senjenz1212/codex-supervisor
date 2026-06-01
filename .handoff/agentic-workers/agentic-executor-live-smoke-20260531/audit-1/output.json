@@ -1,0 +1,11 @@
+{
+  "error": null,
+  "exit_code": 0,
+  "role": "codebase_audit",
+  "schema_version": "agentic-worker-output/v1",
+  "status": "passed",
+  "stderr_ref": ".handoff/agentic-workers/agentic-executor-live-smoke-20260531/audit-1/stderr.txt",
+  "stdout_ref": ".handoff/agentic-workers/agentic-executor-live-smoke-20260531/audit-1/stdout.txt",
+  "task_id": "agentic-executor-live-smoke-20260531",
+  "worker_id": "audit-1"
+}

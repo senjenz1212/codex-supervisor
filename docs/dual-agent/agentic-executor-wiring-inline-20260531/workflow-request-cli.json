@@ -1,0 +1,165 @@
+{
+  "cwd": "/Users/sam.zhang/Documents/codex-supervisor",
+  "task_id": "agentic-executor-wiring-inline-20260531",
+  "run_id": "codex-agentic-executor-wiring-inline-20260531-cli-rerun3",
+  "quality": "best",
+  "execution_layer_mode": "lead_direct",
+  "require_skill_receipts": true,
+  "cursor_review": true,
+  "cursor_review_profile": "rigorous",
+  "timeout_s": 900,
+  "intent": "Make the supervisor produce agentic worker receipts by spawning workers through the built-but-unwired executor, running synchronously inline inside run_dual_agent_workflow. This is the first real graded fan-out path, not a detached job. When agentic_lead_policy is allowed or required, the supervisor plans and validates read-only workers, runs run_agentic_worker_fanout, captures supervisor-owned .handoff/agentic-workers receipts, and reuses existing P13/P14/evidence-grade verification without enabling fan-out by default or weakening the gate sequence.",
+  "tool_receipts": [
+    {
+      "receipt_id": "skill-to-prd-agentic-executor-wiring-inline-20260531",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "to-prd",
+      "stage": "to_prd",
+      "artifacts": [
+        "docs/dual-agent/agentic-executor-wiring-inline-20260531/source/prd.md"
+      ],
+      "claims": [
+        "prd-tdd skill executed",
+        "PRD promise contracts produced"
+      ]
+    },
+    {
+      "receipt_id": "skill-prd-grill-agentic-executor-wiring-inline-20260531",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "grill-with-docs",
+      "stage": "prd_grill",
+      "artifacts": [
+        "docs/dual-agent/agentic-executor-wiring-inline-20260531/source/grill-findings.md"
+      ],
+      "claims": [
+        "prd-tdd skill executed",
+        "PRD grill findings resolved or waived"
+      ]
+    },
+    {
+      "receipt_id": "skill-to-issues-agentic-executor-wiring-inline-20260531",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "to-issues",
+      "stage": "to_issues",
+      "artifacts": [
+        "docs/dual-agent/agentic-executor-wiring-inline-20260531/source/issues.md"
+      ],
+      "claims": [
+        "prd-tdd skill executed",
+        "issues map to PRD promises"
+      ]
+    },
+    {
+      "receipt_id": "skill-tdd-agentic-executor-wiring-inline-20260531",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "tdd",
+      "stage": "tdd",
+      "artifacts": [
+        "docs/dual-agent/agentic-executor-wiring-inline-20260531/source/tdd.md"
+      ],
+      "claims": [
+        "prd-tdd skill executed",
+        "public-boundary RED tests planned"
+      ]
+    },
+    {
+      "receipt_id": "skill-tdd-grill-agentic-executor-wiring-inline-20260531",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "grill-with-docs",
+      "stage": "tdd_grill",
+      "artifacts": [
+        "docs/dual-agent/agentic-executor-wiring-inline-20260531/source/grill-findings-tdd.md"
+      ],
+      "claims": [
+        "prd-tdd skill executed",
+        "TDD grill findings resolved"
+      ]
+    },
+    {
+      "receipt_id": "pytest-focused-agentic-executor-wiring-inline-20260531",
+      "kind": "test",
+      "status": "passed",
+      "command": "uv run pytest tests/test_agentic_executor.py tests/test_agentic_workers.py tests/test_dynamic_workflow_receipts.py tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_required_policy_spawns_agentic_workers_and_accepts_runtime_native_receipts tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_allowed_policy_runs_producer_without_blocking_on_missing_receipts tests/test_dual_agent_workflow_driver.py::test_agentic_required_blocks_solo_execution_before_lead tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_required_policy_still_blocks_without_executor_receipts tests/test_dual_agent_workflow_driver.py::test_submit_workflow_job_payload_round_trips_agentic_policy_fields -q",
+      "summary": "28 passed in 1.60s",
+      "artifacts": [
+        "docs/dual-agent/agentic-executor-wiring-inline-20260531/test-evidence.md"
+      ],
+      "claims": [
+        "tests passed",
+        "focused agentic executor wiring tests passed"
+      ]
+    },
+    {
+      "receipt_id": "pytest-full-agentic-executor-wiring-inline-20260531",
+      "kind": "test",
+      "status": "passed",
+      "command": "uv run --extra dev pytest -q",
+      "summary": "586 passed in 105.08s (0:01:45)",
+      "artifacts": [
+        "docs/dual-agent/agentic-executor-wiring-inline-20260531/test-evidence.md"
+      ],
+      "claims": [
+        "tests passed",
+        "full suite passed"
+      ]
+    },
+    {
+      "receipt_id": "hygiene-agentic-executor-wiring-inline-20260531",
+      "kind": "test",
+      "status": "passed",
+      "command": "git diff --check && uv run python -m py_compile supervisor/agentic_executor.py supervisor/agentic_workers.py supervisor/dynamic_workflow_receipts.py mcp_tools/codex_supervisor_stdio.py",
+      "summary": "passed",
+      "artifacts": [
+        "docs/dual-agent/agentic-executor-wiring-inline-20260531/test-evidence.md"
+      ],
+      "claims": [
+        "diff hygiene passed",
+        "py_compile passed"
+      ]
+    },
+    {
+      "receipt_id": "agentic-live-smoke-required-runtime-native-20260531",
+      "kind": "agentic_live_smoke",
+      "status": "passed",
+      "command": "uv run codex-supervisor-workflow --config /Users/sam.zhang/.codex-supervisor/config.yaml --request docs/dual-agent/agentic-executor-wiring-inline-20260531/agentic-live-smoke-request.json --output docs/dual-agent/agentic-executor-wiring-inline-20260531/agentic-live-smoke-result-rerun1.json --fail-on-blocked",
+      "summary": "run_id=codex-agentic-executor-live-smoke-20260531-rerun1; event 416484 dual_agent_agentic_worker_production status=passed receipt_count=1; event 416486 P13 status=green achieved_evidence_grade=runtime_native; worker receipt=agentic-worker-audit-1",
+      "artifacts": [
+        "docs/dual-agent/agentic-executor-wiring-inline-20260531/test-evidence.md",
+        "docs/dual-agent/agentic-executor-live-smoke-20260531/transcript.jsonl",
+        ".handoff/agentic-workers/agentic-executor-live-smoke-20260531/audit-1/transcript.jsonl",
+        ".handoff/agentic-workers/agentic-executor-live-smoke-20260531/audit-1/output.json",
+        ".handoff/agentic-workers/agentic-executor-live-smoke-20260531/audit-1/worker.log"
+      ],
+      "claims": [
+        "required agentic policy live-smoke produced a supervisor-owned worker receipt",
+        "P13 accepted runtime_native evidence in the ledger",
+        "worker receipt refs and hashes are replay-verifiable"
+      ]
+    },
+    {
+      "receipt_id": "git-diff-agentic-executor-wiring-inline-20260531",
+      "kind": "git_diff",
+      "status": "present",
+      "changed_files": [
+        "supervisor/agentic_executor.py",
+        "mcp_tools/codex_supervisor_stdio.py",
+        "supervisor/dynamic_workflow_receipts.py",
+        "supervisor/state.py",
+        "tests/test_agentic_executor.py",
+        "tests/test_agentic_workers.py",
+        "tests/test_dual_agent_workflow_driver.py",
+        "tests/test_dynamic_workflow_receipts.py",
+        "docs/dual-agent/agentic-executor-wiring-inline-20260531/"
+      ],
+      "claims": [
+        "implemented",
+        "agentic executor inline wiring diff present"
+      ]
+    }
+  ]
+}
