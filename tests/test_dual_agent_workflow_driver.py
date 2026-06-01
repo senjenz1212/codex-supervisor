@@ -1036,12 +1036,271 @@ async def test_poll_dual_agent_workflow_job_reads_durable_result_after_transport
     assert result["result"]["steps"] == [{"gate": "outcome_review", "status": "accepted"}]
     job = state.get_dual_agent_workflow_job(job_id="job-1")
     assert job["status"] == "accepted"
+    assert job["terminal_status"] == "accepted"
+    assert json.loads(job["terminal_outcome_json"])["steps"] == [
+        {"gate": "outcome_review", "status": "accepted"}
+    ]
 
     transcript = await _maybe_await(server.tools["read_gate_transcript"](
         run_id="workflow-run",
         task_id="workflow-1",
     ))
     assert transcript["workflow_jobs"][0]["status"] == "accepted"
+
+
+@pytest.mark.asyncio
+async def test_poll_dual_agent_workflow_job_reads_ledger_result_when_result_file_deleted(tmp_path):
+    server, state = _server(tmp_path)
+    job_dir = tmp_path / ".handoff" / "workflow-jobs" / "job-ledger"
+    job_dir.mkdir(parents=True)
+    request_path = job_dir / "request.json"
+    result_path = job_dir / "result.json"
+    log_path = job_dir / "worker.log"
+    request_path.write_text("{}", encoding="utf-8")
+    result_path.write_text("{}", encoding="utf-8")
+    log_path.write_text("worker completed\n", encoding="utf-8")
+    terminal_outcome = {
+        "status": "accepted",
+        "run_id": "workflow-run",
+        "task_id": "workflow-1",
+        "steps": [{"gate": "outcome_review", "status": "accepted"}],
+    }
+    state.upsert_dual_agent_workflow_job(
+        job_id="job-ledger",
+        run_id="workflow-run",
+        task_id="workflow-1",
+        cwd=str(tmp_path),
+        status="running",
+        pid=987654,
+        request_path=str(request_path),
+        result_path=str(result_path),
+        log_path=str(log_path),
+    )
+    state.complete_dual_agent_workflow_job(
+        job_id="job-ledger",
+        status="accepted",
+        terminal_outcome=terminal_outcome,
+    )
+    result_path.unlink()
+
+    result = await _maybe_await(server.tools["poll_dual_agent_workflow_job"](job_id="job-ledger"))
+
+    assert result["status"] == "accepted"
+    assert result["error"] in (None, "")
+    assert result["result"] == terminal_outcome
+    assert state.get_dual_agent_workflow_job(job_id="job-ledger")["terminal_status"] == "accepted"
+
+
+def test_workflow_cli_records_terminal_outcome_in_ledger(tmp_path):
+    from mcp_tools.codex_supervisor_workflow_cli import persist_detached_workflow_terminal_outcome
+
+    state = State(str(tmp_path / "state.db"))
+    job_dir = tmp_path / ".handoff" / "workflow-jobs" / "job-cli"
+    request_path = job_dir / "request.json"
+    result_path = job_dir / "result.json"
+    log_path = job_dir / "worker.log"
+    job_dir.mkdir(parents=True)
+    request_path.write_text("{}", encoding="utf-8")
+    result_path.write_text("{}", encoding="utf-8")
+    log_path.write_text("", encoding="utf-8")
+    state.upsert_dual_agent_workflow_job(
+        job_id="job-cli",
+        run_id="workflow-run",
+        task_id="workflow-1",
+        cwd=str(tmp_path),
+        status="running",
+        request_path=str(request_path),
+        result_path=str(result_path),
+        log_path=str(log_path),
+    )
+    terminal_outcome = {"status": "accepted", "run_id": "workflow-run", "task_id": "workflow-1"}
+
+    assert persist_detached_workflow_terminal_outcome(
+        request_payload={"job_id": "job-cli"},
+        result=terminal_outcome,
+        state=state,
+        output_path=result_path,
+        returncode=0,
+    ) is True
+
+    job = state.get_dual_agent_workflow_job(job_id="job-cli")
+    assert job["status"] == "accepted"
+    assert json.loads(job["terminal_outcome_json"]) == terminal_outcome
+    terminal_events = [
+        event
+        for event in state.read_events_since("workflow-run", after_event_id=0, limit=20)
+        if event["kind"] == "dual_agent_workflow_terminal_outcome"
+    ]
+    assert terminal_events
+    assert terminal_events[-1]["payload"]["job_id"] == "job-cli"
+
+
+@pytest.mark.asyncio
+async def test_poll_dual_agent_workflow_job_ledger_wins_over_result_file_cache(tmp_path):
+    server, state = _server(tmp_path)
+    job_dir = tmp_path / ".handoff" / "workflow-jobs" / "job-mismatch"
+    request_path = job_dir / "request.json"
+    result_path = job_dir / "result.json"
+    log_path = job_dir / "worker.log"
+    job_dir.mkdir(parents=True)
+    request_path.write_text("{}", encoding="utf-8")
+    log_path.write_text("", encoding="utf-8")
+    ledger_outcome = {"status": "accepted", "run_id": "workflow-run", "task_id": "workflow-1"}
+    file_outcome = {"status": "blocked", "run_id": "workflow-run", "task_id": "workflow-1"}
+    result_path.write_text(json.dumps(file_outcome), encoding="utf-8")
+    state.upsert_dual_agent_workflow_job(
+        job_id="job-mismatch",
+        run_id="workflow-run",
+        task_id="workflow-1",
+        cwd=str(tmp_path),
+        status="running",
+        request_path=str(request_path),
+        result_path=str(result_path),
+        log_path=str(log_path),
+    )
+    state.complete_dual_agent_workflow_job(
+        job_id="job-mismatch",
+        status="accepted",
+        terminal_outcome=ledger_outcome,
+    )
+
+    result = await _maybe_await(server.tools["poll_dual_agent_workflow_job"](job_id="job-mismatch"))
+
+    assert result["status"] == "accepted"
+    assert result["result"] == ledger_outcome
+    discrepancy_events = [
+        event
+        for event in state.read_events_since("workflow-run", after_event_id=0, limit=20)
+        if event["kind"] == "dual_agent_workflow_terminal_discrepancy"
+    ]
+    assert discrepancy_events
+    assert discrepancy_events[-1]["payload"]["job_id"] == "job-mismatch"
+
+
+@pytest.mark.asyncio
+async def test_poll_dual_agent_workflow_job_does_not_emit_discrepancy_for_matching_cache(tmp_path):
+    server, state = _server(tmp_path)
+    job_dir = tmp_path / ".handoff" / "workflow-jobs" / "job-match"
+    request_path = job_dir / "request.json"
+    result_path = job_dir / "result.json"
+    log_path = job_dir / "worker.log"
+    job_dir.mkdir(parents=True)
+    request_path.write_text("{}", encoding="utf-8")
+    log_path.write_text("", encoding="utf-8")
+    outcome = {
+        "task_id": "workflow-1",
+        "run_id": "workflow-run",
+        "status": "accepted",
+        "steps": [{"status": "accepted", "gate": "outcome_review"}],
+    }
+    result_path.write_text(json.dumps({
+        "steps": [{"gate": "outcome_review", "status": "accepted"}],
+        "status": "accepted",
+        "task_id": "workflow-1",
+        "run_id": "workflow-run",
+    }, indent=2), encoding="utf-8")
+    state.upsert_dual_agent_workflow_job(
+        job_id="job-match",
+        run_id="workflow-run",
+        task_id="workflow-1",
+        cwd=str(tmp_path),
+        status="running",
+        request_path=str(request_path),
+        result_path=str(result_path),
+        log_path=str(log_path),
+    )
+    state.complete_dual_agent_workflow_job(
+        job_id="job-match",
+        status="accepted",
+        terminal_outcome=outcome,
+    )
+    cursor = state.latest_event_id("workflow-run")
+
+    result = await _maybe_await(server.tools["poll_dual_agent_workflow_job"](job_id="job-match"))
+
+    assert result["result"] == outcome
+    new_events = state.read_events_since("workflow-run", after_event_id=cursor, limit=20)
+    assert [event for event in new_events if event["kind"] == "dual_agent_workflow_terminal_discrepancy"] == []
+
+
+def test_complete_dual_agent_workflow_job_requires_terminal_outcome(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    state.upsert_dual_agent_workflow_job(
+        job_id="job-atomic",
+        run_id="workflow-run",
+        task_id="workflow-1",
+        cwd=str(tmp_path),
+        status="running",
+        request_path="request.json",
+        result_path="result.json",
+        log_path="worker.log",
+    )
+
+    with pytest.raises(ValueError, match="terminal_outcome"):
+        state.complete_dual_agent_workflow_job(
+            job_id="job-atomic",
+            status="accepted",
+            terminal_outcome=None,  # type: ignore[arg-type]
+        )
+
+    job = state.get_dual_agent_workflow_job(job_id="job-atomic")
+    assert job["status"] == "running"
+    assert job["terminal_outcome_json"] is None
+
+
+def test_complete_dual_agent_workflow_job_rolls_back_status_when_terminal_event_fails(monkeypatch, tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    state.upsert_dual_agent_workflow_job(
+        job_id="job-rollback",
+        run_id="workflow-run",
+        task_id="workflow-1",
+        cwd=str(tmp_path),
+        status="running",
+        request_path="request.json",
+        result_path="result.json",
+        log_path="worker.log",
+    )
+
+    def fail_insert_event(**kwargs):
+        raise RuntimeError("injected event failure")
+
+    monkeypatch.setattr(state, "_insert_event_unlocked", fail_insert_event)
+
+    with pytest.raises(RuntimeError, match="injected event failure"):
+        state.complete_dual_agent_workflow_job(
+            job_id="job-rollback",
+            status="accepted",
+            terminal_outcome={"status": "accepted", "api_key": "sk-proj-secretvalue"},
+        )
+
+    job = state.get_dual_agent_workflow_job(job_id="job-rollback")
+    assert job["status"] == "running"
+    assert job["terminal_status"] is None
+    assert job["terminal_outcome_json"] is None
+
+
+def test_complete_dual_agent_workflow_job_redacts_terminal_outcome_at_rest(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    state.upsert_dual_agent_workflow_job(
+        job_id="job-redact",
+        run_id="workflow-run",
+        task_id="workflow-1",
+        cwd=str(tmp_path),
+        status="running",
+        request_path="request.json",
+        result_path="result.json",
+        log_path="worker.log",
+    )
+
+    state.complete_dual_agent_workflow_job(
+        job_id="job-redact",
+        status="accepted",
+        terminal_outcome={"status": "accepted", "token": "sk-proj-secretvalue"},
+    )
+
+    stored = state.get_dual_agent_workflow_job(job_id="job-redact")["terminal_outcome_json"]
+    assert "sk-proj-secretvalue" not in stored
+    assert "[REDACTED_API_KEY]" in stored
 
 
 @pytest.mark.asyncio

@@ -32,6 +32,7 @@ def test_forward_migration_adds_resume_requested_at_to_old_actions_table(tmp_pat
     assert applied_migrations(conn) == [
         {"version": 1, "name": "actions.resume_requested_at"},
         {"version": 2, "name": "dual_agent_workflow_jobs.idempotency_token"},
+        {"version": 3, "name": "dual_agent_workflow_jobs.terminal_outcome"},
     ]
 
 
@@ -46,6 +47,7 @@ def test_forward_migrations_are_idempotent(tmp_path):
     assert applied_migrations(conn) == [
         {"version": 1, "name": "actions.resume_requested_at"},
         {"version": 2, "name": "dual_agent_workflow_jobs.idempotency_token"},
+        {"version": 3, "name": "dual_agent_workflow_jobs.terminal_outcome"},
     ]
 
 
@@ -107,6 +109,7 @@ def test_state_constructor_applies_forward_migration_to_old_db(tmp_path):
     assert applied_migrations(state._conn) == [
         {"version": 1, "name": "actions.resume_requested_at"},
         {"version": 2, "name": "dual_agent_workflow_jobs.idempotency_token"},
+        {"version": 3, "name": "dual_agent_workflow_jobs.terminal_outcome"},
     ]
 
 
@@ -194,3 +197,41 @@ def test_state_constructor_adds_workflow_job_idempotency_to_existing_db(tmp_path
         for row in state._conn.execute("PRAGMA index_list(dual_agent_workflow_jobs)").fetchall()
     }
     assert "idx_dual_agent_workflow_jobs_idempotency_token" in indexes
+
+
+def test_forward_migration_adds_workflow_job_terminal_outcome_fields(tmp_path):
+    db_path = tmp_path / "state.db"
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        """CREATE TABLE dual_agent_workflow_jobs (
+             job_id TEXT PRIMARY KEY,
+             run_id TEXT NOT NULL,
+             task_id TEXT NOT NULL,
+             cwd TEXT NOT NULL,
+             status TEXT NOT NULL,
+             pid INTEGER,
+             request_path TEXT NOT NULL,
+             result_path TEXT NOT NULL,
+             log_path TEXT NOT NULL,
+             idempotency_token TEXT,
+             returncode INTEGER,
+             error TEXT,
+             created_at INTEGER NOT NULL,
+             updated_at INTEGER NOT NULL
+           )"""
+    )
+
+    run_forward_migrations(conn)
+    run_forward_migrations(conn)
+
+    columns = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(dual_agent_workflow_jobs)").fetchall()
+    }
+    assert {"terminal_status", "terminal_outcome_json", "terminal_outcome_recorded_at"} <= columns
+    assert applied_migrations(conn) == [
+        {"version": 1, "name": "actions.resume_requested_at"},
+        {"version": 2, "name": "dual_agent_workflow_jobs.idempotency_token"},
+        {"version": 3, "name": "dual_agent_workflow_jobs.terminal_outcome"},
+    ]

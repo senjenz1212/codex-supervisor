@@ -140,6 +140,35 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def persist_detached_workflow_terminal_outcome(
+    *,
+    request_payload: dict[str, Any],
+    result: dict[str, Any],
+    state: State,
+    output_path: Path | None = None,
+    returncode: int | None = None,
+    error: str | None = None,
+) -> bool:
+    """Persist a detached workflow worker's terminal result to the ledger."""
+    raw_job_id = request_payload.get("job_id")
+    job_id = str(raw_job_id).strip() if raw_job_id else ""
+    if not job_id and output_path is not None:
+        parent_name = output_path.expanduser().parent.name
+        if parent_name.startswith("workflow-"):
+            job_id = parent_name
+    if not job_id:
+        return False
+    status = str(result.get("status") or "completed")
+    state.complete_dual_agent_workflow_job(
+        job_id=job_id,
+        status=status,
+        terminal_outcome=result,
+        returncode=returncode,
+        error=error,
+    )
+    return True
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run a dual-agent workflow without MCP transport.")
     parser.add_argument("--config", default=str(Path.home() / ".codex-supervisor" / "config.yaml"))
@@ -177,14 +206,22 @@ def main(argv: list[str] | None = None) -> int:
     state = State(cfg.supervisor.state_db)
     request = read_json_payload(args.request)
     result = asyncio.run(run_workflow_payload(request, cfg=cfg, state=state))
+    exit_code = 2 if args.fail_on_blocked and result.get("status") != "accepted" else 0
+    output_path = Path(args.output).expanduser() if args.output else None
 
-    if args.output:
-        write_json(Path(args.output).expanduser(), result)
+    persist_detached_workflow_terminal_outcome(
+        request_payload=request,
+        result=result,
+        state=state,
+        output_path=output_path,
+        returncode=exit_code,
+        error="" if exit_code == 0 else "workflow_not_accepted",
+    )
+
+    if output_path is not None:
+        write_json(output_path, result)
     print(json.dumps(result, indent=2, sort_keys=True))
-
-    if args.fail_on_blocked and result.get("status") != "accepted":
-        return 2
-    return 0
+    return exit_code
 
 
 if __name__ == "__main__":

@@ -70,7 +70,7 @@ from supervisor.dual_agent_runner import (
 )
 from supervisor.dual_agent_lead import GateName, PlanningArtifact
 from supervisor.redaction import redact
-from supervisor.state import State
+from supervisor.state import State, canonical_terminal_outcome_json
 from supervisor.trace_envelope import ensure_tool_call_timing, stamp_trace_envelope, timed_tool_call
 from supervisor.telegram import TelegramNotifier, telegram_enabled
 
@@ -1812,6 +1812,7 @@ class CodexSupervisorMcpAPI:
                 "poll_tool": "poll_dual_agent_workflow_job",
             })
         job_dir.mkdir(parents=True, exist_ok=True)
+        payload["job_id"] = job_id
         request_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         command = [
             sys.executable,
@@ -1834,16 +1835,15 @@ class CodexSupervisorMcpAPI:
                     start_new_session=True,
                 )
         except OSError as e:
-            self.state.upsert_dual_agent_workflow_job(
+            self.state.complete_dual_agent_workflow_job(
                 job_id=job_id,
-                run_id=run_id,
-                task_id=task_id,
-                cwd=str(cwd_path),
                 status="failed",
-                request_path=str(request_path),
-                result_path=str(result_path),
-                log_path=str(log_path),
-                idempotency_token=idempotency_token,
+                terminal_outcome={
+                    "status": "failed",
+                    "run_id": run_id,
+                    "task_id": task_id,
+                    "error": str(e),
+                },
                 error=str(e),
             )
             self.state.write_event(
@@ -1920,31 +1920,103 @@ class CodexSupervisorMcpAPI:
         original_status = str(row["status"])
         status = original_status
         error = row["error"]
-        if result_path.exists():
+        terminal_outcome_json = (
+            row["terminal_outcome_json"] if "terminal_outcome_json" in row.keys() else None
+        )
+        if terminal_outcome_json:
+            try:
+                loaded_terminal = json.loads(str(terminal_outcome_json))
+                result = loaded_terminal if isinstance(loaded_terminal, dict) else {
+                    "raw_result": loaded_terminal
+                }
+            except json.JSONDecodeError:
+                result = {
+                    "status": "failed",
+                    "run_id": row["run_id"],
+                    "task_id": row["task_id"],
+                    "error": "invalid_terminal_outcome_json",
+                }
+            status = str(row["terminal_status"] or row["status"] or result.get("status") or "completed")
+            if result_path.exists():
+                try:
+                    loaded_cache = json.loads(result_path.read_text(encoding="utf-8"))
+                    cache_result = loaded_cache if isinstance(loaded_cache, dict) else {
+                        "raw_result": loaded_cache
+                    }
+                    if (
+                        result is not None
+                        and canonical_terminal_outcome_json(cache_result)
+                        != canonical_terminal_outcome_json(result)
+                    ):
+                        self.state.write_event(
+                            run_id=row["run_id"],
+                            source="dual_agent",
+                            kind="dual_agent_workflow_terminal_discrepancy",
+                            payload={
+                                "job_id": job_id,
+                                "task_id": row["task_id"],
+                                "status": status,
+                                "result_path": row["result_path"],
+                                "ledger_status": result.get("status"),
+                                "cache_status": cache_result.get("status"),
+                                "resolution": "ledger_wins",
+                            },
+                        )
+                except (OSError, json.JSONDecodeError) as e:
+                    self.state.write_event(
+                        run_id=row["run_id"],
+                        source="dual_agent",
+                        kind="dual_agent_workflow_terminal_discrepancy",
+                        payload={
+                            "job_id": job_id,
+                            "task_id": row["task_id"],
+                            "status": status,
+                            "result_path": row["result_path"],
+                            "cache_error": str(e),
+                            "resolution": "ledger_wins",
+                        },
+                    )
+        elif result_path.exists():
             try:
                 loaded = json.loads(result_path.read_text(encoding="utf-8"))
                 result = loaded if isinstance(loaded, dict) else {"raw_result": loaded}
                 status = str(result.get("status") or "completed")
-                self.state.update_dual_agent_workflow_job(
+                self.state.complete_dual_agent_workflow_job(
                     job_id=job_id,
                     status=status,
+                    terminal_outcome=result,
                     error="",
                 )
                 error = ""
             except (OSError, json.JSONDecodeError) as e:
                 status = "failed"
                 error = str(e)
-                self.state.update_dual_agent_workflow_job(
+                result = {
+                    "status": status,
+                    "run_id": row["run_id"],
+                    "task_id": row["task_id"],
+                    "error": error,
+                    "result_path": row["result_path"],
+                }
+                self.state.complete_dual_agent_workflow_job(
                     job_id=job_id,
                     status=status,
+                    terminal_outcome=result,
                     error=error,
                 )
         elif status in {"running", "submitted"} and row["pid"] and not _pid_alive(int(row["pid"])):
             status = "failed"
             error = "worker_exited_without_result"
-            self.state.update_dual_agent_workflow_job(
+            result = {
+                "status": status,
+                "run_id": row["run_id"],
+                "task_id": row["task_id"],
+                "error": error,
+            }
+            self.state.complete_dual_agent_workflow_job(
                 job_id=job_id,
                 status=status,
+                terminal_outcome=result,
                 error=error,
             )
         payload = {
@@ -2128,6 +2200,8 @@ class CodexSupervisorMcpAPI:
                    'dual_agent_dynamic_workflow_synthesis',
                    'dual_agent_reviewer_unavailable_recovery',
                    'dual_agent_workflow_job',
+                   'dual_agent_workflow_terminal_outcome',
+                   'dual_agent_workflow_terminal_discrepancy',
                    'dual_agent_workflow_route',
                    'dual_agent_interaction_message',
                    'tri_agent_cursor_review'
@@ -2196,7 +2270,11 @@ class CodexSupervisorMcpAPI:
                     "occurred_at": row["ts"],
                     **payload,
                 }))
-            elif row["kind"] == "dual_agent_workflow_job":
+            elif row["kind"] in {
+                "dual_agent_workflow_job",
+                "dual_agent_workflow_terminal_outcome",
+                "dual_agent_workflow_terminal_discrepancy",
+            }:
                 workflow_jobs.append(redact({
                     "event_id": row["event_id"],
                     "occurred_at": row["ts"],

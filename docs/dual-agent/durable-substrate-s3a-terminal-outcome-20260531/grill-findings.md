@@ -1,0 +1,60 @@
+# Grill Findings
+
+These findings are derived from dual-agent gate objections in the ledger.
+Future duo-agent runs should also create this file through the `prd-to-tdd` skill's `grill-with-docs` gates before implementation.
+
+- event_id 409809 `prd_review`: Detached worker (codex_supervisor_workflow_cli subprocess, start_new_session=True) writes only result.json and has no State/SQLite handle; ledger outcome can only be captured during poll, so P1 fails for completed-but-unpolled jobs whose file is removed
+- event_id 409809 `prd_review`: P3 does not define how ledger outcome and result-file cache are compared for equality; serialization/poll-time field differences could trigger spurious discrepancy events
+- event_id 409809 `prd_review`: P2 permits poll to backfill the ledger outcome but does not state it uses the P4 atomic helper, creating a latent contradiction with P4's no-out-of-band-writes rule
+- event_id 409809 `prd_review`: If the worker is later given a ledger write path, cross-process SQLite concurrency must be addressed; the existing in-process _write_lock does not coordinate the detached worker
+- event_id 409810 `prd_review`: agents have not both accepted yet; revise and continue
+- event_id 409812 `prd_review`: Detached worker (codex_supervisor_workflow_cli subprocess, start_new_session=True) writes only result.json and has no State/SQLite handle; ledger outcome can only be captured during poll, so P1 fails for completed-but-unpolled jobs whose file is removed
+- event_id 409812 `prd_review`: P3 does not define how ledger outcome and result-file cache are compared for equality; serialization/poll-time field differences could trigger spurious discrepancy events
+- event_id 409812 `prd_review`: P2 permits poll to backfill the ledger outcome but does not state it uses the P4 atomic helper, creating a latent contradiction with P4's no-out-of-band-writes rule
+- event_id 409812 `prd_review`: If the worker is later given a ledger write path, cross-process SQLite concurrency must be addressed; the existing in-process _write_lock does not coordinate the detached worker
+- event_id 409873 `prd_review`: [minor] P3/Slice5 leave 'differ' undefined; naive full-payload comparison of result.json vs terminal_outcome_json risks false-positive dual_agent_workflow_terminal_discrepancy events from key-ordering, redaction, or resume-prompt fields; TDD gate must pin comparison to a canonical subset
+- event_id 409873 `prd_review`: [trivia] P4 atomicity scoped to newly completed jobs while Slice-4 backfill updates old rows; consistent but impl must avoid reintroducing a status/outcome write window
+- event_id 409874 `prd_review`: both agents accepted
+- event_id 409881 `issues_review`: gate blocked
+- event_id 410075 `issues_review`: Slice 3 acceptance criteria are silent on ledger DB identity: worker opens State(cfg.supervisor.state_db) from --config (default ~/.codex-supervisor/config.yaml, stdio.py:1821) while parent polls self.state.db_path; mismatch silently breaks P1 and a co-wired TDD fixture can mask it
+- event_id 410075 `issues_review`: P5 (scope-stays-detached-job-only) has no explicit regression slice; it relies on existing tests/replay as a cross-cutting non-goal (acceptable but should be enforced in TDD)
+- event_id 410075 `issues_review`: Slice 6 canonical equality depends on result.json being redacted with the same redaction applied before ledger storage; result.json is currently loaded raw and only the poll return payload is redacted (stdio.py:1925 vs 1978), so the comparison must redact the file side or risk false-positive discrepancy events (the AC covers this but it is an assumption to verify)
+- event_id 410076 `issues_review`: agents have not both accepted yet; revise and continue
+- event_id 410078 `issues_review`: Slice 3 acceptance criteria are silent on ledger DB identity: worker opens State(cfg.supervisor.state_db) from --config (default ~/.codex-supervisor/config.yaml, stdio.py:1821) while parent polls self.state.db_path; mismatch silently breaks P1 and a co-wired TDD fixture can mask it
+- event_id 410078 `issues_review`: P5 (scope-stays-detached-job-only) has no explicit regression slice; it relies on existing tests/replay as a cross-cutting non-goal (acceptable but should be enforced in TDD)
+- event_id 410078 `issues_review`: Slice 6 canonical equality depends on result.json being redacted with the same redaction applied before ledger storage; result.json is currently loaded raw and only the poll return payload is redacted (stdio.py:1925 vs 1978), so the comparison must redact the file side or risk false-positive discrepancy events (the AC covers this but it is an assumption to verify)
+- event_id 410101 `issues_review`: S6 requires canonical parsed/redacted comparison object but no slice explicitly owns producing the canonical/redacted form at write time (S2/S3); implied by PRD Comparison basis but not an explicit write-slice AC - resolve in implementation-plan/tdd gate
+- event_id 410101 `issues_review`: P3 (ledger-wins-on-discrepancy) is a full forbidden-outcome PRD contract yet its implementing slice S6 is priority P1 rather than P0; in-scope so no promise dropped, but priority understates the contract
+- event_id 410102 `issues_review`: both agents accepted
+- event_id 410143 `tdd_review`: Test 4 proves mismatch->event but not match->no-event, undercutting Finding 7 and P3 canonicalization contract
+- event_id 410143 `tdd_review`: Test 5 validates the precondition guard but not transactional rollback-on-failure for P4 atomicity
+- event_id 410144 `tdd_review`: agents have not both accepted yet; revise and continue
+- event_id 410146 `tdd_review`: Test 4 proves mismatch->event but not match->no-event, undercutting Finding 7 and P3 canonicalization contract
+- event_id 410146 `tdd_review`: Test 5 validates the precondition guard but not transactional rollback-on-failure for P4 atomicity
+- event_id 410180 `tdd_review`: Slice 2 acceptance criterion requiring a dual_agent_workflow_terminal_outcome audit event on normal completion is not asserted by any test in tdd.md; only the discrepancy event (P3) is tested
+- event_id 410180 `tdd_review`: Minor: P1 'not marked failed on missing file' and P3 'resume prompt excluded from canonical comparison' are covered only implicitly
+- event_id 410181 `tdd_review`: agents have not both accepted yet; revise and continue
+- event_id 410183 `tdd_review`: Slice 2 acceptance criterion requiring a dual_agent_workflow_terminal_outcome audit event on normal completion is not asserted by any test in tdd.md; only the discrepancy event (P3) is tested
+- event_id 410183 `tdd_review`: Minor: P1 'not marked failed on missing file' and P3 'resume prompt excluded from canonical comparison' are covered only implicitly
+- event_id 410222 `tdd_review`: No test enforces canonical parsed/redacted discrepancy comparison; the ledger-wins test passes even under raw-byte comparison, so false-discrepancy avoidance is unverified.
+- event_id 410222 `tdd_review`: Atomicity is asserted only via API contract (reject-without-outcome), not via partial-failure/rollback injection (residual, non-blocking).
+- event_id 410222 `tdd_review`: Slice 1 'preserve S2 idempotency columns/indexes' is covered only transitively by schema-migration regression, not an explicit assertion (residual, non-blocking).
+- event_id 410270 `tdd_review`: Redaction-at-rest is only indirectly exercised; add a direct assertion that stored terminal_outcome_json is redacted (Slice 6 explicit promise).
+- event_id 410270 `tdd_review`: Double terminal-write idempotency (poll backfill no-op when ledger outcome exists) is untested.
+- event_id 410299 `tdd_review`: both agents accepted
+- event_id 410330 `implementation_plan`: Non-blocking: implementation-plan.md does not enumerate the exact new terminal-outcome column names/types; issues.md Slice 2 redundantly lists both 'terminal job status' and 'terminal status', risking a stray terminal_status vs status divergence
+- event_id 410330 `implementation_plan`: Non-blocking: atomic helper must inline _insert_event_unlocked rather than call write_event (which self-commits at state.py:399) to preserve single-transaction rollback
+- event_id 410337 `implementation_plan`: both agents accepted
+- event_id 410427 `execution`: Execution gate has zero implementation evidence: git status shows only untracked docs/, no changes to state.py, schema_migrations.py, codex_supervisor_stdio.py, codex_supervisor_workflow_cli.py, or tests.
+- event_id 410427 `execution`: Plan does not enumerate updating the two existing migration-list assertions (test_schema_migrations.py:32-35 and :46-49) that will break when migration v3 is added.
+- event_id 410427 `execution`: Helper invariant for status-vs-terminal_status divergence on the JSON-parse-error poll path is implicit, not stated.
+- event_id 410428 `execution`: agents have not both accepted yet; revise and continue
+- event_id 410430 `execution`: Execution gate has zero implementation evidence: git status shows only untracked docs/, no changes to state.py, schema_migrations.py, codex_supervisor_stdio.py, codex_supervisor_workflow_cli.py, or tests.
+- event_id 410430 `execution`: Plan does not enumerate updating the two existing migration-list assertions (test_schema_migrations.py:32-35 and :46-49) that will break when migration v3 is added.
+- event_id 410430 `execution`: Helper invariant for status-vs-terminal_status divergence on the JSON-parse-error poll path is implicit, not stated.
+- event_id 410729 `execution`: Plan-named P2 test test_poll_dual_agent_workflow_job_keeps_legacy_result_file_fallback is absent; backfill covered instead by amended ..._reads_durable_result_after_transport... test
+- event_id 410729 `execution`: Could not execute tests (uv run pytest requires approval); no green-run evidence captured
+- event_id 410730 `execution`: both agents accepted
+- event_id 410793 `outcome_review`: Independent test execution was not performed because uv run pytest approval was declined in this session; test_status relies on self-reported grade
+- event_id 410793 `outcome_review`: terminal_outcome_recorded_at is written but never read (audit-only field, non-blocking)
+- event_id 410866 `outcome_review`: both agents accepted

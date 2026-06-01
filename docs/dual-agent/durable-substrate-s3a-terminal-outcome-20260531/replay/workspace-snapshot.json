@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "e987bb6c9570f4df9e779d7d69725a24bd07560fd5d01cefbe4a199800142f29",
+  "git": {
+    "diff_bytes": 31114,
+    "diff_sha256": "ab11979741bacd7036fce4ecd2205b642475aaef3c6ce145315517c6c124eb06",
+    "diff_stat": "mcp_tools/codex_supervisor_stdio.py        | 106 ++++++++++--\n mcp_tools/codex_supervisor_workflow_cli.py |  49 +++++-\n supervisor/schema_migrations.py            |  22 +++\n supervisor/state.py                        |  90 +++++++++-\n tests/test_dual_agent_workflow_driver.py   | 259 +++++++++++++++++++++++++++++\n tests/test_schema_migrations.py            |  41 +++++\n 6 files changed, 543 insertions(+), 24 deletions(-)",
+    "head": "a77edd5",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "a77edd5",
+    "status_short": "M mcp_tools/codex_supervisor_stdio.py\n M mcp_tools/codex_supervisor_workflow_cli.py\n M supervisor/schema_migrations.py\n M supervisor/state.py\n M tests/test_dual_agent_workflow_driver.py\n M tests/test_schema_migrations.py\n?? docs/dual-agent/durable-substrate-s3a-terminal-outcome-20260531/"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "ca0c4f627d2056930bae0c54103fd6e51c59abdef837863b96da54351f684960",
+    "implementation_plan": "f00d22a706d5d7caa9f15298047af2d4149d52365d6a05701867f5c1df62a021",
+    "issues": "d8ae413cabe90763f043ba36c5f193a6fb622d775ef1c30a0cb1cbd637db1fda",
+    "prd": "efac91a8e3fc7cf55959aa28db60846f476b9454cc01d97784341e04406ff92f",
+    "tdd_plan": "c5edc552d01b4060354908c1e8e3b1cd98bf478af8b813e8aa294b41381d1223"
+  },
+  "status": "captured"
+}

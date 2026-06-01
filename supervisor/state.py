@@ -36,6 +36,11 @@ BUILTIN_NEVER_TOUCH: tuple[str, ...] = (
 )
 
 
+def canonical_terminal_outcome_json(outcome: dict[str, Any]) -> str:
+    """Canonical redacted workflow-result JSON for ledger storage/comparison."""
+    return json.dumps(redact(outcome), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
   run_id        TEXT PRIMARY KEY,
@@ -214,6 +219,9 @@ CREATE TABLE IF NOT EXISTS dual_agent_workflow_jobs (
   result_path  TEXT NOT NULL,
   log_path     TEXT NOT NULL,
   idempotency_token TEXT,
+  terminal_status TEXT,
+  terminal_outcome_json TEXT,
+  terminal_outcome_recorded_at INTEGER,
   returncode   INTEGER,
   error        TEXT,
   created_at   INTEGER NOT NULL,
@@ -481,10 +489,12 @@ class State:
                    'dual_agent_planning_validation',
                    'dual_agent_skill_receipt_validation',
                    'dual_agent_dynamic_workflow_receipt_validation',
-		                   'dual_agent_dynamic_workflow_manifest',
-		                   'dual_agent_dynamic_workflow_synthesis',
-		                   'dual_agent_reviewer_unavailable_recovery',
-		                   'dual_agent_workflow_job',
+                   'dual_agent_dynamic_workflow_manifest',
+                   'dual_agent_dynamic_workflow_synthesis',
+                   'dual_agent_reviewer_unavailable_recovery',
+                   'dual_agent_workflow_job',
+                   'dual_agent_workflow_terminal_outcome',
+                   'dual_agent_workflow_terminal_discrepancy',
                    'dual_agent_workflow_route',
                    'dual_agent_interaction_message',
                    'tri_agent_cursor_review'
@@ -842,6 +852,78 @@ class State:
                 params,
             )
             self._conn.commit()
+
+    def complete_dual_agent_workflow_job(
+        self,
+        *,
+        job_id: str,
+        status: str,
+        terminal_outcome: dict[str, Any],
+        terminal_status: str | None = None,
+        returncode: int | None = None,
+        error: str | None = None,
+    ) -> int:
+        """Atomically persist a detached workflow job's terminal status/outcome."""
+        if not isinstance(terminal_outcome, dict) or not terminal_outcome:
+            raise ValueError("terminal_outcome must be a non-empty dict")
+        now = int(time.time())
+        terminal_status_value = str(terminal_status or terminal_outcome.get("status") or status)
+        outcome_json = canonical_terminal_outcome_json(terminal_outcome)
+        with self._write_lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                row = self._conn.execute(
+                    """SELECT run_id, task_id, result_path FROM dual_agent_workflow_jobs
+                       WHERE job_id=?""",
+                    (job_id,),
+                ).fetchone()
+                if row is None:
+                    raise KeyError(f"workflow job not found: {job_id}")
+                self._conn.execute(
+                    """UPDATE dual_agent_workflow_jobs
+                          SET status=?,
+                              terminal_status=?,
+                              terminal_outcome_json=?,
+                              terminal_outcome_recorded_at=?,
+                              returncode=?,
+                              error=?,
+                              updated_at=?
+                        WHERE job_id=?""",
+                    (
+                        status,
+                        terminal_status_value,
+                        outcome_json,
+                        now,
+                        returncode,
+                        error,
+                        now,
+                        job_id,
+                    ),
+                )
+                event_payload = self._event_payload(
+                    run_id=row["run_id"],
+                    source="dual_agent",
+                    kind="dual_agent_workflow_terminal_outcome",
+                    payload={
+                        "job_id": job_id,
+                        "task_id": row["task_id"],
+                        "status": status,
+                        "terminal_status": terminal_status_value,
+                        "result_path": row["result_path"],
+                        "transport_recovery": "detached_cli_worker",
+                    },
+                )
+                event_id = self._insert_event_unlocked(
+                    run_id=row["run_id"],
+                    source="dual_agent",
+                    kind="dual_agent_workflow_terminal_outcome",
+                    payload=event_payload,
+                )
+                self._conn.commit()
+                return event_id
+            except Exception:
+                self._conn.rollback()
+                raise
 
     def get_dual_agent_workflow_job(self, *, job_id: str) -> sqlite3.Row | None:
         return self._conn.execute(

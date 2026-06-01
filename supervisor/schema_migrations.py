@@ -98,6 +98,23 @@ def _migration_workflow_job_idempotency_token(conn: sqlite3.Connection) -> None:
     )
 
 
+def _migration_workflow_job_terminal_outcome(conn: sqlite3.Connection) -> None:
+    if not _table_exists(conn, "dual_agent_workflow_jobs"):
+        return
+    columns = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(dual_agent_workflow_jobs)").fetchall()
+    }
+    if "terminal_status" not in columns:
+        conn.execute("ALTER TABLE dual_agent_workflow_jobs ADD COLUMN terminal_status TEXT")
+    if "terminal_outcome_json" not in columns:
+        conn.execute("ALTER TABLE dual_agent_workflow_jobs ADD COLUMN terminal_outcome_json TEXT")
+    if "terminal_outcome_recorded_at" not in columns:
+        conn.execute(
+            "ALTER TABLE dual_agent_workflow_jobs ADD COLUMN terminal_outcome_recorded_at INTEGER"
+        )
+
+
 def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
     row = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
@@ -133,5 +150,10 @@ MIGRATIONS: tuple[SchemaMigration, ...] = (
         2,
         "dual_agent_workflow_jobs.idempotency_token",
         _migration_workflow_job_idempotency_token,
+    ),
+    SchemaMigration(
+        3,
+        "dual_agent_workflow_jobs.terminal_outcome",
+        _migration_workflow_job_terminal_outcome,
     ),
 )
