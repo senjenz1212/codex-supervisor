@@ -51,6 +51,8 @@ WORKFLOW_KEYS = {
     "reviewer_model",
     "reviewer_output_mode",
     "reviewer_max_tokens",
+    "reviewer_infra_retry_limit",
+    "reviewer_infra_retry_backoff_s",
     "task_complexity",
 }
 REQUIRED_WORKFLOW_KEYS = {"cwd", "task_id", "run_id", "intent"}

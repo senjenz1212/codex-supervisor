@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "f230a8e42210da5c2ef0ee8c50dadc8ef44a377507f20e082233fb60807430ad",
+  "git": {
+    "diff_bytes": 33705,
+    "diff_sha256": "2e18bc4fefc5d5018616d8a7319169031ac310ec4c5b54b369bffcc992efabbe",
+    "diff_stat": "mcp_tools/codex_supervisor_stdio.py        |  58 ++++++++\n mcp_tools/codex_supervisor_workflow_cli.py |   2 +\n supervisor/config.py                       |   2 +\n supervisor/cursor_agent.py                 | 110 +++++++++++++-\n tests/test_cursor_agent.py                 | 183 +++++++++++++++++++++++\n tests/test_dual_agent_workflow_driver.py   | 226 +++++++++++++++++++++++++++++\n 6 files changed, 579 insertions(+), 2 deletions(-)",
+    "head": "a59885d",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "a59885d",
+    "status_short": "M mcp_tools/codex_supervisor_stdio.py\n M mcp_tools/codex_supervisor_workflow_cli.py\n M supervisor/config.py\n M supervisor/cursor_agent.py\n M tests/test_cursor_agent.py\n M tests/test_dual_agent_workflow_driver.py\n?? docs/dual-agent/cursor-sdk-infra-retry-hardening-20260601/"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "885ab73da5e19e196c426d9091e249163b191e6ffc74b37ae57b830fcae0f279",
+    "implementation_plan": "3fc2d731e648f586c8232fb4801f0eed0b7837305d3472c7c3b1dda91656f04a",
+    "issues": "be05712b8077c423bb64c0e24df3b7d344ff8d12207e9b829a4a4e042d4970ec",
+    "prd": "2a927db5f4dbc6732f60ee510c11645332102769af933e39bb24059de850830d",
+    "tdd_plan": "d4207ef3bc7877cb6f4e1771a6d0a9dfe0971777c0dc496ba15a50a66d01f283"
+  },
+  "status": "captured"
+}

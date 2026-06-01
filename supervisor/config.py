@@ -132,6 +132,8 @@ class SupervisorCfg(BaseModel):
     reviewer_model: str = "gemini-3.1-pro-preview"
     reviewer_output_mode: Literal["litellm_structured", "cursor_sdk"] = "cursor_sdk"
     reviewer_max_tokens: int = 4096
+    reviewer_infra_retry_limit: int = 2
+    reviewer_infra_retry_backoff_s: float = 1.0
 
 
 class AgenticLeadCfg(BaseModel):

@@ -1,0 +1,94 @@
+{
+  "cwd": "/Users/sam.zhang/Documents/codex-supervisor",
+  "task_id": "cursor-sdk-infra-retry-hardening-20260601",
+  "run_id": "codex-cursor-sdk-infra-retry-hardening-20260601",
+  "intent": "Fix the Cursor reviewer reliability failure diagnosed on June 1, 2026. Add bounded Cursor SDK infrastructure retries with backoff and diagnostics before the workflow classifies Cursor as reviewer_infrastructure_unavailable. Preserve strict gate semantics: real Cursor revise/deny still blocks, contract retry remains separate, missing Cursor verdicts never count as accept, and existing reviewer-unavailable recovery/fallback runs only after retries are exhausted.",
+  "user_facing": false,
+  "max_rounds_per_gate": 5,
+  "quality": "best",
+  "budget_usd": 100.0,
+  "timeout_s": 900,
+  "execution_layer_mode": "lead_direct",
+  "require_skill_receipts": true,
+  "cursor_review": true,
+  "cursor_review_profile": "rigorous",
+  "reviewer_infra_retry_limit": 2,
+  "reviewer_infra_retry_backoff_s": 1.0,
+  "tool_receipts": [
+    {
+      "receipt_id": "skill-to-prd-cursor-sdk-infra-retry-hardening-20260601",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "to-prd",
+      "stage": "to_prd",
+      "claims": ["prd-tdd skill executed", "PRD promise contracts produced"],
+      "artifacts": ["docs/dual-agent/cursor-sdk-infra-retry-hardening-20260601/source/prd.md"]
+    },
+    {
+      "receipt_id": "skill-prd-grill-cursor-sdk-infra-retry-hardening-20260601",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "grill-with-docs",
+      "stage": "prd_grill",
+      "claims": ["prd-tdd skill executed", "PRD grill findings resolved"],
+      "artifacts": ["docs/dual-agent/cursor-sdk-infra-retry-hardening-20260601/source/grill-findings.md"]
+    },
+    {
+      "receipt_id": "skill-to-issues-cursor-sdk-infra-retry-hardening-20260601",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "to-issues",
+      "stage": "to_issues",
+      "claims": ["prd-tdd skill executed", "issues map to PRD promises"],
+      "artifacts": ["docs/dual-agent/cursor-sdk-infra-retry-hardening-20260601/source/issues.md"]
+    },
+    {
+      "receipt_id": "skill-tdd-cursor-sdk-infra-retry-hardening-20260601",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "tdd",
+      "stage": "tdd",
+      "claims": ["prd-tdd skill executed", "public-boundary RED tests planned"],
+      "artifacts": ["docs/dual-agent/cursor-sdk-infra-retry-hardening-20260601/source/tdd.md"]
+    },
+    {
+      "receipt_id": "skill-tdd-grill-cursor-sdk-infra-retry-hardening-20260601",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "grill-with-docs",
+      "stage": "tdd_grill",
+      "claims": ["prd-tdd skill executed", "TDD grill findings resolved"],
+      "artifacts": ["docs/dual-agent/cursor-sdk-infra-retry-hardening-20260601/source/grill-findings-tdd.md"]
+    },
+    {
+      "receipt_id": "pytest-focused-cursor-sdk-infra-retry-hardening-20260601",
+      "kind": "test",
+      "status": "passed",
+      "command": "uv run --extra dev pytest tests/test_cursor_agent.py tests/test_dual_agent_workflow_driver.py -q",
+      "summary": "109 passed in 71.56s",
+      "claims": ["cursor retry and workflow reviewer policy regressions passed"]
+    },
+    {
+      "receipt_id": "pytest-full-cursor-sdk-infra-retry-hardening-20260601",
+      "kind": "test",
+      "status": "passed",
+      "command": "uv run --extra dev pytest -q",
+      "summary": "598 passed in 83.89s",
+      "claims": ["full suite passed"]
+    },
+    {
+      "receipt_id": "git-diff-cursor-sdk-infra-retry-hardening-20260601",
+      "kind": "git_diff",
+      "status": "present",
+      "changed_files": [
+        "mcp_tools/codex_supervisor_stdio.py",
+        "mcp_tools/codex_supervisor_workflow_cli.py",
+        "supervisor/config.py",
+        "supervisor/cursor_agent.py",
+        "tests/test_cursor_agent.py",
+        "tests/test_dual_agent_workflow_driver.py"
+      ],
+      "claims": ["implemented", "diff present for Cursor SDK infrastructure retry hardening"]
+    }
+  ]
+}

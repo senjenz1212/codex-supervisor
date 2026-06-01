@@ -289,6 +289,8 @@ def test_workflow_kwargs_from_payload_preserves_dynamic_workflow_preview_fields(
         "reviewer_model": "gemini-3.1-pro-preview",
         "reviewer_output_mode": "litellm_structured",
         "reviewer_max_tokens": 4096,
+        "reviewer_infra_retry_limit": 4,
+        "reviewer_infra_retry_backoff_s": 0.25,
         "irrelevant_field": "must not leak into workflow kwargs",
     })
 
@@ -303,6 +305,26 @@ def test_workflow_kwargs_from_payload_preserves_dynamic_workflow_preview_fields(
     assert kwargs["reviewer_model"] == "gemini-3.1-pro-preview"
     assert kwargs["reviewer_output_mode"] == "litellm_structured"
     assert kwargs["reviewer_max_tokens"] == 4096
+    assert kwargs["reviewer_infra_retry_limit"] == 4
+    assert kwargs["reviewer_infra_retry_backoff_s"] == 0.25
+    assert "irrelevant_field" not in kwargs
+
+
+def test_workflow_kwargs_from_payload_preserves_reviewer_infra_retry_fields():
+    from mcp_tools.codex_supervisor_workflow_cli import workflow_kwargs_from_payload
+
+    kwargs = workflow_kwargs_from_payload({
+        "cwd": "/tmp/workspace",
+        "task_id": "workflow-1",
+        "run_id": "workflow-run",
+        "intent": "Run Cursor reviewer with bounded infra retries.",
+        "reviewer_infra_retry_limit": 4,
+        "reviewer_infra_retry_backoff_s": 0.25,
+        "irrelevant_field": "must not leak into workflow kwargs",
+    })
+
+    assert kwargs["reviewer_infra_retry_limit"] == 4
+    assert kwargs["reviewer_infra_retry_backoff_s"] == 0.25
     assert "irrelevant_field" not in kwargs
 
 
@@ -546,6 +568,89 @@ def _cursor_contract_unmet_runner(request) -> CursorInvocationResult:
     )
 
 
+def _cursor_exhausted_infra_runner(request) -> CursorInvocationResult:
+    return CursorInvocationResult(
+        probe=ProbeResult(
+            "CURSOR",
+            "red",
+            "reviewer_infrastructure_unavailable",
+            {
+                "original_reason": "reviewer_invocation_failed",
+                "recoverable": True,
+                "attempts": 3,
+                "retry_limit": 2,
+                "infrastructure_retries": {
+                    "attempt_count": 3,
+                    "failed_attempt_count": 3,
+                    "retry_limit": 2,
+                    "attempts": [
+                        {
+                            "attempt": 1,
+                            "reason": "reviewer_invocation_failed",
+                            "error": "internal: internal error 1",
+                        },
+                        {
+                            "attempt": 2,
+                            "reason": "reviewer_invocation_failed",
+                            "error": "internal: internal error 2",
+                        },
+                        {
+                            "attempt": 3,
+                            "reason": "reviewer_invocation_failed",
+                            "error": "internal: internal error 3",
+                        },
+                    ],
+                    "backoff_s": [0.0, 0.0],
+                    "exhausted": True,
+                },
+            },
+        ),
+        outcome=None,
+        transcript="",
+        agent_id="agent-infra",
+        run_id="run-infra",
+        status="failed",
+        model="composer-2.5",
+        duration_ms=90,
+        reviewer_runtime="cursor_sdk",
+        reviewer_output_mode="cursor_sdk",
+        reviewer_assurance="unavailable",
+        failure_classification="reviewer_infrastructure_unavailable",
+        recoverable=True,
+        attempts=3,
+        diagnostics={
+            "infrastructure_retries": {
+                "attempt_count": 3,
+                "failed_attempt_count": 3,
+                "retry_limit": 2,
+                "attempts": [
+                    {
+                        "attempt": 1,
+                        "reason": "reviewer_invocation_failed",
+                        "error": "internal: internal error 1",
+                    },
+                    {
+                        "attempt": 2,
+                        "reason": "reviewer_invocation_failed",
+                        "error": "internal: internal error 2",
+                    },
+                    {
+                        "attempt": 3,
+                        "reason": "reviewer_invocation_failed",
+                        "error": "internal: internal error 3",
+                    },
+                ],
+                "backoff_s": [0.0, 0.0],
+                "exhausted": True,
+            },
+            "fallback": {
+                "attempted": False,
+                "reason": "missing_openai_api_key",
+            },
+        },
+    )
+
+
 @pytest.mark.asyncio
 async def test_workflow_invokes_cursor_sdk_reviewer_after_claude_accept_by_default(
     tmp_path,
@@ -591,6 +696,36 @@ async def test_workflow_invokes_cursor_sdk_reviewer_after_claude_accept_by_defau
     assert cursor_payload["reviewer_output_mode"] == "cursor_sdk"
     assert cursor_payload["reviewer_assurance"] == "tool_backed_primary"
     assert result["final_gate_result"]["independent_reviewer"] == cursor_payload
+
+
+@pytest.mark.asyncio
+async def test_workflow_passes_reviewer_infra_retry_policy_to_cursor_request(tmp_path):
+    requests = []
+
+    def fake_cursor_runner(request):
+        requests.append(request)
+        return _cursor_review_result(request.task_id)
+
+    server, _state = _server(tmp_path, cursor_runner=fake_cursor_runner)
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Cursor infrastructure retry policy should be threaded to the reviewer.",
+        max_rounds_per_gate=1,
+        cursor_review=True,
+        reviewer_infra_retry_limit=4,
+        reviewer_infra_retry_backoff_s=0.25,
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert result["status"] == "accepted"
+    assert result["workflow_route"]["reviewer_infra_retry_limit"] == 4
+    assert result["workflow_route"]["reviewer_infra_retry_backoff_s"] == 0.25
+    assert requests
+    assert all(request.reviewer_infra_retry_limit == 4 for request in requests)
+    assert all(request.reviewer_infra_retry_backoff_s == 0.25 for request in requests)
 
 
 @pytest.mark.asyncio
@@ -859,6 +994,47 @@ async def test_submit_workflow_job_payload_round_trips_agentic_policy_fields(mon
     poll = await _maybe_await(server.tools["poll_dual_agent_workflow_job"](job_id=result["job_id"]))
     assert poll["status"] == "running"
     assert poll["job_id"] == result["job_id"]
+
+
+@pytest.mark.asyncio
+async def test_submit_workflow_job_payload_round_trips_reviewer_infra_retry_policy(
+    monkeypatch,
+    tmp_path,
+):
+    import mcp_tools.codex_supervisor_stdio as stdio
+    from mcp_tools.codex_supervisor_workflow_cli import workflow_kwargs_from_payload
+
+    server, _state = _server(tmp_path)
+
+    class FakePopen:
+        pid = 43210
+
+        def __init__(self, argv, **kwargs):
+            pass
+
+    monkeypatch.setattr(stdio.subprocess, "Popen", FakePopen)
+    monkeypatch.setattr(stdio, "_pid_alive", lambda pid: True)
+
+    result = await _maybe_await(server.tools["submit_dual_agent_workflow_job"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Run long workflow out of band with reviewer infra retry policy.",
+        max_rounds_per_gate=1,
+        tool_receipts=_tool_receipts(),
+        reviewer_infra_retry_limit=4,
+        reviewer_infra_retry_backoff_s=0.25,
+        config_path=str(tmp_path / "config.yaml"),
+    ))
+
+    request = json.loads(Path(result["request_path"]).read_text(encoding="utf-8"))
+    kwargs = workflow_kwargs_from_payload(request)
+
+    assert result["status"] == "running"
+    assert request["reviewer_infra_retry_limit"] == 4
+    assert request["reviewer_infra_retry_backoff_s"] == 0.25
+    assert kwargs["reviewer_infra_retry_limit"] == 4
+    assert kwargs["reviewer_infra_retry_backoff_s"] == 0.25
 
 
 @pytest.mark.asyncio
@@ -2520,6 +2696,8 @@ async def test_run_dual_agent_workflow_with_cursor_review_blocks_on_cursor_rejec
         intent="Cursor should block unresolved concerns.",
         max_rounds_per_gate=1,
         cursor_review=True,
+        reviewer_infra_retry_limit=3,
+        reviewer_infra_retry_backoff_s=0,
         tool_receipts=_tool_receipts(),
     ))
 
@@ -2692,6 +2870,54 @@ async def test_reviewer_unavailable_proceed_degraded_advances_with_degraded_rece
         task_id="workflow-1",
     ))
     assert transcript["reviewer_unavailable_recoveries"]
+
+
+@pytest.mark.asyncio
+async def test_exhausted_cursor_infra_retry_proceeds_degraded_without_counting_cursor_accept(
+    tmp_path,
+):
+    server, state = _server(tmp_path, cursor_runner=_cursor_exhausted_infra_runner)
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Exhausted Cursor infrastructure retries should recover degraded.",
+        max_rounds_per_gate=1,
+        cursor_review=True,
+        reviewer_unavailable_policy="proceed_degraded",
+        reviewer_infra_retry_limit=2,
+        reviewer_infra_retry_backoff_s=0,
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert result["status"] == "accepted"
+    assert result["final_gate_result"]["status"] == "accepted"
+    cursor_review = result["final_gate_result"]["cursor_review"]
+    assert cursor_review["accepted"] is False
+    assert cursor_review["failure_classification"] == "reviewer_infrastructure_unavailable"
+    assert cursor_review["probe"]["reason"] == "reviewer_infrastructure_unavailable"
+    assert cursor_review["diagnostics"]["infrastructure_retries"]["exhausted"] is True
+    assert cursor_review["reviewer_unavailable_recovery"]["evidence_grade"] == "degraded"
+    assert (
+        cursor_review["reviewer_unavailable_recovery"]["reviewer_verdict_counted_as_accept"]
+        is False
+    )
+
+    recovery_events = [
+        json.loads(row["payload_json"])
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "dual_agent_reviewer_unavailable_recovery"
+    ]
+    assert recovery_events
+    assert recovery_events[-1]["status"] == "proceeded_degraded"
+    assert recovery_events[-1]["classification"] == "reviewer_infrastructure_unavailable"
+    assert recovery_events[-1]["evidence_grade"] == "degraded"
+    assert recovery_events[-1]["reviewer_verdict_counted_as_accept"] is False
+    assert recovery_events[-1]["available_reviewers"] == {
+        "claude": "accept",
+        "codex": "accept",
+    }
 
 
 @pytest.mark.asyncio

@@ -12,6 +12,7 @@ import os
 import json
 import signal
 import subprocess
+import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 import threading
@@ -53,6 +54,8 @@ class CursorInvocationRequest:
     expected_decisions: tuple[str, ...] = ()
     expected_objections: tuple[str, ...] = ()
     contract_retry_limit: int = 3
+    reviewer_infra_retry_limit: int = 2
+    reviewer_infra_retry_backoff_s: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -183,8 +186,14 @@ def invoke_cursor_agent(
             )
         try:
             if attempt_request.reviewer_output_mode == "cursor_sdk":
-                with _cursor_sdk_timeout(attempt_request.timeout_s):
-                    transcript, metadata = _run_cursor_sdk(attempt_request)
+                retry_result = _run_cursor_sdk_with_infra_retries(attempt_request)
+                if isinstance(retry_result, CursorInvocationResult):
+                    return _fallback_or_primary_failure(
+                        retry_result,
+                        request,
+                        status_runner=status_runner,
+                    )
+                transcript, metadata = retry_result
             else:
                 transcript, metadata = _run_litellm_structured(attempt_request)
         except CursorSdkTimeoutError:
@@ -369,6 +378,102 @@ def _fallback_or_primary_failure(
     )
 
 
+def _run_cursor_sdk_with_infra_retries(
+    request: CursorInvocationRequest,
+) -> tuple[str, dict[str, Any]] | CursorInvocationResult:
+    retry_limit = max(0, int(request.reviewer_infra_retry_limit or 0))
+    backoff_base_s = max(0.0, float(request.reviewer_infra_retry_backoff_s or 0.0))
+    max_attempts = 1 + retry_limit
+    attempts: list[dict[str, Any]] = []
+    backoffs: list[float] = []
+
+    for infra_attempt in range(1, max_attempts + 1):
+        try:
+            with _cursor_sdk_timeout(request.timeout_s):
+                transcript, metadata = _run_cursor_sdk(request)
+        except CursorSdkTimeoutError:
+            attempts.append({
+                "attempt": infra_attempt,
+                "reason": "cursor_sdk_timeout",
+                "timeout_s": max(1, int(request.timeout_s)),
+            })
+        except ModuleNotFoundError:
+            raise
+        except Exception as e:  # pragma: no cover - exact SDK exception classes vary.
+            attempts.append({
+                "attempt": infra_attempt,
+                "reason": "reviewer_invocation_failed",
+                "error": str(e),
+            })
+        else:
+            if attempts:
+                metadata = {
+                    **metadata,
+                    "infrastructure_retries": _infrastructure_retry_diagnostics(
+                        attempts=attempts,
+                        retry_limit=retry_limit,
+                        backoffs=backoffs,
+                        exhausted=False,
+                    ),
+                }
+            return transcript, metadata
+
+        if infra_attempt < max_attempts:
+            delay_s = backoff_base_s * (2 ** (infra_attempt - 1))
+            backoffs.append(delay_s)
+            if delay_s > 0:
+                time.sleep(delay_s)
+
+    final = attempts[-1] if attempts else {
+        "attempt": 1,
+        "reason": "reviewer_invocation_failed",
+        "error": "cursor sdk failed without attempt diagnostics",
+    }
+    diagnostics = _infrastructure_retry_diagnostics(
+        attempts=attempts,
+        retry_limit=retry_limit,
+        backoffs=backoffs,
+        exhausted=True,
+    )
+    details = {
+        **{key: value for key, value in final.items() if key != "attempt"},
+        "attempts": len(attempts),
+        "retry_limit": retry_limit,
+        "infrastructure_retries": diagnostics,
+    }
+    primary_failure = _cursor_infrastructure_result(
+        reason=str(final.get("reason") or "reviewer_invocation_failed"),
+        attempts=len(attempts),
+        retry_reasons=(),
+        details=details,
+        reviewer_output_mode=request.reviewer_output_mode,
+    )
+    return replace(
+        primary_failure,
+        diagnostics={
+            **(primary_failure.diagnostics or {}),
+            "infrastructure_retries": diagnostics,
+        },
+    )
+
+
+def _infrastructure_retry_diagnostics(
+    *,
+    attempts: list[dict[str, Any]],
+    retry_limit: int,
+    backoffs: list[float],
+    exhausted: bool,
+) -> dict[str, Any]:
+    return {
+        "attempt_count": len(attempts) + (0 if exhausted else 1),
+        "failed_attempt_count": len(attempts),
+        "retry_limit": retry_limit,
+        "attempts": attempts,
+        "backoff_s": backoffs,
+        "exhausted": exhausted,
+    }
+
+
 def _structured_fallback_available(request: CursorInvocationRequest) -> bool:
     return bool(request.openai_api_key)
 
@@ -466,6 +571,7 @@ def _metadata_diagnostics(metadata: dict[str, Any]) -> dict[str, Any] | None:
         "finish_reason",
         "prompt_tokens",
         "completion_tokens",
+        "infrastructure_retries",
     )
     diagnostics = {
         key: metadata.get(key)

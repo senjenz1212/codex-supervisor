@@ -1,0 +1,81 @@
+# Grill Findings
+
+These findings are derived from dual-agent gate objections in the ledger.
+Future duo-agent runs should also create this file through the `prd-to-tdd` skill's `grill-with-docs` gates before implementation.
+
+- event_id 418437 `prd_review`: Efficacy not demonstrated: diagnosed failure was a 7-attempt cluster that later succeeded; PRD makes retry budget configurable (P4) but does not argue a default budget would absorb that observed cluster
+- event_id 418437 `prd_review`: Watchdog timeouts are listed as retried (Implementation Decisions) but promise contracts P1-P3 only frame SDK exceptions; timeout-vs-exception retry policy should be made explicit in TDD
+- event_id 418437 `prd_review`: Backoff shape (fixed/exponential/jitter) and default retry_limit/backoff values are unspecified; should be pinned in TDD so 'bounded' is testable
+- event_id 418438 `prd_review`: both agents accepted
+- event_id 418445 `issues_review`: gate blocked
+- event_id 418486 `issues_review`: both agents accepted
+- event_id 418504 `tdd_review`: P4 names submit_dual_agent_workflow_job and Issue 2 requires detached submit to store retry policy, but no test asserts the detached job payload carries the policy.
+- event_id 418504 `tdd_review`: Issue 1 acceptance 'Missing modules are classified without retry loops' and the PRD decision to not retry missing modules have no corresponding test in the plan.
+- event_id 418504 `tdd_review`: Traceability mismatch: test_workflow_kwargs_from_payload_preserves_reviewer_infra_retry_fields and test_cursor_revise_still_blocks_with_retry_policy_enabled do not exist as named; coverage is folded into other tests (driver:273 preview-fields test; existing revise-blocks tests at cursor_agent:805,346).
+- event_id 418505 `tdd_review`: agents have not both accepted yet; revise and continue
+- event_id 418507 `tdd_review`: P4 names submit_dual_agent_workflow_job and Issue 2 requires detached submit to store retry policy, but no test asserts the detached job payload carries the policy.
+- event_id 418507 `tdd_review`: Issue 1 acceptance 'Missing modules are classified without retry loops' and the PRD decision to not retry missing modules have no corresponding test in the plan.
+- event_id 418507 `tdd_review`: Traceability mismatch: test_workflow_kwargs_from_payload_preserves_reviewer_infra_retry_fields and test_cursor_revise_still_blocks_with_retry_policy_enabled do not exist as named; coverage is folded into other tests (driver:273 preview-fields test; existing revise-blocks tests at cursor_agent:805,346).
+- event_id 418516 `tdd_review`: Slice 1 AC#4 (no missing-module/ModuleNotFoundError no-retry RED test) is uncovered despite new retry-loop behavior at cursor_agent.py:400
+- event_id 418516 `tdd_review`: Slice 2 AC#4 / PRD P4 (submit_dual_agent_workflow_job persisting reviewer_infra_retry_* in job payload) is uncovered; existing submit tests are from the idempotency slice
+- event_id 418516 `tdd_review`: Minor: Slice 2 AC#1 Config.supervisor defaults not directly asserted
+- event_id 418517 `tdd_review`: agents have not both accepted yet; revise and continue
+- event_id 418519 `tdd_review`: Slice 1 AC#4 (no missing-module/ModuleNotFoundError no-retry RED test) is uncovered despite new retry-loop behavior at cursor_agent.py:400
+- event_id 418519 `tdd_review`: Slice 2 AC#4 / PRD P4 (submit_dual_agent_workflow_job persisting reviewer_infra_retry_* in job payload) is uncovered; existing submit tests are from the idempotency slice
+- event_id 418519 `tdd_review`: Minor: Slice 2 AC#1 Config.supervisor defaults not directly asserted
+- event_id 418531 `tdd_review`: Issue1 AC4 (missing-module no-retry) has no RED test in plan or test_cursor_agent.py
+- event_id 418531 `tdd_review`: Issue2 AC4 / P4 (detached submit_dual_agent_workflow_job carries retry policy) has no RED test; submit tests cover only dedup/idempotency
+- event_id 418531 `tdd_review`: Issue3 AC2 (workflow exhausted-retry stays degraded/non-accepting) has no gate-boundary RED test; P2 test only covers invoke_cursor_agent unit boundary
+- event_id 418532 `tdd_review`: agents have not both accepted yet; revise and continue
+- event_id 418534 `tdd_review`: Issue1 AC4 (missing-module no-retry) has no RED test in plan or test_cursor_agent.py
+- event_id 418534 `tdd_review`: Issue2 AC4 / P4 (detached submit_dual_agent_workflow_job carries retry policy) has no RED test; submit tests cover only dedup/idempotency
+- event_id 418534 `tdd_review`: Issue3 AC2 (workflow exhausted-retry stays degraded/non-accepting) has no gate-boundary RED test; P2 test only covers invoke_cursor_agent unit boundary
+- event_id 418544 `tdd_review`: No RED test for 'missing modules classified without retry' (Issue 1 acceptance #4; PRD forbids retrying ModuleNotFoundError) despite except ModuleNotFoundError living inside the retry loop at cursor_agent.py:400.
+- event_id 418544 `tdd_review`: No test exercises detached submit_dual_agent_workflow_job for reviewer_infra_retry_* round-trip; P4 names that boundary and forbids inline/detached policy divergence. Existing detached test round-trips agentic fields only.
+- event_id 418544 `tdd_review`: P5 plan/impl mismatch: tdd.md names test_cursor_revise_still_blocks_with_retry_policy_enabled at run_dual_agent_workflow, but only test_cursor_sdk_fallback_revise_still_blocks exists at the invoke_cursor_agent boundary without retry policy enabled.
+- event_id 418544 `tdd_review`: Fallback-only-after-exhaustion ordering is asserted only negatively (no fallback on success); no positive assertion that fallback runs after all infra attempts are consumed.
+- event_id 418545 `tdd_review`: agents have not both accepted yet; revise and continue
+- event_id 418547 `tdd_review`: No RED test for 'missing modules classified without retry' (Issue 1 acceptance #4; PRD forbids retrying ModuleNotFoundError) despite except ModuleNotFoundError living inside the retry loop at cursor_agent.py:400.
+- event_id 418547 `tdd_review`: No test exercises detached submit_dual_agent_workflow_job for reviewer_infra_retry_* round-trip; P4 names that boundary and forbids inline/detached policy divergence. Existing detached test round-trips agentic fields only.
+- event_id 418547 `tdd_review`: P5 plan/impl mismatch: tdd.md names test_cursor_revise_still_blocks_with_retry_policy_enabled at run_dual_agent_workflow, but only test_cursor_sdk_fallback_revise_still_blocks exists at the invoke_cursor_agent boundary without retry policy enabled.
+- event_id 418547 `tdd_review`: Fallback-only-after-exhaustion ordering is asserted only negatively (no fallback on success); no positive assertion that fallback runs after all infra attempts are consumed.
+- event_id 418552 `tdd_review`: Issue 1 criterion 'Missing modules are classified without retry loops' has no mapped RED test; PRD Impl Decision forbids retrying missing modules, so a forbidden-outcome test is required
+- event_id 418552 `tdd_review`: Issue 2 criterion 'Detached submit stores retry policy in the job request payload' (PRD P4 names submit_dual_agent_workflow_job) has no RED test in the plan
+- event_id 418552 `tdd_review`: Issue 3 criterion 'Recovery artifacts still mark missing Cursor verdicts as degraded, non-accepting evidence' and its named exhausted-infra-retry workflow scenario are not in the RED plan
+- event_id 418552 `tdd_review`: Traceability table names test_workflow_kwargs_from_payload_preserves_reviewer_infra_retry_fields which does not exist by that name; equivalent asserts live in a differently-named test
+- event_id 418553 `tdd_review`: max_rounds_per_gate exhausted without both agents accepting
+- event_id 418555 `tdd_review`: Issue 1 criterion 'Missing modules are classified without retry loops' has no mapped RED test; PRD Impl Decision forbids retrying missing modules, so a forbidden-outcome test is required
+- event_id 418555 `tdd_review`: Issue 2 criterion 'Detached submit stores retry policy in the job request payload' (PRD P4 names submit_dual_agent_workflow_job) has no RED test in the plan
+- event_id 418555 `tdd_review`: Issue 3 criterion 'Recovery artifacts still mark missing Cursor verdicts as degraded, non-accepting evidence' and its named exhausted-infra-retry workflow scenario are not in the RED plan
+- event_id 418555 `tdd_review`: Traceability table names test_workflow_kwargs_from_payload_preserves_reviewer_infra_retry_fields which does not exist by that name; equivalent asserts live in a differently-named test
+- event_id 418772 `tdd_review`: Non-blocking: tdd.md names the P5 blocking guard 'test_cursor_revise_still_blocks_with_retry_policy_enabled' in the RED Plan but 'test_run_dual_agent_workflow_with_cursor_review_blocks_on_cursor_rejection' in Traceability and Regression Commands; reconcile to one name during execution.
+- event_id 418772 `tdd_review`: Live tdd.md hash could not be recomputed (verification shell commands required approval and were not run); review based on authoritative live handoff + read content.
+- event_id 418776 `tdd_review`: cursor_reviewer_infrastructure: reviewer_infrastructure_unavailable
+- event_id 418779 `tdd_review`: Non-blocking: tdd.md names the P5 blocking guard 'test_cursor_revise_still_blocks_with_retry_policy_enabled' in the RED Plan but 'test_run_dual_agent_workflow_with_cursor_review_blocks_on_cursor_rejection' in Traceability and Regression Commands; reconcile to one name during execution.
+- event_id 418779 `tdd_review`: Live tdd.md hash could not be recomputed (verification shell commands required approval and were not run); review based on authoritative live handoff + read content.
+- event_id 418854 `tdd_review`: No RED test proves a watchdog timeout is retried (deferred to existing classification test per grill Finding 2).
+- event_id 418854 `tdd_review`: No RED test asserts the backoff sleep was invoked with the configured reviewer_infra_retry_backoff_s, despite injected-sleep-capture being the named mechanism.
+- event_id 418858 `tdd_review`: cursor_reviewer_infrastructure: reviewer_infrastructure_unavailable
+- event_id 418866 `implementation_plan`: gate blocked
+- event_id 418918 `implementation_plan`: cursor_reviewer_infrastructure: reviewer_infrastructure_unavailable
+- event_id 418959 `implementation_plan`: cursor_reviewer_infrastructure: reviewer_infrastructure_unavailable
+- event_id 418983 `execution`: both agents accepted
+- event_id 419011 `outcome_review`: Tests cover all acceptance criteria but were not run in this session; test_status unknown - run pytest before merge
+- event_id 419017 `outcome_review`: cursor_reviewer_infrastructure: reviewer_infrastructure_unavailable
+- event_id 419020 `outcome_review`: Tests cover all acceptance criteria but were not run in this session; test_status unknown - run pytest before merge
+- event_id 419062 `outcome_review`: Deciding evidence (observed green pytest output) was not produced this session; pytest execution was blocked pending approval
+- event_id 419062 `outcome_review`: outcome-review.md is internally inconsistent: skill-receipts claim 109 passed / 598 passed while the same file states tests were not run this session and test_status is unknown
+- event_id 419063 `outcome_review`: agents have not both accepted yet; revise and continue
+- event_id 419065 `outcome_review`: Deciding evidence (observed green pytest output) was not produced this session; pytest execution was blocked pending approval
+- event_id 419065 `outcome_review`: outcome-review.md is internally inconsistent: skill-receipts claim 109 passed / 598 passed while the same file states tests were not run this session and test_status is unknown
+- event_id 419100 `outcome_review`: Deciding evidence (observed green pytest output) was not produced; pytest execution blocked pending approval and gate runs non-interactively
+- event_id 419100 `outcome_review`: outcome-review.md is internally inconsistent: skill-receipts claim 109/598 passed while the same file states tests were not run this session (test_status unknown)
+- event_id 419101 `outcome_review`: agents have not both accepted yet; revise and continue
+- event_id 419103 `outcome_review`: Deciding evidence (observed green pytest output) was not produced; pytest execution blocked pending approval and gate runs non-interactively
+- event_id 419103 `outcome_review`: outcome-review.md is internally inconsistent: skill-receipts claim 109/598 passed while the same file states tests were not run this session (test_status unknown)
+- event_id 419132 `outcome_review`: test_status unverified: targeted pytest suites require Bash approval the non-interactive gate cannot grant
+- event_id 419132 `outcome_review`: worker outcome-review historically self-contradicts on test_status, so receipts are not trusted as evidence
+- event_id 419133 `outcome_review`: agents have not both accepted yet; revise and continue
+- event_id 419135 `outcome_review`: test_status unverified: targeted pytest suites require Bash approval the non-interactive gate cannot grant
+- event_id 419135 `outcome_review`: worker outcome-review historically self-contradicts on test_status, so receipts are not trusted as evidence
+- event_id 419158 `outcome_review`: cursor_reviewer_infrastructure: reviewer_infrastructure_unavailable

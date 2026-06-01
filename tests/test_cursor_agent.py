@@ -496,6 +496,184 @@ def test_cursor_sdk_is_default_invocation_and_records_diagnostics(tmp_path: Path
     assert result.diagnostics == {"prompt_chars": 2048, "prompt_sha256": "a" * 64}
 
 
+def test_cursor_sdk_infra_retry_succeeds_before_fallback(tmp_path: Path, monkeypatch):
+    calls: list[CursorInvocationRequest] = []
+
+    def flaky_cursor(request: CursorInvocationRequest):
+        calls.append(request)
+        if len(calls) == 1:
+            raise RuntimeError("internal: internal error")
+        outcome = _complete_cursor_outcome(task_id=request.task_id)
+        return f"<dual_agent_outcome>{outcome.model_dump_json()}</dual_agent_outcome>", {
+            "agent_id": "agent-cursor",
+            "run_id": "run-cursor",
+            "status": "finished",
+            "model": "composer-2.5",
+            "reviewer_runtime": "cursor_sdk",
+            "reviewer_output_mode": "cursor_sdk",
+            "duration_ms": 42,
+            "prompt_chars": 2048,
+            "prompt_sha256": "c" * 64,
+        }
+
+    def fallback_run(request: CursorInvocationRequest):
+        raise AssertionError("fallback must not run before infra retry succeeds")
+
+    monkeypatch.setattr(cursor_agent, "_run_cursor_sdk", flaky_cursor)
+    monkeypatch.setattr(cursor_agent, "_run_litellm_structured", fallback_run)
+
+    result = invoke_cursor_agent(CursorInvocationRequest(
+        task_id="tri-agent",
+        gate="outcome_review",
+        instruction="Review the outcome.",
+        cwd=tmp_path,
+        openai_api_key="fallback-key",
+        reviewer_infra_retry_limit=1,
+        reviewer_infra_retry_backoff_s=0,
+        contract_retry_limit=0,
+    ))
+
+    assert len(calls) == 2
+    assert result.probe.ok
+    assert cursor_accepts(result)
+    assert result.failure_classification is None
+    retry_diag = result.diagnostics["infrastructure_retries"]
+    assert retry_diag["retry_limit"] == 1
+    assert retry_diag["exhausted"] is False
+    assert retry_diag["attempt_count"] == 2
+    assert retry_diag["attempts"][0]["reason"] == "reviewer_invocation_failed"
+    assert retry_diag["attempts"][0]["error"] == "internal: internal error"
+    assert retry_diag["backoff_s"] == [0.0]
+
+
+def test_cursor_sdk_infra_retries_exhaust_with_attempt_diagnostics(
+    tmp_path: Path,
+    monkeypatch,
+):
+    calls: list[CursorInvocationRequest] = []
+
+    def failing_cursor(request: CursorInvocationRequest):
+        calls.append(request)
+        raise RuntimeError(f"internal: internal error {len(calls)}")
+
+    monkeypatch.setattr(cursor_agent, "_run_cursor_sdk", failing_cursor)
+
+    result = invoke_cursor_agent(CursorInvocationRequest(
+        task_id="tri-agent",
+        gate="outcome_review",
+        instruction="Review the outcome.",
+        cwd=tmp_path,
+        reviewer_infra_retry_limit=2,
+        reviewer_infra_retry_backoff_s=0,
+        contract_retry_limit=0,
+    ))
+
+    assert len(calls) == 3
+    assert result.probe.reason == "reviewer_infrastructure_unavailable"
+    assert result.probe.details["attempts"] == 3
+    assert result.probe.details["retry_limit"] == 2
+    assert result.failure_classification == "reviewer_infrastructure_unavailable"
+    retry_diag = result.diagnostics["infrastructure_retries"]
+    assert retry_diag["exhausted"] is True
+    assert retry_diag["attempt_count"] == 3
+    assert [item["attempt"] for item in retry_diag["attempts"]] == [1, 2, 3]
+    assert retry_diag["attempts"][-1]["error"] == "internal: internal error 3"
+    assert result.diagnostics["fallback"] == {
+        "attempted": False,
+        "reason": "missing_openai_api_key",
+    }
+
+
+def test_cursor_sdk_contract_retry_does_not_consume_infra_retry_budget(
+    tmp_path: Path,
+    monkeypatch,
+):
+    calls: list[CursorInvocationRequest] = []
+
+    def malformed_then_valid(request: CursorInvocationRequest):
+        calls.append(request)
+        if len(calls) == 1:
+            return "Reviewed the gate but omitted the typed block.", {
+                "agent_id": "agent-1",
+                "run_id": "run-1",
+                "status": "finished",
+                "model": "composer-2.5",
+                "reviewer_runtime": "cursor_sdk",
+                "reviewer_output_mode": "cursor_sdk",
+                "duration_ms": 12,
+            }
+        outcome = _complete_cursor_outcome(task_id=request.task_id)
+        return f"<dual_agent_outcome>{outcome.model_dump_json()}</dual_agent_outcome>", {
+            "agent_id": "agent-2",
+            "run_id": "run-2",
+            "status": "finished",
+            "model": "composer-2.5",
+            "reviewer_runtime": "cursor_sdk",
+            "reviewer_output_mode": "cursor_sdk",
+            "duration_ms": 13,
+        }
+
+    monkeypatch.setattr(cursor_agent, "_run_cursor_sdk", malformed_then_valid)
+
+    result = invoke_cursor_agent(CursorInvocationRequest(
+        task_id="tri-agent",
+        gate="outcome_review",
+        instruction="Review the outcome.",
+        cwd=tmp_path,
+        reviewer_infra_retry_limit=5,
+        reviewer_infra_retry_backoff_s=0,
+        contract_retry_limit=1,
+    ))
+
+    assert len(calls) == 2
+    assert "Corrective retry" in calls[1].instruction
+    assert result.probe.ok
+    assert result.retry_reasons == ("missing dual_agent_outcome block",)
+    assert "infrastructure_retries" not in (result.diagnostics or {})
+
+
+def test_cursor_sdk_missing_module_does_not_consume_infra_retry_budget(
+    tmp_path: Path,
+    monkeypatch,
+):
+    calls: list[CursorInvocationRequest] = []
+
+    def missing_cursor_sdk(request: CursorInvocationRequest):
+        calls.append(request)
+        raise ModuleNotFoundError(
+            "No module named 'cursor_sdk'",
+            name="cursor_sdk",
+            path=None,
+        )
+
+    monkeypatch.setattr(cursor_agent, "_run_cursor_sdk", missing_cursor_sdk)
+
+    result = invoke_cursor_agent(CursorInvocationRequest(
+        task_id="tri-agent",
+        gate="outcome_review",
+        instruction="Review the outcome.",
+        cwd=tmp_path,
+        reviewer_infra_retry_limit=5,
+        reviewer_infra_retry_backoff_s=0,
+        contract_retry_limit=0,
+    ))
+
+    assert len(calls) == 1
+    assert result.probe.reason == "reviewer_infrastructure_unavailable"
+    assert result.probe.details["original_reason"] == "cursor_sdk_missing"
+    assert result.probe.details["attempts"] == 1
+    assert result.failure_classification == "reviewer_infrastructure_unavailable"
+    assert result.recoverable is True
+    assert result.diagnostics["failure"]["probe"]["details"]["original_reason"] == (
+        "cursor_sdk_missing"
+    )
+    assert "infrastructure_retries" not in (result.diagnostics or {})
+    assert result.diagnostics["fallback"] == {
+        "attempted": False,
+        "reason": "missing_openai_api_key",
+    }
+
+
 def test_cursor_sdk_timeout_classifies_as_reviewer_infrastructure_unavailable(
     tmp_path: Path,
     monkeypatch,
@@ -516,6 +694,7 @@ def test_cursor_sdk_timeout_classifies_as_reviewer_infrastructure_unavailable(
         instruction="Review the TDD plan.",
         cwd=tmp_path,
         timeout_s=1,
+        reviewer_infra_retry_limit=0,
         contract_retry_limit=0,
     ))
 
@@ -545,6 +724,7 @@ def test_cursor_sdk_fallback_requires_explicit_request_key(tmp_path: Path, monke
         gate="outcome_review",
         instruction="Review the outcome.",
         cwd=tmp_path,
+        reviewer_infra_retry_limit=0,
         contract_retry_limit=0,
     ))
 
@@ -575,6 +755,7 @@ def test_cursor_sdk_failure_falls_back_to_litellm_structured_with_lower_assuranc
         instruction="Review the outcome.",
         cwd=tmp_path,
         openai_api_key="fallback-key",
+        reviewer_infra_retry_limit=0,
         contract_retry_limit=0,
     ))
 
@@ -609,6 +790,7 @@ def test_cursor_sdk_both_primary_and_fallback_fail_remains_recoverable(
         instruction="Review the outcome.",
         cwd=tmp_path,
         openai_api_key="fallback-key",
+        reviewer_infra_retry_limit=0,
         contract_retry_limit=0,
     ))
 
@@ -650,6 +832,7 @@ def test_cursor_sdk_contract_miss_does_not_fall_back_even_with_explicit_key(
         instruction="Review the outcome.",
         cwd=tmp_path,
         openai_api_key="fallback-key",
+        reviewer_infra_retry_limit=0,
         contract_retry_limit=0,
     ))
 

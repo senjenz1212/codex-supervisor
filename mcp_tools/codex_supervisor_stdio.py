@@ -464,6 +464,8 @@ class CodexSupervisorMcpAPI:
         reviewer_model: str | None = None,
         reviewer_output_mode: str | None = None,
         reviewer_max_tokens: int | None = None,
+        reviewer_infra_retry_limit: int | None = None,
+        reviewer_infra_retry_backoff_s: float | None = None,
         task_complexity: str | None = None,
     ) -> dict[str, Any]:
         execution_layer_mode = _canonical_execution_layer_mode(execution_layer_mode)
@@ -493,6 +495,14 @@ class CodexSupervisorMcpAPI:
         reviewer_max_tokens_value = _reviewer_max_tokens_config(
             self.cfg,
             reviewer_max_tokens=reviewer_max_tokens,
+        )
+        reviewer_infra_retry_limit_value = _reviewer_infra_retry_limit_config(
+            self.cfg,
+            reviewer_infra_retry_limit=reviewer_infra_retry_limit,
+        )
+        reviewer_infra_retry_backoff_s_value = _reviewer_infra_retry_backoff_s_config(
+            self.cfg,
+            reviewer_infra_retry_backoff_s=reviewer_infra_retry_backoff_s,
         )
         max_rounds = max(1, int(max_rounds_per_gate))
         screenshot_payloads = screenshots or []
@@ -537,6 +547,8 @@ class CodexSupervisorMcpAPI:
             "reviewer_model": reviewer_model_value,
             "reviewer_output_mode": reviewer_output_mode_value,
             "reviewer_max_tokens": reviewer_max_tokens_value,
+            "reviewer_infra_retry_limit": reviewer_infra_retry_limit_value,
+            "reviewer_infra_retry_backoff_s": reviewer_infra_retry_backoff_s_value,
             "execution_layer_mode": execution_layer_mode,
             "dynamic_workflow_task_class": dynamic_workflow_task_class,
             "requires_dynamic_workflow_receipts": _is_dynamic_workflow_preview(execution_layer_mode),
@@ -1134,6 +1146,8 @@ class CodexSupervisorMcpAPI:
                             "reviewer_model": reviewer_model_value,
                             "reviewer_output_mode": reviewer_output_mode_value,
                             "reviewer_max_tokens": reviewer_max_tokens_value,
+                            "reviewer_infra_retry_limit": reviewer_infra_retry_limit_value,
+                            "reviewer_infra_retry_backoff_s": reviewer_infra_retry_backoff_s_value,
                             "timeout_s": timeout_s,
                             "planning_artifact_count": len(gate_artifacts),
                             "receipt_count": len(receipt_payloads),
@@ -1166,6 +1180,8 @@ class CodexSupervisorMcpAPI:
                                 reviewer_model=reviewer_model_value,
                                 reviewer_output_mode=reviewer_output_mode_value,  # type: ignore[arg-type]
                                 reviewer_max_tokens=reviewer_max_tokens_value,
+                                reviewer_infra_retry_limit=reviewer_infra_retry_limit_value,
+                                reviewer_infra_retry_backoff_s=reviewer_infra_retry_backoff_s_value,
                                 openai_api_key=self.cfg.models.openai_api_key,
                                 openai_base_url=self.cfg.models.openai_base_url,
                                 timeout_s=timeout_s,
@@ -1815,6 +1831,8 @@ class CodexSupervisorMcpAPI:
         reviewer_model: str | None = None,
         reviewer_output_mode: str | None = None,
         reviewer_max_tokens: int | None = None,
+        reviewer_infra_retry_limit: int | None = None,
+        reviewer_infra_retry_backoff_s: float | None = None,
         task_complexity: str | None = None,
         config_path: str | None = None,
         client_token: str | None = None,
@@ -1846,6 +1864,14 @@ class CodexSupervisorMcpAPI:
         reviewer_max_tokens_value = _reviewer_max_tokens_config(
             self.cfg,
             reviewer_max_tokens=reviewer_max_tokens,
+        )
+        reviewer_infra_retry_limit_value = _reviewer_infra_retry_limit_config(
+            self.cfg,
+            reviewer_infra_retry_limit=reviewer_infra_retry_limit,
+        )
+        reviewer_infra_retry_backoff_s_value = _reviewer_infra_retry_backoff_s_config(
+            self.cfg,
+            reviewer_infra_retry_backoff_s=reviewer_infra_retry_backoff_s,
         )
         cwd_path = Path(cwd).expanduser().resolve()
         payload = {
@@ -1880,6 +1906,8 @@ class CodexSupervisorMcpAPI:
             "reviewer_model": reviewer_model_value,
             "reviewer_output_mode": reviewer_output_mode_value,
             "reviewer_max_tokens": reviewer_max_tokens_value,
+            "reviewer_infra_retry_limit": reviewer_infra_retry_limit_value,
+            "reviewer_infra_retry_backoff_s": reviewer_infra_retry_backoff_s_value,
             "task_complexity": task_complexity,
         }
         idempotency_token = _workflow_job_idempotency_token(
@@ -3257,6 +3285,8 @@ def build_codex_supervisor_mcp_server(
         reviewer_model: str | None = None,
         reviewer_output_mode: str | None = None,
         reviewer_max_tokens: int | None = None,
+        reviewer_infra_retry_limit: int | None = None,
+        reviewer_infra_retry_backoff_s: float | None = None,
         task_complexity: str | None = None,
     ) -> dict[str, Any]:
         return await tool_api.run_dual_agent_workflow(
@@ -3289,6 +3319,8 @@ def build_codex_supervisor_mcp_server(
             reviewer_model=reviewer_model,
             reviewer_output_mode=reviewer_output_mode,
             reviewer_max_tokens=reviewer_max_tokens,
+            reviewer_infra_retry_limit=reviewer_infra_retry_limit,
+            reviewer_infra_retry_backoff_s=reviewer_infra_retry_backoff_s,
             task_complexity=task_complexity,
         )
 
@@ -3323,6 +3355,8 @@ def build_codex_supervisor_mcp_server(
         reviewer_model: str | None = None,
         reviewer_output_mode: str | None = None,
         reviewer_max_tokens: int | None = None,
+        reviewer_infra_retry_limit: int | None = None,
+        reviewer_infra_retry_backoff_s: float | None = None,
         task_complexity: str | None = None,
         config_path: str | None = None,
         client_token: str | None = None,
@@ -3357,6 +3391,8 @@ def build_codex_supervisor_mcp_server(
             reviewer_model=reviewer_model,
             reviewer_output_mode=reviewer_output_mode,
             reviewer_max_tokens=reviewer_max_tokens,
+            reviewer_infra_retry_limit=reviewer_infra_retry_limit,
+            reviewer_infra_retry_backoff_s=reviewer_infra_retry_backoff_s,
             task_complexity=task_complexity,
             config_path=config_path,
             client_token=client_token,
@@ -3860,6 +3896,28 @@ def _reviewer_max_tokens_config(cfg: Config, *, reviewer_max_tokens: int | None)
     if requested is None:
         requested = int(getattr(cfg.supervisor, "reviewer_max_tokens", 4096) or 4096)
     return max(1, int(requested))
+
+
+def _reviewer_infra_retry_limit_config(
+    cfg: Config,
+    *,
+    reviewer_infra_retry_limit: int | None,
+) -> int:
+    requested = reviewer_infra_retry_limit
+    if requested is None:
+        requested = int(getattr(cfg.supervisor, "reviewer_infra_retry_limit", 2) or 0)
+    return max(0, int(requested))
+
+
+def _reviewer_infra_retry_backoff_s_config(
+    cfg: Config,
+    *,
+    reviewer_infra_retry_backoff_s: float | None,
+) -> float:
+    requested = reviewer_infra_retry_backoff_s
+    if requested is None:
+        requested = float(getattr(cfg.supervisor, "reviewer_infra_retry_backoff_s", 1.0) or 0.0)
+    return max(0.0, float(requested))
 
 
 def _reviewer_unavailable_recovery_plan(
