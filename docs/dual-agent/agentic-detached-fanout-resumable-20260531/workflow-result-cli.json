@@ -1,0 +1,2154 @@
+{
+  "artifact_export": {
+    "files": [
+      "docs/dual-agent/agentic-detached-fanout-resumable-20260531/index.md",
+      "docs/dual-agent/agentic-detached-fanout-resumable-20260531/triage.md",
+      "docs/dual-agent/agentic-detached-fanout-resumable-20260531/prd.md",
+      "docs/dual-agent/agentic-detached-fanout-resumable-20260531/tdd.md",
+      "docs/dual-agent/agentic-detached-fanout-resumable-20260531/grill-findings.md",
+      "docs/dual-agent/agentic-detached-fanout-resumable-20260531/issues.md",
+      "docs/dual-agent/agentic-detached-fanout-resumable-20260531/screenshots.md",
+      "docs/dual-agent/agentic-detached-fanout-resumable-20260531/outcome-review.md",
+      "docs/dual-agent/agentic-detached-fanout-resumable-20260531/interactions.md",
+      "docs/dual-agent/agentic-detached-fanout-resumable-20260531/transcript.md",
+      "docs/dual-agent/agentic-detached-fanout-resumable-20260531/transcript.jsonl",
+      "docs/dual-agent/agentic-detached-fanout-resumable-20260531/mast-coverage.md",
+      "docs/dual-agent/agentic-detached-fanout-resumable-20260531/replay/manifest.json",
+      "docs/dual-agent/agentic-detached-fanout-resumable-20260531/replay/workspace-snapshot.json",
+      "docs/dual-agent/agentic-detached-fanout-resumable-20260531/replay/mast-coverage.json",
+      "docs/dual-agent/agentic-detached-fanout-resumable-20260531/source/grill-findings-tdd.md",
+      "docs/dual-agent/agentic-detached-fanout-resumable-20260531/source/grill-findings.md",
+      "docs/dual-agent/agentic-detached-fanout-resumable-20260531/source/implementation-plan.md",
+      "docs/dual-agent/agentic-detached-fanout-resumable-20260531/source/issues.md",
+      "docs/dual-agent/agentic-detached-fanout-resumable-20260531/source/prd.md",
+      "docs/dual-agent/agentic-detached-fanout-resumable-20260531/source/tdd.md"
+    ],
+    "output_dir": "docs/dual-agent/agentic-detached-fanout-resumable-20260531",
+    "run_id": "codex-agentic-detached-fanout-resumable-20260531",
+    "status": "ok",
+    "task_id": "agentic-detached-fanout-resumable-20260531"
+  },
+  "current_gate": "outcome_review",
+  "final_gate_result": {
+    "artifact_export": {
+      "files": [
+        "docs/dual-agent/agentic-detached-fanout-resumable-20260531/index.md",
+        "docs/dual-agent/agentic-detached-fanout-resumable-20260531/triage.md",
+        "docs/dual-agent/agentic-detached-fanout-resumable-20260531/prd.md",
+        "docs/dual-agent/agentic-detached-fanout-resumable-20260531/tdd.md",
+        "docs/dual-agent/agentic-detached-fanout-resumable-20260531/grill-findings.md",
+        "docs/dual-agent/agentic-detached-fanout-resumable-20260531/issues.md",
+        "docs/dual-agent/agentic-detached-fanout-resumable-20260531/screenshots.md",
+        "docs/dual-agent/agentic-detached-fanout-resumable-20260531/outcome-review.md",
+        "docs/dual-agent/agentic-detached-fanout-resumable-20260531/interactions.md",
+        "docs/dual-agent/agentic-detached-fanout-resumable-20260531/transcript.md",
+        "docs/dual-agent/agentic-detached-fanout-resumable-20260531/transcript.jsonl",
+        "docs/dual-agent/agentic-detached-fanout-resumable-20260531/mast-coverage.md",
+        "docs/dual-agent/agentic-detached-fanout-resumable-20260531/replay/manifest.json",
+        "docs/dual-agent/agentic-detached-fanout-resumable-20260531/replay/workspace-snapshot.json",
+        "docs/dual-agent/agentic-detached-fanout-resumable-20260531/replay/mast-coverage.json",
+        "docs/dual-agent/agentic-detached-fanout-resumable-20260531/source/grill-findings-tdd.md",
+        "docs/dual-agent/agentic-detached-fanout-resumable-20260531/source/grill-findings.md",
+        "docs/dual-agent/agentic-detached-fanout-resumable-20260531/source/implementation-plan.md",
+        "docs/dual-agent/agentic-detached-fanout-resumable-20260531/source/issues.md",
+        "docs/dual-agent/agentic-detached-fanout-resumable-20260531/source/prd.md",
+        "docs/dual-agent/agentic-detached-fanout-resumable-20260531/source/tdd.md"
+      ],
+      "output_dir": "docs/dual-agent/agentic-detached-fanout-resumable-20260531",
+      "run_id": "codex-agentic-detached-fanout-resumable-20260531",
+      "status": "ok",
+      "task_id": "agentic-detached-fanout-resumable-20260531"
+    },
+    "artifact_rigor": {
+      "accepted_prerequisite_gates": [
+        "execution"
+      ],
+      "artifact_policy": "strict",
+      "gate": "outcome_review",
+      "gate_statuses": {
+        "execution": "accepted",
+        "implementation_plan": "accepted",
+        "issues_review": "accepted",
+        "outcome_review": "blocked",
+        "prd_review": "accepted",
+        "tdd_review": "accepted"
+      },
+      "missing_artifact_paths": [],
+      "missing_artifacts": [],
+      "missing_prerequisite_gates": [],
+      "missing_screenshot_paths": [],
+      "present_artifacts": [
+        "grill_findings",
+        "implementation_plan",
+        "issues",
+        "prd",
+        "tdd_plan"
+      ],
+      "reason": "required_artifacts_present",
+      "required_artifacts": [
+        "prd",
+        "tdd_plan",
+        "grill_findings",
+        "issues",
+        "implementation_plan"
+      ],
+      "required_prerequisite_gates": [
+        "execution"
+      ],
+      "screenshots": [],
+      "status": "ok",
+      "user_facing": false,
+      "visual_validation": {
+        "allowed_sources": [
+          "browser",
+          "browser-use",
+          "browser_use",
+          "computer",
+          "computer-use",
+          "computer_use"
+        ],
+        "evidence": [],
+        "failures": [],
+        "reason": "no_screenshots_supplied",
+        "status": "not_required"
+      }
+    },
+    "attempts": 1,
+    "claim_verification": {
+      "details": {
+        "legacy_verified_claims": [],
+        "receipts": [
+          {
+            "artifacts": [
+              "docs/dual-agent/agentic-detached-fanout-resumable-20260531/source/prd.md"
+            ],
+            "claims": [
+              "prd-tdd skill executed",
+              "PRD promise contracts produced"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-to-prd-agentic-detached-fanout-resumable-20260531",
+            "skill": "to-prd",
+            "stage": "to_prd",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/agentic-detached-fanout-resumable-20260531/source/grill-findings.md"
+            ],
+            "claims": [
+              "prd-tdd skill executed",
+              "PRD grill findings resolved or waived"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-prd-grill-agentic-detached-fanout-resumable-20260531",
+            "skill": "grill-with-docs",
+            "stage": "prd_grill",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/agentic-detached-fanout-resumable-20260531/source/issues.md"
+            ],
+            "claims": [
+              "prd-tdd skill executed",
+              "issues map to PRD promises"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-to-issues-agentic-detached-fanout-resumable-20260531",
+            "skill": "to-issues",
+            "stage": "to_issues",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/agentic-detached-fanout-resumable-20260531/source/tdd.md"
+            ],
+            "claims": [
+              "prd-tdd skill executed",
+              "public-boundary RED tests planned"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-tdd-agentic-detached-fanout-resumable-20260531",
+            "skill": "tdd",
+            "stage": "tdd",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/agentic-detached-fanout-resumable-20260531/source/grill-findings-tdd.md"
+            ],
+            "claims": [
+              "prd-tdd skill executed",
+              "TDD grill findings resolved"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-tdd-grill-agentic-detached-fanout-resumable-20260531",
+            "skill": "grill-with-docs",
+            "stage": "tdd_grill",
+            "status": "passed"
+          },
+          {
+            "claims": [
+              "full suite passed",
+              "agentic detached fan-out resume regressions passed"
+            ],
+            "command": "uv run --extra dev pytest -q",
+            "kind": "test",
+            "receipt_id": "pytest-full-agentic-detached-fanout-resumable-20260531",
+            "status": "passed",
+            "summary": "590 passed in 117.51s"
+          },
+          {
+            "changed_files": [
+              "mcp_tools/codex_supervisor_stdio.py",
+              "supervisor/agentic_executor.py",
+              "supervisor/agentic_workers.py",
+              "supervisor/state.py",
+              "tests/test_agentic_executor.py",
+              "tests/test_agentic_workers.py",
+              "tests/test_dual_agent_workflow_driver.py"
+            ],
+            "claims": [
+              "implemented",
+              "diff present for agentic detached fan-out resume safety"
+            ],
+            "kind": "git_diff",
+            "receipt_id": "git-diff-agentic-detached-fanout-resumable-20260531",
+            "status": "present"
+          }
+        ]
+      },
+      "probe_id": "P11",
+      "reason": "workflow_claims_verified",
+      "status": "green"
+    },
+    "claude_gate_status": "accepted",
+    "cursor_review": {
+      "accepted": false,
+      "agent_id": null,
+      "attempts": 1,
+      "critical_review": {
+        "assumptions_to_verify": [],
+        "contradictions_checked": [],
+        "decision": "revise",
+        "evidence_refs": [],
+        "missing_evidence": [],
+        "schema_version": "critical-review/v1",
+        "severity": "none",
+        "strongest_objection": "none",
+        "what_would_change_my_mind": "Claude or Codex provides evidence resolving Cursor's objections."
+      },
+      "diagnostics": {
+        "failure": {
+          "attempts": 1,
+          "diagnostics": {
+            "failure": {
+              "attempts": 1,
+              "error": "internal: internal error",
+              "original_reason": "reviewer_invocation_failed",
+              "reviewer_output_mode": "cursor_sdk"
+            }
+          },
+          "failure_classification": "reviewer_infrastructure_unavailable",
+          "model": null,
+          "probe": {
+            "details": {
+              "attempts": 1,
+              "error": "internal: internal error",
+              "original_reason": "reviewer_invocation_failed",
+              "recoverable": true,
+              "retry_reasons": []
+            },
+            "probe_id": "CURSOR",
+            "reason": "reviewer_infrastructure_unavailable",
+            "status": "red"
+          },
+          "recoverable": true,
+          "retry_reasons": [],
+          "reviewer_assurance": "unavailable",
+          "reviewer_output_mode": "cursor_sdk",
+          "reviewer_runtime": "cursor_sdk",
+          "status": null
+        },
+        "fallback": {
+          "attempted": true,
+          "fallback_failure": {
+            "attempts": 1,
+            "diagnostics": {
+              "failure": {
+                "attempts": 1,
+                "diagnostics": {
+                  "failure": {
+                    "attempts": 1,
+                    "error": "<!--\n  403 \u2014 Access denied\n\n  You don't have access to this service.\n  This service is only available to specific networks or users.\n\n  - If you're a Unity employee: connect to the corporate VPN and try again.\n  - Otherwise: this service is internal-only, or restricted to specific users.\n    Contact the team that runs it if you believe this is a mistake.\n-->\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>403 \u2014 Access denied</title>\n</head>\n<body>\n  <main>\n    <div class=\"card\">\n      <div class=\"brand\">\n        <svg width=\"22\" height=\"22\" viewBox=\"0 0 637.5 720\" fill=\"white\" style=\"opacity:0.95\" xmlns=\"http://www.w3.org/2000/svg\" aria-label=\"Unity\">\n          <path d=\"M346.6,128.8l114,65.8c4.1,2.3,4.2,8.8,0,11c0,0-135.5,78.2-135.5,78.2c-4.1,2.4-8.9,2.2-12.8,0l-135.4-78.2c-4.1-2.3-4.3-8.8,0-11l113.9-65.8l0-128.8L0,167.9v335.8l0-1.5v1.5l111.6-64.4l0-131.6c-0.1-4.7,5.5-8,9.6-5.5l135.5,78.2c4.1,2.4,6.4,6.7,6.4,11.1l0,156.4c0.1,4.7-5.4,8-9.5,5.5l-114-65.8L27.9,552.1L318.7,720l290.8-167.9L498,487.7l-114,65.8c-4,2.4-9.7-0.7-9.5-5.5c0,0,0-156.4,0-156.4c0-4.7,2.6-8.9,6.4-11.1l135.4-78.2c4-2.5,9.7,0.7,9.6,5.5v131.6l111.6,64.4V167.9L346.6,0V128.8z\"/>\n        </svg>\n        <span class=\"brand-divider\"></span>\n        <span class=\"brand-name\">Tessen</span>\n      </div>\n      <div class=\"code\">Error 403</div>\n      <h1>You don't have access to this service.</h1>\n      <p>This service is only available to specific networks or users.</p>\n      <ul class=\"reasons\">\n        <li><strong>If you're a Unity employee:</strong> connect to the corporate VPN and try again.</li>\n        <li><strong>Otherwise:</strong> this service is internal-only, or restricted to specific users. Contact the team that runs it if you believe this is a mistake.</li>\n      </ul>\n    </div>\n  </main>\n\n  <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />\n  <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin />\n  <link href=\"https://fonts.googleapis.com/css2?family=DM+Sans:wght@500&family=Inter:wght@400;500;600&display=swap\" rel=\"stylesheet\" />\n  <style>\n    :root {\n      --gray-1:  #111111;\n      --gray-2:  #191919;\n      --gray-5:  #313131;\n      --gray-6:  #3a3a3a;\n      --gray-7:  #484848;\n      --gray-9:  #6e6e6e;\n      --gray-11: #b4b4b4;\n      --gray-12: #eeeeee;\n      --font-display: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;\n      --font-ui:      'Inter', -apple-system, BlinkMacSystemFont, sans-serif;\n    }\n    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }\n    html, body { height: 100%; }\n    body {\n      font-family: var(--font-ui);\n      background: var(--gray-1);\n      color: var(--gray-12);\n      display: flex;\n      flex-direction: column;\n      -webkit-font-smoothing: antialiased;\n    }\n    main {\n      flex: 1;\n      display: flex;\n      align-items: center;\n      justify-content: center;\n      padding: 40px 24px;\n    }\n    .card { max-width: 520px; width: 100%; }\n    .brand {\n      display: flex;\n      align-items: center;\n      gap: 12px;\n      margin-bottom: 40px;\n    }\n    .brand-divider {\n      width: 1px;\n      height: 16px;\n      background: var(--gray-6);\n    }\n    .brand-name {\n      font-size: 14px;\n      font-weight: 600;\n      color: var(--gray-12);\n      letter-spacing: -0.01em;\n    }\n    .code {\n      font-size: 12px;\n      font-weight: 600;\n      color: var(--gray-9);\n      letter-spacing: 0.1em;\n      text-transform: uppercase;\n      margin-bottom: 16px;\n    }\n    h1 {\n      font-family: var(--font-display);\n      font-size: 44px;\n      font-weight: 500;\n      line-height: 1.05;\n      letter-spacing: -0.04em;\n      color: var(--gray-12);\n      margin-bottom: 20px;\n    }\n    p {\n      font-size: 15px;\n      line-height: 1.7;\n      color: var(--gray-11);\n    }\n    .reasons {\n      list-style: none;\n      padding: 22px 26px;\n      background: var(--gray-2);\n      border: 1px solid var(--gray-5);\n      border-radius: 8px;\n      margin-top: 28px;\n    }\n    .reasons li {\n      font-size: 14px;\n      line-height: 1.6;\n      color: var(--gray-11);\n      padding-left: 22px;\n      position: relative;\n    }\n    .reasons li + li { margin-top: 14px; }\n    .reasons li::before {\n      content: '';\n      position: absolute;\n      left: 6px;\n      top: 9px;\n      width: 5px;\n      height: 5px;\n      border-radius: 50%;\n      background: var(--gray-7);\n    }\n    .reasons strong {\n      color: var(--gray-12);\n      font-weight: 600;\n    }\n  </style>\n</body>\n</html>",
+                    "original_reason": "reviewer_invocation_failed",
+                    "reviewer_output_mode": "litellm_structured"
+                  }
+                },
+                "failure_classification": "reviewer_infrastructure_unavailable",
+                "model": null,
+                "probe": {
+                  "details": {
+                    "attempts": 1,
+                    "error": "<!--\n  403 \u2014 Access denied\n\n  You don't have access to this service.\n  This service is only available to specific networks or users.\n\n  - If you're a Unity employee: connect to the corporate VPN and try again.\n  - Otherwise: this service is internal-only, or restricted to specific users.\n    Contact the team that runs it if you believe this is a mistake.\n-->\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>403 \u2014 Access denied</title>\n</head>\n<body>\n  <main>\n    <div class=\"card\">\n      <div class=\"brand\">\n        <svg width=\"22\" height=\"22\" viewBox=\"0 0 637.5 720\" fill=\"white\" style=\"opacity:0.95\" xmlns=\"http://www.w3.org/2000/svg\" aria-label=\"Unity\">\n          <path d=\"M346.6,128.8l114,65.8c4.1,2.3,4.2,8.8,0,11c0,0-135.5,78.2-135.5,78.2c-4.1,2.4-8.9,2.2-12.8,0l-135.4-78.2c-4.1-2.3-4.3-8.8,0-11l113.9-65.8l0-128.8L0,167.9v335.8l0-1.5v1.5l111.6-64.4l0-131.6c-0.1-4.7,5.5-8,9.6-5.5l135.5,78.2c4.1,2.4,6.4,6.7,6.4,11.1l0,156.4c0.1,4.7-5.4,8-9.5,5.5l-114-65.8L27.9,552.1L318.7,720l290.8-167.9L498,487.7l-114,65.8c-4,2.4-9.7-0.7-9.5-5.5c0,0,0-156.4,0-156.4c0-4.7,2.6-8.9,6.4-11.1l135.4-78.2c4-2.5,9.7,0.7,9.6,5.5v131.6l111.6,64.4V167.9L346.6,0V128.8z\"/>\n        </svg>\n        <span class=\"brand-divider\"></span>\n        <span class=\"brand-name\">Tessen</span>\n      </div>\n      <div class=\"code\">Error 403</div>\n      <h1>You don't have access to this service.</h1>\n      <p>This service is only available to specific networks or users.</p>\n      <ul class=\"reasons\">\n        <li><strong>If you're a Unity employee:</strong> connect to the corporate VPN and try again.</li>\n        <li><strong>Otherwise:</strong> this service is internal-only, or restricted to specific users. Contact the team that runs it if you believe this is a mistake.</li>\n      </ul>\n    </div>\n  </main>\n\n  <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />\n  <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin />\n  <link href=\"https://fonts.googleapis.com/css2?family=DM+Sans:wght@500&family=Inter:wght@400;500;600&display=swap\" rel=\"stylesheet\" />\n  <style>\n    :root {\n      --gray-1:  #111111;\n      --gray-2:  #191919;\n      --gray-5:  #313131;\n      --gray-6:  #3a3a3a;\n      --gray-7:  #484848;\n      --gray-9:  #6e6e6e;\n      --gray-11: #b4b4b4;\n      --gray-12: #eeeeee;\n      --font-display: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;\n      --font-ui:      'Inter', -apple-system, BlinkMacSystemFont, sans-serif;\n    }\n    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }\n    html, body { height: 100%; }\n    body {\n      font-family: var(--font-ui);\n      background: var(--gray-1);\n      color: var(--gray-12);\n      display: flex;\n      flex-direction: column;\n      -webkit-font-smoothing: antialiased;\n    }\n    main {\n      flex: 1;\n      display: flex;\n      align-items: center;\n      justify-content: center;\n      padding: 40px 24px;\n    }\n    .card { max-width: 520px; width: 100%; }\n    .brand {\n      display: flex;\n      align-items: center;\n      gap: 12px;\n      margin-bottom: 40px;\n    }\n    .brand-divider {\n      width: 1px;\n      height: 16px;\n      background: var(--gray-6);\n    }\n    .brand-name {\n      font-size: 14px;\n      font-weight: 600;\n      color: var(--gray-12);\n      letter-spacing: -0.01em;\n    }\n    .code {\n      font-size: 12px;\n      font-weight: 600;\n      color: var(--gray-9);\n      letter-spacing: 0.1em;\n      text-transform: uppercase;\n      margin-bottom: 16px;\n    }\n    h1 {\n      font-family: var(--font-display);\n      font-size: 44px;\n      font-weight: 500;\n      line-height: 1.05;\n      letter-spacing: -0.04em;\n      color: var(--gray-12);\n      margin-bottom: 20px;\n    }\n    p {\n      font-size: 15px;\n      line-height: 1.7;\n      color: var(--gray-11);\n    }\n    .reasons {\n      list-style: none;\n      padding: 22px 26px;\n      background: var(--gray-2);\n      border: 1px solid var(--gray-5);\n      border-radius: 8px;\n      margin-top: 28px;\n    }\n    .reasons li {\n      font-size: 14px;\n      line-height: 1.6;\n      color: var(--gray-11);\n      padding-left: 22px;\n      position: relative;\n    }\n    .reasons li + li { margin-top: 14px; }\n    .reasons li::before {\n      content: '';\n      position: absolute;\n      left: 6px;\n      top: 9px;\n      width: 5px;\n      height: 5px;\n      border-radius: 50%;\n      background: var(--gray-7);\n    }\n    .reasons strong {\n      color: var(--gray-12);\n      font-weight: 600;\n    }\n  </style>\n</body>\n</html>",
+                    "original_reason": "reviewer_invocation_failed",
+                    "recoverable": true,
+                    "retry_reasons": []
+                  },
+                  "probe_id": "CURSOR",
+                  "reason": "reviewer_infrastructure_unavailable",
+                  "status": "red"
+                },
+                "recoverable": true,
+                "retry_reasons": [],
+                "reviewer_assurance": "unavailable",
+                "reviewer_output_mode": "litellm_structured",
+                "reviewer_runtime": "litellm_structured",
+                "status": null
+              }
+            },
+            "failure_classification": "reviewer_infrastructure_unavailable",
+            "model": null,
+            "probe": {
+              "details": {
+                "attempts": 1,
+                "error": "<!--\n  403 \u2014 Access denied\n\n  You don't have access to this service.\n  This service is only available to specific networks or users.\n\n  - If you're a Unity employee: connect to the corporate VPN and try again.\n  - Otherwise: this service is internal-only, or restricted to specific users.\n    Contact the team that runs it if you believe this is a mistake.\n-->\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>403 \u2014 Access denied</title>\n</head>\n<body>\n  <main>\n    <div class=\"card\">\n      <div class=\"brand\">\n        <svg width=\"22\" height=\"22\" viewBox=\"0 0 637.5 720\" fill=\"white\" style=\"opacity:0.95\" xmlns=\"http://www.w3.org/2000/svg\" aria-label=\"Unity\">\n          <path d=\"M346.6,128.8l114,65.8c4.1,2.3,4.2,8.8,0,11c0,0-135.5,78.2-135.5,78.2c-4.1,2.4-8.9,2.2-12.8,0l-135.4-78.2c-4.1-2.3-4.3-8.8,0-11l113.9-65.8l0-128.8L0,167.9v335.8l0-1.5v1.5l111.6-64.4l0-131.6c-0.1-4.7,5.5-8,9.6-5.5l135.5,78.2c4.1,2.4,6.4,6.7,6.4,11.1l0,156.4c0.1,4.7-5.4,8-9.5,5.5l-114-65.8L27.9,552.1L318.7,720l290.8-167.9L498,487.7l-114,65.8c-4,2.4-9.7-0.7-9.5-5.5c0,0,0-156.4,0-156.4c0-4.7,2.6-8.9,6.4-11.1l135.4-78.2c4-2.5,9.7,0.7,9.6,5.5v131.6l111.6,64.4V167.9L346.6,0V128.8z\"/>\n        </svg>\n        <span class=\"brand-divider\"></span>\n        <span class=\"brand-name\">Tessen</span>\n      </div>\n      <div class=\"code\">Error 403</div>\n      <h1>You don't have access to this service.</h1>\n      <p>This service is only available to specific networks or users.</p>\n      <ul class=\"reasons\">\n        <li><strong>If you're a Unity employee:</strong> connect to the corporate VPN and try again.</li>\n        <li><strong>Otherwise:</strong> this service is internal-only, or restricted to specific users. Contact the team that runs it if you believe this is a mistake.</li>\n      </ul>\n    </div>\n  </main>\n\n  <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />\n  <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin />\n  <link href=\"https://fonts.googleapis.com/css2?family=DM+Sans:wght@500&family=Inter:wght@400;500;600&display=swap\" rel=\"stylesheet\" />\n  <style>\n    :root {\n      --gray-1:  #111111;\n      --gray-2:  #191919;\n      --gray-5:  #313131;\n      --gray-6:  #3a3a3a;\n      --gray-7:  #484848;\n      --gray-9:  #6e6e6e;\n      --gray-11: #b4b4b4;\n      --gray-12: #eeeeee;\n      --font-display: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;\n      --font-ui:      'Inter', -apple-system, BlinkMacSystemFont, sans-serif;\n    }\n    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }\n    html, body { height: 100%; }\n    body {\n      font-family: var(--font-ui);\n      background: var(--gray-1);\n      color: var(--gray-12);\n      display: flex;\n      flex-direction: column;\n      -webkit-font-smoothing: antialiased;\n    }\n    main {\n      flex: 1;\n      display: flex;\n      align-items: center;\n      justify-content: center;\n      padding: 40px 24px;\n    }\n    .card { max-width: 520px; width: 100%; }\n    .brand {\n      display: flex;\n      align-items: center;\n      gap: 12px;\n      margin-bottom: 40px;\n    }\n    .brand-divider {\n      width: 1px;\n      height: 16px;\n      background: var(--gray-6);\n    }\n    .brand-name {\n      font-size: 14px;\n      font-weight: 600;\n      color: var(--gray-12);\n      letter-spacing: -0.01em;\n    }\n    .code {\n      font-size: 12px;\n      font-weight: 600;\n      color: var(--gray-9);\n      letter-spacing: 0.1em;\n      text-transform: uppercase;\n      margin-bottom: 16px;\n    }\n    h1 {\n      font-family: var(--font-display);\n      font-size: 44px;\n      font-weight: 500;\n      line-height: 1.05;\n      letter-spacing: -0.04em;\n      color: var(--gray-12);\n      margin-bottom: 20px;\n    }\n    p {\n      font-size: 15px;\n      line-height: 1.7;\n      color: var(--gray-11);\n    }\n    .reasons {\n      list-style: none;\n      padding: 22px 26px;\n      background: var(--gray-2);\n      border: 1px solid var(--gray-5);\n      border-radius: 8px;\n      margin-top: 28px;\n    }\n    .reasons li {\n      font-size: 14px;\n      line-height: 1.6;\n      color: var(--gray-11);\n      padding-left: 22px;\n      position: relative;\n    }\n    .reasons li + li { margin-top: 14px; }\n    .reasons li::before {\n      content: '';\n      position: absolute;\n      left: 6px;\n      top: 9px;\n      width: 5px;\n      height: 5px;\n      border-radius: 50%;\n      background: var(--gray-7);\n    }\n    .reasons strong {\n      color: var(--gray-12);\n      font-weight: 600;\n    }\n  </style>\n</body>\n</html>",
+                "original_reason": "reviewer_invocation_failed",
+                "recoverable": true,
+                "retry_reasons": []
+              },
+              "probe_id": "CURSOR",
+              "reason": "reviewer_infrastructure_unavailable",
+              "status": "red"
+            },
+            "recoverable": true,
+            "retry_reasons": [],
+            "reviewer_assurance": "unavailable",
+            "reviewer_output_mode": "litellm_structured",
+            "reviewer_runtime": "litellm_structured",
+            "status": null
+          },
+          "from_runtime": "cursor_sdk",
+          "primary_failure": {
+            "attempts": 1,
+            "diagnostics": {
+              "failure": {
+                "attempts": 1,
+                "error": "internal: internal error",
+                "original_reason": "reviewer_invocation_failed",
+                "reviewer_output_mode": "cursor_sdk"
+              }
+            },
+            "failure_classification": "reviewer_infrastructure_unavailable",
+            "model": null,
+            "probe": {
+              "details": {
+                "attempts": 1,
+                "error": "internal: internal error",
+                "original_reason": "reviewer_invocation_failed",
+                "recoverable": true,
+                "retry_reasons": []
+              },
+              "probe_id": "CURSOR",
+              "reason": "reviewer_infrastructure_unavailable",
+              "status": "red"
+            },
+            "recoverable": true,
+            "retry_reasons": [],
+            "reviewer_assurance": "unavailable",
+            "reviewer_output_mode": "cursor_sdk",
+            "reviewer_runtime": "cursor_sdk",
+            "status": null
+          },
+          "reason": "reviewer_invocation_failed",
+          "to_runtime": "litellm_structured"
+        }
+      },
+      "duration_ms": null,
+      "failure_classification": "reviewer_infrastructure_unavailable",
+      "fallback_from_runtime": null,
+      "fallback_reason": null,
+      "model": null,
+      "outcome": null,
+      "probe": {
+        "details": {
+          "attempts": 1,
+          "error": "internal: internal error",
+          "original_reason": "reviewer_invocation_failed",
+          "recoverable": true,
+          "retry_reasons": []
+        },
+        "probe_id": "CURSOR",
+        "reason": "reviewer_infrastructure_unavailable",
+        "status": "red"
+      },
+      "recoverable": true,
+      "retry_reasons": [],
+      "reviewer_assurance": "unavailable",
+      "reviewer_output_mode": "cursor_sdk",
+      "reviewer_runtime": "cursor_sdk",
+      "reviewer_unavailable_recovery": {
+        "authorization": {
+          "action_type": "dual_agent_gate_deadlock",
+          "id": 1314,
+          "payload": {
+            "answer": "Continue",
+            "ask_id": 47,
+            "authorized_by": "codex_desktop_user_instruction",
+            "available_reviewers": {
+              "claude": "accept",
+              "codex": "revise"
+            },
+            "classification": "reviewer_infrastructure_unavailable",
+            "cursor_review": {
+              "accepted": false,
+              "agent_id": null,
+              "attempts": 1,
+              "critical_review": {
+                "assumptions_to_verify": [],
+                "contradictions_checked": [],
+                "decision": "revise",
+                "evidence_refs": [],
+                "missing_evidence": [],
+                "schema_version": "critical-review/v1",
+                "severity": "none",
+                "strongest_objection": "none",
+                "what_would_change_my_mind": "Claude or Codex provides evidence resolving Cursor's objections."
+              },
+              "diagnostics": {
+                "failure": {
+                  "attempts": 1,
+                  "diagnostics": {
+                    "failure": {
+                      "attempts": 1,
+                      "error": "internal: internal error",
+                      "original_reason": "reviewer_invocation_failed",
+                      "reviewer_output_mode": "cursor_sdk"
+                    }
+                  },
+                  "failure_classification": "reviewer_infrastructure_unavailable",
+                  "model": null,
+                  "probe": {
+                    "details": {
+                      "attempts": 1,
+                      "error": "internal: internal error",
+                      "original_reason": "reviewer_invocation_failed",
+                      "recoverable": true,
+                      "retry_reasons": []
+                    },
+                    "probe_id": "CURSOR",
+                    "reason": "reviewer_infrastructure_unavailable",
+                    "status": "red"
+                  },
+                  "recoverable": true,
+                  "retry_reasons": [],
+                  "reviewer_assurance": "unavailable",
+                  "reviewer_output_mode": "cursor_sdk",
+                  "reviewer_runtime": "cursor_sdk",
+                  "status": null
+                },
+                "fallback": {
+                  "attempted": true,
+                  "fallback_failure": {
+                    "attempts": 1,
+                    "diagnostics": {
+                      "failure": {
+                        "attempts": 1,
+                        "diagnostics": {
+                          "failure": {
+                            "attempts": 1,
+                            "error": "<!--\n  403 \u2014 Access denied\n\n  You don't have access to this service.\n  This service is only available to specific networks or users.\n\n  - If you're a Unity employee: connect to the corporate VPN and try again.\n  - Otherwise: this service is internal-only, or restricted to specific users.\n    Contact the team that runs it if you believe this is a mistake.\n-->\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>403 \u2014 Access denied</title>\n</head>\n<body>\n  <main>\n    <div class=\"card\">\n      <div class=\"brand\">\n        <svg width=\"22\" height=\"22\" viewBox=\"0 0 637.5 720\" fill=\"white\" style=\"opacity:0.95\" xmlns=\"http://www.w3.org/2000/svg\" aria-label=\"Unity\">\n          <path d=\"M346.6,128.8l114,65.8c4.1,2.3,4.2,8.8,0,11c0,0-135.5,78.2-135.5,78.2c-4.1,2.4-8.9,2.2-12.8,0l-135.4-78.2c-4.1-2.3-4.3-8.8,0-11l113.9-65.8l0-128.8L0,167.9v335.8l0-1.5v1.5l111.6-64.4l0-131.6c-0.1-4.7,5.5-8,9.6-5.5l135.5,78.2c4.1,2.4,6.4,6.7,6.4,11.1l0,156.4c0.1,4.7-5.4,8-9.5,5.5l-114-65.8L27.9,552.1L318.7,720l290.8-167.9L498,487.7l-114,65.8c-4,2.4-9.7-0.7-9.5-5.5c0,0,0-156.4,0-156.4c0-4.7,2.6-8.9,6.4-11.1l135.4-78.2c4-2.5,9.7,0.7,9.6,5.5v131.6l111.6,64.4V167.9L346.6,0V128.8z\"/>\n        </svg>\n        <span class=\"brand-divider\"></span>\n        <span class=\"brand-name\">Tessen</span>\n      </div>\n      <div class=\"code\">Error 403</div>\n      <h1>You don't have access to this service.</h1>\n      <p>This service is only available to specific networks or users.</p>\n      <ul class=\"reasons\">\n        <li><strong>If you're a Unity employee:</strong> connect to the corporate VPN and try again.</li>\n        <li><strong>Otherwise:</strong> this service is internal-only, or restricted to specific users. Contact the team that runs it if you believe this is a mistake.</li>\n      </ul>\n    </div>\n  </main>\n\n  <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />\n  <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin />\n  <link href=\"https://fonts.googleapis.com/css2?family=DM+Sans:wght@500&family=Inter:wght@400;500;600&display=swap\" rel=\"stylesheet\" />\n  <style>\n    :root {\n      --gray-1:  #111111;\n      --gray-2:  #191919;\n      --gray-5:  #313131;\n      --gray-6:  #3a3a3a;\n      --gray-7:  #484848;\n      --gray-9:  #6e6e6e;\n      --gray-11: #b4b4b4;\n      --gray-12: #eeeeee;\n      --font-display: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;\n      --font-ui:      'Inter', -apple-system, BlinkMacSystemFont, sans-serif;\n    }\n    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }\n    html, body { height: 100%; }\n    body {\n      font-family: var(--font-ui);\n      background: var(--gray-1);\n      color: var(--gray-12);\n      display: flex;\n      flex-direction: column;\n      -webkit-font-smoothing: antialiased;\n    }\n    main {\n      flex: 1;\n      display: flex;\n      align-items: center;\n      justify-content: center;\n      padding: 40px 24px;\n    }\n    .card { max-width: 520px; width: 100%; }\n    .brand {\n      display: flex;\n      align-items: center;\n      gap: 12px;\n      margin-bottom: 40px;\n    }\n    .brand-divider {\n      width: 1px;\n      height: 16px;\n      background: var(--gray-6);\n    }\n    .brand-name {\n      font-size: 14px;\n      font-weight: 600;\n      color: var(--gray-12);\n      letter-spacing: -0.01em;\n    }\n    .code {\n      font-size: 12px;\n      font-weight: 600;\n      color: var(--gray-9);\n      letter-spacing: 0.1em;\n      text-transform: uppercase;\n      margin-bottom: 16px;\n    }\n    h1 {\n      font-family: var(--font-display);\n      font-size: 44px;\n      font-weight: 500;\n      line-height: 1.05;\n      letter-spacing: -0.04em;\n      color: var(--gray-12);\n      margin-bottom: 20px;\n    }\n    p {\n      font-size: 15px;\n      line-height: 1.7;\n      color: var(--gray-11);\n    }\n    .reasons {\n      list-style: none;\n      padding: 22px 26px;\n      background: var(--gray-2);\n      border: 1px solid var(--gray-5);\n      border-radius: 8px;\n      margin-top: 28px;\n    }\n    .reasons li {\n      font-size: 14px;\n      line-height: 1.6;\n      color: var(--gray-11);\n      padding-left: 22px;\n      position: relative;\n    }\n    .reasons li + li { margin-top: 14px; }\n    .reasons li::before {\n      content: '';\n      position: absolute;\n      left: 6px;\n      top: 9px;\n      width: 5px;\n      height: 5px;\n      border-radius: 50%;\n      background: var(--gray-7);\n    }\n    .reasons strong {\n      color: var(--gray-12);\n      font-weight: 600;\n    }\n  </style>\n</body>\n</html>",
+                            "original_reason": "reviewer_invocation_failed",
+                            "reviewer_output_mode": "litellm_structured"
+                          }
+                        },
+                        "failure_classification": "reviewer_infrastructure_unavailable",
+                        "model": null,
+                        "probe": {
+                          "details": {
+                            "attempts": 1,
+                            "error": "<!--\n  403 \u2014 Access denied\n\n  You don't have access to this service.\n  This service is only available to specific networks or users.\n\n  - If you're a Unity employee: connect to the corporate VPN and try again.\n  - Otherwise: this service is internal-only, or restricted to specific users.\n    Contact the team that runs it if you believe this is a mistake.\n-->\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>403 \u2014 Access denied</title>\n</head>\n<body>\n  <main>\n    <div class=\"card\">\n      <div class=\"brand\">\n        <svg width=\"22\" height=\"22\" viewBox=\"0 0 637.5 720\" fill=\"white\" style=\"opacity:0.95\" xmlns=\"http://www.w3.org/2000/svg\" aria-label=\"Unity\">\n          <path d=\"M346.6,128.8l114,65.8c4.1,2.3,4.2,8.8,0,11c0,0-135.5,78.2-135.5,78.2c-4.1,2.4-8.9,2.2-12.8,0l-135.4-78.2c-4.1-2.3-4.3-8.8,0-11l113.9-65.8l0-128.8L0,167.9v335.8l0-1.5v1.5l111.6-64.4l0-131.6c-0.1-4.7,5.5-8,9.6-5.5l135.5,78.2c4.1,2.4,6.4,6.7,6.4,11.1l0,156.4c0.1,4.7-5.4,8-9.5,5.5l-114-65.8L27.9,552.1L318.7,720l290.8-167.9L498,487.7l-114,65.8c-4,2.4-9.7-0.7-9.5-5.5c0,0,0-156.4,0-156.4c0-4.7,2.6-8.9,6.4-11.1l135.4-78.2c4-2.5,9.7,0.7,9.6,5.5v131.6l111.6,64.4V167.9L346.6,0V128.8z\"/>\n        </svg>\n        <span class=\"brand-divider\"></span>\n        <span class=\"brand-name\">Tessen</span>\n      </div>\n      <div class=\"code\">Error 403</div>\n      <h1>You don't have access to this service.</h1>\n      <p>This service is only available to specific networks or users.</p>\n      <ul class=\"reasons\">\n        <li><strong>If you're a Unity employee:</strong> connect to the corporate VPN and try again.</li>\n        <li><strong>Otherwise:</strong> this service is internal-only, or restricted to specific users. Contact the team that runs it if you believe this is a mistake.</li>\n      </ul>\n    </div>\n  </main>\n\n  <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />\n  <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin />\n  <link href=\"https://fonts.googleapis.com/css2?family=DM+Sans:wght@500&family=Inter:wght@400;500;600&display=swap\" rel=\"stylesheet\" />\n  <style>\n    :root {\n      --gray-1:  #111111;\n      --gray-2:  #191919;\n      --gray-5:  #313131;\n      --gray-6:  #3a3a3a;\n      --gray-7:  #484848;\n      --gray-9:  #6e6e6e;\n      --gray-11: #b4b4b4;\n      --gray-12: #eeeeee;\n      --font-display: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;\n      --font-ui:      'Inter', -apple-system, BlinkMacSystemFont, sans-serif;\n    }\n    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }\n    html, body { height: 100%; }\n    body {\n      font-family: var(--font-ui);\n      background: var(--gray-1);\n      color: var(--gray-12);\n      display: flex;\n      flex-direction: column;\n      -webkit-font-smoothing: antialiased;\n    }\n    main {\n      flex: 1;\n      display: flex;\n      align-items: center;\n      justify-content: center;\n      padding: 40px 24px;\n    }\n    .card { max-width: 520px; width: 100%; }\n    .brand {\n      display: flex;\n      align-items: center;\n      gap: 12px;\n      margin-bottom: 40px;\n    }\n    .brand-divider {\n      width: 1px;\n      height: 16px;\n      background: var(--gray-6);\n    }\n    .brand-name {\n      font-size: 14px;\n      font-weight: 600;\n      color: var(--gray-12);\n      letter-spacing: -0.01em;\n    }\n    .code {\n      font-size: 12px;\n      font-weight: 600;\n      color: var(--gray-9);\n      letter-spacing: 0.1em;\n      text-transform: uppercase;\n      margin-bottom: 16px;\n    }\n    h1 {\n      font-family: var(--font-display);\n      font-size: 44px;\n      font-weight: 500;\n      line-height: 1.05;\n      letter-spacing: -0.04em;\n      color: var(--gray-12);\n      margin-bottom: 20px;\n    }\n    p {\n      font-size: 15px;\n      line-height: 1.7;\n      color: var(--gray-11);\n    }\n    .reasons {\n      list-style: none;\n      padding: 22px 26px;\n      background: var(--gray-2);\n      border: 1px solid var(--gray-5);\n      border-radius: 8px;\n      margin-top: 28px;\n    }\n    .reasons li {\n      font-size: 14px;\n      line-height: 1.6;\n      color: var(--gray-11);\n      padding-left: 22px;\n      position: relative;\n    }\n    .reasons li + li { margin-top: 14px; }\n    .reasons li::before {\n      content: '';\n      position: absolute;\n      left: 6px;\n      top: 9px;\n      width: 5px;\n      height: 5px;\n      border-radius: 50%;\n      background: var(--gray-7);\n    }\n    .reasons strong {\n      color: var(--gray-12);\n      font-weight: 600;\n    }\n  </style>\n</body>\n</html>",
+                            "original_reason": "reviewer_invocation_failed",
+                            "recoverable": true,
+                            "retry_reasons": []
+                          },
+                          "probe_id": "CURSOR",
+                          "reason": "reviewer_infrastructure_unavailable",
+                          "status": "red"
+                        },
+                        "recoverable": true,
+                        "retry_reasons": [],
+                        "reviewer_assurance": "unavailable",
+                        "reviewer_output_mode": "litellm_structured",
+                        "reviewer_runtime": "litellm_structured",
+                        "status": null
+                      }
+                    },
+                    "failure_classification": "reviewer_infrastructure_unavailable",
+                    "model": null,
+                    "probe": {
+                      "details": {
+                        "attempts": 1,
+                        "error": "<!--\n  403 \u2014 Access denied\n\n  You don't have access to this service.\n  This service is only available to specific networks or users.\n\n  - If you're a Unity employee: connect to the corporate VPN and try again.\n  - Otherwise: this service is internal-only, or restricted to specific users.\n    Contact the team that runs it if you believe this is a mistake.\n-->\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>403 \u2014 Access denied</title>\n</head>\n<body>\n  <main>\n    <div class=\"card\">\n      <div class=\"brand\">\n        <svg width=\"22\" height=\"22\" viewBox=\"0 0 637.5 720\" fill=\"white\" style=\"opacity:0.95\" xmlns=\"http://www.w3.org/2000/svg\" aria-label=\"Unity\">\n          <path d=\"M346.6,128.8l114,65.8c4.1,2.3,4.2,8.8,0,11c0,0-135.5,78.2-135.5,78.2c-4.1,2.4-8.9,2.2-12.8,0l-135.4-78.2c-4.1-2.3-4.3-8.8,0-11l113.9-65.8l0-128.8L0,167.9v335.8l0-1.5v1.5l111.6-64.4l0-131.6c-0.1-4.7,5.5-8,9.6-5.5l135.5,78.2c4.1,2.4,6.4,6.7,6.4,11.1l0,156.4c0.1,4.7-5.4,8-9.5,5.5l-114-65.8L27.9,552.1L318.7,720l290.8-167.9L498,487.7l-114,65.8c-4,2.4-9.7-0.7-9.5-5.5c0,0,0-156.4,0-156.4c0-4.7,2.6-8.9,6.4-11.1l135.4-78.2c4-2.5,9.7,0.7,9.6,5.5v131.6l111.6,64.4V167.9L346.6,0V128.8z\"/>\n        </svg>\n        <span class=\"brand-divider\"></span>\n        <span class=\"brand-name\">Tessen</span>\n      </div>\n      <div class=\"code\">Error 403</div>\n      <h1>You don't have access to this service.</h1>\n      <p>This service is only available to specific networks or users.</p>\n      <ul class=\"reasons\">\n        <li><strong>If you're a Unity employee:</strong> connect to the corporate VPN and try again.</li>\n        <li><strong>Otherwise:</strong> this service is internal-only, or restricted to specific users. Contact the team that runs it if you believe this is a mistake.</li>\n      </ul>\n    </div>\n  </main>\n\n  <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />\n  <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin />\n  <link href=\"https://fonts.googleapis.com/css2?family=DM+Sans:wght@500&family=Inter:wght@400;500;600&display=swap\" rel=\"stylesheet\" />\n  <style>\n    :root {\n      --gray-1:  #111111;\n      --gray-2:  #191919;\n      --gray-5:  #313131;\n      --gray-6:  #3a3a3a;\n      --gray-7:  #484848;\n      --gray-9:  #6e6e6e;\n      --gray-11: #b4b4b4;\n      --gray-12: #eeeeee;\n      --font-display: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;\n      --font-ui:      'Inter', -apple-system, BlinkMacSystemFont, sans-serif;\n    }\n    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }\n    html, body { height: 100%; }\n    body {\n      font-family: var(--font-ui);\n      background: var(--gray-1);\n      color: var(--gray-12);\n      display: flex;\n      flex-direction: column;\n      -webkit-font-smoothing: antialiased;\n    }\n    main {\n      flex: 1;\n      display: flex;\n      align-items: center;\n      justify-content: center;\n      padding: 40px 24px;\n    }\n    .card { max-width: 520px; width: 100%; }\n    .brand {\n      display: flex;\n      align-items: center;\n      gap: 12px;\n      margin-bottom: 40px;\n    }\n    .brand-divider {\n      width: 1px;\n      height: 16px;\n      background: var(--gray-6);\n    }\n    .brand-name {\n      font-size: 14px;\n      font-weight: 600;\n      color: var(--gray-12);\n      letter-spacing: -0.01em;\n    }\n    .code {\n      font-size: 12px;\n      font-weight: 600;\n      color: var(--gray-9);\n      letter-spacing: 0.1em;\n      text-transform: uppercase;\n      margin-bottom: 16px;\n    }\n    h1 {\n      font-family: var(--font-display);\n      font-size: 44px;\n      font-weight: 500;\n      line-height: 1.05;\n      letter-spacing: -0.04em;\n      color: var(--gray-12);\n      margin-bottom: 20px;\n    }\n    p {\n      font-size: 15px;\n      line-height: 1.7;\n      color: var(--gray-11);\n    }\n    .reasons {\n      list-style: none;\n      padding: 22px 26px;\n      background: var(--gray-2);\n      border: 1px solid var(--gray-5);\n      border-radius: 8px;\n      margin-top: 28px;\n    }\n    .reasons li {\n      font-size: 14px;\n      line-height: 1.6;\n      color: var(--gray-11);\n      padding-left: 22px;\n      position: relative;\n    }\n    .reasons li + li { margin-top: 14px; }\n    .reasons li::before {\n      content: '';\n      position: absolute;\n      left: 6px;\n      top: 9px;\n      width: 5px;\n      height: 5px;\n      border-radius: 50%;\n      background: var(--gray-7);\n    }\n    .reasons strong {\n      color: var(--gray-12);\n      font-weight: 600;\n    }\n  </style>\n</body>\n</html>",
+                        "original_reason": "reviewer_invocation_failed",
+                        "recoverable": true,
+                        "retry_reasons": []
+                      },
+                      "probe_id": "CURSOR",
+                      "reason": "reviewer_infrastructure_unavailable",
+                      "status": "red"
+                    },
+                    "recoverable": true,
+                    "retry_reasons": [],
+                    "reviewer_assurance": "unavailable",
+                    "reviewer_output_mode": "litellm_structured",
+                    "reviewer_runtime": "litellm_structured",
+                    "status": null
+                  },
+                  "from_runtime": "cursor_sdk",
+                  "primary_failure": {
+                    "attempts": 1,
+                    "diagnostics": {
+                      "failure": {
+                        "attempts": 1,
+                        "error": "internal: internal error",
+                        "original_reason": "reviewer_invocation_failed",
+                        "reviewer_output_mode": "cursor_sdk"
+                      }
+                    },
+                    "failure_classification": "reviewer_infrastructure_unavailable",
+                    "model": null,
+                    "probe": {
+                      "details": {
+                        "attempts": 1,
+                        "error": "internal: internal error",
+                        "original_reason": "reviewer_invocation_failed",
+                        "recoverable": true,
+                        "retry_reasons": []
+                      },
+                      "probe_id": "CURSOR",
+                      "reason": "reviewer_infrastructure_unavailable",
+                      "status": "red"
+                    },
+                    "recoverable": true,
+                    "retry_reasons": [],
+                    "reviewer_assurance": "unavailable",
+                    "reviewer_output_mode": "cursor_sdk",
+                    "reviewer_runtime": "cursor_sdk",
+                    "status": null
+                  },
+                  "reason": "reviewer_invocation_failed",
+                  "to_runtime": "litellm_structured"
+                }
+              },
+              "duration_ms": null,
+              "failure_classification": "reviewer_infrastructure_unavailable",
+              "fallback_from_runtime": null,
+              "fallback_reason": null,
+              "model": null,
+              "outcome": null,
+              "probe": {
+                "details": {
+                  "attempts": 1,
+                  "error": "internal: internal error",
+                  "original_reason": "reviewer_invocation_failed",
+                  "recoverable": true,
+                  "retry_reasons": []
+                },
+                "probe_id": "CURSOR",
+                "reason": "reviewer_infrastructure_unavailable",
+                "status": "red"
+              },
+              "recoverable": true,
+              "retry_reasons": [],
+              "reviewer_assurance": "unavailable",
+              "reviewer_output_mode": "cursor_sdk",
+              "reviewer_runtime": "cursor_sdk",
+              "reviewer_unavailable_recovery": {
+                "authorization": null,
+                "available_reviewers_accept": true,
+                "classification": "reviewer_infrastructure_unavailable",
+                "decision": "escalate",
+                "evidence_grade": "degraded",
+                "forced_by_safety": false,
+                "gate": "outcome_review",
+                "policy": "escalate",
+                "reason": "policy_escalate",
+                "reviewer_verdict_counted_as_accept": false,
+                "safety_reasons": [],
+                "schema_version": "reviewer-unavailable-recovery/v1"
+              },
+              "run_id": null,
+              "schema_version": "independent-reviewer-result/v1",
+              "status": null,
+              "transcript_tail": ""
+            },
+            "escalation_type": "reviewer_unavailable",
+            "evidence_grade": "degraded",
+            "forced_by_safety": false,
+            "gate": "outcome_review",
+            "independent_reviewer": {
+              "accepted": false,
+              "agent_id": null,
+              "attempts": 1,
+              "critical_review": {
+                "assumptions_to_verify": [],
+                "contradictions_checked": [],
+                "decision": "revise",
+                "evidence_refs": [],
+                "missing_evidence": [],
+                "schema_version": "critical-review/v1",
+                "severity": "none",
+                "strongest_objection": "none",
+                "what_would_change_my_mind": "Claude or Codex provides evidence resolving Cursor's objections."
+              },
+              "diagnostics": {
+                "failure": {
+                  "attempts": 1,
+                  "diagnostics": {
+                    "failure": {
+                      "attempts": 1,
+                      "error": "internal: internal error",
+                      "original_reason": "reviewer_invocation_failed",
+                      "reviewer_output_mode": "cursor_sdk"
+                    }
+                  },
+                  "failure_classification": "reviewer_infrastructure_unavailable",
+                  "model": null,
+                  "probe": {
+                    "details": {
+                      "attempts": 1,
+                      "error": "internal: internal error",
+                      "original_reason": "reviewer_invocation_failed",
+                      "recoverable": true,
+                      "retry_reasons": []
+                    },
+                    "probe_id": "CURSOR",
+                    "reason": "reviewer_infrastructure_unavailable",
+                    "status": "red"
+                  },
+                  "recoverable": true,
+                  "retry_reasons": [],
+                  "reviewer_assurance": "unavailable",
+                  "reviewer_output_mode": "cursor_sdk",
+                  "reviewer_runtime": "cursor_sdk",
+                  "status": null
+                },
+                "fallback": {
+                  "attempted": true,
+                  "fallback_failure": {
+                    "attempts": 1,
+                    "diagnostics": {
+                      "failure": {
+                        "attempts": 1,
+                        "diagnostics": {
+                          "failure": {
+                            "attempts": 1,
+                            "error": "<!--\n  403 \u2014 Access denied\n\n  You don't have access to this service.\n  This service is only available to specific networks or users.\n\n  - If you're a Unity employee: connect to the corporate VPN and try again.\n  - Otherwise: this service is internal-only, or restricted to specific users.\n    Contact the team that runs it if you believe this is a mistake.\n-->\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>403 \u2014 Access denied</title>\n</head>\n<body>\n  <main>\n    <div class=\"card\">\n      <div class=\"brand\">\n        <svg width=\"22\" height=\"22\" viewBox=\"0 0 637.5 720\" fill=\"white\" style=\"opacity:0.95\" xmlns=\"http://www.w3.org/2000/svg\" aria-label=\"Unity\">\n          <path d=\"M346.6,128.8l114,65.8c4.1,2.3,4.2,8.8,0,11c0,0-135.5,78.2-135.5,78.2c-4.1,2.4-8.9,2.2-12.8,0l-135.4-78.2c-4.1-2.3-4.3-8.8,0-11l113.9-65.8l0-128.8L0,167.9v335.8l0-1.5v1.5l111.6-64.4l0-131.6c-0.1-4.7,5.5-8,9.6-5.5l135.5,78.2c4.1,2.4,6.4,6.7,6.4,11.1l0,156.4c0.1,4.7-5.4,8-9.5,5.5l-114-65.8L27.9,552.1L318.7,720l290.8-167.9L498,487.7l-114,65.8c-4,2.4-9.7-0.7-9.5-5.5c0,0,0-156.4,0-156.4c0-4.7,2.6-8.9,6.4-11.1l135.4-78.2c4-2.5,9.7,0.7,9.6,5.5v131.6l111.6,64.4V167.9L346.6,0V128.8z\"/>\n        </svg>\n        <span class=\"brand-divider\"></span>\n        <span class=\"brand-name\">Tessen</span>\n      </div>\n      <div class=\"code\">Error 403</div>\n      <h1>You don't have access to this service.</h1>\n      <p>This service is only available to specific networks or users.</p>\n      <ul class=\"reasons\">\n        <li><strong>If you're a Unity employee:</strong> connect to the corporate VPN and try again.</li>\n        <li><strong>Otherwise:</strong> this service is internal-only, or restricted to specific users. Contact the team that runs it if you believe this is a mistake.</li>\n      </ul>\n    </div>\n  </main>\n\n  <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />\n  <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin />\n  <link href=\"https://fonts.googleapis.com/css2?family=DM+Sans:wght@500&family=Inter:wght@400;500;600&display=swap\" rel=\"stylesheet\" />\n  <style>\n    :root {\n      --gray-1:  #111111;\n      --gray-2:  #191919;\n      --gray-5:  #313131;\n      --gray-6:  #3a3a3a;\n      --gray-7:  #484848;\n      --gray-9:  #6e6e6e;\n      --gray-11: #b4b4b4;\n      --gray-12: #eeeeee;\n      --font-display: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;\n      --font-ui:      'Inter', -apple-system, BlinkMacSystemFont, sans-serif;\n    }\n    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }\n    html, body { height: 100%; }\n    body {\n      font-family: var(--font-ui);\n      background: var(--gray-1);\n      color: var(--gray-12);\n      display: flex;\n      flex-direction: column;\n      -webkit-font-smoothing: antialiased;\n    }\n    main {\n      flex: 1;\n      display: flex;\n      align-items: center;\n      justify-content: center;\n      padding: 40px 24px;\n    }\n    .card { max-width: 520px; width: 100%; }\n    .brand {\n      display: flex;\n      align-items: center;\n      gap: 12px;\n      margin-bottom: 40px;\n    }\n    .brand-divider {\n      width: 1px;\n      height: 16px;\n      background: var(--gray-6);\n    }\n    .brand-name {\n      font-size: 14px;\n      font-weight: 600;\n      color: var(--gray-12);\n      letter-spacing: -0.01em;\n    }\n    .code {\n      font-size: 12px;\n      font-weight: 600;\n      color: var(--gray-9);\n      letter-spacing: 0.1em;\n      text-transform: uppercase;\n      margin-bottom: 16px;\n    }\n    h1 {\n      font-family: var(--font-display);\n      font-size: 44px;\n      font-weight: 500;\n      line-height: 1.05;\n      letter-spacing: -0.04em;\n      color: var(--gray-12);\n      margin-bottom: 20px;\n    }\n    p {\n      font-size: 15px;\n      line-height: 1.7;\n      color: var(--gray-11);\n    }\n    .reasons {\n      list-style: none;\n      padding: 22px 26px;\n      background: var(--gray-2);\n      border: 1px solid var(--gray-5);\n      border-radius: 8px;\n      margin-top: 28px;\n    }\n    .reasons li {\n      font-size: 14px;\n      line-height: 1.6;\n      color: var(--gray-11);\n      padding-left: 22px;\n      position: relative;\n    }\n    .reasons li + li { margin-top: 14px; }\n    .reasons li::before {\n      content: '';\n      position: absolute;\n      left: 6px;\n      top: 9px;\n      width: 5px;\n      height: 5px;\n      border-radius: 50%;\n      background: var(--gray-7);\n    }\n    .reasons strong {\n      color: var(--gray-12);\n      font-weight: 600;\n    }\n  </style>\n</body>\n</html>",
+                            "original_reason": "reviewer_invocation_failed",
+                            "reviewer_output_mode": "litellm_structured"
+                          }
+                        },
+                        "failure_classification": "reviewer_infrastructure_unavailable",
+                        "model": null,
+                        "probe": {
+                          "details": {
+                            "attempts": 1,
+                            "error": "<!--\n  403 \u2014 Access denied\n\n  You don't have access to this service.\n  This service is only available to specific networks or users.\n\n  - If you're a Unity employee: connect to the corporate VPN and try again.\n  - Otherwise: this service is internal-only, or restricted to specific users.\n    Contact the team that runs it if you believe this is a mistake.\n-->\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>403 \u2014 Access denied</title>\n</head>\n<body>\n  <main>\n    <div class=\"card\">\n      <div class=\"brand\">\n        <svg width=\"22\" height=\"22\" viewBox=\"0 0 637.5 720\" fill=\"white\" style=\"opacity:0.95\" xmlns=\"http://www.w3.org/2000/svg\" aria-label=\"Unity\">\n          <path d=\"M346.6,128.8l114,65.8c4.1,2.3,4.2,8.8,0,11c0,0-135.5,78.2-135.5,78.2c-4.1,2.4-8.9,2.2-12.8,0l-135.4-78.2c-4.1-2.3-4.3-8.8,0-11l113.9-65.8l0-128.8L0,167.9v335.8l0-1.5v1.5l111.6-64.4l0-131.6c-0.1-4.7,5.5-8,9.6-5.5l135.5,78.2c4.1,2.4,6.4,6.7,6.4,11.1l0,156.4c0.1,4.7-5.4,8-9.5,5.5l-114-65.8L27.9,552.1L318.7,720l290.8-167.9L498,487.7l-114,65.8c-4,2.4-9.7-0.7-9.5-5.5c0,0,0-156.4,0-156.4c0-4.7,2.6-8.9,6.4-11.1l135.4-78.2c4-2.5,9.7,0.7,9.6,5.5v131.6l111.6,64.4V167.9L346.6,0V128.8z\"/>\n        </svg>\n        <span class=\"brand-divider\"></span>\n        <span class=\"brand-name\">Tessen</span>\n      </div>\n      <div class=\"code\">Error 403</div>\n      <h1>You don't have access to this service.</h1>\n      <p>This service is only available to specific networks or users.</p>\n      <ul class=\"reasons\">\n        <li><strong>If you're a Unity employee:</strong> connect to the corporate VPN and try again.</li>\n        <li><strong>Otherwise:</strong> this service is internal-only, or restricted to specific users. Contact the team that runs it if you believe this is a mistake.</li>\n      </ul>\n    </div>\n  </main>\n\n  <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />\n  <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin />\n  <link href=\"https://fonts.googleapis.com/css2?family=DM+Sans:wght@500&family=Inter:wght@400;500;600&display=swap\" rel=\"stylesheet\" />\n  <style>\n    :root {\n      --gray-1:  #111111;\n      --gray-2:  #191919;\n      --gray-5:  #313131;\n      --gray-6:  #3a3a3a;\n      --gray-7:  #484848;\n      --gray-9:  #6e6e6e;\n      --gray-11: #b4b4b4;\n      --gray-12: #eeeeee;\n      --font-display: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;\n      --font-ui:      'Inter', -apple-system, BlinkMacSystemFont, sans-serif;\n    }\n    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }\n    html, body { height: 100%; }\n    body {\n      font-family: var(--font-ui);\n      background: var(--gray-1);\n      color: var(--gray-12);\n      display: flex;\n      flex-direction: column;\n      -webkit-font-smoothing: antialiased;\n    }\n    main {\n      flex: 1;\n      display: flex;\n      align-items: center;\n      justify-content: center;\n      padding: 40px 24px;\n    }\n    .card { max-width: 520px; width: 100%; }\n    .brand {\n      display: flex;\n      align-items: center;\n      gap: 12px;\n      margin-bottom: 40px;\n    }\n    .brand-divider {\n      width: 1px;\n      height: 16px;\n      background: var(--gray-6);\n    }\n    .brand-name {\n      font-size: 14px;\n      font-weight: 600;\n      color: var(--gray-12);\n      letter-spacing: -0.01em;\n    }\n    .code {\n      font-size: 12px;\n      font-weight: 600;\n      color: var(--gray-9);\n      letter-spacing: 0.1em;\n      text-transform: uppercase;\n      margin-bottom: 16px;\n    }\n    h1 {\n      font-family: var(--font-display);\n      font-size: 44px;\n      font-weight: 500;\n      line-height: 1.05;\n      letter-spacing: -0.04em;\n      color: var(--gray-12);\n      margin-bottom: 20px;\n    }\n    p {\n      font-size: 15px;\n      line-height: 1.7;\n      color: var(--gray-11);\n    }\n    .reasons {\n      list-style: none;\n      padding: 22px 26px;\n      background: var(--gray-2);\n      border: 1px solid var(--gray-5);\n      border-radius: 8px;\n      margin-top: 28px;\n    }\n    .reasons li {\n      font-size: 14px;\n      line-height: 1.6;\n      color: var(--gray-11);\n      padding-left: 22px;\n      position: relative;\n    }\n    .reasons li + li { margin-top: 14px; }\n    .reasons li::before {\n      content: '';\n      position: absolute;\n      left: 6px;\n      top: 9px;\n      width: 5px;\n      height: 5px;\n      border-radius: 50%;\n      background: var(--gray-7);\n    }\n    .reasons strong {\n      color: var(--gray-12);\n      font-weight: 600;\n    }\n  </style>\n</body>\n</html>",
+                            "original_reason": "reviewer_invocation_failed",
+                            "recoverable": true,
+                            "retry_reasons": []
+                          },
+                          "probe_id": "CURSOR",
+                          "reason": "reviewer_infrastructure_unavailable",
+                          "status": "red"
+                        },
+                        "recoverable": true,
+                        "retry_reasons": [],
+                        "reviewer_assurance": "unavailable",
+                        "reviewer_output_mode": "litellm_structured",
+                        "reviewer_runtime": "litellm_structured",
+                        "status": null
+                      }
+                    },
+                    "failure_classification": "reviewer_infrastructure_unavailable",
+                    "model": null,
+                    "probe": {
+                      "details": {
+                        "attempts": 1,
+                        "error": "<!--\n  403 \u2014 Access denied\n\n  You don't have access to this service.\n  This service is only available to specific networks or users.\n\n  - If you're a Unity employee: connect to the corporate VPN and try again.\n  - Otherwise: this service is internal-only, or restricted to specific users.\n    Contact the team that runs it if you believe this is a mistake.\n-->\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>403 \u2014 Access denied</title>\n</head>\n<body>\n  <main>\n    <div class=\"card\">\n      <div class=\"brand\">\n        <svg width=\"22\" height=\"22\" viewBox=\"0 0 637.5 720\" fill=\"white\" style=\"opacity:0.95\" xmlns=\"http://www.w3.org/2000/svg\" aria-label=\"Unity\">\n          <path d=\"M346.6,128.8l114,65.8c4.1,2.3,4.2,8.8,0,11c0,0-135.5,78.2-135.5,78.2c-4.1,2.4-8.9,2.2-12.8,0l-135.4-78.2c-4.1-2.3-4.3-8.8,0-11l113.9-65.8l0-128.8L0,167.9v335.8l0-1.5v1.5l111.6-64.4l0-131.6c-0.1-4.7,5.5-8,9.6-5.5l135.5,78.2c4.1,2.4,6.4,6.7,6.4,11.1l0,156.4c0.1,4.7-5.4,8-9.5,5.5l-114-65.8L27.9,552.1L318.7,720l290.8-167.9L498,487.7l-114,65.8c-4,2.4-9.7-0.7-9.5-5.5c0,0,0-156.4,0-156.4c0-4.7,2.6-8.9,6.4-11.1l135.4-78.2c4-2.5,9.7,0.7,9.6,5.5v131.6l111.6,64.4V167.9L346.6,0V128.8z\"/>\n        </svg>\n        <span class=\"brand-divider\"></span>\n        <span class=\"brand-name\">Tessen</span>\n      </div>\n      <div class=\"code\">Error 403</div>\n      <h1>You don't have access to this service.</h1>\n      <p>This service is only available to specific networks or users.</p>\n      <ul class=\"reasons\">\n        <li><strong>If you're a Unity employee:</strong> connect to the corporate VPN and try again.</li>\n        <li><strong>Otherwise:</strong> this service is internal-only, or restricted to specific users. Contact the team that runs it if you believe this is a mistake.</li>\n      </ul>\n    </div>\n  </main>\n\n  <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />\n  <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin />\n  <link href=\"https://fonts.googleapis.com/css2?family=DM+Sans:wght@500&family=Inter:wght@400;500;600&display=swap\" rel=\"stylesheet\" />\n  <style>\n    :root {\n      --gray-1:  #111111;\n      --gray-2:  #191919;\n      --gray-5:  #313131;\n      --gray-6:  #3a3a3a;\n      --gray-7:  #484848;\n      --gray-9:  #6e6e6e;\n      --gray-11: #b4b4b4;\n      --gray-12: #eeeeee;\n      --font-display: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;\n      --font-ui:      'Inter', -apple-system, BlinkMacSystemFont, sans-serif;\n    }\n    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }\n    html, body { height: 100%; }\n    body {\n      font-family: var(--font-ui);\n      background: var(--gray-1);\n      color: var(--gray-12);\n      display: flex;\n      flex-direction: column;\n      -webkit-font-smoothing: antialiased;\n    }\n    main {\n      flex: 1;\n      display: flex;\n      align-items: center;\n      justify-content: center;\n      padding: 40px 24px;\n    }\n    .card { max-width: 520px; width: 100%; }\n    .brand {\n      display: flex;\n      align-items: center;\n      gap: 12px;\n      margin-bottom: 40px;\n    }\n    .brand-divider {\n      width: 1px;\n      height: 16px;\n      background: var(--gray-6);\n    }\n    .brand-name {\n      font-size: 14px;\n      font-weight: 600;\n      color: var(--gray-12);\n      letter-spacing: -0.01em;\n    }\n    .code {\n      font-size: 12px;\n      font-weight: 600;\n      color: var(--gray-9);\n      letter-spacing: 0.1em;\n      text-transform: uppercase;\n      margin-bottom: 16px;\n    }\n    h1 {\n      font-family: var(--font-display);\n      font-size: 44px;\n      font-weight: 500;\n      line-height: 1.05;\n      letter-spacing: -0.04em;\n      color: var(--gray-12);\n      margin-bottom: 20px;\n    }\n    p {\n      font-size: 15px;\n      line-height: 1.7;\n      color: var(--gray-11);\n    }\n    .reasons {\n      list-style: none;\n      padding: 22px 26px;\n      background: var(--gray-2);\n      border: 1px solid var(--gray-5);\n      border-radius: 8px;\n      margin-top: 28px;\n    }\n    .reasons li {\n      font-size: 14px;\n      line-height: 1.6;\n      color: var(--gray-11);\n      padding-left: 22px;\n      position: relative;\n    }\n    .reasons li + li { margin-top: 14px; }\n    .reasons li::before {\n      content: '';\n      position: absolute;\n      left: 6px;\n      top: 9px;\n      width: 5px;\n      height: 5px;\n      border-radius: 50%;\n      background: var(--gray-7);\n    }\n    .reasons strong {\n      color: var(--gray-12);\n      font-weight: 600;\n    }\n  </style>\n</body>\n</html>",
+                        "original_reason": "reviewer_invocation_failed",
+                        "recoverable": true,
+                        "retry_reasons": []
+                      },
+                      "probe_id": "CURSOR",
+                      "reason": "reviewer_infrastructure_unavailable",
+                      "status": "red"
+                    },
+                    "recoverable": true,
+                    "retry_reasons": [],
+                    "reviewer_assurance": "unavailable",
+                    "reviewer_output_mode": "litellm_structured",
+                    "reviewer_runtime": "litellm_structured",
+                    "status": null
+                  },
+                  "from_runtime": "cursor_sdk",
+                  "primary_failure": {
+                    "attempts": 1,
+                    "diagnostics": {
+                      "failure": {
+                        "attempts": 1,
+                        "error": "internal: internal error",
+                        "original_reason": "reviewer_invocation_failed",
+                        "reviewer_output_mode": "cursor_sdk"
+                      }
+                    },
+                    "failure_classification": "reviewer_infrastructure_unavailable",
+                    "model": null,
+                    "probe": {
+                      "details": {
+                        "attempts": 1,
+                        "error": "internal: internal error",
+                        "original_reason": "reviewer_invocation_failed",
+                        "recoverable": true,
+                        "retry_reasons": []
+                      },
+                      "probe_id": "CURSOR",
+                      "reason": "reviewer_infrastructure_unavailable",
+                      "status": "red"
+                    },
+                    "recoverable": true,
+                    "retry_reasons": [],
+                    "reviewer_assurance": "unavailable",
+                    "reviewer_output_mode": "cursor_sdk",
+                    "reviewer_runtime": "cursor_sdk",
+                    "status": null
+                  },
+                  "reason": "reviewer_invocation_failed",
+                  "to_runtime": "litellm_structured"
+                }
+              },
+              "duration_ms": null,
+              "failure_classification": "reviewer_infrastructure_unavailable",
+              "fallback_from_runtime": null,
+              "fallback_reason": null,
+              "model": null,
+              "outcome": null,
+              "probe": {
+                "details": {
+                  "attempts": 1,
+                  "error": "internal: internal error",
+                  "original_reason": "reviewer_invocation_failed",
+                  "recoverable": true,
+                  "retry_reasons": []
+                },
+                "probe_id": "CURSOR",
+                "reason": "reviewer_infrastructure_unavailable",
+                "status": "red"
+              },
+              "recoverable": true,
+              "retry_reasons": [],
+              "reviewer_assurance": "unavailable",
+              "reviewer_output_mode": "cursor_sdk",
+              "reviewer_runtime": "cursor_sdk",
+              "reviewer_unavailable_recovery": {
+                "authorization": null,
+                "available_reviewers_accept": true,
+                "classification": "reviewer_infrastructure_unavailable",
+                "decision": "escalate",
+                "evidence_grade": "degraded",
+                "forced_by_safety": false,
+                "gate": "outcome_review",
+                "policy": "escalate",
+                "reason": "policy_escalate",
+                "reviewer_verdict_counted_as_accept": false,
+                "safety_reasons": [],
+                "schema_version": "reviewer-unavailable-recovery/v1"
+              },
+              "run_id": null,
+              "schema_version": "independent-reviewer-result/v1",
+              "status": null,
+              "transcript_tail": ""
+            },
+            "nonce": "2073e587361f469d",
+            "options": [
+              "Pause",
+              "Kill",
+              "Continue"
+            ],
+            "policy": "escalate",
+            "reason": "reviewer_unavailable",
+            "resumed_at": 1780352911,
+            "reviewer_verdict_counted_as_accept": false,
+            "safety_reasons": [],
+            "task_id": "agentic-detached-fanout-resumable-20260531"
+          },
+          "run_id": "codex-agentic-detached-fanout-resumable-20260531",
+          "status": "resumed"
+        },
+        "available_reviewers_accept": true,
+        "classification": "reviewer_infrastructure_unavailable",
+        "decision": "proceed_degraded",
+        "event_id": 417835,
+        "evidence_grade": "degraded",
+        "forced_by_safety": false,
+        "gate": "outcome_review",
+        "policy": "escalate",
+        "reason": "human_authorized_proceed_degraded",
+        "reviewer_verdict_counted_as_accept": false,
+        "safety_reasons": [],
+        "schema_version": "reviewer-unavailable-recovery/v1"
+      },
+      "run_id": null,
+      "schema_version": "independent-reviewer-result/v1",
+      "status": null,
+      "transcript_tail": ""
+    },
+    "escalation": null,
+    "gate": "outcome_review",
+    "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-detached-fanout-resumable-20260531.json",
+    "independent_reviewer": {
+      "accepted": false,
+      "agent_id": null,
+      "attempts": 1,
+      "critical_review": {
+        "assumptions_to_verify": [],
+        "contradictions_checked": [],
+        "decision": "revise",
+        "evidence_refs": [],
+        "missing_evidence": [],
+        "schema_version": "critical-review/v1",
+        "severity": "none",
+        "strongest_objection": "none",
+        "what_would_change_my_mind": "Claude or Codex provides evidence resolving Cursor's objections."
+      },
+      "diagnostics": {
+        "failure": {
+          "attempts": 1,
+          "diagnostics": {
+            "failure": {
+              "attempts": 1,
+              "error": "internal: internal error",
+              "original_reason": "reviewer_invocation_failed",
+              "reviewer_output_mode": "cursor_sdk"
+            }
+          },
+          "failure_classification": "reviewer_infrastructure_unavailable",
+          "model": null,
+          "probe": {
+            "details": {
+              "attempts": 1,
+              "error": "internal: internal error",
+              "original_reason": "reviewer_invocation_failed",
+              "recoverable": true,
+              "retry_reasons": []
+            },
+            "probe_id": "CURSOR",
+            "reason": "reviewer_infrastructure_unavailable",
+            "status": "red"
+          },
+          "recoverable": true,
+          "retry_reasons": [],
+          "reviewer_assurance": "unavailable",
+          "reviewer_output_mode": "cursor_sdk",
+          "reviewer_runtime": "cursor_sdk",
+          "status": null
+        },
+        "fallback": {
+          "attempted": true,
+          "fallback_failure": {
+            "attempts": 1,
+            "diagnostics": {
+              "failure": {
+                "attempts": 1,
+                "diagnostics": {
+                  "failure": {
+                    "attempts": 1,
+                    "error": "<!--\n  403 \u2014 Access denied\n\n  You don't have access to this service.\n  This service is only available to specific networks or users.\n\n  - If you're a Unity employee: connect to the corporate VPN and try again.\n  - Otherwise: this service is internal-only, or restricted to specific users.\n    Contact the team that runs it if you believe this is a mistake.\n-->\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>403 \u2014 Access denied</title>\n</head>\n<body>\n  <main>\n    <div class=\"card\">\n      <div class=\"brand\">\n        <svg width=\"22\" height=\"22\" viewBox=\"0 0 637.5 720\" fill=\"white\" style=\"opacity:0.95\" xmlns=\"http://www.w3.org/2000/svg\" aria-label=\"Unity\">\n          <path d=\"M346.6,128.8l114,65.8c4.1,2.3,4.2,8.8,0,11c0,0-135.5,78.2-135.5,78.2c-4.1,2.4-8.9,2.2-12.8,0l-135.4-78.2c-4.1-2.3-4.3-8.8,0-11l113.9-65.8l0-128.8L0,167.9v335.8l0-1.5v1.5l111.6-64.4l0-131.6c-0.1-4.7,5.5-8,9.6-5.5l135.5,78.2c4.1,2.4,6.4,6.7,6.4,11.1l0,156.4c0.1,4.7-5.4,8-9.5,5.5l-114-65.8L27.9,552.1L318.7,720l290.8-167.9L498,487.7l-114,65.8c-4,2.4-9.7-0.7-9.5-5.5c0,0,0-156.4,0-156.4c0-4.7,2.6-8.9,6.4-11.1l135.4-78.2c4-2.5,9.7,0.7,9.6,5.5v131.6l111.6,64.4V167.9L346.6,0V128.8z\"/>\n        </svg>\n        <span class=\"brand-divider\"></span>\n        <span class=\"brand-name\">Tessen</span>\n      </div>\n      <div class=\"code\">Error 403</div>\n      <h1>You don't have access to this service.</h1>\n      <p>This service is only available to specific networks or users.</p>\n      <ul class=\"reasons\">\n        <li><strong>If you're a Unity employee:</strong> connect to the corporate VPN and try again.</li>\n        <li><strong>Otherwise:</strong> this service is internal-only, or restricted to specific users. Contact the team that runs it if you believe this is a mistake.</li>\n      </ul>\n    </div>\n  </main>\n\n  <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />\n  <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin />\n  <link href=\"https://fonts.googleapis.com/css2?family=DM+Sans:wght@500&family=Inter:wght@400;500;600&display=swap\" rel=\"stylesheet\" />\n  <style>\n    :root {\n      --gray-1:  #111111;\n      --gray-2:  #191919;\n      --gray-5:  #313131;\n      --gray-6:  #3a3a3a;\n      --gray-7:  #484848;\n      --gray-9:  #6e6e6e;\n      --gray-11: #b4b4b4;\n      --gray-12: #eeeeee;\n      --font-display: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;\n      --font-ui:      'Inter', -apple-system, BlinkMacSystemFont, sans-serif;\n    }\n    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }\n    html, body { height: 100%; }\n    body {\n      font-family: var(--font-ui);\n      background: var(--gray-1);\n      color: var(--gray-12);\n      display: flex;\n      flex-direction: column;\n      -webkit-font-smoothing: antialiased;\n    }\n    main {\n      flex: 1;\n      display: flex;\n      align-items: center;\n      justify-content: center;\n      padding: 40px 24px;\n    }\n    .card { max-width: 520px; width: 100%; }\n    .brand {\n      display: flex;\n      align-items: center;\n      gap: 12px;\n      margin-bottom: 40px;\n    }\n    .brand-divider {\n      width: 1px;\n      height: 16px;\n      background: var(--gray-6);\n    }\n    .brand-name {\n      font-size: 14px;\n      font-weight: 600;\n      color: var(--gray-12);\n      letter-spacing: -0.01em;\n    }\n    .code {\n      font-size: 12px;\n      font-weight: 600;\n      color: var(--gray-9);\n      letter-spacing: 0.1em;\n      text-transform: uppercase;\n      margin-bottom: 16px;\n    }\n    h1 {\n      font-family: var(--font-display);\n      font-size: 44px;\n      font-weight: 500;\n      line-height: 1.05;\n      letter-spacing: -0.04em;\n      color: var(--gray-12);\n      margin-bottom: 20px;\n    }\n    p {\n      font-size: 15px;\n      line-height: 1.7;\n      color: var(--gray-11);\n    }\n    .reasons {\n      list-style: none;\n      padding: 22px 26px;\n      background: var(--gray-2);\n      border: 1px solid var(--gray-5);\n      border-radius: 8px;\n      margin-top: 28px;\n    }\n    .reasons li {\n      font-size: 14px;\n      line-height: 1.6;\n      color: var(--gray-11);\n      padding-left: 22px;\n      position: relative;\n    }\n    .reasons li + li { margin-top: 14px; }\n    .reasons li::before {\n      content: '';\n      position: absolute;\n      left: 6px;\n      top: 9px;\n      width: 5px;\n      height: 5px;\n      border-radius: 50%;\n      background: var(--gray-7);\n    }\n    .reasons strong {\n      color: var(--gray-12);\n      font-weight: 600;\n    }\n  </style>\n</body>\n</html>",
+                    "original_reason": "reviewer_invocation_failed",
+                    "reviewer_output_mode": "litellm_structured"
+                  }
+                },
+                "failure_classification": "reviewer_infrastructure_unavailable",
+                "model": null,
+                "probe": {
+                  "details": {
+                    "attempts": 1,
+                    "error": "<!--\n  403 \u2014 Access denied\n\n  You don't have access to this service.\n  This service is only available to specific networks or users.\n\n  - If you're a Unity employee: connect to the corporate VPN and try again.\n  - Otherwise: this service is internal-only, or restricted to specific users.\n    Contact the team that runs it if you believe this is a mistake.\n-->\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>403 \u2014 Access denied</title>\n</head>\n<body>\n  <main>\n    <div class=\"card\">\n      <div class=\"brand\">\n        <svg width=\"22\" height=\"22\" viewBox=\"0 0 637.5 720\" fill=\"white\" style=\"opacity:0.95\" xmlns=\"http://www.w3.org/2000/svg\" aria-label=\"Unity\">\n          <path d=\"M346.6,128.8l114,65.8c4.1,2.3,4.2,8.8,0,11c0,0-135.5,78.2-135.5,78.2c-4.1,2.4-8.9,2.2-12.8,0l-135.4-78.2c-4.1-2.3-4.3-8.8,0-11l113.9-65.8l0-128.8L0,167.9v335.8l0-1.5v1.5l111.6-64.4l0-131.6c-0.1-4.7,5.5-8,9.6-5.5l135.5,78.2c4.1,2.4,6.4,6.7,6.4,11.1l0,156.4c0.1,4.7-5.4,8-9.5,5.5l-114-65.8L27.9,552.1L318.7,720l290.8-167.9L498,487.7l-114,65.8c-4,2.4-9.7-0.7-9.5-5.5c0,0,0-156.4,0-156.4c0-4.7,2.6-8.9,6.4-11.1l135.4-78.2c4-2.5,9.7,0.7,9.6,5.5v131.6l111.6,64.4V167.9L346.6,0V128.8z\"/>\n        </svg>\n        <span class=\"brand-divider\"></span>\n        <span class=\"brand-name\">Tessen</span>\n      </div>\n      <div class=\"code\">Error 403</div>\n      <h1>You don't have access to this service.</h1>\n      <p>This service is only available to specific networks or users.</p>\n      <ul class=\"reasons\">\n        <li><strong>If you're a Unity employee:</strong> connect to the corporate VPN and try again.</li>\n        <li><strong>Otherwise:</strong> this service is internal-only, or restricted to specific users. Contact the team that runs it if you believe this is a mistake.</li>\n      </ul>\n    </div>\n  </main>\n\n  <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />\n  <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin />\n  <link href=\"https://fonts.googleapis.com/css2?family=DM+Sans:wght@500&family=Inter:wght@400;500;600&display=swap\" rel=\"stylesheet\" />\n  <style>\n    :root {\n      --gray-1:  #111111;\n      --gray-2:  #191919;\n      --gray-5:  #313131;\n      --gray-6:  #3a3a3a;\n      --gray-7:  #484848;\n      --gray-9:  #6e6e6e;\n      --gray-11: #b4b4b4;\n      --gray-12: #eeeeee;\n      --font-display: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;\n      --font-ui:      'Inter', -apple-system, BlinkMacSystemFont, sans-serif;\n    }\n    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }\n    html, body { height: 100%; }\n    body {\n      font-family: var(--font-ui);\n      background: var(--gray-1);\n      color: var(--gray-12);\n      display: flex;\n      flex-direction: column;\n      -webkit-font-smoothing: antialiased;\n    }\n    main {\n      flex: 1;\n      display: flex;\n      align-items: center;\n      justify-content: center;\n      padding: 40px 24px;\n    }\n    .card { max-width: 520px; width: 100%; }\n    .brand {\n      display: flex;\n      align-items: center;\n      gap: 12px;\n      margin-bottom: 40px;\n    }\n    .brand-divider {\n      width: 1px;\n      height: 16px;\n      background: var(--gray-6);\n    }\n    .brand-name {\n      font-size: 14px;\n      font-weight: 600;\n      color: var(--gray-12);\n      letter-spacing: -0.01em;\n    }\n    .code {\n      font-size: 12px;\n      font-weight: 600;\n      color: var(--gray-9);\n      letter-spacing: 0.1em;\n      text-transform: uppercase;\n      margin-bottom: 16px;\n    }\n    h1 {\n      font-family: var(--font-display);\n      font-size: 44px;\n      font-weight: 500;\n      line-height: 1.05;\n      letter-spacing: -0.04em;\n      color: var(--gray-12);\n      margin-bottom: 20px;\n    }\n    p {\n      font-size: 15px;\n      line-height: 1.7;\n      color: var(--gray-11);\n    }\n    .reasons {\n      list-style: none;\n      padding: 22px 26px;\n      background: var(--gray-2);\n      border: 1px solid var(--gray-5);\n      border-radius: 8px;\n      margin-top: 28px;\n    }\n    .reasons li {\n      font-size: 14px;\n      line-height: 1.6;\n      color: var(--gray-11);\n      padding-left: 22px;\n      position: relative;\n    }\n    .reasons li + li { margin-top: 14px; }\n    .reasons li::before {\n      content: '';\n      position: absolute;\n      left: 6px;\n      top: 9px;\n      width: 5px;\n      height: 5px;\n      border-radius: 50%;\n      background: var(--gray-7);\n    }\n    .reasons strong {\n      color: var(--gray-12);\n      font-weight: 600;\n    }\n  </style>\n</body>\n</html>",
+                    "original_reason": "reviewer_invocation_failed",
+                    "recoverable": true,
+                    "retry_reasons": []
+                  },
+                  "probe_id": "CURSOR",
+                  "reason": "reviewer_infrastructure_unavailable",
+                  "status": "red"
+                },
+                "recoverable": true,
+                "retry_reasons": [],
+                "reviewer_assurance": "unavailable",
+                "reviewer_output_mode": "litellm_structured",
+                "reviewer_runtime": "litellm_structured",
+                "status": null
+              }
+            },
+            "failure_classification": "reviewer_infrastructure_unavailable",
+            "model": null,
+            "probe": {
+              "details": {
+                "attempts": 1,
+                "error": "<!--\n  403 \u2014 Access denied\n\n  You don't have access to this service.\n  This service is only available to specific networks or users.\n\n  - If you're a Unity employee: connect to the corporate VPN and try again.\n  - Otherwise: this service is internal-only, or restricted to specific users.\n    Contact the team that runs it if you believe this is a mistake.\n-->\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>403 \u2014 Access denied</title>\n</head>\n<body>\n  <main>\n    <div class=\"card\">\n      <div class=\"brand\">\n        <svg width=\"22\" height=\"22\" viewBox=\"0 0 637.5 720\" fill=\"white\" style=\"opacity:0.95\" xmlns=\"http://www.w3.org/2000/svg\" aria-label=\"Unity\">\n          <path d=\"M346.6,128.8l114,65.8c4.1,2.3,4.2,8.8,0,11c0,0-135.5,78.2-135.5,78.2c-4.1,2.4-8.9,2.2-12.8,0l-135.4-78.2c-4.1-2.3-4.3-8.8,0-11l113.9-65.8l0-128.8L0,167.9v335.8l0-1.5v1.5l111.6-64.4l0-131.6c-0.1-4.7,5.5-8,9.6-5.5l135.5,78.2c4.1,2.4,6.4,6.7,6.4,11.1l0,156.4c0.1,4.7-5.4,8-9.5,5.5l-114-65.8L27.9,552.1L318.7,720l290.8-167.9L498,487.7l-114,65.8c-4,2.4-9.7-0.7-9.5-5.5c0,0,0-156.4,0-156.4c0-4.7,2.6-8.9,6.4-11.1l135.4-78.2c4-2.5,9.7,0.7,9.6,5.5v131.6l111.6,64.4V167.9L346.6,0V128.8z\"/>\n        </svg>\n        <span class=\"brand-divider\"></span>\n        <span class=\"brand-name\">Tessen</span>\n      </div>\n      <div class=\"code\">Error 403</div>\n      <h1>You don't have access to this service.</h1>\n      <p>This service is only available to specific networks or users.</p>\n      <ul class=\"reasons\">\n        <li><strong>If you're a Unity employee:</strong> connect to the corporate VPN and try again.</li>\n        <li><strong>Otherwise:</strong> this service is internal-only, or restricted to specific users. Contact the team that runs it if you believe this is a mistake.</li>\n      </ul>\n    </div>\n  </main>\n\n  <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />\n  <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin />\n  <link href=\"https://fonts.googleapis.com/css2?family=DM+Sans:wght@500&family=Inter:wght@400;500;600&display=swap\" rel=\"stylesheet\" />\n  <style>\n    :root {\n      --gray-1:  #111111;\n      --gray-2:  #191919;\n      --gray-5:  #313131;\n      --gray-6:  #3a3a3a;\n      --gray-7:  #484848;\n      --gray-9:  #6e6e6e;\n      --gray-11: #b4b4b4;\n      --gray-12: #eeeeee;\n      --font-display: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;\n      --font-ui:      'Inter', -apple-system, BlinkMacSystemFont, sans-serif;\n    }\n    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }\n    html, body { height: 100%; }\n    body {\n      font-family: var(--font-ui);\n      background: var(--gray-1);\n      color: var(--gray-12);\n      display: flex;\n      flex-direction: column;\n      -webkit-font-smoothing: antialiased;\n    }\n    main {\n      flex: 1;\n      display: flex;\n      align-items: center;\n      justify-content: center;\n      padding: 40px 24px;\n    }\n    .card { max-width: 520px; width: 100%; }\n    .brand {\n      display: flex;\n      align-items: center;\n      gap: 12px;\n      margin-bottom: 40px;\n    }\n    .brand-divider {\n      width: 1px;\n      height: 16px;\n      background: var(--gray-6);\n    }\n    .brand-name {\n      font-size: 14px;\n      font-weight: 600;\n      color: var(--gray-12);\n      letter-spacing: -0.01em;\n    }\n    .code {\n      font-size: 12px;\n      font-weight: 600;\n      color: var(--gray-9);\n      letter-spacing: 0.1em;\n      text-transform: uppercase;\n      margin-bottom: 16px;\n    }\n    h1 {\n      font-family: var(--font-display);\n      font-size: 44px;\n      font-weight: 500;\n      line-height: 1.05;\n      letter-spacing: -0.04em;\n      color: var(--gray-12);\n      margin-bottom: 20px;\n    }\n    p {\n      font-size: 15px;\n      line-height: 1.7;\n      color: var(--gray-11);\n    }\n    .reasons {\n      list-style: none;\n      padding: 22px 26px;\n      background: var(--gray-2);\n      border: 1px solid var(--gray-5);\n      border-radius: 8px;\n      margin-top: 28px;\n    }\n    .reasons li {\n      font-size: 14px;\n      line-height: 1.6;\n      color: var(--gray-11);\n      padding-left: 22px;\n      position: relative;\n    }\n    .reasons li + li { margin-top: 14px; }\n    .reasons li::before {\n      content: '';\n      position: absolute;\n      left: 6px;\n      top: 9px;\n      width: 5px;\n      height: 5px;\n      border-radius: 50%;\n      background: var(--gray-7);\n    }\n    .reasons strong {\n      color: var(--gray-12);\n      font-weight: 600;\n    }\n  </style>\n</body>\n</html>",
+                "original_reason": "reviewer_invocation_failed",
+                "recoverable": true,
+                "retry_reasons": []
+              },
+              "probe_id": "CURSOR",
+              "reason": "reviewer_infrastructure_unavailable",
+              "status": "red"
+            },
+            "recoverable": true,
+            "retry_reasons": [],
+            "reviewer_assurance": "unavailable",
+            "reviewer_output_mode": "litellm_structured",
+            "reviewer_runtime": "litellm_structured",
+            "status": null
+          },
+          "from_runtime": "cursor_sdk",
+          "primary_failure": {
+            "attempts": 1,
+            "diagnostics": {
+              "failure": {
+                "attempts": 1,
+                "error": "internal: internal error",
+                "original_reason": "reviewer_invocation_failed",
+                "reviewer_output_mode": "cursor_sdk"
+              }
+            },
+            "failure_classification": "reviewer_infrastructure_unavailable",
+            "model": null,
+            "probe": {
+              "details": {
+                "attempts": 1,
+                "error": "internal: internal error",
+                "original_reason": "reviewer_invocation_failed",
+                "recoverable": true,
+                "retry_reasons": []
+              },
+              "probe_id": "CURSOR",
+              "reason": "reviewer_infrastructure_unavailable",
+              "status": "red"
+            },
+            "recoverable": true,
+            "retry_reasons": [],
+            "reviewer_assurance": "unavailable",
+            "reviewer_output_mode": "cursor_sdk",
+            "reviewer_runtime": "cursor_sdk",
+            "status": null
+          },
+          "reason": "reviewer_invocation_failed",
+          "to_runtime": "litellm_structured"
+        }
+      },
+      "duration_ms": null,
+      "failure_classification": "reviewer_infrastructure_unavailable",
+      "fallback_from_runtime": null,
+      "fallback_reason": null,
+      "model": null,
+      "outcome": null,
+      "probe": {
+        "details": {
+          "attempts": 1,
+          "error": "internal: internal error",
+          "original_reason": "reviewer_invocation_failed",
+          "recoverable": true,
+          "retry_reasons": []
+        },
+        "probe_id": "CURSOR",
+        "reason": "reviewer_infrastructure_unavailable",
+        "status": "red"
+      },
+      "recoverable": true,
+      "retry_reasons": [],
+      "reviewer_assurance": "unavailable",
+      "reviewer_output_mode": "cursor_sdk",
+      "reviewer_runtime": "cursor_sdk",
+      "reviewer_unavailable_recovery": {
+        "authorization": {
+          "action_type": "dual_agent_gate_deadlock",
+          "id": 1314,
+          "payload": {
+            "answer": "Continue",
+            "ask_id": 47,
+            "authorized_by": "codex_desktop_user_instruction",
+            "available_reviewers": {
+              "claude": "accept",
+              "codex": "revise"
+            },
+            "classification": "reviewer_infrastructure_unavailable",
+            "cursor_review": {
+              "accepted": false,
+              "agent_id": null,
+              "attempts": 1,
+              "critical_review": {
+                "assumptions_to_verify": [],
+                "contradictions_checked": [],
+                "decision": "revise",
+                "evidence_refs": [],
+                "missing_evidence": [],
+                "schema_version": "critical-review/v1",
+                "severity": "none",
+                "strongest_objection": "none",
+                "what_would_change_my_mind": "Claude or Codex provides evidence resolving Cursor's objections."
+              },
+              "diagnostics": {
+                "failure": {
+                  "attempts": 1,
+                  "diagnostics": {
+                    "failure": {
+                      "attempts": 1,
+                      "error": "internal: internal error",
+                      "original_reason": "reviewer_invocation_failed",
+                      "reviewer_output_mode": "cursor_sdk"
+                    }
+                  },
+                  "failure_classification": "reviewer_infrastructure_unavailable",
+                  "model": null,
+                  "probe": {
+                    "details": {
+                      "attempts": 1,
+                      "error": "internal: internal error",
+                      "original_reason": "reviewer_invocation_failed",
+                      "recoverable": true,
+                      "retry_reasons": []
+                    },
+                    "probe_id": "CURSOR",
+                    "reason": "reviewer_infrastructure_unavailable",
+                    "status": "red"
+                  },
+                  "recoverable": true,
+                  "retry_reasons": [],
+                  "reviewer_assurance": "unavailable",
+                  "reviewer_output_mode": "cursor_sdk",
+                  "reviewer_runtime": "cursor_sdk",
+                  "status": null
+                },
+                "fallback": {
+                  "attempted": true,
+                  "fallback_failure": {
+                    "attempts": 1,
+                    "diagnostics": {
+                      "failure": {
+                        "attempts": 1,
+                        "diagnostics": {
+                          "failure": {
+                            "attempts": 1,
+                            "error": "<!--\n  403 \u2014 Access denied\n\n  You don't have access to this service.\n  This service is only available to specific networks or users.\n\n  - If you're a Unity employee: connect to the corporate VPN and try again.\n  - Otherwise: this service is internal-only, or restricted to specific users.\n    Contact the team that runs it if you believe this is a mistake.\n-->\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>403 \u2014 Access denied</title>\n</head>\n<body>\n  <main>\n    <div class=\"card\">\n      <div class=\"brand\">\n        <svg width=\"22\" height=\"22\" viewBox=\"0 0 637.5 720\" fill=\"white\" style=\"opacity:0.95\" xmlns=\"http://www.w3.org/2000/svg\" aria-label=\"Unity\">\n          <path d=\"M346.6,128.8l114,65.8c4.1,2.3,4.2,8.8,0,11c0,0-135.5,78.2-135.5,78.2c-4.1,2.4-8.9,2.2-12.8,0l-135.4-78.2c-4.1-2.3-4.3-8.8,0-11l113.9-65.8l0-128.8L0,167.9v335.8l0-1.5v1.5l111.6-64.4l0-131.6c-0.1-4.7,5.5-8,9.6-5.5l135.5,78.2c4.1,2.4,6.4,6.7,6.4,11.1l0,156.4c0.1,4.7-5.4,8-9.5,5.5l-114-65.8L27.9,552.1L318.7,720l290.8-167.9L498,487.7l-114,65.8c-4,2.4-9.7-0.7-9.5-5.5c0,0,0-156.4,0-156.4c0-4.7,2.6-8.9,6.4-11.1l135.4-78.2c4-2.5,9.7,0.7,9.6,5.5v131.6l111.6,64.4V167.9L346.6,0V128.8z\"/>\n        </svg>\n        <span class=\"brand-divider\"></span>\n        <span class=\"brand-name\">Tessen</span>\n      </div>\n      <div class=\"code\">Error 403</div>\n      <h1>You don't have access to this service.</h1>\n      <p>This service is only available to specific networks or users.</p>\n      <ul class=\"reasons\">\n        <li><strong>If you're a Unity employee:</strong> connect to the corporate VPN and try again.</li>\n        <li><strong>Otherwise:</strong> this service is internal-only, or restricted to specific users. Contact the team that runs it if you believe this is a mistake.</li>\n      </ul>\n    </div>\n  </main>\n\n  <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />\n  <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin />\n  <link href=\"https://fonts.googleapis.com/css2?family=DM+Sans:wght@500&family=Inter:wght@400;500;600&display=swap\" rel=\"stylesheet\" />\n  <style>\n    :root {\n      --gray-1:  #111111;\n      --gray-2:  #191919;\n      --gray-5:  #313131;\n      --gray-6:  #3a3a3a;\n      --gray-7:  #484848;\n      --gray-9:  #6e6e6e;\n      --gray-11: #b4b4b4;\n      --gray-12: #eeeeee;\n      --font-display: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;\n      --font-ui:      'Inter', -apple-system, BlinkMacSystemFont, sans-serif;\n    }\n    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }\n    html, body { height: 100%; }\n    body {\n      font-family: var(--font-ui);\n      background: var(--gray-1);\n      color: var(--gray-12);\n      display: flex;\n      flex-direction: column;\n      -webkit-font-smoothing: antialiased;\n    }\n    main {\n      flex: 1;\n      display: flex;\n      align-items: center;\n      justify-content: center;\n      padding: 40px 24px;\n    }\n    .card { max-width: 520px; width: 100%; }\n    .brand {\n      display: flex;\n      align-items: center;\n      gap: 12px;\n      margin-bottom: 40px;\n    }\n    .brand-divider {\n      width: 1px;\n      height: 16px;\n      background: var(--gray-6);\n    }\n    .brand-name {\n      font-size: 14px;\n      font-weight: 600;\n      color: var(--gray-12);\n      letter-spacing: -0.01em;\n    }\n    .code {\n      font-size: 12px;\n      font-weight: 600;\n      color: var(--gray-9);\n      letter-spacing: 0.1em;\n      text-transform: uppercase;\n      margin-bottom: 16px;\n    }\n    h1 {\n      font-family: var(--font-display);\n      font-size: 44px;\n      font-weight: 500;\n      line-height: 1.05;\n      letter-spacing: -0.04em;\n      color: var(--gray-12);\n      margin-bottom: 20px;\n    }\n    p {\n      font-size: 15px;\n      line-height: 1.7;\n      color: var(--gray-11);\n    }\n    .reasons {\n      list-style: none;\n      padding: 22px 26px;\n      background: var(--gray-2);\n      border: 1px solid var(--gray-5);\n      border-radius: 8px;\n      margin-top: 28px;\n    }\n    .reasons li {\n      font-size: 14px;\n      line-height: 1.6;\n      color: var(--gray-11);\n      padding-left: 22px;\n      position: relative;\n    }\n    .reasons li + li { margin-top: 14px; }\n    .reasons li::before {\n      content: '';\n      position: absolute;\n      left: 6px;\n      top: 9px;\n      width: 5px;\n      height: 5px;\n      border-radius: 50%;\n      background: var(--gray-7);\n    }\n    .reasons strong {\n      color: var(--gray-12);\n      font-weight: 600;\n    }\n  </style>\n</body>\n</html>",
+                            "original_reason": "reviewer_invocation_failed",
+                            "reviewer_output_mode": "litellm_structured"
+                          }
+                        },
+                        "failure_classification": "reviewer_infrastructure_unavailable",
+                        "model": null,
+                        "probe": {
+                          "details": {
+                            "attempts": 1,
+                            "error": "<!--\n  403 \u2014 Access denied\n\n  You don't have access to this service.\n  This service is only available to specific networks or users.\n\n  - If you're a Unity employee: connect to the corporate VPN and try again.\n  - Otherwise: this service is internal-only, or restricted to specific users.\n    Contact the team that runs it if you believe this is a mistake.\n-->\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>403 \u2014 Access denied</title>\n</head>\n<body>\n  <main>\n    <div class=\"card\">\n      <div class=\"brand\">\n        <svg width=\"22\" height=\"22\" viewBox=\"0 0 637.5 720\" fill=\"white\" style=\"opacity:0.95\" xmlns=\"http://www.w3.org/2000/svg\" aria-label=\"Unity\">\n          <path d=\"M346.6,128.8l114,65.8c4.1,2.3,4.2,8.8,0,11c0,0-135.5,78.2-135.5,78.2c-4.1,2.4-8.9,2.2-12.8,0l-135.4-78.2c-4.1-2.3-4.3-8.8,0-11l113.9-65.8l0-128.8L0,167.9v335.8l0-1.5v1.5l111.6-64.4l0-131.6c-0.1-4.7,5.5-8,9.6-5.5l135.5,78.2c4.1,2.4,6.4,6.7,6.4,11.1l0,156.4c0.1,4.7-5.4,8-9.5,5.5l-114-65.8L27.9,552.1L318.7,720l290.8-167.9L498,487.7l-114,65.8c-4,2.4-9.7-0.7-9.5-5.5c0,0,0-156.4,0-156.4c0-4.7,2.6-8.9,6.4-11.1l135.4-78.2c4-2.5,9.7,0.7,9.6,5.5v131.6l111.6,64.4V167.9L346.6,0V128.8z\"/>\n        </svg>\n        <span class=\"brand-divider\"></span>\n        <span class=\"brand-name\">Tessen</span>\n      </div>\n      <div class=\"code\">Error 403</div>\n      <h1>You don't have access to this service.</h1>\n      <p>This service is only available to specific networks or users.</p>\n      <ul class=\"reasons\">\n        <li><strong>If you're a Unity employee:</strong> connect to the corporate VPN and try again.</li>\n        <li><strong>Otherwise:</strong> this service is internal-only, or restricted to specific users. Contact the team that runs it if you believe this is a mistake.</li>\n      </ul>\n    </div>\n  </main>\n\n  <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />\n  <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin />\n  <link href=\"https://fonts.googleapis.com/css2?family=DM+Sans:wght@500&family=Inter:wght@400;500;600&display=swap\" rel=\"stylesheet\" />\n  <style>\n    :root {\n      --gray-1:  #111111;\n      --gray-2:  #191919;\n      --gray-5:  #313131;\n      --gray-6:  #3a3a3a;\n      --gray-7:  #484848;\n      --gray-9:  #6e6e6e;\n      --gray-11: #b4b4b4;\n      --gray-12: #eeeeee;\n      --font-display: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;\n      --font-ui:      'Inter', -apple-system, BlinkMacSystemFont, sans-serif;\n    }\n    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }\n    html, body { height: 100%; }\n    body {\n      font-family: var(--font-ui);\n      background: var(--gray-1);\n      color: var(--gray-12);\n      display: flex;\n      flex-direction: column;\n      -webkit-font-smoothing: antialiased;\n    }\n    main {\n      flex: 1;\n      display: flex;\n      align-items: center;\n      justify-content: center;\n      padding: 40px 24px;\n    }\n    .card { max-width: 520px; width: 100%; }\n    .brand {\n      display: flex;\n      align-items: center;\n      gap: 12px;\n      margin-bottom: 40px;\n    }\n    .brand-divider {\n      width: 1px;\n      height: 16px;\n      background: var(--gray-6);\n    }\n    .brand-name {\n      font-size: 14px;\n      font-weight: 600;\n      color: var(--gray-12);\n      letter-spacing: -0.01em;\n    }\n    .code {\n      font-size: 12px;\n      font-weight: 600;\n      color: var(--gray-9);\n      letter-spacing: 0.1em;\n      text-transform: uppercase;\n      margin-bottom: 16px;\n    }\n    h1 {\n      font-family: var(--font-display);\n      font-size: 44px;\n      font-weight: 500;\n      line-height: 1.05;\n      letter-spacing: -0.04em;\n      color: var(--gray-12);\n      margin-bottom: 20px;\n    }\n    p {\n      font-size: 15px;\n      line-height: 1.7;\n      color: var(--gray-11);\n    }\n    .reasons {\n      list-style: none;\n      padding: 22px 26px;\n      background: var(--gray-2);\n      border: 1px solid var(--gray-5);\n      border-radius: 8px;\n      margin-top: 28px;\n    }\n    .reasons li {\n      font-size: 14px;\n      line-height: 1.6;\n      color: var(--gray-11);\n      padding-left: 22px;\n      position: relative;\n    }\n    .reasons li + li { margin-top: 14px; }\n    .reasons li::before {\n      content: '';\n      position: absolute;\n      left: 6px;\n      top: 9px;\n      width: 5px;\n      height: 5px;\n      border-radius: 50%;\n      background: var(--gray-7);\n    }\n    .reasons strong {\n      color: var(--gray-12);\n      font-weight: 600;\n    }\n  </style>\n</body>\n</html>",
+                            "original_reason": "reviewer_invocation_failed",
+                            "recoverable": true,
+                            "retry_reasons": []
+                          },
+                          "probe_id": "CURSOR",
+                          "reason": "reviewer_infrastructure_unavailable",
+                          "status": "red"
+                        },
+                        "recoverable": true,
+                        "retry_reasons": [],
+                        "reviewer_assurance": "unavailable",
+                        "reviewer_output_mode": "litellm_structured",
+                        "reviewer_runtime": "litellm_structured",
+                        "status": null
+                      }
+                    },
+                    "failure_classification": "reviewer_infrastructure_unavailable",
+                    "model": null,
+                    "probe": {
+                      "details": {
+                        "attempts": 1,
+                        "error": "<!--\n  403 \u2014 Access denied\n\n  You don't have access to this service.\n  This service is only available to specific networks or users.\n\n  - If you're a Unity employee: connect to the corporate VPN and try again.\n  - Otherwise: this service is internal-only, or restricted to specific users.\n    Contact the team that runs it if you believe this is a mistake.\n-->\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>403 \u2014 Access denied</title>\n</head>\n<body>\n  <main>\n    <div class=\"card\">\n      <div class=\"brand\">\n        <svg width=\"22\" height=\"22\" viewBox=\"0 0 637.5 720\" fill=\"white\" style=\"opacity:0.95\" xmlns=\"http://www.w3.org/2000/svg\" aria-label=\"Unity\">\n          <path d=\"M346.6,128.8l114,65.8c4.1,2.3,4.2,8.8,0,11c0,0-135.5,78.2-135.5,78.2c-4.1,2.4-8.9,2.2-12.8,0l-135.4-78.2c-4.1-2.3-4.3-8.8,0-11l113.9-65.8l0-128.8L0,167.9v335.8l0-1.5v1.5l111.6-64.4l0-131.6c-0.1-4.7,5.5-8,9.6-5.5l135.5,78.2c4.1,2.4,6.4,6.7,6.4,11.1l0,156.4c0.1,4.7-5.4,8-9.5,5.5l-114-65.8L27.9,552.1L318.7,720l290.8-167.9L498,487.7l-114,65.8c-4,2.4-9.7-0.7-9.5-5.5c0,0,0-156.4,0-156.4c0-4.7,2.6-8.9,6.4-11.1l135.4-78.2c4-2.5,9.7,0.7,9.6,5.5v131.6l111.6,64.4V167.9L346.6,0V128.8z\"/>\n        </svg>\n        <span class=\"brand-divider\"></span>\n        <span class=\"brand-name\">Tessen</span>\n      </div>\n      <div class=\"code\">Error 403</div>\n      <h1>You don't have access to this service.</h1>\n      <p>This service is only available to specific networks or users.</p>\n      <ul class=\"reasons\">\n        <li><strong>If you're a Unity employee:</strong> connect to the corporate VPN and try again.</li>\n        <li><strong>Otherwise:</strong> this service is internal-only, or restricted to specific users. Contact the team that runs it if you believe this is a mistake.</li>\n      </ul>\n    </div>\n  </main>\n\n  <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />\n  <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin />\n  <link href=\"https://fonts.googleapis.com/css2?family=DM+Sans:wght@500&family=Inter:wght@400;500;600&display=swap\" rel=\"stylesheet\" />\n  <style>\n    :root {\n      --gray-1:  #111111;\n      --gray-2:  #191919;\n      --gray-5:  #313131;\n      --gray-6:  #3a3a3a;\n      --gray-7:  #484848;\n      --gray-9:  #6e6e6e;\n      --gray-11: #b4b4b4;\n      --gray-12: #eeeeee;\n      --font-display: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;\n      --font-ui:      'Inter', -apple-system, BlinkMacSystemFont, sans-serif;\n    }\n    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }\n    html, body { height: 100%; }\n    body {\n      font-family: var(--font-ui);\n      background: var(--gray-1);\n      color: var(--gray-12);\n      display: flex;\n      flex-direction: column;\n      -webkit-font-smoothing: antialiased;\n    }\n    main {\n      flex: 1;\n      display: flex;\n      align-items: center;\n      justify-content: center;\n      padding: 40px 24px;\n    }\n    .card { max-width: 520px; width: 100%; }\n    .brand {\n      display: flex;\n      align-items: center;\n      gap: 12px;\n      margin-bottom: 40px;\n    }\n    .brand-divider {\n      width: 1px;\n      height: 16px;\n      background: var(--gray-6);\n    }\n    .brand-name {\n      font-size: 14px;\n      font-weight: 600;\n      color: var(--gray-12);\n      letter-spacing: -0.01em;\n    }\n    .code {\n      font-size: 12px;\n      font-weight: 600;\n      color: var(--gray-9);\n      letter-spacing: 0.1em;\n      text-transform: uppercase;\n      margin-bottom: 16px;\n    }\n    h1 {\n      font-family: var(--font-display);\n      font-size: 44px;\n      font-weight: 500;\n      line-height: 1.05;\n      letter-spacing: -0.04em;\n      color: var(--gray-12);\n      margin-bottom: 20px;\n    }\n    p {\n      font-size: 15px;\n      line-height: 1.7;\n      color: var(--gray-11);\n    }\n    .reasons {\n      list-style: none;\n      padding: 22px 26px;\n      background: var(--gray-2);\n      border: 1px solid var(--gray-5);\n      border-radius: 8px;\n      margin-top: 28px;\n    }\n    .reasons li {\n      font-size: 14px;\n      line-height: 1.6;\n      color: var(--gray-11);\n      padding-left: 22px;\n      position: relative;\n    }\n    .reasons li + li { margin-top: 14px; }\n    .reasons li::before {\n      content: '';\n      position: absolute;\n      left: 6px;\n      top: 9px;\n      width: 5px;\n      height: 5px;\n      border-radius: 50%;\n      background: var(--gray-7);\n    }\n    .reasons strong {\n      color: var(--gray-12);\n      font-weight: 600;\n    }\n  </style>\n</body>\n</html>",
+                        "original_reason": "reviewer_invocation_failed",
+                        "recoverable": true,
+                        "retry_reasons": []
+                      },
+                      "probe_id": "CURSOR",
+                      "reason": "reviewer_infrastructure_unavailable",
+                      "status": "red"
+                    },
+                    "recoverable": true,
+                    "retry_reasons": [],
+                    "reviewer_assurance": "unavailable",
+                    "reviewer_output_mode": "litellm_structured",
+                    "reviewer_runtime": "litellm_structured",
+                    "status": null
+                  },
+                  "from_runtime": "cursor_sdk",
+                  "primary_failure": {
+                    "attempts": 1,
+                    "diagnostics": {
+                      "failure": {
+                        "attempts": 1,
+                        "error": "internal: internal error",
+                        "original_reason": "reviewer_invocation_failed",
+                        "reviewer_output_mode": "cursor_sdk"
+                      }
+                    },
+                    "failure_classification": "reviewer_infrastructure_unavailable",
+                    "model": null,
+                    "probe": {
+                      "details": {
+                        "attempts": 1,
+                        "error": "internal: internal error",
+                        "original_reason": "reviewer_invocation_failed",
+                        "recoverable": true,
+                        "retry_reasons": []
+                      },
+                      "probe_id": "CURSOR",
+                      "reason": "reviewer_infrastructure_unavailable",
+                      "status": "red"
+                    },
+                    "recoverable": true,
+                    "retry_reasons": [],
+                    "reviewer_assurance": "unavailable",
+                    "reviewer_output_mode": "cursor_sdk",
+                    "reviewer_runtime": "cursor_sdk",
+                    "status": null
+                  },
+                  "reason": "reviewer_invocation_failed",
+                  "to_runtime": "litellm_structured"
+                }
+              },
+              "duration_ms": null,
+              "failure_classification": "reviewer_infrastructure_unavailable",
+              "fallback_from_runtime": null,
+              "fallback_reason": null,
+              "model": null,
+              "outcome": null,
+              "probe": {
+                "details": {
+                  "attempts": 1,
+                  "error": "internal: internal error",
+                  "original_reason": "reviewer_invocation_failed",
+                  "recoverable": true,
+                  "retry_reasons": []
+                },
+                "probe_id": "CURSOR",
+                "reason": "reviewer_infrastructure_unavailable",
+                "status": "red"
+              },
+              "recoverable": true,
+              "retry_reasons": [],
+              "reviewer_assurance": "unavailable",
+              "reviewer_output_mode": "cursor_sdk",
+              "reviewer_runtime": "cursor_sdk",
+              "reviewer_unavailable_recovery": {
+                "authorization": null,
+                "available_reviewers_accept": true,
+                "classification": "reviewer_infrastructure_unavailable",
+                "decision": "escalate",
+                "evidence_grade": "degraded",
+                "forced_by_safety": false,
+                "gate": "outcome_review",
+                "policy": "escalate",
+                "reason": "policy_escalate",
+                "reviewer_verdict_counted_as_accept": false,
+                "safety_reasons": [],
+                "schema_version": "reviewer-unavailable-recovery/v1"
+              },
+              "run_id": null,
+              "schema_version": "independent-reviewer-result/v1",
+              "status": null,
+              "transcript_tail": ""
+            },
+            "escalation_type": "reviewer_unavailable",
+            "evidence_grade": "degraded",
+            "forced_by_safety": false,
+            "gate": "outcome_review",
+            "independent_reviewer": {
+              "accepted": false,
+              "agent_id": null,
+              "attempts": 1,
+              "critical_review": {
+                "assumptions_to_verify": [],
+                "contradictions_checked": [],
+                "decision": "revise",
+                "evidence_refs": [],
+                "missing_evidence": [],
+                "schema_version": "critical-review/v1",
+                "severity": "none",
+                "strongest_objection": "none",
+                "what_would_change_my_mind": "Claude or Codex provides evidence resolving Cursor's objections."
+              },
+              "diagnostics": {
+                "failure": {
+                  "attempts": 1,
+                  "diagnostics": {
+                    "failure": {
+                      "attempts": 1,
+                      "error": "internal: internal error",
+                      "original_reason": "reviewer_invocation_failed",
+                      "reviewer_output_mode": "cursor_sdk"
+                    }
+                  },
+                  "failure_classification": "reviewer_infrastructure_unavailable",
+                  "model": null,
+                  "probe": {
+                    "details": {
+                      "attempts": 1,
+                      "error": "internal: internal error",
+                      "original_reason": "reviewer_invocation_failed",
+                      "recoverable": true,
+                      "retry_reasons": []
+                    },
+                    "probe_id": "CURSOR",
+                    "reason": "reviewer_infrastructure_unavailable",
+                    "status": "red"
+                  },
+                  "recoverable": true,
+                  "retry_reasons": [],
+                  "reviewer_assurance": "unavailable",
+                  "reviewer_output_mode": "cursor_sdk",
+                  "reviewer_runtime": "cursor_sdk",
+                  "status": null
+                },
+                "fallback": {
+                  "attempted": true,
+                  "fallback_failure": {
+                    "attempts": 1,
+                    "diagnostics": {
+                      "failure": {
+                        "attempts": 1,
+                        "diagnostics": {
+                          "failure": {
+                            "attempts": 1,
+                            "error": "<!--\n  403 \u2014 Access denied\n\n  You don't have access to this service.\n  This service is only available to specific networks or users.\n\n  - If you're a Unity employee: connect to the corporate VPN and try again.\n  - Otherwise: this service is internal-only, or restricted to specific users.\n    Contact the team that runs it if you believe this is a mistake.\n-->\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>403 \u2014 Access denied</title>\n</head>\n<body>\n  <main>\n    <div class=\"card\">\n      <div class=\"brand\">\n        <svg width=\"22\" height=\"22\" viewBox=\"0 0 637.5 720\" fill=\"white\" style=\"opacity:0.95\" xmlns=\"http://www.w3.org/2000/svg\" aria-label=\"Unity\">\n          <path d=\"M346.6,128.8l114,65.8c4.1,2.3,4.2,8.8,0,11c0,0-135.5,78.2-135.5,78.2c-4.1,2.4-8.9,2.2-12.8,0l-135.4-78.2c-4.1-2.3-4.3-8.8,0-11l113.9-65.8l0-128.8L0,167.9v335.8l0-1.5v1.5l111.6-64.4l0-131.6c-0.1-4.7,5.5-8,9.6-5.5l135.5,78.2c4.1,2.4,6.4,6.7,6.4,11.1l0,156.4c0.1,4.7-5.4,8-9.5,5.5l-114-65.8L27.9,552.1L318.7,720l290.8-167.9L498,487.7l-114,65.8c-4,2.4-9.7-0.7-9.5-5.5c0,0,0-156.4,0-156.4c0-4.7,2.6-8.9,6.4-11.1l135.4-78.2c4-2.5,9.7,0.7,9.6,5.5v131.6l111.6,64.4V167.9L346.6,0V128.8z\"/>\n        </svg>\n        <span class=\"brand-divider\"></span>\n        <span class=\"brand-name\">Tessen</span>\n      </div>\n      <div class=\"code\">Error 403</div>\n      <h1>You don't have access to this service.</h1>\n      <p>This service is only available to specific networks or users.</p>\n      <ul class=\"reasons\">\n        <li><strong>If you're a Unity employee:</strong> connect to the corporate VPN and try again.</li>\n        <li><strong>Otherwise:</strong> this service is internal-only, or restricted to specific users. Contact the team that runs it if you believe this is a mistake.</li>\n      </ul>\n    </div>\n  </main>\n\n  <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />\n  <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin />\n  <link href=\"https://fonts.googleapis.com/css2?family=DM+Sans:wght@500&family=Inter:wght@400;500;600&display=swap\" rel=\"stylesheet\" />\n  <style>\n    :root {\n      --gray-1:  #111111;\n      --gray-2:  #191919;\n      --gray-5:  #313131;\n      --gray-6:  #3a3a3a;\n      --gray-7:  #484848;\n      --gray-9:  #6e6e6e;\n      --gray-11: #b4b4b4;\n      --gray-12: #eeeeee;\n      --font-display: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;\n      --font-ui:      'Inter', -apple-system, BlinkMacSystemFont, sans-serif;\n    }\n    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }\n    html, body { height: 100%; }\n    body {\n      font-family: var(--font-ui);\n      background: var(--gray-1);\n      color: var(--gray-12);\n      display: flex;\n      flex-direction: column;\n      -webkit-font-smoothing: antialiased;\n    }\n    main {\n      flex: 1;\n      display: flex;\n      align-items: center;\n      justify-content: center;\n      padding: 40px 24px;\n    }\n    .card { max-width: 520px; width: 100%; }\n    .brand {\n      display: flex;\n      align-items: center;\n      gap: 12px;\n      margin-bottom: 40px;\n    }\n    .brand-divider {\n      width: 1px;\n      height: 16px;\n      background: var(--gray-6);\n    }\n    .brand-name {\n      font-size: 14px;\n      font-weight: 600;\n      color: var(--gray-12);\n      letter-spacing: -0.01em;\n    }\n    .code {\n      font-size: 12px;\n      font-weight: 600;\n      color: var(--gray-9);\n      letter-spacing: 0.1em;\n      text-transform: uppercase;\n      margin-bottom: 16px;\n    }\n    h1 {\n      font-family: var(--font-display);\n      font-size: 44px;\n      font-weight: 500;\n      line-height: 1.05;\n      letter-spacing: -0.04em;\n      color: var(--gray-12);\n      margin-bottom: 20px;\n    }\n    p {\n      font-size: 15px;\n      line-height: 1.7;\n      color: var(--gray-11);\n    }\n    .reasons {\n      list-style: none;\n      padding: 22px 26px;\n      background: var(--gray-2);\n      border: 1px solid var(--gray-5);\n      border-radius: 8px;\n      margin-top: 28px;\n    }\n    .reasons li {\n      font-size: 14px;\n      line-height: 1.6;\n      color: var(--gray-11);\n      padding-left: 22px;\n      position: relative;\n    }\n    .reasons li + li { margin-top: 14px; }\n    .reasons li::before {\n      content: '';\n      position: absolute;\n      left: 6px;\n      top: 9px;\n      width: 5px;\n      height: 5px;\n      border-radius: 50%;\n      background: var(--gray-7);\n    }\n    .reasons strong {\n      color: var(--gray-12);\n      font-weight: 600;\n    }\n  </style>\n</body>\n</html>",
+                            "original_reason": "reviewer_invocation_failed",
+                            "reviewer_output_mode": "litellm_structured"
+                          }
+                        },
+                        "failure_classification": "reviewer_infrastructure_unavailable",
+                        "model": null,
+                        "probe": {
+                          "details": {
+                            "attempts": 1,
+                            "error": "<!--\n  403 \u2014 Access denied\n\n  You don't have access to this service.\n  This service is only available to specific networks or users.\n\n  - If you're a Unity employee: connect to the corporate VPN and try again.\n  - Otherwise: this service is internal-only, or restricted to specific users.\n    Contact the team that runs it if you believe this is a mistake.\n-->\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>403 \u2014 Access denied</title>\n</head>\n<body>\n  <main>\n    <div class=\"card\">\n      <div class=\"brand\">\n        <svg width=\"22\" height=\"22\" viewBox=\"0 0 637.5 720\" fill=\"white\" style=\"opacity:0.95\" xmlns=\"http://www.w3.org/2000/svg\" aria-label=\"Unity\">\n          <path d=\"M346.6,128.8l114,65.8c4.1,2.3,4.2,8.8,0,11c0,0-135.5,78.2-135.5,78.2c-4.1,2.4-8.9,2.2-12.8,0l-135.4-78.2c-4.1-2.3-4.3-8.8,0-11l113.9-65.8l0-128.8L0,167.9v335.8l0-1.5v1.5l111.6-64.4l0-131.6c-0.1-4.7,5.5-8,9.6-5.5l135.5,78.2c4.1,2.4,6.4,6.7,6.4,11.1l0,156.4c0.1,4.7-5.4,8-9.5,5.5l-114-65.8L27.9,552.1L318.7,720l290.8-167.9L498,487.7l-114,65.8c-4,2.4-9.7-0.7-9.5-5.5c0,0,0-156.4,0-156.4c0-4.7,2.6-8.9,6.4-11.1l135.4-78.2c4-2.5,9.7,0.7,9.6,5.5v131.6l111.6,64.4V167.9L346.6,0V128.8z\"/>\n        </svg>\n        <span class=\"brand-divider\"></span>\n        <span class=\"brand-name\">Tessen</span>\n      </div>\n      <div class=\"code\">Error 403</div>\n      <h1>You don't have access to this service.</h1>\n      <p>This service is only available to specific networks or users.</p>\n      <ul class=\"reasons\">\n        <li><strong>If you're a Unity employee:</strong> connect to the corporate VPN and try again.</li>\n        <li><strong>Otherwise:</strong> this service is internal-only, or restricted to specific users. Contact the team that runs it if you believe this is a mistake.</li>\n      </ul>\n    </div>\n  </main>\n\n  <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />\n  <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin />\n  <link href=\"https://fonts.googleapis.com/css2?family=DM+Sans:wght@500&family=Inter:wght@400;500;600&display=swap\" rel=\"stylesheet\" />\n  <style>\n    :root {\n      --gray-1:  #111111;\n      --gray-2:  #191919;\n      --gray-5:  #313131;\n      --gray-6:  #3a3a3a;\n      --gray-7:  #484848;\n      --gray-9:  #6e6e6e;\n      --gray-11: #b4b4b4;\n      --gray-12: #eeeeee;\n      --font-display: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;\n      --font-ui:      'Inter', -apple-system, BlinkMacSystemFont, sans-serif;\n    }\n    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }\n    html, body { height: 100%; }\n    body {\n      font-family: var(--font-ui);\n      background: var(--gray-1);\n      color: var(--gray-12);\n      display: flex;\n      flex-direction: column;\n      -webkit-font-smoothing: antialiased;\n    }\n    main {\n      flex: 1;\n      display: flex;\n      align-items: center;\n      justify-content: center;\n      padding: 40px 24px;\n    }\n    .card { max-width: 520px; width: 100%; }\n    .brand {\n      display: flex;\n      align-items: center;\n      gap: 12px;\n      margin-bottom: 40px;\n    }\n    .brand-divider {\n      width: 1px;\n      height: 16px;\n      background: var(--gray-6);\n    }\n    .brand-name {\n      font-size: 14px;\n      font-weight: 600;\n      color: var(--gray-12);\n      letter-spacing: -0.01em;\n    }\n    .code {\n      font-size: 12px;\n      font-weight: 600;\n      color: var(--gray-9);\n      letter-spacing: 0.1em;\n      text-transform: uppercase;\n      margin-bottom: 16px;\n    }\n    h1 {\n      font-family: var(--font-display);\n      font-size: 44px;\n      font-weight: 500;\n      line-height: 1.05;\n      letter-spacing: -0.04em;\n      color: var(--gray-12);\n      margin-bottom: 20px;\n    }\n    p {\n      font-size: 15px;\n      line-height: 1.7;\n      color: var(--gray-11);\n    }\n    .reasons {\n      list-style: none;\n      padding: 22px 26px;\n      background: var(--gray-2);\n      border: 1px solid var(--gray-5);\n      border-radius: 8px;\n      margin-top: 28px;\n    }\n    .reasons li {\n      font-size: 14px;\n      line-height: 1.6;\n      color: var(--gray-11);\n      padding-left: 22px;\n      position: relative;\n    }\n    .reasons li + li { margin-top: 14px; }\n    .reasons li::before {\n      content: '';\n      position: absolute;\n      left: 6px;\n      top: 9px;\n      width: 5px;\n      height: 5px;\n      border-radius: 50%;\n      background: var(--gray-7);\n    }\n    .reasons strong {\n      color: var(--gray-12);\n      font-weight: 600;\n    }\n  </style>\n</body>\n</html>",
+                            "original_reason": "reviewer_invocation_failed",
+                            "recoverable": true,
+                            "retry_reasons": []
+                          },
+                          "probe_id": "CURSOR",
+                          "reason": "reviewer_infrastructure_unavailable",
+                          "status": "red"
+                        },
+                        "recoverable": true,
+                        "retry_reasons": [],
+                        "reviewer_assurance": "unavailable",
+                        "reviewer_output_mode": "litellm_structured",
+                        "reviewer_runtime": "litellm_structured",
+                        "status": null
+                      }
+                    },
+                    "failure_classification": "reviewer_infrastructure_unavailable",
+                    "model": null,
+                    "probe": {
+                      "details": {
+                        "attempts": 1,
+                        "error": "<!--\n  403 \u2014 Access denied\n\n  You don't have access to this service.\n  This service is only available to specific networks or users.\n\n  - If you're a Unity employee: connect to the corporate VPN and try again.\n  - Otherwise: this service is internal-only, or restricted to specific users.\n    Contact the team that runs it if you believe this is a mistake.\n-->\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>403 \u2014 Access denied</title>\n</head>\n<body>\n  <main>\n    <div class=\"card\">\n      <div class=\"brand\">\n        <svg width=\"22\" height=\"22\" viewBox=\"0 0 637.5 720\" fill=\"white\" style=\"opacity:0.95\" xmlns=\"http://www.w3.org/2000/svg\" aria-label=\"Unity\">\n          <path d=\"M346.6,128.8l114,65.8c4.1,2.3,4.2,8.8,0,11c0,0-135.5,78.2-135.5,78.2c-4.1,2.4-8.9,2.2-12.8,0l-135.4-78.2c-4.1-2.3-4.3-8.8,0-11l113.9-65.8l0-128.8L0,167.9v335.8l0-1.5v1.5l111.6-64.4l0-131.6c-0.1-4.7,5.5-8,9.6-5.5l135.5,78.2c4.1,2.4,6.4,6.7,6.4,11.1l0,156.4c0.1,4.7-5.4,8-9.5,5.5l-114-65.8L27.9,552.1L318.7,720l290.8-167.9L498,487.7l-114,65.8c-4,2.4-9.7-0.7-9.5-5.5c0,0,0-156.4,0-156.4c0-4.7,2.6-8.9,6.4-11.1l135.4-78.2c4-2.5,9.7,0.7,9.6,5.5v131.6l111.6,64.4V167.9L346.6,0V128.8z\"/>\n        </svg>\n        <span class=\"brand-divider\"></span>\n        <span class=\"brand-name\">Tessen</span>\n      </div>\n      <div class=\"code\">Error 403</div>\n      <h1>You don't have access to this service.</h1>\n      <p>This service is only available to specific networks or users.</p>\n      <ul class=\"reasons\">\n        <li><strong>If you're a Unity employee:</strong> connect to the corporate VPN and try again.</li>\n        <li><strong>Otherwise:</strong> this service is internal-only, or restricted to specific users. Contact the team that runs it if you believe this is a mistake.</li>\n      </ul>\n    </div>\n  </main>\n\n  <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />\n  <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin />\n  <link href=\"https://fonts.googleapis.com/css2?family=DM+Sans:wght@500&family=Inter:wght@400;500;600&display=swap\" rel=\"stylesheet\" />\n  <style>\n    :root {\n      --gray-1:  #111111;\n      --gray-2:  #191919;\n      --gray-5:  #313131;\n      --gray-6:  #3a3a3a;\n      --gray-7:  #484848;\n      --gray-9:  #6e6e6e;\n      --gray-11: #b4b4b4;\n      --gray-12: #eeeeee;\n      --font-display: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;\n      --font-ui:      'Inter', -apple-system, BlinkMacSystemFont, sans-serif;\n    }\n    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }\n    html, body { height: 100%; }\n    body {\n      font-family: var(--font-ui);\n      background: var(--gray-1);\n      color: var(--gray-12);\n      display: flex;\n      flex-direction: column;\n      -webkit-font-smoothing: antialiased;\n    }\n    main {\n      flex: 1;\n      display: flex;\n      align-items: center;\n      justify-content: center;\n      padding: 40px 24px;\n    }\n    .card { max-width: 520px; width: 100%; }\n    .brand {\n      display: flex;\n      align-items: center;\n      gap: 12px;\n      margin-bottom: 40px;\n    }\n    .brand-divider {\n      width: 1px;\n      height: 16px;\n      background: var(--gray-6);\n    }\n    .brand-name {\n      font-size: 14px;\n      font-weight: 600;\n      color: var(--gray-12);\n      letter-spacing: -0.01em;\n    }\n    .code {\n      font-size: 12px;\n      font-weight: 600;\n      color: var(--gray-9);\n      letter-spacing: 0.1em;\n      text-transform: uppercase;\n      margin-bottom: 16px;\n    }\n    h1 {\n      font-family: var(--font-display);\n      font-size: 44px;\n      font-weight: 500;\n      line-height: 1.05;\n      letter-spacing: -0.04em;\n      color: var(--gray-12);\n      margin-bottom: 20px;\n    }\n    p {\n      font-size: 15px;\n      line-height: 1.7;\n      color: var(--gray-11);\n    }\n    .reasons {\n      list-style: none;\n      padding: 22px 26px;\n      background: var(--gray-2);\n      border: 1px solid var(--gray-5);\n      border-radius: 8px;\n      margin-top: 28px;\n    }\n    .reasons li {\n      font-size: 14px;\n      line-height: 1.6;\n      color: var(--gray-11);\n      padding-left: 22px;\n      position: relative;\n    }\n    .reasons li + li { margin-top: 14px; }\n    .reasons li::before {\n      content: '';\n      position: absolute;\n      left: 6px;\n      top: 9px;\n      width: 5px;\n      height: 5px;\n      border-radius: 50%;\n      background: var(--gray-7);\n    }\n    .reasons strong {\n      color: var(--gray-12);\n      font-weight: 600;\n    }\n  </style>\n</body>\n</html>",
+                        "original_reason": "reviewer_invocation_failed",
+                        "recoverable": true,
+                        "retry_reasons": []
+                      },
+                      "probe_id": "CURSOR",
+                      "reason": "reviewer_infrastructure_unavailable",
+                      "status": "red"
+                    },
+                    "recoverable": true,
+                    "retry_reasons": [],
+                    "reviewer_assurance": "unavailable",
+                    "reviewer_output_mode": "litellm_structured",
+                    "reviewer_runtime": "litellm_structured",
+                    "status": null
+                  },
+                  "from_runtime": "cursor_sdk",
+                  "primary_failure": {
+                    "attempts": 1,
+                    "diagnostics": {
+                      "failure": {
+                        "attempts": 1,
+                        "error": "internal: internal error",
+                        "original_reason": "reviewer_invocation_failed",
+                        "reviewer_output_mode": "cursor_sdk"
+                      }
+                    },
+                    "failure_classification": "reviewer_infrastructure_unavailable",
+                    "model": null,
+                    "probe": {
+                      "details": {
+                        "attempts": 1,
+                        "error": "internal: internal error",
+                        "original_reason": "reviewer_invocation_failed",
+                        "recoverable": true,
+                        "retry_reasons": []
+                      },
+                      "probe_id": "CURSOR",
+                      "reason": "reviewer_infrastructure_unavailable",
+                      "status": "red"
+                    },
+                    "recoverable": true,
+                    "retry_reasons": [],
+                    "reviewer_assurance": "unavailable",
+                    "reviewer_output_mode": "cursor_sdk",
+                    "reviewer_runtime": "cursor_sdk",
+                    "status": null
+                  },
+                  "reason": "reviewer_invocation_failed",
+                  "to_runtime": "litellm_structured"
+                }
+              },
+              "duration_ms": null,
+              "failure_classification": "reviewer_infrastructure_unavailable",
+              "fallback_from_runtime": null,
+              "fallback_reason": null,
+              "model": null,
+              "outcome": null,
+              "probe": {
+                "details": {
+                  "attempts": 1,
+                  "error": "internal: internal error",
+                  "original_reason": "reviewer_invocation_failed",
+                  "recoverable": true,
+                  "retry_reasons": []
+                },
+                "probe_id": "CURSOR",
+                "reason": "reviewer_infrastructure_unavailable",
+                "status": "red"
+              },
+              "recoverable": true,
+              "retry_reasons": [],
+              "reviewer_assurance": "unavailable",
+              "reviewer_output_mode": "cursor_sdk",
+              "reviewer_runtime": "cursor_sdk",
+              "reviewer_unavailable_recovery": {
+                "authorization": null,
+                "available_reviewers_accept": true,
+                "classification": "reviewer_infrastructure_unavailable",
+                "decision": "escalate",
+                "evidence_grade": "degraded",
+                "forced_by_safety": false,
+                "gate": "outcome_review",
+                "policy": "escalate",
+                "reason": "policy_escalate",
+                "reviewer_verdict_counted_as_accept": false,
+                "safety_reasons": [],
+                "schema_version": "reviewer-unavailable-recovery/v1"
+              },
+              "run_id": null,
+              "schema_version": "independent-reviewer-result/v1",
+              "status": null,
+              "transcript_tail": ""
+            },
+            "nonce": "2073e587361f469d",
+            "options": [
+              "Pause",
+              "Kill",
+              "Continue"
+            ],
+            "policy": "escalate",
+            "reason": "reviewer_unavailable",
+            "resumed_at": 1780352911,
+            "reviewer_verdict_counted_as_accept": false,
+            "safety_reasons": [],
+            "task_id": "agentic-detached-fanout-resumable-20260531"
+          },
+          "run_id": "codex-agentic-detached-fanout-resumable-20260531",
+          "status": "resumed"
+        },
+        "available_reviewers_accept": true,
+        "classification": "reviewer_infrastructure_unavailable",
+        "decision": "proceed_degraded",
+        "event_id": 417835,
+        "evidence_grade": "degraded",
+        "forced_by_safety": false,
+        "gate": "outcome_review",
+        "policy": "escalate",
+        "reason": "human_authorized_proceed_degraded",
+        "reviewer_verdict_counted_as_accept": false,
+        "safety_reasons": [],
+        "schema_version": "reviewer-unavailable-recovery/v1"
+      },
+      "run_id": null,
+      "schema_version": "independent-reviewer-result/v1",
+      "status": null,
+      "transcript_tail": ""
+    },
+    "outcome": {
+      "changed_files": [
+        "mcp_tools/codex_supervisor_stdio.py",
+        "supervisor/agentic_executor.py",
+        "supervisor/agentic_workers.py",
+        "supervisor/state.py",
+        "tests/test_agentic_executor.py",
+        "tests/test_agentic_workers.py",
+        "tests/test_dual_agent_workflow_driver.py"
+      ],
+      "claims": [
+        "Durable receipt hydration runs before produce_agentic_worker_receipts",
+        "Partial fan-out reuses completed workers and spawns only missing/failed roles",
+        "Orphaned/stale workers reaped via PID liveness + timeout from persisted runtime.json",
+        "No gate weakened and fan-out remains off by default"
+      ],
+      "confidence": 0.82,
+      "confidence_criteria": [
+        "Live git diff matches expected scope (7 files, 666 ins)",
+        "Hydration occurs before producer consumption",
+        "Partial reuse logic spawns only missing roles",
+        "Orphan cleanup keyed on PID liveness + timeout",
+        "Gates not weakened, fan-out off by default",
+        "Tests exist and assert concrete behavior tied to code paths"
+      ],
+      "confidence_rationale": "All three requirements verified line-by-line against live source; tests substantive and signatures/imports/event-whitelist consistent. Confidence capped below 0.9 solely because the test suite has not been executed (sandbox blocks python), leaving a small latent-failure risk.",
+      "critical_review": {
+        "assumptions_to_verify": [
+          "The 4 new tests pass when actually run",
+          "No other test regressed by the state.py event-kind whitelist addition or executor signature change"
+        ],
+        "contradictions_checked": [
+          "Prior round-1/2 DENY claimed zero implementation via a stale replay snapshot; refuted by live git diff showing 666 insertions",
+          "Verified hydration is not after the producer (would be a no-op): confirmed L551 precedes L616",
+          "Verified fan-out not enabled by default: handoff packet policy=off, min_subagents=0"
+        ],
+        "decision": "accept",
+        "missing_evidence": [
+          "Actual pytest pass/fail output for the 3 affected test files"
+        ],
+        "severity": "low",
+        "strongest_objection": "The test suite has never been executed in any of the 5 review rounds; correctness rests entirely on static inspection, so a latent runtime failure (async fixture, mock mismatch) cannot be excluded.",
+        "what_would_change_my_mind": "A pytest run showing any of the 4 new tests failing, or discovery that a gate was weakened or fan-out enabled by default."
+      },
+      "decisions": [
+        "ACCEPT \u2014 all three requirements verified in live source; hydration ordering correct (hydrate L551 before producer L616); partial reuse spawns only missing roles; orphan reap by PID liveness+timeout; gates not weakened; fan-out off by default",
+        "Condition: supervisor must run pytest on the 3 affected test files before merge since harness sandbox blocks all python execution"
+      ],
+      "objections": [
+        "Test suite has not been executed across 5 review rounds; GREEN is asserted from source+test inspection, not a run"
+      ],
+      "specialists": [
+        {
+          "decision": "accept",
+          "name": "lead-source-verifier",
+          "objection": "tests never executed; GREEN by inspection only"
+        }
+      ],
+      "summary": "Detached/resumable agentic fan-out fully implemented in working tree (666 ins, 7 files). All three reqs verified line-by-line against live source: durable receipt hydration before producer, partial reuse of completed workers, orphan reap by PID+timeout. Gates not weakened, fan-out off by default, tests substantive RED->GREEN. Only gap: test suite un-run (harness blocks all python). ACCEPT, conditioned on supervisor running pytest pre-merge.",
+      "task_id": "agentic-detached-fanout-resumable-20260531",
+      "test_status": "unknown",
+      "tests": [
+        "tests/test_agentic_executor.py::test_produce_agentic_worker_receipts_reuses_completed_workers_and_spawns_missing_roles",
+        "tests/test_agentic_executor.py::test_produce_agentic_worker_receipts_skips_when_existing_receipts_satisfy_policy",
+        "tests/test_agentic_workers.py::test_agentic_worker_task_cleanup_discovers_and_reaps_stale_runtime_records",
+        "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_hydrates_durable_agentic_worker_receipts_before_producer"
+      ]
+    },
+    "probes": {
+      "P1": {
+        "details": {},
+        "probe_id": "P1",
+        "reason": "planning_artifact_boundaries_ok",
+        "status": "green"
+      },
+      "P2": {
+        "details": {
+          "captured_bytes": 10438,
+          "captured_token_estimate": 2603,
+          "orchestration_surface": "/lead"
+        },
+        "probe_id": "P2",
+        "reason": "worker_orchestration_invocation_ok",
+        "status": "green"
+      },
+      "P3": {
+        "details": {},
+        "probe_id": "P3",
+        "reason": "outcome_fidelity_ok",
+        "status": "green"
+      },
+      "P4": {
+        "details": {
+          "decisions": [
+            "accept",
+            "Condition: supervisor must run pytest on the 3 affected test files before merge since harness sandbox blocks all python execution",
+            "accept",
+            "accept"
+          ]
+        },
+        "probe_id": "P4",
+        "reason": "outcome_gate_decision_ok",
+        "status": "green"
+      },
+      "P_planning": {
+        "details": {
+          "artifact_hashes": {
+            "grill_findings": "530c80e4ea33ae5ac0cff38687be585e9ce2eb1192902169c5a406ca4dfd21a6",
+            "implementation_plan": "9578e4930a3df4a70c60f7da483f4ce9c4b7cc7a6fff4a36bdd4c3cebb5bb007",
+            "issues": "aa3d3230c7cda2de347992d5f5b90d40f2626af8de0028cc01161b791596f50c",
+            "prd": "7f76cb7099de27133a31ef926005d7eedd433652206a603d85e6ab9921e2fa9e",
+            "tdd_plan": "1ad015e6600d505acac4dbeac14209112202fd78304f25d12f8072a38687f6cd"
+          },
+          "artifacts": [
+            {
+              "kind": "prd",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-detached-fanout-resumable-20260531/source/prd.md",
+              "sha256": "7f76cb7099de27133a31ef926005d7eedd433652206a603d85e6ab9921e2fa9e",
+              "status": "accepted"
+            },
+            {
+              "kind": "issues",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-detached-fanout-resumable-20260531/source/issues.md",
+              "sha256": "aa3d3230c7cda2de347992d5f5b90d40f2626af8de0028cc01161b791596f50c",
+              "status": "accepted"
+            },
+            {
+              "kind": "tdd_plan",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-detached-fanout-resumable-20260531/source/tdd.md",
+              "sha256": "1ad015e6600d505acac4dbeac14209112202fd78304f25d12f8072a38687f6cd",
+              "status": "accepted"
+            },
+            {
+              "kind": "grill_findings",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-detached-fanout-resumable-20260531/source/grill-findings.md",
+              "sha256": "530c80e4ea33ae5ac0cff38687be585e9ce2eb1192902169c5a406ca4dfd21a6",
+              "status": "accepted"
+            },
+            {
+              "kind": "implementation_plan",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-detached-fanout-resumable-20260531/source/implementation-plan.md",
+              "sha256": "9578e4930a3df4a70c60f7da483f4ce9c4b7cc7a6fff4a36bdd4c3cebb5bb007",
+              "status": "accepted"
+            }
+          ],
+          "checks": {
+            "AGG-001": "pass",
+            "AGG-002": "pass",
+            "GRILL-001": "pass",
+            "GRILL-002": "pass",
+            "GRILL-003": "pass",
+            "ISS-001": "pass",
+            "ISS-002": "pass",
+            "ISS-003": "pass",
+            "ISS-004": "pass",
+            "PLAN-001": "pass",
+            "PLAN-002": "pass",
+            "PLAN-003": "pass",
+            "PLAN-004": "pass",
+            "PRD-001": "pass",
+            "PRD-002": "pass",
+            "PRD-003": "pass",
+            "PRD-004": "pass",
+            "PRD-005": "pass",
+            "PRD-006": "pass",
+            "TDD-001": "pass",
+            "TDD-002": "pass",
+            "TDD-003": "pass",
+            "TDD-004": "pass"
+          },
+          "gate": "outcome_review",
+          "task_id": "agentic-detached-fanout-resumable-20260531",
+          "validator_version": "1.0.0",
+          "verdict": "accepted"
+        },
+        "probe_id": "P_planning",
+        "reason": "planning_validation_ok",
+        "status": "green"
+      }
+    },
+    "status": "accepted",
+    "supervisor_final_status": "accepted",
+    "task_id": "agentic-detached-fanout-resumable-20260531",
+    "tool_calls": [
+      {
+        "args": {
+          "agentic_lead_policy": "off",
+          "artifact_policy": "strict",
+          "dynamic_workflow_task_class": null,
+          "execution_layer_mode": "lead_direct",
+          "gate": "outcome_review",
+          "min_subagents": 0,
+          "planning_artifact_count": 6,
+          "required_evidence_grade": "self_reported",
+          "required_roles": [],
+          "screenshot_count": 0,
+          "task_id": "agentic-detached-fanout-resumable-20260531",
+          "user_facing": false
+        },
+        "attempts": 1,
+        "duration_ms": 161303,
+        "duration_us": 161303579,
+        "ended_at_ms": 1780352891261,
+        "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-detached-fanout-resumable-20260531.json",
+        "name": "start_dual_agent_gate",
+        "probe_id": null,
+        "result_summary": {
+          "claude_gate_status": "accepted",
+          "probe_statuses": {
+            "P1": "green",
+            "P2": "green",
+            "P3": "green",
+            "P4": "green",
+            "P_planning": "green"
+          },
+          "supervisor_final_status": "accepted"
+        },
+        "started_at_ms": 1780352729958,
+        "status": "completed",
+        "tool_call_id": "start_dual_agent_gate#1780352729958#161303579"
+      },
+      {
+        "args": {
+          "gate": "outcome_review",
+          "task_id": "agentic-detached-fanout-resumable-20260531"
+        },
+        "attempts": 1,
+        "cost_usd": 3.1970902500000005,
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780352891263,
+        "model": "opus",
+        "name": "invoke_claude_lead",
+        "parent_tool_call_id": "start_dual_agent_gate#1780352729958#161303579",
+        "probe_id": null,
+        "result_summary": {
+          "outcome_present": true,
+          "probe_reason": "outcome_fidelity_ok",
+          "probe_status": "green",
+          "tokens_in": 728307,
+          "tokens_out": 9612
+        },
+        "started_at_ms": 1780352891263,
+        "status": "completed",
+        "stderr_bytes": 0,
+        "stdout_bytes": 10438,
+        "token_usage": {
+          "cache_creation_input_tokens": 80199,
+          "cache_read_input_tokens": 648086,
+          "context_window": 200000,
+          "input_tokens": 22,
+          "max_output_tokens": 32000,
+          "output_tokens": 9612,
+          "tokens_in": 728307,
+          "tokens_out": 9612
+        },
+        "tokens_in": 728307,
+        "tokens_out": 9612,
+        "tool_call_id": "invoke_claude_lead#1780352891263#0"
+      },
+      {
+        "args": {
+          "probe_id": "P2"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780352891263,
+        "name": "probe:P2",
+        "parent_tool_call_id": "invoke_claude_lead#1780352891263#0",
+        "probe_id": "P2",
+        "reason": "worker_orchestration_invocation_ok",
+        "result_summary": {
+          "probe_id": "P2",
+          "reason": "worker_orchestration_invocation_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780352891263,
+        "status": "green",
+        "tool_call_id": "probe_p2#1780352891263#0#p2"
+      },
+      {
+        "args": {
+          "probe_id": "P3"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780352891263,
+        "name": "probe:P3",
+        "parent_tool_call_id": "invoke_claude_lead#1780352891263#0",
+        "probe_id": "P3",
+        "reason": "outcome_fidelity_ok",
+        "result_summary": {
+          "probe_id": "P3",
+          "reason": "outcome_fidelity_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780352891263,
+        "status": "green",
+        "tool_call_id": "probe_p3#1780352891263#0#p3"
+      },
+      {
+        "args": {
+          "probe_id": "P1"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780352891263,
+        "name": "probe:P1",
+        "parent_tool_call_id": "invoke_claude_lead#1780352891263#0",
+        "probe_id": "P1",
+        "reason": "planning_artifact_boundaries_ok",
+        "result_summary": {
+          "probe_id": "P1",
+          "reason": "planning_artifact_boundaries_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780352891263,
+        "status": "green",
+        "tool_call_id": "probe_p1#1780352891263#0#p1"
+      },
+      {
+        "args": {
+          "probe_id": "P4"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780352891263,
+        "name": "probe:P4",
+        "parent_tool_call_id": "invoke_claude_lead#1780352891263#0",
+        "probe_id": "P4",
+        "reason": "outcome_gate_decision_ok",
+        "result_summary": {
+          "probe_id": "P4",
+          "reason": "outcome_gate_decision_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780352891263,
+        "status": "green",
+        "tool_call_id": "probe_p4#1780352891263#0#p4"
+      },
+      {
+        "args": {
+          "probe_id": "P_planning"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780352891263,
+        "name": "probe:P_planning",
+        "parent_tool_call_id": "invoke_claude_lead#1780352891263#0",
+        "probe_id": "P_planning",
+        "reason": "planning_validation_ok",
+        "result_summary": {
+          "probe_id": "P_planning",
+          "reason": "planning_validation_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780352891263,
+        "status": "green",
+        "tool_call_id": "probe_p_planning#1780352891263#0#p_planning"
+      }
+    ],
+    "trace_envelope": {
+      "artifacts": [],
+      "claims": [
+        "Durable receipt hydration runs before produce_agentic_worker_receipts",
+        "Partial fan-out reuses completed workers and spawns only missing/failed roles",
+        "Orphaned/stale workers reaped via PID liveness + timeout from persisted runtime.json",
+        "No gate weakened and fan-out remains off by default"
+      ],
+      "event_kind": "dual_agent_gate_result",
+      "failure_taxonomy": null,
+      "gate": "outcome_review",
+      "policy_verdict": "accepted",
+      "receipts": [],
+      "run_id": "codex-agentic-detached-fanout-resumable-20260531",
+      "schema_version": "dual-agent-trace-envelope/v1",
+      "source": "dual_agent",
+      "task_id": "agentic-detached-fanout-resumable-20260531",
+      "tool_calls": [
+        {
+          "args": {
+            "agentic_lead_policy": "off",
+            "artifact_policy": "strict",
+            "dynamic_workflow_task_class": null,
+            "execution_layer_mode": "lead_direct",
+            "gate": "outcome_review",
+            "min_subagents": 0,
+            "planning_artifact_count": 6,
+            "required_evidence_grade": "self_reported",
+            "required_roles": [],
+            "screenshot_count": 0,
+            "task_id": "agentic-detached-fanout-resumable-20260531",
+            "user_facing": false
+          },
+          "attempts": 1,
+          "duration_ms": 161303,
+          "duration_us": 161303579,
+          "ended_at_ms": 1780352891261,
+          "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-detached-fanout-resumable-20260531.json",
+          "name": "start_dual_agent_gate",
+          "probe_id": null,
+          "result_summary": {
+            "claude_gate_status": "accepted",
+            "probe_statuses": {
+              "P1": "green",
+              "P2": "green",
+              "P3": "green",
+              "P4": "green",
+              "P_planning": "green"
+            },
+            "supervisor_final_status": "accepted"
+          },
+          "started_at_ms": 1780352729958,
+          "status": "completed",
+          "tool_call_id": "start_dual_agent_gate#1780352729958#161303579"
+        },
+        {
+          "args": {
+            "gate": "outcome_review",
+            "task_id": "agentic-detached-fanout-resumable-20260531"
+          },
+          "attempts": 1,
+          "cost_usd": 3.1970902500000005,
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780352891263,
+          "model": "opus",
+          "name": "invoke_claude_lead",
+          "parent_tool_call_id": "start_dual_agent_gate#1780352729958#161303579",
+          "probe_id": null,
+          "result_summary": {
+            "outcome_present": true,
+            "probe_reason": "outcome_fidelity_ok",
+            "probe_status": "green",
+            "tokens_in": 728307,
+            "tokens_out": 9612
+          },
+          "started_at_ms": 1780352891263,
+          "status": "completed",
+          "stderr_bytes": 0,
+          "stdout_bytes": 10438,
+          "token_usage": {
+            "cache_creation_input_tokens": 80199,
+            "cache_read_input_tokens": 648086,
+            "context_window": 200000,
+            "input_tokens": 22,
+            "max_output_tokens": 32000,
+            "output_tokens": 9612,
+            "tokens_in": 728307,
+            "tokens_out": 9612
+          },
+          "tokens_in": 728307,
+          "tokens_out": 9612,
+          "tool_call_id": "invoke_claude_lead#1780352891263#0"
+        },
+        {
+          "args": {
+            "probe_id": "P2"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780352891263,
+          "name": "probe:P2",
+          "parent_tool_call_id": "invoke_claude_lead#1780352891263#0",
+          "probe_id": "P2",
+          "reason": "worker_orchestration_invocation_ok",
+          "result_summary": {
+            "probe_id": "P2",
+            "reason": "worker_orchestration_invocation_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780352891263,
+          "status": "green",
+          "tool_call_id": "probe_p2#1780352891263#0#p2"
+        },
+        {
+          "args": {
+            "probe_id": "P3"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780352891263,
+          "name": "probe:P3",
+          "parent_tool_call_id": "invoke_claude_lead#1780352891263#0",
+          "probe_id": "P3",
+          "reason": "outcome_fidelity_ok",
+          "result_summary": {
+            "probe_id": "P3",
+            "reason": "outcome_fidelity_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780352891263,
+          "status": "green",
+          "tool_call_id": "probe_p3#1780352891263#0#p3"
+        },
+        {
+          "args": {
+            "probe_id": "P1"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780352891263,
+          "name": "probe:P1",
+          "parent_tool_call_id": "invoke_claude_lead#1780352891263#0",
+          "probe_id": "P1",
+          "reason": "planning_artifact_boundaries_ok",
+          "result_summary": {
+            "probe_id": "P1",
+            "reason": "planning_artifact_boundaries_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780352891263,
+          "status": "green",
+          "tool_call_id": "probe_p1#1780352891263#0#p1"
+        },
+        {
+          "args": {
+            "probe_id": "P4"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780352891263,
+          "name": "probe:P4",
+          "parent_tool_call_id": "invoke_claude_lead#1780352891263#0",
+          "probe_id": "P4",
+          "reason": "outcome_gate_decision_ok",
+          "result_summary": {
+            "probe_id": "P4",
+            "reason": "outcome_gate_decision_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780352891263,
+          "status": "green",
+          "tool_call_id": "probe_p4#1780352891263#0#p4"
+        },
+        {
+          "args": {
+            "probe_id": "P_planning"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780352891263,
+          "name": "probe:P_planning",
+          "parent_tool_call_id": "invoke_claude_lead#1780352891263#0",
+          "probe_id": "P_planning",
+          "reason": "planning_validation_ok",
+          "result_summary": {
+            "probe_id": "P_planning",
+            "reason": "planning_validation_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780352891263,
+          "status": "green",
+          "tool_call_id": "probe_p_planning#1780352891263#0#p_planning"
+        }
+      ]
+    }
+  },
+  "mandatory_artifacts": {
+    "missing": [],
+    "output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-detached-fanout-resumable-20260531",
+    "required": [
+      "source/prd.md",
+      "source/grill-findings.md",
+      "source/issues.md",
+      "source/tdd.md",
+      "source/grill-findings-tdd.md",
+      "source/implementation-plan.md",
+      "interactions.md",
+      "outcome-review.md",
+      "transcript.md"
+    ],
+    "status": "ok"
+  },
+  "resume": {
+    "artifact_output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-detached-fanout-resumable-20260531",
+    "blocker": null,
+    "current_gate": "outcome_review",
+    "last_status": "accepted",
+    "latest_event_id": 417837,
+    "next_safe_action": "read_gate_transcript and inspect exported artifacts",
+    "prompt": "Use codex_supervisor.\nContinue run_id=codex-agentic-detached-fanout-resumable-20260531\ntask_id=agentic-detached-fanout-resumable-20260531\ncurrent_gate=outcome_review\nlast_status=accepted\nlatest_event_id=417837\nnext_safe_action=read_gate_transcript and inspect exported artifacts\nartifact_output_dir=/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-detached-fanout-resumable-20260531\nfirst inspect: read_gate_transcript(run_id=codex-agentic-detached-fanout-resumable-20260531, task_id=agentic-detached-fanout-resumable-20260531)",
+    "run_id": "codex-agentic-detached-fanout-resumable-20260531",
+    "status": "ok",
+    "steps": [
+      {
+        "attempt_count": 1,
+        "gate": "prd_review",
+        "latest_event_id": 417121,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "issues_review",
+        "latest_event_id": 417194,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "tdd_review",
+        "latest_event_id": 417305,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 2,
+        "gate": "implementation_plan",
+        "latest_event_id": 417416,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "execution",
+        "latest_event_id": 417719,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "outcome_review",
+        "latest_event_id": 417833,
+        "status": "accepted"
+      }
+    ],
+    "task_id": "agentic-detached-fanout-resumable-20260531",
+    "transcript_command": "read_gate_transcript(run_id=codex-agentic-detached-fanout-resumable-20260531, task_id=agentic-detached-fanout-resumable-20260531)"
+  },
+  "run_id": "codex-agentic-detached-fanout-resumable-20260531",
+  "status": "accepted",
+  "steps": [
+    {
+      "attempt_count": 1,
+      "gate": "prd_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "issues_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "tdd_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 2,
+      "gate": "implementation_plan",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "execution",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "outcome_review",
+      "status": "accepted"
+    }
+  ],
+  "task_id": "agentic-detached-fanout-resumable-20260531",
+  "visual_evidence_policy": {
+    "artifact_matches": [],
+    "matched_terms": [],
+    "required": false,
+    "source": "not_user_facing"
+  },
+  "workflow_route": {
+    "agentic_lead_policy": {
+      "min_subagents": 0,
+      "policy": "off",
+      "required_evidence_grade": "self_reported",
+      "required_roles": [],
+      "solo_exception_for_artifact_only_gates": false
+    },
+    "cursor_review_gates": [
+      "tdd_review",
+      "implementation_plan",
+      "outcome_review"
+    ],
+    "cursor_review_profile": "rigorous",
+    "dynamic_workflow_task_class": null,
+    "effective_cursor_review": true,
+    "execution_layer_mode": "lead_direct",
+    "force_cursor_review": false,
+    "gate_count": 6,
+    "gates": [
+      "prd_review",
+      "issues_review",
+      "tdd_review",
+      "implementation_plan",
+      "execution",
+      "outcome_review"
+    ],
+    "planning_depth": "large",
+    "reasons": [
+      "default_large"
+    ],
+    "requested_cursor_review": true,
+    "required_skill_stages": [
+      "to_prd",
+      "prd_grill",
+      "to_issues",
+      "tdd",
+      "tdd_grill"
+    ],
+    "requires_agentic_lead_policy_receipts": false,
+    "requires_brainstorm": false,
+    "requires_dynamic_workflow_receipts": false,
+    "requires_skill_receipts": true,
+    "resume": {
+      "mode": "resume_from_prior_steps",
+      "pending_gates": [
+        "outcome_review"
+      ],
+      "schema_version": "dual-agent-workflow-resume/v1",
+      "skipped_gates": [
+        "prd_review",
+        "issues_review",
+        "tdd_review",
+        "implementation_plan",
+        "execution"
+      ],
+      "skipped_steps": [
+        {
+          "attempt_count": 1,
+          "gate": "prd_review",
+          "latest_event_id": 417121,
+          "status": "accepted"
+        },
+        {
+          "attempt_count": 1,
+          "gate": "issues_review",
+          "latest_event_id": 417194,
+          "status": "accepted"
+        },
+        {
+          "attempt_count": 1,
+          "gate": "tdd_review",
+          "latest_event_id": 417305,
+          "status": "accepted"
+        },
+        {
+          "attempt_count": 2,
+          "gate": "implementation_plan",
+          "latest_event_id": 417416,
+          "status": "accepted"
+        },
+        {
+          "attempt_count": 1,
+          "gate": "execution",
+          "latest_event_id": 417719,
+          "status": "accepted"
+        }
+      ]
+    },
+    "reviewer_max_tokens": 4096,
+    "reviewer_model": "composer-2.5",
+    "reviewer_output_mode": "cursor_sdk",
+    "reviewer_unavailable_policy": "escalate",
+    "schema_version": "dual-agent-workflow-route/v1",
+    "task_complexity": "large"
+  }
+}

@@ -84,27 +84,44 @@ def produce_agentic_worker_receipts(
     policy = str(agentic_policy.get("agentic_lead_policy") or "off").strip().lower()
     if policy not in {"allowed", "required"}:
         return AgenticWorkerProduction(status="not_applicable")
-    if _has_agentic_subagent_receipts(existing_receipts):
-        return AgenticWorkerProduction(status="skipped_existing_receipts")
     if _has_lead_solo_receipt(existing_receipts):
         return AgenticWorkerProduction(
             status="skipped_lead_solo_receipt",
             blocking_findings=[{"reason": "lead_solo_receipt_present"}],
         )
 
+    completed_receipts = _completed_agentic_receipts(existing_receipts)
     min_subagents = max(0, int(agentic_policy.get("min_subagents") or 0))
     required_roles = [
         str(role).strip()
         for role in agentic_policy.get("required_roles") or []
         if str(role).strip()
     ]
+    completed_roles = _completed_role_keys(completed_receipts)
+    missing_required_roles = [
+        role
+        for role in required_roles
+        if _role_key(role) not in completed_roles
+    ]
+    missing_min_subagents = max(0, min_subagents - len(completed_receipts))
+    if not missing_required_roles and missing_min_subagents == 0:
+        return AgenticWorkerProduction(
+            status="skipped_existing_receipts",
+            receipts=[],
+            planner={
+                "existing_completed_receipt_count": len(completed_receipts),
+                "existing_completed_roles": sorted(completed_roles),
+                "reason": "existing_receipts_satisfy_agentic_policy",
+            },
+        )
+
     planner_result = plan_agentic_worker_roster(
         cwd=cwd,
         task_id=task_id,
         run_id=run_id,
         intent=intent,
-        min_subagents=min_subagents,
-        required_roles=required_roles,
+        min_subagents=max(missing_min_subagents, len(missing_required_roles)),
+        required_roles=missing_required_roles,
         timeout_s=timeout_s,
         budget_usd=budget_usd,
         quality=quality,
@@ -117,10 +134,11 @@ def produce_agentic_worker_receipts(
         AgenticWorkerRosterItem(**item)
         for item in planner_result.roster
     ]
+    pending_roster_items = _pending_roster_items(roster_items, completed_receipts)
     validation = validate_agentic_worker_roster(
-        roster_items,
-        min_subagents=min_subagents,
-        required_roles=required_roles,
+        pending_roster_items,
+        min_subagents=missing_min_subagents,
+        required_roles=missing_required_roles,
         timeout_s=timeout_s,
         budget_usd=budget_usd,
     )
@@ -139,7 +157,7 @@ def produce_agentic_worker_receipts(
             task_id=task_id,
             quality=quality,
         )
-        for item in roster_items
+        for item in pending_roster_items
     ]
     receipts = (
         list(fanout_runner(specs))
@@ -175,11 +193,17 @@ def produce_agentic_worker_receipts(
         )
 
     return AgenticWorkerProduction(
-        status="passed" if receipts else "blocked",
+        status="passed" if receipts or completed_receipts else "blocked",
         receipts=receipts,
         roster=[asdict(item) for item in roster_items],
         cleanup=cleanup,
-        planner=planner_result.planner,
+        planner={
+            **planner_result.planner,
+            "existing_completed_receipt_count": len(completed_receipts),
+            "existing_completed_roles": sorted(completed_roles),
+            "pending_worker_ids": [item.worker_id for item in pending_roster_items],
+            "skipped_completed_worker_ids": sorted(_completed_worker_ids(completed_receipts)),
+        },
     )
 
 
@@ -472,17 +496,74 @@ def _normalise_roster_item(worker: dict[str, Any], *, index: int) -> dict[str, A
     }
 
 
-def _has_agentic_subagent_receipts(receipts: list[dict[str, Any]]) -> bool:
+def _agentic_subagent_receipts(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    subagent_receipts: list[dict[str, Any]] = []
     for receipt in receipts:
         if not isinstance(receipt, dict):
             continue
         kind = str(receipt.get("kind") or receipt.get("type") or "").strip().lower()
         if kind in {"dynamic_subagent_result", "dynamic_reviewer_result", "subagent_result"}:
-            return True
+            subagent_receipts.append(receipt)
         subagents = receipt.get("subagents")
-        if isinstance(subagents, list) and subagents:
-            return True
-    return False
+        if isinstance(subagents, list):
+            subagent_receipts.extend(item for item in subagents if isinstance(item, dict))
+    return subagent_receipts
+
+
+def _completed_agentic_receipts(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        receipt
+        for receipt in _agentic_subagent_receipts(receipts)
+        if _receipt_status(receipt) in {"passed", "pass", "accepted", "accept", "ok", "success", "succeeded"}
+    ]
+
+
+def _completed_role_keys(receipts: list[dict[str, Any]]) -> set[str]:
+    role_keys: set[str] = set()
+    for receipt in receipts:
+        for value in (
+            receipt.get("role"),
+            receipt.get("persona_id"),
+            receipt.get("task_id"),
+        ):
+            key = _role_key(str(value or ""))
+            if key:
+                role_keys.add(key)
+                role_keys.update(part for part in key.split(".") if part)
+    return role_keys
+
+
+def _completed_worker_ids(receipts: list[dict[str, Any]]) -> set[str]:
+    return {
+        str(receipt.get("worker_id") or receipt.get("agent_id") or receipt.get("task_id") or "").strip()
+        for receipt in receipts
+        if str(receipt.get("worker_id") or receipt.get("agent_id") or receipt.get("task_id") or "").strip()
+    }
+
+
+def _pending_roster_items(
+    roster: list[AgenticWorkerRosterItem],
+    completed_receipts: list[dict[str, Any]],
+) -> list[AgenticWorkerRosterItem]:
+    completed_workers = _completed_worker_ids(completed_receipts)
+    completed_roles = _completed_role_keys(completed_receipts)
+    pending: list[AgenticWorkerRosterItem] = []
+    for item in roster:
+        worker_key = str(item.worker_id).strip()
+        role_key = _role_key(item.role)
+        persona_key = _role_key(item.persona_id)
+        if worker_key and worker_key in completed_workers:
+            continue
+        if role_key and role_key in completed_roles:
+            continue
+        if persona_key and persona_key in completed_roles:
+            continue
+        pending.append(item)
+    return pending
+
+
+def _receipt_status(receipt: dict[str, Any]) -> str:
+    return str(receipt.get("status") or receipt.get("result") or receipt.get("decision") or "").strip().lower()
 
 
 def _has_lead_solo_receipt(receipts: list[dict[str, Any]]) -> bool:

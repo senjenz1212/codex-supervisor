@@ -1,0 +1,102 @@
+# Grill Findings
+
+These findings are derived from dual-agent gate objections in the ledger.
+Future duo-agent runs should also create this file through the `prd-to-tdd` skill's `grill-with-docs` gates before implementation.
+
+- event_id 417062 `prd_review`: gate blocked
+- event_id 417120 `prd_review`: P2/P4 reference crash-restart but the restart trigger mechanism is unspecified (Finding 2 notes S2 reattach != crash restart) - TDD must define what initiates restart
+- event_id 417120 `prd_review`: Worker-level concurrency (two resumes racing the same missing role) is not explicitly addressed; relies on S2 single-CLI-launch and should be asserted in TDD
+- event_id 417120 `prd_review`: P4 introduces new pid/runtime-record persistence; staleness/timeout criteria for reaping need explicit test boundaries
+- event_id 417121 `prd_review`: both agents accepted
+- event_id 417128 `issues_review`: gate blocked
+- event_id 417154 `issues_review`: gate blocked
+- event_id 417194 `issues_review`: both agents accepted
+- event_id 417216 `tdd_review`: First RED (hydrates) asserts internal existing_receipt_count rather than observable production-event field; make black-box during execution
+- event_id 417216 `tdd_review`: Hash-mismatched/tampered .handoff receipt edge not explicitly named in regression test; add tamper case
+- event_id 417216 `tdd_review`: Concurrent double-spawn safety relies on S2 idempotent-submit serialization rather than a hydration-level race test; verify S2 serializes producer
+- event_id 417217 `tdd_review`: agents have not both accepted yet; revise and continue
+- event_id 417219 `tdd_review`: First RED (hydrates) asserts internal existing_receipt_count rather than observable production-event field; make black-box during execution
+- event_id 417219 `tdd_review`: Hash-mismatched/tampered .handoff receipt edge not explicitly named in regression test; add tamper case
+- event_id 417219 `tdd_review`: Concurrent double-spawn safety relies on S2 idempotent-submit serialization rather than a hydration-level race test; verify S2 serializes producer
+- event_id 417238 `tdd_review`: Non-blocking: Slice 2 RED ('skips all work OR duplicates the completed worker') should pin to the deterministic current behavior (skip-all via skipped_existing_receipts at agentic_executor.py:88) so RED fails for one specific reason.
+- event_id 417238 `tdd_review`: Non-blocking: the progress-event/catch-up test (test_agentic_worker_progress_events_are_available_to_catch_up) should restate 'exactly once' and ascending-event-id ordering that issues.md Slice 3/5 acceptance already requires, matching PRD P5 forbidden 'non-monotonic catch-up'.
+- event_id 417244 `tdd_review`: cursor_reviewer_infrastructure: reviewer_infrastructure_unavailable
+- event_id 417247 `tdd_review`: Non-blocking: Slice 2 RED ('skips all work OR duplicates the completed worker') should pin to the deterministic current behavior (skip-all via skipped_existing_receipts at agentic_executor.py:88) so RED fails for one specific reason.
+- event_id 417247 `tdd_review`: Non-blocking: the progress-event/catch-up test (test_agentic_worker_progress_events_are_available_to_catch_up) should restate 'exactly once' and ascending-event-id ordering that issues.md Slice 3/5 acceptance already requires, matching PRD P5 forbidden 'non-monotonic catch-up'.
+- event_id 417300 `tdd_review`: Hydration boundary test seeds 'ledger and/or .handoff' but does not explicitly assert single-count dedup when the same receipt appears in BOTH sources; this is a fail-closed double-count risk implied by ISS-1 but unnamed.
+- event_id 417300 `tdd_review`: Regression test name centers on failed/timeout receipts; ISS-1 lists hash-mismatched but no test explicitly exercises a tampered/hash-mismatch receipt being rejected.
+- event_id 417300 `tdd_review`: The detached reconnect e2e bundles S2 reattach + receipt hydration + catch-up + poll-after-delete in one test; acceptable but brittle as a single mega-assertion.
+- event_id 417305 `tdd_review`: cursor_reviewer_infrastructure: reviewer_infrastructure_unavailable
+- event_id 417313 `implementation_plan`: gate blocked
+- event_id 417359 `implementation_plan`: cursor_reviewer_infrastructure: reviewer_infrastructure_unavailable
+- event_id 417393 `implementation_plan`: Execution risk remains live: dedup correctness, partial-role under-spawn, and cleanup-not-killing-in-budget-workers are proposed not proven (each flagged as Risk with a targeted test)
+- event_id 417393 `implementation_plan`: Planning-artifact sha256 in handoff not byte-verified (content read was coherent and source-grounded)
+- event_id 417394 `implementation_plan`: agents have not both accepted yet; revise and continue
+- event_id 417396 `implementation_plan`: Execution risk remains live: dedup correctness, partial-role under-spawn, and cleanup-not-killing-in-budget-workers are proposed not proven (each flagged as Risk with a targeted test)
+- event_id 417396 `implementation_plan`: Planning-artifact sha256 in handoff not byte-verified (content read was coherent and source-grounded)
+- event_id 417416 `implementation_plan`: cursor_reviewer_infrastructure: reviewer_infrastructure_unavailable
+- event_id 417447 `execution`: Required durable receipt hydration from ledger and .handoff/agentic-workers/<task>/ before produce_agentic_worker_receipts is absent; receipt_payloads sourced only from in-process tool_receipts
+- event_id 417447 `execution`: Partial fan-out reuse (spawn only missing/failed roles) not implemented; agentic_executor.py:87-88 still binary-skips when any subagent receipts exist
+- event_id 417447 `execution`: Detached/resumable fan-out survival (transport drop, no double-spawn, orphan cleanup) has no new code or tests
+- event_id 417447 `execution`: Replay workspace-snapshot diff_bytes=0, diff_stat empty, HEAD=1429992 (prior task) - no source landed for this task
+- event_id 417447 `execution`: No execution/implementation/test skill receipt; outcome-review and issues ledgers empty
+- event_id 417448 `execution`: agents have not both accepted yet; revise and continue
+- event_id 417450 `execution`: Required durable receipt hydration from ledger and .handoff/agentic-workers/<task>/ before produce_agentic_worker_receipts is absent; receipt_payloads sourced only from in-process tool_receipts
+- event_id 417450 `execution`: Partial fan-out reuse (spawn only missing/failed roles) not implemented; agentic_executor.py:87-88 still binary-skips when any subagent receipts exist
+- event_id 417450 `execution`: Detached/resumable fan-out survival (transport drop, no double-spawn, orphan cleanup) has no new code or tests
+- event_id 417450 `execution`: Replay workspace-snapshot diff_bytes=0, diff_stat empty, HEAD=1429992 (prior task) - no source landed for this task
+- event_id 417450 `execution`: No execution/implementation/test skill receipt; outcome-review and issues ledgers empty
+- event_id 417466 `execution`: diff_bytes=0 and HEAD=1429992 (prior wiring commit): no source landed for this task
+- event_id 417466 `execution`: Requirement 2 unresolved: mcp_tools/codex_supervisor_stdio.py:498 hydrates receipt_payloads only from in-process tool_receipts; grep agentic-workers => 0 matches, no ledger/.handoff hydration before produce
+- event_id 417466 `execution`: Requirement 3 absent: supervisor/agentic_executor.py:87-88 still binary skip (skipped_existing_receipts); no per-role missing/failed/reuse symbols in supervisor/
+- event_id 417466 `execution`: No implementation/test/execution skill receipt; outcome-review.md 'No events recorded'
+- event_id 417466 `execution`: mast-coverage: FM-1.1 disobey_task_spec, FM-1.3 step_repetition, FM-2.5 ignored_objection, FM-3.3 incorrect_verification all observed_in_run
+- event_id 417467 `execution`: agents have not both accepted yet; revise and continue
+- event_id 417469 `execution`: diff_bytes=0 and HEAD=1429992 (prior wiring commit): no source landed for this task
+- event_id 417469 `execution`: Requirement 2 unresolved: mcp_tools/codex_supervisor_stdio.py:498 hydrates receipt_payloads only from in-process tool_receipts; grep agentic-workers => 0 matches, no ledger/.handoff hydration before produce
+- event_id 417469 `execution`: Requirement 3 absent: supervisor/agentic_executor.py:87-88 still binary skip (skipped_existing_receipts); no per-role missing/failed/reuse symbols in supervisor/
+- event_id 417469 `execution`: No implementation/test/execution skill receipt; outcome-review.md 'No events recorded'
+- event_id 417469 `execution`: mast-coverage: FM-1.1 disobey_task_spec, FM-1.3 step_repetition, FM-2.5 ignored_objection, FM-3.3 incorrect_verification all observed_in_run
+- event_id 417482 `execution`: No source change exists for this task (diff_bytes 0, HEAD 1429992); the gate is empty
+- event_id 417482 `execution`: Requirement 2 (durable receipt hydration from ledger and .handoff/agentic-workers/<task>/) is unresolved in mcp_tools
+- event_id 417482 `execution`: Requirement 3 (partial per-role reuse) is unimplemented; agentic_executor.py:87-88 still does a binary skip
+- event_id 417482 `execution`: Only planning receipts exist; no implementation/test/execution receipt and outcome-review records no events
+- event_id 417483 `execution`: agents have not both accepted yet; revise and continue
+- event_id 417485 `execution`: No source change exists for this task (diff_bytes 0, HEAD 1429992); the gate is empty
+- event_id 417485 `execution`: Requirement 2 (durable receipt hydration from ledger and .handoff/agentic-workers/<task>/) is unresolved in mcp_tools
+- event_id 417485 `execution`: Requirement 3 (partial per-role reuse) is unimplemented; agentic_executor.py:87-88 still does a binary skip
+- event_id 417485 `execution`: Only planning receipts exist; no implementation/test/execution receipt and outcome-review records no events
+- event_id 417498 `execution`: diff_bytes=0 and diff_stat empty: no source file changed since prior task commit 1429992
+- event_id 417498 `execution`: Requirement 2 (durable receipt hydration from ledger + .handoff/agentic-workers/<task>/ before produce_agentic_worker_receipts) unresolved - receipts still hydrated in-process only
+- event_id 417498 `execution`: Requirement 3 (partial per-role reuse) absent - agentic_executor.py:87-88 still does binary skip via _has_agentic_subagent_receipts -> skipped_existing_receipts
+- event_id 417498 `execution`: Requirement 1 (detached/resumable survival, no double-spawn, orphan cleanup) absent - no symbols or tests
+- event_id 417498 `execution`: No test references this task id; RED->GREEN never started
+- event_id 417498 `execution`: outcome-review.md: 'No events recorded for this gate'; skill-receipts.json has only planning stages
+- event_id 417498 `execution`: Do not reuse the ACCEPT+escalate operational-lock pattern from the wiring-inline/live-smoke siblings: those had verified-complete code; this gate has none
+- event_id 417499 `execution`: agents have not both accepted yet; revise and continue
+- event_id 417501 `execution`: diff_bytes=0 and diff_stat empty: no source file changed since prior task commit 1429992
+- event_id 417501 `execution`: Requirement 2 (durable receipt hydration from ledger + .handoff/agentic-workers/<task>/ before produce_agentic_worker_receipts) unresolved - receipts still hydrated in-process only
+- event_id 417501 `execution`: Requirement 3 (partial per-role reuse) absent - agentic_executor.py:87-88 still does binary skip via _has_agentic_subagent_receipts -> skipped_existing_receipts
+- event_id 417501 `execution`: Requirement 1 (detached/resumable survival, no double-spawn, orphan cleanup) absent - no symbols or tests
+- event_id 417501 `execution`: No test references this task id; RED->GREEN never started
+- event_id 417501 `execution`: outcome-review.md: 'No events recorded for this gate'; skill-receipts.json has only planning stages
+- event_id 417501 `execution`: Do not reuse the ACCEPT+escalate operational-lock pattern from the wiring-inline/live-smoke siblings: those had verified-complete code; this gate has none
+- event_id 417516 `execution`: No source changes landed: HEAD 1429992 (prior task), diff_bytes 0, working tree has only the untracked docs dir.
+- event_id 417516 `execution`: Durable receipt hydration gap unresolved: no read of .handoff/agentic-workers/<task>/ or ledger before produce_agentic_worker_receipts in mcp_tools.
+- event_id 417516 `execution`: Partial reuse absent: agentic_executor.py:87-88 still binary-skips on existing receipts; no missing/failed-role spawn logic in supervisor/.
+- event_id 417516 `execution`: No RED->GREEN tests reference this task id or detached/resumable survival.
+- event_id 417517 `execution`: max_rounds_per_gate exhausted without both agents accepting
+- event_id 417520 `execution`: No source changes landed: HEAD 1429992 (prior task), diff_bytes 0, working tree has only the untracked docs dir.
+- event_id 417520 `execution`: Durable receipt hydration gap unresolved: no read of .handoff/agentic-workers/<task>/ or ledger before produce_agentic_worker_receipts in mcp_tools.
+- event_id 417520 `execution`: Partial reuse absent: agentic_executor.py:87-88 still binary-skips on existing receipts; no missing/failed-role spawn logic in supervisor/.
+- event_id 417520 `execution`: No RED->GREEN tests reference this task id or detached/resumable survival.
+- event_id 417718 `execution`: Test suite not executed in-session (pytest blocked by harness approval); GREEN inferred from test content + implementation inspection, not a run
+- event_id 417719 `execution`: both agents accepted
+- event_id 417737 `outcome_review`: Test suite not executed this session: pytest was blocked by harness approval, so GREEN is asserted from test content + implementation inspection, not a live run. Supervisor must run the three test files before merge.
+- event_id 417741 `outcome_review`: workflow_claim_verification_failed
+- event_id 417744 `outcome_review`: Test suite not executed this session: pytest was blocked by harness approval, so GREEN is asserted from test content + implementation inspection, not a live run. Supervisor must run the three test files before merge.
+- event_id 417785 `outcome_review`: Test suite not executed - pytest blocked by harness approval twice; GREEN asserted from inspection only, not a run
+- event_id 417791 `outcome_review`: cursor_reviewer_infrastructure: reviewer_infrastructure_unavailable
+- event_id 417794 `outcome_review`: Test suite not executed - pytest blocked by harness approval twice; GREEN asserted from inspection only, not a run
+- event_id 417827 `outcome_review`: Test suite has not been executed across 5 review rounds; GREEN is asserted from source+test inspection, not a run
+- event_id 417833 `outcome_review`: cursor_reviewer_infrastructure: reviewer_infrastructure_unavailable

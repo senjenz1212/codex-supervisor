@@ -1,0 +1,85 @@
+{
+  "cwd": "/Users/sam.zhang/Documents/codex-supervisor",
+  "task_id": "agentic-detached-fanout-resumable-20260531",
+  "run_id": "codex-agentic-detached-fanout-resumable-20260531",
+  "intent": "Make the agentic fan-out safe and resumable as a detached job. A long fan-out should run detached, survive an MCP transport drop, and resume without double-spawning workers or orphaning processes. Resolve the durable receipt hydration gap by ensuring prior worker receipts from the ledger and .handoff/agentic-workers/<task>/ are visible before produce_agentic_worker_receipts runs; partial fan-outs should reuse completed workers and spawn only missing or failed roles. Reuse S2 idempotent submit, S3a ledger terminal outcome, S5 catch_up, P13/P14 evidence verification, and Cursor review. Do not enable fan-out by default or weaken any gates.",
+  "user_facing": false,
+  "max_rounds_per_gate": 5,
+  "quality": "best",
+  "budget_usd": 100.0,
+  "timeout_s": 900,
+  "execution_layer_mode": "lead_direct",
+  "require_skill_receipts": true,
+  "cursor_review": true,
+  "cursor_review_profile": "rigorous",
+  "tool_receipts": [
+    {
+      "receipt_id": "skill-to-prd-agentic-detached-fanout-resumable-20260531",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "to-prd",
+      "stage": "to_prd",
+      "claims": ["prd-tdd skill executed", "PRD promise contracts produced"],
+      "artifacts": ["docs/dual-agent/agentic-detached-fanout-resumable-20260531/source/prd.md"]
+    },
+    {
+      "receipt_id": "skill-prd-grill-agentic-detached-fanout-resumable-20260531",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "grill-with-docs",
+      "stage": "prd_grill",
+      "claims": ["prd-tdd skill executed", "PRD grill findings resolved or waived"],
+      "artifacts": ["docs/dual-agent/agentic-detached-fanout-resumable-20260531/source/grill-findings.md"]
+    },
+    {
+      "receipt_id": "skill-to-issues-agentic-detached-fanout-resumable-20260531",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "to-issues",
+      "stage": "to_issues",
+      "claims": ["prd-tdd skill executed", "issues map to PRD promises"],
+      "artifacts": ["docs/dual-agent/agentic-detached-fanout-resumable-20260531/source/issues.md"]
+    },
+    {
+      "receipt_id": "skill-tdd-agentic-detached-fanout-resumable-20260531",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "tdd",
+      "stage": "tdd",
+      "claims": ["prd-tdd skill executed", "public-boundary RED tests planned"],
+      "artifacts": ["docs/dual-agent/agentic-detached-fanout-resumable-20260531/source/tdd.md"]
+    },
+    {
+      "receipt_id": "skill-tdd-grill-agentic-detached-fanout-resumable-20260531",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "grill-with-docs",
+      "stage": "tdd_grill",
+      "claims": ["prd-tdd skill executed", "TDD grill findings resolved"],
+      "artifacts": ["docs/dual-agent/agentic-detached-fanout-resumable-20260531/source/grill-findings-tdd.md"]
+    },
+    {
+      "receipt_id": "pytest-full-agentic-detached-fanout-resumable-20260531",
+      "kind": "test",
+      "status": "passed",
+      "command": "uv run --extra dev pytest -q",
+      "summary": "590 passed in 117.51s",
+      "claims": ["full suite passed", "agentic detached fan-out resume regressions passed"]
+    },
+    {
+      "receipt_id": "git-diff-agentic-detached-fanout-resumable-20260531",
+      "kind": "git_diff",
+      "status": "present",
+      "changed_files": [
+        "mcp_tools/codex_supervisor_stdio.py",
+        "supervisor/agentic_executor.py",
+        "supervisor/agentic_workers.py",
+        "supervisor/state.py",
+        "tests/test_agentic_executor.py",
+        "tests/test_agentic_workers.py",
+        "tests/test_dual_agent_workflow_driver.py"
+      ],
+      "claims": ["implemented", "diff present for agentic detached fan-out resume safety"]
+    }
+  ]
+}

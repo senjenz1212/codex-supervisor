@@ -2020,6 +2020,100 @@ async def test_run_dual_agent_workflow_required_policy_spawns_agentic_workers_an
     policy = validations[0]["probe"]["details"]["agentic_policy"]
     assert policy["status"] == "accepted"
     assert policy["subagents"][0]["evidence_grade"] == "runtime_native"
+    progress_events = [
+        event for event in state.read_events_since("workflow-run", after_event_id=0, limit=100)
+        if event["kind"] == "dual_agent_agentic_worker_progress"
+    ]
+    assert progress_events
+    assert progress_events[-1]["payload"]["worker_id"] == "audit-1"
+    transcript = await _maybe_await(server.tools["read_gate_transcript"](
+        run_id="workflow-run",
+        task_id="workflow-1",
+    ))
+    assert transcript["agentic_worker_progress"]
+
+
+@pytest.mark.asyncio
+async def test_run_dual_agent_workflow_hydrates_durable_agentic_worker_receipts_before_producer(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
+    from supervisor.agentic_workers import AgenticWorkerSpec, run_agentic_worker
+    from supervisor.dual_agent_runner import build_lead_replay_stdout
+
+    _write_good_workflow_source_artifacts(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    receipt = run_agentic_worker(
+        AgenticWorkerSpec(
+            task_id="workflow-1",
+            worker_id="audit-1",
+            role="codebase_audit",
+            command=("worker", "audit"),
+            cwd=tmp_path,
+            agent_id="agent-audit-1",
+            permission_mode="readOnly",
+            tool_pins=("rg", "sed"),
+            timeout_s=30,
+            budget_usd=0.1,
+        ),
+        runner=lambda argv, **kwargs: subprocess.CompletedProcess(argv, 0, stdout="audit ok\n", stderr=""),
+    )
+    planner_calls = []
+    lead_calls = []
+
+    def fake_runner(argv, **kwargs):
+        prompt = argv[argv.index("-p") + 1] if "-p" in argv else ""
+        if "Agentic worker roster planning" in prompt:
+            planner_calls.append(argv)
+            return subprocess.CompletedProcess(argv, 1, stdout="", stderr="should not plan")
+        lead_calls.append(argv)
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=build_lead_replay_stdout("Workflow response.\n" + _outcome_block("workflow-1")),
+            stderr="",
+        )
+
+    server = build_codex_supervisor_mcp_server(
+        _cfg(tmp_path),
+        state,
+        mcp_cls=_FakeMCP,
+        runner=fake_runner,
+        cursor_runner=_accepting_cursor_runner,
+    )
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Required policy should hydrate existing worker receipts before producer planning.",
+        max_rounds_per_gate=1,
+        task_complexity="trivial",
+        tool_receipts=_tool_receipts(),
+        agentic_lead_policy="required",
+        min_subagents=1,
+        required_roles=["codebase_audit"],
+        required_evidence_grade="runtime_native",
+    ))
+
+    assert result["status"] == "accepted"
+    assert planner_calls == []
+    assert lead_calls
+    route = result["workflow_route"]
+    assert route["agentic_worker_hydration"]["receipt_count"] == 1
+    assert route["agentic_worker_production"]["status"] == "skipped_existing_receipts"
+    productions = [
+        json.loads(row["payload_json"])
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "dual_agent_agentic_worker_production"
+    ]
+    assert productions[-1]["status"] == "skipped_existing_receipts"
+    validations = [
+        json.loads(row["payload_json"])
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "dual_agent_dynamic_workflow_receipt_validation"
+    ]
+    subagent = validations[0]["probe"]["details"]["agentic_policy"]["subagents"][0]
+    assert subagent["evidence_grade"] == "runtime_native"
+    assert subagent["transcript_ref"] == receipt["transcript_ref"]
 
 
 @pytest.mark.asyncio

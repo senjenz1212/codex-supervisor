@@ -41,6 +41,13 @@ def worker_log_ref(*, cwd: str | Path, task_id: str, worker_id: str) -> str:
     return str(Path(".handoff") / "agentic-workers" / safe_task / safe_worker / "worker.log")
 
 
+def worker_runtime_ref(*, cwd: str | Path, task_id: str, worker_id: str) -> str:
+    """Return the durable worker runtime metadata ref relative to cwd."""
+    safe_task = _safe_segment(task_id)
+    safe_worker = _safe_segment(worker_id)
+    return str(Path(".handoff") / "agentic-workers" / safe_task / safe_worker / "runtime.json")
+
+
 def run_agentic_worker(
     spec: AgenticWorkerSpec,
     *,
@@ -57,6 +64,27 @@ def run_agentic_worker(
     exit_code: int | None = None
     error: str | None = None
     status = "failed"
+    runtime_path = worker_dir / "runtime.json"
+    _write_worker_file(
+        cwd_path,
+        runtime_path,
+        json.dumps(
+            {
+                "schema_version": "agentic-worker-runtime/v1",
+                "task_id": spec.task_id,
+                "worker_id": spec.worker_id,
+                "role": spec.role,
+                "pid": None,
+                "status": "running",
+                "started_at_s": started_at_s,
+                "timeout_s": spec.timeout_s,
+                "budget_usd": spec.budget_usd,
+                "log_ref": worker_log_ref(cwd=cwd_path, task_id=spec.task_id, worker_id=spec.worker_id),
+            },
+            sort_keys=True,
+            indent=2,
+        ) + "\n",
+    )
 
     try:
         completed = runner(
@@ -91,6 +119,13 @@ def run_agentic_worker(
         "status": status,
         "exit_code": exit_code,
         "error": error,
+        "persona_id": spec.persona_id,
+        "agent_runtime": spec.agent_runtime,
+        "agent_id": spec.agent_id or spec.worker_id,
+        "permission_mode": spec.permission_mode,
+        "tool_pins": list(spec.tool_pins),
+        "timeout_s": spec.timeout_s,
+        "budget_usd": spec.budget_usd,
         "stdout_ref": stdout_ref,
         "stderr_ref": stderr_ref,
     }
@@ -142,6 +177,27 @@ def run_agentic_worker(
             "",
         ]),
     )
+    runtime_ref = _write_worker_file(
+        cwd_path,
+        runtime_path,
+        json.dumps(
+            {
+                "schema_version": "agentic-worker-runtime/v1",
+                "task_id": spec.task_id,
+                "worker_id": spec.worker_id,
+                "role": spec.role,
+                "pid": None,
+                "status": status,
+                "started_at_s": started_at_s,
+                "ended_at_s": ended_at_s,
+                "timeout_s": spec.timeout_s,
+                "budget_usd": spec.budget_usd,
+                "log_ref": log_ref,
+            },
+            sort_keys=True,
+            indent=2,
+        ) + "\n",
+    )
 
     return {
         "kind": "dynamic_subagent_result",
@@ -171,6 +227,8 @@ def run_agentic_worker(
         "output_sha256": _file_sha256(cwd_path / output_ref),
         "log_ref": log_ref,
         "log_sha256": _file_sha256(cwd_path / log_ref),
+        "runtime_ref": runtime_ref,
+        "runtime_sha256": _file_sha256(cwd_path / runtime_ref),
     }
 
 
@@ -266,6 +324,119 @@ def cleanup_orphaned_agentic_workers(
     }
 
 
+def discover_agentic_worker_runtime_records(
+    *,
+    cwd: str | Path,
+    task_id: str,
+) -> list[dict[str, Any]]:
+    """Read persisted worker runtime metadata for a task."""
+    cwd_path = Path(cwd).resolve()
+    task_dir = cwd_path / ".handoff" / "agentic-workers" / _safe_segment(task_id)
+    if not task_dir.exists():
+        return []
+    records: list[dict[str, Any]] = []
+    for runtime_path in sorted(task_dir.glob("*/runtime.json")):
+        try:
+            payload = json.loads(runtime_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        payload.setdefault("worker_id", runtime_path.parent.name)
+        payload.setdefault("task_id", task_id)
+        payload.setdefault(
+            "log_ref",
+            worker_log_ref(cwd=cwd_path, task_id=task_id, worker_id=str(payload.get("worker_id") or runtime_path.parent.name)),
+        )
+        payload["runtime_ref"] = runtime_path.resolve().relative_to(cwd_path).as_posix()
+        payload["runtime_sha256"] = _file_sha256(runtime_path)
+        records.append(payload)
+    return records
+
+
+def cleanup_agentic_workers_for_task(
+    *,
+    cwd: str | Path,
+    task_id: str,
+    now_s: int | float,
+    is_pid_alive: PidProbe | None = None,
+    terminate: Terminator | None = None,
+) -> dict[str, Any]:
+    """Discover and clean stale persisted worker runtime records for a task."""
+    return cleanup_orphaned_agentic_workers(
+        cwd=cwd,
+        task_id=task_id,
+        workers=discover_agentic_worker_runtime_records(cwd=cwd, task_id=task_id),
+        now_s=now_s,
+        is_pid_alive=is_pid_alive,
+        terminate=terminate,
+    )
+
+
+def discover_agentic_worker_receipts(
+    *,
+    cwd: str | Path,
+    task_id: str,
+) -> list[dict[str, Any]]:
+    """Reconstruct replay-verifiable worker receipts from supervisor-owned files."""
+    cwd_path = Path(cwd).resolve()
+    task_dir = cwd_path / ".handoff" / "agentic-workers" / _safe_segment(task_id)
+    if not task_dir.exists():
+        return []
+    receipts: list[dict[str, Any]] = []
+    for output_path in sorted(task_dir.glob("*/output.json")):
+        try:
+            output = json.loads(output_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(output, dict):
+            continue
+        worker_dir = output_path.parent
+        worker_id = str(output.get("worker_id") or worker_dir.name)
+        role = str(output.get("role") or worker_id)
+        status = str(output.get("status") or "failed")
+        output_ref = output_path.resolve().relative_to(cwd_path).as_posix()
+        transcript_ref = _existing_ref(cwd_path, worker_dir / "transcript.jsonl")
+        stdout_ref = _existing_ref(cwd_path, worker_dir / "stdout.txt")
+        stderr_ref = _existing_ref(cwd_path, worker_dir / "stderr.txt")
+        log_ref = _existing_ref(cwd_path, worker_dir / "worker.log")
+        runtime_ref = _existing_ref(cwd_path, worker_dir / "runtime.json")
+        receipt = {
+            "kind": "dynamic_subagent_result",
+            "schema_version": "agentic-worker-receipt/v1",
+            "receipt_id": f"agentic-worker-{worker_id}",
+            "task_id": str(output.get("task_id") or task_id),
+            "worker_id": worker_id,
+            "role": role,
+            "persona_id": str(output.get("persona_id") or role),
+            "status": status,
+            "decision": "accept" if status in {"passed", "accepted", "success"} else "revise",
+            "severity": "none" if status in {"passed", "accepted", "success"} else "important",
+            "objections": [] if status in {"passed", "accepted", "success"} else [str(output.get("error") or "worker did not pass")],
+            "agent_runtime": str(output.get("agent_runtime") or "claude_code"),
+            "agent_id": str(output.get("agent_id") or worker_id),
+            "permission_mode": str(output.get("permission_mode") or "readOnly"),
+            "tool_pins": _list_or_default(output.get("tool_pins"), ["Read"]),
+            "timeout_s": output.get("timeout_s"),
+            "budget_usd": output.get("budget_usd"),
+            "exit_code": output.get("exit_code"),
+            "output_ref": output_ref,
+            "output_sha256": _file_sha256(output_path),
+        }
+        for key, ref in [
+            ("transcript", transcript_ref),
+            ("stdout", stdout_ref),
+            ("stderr", stderr_ref),
+            ("log", log_ref),
+            ("runtime", runtime_ref),
+        ]:
+            if ref:
+                receipt[f"{key}_ref"] = ref
+                receipt[f"{key}_sha256"] = _file_sha256(cwd_path / ref)
+        receipts.append(receipt)
+    return receipts
+
+
 def _pid_alive(pid: int) -> bool:
     if pid <= 0:
         return False
@@ -319,3 +490,19 @@ def _float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _existing_ref(cwd: Path, path: Path) -> str:
+    if not path.is_file():
+        return ""
+    return path.resolve().relative_to(cwd).as_posix()
+
+
+def _list_or_default(value: Any, default: list[str]) -> list[str]:
+    if isinstance(value, str):
+        items = [item.strip() for item in value.split(",") if item.strip()]
+        return items or list(default)
+    if isinstance(value, (list, tuple, set)):
+        items = [str(item).strip() for item in value if str(item).strip()]
+        return items or list(default)
+    return list(default)

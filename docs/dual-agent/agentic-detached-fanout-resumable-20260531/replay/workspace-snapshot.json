@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "90650d3fabae7ba22e3e1dbff1ed0f49c657e615c49886eb7601ddd5448b261c",
+  "git": {
+    "diff_bytes": 39168,
+    "diff_sha256": "2d2e44cf72846a2ec3ac8b998ab8b2b5b1f0471a29799c3643b99f8f1ab3e1ae",
+    "diff_stat": "mcp_tools/codex_supervisor_stdio.py      | 112 +++++++++++++++++-\n supervisor/agentic_executor.py           | 111 +++++++++++++++---\n supervisor/agentic_workers.py            | 187 +++++++++++++++++++++++++++++++\n supervisor/state.py                      |   1 +\n tests/test_agentic_executor.py           | 121 ++++++++++++++++++++\n tests/test_agentic_workers.py            |  57 ++++++++++\n tests/test_dual_agent_workflow_driver.py |  94 ++++++++++++++++\n 7 files changed, 666 insertions(+), 17 deletions(-)",
+    "head": "1429992",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "1429992",
+    "status_short": "M mcp_tools/codex_supervisor_stdio.py\n M supervisor/agentic_executor.py\n M supervisor/agentic_workers.py\n M supervisor/state.py\n M tests/test_agentic_executor.py\n M tests/test_agentic_workers.py\n M tests/test_dual_agent_workflow_driver.py\n?? docs/dual-agent/agentic-detached-fanout-resumable-20260531/"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "baff9e14d031cfc96b1856470aeb608e657db2f3b11b38bb48801d6c77ec0024",
+    "implementation_plan": "9578e4930a3df4a70c60f7da483f4ce9c4b7cc7a6fff4a36bdd4c3cebb5bb007",
+    "issues": "aa3d3230c7cda2de347992d5f5b90d40f2626af8de0028cc01161b791596f50c",
+    "prd": "7f76cb7099de27133a31ef926005d7eedd433652206a603d85e6ab9921e2fa9e",
+    "tdd_plan": "1ad015e6600d505acac4dbeac14209112202fd78304f25d12f8072a38687f6cd"
+  },
+  "status": "captured"
+}

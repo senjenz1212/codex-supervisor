@@ -190,3 +190,124 @@ def test_agentic_worker_timeout_cleanup_runs_after_fanout_timeout(tmp_path: Path
     assert cleanup_calls[0]["workers"][0]["started_at_s"] < 100.0
     assert production.cleanup is not None
     assert production.cleanup["cleaned"][0]["reason"] == "timeout_exceeded"
+
+
+def test_produce_agentic_worker_receipts_reuses_completed_workers_and_spawns_missing_roles(tmp_path: Path):
+    roster = {
+        "workers": [
+            {
+                "worker_id": "audit-1",
+                "role": "codebase_audit",
+                "persona_id": "reviewer.codebase_audit",
+                "permission_mode": "readOnly",
+                "tool_pins": ["rg", "sed"],
+                "prompt": "Inspect implementation boundaries.",
+                "timeout_s": 30,
+                "budget_usd": 0.1,
+            },
+            {
+                "worker_id": "review-1",
+                "role": "independent_reviewer",
+                "persona_id": "reviewer.independent",
+                "permission_mode": "readOnly",
+                "tool_pins": ["rg", "sed"],
+                "prompt": "Review hydrated evidence.",
+                "timeout_s": 30,
+                "budget_usd": 0.1,
+            },
+        ]
+    }
+    existing = {
+        "kind": "dynamic_subagent_result",
+        "receipt_id": "agentic-worker-audit-1",
+        "worker_id": "audit-1",
+        "role": "codebase_audit",
+        "persona_id": "reviewer.codebase_audit",
+        "status": "passed",
+        "decision": "accept",
+        "agent_runtime": "claude_code",
+        "agent_id": "audit-1",
+        "permission_mode": "readOnly",
+        "tool_pins": ["rg", "sed"],
+    }
+    launched: list[str] = []
+
+    def fake_planner(argv, **kwargs):
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=f"<agentic_worker_roster>{json.dumps(roster)}</agentic_worker_roster>",
+            stderr="",
+        )
+
+    def fanout_runner(specs):
+        launched.extend(spec.worker_id for spec in specs)
+        return [
+            {
+                "kind": "dynamic_subagent_result",
+                "worker_id": spec.worker_id,
+                "role": spec.role,
+                "status": "passed",
+                "decision": "accept",
+            }
+            for spec in specs
+        ]
+
+    production = produce_agentic_worker_receipts(
+        cwd=tmp_path,
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Reuse completed workers and run missing roles only.",
+        agentic_policy={
+            "agentic_lead_policy": "required",
+            "min_subagents": 2,
+            "required_roles": ["codebase_audit", "independent_reviewer"],
+            "required_evidence_grade": "runtime_native",
+        },
+        existing_receipts=[existing],
+        timeout_s=60,
+        budget_usd=0.25,
+        runner=fake_planner,
+        fanout_runner=fanout_runner,
+    )
+
+    assert production.status == "passed"
+    assert launched == ["review-1"]
+    assert production.planner["existing_completed_receipt_count"] == 1
+    assert production.planner["skipped_completed_worker_ids"] == ["audit-1"]
+
+
+def test_produce_agentic_worker_receipts_skips_when_existing_receipts_satisfy_policy(tmp_path: Path):
+    existing = {
+        "kind": "dynamic_subagent_result",
+        "receipt_id": "agentic-worker-audit-1",
+        "worker_id": "audit-1",
+        "role": "codebase_audit",
+        "status": "passed",
+        "decision": "accept",
+    }
+    planner_calls: list[list[str]] = []
+
+    def fail_if_planned(argv, **kwargs):
+        planner_calls.append(argv)
+        return subprocess.CompletedProcess(argv, 1, stdout="", stderr="")
+
+    production = produce_agentic_worker_receipts(
+        cwd=tmp_path,
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Existing receipt already satisfies required policy.",
+        agentic_policy={
+            "agentic_lead_policy": "required",
+            "min_subagents": 1,
+            "required_roles": ["codebase_audit"],
+            "required_evidence_grade": "runtime_native",
+        },
+        existing_receipts=[existing],
+        timeout_s=60,
+        budget_usd=0.25,
+        runner=fail_if_planned,
+    )
+
+    assert production.status == "skipped_existing_receipts"
+    assert planner_calls == []

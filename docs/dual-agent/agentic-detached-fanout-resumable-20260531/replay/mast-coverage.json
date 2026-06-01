@@ -1,0 +1,829 @@
+[
+  {
+    "deterministic_probe": "blocked payload reason `disobey_task_spec` or planning artifact failure",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "failure_taxonomy_for_payload",
+    "mast_category": "Specification Issues",
+    "mast_code": "FM-1.1",
+    "mast_mode": "Disobey task specification",
+    "sources": [
+      {
+        "event_id": 417061,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 417061,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 417127,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 417127,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 417153,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 417153,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 417312,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 417312,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      }
+    ],
+    "status": "observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "blocked payload reason `role_violation_covenant`",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "failure_taxonomy_for_payload -> classify_failure",
+    "mast_category": "Specification Issues",
+    "mast_code": "FM-1.2",
+    "mast_mode": "Disobey role specification",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "same gate and handoff packet observed twice",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "detect_sequence_failures",
+    "mast_category": "Specification Issues",
+    "mast_code": "FM-1.3",
+    "mast_mode": "Step repetition",
+    "sources": [
+      {
+        "details": {
+          "signature": [
+            "prd_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-detached-fanout-resumable-20260531.json"
+          ]
+        },
+        "event_ids": [
+          417061,
+          417120
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "issues_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-detached-fanout-resumable-20260531.json"
+          ]
+        },
+        "event_ids": [
+          417127,
+          417153
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "issues_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-detached-fanout-resumable-20260531.json"
+          ]
+        },
+        "event_ids": [
+          417127,
+          417193
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "tdd_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-detached-fanout-resumable-20260531.json"
+          ]
+        },
+        "event_ids": [
+          417216,
+          417219
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "tdd_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-detached-fanout-resumable-20260531.json"
+          ]
+        },
+        "event_ids": [
+          417216,
+          417238
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "tdd_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-detached-fanout-resumable-20260531.json"
+          ]
+        },
+        "event_ids": [
+          417216,
+          417247
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "tdd_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-detached-fanout-resumable-20260531.json"
+          ]
+        },
+        "event_ids": [
+          417216,
+          417300
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "implementation_plan",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-detached-fanout-resumable-20260531.json"
+          ]
+        },
+        "event_ids": [
+          417312,
+          417350
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "implementation_plan",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-detached-fanout-resumable-20260531.json"
+          ]
+        },
+        "event_ids": [
+          417312,
+          417362
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "implementation_plan",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-detached-fanout-resumable-20260531.json"
+          ]
+        },
+        "event_ids": [
+          417312,
+          417393
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "implementation_plan",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-detached-fanout-resumable-20260531.json"
+          ]
+        },
+        "event_ids": [
+          417312,
+          417396
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "implementation_plan",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-detached-fanout-resumable-20260531.json"
+          ]
+        },
+        "event_ids": [
+          417312,
+          417412
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "execution",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-detached-fanout-resumable-20260531.json"
+          ]
+        },
+        "event_ids": [
+          417447,
+          417450
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "execution",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-detached-fanout-resumable-20260531.json"
+          ]
+        },
+        "event_ids": [
+          417447,
+          417466
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "execution",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-detached-fanout-resumable-20260531.json"
+          ]
+        },
+        "event_ids": [
+          417447,
+          417469
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "execution",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-detached-fanout-resumable-20260531.json"
+          ]
+        },
+        "event_ids": [
+          417447,
+          417482
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "execution",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-detached-fanout-resumable-20260531.json"
+          ]
+        },
+        "event_ids": [
+          417447,
+          417485
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "execution",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-detached-fanout-resumable-20260531.json"
+          ]
+        },
+        "event_ids": [
+          417447,
+          417498
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "execution",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-detached-fanout-resumable-20260531.json"
+          ]
+        },
+        "event_ids": [
+          417447,
+          417501
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "execution",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-detached-fanout-resumable-20260531.json"
+          ]
+        },
+        "event_ids": [
+          417447,
+          417516
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "execution",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-detached-fanout-resumable-20260531.json"
+          ]
+        },
+        "event_ids": [
+          417447,
+          417520
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "execution",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-detached-fanout-resumable-20260531.json"
+          ]
+        },
+        "event_ids": [
+          417447,
+          417718
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-detached-fanout-resumable-20260531.json"
+          ]
+        },
+        "event_ids": [
+          417737,
+          417744
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-detached-fanout-resumable-20260531.json"
+          ]
+        },
+        "event_ids": [
+          417737,
+          417785
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-detached-fanout-resumable-20260531.json"
+          ]
+        },
+        "event_ids": [
+          417737,
+          417794
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-detached-fanout-resumable-20260531.json"
+          ]
+        },
+        "event_ids": [
+          417737,
+          417827
+        ],
+        "source": "sequence"
+      }
+    ],
+    "status": "observed_in_run",
+    "trigger_surface": "sequence"
+  },
+  {
+    "deterministic_probe": "blocked payload reason `lost_conversation_history`",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "classify_failure",
+    "mast_category": "Specification Issues",
+    "mast_code": "FM-1.4",
+    "mast_mode": "Loss of conversation history",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "blocked payload reason `agents_not_converged_max_rounds`",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "classify_failure",
+    "mast_category": "Specification Issues",
+    "mast_code": "FM-1.5",
+    "mast_mode": "Unaware of termination conditions",
+    "sources": [
+      {
+        "event_id": 417219,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 417219,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 417396,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 417396,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 417450,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 417450,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 417469,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 417469,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 417485,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 417485,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 417501,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 417501,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 417520,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 417520,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      }
+    ],
+    "status": "observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "blocked payload reason `conversation_reset`",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "classify_failure",
+    "mast_category": "Inter-Agent Misalignment",
+    "mast_code": "FM-2.1",
+    "mast_mode": "Conversation reset",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "blocked payload reason `ambiguous_input_no_clarification`",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "classify_failure",
+    "mast_category": "Inter-Agent Misalignment",
+    "mast_code": "FM-2.2",
+    "mast_mode": "Fail to ask for clarification",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "blocked payload reason `scope_violation_off_scope`",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "classify_failure",
+    "mast_category": "Inter-Agent Misalignment",
+    "mast_code": "FM-2.3",
+    "mast_mode": "Task derailment",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "Cursor or reviewer disagreement probe fails",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "failure_taxonomy_for_payload",
+    "mast_category": "Inter-Agent Misalignment",
+    "mast_code": "FM-2.4",
+    "mast_mode": "Information withholding",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "Claude response does not address a prior Codex objection",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "detect_sequence_failures",
+    "mast_category": "Inter-Agent Misalignment",
+    "mast_code": "FM-2.5",
+    "mast_mode": "Ignored other agent input",
+    "sources": [
+      {
+        "details": {
+          "objection": "gate blocked"
+        },
+        "event_ids": [
+          417062,
+          417119
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "gate blocked"
+        },
+        "event_ids": [
+          417128,
+          417192
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "gate blocked"
+        },
+        "event_ids": [
+          417154,
+          417192
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "agents have not both accepted yet; revise and continue"
+        },
+        "event_ids": [
+          417217,
+          417237
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "cursor_reviewer_infrastructure: reviewer_infrastructure_unavailable"
+        },
+        "event_ids": [
+          417244,
+          417299
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "gate blocked"
+        },
+        "event_ids": [
+          417313,
+          417349
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "cursor_reviewer_infrastructure: reviewer_infrastructure_unavailable"
+        },
+        "event_ids": [
+          417359,
+          417392
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "agents have not both accepted yet; revise and continue"
+        },
+        "event_ids": [
+          417394,
+          417411
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "agents have not both accepted yet; revise and continue"
+        },
+        "event_ids": [
+          417448,
+          417465
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "agents have not both accepted yet; revise and continue"
+        },
+        "event_ids": [
+          417467,
+          417481
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "agents have not both accepted yet; revise and continue"
+        },
+        "event_ids": [
+          417483,
+          417497
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "agents have not both accepted yet; revise and continue"
+        },
+        "event_ids": [
+          417499,
+          417515
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "max_rounds_per_gate exhausted without both agents accepting"
+        },
+        "event_ids": [
+          417517,
+          417717
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "workflow_claim_verification_failed"
+        },
+        "event_ids": [
+          417741,
+          417784
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "cursor_reviewer_infrastructure: reviewer_infrastructure_unavailable"
+        },
+        "event_ids": [
+          417791,
+          417826
+        ],
+        "source": "sequence"
+      }
+    ],
+    "status": "observed_in_run",
+    "trigger_surface": "sequence"
+  },
+  {
+    "deterministic_probe": "outcome fidelity or message protocol failure",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "failure_taxonomy_for_payload",
+    "mast_category": "Inter-Agent Misalignment",
+    "mast_code": "FM-2.6",
+    "mast_mode": "Reasoning-action mismatch",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "accepted gate is missing a required probe",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "failure_taxonomy_for_payload + detect_sequence_failures",
+    "mast_category": "Task Verification",
+    "mast_code": "FM-3.1",
+    "mast_mode": "Premature termination",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload+sequence"
+  },
+  {
+    "deterministic_probe": "claim verification or evidence receipt probe fails",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "failure_taxonomy_for_payload",
+    "mast_category": "Task Verification",
+    "mast_code": "FM-3.2",
+    "mast_mode": "No or incomplete verification",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "Cursor rejects after the gate was accepted",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "detect_sequence_failures",
+    "mast_category": "Task Verification",
+    "mast_code": "FM-3.3",
+    "mast_mode": "Incorrect verification",
+    "sources": [
+      {
+        "details": {
+          "accepted_gate_event_id": 417238
+        },
+        "event_ids": [
+          417238,
+          417243
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "accepted_gate_event_id": 417300
+        },
+        "event_ids": [
+          417300,
+          417304
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "accepted_gate_event_id": 417350
+        },
+        "event_ids": [
+          417350,
+          417358
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "accepted_gate_event_id": 417412
+        },
+        "event_ids": [
+          417412,
+          417415
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "accepted_gate_event_id": 417737
+        },
+        "event_ids": [
+          417737,
+          417740
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "accepted_gate_event_id": 417785
+        },
+        "event_ids": [
+          417785,
+          417790
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "accepted_gate_event_id": 417827
+        },
+        "event_ids": [
+          417827,
+          417832
+        ],
+        "source": "sequence"
+      }
+    ],
+    "status": "observed_in_run",
+    "trigger_surface": "sequence"
+  }
+]
