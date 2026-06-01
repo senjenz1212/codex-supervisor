@@ -1,0 +1,79 @@
+# Grill Findings
+
+These findings are derived from dual-agent gate objections in the ledger.
+Future duo-agent runs should also create this file through the `prd-to-tdd` skill's `grill-with-docs` gates before implementation.
+
+- event_id 406470 `prd_review`: reconnect/disconnect proof in P3 does not specify same-connection vs fresh read path (medium, deferred to TDD)
+- event_id 406470 `prd_review`: limit=None behavior unspecified in Implementation Decisions (low, deferred to TDD)
+- event_id 406470 `prd_review`: EXPLAIN QUERY PLAN index assertion may flake on tiny/empty fixtures (low, deferred to TDD)
+- event_id 406471 `prd_review`: agents have not both accepted yet; revise and continue
+- event_id 406473 `prd_review`: reconnect/disconnect proof in P3 does not specify same-connection vs fresh read path (medium, deferred to TDD)
+- event_id 406473 `prd_review`: limit=None behavior unspecified in Implementation Decisions (low, deferred to TDD)
+- event_id 406473 `prd_review`: EXPLAIN QUERY PLAN index assertion may flake on tiny/empty fixtures (low, deferred to TDD)
+- event_id 406505 `prd_review`: P2 promise should assert tail query is index-served (no full scan) rather than naming idx_events_run_event in EXPLAIN QUERY PLAN, since event_id is the rowid and plan output is version-sensitive; non-blocking, addressable in TDD plan
+- event_id 406506 `prd_review`: both agents accepted
+- event_id 406591 `issues_review`: ISS-1 has no acceptance criterion for the PRD's 'return [] for non-positive limits' decision; degenerate input could ship unguarded
+- event_id 406591 `issues_review`: ISS-2 RED test text names idx_events_run_event in EXPLAIN QUERY PLAN (version-sensitive since event_id is rowid); reconciled in AC/TDD but issue text retains brittle phrasing
+- event_id 406592 `issues_review`: agents have not both accepted yet; revise and continue
+- event_id 406594 `issues_review`: ISS-1 has no acceptance criterion for the PRD's 'return [] for non-positive limits' decision; degenerate input could ship unguarded
+- event_id 406594 `issues_review`: ISS-2 RED test text names idx_events_run_event in EXPLAIN QUERY PLAN (version-sensitive since event_id is rowid); reconciled in AC/TDD but issue text retains brittle phrasing
+- event_id 406681 `issues_review`: ISS-1 acceptance criteria omit the return-shape/cursor-id guarantee; P1 forbidden 'flattened payloads that omit the cursor id' is only implicitly covered via ISS-3 AC#4
+- event_id 406682 `issues_review`: agents have not both accepted yet; revise and continue
+- event_id 406684 `issues_review`: ISS-1 acceptance criteria omit the return-shape/cursor-id guarantee; P1 forbidden 'flattened payloads that omit the cursor id' is only implicitly covered via ISS-3 AC#4
+- event_id 406755 `issues_review`: Non-blocking: ISS-1 ACs do not explicitly require the return shape to expose event_id/payload cursor (PRD P1 forbids flattened payloads omitting cursor id) nor the non-positive-limit->[] rule; both are still carried by PRD and TDD test cases
+- event_id 406756 `issues_review`: both agents accepted
+- event_id 406811 `tdd_review`: Multi-page catch-up across reconnect is not explicitly exercised (offline batch vs limit relationship unspecified)
+- event_id 406811 `tdd_review`: Non-positive-limit -> [] outcome is in PRD P1 but unmapped to any test case
+- event_id 406811 `tdd_review`: EXPLAIN QUERY PLAN on tiny test DBs can be brittle across SQLite versions
+- event_id 406812 `tdd_review`: agents have not both accepted yet; revise and continue
+- event_id 406814 `tdd_review`: Multi-page catch-up across reconnect is not explicitly exercised (offline batch vs limit relationship unspecified)
+- event_id 406814 `tdd_review`: Non-positive-limit -> [] outcome is in PRD P1 but unmapped to any test case
+- event_id 406814 `tdd_review`: EXPLAIN QUERY PLAN on tiny test DBs can be brittle across SQLite versions
+- event_id 406844 `tdd_review`: Low severity: PRD decision 'return [] for non-positive limits' (prd.md:108) lacks a dedicated test; should fold into the P1 limit case during GREEN
+- event_id 406844 `tdd_review`: Low severity: payload-shape contract (read_events_since nests under 'payload' vs recent_events flattening, prd.md:106) is not explicitly asserted, only 'decoded payload and cursor id'
+- event_id 406893 `tdd_review`: both agents accepted
+- event_id 406900 `implementation_plan`: gate blocked
+- event_id 406941 `implementation_plan`: gate blocked
+- event_id 407022 `implementation_plan`: issues.md ISS-2 acceptance ('EXPLAIN QUERY PLAN shows an index search using idx_events_run_event') is stricter than what SQLite reliably delivers when event_id is a rowid alias; on a single-run fixture the planner may use the integer-primary-key range (a SEARCH, not a SCAN). Mitigation already in plan R1; recommend a multi-run fixture to make the composite index the genuinely cheaper plan.
+- event_id 407022 `implementation_plan`: No code or tests were executed at this gate; full-suite-green and index-served claims remain unproven until execution.
+- event_id 407023 `implementation_plan`: agents have not both accepted yet; revise and continue
+- event_id 407025 `implementation_plan`: issues.md ISS-2 acceptance ('EXPLAIN QUERY PLAN shows an index search using idx_events_run_event') is stricter than what SQLite reliably delivers when event_id is a rowid alias; on a single-run fixture the planner may use the integer-primary-key range (a SEARCH, not a SCAN). Mitigation already in plan R1; recommend a multi-run fixture to make the composite index the genuinely cheaper plan.
+- event_id 407025 `implementation_plan`: No code or tests were executed at this gate; full-suite-green and index-served claims remain unproven until execution.
+- event_id 407092 `implementation_plan`: P2 index-served test is fragile: event_id is the rowid alias, so SQLite may choose a table scan or rowid b-tree over idx_events_run_event on small test tables; assert-no-SCAN mitigation is sound but the test should seed enough rows/multiple run_ids to make an index search genuinely preferred
+- event_id 407102 `implementation_plan`: both agents accepted
+- event_id 407141 `execution`: Implementation absent: grep finds no read_events_since; state.py:61 has only idx_events_run(run_id,ts)
+- event_id 407141 `execution`: Tests absent: test_state_event_ledger.py has 2 pre-existing tests, none of the 7 planned cursor/index/reconnect tests
+- event_id 407141 `execution`: No evidence of a green suite with the change; nothing staged or committed (git diff --stat HEAD empty)
+- event_id 407141 `execution`: Prior triage shows probe P4 (non-contiguous ids) persistently red, consistent with the feature never being implemented
+- event_id 407141 `execution`: Session lacks filesystem write permission; direct execution in lead_direct mode was blocked
+- event_id 407142 `execution`: agents have not both accepted yet; revise and continue
+- event_id 407144 `execution`: Implementation absent: grep finds no read_events_since; state.py:61 has only idx_events_run(run_id,ts)
+- event_id 407144 `execution`: Tests absent: test_state_event_ledger.py has 2 pre-existing tests, none of the 7 planned cursor/index/reconnect tests
+- event_id 407144 `execution`: No evidence of a green suite with the change; nothing staged or committed (git diff --stat HEAD empty)
+- event_id 407144 `execution`: Prior triage shows probe P4 (non-contiguous ids) persistently red, consistent with the feature never being implemented
+- event_id 407144 `execution`: Session lacks filesystem write permission; direct execution in lead_direct mode was blocked
+- event_id 407171 `execution`: Execution gate has no execution: git diff empty, read_events_since and idx_events_run_event exist only in docs/, and tests/test_state_event_ledger.py contains none of the 7 planned tests including the mandatory disconnect/reconnect once-only test.
+- event_id 407171 `execution`: Acceptance criteria 'prove writer/reader boundary with reconnect test' and 'keep full suite green' are unverifiable with zero changed files and no test run.
+- event_id 407172 `execution`: agents have not both accepted yet; revise and continue
+- event_id 407174 `execution`: Execution gate has no execution: git diff empty, read_events_since and idx_events_run_event exist only in docs/, and tests/test_state_event_ledger.py contains none of the 7 planned tests including the mandatory disconnect/reconnect once-only test.
+- event_id 407174 `execution`: Acceptance criteria 'prove writer/reader boundary with reconnect test' and 'keep full suite green' are unverifiable with zero changed files and no test run.
+- event_id 407219 `execution`: Binding acceptance criterion 'keep full suite green' is unverified: focused and full pytest invocations required approval that was not granted this round
+- event_id 407219 `execution`: Query-plan test asserts literal 'idx_events_run_event' name (R1 brittleness) - acceptable per plan but version-sensitive residual risk
+- event_id 407220 `execution`: both agents accepted
+- event_id 407246 `outcome_review`: 'keep full suite green' is self-reported only; gate could not run uv run pytest (commands require approval). Policy permits self_reported evidence but recommend running uv run --extra dev pytest -q before merge.
+- event_id 407256 `outcome_review`: workflow_claim_verification_failed
+- event_id 407258 `outcome_review`: 'keep full suite green' is self-reported only; gate could not run uv run pytest (commands require approval). Policy permits self_reported evidence but recommend running uv run --extra dev pytest -q before merge.
+- event_id 407325 `outcome_review`: Test execution denied in this gate; 'these tests pass' and 'full suite green' are unverified by the reviewer
+- event_id 407325 `outcome_review`: Full suite not assessed for regressions (only the changed test file inspected); risk low because change is additive
+- event_id 407325 `outcome_review`: idx-plan test relies on EXPLAIN QUERY PLAN choosing idx_events_run_event and avoiding SCAN - possible cross-version flakiness, non-blocking
+- event_id 407326 `outcome_review`: agents have not both accepted yet; revise and continue
+- event_id 407328 `outcome_review`: Test execution denied in this gate; 'these tests pass' and 'full suite green' are unverified by the reviewer
+- event_id 407328 `outcome_review`: Full suite not assessed for regressions (only the changed test file inspected); risk low because change is additive
+- event_id 407328 `outcome_review`: idx-plan test relies on EXPLAIN QUERY PLAN choosing idx_events_run_event and avoiding SCAN - possible cross-version flakiness, non-blocking
+- event_id 407344 `outcome_review`: Reviewer could not run pytest (commands required approval); 'keep full suite green' is asserted by worker but not independently verified with captured output
+- event_id 407344 `outcome_review`: Query-plan test asserts idx_events_run_event usage and absence of 'SCAN events'; mildly SQLite-version-dependent though reasonable for (run_id,event_id)
+- event_id 407396 `outcome_review`: workflow_claim_verification_failed
+- event_id 407398 `outcome_review`: Reviewer could not run pytest (commands required approval); 'keep full suite green' is asserted by worker but not independently verified with captured output
+- event_id 407398 `outcome_review`: Query-plan test asserts idx_events_run_event usage and absence of 'SCAN events'; mildly SQLite-version-dependent though reasonable for (run_id,event_id)
+- event_id 407574 `outcome_review`: Full suite green claim is unverified in this gate because pytest commands were blocked pending operator approval.
+- event_id 407597 `outcome_review`: both agents accepted

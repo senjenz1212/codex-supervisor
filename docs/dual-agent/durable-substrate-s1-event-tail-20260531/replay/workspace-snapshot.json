@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "618b1157c069309c8d7e66358aacfc6985f408a1fd757893d5bf39101fc37f3b",
+  "git": {
+    "diff_bytes": 10323,
+    "diff_sha256": "795be024ae430025a18fa57748ec7e441bd11df5ec6d3dcb1642b38b75737741",
+    "diff_stat": "supervisor/state.py              |  31 +++++\n tests/test_state_event_ledger.py | 241 +++++++++++++++++++++++++++++++++++++++\n 2 files changed, 272 insertions(+)",
+    "head": "1207c8f",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "1207c8f",
+    "status_short": "M supervisor/state.py\n M tests/test_state_event_ledger.py\n?? docs/dual-agent/durable-substrate-s1-event-tail-20260531/"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "8b57b25ae070aa33aec68e86af90a0364d887c60eeb2160bb601d86828115e17",
+    "implementation_plan": "3e9b9b0fe1d05f42b844c1d41003903dc014cc91632feb24a4016bfaa5d4c09c",
+    "issues": "a21059050928b21becc59e8d2f6d6e0f3596c78144ed14c8373d37e07aa16173",
+    "prd": "7415f2d625b1091f7774f2fbe999aeee09a1eea3f37e8a61819b19df8d4cf531",
+    "tdd_plan": "be48784ee90dc77dd19c75af666b4c1d8a6072043ce4007a3a588fb7ca61934a"
+  },
+  "status": "captured"
+}

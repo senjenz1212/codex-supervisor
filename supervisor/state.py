@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS events (
   payload_json  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_events_run ON events(run_id, ts);
+CREATE INDEX IF NOT EXISTS idx_events_run_event ON events(run_id, event_id);
 
 CREATE TABLE IF NOT EXISTS verdicts (
   verdict_id    INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -436,6 +437,36 @@ class State:
             {"id": r["event_id"], "ts": r["ts"], "source": r["source"],
              "kind": r["kind"], **json.loads(r["payload_json"])}
             for r in rows
+        ]
+
+    def read_events_since(
+        self,
+        run_id: str,
+        after_event_id: int | None = 0,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Read the durable event tail after a caller-owned event_id cursor."""
+        page_limit = int(limit)
+        if page_limit <= 0:
+            return []
+        cursor = int(after_event_id or 0)
+        rows = self._conn.execute(
+            """SELECT event_id, ts, source, kind, payload_json
+               FROM events
+               WHERE run_id=? AND event_id > ?
+               ORDER BY event_id ASC
+               LIMIT ?""",
+            (run_id, cursor, page_limit),
+        ).fetchall()
+        return [
+            {
+                "event_id": int(row["event_id"]),
+                "ts": int(row["ts"]),
+                "source": row["source"],
+                "kind": row["kind"],
+                "payload": json.loads(row["payload_json"]),
+            }
+            for row in rows
         ]
 
     def read_dual_agent_gate_events(self, run_id: str) -> list[sqlite3.Row]:

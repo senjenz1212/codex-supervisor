@@ -1,0 +1,1650 @@
+{
+  "event_ids": [
+    406377,
+    406386,
+    406388,
+    406389,
+    406469,
+    406470,
+    406471,
+    406472,
+    406473,
+    406474,
+    406475,
+    406504,
+    406505,
+    406506,
+    406507,
+    406510,
+    406511,
+    406590,
+    406591,
+    406592,
+    406593,
+    406594,
+    406595,
+    406596,
+    406680,
+    406681,
+    406682,
+    406683,
+    406684,
+    406685,
+    406686,
+    406754,
+    406755,
+    406756,
+    406757,
+    406763,
+    406764,
+    406810,
+    406811,
+    406812,
+    406813,
+    406814,
+    406815,
+    406816,
+    406843,
+    406844,
+    406859,
+    406891,
+    406892,
+    406893,
+    406894,
+    406897,
+    406898,
+    406899,
+    406900,
+    406901,
+    406934,
+    406936,
+    406938,
+    406939,
+    406940,
+    406941,
+    406942,
+    406977,
+    406979,
+    406981,
+    406982,
+    407021,
+    407022,
+    407023,
+    407024,
+    407025,
+    407026,
+    407027,
+    407091,
+    407092,
+    407093,
+    407100,
+    407101,
+    407102,
+    407103,
+    407106,
+    407107,
+    407140,
+    407141,
+    407142,
+    407143,
+    407144,
+    407145,
+    407146,
+    407170,
+    407171,
+    407172,
+    407173,
+    407174,
+    407175,
+    407176,
+    407218,
+    407219,
+    407220,
+    407221,
+    407224,
+    407225,
+    407245,
+    407246,
+    407247,
+    407254,
+    407255,
+    407256,
+    407257,
+    407258,
+    407259,
+    407260,
+    407324,
+    407325,
+    407326,
+    407327,
+    407328,
+    407329,
+    407330,
+    407343,
+    407344,
+    407345,
+    407394,
+    407395,
+    407396,
+    407397,
+    407398,
+    407399,
+    407400,
+    407548,
+    407550,
+    407552,
+    407553,
+    407573,
+    407574,
+    407575,
+    407595,
+    407596,
+    407597,
+    407598
+  ],
+  "event_kinds": [
+    "dual_agent_gate_result",
+    "dual_agent_gate_round",
+    "dual_agent_interaction_message",
+    "dual_agent_planning_validation",
+    "dual_agent_skill_receipt_validation",
+    "dual_agent_workflow_route",
+    "tri_agent_cursor_review"
+  ],
+  "events_count": 141,
+  "failure_summary": null,
+  "files": {
+    "index": "index.md",
+    "interactions": "interactions.md",
+    "mast_coverage_json": "replay/mast-coverage.json",
+    "mast_coverage_markdown": "mast-coverage.md",
+    "transcript_jsonl": "transcript.jsonl",
+    "transcript_markdown": "transcript.md",
+    "workspace_snapshot": "replay/workspace-snapshot.json"
+  },
+  "handoff_packets": [
+    {
+      "content": "{\n  \"cwd\": \"/Users/sam.zhang/Documents/codex-supervisor\",\n  \"execution_layer_policy\": {\n    \"agentic_lead_policy\": {\n      \"min_subagents\": 0,\n      \"policy\": \"off\",\n      \"required_evidence_grade\": \"self_reported\",\n      \"required_roles\": [],\n      \"solo_exception_for_artifact_only_gates\": false\n    },\n    \"allowed_dynamic_workflow_task_classes\": [],\n    \"codex_supervises_final_artifact\": true,\n    \"dynamic_workflow_task_class\": null,\n    \"lead_execution_layer\": \"single_lead_worker\",\n    \"mode\": \"lead_direct\",\n    \"preview_required_gates\": [],\n    \"supervision_layer\": \"codex_plus_lead\"\n  },\n  \"expected_decisions\": [],\n  \"expected_objections\": [],\n  \"expected_specialists\": [],\n  \"gate\": \"outcome_review\",\n  \"instruction\": \"Supervisor-owned workflow gate: outcome_review.\\n\\nIntent:\\nAdd the event-tail read cursor plus index that lets a consumer follow the event log incrementally, so an MCP transport drop can reconnect and catch up instead of restarting. The exact gap is that recent_events is a last-N read, there is no read_events_since WHERE event_id > ?, the events index is currently (run_id, ts) rather than (run_id, event_id), and run_watches.last_event_id has no generic after-this-id read behind it. Scope: add State.read_events_since(run_id, after_event_id, limit) using event_id > cursor ORDER BY event_id ASC LIMIT, add CREATE INDEX IF NOT EXISTS idx_events_run_event ON events(run_id, event_id) while keeping idx_events_run, prove the writer/reader boundary with a disconnect/reconnect consumer test, tolerate non-contiguous AUTOINCREMENT event ids, preserve recent_events/read_dual_agent_gate_events/replay behavior, and keep full suite green. Non-goals: do not make events the sole source of truth, do not change submit/job semantics, terminal-result storage, production Telegram progress, or resumable MCP transport.\\n\\nReview this gate against the current source artifacts and return a typed dual_agent_outcome.\\nUse decisions/objections to say whether the gate should accept, revise, or deny.\",\n  \"lead_skill\": null,\n  \"outcome_validation_policy\": {\n    \"fidelity_failure\": \"abort_to_operator\",\n    \"malformed_outcome\": \"retry_once_with_corrective_packet\",\n    \"subprocess_failure\": \"abort_to_operator\",\n    \"timeout\": \"abort_to_operator\"\n  },\n  \"packet_schema_version\": \"dual-agent-handoff/v1\",\n  \"planning_artifacts\": [\n    {\n      \"kind\": \"prd\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/durable-substrate-s1-event-tail-20260531/source/prd.md\",\n      \"sha256\": \"7415f2d625b1091f7774f2fbe999aeee09a1eea3f37e8a61819b19df8d4cf531\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/durable-substrate-s1-event-tail-20260531/source/grill-findings.md\",\n      \"sha256\": \"20ace1fccc7169c8e7ab47da38a060ed3ecfe2c21134d5b112baf1d669e5d1e0\"\n    },\n    {\n      \"kind\": \"issues\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/durable-substrate-s1-event-tail-20260531/source/issues.md\",\n      \"sha256\": \"a21059050928b21becc59e8d2f6d6e0f3596c78144ed14c8373d37e07aa16173\"\n    },\n    {\n      \"kind\": \"tdd_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/durable-substrate-s1-event-tail-20260531/source/tdd.md\",\n      \"sha256\": \"be48784ee90dc77dd19c75af666b4c1d8a6072043ce4007a3a588fb7ca61934a\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/durable-substrate-s1-event-tail-20260531/source/grill-findings-tdd.md\",\n      \"sha256\": \"8b57b25ae070aa33aec68e86af90a0364d887c60eeb2160bb601d86828115e17\"\n    },\n    {\n      \"kind\": \"implementation_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/durable-substrate-s1-event-tail-20260531/source/implementation-plan.md\",\n      \"sha256\": \"3e9b9b0fe1d05f42b844c1d41003903dc014cc91632feb24a4016bfaa5d4c09c\"\n    }\n  ],\n  \"suggested_skills\": [\n    \"/lead\"\n  ],\n  \"task_id\": \"durable-substrate-s1-event-tail-20260531\"\n}\n",
+      "event_ids": [
+        406470,
+        406473,
+        406505,
+        406591,
+        406594,
+        406681,
+        406684,
+        406755,
+        406811,
+        406814,
+        406844,
+        406899,
+        406940,
+        407022,
+        407025,
+        407092,
+        407141,
+        407144,
+        407171,
+        407174,
+        407219,
+        407246,
+        407258,
+        407325,
+        407328,
+        407344,
+        407398,
+        407574
+      ],
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json",
+      "sha256": "e1cd51373b1f0d0d0e651c0be57b2a72a0519454a1ff13db14e276453375cb83",
+      "status": "captured"
+    }
+  ],
+  "mast_coverage": [
+    {
+      "deterministic_probe": "blocked payload reason `disobey_task_spec` or planning artifact failure",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.1",
+      "mast_mode": "Disobey task specification",
+      "sources": [
+        {
+          "event_id": 406899,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 406899,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        },
+        {
+          "event_id": 406940,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 406940,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        }
+      ],
+      "status": "observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `role_violation_covenant`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload -> classify_failure",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.2",
+      "mast_mode": "Disobey role specification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "same gate and handoff packet observed twice",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "detect_sequence_failures",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "sources": [
+        {
+          "details": {
+            "signature": [
+              "prd_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+            ]
+          },
+          "event_ids": [
+            406470,
+            406473
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "prd_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+            ]
+          },
+          "event_ids": [
+            406470,
+            406505
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "issues_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+            ]
+          },
+          "event_ids": [
+            406591,
+            406594
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "issues_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+            ]
+          },
+          "event_ids": [
+            406591,
+            406681
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "issues_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+            ]
+          },
+          "event_ids": [
+            406591,
+            406684
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "issues_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+            ]
+          },
+          "event_ids": [
+            406591,
+            406755
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "tdd_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+            ]
+          },
+          "event_ids": [
+            406811,
+            406814
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "tdd_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+            ]
+          },
+          "event_ids": [
+            406811,
+            406844
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "implementation_plan",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+            ]
+          },
+          "event_ids": [
+            406899,
+            406940
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "implementation_plan",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+            ]
+          },
+          "event_ids": [
+            406899,
+            407022
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "implementation_plan",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+            ]
+          },
+          "event_ids": [
+            406899,
+            407025
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "implementation_plan",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+            ]
+          },
+          "event_ids": [
+            406899,
+            407092
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "execution",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+            ]
+          },
+          "event_ids": [
+            407141,
+            407144
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "execution",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+            ]
+          },
+          "event_ids": [
+            407141,
+            407171
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "execution",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+            ]
+          },
+          "event_ids": [
+            407141,
+            407174
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "execution",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+            ]
+          },
+          "event_ids": [
+            407141,
+            407219
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+            ]
+          },
+          "event_ids": [
+            407246,
+            407258
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+            ]
+          },
+          "event_ids": [
+            407246,
+            407325
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+            ]
+          },
+          "event_ids": [
+            407246,
+            407328
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+            ]
+          },
+          "event_ids": [
+            407246,
+            407344
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+            ]
+          },
+          "event_ids": [
+            407246,
+            407398
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+            ]
+          },
+          "event_ids": [
+            407246,
+            407574
+          ],
+          "source": "sequence"
+        }
+      ],
+      "status": "observed_in_run",
+      "trigger_surface": "sequence"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `lost_conversation_history`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.4",
+      "mast_mode": "Loss of conversation history",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `agents_not_converged_max_rounds`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.5",
+      "mast_mode": "Unaware of termination conditions",
+      "sources": [
+        {
+          "event_id": 406473,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 406473,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        },
+        {
+          "event_id": 406594,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 406594,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        },
+        {
+          "event_id": 406684,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 406684,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        },
+        {
+          "event_id": 406814,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 406814,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        },
+        {
+          "event_id": 407025,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 407025,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        },
+        {
+          "event_id": 407144,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 407144,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        },
+        {
+          "event_id": 407174,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 407174,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        },
+        {
+          "event_id": 407328,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 407328,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        }
+      ],
+      "status": "observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `conversation_reset`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.1",
+      "mast_mode": "Conversation reset",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `ambiguous_input_no_clarification`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.2",
+      "mast_mode": "Fail to ask for clarification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `scope_violation_off_scope`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.3",
+      "mast_mode": "Task derailment",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "Cursor or reviewer disagreement probe fails",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.4",
+      "mast_mode": "Information withholding",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "Claude response does not address a prior Codex objection",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "detect_sequence_failures",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "sources": [
+        {
+          "details": {
+            "objection": "agents have not both accepted yet; revise and continue"
+          },
+          "event_ids": [
+            406471,
+            406504
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "agents have not both accepted yet; revise and continue"
+          },
+          "event_ids": [
+            406592,
+            406680
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "agents have not both accepted yet; revise and continue"
+          },
+          "event_ids": [
+            406682,
+            406754
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "agents have not both accepted yet; revise and continue"
+          },
+          "event_ids": [
+            406812,
+            406843
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "gate blocked"
+          },
+          "event_ids": [
+            406900,
+            407021
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "gate blocked"
+          },
+          "event_ids": [
+            406941,
+            407021
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "agents have not both accepted yet; revise and continue"
+          },
+          "event_ids": [
+            407023,
+            407091
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "agents have not both accepted yet; revise and continue"
+          },
+          "event_ids": [
+            407142,
+            407170
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "agents have not both accepted yet; revise and continue"
+          },
+          "event_ids": [
+            407172,
+            407218
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "workflow_claim_verification_failed"
+          },
+          "event_ids": [
+            407256,
+            407324
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "agents have not both accepted yet; revise and continue"
+          },
+          "event_ids": [
+            407326,
+            407343
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "workflow_claim_verification_failed"
+          },
+          "event_ids": [
+            407396,
+            407573
+          ],
+          "source": "sequence"
+        }
+      ],
+      "status": "observed_in_run",
+      "trigger_surface": "sequence"
+    },
+    {
+      "deterministic_probe": "outcome fidelity or message protocol failure",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.6",
+      "mast_mode": "Reasoning-action mismatch",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "accepted gate is missing a required probe",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload + detect_sequence_failures",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.1",
+      "mast_mode": "Premature termination",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload+sequence"
+    },
+    {
+      "deterministic_probe": "claim verification or evidence receipt probe fails",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.2",
+      "mast_mode": "No or incomplete verification",
+      "sources": [
+        {
+          "event_id": 407258,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 407258,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        },
+        {
+          "event_id": 407398,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 407398,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        }
+      ],
+      "status": "observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "Cursor rejects after the gate was accepted",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "detect_sequence_failures",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.3",
+      "mast_mode": "Incorrect verification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "sequence"
+    }
+  ],
+  "run_id": "codex-durable-s1-event-tail-20260531",
+  "schema_version": "dual-agent-replay-manifest/v1",
+  "schema_versions": {
+    "agent_interaction": "dual-agent-interaction/v1",
+    "failure_taxonomy": "dual-agent-failure-taxonomy/v1",
+    "replay_manifest": "dual-agent-replay-manifest/v1",
+    "trace_envelope": "dual-agent-trace-envelope/v1"
+  },
+  "sequence_failures": [
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "prd_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+        ]
+      },
+      "event_ids": [
+        406470,
+        406473
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "agents have not both accepted yet; revise and continue"
+      },
+      "event_ids": [
+        406471,
+        406504
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "prd_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+        ]
+      },
+      "event_ids": [
+        406470,
+        406505
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "issues_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+        ]
+      },
+      "event_ids": [
+        406591,
+        406594
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "agents have not both accepted yet; revise and continue"
+      },
+      "event_ids": [
+        406592,
+        406680
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "issues_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+        ]
+      },
+      "event_ids": [
+        406591,
+        406681
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "issues_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+        ]
+      },
+      "event_ids": [
+        406591,
+        406684
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "agents have not both accepted yet; revise and continue"
+      },
+      "event_ids": [
+        406682,
+        406754
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "issues_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+        ]
+      },
+      "event_ids": [
+        406591,
+        406755
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "tdd_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+        ]
+      },
+      "event_ids": [
+        406811,
+        406814
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "agents have not both accepted yet; revise and continue"
+      },
+      "event_ids": [
+        406812,
+        406843
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "tdd_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+        ]
+      },
+      "event_ids": [
+        406811,
+        406844
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "implementation_plan",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+        ]
+      },
+      "event_ids": [
+        406899,
+        406940
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "gate blocked"
+      },
+      "event_ids": [
+        406900,
+        407021
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "gate blocked"
+      },
+      "event_ids": [
+        406941,
+        407021
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "implementation_plan",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+        ]
+      },
+      "event_ids": [
+        406899,
+        407022
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "implementation_plan",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+        ]
+      },
+      "event_ids": [
+        406899,
+        407025
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "agents have not both accepted yet; revise and continue"
+      },
+      "event_ids": [
+        407023,
+        407091
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "implementation_plan",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+        ]
+      },
+      "event_ids": [
+        406899,
+        407092
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "execution",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+        ]
+      },
+      "event_ids": [
+        407141,
+        407144
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "agents have not both accepted yet; revise and continue"
+      },
+      "event_ids": [
+        407142,
+        407170
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "execution",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+        ]
+      },
+      "event_ids": [
+        407141,
+        407171
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "execution",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+        ]
+      },
+      "event_ids": [
+        407141,
+        407174
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "agents have not both accepted yet; revise and continue"
+      },
+      "event_ids": [
+        407172,
+        407218
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "execution",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+        ]
+      },
+      "event_ids": [
+        407141,
+        407219
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+        ]
+      },
+      "event_ids": [
+        407246,
+        407258
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "workflow_claim_verification_failed"
+      },
+      "event_ids": [
+        407256,
+        407324
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+        ]
+      },
+      "event_ids": [
+        407246,
+        407325
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+        ]
+      },
+      "event_ids": [
+        407246,
+        407328
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "agents have not both accepted yet; revise and continue"
+      },
+      "event_ids": [
+        407326,
+        407343
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+        ]
+      },
+      "event_ids": [
+        407246,
+        407344
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+        ]
+      },
+      "event_ids": [
+        407246,
+        407398
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "workflow_claim_verification_failed"
+      },
+      "event_ids": [
+        407396,
+        407573
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-substrate-s1-event-tail-20260531.json"
+        ]
+      },
+      "event_ids": [
+        407246,
+        407574
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    }
+  ],
+  "state": {
+    "events_count_at_capture": 141,
+    "first_event_id": 406377,
+    "last_event_id": 407598,
+    "transcript_jsonl_sha256": "95f189d81fa3540336ea75fe0b890503681551aa7172b882d6c1460cd0e163b1"
+  },
+  "task_id": "durable-substrate-s1-event-tail-20260531",
+  "tool_call_totals": {
+    "total_cost_usd": 118.095294,
+    "total_duration_ms": 4509988,
+    "total_duration_us": 4510038614,
+    "total_tokens_in": 26371610,
+    "total_tokens_out": 277532,
+    "unique_tool_calls": 255
+  },
+  "workspace_snapshot": {
+    "file_tree_sha256": "618b1157c069309c8d7e66358aacfc6985f408a1fd757893d5bf39101fc37f3b",
+    "git": {
+      "diff_bytes": 10323,
+      "diff_sha256": "795be024ae430025a18fa57748ec7e441bd11df5ec6d3dcb1642b38b75737741",
+      "diff_stat": "supervisor/state.py              |  31 +++++\n tests/test_state_event_ledger.py | 241 +++++++++++++++++++++++++++++++++++++++\n 2 files changed, 272 insertions(+)",
+      "head": "1207c8f",
+      "head_label": "handoff_cwd_head",
+      "head_ref": "HEAD",
+      "head_sha": "1207c8f",
+      "status_short": "M supervisor/state.py\n M tests/test_state_event_ledger.py\n?? docs/dual-agent/durable-substrate-s1-event-tail-20260531/"
+    },
+    "root": "/Users/sam.zhang/Documents/codex-supervisor",
+    "root_source": "handoff_cwd",
+    "source_artifact_hashes": {
+      "grill_findings": "8b57b25ae070aa33aec68e86af90a0364d887c60eeb2160bb601d86828115e17",
+      "implementation_plan": "3e9b9b0fe1d05f42b844c1d41003903dc014cc91632feb24a4016bfaa5d4c09c",
+      "issues": "a21059050928b21becc59e8d2f6d6e0f3596c78144ed14c8373d37e07aa16173",
+      "prd": "7415f2d625b1091f7774f2fbe999aeee09a1eea3f37e8a61819b19df8d4cf531",
+      "tdd_plan": "be48784ee90dc77dd19c75af666b4c1d8a6072043ce4007a3a588fb7ca61934a"
+    },
+    "status": "captured"
+  }
+}
