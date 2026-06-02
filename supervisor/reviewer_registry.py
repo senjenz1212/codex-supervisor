@@ -117,6 +117,7 @@ def independent_reviewer_result_from_cursor_result(
         "task_id": task_id,
         "gate": gate,
         "round_index": round_index,
+        "verdict_present": result.outcome is not None,
         "accepted": cursor_accepts(result),
         "decision": _decision_from_result(result),
         "severity": str(critical_review.get("severity") or ("none" if cursor_accepts(result) else "important")),
@@ -144,6 +145,119 @@ def independent_reviewer_result_from_cursor_result(
         "recoverable": result.recoverable,
         "attempts": result.attempts,
     }
+
+
+def evaluate_reviewer_panel(
+    results: list[dict[str, Any]] | tuple[dict[str, Any], ...],
+    *,
+    low_confidence_threshold: float = 0.0,
+) -> dict[str, Any]:
+    """Conservative non-weighted aggregation for independent reviewers."""
+    threshold = _clamp_confidence(low_confidence_threshold)
+    reviewer_inputs = [_reviewer_input_summary(result) for result in results if isinstance(result, dict)]
+    available_reviewers = [
+        item["reviewer_id"]
+        for item in reviewer_inputs
+        if item["verdict_present"] and item["decision"] in {"accept", "revise", "deny"}
+    ]
+    missing_reviewers = [
+        item["reviewer_id"]
+        for item in reviewer_inputs
+        if not item["verdict_present"] or item["decision"] not in {"accept", "revise", "deny"}
+    ]
+    blocking_reviewers = [
+        item["reviewer_id"]
+        for item in reviewer_inputs
+        if (
+            item["verdict_present"]
+            and item["decision"] in {"revise", "deny"}
+            and item["severity"] in {"critical", "important"}
+        )
+    ]
+    non_accepting_reviewers = [
+        item["reviewer_id"]
+        for item in reviewer_inputs
+        if item["verdict_present"] and item["decision"] in {"revise", "deny"}
+    ]
+    low_confidence_reviewers = [
+        item["reviewer_id"]
+        for item in reviewer_inputs
+        if (
+            item["verdict_present"]
+            and item["decision"] == "accept"
+            and item["confidence"] is not None
+            and item["confidence"] < threshold
+        )
+    ]
+    accepted_reviewers = [
+        item["reviewer_id"]
+        for item in reviewer_inputs
+        if item["verdict_present"] and item["decision"] == "accept"
+    ]
+
+    decision = "accept"
+    reason = "all_available_reviewers_accept"
+    if not reviewer_inputs:
+        reason = "review_not_required"
+    elif blocking_reviewers:
+        decision = "revise"
+        reason = "blocking_reviewer_objection"
+    elif non_accepting_reviewers:
+        decision = "revise"
+        reason = "reviewer_non_accept"
+    elif missing_reviewers:
+        decision = "revise"
+        reason = "missing_reviewer_verdict"
+    elif low_confidence_reviewers:
+        decision = "escalate"
+        reason = "low_confidence_accept"
+
+    return {
+        "schema_version": "independent-reviewer-panel-decision/v1",
+        "decision": decision,
+        "reason": reason,
+        "low_confidence_threshold": threshold,
+        "available_reviewers": available_reviewers,
+        "accepted_reviewers": accepted_reviewers,
+        "blocking_reviewers": blocking_reviewers,
+        "non_accepting_reviewers": non_accepting_reviewers,
+        "missing_reviewers": missing_reviewers,
+        "low_confidence_reviewers": low_confidence_reviewers,
+        "reviewer_inputs": reviewer_inputs,
+    }
+
+
+def _reviewer_input_summary(result: dict[str, Any]) -> dict[str, Any]:
+    reviewer_id = str(result.get("reviewer_id") or "unknown-reviewer")
+    decision = str(result.get("decision") or "").strip().lower()
+    severity = str(result.get("severity") or "none").strip().lower()
+    verdict_present = bool(result.get("verdict_present", decision in {"accept", "revise", "deny"}))
+    confidence = _coerce_confidence(result.get("confidence"))
+    return {
+        "reviewer_id": reviewer_id,
+        "decision": decision,
+        "severity": severity,
+        "confidence": confidence,
+        "accepted": bool(result.get("accepted")),
+        "verdict_present": verdict_present,
+        "runtime": result.get("runtime") or result.get("reviewer_runtime"),
+        "model": result.get("model"),
+        "provider_family": result.get("provider_family"),
+        "assurance_grade": result.get("assurance_grade"),
+    }
+
+
+def _coerce_confidence(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return _clamp_confidence(float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _clamp_confidence(value: float) -> float:
+    return max(0.0, min(1.0, float(value)))
 
 
 def _decision_from_result(result: CursorInvocationResult) -> str:

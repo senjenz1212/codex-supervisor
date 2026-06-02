@@ -295,6 +295,13 @@ def codex_review_packet(
             )
     if cursor_review is not None:
         classification = _cursor_review_failure_classification(cursor_review)
+        panel_decision = (
+            cursor_review.get("independent_reviewer_panel_decision")
+            if isinstance(cursor_review.get("independent_reviewer_panel_decision"), dict)
+            else {}
+        )
+        panel_status = str(panel_decision.get("decision") or "")
+        panel_reason = str(panel_decision.get("reason") or "")
         recovery = (
             cursor_review.get("reviewer_unavailable_recovery")
             if isinstance(cursor_review.get("reviewer_unavailable_recovery"), dict)
@@ -305,17 +312,35 @@ def codex_review_packet(
             and recovery.get("reviewer_verdict_counted_as_accept") is False
         )
         evidence = [classification or str((cursor_review.get("probe") or {}).get("reason") or "")]
+        if panel_status:
+            evidence.append(f"panel_decision={panel_status}:{panel_reason}")
+        reviewer_status = (
+            "pass"
+            if bool(cursor_review.get("accepted")) and panel_status in {"", "accept"}
+            else "degraded"
+            if degraded_reviewer_unavailable
+            else "fail"
+        )
         requirements.append({
             "requirement_id": "independent_reviewer",
             "legacy_requirement_id": "cursor_review",
-            "status": "pass"
-            if bool(cursor_review.get("accepted"))
-            else "degraded"
-            if degraded_reviewer_unavailable
-            else "fail",
+            "status": reviewer_status,
             "evidence": evidence,
         })
-        if not bool(cursor_review.get("accepted")) and not degraded_reviewer_unavailable:
+        if (
+            bool(cursor_review.get("accepted"))
+            and panel_status
+            and panel_status != "accept"
+            and not degraded_reviewer_unavailable
+        ):
+            add_finding(
+                severity="IMPORTANT",
+                code="REVIEWER_PANEL",
+                title=f"independent reviewer panel did not accept: {panel_reason}",
+                requirement_id="independent_reviewer",
+                evidence=evidence,
+            )
+        elif not bool(cursor_review.get("accepted")) and not degraded_reviewer_unavailable:
             add_finding(
                 severity="IMPORTANT",
                 code="CURSOR_INFRA" if classification else "CURSOR",
@@ -351,6 +376,16 @@ def codex_review_packet(
         },
         "objections": [] if decision == "accept" else [objection],
         "evidence_refs": list(evidence_refs),
+        "independent_reviewer_panel_decision": (
+            cursor_review.get("independent_reviewer_panel_decision")
+            if isinstance(cursor_review, dict)
+            else None
+        ),
+        "independent_reviewer_results": (
+            cursor_review.get("independent_reviewer_results")
+            if isinstance(cursor_review, dict)
+            else None
+        ),
         "would_change_if": what_would_change,
         "critical_review": normalize_critical_review(
             {

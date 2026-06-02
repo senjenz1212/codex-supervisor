@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "b48dcf02c0da04454854841532e9b4e32c4253c86014f4d107cd33d14b5f092f",
+  "git": {
+    "diff_bytes": 36700,
+    "diff_sha256": "ade579e6fa0b124e97f270e9943e524270be88b1bfe59fd0872bfa7bc9b794a7",
+    "diff_stat": "config.example.yaml                        |   3 +\n mcp_tools/codex_supervisor_stdio.py        | 118 ++++++++++++++-\n mcp_tools/codex_supervisor_workflow_cli.py |   1 +\n supervisor/agent_mailbox.py                |  47 +++++-\n supervisor/config.py                       |   1 +\n supervisor/reviewer_registry.py            | 114 +++++++++++++++\n tests/test_dual_agent_workflow_driver.py   | 227 ++++++++++++++++++++++++++++-\n 7 files changed, 497 insertions(+), 14 deletions(-)",
+    "head": "e457637",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "e457637",
+    "status_short": "M config.example.yaml\n M mcp_tools/codex_supervisor_stdio.py\n M mcp_tools/codex_supervisor_workflow_cli.py\n M supervisor/agent_mailbox.py\n M supervisor/config.py\n M supervisor/reviewer_registry.py\n M tests/test_dual_agent_workflow_driver.py\n?? docs/dual-agent/reviewer-panel-conservative-aggregator-20260601/"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "f0c28dc5383e7781d81f32a83718e5ceef77a1537e345d0cde17179eb45034e8",
+    "implementation_plan": "25b485e6661ed657ffae0428e81d9a74e2d1f88710080294d973cc748e12e724",
+    "issues": "7e2aac98187c8043f00553dd0678c899beeba140b9079dfe8ce4a6a023a9e8a1",
+    "prd": "f22e1b4ca386882fd985d0f762d66a40cd6c2a614f0ceb2ff3212d8239d80ebf",
+    "tdd_plan": "1e370db0fad168fc7836607279f443302d9438f8eabbc01c8e9f5aefb1663d6e"
+  },
+  "status": "captured"
+}

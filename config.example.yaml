@@ -61,6 +61,9 @@ supervisor:
   reviewer_model: gemini-3.1-pro-preview
   reviewer_output_mode: litellm_structured
   reviewer_max_tokens: 4096
+  # Permissive by default: clean reviewer accepts still advance until eval data
+  # justifies a stricter low-confidence escalation threshold.
+  reviewer_low_confidence_threshold: 0.0
 
 modes:
   rollout_ingestion: enforce

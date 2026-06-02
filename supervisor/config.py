@@ -134,6 +134,7 @@ class SupervisorCfg(BaseModel):
     reviewer_max_tokens: int = 4096
     reviewer_infra_retry_limit: int = 2
     reviewer_infra_retry_backoff_s: float = 1.0
+    reviewer_low_confidence_threshold: float = 0.0
 
 
 class AgenticLeadCfg(BaseModel):

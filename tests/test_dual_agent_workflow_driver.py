@@ -291,6 +291,7 @@ def test_workflow_kwargs_from_payload_preserves_dynamic_workflow_preview_fields(
         "reviewer_max_tokens": 4096,
         "reviewer_infra_retry_limit": 4,
         "reviewer_infra_retry_backoff_s": 0.25,
+        "reviewer_low_confidence_threshold": 0.4,
         "irrelevant_field": "must not leak into workflow kwargs",
     })
 
@@ -307,6 +308,7 @@ def test_workflow_kwargs_from_payload_preserves_dynamic_workflow_preview_fields(
     assert kwargs["reviewer_max_tokens"] == 4096
     assert kwargs["reviewer_infra_retry_limit"] == 4
     assert kwargs["reviewer_infra_retry_backoff_s"] == 0.25
+    assert kwargs["reviewer_low_confidence_threshold"] == 0.4
     assert "irrelevant_field" not in kwargs
 
 
@@ -499,7 +501,13 @@ def test_workflow_cli_loads_codex_mcp_env_without_overriding_existing(tmp_path, 
     assert "SHOULD_NOT_LOAD" not in os.environ
 
 
-def _cursor_review_result(task_id: str, *, decision: str = "accept") -> CursorInvocationResult:
+def _cursor_review_result(
+    task_id: str,
+    *,
+    decision: str = "accept",
+    severity: str | None = None,
+    confidence: float = 0.91,
+) -> CursorInvocationResult:
     outcome = Outcome(
         task_id=task_id,
         summary="Cursor independently reviewed the gate.",
@@ -509,7 +517,7 @@ def _cursor_review_result(task_id: str, *, decision: str = "accept") -> CursorIn
         changed_files=[],
         tests=[],
         test_status="unknown",
-        confidence=0.91,
+        confidence=confidence,
         confidence_rationale="Cursor reviewed the gate evidence independently.",
         confidence_criteria=["typed outcome complete", "review decision present"],
         claims=[],
@@ -520,7 +528,7 @@ def _cursor_review_result(task_id: str, *, decision: str = "accept") -> CursorIn
             "assumptions_to_verify": [],
             "what_would_change_my_mind": "New contradictory evidence.",
             "decision": decision,
-            "severity": "none" if decision == "accept" else "important",
+            "severity": severity or ("none" if decision == "accept" else "important"),
         },
     )
     return CursorInvocationResult(
@@ -534,6 +542,29 @@ def _cursor_review_result(task_id: str, *, decision: str = "accept") -> CursorIn
         reviewer_runtime="cursor_sdk",
         reviewer_output_mode="cursor_sdk",
         reviewer_assurance="tool_backed_primary",
+        duration_ms=10,
+    )
+
+
+def _cursor_missing_verdict_runner(request) -> CursorInvocationResult:
+    return CursorInvocationResult(
+        probe=ProbeResult(
+            "CURSOR",
+            "red",
+            "cursor_review_missing_verdict",
+            {"recoverable": False},
+        ),
+        outcome=None,
+        transcript="reviewer returned no typed outcome",
+        agent_id="agent-missing",
+        run_id="run-missing",
+        status="finished",
+        model="gemini-3.1-pro-preview",
+        reviewer_runtime="litellm_structured",
+        reviewer_output_mode="litellm_structured",
+        reviewer_assurance="structured_text_only",
+        failure_classification=None,
+        recoverable=False,
         duration_ms=10,
     )
 
@@ -2628,7 +2659,11 @@ async def test_run_dual_agent_workflow_runs_cursor_review_by_default(tmp_path):
     ]
     review_request = next(event for event in interactions if event["message_type"] == "review_request")
     review_response = next(event for event in interactions if event["message_type"] == "review_response")
-    gate_decision = next(event for event in interactions if event["message_type"] == "gate_decision")
+    gate_decision = next(
+        event
+        for event in interactions
+        if event["message_type"] == "gate_decision" and event["gate"] == "outcome_review"
+    )
     assert "Critical review:" in review_request["content"]
     assert review_request["critical_review"]["schema_version"] == "critical-review/v1"
     assert review_response["critical_review"]["schema_version"] == "critical-review/v1"
@@ -2910,6 +2945,182 @@ async def test_run_dual_agent_workflow_with_cursor_review_blocks_on_cursor_rejec
 
 
 @pytest.mark.asyncio
+async def test_run_dual_agent_workflow_panel_blocks_important_reviewer_revise(tmp_path):
+    def fake_cursor_runner(request):
+        return _cursor_review_result(request.task_id, decision="revise", severity="important")
+
+    server, state = _server(tmp_path, cursor_runner=fake_cursor_runner)
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Panel must hard-block important reviewer objections.",
+        max_rounds_per_gate=1,
+        cursor_review=True,
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert result["status"] == "blocked"
+    panel_decision = result["final_gate_result"]["independent_reviewer_panel_decision"]
+    assert panel_decision["decision"] == "revise"
+    assert panel_decision["reason"] == "blocking_reviewer_objection"
+    assert panel_decision["blocking_reviewers"] == ["independent-reviewer-0"]
+    assert result["final_gate_result"]["cursor_decision"] == "revise"
+
+    reviewer_events = [
+        (row["kind"], json.loads(row["payload_json"]))
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] in {"independent_reviewer_review", "tri_agent_cursor_review"}
+    ]
+    assert reviewer_events
+    assert all(
+        payload["independent_reviewer_panel_decision"]["decision"] == "revise"
+        for _kind, payload in reviewer_events
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_dual_agent_workflow_panel_missing_verdict_does_not_accept(tmp_path):
+    server, state = _server(tmp_path, cursor_runner=_cursor_missing_verdict_runner)
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Missing reviewer verdict must not count as accept.",
+        max_rounds_per_gate=1,
+        cursor_review=True,
+        reviewer_unavailable_policy="proceed_degraded",
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert result["status"] == "blocked"
+    cursor_review = result["final_gate_result"]["cursor_review"]
+    assert "reviewer_unavailable_recovery" not in cursor_review
+    panel_decision = result["final_gate_result"]["independent_reviewer_panel_decision"]
+    assert panel_decision["decision"] == "revise"
+    assert panel_decision["reason"] == "missing_reviewer_verdict"
+    assert panel_decision["missing_reviewers"] == ["independent-reviewer-0"]
+    assert result["final_gate_result"]["cursor_decision"] == "revise"
+
+    rounds = [
+        json.loads(row["payload_json"])["round"]
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "dual_agent_gate_round"
+    ]
+    assert rounds[-1]["codex_decision"] == "revise"
+
+
+@pytest.mark.asyncio
+async def test_run_dual_agent_workflow_panel_high_confidence_accept_advances_by_default(tmp_path):
+    def fake_cursor_runner(request):
+        return _cursor_review_result(request.task_id, decision="accept", confidence=0.91)
+
+    server, state = _server(tmp_path, cursor_runner=fake_cursor_runner)
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Panel must preserve normal high-confidence accept throughput.",
+        max_rounds_per_gate=1,
+        cursor_review=True,
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert result["status"] == "accepted"
+    panel_decision = result["final_gate_result"]["independent_reviewer_panel_decision"]
+    assert panel_decision["decision"] == "accept"
+    assert panel_decision["reason"] == "all_available_reviewers_accept"
+    assert panel_decision["low_confidence_threshold"] == 0.0
+    assert panel_decision["low_confidence_reviewers"] == []
+    assert result["final_gate_result"]["cursor_decision"] == "accept"
+
+    reviewer_event = next(
+        json.loads(row["payload_json"])
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "independent_reviewer_review"
+    )
+    assert reviewer_event["independent_reviewer_panel_decision"]["decision"] == "accept"
+
+
+@pytest.mark.asyncio
+async def test_run_dual_agent_workflow_panel_low_confidence_accept_escalates_when_threshold_configured(
+    tmp_path,
+):
+    def fake_cursor_runner(request):
+        return _cursor_review_result(request.task_id, decision="accept", confidence=0.42)
+
+    server, state = _server(tmp_path, cursor_runner=fake_cursor_runner)
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Low-confidence reviewer accepts should escalate when configured.",
+        max_rounds_per_gate=1,
+        cursor_review=True,
+        reviewer_low_confidence_threshold=0.5,
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert result["status"] == "blocked"
+    panel_decision = result["final_gate_result"]["independent_reviewer_panel_decision"]
+    assert panel_decision["decision"] == "escalate"
+    assert panel_decision["reason"] == "low_confidence_accept"
+    assert panel_decision["low_confidence_threshold"] == 0.5
+    assert panel_decision["low_confidence_reviewers"] == ["independent-reviewer-0"]
+    assert result["final_gate_result"]["cursor_decision"] == "revise"
+
+    interactions = [
+        json.loads(row["payload_json"])
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "dual_agent_interaction_message"
+    ]
+    gate_decision = next(
+        event
+        for event in interactions
+        if event["message_type"] == "gate_decision" and event["gate"] == "outcome_review"
+    )
+    assert gate_decision["metadata"]["independent_reviewer_panel_decision"]["decision"] == "escalate"
+
+
+@pytest.mark.asyncio
+async def test_panel_decision_is_exported_on_new_and_legacy_reviewer_events(tmp_path):
+    server, state = _server(tmp_path, cursor_runner=_accepting_cursor_runner)
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Panel decision should be visible in reviewer events.",
+        max_rounds_per_gate=1,
+        cursor_review=True,
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert result["status"] == "accepted"
+    events = [
+        (row["kind"], json.loads(row["payload_json"]))
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] in {"independent_reviewer_review", "tri_agent_cursor_review"}
+    ]
+    assert {kind for kind, _payload in events} == {
+        "independent_reviewer_review",
+        "tri_agent_cursor_review",
+    }
+    assert all(
+        payload["independent_reviewer_panel_decision"]["decision"] == "accept"
+        for _kind, payload in events
+    )
+    assert all(
+        payload["cursor_review"]["independent_reviewer_panel_decision"]["decision"] == "accept"
+        for _kind, payload in events
+    )
+
+
+@pytest.mark.asyncio
 async def test_run_dual_agent_workflow_records_cursor_contract_failure_as_recoverable_infra(
     tmp_path,
 ):
@@ -3096,6 +3307,14 @@ async def test_reviewer_unavailable_proceed_degraded_advances_with_degraded_rece
     )
     assert all(
         review["reviewer_unavailable_recovery"]["reviewer_verdict_counted_as_accept"] is False
+        for review in cursor_reviews
+    )
+    assert all(
+        review["independent_reviewer_panel_decision"]["decision"] == "revise"
+        for review in cursor_reviews
+    )
+    assert all(
+        review["independent_reviewer_panel_decision"]["reason"] == "missing_reviewer_verdict"
         for review in cursor_reviews
     )
 

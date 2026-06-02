@@ -38,6 +38,7 @@ from supervisor.cursor_agent import (
 )
 from supervisor.reviewer_registry import (
     configured_reviewers,
+    evaluate_reviewer_panel,
     independent_reviewer_results_from_cursor_result,
 )
 from supervisor.dual_agent import GateRound, ProbeResult, evaluate_deadlock_budget
@@ -470,6 +471,7 @@ class CodexSupervisorMcpAPI:
         reviewer_max_tokens: int | None = None,
         reviewer_infra_retry_limit: int | None = None,
         reviewer_infra_retry_backoff_s: float | None = None,
+        reviewer_low_confidence_threshold: float | None = None,
         task_complexity: str | None = None,
     ) -> dict[str, Any]:
         execution_layer_mode = _canonical_execution_layer_mode(execution_layer_mode)
@@ -507,6 +509,10 @@ class CodexSupervisorMcpAPI:
         reviewer_infra_retry_backoff_s_value = _reviewer_infra_retry_backoff_s_config(
             self.cfg,
             reviewer_infra_retry_backoff_s=reviewer_infra_retry_backoff_s,
+        )
+        reviewer_low_confidence_threshold_value = _reviewer_low_confidence_threshold_config(
+            self.cfg,
+            reviewer_low_confidence_threshold=reviewer_low_confidence_threshold,
         )
         max_rounds = max(1, int(max_rounds_per_gate))
         screenshot_payloads = screenshots or []
@@ -553,6 +559,7 @@ class CodexSupervisorMcpAPI:
             "reviewer_max_tokens": reviewer_max_tokens_value,
             "reviewer_infra_retry_limit": reviewer_infra_retry_limit_value,
             "reviewer_infra_retry_backoff_s": reviewer_infra_retry_backoff_s_value,
+            "reviewer_low_confidence_threshold": reviewer_low_confidence_threshold_value,
             "execution_layer_mode": execution_layer_mode,
             "dynamic_workflow_task_class": dynamic_workflow_task_class,
             "requires_dynamic_workflow_receipts": _is_dynamic_workflow_preview(execution_layer_mode),
@@ -1277,7 +1284,26 @@ class CodexSupervisorMcpAPI:
                 )
                 cursor_decision = (
                     "accept"
-                    if not cursor_reviews_this_gate or cursor_accepts(cursor_result)
+                    if not cursor_reviews_this_gate
+                    else "revise"
+                )
+                independent_reviewer_panel_decision = evaluate_reviewer_panel(
+                    [],
+                    low_confidence_threshold=reviewer_low_confidence_threshold_value,
+                )
+                if cursor_reviews_this_gate and cursor_result is not None:
+                    independent_reviewer_panel_decision = evaluate_reviewer_panel(
+                        independent_reviewer_results_from_cursor_result(
+                            cursor_result,
+                            task_id=task_id,
+                            gate=str(gate),
+                            round_index=round_index,
+                        ),
+                        low_confidence_threshold=reviewer_low_confidence_threshold_value,
+                    )
+                cursor_decision = (
+                    "accept"
+                    if independent_reviewer_panel_decision["decision"] == "accept"
                     else "revise"
                 )
                 cursor_payload = (
@@ -1295,6 +1321,10 @@ class CodexSupervisorMcpAPI:
                 )
                 if cursor_payload is not None:
                     cursor_payload["independent_reviewer_results"] = independent_reviewer_results
+                    cursor_payload["independent_reviewer_panel_decision"] = (
+                        independent_reviewer_panel_decision
+                    )
+                payload["independent_reviewer_panel_decision"] = independent_reviewer_panel_decision
                 claim_payload = asdict(claim_probe) if claim_probe is not None else None
                 cursor_infrastructure_failure = (
                     cursor_payload is not None
@@ -1326,6 +1356,7 @@ class CodexSupervisorMcpAPI:
                     payload["cursor_review"] = cursor_payload
                     payload["independent_reviewer"] = cursor_payload
                     payload["independent_reviewer_results"] = independent_reviewer_results
+                    payload["independent_reviewer_panel_decision"] = independent_reviewer_panel_decision
                 if cursor_payload is not None and cursor_reviews_this_gate:
                     self.state.write_event(
                         run_id=run_id,
@@ -1335,6 +1366,7 @@ class CodexSupervisorMcpAPI:
                             "task_id": task_id,
                             "gate": gate,
                             "independent_reviewer_results": independent_reviewer_results,
+                            "independent_reviewer_panel_decision": independent_reviewer_panel_decision,
                             "cursor_review": cursor_payload,
                             "independent_reviewer": cursor_payload,
                             "tool_calls": cursor_tool_calls,
@@ -1350,6 +1382,7 @@ class CodexSupervisorMcpAPI:
                             "cursor_review": cursor_payload,
                             "independent_reviewer": cursor_payload,
                             "independent_reviewer_results": independent_reviewer_results,
+                            "independent_reviewer_panel_decision": independent_reviewer_panel_decision,
                             "tool_calls": cursor_tool_calls,
                         },
                     )
@@ -1372,6 +1405,9 @@ class CodexSupervisorMcpAPI:
                     and not _payload_blocked_for_lead_revision(payload)
                     else "revise"
                 )
+                payload["cursor_decision"] = cursor_decision
+                payload["codex_decision"] = codex_decision
+                payload["claude_decision"] = claude_decision
                 probe_statuses = {
                     probe_id: str(probe.get("status") or "")
                     for probe_id, probe in (payload.get("probes") or {}).items()
@@ -1493,9 +1529,10 @@ class CodexSupervisorMcpAPI:
                             metadata={
                                 "codex_decision": codex_decision,
                                 "claude_decision": claude_decision,
-                            "cursor_decision": cursor_decision,
-                            "round_event_id": round_result["event_id"],
-                        },
+                                "cursor_decision": cursor_decision,
+                                "independent_reviewer_panel_decision": independent_reviewer_panel_decision,
+                                "round_event_id": round_result["event_id"],
+                            },
                     ),
                 )
                 gate_rounds.append(_gate_round_from_payload(round_result["round"]))
@@ -1881,6 +1918,7 @@ class CodexSupervisorMcpAPI:
         reviewer_max_tokens: int | None = None,
         reviewer_infra_retry_limit: int | None = None,
         reviewer_infra_retry_backoff_s: float | None = None,
+        reviewer_low_confidence_threshold: float | None = None,
         task_complexity: str | None = None,
         config_path: str | None = None,
         client_token: str | None = None,
@@ -1921,6 +1959,10 @@ class CodexSupervisorMcpAPI:
             self.cfg,
             reviewer_infra_retry_backoff_s=reviewer_infra_retry_backoff_s,
         )
+        reviewer_low_confidence_threshold_value = _reviewer_low_confidence_threshold_config(
+            self.cfg,
+            reviewer_low_confidence_threshold=reviewer_low_confidence_threshold,
+        )
         cwd_path = Path(cwd).expanduser().resolve()
         payload = {
             "cwd": str(cwd_path),
@@ -1956,6 +1998,7 @@ class CodexSupervisorMcpAPI:
             "reviewer_max_tokens": reviewer_max_tokens_value,
             "reviewer_infra_retry_limit": reviewer_infra_retry_limit_value,
             "reviewer_infra_retry_backoff_s": reviewer_infra_retry_backoff_s_value,
+            "reviewer_low_confidence_threshold": reviewer_low_confidence_threshold_value,
             "task_complexity": task_complexity,
         }
         idempotency_token = _workflow_job_idempotency_token(
@@ -2742,6 +2785,13 @@ class CodexSupervisorMcpAPI:
             "cursor_review": source_payload.get("cursor_review"),
             "independent_reviewer": source_payload.get("independent_reviewer")
             or source_payload.get("cursor_review"),
+            "independent_reviewer_results": source_payload.get("independent_reviewer_results") or [],
+            "independent_reviewer_panel_decision": source_payload.get(
+                "independent_reviewer_panel_decision"
+            ),
+            "cursor_decision": source_payload.get("cursor_decision"),
+            "codex_decision": source_payload.get("codex_decision"),
+            "claude_decision": source_payload.get("claude_decision"),
             "claim_verification": claim_probe,
             "escalation": {
                 "type": "workflow_lifecycle",
@@ -3354,6 +3404,7 @@ def build_codex_supervisor_mcp_server(
         reviewer_max_tokens: int | None = None,
         reviewer_infra_retry_limit: int | None = None,
         reviewer_infra_retry_backoff_s: float | None = None,
+        reviewer_low_confidence_threshold: float | None = None,
         task_complexity: str | None = None,
     ) -> dict[str, Any]:
         return await tool_api.run_dual_agent_workflow(
@@ -3388,6 +3439,7 @@ def build_codex_supervisor_mcp_server(
             reviewer_max_tokens=reviewer_max_tokens,
             reviewer_infra_retry_limit=reviewer_infra_retry_limit,
             reviewer_infra_retry_backoff_s=reviewer_infra_retry_backoff_s,
+            reviewer_low_confidence_threshold=reviewer_low_confidence_threshold,
             task_complexity=task_complexity,
         )
 
@@ -3424,6 +3476,7 @@ def build_codex_supervisor_mcp_server(
         reviewer_max_tokens: int | None = None,
         reviewer_infra_retry_limit: int | None = None,
         reviewer_infra_retry_backoff_s: float | None = None,
+        reviewer_low_confidence_threshold: float | None = None,
         task_complexity: str | None = None,
         config_path: str | None = None,
         client_token: str | None = None,
@@ -3460,6 +3513,7 @@ def build_codex_supervisor_mcp_server(
             reviewer_max_tokens=reviewer_max_tokens,
             reviewer_infra_retry_limit=reviewer_infra_retry_limit,
             reviewer_infra_retry_backoff_s=reviewer_infra_retry_backoff_s,
+            reviewer_low_confidence_threshold=reviewer_low_confidence_threshold,
             task_complexity=task_complexity,
             config_path=config_path,
             client_token=client_token,
@@ -3743,6 +3797,51 @@ def _workflow_round_objection(
         return str(escalation.get("reason") or "gate blocked")
     if claim_probe is not None and claim_probe.get("status") != "green":
         return str(claim_probe.get("reason") or "claim verification failed")
+    if cursor_review is not None:
+        panel_decision = cursor_review.get("independent_reviewer_panel_decision")
+        if isinstance(panel_decision, dict) and panel_decision.get("decision") != "accept":
+            reason = str(panel_decision.get("reason") or "independent_reviewer_panel_not_accepted")
+            classification = _cursor_review_failure_classification(cursor_review)
+            should_use_panel_reason = bool(cursor_review.get("accepted")) or (
+                reason == "missing_reviewer_verdict" and not classification
+            )
+            if not should_use_panel_reason:
+                panel_decision = None
+        if isinstance(panel_decision, dict) and panel_decision.get("decision") != "accept":
+            reason = str(panel_decision.get("reason") or "independent_reviewer_panel_not_accepted")
+            if reason == "low_confidence_accept":
+                reviewers = ", ".join(
+                    str(item)
+                    for item in panel_decision.get("low_confidence_reviewers", [])
+                    if str(item).strip()
+                )
+                suffix = f": {reviewers}" if reviewers else ""
+                return f"independent_reviewer_low_confidence_accept{suffix}"
+            if reason == "missing_reviewer_verdict":
+                reviewers = ", ".join(
+                    str(item)
+                    for item in panel_decision.get("missing_reviewers", [])
+                    if str(item).strip()
+                )
+                suffix = f": {reviewers}" if reviewers else ""
+                return f"independent_reviewer_missing_verdict{suffix}"
+            if reason == "blocking_reviewer_objection":
+                reviewers = ", ".join(
+                    str(item)
+                    for item in panel_decision.get("blocking_reviewers", [])
+                    if str(item).strip()
+                )
+                suffix = f": {reviewers}" if reviewers else ""
+                return f"independent_reviewer_blocking_objection{suffix}"
+            if reason == "reviewer_non_accept":
+                reviewers = ", ".join(
+                    str(item)
+                    for item in panel_decision.get("non_accepting_reviewers", [])
+                    if str(item).strip()
+                )
+                suffix = f": {reviewers}" if reviewers else ""
+                return f"independent_reviewer_non_accept{suffix}"
+            return f"independent_reviewer_panel_{reason}"
     if cursor_review is not None and not cursor_review.get("accepted"):
         classification = _cursor_review_failure_classification(cursor_review)
         if classification == "reviewer_access_denied":
@@ -4071,6 +4170,17 @@ def _reviewer_infra_retry_backoff_s_config(
     if requested is None:
         requested = float(getattr(cfg.supervisor, "reviewer_infra_retry_backoff_s", 1.0) or 0.0)
     return max(0.0, float(requested))
+
+
+def _reviewer_low_confidence_threshold_config(
+    cfg: Config,
+    *,
+    reviewer_low_confidence_threshold: float | None,
+) -> float:
+    requested = reviewer_low_confidence_threshold
+    if requested is None:
+        requested = float(getattr(cfg.supervisor, "reviewer_low_confidence_threshold", 0.0) or 0.0)
+    return max(0.0, min(1.0, float(requested)))
 
 
 def _reviewer_unavailable_recovery_plan(
