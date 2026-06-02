@@ -1,0 +1,75 @@
+{
+  "attempts": 1,
+  "created_at": 1780366080,
+  "diagnostics": {
+    "completion_tokens": 933,
+    "finish_reason": "stop",
+    "prompt_chars": 16168,
+    "prompt_sha256": "806a9b3f1bc74a5c5feb3db522de5eebe5d4bb93eb9a7652329262e2973422fa",
+    "prompt_tokens": 4285
+  },
+  "failure_classification": null,
+  "model": "gemini-3.1-pro-preview",
+  "outcome": {
+    "changed_files": [],
+    "claims": [
+      "reviewer route probe is testing typed outcome, not implementation correctness"
+    ],
+    "confidence": 1.0,
+    "confidence_criteria": [
+      "Internal consistency of planning artifacts",
+      "Adherence to fallback probe instructions"
+    ],
+    "confidence_rationale": "The instruction explicitly requests to accept if the packet is internally consistent for this bounded Phase 0 fallback probe. The PRD, TDD, and implementation plans are well-aligned and consistent.",
+    "critical_review": {
+      "assumptions_to_verify": [
+        "Assume the fallback probe only requires planning artifact consistency."
+      ],
+      "contradictions_checked": [
+        "Checked if PRD promises map correctly to TDD tests and implementation plan."
+      ],
+      "decision": "accept",
+      "missing_evidence": [
+        "Implementation code",
+        "Test execution results"
+      ],
+      "severity": "low",
+      "strongest_objection": "No implementation files or test results are provided, though this is expected for a Phase 0 fallback probe.",
+      "what_would_change_my_mind": "If the planning artifacts contained contradictory requirements or unmapped promises."
+    },
+    "decisions": [
+      "accept"
+    ],
+    "objections": [],
+    "specialists": [
+      {
+        "decision": "accept",
+        "name": "Cursor Reviewer",
+        "objection": "None. The planning artifacts are internally consistent and this is a fallback probe."
+      }
+    ],
+    "summary": "Bounded Phase 0 fallback probe testing typed outcome and internal consistency of planning artifacts.",
+    "task_id": "reviewer-route-access-fix-20260601",
+    "test_status": "unknown",
+    "tests": []
+  },
+  "probe": {
+    "details": {},
+    "probe_id": "CURSOR",
+    "reason": "cursor_review_ok",
+    "status": "green"
+  },
+  "prompt_chars": 16168,
+  "prompt_sha256": "806a9b3f1bc74a5c5feb3db522de5eebe5d4bb93eb9a7652329262e2973422fa",
+  "recoverable": false,
+  "reviewer_assurance": "structured_text_only",
+  "reviewer_output_mode": "litellm_structured",
+  "reviewer_runtime": "litellm_structured",
+  "route": {
+    "base_url_host": "uai-litellm.internal.unity.com",
+    "model": "gemini-3.1-pro-preview",
+    "openai_api_key_present": true
+  },
+  "status": "accepted",
+  "transcript_tail": "obe. The PRD, TDD, and implementation plans are well-aligned and consistent.\",\n  \"confidence_criteria\": [\n    \"Internal consistency of planning artifacts\",\n    \"Adherence to fallback probe instructions\"\n  ],\n  \"claims\": [\n    \"reviewer route probe is testing typed outcome, not implementation correctness\"\n  ],\n  \"critical_review\": {\n    \"strongest_objection\": \"No implementation files or test results are provided, though this is expected for a Phase 0 fallback probe.\",\n    \"missing_evidence\": [\n      \"Implementation code\",\n      \"Test execution results\"\n    ],\n    \"contradictions_checked\": [\n      \"Checked if PRD promises map correctly to TDD tests and implementation plan.\"\n    ],\n    \"assumptions_to_verify\": [\n      \"Assume the fallback probe only requires planning artifact consistency.\"\n    ],\n    \"what_would_change_my_mind\": \"If the planning artifacts contained contradictory requirements or unmapped promises.\",\n    \"decision\": \"accept\",\n    \"severity\": \"low\"\n  }\n}</dual_agent_outcome>"
+}

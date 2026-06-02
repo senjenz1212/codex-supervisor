@@ -1,0 +1,256 @@
+{
+  "created_at": 1780366003,
+  "cursor_sdk": {
+    "accepted": false,
+    "agent_id": null,
+    "attempts": 3,
+    "diagnostics": {
+      "failure": {
+        "attempts": 3,
+        "diagnostics": {
+          "failure": {
+            "attempts": 3,
+            "error": "internal: internal error",
+            "infrastructure_retries": {
+              "attempt_count": 3,
+              "attempts": [
+                {
+                  "attempt": 1,
+                  "error": "internal: internal error",
+                  "reason": "reviewer_invocation_failed"
+                },
+                {
+                  "attempt": 2,
+                  "error": "internal: internal error",
+                  "reason": "reviewer_invocation_failed"
+                },
+                {
+                  "attempt": 3,
+                  "error": "internal: internal error",
+                  "reason": "reviewer_invocation_failed"
+                }
+              ],
+              "backoff_s": [
+                1.0,
+                2.0
+              ],
+              "exhausted": true,
+              "failed_attempt_count": 3,
+              "retry_limit": 2
+            },
+            "original_reason": "reviewer_invocation_failed",
+            "reason": "reviewer_invocation_failed",
+            "retry_limit": 2,
+            "reviewer_output_mode": "cursor_sdk"
+          },
+          "infrastructure_retries": {
+            "attempt_count": 3,
+            "attempts": [
+              {
+                "attempt": 1,
+                "error": "internal: internal error",
+                "reason": "reviewer_invocation_failed"
+              },
+              {
+                "attempt": 2,
+                "error": "internal: internal error",
+                "reason": "reviewer_invocation_failed"
+              },
+              {
+                "attempt": 3,
+                "error": "internal: internal error",
+                "reason": "reviewer_invocation_failed"
+              }
+            ],
+            "backoff_s": [
+              1.0,
+              2.0
+            ],
+            "exhausted": true,
+            "failed_attempt_count": 3,
+            "retry_limit": 2
+          }
+        },
+        "failure_classification": "reviewer_infrastructure_unavailable",
+        "model": null,
+        "probe": {
+          "details": {
+            "attempts": 3,
+            "error": "internal: internal error",
+            "infrastructure_retries": {
+              "attempt_count": 3,
+              "attempts": [
+                {
+                  "attempt": 1,
+                  "error": "internal: internal error",
+                  "reason": "reviewer_invocation_failed"
+                },
+                {
+                  "attempt": 2,
+                  "error": "internal: internal error",
+                  "reason": "reviewer_invocation_failed"
+                },
+                {
+                  "attempt": 3,
+                  "error": "internal: internal error",
+                  "reason": "reviewer_invocation_failed"
+                }
+              ],
+              "backoff_s": [
+                1.0,
+                2.0
+              ],
+              "exhausted": true,
+              "failed_attempt_count": 3,
+              "retry_limit": 2
+            },
+            "original_reason": "reviewer_invocation_failed",
+            "reason": "reviewer_invocation_failed",
+            "recoverable": true,
+            "retry_limit": 2,
+            "retry_reasons": []
+          },
+          "probe_id": "CURSOR",
+          "reason": "reviewer_infrastructure_unavailable",
+          "status": "red"
+        },
+        "recoverable": true,
+        "retry_reasons": [],
+        "reviewer_assurance": "unavailable",
+        "reviewer_output_mode": "cursor_sdk",
+        "reviewer_runtime": "cursor_sdk",
+        "status": null
+      },
+      "fallback": {
+        "attempted": false,
+        "reason": "missing_openai_api_key"
+      },
+      "infrastructure_retries": {
+        "attempt_count": 3,
+        "attempts": [
+          {
+            "attempt": 1,
+            "error": "internal: internal error",
+            "reason": "reviewer_invocation_failed"
+          },
+          {
+            "attempt": 2,
+            "error": "internal: internal error",
+            "reason": "reviewer_invocation_failed"
+          },
+          {
+            "attempt": 3,
+            "error": "internal: internal error",
+            "reason": "reviewer_invocation_failed"
+          }
+        ],
+        "backoff_s": [
+          1.0,
+          2.0
+        ],
+        "exhausted": true,
+        "failed_attempt_count": 3,
+        "retry_limit": 2
+      }
+    },
+    "duration_ms": null,
+    "failure_classification": "reviewer_infrastructure_unavailable",
+    "model": null,
+    "outcome_decisions": null,
+    "probe": {
+      "details": {
+        "attempts": 3,
+        "error": "internal: internal error",
+        "infrastructure_retries": {
+          "attempt_count": 3,
+          "attempts": [
+            {
+              "attempt": 1,
+              "error": "internal: internal error",
+              "reason": "reviewer_invocation_failed"
+            },
+            {
+              "attempt": 2,
+              "error": "internal: internal error",
+              "reason": "reviewer_invocation_failed"
+            },
+            {
+              "attempt": 3,
+              "error": "internal: internal error",
+              "reason": "reviewer_invocation_failed"
+            }
+          ],
+          "backoff_s": [
+            1.0,
+            2.0
+          ],
+          "exhausted": true,
+          "failed_attempt_count": 3,
+          "retry_limit": 2
+        },
+        "original_reason": "reviewer_invocation_failed",
+        "reason": "reviewer_invocation_failed",
+        "recoverable": true,
+        "retry_limit": 2,
+        "retry_reasons": []
+      },
+      "probe_id": "CURSOR",
+      "reason": "reviewer_infrastructure_unavailable",
+      "status": "red"
+    },
+    "recoverable": true,
+    "reviewer_assurance": "unavailable",
+    "reviewer_output_mode": "cursor_sdk",
+    "reviewer_runtime": "cursor_sdk",
+    "run_id": null,
+    "status": "failed",
+    "transcript_tail": ""
+  },
+  "cwd": "/Users/sam.zhang/Documents/codex-supervisor",
+  "litellm_structured": {
+    "metadata": {
+      "agent_id": null,
+      "completion_tokens": 2034,
+      "duration_ms": null,
+      "finish_reason": "length",
+      "model": "gemini-3.1-pro-preview",
+      "prompt_chars": 134764,
+      "prompt_sha256": "7cc7483a5a522756e017b79e7aa7fd5f2c76b1e13fc9de5a61b2270b58e28e05",
+      "prompt_tokens": 43984,
+      "reviewer_output_mode": "litellm_structured",
+      "reviewer_runtime": "litellm_structured",
+      "run_id": "tDoeauyWIZCO88APwY6d6As",
+      "status": "finished"
+    },
+    "status": "succeeded",
+    "transcript_tail": "<dual_agent_outcome></dual_agent_outcome>"
+  },
+  "loaded_codex_mcp_env_keys": [
+    "CURSOR_API_KEY"
+  ],
+  "loaded_secret_keys": [
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_BASE_URL",
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "TELEGRAM_BOT_TOKEN",
+    "TELEGRAM_CHAT_ID"
+  ],
+  "prompt": {
+    "planning_artifact_count": 4,
+    "prompt_chars": 134764,
+    "prompt_sha256": "7cc7483a5a522756e017b79e7aa7fd5f2c76b1e13fc9de5a61b2270b58e28e05",
+    "representative_packet": "previous rigorous workflow excerpts plus source artifacts"
+  },
+  "route": {
+    "base_url": "https://uai-litellm.internal.unity.com/v1",
+    "base_url_host": "uai-litellm.internal.unity.com",
+    "cursor_api_key_present": true,
+    "cursor_api_key_source": "codex mcp env",
+    "model": "gemini-3.1-pro-preview",
+    "openai_api_key_identity": "opaque non-JWT key; scope/subject not locally introspectable",
+    "openai_api_key_present": true,
+    "openai_api_key_source": "secrets.env"
+  }
+}
