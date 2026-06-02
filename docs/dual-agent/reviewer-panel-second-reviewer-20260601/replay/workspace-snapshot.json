@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "f91f81f3251159960d4ebd81d63086eea3ea34256db7de59e0aeaa5ba6b20d0e",
+  "git": {
+    "diff_bytes": 61901,
+    "diff_sha256": "c64ba011ed6243f6effd39214c19c923053f7ce1b6aa6dad61fe6eb8d30796c1",
+    "diff_stat": "mcp_tools/codex_supervisor_stdio.py      | 226 ++++++++++-----\n supervisor/cursor_agent.py               |   2 +-\n supervisor/reviewer_registry.py          | 390 +++++++++++++++++++++++++-\n tests/test_dual_agent_workflow_driver.py | 457 ++++++++++++++++++++++++++++++-\n 4 files changed, 994 insertions(+), 81 deletions(-)",
+    "head": "458abc1",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "458abc1",
+    "status_short": "M mcp_tools/codex_supervisor_stdio.py\n M supervisor/cursor_agent.py\n M supervisor/reviewer_registry.py\n M tests/test_dual_agent_workflow_driver.py\n?? docs/dual-agent/reviewer-panel-second-reviewer-20260601/"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "3139fc5bcab309e27c5f2dd7a8e0f78c252067d8ab538f67e8936bbe82ab66cd",
+    "implementation_plan": "a16a7104a1b190668de3808bf28d5db0359cae407cbf0d7155f36facff4a0fd8",
+    "issues": "bf7f904165f43a3cdf073d3565f1df87ed303695910c2c572002f93e6492c3f6",
+    "prd": "44ec20ca81f4b367497420abf2dd2d1b80dd85d5d90fa7a90060de9ba5f4b6f6",
+    "tdd_plan": "351f63bb2db48167ec11e76d4178f72caeb291208839abf9d2c1fa275b97b3fe"
+  },
+  "status": "captured"
+}

@@ -1,0 +1,22 @@
+{
+  "accepted": true,
+  "assurance_grade": "agentic",
+  "bounded_read": {
+    "command_observed": "cat README.md",
+    "sandbox": "read-only"
+  },
+  "created_at": 1780411038,
+  "decision": "accept",
+  "model": "gpt-5.5",
+  "outcome_present": true,
+  "outcome_task_id": "codex-reviewer-probe",
+  "provider_family": "openai",
+  "reviewer_assurance": "tool_backed_primary",
+  "reviewer_output_mode": "codex_cli",
+  "reviewer_runtime": "codex_cli",
+  "route": "codex_cli_readonly",
+  "status": "completed",
+  "tool_access": "codebase_tools",
+  "transcript_ref": "route-evidence/codex-cli-readonly-probe.jsonl",
+  "transcript_sha256": "ba17398c5eabfdf437765f702b610a44cce19dbe3a84365263620897161a7909"
+}

@@ -1,0 +1,1261 @@
+{
+  "artifact_export": {
+    "files": [
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/index.md",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/triage.md",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/prd.md",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/tdd.md",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/grill-findings.md",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/issues.md",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/screenshots.md",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/outcome-review.md",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/interactions.md",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/transcript.md",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/transcript.jsonl",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/mast-coverage.md",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/replay/manifest.json",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/replay/workspace-snapshot.json",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/replay/mast-coverage.json",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/source/grill-findings-tdd.md",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/source/grill-findings.md",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/source/implementation-plan.md",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/source/issues.md",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/source/prd.md",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/source/tdd.md"
+    ],
+    "output_dir": "docs/dual-agent/reviewer-panel-second-reviewer-20260601",
+    "run_id": "codex-reviewer-panel-second-reviewer-20260601",
+    "status": "ok",
+    "task_id": "reviewer-panel-second-reviewer-20260601"
+  },
+  "current_gate": "implementation_plan",
+  "final_gate_result": {
+    "artifact_rigor": {
+      "accepted_prerequisite_gates": [
+        "tdd_review"
+      ],
+      "artifact_policy": "strict",
+      "gate": "implementation_plan",
+      "gate_statuses": {
+        "implementation_plan": "blocked",
+        "issues_review": "accepted",
+        "prd_review": "accepted",
+        "tdd_review": "accepted"
+      },
+      "missing_artifact_paths": [],
+      "missing_artifacts": [],
+      "missing_prerequisite_gates": [],
+      "missing_screenshot_paths": [],
+      "present_artifacts": [
+        "grill_findings",
+        "implementation_plan",
+        "issues",
+        "prd",
+        "tdd_plan"
+      ],
+      "reason": "required_artifacts_present",
+      "required_artifacts": [
+        "prd",
+        "tdd_plan",
+        "grill_findings",
+        "issues"
+      ],
+      "required_prerequisite_gates": [
+        "tdd_review"
+      ],
+      "screenshots": [],
+      "status": "ok",
+      "user_facing": false,
+      "visual_validation": {
+        "allowed_sources": [
+          "browser",
+          "browser-use",
+          "browser_use",
+          "computer",
+          "computer-use",
+          "computer_use"
+        ],
+        "evidence": [],
+        "failures": [],
+        "reason": "no_screenshots_supplied",
+        "status": "not_required"
+      }
+    },
+    "attempts": 5,
+    "claim_verification": null,
+    "claude_decision": "accept",
+    "codex_decision": "revise",
+    "cursor_decision": "revise",
+    "cursor_review": {
+      "accepted": true,
+      "agent_id": null,
+      "attempts": 1,
+      "critical_review": {
+        "assumptions_to_verify": [
+          "Codex CLI route reliably returns typed verdicts in production."
+        ],
+        "contradictions_checked": [
+          "Claude claimed tests were not executed, but evidence receipts show pytest-full passed."
+        ],
+        "decision": "accept",
+        "evidence_refs": [],
+        "missing_evidence": [
+          "Live production run with two real verdicts (expected in outcome gate)"
+        ],
+        "schema_version": "critical-review/v1",
+        "severity": "none",
+        "strongest_objection": "The second reviewer shares a lineage with the Codex supervisor, though it is distinct from the Claude lead and Gemini reviewer as requested.",
+        "what_would_change_my_mind": "If the second reviewer was from the Claude or Gemini family, or if the conservative rules were altered."
+      },
+      "diagnostics": {
+        "completion_tokens": 1855,
+        "fallback": {
+          "attempted": true,
+          "from_runtime": "cursor_sdk",
+          "primary_failure": {
+            "attempts": 1,
+            "diagnostics": {
+              "failure": {
+                "attempts": 1,
+                "original_reason": "cursor_sdk_missing",
+                "reviewer_output_mode": "cursor_sdk"
+              }
+            },
+            "failure_classification": "reviewer_infrastructure_unavailable",
+            "model": null,
+            "probe": {
+              "details": {
+                "attempts": 1,
+                "original_reason": "cursor_sdk_missing",
+                "recoverable": true,
+                "retry_reasons": []
+              },
+              "probe_id": "CURSOR",
+              "reason": "reviewer_infrastructure_unavailable",
+              "status": "red"
+            },
+            "recoverable": true,
+            "retry_reasons": [],
+            "reviewer_assurance": "unavailable",
+            "reviewer_output_mode": "cursor_sdk",
+            "reviewer_runtime": "cursor_sdk",
+            "status": null
+          },
+          "reason": "cursor_sdk_missing",
+          "to_runtime": "litellm_structured"
+        },
+        "finish_reason": "stop",
+        "prompt_chars": 12825,
+        "prompt_sha256": "6fc336c16fb7243081c88eef87ec2997bf6b28d7189b98d1d0f1c7e9bcc5cb19",
+        "prompt_tokens": 4243
+      },
+      "duration_ms": null,
+      "failure_classification": null,
+      "fallback_from_runtime": "cursor_sdk",
+      "fallback_reason": "cursor_sdk_missing",
+      "independent_reviewer_panel_decision": {
+        "accepted_reviewers": [
+          "independent-reviewer-0"
+        ],
+        "available_reviewers": [
+          "independent-reviewer-0",
+          "independent-reviewer-1"
+        ],
+        "blocking_reviewers": [
+          "independent-reviewer-1"
+        ],
+        "decision": "revise",
+        "low_confidence_reviewers": [],
+        "low_confidence_threshold": 0.0,
+        "missing_reviewers": [],
+        "non_accepting_reviewers": [
+          "independent-reviewer-1"
+        ],
+        "reason": "blocking_reviewer_objection",
+        "reviewer_inputs": [
+          {
+            "accepted": true,
+            "assurance_grade": "text_only",
+            "confidence": 0.95,
+            "decision": "accept",
+            "model": "gemini-3.1-pro-preview",
+            "provider_family": "google",
+            "reviewer_id": "independent-reviewer-0",
+            "runtime": "litellm_structured",
+            "severity": "none",
+            "verdict_present": true
+          },
+          {
+            "accepted": false,
+            "assurance_grade": "agentic",
+            "confidence": 0.88,
+            "decision": "revise",
+            "model": "gpt-5.5",
+            "provider_family": "openai",
+            "reviewer_id": "independent-reviewer-1",
+            "runtime": "codex_cli",
+            "severity": "important",
+            "verdict_present": true
+          }
+        ],
+        "schema_version": "independent-reviewer-panel-decision/v1"
+      },
+      "independent_reviewer_results": [
+        {
+          "accepted": true,
+          "assurance_grade": "text_only",
+          "attempts": 1,
+          "confidence": 0.95,
+          "critical_review": {
+            "assumptions_to_verify": [
+              "Codex CLI route reliably returns typed verdicts in production."
+            ],
+            "contradictions_checked": [
+              "Claude claimed tests were not executed, but evidence receipts show pytest-full passed."
+            ],
+            "decision": "accept",
+            "missing_evidence": [
+              "Live production run with two real verdicts (expected in outcome gate)"
+            ],
+            "severity": "none",
+            "strongest_objection": "The second reviewer shares a lineage with the Codex supervisor, though it is distinct from the Claude lead and Gemini reviewer as requested.",
+            "what_would_change_my_mind": "If the second reviewer was from the Claude or Gemini family, or if the conservative rules were altered."
+          },
+          "decision": "accept",
+          "failure_classification": null,
+          "gate": "implementation_plan",
+          "lineage": [
+            "google",
+            "litellm_structured",
+            "gemini-3.1-pro-preview"
+          ],
+          "model": "gemini-3.1-pro-preview",
+          "output_sha256": "884c7cc1df4af39cf89a17498aafc691a5cc6350b8fc955f884338eaf6941b37",
+          "provider_family": "google",
+          "recoverable": false,
+          "reviewer_assurance": "fallback_text_only",
+          "reviewer_id": "independent-reviewer-0",
+          "reviewer_output_mode": "litellm_structured",
+          "reviewer_runtime": "litellm_structured",
+          "round_index": 5,
+          "runtime": "litellm_structured",
+          "schema_version": "independent-reviewer-panel-result/v1",
+          "severity": "none",
+          "task_id": "reviewer-panel-second-reviewer-20260601",
+          "tool_access": "text_only",
+          "transcript_refs": [
+            {
+              "chars": 2376,
+              "kind": "reviewer_transcript_tail",
+              "ref": "independent_reviewer_review:reviewer-panel-second-reviewer-20260601:implementation_plan:5:independent-reviewer-0"
+            }
+          ],
+          "transcript_sha256": "a96fc43c7f31c45a0014996e56f4676f53dcb43f5a40d37b4a48d4653be5538a",
+          "verdict_present": true
+        },
+        {
+          "accepted": false,
+          "assurance_grade": "agentic",
+          "attempts": 1,
+          "confidence": 0.88,
+          "critical_review": {
+            "assumptions_to_verify": [
+              "Whether production Codex CLI can return a valid typed outcome without executing a command; the code permits this case.",
+              "Whether the desired non-agentic fallback should be text_only or self_reported; the task text says otherwise text_only.",
+              "Whether full suite stays green after fixing assurance mapping and adding the missing regression."
+            ],
+            "contradictions_checked": [
+              "Cursor SDK route evidence failed with reviewer_infrastructure_unavailable while Codex CLI route evidence returned a typed read-only verdict.",
+              "Panel wiring loops over configured_reviewers and evaluator receives the full reviewer result list.",
+              "Outage handling keeps reviewer-1 missing as panel decision=revise and records degraded recovery metadata.",
+              "Claude's claim that agentic metadata is justified by tools and hashes is contradicted by the no-command codex_cli mapping path."
+            ],
+            "decision": "revise",
+            "missing_evidence": [
+              "Regression proving a Codex CLI typed outcome with zero command executions is not exported as agentic.",
+              "Independent pytest execution from this review environment; I relied on receipts and static inspection.",
+              "A live rigorous run recording two real successful reviewer verdicts simultaneously."
+            ],
+            "severity": "important",
+            "strongest_objection": "The implementation violates P2/non-goal provenance truthfulness: CodexCliReviewer correctly downgrades reviewer_assurance to self_reported when no command_executions exist, but _assurance_grade still returns agentic for any codex_cli runtime. A prompt-only typed Codex verdict can therefore be exported as assurance_grade=agentic without the required tool evidence.",
+            "what_would_change_my_mind": "Fix assurance mapping so agentic requires tool_backed_primary or command evidence, add a no-command Codex CLI regression, rerun focused and full suites, and provide live two-verdict evidence or explicitly defer that evidence to outcome_review without claiming it is already satisfied."
+          },
+          "decision": "revise",
+          "failure_classification": null,
+          "gate": "implementation_plan",
+          "lineage": [
+            "openai",
+            "codex_cli",
+            "gpt-5.5"
+          ],
+          "model": "gpt-5.5",
+          "output_sha256": "7479ac9bd883e3ca292e21e9d16d01c4d5a22125a9be55d42c4d27eb3648734c",
+          "provider_family": "openai",
+          "recoverable": false,
+          "reviewer_assurance": "tool_backed_primary",
+          "reviewer_id": "independent-reviewer-1",
+          "reviewer_output_mode": "codex_cli",
+          "reviewer_runtime": "codex_cli",
+          "round_index": 5,
+          "runtime": "codex_cli",
+          "schema_version": "independent-reviewer-panel-result/v1",
+          "severity": "important",
+          "task_id": "reviewer-panel-second-reviewer-20260601",
+          "tool_access": "codebase_tools",
+          "transcript_refs": [
+            {
+              "chars": 4000,
+              "kind": "reviewer_transcript_tail",
+              "ref": "independent_reviewer_review:reviewer-panel-second-reviewer-20260601:implementation_plan:5:independent-reviewer-1"
+            }
+          ],
+          "transcript_sha256": "64700e6531872e70287281edadd89c0c0b366047bc22d51308b0c008c9e2f444",
+          "verdict_present": true
+        }
+      ],
+      "model": "gemini-3.1-pro-preview",
+      "outcome": {
+        "changed_files": [
+          "supervisor/reviewer_registry.py",
+          "mcp_tools/codex_supervisor_stdio.py",
+          "tests/test_dual_agent_workflow_driver.py",
+          "docs/dual-agent/reviewer-panel-second-reviewer-20260601/test-evidence.md"
+        ],
+        "claims": [
+          "Second reviewer is GPT-family",
+          "Tests passed successfully",
+          "Conservative rules apply across both reviewers"
+        ],
+        "confidence": 0.95,
+        "confidence_criteria": [
+          "Tests passed",
+          "Distinct family used",
+          "Conservative rules applied"
+        ],
+        "confidence_rationale": "All tests passed and evidence receipts confirm the implementation meets the requirements of adding a distinct-family second reviewer.",
+        "critical_review": {
+          "assumptions_to_verify": [
+            "Codex CLI route reliably returns typed verdicts in production."
+          ],
+          "contradictions_checked": [
+            "Claude claimed tests were not executed, but evidence receipts show pytest-full passed."
+          ],
+          "decision": "accept",
+          "missing_evidence": [
+            "Live production run with two real verdicts (expected in outcome gate)"
+          ],
+          "severity": "none",
+          "strongest_objection": "The second reviewer shares a lineage with the Codex supervisor, though it is distinct from the Claude lead and Gemini reviewer as requested.",
+          "what_would_change_my_mind": "If the second reviewer was from the Claude or Gemini family, or if the conservative rules were altered."
+        },
+        "decisions": [
+          "accept"
+        ],
+        "objections": [],
+        "specialists": [
+          {
+            "decision": "accept",
+            "name": "Cursor Reviewer",
+            "objection": "None"
+          }
+        ],
+        "summary": "Implementation plan gate accepted. The plan correctly registers a second reviewer from the GPT-family (distinct from Claude lead and Gemini reviewer). Evidence shows all tests passed, contradicting Claude's claim that tests were not executed. The conservative rules are maintained.",
+        "task_id": "reviewer-panel-second-reviewer-20260601",
+        "test_status": "passed",
+        "tests": [
+          "test_reviewer_registry_returns_codex_cli_second_reviewer",
+          "test_codex_cli_reviewer_parses_typed_outcome_with_hashes",
+          "test_workflow_exposes_independent_reviewer_results_and_dual_writes_events",
+          "test_second_reviewer_important_revise_blocks",
+          "test_second_reviewer_outage_proceeds_only_degraded"
+        ]
+      },
+      "probe": {
+        "details": {},
+        "probe_id": "CURSOR",
+        "reason": "cursor_review_ok",
+        "status": "green"
+      },
+      "recoverable": false,
+      "retry_reasons": [],
+      "reviewer_assurance": "fallback_text_only",
+      "reviewer_output_mode": "litellm_structured",
+      "reviewer_runtime": "litellm_structured",
+      "run_id": "Cv8eavwq9_LtsQ_sjK7YCQ",
+      "schema_version": "independent-reviewer-result/v1",
+      "status": "finished",
+      "transcript_tail": "[cursor attempt 1/4]\n<dual_agent_outcome>{\n  \"task_id\": \"reviewer-panel-second-reviewer-20260601\",\n  \"summary\": \"Implementation plan gate accepted. The plan correctly registers a second reviewer from the GPT-family (distinct from Claude lead and Gemini reviewer). Evidence shows all tests passed, contradicting Claude's claim that tests were not executed. The conservative rules are maintained.\",\n  \"specialists\": [\n    {\n      \"name\": \"Cursor Reviewer\",\n      \"decision\": \"accept\",\n      \"objection\": \"None\"\n    }\n  ],\n  \"decisions\": [\n    \"accept\"\n  ],\n  \"objections\": [],\n  \"changed_files\": [\n    \"supervisor/reviewer_registry.py\",\n    \"mcp_tools/codex_supervisor_stdio.py\",\n    \"tests/test_dual_agent_workflow_driver.py\",\n    \"docs/dual-agent/reviewer-panel-second-reviewer-20260601/test-evidence.md\"\n  ],\n  \"tests\": [\n    \"test_reviewer_registry_returns_codex_cli_second_reviewer\",\n    \"test_codex_cli_reviewer_parses_typed_outcome_with_hashes\",\n    \"test_workflow_exposes_independent_reviewer_results_and_dual_writes_events\",\n    \"test_second_reviewer_important_revise_blocks\",\n    \"test_second_reviewer_outage_proceeds_only_degraded\"\n  ],\n  \"test_status\": \"passed\",\n  \"confidence\": 0.95,\n  \"confidence_rationale\": \"All tests passed and evidence receipts confirm the implementation meets the requirements of adding a distinct-family second reviewer.\",\n  \"confidence_criteria\": [\n    \"Tests passed\",\n    \"Distinct family used\",\n    \"Conservative rules applied\"\n  ],\n  \"claims\": [\n    \"Second reviewer is GPT-family\",\n    \"Tests passed successfully\",\n    \"Conservative rules apply across both reviewers\"\n  ],\n  \"critical_review\": {\n    \"strongest_objection\": \"The second reviewer shares a lineage with the Codex supervisor, though it is distinct from the Claude lead and Gemini reviewer as requested.\",\n    \"missing_evidence\": [\n      \"Live production run with two real verdicts (expected in outcome gate)\"\n    ],\n    \"contradictions_checked\": [\n      \"Claude claimed tests were not executed, but evidence receipts show pytest-full passed.\"\n    ],\n    \"assumptions_to_verify\": [\n      \"Codex CLI route reliably returns typed verdicts in production.\"\n    ],\n    \"what_would_change_my_mind\": \"If the second reviewer was from the Claude or Gemini family, or if the conservative rules were altered.\",\n    \"decision\": \"accept\",\n    \"severity\": \"none\"\n  }\n}</dual_agent_outcome>"
+    },
+    "escalation": {
+      "claim_verification": null,
+      "reason": "agents_not_converged",
+      "type": "workflow_lifecycle"
+    },
+    "event_id": 432666,
+    "gate": "implementation_plan",
+    "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-panel-second-reviewer-20260601.json",
+    "independent_reviewer": {
+      "accepted": true,
+      "agent_id": null,
+      "attempts": 1,
+      "critical_review": {
+        "assumptions_to_verify": [
+          "Codex CLI route reliably returns typed verdicts in production."
+        ],
+        "contradictions_checked": [
+          "Claude claimed tests were not executed, but evidence receipts show pytest-full passed."
+        ],
+        "decision": "accept",
+        "evidence_refs": [],
+        "missing_evidence": [
+          "Live production run with two real verdicts (expected in outcome gate)"
+        ],
+        "schema_version": "critical-review/v1",
+        "severity": "none",
+        "strongest_objection": "The second reviewer shares a lineage with the Codex supervisor, though it is distinct from the Claude lead and Gemini reviewer as requested.",
+        "what_would_change_my_mind": "If the second reviewer was from the Claude or Gemini family, or if the conservative rules were altered."
+      },
+      "diagnostics": {
+        "completion_tokens": 1855,
+        "fallback": {
+          "attempted": true,
+          "from_runtime": "cursor_sdk",
+          "primary_failure": {
+            "attempts": 1,
+            "diagnostics": {
+              "failure": {
+                "attempts": 1,
+                "original_reason": "cursor_sdk_missing",
+                "reviewer_output_mode": "cursor_sdk"
+              }
+            },
+            "failure_classification": "reviewer_infrastructure_unavailable",
+            "model": null,
+            "probe": {
+              "details": {
+                "attempts": 1,
+                "original_reason": "cursor_sdk_missing",
+                "recoverable": true,
+                "retry_reasons": []
+              },
+              "probe_id": "CURSOR",
+              "reason": "reviewer_infrastructure_unavailable",
+              "status": "red"
+            },
+            "recoverable": true,
+            "retry_reasons": [],
+            "reviewer_assurance": "unavailable",
+            "reviewer_output_mode": "cursor_sdk",
+            "reviewer_runtime": "cursor_sdk",
+            "status": null
+          },
+          "reason": "cursor_sdk_missing",
+          "to_runtime": "litellm_structured"
+        },
+        "finish_reason": "stop",
+        "prompt_chars": 12825,
+        "prompt_sha256": "6fc336c16fb7243081c88eef87ec2997bf6b28d7189b98d1d0f1c7e9bcc5cb19",
+        "prompt_tokens": 4243
+      },
+      "duration_ms": null,
+      "failure_classification": null,
+      "fallback_from_runtime": "cursor_sdk",
+      "fallback_reason": "cursor_sdk_missing",
+      "independent_reviewer_panel_decision": {
+        "accepted_reviewers": [
+          "independent-reviewer-0"
+        ],
+        "available_reviewers": [
+          "independent-reviewer-0",
+          "independent-reviewer-1"
+        ],
+        "blocking_reviewers": [
+          "independent-reviewer-1"
+        ],
+        "decision": "revise",
+        "low_confidence_reviewers": [],
+        "low_confidence_threshold": 0.0,
+        "missing_reviewers": [],
+        "non_accepting_reviewers": [
+          "independent-reviewer-1"
+        ],
+        "reason": "blocking_reviewer_objection",
+        "reviewer_inputs": [
+          {
+            "accepted": true,
+            "assurance_grade": "text_only",
+            "confidence": 0.95,
+            "decision": "accept",
+            "model": "gemini-3.1-pro-preview",
+            "provider_family": "google",
+            "reviewer_id": "independent-reviewer-0",
+            "runtime": "litellm_structured",
+            "severity": "none",
+            "verdict_present": true
+          },
+          {
+            "accepted": false,
+            "assurance_grade": "agentic",
+            "confidence": 0.88,
+            "decision": "revise",
+            "model": "gpt-5.5",
+            "provider_family": "openai",
+            "reviewer_id": "independent-reviewer-1",
+            "runtime": "codex_cli",
+            "severity": "important",
+            "verdict_present": true
+          }
+        ],
+        "schema_version": "independent-reviewer-panel-decision/v1"
+      },
+      "independent_reviewer_results": [
+        {
+          "accepted": true,
+          "assurance_grade": "text_only",
+          "attempts": 1,
+          "confidence": 0.95,
+          "critical_review": {
+            "assumptions_to_verify": [
+              "Codex CLI route reliably returns typed verdicts in production."
+            ],
+            "contradictions_checked": [
+              "Claude claimed tests were not executed, but evidence receipts show pytest-full passed."
+            ],
+            "decision": "accept",
+            "missing_evidence": [
+              "Live production run with two real verdicts (expected in outcome gate)"
+            ],
+            "severity": "none",
+            "strongest_objection": "The second reviewer shares a lineage with the Codex supervisor, though it is distinct from the Claude lead and Gemini reviewer as requested.",
+            "what_would_change_my_mind": "If the second reviewer was from the Claude or Gemini family, or if the conservative rules were altered."
+          },
+          "decision": "accept",
+          "failure_classification": null,
+          "gate": "implementation_plan",
+          "lineage": [
+            "google",
+            "litellm_structured",
+            "gemini-3.1-pro-preview"
+          ],
+          "model": "gemini-3.1-pro-preview",
+          "output_sha256": "884c7cc1df4af39cf89a17498aafc691a5cc6350b8fc955f884338eaf6941b37",
+          "provider_family": "google",
+          "recoverable": false,
+          "reviewer_assurance": "fallback_text_only",
+          "reviewer_id": "independent-reviewer-0",
+          "reviewer_output_mode": "litellm_structured",
+          "reviewer_runtime": "litellm_structured",
+          "round_index": 5,
+          "runtime": "litellm_structured",
+          "schema_version": "independent-reviewer-panel-result/v1",
+          "severity": "none",
+          "task_id": "reviewer-panel-second-reviewer-20260601",
+          "tool_access": "text_only",
+          "transcript_refs": [
+            {
+              "chars": 2376,
+              "kind": "reviewer_transcript_tail",
+              "ref": "independent_reviewer_review:reviewer-panel-second-reviewer-20260601:implementation_plan:5:independent-reviewer-0"
+            }
+          ],
+          "transcript_sha256": "a96fc43c7f31c45a0014996e56f4676f53dcb43f5a40d37b4a48d4653be5538a",
+          "verdict_present": true
+        },
+        {
+          "accepted": false,
+          "assurance_grade": "agentic",
+          "attempts": 1,
+          "confidence": 0.88,
+          "critical_review": {
+            "assumptions_to_verify": [
+              "Whether production Codex CLI can return a valid typed outcome without executing a command; the code permits this case.",
+              "Whether the desired non-agentic fallback should be text_only or self_reported; the task text says otherwise text_only.",
+              "Whether full suite stays green after fixing assurance mapping and adding the missing regression."
+            ],
+            "contradictions_checked": [
+              "Cursor SDK route evidence failed with reviewer_infrastructure_unavailable while Codex CLI route evidence returned a typed read-only verdict.",
+              "Panel wiring loops over configured_reviewers and evaluator receives the full reviewer result list.",
+              "Outage handling keeps reviewer-1 missing as panel decision=revise and records degraded recovery metadata.",
+              "Claude's claim that agentic metadata is justified by tools and hashes is contradicted by the no-command codex_cli mapping path."
+            ],
+            "decision": "revise",
+            "missing_evidence": [
+              "Regression proving a Codex CLI typed outcome with zero command executions is not exported as agentic.",
+              "Independent pytest execution from this review environment; I relied on receipts and static inspection.",
+              "A live rigorous run recording two real successful reviewer verdicts simultaneously."
+            ],
+            "severity": "important",
+            "strongest_objection": "The implementation violates P2/non-goal provenance truthfulness: CodexCliReviewer correctly downgrades reviewer_assurance to self_reported when no command_executions exist, but _assurance_grade still returns agentic for any codex_cli runtime. A prompt-only typed Codex verdict can therefore be exported as assurance_grade=agentic without the required tool evidence.",
+            "what_would_change_my_mind": "Fix assurance mapping so agentic requires tool_backed_primary or command evidence, add a no-command Codex CLI regression, rerun focused and full suites, and provide live two-verdict evidence or explicitly defer that evidence to outcome_review without claiming it is already satisfied."
+          },
+          "decision": "revise",
+          "failure_classification": null,
+          "gate": "implementation_plan",
+          "lineage": [
+            "openai",
+            "codex_cli",
+            "gpt-5.5"
+          ],
+          "model": "gpt-5.5",
+          "output_sha256": "7479ac9bd883e3ca292e21e9d16d01c4d5a22125a9be55d42c4d27eb3648734c",
+          "provider_family": "openai",
+          "recoverable": false,
+          "reviewer_assurance": "tool_backed_primary",
+          "reviewer_id": "independent-reviewer-1",
+          "reviewer_output_mode": "codex_cli",
+          "reviewer_runtime": "codex_cli",
+          "round_index": 5,
+          "runtime": "codex_cli",
+          "schema_version": "independent-reviewer-panel-result/v1",
+          "severity": "important",
+          "task_id": "reviewer-panel-second-reviewer-20260601",
+          "tool_access": "codebase_tools",
+          "transcript_refs": [
+            {
+              "chars": 4000,
+              "kind": "reviewer_transcript_tail",
+              "ref": "independent_reviewer_review:reviewer-panel-second-reviewer-20260601:implementation_plan:5:independent-reviewer-1"
+            }
+          ],
+          "transcript_sha256": "64700e6531872e70287281edadd89c0c0b366047bc22d51308b0c008c9e2f444",
+          "verdict_present": true
+        }
+      ],
+      "model": "gemini-3.1-pro-preview",
+      "outcome": {
+        "changed_files": [
+          "supervisor/reviewer_registry.py",
+          "mcp_tools/codex_supervisor_stdio.py",
+          "tests/test_dual_agent_workflow_driver.py",
+          "docs/dual-agent/reviewer-panel-second-reviewer-20260601/test-evidence.md"
+        ],
+        "claims": [
+          "Second reviewer is GPT-family",
+          "Tests passed successfully",
+          "Conservative rules apply across both reviewers"
+        ],
+        "confidence": 0.95,
+        "confidence_criteria": [
+          "Tests passed",
+          "Distinct family used",
+          "Conservative rules applied"
+        ],
+        "confidence_rationale": "All tests passed and evidence receipts confirm the implementation meets the requirements of adding a distinct-family second reviewer.",
+        "critical_review": {
+          "assumptions_to_verify": [
+            "Codex CLI route reliably returns typed verdicts in production."
+          ],
+          "contradictions_checked": [
+            "Claude claimed tests were not executed, but evidence receipts show pytest-full passed."
+          ],
+          "decision": "accept",
+          "missing_evidence": [
+            "Live production run with two real verdicts (expected in outcome gate)"
+          ],
+          "severity": "none",
+          "strongest_objection": "The second reviewer shares a lineage with the Codex supervisor, though it is distinct from the Claude lead and Gemini reviewer as requested.",
+          "what_would_change_my_mind": "If the second reviewer was from the Claude or Gemini family, or if the conservative rules were altered."
+        },
+        "decisions": [
+          "accept"
+        ],
+        "objections": [],
+        "specialists": [
+          {
+            "decision": "accept",
+            "name": "Cursor Reviewer",
+            "objection": "None"
+          }
+        ],
+        "summary": "Implementation plan gate accepted. The plan correctly registers a second reviewer from the GPT-family (distinct from Claude lead and Gemini reviewer). Evidence shows all tests passed, contradicting Claude's claim that tests were not executed. The conservative rules are maintained.",
+        "task_id": "reviewer-panel-second-reviewer-20260601",
+        "test_status": "passed",
+        "tests": [
+          "test_reviewer_registry_returns_codex_cli_second_reviewer",
+          "test_codex_cli_reviewer_parses_typed_outcome_with_hashes",
+          "test_workflow_exposes_independent_reviewer_results_and_dual_writes_events",
+          "test_second_reviewer_important_revise_blocks",
+          "test_second_reviewer_outage_proceeds_only_degraded"
+        ]
+      },
+      "probe": {
+        "details": {},
+        "probe_id": "CURSOR",
+        "reason": "cursor_review_ok",
+        "status": "green"
+      },
+      "recoverable": false,
+      "retry_reasons": [],
+      "reviewer_assurance": "fallback_text_only",
+      "reviewer_output_mode": "litellm_structured",
+      "reviewer_runtime": "litellm_structured",
+      "run_id": "Cv8eavwq9_LtsQ_sjK7YCQ",
+      "schema_version": "independent-reviewer-result/v1",
+      "status": "finished",
+      "transcript_tail": "[cursor attempt 1/4]\n<dual_agent_outcome>{\n  \"task_id\": \"reviewer-panel-second-reviewer-20260601\",\n  \"summary\": \"Implementation plan gate accepted. The plan correctly registers a second reviewer from the GPT-family (distinct from Claude lead and Gemini reviewer). Evidence shows all tests passed, contradicting Claude's claim that tests were not executed. The conservative rules are maintained.\",\n  \"specialists\": [\n    {\n      \"name\": \"Cursor Reviewer\",\n      \"decision\": \"accept\",\n      \"objection\": \"None\"\n    }\n  ],\n  \"decisions\": [\n    \"accept\"\n  ],\n  \"objections\": [],\n  \"changed_files\": [\n    \"supervisor/reviewer_registry.py\",\n    \"mcp_tools/codex_supervisor_stdio.py\",\n    \"tests/test_dual_agent_workflow_driver.py\",\n    \"docs/dual-agent/reviewer-panel-second-reviewer-20260601/test-evidence.md\"\n  ],\n  \"tests\": [\n    \"test_reviewer_registry_returns_codex_cli_second_reviewer\",\n    \"test_codex_cli_reviewer_parses_typed_outcome_with_hashes\",\n    \"test_workflow_exposes_independent_reviewer_results_and_dual_writes_events\",\n    \"test_second_reviewer_important_revise_blocks\",\n    \"test_second_reviewer_outage_proceeds_only_degraded\"\n  ],\n  \"test_status\": \"passed\",\n  \"confidence\": 0.95,\n  \"confidence_rationale\": \"All tests passed and evidence receipts confirm the implementation meets the requirements of adding a distinct-family second reviewer.\",\n  \"confidence_criteria\": [\n    \"Tests passed\",\n    \"Distinct family used\",\n    \"Conservative rules applied\"\n  ],\n  \"claims\": [\n    \"Second reviewer is GPT-family\",\n    \"Tests passed successfully\",\n    \"Conservative rules apply across both reviewers\"\n  ],\n  \"critical_review\": {\n    \"strongest_objection\": \"The second reviewer shares a lineage with the Codex supervisor, though it is distinct from the Claude lead and Gemini reviewer as requested.\",\n    \"missing_evidence\": [\n      \"Live production run with two real verdicts (expected in outcome gate)\"\n    ],\n    \"contradictions_checked\": [\n      \"Claude claimed tests were not executed, but evidence receipts show pytest-full passed.\"\n    ],\n    \"assumptions_to_verify\": [\n      \"Codex CLI route reliably returns typed verdicts in production.\"\n    ],\n    \"what_would_change_my_mind\": \"If the second reviewer was from the Claude or Gemini family, or if the conservative rules were altered.\",\n    \"decision\": \"accept\",\n    \"severity\": \"none\"\n  }\n}</dual_agent_outcome>"
+    },
+    "independent_reviewer_panel_decision": {
+      "accepted_reviewers": [
+        "independent-reviewer-0"
+      ],
+      "available_reviewers": [
+        "independent-reviewer-0",
+        "independent-reviewer-1"
+      ],
+      "blocking_reviewers": [
+        "independent-reviewer-1"
+      ],
+      "decision": "revise",
+      "low_confidence_reviewers": [],
+      "low_confidence_threshold": 0.0,
+      "missing_reviewers": [],
+      "non_accepting_reviewers": [
+        "independent-reviewer-1"
+      ],
+      "reason": "blocking_reviewer_objection",
+      "reviewer_inputs": [
+        {
+          "accepted": true,
+          "assurance_grade": "text_only",
+          "confidence": 0.95,
+          "decision": "accept",
+          "model": "gemini-3.1-pro-preview",
+          "provider_family": "google",
+          "reviewer_id": "independent-reviewer-0",
+          "runtime": "litellm_structured",
+          "severity": "none",
+          "verdict_present": true
+        },
+        {
+          "accepted": false,
+          "assurance_grade": "agentic",
+          "confidence": 0.88,
+          "decision": "revise",
+          "model": "gpt-5.5",
+          "provider_family": "openai",
+          "reviewer_id": "independent-reviewer-1",
+          "runtime": "codex_cli",
+          "severity": "important",
+          "verdict_present": true
+        }
+      ],
+      "schema_version": "independent-reviewer-panel-decision/v1"
+    },
+    "independent_reviewer_results": [
+      {
+        "accepted": true,
+        "assurance_grade": "text_only",
+        "attempts": 1,
+        "confidence": 0.95,
+        "critical_review": {
+          "assumptions_to_verify": [
+            "Codex CLI route reliably returns typed verdicts in production."
+          ],
+          "contradictions_checked": [
+            "Claude claimed tests were not executed, but evidence receipts show pytest-full passed."
+          ],
+          "decision": "accept",
+          "missing_evidence": [
+            "Live production run with two real verdicts (expected in outcome gate)"
+          ],
+          "severity": "none",
+          "strongest_objection": "The second reviewer shares a lineage with the Codex supervisor, though it is distinct from the Claude lead and Gemini reviewer as requested.",
+          "what_would_change_my_mind": "If the second reviewer was from the Claude or Gemini family, or if the conservative rules were altered."
+        },
+        "decision": "accept",
+        "failure_classification": null,
+        "gate": "implementation_plan",
+        "lineage": [
+          "google",
+          "litellm_structured",
+          "gemini-3.1-pro-preview"
+        ],
+        "model": "gemini-3.1-pro-preview",
+        "output_sha256": "884c7cc1df4af39cf89a17498aafc691a5cc6350b8fc955f884338eaf6941b37",
+        "provider_family": "google",
+        "recoverable": false,
+        "reviewer_assurance": "fallback_text_only",
+        "reviewer_id": "independent-reviewer-0",
+        "reviewer_output_mode": "litellm_structured",
+        "reviewer_runtime": "litellm_structured",
+        "round_index": 5,
+        "runtime": "litellm_structured",
+        "schema_version": "independent-reviewer-panel-result/v1",
+        "severity": "none",
+        "task_id": "reviewer-panel-second-reviewer-20260601",
+        "tool_access": "text_only",
+        "transcript_refs": [
+          {
+            "chars": 2376,
+            "kind": "reviewer_transcript_tail",
+            "ref": "independent_reviewer_review:reviewer-panel-second-reviewer-20260601:implementation_plan:5:independent-reviewer-0"
+          }
+        ],
+        "transcript_sha256": "a96fc43c7f31c45a0014996e56f4676f53dcb43f5a40d37b4a48d4653be5538a",
+        "verdict_present": true
+      },
+      {
+        "accepted": false,
+        "assurance_grade": "agentic",
+        "attempts": 1,
+        "confidence": 0.88,
+        "critical_review": {
+          "assumptions_to_verify": [
+            "Whether production Codex CLI can return a valid typed outcome without executing a command; the code permits this case.",
+            "Whether the desired non-agentic fallback should be text_only or self_reported; the task text says otherwise text_only.",
+            "Whether full suite stays green after fixing assurance mapping and adding the missing regression."
+          ],
+          "contradictions_checked": [
+            "Cursor SDK route evidence failed with reviewer_infrastructure_unavailable while Codex CLI route evidence returned a typed read-only verdict.",
+            "Panel wiring loops over configured_reviewers and evaluator receives the full reviewer result list.",
+            "Outage handling keeps reviewer-1 missing as panel decision=revise and records degraded recovery metadata.",
+            "Claude's claim that agentic metadata is justified by tools and hashes is contradicted by the no-command codex_cli mapping path."
+          ],
+          "decision": "revise",
+          "missing_evidence": [
+            "Regression proving a Codex CLI typed outcome with zero command executions is not exported as agentic.",
+            "Independent pytest execution from this review environment; I relied on receipts and static inspection.",
+            "A live rigorous run recording two real successful reviewer verdicts simultaneously."
+          ],
+          "severity": "important",
+          "strongest_objection": "The implementation violates P2/non-goal provenance truthfulness: CodexCliReviewer correctly downgrades reviewer_assurance to self_reported when no command_executions exist, but _assurance_grade still returns agentic for any codex_cli runtime. A prompt-only typed Codex verdict can therefore be exported as assurance_grade=agentic without the required tool evidence.",
+          "what_would_change_my_mind": "Fix assurance mapping so agentic requires tool_backed_primary or command evidence, add a no-command Codex CLI regression, rerun focused and full suites, and provide live two-verdict evidence or explicitly defer that evidence to outcome_review without claiming it is already satisfied."
+        },
+        "decision": "revise",
+        "failure_classification": null,
+        "gate": "implementation_plan",
+        "lineage": [
+          "openai",
+          "codex_cli",
+          "gpt-5.5"
+        ],
+        "model": "gpt-5.5",
+        "output_sha256": "7479ac9bd883e3ca292e21e9d16d01c4d5a22125a9be55d42c4d27eb3648734c",
+        "provider_family": "openai",
+        "recoverable": false,
+        "reviewer_assurance": "tool_backed_primary",
+        "reviewer_id": "independent-reviewer-1",
+        "reviewer_output_mode": "codex_cli",
+        "reviewer_runtime": "codex_cli",
+        "round_index": 5,
+        "runtime": "codex_cli",
+        "schema_version": "independent-reviewer-panel-result/v1",
+        "severity": "important",
+        "task_id": "reviewer-panel-second-reviewer-20260601",
+        "tool_access": "codebase_tools",
+        "transcript_refs": [
+          {
+            "chars": 4000,
+            "kind": "reviewer_transcript_tail",
+            "ref": "independent_reviewer_review:reviewer-panel-second-reviewer-20260601:implementation_plan:5:independent-reviewer-1"
+          }
+        ],
+        "transcript_sha256": "64700e6531872e70287281edadd89c0c0b366047bc22d51308b0c008c9e2f444",
+        "verdict_present": true
+      }
+    ],
+    "outcome": {
+      "changed_files": [
+        "supervisor/reviewer_registry.py",
+        "mcp_tools/codex_supervisor_stdio.py",
+        "tests/test_dual_agent_workflow_driver.py",
+        "supervisor/cursor_agent.py"
+      ],
+      "claims": [
+        "Second reviewer is openai/codex_cli/gpt-5.5, distinct family from Claude lead and Gemini reviewer",
+        "Agentic grade justified by tool access + read-only sandbox + transcript refs + stdout/stderr hashes",
+        "Conservative rules unchanged and applied across both reviewers (non-weighted)",
+        "Missing reviewer verdict degrades honestly (revise/missing_reviewer_verdict; not counted as accept) per P4 and stdio:4122 guard",
+        "Route blocking-question resolved by real codex-cli-readonly probe evidence"
+      ],
+      "confidence": 0.87,
+      "confidence_criteria": [
+        "Plan file content read directly and is sound/complete/traceable",
+        "All 5 P1-P5 tests exist at named lines",
+        "git diff --stat confirms 919 ins/4 files realized",
+        "CodexCliReviewer agentic metadata + read-only sandbox + hashing verified in source",
+        "Conservative aggregator non-weighted; missing->revise verified",
+        "Recovery guard skips missing reviewers (never counts accept)",
+        "Route evidence shows real typed agentic accept verdict"
+      ],
+      "confidence_rationale": "All planning + realization claims verified by direct file reads, grep of named tests, git diff --stat, and route-evidence inspection. Not 0.95 because pytest was not executed (no approval) and acceptance #1's live two-verdict run was not demonstrated (degraded replay only) \u2014 both are OUTCOME-gate obligations, not implementation_plan defects.",
+      "critical_review": {
+        "assumptions_to_verify": [
+          "Live codex CLI route returns a typed verdict under load in the real workflow (OUTCOME gate)",
+          "Full pytest suite is green including the new panel tests"
+        ],
+        "contradictions_checked": [
+          "independent-reviewer-1 missing verdict is honest-degradation by design (P4 + guard), not a regression or silent accept",
+          "reviewer-1 shares family with Codex supervisor but is still distinct from BOTH correlated lineages and is disclosed in plan Risk L49-52",
+          "Non-goals respected: panel is non-weighted, agentic grade gated on tools+hashes, conservative rules unchanged"
+        ],
+        "decision": "accept",
+        "missing_evidence": [
+          "A live rigorous run recording two real cross-family verdicts simultaneously",
+          "pytest pass/fail output for the full suite (not run; approval not granted)",
+          "Independently re-derived sha256 of implementation-plan.md (shasum approval denied)"
+        ],
+        "severity": "none",
+        "strongest_objection": "Acceptance #1 requires TWO real LIVE independent verdicts in a rigorous run, but only an isolated route probe + deterministic fakes are demonstrated; the captured replay run was degraded with reviewer-1 missing.",
+        "what_would_change_my_mind": "If the plan failed to register a distinct-family reviewer, mislabeled a text-only reviewer as agentic, changed the conservative rules, or any named P1-P5 test were absent \u2014 none of which hold."
+      },
+      "decisions": [
+        "accept"
+      ],
+      "objections": [],
+      "specialists": [
+        {
+          "decision": "accept",
+          "name": "plan-verifier",
+          "objection": null
+        }
+      ],
+      "summary": "implementation_plan gate ACCEPT. Plan is sound/complete/traceable and realized in tree (919 ins/4 files). reviewer_registry.py registers reviewer-1 as openai/codex_cli/gpt-5.5 with agentic grade justified by tools+read-only sandbox+transcript+hashes, a distinct family from both Claude lead and Gemini reviewer. Conservative non-weighted aggregator applies across both; missing verdict yields revise/missing_reviewer_verdict and the recovery guard never counts a missing reviewer as accept. Route blocking-question resolved by real codex-cli-readonly probe evidence (accept verdict, command observed, transcript hash). P1-P5 tests all exist. The independent-reviewer-1 corrective objection is the by-design honest-degradation path proven by P4, not a planning defect.",
+      "task_id": "reviewer-panel-second-reviewer-20260601",
+      "test_status": "unknown",
+      "tests": [
+        "test_workflow_exposes_independent_reviewer_results_and_dual_writes_events",
+        "test_reviewer_registry_returns_codex_cli_second_reviewer",
+        "test_codex_cli_reviewer_parses_typed_outcome_with_hashes",
+        "test_second_reviewer_important_revise_blocks",
+        "test_second_reviewer_outage_proceeds_only_degraded"
+      ]
+    },
+    "probes": {
+      "P1": {
+        "details": {},
+        "probe_id": "P1",
+        "reason": "planning_artifact_boundaries_ok",
+        "status": "green"
+      },
+      "P2": {
+        "details": {
+          "captured_bytes": 8491,
+          "captured_token_estimate": 2117,
+          "orchestration_surface": "/lead"
+        },
+        "probe_id": "P2",
+        "reason": "worker_orchestration_invocation_ok",
+        "status": "green"
+      },
+      "P3": {
+        "details": {},
+        "probe_id": "P3",
+        "reason": "outcome_fidelity_ok",
+        "status": "green"
+      },
+      "P4": {
+        "details": {
+          "decisions": [
+            "accept",
+            "accept",
+            "accept"
+          ]
+        },
+        "probe_id": "P4",
+        "reason": "outcome_gate_decision_ok",
+        "status": "green"
+      },
+      "P_planning": {
+        "details": {
+          "artifact_hashes": {
+            "grill_findings": "c39a13fce9f539caec7781049086e06dc265083c565bb0d4472ab128b5394766",
+            "implementation_plan": "a16a7104a1b190668de3808bf28d5db0359cae407cbf0d7155f36facff4a0fd8",
+            "issues": "bf7f904165f43a3cdf073d3565f1df87ed303695910c2c572002f93e6492c3f6",
+            "prd": "44ec20ca81f4b367497420abf2dd2d1b80dd85d5d90fa7a90060de9ba5f4b6f6",
+            "tdd_plan": "351f63bb2db48167ec11e76d4178f72caeb291208839abf9d2c1fa275b97b3fe"
+          },
+          "artifacts": [
+            {
+              "kind": "prd",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-second-reviewer-20260601/source/prd.md",
+              "sha256": "44ec20ca81f4b367497420abf2dd2d1b80dd85d5d90fa7a90060de9ba5f4b6f6",
+              "status": "accepted"
+            },
+            {
+              "kind": "issues",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-second-reviewer-20260601/source/issues.md",
+              "sha256": "bf7f904165f43a3cdf073d3565f1df87ed303695910c2c572002f93e6492c3f6",
+              "status": "accepted"
+            },
+            {
+              "kind": "tdd_plan",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-second-reviewer-20260601/source/tdd.md",
+              "sha256": "351f63bb2db48167ec11e76d4178f72caeb291208839abf9d2c1fa275b97b3fe",
+              "status": "accepted"
+            },
+            {
+              "kind": "grill_findings",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-second-reviewer-20260601/source/grill-findings.md",
+              "sha256": "c39a13fce9f539caec7781049086e06dc265083c565bb0d4472ab128b5394766",
+              "status": "accepted"
+            },
+            {
+              "kind": "implementation_plan",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-second-reviewer-20260601/source/implementation-plan.md",
+              "sha256": "a16a7104a1b190668de3808bf28d5db0359cae407cbf0d7155f36facff4a0fd8",
+              "status": "accepted"
+            }
+          ],
+          "checks": {
+            "AGG-001": "pass",
+            "AGG-002": "pass",
+            "GRILL-001": "pass",
+            "GRILL-002": "pass",
+            "GRILL-003": "pass",
+            "ISS-001": "pass",
+            "ISS-002": "pass",
+            "ISS-003": "pass",
+            "ISS-004": "pass",
+            "PLAN-001": "pass",
+            "PLAN-002": "pass",
+            "PLAN-003": "pass",
+            "PLAN-004": "pass",
+            "PRD-001": "pass",
+            "PRD-002": "pass",
+            "PRD-003": "pass",
+            "PRD-004": "pass",
+            "PRD-005": "pass",
+            "PRD-006": "pass",
+            "TDD-001": "pass",
+            "TDD-002": "pass",
+            "TDD-003": "pass",
+            "TDD-004": "pass"
+          },
+          "gate": "implementation_plan",
+          "task_id": "reviewer-panel-second-reviewer-20260601",
+          "validator_version": "1.0.0",
+          "verdict": "accepted"
+        },
+        "probe_id": "P_planning",
+        "reason": "planning_validation_ok",
+        "status": "green"
+      }
+    },
+    "status": "blocked",
+    "task_id": "reviewer-panel-second-reviewer-20260601",
+    "trace_envelope": {
+      "artifacts": [],
+      "claims": [
+        "Second reviewer is openai/codex_cli/gpt-5.5, distinct family from Claude lead and Gemini reviewer",
+        "Agentic grade justified by tool access + read-only sandbox + transcript refs + stdout/stderr hashes",
+        "Conservative rules unchanged and applied across both reviewers (non-weighted)",
+        "Missing reviewer verdict degrades honestly (revise/missing_reviewer_verdict; not counted as accept) per P4 and stdio:4122 guard",
+        "Route blocking-question resolved by real codex-cli-readonly probe evidence"
+      ],
+      "event_kind": "dual_agent_gate_result",
+      "failure_taxonomy": {
+        "category": "inter_agent_misalignment",
+        "code": "agents_not_converged",
+        "framework": "MAST-inspired",
+        "mast_category": "Specification Issues",
+        "mast_code": "FM-1.5",
+        "mast_mode": "Unaware of termination conditions",
+        "probe_id": "",
+        "schema_version": "dual-agent-failure-taxonomy/v1",
+        "source": "result_escalation",
+        "subcategory": "decision_deadlock"
+      },
+      "gate": "implementation_plan",
+      "policy_verdict": "blocked",
+      "receipts": [],
+      "run_id": "codex-reviewer-panel-second-reviewer-20260601",
+      "schema_version": "dual-agent-trace-envelope/v1",
+      "source": "dual_agent",
+      "task_id": "reviewer-panel-second-reviewer-20260601",
+      "tool_calls": []
+    },
+    "workflow_deadlock_escalation": {
+      "action_id": 1325,
+      "ask_id": 58,
+      "nonce": "1a1f9beaa6902979",
+      "probe": {
+        "details": {
+          "action_id": null,
+          "escalation_type": "kill_or_pause"
+        },
+        "probe_id": "P4",
+        "reason": "paused_for_human",
+        "status": "green"
+      },
+      "status": "paused_for_human"
+    }
+  },
+  "mandatory_artifacts": {
+    "missing": [],
+    "output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-second-reviewer-20260601",
+    "required": [
+      "source/prd.md",
+      "source/grill-findings.md",
+      "source/issues.md",
+      "source/tdd.md",
+      "source/grill-findings-tdd.md",
+      "source/implementation-plan.md",
+      "interactions.md",
+      "outcome-review.md",
+      "transcript.md"
+    ],
+    "status": "ok"
+  },
+  "resume": {
+    "artifact_output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-second-reviewer-20260601",
+    "blocker": {
+      "gate": "implementation_plan",
+      "latest_event_id": 432666,
+      "status": "blocked"
+    },
+    "current_gate": "implementation_plan",
+    "last_status": "blocked",
+    "latest_event_id": 432668,
+    "next_safe_action": "inspect blocker, provide corrective input, then rerun run_dual_agent_workflow",
+    "prompt": "Use codex_supervisor.\nContinue run_id=codex-reviewer-panel-second-reviewer-20260601\ntask_id=reviewer-panel-second-reviewer-20260601\ncurrent_gate=implementation_plan\nlast_status=blocked\nlatest_event_id=432668\nnext_safe_action=inspect blocker, provide corrective input, then rerun run_dual_agent_workflow\nartifact_output_dir=/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-second-reviewer-20260601\nfirst inspect: read_gate_transcript(run_id=codex-reviewer-panel-second-reviewer-20260601, task_id=reviewer-panel-second-reviewer-20260601)",
+    "run_id": "codex-reviewer-panel-second-reviewer-20260601",
+    "status": "ok",
+    "steps": [
+      {
+        "attempt_count": 1,
+        "gate": "prd_review",
+        "latest_event_id": 428415,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "issues_review",
+        "latest_event_id": 428693,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "tdd_review",
+        "latest_event_id": 429382,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 5,
+        "gate": "implementation_plan",
+        "latest_event_id": 432666,
+        "status": "blocked"
+      }
+    ],
+    "task_id": "reviewer-panel-second-reviewer-20260601",
+    "transcript_command": "read_gate_transcript(run_id=codex-reviewer-panel-second-reviewer-20260601, task_id=reviewer-panel-second-reviewer-20260601)"
+  },
+  "run_id": "codex-reviewer-panel-second-reviewer-20260601",
+  "status": "blocked",
+  "steps": [
+    {
+      "attempt_count": 1,
+      "gate": "prd_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "issues_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "tdd_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 5,
+      "gate": "implementation_plan",
+      "status": "blocked"
+    }
+  ],
+  "task_id": "reviewer-panel-second-reviewer-20260601",
+  "visual_evidence_policy": {
+    "artifact_matches": [],
+    "matched_terms": [],
+    "required": false,
+    "source": "not_user_facing"
+  },
+  "workflow_route": {
+    "agentic_lead_policy": {
+      "min_subagents": 0,
+      "policy": "off",
+      "required_evidence_grade": "self_reported",
+      "required_roles": [],
+      "solo_exception_for_artifact_only_gates": false
+    },
+    "cursor_review_gates": [
+      "tdd_review",
+      "implementation_plan",
+      "outcome_review"
+    ],
+    "cursor_review_profile": "rigorous",
+    "dynamic_workflow_task_class": null,
+    "effective_cursor_review": true,
+    "execution_layer_mode": "lead_direct",
+    "force_cursor_review": false,
+    "gate_count": 6,
+    "gates": [
+      "prd_review",
+      "issues_review",
+      "tdd_review",
+      "implementation_plan",
+      "execution",
+      "outcome_review"
+    ],
+    "planning_depth": "large",
+    "reasons": [
+      "default_large"
+    ],
+    "requested_cursor_review": true,
+    "required_skill_stages": [
+      "to_prd",
+      "prd_grill",
+      "to_issues",
+      "tdd",
+      "tdd_grill"
+    ],
+    "requires_agentic_lead_policy_receipts": false,
+    "requires_brainstorm": false,
+    "requires_dynamic_workflow_receipts": false,
+    "requires_skill_receipts": true,
+    "resume": {
+      "mode": "resume_from_prior_steps",
+      "pending_gates": [
+        "implementation_plan",
+        "execution",
+        "outcome_review"
+      ],
+      "schema_version": "dual-agent-workflow-resume/v1",
+      "skipped_gates": [
+        "prd_review",
+        "issues_review",
+        "tdd_review"
+      ],
+      "skipped_steps": [
+        {
+          "attempt_count": 1,
+          "gate": "prd_review",
+          "latest_event_id": 428415,
+          "status": "accepted"
+        },
+        {
+          "attempt_count": 1,
+          "gate": "issues_review",
+          "latest_event_id": 428693,
+          "status": "accepted"
+        },
+        {
+          "attempt_count": 1,
+          "gate": "tdd_review",
+          "latest_event_id": 429382,
+          "status": "accepted"
+        }
+      ]
+    },
+    "reviewer_infra_retry_backoff_s": 1.0,
+    "reviewer_infra_retry_limit": 2,
+    "reviewer_low_confidence_threshold": 0.0,
+    "reviewer_max_tokens": 4096,
+    "reviewer_model": "composer-2.5",
+    "reviewer_output_mode": "cursor_sdk",
+    "reviewer_unavailable_policy": "escalate",
+    "schema_version": "dual-agent-workflow-route/v1",
+    "task_complexity": "large"
+  }
+}

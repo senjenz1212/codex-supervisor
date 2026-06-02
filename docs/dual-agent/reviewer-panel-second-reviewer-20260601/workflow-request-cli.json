@@ -1,0 +1,160 @@
+{
+  "cursor_review": true,
+  "cursor_review_profile": "rigorous",
+  "cwd": "/Users/sam.zhang/Documents/codex-supervisor",
+  "execution_layer_mode": "lead_direct",
+  "intent": "Register a SECOND, genuinely independent reviewer of a DIFFERENT lineage from BOTH the Claude lead and the existing Gemini reviewer, behind the slice-1 registry interface, so the panel has real cross-vendor signal.\n\nEXACT FACTS: the lead is Claude (Claude-family); the supervisor is Codex/GPT-family; the working independent reviewer is Gemini. A Claude- or Gemini-family reviewer is CORRELATED with the lead/existing reviewer, so the second reviewer should be a distinct family. An agentic reviewer requires tool access + bounded read perms + durable transcript refs + receipt hashes (the same bar as Cursor); a JSON model reviewer is text_only.\n\nBLOCKING OPEN QUESTION \u2014 resolve in PRD/grill with REAL evidence: which second-reviewer route actually returns real typed verdicts in the rigorous workflow? Probe (a) Cursor SDK with an alternate model (gpt-5.5/composer) + entitlement; (b) a GPT-family reviewer through the gateway (distinct from the Codex supervisor's role). Pick by evidence; capture failure context (never secrets).\n\nSCOPE (do):\n1. Register a second working reviewer of a distinct provider_family; the panel now runs 2 real reviewers via the registry.\n2. Record its lineage + assurance_grade truthfully (agentic only if it has tools + bounded read + transcript refs + hashes; otherwise text_only).\n3. The conservative aggregator (slice 2) applies across both; a genuine outage of one still degrades honestly.\n\nNON-GOALS: do NOT add calibrated weighting; do NOT mislabel a text-only reviewer as agentic; do NOT change the conservative rules.\n\nACCEPTANCE:\n- A rigorous run records TWO real independent verdicts from DIFFERENT families, each with lineage + assurance_grade.\n- The conservative rules apply across both; a single-reviewer outage degrades honestly (no regression).\n- Deterministic replay preserved (cassettes for both routes); full suite green; ledger + replay artifacts exported.",
+  "quality": "best",
+  "require_skill_receipts": true,
+  "run_id": "codex-reviewer-panel-second-reviewer-20260601",
+  "task_id": "reviewer-panel-second-reviewer-20260601",
+  "timeout_s": 1200,
+  "tool_receipts": [
+    {
+      "artifacts": [
+        "docs/dual-agent/reviewer-panel-second-reviewer-20260601/source/prd.md"
+      ],
+      "claims": [
+        "prd-tdd skill executed",
+        "PRD promise contracts produced",
+        "blocking route evidence incorporated"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-to-prd-reviewer-panel-second-reviewer-20260601",
+      "skill": "to-prd",
+      "stage": "to_prd",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/reviewer-panel-second-reviewer-20260601/source/grill-findings.md"
+      ],
+      "claims": [
+        "prd-tdd skill executed",
+        "PRD grill findings resolved"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-prd-grill-reviewer-panel-second-reviewer-20260601",
+      "skill": "grill-with-docs",
+      "stage": "prd_grill",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/reviewer-panel-second-reviewer-20260601/source/issues.md"
+      ],
+      "claims": [
+        "prd-tdd skill executed",
+        "issues map to PRD promises"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-to-issues-reviewer-panel-second-reviewer-20260601",
+      "skill": "to-issues",
+      "stage": "to_issues",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/reviewer-panel-second-reviewer-20260601/source/tdd.md"
+      ],
+      "claims": [
+        "prd-tdd skill executed",
+        "public-boundary RED tests planned"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-tdd-reviewer-panel-second-reviewer-20260601",
+      "skill": "tdd",
+      "stage": "tdd",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/reviewer-panel-second-reviewer-20260601/source/grill-findings-tdd.md"
+      ],
+      "claims": [
+        "prd-tdd skill executed",
+        "TDD grill findings resolved"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-tdd-grill-reviewer-panel-second-reviewer-20260601",
+      "skill": "grill-with-docs",
+      "stage": "tdd_grill",
+      "status": "passed"
+    },
+    {
+      "claims": [
+        "python compile passed"
+      ],
+      "command": "python3 -m py_compile supervisor/reviewer_registry.py supervisor/cursor_agent.py mcp_tools/codex_supervisor_stdio.py tests/test_dual_agent_workflow_driver.py",
+      "kind": "test",
+      "receipt_id": "py-compile-reviewer-panel-second-reviewer",
+      "status": "passed"
+    },
+    {
+      "claims": [
+        "focused reviewer panel second reviewer tests passed"
+      ],
+      "command": "uv run pytest tests/test_dual_agent_workflow_driver.py::test_reviewer_registry_returns_codex_cli_second_reviewer tests/test_dual_agent_workflow_driver.py::test_codex_cli_reviewer_parses_typed_outcome_with_hashes tests/test_dual_agent_workflow_driver.py::test_codex_cli_reviewer_without_command_evidence_is_not_agentic tests/test_dual_agent_workflow_driver.py::test_codex_cli_reviewer_parses_session_event_jsonl tests/test_dual_agent_workflow_driver.py::test_workflow_exposes_independent_reviewer_results_and_dual_writes_events tests/test_dual_agent_workflow_driver.py::test_second_reviewer_important_revise_blocks tests/test_dual_agent_workflow_driver.py::test_second_reviewer_outage_proceeds_only_degraded -q",
+      "kind": "test",
+      "receipt_id": "pytest-focused-reviewer-panel-second-reviewer",
+      "status": "passed"
+    },
+    {
+      "claims": [
+        "workflow driver suite passed"
+      ],
+      "command": "uv run pytest tests/test_dual_agent_workflow_driver.py -q",
+      "kind": "test",
+      "receipt_id": "pytest-workflow-driver-reviewer-panel-second-reviewer",
+      "status": "passed"
+    },
+    {
+      "claims": [
+        "full test suite passed",
+        "619 tests passed"
+      ],
+      "command": "uv run --extra dev pytest -q",
+      "kind": "test",
+      "receipt_id": "pytest-full-reviewer-panel-second-reviewer",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/reviewer-panel-second-reviewer-20260601/route-evidence/cursor-sdk-probe.json"
+      ],
+      "claims": [
+        "Cursor SDK alternate models probed and did not return typed verdicts"
+      ],
+      "kind": "route_evidence",
+      "receipt_id": "route-evidence-cursor-sdk-reviewer-panel-second-reviewer",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/reviewer-panel-second-reviewer-20260601/route-evidence/codex-cli-readonly-probe.jsonl",
+        "docs/dual-agent/reviewer-panel-second-reviewer-20260601/route-evidence/codex-cli-readonly-probe-summary.json"
+      ],
+      "claims": [
+        "Codex CLI GPT-family route returned typed verdict with read-only command evidence"
+      ],
+      "kind": "route_evidence",
+      "receipt_id": "route-evidence-codex-cli-reviewer-panel-second-reviewer",
+      "status": "passed"
+    },
+    {
+      "changed_files": [
+        "supervisor/reviewer_registry.py",
+        "mcp_tools/codex_supervisor_stdio.py",
+        "tests/test_dual_agent_workflow_driver.py",
+        "docs/dual-agent/reviewer-panel-second-reviewer-20260601/test-evidence.md",
+        "supervisor/cursor_agent.py"
+      ],
+      "claims": [
+        "implemented second reviewer registry and workflow panel wiring"
+      ],
+      "kind": "git_diff",
+      "receipt_id": "git-diff-reviewer-panel-second-reviewer",
+      "status": "present"
+    }
+  ]
+}

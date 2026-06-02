@@ -1,0 +1,2158 @@
+{
+  "artifact_export": {
+    "files": [
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/index.md",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/triage.md",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/prd.md",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/tdd.md",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/grill-findings.md",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/issues.md",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/screenshots.md",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/outcome-review.md",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/interactions.md",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/transcript.md",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/transcript.jsonl",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/mast-coverage.md",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/replay/manifest.json",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/replay/workspace-snapshot.json",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/replay/mast-coverage.json",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/source/grill-findings-tdd.md",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/source/grill-findings.md",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/source/implementation-plan.md",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/source/issues.md",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/source/prd.md",
+      "docs/dual-agent/reviewer-panel-second-reviewer-20260601/source/tdd.md"
+    ],
+    "output_dir": "docs/dual-agent/reviewer-panel-second-reviewer-20260601",
+    "run_id": "codex-reviewer-panel-second-reviewer-20260601",
+    "status": "ok",
+    "task_id": "reviewer-panel-second-reviewer-20260601"
+  },
+  "current_gate": "tdd_review",
+  "final_gate_result": {
+    "artifact_rigor": {
+      "accepted_prerequisite_gates": [
+        "issues_review"
+      ],
+      "artifact_policy": "strict",
+      "gate": "tdd_review",
+      "gate_statuses": {
+        "issues_review": "accepted",
+        "prd_review": "accepted"
+      },
+      "missing_artifact_paths": [],
+      "missing_artifacts": [],
+      "missing_prerequisite_gates": [],
+      "missing_screenshot_paths": [],
+      "present_artifacts": [
+        "grill_findings",
+        "implementation_plan",
+        "issues",
+        "prd",
+        "tdd_plan"
+      ],
+      "reason": "required_artifacts_present",
+      "required_artifacts": [
+        "prd",
+        "issues",
+        "tdd_plan",
+        "grill_findings"
+      ],
+      "required_prerequisite_gates": [
+        "issues_review"
+      ],
+      "screenshots": [],
+      "status": "ok",
+      "user_facing": false,
+      "visual_validation": {
+        "allowed_sources": [
+          "browser",
+          "browser-use",
+          "browser_use",
+          "computer",
+          "computer-use",
+          "computer_use"
+        ],
+        "evidence": [],
+        "failures": [],
+        "reason": "no_screenshots_supplied",
+        "status": "not_required"
+      }
+    },
+    "attempts": 1,
+    "claim_verification": null,
+    "claude_decision": "accept",
+    "codex_decision": "revise",
+    "cursor_decision": "revise",
+    "cursor_review": {
+      "accepted": true,
+      "agent_id": null,
+      "attempts": 1,
+      "critical_review": {
+        "assumptions_to_verify": [
+          "The tests actually assert the distinct families and conservative rules."
+        ],
+        "contradictions_checked": [
+          "Claude claimed tests were not run, but evidence receipts confirm they were run and passed."
+        ],
+        "decision": "accept",
+        "evidence_refs": [],
+        "missing_evidence": [],
+        "schema_version": "critical-review/v1",
+        "severity": "low",
+        "strongest_objection": "Claude noted a mismatch in the TDD document regarding a test name in a regression command, but the actual tests exist and pass.",
+        "what_would_change_my_mind": "If the tests did not actually cover the distinct family requirement or if the conservative rules were not enforced."
+      },
+      "diagnostics": {
+        "completion_tokens": 2989,
+        "fallback": {
+          "attempted": true,
+          "from_runtime": "cursor_sdk",
+          "primary_failure": {
+            "attempts": 1,
+            "diagnostics": {
+              "failure": {
+                "attempts": 1,
+                "original_reason": "cursor_sdk_missing",
+                "reviewer_output_mode": "cursor_sdk"
+              }
+            },
+            "failure_classification": "reviewer_infrastructure_unavailable",
+            "model": null,
+            "probe": {
+              "details": {
+                "attempts": 1,
+                "original_reason": "cursor_sdk_missing",
+                "recoverable": true,
+                "retry_reasons": []
+              },
+              "probe_id": "CURSOR",
+              "reason": "reviewer_infrastructure_unavailable",
+              "status": "red"
+            },
+            "recoverable": true,
+            "retry_reasons": [],
+            "reviewer_assurance": "unavailable",
+            "reviewer_output_mode": "cursor_sdk",
+            "reviewer_runtime": "cursor_sdk",
+            "status": null
+          },
+          "reason": "cursor_sdk_missing",
+          "to_runtime": "litellm_structured"
+        },
+        "finish_reason": "stop",
+        "prompt_chars": 13417,
+        "prompt_sha256": "b5a4dd79d0bd6fd2f7b180b437d3fec542ee5053e18d7d1269985558ebefeb19",
+        "prompt_tokens": 3560
+      },
+      "duration_ms": null,
+      "failure_classification": null,
+      "fallback_from_runtime": "cursor_sdk",
+      "fallback_reason": "cursor_sdk_missing",
+      "independent_reviewer_panel_decision": {
+        "accepted_reviewers": [
+          "independent-reviewer-0"
+        ],
+        "available_reviewers": [
+          "independent-reviewer-0"
+        ],
+        "blocking_reviewers": [],
+        "decision": "revise",
+        "low_confidence_reviewers": [],
+        "low_confidence_threshold": 0.0,
+        "missing_reviewers": [
+          "independent-reviewer-1"
+        ],
+        "non_accepting_reviewers": [],
+        "reason": "missing_reviewer_verdict",
+        "reviewer_inputs": [
+          {
+            "accepted": true,
+            "assurance_grade": "text_only",
+            "confidence": 0.95,
+            "decision": "accept",
+            "model": "gemini-3.1-pro-preview",
+            "provider_family": "google",
+            "reviewer_id": "independent-reviewer-0",
+            "runtime": "litellm_structured",
+            "severity": "low",
+            "verdict_present": true
+          },
+          {
+            "accepted": false,
+            "assurance_grade": "agentic",
+            "confidence": null,
+            "decision": "revise",
+            "model": "gpt-5.5",
+            "provider_family": "openai",
+            "reviewer_id": "independent-reviewer-1",
+            "runtime": "codex_cli",
+            "severity": "important",
+            "verdict_present": false
+          }
+        ],
+        "schema_version": "independent-reviewer-panel-decision/v1"
+      },
+      "independent_reviewer_results": [
+        {
+          "accepted": true,
+          "assurance_grade": "text_only",
+          "attempts": 1,
+          "confidence": 0.95,
+          "critical_review": {
+            "assumptions_to_verify": [
+              "The tests actually assert the distinct families and conservative rules."
+            ],
+            "contradictions_checked": [
+              "Claude claimed tests were not run, but evidence receipts confirm they were run and passed."
+            ],
+            "decision": "accept",
+            "missing_evidence": [],
+            "severity": "low",
+            "strongest_objection": "Claude noted a mismatch in the TDD document regarding a test name in a regression command, but the actual tests exist and pass.",
+            "what_would_change_my_mind": "If the tests did not actually cover the distinct family requirement or if the conservative rules were not enforced."
+          },
+          "decision": "accept",
+          "failure_classification": null,
+          "gate": "tdd_review",
+          "lineage": [
+            "google",
+            "litellm_structured",
+            "gemini-3.1-pro-preview"
+          ],
+          "model": "gemini-3.1-pro-preview",
+          "output_sha256": "9ae5510a4eb2c15d37742b2267b7847d1b4d85ac3017aa8558131729129c6ea8",
+          "provider_family": "google",
+          "recoverable": false,
+          "reviewer_assurance": "fallback_text_only",
+          "reviewer_id": "independent-reviewer-0",
+          "reviewer_output_mode": "litellm_structured",
+          "reviewer_runtime": "litellm_structured",
+          "round_index": 1,
+          "runtime": "litellm_structured",
+          "schema_version": "independent-reviewer-panel-result/v1",
+          "severity": "low",
+          "task_id": "reviewer-panel-second-reviewer-20260601",
+          "tool_access": "text_only",
+          "transcript_refs": [
+            {
+              "chars": 2688,
+              "kind": "reviewer_transcript_tail",
+              "ref": "independent_reviewer_review:reviewer-panel-second-reviewer-20260601:tdd_review:1:independent-reviewer-0"
+            }
+          ],
+          "transcript_sha256": "1e782fc6ebaa2e8f9189ac66ab3e16946ad56af88b7e2a6cab032068586b678b",
+          "verdict_present": true
+        },
+        {
+          "accepted": false,
+          "assurance_grade": "agentic",
+          "attempts": 1,
+          "confidence": null,
+          "critical_review": {},
+          "decision": "revise",
+          "failure_classification": "reviewer_contract_unmet",
+          "gate": "tdd_review",
+          "lineage": [
+            "openai",
+            "codex_cli",
+            "gpt-5.5"
+          ],
+          "model": "gpt-5.5",
+          "output_sha256": null,
+          "provider_family": "openai",
+          "recoverable": true,
+          "reviewer_assurance": "tool_backed_primary",
+          "reviewer_id": "independent-reviewer-1",
+          "reviewer_output_mode": "codex_cli",
+          "reviewer_runtime": "codex_cli",
+          "round_index": 1,
+          "runtime": "codex_cli",
+          "schema_version": "independent-reviewer-panel-result/v1",
+          "severity": "important",
+          "task_id": "reviewer-panel-second-reviewer-20260601",
+          "tool_access": "codebase_tools",
+          "transcript_refs": [
+            {
+              "chars": 4000,
+              "kind": "reviewer_transcript_tail",
+              "ref": "independent_reviewer_review:reviewer-panel-second-reviewer-20260601:tdd_review:1:independent-reviewer-1"
+            }
+          ],
+          "transcript_sha256": "67c55b55d388f131b33e1fdfa247459e082fa26d4473192d9227df8896b20666",
+          "verdict_present": false
+        }
+      ],
+      "model": "gemini-3.1-pro-preview",
+      "outcome": {
+        "changed_files": [
+          "supervisor/reviewer_registry.py",
+          "mcp_tools/codex_supervisor_stdio.py",
+          "tests/test_dual_agent_workflow_driver.py",
+          "docs/dual-agent/reviewer-panel-second-reviewer-20260601/test-evidence.md"
+        ],
+        "claims": [
+          "Second reviewer registered from distinct family",
+          "Conservative rules apply across both reviewers",
+          "Tests passed and deterministic replay preserved"
+        ],
+        "confidence": 0.95,
+        "confidence_criteria": [
+          "Tests executed and passed",
+          "Distinct family requirement met",
+          "Conservative rules enforced"
+        ],
+        "confidence_rationale": "Evidence receipts confirm that all tests passed, including the focused tests and the full suite. Route evidence confirms the distinct family requirement.",
+        "critical_review": {
+          "assumptions_to_verify": [
+            "The tests actually assert the distinct families and conservative rules."
+          ],
+          "contradictions_checked": [
+            "Claude claimed tests were not run, but evidence receipts confirm they were run and passed."
+          ],
+          "decision": "accept",
+          "missing_evidence": [],
+          "severity": "low",
+          "strongest_objection": "Claude noted a mismatch in the TDD document regarding a test name in a regression command, but the actual tests exist and pass.",
+          "what_would_change_my_mind": "If the tests did not actually cover the distinct family requirement or if the conservative rules were not enforced."
+        },
+        "decisions": [
+          "accept"
+        ],
+        "objections": [
+          "Claude noted a mismatch in the TDD document regarding a test name in a regression command, but the actual tests exist and pass."
+        ],
+        "specialists": [
+          {
+            "decision": "accept",
+            "name": "Cursor Reviewer",
+            "objection": "None. Claude's concern about unverified test execution is resolved by the provided evidence receipts showing all tests passed."
+          }
+        ],
+        "summary": "TDD review gate accepted. Evidence receipts confirm that all planned tests were executed and passed, resolving Claude's concern about unverified test execution. The implementation successfully registers a second independent reviewer from a distinct family, enforces conservative rules, and preserves deterministic replay.",
+        "task_id": "reviewer-panel-second-reviewer-20260601",
+        "test_status": "passed",
+        "tests": [
+          "test_reviewer_registry_returns_codex_cli_second_reviewer",
+          "test_codex_cli_reviewer_parses_typed_outcome_with_hashes",
+          "test_workflow_exposes_independent_reviewer_results_and_dual_writes_events",
+          "test_second_reviewer_important_revise_blocks",
+          "test_second_reviewer_outage_proceeds_only_degraded"
+        ]
+      },
+      "panel_failure_classification": "reviewer_contract_unmet",
+      "panel_recoverable_failures": [
+        {
+          "failure_classification": "reviewer_contract_unmet",
+          "model": "gpt-5.5",
+          "recoverable": true,
+          "reviewer_id": "independent-reviewer-1",
+          "runtime": "codex_cli"
+        }
+      ],
+      "probe": {
+        "details": {},
+        "probe_id": "CURSOR",
+        "reason": "cursor_review_ok",
+        "status": "green"
+      },
+      "recoverable": false,
+      "retry_reasons": [],
+      "reviewer_assurance": "fallback_text_only",
+      "reviewer_output_mode": "litellm_structured",
+      "reviewer_runtime": "litellm_structured",
+      "reviewer_unavailable_recovery": {
+        "authorization": null,
+        "available_reviewers_accept": true,
+        "classification": "reviewer_contract_unmet",
+        "decision": "escalate",
+        "escalation": {
+          "action_id": 1322,
+          "ask_id": 55,
+          "classification": "reviewer_contract_unmet",
+          "evidence_grade": "degraded",
+          "forced_by_safety": false,
+          "independent_reviewer": {
+            "accepted": true,
+            "agent_id": null,
+            "attempts": 1,
+            "critical_review": {
+              "assumptions_to_verify": [
+                "The tests actually assert the distinct families and conservative rules."
+              ],
+              "contradictions_checked": [
+                "Claude claimed tests were not run, but evidence receipts confirm they were run and passed."
+              ],
+              "decision": "accept",
+              "evidence_refs": [],
+              "missing_evidence": [],
+              "schema_version": "critical-review/v1",
+              "severity": "low",
+              "strongest_objection": "Claude noted a mismatch in the TDD document regarding a test name in a regression command, but the actual tests exist and pass.",
+              "what_would_change_my_mind": "If the tests did not actually cover the distinct family requirement or if the conservative rules were not enforced."
+            },
+            "diagnostics": {
+              "completion_tokens": 2989,
+              "fallback": {
+                "attempted": true,
+                "from_runtime": "cursor_sdk",
+                "primary_failure": {
+                  "attempts": 1,
+                  "diagnostics": {
+                    "failure": {
+                      "attempts": 1,
+                      "original_reason": "cursor_sdk_missing",
+                      "reviewer_output_mode": "cursor_sdk"
+                    }
+                  },
+                  "failure_classification": "reviewer_infrastructure_unavailable",
+                  "model": null,
+                  "probe": {
+                    "details": {
+                      "attempts": 1,
+                      "original_reason": "cursor_sdk_missing",
+                      "recoverable": true,
+                      "retry_reasons": []
+                    },
+                    "probe_id": "CURSOR",
+                    "reason": "reviewer_infrastructure_unavailable",
+                    "status": "red"
+                  },
+                  "recoverable": true,
+                  "retry_reasons": [],
+                  "reviewer_assurance": "unavailable",
+                  "reviewer_output_mode": "cursor_sdk",
+                  "reviewer_runtime": "cursor_sdk",
+                  "status": null
+                },
+                "reason": "cursor_sdk_missing",
+                "to_runtime": "litellm_structured"
+              },
+              "finish_reason": "stop",
+              "prompt_chars": 13417,
+              "prompt_sha256": "b5a4dd79d0bd6fd2f7b180b437d3fec542ee5053e18d7d1269985558ebefeb19",
+              "prompt_tokens": 3560
+            },
+            "duration_ms": null,
+            "failure_classification": null,
+            "fallback_from_runtime": "cursor_sdk",
+            "fallback_reason": "cursor_sdk_missing",
+            "independent_reviewer_panel_decision": {
+              "accepted_reviewers": [
+                "independent-reviewer-0"
+              ],
+              "available_reviewers": [
+                "independent-reviewer-0"
+              ],
+              "blocking_reviewers": [],
+              "decision": "revise",
+              "low_confidence_reviewers": [],
+              "low_confidence_threshold": 0.0,
+              "missing_reviewers": [
+                "independent-reviewer-1"
+              ],
+              "non_accepting_reviewers": [],
+              "reason": "missing_reviewer_verdict",
+              "reviewer_inputs": [
+                {
+                  "accepted": true,
+                  "assurance_grade": "text_only",
+                  "confidence": 0.95,
+                  "decision": "accept",
+                  "model": "gemini-3.1-pro-preview",
+                  "provider_family": "google",
+                  "reviewer_id": "independent-reviewer-0",
+                  "runtime": "litellm_structured",
+                  "severity": "low",
+                  "verdict_present": true
+                },
+                {
+                  "accepted": false,
+                  "assurance_grade": "agentic",
+                  "confidence": null,
+                  "decision": "revise",
+                  "model": "gpt-5.5",
+                  "provider_family": "openai",
+                  "reviewer_id": "independent-reviewer-1",
+                  "runtime": "codex_cli",
+                  "severity": "important",
+                  "verdict_present": false
+                }
+              ],
+              "schema_version": "independent-reviewer-panel-decision/v1"
+            },
+            "independent_reviewer_results": [
+              {
+                "accepted": true,
+                "assurance_grade": "text_only",
+                "attempts": 1,
+                "confidence": 0.95,
+                "critical_review": {
+                  "assumptions_to_verify": [
+                    "The tests actually assert the distinct families and conservative rules."
+                  ],
+                  "contradictions_checked": [
+                    "Claude claimed tests were not run, but evidence receipts confirm they were run and passed."
+                  ],
+                  "decision": "accept",
+                  "missing_evidence": [],
+                  "severity": "low",
+                  "strongest_objection": "Claude noted a mismatch in the TDD document regarding a test name in a regression command, but the actual tests exist and pass.",
+                  "what_would_change_my_mind": "If the tests did not actually cover the distinct family requirement or if the conservative rules were not enforced."
+                },
+                "decision": "accept",
+                "failure_classification": null,
+                "gate": "tdd_review",
+                "lineage": [
+                  "google",
+                  "litellm_structured",
+                  "gemini-3.1-pro-preview"
+                ],
+                "model": "gemini-3.1-pro-preview",
+                "output_sha256": "9ae5510a4eb2c15d37742b2267b7847d1b4d85ac3017aa8558131729129c6ea8",
+                "provider_family": "google",
+                "recoverable": false,
+                "reviewer_assurance": "fallback_text_only",
+                "reviewer_id": "independent-reviewer-0",
+                "reviewer_output_mode": "litellm_structured",
+                "reviewer_runtime": "litellm_structured",
+                "round_index": 1,
+                "runtime": "litellm_structured",
+                "schema_version": "independent-reviewer-panel-result/v1",
+                "severity": "low",
+                "task_id": "reviewer-panel-second-reviewer-20260601",
+                "tool_access": "text_only",
+                "transcript_refs": [
+                  {
+                    "chars": 2688,
+                    "kind": "reviewer_transcript_tail",
+                    "ref": "independent_reviewer_review:reviewer-panel-second-reviewer-20260601:tdd_review:1:independent-reviewer-0"
+                  }
+                ],
+                "transcript_sha256": "1e782fc6ebaa2e8f9189ac66ab3e16946ad56af88b7e2a6cab032068586b678b",
+                "verdict_present": true
+              },
+              {
+                "accepted": false,
+                "assurance_grade": "agentic",
+                "attempts": 1,
+                "confidence": null,
+                "critical_review": {},
+                "decision": "revise",
+                "failure_classification": "reviewer_contract_unmet",
+                "gate": "tdd_review",
+                "lineage": [
+                  "openai",
+                  "codex_cli",
+                  "gpt-5.5"
+                ],
+                "model": "gpt-5.5",
+                "output_sha256": null,
+                "provider_family": "openai",
+                "recoverable": true,
+                "reviewer_assurance": "tool_backed_primary",
+                "reviewer_id": "independent-reviewer-1",
+                "reviewer_output_mode": "codex_cli",
+                "reviewer_runtime": "codex_cli",
+                "round_index": 1,
+                "runtime": "codex_cli",
+                "schema_version": "independent-reviewer-panel-result/v1",
+                "severity": "important",
+                "task_id": "reviewer-panel-second-reviewer-20260601",
+                "tool_access": "codebase_tools",
+                "transcript_refs": [
+                  {
+                    "chars": 4000,
+                    "kind": "reviewer_transcript_tail",
+                    "ref": "independent_reviewer_review:reviewer-panel-second-reviewer-20260601:tdd_review:1:independent-reviewer-1"
+                  }
+                ],
+                "transcript_sha256": "67c55b55d388f131b33e1fdfa247459e082fa26d4473192d9227df8896b20666",
+                "verdict_present": false
+              }
+            ],
+            "model": "gemini-3.1-pro-preview",
+            "outcome": {
+              "changed_files": [
+                "supervisor/reviewer_registry.py",
+                "mcp_tools/codex_supervisor_stdio.py",
+                "tests/test_dual_agent_workflow_driver.py",
+                "docs/dual-agent/reviewer-panel-second-reviewer-20260601/test-evidence.md"
+              ],
+              "claims": [
+                "Second reviewer registered from distinct family",
+                "Conservative rules apply across both reviewers",
+                "Tests passed and deterministic replay preserved"
+              ],
+              "confidence": 0.95,
+              "confidence_criteria": [
+                "Tests executed and passed",
+                "Distinct family requirement met",
+                "Conservative rules enforced"
+              ],
+              "confidence_rationale": "Evidence receipts confirm that all tests passed, including the focused tests and the full suite. Route evidence confirms the distinct family requirement.",
+              "critical_review": {
+                "assumptions_to_verify": [
+                  "The tests actually assert the distinct families and conservative rules."
+                ],
+                "contradictions_checked": [
+                  "Claude claimed tests were not run, but evidence receipts confirm they were run and passed."
+                ],
+                "decision": "accept",
+                "missing_evidence": [],
+                "severity": "low",
+                "strongest_objection": "Claude noted a mismatch in the TDD document regarding a test name in a regression command, but the actual tests exist and pass.",
+                "what_would_change_my_mind": "If the tests did not actually cover the distinct family requirement or if the conservative rules were not enforced."
+              },
+              "decisions": [
+                "accept"
+              ],
+              "objections": [
+                "Claude noted a mismatch in the TDD document regarding a test name in a regression command, but the actual tests exist and pass."
+              ],
+              "specialists": [
+                {
+                  "decision": "accept",
+                  "name": "Cursor Reviewer",
+                  "objection": "None. Claude's concern about unverified test execution is resolved by the provided evidence receipts showing all tests passed."
+                }
+              ],
+              "summary": "TDD review gate accepted. Evidence receipts confirm that all planned tests were executed and passed, resolving Claude's concern about unverified test execution. The implementation successfully registers a second independent reviewer from a distinct family, enforces conservative rules, and preserves deterministic replay.",
+              "task_id": "reviewer-panel-second-reviewer-20260601",
+              "test_status": "passed",
+              "tests": [
+                "test_reviewer_registry_returns_codex_cli_second_reviewer",
+                "test_codex_cli_reviewer_parses_typed_outcome_with_hashes",
+                "test_workflow_exposes_independent_reviewer_results_and_dual_writes_events",
+                "test_second_reviewer_important_revise_blocks",
+                "test_second_reviewer_outage_proceeds_only_degraded"
+              ]
+            },
+            "panel_failure_classification": "reviewer_contract_unmet",
+            "panel_recoverable_failures": [
+              {
+                "failure_classification": "reviewer_contract_unmet",
+                "model": "gpt-5.5",
+                "recoverable": true,
+                "reviewer_id": "independent-reviewer-1",
+                "runtime": "codex_cli"
+              }
+            ],
+            "probe": {
+              "details": {},
+              "probe_id": "CURSOR",
+              "reason": "cursor_review_ok",
+              "status": "green"
+            },
+            "recoverable": false,
+            "retry_reasons": [],
+            "reviewer_assurance": "fallback_text_only",
+            "reviewer_output_mode": "litellm_structured",
+            "reviewer_runtime": "litellm_structured",
+            "reviewer_unavailable_recovery": {
+              "authorization": null,
+              "available_reviewers_accept": true,
+              "classification": "reviewer_contract_unmet",
+              "decision": "escalate",
+              "evidence_grade": "degraded",
+              "forced_by_safety": false,
+              "gate": "tdd_review",
+              "policy": "escalate",
+              "reason": "policy_escalate",
+              "reviewer_verdict_counted_as_accept": false,
+              "safety_reasons": [],
+              "schema_version": "reviewer-unavailable-recovery/v1",
+              "unavailable_reviewers": [
+                "independent-reviewer-1"
+              ]
+            },
+            "run_id": "1PIeatLSBe7e-O4PodLr6QM",
+            "schema_version": "independent-reviewer-result/v1",
+            "status": "finished",
+            "transcript_tail": "[cursor attempt 1/4]\n<dual_agent_outcome>{\n  \"task_id\": \"reviewer-panel-second-reviewer-20260601\",\n  \"summary\": \"TDD review gate accepted. Evidence receipts confirm that all planned tests were executed and passed, resolving Claude's concern about unverified test execution. The implementation successfully registers a second independent reviewer from a distinct family, enforces conservative rules, and preserves deterministic replay.\",\n  \"specialists\": [\n    {\n      \"name\": \"Cursor Reviewer\",\n      \"decision\": \"accept\",\n      \"objection\": \"None. Claude's concern about unverified test execution is resolved by the provided evidence receipts showing all tests passed.\"\n    }\n  ],\n  \"decisions\": [\n    \"accept\"\n  ],\n  \"objections\": [\n    \"Claude noted a mismatch in the TDD document regarding a test name in a regression command, but the actual tests exist and pass.\"\n  ],\n  \"changed_files\": [\n    \"supervisor/reviewer_registry.py\",\n    \"mcp_tools/codex_supervisor_stdio.py\",\n    \"tests/test_dual_agent_workflow_driver.py\",\n    \"docs/dual-agent/reviewer-panel-second-reviewer-20260601/test-evidence.md\"\n  ],\n  \"tests\": [\n    \"test_reviewer_registry_returns_codex_cli_second_reviewer\",\n    \"test_codex_cli_reviewer_parses_typed_outcome_with_hashes\",\n    \"test_workflow_exposes_independent_reviewer_results_and_dual_writes_events\",\n    \"test_second_reviewer_important_revise_blocks\",\n    \"test_second_reviewer_outage_proceeds_only_degraded\"\n  ],\n  \"test_status\": \"passed\",\n  \"confidence\": 0.95,\n  \"confidence_rationale\": \"Evidence receipts confirm that all tests passed, including the focused tests and the full suite. Route evidence confirms the distinct family requirement.\",\n  \"confidence_criteria\": [\n    \"Tests executed and passed\",\n    \"Distinct family requirement met\",\n    \"Conservative rules enforced\"\n  ],\n  \"claims\": [\n    \"Second reviewer registered from distinct family\",\n    \"Conservative rules apply across both reviewers\",\n    \"Tests passed and deterministic replay preserved\"\n  ],\n  \"critical_review\": {\n    \"strongest_objection\": \"Claude noted a mismatch in the TDD document regarding a test name in a regression command, but the actual tests exist and pass.\",\n    \"missing_evidence\": [],\n    \"contradictions_checked\": [\n      \"Claude claimed tests were not run, but evidence receipts confirm they were run and passed.\"\n    ],\n    \"assumptions_to_verify\": [\n      \"The tests actually assert the distinct families and conservative rules.\"\n    ],\n    \"what_would_change_my_mind\": \"If the tests did not actually cover the distinct family requirement or if the conservative rules were not enforced.\",\n    \"decision\": \"accept\",\n    \"severity\": \"low\"\n  }\n}</dual_agent_outcome>",
+            "unavailable_reviewer_ids": [
+              "independent-reviewer-1"
+            ]
+          },
+          "nonce": "b7f71e2362e24705",
+          "options": [
+            "Pause",
+            "Kill",
+            "Continue"
+          ],
+          "policy": "escalate",
+          "reviewer_verdict_counted_as_accept": false,
+          "safety_reasons": [],
+          "status": "paused_for_human",
+          "unavailable_reviewers": [
+            "independent-reviewer-1"
+          ]
+        },
+        "event_id": 429050,
+        "evidence_grade": "degraded",
+        "forced_by_safety": false,
+        "gate": "tdd_review",
+        "policy": "escalate",
+        "reason": "policy_escalate",
+        "reviewer_verdict_counted_as_accept": false,
+        "safety_reasons": [],
+        "schema_version": "reviewer-unavailable-recovery/v1",
+        "unavailable_reviewers": [
+          "independent-reviewer-1"
+        ]
+      },
+      "run_id": "1PIeatLSBe7e-O4PodLr6QM",
+      "schema_version": "independent-reviewer-result/v1",
+      "status": "finished",
+      "transcript_tail": "[cursor attempt 1/4]\n<dual_agent_outcome>{\n  \"task_id\": \"reviewer-panel-second-reviewer-20260601\",\n  \"summary\": \"TDD review gate accepted. Evidence receipts confirm that all planned tests were executed and passed, resolving Claude's concern about unverified test execution. The implementation successfully registers a second independent reviewer from a distinct family, enforces conservative rules, and preserves deterministic replay.\",\n  \"specialists\": [\n    {\n      \"name\": \"Cursor Reviewer\",\n      \"decision\": \"accept\",\n      \"objection\": \"None. Claude's concern about unverified test execution is resolved by the provided evidence receipts showing all tests passed.\"\n    }\n  ],\n  \"decisions\": [\n    \"accept\"\n  ],\n  \"objections\": [\n    \"Claude noted a mismatch in the TDD document regarding a test name in a regression command, but the actual tests exist and pass.\"\n  ],\n  \"changed_files\": [\n    \"supervisor/reviewer_registry.py\",\n    \"mcp_tools/codex_supervisor_stdio.py\",\n    \"tests/test_dual_agent_workflow_driver.py\",\n    \"docs/dual-agent/reviewer-panel-second-reviewer-20260601/test-evidence.md\"\n  ],\n  \"tests\": [\n    \"test_reviewer_registry_returns_codex_cli_second_reviewer\",\n    \"test_codex_cli_reviewer_parses_typed_outcome_with_hashes\",\n    \"test_workflow_exposes_independent_reviewer_results_and_dual_writes_events\",\n    \"test_second_reviewer_important_revise_blocks\",\n    \"test_second_reviewer_outage_proceeds_only_degraded\"\n  ],\n  \"test_status\": \"passed\",\n  \"confidence\": 0.95,\n  \"confidence_rationale\": \"Evidence receipts confirm that all tests passed, including the focused tests and the full suite. Route evidence confirms the distinct family requirement.\",\n  \"confidence_criteria\": [\n    \"Tests executed and passed\",\n    \"Distinct family requirement met\",\n    \"Conservative rules enforced\"\n  ],\n  \"claims\": [\n    \"Second reviewer registered from distinct family\",\n    \"Conservative rules apply across both reviewers\",\n    \"Tests passed and deterministic replay preserved\"\n  ],\n  \"critical_review\": {\n    \"strongest_objection\": \"Claude noted a mismatch in the TDD document regarding a test name in a regression command, but the actual tests exist and pass.\",\n    \"missing_evidence\": [],\n    \"contradictions_checked\": [\n      \"Claude claimed tests were not run, but evidence receipts confirm they were run and passed.\"\n    ],\n    \"assumptions_to_verify\": [\n      \"The tests actually assert the distinct families and conservative rules.\"\n    ],\n    \"what_would_change_my_mind\": \"If the tests did not actually cover the distinct family requirement or if the conservative rules were not enforced.\",\n    \"decision\": \"accept\",\n    \"severity\": \"low\"\n  }\n}</dual_agent_outcome>",
+      "unavailable_reviewer_ids": [
+        "independent-reviewer-1"
+      ]
+    },
+    "escalation": {
+      "claim_verification": null,
+      "reason": "reviewer_contract_unmet",
+      "type": "workflow_lifecycle"
+    },
+    "event_id": 429051,
+    "gate": "tdd_review",
+    "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-panel-second-reviewer-20260601.json",
+    "independent_reviewer": {
+      "accepted": true,
+      "agent_id": null,
+      "attempts": 1,
+      "critical_review": {
+        "assumptions_to_verify": [
+          "The tests actually assert the distinct families and conservative rules."
+        ],
+        "contradictions_checked": [
+          "Claude claimed tests were not run, but evidence receipts confirm they were run and passed."
+        ],
+        "decision": "accept",
+        "evidence_refs": [],
+        "missing_evidence": [],
+        "schema_version": "critical-review/v1",
+        "severity": "low",
+        "strongest_objection": "Claude noted a mismatch in the TDD document regarding a test name in a regression command, but the actual tests exist and pass.",
+        "what_would_change_my_mind": "If the tests did not actually cover the distinct family requirement or if the conservative rules were not enforced."
+      },
+      "diagnostics": {
+        "completion_tokens": 2989,
+        "fallback": {
+          "attempted": true,
+          "from_runtime": "cursor_sdk",
+          "primary_failure": {
+            "attempts": 1,
+            "diagnostics": {
+              "failure": {
+                "attempts": 1,
+                "original_reason": "cursor_sdk_missing",
+                "reviewer_output_mode": "cursor_sdk"
+              }
+            },
+            "failure_classification": "reviewer_infrastructure_unavailable",
+            "model": null,
+            "probe": {
+              "details": {
+                "attempts": 1,
+                "original_reason": "cursor_sdk_missing",
+                "recoverable": true,
+                "retry_reasons": []
+              },
+              "probe_id": "CURSOR",
+              "reason": "reviewer_infrastructure_unavailable",
+              "status": "red"
+            },
+            "recoverable": true,
+            "retry_reasons": [],
+            "reviewer_assurance": "unavailable",
+            "reviewer_output_mode": "cursor_sdk",
+            "reviewer_runtime": "cursor_sdk",
+            "status": null
+          },
+          "reason": "cursor_sdk_missing",
+          "to_runtime": "litellm_structured"
+        },
+        "finish_reason": "stop",
+        "prompt_chars": 13417,
+        "prompt_sha256": "b5a4dd79d0bd6fd2f7b180b437d3fec542ee5053e18d7d1269985558ebefeb19",
+        "prompt_tokens": 3560
+      },
+      "duration_ms": null,
+      "failure_classification": null,
+      "fallback_from_runtime": "cursor_sdk",
+      "fallback_reason": "cursor_sdk_missing",
+      "independent_reviewer_panel_decision": {
+        "accepted_reviewers": [
+          "independent-reviewer-0"
+        ],
+        "available_reviewers": [
+          "independent-reviewer-0"
+        ],
+        "blocking_reviewers": [],
+        "decision": "revise",
+        "low_confidence_reviewers": [],
+        "low_confidence_threshold": 0.0,
+        "missing_reviewers": [
+          "independent-reviewer-1"
+        ],
+        "non_accepting_reviewers": [],
+        "reason": "missing_reviewer_verdict",
+        "reviewer_inputs": [
+          {
+            "accepted": true,
+            "assurance_grade": "text_only",
+            "confidence": 0.95,
+            "decision": "accept",
+            "model": "gemini-3.1-pro-preview",
+            "provider_family": "google",
+            "reviewer_id": "independent-reviewer-0",
+            "runtime": "litellm_structured",
+            "severity": "low",
+            "verdict_present": true
+          },
+          {
+            "accepted": false,
+            "assurance_grade": "agentic",
+            "confidence": null,
+            "decision": "revise",
+            "model": "gpt-5.5",
+            "provider_family": "openai",
+            "reviewer_id": "independent-reviewer-1",
+            "runtime": "codex_cli",
+            "severity": "important",
+            "verdict_present": false
+          }
+        ],
+        "schema_version": "independent-reviewer-panel-decision/v1"
+      },
+      "independent_reviewer_results": [
+        {
+          "accepted": true,
+          "assurance_grade": "text_only",
+          "attempts": 1,
+          "confidence": 0.95,
+          "critical_review": {
+            "assumptions_to_verify": [
+              "The tests actually assert the distinct families and conservative rules."
+            ],
+            "contradictions_checked": [
+              "Claude claimed tests were not run, but evidence receipts confirm they were run and passed."
+            ],
+            "decision": "accept",
+            "missing_evidence": [],
+            "severity": "low",
+            "strongest_objection": "Claude noted a mismatch in the TDD document regarding a test name in a regression command, but the actual tests exist and pass.",
+            "what_would_change_my_mind": "If the tests did not actually cover the distinct family requirement or if the conservative rules were not enforced."
+          },
+          "decision": "accept",
+          "failure_classification": null,
+          "gate": "tdd_review",
+          "lineage": [
+            "google",
+            "litellm_structured",
+            "gemini-3.1-pro-preview"
+          ],
+          "model": "gemini-3.1-pro-preview",
+          "output_sha256": "9ae5510a4eb2c15d37742b2267b7847d1b4d85ac3017aa8558131729129c6ea8",
+          "provider_family": "google",
+          "recoverable": false,
+          "reviewer_assurance": "fallback_text_only",
+          "reviewer_id": "independent-reviewer-0",
+          "reviewer_output_mode": "litellm_structured",
+          "reviewer_runtime": "litellm_structured",
+          "round_index": 1,
+          "runtime": "litellm_structured",
+          "schema_version": "independent-reviewer-panel-result/v1",
+          "severity": "low",
+          "task_id": "reviewer-panel-second-reviewer-20260601",
+          "tool_access": "text_only",
+          "transcript_refs": [
+            {
+              "chars": 2688,
+              "kind": "reviewer_transcript_tail",
+              "ref": "independent_reviewer_review:reviewer-panel-second-reviewer-20260601:tdd_review:1:independent-reviewer-0"
+            }
+          ],
+          "transcript_sha256": "1e782fc6ebaa2e8f9189ac66ab3e16946ad56af88b7e2a6cab032068586b678b",
+          "verdict_present": true
+        },
+        {
+          "accepted": false,
+          "assurance_grade": "agentic",
+          "attempts": 1,
+          "confidence": null,
+          "critical_review": {},
+          "decision": "revise",
+          "failure_classification": "reviewer_contract_unmet",
+          "gate": "tdd_review",
+          "lineage": [
+            "openai",
+            "codex_cli",
+            "gpt-5.5"
+          ],
+          "model": "gpt-5.5",
+          "output_sha256": null,
+          "provider_family": "openai",
+          "recoverable": true,
+          "reviewer_assurance": "tool_backed_primary",
+          "reviewer_id": "independent-reviewer-1",
+          "reviewer_output_mode": "codex_cli",
+          "reviewer_runtime": "codex_cli",
+          "round_index": 1,
+          "runtime": "codex_cli",
+          "schema_version": "independent-reviewer-panel-result/v1",
+          "severity": "important",
+          "task_id": "reviewer-panel-second-reviewer-20260601",
+          "tool_access": "codebase_tools",
+          "transcript_refs": [
+            {
+              "chars": 4000,
+              "kind": "reviewer_transcript_tail",
+              "ref": "independent_reviewer_review:reviewer-panel-second-reviewer-20260601:tdd_review:1:independent-reviewer-1"
+            }
+          ],
+          "transcript_sha256": "67c55b55d388f131b33e1fdfa247459e082fa26d4473192d9227df8896b20666",
+          "verdict_present": false
+        }
+      ],
+      "model": "gemini-3.1-pro-preview",
+      "outcome": {
+        "changed_files": [
+          "supervisor/reviewer_registry.py",
+          "mcp_tools/codex_supervisor_stdio.py",
+          "tests/test_dual_agent_workflow_driver.py",
+          "docs/dual-agent/reviewer-panel-second-reviewer-20260601/test-evidence.md"
+        ],
+        "claims": [
+          "Second reviewer registered from distinct family",
+          "Conservative rules apply across both reviewers",
+          "Tests passed and deterministic replay preserved"
+        ],
+        "confidence": 0.95,
+        "confidence_criteria": [
+          "Tests executed and passed",
+          "Distinct family requirement met",
+          "Conservative rules enforced"
+        ],
+        "confidence_rationale": "Evidence receipts confirm that all tests passed, including the focused tests and the full suite. Route evidence confirms the distinct family requirement.",
+        "critical_review": {
+          "assumptions_to_verify": [
+            "The tests actually assert the distinct families and conservative rules."
+          ],
+          "contradictions_checked": [
+            "Claude claimed tests were not run, but evidence receipts confirm they were run and passed."
+          ],
+          "decision": "accept",
+          "missing_evidence": [],
+          "severity": "low",
+          "strongest_objection": "Claude noted a mismatch in the TDD document regarding a test name in a regression command, but the actual tests exist and pass.",
+          "what_would_change_my_mind": "If the tests did not actually cover the distinct family requirement or if the conservative rules were not enforced."
+        },
+        "decisions": [
+          "accept"
+        ],
+        "objections": [
+          "Claude noted a mismatch in the TDD document regarding a test name in a regression command, but the actual tests exist and pass."
+        ],
+        "specialists": [
+          {
+            "decision": "accept",
+            "name": "Cursor Reviewer",
+            "objection": "None. Claude's concern about unverified test execution is resolved by the provided evidence receipts showing all tests passed."
+          }
+        ],
+        "summary": "TDD review gate accepted. Evidence receipts confirm that all planned tests were executed and passed, resolving Claude's concern about unverified test execution. The implementation successfully registers a second independent reviewer from a distinct family, enforces conservative rules, and preserves deterministic replay.",
+        "task_id": "reviewer-panel-second-reviewer-20260601",
+        "test_status": "passed",
+        "tests": [
+          "test_reviewer_registry_returns_codex_cli_second_reviewer",
+          "test_codex_cli_reviewer_parses_typed_outcome_with_hashes",
+          "test_workflow_exposes_independent_reviewer_results_and_dual_writes_events",
+          "test_second_reviewer_important_revise_blocks",
+          "test_second_reviewer_outage_proceeds_only_degraded"
+        ]
+      },
+      "panel_failure_classification": "reviewer_contract_unmet",
+      "panel_recoverable_failures": [
+        {
+          "failure_classification": "reviewer_contract_unmet",
+          "model": "gpt-5.5",
+          "recoverable": true,
+          "reviewer_id": "independent-reviewer-1",
+          "runtime": "codex_cli"
+        }
+      ],
+      "probe": {
+        "details": {},
+        "probe_id": "CURSOR",
+        "reason": "cursor_review_ok",
+        "status": "green"
+      },
+      "recoverable": false,
+      "retry_reasons": [],
+      "reviewer_assurance": "fallback_text_only",
+      "reviewer_output_mode": "litellm_structured",
+      "reviewer_runtime": "litellm_structured",
+      "reviewer_unavailable_recovery": {
+        "authorization": null,
+        "available_reviewers_accept": true,
+        "classification": "reviewer_contract_unmet",
+        "decision": "escalate",
+        "escalation": {
+          "action_id": 1322,
+          "ask_id": 55,
+          "classification": "reviewer_contract_unmet",
+          "evidence_grade": "degraded",
+          "forced_by_safety": false,
+          "independent_reviewer": {
+            "accepted": true,
+            "agent_id": null,
+            "attempts": 1,
+            "critical_review": {
+              "assumptions_to_verify": [
+                "The tests actually assert the distinct families and conservative rules."
+              ],
+              "contradictions_checked": [
+                "Claude claimed tests were not run, but evidence receipts confirm they were run and passed."
+              ],
+              "decision": "accept",
+              "evidence_refs": [],
+              "missing_evidence": [],
+              "schema_version": "critical-review/v1",
+              "severity": "low",
+              "strongest_objection": "Claude noted a mismatch in the TDD document regarding a test name in a regression command, but the actual tests exist and pass.",
+              "what_would_change_my_mind": "If the tests did not actually cover the distinct family requirement or if the conservative rules were not enforced."
+            },
+            "diagnostics": {
+              "completion_tokens": 2989,
+              "fallback": {
+                "attempted": true,
+                "from_runtime": "cursor_sdk",
+                "primary_failure": {
+                  "attempts": 1,
+                  "diagnostics": {
+                    "failure": {
+                      "attempts": 1,
+                      "original_reason": "cursor_sdk_missing",
+                      "reviewer_output_mode": "cursor_sdk"
+                    }
+                  },
+                  "failure_classification": "reviewer_infrastructure_unavailable",
+                  "model": null,
+                  "probe": {
+                    "details": {
+                      "attempts": 1,
+                      "original_reason": "cursor_sdk_missing",
+                      "recoverable": true,
+                      "retry_reasons": []
+                    },
+                    "probe_id": "CURSOR",
+                    "reason": "reviewer_infrastructure_unavailable",
+                    "status": "red"
+                  },
+                  "recoverable": true,
+                  "retry_reasons": [],
+                  "reviewer_assurance": "unavailable",
+                  "reviewer_output_mode": "cursor_sdk",
+                  "reviewer_runtime": "cursor_sdk",
+                  "status": null
+                },
+                "reason": "cursor_sdk_missing",
+                "to_runtime": "litellm_structured"
+              },
+              "finish_reason": "stop",
+              "prompt_chars": 13417,
+              "prompt_sha256": "b5a4dd79d0bd6fd2f7b180b437d3fec542ee5053e18d7d1269985558ebefeb19",
+              "prompt_tokens": 3560
+            },
+            "duration_ms": null,
+            "failure_classification": null,
+            "fallback_from_runtime": "cursor_sdk",
+            "fallback_reason": "cursor_sdk_missing",
+            "independent_reviewer_panel_decision": {
+              "accepted_reviewers": [
+                "independent-reviewer-0"
+              ],
+              "available_reviewers": [
+                "independent-reviewer-0"
+              ],
+              "blocking_reviewers": [],
+              "decision": "revise",
+              "low_confidence_reviewers": [],
+              "low_confidence_threshold": 0.0,
+              "missing_reviewers": [
+                "independent-reviewer-1"
+              ],
+              "non_accepting_reviewers": [],
+              "reason": "missing_reviewer_verdict",
+              "reviewer_inputs": [
+                {
+                  "accepted": true,
+                  "assurance_grade": "text_only",
+                  "confidence": 0.95,
+                  "decision": "accept",
+                  "model": "gemini-3.1-pro-preview",
+                  "provider_family": "google",
+                  "reviewer_id": "independent-reviewer-0",
+                  "runtime": "litellm_structured",
+                  "severity": "low",
+                  "verdict_present": true
+                },
+                {
+                  "accepted": false,
+                  "assurance_grade": "agentic",
+                  "confidence": null,
+                  "decision": "revise",
+                  "model": "gpt-5.5",
+                  "provider_family": "openai",
+                  "reviewer_id": "independent-reviewer-1",
+                  "runtime": "codex_cli",
+                  "severity": "important",
+                  "verdict_present": false
+                }
+              ],
+              "schema_version": "independent-reviewer-panel-decision/v1"
+            },
+            "independent_reviewer_results": [
+              {
+                "accepted": true,
+                "assurance_grade": "text_only",
+                "attempts": 1,
+                "confidence": 0.95,
+                "critical_review": {
+                  "assumptions_to_verify": [
+                    "The tests actually assert the distinct families and conservative rules."
+                  ],
+                  "contradictions_checked": [
+                    "Claude claimed tests were not run, but evidence receipts confirm they were run and passed."
+                  ],
+                  "decision": "accept",
+                  "missing_evidence": [],
+                  "severity": "low",
+                  "strongest_objection": "Claude noted a mismatch in the TDD document regarding a test name in a regression command, but the actual tests exist and pass.",
+                  "what_would_change_my_mind": "If the tests did not actually cover the distinct family requirement or if the conservative rules were not enforced."
+                },
+                "decision": "accept",
+                "failure_classification": null,
+                "gate": "tdd_review",
+                "lineage": [
+                  "google",
+                  "litellm_structured",
+                  "gemini-3.1-pro-preview"
+                ],
+                "model": "gemini-3.1-pro-preview",
+                "output_sha256": "9ae5510a4eb2c15d37742b2267b7847d1b4d85ac3017aa8558131729129c6ea8",
+                "provider_family": "google",
+                "recoverable": false,
+                "reviewer_assurance": "fallback_text_only",
+                "reviewer_id": "independent-reviewer-0",
+                "reviewer_output_mode": "litellm_structured",
+                "reviewer_runtime": "litellm_structured",
+                "round_index": 1,
+                "runtime": "litellm_structured",
+                "schema_version": "independent-reviewer-panel-result/v1",
+                "severity": "low",
+                "task_id": "reviewer-panel-second-reviewer-20260601",
+                "tool_access": "text_only",
+                "transcript_refs": [
+                  {
+                    "chars": 2688,
+                    "kind": "reviewer_transcript_tail",
+                    "ref": "independent_reviewer_review:reviewer-panel-second-reviewer-20260601:tdd_review:1:independent-reviewer-0"
+                  }
+                ],
+                "transcript_sha256": "1e782fc6ebaa2e8f9189ac66ab3e16946ad56af88b7e2a6cab032068586b678b",
+                "verdict_present": true
+              },
+              {
+                "accepted": false,
+                "assurance_grade": "agentic",
+                "attempts": 1,
+                "confidence": null,
+                "critical_review": {},
+                "decision": "revise",
+                "failure_classification": "reviewer_contract_unmet",
+                "gate": "tdd_review",
+                "lineage": [
+                  "openai",
+                  "codex_cli",
+                  "gpt-5.5"
+                ],
+                "model": "gpt-5.5",
+                "output_sha256": null,
+                "provider_family": "openai",
+                "recoverable": true,
+                "reviewer_assurance": "tool_backed_primary",
+                "reviewer_id": "independent-reviewer-1",
+                "reviewer_output_mode": "codex_cli",
+                "reviewer_runtime": "codex_cli",
+                "round_index": 1,
+                "runtime": "codex_cli",
+                "schema_version": "independent-reviewer-panel-result/v1",
+                "severity": "important",
+                "task_id": "reviewer-panel-second-reviewer-20260601",
+                "tool_access": "codebase_tools",
+                "transcript_refs": [
+                  {
+                    "chars": 4000,
+                    "kind": "reviewer_transcript_tail",
+                    "ref": "independent_reviewer_review:reviewer-panel-second-reviewer-20260601:tdd_review:1:independent-reviewer-1"
+                  }
+                ],
+                "transcript_sha256": "67c55b55d388f131b33e1fdfa247459e082fa26d4473192d9227df8896b20666",
+                "verdict_present": false
+              }
+            ],
+            "model": "gemini-3.1-pro-preview",
+            "outcome": {
+              "changed_files": [
+                "supervisor/reviewer_registry.py",
+                "mcp_tools/codex_supervisor_stdio.py",
+                "tests/test_dual_agent_workflow_driver.py",
+                "docs/dual-agent/reviewer-panel-second-reviewer-20260601/test-evidence.md"
+              ],
+              "claims": [
+                "Second reviewer registered from distinct family",
+                "Conservative rules apply across both reviewers",
+                "Tests passed and deterministic replay preserved"
+              ],
+              "confidence": 0.95,
+              "confidence_criteria": [
+                "Tests executed and passed",
+                "Distinct family requirement met",
+                "Conservative rules enforced"
+              ],
+              "confidence_rationale": "Evidence receipts confirm that all tests passed, including the focused tests and the full suite. Route evidence confirms the distinct family requirement.",
+              "critical_review": {
+                "assumptions_to_verify": [
+                  "The tests actually assert the distinct families and conservative rules."
+                ],
+                "contradictions_checked": [
+                  "Claude claimed tests were not run, but evidence receipts confirm they were run and passed."
+                ],
+                "decision": "accept",
+                "missing_evidence": [],
+                "severity": "low",
+                "strongest_objection": "Claude noted a mismatch in the TDD document regarding a test name in a regression command, but the actual tests exist and pass.",
+                "what_would_change_my_mind": "If the tests did not actually cover the distinct family requirement or if the conservative rules were not enforced."
+              },
+              "decisions": [
+                "accept"
+              ],
+              "objections": [
+                "Claude noted a mismatch in the TDD document regarding a test name in a regression command, but the actual tests exist and pass."
+              ],
+              "specialists": [
+                {
+                  "decision": "accept",
+                  "name": "Cursor Reviewer",
+                  "objection": "None. Claude's concern about unverified test execution is resolved by the provided evidence receipts showing all tests passed."
+                }
+              ],
+              "summary": "TDD review gate accepted. Evidence receipts confirm that all planned tests were executed and passed, resolving Claude's concern about unverified test execution. The implementation successfully registers a second independent reviewer from a distinct family, enforces conservative rules, and preserves deterministic replay.",
+              "task_id": "reviewer-panel-second-reviewer-20260601",
+              "test_status": "passed",
+              "tests": [
+                "test_reviewer_registry_returns_codex_cli_second_reviewer",
+                "test_codex_cli_reviewer_parses_typed_outcome_with_hashes",
+                "test_workflow_exposes_independent_reviewer_results_and_dual_writes_events",
+                "test_second_reviewer_important_revise_blocks",
+                "test_second_reviewer_outage_proceeds_only_degraded"
+              ]
+            },
+            "panel_failure_classification": "reviewer_contract_unmet",
+            "panel_recoverable_failures": [
+              {
+                "failure_classification": "reviewer_contract_unmet",
+                "model": "gpt-5.5",
+                "recoverable": true,
+                "reviewer_id": "independent-reviewer-1",
+                "runtime": "codex_cli"
+              }
+            ],
+            "probe": {
+              "details": {},
+              "probe_id": "CURSOR",
+              "reason": "cursor_review_ok",
+              "status": "green"
+            },
+            "recoverable": false,
+            "retry_reasons": [],
+            "reviewer_assurance": "fallback_text_only",
+            "reviewer_output_mode": "litellm_structured",
+            "reviewer_runtime": "litellm_structured",
+            "reviewer_unavailable_recovery": {
+              "authorization": null,
+              "available_reviewers_accept": true,
+              "classification": "reviewer_contract_unmet",
+              "decision": "escalate",
+              "evidence_grade": "degraded",
+              "forced_by_safety": false,
+              "gate": "tdd_review",
+              "policy": "escalate",
+              "reason": "policy_escalate",
+              "reviewer_verdict_counted_as_accept": false,
+              "safety_reasons": [],
+              "schema_version": "reviewer-unavailable-recovery/v1",
+              "unavailable_reviewers": [
+                "independent-reviewer-1"
+              ]
+            },
+            "run_id": "1PIeatLSBe7e-O4PodLr6QM",
+            "schema_version": "independent-reviewer-result/v1",
+            "status": "finished",
+            "transcript_tail": "[cursor attempt 1/4]\n<dual_agent_outcome>{\n  \"task_id\": \"reviewer-panel-second-reviewer-20260601\",\n  \"summary\": \"TDD review gate accepted. Evidence receipts confirm that all planned tests were executed and passed, resolving Claude's concern about unverified test execution. The implementation successfully registers a second independent reviewer from a distinct family, enforces conservative rules, and preserves deterministic replay.\",\n  \"specialists\": [\n    {\n      \"name\": \"Cursor Reviewer\",\n      \"decision\": \"accept\",\n      \"objection\": \"None. Claude's concern about unverified test execution is resolved by the provided evidence receipts showing all tests passed.\"\n    }\n  ],\n  \"decisions\": [\n    \"accept\"\n  ],\n  \"objections\": [\n    \"Claude noted a mismatch in the TDD document regarding a test name in a regression command, but the actual tests exist and pass.\"\n  ],\n  \"changed_files\": [\n    \"supervisor/reviewer_registry.py\",\n    \"mcp_tools/codex_supervisor_stdio.py\",\n    \"tests/test_dual_agent_workflow_driver.py\",\n    \"docs/dual-agent/reviewer-panel-second-reviewer-20260601/test-evidence.md\"\n  ],\n  \"tests\": [\n    \"test_reviewer_registry_returns_codex_cli_second_reviewer\",\n    \"test_codex_cli_reviewer_parses_typed_outcome_with_hashes\",\n    \"test_workflow_exposes_independent_reviewer_results_and_dual_writes_events\",\n    \"test_second_reviewer_important_revise_blocks\",\n    \"test_second_reviewer_outage_proceeds_only_degraded\"\n  ],\n  \"test_status\": \"passed\",\n  \"confidence\": 0.95,\n  \"confidence_rationale\": \"Evidence receipts confirm that all tests passed, including the focused tests and the full suite. Route evidence confirms the distinct family requirement.\",\n  \"confidence_criteria\": [\n    \"Tests executed and passed\",\n    \"Distinct family requirement met\",\n    \"Conservative rules enforced\"\n  ],\n  \"claims\": [\n    \"Second reviewer registered from distinct family\",\n    \"Conservative rules apply across both reviewers\",\n    \"Tests passed and deterministic replay preserved\"\n  ],\n  \"critical_review\": {\n    \"strongest_objection\": \"Claude noted a mismatch in the TDD document regarding a test name in a regression command, but the actual tests exist and pass.\",\n    \"missing_evidence\": [],\n    \"contradictions_checked\": [\n      \"Claude claimed tests were not run, but evidence receipts confirm they were run and passed.\"\n    ],\n    \"assumptions_to_verify\": [\n      \"The tests actually assert the distinct families and conservative rules.\"\n    ],\n    \"what_would_change_my_mind\": \"If the tests did not actually cover the distinct family requirement or if the conservative rules were not enforced.\",\n    \"decision\": \"accept\",\n    \"severity\": \"low\"\n  }\n}</dual_agent_outcome>",
+            "unavailable_reviewer_ids": [
+              "independent-reviewer-1"
+            ]
+          },
+          "nonce": "b7f71e2362e24705",
+          "options": [
+            "Pause",
+            "Kill",
+            "Continue"
+          ],
+          "policy": "escalate",
+          "reviewer_verdict_counted_as_accept": false,
+          "safety_reasons": [],
+          "status": "paused_for_human",
+          "unavailable_reviewers": [
+            "independent-reviewer-1"
+          ]
+        },
+        "event_id": 429050,
+        "evidence_grade": "degraded",
+        "forced_by_safety": false,
+        "gate": "tdd_review",
+        "policy": "escalate",
+        "reason": "policy_escalate",
+        "reviewer_verdict_counted_as_accept": false,
+        "safety_reasons": [],
+        "schema_version": "reviewer-unavailable-recovery/v1",
+        "unavailable_reviewers": [
+          "independent-reviewer-1"
+        ]
+      },
+      "run_id": "1PIeatLSBe7e-O4PodLr6QM",
+      "schema_version": "independent-reviewer-result/v1",
+      "status": "finished",
+      "transcript_tail": "[cursor attempt 1/4]\n<dual_agent_outcome>{\n  \"task_id\": \"reviewer-panel-second-reviewer-20260601\",\n  \"summary\": \"TDD review gate accepted. Evidence receipts confirm that all planned tests were executed and passed, resolving Claude's concern about unverified test execution. The implementation successfully registers a second independent reviewer from a distinct family, enforces conservative rules, and preserves deterministic replay.\",\n  \"specialists\": [\n    {\n      \"name\": \"Cursor Reviewer\",\n      \"decision\": \"accept\",\n      \"objection\": \"None. Claude's concern about unverified test execution is resolved by the provided evidence receipts showing all tests passed.\"\n    }\n  ],\n  \"decisions\": [\n    \"accept\"\n  ],\n  \"objections\": [\n    \"Claude noted a mismatch in the TDD document regarding a test name in a regression command, but the actual tests exist and pass.\"\n  ],\n  \"changed_files\": [\n    \"supervisor/reviewer_registry.py\",\n    \"mcp_tools/codex_supervisor_stdio.py\",\n    \"tests/test_dual_agent_workflow_driver.py\",\n    \"docs/dual-agent/reviewer-panel-second-reviewer-20260601/test-evidence.md\"\n  ],\n  \"tests\": [\n    \"test_reviewer_registry_returns_codex_cli_second_reviewer\",\n    \"test_codex_cli_reviewer_parses_typed_outcome_with_hashes\",\n    \"test_workflow_exposes_independent_reviewer_results_and_dual_writes_events\",\n    \"test_second_reviewer_important_revise_blocks\",\n    \"test_second_reviewer_outage_proceeds_only_degraded\"\n  ],\n  \"test_status\": \"passed\",\n  \"confidence\": 0.95,\n  \"confidence_rationale\": \"Evidence receipts confirm that all tests passed, including the focused tests and the full suite. Route evidence confirms the distinct family requirement.\",\n  \"confidence_criteria\": [\n    \"Tests executed and passed\",\n    \"Distinct family requirement met\",\n    \"Conservative rules enforced\"\n  ],\n  \"claims\": [\n    \"Second reviewer registered from distinct family\",\n    \"Conservative rules apply across both reviewers\",\n    \"Tests passed and deterministic replay preserved\"\n  ],\n  \"critical_review\": {\n    \"strongest_objection\": \"Claude noted a mismatch in the TDD document regarding a test name in a regression command, but the actual tests exist and pass.\",\n    \"missing_evidence\": [],\n    \"contradictions_checked\": [\n      \"Claude claimed tests were not run, but evidence receipts confirm they were run and passed.\"\n    ],\n    \"assumptions_to_verify\": [\n      \"The tests actually assert the distinct families and conservative rules.\"\n    ],\n    \"what_would_change_my_mind\": \"If the tests did not actually cover the distinct family requirement or if the conservative rules were not enforced.\",\n    \"decision\": \"accept\",\n    \"severity\": \"low\"\n  }\n}</dual_agent_outcome>",
+      "unavailable_reviewer_ids": [
+        "independent-reviewer-1"
+      ]
+    },
+    "independent_reviewer_panel_decision": {
+      "accepted_reviewers": [
+        "independent-reviewer-0"
+      ],
+      "available_reviewers": [
+        "independent-reviewer-0"
+      ],
+      "blocking_reviewers": [],
+      "decision": "revise",
+      "low_confidence_reviewers": [],
+      "low_confidence_threshold": 0.0,
+      "missing_reviewers": [
+        "independent-reviewer-1"
+      ],
+      "non_accepting_reviewers": [],
+      "reason": "missing_reviewer_verdict",
+      "reviewer_inputs": [
+        {
+          "accepted": true,
+          "assurance_grade": "text_only",
+          "confidence": 0.95,
+          "decision": "accept",
+          "model": "gemini-3.1-pro-preview",
+          "provider_family": "google",
+          "reviewer_id": "independent-reviewer-0",
+          "runtime": "litellm_structured",
+          "severity": "low",
+          "verdict_present": true
+        },
+        {
+          "accepted": false,
+          "assurance_grade": "agentic",
+          "confidence": null,
+          "decision": "revise",
+          "model": "gpt-5.5",
+          "provider_family": "openai",
+          "reviewer_id": "independent-reviewer-1",
+          "runtime": "codex_cli",
+          "severity": "important",
+          "verdict_present": false
+        }
+      ],
+      "schema_version": "independent-reviewer-panel-decision/v1"
+    },
+    "independent_reviewer_results": [
+      {
+        "accepted": true,
+        "assurance_grade": "text_only",
+        "attempts": 1,
+        "confidence": 0.95,
+        "critical_review": {
+          "assumptions_to_verify": [
+            "The tests actually assert the distinct families and conservative rules."
+          ],
+          "contradictions_checked": [
+            "Claude claimed tests were not run, but evidence receipts confirm they were run and passed."
+          ],
+          "decision": "accept",
+          "missing_evidence": [],
+          "severity": "low",
+          "strongest_objection": "Claude noted a mismatch in the TDD document regarding a test name in a regression command, but the actual tests exist and pass.",
+          "what_would_change_my_mind": "If the tests did not actually cover the distinct family requirement or if the conservative rules were not enforced."
+        },
+        "decision": "accept",
+        "failure_classification": null,
+        "gate": "tdd_review",
+        "lineage": [
+          "google",
+          "litellm_structured",
+          "gemini-3.1-pro-preview"
+        ],
+        "model": "gemini-3.1-pro-preview",
+        "output_sha256": "9ae5510a4eb2c15d37742b2267b7847d1b4d85ac3017aa8558131729129c6ea8",
+        "provider_family": "google",
+        "recoverable": false,
+        "reviewer_assurance": "fallback_text_only",
+        "reviewer_id": "independent-reviewer-0",
+        "reviewer_output_mode": "litellm_structured",
+        "reviewer_runtime": "litellm_structured",
+        "round_index": 1,
+        "runtime": "litellm_structured",
+        "schema_version": "independent-reviewer-panel-result/v1",
+        "severity": "low",
+        "task_id": "reviewer-panel-second-reviewer-20260601",
+        "tool_access": "text_only",
+        "transcript_refs": [
+          {
+            "chars": 2688,
+            "kind": "reviewer_transcript_tail",
+            "ref": "independent_reviewer_review:reviewer-panel-second-reviewer-20260601:tdd_review:1:independent-reviewer-0"
+          }
+        ],
+        "transcript_sha256": "1e782fc6ebaa2e8f9189ac66ab3e16946ad56af88b7e2a6cab032068586b678b",
+        "verdict_present": true
+      },
+      {
+        "accepted": false,
+        "assurance_grade": "agentic",
+        "attempts": 1,
+        "confidence": null,
+        "critical_review": {},
+        "decision": "revise",
+        "failure_classification": "reviewer_contract_unmet",
+        "gate": "tdd_review",
+        "lineage": [
+          "openai",
+          "codex_cli",
+          "gpt-5.5"
+        ],
+        "model": "gpt-5.5",
+        "output_sha256": null,
+        "provider_family": "openai",
+        "recoverable": true,
+        "reviewer_assurance": "tool_backed_primary",
+        "reviewer_id": "independent-reviewer-1",
+        "reviewer_output_mode": "codex_cli",
+        "reviewer_runtime": "codex_cli",
+        "round_index": 1,
+        "runtime": "codex_cli",
+        "schema_version": "independent-reviewer-panel-result/v1",
+        "severity": "important",
+        "task_id": "reviewer-panel-second-reviewer-20260601",
+        "tool_access": "codebase_tools",
+        "transcript_refs": [
+          {
+            "chars": 4000,
+            "kind": "reviewer_transcript_tail",
+            "ref": "independent_reviewer_review:reviewer-panel-second-reviewer-20260601:tdd_review:1:independent-reviewer-1"
+          }
+        ],
+        "transcript_sha256": "67c55b55d388f131b33e1fdfa247459e082fa26d4473192d9227df8896b20666",
+        "verdict_present": false
+      }
+    ],
+    "outcome": {
+      "changed_files": [
+        "tests/test_dual_agent_workflow_driver.py",
+        "supervisor/reviewer_registry.py",
+        "mcp_tools/codex_supervisor_stdio.py"
+      ],
+      "claims": [
+        "The tdd plan is sound, complete, public-boundary, and grill-resolved",
+        "All planned tests are realized as real non-vacuous tests in the working tree",
+        "Tests are deterministic and do not invoke live Codex/Cursor",
+        "Non-goals are respected: no calibrated weighting, no agentic mislabel, conservative rules unchanged"
+      ],
+      "confidence": 0.86,
+      "confidence_criteria": [
+        "All 5 planned tests present and named consistently with the plan body: yes",
+        "Tests hit the public boundary where required: yes (3 via run_dual_agent_workflow tool)",
+        "Tests non-vacuous (assert distinct families, blocking, degraded-not-accept): yes",
+        "Fixtures exist and prevent live calls: yes",
+        "Grill findings resolved: 3/3",
+        "Tests actually executed green: NOT verified (pytest approval blocked)",
+        "Regression commands runnable verbatim: NO (line 61 names nonexistent test)"
+      ],
+      "confidence_rationale": "High-confidence on test-plan soundness and realization: every planned test was read and verified non-vacuous and public-boundary, fixtures exist, and grill findings are resolved. Held below 0.9 because pytest was not executed (approval blocked) so GREEN is inspection-only, handoff byte-hashes were not re-verified, and there is a real (though non-blocking) regression-command naming defect.",
+      "critical_review": {
+        "assumptions_to_verify": [
+          "Suite actually passes when pytest runs (currently inspection-only)",
+          "Default codex_runner fake injection holds for every test path so CI never hits live Codex",
+          "Handoff artifact bytes match the declared sha256 hashes"
+        ],
+        "contradictions_checked": [
+          "TDD section-3 test name vs regression-command name: MISMATCH found (cmd name is stale; real test exists under section name)",
+          "Adapter sets reviewer_assurance tool_backed_primary vs panel asserts assurance_grade agentic: consistent across the two field layers, both gated on command_executions",
+          "Non-goal 'no calibrated weighting' vs presence of low_confidence_threshold: consistent \u2014 default 0.0 (off), opt-in only",
+          "Non-goal 'no agentic mislabel' vs codex labeled agentic: truthful \u2014 gated on command_executions in the JSONL"
+        ],
+        "decision": "accept",
+        "missing_evidence": [
+          "Empirical pytest run confirming all 5 tests pass (GREEN) \u2014 Bash/pytest approval not granted in this env",
+          "Re-computed sha256 of handoff planning artifacts vs packet hashes \u2014 shasum blocked",
+          "Confirmation that the panel-level assurance_grade 'agentic' mapping is faithful to adapter reviewer_assurance under all command_execution states"
+        ],
+        "severity": "low",
+        "strongest_objection": "The focused regression command in tdd.md:61 references a test name that does not exist (test_run_dual_agent_workflow_records_two_independent_reviewers); the actual public-boundary test is test_workflow_exposes_independent_reviewer_results_and_dual_writes_events. Running that exact command verbatim errors at collection.",
+        "what_would_change_my_mind": "A pytest run showing any of the 5 tests fail or pass vacuously, evidence that a test secretly invokes live Codex/Cursor, or discovery that a planned acceptance dimension (distinct family, truthful assurance, conservative-block parity, honest degrade) is unasserted."
+      },
+      "decisions": [
+        "accept"
+      ],
+      "objections": [
+        "tdd.md:61 focused regression command names test_run_dual_agent_workflow_records_two_independent_reviewers which does not exist; the real test is test_workflow_exposes_independent_reviewer_results_and_dual_writes_events (line 2776). That exact command errors at collection, but coverage is preserved by the file-level and full-suite commands (lines 62-63). REVISE-grade nit, not blocking.",
+        "Residual: pytest not run (Bash approval blocked); GREEN verified by inspection only and handoff byte-hashes not re-verified."
+      ],
+      "specialists": [
+        {
+          "decision": "accept",
+          "name": "lead-gate-reviewer",
+          "objection": "tdd.md:61 regression command references nonexistent test name; coverage intact via broader commands"
+        }
+      ],
+      "summary": "tdd_review ACCEPT: all 5 planned tests (P1-P5) realized as real non-vacuous tests; 3 hit the public boundary via run_dual_agent_workflow, 2 cover the registry/adapter agentic bar (tool+read-only sandbox+hash). Fake runners injected by default so no test calls live Codex; grill 3/3 resolved; non-goals respected (no weighting, no agentic mislabel, conservative rules unchanged). One non-blocking artifact defect: tdd.md:61 focused regression command names a nonexistent test.",
+      "task_id": "reviewer-panel-second-reviewer-20260601",
+      "test_status": "unknown",
+      "tests": [
+        "test_reviewer_registry_returns_codex_cli_second_reviewer",
+        "test_codex_cli_reviewer_parses_typed_outcome_with_hashes",
+        "test_workflow_exposes_independent_reviewer_results_and_dual_writes_events",
+        "test_second_reviewer_important_revise_blocks",
+        "test_second_reviewer_outage_proceeds_only_degraded"
+      ]
+    },
+    "probes": {
+      "P1": {
+        "details": {},
+        "probe_id": "P1",
+        "reason": "planning_artifact_boundaries_ok",
+        "status": "green"
+      },
+      "P2": {
+        "details": {
+          "captured_bytes": 9219,
+          "captured_token_estimate": 2297,
+          "orchestration_surface": "/lead"
+        },
+        "probe_id": "P2",
+        "reason": "worker_orchestration_invocation_ok",
+        "status": "green"
+      },
+      "P3": {
+        "details": {},
+        "probe_id": "P3",
+        "reason": "outcome_fidelity_ok",
+        "status": "green"
+      },
+      "P4": {
+        "details": {
+          "decisions": [
+            "accept",
+            "accept",
+            "accept"
+          ]
+        },
+        "probe_id": "P4",
+        "reason": "outcome_gate_decision_ok",
+        "status": "green"
+      },
+      "P_planning": {
+        "details": {
+          "artifact_hashes": {
+            "grill_findings": "c39a13fce9f539caec7781049086e06dc265083c565bb0d4472ab128b5394766",
+            "issues": "bf7f904165f43a3cdf073d3565f1df87ed303695910c2c572002f93e6492c3f6",
+            "prd": "44ec20ca81f4b367497420abf2dd2d1b80dd85d5d90fa7a90060de9ba5f4b6f6",
+            "tdd_plan": "351f63bb2db48167ec11e76d4178f72caeb291208839abf9d2c1fa275b97b3fe"
+          },
+          "artifacts": [
+            {
+              "kind": "prd",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-second-reviewer-20260601/source/prd.md",
+              "sha256": "44ec20ca81f4b367497420abf2dd2d1b80dd85d5d90fa7a90060de9ba5f4b6f6",
+              "status": "accepted"
+            },
+            {
+              "kind": "issues",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-second-reviewer-20260601/source/issues.md",
+              "sha256": "bf7f904165f43a3cdf073d3565f1df87ed303695910c2c572002f93e6492c3f6",
+              "status": "accepted"
+            },
+            {
+              "kind": "tdd_plan",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-second-reviewer-20260601/source/tdd.md",
+              "sha256": "351f63bb2db48167ec11e76d4178f72caeb291208839abf9d2c1fa275b97b3fe",
+              "status": "accepted"
+            },
+            {
+              "kind": "grill_findings",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-second-reviewer-20260601/source/grill-findings.md",
+              "sha256": "c39a13fce9f539caec7781049086e06dc265083c565bb0d4472ab128b5394766",
+              "status": "accepted"
+            }
+          ],
+          "checks": {
+            "AGG-001": "pass",
+            "AGG-002": "pass",
+            "GRILL-001": "pass",
+            "GRILL-002": "pass",
+            "GRILL-003": "pass",
+            "ISS-001": "pass",
+            "ISS-002": "pass",
+            "ISS-003": "pass",
+            "ISS-004": "pass",
+            "PRD-001": "pass",
+            "PRD-002": "pass",
+            "PRD-003": "pass",
+            "PRD-004": "pass",
+            "PRD-005": "pass",
+            "PRD-006": "pass",
+            "TDD-001": "pass",
+            "TDD-002": "pass",
+            "TDD-003": "pass",
+            "TDD-004": "pass"
+          },
+          "gate": "tdd_review",
+          "task_id": "reviewer-panel-second-reviewer-20260601",
+          "validator_version": "1.0.0",
+          "verdict": "accepted"
+        },
+        "probe_id": "P_planning",
+        "reason": "planning_validation_ok",
+        "status": "green"
+      }
+    },
+    "status": "blocked",
+    "task_id": "reviewer-panel-second-reviewer-20260601",
+    "trace_envelope": {
+      "artifacts": [],
+      "claims": [
+        "The tdd plan is sound, complete, public-boundary, and grill-resolved",
+        "All planned tests are realized as real non-vacuous tests in the working tree",
+        "Tests are deterministic and do not invoke live Codex/Cursor",
+        "Non-goals are respected: no calibrated weighting, no agentic mislabel, conservative rules unchanged"
+      ],
+      "event_kind": "dual_agent_gate_result",
+      "failure_taxonomy": {
+        "category": "system_design",
+        "code": "reviewer_contract_unmet",
+        "framework": "MAST-inspired",
+        "mast_category": null,
+        "mast_code": null,
+        "mast_mode": null,
+        "probe_id": "",
+        "schema_version": "dual-agent-failure-taxonomy/v1",
+        "source": "result_escalation",
+        "subcategory": "unknown"
+      },
+      "gate": "tdd_review",
+      "policy_verdict": "blocked",
+      "receipts": [],
+      "run_id": "codex-reviewer-panel-second-reviewer-20260601",
+      "schema_version": "dual-agent-trace-envelope/v1",
+      "source": "dual_agent",
+      "task_id": "reviewer-panel-second-reviewer-20260601",
+      "tool_calls": []
+    },
+    "workflow_reviewer_unavailable_escalation": {
+      "action_id": 1322,
+      "ask_id": 55,
+      "classification": "reviewer_contract_unmet",
+      "evidence_grade": "degraded",
+      "forced_by_safety": false,
+      "independent_reviewer": {
+        "accepted": true,
+        "agent_id": null,
+        "attempts": 1,
+        "critical_review": {
+          "assumptions_to_verify": [
+            "The tests actually assert the distinct families and conservative rules."
+          ],
+          "contradictions_checked": [
+            "Claude claimed tests were not run, but evidence receipts confirm they were run and passed."
+          ],
+          "decision": "accept",
+          "evidence_refs": [],
+          "missing_evidence": [],
+          "schema_version": "critical-review/v1",
+          "severity": "low",
+          "strongest_objection": "Claude noted a mismatch in the TDD document regarding a test name in a regression command, but the actual tests exist and pass.",
+          "what_would_change_my_mind": "If the tests did not actually cover the distinct family requirement or if the conservative rules were not enforced."
+        },
+        "diagnostics": {
+          "completion_tokens": 2989,
+          "fallback": {
+            "attempted": true,
+            "from_runtime": "cursor_sdk",
+            "primary_failure": {
+              "attempts": 1,
+              "diagnostics": {
+                "failure": {
+                  "attempts": 1,
+                  "original_reason": "cursor_sdk_missing",
+                  "reviewer_output_mode": "cursor_sdk"
+                }
+              },
+              "failure_classification": "reviewer_infrastructure_unavailable",
+              "model": null,
+              "probe": {
+                "details": {
+                  "attempts": 1,
+                  "original_reason": "cursor_sdk_missing",
+                  "recoverable": true,
+                  "retry_reasons": []
+                },
+                "probe_id": "CURSOR",
+                "reason": "reviewer_infrastructure_unavailable",
+                "status": "red"
+              },
+              "recoverable": true,
+              "retry_reasons": [],
+              "reviewer_assurance": "unavailable",
+              "reviewer_output_mode": "cursor_sdk",
+              "reviewer_runtime": "cursor_sdk",
+              "status": null
+            },
+            "reason": "cursor_sdk_missing",
+            "to_runtime": "litellm_structured"
+          },
+          "finish_reason": "stop",
+          "prompt_chars": 13417,
+          "prompt_sha256": "b5a4dd79d0bd6fd2f7b180b437d3fec542ee5053e18d7d1269985558ebefeb19",
+          "prompt_tokens": 3560
+        },
+        "duration_ms": null,
+        "failure_classification": null,
+        "fallback_from_runtime": "cursor_sdk",
+        "fallback_reason": "cursor_sdk_missing",
+        "independent_reviewer_panel_decision": {
+          "accepted_reviewers": [
+            "independent-reviewer-0"
+          ],
+          "available_reviewers": [
+            "independent-reviewer-0"
+          ],
+          "blocking_reviewers": [],
+          "decision": "revise",
+          "low_confidence_reviewers": [],
+          "low_confidence_threshold": 0.0,
+          "missing_reviewers": [
+            "independent-reviewer-1"
+          ],
+          "non_accepting_reviewers": [],
+          "reason": "missing_reviewer_verdict",
+          "reviewer_inputs": [
+            {
+              "accepted": true,
+              "assurance_grade": "text_only",
+              "confidence": 0.95,
+              "decision": "accept",
+              "model": "gemini-3.1-pro-preview",
+              "provider_family": "google",
+              "reviewer_id": "independent-reviewer-0",
+              "runtime": "litellm_structured",
+              "severity": "low",
+              "verdict_present": true
+            },
+            {
+              "accepted": false,
+              "assurance_grade": "agentic",
+              "confidence": null,
+              "decision": "revise",
+              "model": "gpt-5.5",
+              "provider_family": "openai",
+              "reviewer_id": "independent-reviewer-1",
+              "runtime": "codex_cli",
+              "severity": "important",
+              "verdict_present": false
+            }
+          ],
+          "schema_version": "independent-reviewer-panel-decision/v1"
+        },
+        "independent_reviewer_results": [
+          {
+            "accepted": true,
+            "assurance_grade": "text_only",
+            "attempts": 1,
+            "confidence": 0.95,
+            "critical_review": {
+              "assumptions_to_verify": [
+                "The tests actually assert the distinct families and conservative rules."
+              ],
+              "contradictions_checked": [
+                "Claude claimed tests were not run, but evidence receipts confirm they were run and passed."
+              ],
+              "decision": "accept",
+              "missing_evidence": [],
+              "severity": "low",
+              "strongest_objection": "Claude noted a mismatch in the TDD document regarding a test name in a regression command, but the actual tests exist and pass.",
+              "what_would_change_my_mind": "If the tests did not actually cover the distinct family requirement or if the conservative rules were not enforced."
+            },
+            "decision": "accept",
+            "failure_classification": null,
+            "gate": "tdd_review",
+            "lineage": [
+              "google",
+              "litellm_structured",
+              "gemini-3.1-pro-preview"
+            ],
+            "model": "gemini-3.1-pro-preview",
+            "output_sha256": "9ae5510a4eb2c15d37742b2267b7847d1b4d85ac3017aa8558131729129c6ea8",
+            "provider_family": "google",
+            "recoverable": false,
+            "reviewer_assurance": "fallback_text_only",
+            "reviewer_id": "independent-reviewer-0",
+            "reviewer_output_mode": "litellm_structured",
+            "reviewer_runtime": "litellm_structured",
+            "round_index": 1,
+            "runtime": "litellm_structured",
+            "schema_version": "independent-reviewer-panel-result/v1",
+            "severity": "low",
+            "task_id": "reviewer-panel-second-reviewer-20260601",
+            "tool_access": "text_only",
+            "transcript_refs": [
+              {
+                "chars": 2688,
+                "kind": "reviewer_transcript_tail",
+                "ref": "independent_reviewer_review:reviewer-panel-second-reviewer-20260601:tdd_review:1:independent-reviewer-0"
+              }
+            ],
+            "transcript_sha256": "1e782fc6ebaa2e8f9189ac66ab3e16946ad56af88b7e2a6cab032068586b678b",
+            "verdict_present": true
+          },
+          {
+            "accepted": false,
+            "assurance_grade": "agentic",
+            "attempts": 1,
+            "confidence": null,
+            "critical_review": {},
+            "decision": "revise",
+            "failure_classification": "reviewer_contract_unmet",
+            "gate": "tdd_review",
+            "lineage": [
+              "openai",
+              "codex_cli",
+              "gpt-5.5"
+            ],
+            "model": "gpt-5.5",
+            "output_sha256": null,
+            "provider_family": "openai",
+            "recoverable": true,
+            "reviewer_assurance": "tool_backed_primary",
+            "reviewer_id": "independent-reviewer-1",
+            "reviewer_output_mode": "codex_cli",
+            "reviewer_runtime": "codex_cli",
+            "round_index": 1,
+            "runtime": "codex_cli",
+            "schema_version": "independent-reviewer-panel-result/v1",
+            "severity": "important",
+            "task_id": "reviewer-panel-second-reviewer-20260601",
+            "tool_access": "codebase_tools",
+            "transcript_refs": [
+              {
+                "chars": 4000,
+                "kind": "reviewer_transcript_tail",
+                "ref": "independent_reviewer_review:reviewer-panel-second-reviewer-20260601:tdd_review:1:independent-reviewer-1"
+              }
+            ],
+            "transcript_sha256": "67c55b55d388f131b33e1fdfa247459e082fa26d4473192d9227df8896b20666",
+            "verdict_present": false
+          }
+        ],
+        "model": "gemini-3.1-pro-preview",
+        "outcome": {
+          "changed_files": [
+            "supervisor/reviewer_registry.py",
+            "mcp_tools/codex_supervisor_stdio.py",
+            "tests/test_dual_agent_workflow_driver.py",
+            "docs/dual-agent/reviewer-panel-second-reviewer-20260601/test-evidence.md"
+          ],
+          "claims": [
+            "Second reviewer registered from distinct family",
+            "Conservative rules apply across both reviewers",
+            "Tests passed and deterministic replay preserved"
+          ],
+          "confidence": 0.95,
+          "confidence_criteria": [
+            "Tests executed and passed",
+            "Distinct family requirement met",
+            "Conservative rules enforced"
+          ],
+          "confidence_rationale": "Evidence receipts confirm that all tests passed, including the focused tests and the full suite. Route evidence confirms the distinct family requirement.",
+          "critical_review": {
+            "assumptions_to_verify": [
+              "The tests actually assert the distinct families and conservative rules."
+            ],
+            "contradictions_checked": [
+              "Claude claimed tests were not run, but evidence receipts confirm they were run and passed."
+            ],
+            "decision": "accept",
+            "missing_evidence": [],
+            "severity": "low",
+            "strongest_objection": "Claude noted a mismatch in the TDD document regarding a test name in a regression command, but the actual tests exist and pass.",
+            "what_would_change_my_mind": "If the tests did not actually cover the distinct family requirement or if the conservative rules were not enforced."
+          },
+          "decisions": [
+            "accept"
+          ],
+          "objections": [
+            "Claude noted a mismatch in the TDD document regarding a test name in a regression command, but the actual tests exist and pass."
+          ],
+          "specialists": [
+            {
+              "decision": "accept",
+              "name": "Cursor Reviewer",
+              "objection": "None. Claude's concern about unverified test execution is resolved by the provided evidence receipts showing all tests passed."
+            }
+          ],
+          "summary": "TDD review gate accepted. Evidence receipts confirm that all planned tests were executed and passed, resolving Claude's concern about unverified test execution. The implementation successfully registers a second independent reviewer from a distinct family, enforces conservative rules, and preserves deterministic replay.",
+          "task_id": "reviewer-panel-second-reviewer-20260601",
+          "test_status": "passed",
+          "tests": [
+            "test_reviewer_registry_returns_codex_cli_second_reviewer",
+            "test_codex_cli_reviewer_parses_typed_outcome_with_hashes",
+            "test_workflow_exposes_independent_reviewer_results_and_dual_writes_events",
+            "test_second_reviewer_important_revise_blocks",
+            "test_second_reviewer_outage_proceeds_only_degraded"
+          ]
+        },
+        "panel_failure_classification": "reviewer_contract_unmet",
+        "panel_recoverable_failures": [
+          {
+            "failure_classification": "reviewer_contract_unmet",
+            "model": "gpt-5.5",
+            "recoverable": true,
+            "reviewer_id": "independent-reviewer-1",
+            "runtime": "codex_cli"
+          }
+        ],
+        "probe": {
+          "details": {},
+          "probe_id": "CURSOR",
+          "reason": "cursor_review_ok",
+          "status": "green"
+        },
+        "recoverable": false,
+        "retry_reasons": [],
+        "reviewer_assurance": "fallback_text_only",
+        "reviewer_output_mode": "litellm_structured",
+        "reviewer_runtime": "litellm_structured",
+        "reviewer_unavailable_recovery": {
+          "authorization": null,
+          "available_reviewers_accept": true,
+          "classification": "reviewer_contract_unmet",
+          "decision": "escalate",
+          "evidence_grade": "degraded",
+          "forced_by_safety": false,
+          "gate": "tdd_review",
+          "policy": "escalate",
+          "reason": "policy_escalate",
+          "reviewer_verdict_counted_as_accept": false,
+          "safety_reasons": [],
+          "schema_version": "reviewer-unavailable-recovery/v1",
+          "unavailable_reviewers": [
+            "independent-reviewer-1"
+          ]
+        },
+        "run_id": "1PIeatLSBe7e-O4PodLr6QM",
+        "schema_version": "independent-reviewer-result/v1",
+        "status": "finished",
+        "transcript_tail": "[cursor attempt 1/4]\n<dual_agent_outcome>{\n  \"task_id\": \"reviewer-panel-second-reviewer-20260601\",\n  \"summary\": \"TDD review gate accepted. Evidence receipts confirm that all planned tests were executed and passed, resolving Claude's concern about unverified test execution. The implementation successfully registers a second independent reviewer from a distinct family, enforces conservative rules, and preserves deterministic replay.\",\n  \"specialists\": [\n    {\n      \"name\": \"Cursor Reviewer\",\n      \"decision\": \"accept\",\n      \"objection\": \"None. Claude's concern about unverified test execution is resolved by the provided evidence receipts showing all tests passed.\"\n    }\n  ],\n  \"decisions\": [\n    \"accept\"\n  ],\n  \"objections\": [\n    \"Claude noted a mismatch in the TDD document regarding a test name in a regression command, but the actual tests exist and pass.\"\n  ],\n  \"changed_files\": [\n    \"supervisor/reviewer_registry.py\",\n    \"mcp_tools/codex_supervisor_stdio.py\",\n    \"tests/test_dual_agent_workflow_driver.py\",\n    \"docs/dual-agent/reviewer-panel-second-reviewer-20260601/test-evidence.md\"\n  ],\n  \"tests\": [\n    \"test_reviewer_registry_returns_codex_cli_second_reviewer\",\n    \"test_codex_cli_reviewer_parses_typed_outcome_with_hashes\",\n    \"test_workflow_exposes_independent_reviewer_results_and_dual_writes_events\",\n    \"test_second_reviewer_important_revise_blocks\",\n    \"test_second_reviewer_outage_proceeds_only_degraded\"\n  ],\n  \"test_status\": \"passed\",\n  \"confidence\": 0.95,\n  \"confidence_rationale\": \"Evidence receipts confirm that all tests passed, including the focused tests and the full suite. Route evidence confirms the distinct family requirement.\",\n  \"confidence_criteria\": [\n    \"Tests executed and passed\",\n    \"Distinct family requirement met\",\n    \"Conservative rules enforced\"\n  ],\n  \"claims\": [\n    \"Second reviewer registered from distinct family\",\n    \"Conservative rules apply across both reviewers\",\n    \"Tests passed and deterministic replay preserved\"\n  ],\n  \"critical_review\": {\n    \"strongest_objection\": \"Claude noted a mismatch in the TDD document regarding a test name in a regression command, but the actual tests exist and pass.\",\n    \"missing_evidence\": [],\n    \"contradictions_checked\": [\n      \"Claude claimed tests were not run, but evidence receipts confirm they were run and passed.\"\n    ],\n    \"assumptions_to_verify\": [\n      \"The tests actually assert the distinct families and conservative rules.\"\n    ],\n    \"what_would_change_my_mind\": \"If the tests did not actually cover the distinct family requirement or if the conservative rules were not enforced.\",\n    \"decision\": \"accept\",\n    \"severity\": \"low\"\n  }\n}</dual_agent_outcome>",
+        "unavailable_reviewer_ids": [
+          "independent-reviewer-1"
+        ]
+      },
+      "nonce": "b7f71e2362e24705",
+      "options": [
+        "Pause",
+        "Kill",
+        "Continue"
+      ],
+      "policy": "escalate",
+      "reviewer_verdict_counted_as_accept": false,
+      "safety_reasons": [],
+      "status": "paused_for_human",
+      "unavailable_reviewers": [
+        "independent-reviewer-1"
+      ]
+    }
+  },
+  "mandatory_artifacts": {
+    "missing": [],
+    "output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-second-reviewer-20260601",
+    "required": [
+      "source/prd.md",
+      "source/grill-findings.md",
+      "source/issues.md",
+      "source/tdd.md",
+      "source/grill-findings-tdd.md",
+      "source/implementation-plan.md",
+      "interactions.md",
+      "outcome-review.md",
+      "transcript.md"
+    ],
+    "status": "ok"
+  },
+  "resume": {
+    "artifact_output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-second-reviewer-20260601",
+    "blocker": {
+      "gate": "tdd_review",
+      "latest_event_id": 429051,
+      "status": "blocked"
+    },
+    "current_gate": "tdd_review",
+    "last_status": "blocked",
+    "latest_event_id": 429052,
+    "next_safe_action": "inspect blocker, provide corrective input, then rerun run_dual_agent_workflow",
+    "prompt": "Use codex_supervisor.\nContinue run_id=codex-reviewer-panel-second-reviewer-20260601\ntask_id=reviewer-panel-second-reviewer-20260601\ncurrent_gate=tdd_review\nlast_status=blocked\nlatest_event_id=429052\nnext_safe_action=inspect blocker, provide corrective input, then rerun run_dual_agent_workflow\nartifact_output_dir=/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-second-reviewer-20260601\nfirst inspect: read_gate_transcript(run_id=codex-reviewer-panel-second-reviewer-20260601, task_id=reviewer-panel-second-reviewer-20260601)",
+    "run_id": "codex-reviewer-panel-second-reviewer-20260601",
+    "status": "ok",
+    "steps": [
+      {
+        "attempt_count": 1,
+        "gate": "prd_review",
+        "latest_event_id": 428415,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "issues_review",
+        "latest_event_id": 428693,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "tdd_review",
+        "latest_event_id": 429051,
+        "status": "blocked"
+      }
+    ],
+    "task_id": "reviewer-panel-second-reviewer-20260601",
+    "transcript_command": "read_gate_transcript(run_id=codex-reviewer-panel-second-reviewer-20260601, task_id=reviewer-panel-second-reviewer-20260601)"
+  },
+  "run_id": "codex-reviewer-panel-second-reviewer-20260601",
+  "status": "blocked",
+  "steps": [
+    {
+      "attempt_count": 1,
+      "gate": "prd_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "issues_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "tdd_review",
+      "status": "blocked"
+    }
+  ],
+  "task_id": "reviewer-panel-second-reviewer-20260601",
+  "visual_evidence_policy": {
+    "artifact_matches": [],
+    "matched_terms": [],
+    "required": false,
+    "source": "not_user_facing"
+  },
+  "workflow_route": {
+    "agentic_lead_policy": {
+      "min_subagents": 0,
+      "policy": "off",
+      "required_evidence_grade": "self_reported",
+      "required_roles": [],
+      "solo_exception_for_artifact_only_gates": false
+    },
+    "cursor_review_gates": [
+      "tdd_review",
+      "implementation_plan",
+      "outcome_review"
+    ],
+    "cursor_review_profile": "rigorous",
+    "dynamic_workflow_task_class": null,
+    "effective_cursor_review": true,
+    "execution_layer_mode": "lead_direct",
+    "force_cursor_review": false,
+    "gate_count": 6,
+    "gates": [
+      "prd_review",
+      "issues_review",
+      "tdd_review",
+      "implementation_plan",
+      "execution",
+      "outcome_review"
+    ],
+    "planning_depth": "large",
+    "reasons": [
+      "default_large"
+    ],
+    "requested_cursor_review": true,
+    "required_skill_stages": [
+      "to_prd",
+      "prd_grill",
+      "to_issues",
+      "tdd",
+      "tdd_grill"
+    ],
+    "requires_agentic_lead_policy_receipts": false,
+    "requires_brainstorm": false,
+    "requires_dynamic_workflow_receipts": false,
+    "requires_skill_receipts": true,
+    "resume": {
+      "mode": "resume_from_prior_steps",
+      "pending_gates": [
+        "issues_review",
+        "tdd_review",
+        "implementation_plan",
+        "execution",
+        "outcome_review"
+      ],
+      "schema_version": "dual-agent-workflow-resume/v1",
+      "skipped_gates": [
+        "prd_review"
+      ],
+      "skipped_steps": [
+        {
+          "attempt_count": 1,
+          "gate": "prd_review",
+          "latest_event_id": 428415,
+          "status": "accepted"
+        }
+      ]
+    },
+    "reviewer_infra_retry_backoff_s": 1.0,
+    "reviewer_infra_retry_limit": 2,
+    "reviewer_low_confidence_threshold": 0.0,
+    "reviewer_max_tokens": 4096,
+    "reviewer_model": "composer-2.5",
+    "reviewer_output_mode": "cursor_sdk",
+    "reviewer_unavailable_policy": "escalate",
+    "schema_version": "dual-agent-workflow-route/v1",
+    "task_complexity": "large"
+  }
+}

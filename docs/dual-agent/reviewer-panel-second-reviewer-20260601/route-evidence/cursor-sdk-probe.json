@@ -1,0 +1,254 @@
+{
+  "api_key_present": true,
+  "attempts": [
+    {
+      "accepted": false,
+      "agent_id_present": false,
+      "cursor_status": null,
+      "decision": null,
+      "diagnostics": {
+        "failure": {
+          "attempts": 1,
+          "diagnostics": {
+            "failure": {
+              "attempts": 1,
+              "error": "internal: internal error",
+              "infrastructure_retries": {
+                "attempt_count": 1,
+                "attempts": [
+                  {
+                    "attempt": 1,
+                    "error": "internal: internal error",
+                    "reason": "reviewer_invocation_failed"
+                  }
+                ],
+                "backoff_s": [],
+                "exhausted": true,
+                "failed_attempt_count": 1,
+                "retry_limit": 0
+              },
+              "original_reason": "reviewer_invocation_failed",
+              "reason": "reviewer_invocation_failed",
+              "retry_limit": 0,
+              "reviewer_output_mode": "cursor_sdk"
+            },
+            "infrastructure_retries": {
+              "attempt_count": 1,
+              "attempts": [
+                {
+                  "attempt": 1,
+                  "error": "internal: internal error",
+                  "reason": "reviewer_invocation_failed"
+                }
+              ],
+              "backoff_s": [],
+              "exhausted": true,
+              "failed_attempt_count": 1,
+              "retry_limit": 0
+            }
+          },
+          "failure_classification": "reviewer_infrastructure_unavailable",
+          "model": null,
+          "probe": {
+            "details": {
+              "attempts": 1,
+              "error": "internal: internal error",
+              "infrastructure_retries": {
+                "attempt_count": 1,
+                "attempts": [
+                  {
+                    "attempt": 1,
+                    "error": "internal: internal error",
+                    "reason": "reviewer_invocation_failed"
+                  }
+                ],
+                "backoff_s": [],
+                "exhausted": true,
+                "failed_attempt_count": 1,
+                "retry_limit": 0
+              },
+              "original_reason": "reviewer_invocation_failed",
+              "reason": "reviewer_invocation_failed",
+              "recoverable": true,
+              "retry_limit": 0,
+              "retry_reasons": []
+            },
+            "probe_id": "CURSOR",
+            "reason": "reviewer_infrastructure_unavailable",
+            "status": "red"
+          },
+          "recoverable": true,
+          "retry_reasons": [],
+          "reviewer_assurance": "unavailable",
+          "reviewer_output_mode": "cursor_sdk",
+          "reviewer_runtime": "cursor_sdk",
+          "status": null
+        },
+        "fallback": {
+          "attempted": false,
+          "reason": "missing_openai_api_key"
+        },
+        "infrastructure_retries": {
+          "attempt_count": 1,
+          "attempts": [
+            {
+              "attempt": 1,
+              "error": "internal: internal error",
+              "reason": "reviewer_invocation_failed"
+            }
+          ],
+          "backoff_s": [],
+          "exhausted": true,
+          "failed_attempt_count": 1,
+          "retry_limit": 0
+        }
+      },
+      "duration_ms": null,
+      "elapsed_s": 2.416,
+      "failure_classification": "reviewer_infrastructure_unavailable",
+      "fallback_from_runtime": null,
+      "fallback_reason": null,
+      "model": "composer-2.5",
+      "outcome_present": false,
+      "probe_reason": "reviewer_infrastructure_unavailable",
+      "probe_status": "red",
+      "recoverable": true,
+      "reported_model": null,
+      "reviewer_assurance": "unavailable",
+      "reviewer_output_mode": "cursor_sdk",
+      "reviewer_runtime": "cursor_sdk",
+      "run_id_present": false,
+      "started_at": 1780410544,
+      "status": "blocked",
+      "transcript_chars": 0,
+      "transcript_sha256": null
+    },
+    {
+      "accepted": false,
+      "agent_id_present": false,
+      "cursor_status": null,
+      "decision": null,
+      "diagnostics": {
+        "failure": {
+          "attempts": 1,
+          "diagnostics": {
+            "failure": {
+              "attempts": 1,
+              "error": "internal: internal error",
+              "infrastructure_retries": {
+                "attempt_count": 1,
+                "attempts": [
+                  {
+                    "attempt": 1,
+                    "error": "internal: internal error",
+                    "reason": "reviewer_invocation_failed"
+                  }
+                ],
+                "backoff_s": [],
+                "exhausted": true,
+                "failed_attempt_count": 1,
+                "retry_limit": 0
+              },
+              "original_reason": "reviewer_invocation_failed",
+              "reason": "reviewer_invocation_failed",
+              "retry_limit": 0,
+              "reviewer_output_mode": "cursor_sdk"
+            },
+            "infrastructure_retries": {
+              "attempt_count": 1,
+              "attempts": [
+                {
+                  "attempt": 1,
+                  "error": "internal: internal error",
+                  "reason": "reviewer_invocation_failed"
+                }
+              ],
+              "backoff_s": [],
+              "exhausted": true,
+              "failed_attempt_count": 1,
+              "retry_limit": 0
+            }
+          },
+          "failure_classification": "reviewer_infrastructure_unavailable",
+          "model": null,
+          "probe": {
+            "details": {
+              "attempts": 1,
+              "error": "internal: internal error",
+              "infrastructure_retries": {
+                "attempt_count": 1,
+                "attempts": [
+                  {
+                    "attempt": 1,
+                    "error": "internal: internal error",
+                    "reason": "reviewer_invocation_failed"
+                  }
+                ],
+                "backoff_s": [],
+                "exhausted": true,
+                "failed_attempt_count": 1,
+                "retry_limit": 0
+              },
+              "original_reason": "reviewer_invocation_failed",
+              "reason": "reviewer_invocation_failed",
+              "recoverable": true,
+              "retry_limit": 0,
+              "retry_reasons": []
+            },
+            "probe_id": "CURSOR",
+            "reason": "reviewer_infrastructure_unavailable",
+            "status": "red"
+          },
+          "recoverable": true,
+          "retry_reasons": [],
+          "reviewer_assurance": "unavailable",
+          "reviewer_output_mode": "cursor_sdk",
+          "reviewer_runtime": "cursor_sdk",
+          "status": null
+        },
+        "fallback": {
+          "attempted": false,
+          "reason": "missing_openai_api_key"
+        },
+        "infrastructure_retries": {
+          "attempt_count": 1,
+          "attempts": [
+            {
+              "attempt": 1,
+              "error": "internal: internal error",
+              "reason": "reviewer_invocation_failed"
+            }
+          ],
+          "backoff_s": [],
+          "exhausted": true,
+          "failed_attempt_count": 1,
+          "retry_limit": 0
+        }
+      },
+      "duration_ms": null,
+      "elapsed_s": 0.254,
+      "failure_classification": "reviewer_infrastructure_unavailable",
+      "fallback_from_runtime": null,
+      "fallback_reason": null,
+      "model": "gpt-5.5",
+      "outcome_present": false,
+      "probe_reason": "reviewer_infrastructure_unavailable",
+      "probe_status": "red",
+      "recoverable": true,
+      "reported_model": null,
+      "reviewer_assurance": "unavailable",
+      "reviewer_output_mode": "cursor_sdk",
+      "reviewer_runtime": "cursor_sdk",
+      "run_id_present": false,
+      "started_at": 1780410546,
+      "status": "blocked",
+      "transcript_chars": 0,
+      "transcript_sha256": null
+    }
+  ],
+  "created_at": 1780410544,
+  "loaded_codex_mcp_env_keys": [
+    "CURSOR_API_KEY"
+  ],
+  "route": "cursor_sdk"
+}

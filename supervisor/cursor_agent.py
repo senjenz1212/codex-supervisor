@@ -956,7 +956,7 @@ def _outcome_block_contract() -> str:
         "Always end with <dual_agent_outcome>{...valid compact JSON...}</dual_agent_outcome>. "
         "The JSON must include: task_id string, summary string, specialists array, "
         "decisions array, objections array, changed_files array, tests array, "
-        "test_status string, confidence number from 0 to 1, confidence_rationale string, "
+        "test_status one of passed, failed, or unknown, confidence number from 0 to 1, confidence_rationale string, "
         "confidence_criteria array, claims array, and critical_review object. "
         "critical_review must include strongest_objection string, missing_evidence array, "
         "contradictions_checked array, assumptions_to_verify array, "

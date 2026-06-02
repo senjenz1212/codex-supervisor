@@ -39,7 +39,7 @@ from supervisor.cursor_agent import (
 from supervisor.reviewer_registry import (
     configured_reviewers,
     evaluate_reviewer_panel,
-    independent_reviewer_results_from_cursor_result,
+    independent_reviewer_results_from_review_results,
 )
 from supervisor.dual_agent import GateRound, ProbeResult, evaluate_deadlock_budget
 from supervisor.dual_agent_artifacts import (
@@ -1094,7 +1094,10 @@ class CodexSupervisorMcpAPI:
                 final_payload = payload
                 claim_probe = None
                 cursor_result: CursorInvocationResult | None = None
+                cursor_payload: dict[str, Any] | None = None
                 cursor_tool_calls: list[dict[str, Any]] = []
+                review_results: list[tuple[Any, CursorInvocationResult]] = []
+                independent_reviewer_results: list[dict[str, Any]] = []
                 if gate == "outcome_review" and payload.get("status") == "accepted":
                     claim_probe = verify_workflow_claims(
                         outcome_payload=payload.get("outcome"),
@@ -1114,8 +1117,8 @@ class CodexSupervisorMcpAPI:
                         reviewer_output_mode=reviewer_output_mode_value,
                         reviewer_model=reviewer_model_value,
                         runner=self.cursor_runner,
+                        codex_runner=self.codex_runner,
                     )
-                    independent_reviewer = independent_reviewers[0]
                     review_request_event_id = self._write_interaction_message(
                         run_id=run_id,
                         message=AgentMailboxMessage(
@@ -1173,51 +1176,74 @@ class CodexSupervisorMcpAPI:
                         },
                         receipt_ids=_receipt_ids(receipt_payloads),
                     ) as cursor_tool_call:
-                        cursor_result = independent_reviewer.review(
-                            CursorInvocationRequest(
-                                task_id=task_id,
-                                gate=gate,  # type: ignore[arg-type]
-                                instruction=_cursor_review_instruction(
-                                    gate=gate,
-                                    intent=intent,
-                                    corrective_context=corrective_context,
-                                ),
-                                cwd=cwd,
-                                claude_outcome=payload.get("outcome")
-                                if isinstance(payload.get("outcome"), dict)
-                                else None,
-                                planning_artifacts=tuple(
-                                    artifact
-                                    for artifact in (
-                                        _maybe_artifact(item)
-                                        for item in gate_artifacts
-                                    )
-                                    if artifact is not None
-                                ),
-                                quality=quality,
-                                model=cursor_model,
-                                reviewer_model=reviewer_model_value,
-                                reviewer_output_mode=reviewer_output_mode_value,  # type: ignore[arg-type]
-                                reviewer_max_tokens=reviewer_max_tokens_value,
-                                reviewer_infra_retry_limit=reviewer_infra_retry_limit_value,
-                                reviewer_infra_retry_backoff_s=reviewer_infra_retry_backoff_s_value,
-                                openai_api_key=self.cfg.models.openai_api_key,
-                                openai_base_url=self.cfg.models.openai_base_url,
-                                timeout_s=timeout_s,
-                                tool_receipts=tuple(receipt_payloads),
-                            )
-                    )
-                    cursor_tool_call.update(_cursor_tool_call_fields(cursor_result))
+                        reviewer_request = CursorInvocationRequest(
+                            task_id=task_id,
+                            gate=gate,  # type: ignore[arg-type]
+                            instruction=_cursor_review_instruction(
+                                gate=gate,
+                                intent=intent,
+                                corrective_context=corrective_context,
+                            ),
+                            cwd=cwd,
+                            claude_outcome=payload.get("outcome")
+                            if isinstance(payload.get("outcome"), dict)
+                            else None,
+                            planning_artifacts=tuple(
+                                artifact
+                                for artifact in (
+                                    _maybe_artifact(item)
+                                    for item in gate_artifacts
+                                )
+                                if artifact is not None
+                            ),
+                            quality=quality,
+                            model=cursor_model,
+                            reviewer_model=reviewer_model_value,
+                            reviewer_output_mode=reviewer_output_mode_value,  # type: ignore[arg-type]
+                            reviewer_max_tokens=reviewer_max_tokens_value,
+                            reviewer_infra_retry_limit=reviewer_infra_retry_limit_value,
+                            reviewer_infra_retry_backoff_s=reviewer_infra_retry_backoff_s_value,
+                            openai_api_key=self.cfg.models.openai_api_key,
+                            openai_base_url=self.cfg.models.openai_base_url,
+                            timeout_s=timeout_s,
+                            tool_receipts=tuple(receipt_payloads),
+                        )
+                        for independent_reviewer in independent_reviewers:
+                            review_results.append((
+                                independent_reviewer.spec,
+                                independent_reviewer.review(reviewer_request),
+                            ))
+                    cursor_result = review_results[0][1] if review_results else None
+                    if cursor_result is not None:
+                        cursor_tool_call.update(_cursor_tool_call_fields(cursor_result))
+                    cursor_tool_call.update({
+                        "reviewer_count": len(review_results),
+                        "reviewer_ids": [spec.reviewer_id for spec, _result in review_results],
+                        "reviewer_result_summary": [
+                            {
+                                "reviewer_id": spec.reviewer_id,
+                                "accepted": cursor_accepts(result),
+                                "probe_status": result.probe.status,
+                                "probe_reason": result.probe.reason,
+                                "failure_classification": result.failure_classification,
+                                "recoverable": result.recoverable,
+                                "reviewer_runtime": result.reviewer_runtime,
+                                "model": result.model,
+                            }
+                            for spec, result in review_results
+                        ],
+                    })
                     cursor_tool_call = ensure_tool_call_timing(cursor_tool_call)
                     cursor_tool_calls = [cursor_tool_call]
-                    cursor_payload = _cursor_result_payload(cursor_result)
-                    independent_reviewer_results = independent_reviewer_results_from_cursor_result(
-                        cursor_result,
+                    independent_reviewer_results = independent_reviewer_results_from_review_results(
+                        review_results,
                         task_id=task_id,
                         gate=str(gate),
                         round_index=round_index,
-                        reviewer_id=independent_reviewer.spec.reviewer_id,
                     )
+                    cursor_payload = _cursor_result_payload(cursor_result) if cursor_result is not None else None
+                    if cursor_payload is None:
+                        cursor_payload = {"schema_version": "independent-reviewer-result/v1", "accepted": False}
                     cursor_payload["independent_reviewer_results"] = independent_reviewer_results
                     payload["cursor_review"] = cursor_payload
                     payload["independent_reviewer"] = cursor_payload
@@ -1288,53 +1314,46 @@ class CodexSupervisorMcpAPI:
                     else "revise"
                 )
                 independent_reviewer_panel_decision = evaluate_reviewer_panel(
-                    [],
+                    independent_reviewer_results,
                     low_confidence_threshold=reviewer_low_confidence_threshold_value,
                 )
-                if cursor_reviews_this_gate and cursor_result is not None:
-                    independent_reviewer_panel_decision = evaluate_reviewer_panel(
-                        independent_reviewer_results_from_cursor_result(
-                            cursor_result,
-                            task_id=task_id,
-                            gate=str(gate),
-                            round_index=round_index,
-                        ),
-                        low_confidence_threshold=reviewer_low_confidence_threshold_value,
-                    )
                 cursor_decision = (
                     "accept"
                     if independent_reviewer_panel_decision["decision"] == "accept"
                     else "revise"
                 )
-                cursor_payload = (
-                    _cursor_result_payload(cursor_result)
-                    if cursor_result is not None else None
+                panel_recoverable_failures = _panel_recoverable_infrastructure_failures(
+                    independent_reviewer_results
                 )
-                independent_reviewer_results = (
-                    independent_reviewer_results_from_cursor_result(
-                        cursor_result,
-                        task_id=task_id,
-                        gate=str(gate),
-                        round_index=round_index,
-                    )
-                    if cursor_result is not None else []
+                reviewer_failure_classification = _panel_failure_classification(
+                    panel_recoverable_failures,
+                    cursor_payload,
                 )
                 if cursor_payload is not None:
                     cursor_payload["independent_reviewer_results"] = independent_reviewer_results
                     cursor_payload["independent_reviewer_panel_decision"] = (
                         independent_reviewer_panel_decision
                     )
+                    if panel_recoverable_failures:
+                        cursor_payload["panel_recoverable_failures"] = panel_recoverable_failures
+                        cursor_payload["unavailable_reviewer_ids"] = [
+                            str(item.get("reviewer_id"))
+                            for item in panel_recoverable_failures
+                            if str(item.get("reviewer_id") or "").strip()
+                        ]
+                        cursor_payload["panel_failure_classification"] = (
+                            reviewer_failure_classification
+                        )
                 payload["independent_reviewer_panel_decision"] = independent_reviewer_panel_decision
+                payload["independent_reviewer_results"] = independent_reviewer_results
                 claim_payload = asdict(claim_probe) if claim_probe is not None else None
-                cursor_infrastructure_failure = (
-                    cursor_payload is not None
-                    and _cursor_review_recoverable_infrastructure_failure(cursor_payload)
-                )
+                cursor_infrastructure_failure = bool(panel_recoverable_failures)
                 reviewer_unavailable_recovery: dict[str, Any] | None = None
                 available_reviewers_accept = (
                     payload.get("status") == "accepted"
                     and claude_decision == "accept"
                     and (claim_probe is None or claim_probe.ok)
+                    and _panel_available_reviewers_accept(independent_reviewer_results)
                 )
                 if cursor_infrastructure_failure and cursor_payload is not None:
                     reviewer_unavailable_recovery = _reviewer_unavailable_recovery_plan(
@@ -1343,12 +1362,17 @@ class CodexSupervisorMcpAPI:
                         task_id=task_id,
                         gate=str(gate),
                         policy=reviewer_policy,
-                        classification=_cursor_review_failure_classification(cursor_payload),
+                        classification=reviewer_failure_classification,
                         available_reviewers_accept=available_reviewers_accept,
                         agentic_policy=agentic_policy,
                         required_evidence_grade=agentic_policy["required_evidence_grade"],
                         user_facing=effective_user_facing and gate == "outcome_review",
                     )
+                    reviewer_unavailable_recovery["unavailable_reviewers"] = [
+                        str(item.get("reviewer_id"))
+                        for item in panel_recoverable_failures
+                        if str(item.get("reviewer_id") or "").strip()
+                    ]
                     cursor_payload = {
                         **cursor_payload,
                         "reviewer_unavailable_recovery": reviewer_unavailable_recovery,
@@ -1538,7 +1562,7 @@ class CodexSupervisorMcpAPI:
                 gate_rounds.append(_gate_round_from_payload(round_result["round"]))
 
                 if cursor_infrastructure_failure:
-                    classification = _cursor_review_failure_classification(cursor_payload)
+                    classification = reviewer_failure_classification
                     recovery = reviewer_unavailable_recovery or {}
                     if recovery.get("decision") == "proceed_degraded":
                         recovery_event = self._record_reviewer_unavailable_recovery(
@@ -3048,6 +3072,7 @@ class CodexSupervisorMcpAPI:
             "authorization": recovery.get("authorization"),
             "forced_by_safety": bool(recovery.get("forced_by_safety")),
             "safety_reasons": list(recovery.get("safety_reasons") or []),
+            "unavailable_reviewers": list(recovery.get("unavailable_reviewers") or []),
             "decision": recovery.get("decision"),
             "recovery": recovery,
         }
@@ -3110,6 +3135,7 @@ class CodexSupervisorMcpAPI:
                 "policy": policy,
                 "forced_by_safety": bool(recovery.get("forced_by_safety")),
                 "safety_reasons": safety_reasons,
+                "unavailable_reviewers": list(recovery.get("unavailable_reviewers") or []),
                 "available_reviewers": available_reviewers,
                 "cursor_review": cursor_review,
                 "independent_reviewer": cursor_review,
@@ -3131,6 +3157,7 @@ class CodexSupervisorMcpAPI:
             "classification": classification,
             "forced_by_safety": bool(recovery.get("forced_by_safety")),
             "safety_reasons": safety_reasons,
+            "unavailable_reviewers": list(recovery.get("unavailable_reviewers") or []),
             "action_id": action_id,
             "ask_id": ask_id,
             "nonce": nonce,
@@ -3973,6 +4000,8 @@ def _cursor_payload_decision(cursor_review: dict[str, Any]) -> str:
 def _reviewer_provider_family(runtime: Any, model: Any) -> str:
     runtime_text = str(runtime or "").lower()
     model_text = str(model or "").lower()
+    if "codex" in runtime_text:
+        return "openai"
     if "cursor" in runtime_text:
         return "cursor"
     if "gemini" in model_text:
@@ -4044,6 +4073,65 @@ def _cursor_review_recoverable_infrastructure_failure(
         "reviewer_contract_unmet",
         "reviewer_infrastructure_unavailable",
     }
+
+
+def _panel_recoverable_infrastructure_failures(
+    reviewer_results: list[dict[str, Any]] | tuple[dict[str, Any], ...],
+) -> list[dict[str, Any]]:
+    failures: list[dict[str, Any]] = []
+    for result in reviewer_results:
+        if not isinstance(result, dict):
+            continue
+        classification = str(result.get("failure_classification") or "").strip()
+        if classification not in {
+            "reviewer_contract_unmet",
+            "reviewer_infrastructure_unavailable",
+        }:
+            continue
+        if not bool(result.get("recoverable")):
+            continue
+        failures.append({
+            "reviewer_id": result.get("reviewer_id"),
+            "failure_classification": classification,
+            "recoverable": True,
+            "runtime": result.get("runtime") or result.get("reviewer_runtime"),
+            "model": result.get("model"),
+        })
+    return failures
+
+
+def _panel_failure_classification(
+    recoverable_failures: list[dict[str, Any]],
+    cursor_review: dict[str, Any] | None,
+) -> str:
+    legacy_classification = _cursor_review_failure_classification(cursor_review)
+    if legacy_classification:
+        return legacy_classification
+    classifications = {
+        str(item.get("failure_classification") or "")
+        for item in recoverable_failures
+        if str(item.get("failure_classification") or "").strip()
+    }
+    if "reviewer_infrastructure_unavailable" in classifications:
+        return "reviewer_infrastructure_unavailable"
+    if "reviewer_contract_unmet" in classifications:
+        return "reviewer_contract_unmet"
+    return ""
+
+
+def _panel_available_reviewers_accept(
+    reviewer_results: list[dict[str, Any]] | tuple[dict[str, Any], ...],
+) -> bool:
+    for result in reviewer_results:
+        if not isinstance(result, dict):
+            continue
+        decision = str(result.get("decision") or "").strip().lower()
+        verdict_present = bool(result.get("verdict_present", decision in {"accept", "revise", "deny"}))
+        if not verdict_present:
+            continue
+        if decision != "accept":
+            return False
+    return True
 
 
 def _normalise_receipt_payloads(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:

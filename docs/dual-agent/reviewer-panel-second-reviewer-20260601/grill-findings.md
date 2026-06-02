@@ -1,0 +1,58 @@
+# Grill Findings
+
+These findings are derived from dual-agent gate objections in the ledger.
+Future duo-agent runs should also create this file through the `prd-to-tdd` skill's `grill-with-docs` gates before implementation.
+
+- event_id 428155 `prd_review`: gate blocked
+- event_id 428414 `prd_review`: Chosen reviewer is OpenAI/GPT-family via Codex CLI, same family+runtime as the Codex supervisor; intent probe (b) wanted GPT-family distinct from the supervisor's role and PRD relies on distinctness-from-Claude+Gemini + structural role separation without stating supervisor-role independence (non-blocking)
+- event_id 428414 `prd_review`: PRD/transcript byte-hashes not re-verified in this env; shasum and python3 hashing blocked by Bash approval (residual)
+- event_id 428414 `prd_review`: Agentic assurance evidenced by a single trivial cat README.md read; production adapter must preserve the full tool+bounded-read+transcript+hash bar
+- event_id 428415 `prd_review`: both agents accepted
+- event_id 428422 `issues_review`: gate blocked
+- event_id 428693 `issues_review`: both agents accepted
+- event_id 428793 `tdd_review`: tdd.md:61 focused regression command names test_run_dual_agent_workflow_records_two_independent_reviewers which does not exist; the real test is test_workflow_exposes_independent_reviewer_results_and_dual_writes_events (line 2776). That exact command errors at collection, but coverage is preserved by the file-level and full-suite commands (lines 62-63). REVISE-grade nit, not blocking.
+- event_id 428793 `tdd_review`: Residual: pytest not run (Bash approval blocked); GREEN verified by inspection only and handoff byte-hashes not re-verified.
+- event_id 429044 `tdd_review`: independent_reviewer_missing_verdict: independent-reviewer-1
+- event_id 429051 `tdd_review`: tdd.md:61 focused regression command names test_run_dual_agent_workflow_records_two_independent_reviewers which does not exist; the real test is test_workflow_exposes_independent_reviewer_results_and_dual_writes_events (line 2776). That exact command errors at collection, but coverage is preserved by the file-level and full-suite commands (lines 62-63). REVISE-grade nit, not blocking.
+- event_id 429051 `tdd_review`: Residual: pytest not run (Bash approval blocked); GREEN verified by inspection only and handoff byte-hashes not re-verified.
+- event_id 429174 `tdd_review`: tdd.md:61 focused regression command references nonexistent test test_run_dual_agent_workflow_records_two_independent_reviewers; exact command errors at collection though coverage is intact via broader commands lines 62-63
+- event_id 429382 `tdd_review`: independent_reviewer_missing_verdict: independent-reviewer-1
+- event_id 429451 `implementation_plan`: Second reviewer (Codex CLI, openai/gpt-5.5) is the same provider_family as the Codex/GPT supervisor; intent explicitly permits option (b) and plan discloses the correlation truthfully, so non-blocking for implementation_plan.
+- event_id 429451 `implementation_plan`: Byte hash of implementation-plan.md not independently re-derived (shasum/python execution approval denied); mitigated by handoff packet and replay manifest both recording a16a7104.
+- event_id 429451 `implementation_plan`: Full pytest not executed in this gate; test-evidence.md claims 5 focused + 92 driver + 617 full green; for implementation_plan the bar is plan quality + test existence, both verified.
+- event_id 429730 `implementation_plan`: independent_reviewer_missing_verdict: independent-reviewer-1
+- event_id 429733 `implementation_plan`: Second reviewer (Codex CLI, openai/gpt-5.5) is the same provider_family as the Codex/GPT supervisor; intent explicitly permits option (b) and plan discloses the correlation truthfully, so non-blocking for implementation_plan.
+- event_id 429733 `implementation_plan`: Byte hash of implementation-plan.md not independently re-derived (shasum/python execution approval denied); mitigated by handoff packet and replay manifest both recording a16a7104.
+- event_id 429733 `implementation_plan`: Full pytest not executed in this gate; test-evidence.md claims 5 focused + 92 driver + 617 full green; for implementation_plan the bar is plan quality + test existence, both verified.
+- event_id 430203 `implementation_plan`: cursor_agent.py (2-line prompt-text clarification) touched but not named in plan Files-To-Touch; non-behavioral, non-blocking
+- event_id 430203 `implementation_plan`: chosen reviewer provider_family=openai shares GPT-family with Codex supervisor role; intent option (b) permits it and plan Risk discloses it; still distinct from Claude lead and Gemini reviewer
+- event_id 430203 `implementation_plan`: plan byte-hash a16a7104 not independently re-derived (shasum approval denied); corroborated by handoff packet + replay manifest
+- event_id 430203 `implementation_plan`: pytest not executed in this planning gate; defer suite verification to execution/outcome gate
+- event_id 430439 `implementation_plan`: independent_reviewer_blocking_objection: independent-reviewer-1
+- event_id 430445 `implementation_plan`: cursor_agent.py (2-line prompt-text clarification) touched but not named in plan Files-To-Touch; non-behavioral, non-blocking
+- event_id 430445 `implementation_plan`: chosen reviewer provider_family=openai shares GPT-family with Codex supervisor role; intent option (b) permits it and plan Risk discloses it; still distinct from Claude lead and Gemini reviewer
+- event_id 430445 `implementation_plan`: plan byte-hash a16a7104 not independently re-derived (shasum approval denied); corroborated by handoff packet + replay manifest
+- event_id 430445 `implementation_plan`: pytest not executed in this planning gate; defer suite verification to execution/outcome gate
+- event_id 430631 `implementation_plan`: RESOLVED independent_reviewer_missing_verdict:independent-reviewer-1 - it is the by-design honest-degradation path (reviewer-1 unavailable in gate self-review subprocess), proven non-silent by P4 test (reviewer_verdict_counted_as_accept False; panel revise/missing_reviewer_verdict; recovery degraded/proceeded_degraded); not an implementation_plan defect
+- event_id 430631 `implementation_plan`: RESIDUAL(outcome-gate): acceptance #1 two real LIVE verdicts demonstrated only via isolated route-probe + deterministic tests; captured replay was a degraded run - outcome gate must verify a live two-verdict run or authorized degraded run
+- event_id 430631 `implementation_plan`: RESIDUAL(disclosed): reviewer-1 openai == same family as Codex supervisor (intent option b permits; plan Risk L49-52; still distinct from Claude lead + Gemini)
+- event_id 430984 `implementation_plan`: independent_reviewer_blocking_objection: independent-reviewer-1
+- event_id 430990 `implementation_plan`: RESOLVED independent_reviewer_missing_verdict:independent-reviewer-1 - it is the by-design honest-degradation path (reviewer-1 unavailable in gate self-review subprocess), proven non-silent by P4 test (reviewer_verdict_counted_as_accept False; panel revise/missing_reviewer_verdict; recovery degraded/proceeded_degraded); not an implementation_plan defect
+- event_id 430990 `implementation_plan`: RESIDUAL(outcome-gate): acceptance #1 two real LIVE verdicts demonstrated only via isolated route-probe + deterministic tests; captured replay was a degraded run - outcome gate must verify a live two-verdict run or authorized degraded run
+- event_id 430990 `implementation_plan`: RESIDUAL(disclosed): reviewer-1 openai == same family as Codex supervisor (intent option b permits; plan Risk L49-52; still distinct from Claude lead + Gemini)
+- event_id 431319 `implementation_plan`: independent_reviewer_blocking_objection: independent-reviewer-1
+- event_id 431664 `implementation_plan`: independent_reviewer_blocking_objection: independent-reviewer-1
+- event_id 432661 `implementation_plan`: independent_reviewer_blocking_objection: independent-reviewer-1
+- event_id 433010 `implementation_plan`: Acceptance #1 (TWO live independent verdicts in one rigorous run) is demonstrated only via isolated route probe + deterministic tests; captured replay run was degraded (reviewer-1 missing) - defer live two-verdict proof to OUTCOME gate.
+- event_id 433010 `implementation_plan`: reviewer-1 provider_family=openai is the SAME family as the Codex supervisor role; disclosed in plan Risk L49-52 and permitted by intent option (b); still distinct from BOTH Claude lead and Gemini.
+- event_id 433218 `implementation_plan`: both agents accepted
+- event_id 433265 `execution`: Acceptance #1 'rigorous run records TWO real verdicts' is split-proven: reviewer-1 live verdict only in isolated route probe, panel-of-2 only via fake-runner tests, captured replay had reviewer-1 missing - single live two-verdict capture is the outcome-gate obligation
+- event_id 433265 `execution`: pytest full-suite green (619) is claimed in test-evidence.md only; not re-run during this gate (recurring env residual)
+- event_id 433265 `execution`: reviewer-1 provider_family=openai is the SAME family as the Codex supervisor role (disclosed in plan Risk L49-52; intent option (b) permits; still distinct from BOTH Claude lead and Gemini)
+- event_id 433266 `execution`: both agents accepted
+- event_id 433317 `outcome_review`: Accept overrides reviewer-1's live revise(important); objection refuted at reviewer_registry.py:496-509 + existing regression tests:3107
+- event_id 433317 `outcome_review`: Canonical replay/manifest.json reflects the degraded single-reviewer run (diff_sha c64ba011, reviewer-1 missing); the decisive two-verdict proof lives only in ad-hoc workflow-result-cli-rerun4.json, not regenerated into canonical replay
+- event_id 433317 `outcome_review`: pytest not independently executed by me; full-suite 619-passed claimed only in test-evidence receipts
+- event_id 433317 `outcome_review`: test-evidence.md:21 stale (frames panel-of-2 as deterministic-fake-only; outcome-review.md is empty placeholder)
+- event_id 433317 `outcome_review`: reviewer-1=openai shares family with Codex supervisor (disclosed/permitted intent option b; still distinct from both Claude lead and Gemini reviewer)
+- event_id 433671 `outcome_review`: both agents accepted
