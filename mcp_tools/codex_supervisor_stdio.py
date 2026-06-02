@@ -36,6 +36,10 @@ from supervisor.cursor_agent import (
     cursor_accepts,
     invoke_cursor_agent,
 )
+from supervisor.reviewer_registry import (
+    configured_reviewers,
+    independent_reviewer_results_from_cursor_result,
+)
 from supervisor.dual_agent import GateRound, ProbeResult, evaluate_deadlock_budget
 from supervisor.dual_agent_artifacts import (
     ScreenshotArtifact,
@@ -1099,6 +1103,12 @@ class CodexSupervisorMcpAPI:
                         "Cursor finds an unresolved blocker, missing receipt, "
                         "or contradiction in the evidence."
                     )
+                    independent_reviewers = configured_reviewers(
+                        reviewer_output_mode=reviewer_output_mode_value,
+                        reviewer_model=reviewer_model_value,
+                        runner=self.cursor_runner,
+                    )
+                    independent_reviewer = independent_reviewers[0]
                     review_request_event_id = self._write_interaction_message(
                         run_id=run_id,
                         message=AgentMailboxMessage(
@@ -1149,12 +1159,14 @@ class CodexSupervisorMcpAPI:
                             "reviewer_infra_retry_limit": reviewer_infra_retry_limit_value,
                             "reviewer_infra_retry_backoff_s": reviewer_infra_retry_backoff_s_value,
                             "timeout_s": timeout_s,
+                            "reviewer_count": len(independent_reviewers),
+                            "reviewer_ids": [reviewer.spec.reviewer_id for reviewer in independent_reviewers],
                             "planning_artifact_count": len(gate_artifacts),
                             "receipt_count": len(receipt_payloads),
                         },
                         receipt_ids=_receipt_ids(receipt_payloads),
                     ) as cursor_tool_call:
-                        cursor_result = self.cursor_runner(
+                        cursor_result = independent_reviewer.review(
                             CursorInvocationRequest(
                                 task_id=task_id,
                                 gate=gate,  # type: ignore[arg-type]
@@ -1192,8 +1204,17 @@ class CodexSupervisorMcpAPI:
                     cursor_tool_call = ensure_tool_call_timing(cursor_tool_call)
                     cursor_tool_calls = [cursor_tool_call]
                     cursor_payload = _cursor_result_payload(cursor_result)
+                    independent_reviewer_results = independent_reviewer_results_from_cursor_result(
+                        cursor_result,
+                        task_id=task_id,
+                        gate=str(gate),
+                        round_index=round_index,
+                        reviewer_id=independent_reviewer.spec.reviewer_id,
+                    )
+                    cursor_payload["independent_reviewer_results"] = independent_reviewer_results
                     payload["cursor_review"] = cursor_payload
                     payload["independent_reviewer"] = cursor_payload
+                    payload["independent_reviewer_results"] = independent_reviewer_results
                     cursor_response_would_change_if = (
                         "Claude or Codex provides evidence resolving Cursor's objections."
                     )
@@ -1244,6 +1265,7 @@ class CodexSupervisorMcpAPI:
                             metadata={
                                 "cursor_review": cursor_payload,
                                 "independent_reviewer": cursor_payload,
+                                "independent_reviewer_results": independent_reviewer_results,
                                 "tool_calls": [cursor_tool_call],
                             },
                         ),
@@ -1262,6 +1284,17 @@ class CodexSupervisorMcpAPI:
                     _cursor_result_payload(cursor_result)
                     if cursor_result is not None else None
                 )
+                independent_reviewer_results = (
+                    independent_reviewer_results_from_cursor_result(
+                        cursor_result,
+                        task_id=task_id,
+                        gate=str(gate),
+                        round_index=round_index,
+                    )
+                    if cursor_result is not None else []
+                )
+                if cursor_payload is not None:
+                    cursor_payload["independent_reviewer_results"] = independent_reviewer_results
                 claim_payload = asdict(claim_probe) if claim_probe is not None else None
                 cursor_infrastructure_failure = (
                     cursor_payload is not None
@@ -1292,7 +1325,21 @@ class CodexSupervisorMcpAPI:
                     }
                     payload["cursor_review"] = cursor_payload
                     payload["independent_reviewer"] = cursor_payload
+                    payload["independent_reviewer_results"] = independent_reviewer_results
                 if cursor_payload is not None and cursor_reviews_this_gate:
+                    self.state.write_event(
+                        run_id=run_id,
+                        source="dual_agent",
+                        kind="independent_reviewer_review",
+                        payload={
+                            "task_id": task_id,
+                            "gate": gate,
+                            "independent_reviewer_results": independent_reviewer_results,
+                            "cursor_review": cursor_payload,
+                            "independent_reviewer": cursor_payload,
+                            "tool_calls": cursor_tool_calls,
+                        },
+                    )
                     self.state.write_event(
                         run_id=run_id,
                         source="dual_agent",
@@ -1302,6 +1349,7 @@ class CodexSupervisorMcpAPI:
                             "gate": gate,
                             "cursor_review": cursor_payload,
                             "independent_reviewer": cursor_payload,
+                            "independent_reviewer_results": independent_reviewer_results,
                             "tool_calls": cursor_tool_calls,
                         },
                     )
@@ -2367,6 +2415,7 @@ class CodexSupervisorMcpAPI:
                    'dual_agent_workflow_terminal_discrepancy',
                    'dual_agent_workflow_route',
                    'dual_agent_interaction_message',
+                   'independent_reviewer_review',
                    'tri_agent_cursor_review'
                  )
                ORDER BY event_id ASC""",
@@ -2385,6 +2434,7 @@ class CodexSupervisorMcpAPI:
         workflow_routes: list[dict[str, Any]] = []
         interactions: list[dict[str, Any]] = []
         cursor_reviews: list[dict[str, Any]] = []
+        independent_reviewer_reviews: list[dict[str, Any]] = []
         latest_result: dict[str, Any] | None = None
         latest_result_event_id: int | None = None
         for row in rows:
@@ -2477,6 +2527,19 @@ class CodexSupervisorMcpAPI:
                     "cursor_review": payload.get("cursor_review"),
                     "independent_reviewer": payload.get("independent_reviewer")
                     or payload.get("cursor_review"),
+                    "independent_reviewer_results": payload.get("independent_reviewer_results")
+                    or _independent_reviewer_results_from_payload(payload),
+                }))
+            elif row["kind"] == "independent_reviewer_review":
+                independent_reviewer_reviews.append(redact({
+                    "event_id": row["event_id"],
+                    "occurred_at": row["ts"],
+                    "gate": payload.get("gate"),
+                    "independent_reviewer_results": payload.get("independent_reviewer_results")
+                    or _independent_reviewer_results_from_payload(payload),
+                    "cursor_review": payload.get("cursor_review"),
+                    "independent_reviewer": payload.get("independent_reviewer")
+                    or payload.get("cursor_review"),
                 }))
             elif row["kind"] == "dual_agent_gate_result":
                 latest_result = redact(payload)
@@ -2489,6 +2552,8 @@ class CodexSupervisorMcpAPI:
             and not dynamic_workflow_receipt_validations and not dynamic_workflow_manifests
             and not dynamic_workflow_syntheses and not reviewer_unavailable_recoveries
             and not workflow_jobs and not workflow_routes
+            and not cursor_reviews
+            and not independent_reviewer_reviews
             and latest_result is None
         ):
             return {
@@ -2508,6 +2573,7 @@ class CodexSupervisorMcpAPI:
                 "workflow_routes": [],
                 "interactions": [],
                 "cursor_reviews": [],
+                "independent_reviewer_reviews": [],
                 "result": None,
                 "handoff_packet_path": None,
             }
@@ -2528,6 +2594,7 @@ class CodexSupervisorMcpAPI:
             "workflow_routes": workflow_routes,
             "interactions": interactions,
             "cursor_reviews": cursor_reviews,
+            "independent_reviewer_reviews": independent_reviewer_reviews,
             "result_event_id": latest_result_event_id,
             "result": latest_result,
             "handoff_packet_path": (
@@ -3739,6 +3806,85 @@ def _cursor_result_payload(result: CursorInvocationResult) -> dict[str, Any]:
         "duration_ms": result.duration_ms,
         "transcript_tail": result.transcript[-4000:],
     })
+
+
+def _independent_reviewer_results_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    explicit = payload.get("independent_reviewer_results")
+    if isinstance(explicit, list):
+        return [item for item in explicit if isinstance(item, dict)]
+    cursor_review = payload.get("cursor_review") if isinstance(payload.get("cursor_review"), dict) else payload
+    nested = cursor_review.get("independent_reviewer_results") if isinstance(cursor_review, dict) else None
+    if isinstance(nested, list):
+        return [item for item in nested if isinstance(item, dict)]
+    if not isinstance(cursor_review, dict) or not cursor_review:
+        return []
+    outcome = cursor_review.get("outcome") if isinstance(cursor_review.get("outcome"), dict) else {}
+    critical_review = (
+        outcome.get("critical_review")
+        if isinstance(outcome.get("critical_review"), dict)
+        else cursor_review.get("critical_review")
+        if isinstance(cursor_review.get("critical_review"), dict)
+        else {}
+    )
+    transcript = str(cursor_review.get("transcript_tail") or "")
+    output_json = json.dumps(outcome, sort_keys=True, default=str) if outcome else ""
+    runtime = cursor_review.get("reviewer_runtime") or cursor_review.get("reviewer_output_mode")
+    return [{
+        "schema_version": "independent-reviewer-panel-result/v1",
+        "reviewer_id": "independent-reviewer-0",
+        "accepted": cursor_review.get("accepted"),
+        "decision": _cursor_payload_decision(cursor_review),
+        "severity": critical_review.get("severity") or ("none" if cursor_review.get("accepted") else "important"),
+        "confidence": outcome.get("confidence"),
+        "runtime": runtime,
+        "reviewer_runtime": cursor_review.get("reviewer_runtime"),
+        "reviewer_output_mode": cursor_review.get("reviewer_output_mode"),
+        "model": cursor_review.get("model"),
+        "provider_family": _reviewer_provider_family(runtime, cursor_review.get("model")),
+        "lineage": [
+            item for item in (
+                _reviewer_provider_family(runtime, cursor_review.get("model")),
+                runtime,
+                cursor_review.get("model"),
+            )
+            if item
+        ],
+        "tool_access": "codebase_tools" if str(runtime or "").startswith("cursor") else "text_only",
+        "assurance_grade": "agentic" if str(runtime or "").startswith("cursor") else "text_only",
+        "reviewer_assurance": cursor_review.get("reviewer_assurance"),
+        "transcript_refs": cursor_review.get("raw_transcript_refs") or [],
+        "transcript_sha256": hashlib.sha256(transcript.encode("utf-8")).hexdigest(),
+        "output_sha256": hashlib.sha256(output_json.encode("utf-8")).hexdigest() if output_json else None,
+        "critical_review": critical_review,
+        "failure_classification": cursor_review.get("failure_classification"),
+        "recoverable": cursor_review.get("recoverable"),
+        "attempts": cursor_review.get("attempts"),
+    }]
+
+
+def _cursor_payload_decision(cursor_review: dict[str, Any]) -> str:
+    outcome = cursor_review.get("outcome") if isinstance(cursor_review.get("outcome"), dict) else {}
+    decisions = outcome.get("decisions") if isinstance(outcome.get("decisions"), list) else []
+    for decision in decisions:
+        if decision in {"accept", "revise", "deny"}:
+            return str(decision)
+    return "accept" if cursor_review.get("accepted") else "revise"
+
+
+def _reviewer_provider_family(runtime: Any, model: Any) -> str:
+    runtime_text = str(runtime or "").lower()
+    model_text = str(model or "").lower()
+    if "cursor" in runtime_text:
+        return "cursor"
+    if "gemini" in model_text:
+        return "google"
+    if "claude" in model_text:
+        return "anthropic"
+    if "gpt" in model_text:
+        return "openai"
+    if "litellm" in runtime_text:
+        return "openai_compatible"
+    return "unknown"
 
 
 def _cursor_tool_call_fields(result: CursorInvocationResult) -> dict[str, Any]:

@@ -638,6 +638,13 @@ def _interaction_event_markdown(index: int, event: dict[str, Any]) -> str:
             "",
         ])
 
+    if event["kind"] == "independent_reviewer_review":
+        return _independent_reviewer_review_event_markdown(
+            heading=f"## {index}. {title}",
+            event=event,
+            include_kind=False,
+        )
+
     if event["kind"] == "tri_agent_cursor_review":
         return _cursor_review_event_markdown(
             heading=f"## {index}. {title}",
@@ -798,6 +805,13 @@ def _event_markdown(event: dict[str, Any]) -> str:
 
     if event["kind"] == "dual_agent_planning_validation":
         return _planning_validation_event_markdown(
+            heading=f"## event_id: {event['event_id']}",
+            event=event,
+            include_kind=True,
+        )
+
+    if event["kind"] == "independent_reviewer_review":
+        return _independent_reviewer_review_event_markdown(
             heading=f"## event_id: {event['event_id']}",
             event=event,
             include_kind=True,
@@ -1048,6 +1062,69 @@ def _cursor_review_event_markdown(
             f"- evidence_grade: `{_clean_text(recovery.get('evidence_grade'))}`",
             f"- reviewer_verdict_counted_as_accept: `{recovery.get('reviewer_verdict_counted_as_accept')}`",
             f"- forced_by_safety: `{recovery.get('forced_by_safety')}`",
+            "",
+        ])
+    lines.extend(_trace_envelope_section(payload))
+    return "\n".join(lines)
+
+
+def _independent_reviewer_review_event_markdown(
+    *,
+    heading: str,
+    event: dict[str, Any],
+    include_kind: bool,
+) -> str:
+    payload = event["payload"]
+    results = payload.get("independent_reviewer_results")
+    if not isinstance(results, list):
+        results = []
+    lines = [
+        heading,
+        "",
+        f"- event_id: `{event['event_id']}`",
+        f"- ts: `{event['ts']}`",
+    ]
+    if include_kind:
+        lines.extend([
+            f"- kind: `{event['kind']}`",
+            f"- gate: `{event['gate']}`",
+        ])
+    lines.extend([
+        "- interaction_type: `independent_reviewer_review`",
+        f"- gate: `{event['gate']}`",
+        f"- reviewer_count: `{len(results)}`",
+        "",
+        "### Independent Reviewer Results",
+        "",
+    ])
+    if not results:
+        lines.extend(["- None recorded.", ""])
+    for index, result in enumerate(results, start=1):
+        if not isinstance(result, dict):
+            continue
+        lines.extend([
+            f"#### Reviewer {index}: `{_clean_text(result.get('reviewer_id'))}`",
+            "",
+            f"- accepted: `{result.get('accepted')}`",
+            f"- decision: `{_clean_text(result.get('decision'))}`",
+            f"- severity: `{_clean_text(result.get('severity'))}`",
+            f"- confidence: `{_clean_text(result.get('confidence'))}`",
+            f"- runtime: `{_clean_text(result.get('runtime') or result.get('reviewer_runtime'))}`",
+            f"- model: `{_clean_text(result.get('model'))}`",
+            f"- provider_family: `{_clean_text(result.get('provider_family'))}`",
+            f"- lineage: {_inline_markdown_value(result.get('lineage') or [])}",
+            f"- tool_access: `{_clean_text(result.get('tool_access'))}`",
+            f"- assurance_grade: `{_clean_text(result.get('assurance_grade'))}`",
+            f"- transcript_sha256: `{_clean_text(result.get('transcript_sha256'))}`",
+            f"- output_sha256: `{_clean_text(result.get('output_sha256'))}`",
+            "",
+            "Transcript refs:",
+            "",
+            _list_markdown(result.get("transcript_refs")),
+            "",
+            "Critical review:",
+            "",
+            _inline_markdown_value(result.get("critical_review") or {}),
             "",
         ])
     lines.extend(_trace_envelope_section(payload))

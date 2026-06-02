@@ -377,6 +377,66 @@ def test_export_dual_agent_run_artifacts_renders_cursor_review_events(tmp_path):
         assert "Cursor transcript tail." in text
 
 
+def test_export_dual_agent_run_artifacts_renders_independent_reviewer_panel_events(tmp_path):
+    state = _state(tmp_path)
+    _insert_event(
+        state,
+        kind="independent_reviewer_review",
+        payload={
+            "task_id": "task-1",
+            "gate": "outcome_review",
+            "independent_reviewer_results": [
+                {
+                    "reviewer_id": "independent-reviewer-0",
+                    "accepted": True,
+                    "decision": "accept",
+                    "severity": "none",
+                    "confidence": 0.91,
+                    "runtime": "litellm_structured",
+                    "model": "gemini-3.1-pro-preview",
+                    "provider_family": "google",
+                    "lineage": ["google", "litellm_structured", "gemini-3.1-pro-preview"],
+                    "tool_access": "text_only",
+                    "assurance_grade": "text_only",
+                    "transcript_refs": [
+                        {
+                            "kind": "reviewer_transcript_tail",
+                            "ref": "independent_reviewer_review:task-1:outcome_review:1:independent-reviewer-0",
+                        }
+                    ],
+                    "transcript_sha256": "abc123",
+                    "output_sha256": "def456",
+                    "critical_review": {
+                        "schema_version": "critical-review/v1",
+                        "severity": "none",
+                        "decision": "accept",
+                    },
+                }
+            ],
+        },
+    )
+
+    result = export_dual_agent_run_artifacts(
+        state,
+        run_id="run-1",
+        task_id="task-1",
+        output_dir=tmp_path / "docs" / "dual-agent" / "task-1",
+    )
+
+    interactions = (result.output_dir / "interactions.md").read_text()
+    transcript = (result.output_dir / "transcript.md").read_text()
+    for text in (interactions, transcript):
+        assert "interaction_type: `independent_reviewer_review`" in text
+        assert "reviewer_count: `1`" in text
+        assert "independent-reviewer-0" in text
+        assert "gemini-3.1-pro-preview" in text
+        assert "provider_family: `google`" in text
+        assert "tool_access: `text_only`" in text
+        assert "assurance_grade: `text_only`" in text
+        assert "transcript_sha256: `abc123`" in text
+        assert "output_sha256: `def456`" in text
+
+
 def test_export_dual_agent_run_artifacts_renders_top_level_cursor_review_events(tmp_path):
     state = _state(tmp_path)
     _insert_event(

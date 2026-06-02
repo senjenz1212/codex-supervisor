@@ -322,11 +322,19 @@ def detect_sequence_failures(events: list[dict[str, Any]]) -> list[dict[str, Any
                 payload=payload,
             )
 
-        if kind == "tri_agent_cursor_review":
+        if kind in {"tri_agent_cursor_review", "independent_reviewer_review"}:
             accepted = payload.get("accepted")
             cursor_review = payload.get("cursor_review") if isinstance(payload.get("cursor_review"), dict) else {}
             if accepted is None and cursor_review:
                 accepted = cursor_review.get("accepted")
+            if accepted is None and isinstance(payload.get("independent_reviewer_results"), list):
+                reviewer_results = [
+                    result for result in payload["independent_reviewer_results"]
+                    if isinstance(result, dict)
+                ]
+                accepted = bool(reviewer_results) and all(
+                    bool(result.get("accepted")) for result in reviewer_results
+                )
             if accepted is False and gate in accepted_gate_by_gate:
                 failures.append(_sequence_failure(
                     "false_green_incorrect_verification",

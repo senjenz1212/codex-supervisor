@@ -499,6 +499,7 @@ class State:
                    'dual_agent_workflow_terminal_discrepancy',
                    'dual_agent_workflow_route',
                    'dual_agent_interaction_message',
+                   'independent_reviewer_review',
                    'tri_agent_cursor_review'
                  )
                ORDER BY event_id ASC""",

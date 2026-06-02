@@ -172,6 +172,31 @@ def test_failure_taxonomy_triggers_all_mast_modes_through_payload_or_sequence_ru
     assert observed == set(MAST_FAILURE_MODES)
 
 
+def test_empty_independent_reviewer_panel_does_not_count_as_accept():
+    failures = detect_sequence_failures([
+        {
+            "event_id": 1,
+            "kind": "dual_agent_gate_result",
+            "gate": "outcome_review",
+            "payload": {
+                "status": "accepted",
+                "probes": {"P1": {"status": "green", "reason": "ok"}},
+            },
+        },
+        {
+            "event_id": 2,
+            "kind": "independent_reviewer_review",
+            "gate": "outcome_review",
+            "payload": {"independent_reviewer_results": []},
+        },
+    ])
+
+    assert any(
+        failure["code"] == "false_green_incorrect_verification"
+        for failure in failures
+    )
+
+
 def test_mast_coverage_matrix_reports_every_mode_and_sequence_sources():
     events = [
         {

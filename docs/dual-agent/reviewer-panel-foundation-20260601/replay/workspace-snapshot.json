@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "542fafbf483569ace13b16472b66b2a414369cf0e0a11ac78bea061177f508a4",
+  "git": {
+    "diff_bytes": 30821,
+    "diff_sha256": "7e93d87f052d7ecf855f47b36687e76d6fe27e6954b97506901bbd074b3617d4",
+    "diff_stat": "mcp_tools/codex_supervisor_stdio.py      | 148 +++++++++++++++++++++++++++-\n supervisor/dual_agent_artifacts.py       |  77 +++++++++++++++\n supervisor/failure_taxonomy.py           |  10 +-\n supervisor/state.py                      |   1 +\n tests/test_dual_agent_artifacts.py       |  60 ++++++++++++\n tests/test_dual_agent_workflow_driver.py | 163 ++++++++++++++++++++++++++++++-\n tests/test_failure_taxonomy.py           |  25 +++++\n 7 files changed, 481 insertions(+), 3 deletions(-)",
+    "head": "4ea6388",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "4ea6388",
+    "status_short": "M mcp_tools/codex_supervisor_stdio.py\n M supervisor/dual_agent_artifacts.py\n M supervisor/failure_taxonomy.py\n M supervisor/state.py\n M tests/test_dual_agent_artifacts.py\n M tests/test_dual_agent_workflow_driver.py\n M tests/test_failure_taxonomy.py\n?? docs/adr/20260601-independent-reviewer-panel-boundary.md\n?? docs/dual-agent/reviewer-panel-foundation-20260601/\n?? supervisor/reviewer_registry.py"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "80aae9fc82dfe422dfa4401efd74c55c47acbac736aeccb34eddd1fcd21981aa",
+    "implementation_plan": "c59ba8d0b88cf2781e50a38d4c57e78ccc61dd85948f6118e6d0a57f4725c21b",
+    "issues": "9087e4a165dadb701937c50264dea294ee5c358273d124aba1592173449ff5d6",
+    "prd": "34261e206e9b776f6da37b817fb41f20919050bf1289a94868fd7655ece740fb",
+    "tdd_plan": "6a033ee77dffaeb7ae0b23fb328a8a55cd066f893ad2f8b63d866c1c2387f09a"
+  },
+  "status": "captured"
+}

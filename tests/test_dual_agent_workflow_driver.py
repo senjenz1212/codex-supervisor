@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from supervisor.config import Config
-from supervisor.cursor_agent import CursorInvocationResult
+from supervisor.cursor_agent import CursorInvocationRequest, CursorInvocationResult
 from supervisor.dual_agent import Outcome, ProbeResult
 from supervisor.dual_agent_workflow import (
     cursor_review_gates_for_workflow,
@@ -2633,6 +2633,167 @@ async def test_run_dual_agent_workflow_runs_cursor_review_by_default(tmp_path):
     assert review_request["critical_review"]["schema_version"] == "critical-review/v1"
     assert review_response["critical_review"]["schema_version"] == "critical-review/v1"
     assert gate_decision["critical_review"]["schema_version"] == "critical-review/v1"
+
+
+@pytest.mark.asyncio
+async def test_workflow_exposes_independent_reviewer_results_and_dual_writes_events(tmp_path):
+    cursor_calls = []
+
+    def fake_cursor_runner(request):
+        cursor_calls.append(request)
+        result = _cursor_review_result(request.task_id)
+        return CursorInvocationResult(
+            probe=result.probe,
+            outcome=result.outcome,
+            transcript=result.transcript,
+            run_id="chatcmpl-gemini",
+            status="finished",
+            model="gemini-3.1-pro-preview",
+            reviewer_runtime="litellm_structured",
+            reviewer_output_mode="litellm_structured",
+            reviewer_assurance="structured_text_only",
+        )
+
+    server, state = _server(tmp_path, cursor_runner=fake_cursor_runner)
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Expose the independent reviewer panel shape.",
+        max_rounds_per_gate=1,
+        cursor_review=True,
+        reviewer_output_mode="litellm_structured",
+        reviewer_model="gemini-3.1-pro-preview",
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert result["status"] == "accepted"
+    panel = result["final_gate_result"]["independent_reviewer_results"]
+    assert len(panel) == 1
+    reviewer = panel[0]
+    assert reviewer["reviewer_id"] == "independent-reviewer-0"
+    assert reviewer["runtime"] == "litellm_structured"
+    assert reviewer["model"] == "gemini-3.1-pro-preview"
+    assert reviewer["provider_family"] == "google"
+    assert reviewer["tool_access"] == "text_only"
+    assert reviewer["assurance_grade"] == "text_only"
+    assert reviewer["decision"] == "accept"
+    assert reviewer["severity"] == "none"
+    assert reviewer["confidence"] == 0.91
+    assert reviewer["transcript_refs"]
+    assert reviewer["transcript_sha256"]
+    assert reviewer["output_sha256"]
+
+    events = [
+        (row["kind"], json.loads(row["payload_json"]))
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] in {"independent_reviewer_review", "tri_agent_cursor_review"}
+    ]
+    assert [kind for kind, _payload in events] == [
+        "independent_reviewer_review",
+        "tri_agent_cursor_review",
+    ]
+    assert events[0][1]["independent_reviewer_results"][0]["provider_family"] == "google"
+    assert events[1][1]["cursor_review"]["independent_reviewer_results"][0]["provider_family"] == "google"
+
+    transcript = await _maybe_await(server.tools["read_gate_transcript"](
+        run_id="workflow-run",
+        task_id="workflow-1",
+    ))
+    assert len(transcript["independent_reviewer_reviews"]) == 1
+    assert len(transcript["cursor_reviews"]) == 1
+    assert transcript["independent_reviewer_reviews"][0]["independent_reviewer_results"][0]["decision"] == "accept"
+
+
+@pytest.mark.asyncio
+async def test_read_gate_transcript_backfills_panel_results_from_legacy_cursor_event(tmp_path):
+    server, state = _server(tmp_path)
+    outcome = _cursor_review_result("workflow-1").outcome
+    assert outcome is not None
+    state.write_event(
+        run_id="legacy-run",
+        source="dual_agent",
+        kind="tri_agent_cursor_review",
+        payload={
+            "task_id": "workflow-1",
+            "gate": "outcome_review",
+            "cursor_review": {
+                "accepted": True,
+                "outcome": outcome.model_dump(),
+                "model": "gemini-3.1-pro-preview",
+                "reviewer_runtime": "litellm_structured",
+                "reviewer_output_mode": "litellm_structured",
+                "reviewer_assurance": "structured_text_only",
+                "transcript_tail": "<dual_agent_outcome>{}</dual_agent_outcome>",
+            },
+        },
+    )
+
+    transcript = await _maybe_await(server.tools["read_gate_transcript"](
+        run_id="legacy-run",
+        task_id="workflow-1",
+    ))
+
+    assert transcript["status"] == "ok"
+    assert len(transcript["cursor_reviews"]) == 1
+    assert transcript["independent_reviewer_reviews"] == []
+    panel = transcript["cursor_reviews"][0]["independent_reviewer_results"]
+    assert panel[0]["reviewer_id"] == "independent-reviewer-0"
+    assert panel[0]["decision"] == "accept"
+    assert panel[0]["provider_family"] == "google"
+    assert panel[0]["assurance_grade"] == "text_only"
+
+
+def test_reviewer_registry_supports_mock_panel_and_configured_structured_reviewer(tmp_path):
+    from supervisor.reviewer_registry import MockReviewer, ReviewerSpec, configured_reviewers
+
+    result = _cursor_review_result("workflow-1")
+    mock = MockReviewer(
+        spec=ReviewerSpec(
+            reviewer_id="mock-reviewer",
+            runtime="mock",
+            provider_family="test",
+            lineage=("test", "mock"),
+            tool_access="none",
+            assurance_grade="self_reported",
+        ),
+        result=result,
+    )
+
+    request = None
+
+    def fake_runner(incoming_request):
+        nonlocal request
+        request = incoming_request
+        return result
+
+    reviewers = configured_reviewers(
+        reviewer_output_mode="litellm_structured",
+        reviewer_model="gemini-3.1-pro-preview",
+        runner=fake_runner,
+    )
+
+    assert mock.review(CursorInvocationRequest(
+        task_id="workflow-1",
+        gate="outcome_review",
+        instruction="Review.",
+        cwd=tmp_path,
+    )).outcome == result.outcome
+    assert len(reviewers) == 1
+    assert reviewers[0].spec.provider_family == "google"
+    assert reviewers[0].spec.assurance_grade == "text_only"
+
+    reviewers[0].review(CursorInvocationRequest(
+        task_id="workflow-1",
+        gate="outcome_review",
+        instruction="Review.",
+        cwd=tmp_path,
+        reviewer_output_mode="litellm_structured",
+        reviewer_model="gemini-3.1-pro-preview",
+    ))
+    assert request is not None
+    assert request.reviewer_output_mode == "litellm_structured"
 
 
 @pytest.mark.asyncio
