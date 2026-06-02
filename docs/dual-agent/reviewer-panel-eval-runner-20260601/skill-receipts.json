@@ -1,0 +1,77 @@
+[
+  {
+    "receipt_id": "skill-to-prd-reviewer-panel-eval-runner-20260601",
+    "kind": "skill_run",
+    "status": "passed",
+    "skill": "to-prd",
+    "stage": "to_prd",
+    "claims": [
+      "prd-to-tdd skill executed",
+      "PRD promise contracts produced",
+      "reviewer panel eval runner distinguished from agentic lead eval"
+    ],
+    "artifacts": [
+      "docs/dual-agent/reviewer-panel-eval-runner-20260601/source/prd.md"
+    ]
+  },
+  {
+    "receipt_id": "skill-prd-grill-reviewer-panel-eval-runner-20260601",
+    "kind": "skill_run",
+    "status": "passed",
+    "skill": "grill-with-docs",
+    "stage": "prd_grill",
+    "claims": [
+      "prd-to-tdd skill executed",
+      "PRD grill findings resolved",
+      "public boundary gap handled as Slice 1 implementation responsibility"
+    ],
+    "artifacts": [
+      "docs/dual-agent/reviewer-panel-eval-runner-20260601/source/grill-findings.md"
+    ]
+  },
+  {
+    "receipt_id": "skill-to-issues-reviewer-panel-eval-runner-20260601",
+    "kind": "skill_run",
+    "status": "passed",
+    "skill": "to-issues",
+    "stage": "to_issues",
+    "claims": [
+      "prd-to-tdd skill executed",
+      "issues map to every PRD promise",
+      "issues preserve public boundaries and forbidden outcomes"
+    ],
+    "artifacts": [
+      "docs/dual-agent/reviewer-panel-eval-runner-20260601/source/issues.md"
+    ]
+  },
+  {
+    "receipt_id": "skill-tdd-reviewer-panel-eval-runner-20260601",
+    "kind": "skill_run",
+    "status": "passed",
+    "skill": "tdd",
+    "stage": "tdd",
+    "claims": [
+      "prd-to-tdd skill executed",
+      "public-boundary RED tests planned",
+      "helper-only tests deferred until runner-boundary tests exist"
+    ],
+    "artifacts": [
+      "docs/dual-agent/reviewer-panel-eval-runner-20260601/source/tdd.md"
+    ]
+  },
+  {
+    "receipt_id": "skill-tdd-grill-reviewer-panel-eval-runner-20260601",
+    "kind": "skill_run",
+    "status": "passed",
+    "skill": "grill-with-docs",
+    "stage": "tdd_grill",
+    "claims": [
+      "prd-to-tdd skill executed",
+      "TDD grill findings resolved",
+      "translation audit completed"
+    ],
+    "artifacts": [
+      "docs/dual-agent/reviewer-panel-eval-runner-20260601/source/grill-findings-tdd.md"
+    ]
+  }
+]

@@ -292,3 +292,13 @@ Tests must compare `lead_direct`, `agentic_allowed`, and `agentic_required`
 rows across wall-clock, cost, retries, rejected gates, missed issues, and
 operator interventions. Reports must never authorize an agentic default change
 without an explicit operator review gate.
+
+## reviewer_panel_eval_runner
+
+Replay labeled reviewer-panel fixtures through `supervisor.reviewer_panel_eval`
+and emit per-reviewer plus pairwise dependency metrics. Tests must use
+deterministic fixture or cassette replay by default, must record one row for
+every configured reviewer and labeled gate decision, and must prove the report
+is observation-only: no gate aggregation, reviewer roster default, calibrated
+weight, or policy setting may change. Ledger writes at this boundary are eval
+observations only, not gate decisions.

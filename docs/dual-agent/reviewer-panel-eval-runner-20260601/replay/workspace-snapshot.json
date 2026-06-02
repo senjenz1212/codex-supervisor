@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "b5570e510167cf1cf5119b78f2c48b7a53cf0cddc6d563a3fbc7098e560fe42b",
+  "git": {
+    "diff_bytes": 1031,
+    "diff_sha256": "5ba14b55cc01f914193a26c1f4c3135aefac0a993cca662ceb34cb8c3a0d69a5",
+    "diff_stat": "docs/testing/public-boundaries.md | 10 ++++++++++\n 1 file changed, 10 insertions(+)",
+    "head": "7527f95",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "7527f95",
+    "status_short": "M docs/testing/public-boundaries.md\n?? docs/dual-agent/reviewer-panel-eval-runner-20260601/\n?? supervisor/reviewer_panel_eval.py\n?? tests/test_reviewer_panel_eval_runner.py"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "21f70aaba07c3cd12e9552c3012aa94dd2703d6ccafb215f625294bde8e81071",
+    "implementation_plan": "77ddb5d317e42fce4aed811e9448476066e44a073c85992e3d640fee8b3ccbfb",
+    "issues": "dcb47cd458d114db531f33a846fa70509a9ab6ae3a2e5ffa7eb7421dcf246514",
+    "prd": "e6b6c82803869dbe34e83cbc3d6b3455ae9a3447aec5794b30fd6db5d98b7bd4",
+    "tdd_plan": "ad235cd4867e82ca48eab70e363038ac49643f44ad78c27e0a70cab05b74b92d"
+  },
+  "status": "captured"
+}
