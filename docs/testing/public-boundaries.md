@@ -302,3 +302,13 @@ every configured reviewer and labeled gate decision, and must prove the report
 is observation-only: no gate aggregation, reviewer roster default, calibrated
 weight, or policy setting may change. Ledger writes at this boundary are eval
 observations only, not gate decisions.
+
+## reviewer_panel_adjudication
+
+Adjudicate reviewer-panel disagreement through `run_dual_agent_workflow` and
+the emitted `independent_reviewer_review` /
+`independent_reviewer_adjudication` events. Tests must exercise the workflow
+boundary first, with live reviewers injected below that boundary, and prove
+that split panels or important/critical accept-shaped objections produce a
+bounded evidence packet without majority vote, calibrated weighting, unbounded
+file reads, or any weakening of real revise/deny hard blocks.

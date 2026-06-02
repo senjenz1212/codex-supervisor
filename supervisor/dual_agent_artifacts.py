@@ -645,6 +645,13 @@ def _interaction_event_markdown(index: int, event: dict[str, Any]) -> str:
             include_kind=False,
         )
 
+    if event["kind"] == "independent_reviewer_adjudication":
+        return _independent_reviewer_adjudication_event_markdown(
+            heading=f"## {index}. {title}",
+            event=event,
+            include_kind=False,
+        )
+
     if event["kind"] == "tri_agent_cursor_review":
         return _cursor_review_event_markdown(
             heading=f"## {index}. {title}",
@@ -812,6 +819,13 @@ def _event_markdown(event: dict[str, Any]) -> str:
 
     if event["kind"] == "independent_reviewer_review":
         return _independent_reviewer_review_event_markdown(
+            heading=f"## event_id: {event['event_id']}",
+            event=event,
+            include_kind=True,
+        )
+
+    if event["kind"] == "independent_reviewer_adjudication":
+        return _independent_reviewer_adjudication_event_markdown(
             heading=f"## event_id: {event['event_id']}",
             event=event,
             include_kind=True,
@@ -1127,6 +1141,65 @@ def _independent_reviewer_review_event_markdown(
             _inline_markdown_value(result.get("critical_review") or {}),
             "",
         ])
+    lines.extend(_trace_envelope_section(payload))
+    return "\n".join(lines)
+
+
+def _independent_reviewer_adjudication_event_markdown(
+    *,
+    heading: str,
+    event: dict[str, Any],
+    include_kind: bool,
+) -> str:
+    payload = event["payload"]
+    adjudication = payload.get("adjudication") if isinstance(payload.get("adjudication"), dict) else {}
+    strongest = (
+        adjudication.get("strongest_objection")
+        if isinstance(adjudication.get("strongest_objection"), dict)
+        else {}
+    )
+    lines = [
+        heading,
+        "",
+        f"- event_id: `{event['event_id']}`",
+        f"- ts: `{event['ts']}`",
+    ]
+    if include_kind:
+        lines.extend([
+            f"- kind: `{event['kind']}`",
+            f"- gate: `{event['gate']}`",
+        ])
+    lines.extend([
+        "- interaction_type: `independent_reviewer_adjudication`",
+        f"- gate: `{event['gate']}`",
+        f"- trigger: `{_clean_text(adjudication.get('trigger'))}`",
+        f"- decision: `{_clean_text(adjudication.get('decision'))}`",
+        f"- reason: `{_clean_text(adjudication.get('reason'))}`",
+        f"- majority_vote_used: `{adjudication.get('majority_vote_used')}`",
+        "",
+        "### Strongest Objection",
+        "",
+        f"- reviewer_id: `{_clean_text(strongest.get('reviewer_id'))}`",
+        f"- decision: `{_clean_text(strongest.get('decision'))}`",
+        f"- severity: `{_clean_text(strongest.get('severity'))}`",
+        f"- confidence: `{_clean_text(strongest.get('confidence'))}`",
+        f"- text: {_text_or_none(strongest.get('text'))}",
+        f"- transcript_sha256: `{_clean_text(strongest.get('transcript_sha256'))}`",
+        f"- output_sha256: `{_clean_text(strongest.get('output_sha256'))}`",
+        "",
+        "Evidence refs:",
+        "",
+        _list_markdown(strongest.get("evidence_refs")),
+        "",
+        "Tests:",
+        "",
+        _list_markdown(strongest.get("tests")),
+        "",
+        "Evidence checks:",
+        "",
+        _inline_markdown_value(adjudication.get("evidence_checks") or []),
+        "",
+    ])
     lines.extend(_trace_envelope_section(payload))
     return "\n".join(lines)
 

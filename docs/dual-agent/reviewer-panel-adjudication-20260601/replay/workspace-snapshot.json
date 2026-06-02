@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "6524c355017413357d0c41a01364cfa81a566001e2bc069dfa8ecf6380a35497",
+  "git": {
+    "diff_bytes": 38276,
+    "diff_sha256": "ff8ed5bc74f36a51241589f38810955b5ff643a2ded0432ab975d3880b4e4766",
+    "diff_stat": "docs/testing/public-boundaries.md        |  10 ++\n mcp_tools/codex_supervisor_stdio.py      |  64 +++++++\n supervisor/dual_agent_artifacts.py       |  73 ++++++++\n supervisor/reviewer_registry.py          | 228 +++++++++++++++++++++++\n supervisor/state.py                      |   1 +\n tests/test_dual_agent_workflow_driver.py | 299 ++++++++++++++++++++++++++++++-\n 6 files changed, 669 insertions(+), 6 deletions(-)",
+    "head": "a1d79fb",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "a1d79fb",
+    "status_short": "M docs/testing/public-boundaries.md\n M mcp_tools/codex_supervisor_stdio.py\n M supervisor/dual_agent_artifacts.py\n M supervisor/reviewer_registry.py\n M supervisor/state.py\n M tests/test_dual_agent_workflow_driver.py\n?? docs/dual-agent/reviewer-panel-adjudication-20260601/"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "d10d3d639705072477c817c688b2dc0faa8fbb6f872869cea105abf90872ec9f",
+    "implementation_plan": "9adcb0434ed7740e1a92d4375fdb361d575b3b8c3cb96a8e34c088e1f55173d7",
+    "issues": "f5157897d35ad1c2d86297db3b901dd28ab5b088a1bc62b734e4510a5db310d7",
+    "prd": "8a24db8ca0493545b1c7f432bf8c97b2b63b514434aa83484ddb83b6206ecd44",
+    "tdd_plan": "af64adbf43579308638fb7ea388b2b57f9172476c3392427b666a0dcf3981cd8"
+  },
+  "status": "captured"
+}

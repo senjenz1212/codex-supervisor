@@ -307,6 +307,7 @@ def independent_reviewer_result_from_cursor_result(
         "transcript_sha256": hashlib.sha256(transcript.encode("utf-8")).hexdigest(),
         "output_sha256": hashlib.sha256(output_json.encode("utf-8")).hexdigest() if output_json else None,
         "critical_review": critical_review,
+        "tests": list(outcome_payload.get("tests") or []) if isinstance(outcome_payload, dict) else [],
         "failure_classification": result.failure_classification,
         "recoverable": result.recoverable,
         "attempts": result.attempts,
@@ -413,6 +414,104 @@ def evaluate_reviewer_panel(
     }
 
 
+def adjudicate_reviewer_panel(
+    results: list[dict[str, Any]] | tuple[dict[str, Any], ...],
+    *,
+    cwd: str | Path,
+    max_evidence_refs: int = 5,
+) -> dict[str, Any] | None:
+    """Build a bounded adjudication packet for split or strong-objection panels.
+
+    This is deliberately not a weighting function. It only preserves and checks
+    the strongest objection so downstream gate logic can block or escalate
+    without majority voting.
+    """
+    reviewer_inputs = [result for result in results if isinstance(result, dict)]
+    if not reviewer_inputs:
+        return None
+
+    available_decisions = {
+        _normalise_decision(result)
+        for result in reviewer_inputs
+        if bool(result.get("verdict_present")) and _normalise_decision(result) in {"accept", "revise", "deny"}
+    }
+    has_accept = "accept" in available_decisions
+    has_non_accept = bool(available_decisions & {"revise", "deny"})
+    disagreement = has_accept and has_non_accept
+    strong_candidates = [
+        result
+        for result in reviewer_inputs
+        if _strongest_objection_text(result)
+        and _severity_rank(_result_severity(result)) >= _severity_rank("important")
+        and bool(result.get("verdict_present"))
+    ]
+    if not disagreement and not strong_candidates:
+        return None
+
+    trigger = "disagreement" if disagreement else "strong_minority_objection"
+    strongest = _select_strongest_objection(
+        [
+            result for result in reviewer_inputs
+            if _normalise_decision(result) in {"revise", "deny"}
+        ]
+        if disagreement else strong_candidates
+    )
+    if strongest is None:
+        strongest = _select_strongest_objection(strong_candidates or reviewer_inputs)
+    if strongest is None:
+        return None
+
+    strongest_decision = _normalise_decision(strongest)
+    strongest_severity = _result_severity(strongest)
+    decision = (
+        "block"
+        if strongest_decision in {"revise", "deny"}
+        and _severity_rank(strongest_severity) >= _severity_rank("important")
+        else "escalate"
+    )
+    evidence_refs = _result_evidence_refs(strongest)
+    tests = _text_list(strongest.get("tests"))
+    evidence_checks = _check_evidence_refs(
+        cwd=Path(cwd),
+        refs=[*evidence_refs, *tests],
+        max_evidence_refs=max_evidence_refs,
+    )
+    return {
+        "schema_version": "independent-reviewer-adjudication/v1",
+        "trigger": trigger,
+        "decision": decision,
+        "reason": (
+            "real_reviewer_objection"
+            if decision == "block"
+            else "strong_accept_objection"
+        ),
+        "majority_vote_used": False,
+        "bounded": True,
+        "max_evidence_refs": max_evidence_refs,
+        "reviewer_count": len(reviewer_inputs),
+        "available_decisions": sorted(available_decisions),
+        "strongest_objection": {
+            "reviewer_id": str(strongest.get("reviewer_id") or "unknown-reviewer"),
+            "decision": strongest_decision,
+            "severity": strongest_severity,
+            "confidence": _coerce_confidence(strongest.get("confidence")),
+            "text": _strongest_objection_text(strongest),
+            "evidence_refs": evidence_refs,
+            "tests": tests,
+            "transcript_refs": list(strongest.get("transcript_refs") or []),
+            "transcript_sha256": strongest.get("transcript_sha256"),
+            "output_sha256": strongest.get("output_sha256"),
+            "runtime": strongest.get("runtime") or strongest.get("reviewer_runtime"),
+            "model": strongest.get("model"),
+            "provider_family": strongest.get("provider_family"),
+            "lineage": list(strongest.get("lineage") or []),
+            "tool_access": strongest.get("tool_access"),
+            "assurance_grade": strongest.get("assurance_grade"),
+        },
+        "evidence_checks": evidence_checks,
+    }
+
+
 def _reviewer_input_summary(result: dict[str, Any]) -> dict[str, Any]:
     reviewer_id = str(result.get("reviewer_id") or "unknown-reviewer")
     decision = str(result.get("decision") or "").strip().lower()
@@ -431,6 +530,135 @@ def _reviewer_input_summary(result: dict[str, Any]) -> dict[str, Any]:
         "provider_family": result.get("provider_family"),
         "assurance_grade": result.get("assurance_grade"),
     }
+
+
+def _select_strongest_objection(results: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if not results:
+        return None
+    return sorted(
+        results,
+        key=lambda result: (
+            _severity_rank(_result_severity(result)),
+            1 if _normalise_decision(result) in {"revise", "deny"} else 0,
+            _coerce_confidence(result.get("confidence")) or 0.0,
+            str(result.get("reviewer_id") or ""),
+        ),
+        reverse=True,
+    )[0]
+
+
+def _normalise_decision(result: dict[str, Any]) -> str:
+    return str(result.get("decision") or "").strip().lower()
+
+
+def _result_severity(result: dict[str, Any]) -> str:
+    critical = result.get("critical_review") if isinstance(result.get("critical_review"), dict) else {}
+    return str(critical.get("severity") or result.get("severity") or "none").strip().lower()
+
+
+def _severity_rank(severity: str) -> int:
+    return {
+        "none": 0,
+        "low": 1,
+        "minor": 1,
+        "medium": 2,
+        "moderate": 2,
+        "important": 3,
+        "critical": 4,
+    }.get(str(severity or "").strip().lower(), 0)
+
+
+def _strongest_objection_text(result: dict[str, Any]) -> str:
+    critical = result.get("critical_review") if isinstance(result.get("critical_review"), dict) else {}
+    text = str(critical.get("strongest_objection") or "").strip()
+    if text and text.lower() not in {"none", "n/a", "na", "no objection"}:
+        return text
+    objections = result.get("objections")
+    if isinstance(objections, list):
+        return next((str(item).strip() for item in objections if str(item).strip()), "")
+    return ""
+
+
+def _result_evidence_refs(result: dict[str, Any]) -> list[Any]:
+    critical = result.get("critical_review") if isinstance(result.get("critical_review"), dict) else {}
+    refs = critical.get("evidence_refs")
+    if not isinstance(refs, list):
+        refs = result.get("evidence_refs")
+    return list(refs or []) if isinstance(refs, list) else []
+
+
+def _text_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _check_evidence_refs(
+    *,
+    cwd: Path,
+    refs: list[Any],
+    max_evidence_refs: int,
+) -> list[dict[str, Any]]:
+    checks: list[dict[str, Any]] = []
+    root = cwd.expanduser().resolve()
+    for raw_ref in refs[:max(0, int(max_evidence_refs))]:
+        ref, expected_sha256 = _normalise_evidence_ref(raw_ref)
+        if not ref:
+            continue
+        check: dict[str, Any] = {"ref": ref}
+        if _is_external_ref(ref):
+            check["status"] = "skipped_external"
+            checks.append(check)
+            continue
+        candidate = Path(ref).expanduser()
+        if candidate.is_absolute():
+            resolved = candidate.resolve()
+        else:
+            resolved = (root / candidate).resolve()
+        try:
+            resolved.relative_to(root)
+        except ValueError:
+            check["status"] = "skipped_unbounded"
+            checks.append(check)
+            continue
+        if not resolved.exists() or not resolved.is_file():
+            check["status"] = "missing"
+            checks.append(check)
+            continue
+        digest = hashlib.sha256(resolved.read_bytes()).hexdigest()
+        check["sha256"] = digest
+        if expected_sha256 and expected_sha256 != digest:
+            check["status"] = "hash_mismatch"
+            check["expected_sha256"] = expected_sha256
+        else:
+            check["status"] = "verified"
+        checks.append(check)
+    if len(refs) > max_evidence_refs:
+        checks.append({
+            "status": "truncated",
+            "skipped_count": len(refs) - max_evidence_refs,
+            "max_evidence_refs": max_evidence_refs,
+        })
+    return checks
+
+
+def _normalise_evidence_ref(value: Any) -> tuple[str, str | None]:
+    if isinstance(value, dict):
+        ref = str(value.get("path") or value.get("ref") or "").strip()
+        expected = value.get("sha256") or value.get("hash") or value.get("expected_sha256")
+        expected_text = str(expected).removeprefix("sha256:") if expected else None
+        return ref, expected_text
+    return str(value or "").strip(), None
+
+
+def _is_external_ref(ref: str) -> bool:
+    text = ref.strip().lower()
+    return (
+        "://" in text
+        or text.startswith("event:")
+        or text.startswith("independent_reviewer_review:")
+        or text.startswith("tri_agent_cursor_review:")
+    )
 
 
 def _coerce_confidence(value: Any) -> float | None:

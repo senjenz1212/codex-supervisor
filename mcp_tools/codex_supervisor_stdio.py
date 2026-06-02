@@ -37,6 +37,7 @@ from supervisor.cursor_agent import (
     invoke_cursor_agent,
 )
 from supervisor.reviewer_registry import (
+    adjudicate_reviewer_panel,
     configured_reviewers,
     evaluate_reviewer_panel,
     independent_reviewer_results_from_review_results,
@@ -1098,6 +1099,7 @@ class CodexSupervisorMcpAPI:
                 cursor_tool_calls: list[dict[str, Any]] = []
                 review_results: list[tuple[Any, CursorInvocationResult]] = []
                 independent_reviewer_results: list[dict[str, Any]] = []
+                independent_reviewer_adjudication: dict[str, Any] | None = None
                 if gate == "outcome_review" and payload.get("status") == "accepted":
                     claim_probe = verify_workflow_claims(
                         outcome_payload=payload.get("outcome"),
@@ -1317,6 +1319,24 @@ class CodexSupervisorMcpAPI:
                     independent_reviewer_results,
                     low_confidence_threshold=reviewer_low_confidence_threshold_value,
                 )
+                independent_reviewer_adjudication = adjudicate_reviewer_panel(
+                    independent_reviewer_results,
+                    cwd=cwd,
+                )
+                if independent_reviewer_adjudication is not None:
+                    independent_reviewer_panel_decision = {
+                        **independent_reviewer_panel_decision,
+                        "adjudication": independent_reviewer_adjudication,
+                    }
+                    if (
+                        independent_reviewer_panel_decision["decision"] == "accept"
+                        and independent_reviewer_adjudication["decision"] == "escalate"
+                    ):
+                        independent_reviewer_panel_decision = {
+                            **independent_reviewer_panel_decision,
+                            "decision": "escalate",
+                            "reason": "adjudicated_strong_objection",
+                        }
                 cursor_decision = (
                     "accept"
                     if independent_reviewer_panel_decision["decision"] == "accept"
@@ -1382,6 +1402,19 @@ class CodexSupervisorMcpAPI:
                     payload["independent_reviewer_results"] = independent_reviewer_results
                     payload["independent_reviewer_panel_decision"] = independent_reviewer_panel_decision
                 if cursor_payload is not None and cursor_reviews_this_gate:
+                    if independent_reviewer_adjudication is not None:
+                        self.state.write_event(
+                            run_id=run_id,
+                            source="dual_agent",
+                            kind="independent_reviewer_adjudication",
+                            payload={
+                                "task_id": task_id,
+                                "gate": gate,
+                                "adjudication": independent_reviewer_adjudication,
+                                "independent_reviewer_panel_decision": independent_reviewer_panel_decision,
+                                "independent_reviewer_results": independent_reviewer_results,
+                            },
+                        )
                     self.state.write_event(
                         run_id=run_id,
                         source="dual_agent",
@@ -2482,6 +2515,7 @@ class CodexSupervisorMcpAPI:
                    'dual_agent_workflow_terminal_discrepancy',
                    'dual_agent_workflow_route',
                    'dual_agent_interaction_message',
+                   'independent_reviewer_adjudication',
                    'independent_reviewer_review',
                    'tri_agent_cursor_review'
                  )
@@ -2502,6 +2536,7 @@ class CodexSupervisorMcpAPI:
         interactions: list[dict[str, Any]] = []
         cursor_reviews: list[dict[str, Any]] = []
         independent_reviewer_reviews: list[dict[str, Any]] = []
+        independent_reviewer_adjudications: list[dict[str, Any]] = []
         latest_result: dict[str, Any] | None = None
         latest_result_event_id: int | None = None
         for row in rows:
@@ -2608,6 +2643,18 @@ class CodexSupervisorMcpAPI:
                     "independent_reviewer": payload.get("independent_reviewer")
                     or payload.get("cursor_review"),
                 }))
+            elif row["kind"] == "independent_reviewer_adjudication":
+                independent_reviewer_adjudications.append(redact({
+                    "event_id": row["event_id"],
+                    "occurred_at": row["ts"],
+                    "gate": payload.get("gate"),
+                    "adjudication": payload.get("adjudication"),
+                    "independent_reviewer_panel_decision": payload.get(
+                        "independent_reviewer_panel_decision"
+                    ),
+                    "independent_reviewer_results": payload.get("independent_reviewer_results")
+                    or _independent_reviewer_results_from_payload(payload),
+                }))
             elif row["kind"] == "dual_agent_gate_result":
                 latest_result = redact(payload)
                 latest_result_event_id = int(row["event_id"])
@@ -2621,6 +2668,7 @@ class CodexSupervisorMcpAPI:
             and not workflow_jobs and not workflow_routes
             and not cursor_reviews
             and not independent_reviewer_reviews
+            and not independent_reviewer_adjudications
             and latest_result is None
         ):
             return {
@@ -2641,6 +2689,7 @@ class CodexSupervisorMcpAPI:
                 "interactions": [],
                 "cursor_reviews": [],
                 "independent_reviewer_reviews": [],
+                "independent_reviewer_adjudications": [],
                 "result": None,
                 "handoff_packet_path": None,
             }
@@ -2662,6 +2711,7 @@ class CodexSupervisorMcpAPI:
             "interactions": interactions,
             "cursor_reviews": cursor_reviews,
             "independent_reviewer_reviews": independent_reviewer_reviews,
+            "independent_reviewer_adjudications": independent_reviewer_adjudications,
             "result_event_id": latest_result_event_id,
             "result": latest_result,
             "handoff_packet_path": (
@@ -3836,6 +3886,20 @@ def _workflow_round_objection(
                 panel_decision = None
         if isinstance(panel_decision, dict) and panel_decision.get("decision") != "accept":
             reason = str(panel_decision.get("reason") or "independent_reviewer_panel_not_accepted")
+            if reason == "adjudicated_strong_objection":
+                adjudication = (
+                    panel_decision.get("adjudication")
+                    if isinstance(panel_decision.get("adjudication"), dict)
+                    else {}
+                )
+                strongest = (
+                    adjudication.get("strongest_objection")
+                    if isinstance(adjudication.get("strongest_objection"), dict)
+                    else {}
+                )
+                reviewer_id = str(strongest.get("reviewer_id") or "").strip()
+                suffix = f": {reviewer_id}" if reviewer_id else ""
+                return f"independent_reviewer_adjudicated_strong_objection{suffix}"
             if reason == "low_confidence_accept":
                 reviewers = ", ".join(
                     str(item)

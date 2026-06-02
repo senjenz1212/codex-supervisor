@@ -510,28 +510,39 @@ def _cursor_review_result(
     decision: str = "accept",
     severity: str | None = None,
     confidence: float = 0.91,
+    strongest_objection: str | None = None,
+    evidence_ref: str | None = None,
 ) -> CursorInvocationResult:
+    objection = (
+        strongest_objection
+        if strongest_objection is not None
+        else "none" if decision == "accept" else "unresolved concern"
+    )
+    outcome_objections = [] if decision == "accept" else [
+        strongest_objection or "Cursor found an unresolved concern."
+    ]
     outcome = Outcome(
         task_id=task_id,
         summary="Cursor independently reviewed the gate.",
         specialists=[{"name": "Cursor Reviewer", "decision": decision}],
         decisions=[decision],
-        objections=[] if decision == "accept" else ["Cursor found an unresolved concern."],
+        objections=outcome_objections,
         changed_files=[],
-        tests=[],
+        tests=[evidence_ref] if evidence_ref else [],
         test_status="unknown",
         confidence=confidence,
         confidence_rationale="Cursor reviewed the gate evidence independently.",
         confidence_criteria=["typed outcome complete", "review decision present"],
         claims=[],
         critical_review={
-            "strongest_objection": "none" if decision == "accept" else "unresolved concern",
+            "strongest_objection": objection,
             "missing_evidence": [],
             "contradictions_checked": ["gate evidence"],
             "assumptions_to_verify": [],
             "what_would_change_my_mind": "New contradictory evidence.",
             "decision": decision,
             "severity": severity or ("none" if decision == "accept" else "important"),
+            "evidence_refs": [evidence_ref] if evidence_ref else [],
         },
     )
     return CursorInvocationResult(
@@ -556,28 +567,36 @@ def _codex_reviewer_jsonl(
     severity: str | None = None,
     confidence: float = 0.93,
     include_command: bool = True,
+    strongest_objection: str | None = None,
+    evidence_ref: str | None = None,
 ) -> str:
+    objection = (
+        strongest_objection
+        if strongest_objection is not None
+        else "none" if decision == "accept" else "unresolved concern"
+    )
     outcome = Outcome(
         task_id=task_id,
         summary="Codex CLI independently reviewed the gate.",
         specialists=[{"name": "independent-reviewer-1", "decision": decision}],
         decisions=[decision],
-        objections=[] if decision == "accept" else ["Codex CLI found an unresolved concern."],
+        objections=[] if decision == "accept" else [objection],
         changed_files=[],
-        tests=[],
+        tests=[evidence_ref] if evidence_ref else [],
         test_status="unknown",
         confidence=confidence,
         confidence_rationale="Codex CLI reviewed the gate evidence with read-only tools.",
         confidence_criteria=["typed outcome complete", "read-only command evidence observed"],
         claims=[],
         critical_review={
-            "strongest_objection": "none" if decision == "accept" else "unresolved concern",
+            "strongest_objection": objection,
             "missing_evidence": [],
             "contradictions_checked": ["gate evidence"],
             "assumptions_to_verify": [],
             "what_would_change_my_mind": "New contradictory evidence.",
             "decision": decision,
             "severity": severity or ("none" if decision == "accept" else "important"),
+            "evidence_refs": [evidence_ref] if evidence_ref else [],
         },
     )
     events = [
@@ -705,6 +724,47 @@ def _revising_codex_reviewer_runner(argv, **kwargs):
         argv,
         0,
         stdout=_codex_reviewer_jsonl(task_id, decision="revise", severity="important"),
+        stderr="",
+    )
+
+
+def _revising_codex_reviewer_with_evidence_runner(argv, **kwargs):
+    task_id = _task_id_from_codex_argv(argv)
+    cwd = Path(kwargs.get("cwd") or ".")
+    evidence = cwd / "docs" / "dual-agent" / "workflow-1" / "adjudication-evidence.txt"
+    evidence.parent.mkdir(parents=True, exist_ok=True)
+    evidence.write_text("minority objection evidence\n", encoding="utf-8")
+    return subprocess.CompletedProcess(
+        argv,
+        0,
+        stdout=_codex_reviewer_jsonl(
+            task_id,
+            decision="revise",
+            severity="important",
+            strongest_objection="cited receipt contradicts the accept path",
+            evidence_ref=str(evidence.relative_to(cwd)),
+        ),
+        stderr="",
+    )
+
+
+def _accepting_codex_reviewer_with_objection_runner(argv, **kwargs):
+    task_id = _task_id_from_codex_argv(argv)
+    cwd = Path(kwargs.get("cwd") or ".")
+    evidence = cwd / "docs" / "dual-agent" / "workflow-1" / "strong-objection.txt"
+    evidence.parent.mkdir(parents=True, exist_ok=True)
+    evidence.write_text("strong accept-shaped objection evidence\n", encoding="utf-8")
+    return subprocess.CompletedProcess(
+        argv,
+        0,
+        stdout=_codex_reviewer_jsonl(
+            task_id,
+            decision="accept",
+            severity="important",
+            confidence=0.88,
+            strongest_objection="accept path lacks the cited receipt replay",
+            evidence_ref=str(evidence.relative_to(cwd)),
+        ),
         stderr="",
     )
 
@@ -3382,6 +3442,233 @@ async def test_second_reviewer_important_revise_blocks(tmp_path):
         "independent-reviewer-1",
     ]
     assert reviewer_event["independent_reviewer_results"][1]["decision"] == "revise"
+
+
+@pytest.mark.asyncio
+async def test_run_dual_agent_workflow_split_panel_triggers_adjudication(tmp_path):
+    server, state = _server(
+        tmp_path,
+        cursor_runner=_accepting_cursor_runner,
+        codex_runner=_revising_codex_reviewer_with_evidence_runner,
+    )
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="A split reviewer panel must adjudicate the strongest objection.",
+        max_rounds_per_gate=1,
+        cursor_review=True,
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert result["status"] == "blocked"
+    panel_decision = result["final_gate_result"]["independent_reviewer_panel_decision"]
+    assert panel_decision["decision"] == "revise"
+    assert panel_decision["reason"] == "blocking_reviewer_objection"
+    adjudication = panel_decision["adjudication"]
+    assert adjudication["trigger"] == "disagreement"
+    assert adjudication["decision"] == "block"
+    assert adjudication["majority_vote_used"] is False
+    assert adjudication["strongest_objection"]["reviewer_id"] == "independent-reviewer-1"
+    assert adjudication["strongest_objection"]["text"] == "cited receipt contradicts the accept path"
+    assert adjudication["strongest_objection"]["transcript_sha256"]
+    assert adjudication["strongest_objection"]["output_sha256"]
+    assert adjudication["evidence_checks"][0]["status"] == "verified"
+
+    reviewer_event = next(
+        json.loads(row["payload_json"])
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "independent_reviewer_review"
+    )
+    assert reviewer_event["independent_reviewer_panel_decision"]["adjudication"]["decision"] == "block"
+    adjudication_events = [
+        json.loads(row["payload_json"])
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "independent_reviewer_adjudication"
+    ]
+    assert adjudication_events[-1]["adjudication"]["strongest_objection"]["reviewer_id"] == (
+        "independent-reviewer-1"
+    )
+
+
+@pytest.mark.asyncio
+async def test_real_reviewer_revise_still_hard_blocks_with_adjudication(tmp_path):
+    server, state = _server(
+        tmp_path,
+        cursor_runner=_accepting_cursor_runner,
+        codex_runner=_revising_codex_reviewer_with_evidence_runner,
+    )
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="A real important reviewer revise must remain a hard block after adjudication.",
+        max_rounds_per_gate=1,
+        cursor_review=True,
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert result["status"] == "blocked"
+    panel_decision = result["final_gate_result"]["independent_reviewer_panel_decision"]
+    assert panel_decision["decision"] == "revise"
+    assert panel_decision["reason"] == "blocking_reviewer_objection"
+    assert panel_decision["blocking_reviewers"] == ["independent-reviewer-1"]
+    assert panel_decision["adjudication"]["decision"] == "block"
+    assert panel_decision["adjudication"]["majority_vote_used"] is False
+    assert result["final_gate_result"]["cursor_decision"] == "revise"
+
+    rounds = [
+        json.loads(row["payload_json"])["round"]
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "dual_agent_gate_round"
+    ]
+    assert rounds[-1]["codex_decision"] == "revise"
+
+
+@pytest.mark.asyncio
+async def test_run_dual_agent_workflow_accept_with_strong_objection_escalates(tmp_path):
+    server, state = _server(
+        tmp_path,
+        cursor_runner=_accepting_cursor_runner,
+        codex_runner=_accepting_codex_reviewer_with_objection_runner,
+    )
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="All accepts with a strong minority objection should adjudicate and escalate.",
+        max_rounds_per_gate=1,
+        cursor_review=True,
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert result["status"] == "blocked"
+    panel_decision = result["final_gate_result"]["independent_reviewer_panel_decision"]
+    assert panel_decision["decision"] == "escalate"
+    assert panel_decision["reason"] == "adjudicated_strong_objection"
+    adjudication = panel_decision["adjudication"]
+    assert adjudication["trigger"] == "strong_minority_objection"
+    assert adjudication["decision"] == "escalate"
+    assert adjudication["strongest_objection"]["reviewer_id"] == "independent-reviewer-1"
+    assert result["final_gate_result"]["cursor_decision"] == "revise"
+
+    rounds = [
+        json.loads(row["payload_json"])["round"]
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "dual_agent_gate_round"
+    ]
+    assert rounds[-1]["objection"] == (
+        "independent_reviewer_adjudicated_strong_objection: independent-reviewer-1"
+    )
+
+
+def test_reviewer_panel_adjudication_checks_bounded_refs(tmp_path):
+    from supervisor.reviewer_registry import adjudicate_reviewer_panel
+
+    good = tmp_path / "evidence" / "good.txt"
+    good.parent.mkdir(parents=True)
+    good.write_text("verified evidence\n", encoding="utf-8")
+    bad_hash = tmp_path / "evidence" / "bad-hash.txt"
+    bad_hash.write_text("hash mismatch evidence\n", encoding="utf-8")
+    outside = tmp_path.parent / "outside-adjudication.txt"
+    outside.write_text("outside cwd\n", encoding="utf-8")
+
+    result = adjudicate_reviewer_panel(
+        [
+            {
+                "reviewer_id": "independent-reviewer-0",
+                "verdict_present": True,
+                "accepted": True,
+                "decision": "accept",
+                "severity": "none",
+                "confidence": 0.9,
+                "critical_review": {"strongest_objection": "none", "severity": "none"},
+            },
+            {
+                "reviewer_id": "independent-reviewer-1",
+                "verdict_present": True,
+                "accepted": False,
+                "decision": "revise",
+                "severity": "important",
+                "confidence": 0.88,
+                "critical_review": {
+                    "strongest_objection": "bounded evidence must be inspected",
+                    "severity": "important",
+                    "evidence_refs": [
+                        {
+                            "ref": str(good.relative_to(tmp_path)),
+                            "sha256": sha256(good.read_bytes()).hexdigest(),
+                        },
+                        {
+                            "ref": str(bad_hash.relative_to(tmp_path)),
+                            "sha256": "0" * 64,
+                        },
+                        "missing-evidence.txt",
+                        "https://example.invalid/evidence",
+                        str(outside),
+                    ],
+                },
+                "tests": [],
+                "transcript_refs": [],
+                "transcript_sha256": "abc",
+                "output_sha256": "def",
+            },
+        ],
+        cwd=tmp_path,
+    )
+
+    assert result is not None
+    statuses = {check["ref"]: check["status"] for check in result["evidence_checks"]}
+    assert statuses[str(good.relative_to(tmp_path))] == "verified"
+    assert statuses[str(bad_hash.relative_to(tmp_path))] == "hash_mismatch"
+    assert statuses["missing-evidence.txt"] == "missing"
+    assert statuses["https://example.invalid/evidence"] == "skipped_external"
+    assert statuses[str(outside)] == "skipped_unbounded"
+
+
+@pytest.mark.asyncio
+async def test_independent_reviewer_adjudication_event_and_transcript_export(tmp_path):
+    server, state = _server(
+        tmp_path,
+        cursor_runner=_accepting_cursor_runner,
+        codex_runner=_revising_codex_reviewer_with_evidence_runner,
+    )
+
+    await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Adjudication must appear in transcript and exported artifacts.",
+        max_rounds_per_gate=1,
+        cursor_review=True,
+        tool_receipts=_tool_receipts(),
+    ))
+
+    transcript = await _maybe_await(server.tools["read_gate_transcript"](
+        run_id="workflow-run",
+        task_id="workflow-1",
+    ))
+    assert transcript["independent_reviewer_adjudications"][-1]["adjudication"]["decision"] == "block"
+    assert "cited receipt contradicts the accept path" in json.dumps(transcript)
+
+    output_dir = tmp_path / "docs" / "dual-agent" / "workflow-1"
+    export = await _maybe_await(server.tools["export_gate_artifacts"](
+        run_id="workflow-run",
+        task_id="workflow-1",
+        cwd=str(tmp_path),
+        output_dir=str(output_dir),
+        screenshots=[],
+    ))
+    assert export["status"] == "ok"
+    interactions = (output_dir / "interactions.md").read_text(encoding="utf-8")
+    raw_transcript = (output_dir / "transcript.md").read_text(encoding="utf-8")
+    for text in (interactions, raw_transcript):
+        assert "interaction_type: `independent_reviewer_adjudication`" in text
+        assert "cited receipt contradicts the accept path" in text
+        assert "majority_vote_used: `False`" in text
 
 
 @pytest.mark.asyncio

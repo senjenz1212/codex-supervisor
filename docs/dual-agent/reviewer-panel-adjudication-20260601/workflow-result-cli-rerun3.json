@@ -1,0 +1,1815 @@
+{
+  "artifact_export": {
+    "files": [
+      "docs/dual-agent/reviewer-panel-adjudication-20260601/index.md",
+      "docs/dual-agent/reviewer-panel-adjudication-20260601/triage.md",
+      "docs/dual-agent/reviewer-panel-adjudication-20260601/prd.md",
+      "docs/dual-agent/reviewer-panel-adjudication-20260601/tdd.md",
+      "docs/dual-agent/reviewer-panel-adjudication-20260601/grill-findings.md",
+      "docs/dual-agent/reviewer-panel-adjudication-20260601/issues.md",
+      "docs/dual-agent/reviewer-panel-adjudication-20260601/screenshots.md",
+      "docs/dual-agent/reviewer-panel-adjudication-20260601/outcome-review.md",
+      "docs/dual-agent/reviewer-panel-adjudication-20260601/interactions.md",
+      "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.md",
+      "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl",
+      "docs/dual-agent/reviewer-panel-adjudication-20260601/mast-coverage.md",
+      "docs/dual-agent/reviewer-panel-adjudication-20260601/replay/manifest.json",
+      "docs/dual-agent/reviewer-panel-adjudication-20260601/replay/workspace-snapshot.json",
+      "docs/dual-agent/reviewer-panel-adjudication-20260601/replay/mast-coverage.json",
+      "docs/dual-agent/reviewer-panel-adjudication-20260601/source/grill-findings-tdd.md",
+      "docs/dual-agent/reviewer-panel-adjudication-20260601/source/grill-findings.md",
+      "docs/dual-agent/reviewer-panel-adjudication-20260601/source/implementation-plan.md",
+      "docs/dual-agent/reviewer-panel-adjudication-20260601/source/issues.md",
+      "docs/dual-agent/reviewer-panel-adjudication-20260601/source/prd.md",
+      "docs/dual-agent/reviewer-panel-adjudication-20260601/source/tdd.md"
+    ],
+    "output_dir": "docs/dual-agent/reviewer-panel-adjudication-20260601",
+    "run_id": "codex-reviewer-panel-adjudication-20260601",
+    "status": "ok",
+    "task_id": "reviewer-panel-adjudication-20260601"
+  },
+  "current_gate": "outcome_review",
+  "final_gate_result": {
+    "artifact_export": {
+      "files": [
+        "docs/dual-agent/reviewer-panel-adjudication-20260601/index.md",
+        "docs/dual-agent/reviewer-panel-adjudication-20260601/triage.md",
+        "docs/dual-agent/reviewer-panel-adjudication-20260601/prd.md",
+        "docs/dual-agent/reviewer-panel-adjudication-20260601/tdd.md",
+        "docs/dual-agent/reviewer-panel-adjudication-20260601/grill-findings.md",
+        "docs/dual-agent/reviewer-panel-adjudication-20260601/issues.md",
+        "docs/dual-agent/reviewer-panel-adjudication-20260601/screenshots.md",
+        "docs/dual-agent/reviewer-panel-adjudication-20260601/outcome-review.md",
+        "docs/dual-agent/reviewer-panel-adjudication-20260601/interactions.md",
+        "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.md",
+        "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl",
+        "docs/dual-agent/reviewer-panel-adjudication-20260601/mast-coverage.md",
+        "docs/dual-agent/reviewer-panel-adjudication-20260601/replay/manifest.json",
+        "docs/dual-agent/reviewer-panel-adjudication-20260601/replay/workspace-snapshot.json",
+        "docs/dual-agent/reviewer-panel-adjudication-20260601/replay/mast-coverage.json",
+        "docs/dual-agent/reviewer-panel-adjudication-20260601/source/grill-findings-tdd.md",
+        "docs/dual-agent/reviewer-panel-adjudication-20260601/source/grill-findings.md",
+        "docs/dual-agent/reviewer-panel-adjudication-20260601/source/implementation-plan.md",
+        "docs/dual-agent/reviewer-panel-adjudication-20260601/source/issues.md",
+        "docs/dual-agent/reviewer-panel-adjudication-20260601/source/prd.md",
+        "docs/dual-agent/reviewer-panel-adjudication-20260601/source/tdd.md"
+      ],
+      "output_dir": "docs/dual-agent/reviewer-panel-adjudication-20260601",
+      "run_id": "codex-reviewer-panel-adjudication-20260601",
+      "status": "ok",
+      "task_id": "reviewer-panel-adjudication-20260601"
+    },
+    "artifact_rigor": {
+      "accepted_prerequisite_gates": [
+        "execution"
+      ],
+      "artifact_policy": "strict",
+      "gate": "outcome_review",
+      "gate_statuses": {
+        "execution": "accepted",
+        "implementation_plan": "accepted",
+        "issues_review": "accepted",
+        "prd_review": "accepted",
+        "tdd_review": "accepted"
+      },
+      "missing_artifact_paths": [],
+      "missing_artifacts": [],
+      "missing_prerequisite_gates": [],
+      "missing_screenshot_paths": [],
+      "present_artifacts": [
+        "grill_findings",
+        "implementation_plan",
+        "issues",
+        "prd",
+        "tdd_plan"
+      ],
+      "reason": "required_artifacts_present",
+      "required_artifacts": [
+        "prd",
+        "tdd_plan",
+        "grill_findings",
+        "issues",
+        "implementation_plan"
+      ],
+      "required_prerequisite_gates": [
+        "execution"
+      ],
+      "screenshots": [],
+      "status": "ok",
+      "user_facing": false,
+      "visual_validation": {
+        "allowed_sources": [
+          "browser",
+          "browser-use",
+          "browser_use",
+          "computer",
+          "computer-use",
+          "computer_use"
+        ],
+        "evidence": [],
+        "failures": [],
+        "reason": "no_screenshots_supplied",
+        "status": "not_required"
+      }
+    },
+    "attempts": 1,
+    "claim_verification": {
+      "details": {
+        "legacy_verified_claims": [],
+        "receipts": [
+          {
+            "artifacts": [
+              "docs/dual-agent/reviewer-panel-adjudication-20260601/source/prd.md"
+            ],
+            "claims": [
+              "prd-to-tdd skill executed",
+              "PRD promise contracts produced",
+              "adjudication scope preserves conservative panel rules"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-to-prd-reviewer-panel-adjudication-20260601",
+            "skill": "to-prd",
+            "stage": "to_prd",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/reviewer-panel-adjudication-20260601/source/grill-findings.md"
+            ],
+            "claims": [
+              "prd-to-tdd skill executed",
+              "PRD grill findings resolved",
+              "bounded tool-backed adjudication clarified"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-prd-grill-reviewer-panel-adjudication-20260601",
+            "skill": "grill-with-docs",
+            "stage": "prd_grill",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/reviewer-panel-adjudication-20260601/source/issues.md"
+            ],
+            "claims": [
+              "prd-to-tdd skill executed",
+              "issues map to every PRD promise",
+              "public-boundary RED test preserved"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-to-issues-reviewer-panel-adjudication-20260601",
+            "skill": "to-issues",
+            "stage": "to_issues",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/reviewer-panel-adjudication-20260601/source/tdd.md"
+            ],
+            "claims": [
+              "prd-to-tdd skill executed",
+              "workflow-boundary RED tests planned",
+              "helper tests follow public-boundary proof"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-tdd-reviewer-panel-adjudication-20260601",
+            "skill": "tdd",
+            "stage": "tdd",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/reviewer-panel-adjudication-20260601/source/grill-findings-tdd.md"
+            ],
+            "claims": [
+              "prd-to-tdd skill executed",
+              "TDD grill findings resolved",
+              "translation audit completed"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-tdd-grill-reviewer-panel-adjudication-20260601",
+            "skill": "grill-with-docs",
+            "stage": "tdd_grill",
+            "status": "passed"
+          },
+          {
+            "claims": [
+              "python compile passed"
+            ],
+            "command": "python3 -m py_compile supervisor/reviewer_registry.py mcp_tools/codex_supervisor_stdio.py supervisor/dual_agent_artifacts.py supervisor/state.py tests/test_dual_agent_workflow_driver.py",
+            "kind": "test",
+            "receipt_id": "py-compile-reviewer-panel-adjudication",
+            "status": "passed"
+          },
+          {
+            "claims": [
+              "focused reviewer-panel adjudication tests passed",
+              "11 tests passed"
+            ],
+            "command": "uv run pytest tests/test_dual_agent_workflow_driver.py::test_second_reviewer_important_revise_blocks tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_split_panel_triggers_adjudication tests/test_dual_agent_workflow_driver.py::test_real_reviewer_revise_still_hard_blocks_with_adjudication tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_accept_with_strong_objection_escalates tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_panel_missing_verdict_does_not_accept tests/test_dual_agent_workflow_driver.py::test_second_reviewer_outage_proceeds_only_degraded tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_panel_high_confidence_accept_advances_by_default tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_panel_low_confidence_accept_escalates_when_threshold_configured tests/test_dual_agent_workflow_driver.py::test_panel_decision_is_exported_on_new_and_legacy_reviewer_events tests/test_dual_agent_workflow_driver.py::test_independent_reviewer_adjudication_event_and_transcript_export tests/test_dual_agent_workflow_driver.py::test_reviewer_panel_adjudication_checks_bounded_refs -q",
+            "kind": "test",
+            "receipt_id": "pytest-focused-reviewer-panel-adjudication",
+            "status": "passed"
+          },
+          {
+            "claims": [
+              "legacy cursor rejection regression and adjudication tests passed",
+              "4 tests passed"
+            ],
+            "command": "uv run pytest tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_with_cursor_review_blocks_on_cursor_rejection tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_split_panel_triggers_adjudication tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_accept_with_strong_objection_escalates -q",
+            "kind": "test",
+            "receipt_id": "pytest-cursor-rejection-regression-reviewer-panel-adjudication",
+            "status": "passed"
+          },
+          {
+            "claims": [
+              "dual-agent artifact and mailbox tests passed",
+              "28 tests passed"
+            ],
+            "command": "uv run pytest tests/test_dual_agent_artifacts.py tests/test_agent_mailbox.py -q",
+            "kind": "test",
+            "receipt_id": "pytest-artifacts-mailbox-reviewer-panel-adjudication",
+            "status": "passed"
+          },
+          {
+            "claims": [
+              "full test suite passed",
+              "630 tests passed"
+            ],
+            "command": "uv run --extra dev pytest -q",
+            "kind": "test",
+            "receipt_id": "pytest-full-reviewer-panel-adjudication",
+            "status": "passed"
+          },
+          {
+            "changed_files": [
+              "docs/testing/public-boundaries.md",
+              "mcp_tools/codex_supervisor_stdio.py",
+              "supervisor/dual_agent_artifacts.py",
+              "supervisor/reviewer_registry.py",
+              "supervisor/state.py",
+              "tests/test_dual_agent_workflow_driver.py",
+              "docs/dual-agent/reviewer-panel-adjudication-20260601/source/prd.md",
+              "docs/dual-agent/reviewer-panel-adjudication-20260601/source/grill-findings.md",
+              "docs/dual-agent/reviewer-panel-adjudication-20260601/source/issues.md",
+              "docs/dual-agent/reviewer-panel-adjudication-20260601/source/tdd.md",
+              "docs/dual-agent/reviewer-panel-adjudication-20260601/source/grill-findings-tdd.md"
+            ],
+            "claims": [
+              "implemented reviewer panel adjudication and replay/export wiring"
+            ],
+            "kind": "git_diff",
+            "receipt_id": "git-diff-reviewer-panel-adjudication",
+            "status": "present"
+          }
+        ]
+      },
+      "probe_id": "P11",
+      "reason": "workflow_claims_verified",
+      "status": "green"
+    },
+    "claude_decision": "accept",
+    "claude_gate_status": "accepted",
+    "codex_decision": "accept",
+    "cursor_decision": "accept",
+    "cursor_review": {
+      "accepted": true,
+      "agent_id": null,
+      "attempts": 1,
+      "critical_review": {
+        "assumptions_to_verify": [
+          "The evidence receipts accurately reflect the state of the codebase."
+        ],
+        "contradictions_checked": [
+          "Checked Claude's claim that pytest was not run against the evidence receipts which show it was run and passed."
+        ],
+        "decision": "accept",
+        "evidence_refs": [],
+        "missing_evidence": [],
+        "schema_version": "critical-review/v1",
+        "severity": "low",
+        "strongest_objection": "Claude's outcome claims pytest was not run, but the evidence receipts show multiple pytest runs including the full suite passing.",
+        "what_would_change_my_mind": "If the test receipts were fabricated or if the tests didn't actually cover the acceptance criteria."
+      },
+      "diagnostics": {
+        "completion_tokens": 1592,
+        "fallback": {
+          "attempted": true,
+          "from_runtime": "cursor_sdk",
+          "primary_failure": {
+            "attempts": 1,
+            "diagnostics": {
+              "failure": {
+                "attempts": 1,
+                "original_reason": "cursor_sdk_missing",
+                "reviewer_output_mode": "cursor_sdk"
+              }
+            },
+            "failure_classification": "reviewer_infrastructure_unavailable",
+            "model": null,
+            "probe": {
+              "details": {
+                "attempts": 1,
+                "original_reason": "cursor_sdk_missing",
+                "recoverable": true,
+                "retry_reasons": []
+              },
+              "probe_id": "CURSOR",
+              "reason": "reviewer_infrastructure_unavailable",
+              "status": "red"
+            },
+            "recoverable": true,
+            "retry_reasons": [],
+            "reviewer_assurance": "unavailable",
+            "reviewer_output_mode": "cursor_sdk",
+            "reviewer_runtime": "cursor_sdk",
+            "status": null
+          },
+          "reason": "cursor_sdk_missing",
+          "to_runtime": "litellm_structured"
+        },
+        "finish_reason": "stop",
+        "prompt_chars": 13049,
+        "prompt_sha256": "a9144dc68922249fbacafbd23434dad75d89a70afe0591474cf5cbbef65207bb",
+        "prompt_tokens": 4556
+      },
+      "duration_ms": null,
+      "failure_classification": null,
+      "fallback_from_runtime": "cursor_sdk",
+      "fallback_reason": "cursor_sdk_missing",
+      "independent_reviewer_panel_decision": {
+        "accepted_reviewers": [
+          "independent-reviewer-0",
+          "independent-reviewer-1"
+        ],
+        "available_reviewers": [
+          "independent-reviewer-0",
+          "independent-reviewer-1"
+        ],
+        "blocking_reviewers": [],
+        "decision": "accept",
+        "low_confidence_reviewers": [],
+        "low_confidence_threshold": 0.0,
+        "missing_reviewers": [],
+        "non_accepting_reviewers": [],
+        "reason": "all_available_reviewers_accept",
+        "reviewer_inputs": [
+          {
+            "accepted": true,
+            "assurance_grade": "text_only",
+            "confidence": 0.95,
+            "decision": "accept",
+            "model": "gemini-3.1-pro-preview",
+            "provider_family": "google",
+            "reviewer_id": "independent-reviewer-0",
+            "runtime": "litellm_structured",
+            "severity": "low",
+            "verdict_present": true
+          },
+          {
+            "accepted": true,
+            "assurance_grade": "agentic",
+            "confidence": 0.88,
+            "decision": "accept",
+            "model": "gpt-5.5",
+            "provider_family": "openai",
+            "reviewer_id": "independent-reviewer-1",
+            "runtime": "codex_cli",
+            "severity": "low",
+            "verdict_present": true
+          }
+        ],
+        "schema_version": "independent-reviewer-panel-decision/v1"
+      },
+      "independent_reviewer_results": [
+        {
+          "accepted": true,
+          "assurance_grade": "text_only",
+          "attempts": 1,
+          "confidence": 0.95,
+          "critical_review": {
+            "assumptions_to_verify": [
+              "The evidence receipts accurately reflect the state of the codebase."
+            ],
+            "contradictions_checked": [
+              "Checked Claude's claim that pytest was not run against the evidence receipts which show it was run and passed."
+            ],
+            "decision": "accept",
+            "missing_evidence": [],
+            "severity": "low",
+            "strongest_objection": "Claude's outcome claims pytest was not run, but the evidence receipts show multiple pytest runs including the full suite passing.",
+            "what_would_change_my_mind": "If the test receipts were fabricated or if the tests didn't actually cover the acceptance criteria."
+          },
+          "decision": "accept",
+          "failure_classification": null,
+          "gate": "outcome_review",
+          "lineage": [
+            "google",
+            "litellm_structured",
+            "gemini-3.1-pro-preview"
+          ],
+          "model": "gemini-3.1-pro-preview",
+          "output_sha256": "0be7eeba1b788df02c93037fb141827c937a5d8667479e74458813f9f11bac19",
+          "provider_family": "google",
+          "recoverable": false,
+          "reviewer_assurance": "fallback_text_only",
+          "reviewer_id": "independent-reviewer-0",
+          "reviewer_output_mode": "litellm_structured",
+          "reviewer_runtime": "litellm_structured",
+          "round_index": 1,
+          "runtime": "litellm_structured",
+          "schema_version": "independent-reviewer-panel-result/v1",
+          "severity": "low",
+          "task_id": "reviewer-panel-adjudication-20260601",
+          "tests": [
+            "test_run_dual_agent_workflow_split_panel_triggers_adjudication",
+            "test_real_reviewer_revise_still_hard_blocks_with_adjudication",
+            "test_run_dual_agent_workflow_accept_with_strong_objection_escalates",
+            "test_reviewer_panel_adjudication_checks_bounded_refs",
+            "test_independent_reviewer_adjudication_event_and_transcript_export"
+          ],
+          "tool_access": "text_only",
+          "transcript_refs": [
+            {
+              "chars": 2469,
+              "kind": "reviewer_transcript_tail",
+              "ref": "independent_reviewer_review:reviewer-panel-adjudication-20260601:outcome_review:1:independent-reviewer-0"
+            }
+          ],
+          "transcript_sha256": "ea3855ff3243fad99322dcd1e674153bf57dfb4e97f68e7e2b136c69389dbdc6",
+          "verdict_present": true
+        },
+        {
+          "accepted": true,
+          "assurance_grade": "agentic",
+          "attempts": 1,
+          "confidence": 0.88,
+          "critical_review": {
+            "assumptions_to_verify": [
+              "Receipt-reported pytest runs were executed against this exact working tree state",
+              "Future reviewer outputs put evidence refs in critical_review.evidence_refs and tests in the top-level tests field as expected",
+              "Treating external refs as skipped is acceptable for replay rather than requiring network-backed verification"
+            ],
+            "contradictions_checked": [
+              "Majority vote risk: refuted by majority_vote_used=false and no weighting/threshold-based panel count logic in adjudicate_reviewer_panel",
+              "Block weakening risk: refuted by evaluate_reviewer_panel revise/deny handling and stdio cursor_decision=revise whenever panel decision is not accept",
+              "Vacuous evidence check risk: refuted by cwd confinement, sha256 compare, missing/external/unbounded classification, and bounded-refs test assertions",
+              "Artifact omission risk: refuted by state allowlist, read_gate_transcript projection, artifact markdown rendering, and export test coverage",
+              "Planning hash drift risk: refuted by shasum matching PRD/grill/issues/TDD/implementation plan hashes"
+            ],
+            "decision": "accept",
+            "missing_evidence": [
+              "No independent pytest rerun in this read-only review; relying on provided/exported receipts",
+              "No live proof that a future reviewer-provided test command is executed, only that tests are captured and bounded as refs",
+              "Actual exported run did not contain an independent_reviewer_adjudication event because the reviewed panel did not split; behavior is covered by tests and code inspection"
+            ],
+            "severity": "low",
+            "strongest_objection": "The implementation is not a separate semantic adjudicator; it deterministically chooses the strongest objection and checks bounded refs/hashes. If the intended acceptance required a new model/tool to re-judge factual correctness or execute cited tests, this should not advance. The planning artifacts explicitly narrowed the slice to deterministic packet assembly plus bounded evidence checks, so this is not blocking.",
+            "what_would_change_my_mind": "A failing focused/full-suite test run, a trace showing adjudication downgrading revise/deny to accept, or a requirement clarification that this slice must perform semantic re-adjudication or execute cited test commands rather than record bounded evidence checks."
+          },
+          "decision": "accept",
+          "failure_classification": null,
+          "gate": "outcome_review",
+          "lineage": [
+            "openai",
+            "codex_cli",
+            "gpt-5.5"
+          ],
+          "model": "gpt-5.5",
+          "output_sha256": "17a3cccc39f6e6da322831d0e2595126822407b2e84daac698f91c9d278ad83a",
+          "provider_family": "openai",
+          "recoverable": false,
+          "reviewer_assurance": "tool_backed_primary",
+          "reviewer_id": "independent-reviewer-1",
+          "reviewer_output_mode": "codex_cli",
+          "reviewer_runtime": "codex_cli",
+          "round_index": 1,
+          "runtime": "codex_cli",
+          "schema_version": "independent-reviewer-panel-result/v1",
+          "severity": "low",
+          "task_id": "reviewer-panel-adjudication-20260601",
+          "tests": [
+            "py-compile-reviewer-panel-adjudication",
+            "pytest-focused-reviewer-panel-adjudication",
+            "pytest-cursor-rejection-regression-reviewer-panel-adjudication",
+            "pytest-artifacts-mailbox-reviewer-panel-adjudication",
+            "pytest-full-reviewer-panel-adjudication"
+          ],
+          "tool_access": "codebase_tools",
+          "transcript_refs": [
+            {
+              "chars": 4000,
+              "kind": "reviewer_transcript_tail",
+              "ref": "independent_reviewer_review:reviewer-panel-adjudication-20260601:outcome_review:1:independent-reviewer-1"
+            }
+          ],
+          "transcript_sha256": "2b39ad900482658125d1d498d54bd93103f1f926135092945b55ca12827ca3a9",
+          "verdict_present": true
+        }
+      ],
+      "model": "gemini-3.1-pro-preview",
+      "outcome": {
+        "changed_files": [
+          "docs/testing/public-boundaries.md",
+          "mcp_tools/codex_supervisor_stdio.py",
+          "supervisor/dual_agent_artifacts.py",
+          "supervisor/reviewer_registry.py",
+          "supervisor/state.py",
+          "tests/test_dual_agent_workflow_driver.py"
+        ],
+        "claims": [
+          "All acceptance criteria met",
+          "Tests passed successfully"
+        ],
+        "confidence": 0.95,
+        "confidence_criteria": [
+          "Full test suite passed",
+          "Focused tests passed",
+          "Git diff matches expectations"
+        ],
+        "confidence_rationale": "Evidence receipts confirm that the full test suite passed, contradicting Claude's claim that tests were not run. The implementation meets all acceptance criteria.",
+        "critical_review": {
+          "assumptions_to_verify": [
+            "The evidence receipts accurately reflect the state of the codebase."
+          ],
+          "contradictions_checked": [
+            "Checked Claude's claim that pytest was not run against the evidence receipts which show it was run and passed."
+          ],
+          "decision": "accept",
+          "missing_evidence": [],
+          "severity": "low",
+          "strongest_objection": "Claude's outcome claims pytest was not run, but the evidence receipts show multiple pytest runs including the full suite passing.",
+          "what_would_change_my_mind": "If the test receipts were fabricated or if the tests didn't actually cover the acceptance criteria."
+        },
+        "decisions": [
+          "accept"
+        ],
+        "objections": [
+          "Claude's outcome incorrectly claims tests were not run, but evidence receipts prove otherwise."
+        ],
+        "specialists": [
+          {
+            "decision": "accept",
+            "name": "Cursor Reviewer",
+            "objection": "Claude's outcome incorrectly claims tests were not run, but evidence receipts prove otherwise."
+          }
+        ],
+        "summary": "The implementation successfully meets all acceptance criteria. Claude's outcome incorrectly stated that tests were not run, but evidence receipts confirm that focused and full test suites passed successfully.",
+        "task_id": "reviewer-panel-adjudication-20260601",
+        "test_status": "passed",
+        "tests": [
+          "test_run_dual_agent_workflow_split_panel_triggers_adjudication",
+          "test_real_reviewer_revise_still_hard_blocks_with_adjudication",
+          "test_run_dual_agent_workflow_accept_with_strong_objection_escalates",
+          "test_reviewer_panel_adjudication_checks_bounded_refs",
+          "test_independent_reviewer_adjudication_event_and_transcript_export"
+        ]
+      },
+      "probe": {
+        "details": {},
+        "probe_id": "CURSOR",
+        "reason": "cursor_review_ok",
+        "status": "green"
+      },
+      "recoverable": false,
+      "retry_reasons": [],
+      "reviewer_assurance": "fallback_text_only",
+      "reviewer_output_mode": "litellm_structured",
+      "reviewer_runtime": "litellm_structured",
+      "run_id": "BDEfatLWCO7e-O4PodLr6QM",
+      "schema_version": "independent-reviewer-result/v1",
+      "status": "finished",
+      "transcript_tail": "[cursor attempt 1/4]\n<dual_agent_outcome>{\n  \"task_id\": \"reviewer-panel-adjudication-20260601\",\n  \"summary\": \"The implementation successfully meets all acceptance criteria. Claude's outcome incorrectly stated that tests were not run, but evidence receipts confirm that focused and full test suites passed successfully.\",\n  \"specialists\": [\n    {\n      \"name\": \"Cursor Reviewer\",\n      \"decision\": \"accept\",\n      \"objection\": \"Claude's outcome incorrectly claims tests were not run, but evidence receipts prove otherwise.\"\n    }\n  ],\n  \"decisions\": [\n    \"accept\"\n  ],\n  \"objections\": [\n    \"Claude's outcome incorrectly claims tests were not run, but evidence receipts prove otherwise.\"\n  ],\n  \"changed_files\": [\n    \"docs/testing/public-boundaries.md\",\n    \"mcp_tools/codex_supervisor_stdio.py\",\n    \"supervisor/dual_agent_artifacts.py\",\n    \"supervisor/reviewer_registry.py\",\n    \"supervisor/state.py\",\n    \"tests/test_dual_agent_workflow_driver.py\"\n  ],\n  \"tests\": [\n    \"test_run_dual_agent_workflow_split_panel_triggers_adjudication\",\n    \"test_real_reviewer_revise_still_hard_blocks_with_adjudication\",\n    \"test_run_dual_agent_workflow_accept_with_strong_objection_escalates\",\n    \"test_reviewer_panel_adjudication_checks_bounded_refs\",\n    \"test_independent_reviewer_adjudication_event_and_transcript_export\"\n  ],\n  \"test_status\": \"passed\",\n  \"confidence\": 0.95,\n  \"confidence_rationale\": \"Evidence receipts confirm that the full test suite passed, contradicting Claude's claim that tests were not run. The implementation meets all acceptance criteria.\",\n  \"confidence_criteria\": [\n    \"Full test suite passed\",\n    \"Focused tests passed\",\n    \"Git diff matches expectations\"\n  ],\n  \"claims\": [\n    \"All acceptance criteria met\",\n    \"Tests passed successfully\"\n  ],\n  \"critical_review\": {\n    \"strongest_objection\": \"Claude's outcome claims pytest was not run, but the evidence receipts show multiple pytest runs including the full suite passing.\",\n    \"missing_evidence\": [],\n    \"contradictions_checked\": [\n      \"Checked Claude's claim that pytest was not run against the evidence receipts which show it was run and passed.\"\n    ],\n    \"assumptions_to_verify\": [\n      \"The evidence receipts accurately reflect the state of the codebase.\"\n    ],\n    \"what_would_change_my_mind\": \"If the test receipts were fabricated or if the tests didn't actually cover the acceptance criteria.\",\n    \"decision\": \"accept\",\n    \"severity\": \"low\"\n  }\n}</dual_agent_outcome>"
+    },
+    "escalation": null,
+    "gate": "outcome_review",
+    "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-panel-adjudication-20260601.json",
+    "independent_reviewer": {
+      "accepted": true,
+      "agent_id": null,
+      "attempts": 1,
+      "critical_review": {
+        "assumptions_to_verify": [
+          "The evidence receipts accurately reflect the state of the codebase."
+        ],
+        "contradictions_checked": [
+          "Checked Claude's claim that pytest was not run against the evidence receipts which show it was run and passed."
+        ],
+        "decision": "accept",
+        "evidence_refs": [],
+        "missing_evidence": [],
+        "schema_version": "critical-review/v1",
+        "severity": "low",
+        "strongest_objection": "Claude's outcome claims pytest was not run, but the evidence receipts show multiple pytest runs including the full suite passing.",
+        "what_would_change_my_mind": "If the test receipts were fabricated or if the tests didn't actually cover the acceptance criteria."
+      },
+      "diagnostics": {
+        "completion_tokens": 1592,
+        "fallback": {
+          "attempted": true,
+          "from_runtime": "cursor_sdk",
+          "primary_failure": {
+            "attempts": 1,
+            "diagnostics": {
+              "failure": {
+                "attempts": 1,
+                "original_reason": "cursor_sdk_missing",
+                "reviewer_output_mode": "cursor_sdk"
+              }
+            },
+            "failure_classification": "reviewer_infrastructure_unavailable",
+            "model": null,
+            "probe": {
+              "details": {
+                "attempts": 1,
+                "original_reason": "cursor_sdk_missing",
+                "recoverable": true,
+                "retry_reasons": []
+              },
+              "probe_id": "CURSOR",
+              "reason": "reviewer_infrastructure_unavailable",
+              "status": "red"
+            },
+            "recoverable": true,
+            "retry_reasons": [],
+            "reviewer_assurance": "unavailable",
+            "reviewer_output_mode": "cursor_sdk",
+            "reviewer_runtime": "cursor_sdk",
+            "status": null
+          },
+          "reason": "cursor_sdk_missing",
+          "to_runtime": "litellm_structured"
+        },
+        "finish_reason": "stop",
+        "prompt_chars": 13049,
+        "prompt_sha256": "a9144dc68922249fbacafbd23434dad75d89a70afe0591474cf5cbbef65207bb",
+        "prompt_tokens": 4556
+      },
+      "duration_ms": null,
+      "failure_classification": null,
+      "fallback_from_runtime": "cursor_sdk",
+      "fallback_reason": "cursor_sdk_missing",
+      "independent_reviewer_panel_decision": {
+        "accepted_reviewers": [
+          "independent-reviewer-0",
+          "independent-reviewer-1"
+        ],
+        "available_reviewers": [
+          "independent-reviewer-0",
+          "independent-reviewer-1"
+        ],
+        "blocking_reviewers": [],
+        "decision": "accept",
+        "low_confidence_reviewers": [],
+        "low_confidence_threshold": 0.0,
+        "missing_reviewers": [],
+        "non_accepting_reviewers": [],
+        "reason": "all_available_reviewers_accept",
+        "reviewer_inputs": [
+          {
+            "accepted": true,
+            "assurance_grade": "text_only",
+            "confidence": 0.95,
+            "decision": "accept",
+            "model": "gemini-3.1-pro-preview",
+            "provider_family": "google",
+            "reviewer_id": "independent-reviewer-0",
+            "runtime": "litellm_structured",
+            "severity": "low",
+            "verdict_present": true
+          },
+          {
+            "accepted": true,
+            "assurance_grade": "agentic",
+            "confidence": 0.88,
+            "decision": "accept",
+            "model": "gpt-5.5",
+            "provider_family": "openai",
+            "reviewer_id": "independent-reviewer-1",
+            "runtime": "codex_cli",
+            "severity": "low",
+            "verdict_present": true
+          }
+        ],
+        "schema_version": "independent-reviewer-panel-decision/v1"
+      },
+      "independent_reviewer_results": [
+        {
+          "accepted": true,
+          "assurance_grade": "text_only",
+          "attempts": 1,
+          "confidence": 0.95,
+          "critical_review": {
+            "assumptions_to_verify": [
+              "The evidence receipts accurately reflect the state of the codebase."
+            ],
+            "contradictions_checked": [
+              "Checked Claude's claim that pytest was not run against the evidence receipts which show it was run and passed."
+            ],
+            "decision": "accept",
+            "missing_evidence": [],
+            "severity": "low",
+            "strongest_objection": "Claude's outcome claims pytest was not run, but the evidence receipts show multiple pytest runs including the full suite passing.",
+            "what_would_change_my_mind": "If the test receipts were fabricated or if the tests didn't actually cover the acceptance criteria."
+          },
+          "decision": "accept",
+          "failure_classification": null,
+          "gate": "outcome_review",
+          "lineage": [
+            "google",
+            "litellm_structured",
+            "gemini-3.1-pro-preview"
+          ],
+          "model": "gemini-3.1-pro-preview",
+          "output_sha256": "0be7eeba1b788df02c93037fb141827c937a5d8667479e74458813f9f11bac19",
+          "provider_family": "google",
+          "recoverable": false,
+          "reviewer_assurance": "fallback_text_only",
+          "reviewer_id": "independent-reviewer-0",
+          "reviewer_output_mode": "litellm_structured",
+          "reviewer_runtime": "litellm_structured",
+          "round_index": 1,
+          "runtime": "litellm_structured",
+          "schema_version": "independent-reviewer-panel-result/v1",
+          "severity": "low",
+          "task_id": "reviewer-panel-adjudication-20260601",
+          "tests": [
+            "test_run_dual_agent_workflow_split_panel_triggers_adjudication",
+            "test_real_reviewer_revise_still_hard_blocks_with_adjudication",
+            "test_run_dual_agent_workflow_accept_with_strong_objection_escalates",
+            "test_reviewer_panel_adjudication_checks_bounded_refs",
+            "test_independent_reviewer_adjudication_event_and_transcript_export"
+          ],
+          "tool_access": "text_only",
+          "transcript_refs": [
+            {
+              "chars": 2469,
+              "kind": "reviewer_transcript_tail",
+              "ref": "independent_reviewer_review:reviewer-panel-adjudication-20260601:outcome_review:1:independent-reviewer-0"
+            }
+          ],
+          "transcript_sha256": "ea3855ff3243fad99322dcd1e674153bf57dfb4e97f68e7e2b136c69389dbdc6",
+          "verdict_present": true
+        },
+        {
+          "accepted": true,
+          "assurance_grade": "agentic",
+          "attempts": 1,
+          "confidence": 0.88,
+          "critical_review": {
+            "assumptions_to_verify": [
+              "Receipt-reported pytest runs were executed against this exact working tree state",
+              "Future reviewer outputs put evidence refs in critical_review.evidence_refs and tests in the top-level tests field as expected",
+              "Treating external refs as skipped is acceptable for replay rather than requiring network-backed verification"
+            ],
+            "contradictions_checked": [
+              "Majority vote risk: refuted by majority_vote_used=false and no weighting/threshold-based panel count logic in adjudicate_reviewer_panel",
+              "Block weakening risk: refuted by evaluate_reviewer_panel revise/deny handling and stdio cursor_decision=revise whenever panel decision is not accept",
+              "Vacuous evidence check risk: refuted by cwd confinement, sha256 compare, missing/external/unbounded classification, and bounded-refs test assertions",
+              "Artifact omission risk: refuted by state allowlist, read_gate_transcript projection, artifact markdown rendering, and export test coverage",
+              "Planning hash drift risk: refuted by shasum matching PRD/grill/issues/TDD/implementation plan hashes"
+            ],
+            "decision": "accept",
+            "missing_evidence": [
+              "No independent pytest rerun in this read-only review; relying on provided/exported receipts",
+              "No live proof that a future reviewer-provided test command is executed, only that tests are captured and bounded as refs",
+              "Actual exported run did not contain an independent_reviewer_adjudication event because the reviewed panel did not split; behavior is covered by tests and code inspection"
+            ],
+            "severity": "low",
+            "strongest_objection": "The implementation is not a separate semantic adjudicator; it deterministically chooses the strongest objection and checks bounded refs/hashes. If the intended acceptance required a new model/tool to re-judge factual correctness or execute cited tests, this should not advance. The planning artifacts explicitly narrowed the slice to deterministic packet assembly plus bounded evidence checks, so this is not blocking.",
+            "what_would_change_my_mind": "A failing focused/full-suite test run, a trace showing adjudication downgrading revise/deny to accept, or a requirement clarification that this slice must perform semantic re-adjudication or execute cited test commands rather than record bounded evidence checks."
+          },
+          "decision": "accept",
+          "failure_classification": null,
+          "gate": "outcome_review",
+          "lineage": [
+            "openai",
+            "codex_cli",
+            "gpt-5.5"
+          ],
+          "model": "gpt-5.5",
+          "output_sha256": "17a3cccc39f6e6da322831d0e2595126822407b2e84daac698f91c9d278ad83a",
+          "provider_family": "openai",
+          "recoverable": false,
+          "reviewer_assurance": "tool_backed_primary",
+          "reviewer_id": "independent-reviewer-1",
+          "reviewer_output_mode": "codex_cli",
+          "reviewer_runtime": "codex_cli",
+          "round_index": 1,
+          "runtime": "codex_cli",
+          "schema_version": "independent-reviewer-panel-result/v1",
+          "severity": "low",
+          "task_id": "reviewer-panel-adjudication-20260601",
+          "tests": [
+            "py-compile-reviewer-panel-adjudication",
+            "pytest-focused-reviewer-panel-adjudication",
+            "pytest-cursor-rejection-regression-reviewer-panel-adjudication",
+            "pytest-artifacts-mailbox-reviewer-panel-adjudication",
+            "pytest-full-reviewer-panel-adjudication"
+          ],
+          "tool_access": "codebase_tools",
+          "transcript_refs": [
+            {
+              "chars": 4000,
+              "kind": "reviewer_transcript_tail",
+              "ref": "independent_reviewer_review:reviewer-panel-adjudication-20260601:outcome_review:1:independent-reviewer-1"
+            }
+          ],
+          "transcript_sha256": "2b39ad900482658125d1d498d54bd93103f1f926135092945b55ca12827ca3a9",
+          "verdict_present": true
+        }
+      ],
+      "model": "gemini-3.1-pro-preview",
+      "outcome": {
+        "changed_files": [
+          "docs/testing/public-boundaries.md",
+          "mcp_tools/codex_supervisor_stdio.py",
+          "supervisor/dual_agent_artifacts.py",
+          "supervisor/reviewer_registry.py",
+          "supervisor/state.py",
+          "tests/test_dual_agent_workflow_driver.py"
+        ],
+        "claims": [
+          "All acceptance criteria met",
+          "Tests passed successfully"
+        ],
+        "confidence": 0.95,
+        "confidence_criteria": [
+          "Full test suite passed",
+          "Focused tests passed",
+          "Git diff matches expectations"
+        ],
+        "confidence_rationale": "Evidence receipts confirm that the full test suite passed, contradicting Claude's claim that tests were not run. The implementation meets all acceptance criteria.",
+        "critical_review": {
+          "assumptions_to_verify": [
+            "The evidence receipts accurately reflect the state of the codebase."
+          ],
+          "contradictions_checked": [
+            "Checked Claude's claim that pytest was not run against the evidence receipts which show it was run and passed."
+          ],
+          "decision": "accept",
+          "missing_evidence": [],
+          "severity": "low",
+          "strongest_objection": "Claude's outcome claims pytest was not run, but the evidence receipts show multiple pytest runs including the full suite passing.",
+          "what_would_change_my_mind": "If the test receipts were fabricated or if the tests didn't actually cover the acceptance criteria."
+        },
+        "decisions": [
+          "accept"
+        ],
+        "objections": [
+          "Claude's outcome incorrectly claims tests were not run, but evidence receipts prove otherwise."
+        ],
+        "specialists": [
+          {
+            "decision": "accept",
+            "name": "Cursor Reviewer",
+            "objection": "Claude's outcome incorrectly claims tests were not run, but evidence receipts prove otherwise."
+          }
+        ],
+        "summary": "The implementation successfully meets all acceptance criteria. Claude's outcome incorrectly stated that tests were not run, but evidence receipts confirm that focused and full test suites passed successfully.",
+        "task_id": "reviewer-panel-adjudication-20260601",
+        "test_status": "passed",
+        "tests": [
+          "test_run_dual_agent_workflow_split_panel_triggers_adjudication",
+          "test_real_reviewer_revise_still_hard_blocks_with_adjudication",
+          "test_run_dual_agent_workflow_accept_with_strong_objection_escalates",
+          "test_reviewer_panel_adjudication_checks_bounded_refs",
+          "test_independent_reviewer_adjudication_event_and_transcript_export"
+        ]
+      },
+      "probe": {
+        "details": {},
+        "probe_id": "CURSOR",
+        "reason": "cursor_review_ok",
+        "status": "green"
+      },
+      "recoverable": false,
+      "retry_reasons": [],
+      "reviewer_assurance": "fallback_text_only",
+      "reviewer_output_mode": "litellm_structured",
+      "reviewer_runtime": "litellm_structured",
+      "run_id": "BDEfatLWCO7e-O4PodLr6QM",
+      "schema_version": "independent-reviewer-result/v1",
+      "status": "finished",
+      "transcript_tail": "[cursor attempt 1/4]\n<dual_agent_outcome>{\n  \"task_id\": \"reviewer-panel-adjudication-20260601\",\n  \"summary\": \"The implementation successfully meets all acceptance criteria. Claude's outcome incorrectly stated that tests were not run, but evidence receipts confirm that focused and full test suites passed successfully.\",\n  \"specialists\": [\n    {\n      \"name\": \"Cursor Reviewer\",\n      \"decision\": \"accept\",\n      \"objection\": \"Claude's outcome incorrectly claims tests were not run, but evidence receipts prove otherwise.\"\n    }\n  ],\n  \"decisions\": [\n    \"accept\"\n  ],\n  \"objections\": [\n    \"Claude's outcome incorrectly claims tests were not run, but evidence receipts prove otherwise.\"\n  ],\n  \"changed_files\": [\n    \"docs/testing/public-boundaries.md\",\n    \"mcp_tools/codex_supervisor_stdio.py\",\n    \"supervisor/dual_agent_artifacts.py\",\n    \"supervisor/reviewer_registry.py\",\n    \"supervisor/state.py\",\n    \"tests/test_dual_agent_workflow_driver.py\"\n  ],\n  \"tests\": [\n    \"test_run_dual_agent_workflow_split_panel_triggers_adjudication\",\n    \"test_real_reviewer_revise_still_hard_blocks_with_adjudication\",\n    \"test_run_dual_agent_workflow_accept_with_strong_objection_escalates\",\n    \"test_reviewer_panel_adjudication_checks_bounded_refs\",\n    \"test_independent_reviewer_adjudication_event_and_transcript_export\"\n  ],\n  \"test_status\": \"passed\",\n  \"confidence\": 0.95,\n  \"confidence_rationale\": \"Evidence receipts confirm that the full test suite passed, contradicting Claude's claim that tests were not run. The implementation meets all acceptance criteria.\",\n  \"confidence_criteria\": [\n    \"Full test suite passed\",\n    \"Focused tests passed\",\n    \"Git diff matches expectations\"\n  ],\n  \"claims\": [\n    \"All acceptance criteria met\",\n    \"Tests passed successfully\"\n  ],\n  \"critical_review\": {\n    \"strongest_objection\": \"Claude's outcome claims pytest was not run, but the evidence receipts show multiple pytest runs including the full suite passing.\",\n    \"missing_evidence\": [],\n    \"contradictions_checked\": [\n      \"Checked Claude's claim that pytest was not run against the evidence receipts which show it was run and passed.\"\n    ],\n    \"assumptions_to_verify\": [\n      \"The evidence receipts accurately reflect the state of the codebase.\"\n    ],\n    \"what_would_change_my_mind\": \"If the test receipts were fabricated or if the tests didn't actually cover the acceptance criteria.\",\n    \"decision\": \"accept\",\n    \"severity\": \"low\"\n  }\n}</dual_agent_outcome>"
+    },
+    "independent_reviewer_panel_decision": {
+      "accepted_reviewers": [
+        "independent-reviewer-0",
+        "independent-reviewer-1"
+      ],
+      "available_reviewers": [
+        "independent-reviewer-0",
+        "independent-reviewer-1"
+      ],
+      "blocking_reviewers": [],
+      "decision": "accept",
+      "low_confidence_reviewers": [],
+      "low_confidence_threshold": 0.0,
+      "missing_reviewers": [],
+      "non_accepting_reviewers": [],
+      "reason": "all_available_reviewers_accept",
+      "reviewer_inputs": [
+        {
+          "accepted": true,
+          "assurance_grade": "text_only",
+          "confidence": 0.95,
+          "decision": "accept",
+          "model": "gemini-3.1-pro-preview",
+          "provider_family": "google",
+          "reviewer_id": "independent-reviewer-0",
+          "runtime": "litellm_structured",
+          "severity": "low",
+          "verdict_present": true
+        },
+        {
+          "accepted": true,
+          "assurance_grade": "agentic",
+          "confidence": 0.88,
+          "decision": "accept",
+          "model": "gpt-5.5",
+          "provider_family": "openai",
+          "reviewer_id": "independent-reviewer-1",
+          "runtime": "codex_cli",
+          "severity": "low",
+          "verdict_present": true
+        }
+      ],
+      "schema_version": "independent-reviewer-panel-decision/v1"
+    },
+    "independent_reviewer_results": [
+      {
+        "accepted": true,
+        "assurance_grade": "text_only",
+        "attempts": 1,
+        "confidence": 0.95,
+        "critical_review": {
+          "assumptions_to_verify": [
+            "The evidence receipts accurately reflect the state of the codebase."
+          ],
+          "contradictions_checked": [
+            "Checked Claude's claim that pytest was not run against the evidence receipts which show it was run and passed."
+          ],
+          "decision": "accept",
+          "missing_evidence": [],
+          "severity": "low",
+          "strongest_objection": "Claude's outcome claims pytest was not run, but the evidence receipts show multiple pytest runs including the full suite passing.",
+          "what_would_change_my_mind": "If the test receipts were fabricated or if the tests didn't actually cover the acceptance criteria."
+        },
+        "decision": "accept",
+        "failure_classification": null,
+        "gate": "outcome_review",
+        "lineage": [
+          "google",
+          "litellm_structured",
+          "gemini-3.1-pro-preview"
+        ],
+        "model": "gemini-3.1-pro-preview",
+        "output_sha256": "0be7eeba1b788df02c93037fb141827c937a5d8667479e74458813f9f11bac19",
+        "provider_family": "google",
+        "recoverable": false,
+        "reviewer_assurance": "fallback_text_only",
+        "reviewer_id": "independent-reviewer-0",
+        "reviewer_output_mode": "litellm_structured",
+        "reviewer_runtime": "litellm_structured",
+        "round_index": 1,
+        "runtime": "litellm_structured",
+        "schema_version": "independent-reviewer-panel-result/v1",
+        "severity": "low",
+        "task_id": "reviewer-panel-adjudication-20260601",
+        "tests": [
+          "test_run_dual_agent_workflow_split_panel_triggers_adjudication",
+          "test_real_reviewer_revise_still_hard_blocks_with_adjudication",
+          "test_run_dual_agent_workflow_accept_with_strong_objection_escalates",
+          "test_reviewer_panel_adjudication_checks_bounded_refs",
+          "test_independent_reviewer_adjudication_event_and_transcript_export"
+        ],
+        "tool_access": "text_only",
+        "transcript_refs": [
+          {
+            "chars": 2469,
+            "kind": "reviewer_transcript_tail",
+            "ref": "independent_reviewer_review:reviewer-panel-adjudication-20260601:outcome_review:1:independent-reviewer-0"
+          }
+        ],
+        "transcript_sha256": "ea3855ff3243fad99322dcd1e674153bf57dfb4e97f68e7e2b136c69389dbdc6",
+        "verdict_present": true
+      },
+      {
+        "accepted": true,
+        "assurance_grade": "agentic",
+        "attempts": 1,
+        "confidence": 0.88,
+        "critical_review": {
+          "assumptions_to_verify": [
+            "Receipt-reported pytest runs were executed against this exact working tree state",
+            "Future reviewer outputs put evidence refs in critical_review.evidence_refs and tests in the top-level tests field as expected",
+            "Treating external refs as skipped is acceptable for replay rather than requiring network-backed verification"
+          ],
+          "contradictions_checked": [
+            "Majority vote risk: refuted by majority_vote_used=false and no weighting/threshold-based panel count logic in adjudicate_reviewer_panel",
+            "Block weakening risk: refuted by evaluate_reviewer_panel revise/deny handling and stdio cursor_decision=revise whenever panel decision is not accept",
+            "Vacuous evidence check risk: refuted by cwd confinement, sha256 compare, missing/external/unbounded classification, and bounded-refs test assertions",
+            "Artifact omission risk: refuted by state allowlist, read_gate_transcript projection, artifact markdown rendering, and export test coverage",
+            "Planning hash drift risk: refuted by shasum matching PRD/grill/issues/TDD/implementation plan hashes"
+          ],
+          "decision": "accept",
+          "missing_evidence": [
+            "No independent pytest rerun in this read-only review; relying on provided/exported receipts",
+            "No live proof that a future reviewer-provided test command is executed, only that tests are captured and bounded as refs",
+            "Actual exported run did not contain an independent_reviewer_adjudication event because the reviewed panel did not split; behavior is covered by tests and code inspection"
+          ],
+          "severity": "low",
+          "strongest_objection": "The implementation is not a separate semantic adjudicator; it deterministically chooses the strongest objection and checks bounded refs/hashes. If the intended acceptance required a new model/tool to re-judge factual correctness or execute cited tests, this should not advance. The planning artifacts explicitly narrowed the slice to deterministic packet assembly plus bounded evidence checks, so this is not blocking.",
+          "what_would_change_my_mind": "A failing focused/full-suite test run, a trace showing adjudication downgrading revise/deny to accept, or a requirement clarification that this slice must perform semantic re-adjudication or execute cited test commands rather than record bounded evidence checks."
+        },
+        "decision": "accept",
+        "failure_classification": null,
+        "gate": "outcome_review",
+        "lineage": [
+          "openai",
+          "codex_cli",
+          "gpt-5.5"
+        ],
+        "model": "gpt-5.5",
+        "output_sha256": "17a3cccc39f6e6da322831d0e2595126822407b2e84daac698f91c9d278ad83a",
+        "provider_family": "openai",
+        "recoverable": false,
+        "reviewer_assurance": "tool_backed_primary",
+        "reviewer_id": "independent-reviewer-1",
+        "reviewer_output_mode": "codex_cli",
+        "reviewer_runtime": "codex_cli",
+        "round_index": 1,
+        "runtime": "codex_cli",
+        "schema_version": "independent-reviewer-panel-result/v1",
+        "severity": "low",
+        "task_id": "reviewer-panel-adjudication-20260601",
+        "tests": [
+          "py-compile-reviewer-panel-adjudication",
+          "pytest-focused-reviewer-panel-adjudication",
+          "pytest-cursor-rejection-regression-reviewer-panel-adjudication",
+          "pytest-artifacts-mailbox-reviewer-panel-adjudication",
+          "pytest-full-reviewer-panel-adjudication"
+        ],
+        "tool_access": "codebase_tools",
+        "transcript_refs": [
+          {
+            "chars": 4000,
+            "kind": "reviewer_transcript_tail",
+            "ref": "independent_reviewer_review:reviewer-panel-adjudication-20260601:outcome_review:1:independent-reviewer-1"
+          }
+        ],
+        "transcript_sha256": "2b39ad900482658125d1d498d54bd93103f1f926135092945b55ca12827ca3a9",
+        "verdict_present": true
+      }
+    ],
+    "outcome": {
+      "changed_files": [
+        "mcp_tools/codex_supervisor_stdio.py",
+        "supervisor/dual_agent_artifacts.py",
+        "supervisor/reviewer_registry.py",
+        "supervisor/state.py",
+        "tests/test_dual_agent_workflow_driver.py",
+        "docs/testing/public-boundaries.md"
+      ],
+      "claims": [
+        "All 4 acceptance clauses backed by realized source + non-vacuous tests",
+        "Both NON-GOALs (no majority vote, no block weakening) structurally enforced",
+        "Minority revise/deny recovery already handled by conservative aggregator; adjudication additively adds all-accept+strong-objection->escalate path"
+      ],
+      "confidence": 0.86,
+      "confidence_criteria": [
+        "git diff --stat matches prior gates (669/6)",
+        "adjudicate_reviewer_panel + _check_evidence_refs present and tool-backed",
+        "block-preservation guard never sets decision=accept",
+        "artifacts export wired for adjudication event",
+        "5 named tests exist and assert non-vacuous statuses"
+      ],
+      "confidence_rationale": "Every acceptance clause and both NON-GOAL guards verified directly in the working tree with file:line evidence and non-vacuous tests; diff stat matches all prior gate memories. Capped below 0.95 solely because the explicit 'full suite green' clause was not empirically run (pytest approval declined), leaving deterministic-replay verified only by construction.",
+      "critical_review": {
+        "assumptions_to_verify": [
+          "On-disk planning artifacts still match handoff sha256 (read directly; hashes not re-derived)",
+          "Conservative aggregator (prior slice) still blocks any minority revise/deny so adjudication's additive escalate path does not regress earlier coverage"
+        ],
+        "contradictions_checked": [
+          "Guard could weaken a block \u2014 refuted: stdio:1331-1339 only upgrades accept->escalate and cursor_decision:1340-1344 stays revise whenever panel!=accept",
+          "Adjudication uses majority vote \u2014 refuted: majority_vote_used False:488 and 'deliberately not a weighting function':425",
+          "Evidence check is vacuous stub \u2014 refuted: :596-642 resolves cwd-confined, sha256-compares, classifies external/unbounded/missing; test:3568 asserts all branches"
+        ],
+        "decision": "accept",
+        "missing_evidence": [
+          "pytest run output for tests/test_dual_agent_workflow_driver.py",
+          "re-derived sha256 of implementation-plan.md manifest entry 9adcb043 (Bash hashing not performed)"
+        ],
+        "severity": "low",
+        "strongest_objection": "'Full suite green / deterministic replay' is an explicit acceptance criterion and pytest was never executed on this task; the accept verdict is inspection-based, not empirically test-verified.",
+        "what_would_change_my_mind": "A pytest run showing any of the 5 named tests or 4 regressions failing, or finding a code path where adjudication downgrades a real revise/deny to accept."
+      },
+      "decisions": [
+        "accept"
+      ],
+      "objections": [
+        "Acceptance clause 'deterministic replay / full suite green' is empirically unverified because pytest was not run; verdict rests on code inspection plus deterministic-by-construction reasoning."
+      ],
+      "specialists": [
+        {
+          "decision": "accept",
+          "name": "lead-direct-verifier",
+          "objection": "full-suite-green clause empirically unverified (pytest not run)"
+        }
+      ],
+      "summary": "Final outcome_review: all 4 acceptance clauses realized in working tree (669 ins/6 files). Tool-backed adjudication (_check_evidence_refs sha256/cwd-confined), block-preservation guard never sets decision=accept, both NON-GOAL guards verified, 5 named tests non-vacuous. Sole residual: pytest not run (operator-declined).",
+      "task_id": "reviewer-panel-adjudication-20260601",
+      "test_status": "unknown",
+      "tests": [
+        "test_run_dual_agent_workflow_split_panel_triggers_adjudication:3448",
+        "test_real_reviewer_revise_still_hard_blocks_with_adjudication:3496",
+        "test_run_dual_agent_workflow_accept_with_strong_objection_escalates:3531",
+        "test_reviewer_panel_adjudication_checks_bounded_refs:3568",
+        "test_independent_reviewer_adjudication_event_and_transcript_export:3633"
+      ]
+    },
+    "probes": {
+      "P1": {
+        "details": {},
+        "probe_id": "P1",
+        "reason": "planning_artifact_boundaries_ok",
+        "status": "green"
+      },
+      "P2": {
+        "details": {
+          "captured_bytes": 8213,
+          "captured_token_estimate": 2046,
+          "orchestration_surface": "/lead"
+        },
+        "probe_id": "P2",
+        "reason": "worker_orchestration_invocation_ok",
+        "status": "green"
+      },
+      "P3": {
+        "details": {},
+        "probe_id": "P3",
+        "reason": "outcome_fidelity_ok",
+        "status": "green"
+      },
+      "P4": {
+        "details": {
+          "decisions": [
+            "accept",
+            "accept",
+            "accept"
+          ]
+        },
+        "probe_id": "P4",
+        "reason": "outcome_gate_decision_ok",
+        "status": "green"
+      },
+      "P_planning": {
+        "details": {
+          "artifact_hashes": {
+            "grill_findings": "c9a2d7395c50b188b0326d1af63dec00eebcac0e4ad27a01d85c53a5fe0a2e99",
+            "implementation_plan": "9adcb0434ed7740e1a92d4375fdb361d575b3b8c3cb96a8e34c088e1f55173d7",
+            "issues": "f5157897d35ad1c2d86297db3b901dd28ab5b088a1bc62b734e4510a5db310d7",
+            "prd": "8a24db8ca0493545b1c7f432bf8c97b2b63b514434aa83484ddb83b6206ecd44",
+            "tdd_plan": "af64adbf43579308638fb7ea388b2b57f9172476c3392427b666a0dcf3981cd8"
+          },
+          "artifacts": [
+            {
+              "kind": "prd",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-adjudication-20260601/source/prd.md",
+              "sha256": "8a24db8ca0493545b1c7f432bf8c97b2b63b514434aa83484ddb83b6206ecd44",
+              "status": "accepted"
+            },
+            {
+              "kind": "issues",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-adjudication-20260601/source/issues.md",
+              "sha256": "f5157897d35ad1c2d86297db3b901dd28ab5b088a1bc62b734e4510a5db310d7",
+              "status": "accepted"
+            },
+            {
+              "kind": "tdd_plan",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-adjudication-20260601/source/tdd.md",
+              "sha256": "af64adbf43579308638fb7ea388b2b57f9172476c3392427b666a0dcf3981cd8",
+              "status": "accepted"
+            },
+            {
+              "kind": "grill_findings",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-adjudication-20260601/source/grill-findings.md",
+              "sha256": "c9a2d7395c50b188b0326d1af63dec00eebcac0e4ad27a01d85c53a5fe0a2e99",
+              "status": "accepted"
+            },
+            {
+              "kind": "implementation_plan",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-adjudication-20260601/source/implementation-plan.md",
+              "sha256": "9adcb0434ed7740e1a92d4375fdb361d575b3b8c3cb96a8e34c088e1f55173d7",
+              "status": "accepted"
+            }
+          ],
+          "checks": {
+            "AGG-001": "pass",
+            "AGG-002": "pass",
+            "GRILL-001": "pass",
+            "GRILL-002": "pass",
+            "GRILL-003": "pass",
+            "ISS-001": "pass",
+            "ISS-002": "pass",
+            "ISS-003": "pass",
+            "ISS-004": "pass",
+            "PLAN-001": "pass",
+            "PLAN-002": "pass",
+            "PLAN-003": "pass",
+            "PLAN-004": "pass",
+            "PRD-001": "pass",
+            "PRD-002": "pass",
+            "PRD-003": "pass",
+            "PRD-004": "pass",
+            "PRD-005": "pass",
+            "PRD-006": "pass",
+            "TDD-001": "pass",
+            "TDD-002": "pass",
+            "TDD-003": "pass",
+            "TDD-004": "pass"
+          },
+          "gate": "outcome_review",
+          "task_id": "reviewer-panel-adjudication-20260601",
+          "validator_version": "1.0.0",
+          "verdict": "accepted"
+        },
+        "probe_id": "P_planning",
+        "reason": "planning_validation_ok",
+        "status": "green"
+      }
+    },
+    "status": "accepted",
+    "supervisor_final_status": "accepted",
+    "task_id": "reviewer-panel-adjudication-20260601",
+    "tool_calls": [
+      {
+        "args": {
+          "agentic_lead_policy": "off",
+          "artifact_policy": "strict",
+          "dynamic_workflow_task_class": null,
+          "execution_layer_mode": "lead_direct",
+          "gate": "outcome_review",
+          "min_subagents": 0,
+          "planning_artifact_count": 6,
+          "required_evidence_grade": "self_reported",
+          "required_roles": [],
+          "screenshot_count": 0,
+          "task_id": "reviewer-panel-adjudication-20260601",
+          "user_facing": false
+        },
+        "attempts": 1,
+        "duration_ms": 139764,
+        "duration_us": 139764420,
+        "ended_at_ms": 1780429058827,
+        "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-panel-adjudication-20260601.json",
+        "name": "start_dual_agent_gate",
+        "probe_id": null,
+        "result_summary": {
+          "claude_gate_status": "accepted",
+          "probe_statuses": {
+            "P1": "green",
+            "P2": "green",
+            "P3": "green",
+            "P4": "green",
+            "P_planning": "green"
+          },
+          "supervisor_final_status": "accepted"
+        },
+        "started_at_ms": 1780428919063,
+        "status": "completed",
+        "tool_call_id": "start_dual_agent_gate#1780428919063#139764420"
+      },
+      {
+        "args": {
+          "gate": "outcome_review",
+          "task_id": "reviewer-panel-adjudication-20260601"
+        },
+        "attempts": 1,
+        "cost_usd": 4.548444,
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780429058874,
+        "model": "opus",
+        "name": "invoke_claude_lead",
+        "parent_tool_call_id": "start_dual_agent_gate#1780428919063#139764420",
+        "probe_id": null,
+        "result_summary": {
+          "outcome_present": true,
+          "probe_reason": "outcome_fidelity_ok",
+          "probe_status": "green",
+          "tokens_in": 1138576,
+          "tokens_out": 10146
+        },
+        "started_at_ms": 1780429058874,
+        "status": "completed",
+        "stderr_bytes": 0,
+        "stdout_bytes": 8213,
+        "token_usage": {
+          "cache_creation_input_tokens": 120426,
+          "cache_read_input_tokens": 1017981,
+          "context_window": 200000,
+          "input_tokens": 169,
+          "max_output_tokens": 32000,
+          "output_tokens": 10146,
+          "tokens_in": 1138576,
+          "tokens_out": 10146
+        },
+        "tokens_in": 1138576,
+        "tokens_out": 10146,
+        "tool_call_id": "invoke_claude_lead#1780429058874#0"
+      },
+      {
+        "args": {
+          "probe_id": "P2"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780429058874,
+        "name": "probe:P2",
+        "parent_tool_call_id": "invoke_claude_lead#1780429058874#0",
+        "probe_id": "P2",
+        "reason": "worker_orchestration_invocation_ok",
+        "result_summary": {
+          "probe_id": "P2",
+          "reason": "worker_orchestration_invocation_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780429058874,
+        "status": "green",
+        "tool_call_id": "probe_p2#1780429058874#0#p2"
+      },
+      {
+        "args": {
+          "probe_id": "P3"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780429058874,
+        "name": "probe:P3",
+        "parent_tool_call_id": "invoke_claude_lead#1780429058874#0",
+        "probe_id": "P3",
+        "reason": "outcome_fidelity_ok",
+        "result_summary": {
+          "probe_id": "P3",
+          "reason": "outcome_fidelity_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780429058874,
+        "status": "green",
+        "tool_call_id": "probe_p3#1780429058874#0#p3"
+      },
+      {
+        "args": {
+          "probe_id": "P1"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780429058874,
+        "name": "probe:P1",
+        "parent_tool_call_id": "invoke_claude_lead#1780429058874#0",
+        "probe_id": "P1",
+        "reason": "planning_artifact_boundaries_ok",
+        "result_summary": {
+          "probe_id": "P1",
+          "reason": "planning_artifact_boundaries_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780429058874,
+        "status": "green",
+        "tool_call_id": "probe_p1#1780429058874#0#p1"
+      },
+      {
+        "args": {
+          "probe_id": "P4"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780429058874,
+        "name": "probe:P4",
+        "parent_tool_call_id": "invoke_claude_lead#1780429058874#0",
+        "probe_id": "P4",
+        "reason": "outcome_gate_decision_ok",
+        "result_summary": {
+          "probe_id": "P4",
+          "reason": "outcome_gate_decision_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780429058874,
+        "status": "green",
+        "tool_call_id": "probe_p4#1780429058874#0#p4"
+      },
+      {
+        "args": {
+          "probe_id": "P_planning"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780429058874,
+        "name": "probe:P_planning",
+        "parent_tool_call_id": "invoke_claude_lead#1780429058874#0",
+        "probe_id": "P_planning",
+        "reason": "planning_validation_ok",
+        "result_summary": {
+          "probe_id": "P_planning",
+          "reason": "planning_validation_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780429058874,
+        "status": "green",
+        "tool_call_id": "probe_p_planning#1780429058874#0#p_planning"
+      }
+    ],
+    "trace_envelope": {
+      "artifacts": [],
+      "claims": [
+        "All 4 acceptance clauses backed by realized source + non-vacuous tests",
+        "Both NON-GOALs (no majority vote, no block weakening) structurally enforced",
+        "Minority revise/deny recovery already handled by conservative aggregator; adjudication additively adds all-accept+strong-objection->escalate path"
+      ],
+      "event_kind": "dual_agent_gate_result",
+      "failure_taxonomy": null,
+      "gate": "outcome_review",
+      "policy_verdict": "accepted",
+      "receipts": [],
+      "run_id": "codex-reviewer-panel-adjudication-20260601",
+      "schema_version": "dual-agent-trace-envelope/v1",
+      "source": "dual_agent",
+      "task_id": "reviewer-panel-adjudication-20260601",
+      "tool_calls": [
+        {
+          "args": {
+            "agentic_lead_policy": "off",
+            "artifact_policy": "strict",
+            "dynamic_workflow_task_class": null,
+            "execution_layer_mode": "lead_direct",
+            "gate": "outcome_review",
+            "min_subagents": 0,
+            "planning_artifact_count": 6,
+            "required_evidence_grade": "self_reported",
+            "required_roles": [],
+            "screenshot_count": 0,
+            "task_id": "reviewer-panel-adjudication-20260601",
+            "user_facing": false
+          },
+          "attempts": 1,
+          "duration_ms": 139764,
+          "duration_us": 139764420,
+          "ended_at_ms": 1780429058827,
+          "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-panel-adjudication-20260601.json",
+          "name": "start_dual_agent_gate",
+          "probe_id": null,
+          "result_summary": {
+            "claude_gate_status": "accepted",
+            "probe_statuses": {
+              "P1": "green",
+              "P2": "green",
+              "P3": "green",
+              "P4": "green",
+              "P_planning": "green"
+            },
+            "supervisor_final_status": "accepted"
+          },
+          "started_at_ms": 1780428919063,
+          "status": "completed",
+          "tool_call_id": "start_dual_agent_gate#1780428919063#139764420"
+        },
+        {
+          "args": {
+            "gate": "outcome_review",
+            "task_id": "reviewer-panel-adjudication-20260601"
+          },
+          "attempts": 1,
+          "cost_usd": 4.548444,
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780429058874,
+          "model": "opus",
+          "name": "invoke_claude_lead",
+          "parent_tool_call_id": "start_dual_agent_gate#1780428919063#139764420",
+          "probe_id": null,
+          "result_summary": {
+            "outcome_present": true,
+            "probe_reason": "outcome_fidelity_ok",
+            "probe_status": "green",
+            "tokens_in": 1138576,
+            "tokens_out": 10146
+          },
+          "started_at_ms": 1780429058874,
+          "status": "completed",
+          "stderr_bytes": 0,
+          "stdout_bytes": 8213,
+          "token_usage": {
+            "cache_creation_input_tokens": 120426,
+            "cache_read_input_tokens": 1017981,
+            "context_window": 200000,
+            "input_tokens": 169,
+            "max_output_tokens": 32000,
+            "output_tokens": 10146,
+            "tokens_in": 1138576,
+            "tokens_out": 10146
+          },
+          "tokens_in": 1138576,
+          "tokens_out": 10146,
+          "tool_call_id": "invoke_claude_lead#1780429058874#0"
+        },
+        {
+          "args": {
+            "probe_id": "P2"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780429058874,
+          "name": "probe:P2",
+          "parent_tool_call_id": "invoke_claude_lead#1780429058874#0",
+          "probe_id": "P2",
+          "reason": "worker_orchestration_invocation_ok",
+          "result_summary": {
+            "probe_id": "P2",
+            "reason": "worker_orchestration_invocation_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780429058874,
+          "status": "green",
+          "tool_call_id": "probe_p2#1780429058874#0#p2"
+        },
+        {
+          "args": {
+            "probe_id": "P3"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780429058874,
+          "name": "probe:P3",
+          "parent_tool_call_id": "invoke_claude_lead#1780429058874#0",
+          "probe_id": "P3",
+          "reason": "outcome_fidelity_ok",
+          "result_summary": {
+            "probe_id": "P3",
+            "reason": "outcome_fidelity_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780429058874,
+          "status": "green",
+          "tool_call_id": "probe_p3#1780429058874#0#p3"
+        },
+        {
+          "args": {
+            "probe_id": "P1"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780429058874,
+          "name": "probe:P1",
+          "parent_tool_call_id": "invoke_claude_lead#1780429058874#0",
+          "probe_id": "P1",
+          "reason": "planning_artifact_boundaries_ok",
+          "result_summary": {
+            "probe_id": "P1",
+            "reason": "planning_artifact_boundaries_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780429058874,
+          "status": "green",
+          "tool_call_id": "probe_p1#1780429058874#0#p1"
+        },
+        {
+          "args": {
+            "probe_id": "P4"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780429058874,
+          "name": "probe:P4",
+          "parent_tool_call_id": "invoke_claude_lead#1780429058874#0",
+          "probe_id": "P4",
+          "reason": "outcome_gate_decision_ok",
+          "result_summary": {
+            "probe_id": "P4",
+            "reason": "outcome_gate_decision_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780429058874,
+          "status": "green",
+          "tool_call_id": "probe_p4#1780429058874#0#p4"
+        },
+        {
+          "args": {
+            "probe_id": "P_planning"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780429058874,
+          "name": "probe:P_planning",
+          "parent_tool_call_id": "invoke_claude_lead#1780429058874#0",
+          "probe_id": "P_planning",
+          "reason": "planning_validation_ok",
+          "result_summary": {
+            "probe_id": "P_planning",
+            "reason": "planning_validation_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780429058874,
+          "status": "green",
+          "tool_call_id": "probe_p_planning#1780429058874#0#p_planning"
+        }
+      ]
+    }
+  },
+  "mandatory_artifacts": {
+    "missing": [],
+    "output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-adjudication-20260601",
+    "required": [
+      "source/prd.md",
+      "source/grill-findings.md",
+      "source/issues.md",
+      "source/tdd.md",
+      "source/grill-findings-tdd.md",
+      "source/implementation-plan.md",
+      "interactions.md",
+      "outcome-review.md",
+      "transcript.md"
+    ],
+    "status": "ok"
+  },
+  "resume": {
+    "artifact_output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-adjudication-20260601",
+    "blocker": null,
+    "current_gate": "outcome_review",
+    "last_status": "accepted",
+    "latest_event_id": 438429,
+    "next_safe_action": "read_gate_transcript and inspect exported artifacts",
+    "prompt": "Use codex_supervisor.\nContinue run_id=codex-reviewer-panel-adjudication-20260601\ntask_id=reviewer-panel-adjudication-20260601\ncurrent_gate=outcome_review\nlast_status=accepted\nlatest_event_id=438429\nnext_safe_action=read_gate_transcript and inspect exported artifacts\nartifact_output_dir=/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-adjudication-20260601\nfirst inspect: read_gate_transcript(run_id=codex-reviewer-panel-adjudication-20260601, task_id=reviewer-panel-adjudication-20260601)",
+    "run_id": "codex-reviewer-panel-adjudication-20260601",
+    "status": "ok",
+    "steps": [
+      {
+        "attempt_count": 1,
+        "gate": "prd_review",
+        "latest_event_id": 437576,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "issues_review",
+        "latest_event_id": 437706,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "tdd_review",
+        "latest_event_id": 437879,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "implementation_plan",
+        "latest_event_id": 438132,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "execution",
+        "latest_event_id": 438202,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "outcome_review",
+        "latest_event_id": 438416,
+        "status": "accepted"
+      }
+    ],
+    "task_id": "reviewer-panel-adjudication-20260601",
+    "transcript_command": "read_gate_transcript(run_id=codex-reviewer-panel-adjudication-20260601, task_id=reviewer-panel-adjudication-20260601)"
+  },
+  "run_id": "codex-reviewer-panel-adjudication-20260601",
+  "status": "accepted",
+  "steps": [
+    {
+      "attempt_count": 1,
+      "gate": "prd_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "issues_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "tdd_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "implementation_plan",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "execution",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "outcome_review",
+      "status": "accepted"
+    }
+  ],
+  "task_id": "reviewer-panel-adjudication-20260601",
+  "visual_evidence_policy": {
+    "artifact_matches": [],
+    "matched_terms": [],
+    "required": false,
+    "source": "not_user_facing"
+  },
+  "workflow_route": {
+    "agentic_lead_policy": {
+      "min_subagents": 0,
+      "policy": "off",
+      "required_evidence_grade": "self_reported",
+      "required_roles": [],
+      "solo_exception_for_artifact_only_gates": false
+    },
+    "cursor_review_gates": [
+      "tdd_review",
+      "implementation_plan",
+      "outcome_review"
+    ],
+    "cursor_review_profile": "rigorous",
+    "dynamic_workflow_task_class": null,
+    "effective_cursor_review": true,
+    "execution_layer_mode": "lead_direct",
+    "force_cursor_review": false,
+    "gate_count": 6,
+    "gates": [
+      "prd_review",
+      "issues_review",
+      "tdd_review",
+      "implementation_plan",
+      "execution",
+      "outcome_review"
+    ],
+    "planning_depth": "large",
+    "reasons": [
+      "default_large"
+    ],
+    "requested_cursor_review": true,
+    "required_skill_stages": [
+      "to_prd",
+      "prd_grill",
+      "to_issues",
+      "tdd",
+      "tdd_grill"
+    ],
+    "requires_agentic_lead_policy_receipts": false,
+    "requires_brainstorm": false,
+    "requires_dynamic_workflow_receipts": false,
+    "requires_skill_receipts": true,
+    "resume": {
+      "mode": "resume_from_prior_steps",
+      "pending_gates": [
+        "implementation_plan",
+        "execution",
+        "outcome_review"
+      ],
+      "schema_version": "dual-agent-workflow-resume/v1",
+      "skipped_gates": [
+        "prd_review",
+        "issues_review",
+        "tdd_review"
+      ],
+      "skipped_steps": [
+        {
+          "attempt_count": 1,
+          "gate": "prd_review",
+          "latest_event_id": 437576,
+          "status": "accepted"
+        },
+        {
+          "attempt_count": 1,
+          "gate": "issues_review",
+          "latest_event_id": 437706,
+          "status": "accepted"
+        },
+        {
+          "attempt_count": 1,
+          "gate": "tdd_review",
+          "latest_event_id": 437879,
+          "status": "accepted"
+        }
+      ]
+    },
+    "reviewer_infra_retry_backoff_s": 1.0,
+    "reviewer_infra_retry_limit": 2,
+    "reviewer_low_confidence_threshold": 0.0,
+    "reviewer_max_tokens": 4096,
+    "reviewer_model": "composer-2.5",
+    "reviewer_output_mode": "cursor_sdk",
+    "reviewer_unavailable_policy": "escalate",
+    "schema_version": "dual-agent-workflow-route/v1",
+    "task_complexity": "large"
+  }
+}
