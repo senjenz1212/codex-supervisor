@@ -3677,10 +3677,13 @@ def _workflow_round_objection(
     if claim_probe is not None and claim_probe.get("status") != "green":
         return str(claim_probe.get("reason") or "claim verification failed")
     if cursor_review is not None and not cursor_review.get("accepted"):
+        classification = _cursor_review_failure_classification(cursor_review)
+        if classification == "reviewer_access_denied":
+            return "cursor_reviewer_access_denied: reviewer_access_denied"
         if _cursor_review_recoverable_infrastructure_failure(cursor_review):
             return (
                 "cursor_reviewer_infrastructure: "
-                f"{_cursor_review_failure_classification(cursor_review)}"
+                f"{classification}"
             )
         outcome = cursor_review.get("outcome") if isinstance(cursor_review.get("outcome"), dict) else {}
         outcome_objections = outcome.get("objections") if isinstance(outcome.get("objections"), list) else []
@@ -3779,7 +3782,11 @@ def _cursor_review_failure_classification(cursor_review: dict[str, Any] | None) 
         return classification
     probe = cursor_review.get("probe") if isinstance(cursor_review.get("probe"), dict) else {}
     reason = str(probe.get("reason") or "").strip()
-    if reason in {"reviewer_contract_unmet", "reviewer_infrastructure_unavailable"}:
+    if reason in {
+        "reviewer_contract_unmet",
+        "reviewer_infrastructure_unavailable",
+        "reviewer_access_denied",
+    }:
         return reason
     return ""
 

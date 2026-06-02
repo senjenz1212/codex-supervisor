@@ -651,6 +651,40 @@ def _cursor_exhausted_infra_runner(request) -> CursorInvocationResult:
     )
 
 
+def _cursor_access_denied_runner(request) -> CursorInvocationResult:
+    return CursorInvocationResult(
+        probe=ProbeResult(
+            "CURSOR",
+            "red",
+            "reviewer_access_denied",
+            {
+                "status_code": 403,
+                "recoverable": False,
+                "message": "Access denied for configured reviewer route.",
+            },
+        ),
+        outcome=None,
+        transcript="",
+        agent_id="agent-access",
+        run_id="run-access",
+        status="failed",
+        model="gemini-3.1-pro-preview",
+        reviewer_runtime="litellm_structured",
+        reviewer_output_mode="litellm_structured",
+        reviewer_assurance="unavailable",
+        failure_classification="reviewer_access_denied",
+        recoverable=False,
+        attempts=1,
+        diagnostics={
+            "access_denied": {
+                "status_code": 403,
+                "base_url_host": "uai-litellm.internal.unity.com",
+                "model": "gemini-3.1-pro-preview",
+            },
+        },
+    )
+
+
 @pytest.mark.asyncio
 async def test_workflow_invokes_cursor_sdk_reviewer_after_claude_accept_by_default(
     tmp_path,
@@ -2778,6 +2812,54 @@ async def test_run_dual_agent_workflow_records_cursor_contract_failure_as_recove
     assert transcript["cursor_reviews"][0]["cursor_review"]["failure_classification"] == (
         "reviewer_contract_unmet"
     )
+
+
+@pytest.mark.asyncio
+async def test_reviewer_access_denied_blocks_without_degraded_recovery(tmp_path):
+    server, state = _server(tmp_path, cursor_runner=_cursor_access_denied_runner)
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Reviewer access denied should be fixed, not degraded.",
+        max_rounds_per_gate=1,
+        cursor_review=True,
+        reviewer_unavailable_policy="proceed_degraded",
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert result["status"] == "blocked"
+    assert result["current_gate"] == "outcome_review"
+    cursor_review = result["final_gate_result"]["cursor_review"]
+    assert cursor_review["accepted"] is False
+    assert cursor_review["failure_classification"] == "reviewer_access_denied"
+    assert cursor_review["recoverable"] is False
+    assert "reviewer_unavailable_recovery" not in cursor_review
+
+    cursor_events = [
+        json.loads(row["payload_json"])
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "tri_agent_cursor_review"
+    ]
+    assert len(cursor_events) == 1
+    assert cursor_events[0]["cursor_review"]["failure_classification"] == (
+        "reviewer_access_denied"
+    )
+
+    recovery_events = [
+        json.loads(row["payload_json"])
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "dual_agent_reviewer_unavailable_recovery"
+    ]
+    assert recovery_events == []
+
+    rounds = [
+        json.loads(row["payload_json"])["round"]
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "dual_agent_gate_round"
+    ]
+    assert rounds[-1]["objection"] == "cursor_reviewer_access_denied: reviewer_access_denied"
 
 
 @pytest.mark.asyncio

@@ -1,0 +1,24 @@
+{
+  "file_tree_sha256": "46260e5d3fa13d6abb13056db9871288356a84e6b93c21e7ef24ea1e452bad6b",
+  "git": {
+    "diff_bytes": 27527,
+    "diff_sha256": "b6e9a97c95e0394f326f75f2249e5eef444425e4d6c43e24c29eddbe5b88cee4",
+    "diff_stat": "mcp_tools/codex_supervisor_stdio.py      |  11 +-\n supervisor/cursor_agent.py               | 261 ++++++++++++++++++++++++++++++-\n tests/test_cursor_agent.py               | 180 +++++++++++++++++++++\n tests/test_dual_agent_workflow_driver.py |  82 ++++++++++\n 4 files changed, 525 insertions(+), 9 deletions(-)",
+    "head": "ac85cdd",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "ac85cdd",
+    "status_short": "M mcp_tools/codex_supervisor_stdio.py\n M supervisor/cursor_agent.py\n M tests/test_cursor_agent.py\n M tests/test_dual_agent_workflow_driver.py\n?? docs/dual-agent/reviewer-route-access-fix-20260601/grill-findings.md\n?? docs/dual-agent/reviewer-route-access-fix-20260601/index.md\n?? docs/dual-agent/reviewer-route-access-fix-20260601/interactions.md\n?? docs/dual-agent/reviewer-route-access-fix-20260601/issues.md\n?? docs/dual-agent/reviewer-route-access-fix-20260601/mast-coverage.md\n?? docs/dual-agent/reviewer-route-access-fix-20260601/outcome-review.md\n?? docs/dual-agent/reviewer-route-access-fix-20260601/prd.md\n?? docs/dual-agent/reviewer-route-access-fix-20260601/replay/\n?? docs/dual-agent/reviewer-route-access-fix-20260601/screenshots.md\n?? docs/dual-agent/reviewer-route-access-fix-20260601/skill-receipts.json\n?? docs/dual-agent/reviewer-route-access-fix-20260601/source/\n?? docs/dual-agent/reviewer-route-access-fix-20260601/tdd.md\n?? docs/dual-agent/reviewer-route-access-fix-20260601/transcript.jsonl\n?? docs/dual-agent/reviewer-route-access-fix-20260601/transcript.md\n?? docs/dual-agent/reviewer-route-access-fix-20260601/triage.md\n?? docs/dual-agent/reviewer-route-access-fix-20260601/workflow-request-cli.json\n?? docs/dual-agent/reviewer-route-access-fix-20260601/workflow-result-cli.json"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "77a3ae719a1219614aa427067b13913015049f69dd6099e73c357771c9077403",
+    "implementation_plan": "f93d19cf15dd0ba962ed40eac03b58f522833216091ecfb25d34f3afadae30de",
+    "issues": "8920ef6a640664d1279cb9ebd8e789471ccdf360dc76c3ed16701d4bff69c070",
+    "other": "94356ec057df06e6b717b0d302ad00cc5154734cd1ba64834fccc10694f94e7c",
+    "prd": "6c3584ac41d742f207c8f12ae8bf3eba0711c31dafcf9936fadc95e52f4dcfad",
+    "tdd_plan": "485a7acab6f7bab5d47bca7ec53e66f4f5da9e76467aab9427f5ce4624e353a8"
+  },
+  "status": "captured"
+}

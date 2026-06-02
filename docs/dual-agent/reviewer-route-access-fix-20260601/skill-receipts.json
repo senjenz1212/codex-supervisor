@@ -1,0 +1,47 @@
+[
+  {
+    "receipt_id": "skill-to-prd-reviewer-route-access-fix-20260601",
+    "kind": "skill_run",
+    "status": "passed",
+    "skill": "to-prd",
+    "stage": "to_prd",
+    "claims": ["prd-tdd skill executed", "PRD promise contracts produced", "Phase 0 reviewer probe incorporated"],
+    "artifacts": ["docs/dual-agent/reviewer-route-access-fix-20260601/source/prd.md", "docs/dual-agent/reviewer-route-access-fix-20260601/phase0-reviewer-probe.md"]
+  },
+  {
+    "receipt_id": "skill-prd-grill-reviewer-route-access-fix-20260601",
+    "kind": "skill_run",
+    "status": "passed",
+    "skill": "grill-with-docs",
+    "stage": "prd_grill",
+    "claims": ["prd-tdd skill executed", "PRD grill findings resolved"],
+    "artifacts": ["docs/dual-agent/reviewer-route-access-fix-20260601/source/grill-findings.md"]
+  },
+  {
+    "receipt_id": "skill-to-issues-reviewer-route-access-fix-20260601",
+    "kind": "skill_run",
+    "status": "passed",
+    "skill": "to-issues",
+    "stage": "to_issues",
+    "claims": ["prd-tdd skill executed", "issues map to PRD promises"],
+    "artifacts": ["docs/dual-agent/reviewer-route-access-fix-20260601/source/issues.md"]
+  },
+  {
+    "receipt_id": "skill-tdd-reviewer-route-access-fix-20260601",
+    "kind": "skill_run",
+    "status": "passed",
+    "skill": "tdd",
+    "stage": "tdd",
+    "claims": ["prd-tdd skill executed", "public-boundary RED tests planned"],
+    "artifacts": ["docs/dual-agent/reviewer-route-access-fix-20260601/source/tdd.md"]
+  },
+  {
+    "receipt_id": "skill-tdd-grill-reviewer-route-access-fix-20260601",
+    "kind": "skill_run",
+    "status": "passed",
+    "skill": "grill-with-docs",
+    "stage": "tdd_grill",
+    "claims": ["prd-tdd skill executed", "TDD grill findings resolved"],
+    "artifacts": ["docs/dual-agent/reviewer-route-access-fix-20260601/source/grill-findings-tdd.md"]
+  }
+]

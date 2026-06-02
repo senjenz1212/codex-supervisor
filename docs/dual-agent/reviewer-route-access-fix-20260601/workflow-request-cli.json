@@ -1,0 +1,112 @@
+{
+  "cwd": "/Users/sam.zhang/Documents/codex-supervisor",
+  "task_id": "reviewer-route-access-fix-20260601",
+  "run_id": "codex-reviewer-route-access-fix-20260601",
+  "intent": "Make rigorous dual-agent review produce a real counted independent reviewer verdict instead of resting in proceed_degraded. Preserve Cursor SDK as primary, use Gemini/LiteLLM fallback when Cursor is externally unavailable, classify reviewer access denied as reviewer_access_denied rather than transient infrastructure, avoid retrying 401/403 access failures, and keep missing verdicts or real revise/deny decisions non-accepting.",
+  "user_facing": false,
+  "max_rounds_per_gate": 5,
+  "quality": "best",
+  "budget_usd": 100.0,
+  "timeout_s": 900,
+  "execution_layer_mode": "lead_direct",
+  "require_skill_receipts": true,
+  "cursor_review": true,
+  "cursor_review_profile": "rigorous",
+  "reviewer_infra_retry_limit": 2,
+  "reviewer_infra_retry_backoff_s": 1.0,
+  "planning_artifacts": [
+    {
+      "kind": "other",
+      "path": "docs/dual-agent/reviewer-route-access-fix-20260601/phase0-reviewer-probe.md",
+      "mutable_by_worker": false
+    }
+  ],
+  "tool_receipts": [
+    {
+      "receipt_id": "skill-to-prd-reviewer-route-access-fix-20260601",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "to-prd",
+      "stage": "to_prd",
+      "claims": ["prd-tdd skill executed", "PRD promise contracts produced", "Phase 0 reviewer probe incorporated"],
+      "artifacts": ["docs/dual-agent/reviewer-route-access-fix-20260601/source/prd.md", "docs/dual-agent/reviewer-route-access-fix-20260601/phase0-reviewer-probe.md"]
+    },
+    {
+      "receipt_id": "skill-prd-grill-reviewer-route-access-fix-20260601",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "grill-with-docs",
+      "stage": "prd_grill",
+      "claims": ["prd-tdd skill executed", "PRD grill findings resolved"],
+      "artifacts": ["docs/dual-agent/reviewer-route-access-fix-20260601/source/grill-findings.md"]
+    },
+    {
+      "receipt_id": "skill-to-issues-reviewer-route-access-fix-20260601",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "to-issues",
+      "stage": "to_issues",
+      "claims": ["prd-tdd skill executed", "issues map to PRD promises"],
+      "artifacts": ["docs/dual-agent/reviewer-route-access-fix-20260601/source/issues.md"]
+    },
+    {
+      "receipt_id": "skill-tdd-reviewer-route-access-fix-20260601",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "tdd",
+      "stage": "tdd",
+      "claims": ["prd-tdd skill executed", "public-boundary RED tests planned"],
+      "artifacts": ["docs/dual-agent/reviewer-route-access-fix-20260601/source/tdd.md"]
+    },
+    {
+      "receipt_id": "skill-tdd-grill-reviewer-route-access-fix-20260601",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "grill-with-docs",
+      "stage": "tdd_grill",
+      "claims": ["prd-tdd skill executed", "TDD grill findings resolved"],
+      "artifacts": ["docs/dual-agent/reviewer-route-access-fix-20260601/source/grill-findings-tdd.md"]
+    },
+    {
+      "receipt_id": "phase0-reviewer-probe-reviewer-route-access-fix-20260601",
+      "kind": "runtime_probe",
+      "status": "passed",
+      "path": "docs/dual-agent/reviewer-route-access-fix-20260601/phase0-reviewer-probe.md",
+      "claims": ["Gemini fallback authenticates when supervisor secrets are loaded", "bounded Gemini fallback returns typed accept", "Cursor SDK internal error reproduced at tiny and realistic prompt sizes"]
+    },
+    {
+      "receipt_id": "pytest-focused-reviewer-route-access-fix-20260601",
+      "kind": "test",
+      "status": "passed",
+      "command": "uv run --extra dev pytest tests/test_cursor_agent.py tests/test_dual_agent_workflow_driver.py -q",
+      "summary": "114 passed in 69.54s",
+      "claims": ["reviewer access-denied classification and workflow regressions passed"]
+    },
+    {
+      "receipt_id": "pytest-full-reviewer-route-access-fix-20260601",
+      "kind": "test",
+      "status": "passed",
+      "command": "uv run --extra dev pytest -q",
+      "summary": "603 passed in 82.02s",
+      "claims": ["full suite passed"]
+    },
+    {
+      "receipt_id": "git-diff-reviewer-route-access-fix-20260601",
+      "kind": "git_diff",
+      "status": "present",
+      "changed_files": [
+        "supervisor/cursor_agent.py",
+        "mcp_tools/codex_supervisor_stdio.py",
+        "tests/test_cursor_agent.py",
+        "tests/test_dual_agent_workflow_driver.py",
+        "docs/dual-agent/reviewer-route-access-fix-20260601/source/prd.md",
+        "docs/dual-agent/reviewer-route-access-fix-20260601/source/grill-findings.md",
+        "docs/dual-agent/reviewer-route-access-fix-20260601/source/issues.md",
+        "docs/dual-agent/reviewer-route-access-fix-20260601/source/tdd.md",
+        "docs/dual-agent/reviewer-route-access-fix-20260601/source/grill-findings-tdd.md",
+        "docs/dual-agent/reviewer-route-access-fix-20260601/source/implementation-plan.md"
+      ],
+      "claims": ["implemented", "diff present for reviewer route access fix"]
+    }
+  ]
+}

@@ -410,6 +410,44 @@ def test_structured_litellm_failure_classifies_as_infrastructure_unavailable(
     assert result.recoverable is True
 
 
+def test_structured_litellm_access_denied_classifies_distinctly_without_retry(
+    tmp_path: Path,
+    monkeypatch,
+):
+    calls: list[CursorInvocationRequest] = []
+
+    class GatewayAccessDenied(RuntimeError):
+        status_code = 403
+        body = {"error": {"message": "Access denied for gemini-3.1-pro-preview"}}
+
+    def fake_run(request: CursorInvocationRequest):
+        calls.append(request)
+        raise GatewayAccessDenied("403 Access denied for configured reviewer route")
+
+    monkeypatch.setattr(cursor_agent, "_run_litellm_structured", fake_run)
+
+    result = invoke_cursor_agent(CursorInvocationRequest(
+        task_id="tri-agent",
+        gate="tdd_review",
+        instruction="Review the TDD plan.",
+        cwd=tmp_path,
+        reviewer_output_mode="litellm_structured",
+        openai_api_key="secret-key-must-not-appear",
+        openai_base_url="https://litellm.example/v1",
+        contract_retry_limit=3,
+    ))
+
+    assert len(calls) == 1
+    assert result.probe.reason == "reviewer_access_denied"
+    assert result.failure_classification == "reviewer_access_denied"
+    assert result.recoverable is False
+    assert result.attempts == 1
+    rendered = json.dumps(result.diagnostics, sort_keys=True)
+    assert "secret-key-must-not-appear" not in rendered
+    assert "litellm.example" in rendered
+    assert "403" in rendered
+
+
 def test_structured_litellm_invalid_json_classifies_as_contract_unmet(
     tmp_path: Path,
     monkeypatch,
@@ -707,6 +745,40 @@ def test_cursor_sdk_timeout_classifies_as_reviewer_infrastructure_unavailable(
     assert result.diagnostics["fallback"]["attempted"] is False
 
 
+def test_cursor_sdk_access_denied_does_not_retry_or_fallback(tmp_path: Path, monkeypatch):
+    calls: list[CursorInvocationRequest] = []
+
+    class CursorAccessDenied(RuntimeError):
+        status_code = 403
+
+    def denied_cursor(request: CursorInvocationRequest):
+        calls.append(request)
+        raise CursorAccessDenied("permission denied for Cursor reviewer")
+
+    def fallback_run(request: CursorInvocationRequest):
+        raise AssertionError("access denied must not fall back")
+
+    monkeypatch.setattr(cursor_agent, "_run_cursor_sdk", denied_cursor)
+    monkeypatch.setattr(cursor_agent, "_run_litellm_structured", fallback_run)
+
+    result = invoke_cursor_agent(CursorInvocationRequest(
+        task_id="tri-agent",
+        gate="outcome_review",
+        instruction="Review the outcome.",
+        cwd=tmp_path,
+        openai_api_key="fallback-key",
+        reviewer_infra_retry_limit=5,
+        reviewer_infra_retry_backoff_s=0,
+        contract_retry_limit=0,
+    ))
+
+    assert len(calls) == 1
+    assert result.probe.reason == "reviewer_access_denied"
+    assert result.failure_classification == "reviewer_access_denied"
+    assert result.recoverable is False
+    assert "fallback" not in (result.diagnostics or {})
+
+
 def test_cursor_sdk_fallback_requires_explicit_request_key(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "ambient-key-must-not-trigger-fallback")
 
@@ -739,10 +811,13 @@ def test_cursor_sdk_failure_falls_back_to_litellm_structured_with_lower_assuranc
     tmp_path: Path,
     monkeypatch,
 ):
+    fallback_calls: list[CursorInvocationRequest] = []
+
     def failing_cursor(request: CursorInvocationRequest):
         raise RuntimeError("cursor transport closed")
 
     def fallback_run(request: CursorInvocationRequest):
+        fallback_calls.append(request)
         outcome = _complete_cursor_outcome(task_id=request.task_id)
         return f"<dual_agent_outcome>{outcome.model_dump_json()}</dual_agent_outcome>", _litellm_metadata()
 
@@ -755,10 +830,12 @@ def test_cursor_sdk_failure_falls_back_to_litellm_structured_with_lower_assuranc
         instruction="Review the outcome.",
         cwd=tmp_path,
         openai_api_key="fallback-key",
+        reviewer_model="composer-2.5",
         reviewer_infra_retry_limit=0,
         contract_retry_limit=0,
     ))
 
+    assert fallback_calls and fallback_calls[0].reviewer_model is None
     assert result.probe.ok
     assert cursor_accepts(result)
     assert result.reviewer_runtime == "litellm_structured"
@@ -800,6 +877,45 @@ def test_cursor_sdk_both_primary_and_fallback_fail_remains_recoverable(
     assert result.diagnostics["fallback"]["attempted"] is True
     assert result.diagnostics["fallback"]["fallback_failure"]["probe"]["reason"] == (
         "reviewer_infrastructure_unavailable"
+    )
+
+
+def test_cursor_sdk_fallback_access_denied_surfaces_access_denied(
+    tmp_path: Path,
+    monkeypatch,
+):
+    class GatewayAccessDenied(RuntimeError):
+        status_code = 403
+
+    def failing_cursor(request: CursorInvocationRequest):
+        raise RuntimeError("cursor transport closed")
+
+    def denied_fallback(request: CursorInvocationRequest):
+        raise GatewayAccessDenied("403 Access denied for configured reviewer route")
+
+    monkeypatch.setattr(cursor_agent, "_run_cursor_sdk", failing_cursor)
+    monkeypatch.setattr(cursor_agent, "_run_litellm_structured", denied_fallback)
+
+    result = invoke_cursor_agent(CursorInvocationRequest(
+        task_id="tri-agent",
+        gate="outcome_review",
+        instruction="Review the outcome.",
+        cwd=tmp_path,
+        openai_api_key="fallback-key",
+        openai_base_url="https://litellm.example/v1",
+        reviewer_infra_retry_limit=0,
+        contract_retry_limit=0,
+    ))
+
+    assert result.probe.reason == "reviewer_access_denied"
+    assert result.failure_classification == "reviewer_access_denied"
+    assert result.recoverable is False
+    assert result.fallback_from_runtime == "cursor_sdk"
+    assert result.diagnostics["fallback"]["primary_failure"]["probe"]["reason"] == (
+        "reviewer_infrastructure_unavailable"
+    )
+    assert result.diagnostics["fallback"]["fallback_failure"]["probe"]["reason"] == (
+        "reviewer_access_denied"
     )
 
 
@@ -869,6 +985,70 @@ def test_cursor_sdk_fallback_revise_still_blocks(tmp_path: Path, monkeypatch):
     assert not cursor_accepts(result)
     assert result.failure_classification is None
     assert result.reviewer_assurance == "fallback_text_only"
+
+
+def test_structured_fallback_prompt_compacts_large_receipts(tmp_path: Path, monkeypatch):
+    captured: dict[str, object] = {}
+    outcome = _complete_cursor_outcome(task_id="tri-agent")
+    huge_receipt_result = "receipt-output-" + ("x" * 20_000)
+    huge_transcript = "claude-transcript-" + ("y" * 20_000)
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            captured["completion_kwargs"] = kwargs
+            return SimpleNamespace(
+                id="chatcmpl-compact",
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content=outcome.model_dump_json()),
+                        finish_reason="stop",
+                    )
+                ],
+                usage=SimpleNamespace(prompt_tokens=1200, completion_tokens=200),
+            )
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs):
+            captured["client_kwargs"] = kwargs
+            self.chat = SimpleNamespace(completions=FakeCompletions())
+
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=FakeOpenAI))
+
+    cursor_agent._run_litellm_structured(
+        CursorInvocationRequest(
+            task_id="tri-agent",
+            gate="outcome_review",
+            instruction="Review the outcome.",
+            cwd=tmp_path,
+            claude_outcome={
+                "summary": "Claude accepted.",
+                "transcript": huge_transcript,
+                "changed_files": ["supervisor/cursor_agent.py"],
+                "tests": ["uv run --extra dev pytest tests/test_cursor_agent.py -q"],
+                "critical_review": {"decision": "accept"},
+            },
+            tool_receipts=(
+                {
+                    "receipt_id": "huge-pytest",
+                    "kind": "test",
+                    "status": "passed",
+                    "result": huge_receipt_result,
+                    "claims": ["tests passed"],
+                },
+            ),
+            openai_api_key="fallback-key",
+            openai_base_url="https://litellm.example/v1",
+        )
+    )
+
+    prompt = captured["completion_kwargs"]["messages"][1]["content"]
+    assert len(prompt) < 20_000
+    assert "huge-pytest" in prompt
+    assert "tests passed" in prompt
+    assert "Always end with <dual_agent_outcome>" in prompt
+    assert "critical_review object" in prompt
+    assert "x" * 5000 not in prompt
+    assert "y" * 5000 not in prompt
 
 
 def test_invoke_cursor_agent_retries_missing_outcome_with_contract_packet(tmp_path: Path, monkeypatch):

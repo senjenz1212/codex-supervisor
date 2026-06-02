@@ -17,6 +17,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 import threading
 from typing import Any, Callable, Literal
+from urllib.parse import urlparse
 
 from .dual_agent import Outcome, ProbeResult, evaluate_outcome_fidelity, outcome_accepts
 from .dual_agent_lead import GateName, ModelQuality, PlanningArtifact
@@ -25,6 +26,7 @@ from .agent_mailbox import critical_review_prompt
 CursorFailureClassification = Literal[
     "reviewer_contract_unmet",
     "reviewer_infrastructure_unavailable",
+    "reviewer_access_denied",
 ]
 ReviewerOutputMode = Literal["litellm_structured", "cursor_sdk"]
 DEFAULT_STRUCTURED_REVIEWER_MODEL = "gemini-3.1-pro-preview"
@@ -114,7 +116,7 @@ def select_reviewer_model(
     return DEFAULT_STRUCTURED_REVIEWER_MODEL
 
 
-def build_cursor_prompt(request: CursorInvocationRequest) -> str:
+def build_cursor_prompt(request: CursorInvocationRequest, *, compact: bool = False) -> str:
     artifact_lines = [
         f"- {artifact.kind}: {Path(artifact.path)}"
         for artifact in request.planning_artifacts
@@ -122,11 +124,15 @@ def build_cursor_prompt(request: CursorInvocationRequest) -> str:
     artifacts = "\n".join(artifact_lines) if artifact_lines else "- none"
     receipt_lines = [
         f"- {receipt.get('receipt_id') or receipt.get('id') or 'receipt'}: "
-        f"{_receipt_prompt_payload(receipt)}"
+        f"{_receipt_prompt_payload(receipt, compact=compact)}"
         for receipt in request.tool_receipts
     ]
     receipts = "\n".join(receipt_lines) if receipt_lines else "- none"
     claude_outcome = request.claude_outcome or {}
+    claude_outcome_text = _claude_outcome_prompt_payload(
+        claude_outcome,
+        compact=compact,
+    )
     return "\n".join([
         f"Tri-agent review gate: {request.gate}.",
         f"Task id: {request.task_id}.",
@@ -145,7 +151,7 @@ def build_cursor_prompt(request: CursorInvocationRequest) -> str:
         receipts,
         "",
         "Claude outcome JSON:",
-        str(claude_outcome),
+        claude_outcome_text,
         "",
         "Return a specialist named Cursor Reviewer. Use decision accept only if the gate should advance.",
         _outcome_block_contract(),
@@ -216,6 +222,15 @@ def invoke_cursor_agent(
                 return _fallback_or_primary_failure(primary_failure, request, status_runner=status_runner)
             raise
         except Exception as e:  # pragma: no cover - exact SDK exception classes vary.
+            access_denied_details = _reviewer_access_denied_details(e, attempt_request)
+            if access_denied_details is not None:
+                primary_failure = _cursor_access_denied_result(
+                    attempts=attempt,
+                    retry_reasons=tuple(retry_reasons),
+                    details=access_denied_details,
+                    reviewer_output_mode=attempt_request.reviewer_output_mode,
+                )
+                return _fallback_or_primary_failure(primary_failure, request, status_runner=status_runner)
             primary_failure = _cursor_infrastructure_result(
                 reason="reviewer_invocation_failed",
                 attempts=attempt,
@@ -336,10 +351,33 @@ def _fallback_or_primary_failure(
         )
 
     fallback_reason = _fallback_reason(primary_failure)
-    fallback_request = replace(request, reviewer_output_mode="litellm_structured")
+    fallback_request = replace(
+        request,
+        reviewer_output_mode="litellm_structured",
+        reviewer_model=None,
+    )
     fallback_result = invoke_cursor_agent(fallback_request, status_runner=status_runner)
     fallback_payload = _result_diagnostics(fallback_result)
     primary_payload = _result_diagnostics(primary_failure)
+
+    if fallback_result.failure_classification == "reviewer_access_denied":
+        return _with_failure_diagnostics(
+            replace(
+                fallback_result,
+                fallback_from_runtime="cursor_sdk",
+                fallback_reason=fallback_reason,
+            ),
+            extra={
+                "fallback": {
+                    "attempted": True,
+                    "from_runtime": "cursor_sdk",
+                    "to_runtime": "litellm_structured",
+                    "reason": fallback_reason,
+                    "primary_failure": primary_payload,
+                    "fallback_failure": fallback_payload,
+                },
+            },
+        )
 
     if fallback_result.probe.ok and fallback_result.outcome is not None:
         return replace(
@@ -400,6 +438,14 @@ def _run_cursor_sdk_with_infra_retries(
         except ModuleNotFoundError:
             raise
         except Exception as e:  # pragma: no cover - exact SDK exception classes vary.
+            access_denied_details = _reviewer_access_denied_details(e, request)
+            if access_denied_details is not None:
+                return _cursor_access_denied_result(
+                    attempts=infra_attempt,
+                    retry_reasons=(),
+                    details=access_denied_details,
+                    reviewer_output_mode=request.reviewer_output_mode,
+                )
             attempts.append({
                 "attempt": infra_attempt,
                 "reason": "reviewer_invocation_failed",
@@ -618,7 +664,7 @@ def _run_litellm_structured(request: CursorInvocationRequest) -> tuple[str, dict
     if not api_key:
         raise RuntimeError("missing OPENAI_API_KEY for structured reviewer")
 
-    prompt = build_cursor_prompt(request)
+    prompt = build_cursor_prompt(request, compact=True)
     client_kwargs: dict[str, Any] = {"api_key": api_key}
     if base_url:
         client_kwargs["base_url"] = base_url
@@ -871,6 +917,40 @@ def _cursor_infrastructure_result(
     )
 
 
+def _cursor_access_denied_result(
+    *,
+    attempts: int,
+    retry_reasons: tuple[str, ...],
+    details: dict[str, Any],
+    reviewer_output_mode: str | None = None,
+) -> CursorInvocationResult:
+    sanitized_details = {
+        "original_reason": "reviewer_access_denied",
+        "attempts": attempts,
+        "retry_reasons": list(retry_reasons),
+        "recoverable": False,
+        **details,
+    }
+    return CursorInvocationResult(
+        probe=ProbeResult(
+            "CURSOR",
+            "red",
+            "reviewer_access_denied",
+            sanitized_details,
+        ),
+        outcome=None,
+        transcript="",
+        failure_classification="reviewer_access_denied",
+        recoverable=False,
+        attempts=attempts,
+        retry_reasons=retry_reasons,
+        reviewer_output_mode=reviewer_output_mode,
+        reviewer_runtime=reviewer_output_mode,
+        reviewer_assurance="unavailable",
+        diagnostics={"access_denied": sanitized_details},
+    )
+
+
 def _outcome_block_contract() -> str:
     return (
         "Always end with <dual_agent_outcome>{...valid compact JSON...}</dual_agent_outcome>. "
@@ -885,7 +965,7 @@ def _outcome_block_contract() -> str:
     )
 
 
-def _receipt_prompt_payload(receipt: dict[str, Any]) -> str:
+def _receipt_prompt_payload(receipt: dict[str, Any], *, compact: bool = False) -> str:
     allowed = {
         key: receipt.get(key)
         for key in (
@@ -906,4 +986,171 @@ def _receipt_prompt_payload(receipt: dict[str, Any]) -> str:
         )
         if receipt.get(key) not in (None, "", [], {})
     }
-    return json.dumps(allowed or receipt, sort_keys=True, default=str)
+    payload = allowed or receipt
+    if compact:
+        payload = _compact_for_prompt(payload)
+    return json.dumps(payload, sort_keys=True, default=str)
+
+
+def _claude_outcome_prompt_payload(
+    claude_outcome: dict[str, Any],
+    *,
+    compact: bool,
+) -> str:
+    if not compact:
+        return str(claude_outcome)
+    allowed = {
+        key: claude_outcome.get(key)
+        for key in (
+            "task_id",
+            "summary",
+            "specialists",
+            "decisions",
+            "objections",
+            "changed_files",
+            "tests",
+            "test_status",
+            "confidence",
+            "confidence_rationale",
+            "confidence_criteria",
+            "claims",
+            "critical_review",
+        )
+        if claude_outcome.get(key) not in (None, "", [], {})
+    }
+    return json.dumps(_compact_for_prompt(allowed or claude_outcome), sort_keys=True, default=str)
+
+
+def _compact_for_prompt(
+    value: Any,
+    *,
+    max_string_chars: int = 1200,
+    max_items: int = 20,
+    max_depth: int = 4,
+) -> Any:
+    if max_depth <= 0:
+        return _truncate_prompt_text(str(value), max_string_chars)
+    if isinstance(value, str):
+        return _truncate_prompt_text(value, max_string_chars)
+    if isinstance(value, (int, float, bool)) or value is None:
+        return value
+    if isinstance(value, dict):
+        items = list(value.items())
+        compacted = {
+            str(key): _compact_for_prompt(
+                item_value,
+                max_string_chars=max_string_chars,
+                max_items=max_items,
+                max_depth=max_depth - 1,
+            )
+            for key, item_value in items[:max_items]
+        }
+        if len(items) > max_items:
+            compacted["_truncated_keys"] = len(items) - max_items
+        return compacted
+    if isinstance(value, (list, tuple, set)):
+        items = list(value)
+        compacted_items = [
+            _compact_for_prompt(
+                item,
+                max_string_chars=max_string_chars,
+                max_items=max_items,
+                max_depth=max_depth - 1,
+            )
+            for item in items[:max_items]
+        ]
+        if len(items) > max_items:
+            compacted_items.append({"_truncated_items": len(items) - max_items})
+        return compacted_items
+    return _truncate_prompt_text(str(value), max_string_chars)
+
+
+def _truncate_prompt_text(value: str, max_chars: int) -> str:
+    if len(value) <= max_chars:
+        return value
+    omitted = len(value) - max_chars
+    return f"{value[:max_chars]}...[truncated {omitted} chars]"
+
+
+def _reviewer_access_denied_details(
+    error: BaseException,
+    request: CursorInvocationRequest,
+) -> dict[str, Any] | None:
+    status_code = _exception_status_code(error)
+    message = _truncate_prompt_text(str(error), 1000)
+    body_text = _exception_body_text(error)
+    haystack = " ".join(
+        part.lower()
+        for part in (
+            type(error).__name__,
+            str(status_code or ""),
+            message,
+            body_text,
+        )
+        if part
+    )
+    access_marker = any(
+        marker in haystack
+        for marker in (
+            "access denied",
+            "permission denied",
+            "unauthorized",
+            "forbidden",
+            "not authorized",
+            "do not have access",
+            "don't have access",
+        )
+    )
+    if status_code not in {401, 403} and not (
+        access_marker and ("401" in haystack or "403" in haystack)
+    ):
+        return None
+
+    model = select_reviewer_model(
+        quality=request.quality,
+        reviewer_output_mode=request.reviewer_output_mode,
+        reviewer_model=request.reviewer_model,
+        cursor_model=request.model,
+    )
+    return {
+        "status_code": status_code,
+        "error_type": type(error).__name__,
+        "message": message,
+        "body": _truncate_prompt_text(body_text, 1000) if body_text else None,
+        "reviewer_output_mode": request.reviewer_output_mode,
+        "model": model,
+        "base_url_host": _base_url_host(request.openai_base_url or os.environ.get("OPENAI_BASE_URL")),
+    }
+
+
+def _exception_status_code(error: BaseException) -> int | None:
+    for attr in ("status_code", "status", "code"):
+        value = getattr(error, attr, None)
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            pass
+    response = getattr(error, "response", None)
+    value = getattr(response, "status_code", None)
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _exception_body_text(error: BaseException) -> str:
+    body = getattr(error, "body", None)
+    if body not in (None, "", {}, []):
+        return json.dumps(body, sort_keys=True, default=str) if not isinstance(body, str) else body
+    response = getattr(error, "response", None)
+    text = getattr(response, "text", None)
+    if text:
+        return str(text)
+    return ""
+
+
+def _base_url_host(base_url: str | None) -> str | None:
+    if not base_url:
+        return None
+    parsed = urlparse(str(base_url))
+    return parsed.netloc or parsed.path or None
