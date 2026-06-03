@@ -1,0 +1,237 @@
+schema_version: agentic-lead-eval-dataset/v1
+accepted_reviewer_panel: &accepted_reviewer_panel
+  - reviewer_id: independent-reviewer-0
+    provider_family: google
+    assurance_grade: text_only
+    decision: accept
+    confidence: 0.88
+  - reviewer_id: independent-reviewer-1
+    provider_family: openai
+    assurance_grade: agentic
+    decision: accept
+    confidence: 0.91
+tasks:
+  - task_id: resume-drop-catchup
+    intent: Verify reconnect catch-up behavior without restarting.
+    required_verdicts:
+      - id: bug_fixed
+        description: Missed events are caught up after reconnect.
+      - id: no_regression
+        description: Existing poll flow still works.
+      - id: gate_passed_honestly
+        description: The gated workflow accepted with receipts.
+    arms:
+      lead_direct:
+        budget:
+          token_budget: 12000
+          budget_usd_limit: 3.5
+        workflow_result:
+          status: accepted
+          steps:
+            - {gate: prd_review, status: accepted, attempt_count: 1}
+            - {gate: issues_review, status: accepted, attempt_count: 1}
+            - {gate: tdd_review, status: accepted, attempt_count: 1}
+            - {gate: implementation_plan, status: accepted, attempt_count: 1}
+            - {gate: execution, status: accepted, attempt_count: 1}
+            - {gate: outcome_review, status: accepted, attempt_count: 1}
+          final_gate_result:
+            gate: outcome_review
+            status: accepted
+            independent_reviewer_results: *accepted_reviewer_panel
+            probes:
+              P1: {status: green}
+              P2: {status: green}
+              P3: {status: green}
+        metrics:
+          wall_clock_s: 180
+          cost_usd: 2.1
+          operator_interventions: 0
+        verdict_evidence:
+          bug_fixed:
+            - {kind: probe_receipt, ref: P3:resume-drop-catchup:lead_direct, status: passed}
+          no_regression:
+            - {kind: artifact_path, ref: tests/test_codex_resume.py, status: passed}
+          gate_passed_honestly:
+            - {kind: probe_receipt, ref: outcome_review:P1-P3, status: passed}
+      agentic_allowed:
+        budget:
+          token_budget: 12000
+          budget_usd_limit: 3.5
+        workflow_result:
+          status: accepted
+          steps:
+            - {gate: prd_review, status: accepted, attempt_count: 1}
+            - {gate: issues_review, status: accepted, attempt_count: 1}
+            - {gate: tdd_review, status: accepted, attempt_count: 1}
+            - {gate: implementation_plan, status: accepted, attempt_count: 1}
+            - {gate: execution, status: accepted, attempt_count: 1}
+            - {gate: outcome_review, status: accepted, attempt_count: 1}
+          final_gate_result:
+            gate: outcome_review
+            status: accepted
+            independent_reviewer_results: *accepted_reviewer_panel
+            probes:
+              P1: {status: green}
+              P2: {status: green}
+              P3: {status: green}
+              P13: {status: green}
+              P14: {status: green}
+        metrics:
+          wall_clock_s: 150
+          cost_usd: 2.8
+          operator_interventions: 0
+        verdict_evidence:
+          bug_fixed:
+            - {kind: probe_receipt, ref: P3:resume-drop-catchup:agentic_allowed, status: passed}
+            - {kind: probe_receipt, ref: P13:worker-receipt-hash, status: passed}
+          no_regression:
+            - {kind: artifact_path, ref: tests/test_codex_resume.py, status: passed}
+          gate_passed_honestly:
+            - {kind: probe_receipt, ref: outcome_review:P1-P3-P13-P14, status: passed}
+      agentic_required:
+        budget:
+          token_budget: 12000
+          budget_usd_limit: 3.5
+        workflow_result:
+          status: accepted
+          steps:
+            - {gate: prd_review, status: accepted, attempt_count: 1}
+            - {gate: issues_review, status: accepted, attempt_count: 1}
+            - {gate: tdd_review, status: accepted, attempt_count: 1}
+            - {gate: implementation_plan, status: accepted, attempt_count: 1}
+            - {gate: execution, status: accepted, attempt_count: 1}
+            - {gate: outcome_review, status: accepted, attempt_count: 1}
+          final_gate_result:
+            gate: outcome_review
+            status: accepted
+            independent_reviewer_results: *accepted_reviewer_panel
+            probes:
+              P1: {status: green}
+              P2: {status: green}
+              P3: {status: green}
+              P13: {status: green}
+              P14: {status: green}
+        metrics:
+          wall_clock_s: 132
+          cost_usd: 3.1
+          operator_interventions: 0
+        verdict_evidence:
+          bug_fixed:
+            - {kind: probe_receipt, ref: P3:resume-drop-catchup:agentic_required, status: passed}
+            - {kind: probe_receipt, ref: P13:worker-receipt-hash, status: passed}
+          no_regression:
+            - {kind: artifact_path, ref: tests/test_codex_resume.py, status: passed}
+          gate_passed_honestly:
+            - {kind: probe_receipt, ref: outcome_review:P1-P3-P13-P14, status: passed}
+  - task_id: reviewer-roster-calibration
+    intent: Verify calibration rejects mixed-lineage rows.
+    required_verdicts:
+      - id: bug_fixed
+        description: Mixed-lineage calibration rows are rejected.
+      - id: no_regression
+        description: Conservative fallback remains available.
+      - id: gate_passed_honestly
+        description: Blocks and accepts are reported honestly.
+    arms:
+      lead_direct:
+        budget:
+          token_budget: 10000
+          budget_usd_limit: 2.5
+        workflow_result:
+          status: accepted
+          steps:
+            - {gate: prd_review, status: accepted, attempt_count: 1}
+            - {gate: issues_review, status: accepted, attempt_count: 1}
+            - {gate: tdd_review, status: accepted, attempt_count: 1}
+            - {gate: implementation_plan, status: accepted, attempt_count: 1}
+            - {gate: execution, status: accepted, attempt_count: 2}
+            - {gate: outcome_review, status: accepted, attempt_count: 1}
+          final_gate_result:
+            gate: outcome_review
+            status: accepted
+            independent_reviewer_results: *accepted_reviewer_panel
+            probes:
+              P1: {status: green}
+              P2: {status: green}
+              P3: {status: green}
+        metrics:
+          wall_clock_s: 220
+          cost_usd: 2.0
+          operator_interventions: 1
+        verdict_evidence:
+          bug_fixed:
+            - {kind: diff_hunk, ref: supervisor/reviewer_panel_eval.py:+row_roster_consistency, status: passed}
+          no_regression:
+            - {kind: artifact_path, ref: tests/test_reviewer_panel_eval_runner.py, status: passed}
+          gate_passed_honestly:
+            - {kind: probe_receipt, ref: outcome_review:P1-P3, status: passed}
+      agentic_allowed:
+        budget:
+          token_budget: 10000
+          budget_usd_limit: 2.5
+        workflow_result:
+          status: accepted
+          steps:
+            - {gate: prd_review, status: accepted, attempt_count: 1}
+            - {gate: issues_review, status: accepted, attempt_count: 1}
+            - {gate: tdd_review, status: accepted, attempt_count: 1}
+            - {gate: implementation_plan, status: accepted, attempt_count: 1}
+            - {gate: execution, status: accepted, attempt_count: 1}
+            - {gate: outcome_review, status: accepted, attempt_count: 1}
+          final_gate_result:
+            gate: outcome_review
+            status: accepted
+            independent_reviewer_results: *accepted_reviewer_panel
+            probes:
+              P1: {status: green}
+              P2: {status: green}
+              P3: {status: green}
+              P13: {status: green}
+              P14: {status: green}
+        metrics:
+          wall_clock_s: 170
+          cost_usd: 2.3
+          operator_interventions: 0
+        verdict_evidence:
+          bug_fixed:
+            - {kind: diff_hunk, ref: supervisor/reviewer_panel_eval.py:+row_roster_consistency, status: passed}
+            - {kind: probe_receipt, ref: P13:agentic-worker-roster, status: passed}
+          no_regression:
+            - {kind: artifact_path, ref: tests/test_reviewer_panel_eval_runner.py, status: passed}
+          gate_passed_honestly:
+            - {kind: probe_receipt, ref: outcome_review:P1-P3-P13-P14, status: passed}
+      agentic_required:
+        budget:
+          token_budget: 10000
+          budget_usd_limit: 2.5
+        workflow_result:
+          status: accepted
+          steps:
+            - {gate: prd_review, status: accepted, attempt_count: 1}
+            - {gate: issues_review, status: accepted, attempt_count: 1}
+            - {gate: tdd_review, status: accepted, attempt_count: 1}
+            - {gate: implementation_plan, status: accepted, attempt_count: 1}
+            - {gate: execution, status: accepted, attempt_count: 1}
+            - {gate: outcome_review, status: accepted, attempt_count: 1}
+          final_gate_result:
+            gate: outcome_review
+            status: accepted
+            independent_reviewer_results: *accepted_reviewer_panel
+            probes:
+              P1: {status: green}
+              P2: {status: green}
+              P3: {status: green}
+              P13: {status: green}
+              P14: {status: green}
+        metrics:
+          wall_clock_s: 160
+          cost_usd: 2.4
+          operator_interventions: 0
+        verdict_evidence:
+          bug_fixed:
+            - {kind: diff_hunk, ref: supervisor/reviewer_panel_eval.py:+row_roster_consistency, status: passed}
+            - {kind: probe_receipt, ref: P13:agentic-worker-roster, status: passed}
+          no_regression:
+            - {kind: artifact_path, ref: tests/test_reviewer_panel_eval_runner.py, status: passed}
+          gate_passed_honestly:
+            - {kind: probe_receipt, ref: outcome_review:P1-P3-P13-P14, status: passed}

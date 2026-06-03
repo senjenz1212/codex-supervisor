@@ -1,0 +1,871 @@
+{
+  "agentic_lead_policy_snapshot": {
+    "mutated": false,
+    "policy": "off",
+    "source": "report_only_runner_invariant"
+  },
+  "dataset": {
+    "path": "tests/fixtures/agentic_eval/three_arm_tasks.yaml",
+    "schema_version": "agentic-lead-eval-dataset/v1",
+    "sha256": "3215058287fffe0728eb7e2a5f92842cacbb74e984c68c45ef36e62feff307ec",
+    "task_count": 2
+  },
+  "default_change_allowed": false,
+  "default_change_gate": {
+    "required_modes": [
+      "lead_direct",
+      "agentic_allowed",
+      "agentic_required"
+    ],
+    "required_review": "operator_accepts_eval_report"
+  },
+  "evidence": {
+    "records": [
+      {
+        "gate_statuses": {
+          "execution": "accepted",
+          "implementation_plan": "accepted",
+          "issues_review": "accepted",
+          "outcome_review": "accepted",
+          "prd_review": "accepted",
+          "tdd_review": "accepted"
+        },
+        "mode": "lead_direct",
+        "probe_statuses": {
+          "P1": "green",
+          "P2": "green",
+          "P3": "green"
+        },
+        "reviewer_panel_decisions": [
+          {
+            "decision": "accept",
+            "reviewer_id": "independent-reviewer-0"
+          },
+          {
+            "decision": "accept",
+            "reviewer_id": "independent-reviewer-1"
+          }
+        ],
+        "score": {
+          "failed_verdict_count": 0,
+          "mode": "lead_direct",
+          "passed_verdict_count": 3,
+          "schema_version": "agentic-lead-eval-score/v1",
+          "score": 5.0,
+          "score_max": 5,
+          "task_id": "resume-drop-catchup",
+          "verdicts": [
+            {
+              "description": "Missed events are caught up after reconnect.",
+              "evidence": [
+                {
+                  "kind": "probe_receipt",
+                  "ref": "P3:resume-drop-catchup:lead_direct",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "bug_fixed"
+            },
+            {
+              "description": "Existing poll flow still works.",
+              "evidence": [
+                {
+                  "kind": "artifact_path",
+                  "ref": "tests/test_codex_resume.py",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "no_regression"
+            },
+            {
+              "description": "The gated workflow accepted with receipts.",
+              "evidence": [
+                {
+                  "kind": "probe_receipt",
+                  "ref": "outcome_review:P1-P3",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "gate_passed_honestly"
+            }
+          ],
+          "workflow_status": "accepted"
+        },
+        "task_id": "resume-drop-catchup",
+        "workflow_status": "accepted"
+      },
+      {
+        "gate_statuses": {
+          "execution": "accepted",
+          "implementation_plan": "accepted",
+          "issues_review": "accepted",
+          "outcome_review": "accepted",
+          "prd_review": "accepted",
+          "tdd_review": "accepted"
+        },
+        "mode": "agentic_allowed",
+        "probe_statuses": {
+          "P1": "green",
+          "P13": "green",
+          "P14": "green",
+          "P2": "green",
+          "P3": "green"
+        },
+        "reviewer_panel_decisions": [
+          {
+            "decision": "accept",
+            "reviewer_id": "independent-reviewer-0"
+          },
+          {
+            "decision": "accept",
+            "reviewer_id": "independent-reviewer-1"
+          }
+        ],
+        "score": {
+          "failed_verdict_count": 0,
+          "mode": "agentic_allowed",
+          "passed_verdict_count": 3,
+          "schema_version": "agentic-lead-eval-score/v1",
+          "score": 5.0,
+          "score_max": 5,
+          "task_id": "resume-drop-catchup",
+          "verdicts": [
+            {
+              "description": "Missed events are caught up after reconnect.",
+              "evidence": [
+                {
+                  "kind": "probe_receipt",
+                  "ref": "P3:resume-drop-catchup:agentic_allowed",
+                  "status": "passed"
+                },
+                {
+                  "kind": "probe_receipt",
+                  "ref": "P13:worker-receipt-hash",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "bug_fixed"
+            },
+            {
+              "description": "Existing poll flow still works.",
+              "evidence": [
+                {
+                  "kind": "artifact_path",
+                  "ref": "tests/test_codex_resume.py",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "no_regression"
+            },
+            {
+              "description": "The gated workflow accepted with receipts.",
+              "evidence": [
+                {
+                  "kind": "probe_receipt",
+                  "ref": "outcome_review:P1-P3-P13-P14",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "gate_passed_honestly"
+            }
+          ],
+          "workflow_status": "accepted"
+        },
+        "task_id": "resume-drop-catchup",
+        "workflow_status": "accepted"
+      },
+      {
+        "gate_statuses": {
+          "execution": "accepted",
+          "implementation_plan": "accepted",
+          "issues_review": "accepted",
+          "outcome_review": "accepted",
+          "prd_review": "accepted",
+          "tdd_review": "accepted"
+        },
+        "mode": "agentic_required",
+        "probe_statuses": {
+          "P1": "green",
+          "P13": "green",
+          "P14": "green",
+          "P2": "green",
+          "P3": "green"
+        },
+        "reviewer_panel_decisions": [
+          {
+            "decision": "accept",
+            "reviewer_id": "independent-reviewer-0"
+          },
+          {
+            "decision": "accept",
+            "reviewer_id": "independent-reviewer-1"
+          }
+        ],
+        "score": {
+          "failed_verdict_count": 0,
+          "mode": "agentic_required",
+          "passed_verdict_count": 3,
+          "schema_version": "agentic-lead-eval-score/v1",
+          "score": 5.0,
+          "score_max": 5,
+          "task_id": "resume-drop-catchup",
+          "verdicts": [
+            {
+              "description": "Missed events are caught up after reconnect.",
+              "evidence": [
+                {
+                  "kind": "probe_receipt",
+                  "ref": "P3:resume-drop-catchup:agentic_required",
+                  "status": "passed"
+                },
+                {
+                  "kind": "probe_receipt",
+                  "ref": "P13:worker-receipt-hash",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "bug_fixed"
+            },
+            {
+              "description": "Existing poll flow still works.",
+              "evidence": [
+                {
+                  "kind": "artifact_path",
+                  "ref": "tests/test_codex_resume.py",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "no_regression"
+            },
+            {
+              "description": "The gated workflow accepted with receipts.",
+              "evidence": [
+                {
+                  "kind": "probe_receipt",
+                  "ref": "outcome_review:P1-P3-P13-P14",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "gate_passed_honestly"
+            }
+          ],
+          "workflow_status": "accepted"
+        },
+        "task_id": "resume-drop-catchup",
+        "workflow_status": "accepted"
+      },
+      {
+        "gate_statuses": {
+          "execution": "accepted",
+          "implementation_plan": "accepted",
+          "issues_review": "accepted",
+          "outcome_review": "accepted",
+          "prd_review": "accepted",
+          "tdd_review": "accepted"
+        },
+        "mode": "lead_direct",
+        "probe_statuses": {
+          "P1": "green",
+          "P2": "green",
+          "P3": "green"
+        },
+        "reviewer_panel_decisions": [
+          {
+            "decision": "accept",
+            "reviewer_id": "independent-reviewer-0"
+          },
+          {
+            "decision": "accept",
+            "reviewer_id": "independent-reviewer-1"
+          }
+        ],
+        "score": {
+          "failed_verdict_count": 0,
+          "mode": "lead_direct",
+          "passed_verdict_count": 3,
+          "schema_version": "agentic-lead-eval-score/v1",
+          "score": 5.0,
+          "score_max": 5,
+          "task_id": "reviewer-roster-calibration",
+          "verdicts": [
+            {
+              "description": "Mixed-lineage calibration rows are rejected.",
+              "evidence": [
+                {
+                  "kind": "diff_hunk",
+                  "ref": "supervisor/reviewer_panel_eval.py:+row_roster_consistency",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "bug_fixed"
+            },
+            {
+              "description": "Conservative fallback remains available.",
+              "evidence": [
+                {
+                  "kind": "artifact_path",
+                  "ref": "tests/test_reviewer_panel_eval_runner.py",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "no_regression"
+            },
+            {
+              "description": "Blocks and accepts are reported honestly.",
+              "evidence": [
+                {
+                  "kind": "probe_receipt",
+                  "ref": "outcome_review:P1-P3",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "gate_passed_honestly"
+            }
+          ],
+          "workflow_status": "accepted"
+        },
+        "task_id": "reviewer-roster-calibration",
+        "workflow_status": "accepted"
+      },
+      {
+        "gate_statuses": {
+          "execution": "accepted",
+          "implementation_plan": "accepted",
+          "issues_review": "accepted",
+          "outcome_review": "accepted",
+          "prd_review": "accepted",
+          "tdd_review": "accepted"
+        },
+        "mode": "agentic_allowed",
+        "probe_statuses": {
+          "P1": "green",
+          "P13": "green",
+          "P14": "green",
+          "P2": "green",
+          "P3": "green"
+        },
+        "reviewer_panel_decisions": [
+          {
+            "decision": "accept",
+            "reviewer_id": "independent-reviewer-0"
+          },
+          {
+            "decision": "accept",
+            "reviewer_id": "independent-reviewer-1"
+          }
+        ],
+        "score": {
+          "failed_verdict_count": 0,
+          "mode": "agentic_allowed",
+          "passed_verdict_count": 3,
+          "schema_version": "agentic-lead-eval-score/v1",
+          "score": 5.0,
+          "score_max": 5,
+          "task_id": "reviewer-roster-calibration",
+          "verdicts": [
+            {
+              "description": "Mixed-lineage calibration rows are rejected.",
+              "evidence": [
+                {
+                  "kind": "diff_hunk",
+                  "ref": "supervisor/reviewer_panel_eval.py:+row_roster_consistency",
+                  "status": "passed"
+                },
+                {
+                  "kind": "probe_receipt",
+                  "ref": "P13:agentic-worker-roster",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "bug_fixed"
+            },
+            {
+              "description": "Conservative fallback remains available.",
+              "evidence": [
+                {
+                  "kind": "artifact_path",
+                  "ref": "tests/test_reviewer_panel_eval_runner.py",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "no_regression"
+            },
+            {
+              "description": "Blocks and accepts are reported honestly.",
+              "evidence": [
+                {
+                  "kind": "probe_receipt",
+                  "ref": "outcome_review:P1-P3-P13-P14",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "gate_passed_honestly"
+            }
+          ],
+          "workflow_status": "accepted"
+        },
+        "task_id": "reviewer-roster-calibration",
+        "workflow_status": "accepted"
+      },
+      {
+        "gate_statuses": {
+          "execution": "accepted",
+          "implementation_plan": "accepted",
+          "issues_review": "accepted",
+          "outcome_review": "accepted",
+          "prd_review": "accepted",
+          "tdd_review": "accepted"
+        },
+        "mode": "agentic_required",
+        "probe_statuses": {
+          "P1": "green",
+          "P13": "green",
+          "P14": "green",
+          "P2": "green",
+          "P3": "green"
+        },
+        "reviewer_panel_decisions": [
+          {
+            "decision": "accept",
+            "reviewer_id": "independent-reviewer-0"
+          },
+          {
+            "decision": "accept",
+            "reviewer_id": "independent-reviewer-1"
+          }
+        ],
+        "score": {
+          "failed_verdict_count": 0,
+          "mode": "agentic_required",
+          "passed_verdict_count": 3,
+          "schema_version": "agentic-lead-eval-score/v1",
+          "score": 5.0,
+          "score_max": 5,
+          "task_id": "reviewer-roster-calibration",
+          "verdicts": [
+            {
+              "description": "Mixed-lineage calibration rows are rejected.",
+              "evidence": [
+                {
+                  "kind": "diff_hunk",
+                  "ref": "supervisor/reviewer_panel_eval.py:+row_roster_consistency",
+                  "status": "passed"
+                },
+                {
+                  "kind": "probe_receipt",
+                  "ref": "P13:agentic-worker-roster",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "bug_fixed"
+            },
+            {
+              "description": "Conservative fallback remains available.",
+              "evidence": [
+                {
+                  "kind": "artifact_path",
+                  "ref": "tests/test_reviewer_panel_eval_runner.py",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "no_regression"
+            },
+            {
+              "description": "Blocks and accepts are reported honestly.",
+              "evidence": [
+                {
+                  "kind": "probe_receipt",
+                  "ref": "outcome_review:P1-P3-P13-P14",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "gate_passed_honestly"
+            }
+          ],
+          "workflow_status": "accepted"
+        },
+        "task_id": "reviewer-roster-calibration",
+        "workflow_status": "accepted"
+      }
+    ],
+    "schema_version": "agentic-lead-eval-evidence/v1",
+    "sha256": "65a9a3475c7182cec80538fb4fe6c808e7f134ee0194388d7d696b5b35351350"
+  },
+  "exports": {
+    "evidence_json": "docs/dual-agent/agentic-eval-harness-runner-20260603/source/agentic-eval/evidence.json",
+    "replay_manifest": "docs/dual-agent/agentic-eval-harness-runner-20260603/source/agentic-eval/replay-manifest.json",
+    "report_json": "docs/dual-agent/agentic-eval-harness-runner-20260603/source/agentic-eval/report.json",
+    "rows_jsonl": "docs/dual-agent/agentic-eval-harness-runner-20260603/source/agentic-eval/rows.jsonl"
+  },
+  "report_only": {
+    "config_mutated": false,
+    "default_change_allowed": false,
+    "policy_mutated": false
+  },
+  "report_sha256": "0faf094543256389f6b1a4419c5f47780e153ea15f754f1148eb761e7434f833",
+  "rows": [
+    {
+      "budget_usd_limit": 3.5,
+      "cost_usd": 2.1,
+      "gate_statuses": {
+        "execution": "accepted",
+        "implementation_plan": "accepted",
+        "issues_review": "accepted",
+        "outcome_review": "accepted",
+        "prd_review": "accepted",
+        "tdd_review": "accepted"
+      },
+      "graceful_degradation": 1.0,
+      "missed_issues": 0,
+      "mode": "lead_direct",
+      "operator_interventions": 0,
+      "probe_statuses": {
+        "P1": "green",
+        "P2": "green",
+        "P3": "green"
+      },
+      "rejected_gates": 0,
+      "required_verdicts": [
+        "bug_fixed",
+        "no_regression",
+        "gate_passed_honestly"
+      ],
+      "retries": 0,
+      "reviewer_panel_decisions": [
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-0"
+        },
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-1"
+        }
+      ],
+      "score": 5.0,
+      "score_max": 5,
+      "task_id": "resume-drop-catchup",
+      "token_budget": 12000,
+      "wall_clock_s": 180,
+      "workflow_status": "accepted"
+    },
+    {
+      "budget_usd_limit": 3.5,
+      "cost_usd": 2.8,
+      "gate_statuses": {
+        "execution": "accepted",
+        "implementation_plan": "accepted",
+        "issues_review": "accepted",
+        "outcome_review": "accepted",
+        "prd_review": "accepted",
+        "tdd_review": "accepted"
+      },
+      "graceful_degradation": 1.0,
+      "missed_issues": 0,
+      "mode": "agentic_allowed",
+      "operator_interventions": 0,
+      "probe_statuses": {
+        "P1": "green",
+        "P13": "green",
+        "P14": "green",
+        "P2": "green",
+        "P3": "green"
+      },
+      "rejected_gates": 0,
+      "required_verdicts": [
+        "bug_fixed",
+        "no_regression",
+        "gate_passed_honestly"
+      ],
+      "retries": 0,
+      "reviewer_panel_decisions": [
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-0"
+        },
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-1"
+        }
+      ],
+      "score": 5.0,
+      "score_max": 5,
+      "task_id": "resume-drop-catchup",
+      "token_budget": 12000,
+      "wall_clock_s": 150,
+      "workflow_status": "accepted"
+    },
+    {
+      "budget_usd_limit": 3.5,
+      "cost_usd": 3.1,
+      "gate_statuses": {
+        "execution": "accepted",
+        "implementation_plan": "accepted",
+        "issues_review": "accepted",
+        "outcome_review": "accepted",
+        "prd_review": "accepted",
+        "tdd_review": "accepted"
+      },
+      "graceful_degradation": 1.0,
+      "missed_issues": 0,
+      "mode": "agentic_required",
+      "operator_interventions": 0,
+      "probe_statuses": {
+        "P1": "green",
+        "P13": "green",
+        "P14": "green",
+        "P2": "green",
+        "P3": "green"
+      },
+      "rejected_gates": 0,
+      "required_verdicts": [
+        "bug_fixed",
+        "no_regression",
+        "gate_passed_honestly"
+      ],
+      "retries": 0,
+      "reviewer_panel_decisions": [
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-0"
+        },
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-1"
+        }
+      ],
+      "score": 5.0,
+      "score_max": 5,
+      "task_id": "resume-drop-catchup",
+      "token_budget": 12000,
+      "wall_clock_s": 132,
+      "workflow_status": "accepted"
+    },
+    {
+      "budget_usd_limit": 2.5,
+      "cost_usd": 2.0,
+      "gate_statuses": {
+        "execution": "accepted",
+        "implementation_plan": "accepted",
+        "issues_review": "accepted",
+        "outcome_review": "accepted",
+        "prd_review": "accepted",
+        "tdd_review": "accepted"
+      },
+      "graceful_degradation": 1.0,
+      "missed_issues": 0,
+      "mode": "lead_direct",
+      "operator_interventions": 1,
+      "probe_statuses": {
+        "P1": "green",
+        "P2": "green",
+        "P3": "green"
+      },
+      "rejected_gates": 0,
+      "required_verdicts": [
+        "bug_fixed",
+        "no_regression",
+        "gate_passed_honestly"
+      ],
+      "retries": 1,
+      "reviewer_panel_decisions": [
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-0"
+        },
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-1"
+        }
+      ],
+      "score": 5.0,
+      "score_max": 5,
+      "task_id": "reviewer-roster-calibration",
+      "token_budget": 10000,
+      "wall_clock_s": 220,
+      "workflow_status": "accepted"
+    },
+    {
+      "budget_usd_limit": 2.5,
+      "cost_usd": 2.3,
+      "gate_statuses": {
+        "execution": "accepted",
+        "implementation_plan": "accepted",
+        "issues_review": "accepted",
+        "outcome_review": "accepted",
+        "prd_review": "accepted",
+        "tdd_review": "accepted"
+      },
+      "graceful_degradation": 1.0,
+      "missed_issues": 0,
+      "mode": "agentic_allowed",
+      "operator_interventions": 0,
+      "probe_statuses": {
+        "P1": "green",
+        "P13": "green",
+        "P14": "green",
+        "P2": "green",
+        "P3": "green"
+      },
+      "rejected_gates": 0,
+      "required_verdicts": [
+        "bug_fixed",
+        "no_regression",
+        "gate_passed_honestly"
+      ],
+      "retries": 0,
+      "reviewer_panel_decisions": [
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-0"
+        },
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-1"
+        }
+      ],
+      "score": 5.0,
+      "score_max": 5,
+      "task_id": "reviewer-roster-calibration",
+      "token_budget": 10000,
+      "wall_clock_s": 170,
+      "workflow_status": "accepted"
+    },
+    {
+      "budget_usd_limit": 2.5,
+      "cost_usd": 2.4,
+      "gate_statuses": {
+        "execution": "accepted",
+        "implementation_plan": "accepted",
+        "issues_review": "accepted",
+        "outcome_review": "accepted",
+        "prd_review": "accepted",
+        "tdd_review": "accepted"
+      },
+      "graceful_degradation": 1.0,
+      "missed_issues": 0,
+      "mode": "agentic_required",
+      "operator_interventions": 0,
+      "probe_statuses": {
+        "P1": "green",
+        "P13": "green",
+        "P14": "green",
+        "P2": "green",
+        "P3": "green"
+      },
+      "rejected_gates": 0,
+      "required_verdicts": [
+        "bug_fixed",
+        "no_regression",
+        "gate_passed_honestly"
+      ],
+      "retries": 0,
+      "reviewer_panel_decisions": [
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-0"
+        },
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-1"
+        }
+      ],
+      "score": 5.0,
+      "score_max": 5,
+      "task_id": "reviewer-roster-calibration",
+      "token_budget": 10000,
+      "wall_clock_s": 160,
+      "workflow_status": "accepted"
+    }
+  ],
+  "runner": {
+    "execution_mode": "fixture_replay",
+    "live_calls_allowed": false,
+    "public_boundary": "agentic_eval_runner",
+    "schema_version": "agentic-lead-eval-runner/v1",
+    "workflow_runner_used": false
+  },
+  "schema_version": "agentic-lead-eval/v1",
+  "summary": {
+    "agentic_allowed": {
+      "avg_cost_usd": 2.55,
+      "avg_graceful_degradation": 1.0,
+      "avg_score": 5.0,
+      "avg_wall_clock_s": 160.0,
+      "cost_usd": 5.1,
+      "graceful_degradation": 2.0,
+      "missed_issues": 0,
+      "operator_interventions": 0,
+      "rejected_gates": 0,
+      "retries": 0,
+      "score": 10.0,
+      "task_count": 2,
+      "wall_clock_s": 320.0
+    },
+    "agentic_required": {
+      "avg_cost_usd": 2.75,
+      "avg_graceful_degradation": 1.0,
+      "avg_score": 5.0,
+      "avg_wall_clock_s": 146.0,
+      "cost_usd": 5.5,
+      "graceful_degradation": 2.0,
+      "missed_issues": 0,
+      "operator_interventions": 0,
+      "rejected_gates": 0,
+      "retries": 0,
+      "score": 10.0,
+      "task_count": 2,
+      "wall_clock_s": 292.0
+    },
+    "lead_direct": {
+      "avg_cost_usd": 2.05,
+      "avg_graceful_degradation": 1.0,
+      "avg_score": 5.0,
+      "avg_wall_clock_s": 200.0,
+      "cost_usd": 4.1,
+      "graceful_degradation": 2.0,
+      "missed_issues": 0,
+      "operator_interventions": 1,
+      "rejected_gates": 0,
+      "retries": 1,
+      "score": 10.0,
+      "task_count": 2,
+      "wall_clock_s": 400.0
+    }
+  }
+}

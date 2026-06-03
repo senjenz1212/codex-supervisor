@@ -1,0 +1,253 @@
+{
+  "agentic_lead_policy": "off",
+  "cursor_review": true,
+  "cursor_review_profile": "rigorous",
+  "cwd": "/Users/sam.zhang/Documents/codex-supervisor",
+  "execution_layer_mode": "lead_direct",
+  "intent": "Build a replay-only, report-only agentic eval harness runner that compares lead_direct, agentic_allowed, and agentic_required under equal compute budget with deterministic evidence-backed scoring and no policy default mutation.",
+  "max_rounds_per_gate": 5,
+  "planning_artifacts": [
+    {
+      "kind": "prd",
+      "mutable_by_worker": false,
+      "path": "docs/dual-agent/agentic-eval-harness-runner-20260603/source/prd.md",
+      "sha256": "9b8b784bc568cbcbf68080bec1697fa53c79b69ec735bf953e73906706d34b0b"
+    },
+    {
+      "kind": "grill_findings",
+      "mutable_by_worker": false,
+      "path": "docs/dual-agent/agentic-eval-harness-runner-20260603/source/grill-findings.md",
+      "sha256": "5a31c473a11bf5aaaa7268218c7b60ee1157d23ffb95faaac040585471dba463"
+    },
+    {
+      "kind": "issues",
+      "mutable_by_worker": false,
+      "path": "docs/dual-agent/agentic-eval-harness-runner-20260603/source/issues.md",
+      "sha256": "1fe0c9ee92eb92942d903aebb43b5cc504d5bdd1c78cbd32a4918afacc91819c"
+    },
+    {
+      "kind": "tdd_plan",
+      "mutable_by_worker": false,
+      "path": "docs/dual-agent/agentic-eval-harness-runner-20260603/source/tdd.md",
+      "sha256": "6c3c2269df7c0bbbdb5ff4384759e514597d54b7c12a1e4a8e2c8edb9998f4bb"
+    },
+    {
+      "kind": "grill_findings",
+      "mutable_by_worker": false,
+      "path": "docs/dual-agent/agentic-eval-harness-runner-20260603/source/grill-findings-tdd.md",
+      "sha256": "130471b1f9df79f2e3b84d040d8026d3ae8c0bab72ded76628bb70df9f601ffa"
+    },
+    {
+      "kind": "implementation_plan",
+      "mutable_by_worker": false,
+      "path": "docs/dual-agent/agentic-eval-harness-runner-20260603/source/implementation-plan.md",
+      "sha256": "929c49823de4a38cbe770f8edd2fbb629ab3e51b92d7ae15f70bafe817961ddb"
+    },
+    {
+      "kind": "other",
+      "mutable_by_worker": false,
+      "path": "docs/dual-agent/agentic-eval-harness-runner-20260603/test-evidence.md",
+      "sha256": "392d1b25686bb7aa149a8c57644232bdfbfe4c8c25965d6f8aaa44e4d27cc949"
+    }
+  ],
+  "quality": "best",
+  "require_skill_receipts": true,
+  "run_id": "codex-agentic-eval-harness-runner-20260603-20260602-223516",
+  "task_id": "agentic-eval-harness-runner-20260603",
+  "timeout_s": 1200,
+  "tool_receipts": [
+    {
+      "artifacts": [
+        "docs/dual-agent/agentic-eval-harness-runner-20260603/source/prd.md"
+      ],
+      "claims": [
+        "prd-to-tdd skill executed",
+        "PRD promise contracts produced",
+        "report-only and replay-only boundaries specified",
+        "planning validator shape repaired after PRD gate block"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-to-prd-agentic-eval-harness-runner-20260603",
+      "skill": "to-prd",
+      "stage": "to_prd",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/agentic-eval-harness-runner-20260603/source/grill-findings.md"
+      ],
+      "claims": [
+        "prd-to-tdd skill executed",
+        "PRD grill findings resolved",
+        "real workflow versus replay-only tension resolved"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-prd-grill-agentic-eval-harness-runner-20260603",
+      "skill": "grill-with-docs",
+      "stage": "prd_grill",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/agentic-eval-harness-runner-20260603/source/issues.md"
+      ],
+      "claims": [
+        "prd-to-tdd skill executed",
+        "issue slices cover every PRD promise",
+        "public-boundary tests named"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-to-issues-agentic-eval-harness-runner-20260603",
+      "skill": "to-issues",
+      "stage": "to_issues",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/agentic-eval-harness-runner-20260603/source/tdd.md"
+      ],
+      "claims": [
+        "prd-to-tdd skill executed",
+        "TDD plan starts at public runner boundary",
+        "equal budget, evidence scoring, replay guard, and report-only regressions planned"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-tdd-agentic-eval-harness-runner-20260603",
+      "skill": "tdd",
+      "stage": "tdd",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/agentic-eval-harness-runner-20260603/source/grill-findings-tdd.md"
+      ],
+      "claims": [
+        "prd-to-tdd skill executed",
+        "TDD grill findings resolved",
+        "translation audit completed"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-tdd-grill-agentic-eval-harness-runner-20260603",
+      "skill": "grill-with-docs",
+      "stage": "tdd_grill",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/agentic-eval-harness-runner-20260603/source/prd.md",
+        "docs/dual-agent/agentic-eval-harness-runner-20260603/source/issues.md",
+        "docs/dual-agent/agentic-eval-harness-runner-20260603/source/tdd.md",
+        "docs/dual-agent/agentic-eval-harness-runner-20260603/source/implementation-plan.md"
+      ],
+      "claims": [
+        "local planning validator accepted all workflow gates after artifact repair"
+      ],
+      "command": "uv run python - <<PY ... validate_planning_artifacts(...) for all workflow gates",
+      "kind": "test",
+      "receipt_id": "planning-validator-agentic-eval-harness-runner-20260603",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "tests/test_agentic_eval.py"
+      ],
+      "claims": [
+        "8 focused tests passed",
+        "equal budget, evidence-required and resolvable-reference scoring, replay-shape validation, no-live replay guard, report-only invariant covered"
+      ],
+      "command": "uv run pytest tests/test_agentic_eval.py -q",
+      "kind": "test",
+      "receipt_id": "pytest-focused-agentic-eval-harness-runner-20260603",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "supervisor/agentic_eval.py",
+        "tests/test_agentic_eval.py"
+      ],
+      "claims": [
+        "agentic eval module and tests compile"
+      ],
+      "command": "uv run python -m py_compile supervisor/agentic_eval.py tests/test_agentic_eval.py",
+      "kind": "test",
+      "receipt_id": "py-compile-agentic-eval-harness-runner-20260603",
+      "status": "passed"
+    },
+    {
+      "claims": [
+        "no whitespace errors"
+      ],
+      "command": "git diff --check",
+      "kind": "test",
+      "receipt_id": "git-diff-check-agentic-eval-harness-runner-20260603",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "tests/test_agentic_eval.py",
+        "tests/test_agentic_executor.py",
+        "tests/test_dual_agent_workflow_driver.py"
+      ],
+      "claims": [
+        "117 workflow-adjacent regression tests passed"
+      ],
+      "command": "uv run pytest tests/test_agentic_eval.py tests/test_agentic_executor.py tests/test_dual_agent_workflow_driver.py -q",
+      "kind": "test",
+      "receipt_id": "pytest-workflow-regression-agentic-eval-harness-runner-20260603",
+      "status": "passed"
+    },
+    {
+      "claims": [
+        "651 tests passed"
+      ],
+      "command": "uv run --extra dev pytest -q",
+      "kind": "test",
+      "receipt_id": "pytest-full-agentic-eval-harness-runner-20260603",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/agentic-eval-harness-runner-20260603/source/agentic-eval/report.json",
+        "docs/dual-agent/agentic-eval-harness-runner-20260603/source/agentic-eval/evidence.json",
+        "docs/dual-agent/agentic-eval-harness-runner-20260603/source/agentic-eval/rows.jsonl",
+        "docs/dual-agent/agentic-eval-harness-runner-20260603/source/agentic-eval/replay-manifest.json"
+      ],
+      "claims": [
+        "fixture report exported",
+        "evidence artifact exported",
+        "report payload sha256 0faf094543256389f6b1a4419c5f47780e153ea15f754f1148eb761e7434f833",
+        "evidence payload sha256 65a9a3475c7182cec80538fb4fe6c808e7f134ee0194388d7d696b5b35351350",
+        "default_change_allowed false",
+        "agentic_lead_policy snapshot off"
+      ],
+      "kind": "artifact",
+      "receipt_id": "agentic-eval-report-agentic-eval-harness-runner-20260603",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/agentic-eval-harness-runner-20260603/test-evidence.md"
+      ],
+      "claims": [
+        "fixture comparison summarized",
+        "artifact hashes recorded",
+        "report-only invariants documented",
+        "resolvable evidence-reference validation documented"
+      ],
+      "kind": "test_evidence",
+      "receipt_id": "test-evidence-agentic-eval-harness-runner-20260603",
+      "status": "passed"
+    }
+  ],
+  "user_facing": false,
+  "verified_claims": [
+    "agentic_eval_runner produces rows for lead_direct, agentic_allowed, and agentic_required per task",
+    "runner asserts equal token and USD budgets per task before materializing rows",
+    "fixture replay rejects missing required workflow probes and reviewer-panel decisions",
+    "score_agentic_eval_arm fails unevidenced required verdicts and is deterministic",
+    "default execution does not call a live workflow runner",
+    "report artifacts include report.json, evidence.json, rows.jsonl, and replay-manifest.json",
+    "default_change_allowed remains false",
+    "agentic_lead_policy snapshot remains off"
+  ]
+}

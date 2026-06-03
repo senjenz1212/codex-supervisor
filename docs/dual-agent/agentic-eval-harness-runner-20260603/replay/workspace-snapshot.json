@@ -1,0 +1,24 @@
+{
+  "file_tree_sha256": "6dccf18d2cd4ed7056902f11975ae729c89ddf47672880a87d0499b1dc3c5f31",
+  "git": {
+    "diff_bytes": 31348,
+    "diff_sha256": "e018b150c8612763d3a3bda37165ac964cfb2855c31e448780e32136d5ea4c52",
+    "diff_stat": "supervisor/agentic_eval.py | 523 ++++++++++++++++++++++++++++++++++++++++++++-\n tests/test_agentic_eval.py | 178 ++++++++++++++-\n 2 files changed, 693 insertions(+), 8 deletions(-)",
+    "head": "62c6ff8",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "62c6ff8",
+    "status_short": "M supervisor/agentic_eval.py\n M tests/test_agentic_eval.py\n?? docs/dual-agent/agentic-eval-harness-runner-20260603/\n?? tests/fixtures/agentic_eval/"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "130471b1f9df79f2e3b84d040d8026d3ae8c0bab72ded76628bb70df9f601ffa",
+    "implementation_plan": "929c49823de4a38cbe770f8edd2fbb629ab3e51b92d7ae15f70bafe817961ddb",
+    "issues": "1fe0c9ee92eb92942d903aebb43b5cc504d5bdd1c78cbd32a4918afacc91819c",
+    "other": "392d1b25686bb7aa149a8c57644232bdfbfe4c8c25965d6f8aaa44e4d27cc949",
+    "prd": "9b8b784bc568cbcbf68080bec1697fa53c79b69ec735bf953e73906706d34b0b",
+    "tdd_plan": "6c3c2269df7c0bbbdb5ff4384759e514597d54b7c12a1e4a8e2c8edb9998f4bb"
+  },
+  "status": "captured"
+}

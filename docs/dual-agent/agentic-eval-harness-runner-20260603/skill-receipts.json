@@ -1,0 +1,77 @@
+[
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-to-prd-agentic-eval-harness-runner-20260603",
+    "skill": "to-prd",
+    "stage": "to_prd",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/agentic-eval-harness-runner-20260603/source/prd.md"
+    ],
+    "claims": [
+      "prd-to-tdd skill executed",
+      "PRD promise contracts produced",
+      "report-only and replay-only boundaries specified"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-prd-grill-agentic-eval-harness-runner-20260603",
+    "skill": "grill-with-docs",
+    "stage": "prd_grill",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/agentic-eval-harness-runner-20260603/source/grill-findings.md"
+    ],
+    "claims": [
+      "prd-to-tdd skill executed",
+      "PRD grill findings resolved",
+      "real workflow versus replay-only tension resolved"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-to-issues-agentic-eval-harness-runner-20260603",
+    "skill": "to-issues",
+    "stage": "to_issues",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/agentic-eval-harness-runner-20260603/source/issues.md"
+    ],
+    "claims": [
+      "prd-to-tdd skill executed",
+      "issue slices cover every PRD promise",
+      "public-boundary tests named"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-tdd-agentic-eval-harness-runner-20260603",
+    "skill": "tdd",
+    "stage": "tdd",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/agentic-eval-harness-runner-20260603/source/tdd.md"
+    ],
+    "claims": [
+      "prd-to-tdd skill executed",
+      "TDD plan starts at public runner boundary",
+      "equal budget, evidence scoring, replay guard, and report-only regressions planned"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-tdd-grill-agentic-eval-harness-runner-20260603",
+    "skill": "grill-with-docs",
+    "stage": "tdd_grill",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/agentic-eval-harness-runner-20260603/source/grill-findings-tdd.md"
+    ],
+    "claims": [
+      "prd-to-tdd skill executed",
+      "TDD grill findings resolved",
+      "translation audit completed"
+    ]
+  }
+]
