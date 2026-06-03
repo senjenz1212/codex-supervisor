@@ -46,6 +46,11 @@ tasks:
           wall_clock_s: 180
           cost_usd: 2.1
           operator_interventions: 0
+          time_to_first_useful_finding: 55
+          time_to_accepted_outcome: 180
+          orchestration_overhead_s: 8
+          reviewer_time_s: 34
+          worker_idle_wait_s: 0
         verdict_evidence:
           bug_fixed:
             - {kind: probe_receipt, ref: P3:resume-drop-catchup:lead_direct, status: passed}
@@ -80,6 +85,11 @@ tasks:
           wall_clock_s: 150
           cost_usd: 2.8
           operator_interventions: 0
+          time_to_first_useful_finding: 38
+          time_to_accepted_outcome: 150
+          orchestration_overhead_s: 16
+          reviewer_time_s: 36
+          worker_idle_wait_s: 7
         verdict_evidence:
           bug_fixed:
             - {kind: probe_receipt, ref: P3:resume-drop-catchup:agentic_allowed, status: passed}
@@ -115,6 +125,11 @@ tasks:
           wall_clock_s: 132
           cost_usd: 3.1
           operator_interventions: 0
+          time_to_first_useful_finding: 31
+          time_to_accepted_outcome: 132
+          orchestration_overhead_s: 20
+          reviewer_time_s: 37
+          worker_idle_wait_s: 9
         verdict_evidence:
           bug_fixed:
             - {kind: probe_receipt, ref: P3:resume-drop-catchup:agentic_required, status: passed}
@@ -158,6 +173,11 @@ tasks:
           wall_clock_s: 220
           cost_usd: 2.0
           operator_interventions: 1
+          time_to_first_useful_finding: 70
+          time_to_accepted_outcome: 220
+          orchestration_overhead_s: 10
+          reviewer_time_s: 42
+          worker_idle_wait_s: 0
         verdict_evidence:
           bug_fixed:
             - {kind: diff_hunk, ref: supervisor/reviewer_panel_eval.py:+row_roster_consistency, status: passed}
@@ -192,6 +212,11 @@ tasks:
           wall_clock_s: 170
           cost_usd: 2.3
           operator_interventions: 0
+          time_to_first_useful_finding: 49
+          time_to_accepted_outcome: 170
+          orchestration_overhead_s: 18
+          reviewer_time_s: 43
+          worker_idle_wait_s: 8
         verdict_evidence:
           bug_fixed:
             - {kind: diff_hunk, ref: supervisor/reviewer_panel_eval.py:+row_roster_consistency, status: passed}
@@ -227,11 +252,276 @@ tasks:
           wall_clock_s: 160
           cost_usd: 2.4
           operator_interventions: 0
+          time_to_first_useful_finding: 45
+          time_to_accepted_outcome: 160
+          orchestration_overhead_s: 22
+          reviewer_time_s: 44
+          worker_idle_wait_s: 9
         verdict_evidence:
           bug_fixed:
             - {kind: diff_hunk, ref: supervisor/reviewer_panel_eval.py:+row_roster_consistency, status: passed}
             - {kind: probe_receipt, ref: P13:agentic-worker-roster, status: passed}
           no_regression:
             - {kind: artifact_path, ref: tests/test_reviewer_panel_eval_runner.py, status: passed}
+          gate_passed_honestly:
+            - {kind: probe_receipt, ref: outcome_review:P1-P3-P13-P14, status: passed}
+  - task_id: multi-file-code-archaeology
+    intent: Find all files touched by a broad agentic-eval reporting change.
+    required_verdicts:
+      - id: affected_files_identified
+        description: Core runner and tests are both identified as affected paths.
+      - id: evidence_backed_summary
+        description: The analysis cites concrete artifacts rather than prose-only claims.
+      - id: gate_passed_honestly
+        description: The gated workflow accepted with required receipts.
+    arms:
+      lead_direct:
+        budget:
+          token_budget: 14000
+          budget_usd_limit: 4.0
+        workflow_result:
+          status: accepted
+          steps:
+            - {gate: prd_review, status: accepted, attempt_count: 1}
+            - {gate: issues_review, status: accepted, attempt_count: 1}
+            - {gate: tdd_review, status: accepted, attempt_count: 1}
+            - {gate: implementation_plan, status: accepted, attempt_count: 1}
+            - {gate: execution, status: accepted, attempt_count: 1}
+            - {gate: outcome_review, status: accepted, attempt_count: 1}
+          final_gate_result:
+            gate: outcome_review
+            status: accepted
+            independent_reviewer_results: *accepted_reviewer_panel
+            probes:
+              P1: {status: green}
+              P2: {status: green}
+              P3: {status: green}
+        metrics:
+          wall_clock_s: 300
+          cost_usd: 2.9
+          operator_interventions: 0
+          time_to_first_useful_finding: 95
+          time_to_accepted_outcome: 300
+          orchestration_overhead_s: 12
+          reviewer_time_s: 50
+          worker_idle_wait_s: 0
+        verdict_evidence:
+          affected_files_identified:
+            - {kind: artifact_path, ref: supervisor/agentic_eval.py, status: passed}
+            - {kind: artifact_path, ref: tests/test_agentic_eval.py, status: passed}
+          evidence_backed_summary:
+            - {kind: diff_hunk, ref: supervisor/agentic_eval.py:+build_agentic_eval_report, status: passed}
+          gate_passed_honestly:
+            - {kind: probe_receipt, ref: outcome_review:P1-P3, status: passed}
+      agentic_allowed:
+        budget:
+          token_budget: 14000
+          budget_usd_limit: 4.0
+        workflow_result:
+          status: accepted
+          steps:
+            - {gate: prd_review, status: accepted, attempt_count: 1}
+            - {gate: issues_review, status: accepted, attempt_count: 1}
+            - {gate: tdd_review, status: accepted, attempt_count: 1}
+            - {gate: implementation_plan, status: accepted, attempt_count: 1}
+            - {gate: execution, status: accepted, attempt_count: 1}
+            - {gate: outcome_review, status: accepted, attempt_count: 1}
+          final_gate_result:
+            gate: outcome_review
+            status: accepted
+            independent_reviewer_results: *accepted_reviewer_panel
+            probes:
+              P1: {status: green}
+              P2: {status: green}
+              P3: {status: green}
+              P13: {status: green}
+              P14: {status: green}
+        metrics:
+          wall_clock_s: 210
+          cost_usd: 3.1
+          operator_interventions: 0
+          time_to_first_useful_finding: 55
+          time_to_accepted_outcome: 210
+          orchestration_overhead_s: 20
+          reviewer_time_s: 45
+          worker_idle_wait_s: 8
+        verdict_evidence:
+          affected_files_identified:
+            - {kind: artifact_path, ref: supervisor/agentic_eval.py, status: passed}
+            - {kind: artifact_path, ref: tests/test_agentic_eval.py, status: passed}
+            - {kind: probe_receipt, ref: P13:parallel-file-scan, status: passed}
+          evidence_backed_summary:
+            - {kind: diff_hunk, ref: tests/test_agentic_eval.py:+test_agentic_eval_runner_reports_acceleration_percentiles, status: passed}
+          gate_passed_honestly:
+            - {kind: probe_receipt, ref: outcome_review:P1-P3-P13-P14, status: passed}
+      agentic_required:
+        budget:
+          token_budget: 14000
+          budget_usd_limit: 4.0
+        workflow_result:
+          status: accepted
+          steps:
+            - {gate: prd_review, status: accepted, attempt_count: 1}
+            - {gate: issues_review, status: accepted, attempt_count: 1}
+            - {gate: tdd_review, status: accepted, attempt_count: 1}
+            - {gate: implementation_plan, status: accepted, attempt_count: 1}
+            - {gate: execution, status: accepted, attempt_count: 1}
+            - {gate: outcome_review, status: accepted, attempt_count: 1}
+          final_gate_result:
+            gate: outcome_review
+            status: accepted
+            independent_reviewer_results: *accepted_reviewer_panel
+            probes:
+              P1: {status: green}
+              P2: {status: green}
+              P3: {status: green}
+              P13: {status: green}
+              P14: {status: green}
+        metrics:
+          wall_clock_s: 195
+          cost_usd: 3.4
+          operator_interventions: 0
+          time_to_first_useful_finding: 48
+          time_to_accepted_outcome: 195
+          orchestration_overhead_s: 28
+          reviewer_time_s: 46
+          worker_idle_wait_s: 10
+        verdict_evidence:
+          affected_files_identified:
+            - {kind: artifact_path, ref: supervisor/agentic_eval.py, status: passed}
+            - {kind: artifact_path, ref: tests/test_agentic_eval.py, status: passed}
+            - {kind: probe_receipt, ref: P13:parallel-file-scan, status: passed}
+          evidence_backed_summary:
+            - {kind: diff_hunk, ref: tests/test_agentic_eval.py:+test_agentic_eval_quality_gated_win_condition_truth_table, status: passed}
+          gate_passed_honestly:
+            - {kind: probe_receipt, ref: outcome_review:P1-P3-P13-P14, status: passed}
+  - task_id: affected-path-dependency-trace
+    intent: Trace dependency paths for a report-only eval change.
+    required_verdicts:
+      - id: dependency_paths_traced
+        description: Runner and bridge-facing tests are traced through the report boundary.
+      - id: no_policy_mutation
+        description: The evaluation remains report-only.
+      - id: gate_passed_honestly
+        description: The gated workflow accepted with required receipts.
+    arms:
+      lead_direct:
+        budget:
+          token_budget: 13000
+          budget_usd_limit: 3.8
+        workflow_result:
+          status: accepted
+          steps:
+            - {gate: prd_review, status: accepted, attempt_count: 1}
+            - {gate: issues_review, status: accepted, attempt_count: 1}
+            - {gate: tdd_review, status: accepted, attempt_count: 1}
+            - {gate: implementation_plan, status: accepted, attempt_count: 1}
+            - {gate: execution, status: accepted, attempt_count: 1}
+            - {gate: outcome_review, status: accepted, attempt_count: 1}
+          final_gate_result:
+            gate: outcome_review
+            status: accepted
+            independent_reviewer_results: *accepted_reviewer_panel
+            probes:
+              P1: {status: green}
+              P2: {status: green}
+              P3: {status: green}
+        metrics:
+          wall_clock_s: 260
+          cost_usd: 2.6
+          operator_interventions: 0
+          time_to_first_useful_finding: 82
+          time_to_accepted_outcome: 260
+          orchestration_overhead_s: 11
+          reviewer_time_s: 47
+          worker_idle_wait_s: 0
+        verdict_evidence:
+          dependency_paths_traced:
+            - {kind: artifact_path, ref: supervisor/agentic_eval.py, status: passed}
+            - {kind: artifact_path, ref: tests/test_agentic_eval_bridge.py, status: passed}
+          no_policy_mutation:
+            - {kind: probe_receipt, ref: report_only:agentic_lead_policy_snapshot_off, status: passed}
+          gate_passed_honestly:
+            - {kind: probe_receipt, ref: outcome_review:P1-P3, status: passed}
+      agentic_allowed:
+        budget:
+          token_budget: 13000
+          budget_usd_limit: 3.8
+        workflow_result:
+          status: accepted
+          steps:
+            - {gate: prd_review, status: accepted, attempt_count: 1}
+            - {gate: issues_review, status: accepted, attempt_count: 1}
+            - {gate: tdd_review, status: accepted, attempt_count: 1}
+            - {gate: implementation_plan, status: accepted, attempt_count: 1}
+            - {gate: execution, status: accepted, attempt_count: 1}
+            - {gate: outcome_review, status: accepted, attempt_count: 1}
+          final_gate_result:
+            gate: outcome_review
+            status: accepted
+            independent_reviewer_results: *accepted_reviewer_panel
+            probes:
+              P1: {status: green}
+              P2: {status: green}
+              P3: {status: green}
+              P13: {status: green}
+              P14: {status: green}
+        metrics:
+          wall_clock_s: 205
+          cost_usd: 2.9
+          operator_interventions: 0
+          time_to_first_useful_finding: 50
+          time_to_accepted_outcome: 205
+          orchestration_overhead_s: 19
+          reviewer_time_s: 48
+          worker_idle_wait_s: 7
+        verdict_evidence:
+          dependency_paths_traced:
+            - {kind: artifact_path, ref: supervisor/agentic_eval.py, status: passed}
+            - {kind: artifact_path, ref: tests/test_agentic_eval_bridge.py, status: passed}
+            - {kind: probe_receipt, ref: P13:parallel-dependency-trace, status: passed}
+          no_policy_mutation:
+            - {kind: probe_receipt, ref: report_only:agentic_lead_policy_snapshot_off, status: passed}
+          gate_passed_honestly:
+            - {kind: probe_receipt, ref: outcome_review:P1-P3-P13-P14, status: passed}
+      agentic_required:
+        budget:
+          token_budget: 13000
+          budget_usd_limit: 3.8
+        workflow_result:
+          status: accepted
+          steps:
+            - {gate: prd_review, status: accepted, attempt_count: 1}
+            - {gate: issues_review, status: accepted, attempt_count: 1}
+            - {gate: tdd_review, status: accepted, attempt_count: 1}
+            - {gate: implementation_plan, status: accepted, attempt_count: 1}
+            - {gate: execution, status: accepted, attempt_count: 1}
+            - {gate: outcome_review, status: accepted, attempt_count: 1}
+          final_gate_result:
+            gate: outcome_review
+            status: accepted
+            independent_reviewer_results: *accepted_reviewer_panel
+            probes:
+              P1: {status: green}
+              P2: {status: green}
+              P3: {status: green}
+              P13: {status: green}
+              P14: {status: green}
+        metrics:
+          wall_clock_s: 190
+          cost_usd: 3.2
+          operator_interventions: 0
+          time_to_first_useful_finding: 45
+          time_to_accepted_outcome: 190
+          orchestration_overhead_s: 24
+          reviewer_time_s: 49
+          worker_idle_wait_s: 9
+        verdict_evidence:
+          dependency_paths_traced:
+            - {kind: artifact_path, ref: supervisor/agentic_eval.py, status: passed}
+            - {kind: artifact_path, ref: tests/test_agentic_eval_bridge.py, status: passed}
+            - {kind: probe_receipt, ref: P13:parallel-dependency-trace, status: passed}
+          no_policy_mutation:
+            - {kind: probe_receipt, ref: report_only:agentic_lead_policy_snapshot_off, status: passed}
           gate_passed_honestly:
             - {kind: probe_receipt, ref: outcome_review:P1-P3-P13-P14, status: passed}

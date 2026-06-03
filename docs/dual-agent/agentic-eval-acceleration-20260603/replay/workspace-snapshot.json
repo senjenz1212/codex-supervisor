@@ -1,0 +1,24 @@
+{
+  "file_tree_sha256": "cbfe2a1223df3d9632a5d4076cdedfb772b277df796156e93c527863ceefd5d6",
+  "git": {
+    "diff_bytes": 36260,
+    "diff_sha256": "f05097d77082eaf6c5fa7c5e3b4ec74d5675906d03cbdd56db6513525d50bdc0",
+    "diff_stat": "supervisor/agentic_eval.py                       | 202 ++++++++++++++++\n supervisor/agentic_eval_assembler.py             |   8 +-\n tests/fixtures/agentic_eval/three_arm_tasks.yaml | 290 +++++++++++++++++++++++\n tests/test_agentic_eval.py                       | 136 ++++++++++-\n 4 files changed, 633 insertions(+), 3 deletions(-)",
+    "head": "5ff4b4b",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "5ff4b4b",
+    "status_short": "M supervisor/agentic_eval.py\n M supervisor/agentic_eval_assembler.py\n M tests/fixtures/agentic_eval/three_arm_tasks.yaml\n M tests/test_agentic_eval.py\n?? .scratch/agentic-eval-missed-issues-fix-outcome-request.json\n?? .scratch/agentic-eval-missed-issues-fix-resume-request.json\n?? .scratch/mcp-grill-kind-alias-20260603-config.yaml\n?? docs/dual-agent/agentic-eval-acceleration-20260603/"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "282ff4ed2d663f30f79d19f49f1a109c97e6d779e9397a3efdb6f17b7b8c075c",
+    "implementation_plan": "0f44b1343d2e5d3ccd367bd51c2569b95e51010f2146ec9b943ac6e5010ed3ab",
+    "issues": "0c9d104782431013f7c786f66c782d8d935170579bbe203cf744b87265002259",
+    "outcome": "c49faa4423a463878e00403c4ccf7fe99553d7462b0bc1cb0b59590340c4d590",
+    "prd": "0a8ce4ad6024c054b5386994dae99054cd9320b9efd38f8c66a702e42e3edc23",
+    "tdd_plan": "6f2a791c2d8c30612c4310513ff236ae1ae06893da529382936b6ea278527155"
+  },
+  "status": "captured"
+}

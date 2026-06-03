@@ -1,0 +1,74 @@
+[
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-to-prd-agentic-eval-acceleration-20260603",
+    "skill": "to-prd",
+    "stage": "to_prd",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/agentic-eval-acceleration-20260603/source/prd.md"
+    ],
+    "claims": [
+      "PRD promise contracts produced",
+      "speed-headline metric specified",
+      "report-only boundary preserved"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-prd-grill-agentic-eval-acceleration-20260603",
+    "skill": "grill-with-docs",
+    "stage": "prd_grill",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/agentic-eval-acceleration-20260603/source/grill-findings.md"
+    ],
+    "claims": [
+      "PRD grill findings resolved",
+      "blocked faster run cannot qualify",
+      "quality-derived guardrails pinned"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-to-issues-agentic-eval-acceleration-20260603",
+    "skill": "to-issues",
+    "stage": "to_issues",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/agentic-eval-acceleration-20260603/source/issues.md"
+    ],
+    "claims": [
+      "Issue slices cover P1-P5",
+      "runner public boundary retained"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-tdd-agentic-eval-acceleration-20260603",
+    "skill": "tdd",
+    "stage": "tdd",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/agentic-eval-acceleration-20260603/source/tdd.md"
+    ],
+    "claims": [
+      "TDD starts at agentic_eval_runner public boundary",
+      "acceleration, qualification, latency, and replay-hash tests planned"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-tdd-grill-agentic-eval-acceleration-20260603",
+    "skill": "grill-with-docs",
+    "stage": "tdd_grill",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/agentic-eval-acceleration-20260603/source/grill-findings-tdd.md"
+    ],
+    "claims": [
+      "TDD grill findings resolved",
+      "translation audit completed"
+    ]
+  }
+]

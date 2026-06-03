@@ -10,6 +10,13 @@ from supervisor.agentic_eval import agentic_eval_runner, build_agentic_eval_repo
 
 
 FIXTURE = "tests/fixtures/agentic_eval/three_arm_tasks.yaml"
+ACCELERATION_REPORT_SHA256 = "5f5239f0bc0dfacd64b1e71f0b3a8abc53d051b2c4d0c7f24d455eb425393e74"
+
+
+def _write_dataset(tmp_path, dataset: dict, name: str = "dataset.json") -> Path:
+    path = tmp_path / name
+    path.write_text(json.dumps({"schema_version": dataset["schema_version"], "tasks": dataset["tasks"]}), encoding="utf-8")
+    return path
 
 
 def test_agentic_eval_report_compares_required_modes():
@@ -73,7 +80,12 @@ def test_agentic_eval_runner_covers_required_modes():
     assert report["schema_version"] == "agentic-lead-eval/v1"
     assert report["runner"]["execution_mode"] == "fixture_replay"
     assert report["runner"]["live_calls_allowed"] is False
-    assert sorted(by_task) == ["resume-drop-catchup", "reviewer-roster-calibration"]
+    assert sorted(by_task) == [
+        "affected-path-dependency-trace",
+        "multi-file-code-archaeology",
+        "resume-drop-catchup",
+        "reviewer-roster-calibration",
+    ]
     for modes in by_task.values():
         assert modes == ["lead_direct", "agentic_allowed", "agentic_required"]
     assert report["default_change_gate"]["required_modes"] == [
@@ -90,6 +102,125 @@ def test_agentic_eval_runner_covers_required_modes():
         assert row["reviewer_panel_decisions"]
         if row["mode"] in {"agentic_allowed", "agentic_required"}:
             assert {"P13", "P14"} <= set(row["probe_statuses"])
+
+
+def test_agentic_eval_runner_reports_acceleration_percentiles():
+    report = agentic_eval_runner(dataset_path=FIXTURE)
+
+    rows = {
+        (row["task_id"], row["mode"]): row
+        for row in report["rows"]
+    }
+    assert rows[("resume-drop-catchup", "lead_direct")]["acceleration_ratio"] == 1.0
+    assert rows[("resume-drop-catchup", "agentic_allowed")]["acceleration_ratio"] == 1.2
+    assert rows[("resume-drop-catchup", "agentic_required")]["acceleration_ratio"] == pytest.approx(1.364)
+
+    allowed = report["summary"]["agentic_allowed"]
+    required = report["summary"]["agentic_required"]
+    assert allowed["acceleration_ratio_p50"] == pytest.approx(1.281)
+    assert allowed["acceleration_ratio_p95"] == pytest.approx(1.409)
+    assert required["acceleration_ratio_p50"] == pytest.approx(1.372)
+    assert required["acceleration_ratio_p95"] == pytest.approx(1.514)
+    assert report["summary"]["lead_direct"]["acceleration_ratio_p50"] == 1.0
+
+
+def test_agentic_eval_quality_gated_win_condition_truth_table():
+    lead = {
+        "task_id": "truth-table",
+        "mode": "lead_direct",
+        "wall_clock_s": 120,
+        "workflow_status": "accepted",
+        "score": 5,
+        "missed_issues": 0,
+        "rejected_gates": 0,
+    }
+    base_agentic = {
+        "task_id": "truth-table",
+        "mode": "agentic_allowed",
+        "wall_clock_s": 80,
+        "workflow_status": "accepted",
+        "score": 5,
+        "missed_issues": 0,
+        "rejected_gates": 0,
+    }
+
+    cases = [
+        ("workflow_status_not_accepted", {"workflow_status": "blocked"}),
+        ("score_below_lead_direct", {"score": 4}),
+        ("missed_issues_above_lead_direct", {"missed_issues": 1}),
+        ("rejected_gates_above_lead_direct", {"rejected_gates": 1}),
+        ("acceleration_ratio_below_1_2", {"wall_clock_s": 110}),
+    ]
+    for predicate, mutation in cases:
+        agentic = {**base_agentic, **mutation}
+        report = build_agentic_eval_report([lead, agentic])
+        row = next(row for row in report["rows"] if row["mode"] == "agentic_allowed")
+        assert row["qualifies"] is False
+        assert predicate in row["qualification_failing_predicates"]
+
+    report = build_agentic_eval_report([lead, base_agentic])
+    row = next(row for row in report["rows"] if row["mode"] == "agentic_allowed")
+    assert row["qualifies"] is True
+    assert row["qualification_failing_predicates"] == []
+
+
+def test_agentic_eval_blocked_faster_arm_never_qualifies(tmp_path):
+    dataset = load_agentic_eval_dataset(FIXTURE)
+    task = dataset["tasks"][0]
+    arm = task["arms"]["agentic_allowed"]
+    arm["metrics"]["wall_clock_s"] = 10
+    arm["workflow_result"]["status"] = "blocked"
+    arm["workflow_result"]["steps"][-1]["status"] = "blocked"
+    arm["workflow_result"]["final_gate_result"]["status"] = "blocked"
+    path = _write_dataset(tmp_path, dataset, "blocked-faster.json")
+
+    report = agentic_eval_runner(dataset_path=path)
+
+    row = next(row for row in report["rows"] if row["task_id"] == task["task_id"] and row["mode"] == "agentic_allowed")
+    assert row["acceleration_ratio"] >= 1.2
+    assert row["qualifies"] is False
+    assert "workflow_status_not_accepted" in row["qualification_failing_predicates"]
+
+
+def test_agentic_eval_latency_fields_are_values_or_unavailable_reasons(tmp_path):
+    dataset = load_agentic_eval_dataset(FIXTURE)
+    task = dataset["tasks"][0]
+    task["arms"]["lead_direct"]["metrics"].update({
+        "time_to_first_useful_finding": 40,
+        "time_to_accepted_outcome": 180,
+        "orchestration_overhead_s": 12,
+        "reviewer_time_s": 35,
+        "worker_idle_wait_s": 0,
+    })
+    task["arms"]["agentic_allowed"]["metrics"].pop("time_to_first_useful_finding", None)
+    path = _write_dataset(tmp_path, dataset, "latency.json")
+
+    report = agentic_eval_runner(dataset_path=path)
+
+    lead = next(row for row in report["rows"] if row["task_id"] == task["task_id"] and row["mode"] == "lead_direct")
+    assert lead["time_to_first_useful_finding"] == 40
+    assert lead["time_to_first_useful_finding_unavailable_reason"] is None
+    assert lead["worker_idle_wait_s"] == 0
+
+    allowed = next(row for row in report["rows"] if row["task_id"] == task["task_id"] and row["mode"] == "agentic_allowed")
+    assert allowed["time_to_first_useful_finding"] is None
+    assert allowed["time_to_first_useful_finding_unavailable_reason"] == "not_recorded"
+
+
+def test_agentic_eval_parallelism_corpus_replays_to_stable_report_sha256():
+    report = agentic_eval_runner(dataset_path=FIXTURE)
+
+    parallelism_tasks = {
+        row["task_id"]
+        for row in report["rows"]
+        if row["task_id"] in {"multi-file-code-archaeology", "affected-path-dependency-trace"}
+    }
+    assert parallelism_tasks == {"multi-file-code-archaeology", "affected-path-dependency-trace"}
+    for task_id in parallelism_tasks:
+        task_rows = [row for row in report["rows"] if row["task_id"] == task_id]
+        assert {row["mode"] for row in task_rows} == {"lead_direct", "agentic_allowed", "agentic_required"}
+        assert all(row["workflow_status"] == "accepted" for row in task_rows)
+    assert report["report_sha256"] == ACCELERATION_REPORT_SHA256
 
 
 def test_agentic_eval_runner_enforces_equal_budget(tmp_path):
@@ -286,11 +417,14 @@ def test_agentic_eval_runner_is_report_only(tmp_path):
     }
     assert report["agentic_lead_policy_snapshot"]["policy"] == "off"
     assert report["agentic_lead_policy_snapshot"]["mutated"] is False
+    assert report["recommendation"]["report_only"] is True
+    assert report["recommendation"]["policy_mutated"] is False
     for key in ("report_json", "evidence_json", "rows_jsonl", "replay_manifest"):
         assert key in report["exports"]
         assert (output_dir / report["exports"][key].split("/")[-1]).exists()
     saved = json.loads((output_dir / "report.json").read_text(encoding="utf-8"))
     assert saved["default_change_allowed"] is False
+    assert saved["recommendation"]["report_only"] is True
     evidence = json.loads((output_dir / "evidence.json").read_text(encoding="utf-8"))
     assert evidence["records"]
 

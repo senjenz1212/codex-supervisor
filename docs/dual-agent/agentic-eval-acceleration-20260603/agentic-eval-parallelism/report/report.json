@@ -1,0 +1,1164 @@
+{
+  "agentic_lead_policy_snapshot": {
+    "mutated": false,
+    "policy": "off",
+    "source": "report_only_runner_invariant"
+  },
+  "dataset": {
+    "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-acceleration-20260603/agentic-eval-parallelism/agentic_eval_three_arm_dataset.yaml",
+    "schema_version": "agentic-lead-eval-dataset/v1",
+    "sha256": "a0c1845d601df2ceb6e78bbc4fa137b8400cb2308c7b68f05dd5bb721f8dc65a",
+    "task_count": 2
+  },
+  "default_change_allowed": false,
+  "default_change_gate": {
+    "required_modes": [
+      "lead_direct",
+      "agentic_allowed",
+      "agentic_required"
+    ],
+    "required_review": "operator_accepts_eval_report"
+  },
+  "evidence": {
+    "records": [
+      {
+        "gate_statuses": {
+          "execution": "accepted",
+          "implementation_plan": "accepted",
+          "issues_review": "accepted",
+          "outcome_review": "accepted",
+          "prd_review": "accepted",
+          "tdd_review": "accepted"
+        },
+        "mode": "lead_direct",
+        "probe_statuses": {
+          "P1": "green",
+          "P2": "green",
+          "P3": "green"
+        },
+        "reviewer_panel_decisions": [
+          {
+            "decision": "accept",
+            "reviewer_id": "independent-reviewer-0"
+          },
+          {
+            "decision": "accept",
+            "reviewer_id": "independent-reviewer-1"
+          }
+        ],
+        "score": {
+          "failed_verdict_count": 0,
+          "mode": "lead_direct",
+          "passed_verdict_count": 3,
+          "schema_version": "agentic-lead-eval-score/v1",
+          "score": 5.0,
+          "score_max": 5,
+          "task_id": "multi-file-code-archaeology",
+          "verdicts": [
+            {
+              "description": "Core runner and tests are both identified as affected paths.",
+              "evidence": [
+                {
+                  "kind": "artifact_path",
+                  "ref": "supervisor/agentic_eval.py",
+                  "status": "passed"
+                },
+                {
+                  "kind": "artifact_path",
+                  "ref": "tests/test_agentic_eval.py",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "affected_files_identified"
+            },
+            {
+              "description": "The analysis cites concrete artifacts rather than prose-only claims.",
+              "evidence": [
+                {
+                  "kind": "diff_hunk",
+                  "ref": "supervisor/agentic_eval.py:+build_agentic_eval_report",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "evidence_backed_summary"
+            },
+            {
+              "description": "The gated workflow accepted with required receipts.",
+              "evidence": [
+                {
+                  "kind": "probe_receipt",
+                  "ref": "outcome_review:P1-P3",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "gate_passed_honestly"
+            }
+          ],
+          "workflow_status": "accepted"
+        },
+        "task_id": "multi-file-code-archaeology",
+        "workflow_status": "accepted"
+      },
+      {
+        "gate_statuses": {
+          "execution": "accepted",
+          "implementation_plan": "accepted",
+          "issues_review": "accepted",
+          "outcome_review": "accepted",
+          "prd_review": "accepted",
+          "tdd_review": "accepted"
+        },
+        "mode": "agentic_allowed",
+        "probe_statuses": {
+          "P1": "green",
+          "P13": "green",
+          "P14": "green",
+          "P2": "green",
+          "P3": "green"
+        },
+        "reviewer_panel_decisions": [
+          {
+            "decision": "accept",
+            "reviewer_id": "independent-reviewer-0"
+          },
+          {
+            "decision": "accept",
+            "reviewer_id": "independent-reviewer-1"
+          }
+        ],
+        "score": {
+          "failed_verdict_count": 0,
+          "mode": "agentic_allowed",
+          "passed_verdict_count": 3,
+          "schema_version": "agentic-lead-eval-score/v1",
+          "score": 5.0,
+          "score_max": 5,
+          "task_id": "multi-file-code-archaeology",
+          "verdicts": [
+            {
+              "description": "Core runner and tests are both identified as affected paths.",
+              "evidence": [
+                {
+                  "kind": "artifact_path",
+                  "ref": "supervisor/agentic_eval.py",
+                  "status": "passed"
+                },
+                {
+                  "kind": "artifact_path",
+                  "ref": "tests/test_agentic_eval.py",
+                  "status": "passed"
+                },
+                {
+                  "kind": "probe_receipt",
+                  "ref": "P13:parallel-file-scan",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "affected_files_identified"
+            },
+            {
+              "description": "The analysis cites concrete artifacts rather than prose-only claims.",
+              "evidence": [
+                {
+                  "kind": "diff_hunk",
+                  "ref": "tests/test_agentic_eval.py:+test_agentic_eval_runner_reports_acceleration_percentiles",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "evidence_backed_summary"
+            },
+            {
+              "description": "The gated workflow accepted with required receipts.",
+              "evidence": [
+                {
+                  "kind": "probe_receipt",
+                  "ref": "outcome_review:P1-P3-P13-P14",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "gate_passed_honestly"
+            }
+          ],
+          "workflow_status": "accepted"
+        },
+        "task_id": "multi-file-code-archaeology",
+        "workflow_status": "accepted"
+      },
+      {
+        "gate_statuses": {
+          "execution": "accepted",
+          "implementation_plan": "accepted",
+          "issues_review": "accepted",
+          "outcome_review": "accepted",
+          "prd_review": "accepted",
+          "tdd_review": "accepted"
+        },
+        "mode": "agentic_required",
+        "probe_statuses": {
+          "P1": "green",
+          "P13": "green",
+          "P14": "green",
+          "P2": "green",
+          "P3": "green"
+        },
+        "reviewer_panel_decisions": [
+          {
+            "decision": "accept",
+            "reviewer_id": "independent-reviewer-0"
+          },
+          {
+            "decision": "accept",
+            "reviewer_id": "independent-reviewer-1"
+          }
+        ],
+        "score": {
+          "failed_verdict_count": 0,
+          "mode": "agentic_required",
+          "passed_verdict_count": 3,
+          "schema_version": "agentic-lead-eval-score/v1",
+          "score": 5.0,
+          "score_max": 5,
+          "task_id": "multi-file-code-archaeology",
+          "verdicts": [
+            {
+              "description": "Core runner and tests are both identified as affected paths.",
+              "evidence": [
+                {
+                  "kind": "artifact_path",
+                  "ref": "supervisor/agentic_eval.py",
+                  "status": "passed"
+                },
+                {
+                  "kind": "artifact_path",
+                  "ref": "tests/test_agentic_eval.py",
+                  "status": "passed"
+                },
+                {
+                  "kind": "probe_receipt",
+                  "ref": "P13:parallel-file-scan",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "affected_files_identified"
+            },
+            {
+              "description": "The analysis cites concrete artifacts rather than prose-only claims.",
+              "evidence": [
+                {
+                  "kind": "diff_hunk",
+                  "ref": "tests/test_agentic_eval.py:+test_agentic_eval_quality_gated_win_condition_truth_table",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "evidence_backed_summary"
+            },
+            {
+              "description": "The gated workflow accepted with required receipts.",
+              "evidence": [
+                {
+                  "kind": "probe_receipt",
+                  "ref": "outcome_review:P1-P3-P13-P14",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "gate_passed_honestly"
+            }
+          ],
+          "workflow_status": "accepted"
+        },
+        "task_id": "multi-file-code-archaeology",
+        "workflow_status": "accepted"
+      },
+      {
+        "gate_statuses": {
+          "execution": "accepted",
+          "implementation_plan": "accepted",
+          "issues_review": "accepted",
+          "outcome_review": "accepted",
+          "prd_review": "accepted",
+          "tdd_review": "accepted"
+        },
+        "mode": "lead_direct",
+        "probe_statuses": {
+          "P1": "green",
+          "P2": "green",
+          "P3": "green"
+        },
+        "reviewer_panel_decisions": [
+          {
+            "decision": "accept",
+            "reviewer_id": "independent-reviewer-0"
+          },
+          {
+            "decision": "accept",
+            "reviewer_id": "independent-reviewer-1"
+          }
+        ],
+        "score": {
+          "failed_verdict_count": 0,
+          "mode": "lead_direct",
+          "passed_verdict_count": 3,
+          "schema_version": "agentic-lead-eval-score/v1",
+          "score": 5.0,
+          "score_max": 5,
+          "task_id": "affected-path-dependency-trace",
+          "verdicts": [
+            {
+              "description": "Runner and bridge-facing tests are traced through the report boundary.",
+              "evidence": [
+                {
+                  "kind": "artifact_path",
+                  "ref": "supervisor/agentic_eval.py",
+                  "status": "passed"
+                },
+                {
+                  "kind": "artifact_path",
+                  "ref": "tests/test_agentic_eval_bridge.py",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "dependency_paths_traced"
+            },
+            {
+              "description": "The evaluation remains report-only.",
+              "evidence": [
+                {
+                  "kind": "probe_receipt",
+                  "ref": "report_only:agentic_lead_policy_snapshot_off",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "no_policy_mutation"
+            },
+            {
+              "description": "The gated workflow accepted with required receipts.",
+              "evidence": [
+                {
+                  "kind": "probe_receipt",
+                  "ref": "outcome_review:P1-P3",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "gate_passed_honestly"
+            }
+          ],
+          "workflow_status": "accepted"
+        },
+        "task_id": "affected-path-dependency-trace",
+        "workflow_status": "accepted"
+      },
+      {
+        "gate_statuses": {
+          "execution": "accepted",
+          "implementation_plan": "accepted",
+          "issues_review": "accepted",
+          "outcome_review": "accepted",
+          "prd_review": "accepted",
+          "tdd_review": "accepted"
+        },
+        "mode": "agentic_allowed",
+        "probe_statuses": {
+          "P1": "green",
+          "P13": "green",
+          "P14": "green",
+          "P2": "green",
+          "P3": "green"
+        },
+        "reviewer_panel_decisions": [
+          {
+            "decision": "accept",
+            "reviewer_id": "independent-reviewer-0"
+          },
+          {
+            "decision": "accept",
+            "reviewer_id": "independent-reviewer-1"
+          }
+        ],
+        "score": {
+          "failed_verdict_count": 0,
+          "mode": "agentic_allowed",
+          "passed_verdict_count": 3,
+          "schema_version": "agentic-lead-eval-score/v1",
+          "score": 5.0,
+          "score_max": 5,
+          "task_id": "affected-path-dependency-trace",
+          "verdicts": [
+            {
+              "description": "Runner and bridge-facing tests are traced through the report boundary.",
+              "evidence": [
+                {
+                  "kind": "artifact_path",
+                  "ref": "supervisor/agentic_eval.py",
+                  "status": "passed"
+                },
+                {
+                  "kind": "artifact_path",
+                  "ref": "tests/test_agentic_eval_bridge.py",
+                  "status": "passed"
+                },
+                {
+                  "kind": "probe_receipt",
+                  "ref": "P13:parallel-dependency-trace",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "dependency_paths_traced"
+            },
+            {
+              "description": "The evaluation remains report-only.",
+              "evidence": [
+                {
+                  "kind": "probe_receipt",
+                  "ref": "report_only:agentic_lead_policy_snapshot_off",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "no_policy_mutation"
+            },
+            {
+              "description": "The gated workflow accepted with required receipts.",
+              "evidence": [
+                {
+                  "kind": "probe_receipt",
+                  "ref": "outcome_review:P1-P3-P13-P14",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "gate_passed_honestly"
+            }
+          ],
+          "workflow_status": "accepted"
+        },
+        "task_id": "affected-path-dependency-trace",
+        "workflow_status": "accepted"
+      },
+      {
+        "gate_statuses": {
+          "execution": "accepted",
+          "implementation_plan": "accepted",
+          "issues_review": "accepted",
+          "outcome_review": "accepted",
+          "prd_review": "accepted",
+          "tdd_review": "accepted"
+        },
+        "mode": "agentic_required",
+        "probe_statuses": {
+          "P1": "green",
+          "P13": "green",
+          "P14": "green",
+          "P2": "green",
+          "P3": "green"
+        },
+        "reviewer_panel_decisions": [
+          {
+            "decision": "accept",
+            "reviewer_id": "independent-reviewer-0"
+          },
+          {
+            "decision": "accept",
+            "reviewer_id": "independent-reviewer-1"
+          }
+        ],
+        "score": {
+          "failed_verdict_count": 0,
+          "mode": "agentic_required",
+          "passed_verdict_count": 3,
+          "schema_version": "agentic-lead-eval-score/v1",
+          "score": 5.0,
+          "score_max": 5,
+          "task_id": "affected-path-dependency-trace",
+          "verdicts": [
+            {
+              "description": "Runner and bridge-facing tests are traced through the report boundary.",
+              "evidence": [
+                {
+                  "kind": "artifact_path",
+                  "ref": "supervisor/agentic_eval.py",
+                  "status": "passed"
+                },
+                {
+                  "kind": "artifact_path",
+                  "ref": "tests/test_agentic_eval_bridge.py",
+                  "status": "passed"
+                },
+                {
+                  "kind": "probe_receipt",
+                  "ref": "P13:parallel-dependency-trace",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "dependency_paths_traced"
+            },
+            {
+              "description": "The evaluation remains report-only.",
+              "evidence": [
+                {
+                  "kind": "probe_receipt",
+                  "ref": "report_only:agentic_lead_policy_snapshot_off",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "no_policy_mutation"
+            },
+            {
+              "description": "The gated workflow accepted with required receipts.",
+              "evidence": [
+                {
+                  "kind": "probe_receipt",
+                  "ref": "outcome_review:P1-P3-P13-P14",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "gate_passed_honestly"
+            }
+          ],
+          "workflow_status": "accepted"
+        },
+        "task_id": "affected-path-dependency-trace",
+        "workflow_status": "accepted"
+      }
+    ],
+    "schema_version": "agentic-lead-eval-evidence/v1",
+    "sha256": "c2c1a9685c5953a2b9784923a592ae7cc8c2f707385aa49d17cf922a92cdc631"
+  },
+  "exports": {
+    "evidence_json": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-acceleration-20260603/agentic-eval-parallelism/report/evidence.json",
+    "replay_manifest": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-acceleration-20260603/agentic-eval-parallelism/report/replay-manifest.json",
+    "report_json": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-acceleration-20260603/agentic-eval-parallelism/report/report.json",
+    "rows_jsonl": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-acceleration-20260603/agentic-eval-parallelism/report/rows.jsonl"
+  },
+  "recommendation": {
+    "default_change_allowed": false,
+    "modes": {
+      "agentic_allowed": {
+        "failing_predicates": [],
+        "qualifies": true,
+        "qualifying_task_count": 2,
+        "task_count": 2
+      },
+      "agentic_required": {
+        "failing_predicates": [],
+        "qualifies": true,
+        "qualifying_task_count": 2,
+        "task_count": 2
+      },
+      "lead_direct": {
+        "failing_predicates": [],
+        "qualifies": false,
+        "qualifying_task_count": 2,
+        "task_count": 2
+      }
+    },
+    "policy_mutated": false,
+    "qualifying_modes": [
+      "agentic_allowed",
+      "agentic_required"
+    ],
+    "recommended_policy": "operator_review_required",
+    "report_only": true,
+    "schema_version": "agentic-lead-eval-recommendation/v1",
+    "thresholds": {
+      "acceleration_ratio_min": 1.2,
+      "requires_missed_issues_no_more_than_lead_direct": true,
+      "requires_rejected_gates_no_more_than_lead_direct": true,
+      "requires_score_at_least_lead_direct": true,
+      "requires_workflow_status": "accepted"
+    }
+  },
+  "report_only": {
+    "config_mutated": false,
+    "default_change_allowed": false,
+    "policy_mutated": false
+  },
+  "report_sha256": "bb6c7ba4d09556af61b0adabfaad07e772204d1a49484536c6eb8204d72e8955",
+  "rows": [
+    {
+      "acceleration_ratio": 1.0,
+      "acceleration_ratio_unavailable_reason": null,
+      "budget_usd_limit": 4.0,
+      "cost_usd": 2.9,
+      "gate_statuses": {
+        "execution": "accepted",
+        "implementation_plan": "accepted",
+        "issues_review": "accepted",
+        "outcome_review": "accepted",
+        "prd_review": "accepted",
+        "tdd_review": "accepted"
+      },
+      "graceful_degradation": 1.0,
+      "metrics_divergence": false,
+      "metrics_divergence_fields": [],
+      "missed_issues": 0,
+      "mode": "lead_direct",
+      "operator_interventions": 0,
+      "orchestration_overhead_s": 12,
+      "orchestration_overhead_s_unavailable_reason": null,
+      "probe_statuses": {
+        "P1": "green",
+        "P2": "green",
+        "P3": "green"
+      },
+      "qualification_failing_predicates": [],
+      "qualifies": true,
+      "rejected_gates": 0,
+      "required_verdicts": [
+        "affected_files_identified",
+        "evidence_backed_summary",
+        "gate_passed_honestly"
+      ],
+      "retries": 0,
+      "reviewer_panel_decisions": [
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-0"
+        },
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-1"
+        }
+      ],
+      "reviewer_time_s": 50,
+      "reviewer_time_s_unavailable_reason": null,
+      "score": 5.0,
+      "score_max": 5,
+      "task_id": "multi-file-code-archaeology",
+      "time_to_accepted_outcome": 300,
+      "time_to_accepted_outcome_unavailable_reason": null,
+      "time_to_first_useful_finding": 95,
+      "time_to_first_useful_finding_unavailable_reason": null,
+      "token_budget": 14000,
+      "wall_clock_s": 300,
+      "worker_idle_wait_s": 0,
+      "worker_idle_wait_s_unavailable_reason": null,
+      "workflow_status": "accepted"
+    },
+    {
+      "acceleration_ratio": 1.429,
+      "acceleration_ratio_unavailable_reason": null,
+      "budget_usd_limit": 4.0,
+      "cost_usd": 3.1,
+      "gate_statuses": {
+        "execution": "accepted",
+        "implementation_plan": "accepted",
+        "issues_review": "accepted",
+        "outcome_review": "accepted",
+        "prd_review": "accepted",
+        "tdd_review": "accepted"
+      },
+      "graceful_degradation": 1.0,
+      "metrics_divergence": false,
+      "metrics_divergence_fields": [],
+      "missed_issues": 0,
+      "mode": "agentic_allowed",
+      "operator_interventions": 0,
+      "orchestration_overhead_s": 20,
+      "orchestration_overhead_s_unavailable_reason": null,
+      "probe_statuses": {
+        "P1": "green",
+        "P13": "green",
+        "P14": "green",
+        "P2": "green",
+        "P3": "green"
+      },
+      "qualification_failing_predicates": [],
+      "qualifies": true,
+      "rejected_gates": 0,
+      "required_verdicts": [
+        "affected_files_identified",
+        "evidence_backed_summary",
+        "gate_passed_honestly"
+      ],
+      "retries": 0,
+      "reviewer_panel_decisions": [
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-0"
+        },
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-1"
+        }
+      ],
+      "reviewer_time_s": 45,
+      "reviewer_time_s_unavailable_reason": null,
+      "score": 5.0,
+      "score_max": 5,
+      "task_id": "multi-file-code-archaeology",
+      "time_to_accepted_outcome": 210,
+      "time_to_accepted_outcome_unavailable_reason": null,
+      "time_to_first_useful_finding": 55,
+      "time_to_first_useful_finding_unavailable_reason": null,
+      "token_budget": 14000,
+      "wall_clock_s": 210,
+      "worker_idle_wait_s": 8,
+      "worker_idle_wait_s_unavailable_reason": null,
+      "workflow_status": "accepted"
+    },
+    {
+      "acceleration_ratio": 1.538,
+      "acceleration_ratio_unavailable_reason": null,
+      "budget_usd_limit": 4.0,
+      "cost_usd": 3.4,
+      "gate_statuses": {
+        "execution": "accepted",
+        "implementation_plan": "accepted",
+        "issues_review": "accepted",
+        "outcome_review": "accepted",
+        "prd_review": "accepted",
+        "tdd_review": "accepted"
+      },
+      "graceful_degradation": 1.0,
+      "metrics_divergence": false,
+      "metrics_divergence_fields": [],
+      "missed_issues": 0,
+      "mode": "agentic_required",
+      "operator_interventions": 0,
+      "orchestration_overhead_s": 28,
+      "orchestration_overhead_s_unavailable_reason": null,
+      "probe_statuses": {
+        "P1": "green",
+        "P13": "green",
+        "P14": "green",
+        "P2": "green",
+        "P3": "green"
+      },
+      "qualification_failing_predicates": [],
+      "qualifies": true,
+      "rejected_gates": 0,
+      "required_verdicts": [
+        "affected_files_identified",
+        "evidence_backed_summary",
+        "gate_passed_honestly"
+      ],
+      "retries": 0,
+      "reviewer_panel_decisions": [
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-0"
+        },
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-1"
+        }
+      ],
+      "reviewer_time_s": 46,
+      "reviewer_time_s_unavailable_reason": null,
+      "score": 5.0,
+      "score_max": 5,
+      "task_id": "multi-file-code-archaeology",
+      "time_to_accepted_outcome": 195,
+      "time_to_accepted_outcome_unavailable_reason": null,
+      "time_to_first_useful_finding": 48,
+      "time_to_first_useful_finding_unavailable_reason": null,
+      "token_budget": 14000,
+      "wall_clock_s": 195,
+      "worker_idle_wait_s": 10,
+      "worker_idle_wait_s_unavailable_reason": null,
+      "workflow_status": "accepted"
+    },
+    {
+      "acceleration_ratio": 1.0,
+      "acceleration_ratio_unavailable_reason": null,
+      "budget_usd_limit": 3.8,
+      "cost_usd": 2.6,
+      "gate_statuses": {
+        "execution": "accepted",
+        "implementation_plan": "accepted",
+        "issues_review": "accepted",
+        "outcome_review": "accepted",
+        "prd_review": "accepted",
+        "tdd_review": "accepted"
+      },
+      "graceful_degradation": 1.0,
+      "metrics_divergence": false,
+      "metrics_divergence_fields": [],
+      "missed_issues": 0,
+      "mode": "lead_direct",
+      "operator_interventions": 0,
+      "orchestration_overhead_s": 11,
+      "orchestration_overhead_s_unavailable_reason": null,
+      "probe_statuses": {
+        "P1": "green",
+        "P2": "green",
+        "P3": "green"
+      },
+      "qualification_failing_predicates": [],
+      "qualifies": true,
+      "rejected_gates": 0,
+      "required_verdicts": [
+        "dependency_paths_traced",
+        "no_policy_mutation",
+        "gate_passed_honestly"
+      ],
+      "retries": 0,
+      "reviewer_panel_decisions": [
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-0"
+        },
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-1"
+        }
+      ],
+      "reviewer_time_s": 47,
+      "reviewer_time_s_unavailable_reason": null,
+      "score": 5.0,
+      "score_max": 5,
+      "task_id": "affected-path-dependency-trace",
+      "time_to_accepted_outcome": 260,
+      "time_to_accepted_outcome_unavailable_reason": null,
+      "time_to_first_useful_finding": 82,
+      "time_to_first_useful_finding_unavailable_reason": null,
+      "token_budget": 13000,
+      "wall_clock_s": 260,
+      "worker_idle_wait_s": 0,
+      "worker_idle_wait_s_unavailable_reason": null,
+      "workflow_status": "accepted"
+    },
+    {
+      "acceleration_ratio": 1.268,
+      "acceleration_ratio_unavailable_reason": null,
+      "budget_usd_limit": 3.8,
+      "cost_usd": 2.9,
+      "gate_statuses": {
+        "execution": "accepted",
+        "implementation_plan": "accepted",
+        "issues_review": "accepted",
+        "outcome_review": "accepted",
+        "prd_review": "accepted",
+        "tdd_review": "accepted"
+      },
+      "graceful_degradation": 1.0,
+      "metrics_divergence": false,
+      "metrics_divergence_fields": [],
+      "missed_issues": 0,
+      "mode": "agentic_allowed",
+      "operator_interventions": 0,
+      "orchestration_overhead_s": 19,
+      "orchestration_overhead_s_unavailable_reason": null,
+      "probe_statuses": {
+        "P1": "green",
+        "P13": "green",
+        "P14": "green",
+        "P2": "green",
+        "P3": "green"
+      },
+      "qualification_failing_predicates": [],
+      "qualifies": true,
+      "rejected_gates": 0,
+      "required_verdicts": [
+        "dependency_paths_traced",
+        "no_policy_mutation",
+        "gate_passed_honestly"
+      ],
+      "retries": 0,
+      "reviewer_panel_decisions": [
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-0"
+        },
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-1"
+        }
+      ],
+      "reviewer_time_s": 48,
+      "reviewer_time_s_unavailable_reason": null,
+      "score": 5.0,
+      "score_max": 5,
+      "task_id": "affected-path-dependency-trace",
+      "time_to_accepted_outcome": 205,
+      "time_to_accepted_outcome_unavailable_reason": null,
+      "time_to_first_useful_finding": 50,
+      "time_to_first_useful_finding_unavailable_reason": null,
+      "token_budget": 13000,
+      "wall_clock_s": 205,
+      "worker_idle_wait_s": 7,
+      "worker_idle_wait_s_unavailable_reason": null,
+      "workflow_status": "accepted"
+    },
+    {
+      "acceleration_ratio": 1.368,
+      "acceleration_ratio_unavailable_reason": null,
+      "budget_usd_limit": 3.8,
+      "cost_usd": 3.2,
+      "gate_statuses": {
+        "execution": "accepted",
+        "implementation_plan": "accepted",
+        "issues_review": "accepted",
+        "outcome_review": "accepted",
+        "prd_review": "accepted",
+        "tdd_review": "accepted"
+      },
+      "graceful_degradation": 1.0,
+      "metrics_divergence": false,
+      "metrics_divergence_fields": [],
+      "missed_issues": 0,
+      "mode": "agentic_required",
+      "operator_interventions": 0,
+      "orchestration_overhead_s": 24,
+      "orchestration_overhead_s_unavailable_reason": null,
+      "probe_statuses": {
+        "P1": "green",
+        "P13": "green",
+        "P14": "green",
+        "P2": "green",
+        "P3": "green"
+      },
+      "qualification_failing_predicates": [],
+      "qualifies": true,
+      "rejected_gates": 0,
+      "required_verdicts": [
+        "dependency_paths_traced",
+        "no_policy_mutation",
+        "gate_passed_honestly"
+      ],
+      "retries": 0,
+      "reviewer_panel_decisions": [
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-0"
+        },
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-1"
+        }
+      ],
+      "reviewer_time_s": 49,
+      "reviewer_time_s_unavailable_reason": null,
+      "score": 5.0,
+      "score_max": 5,
+      "task_id": "affected-path-dependency-trace",
+      "time_to_accepted_outcome": 190,
+      "time_to_accepted_outcome_unavailable_reason": null,
+      "time_to_first_useful_finding": 45,
+      "time_to_first_useful_finding_unavailable_reason": null,
+      "token_budget": 13000,
+      "wall_clock_s": 190,
+      "worker_idle_wait_s": 9,
+      "worker_idle_wait_s_unavailable_reason": null,
+      "workflow_status": "accepted"
+    }
+  ],
+  "runner": {
+    "execution_mode": "fixture_replay",
+    "live_calls_allowed": false,
+    "public_boundary": "agentic_eval_runner",
+    "schema_version": "agentic-lead-eval-runner/v1",
+    "workflow_runner_used": false
+  },
+  "schema_version": "agentic-lead-eval/v1",
+  "summary": {
+    "agentic_allowed": {
+      "acceleration_ratio_p50": 1.349,
+      "acceleration_ratio_p95": 1.421,
+      "avg_cost_usd": 3.0,
+      "avg_graceful_degradation": 1.0,
+      "avg_score": 5.0,
+      "avg_wall_clock_s": 207.5,
+      "cost_usd": 6.0,
+      "graceful_degradation": 2.0,
+      "latency": {
+        "orchestration_overhead_s": {
+          "avg": 19.5,
+          "p50": 19.5,
+          "p95": 19.95,
+          "unavailable_count": 0
+        },
+        "reviewer_time_s": {
+          "avg": 46.5,
+          "p50": 46.5,
+          "p95": 47.85,
+          "unavailable_count": 0
+        },
+        "time_to_accepted_outcome": {
+          "avg": 207.5,
+          "p50": 207.5,
+          "p95": 209.75,
+          "unavailable_count": 0
+        },
+        "time_to_first_useful_finding": {
+          "avg": 52.5,
+          "p50": 52.5,
+          "p95": 54.75,
+          "unavailable_count": 0
+        },
+        "worker_idle_wait_s": {
+          "avg": 7.5,
+          "p50": 7.5,
+          "p95": 7.95,
+          "unavailable_count": 0
+        }
+      },
+      "missed_issues": 0,
+      "non_qualifying_task_count": 0,
+      "non_qualifying_task_ids": [],
+      "operator_interventions": 0,
+      "qualification_failing_predicates": [],
+      "qualified_task_ids": [
+        "multi-file-code-archaeology",
+        "affected-path-dependency-trace"
+      ],
+      "qualifies": true,
+      "qualifying_task_count": 2,
+      "rejected_gates": 0,
+      "retries": 0,
+      "score": 10.0,
+      "task_count": 2,
+      "wall_clock_s": 415.0
+    },
+    "agentic_required": {
+      "acceleration_ratio_p50": 1.453,
+      "acceleration_ratio_p95": 1.53,
+      "avg_cost_usd": 3.3,
+      "avg_graceful_degradation": 1.0,
+      "avg_score": 5.0,
+      "avg_wall_clock_s": 192.5,
+      "cost_usd": 6.6,
+      "graceful_degradation": 2.0,
+      "latency": {
+        "orchestration_overhead_s": {
+          "avg": 26.0,
+          "p50": 26.0,
+          "p95": 27.8,
+          "unavailable_count": 0
+        },
+        "reviewer_time_s": {
+          "avg": 47.5,
+          "p50": 47.5,
+          "p95": 48.85,
+          "unavailable_count": 0
+        },
+        "time_to_accepted_outcome": {
+          "avg": 192.5,
+          "p50": 192.5,
+          "p95": 194.75,
+          "unavailable_count": 0
+        },
+        "time_to_first_useful_finding": {
+          "avg": 46.5,
+          "p50": 46.5,
+          "p95": 47.85,
+          "unavailable_count": 0
+        },
+        "worker_idle_wait_s": {
+          "avg": 9.5,
+          "p50": 9.5,
+          "p95": 9.95,
+          "unavailable_count": 0
+        }
+      },
+      "missed_issues": 0,
+      "non_qualifying_task_count": 0,
+      "non_qualifying_task_ids": [],
+      "operator_interventions": 0,
+      "qualification_failing_predicates": [],
+      "qualified_task_ids": [
+        "multi-file-code-archaeology",
+        "affected-path-dependency-trace"
+      ],
+      "qualifies": true,
+      "qualifying_task_count": 2,
+      "rejected_gates": 0,
+      "retries": 0,
+      "score": 10.0,
+      "task_count": 2,
+      "wall_clock_s": 385.0
+    },
+    "lead_direct": {
+      "acceleration_ratio_p50": 1.0,
+      "acceleration_ratio_p95": 1.0,
+      "avg_cost_usd": 2.75,
+      "avg_graceful_degradation": 1.0,
+      "avg_score": 5.0,
+      "avg_wall_clock_s": 280.0,
+      "cost_usd": 5.5,
+      "graceful_degradation": 2.0,
+      "latency": {
+        "orchestration_overhead_s": {
+          "avg": 11.5,
+          "p50": 11.5,
+          "p95": 11.95,
+          "unavailable_count": 0
+        },
+        "reviewer_time_s": {
+          "avg": 48.5,
+          "p50": 48.5,
+          "p95": 49.85,
+          "unavailable_count": 0
+        },
+        "time_to_accepted_outcome": {
+          "avg": 280.0,
+          "p50": 280.0,
+          "p95": 298.0,
+          "unavailable_count": 0
+        },
+        "time_to_first_useful_finding": {
+          "avg": 88.5,
+          "p50": 88.5,
+          "p95": 94.35,
+          "unavailable_count": 0
+        },
+        "worker_idle_wait_s": {
+          "avg": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "unavailable_count": 0
+        }
+      },
+      "missed_issues": 0,
+      "non_qualifying_task_count": 0,
+      "non_qualifying_task_ids": [],
+      "operator_interventions": 0,
+      "qualification_failing_predicates": [],
+      "qualified_task_ids": [
+        "multi-file-code-archaeology",
+        "affected-path-dependency-trace"
+      ],
+      "qualifies": true,
+      "qualifying_task_count": 2,
+      "rejected_gates": 0,
+      "retries": 0,
+      "score": 10.0,
+      "task_count": 2,
+      "wall_clock_s": 560.0
+    }
+  }
+}

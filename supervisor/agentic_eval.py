@@ -19,6 +19,14 @@ _NUMERIC_FIELDS = (
     "graceful_degradation",
     "score",
 )
+LATENCY_FIELDS = (
+    "time_to_first_useful_finding",
+    "time_to_accepted_outcome",
+    "orchestration_overhead_s",
+    "reviewer_time_s",
+    "worker_idle_wait_s",
+)
+ACCELERATION_WIN_THRESHOLD = 1.2
 
 REQUIRED_MODES = ("lead_direct", "agentic_allowed", "agentic_required")
 DATASET_SCHEMA_VERSION = "agentic-lead-eval-dataset/v1"
@@ -47,6 +55,7 @@ def build_agentic_eval_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
     the raw rows before moving agentic modes beyond opt-in.
     """
     normalized_rows = [_normalise_row(row) for row in rows]
+    _attach_acceleration_and_qualification(normalized_rows)
     summary: dict[str, dict[str, Any]] = {}
     for row in normalized_rows:
         mode = str(row.get("mode") or "unknown")
@@ -60,10 +69,36 @@ def build_agentic_eval_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "operator_interventions": 0,
             "graceful_degradation": 0.0,
             "score": 0.0,
+            "qualifying_task_count": 0,
+            "non_qualifying_task_count": 0,
+            "qualified_task_ids": [],
+            "non_qualifying_task_ids": [],
+            "qualification_failing_predicates": [],
+            "_acceleration_ratios": [],
+            "_latency_values": {field: [] for field in LATENCY_FIELDS},
+            "_latency_unavailable": {field: 0 for field in LATENCY_FIELDS},
         })
         bucket["task_count"] += 1
         for field in _NUMERIC_FIELDS:
             bucket[field] += row[field]
+        if row.get("qualifies"):
+            bucket["qualifying_task_count"] += 1
+            bucket["qualified_task_ids"].append(row["task_id"])
+        else:
+            bucket["non_qualifying_task_count"] += 1
+            bucket["non_qualifying_task_ids"].append(row["task_id"])
+            for predicate in row.get("qualification_failing_predicates") or []:
+                if predicate not in bucket["qualification_failing_predicates"]:
+                    bucket["qualification_failing_predicates"].append(predicate)
+        ratio = row.get("acceleration_ratio")
+        if isinstance(ratio, (int, float)):
+            bucket["_acceleration_ratios"].append(float(ratio))
+        for field in LATENCY_FIELDS:
+            value = row.get(field)
+            if isinstance(value, (int, float)):
+                bucket["_latency_values"][field].append(float(value))
+            else:
+                bucket["_latency_unavailable"][field] += 1
 
     for bucket in summary.values():
         task_count = max(1, int(bucket["task_count"]))
@@ -71,11 +106,31 @@ def build_agentic_eval_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
         bucket["avg_cost_usd"] = bucket["cost_usd"] / task_count
         bucket["avg_score"] = bucket["score"] / task_count
         bucket["avg_graceful_degradation"] = bucket["graceful_degradation"] / task_count
+        ratios = bucket.pop("_acceleration_ratios")
+        bucket["acceleration_ratio_p50"] = _percentile(ratios, 50)
+        bucket["acceleration_ratio_p95"] = _percentile(ratios, 95)
+        latency_values = bucket.pop("_latency_values")
+        latency_unavailable = bucket.pop("_latency_unavailable")
+        bucket["latency"] = {
+            field: {
+                "avg": _mean_or_none(values),
+                "p50": _percentile(values, 50),
+                "p95": _percentile(values, 95),
+                "unavailable_count": latency_unavailable[field],
+            }
+            for field, values in latency_values.items()
+        }
+        bucket["qualifies"] = (
+            bucket["task_count"] > 0
+            and bucket["qualifying_task_count"] == bucket["task_count"]
+            and not bucket["qualification_failing_predicates"]
+        )
 
     return {
         "schema_version": "agentic-lead-eval/v1",
         "rows": normalized_rows,
         "summary": summary,
+        "recommendation": _build_report_only_recommendation(summary),
         "default_change_allowed": False,
         "default_change_gate": {
             "required_modes": list(REQUIRED_MODES),
@@ -157,6 +212,7 @@ def agentic_eval_runner(
                 "reviewer_panel_decisions": reviewer_panel_decisions,
                 "required_verdicts": [item["verdict_id"] for item in score["verdicts"]],
             }
+            row.update(_latency_fields_from_metrics(metrics))
             row.update(quality_divergence["reported"])
             rows.append(row)
             evidence_records.append({
@@ -285,11 +341,123 @@ def _normalise_row(row: dict[str, Any]) -> dict[str, Any]:
     result = dict(row)
     result["task_id"] = str(row.get("task_id") or "")
     result["mode"] = str(row.get("mode") or "unknown")
+    result["workflow_status"] = str(row.get("workflow_status") or "unknown").strip().lower()
     for field in _NUMERIC_FIELDS:
         result[field] = _number(row.get(field))
     result["token_budget"] = _number(row.get("token_budget"))
     result["budget_usd_limit"] = _number(row.get("budget_usd_limit"))
+    for field in LATENCY_FIELDS:
+        value = _optional_number(row.get(field))
+        result[field] = value
+        result[f"{field}_unavailable_reason"] = (
+            None
+            if value is not None
+            else str(row.get(f"{field}_unavailable_reason") or "not_recorded")
+        )
     return result
+
+
+def _attach_acceleration_and_qualification(rows: list[dict[str, Any]]) -> None:
+    rows_by_task: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        rows_by_task.setdefault(row["task_id"], []).append(row)
+
+    for task_rows in rows_by_task.values():
+        lead = next((row for row in task_rows if row["mode"] == "lead_direct"), None)
+        for row in task_rows:
+            ratio, reason = _acceleration_ratio(lead=lead, row=row)
+            row["acceleration_ratio"] = ratio
+            row["acceleration_ratio_unavailable_reason"] = reason
+            qualifies, failing = _qualification_result(lead=lead, row=row)
+            row["qualifies"] = qualifies
+            row["qualification_failing_predicates"] = failing
+
+
+def _acceleration_ratio(*, lead: dict[str, Any] | None, row: dict[str, Any]) -> tuple[float | None, str | None]:
+    if lead is None:
+        return None, "lead_direct_missing"
+    lead_wall = _optional_number(lead.get("wall_clock_s"))
+    row_wall = _optional_number(row.get("wall_clock_s"))
+    if lead_wall is None or lead_wall <= 0:
+        return None, "lead_direct_wall_clock_unavailable"
+    if row_wall is None or row_wall <= 0:
+        return None, "mode_wall_clock_unavailable"
+    return round(float(lead_wall) / float(row_wall), 3), None
+
+
+def _qualification_result(*, lead: dict[str, Any] | None, row: dict[str, Any]) -> tuple[bool, list[str]]:
+    failing: list[str] = []
+    if _status(row.get("workflow_status")) != "accepted":
+        failing.append("workflow_status_not_accepted")
+    if lead is None:
+        failing.append("lead_direct_missing")
+        return False, failing
+    if row["mode"] == "lead_direct":
+        return not failing, failing
+
+    if row.get("score", 0) < lead.get("score", 0):
+        failing.append("score_below_lead_direct")
+    if row.get("missed_issues", 0) > lead.get("missed_issues", 0):
+        failing.append("missed_issues_above_lead_direct")
+    if row.get("rejected_gates", 0) > lead.get("rejected_gates", 0):
+        failing.append("rejected_gates_above_lead_direct")
+    ratio = row.get("acceleration_ratio")
+    if ratio is None:
+        failing.append("acceleration_ratio_unavailable")
+    elif float(ratio) < ACCELERATION_WIN_THRESHOLD:
+        failing.append("acceleration_ratio_below_1_2")
+    return not failing, failing
+
+
+def _status(value: Any) -> str:
+    status = str(value or "unknown").strip().lower()
+    if status == "accept":
+        return "accepted"
+    return status
+
+
+def _latency_fields_from_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
+    values: dict[str, Any] = {}
+    for field in LATENCY_FIELDS:
+        value = _optional_number(metrics.get(field))
+        values[field] = value
+        if value is None:
+            values[f"{field}_unavailable_reason"] = "not_recorded" if field not in metrics else "invalid_metric"
+        else:
+            values[f"{field}_unavailable_reason"] = None
+    return values
+
+
+def _build_report_only_recommendation(summary: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    modes: dict[str, dict[str, Any]] = {}
+    qualifying_modes: list[str] = []
+    for mode in REQUIRED_MODES:
+        bucket = summary.get(mode, {})
+        qualifies = bool(bucket.get("qualifies")) if mode != "lead_direct" else False
+        if qualifies:
+            qualifying_modes.append(mode)
+        modes[mode] = {
+            "qualifies": qualifies,
+            "failing_predicates": list(bucket.get("qualification_failing_predicates") or []),
+            "qualifying_task_count": int(bucket.get("qualifying_task_count") or 0),
+            "task_count": int(bucket.get("task_count") or 0),
+        }
+    return {
+        "schema_version": "agentic-lead-eval-recommendation/v1",
+        "report_only": True,
+        "policy_mutated": False,
+        "default_change_allowed": False,
+        "thresholds": {
+            "acceleration_ratio_min": ACCELERATION_WIN_THRESHOLD,
+            "requires_workflow_status": "accepted",
+            "requires_score_at_least_lead_direct": True,
+            "requires_missed_issues_no_more_than_lead_direct": True,
+            "requires_rejected_gates_no_more_than_lead_direct": True,
+        },
+        "modes": modes,
+        "recommended_policy": "keep_off" if not qualifying_modes else "operator_review_required",
+        "qualifying_modes": qualifying_modes,
+    }
 
 
 def _quality_metric_divergence(
@@ -324,6 +492,40 @@ def _number(value: Any, *, default: int | float = 0) -> int | float:
     except (TypeError, ValueError):
         return default
     return int(parsed) if parsed.is_integer() else parsed
+
+
+def _optional_number(value: Any) -> int | float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return value
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return int(parsed) if parsed.is_integer() else parsed
+
+
+def _mean_or_none(values: list[float]) -> float | None:
+    if not values:
+        return None
+    return round(sum(values) / len(values), 3)
+
+
+def _percentile(values: list[float], percentile: int | float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(float(value) for value in values)
+    if len(ordered) == 1:
+        return round(ordered[0], 3)
+    rank = (float(percentile) / 100.0) * (len(ordered) - 1)
+    lower = int(rank)
+    upper = min(lower + 1, len(ordered) - 1)
+    fraction = rank - lower
+    value = ordered[lower] + (ordered[upper] - ordered[lower]) * fraction
+    return round(value, 3)
 
 
 def _normalise_task(task: Any, *, index: int) -> dict[str, Any]:

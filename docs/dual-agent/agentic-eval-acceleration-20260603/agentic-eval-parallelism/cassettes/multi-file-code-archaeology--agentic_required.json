@@ -1,0 +1,72 @@
+{
+  "final_gate_result": {
+    "gate": "outcome_review",
+    "independent_reviewer_results": [
+      {
+        "assurance_grade": "text_only",
+        "confidence": 0.88,
+        "decision": "accept",
+        "provider_family": "google",
+        "reviewer_id": "independent-reviewer-0"
+      },
+      {
+        "assurance_grade": "agentic",
+        "confidence": 0.91,
+        "decision": "accept",
+        "provider_family": "openai",
+        "reviewer_id": "independent-reviewer-1"
+      }
+    ],
+    "probes": {
+      "P1": {
+        "status": "green"
+      },
+      "P13": {
+        "status": "green"
+      },
+      "P14": {
+        "status": "green"
+      },
+      "P2": {
+        "status": "green"
+      },
+      "P3": {
+        "status": "green"
+      }
+    },
+    "status": "accepted"
+  },
+  "status": "accepted",
+  "steps": [
+    {
+      "attempt_count": 1,
+      "gate": "prd_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "issues_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "tdd_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "implementation_plan",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "execution",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "outcome_review",
+      "status": "accepted"
+    }
+  ]
+}

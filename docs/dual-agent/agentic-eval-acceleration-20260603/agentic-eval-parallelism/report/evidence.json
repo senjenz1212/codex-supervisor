@@ -1,0 +1,538 @@
+{
+  "records": [
+    {
+      "gate_statuses": {
+        "execution": "accepted",
+        "implementation_plan": "accepted",
+        "issues_review": "accepted",
+        "outcome_review": "accepted",
+        "prd_review": "accepted",
+        "tdd_review": "accepted"
+      },
+      "mode": "lead_direct",
+      "probe_statuses": {
+        "P1": "green",
+        "P2": "green",
+        "P3": "green"
+      },
+      "reviewer_panel_decisions": [
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-0"
+        },
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-1"
+        }
+      ],
+      "score": {
+        "failed_verdict_count": 0,
+        "mode": "lead_direct",
+        "passed_verdict_count": 3,
+        "schema_version": "agentic-lead-eval-score/v1",
+        "score": 5.0,
+        "score_max": 5,
+        "task_id": "multi-file-code-archaeology",
+        "verdicts": [
+          {
+            "description": "Core runner and tests are both identified as affected paths.",
+            "evidence": [
+              {
+                "kind": "artifact_path",
+                "ref": "supervisor/agentic_eval.py",
+                "status": "passed"
+              },
+              {
+                "kind": "artifact_path",
+                "ref": "tests/test_agentic_eval.py",
+                "status": "passed"
+              }
+            ],
+            "reason": "evidence_present",
+            "status": "passed",
+            "verdict_id": "affected_files_identified"
+          },
+          {
+            "description": "The analysis cites concrete artifacts rather than prose-only claims.",
+            "evidence": [
+              {
+                "kind": "diff_hunk",
+                "ref": "supervisor/agentic_eval.py:+build_agentic_eval_report",
+                "status": "passed"
+              }
+            ],
+            "reason": "evidence_present",
+            "status": "passed",
+            "verdict_id": "evidence_backed_summary"
+          },
+          {
+            "description": "The gated workflow accepted with required receipts.",
+            "evidence": [
+              {
+                "kind": "probe_receipt",
+                "ref": "outcome_review:P1-P3",
+                "status": "passed"
+              }
+            ],
+            "reason": "evidence_present",
+            "status": "passed",
+            "verdict_id": "gate_passed_honestly"
+          }
+        ],
+        "workflow_status": "accepted"
+      },
+      "task_id": "multi-file-code-archaeology",
+      "workflow_status": "accepted"
+    },
+    {
+      "gate_statuses": {
+        "execution": "accepted",
+        "implementation_plan": "accepted",
+        "issues_review": "accepted",
+        "outcome_review": "accepted",
+        "prd_review": "accepted",
+        "tdd_review": "accepted"
+      },
+      "mode": "agentic_allowed",
+      "probe_statuses": {
+        "P1": "green",
+        "P13": "green",
+        "P14": "green",
+        "P2": "green",
+        "P3": "green"
+      },
+      "reviewer_panel_decisions": [
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-0"
+        },
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-1"
+        }
+      ],
+      "score": {
+        "failed_verdict_count": 0,
+        "mode": "agentic_allowed",
+        "passed_verdict_count": 3,
+        "schema_version": "agentic-lead-eval-score/v1",
+        "score": 5.0,
+        "score_max": 5,
+        "task_id": "multi-file-code-archaeology",
+        "verdicts": [
+          {
+            "description": "Core runner and tests are both identified as affected paths.",
+            "evidence": [
+              {
+                "kind": "artifact_path",
+                "ref": "supervisor/agentic_eval.py",
+                "status": "passed"
+              },
+              {
+                "kind": "artifact_path",
+                "ref": "tests/test_agentic_eval.py",
+                "status": "passed"
+              },
+              {
+                "kind": "probe_receipt",
+                "ref": "P13:parallel-file-scan",
+                "status": "passed"
+              }
+            ],
+            "reason": "evidence_present",
+            "status": "passed",
+            "verdict_id": "affected_files_identified"
+          },
+          {
+            "description": "The analysis cites concrete artifacts rather than prose-only claims.",
+            "evidence": [
+              {
+                "kind": "diff_hunk",
+                "ref": "tests/test_agentic_eval.py:+test_agentic_eval_runner_reports_acceleration_percentiles",
+                "status": "passed"
+              }
+            ],
+            "reason": "evidence_present",
+            "status": "passed",
+            "verdict_id": "evidence_backed_summary"
+          },
+          {
+            "description": "The gated workflow accepted with required receipts.",
+            "evidence": [
+              {
+                "kind": "probe_receipt",
+                "ref": "outcome_review:P1-P3-P13-P14",
+                "status": "passed"
+              }
+            ],
+            "reason": "evidence_present",
+            "status": "passed",
+            "verdict_id": "gate_passed_honestly"
+          }
+        ],
+        "workflow_status": "accepted"
+      },
+      "task_id": "multi-file-code-archaeology",
+      "workflow_status": "accepted"
+    },
+    {
+      "gate_statuses": {
+        "execution": "accepted",
+        "implementation_plan": "accepted",
+        "issues_review": "accepted",
+        "outcome_review": "accepted",
+        "prd_review": "accepted",
+        "tdd_review": "accepted"
+      },
+      "mode": "agentic_required",
+      "probe_statuses": {
+        "P1": "green",
+        "P13": "green",
+        "P14": "green",
+        "P2": "green",
+        "P3": "green"
+      },
+      "reviewer_panel_decisions": [
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-0"
+        },
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-1"
+        }
+      ],
+      "score": {
+        "failed_verdict_count": 0,
+        "mode": "agentic_required",
+        "passed_verdict_count": 3,
+        "schema_version": "agentic-lead-eval-score/v1",
+        "score": 5.0,
+        "score_max": 5,
+        "task_id": "multi-file-code-archaeology",
+        "verdicts": [
+          {
+            "description": "Core runner and tests are both identified as affected paths.",
+            "evidence": [
+              {
+                "kind": "artifact_path",
+                "ref": "supervisor/agentic_eval.py",
+                "status": "passed"
+              },
+              {
+                "kind": "artifact_path",
+                "ref": "tests/test_agentic_eval.py",
+                "status": "passed"
+              },
+              {
+                "kind": "probe_receipt",
+                "ref": "P13:parallel-file-scan",
+                "status": "passed"
+              }
+            ],
+            "reason": "evidence_present",
+            "status": "passed",
+            "verdict_id": "affected_files_identified"
+          },
+          {
+            "description": "The analysis cites concrete artifacts rather than prose-only claims.",
+            "evidence": [
+              {
+                "kind": "diff_hunk",
+                "ref": "tests/test_agentic_eval.py:+test_agentic_eval_quality_gated_win_condition_truth_table",
+                "status": "passed"
+              }
+            ],
+            "reason": "evidence_present",
+            "status": "passed",
+            "verdict_id": "evidence_backed_summary"
+          },
+          {
+            "description": "The gated workflow accepted with required receipts.",
+            "evidence": [
+              {
+                "kind": "probe_receipt",
+                "ref": "outcome_review:P1-P3-P13-P14",
+                "status": "passed"
+              }
+            ],
+            "reason": "evidence_present",
+            "status": "passed",
+            "verdict_id": "gate_passed_honestly"
+          }
+        ],
+        "workflow_status": "accepted"
+      },
+      "task_id": "multi-file-code-archaeology",
+      "workflow_status": "accepted"
+    },
+    {
+      "gate_statuses": {
+        "execution": "accepted",
+        "implementation_plan": "accepted",
+        "issues_review": "accepted",
+        "outcome_review": "accepted",
+        "prd_review": "accepted",
+        "tdd_review": "accepted"
+      },
+      "mode": "lead_direct",
+      "probe_statuses": {
+        "P1": "green",
+        "P2": "green",
+        "P3": "green"
+      },
+      "reviewer_panel_decisions": [
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-0"
+        },
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-1"
+        }
+      ],
+      "score": {
+        "failed_verdict_count": 0,
+        "mode": "lead_direct",
+        "passed_verdict_count": 3,
+        "schema_version": "agentic-lead-eval-score/v1",
+        "score": 5.0,
+        "score_max": 5,
+        "task_id": "affected-path-dependency-trace",
+        "verdicts": [
+          {
+            "description": "Runner and bridge-facing tests are traced through the report boundary.",
+            "evidence": [
+              {
+                "kind": "artifact_path",
+                "ref": "supervisor/agentic_eval.py",
+                "status": "passed"
+              },
+              {
+                "kind": "artifact_path",
+                "ref": "tests/test_agentic_eval_bridge.py",
+                "status": "passed"
+              }
+            ],
+            "reason": "evidence_present",
+            "status": "passed",
+            "verdict_id": "dependency_paths_traced"
+          },
+          {
+            "description": "The evaluation remains report-only.",
+            "evidence": [
+              {
+                "kind": "probe_receipt",
+                "ref": "report_only:agentic_lead_policy_snapshot_off",
+                "status": "passed"
+              }
+            ],
+            "reason": "evidence_present",
+            "status": "passed",
+            "verdict_id": "no_policy_mutation"
+          },
+          {
+            "description": "The gated workflow accepted with required receipts.",
+            "evidence": [
+              {
+                "kind": "probe_receipt",
+                "ref": "outcome_review:P1-P3",
+                "status": "passed"
+              }
+            ],
+            "reason": "evidence_present",
+            "status": "passed",
+            "verdict_id": "gate_passed_honestly"
+          }
+        ],
+        "workflow_status": "accepted"
+      },
+      "task_id": "affected-path-dependency-trace",
+      "workflow_status": "accepted"
+    },
+    {
+      "gate_statuses": {
+        "execution": "accepted",
+        "implementation_plan": "accepted",
+        "issues_review": "accepted",
+        "outcome_review": "accepted",
+        "prd_review": "accepted",
+        "tdd_review": "accepted"
+      },
+      "mode": "agentic_allowed",
+      "probe_statuses": {
+        "P1": "green",
+        "P13": "green",
+        "P14": "green",
+        "P2": "green",
+        "P3": "green"
+      },
+      "reviewer_panel_decisions": [
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-0"
+        },
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-1"
+        }
+      ],
+      "score": {
+        "failed_verdict_count": 0,
+        "mode": "agentic_allowed",
+        "passed_verdict_count": 3,
+        "schema_version": "agentic-lead-eval-score/v1",
+        "score": 5.0,
+        "score_max": 5,
+        "task_id": "affected-path-dependency-trace",
+        "verdicts": [
+          {
+            "description": "Runner and bridge-facing tests are traced through the report boundary.",
+            "evidence": [
+              {
+                "kind": "artifact_path",
+                "ref": "supervisor/agentic_eval.py",
+                "status": "passed"
+              },
+              {
+                "kind": "artifact_path",
+                "ref": "tests/test_agentic_eval_bridge.py",
+                "status": "passed"
+              },
+              {
+                "kind": "probe_receipt",
+                "ref": "P13:parallel-dependency-trace",
+                "status": "passed"
+              }
+            ],
+            "reason": "evidence_present",
+            "status": "passed",
+            "verdict_id": "dependency_paths_traced"
+          },
+          {
+            "description": "The evaluation remains report-only.",
+            "evidence": [
+              {
+                "kind": "probe_receipt",
+                "ref": "report_only:agentic_lead_policy_snapshot_off",
+                "status": "passed"
+              }
+            ],
+            "reason": "evidence_present",
+            "status": "passed",
+            "verdict_id": "no_policy_mutation"
+          },
+          {
+            "description": "The gated workflow accepted with required receipts.",
+            "evidence": [
+              {
+                "kind": "probe_receipt",
+                "ref": "outcome_review:P1-P3-P13-P14",
+                "status": "passed"
+              }
+            ],
+            "reason": "evidence_present",
+            "status": "passed",
+            "verdict_id": "gate_passed_honestly"
+          }
+        ],
+        "workflow_status": "accepted"
+      },
+      "task_id": "affected-path-dependency-trace",
+      "workflow_status": "accepted"
+    },
+    {
+      "gate_statuses": {
+        "execution": "accepted",
+        "implementation_plan": "accepted",
+        "issues_review": "accepted",
+        "outcome_review": "accepted",
+        "prd_review": "accepted",
+        "tdd_review": "accepted"
+      },
+      "mode": "agentic_required",
+      "probe_statuses": {
+        "P1": "green",
+        "P13": "green",
+        "P14": "green",
+        "P2": "green",
+        "P3": "green"
+      },
+      "reviewer_panel_decisions": [
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-0"
+        },
+        {
+          "decision": "accept",
+          "reviewer_id": "independent-reviewer-1"
+        }
+      ],
+      "score": {
+        "failed_verdict_count": 0,
+        "mode": "agentic_required",
+        "passed_verdict_count": 3,
+        "schema_version": "agentic-lead-eval-score/v1",
+        "score": 5.0,
+        "score_max": 5,
+        "task_id": "affected-path-dependency-trace",
+        "verdicts": [
+          {
+            "description": "Runner and bridge-facing tests are traced through the report boundary.",
+            "evidence": [
+              {
+                "kind": "artifact_path",
+                "ref": "supervisor/agentic_eval.py",
+                "status": "passed"
+              },
+              {
+                "kind": "artifact_path",
+                "ref": "tests/test_agentic_eval_bridge.py",
+                "status": "passed"
+              },
+              {
+                "kind": "probe_receipt",
+                "ref": "P13:parallel-dependency-trace",
+                "status": "passed"
+              }
+            ],
+            "reason": "evidence_present",
+            "status": "passed",
+            "verdict_id": "dependency_paths_traced"
+          },
+          {
+            "description": "The evaluation remains report-only.",
+            "evidence": [
+              {
+                "kind": "probe_receipt",
+                "ref": "report_only:agentic_lead_policy_snapshot_off",
+                "status": "passed"
+              }
+            ],
+            "reason": "evidence_present",
+            "status": "passed",
+            "verdict_id": "no_policy_mutation"
+          },
+          {
+            "description": "The gated workflow accepted with required receipts.",
+            "evidence": [
+              {
+                "kind": "probe_receipt",
+                "ref": "outcome_review:P1-P3-P13-P14",
+                "status": "passed"
+              }
+            ],
+            "reason": "evidence_present",
+            "status": "passed",
+            "verdict_id": "gate_passed_honestly"
+          }
+        ],
+        "workflow_status": "accepted"
+      },
+      "task_id": "affected-path-dependency-trace",
+      "workflow_status": "accepted"
+    }
+  ],
+  "schema_version": "agentic-lead-eval-evidence/v1",
+  "sha256": "c2c1a9685c5953a2b9784923a592ae7cc8c2f707385aa49d17cf922a92cdc631"
+}

@@ -1,0 +1,187 @@
+{
+  "agentic_lead_policy": "off",
+  "cursor_review": true,
+  "cursor_review_profile": "rigorous",
+  "cwd": "/Users/sam.zhang/Documents/codex-supervisor",
+  "execution_layer_mode": "lead_direct",
+  "intent": "Make agentic eval speed the headline metric with evidence-derived quality guardrails and report-only fan-out recommendations.",
+  "planning_artifacts": [
+    {
+      "kind": "prd",
+      "mutable_by_worker": false,
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-acceleration-20260603/source/prd.md"
+    },
+    {
+      "kind": "grill_findings",
+      "mutable_by_worker": false,
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-acceleration-20260603/source/grill-findings.md"
+    },
+    {
+      "kind": "issues",
+      "mutable_by_worker": false,
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-acceleration-20260603/source/issues.md"
+    },
+    {
+      "kind": "tdd_plan",
+      "mutable_by_worker": false,
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-acceleration-20260603/source/tdd.md"
+    },
+    {
+      "kind": "grill-findings-tdd",
+      "mutable_by_worker": false,
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-acceleration-20260603/source/grill-findings-tdd.md"
+    },
+    {
+      "kind": "outcome",
+      "mutable_by_worker": false,
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-acceleration-20260603/test-evidence.md"
+    }
+  ],
+  "quality": "best",
+  "require_skill_receipts": true,
+  "run_id": "a56453a3-b68d-4cf7-ae74-90a7ac234aea-cli",
+  "task_id": "agentic-eval-acceleration-20260603",
+  "timeout_s": 900,
+  "tool_receipts": [
+    {
+      "artifacts": [
+        "docs/dual-agent/agentic-eval-acceleration-20260603/source/prd.md"
+      ],
+      "claims": [
+        "PRD promise contracts produced",
+        "speed-headline metric specified",
+        "report-only boundary preserved"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-to-prd-agentic-eval-acceleration-20260603",
+      "skill": "to-prd",
+      "stage": "to_prd",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/agentic-eval-acceleration-20260603/source/grill-findings.md"
+      ],
+      "claims": [
+        "PRD grill findings resolved",
+        "blocked faster run cannot qualify",
+        "quality-derived guardrails pinned"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-prd-grill-agentic-eval-acceleration-20260603",
+      "skill": "grill-with-docs",
+      "stage": "prd_grill",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/agentic-eval-acceleration-20260603/source/issues.md"
+      ],
+      "claims": [
+        "Issue slices cover P1-P5",
+        "runner public boundary retained"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-to-issues-agentic-eval-acceleration-20260603",
+      "skill": "to-issues",
+      "stage": "to_issues",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/agentic-eval-acceleration-20260603/source/tdd.md"
+      ],
+      "claims": [
+        "TDD starts at agentic_eval_runner public boundary",
+        "acceleration, qualification, latency, and replay-hash tests planned"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-tdd-agentic-eval-acceleration-20260603",
+      "skill": "tdd",
+      "stage": "tdd",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/agentic-eval-acceleration-20260603/source/grill-findings-tdd.md"
+      ],
+      "claims": [
+        "TDD grill findings resolved",
+        "translation audit completed"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-tdd-grill-agentic-eval-acceleration-20260603",
+      "skill": "grill-with-docs",
+      "stage": "tdd_grill",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/agentic-eval-acceleration-20260603/test-evidence.md"
+      ],
+      "claims": [
+        "acceleration ratios and quality-gated predicates tested"
+      ],
+      "command": "uv run pytest tests/test_agentic_eval.py -q",
+      "kind": "test_run",
+      "receipt_id": "pytest-agentic-eval-acceleration-focused-20260603",
+      "result": "17 passed in 0.59s",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/agentic-eval-acceleration-20260603/test-evidence.md"
+      ],
+      "claims": [
+        "agentic eval bridge and corpus tests remain green"
+      ],
+      "command": "uv run pytest tests/test_agentic_eval.py tests/test_agentic_eval_bridge.py tests/test_agentic_eval_corpus.py -q",
+      "kind": "test_run",
+      "receipt_id": "pytest-agentic-eval-acceleration-adjacent-20260603",
+      "result": "33 passed in 1.30s",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/agentic-eval-acceleration-20260603/test-evidence.md"
+      ],
+      "claims": [
+        "full suite green"
+      ],
+      "command": "uv run --extra dev pytest -q",
+      "kind": "test_run",
+      "receipt_id": "pytest-agentic-eval-acceleration-full-20260603",
+      "result": "678 passed in 108.24s (0:01:48)",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/agentic-eval-acceleration-20260603/test-evidence.md"
+      ],
+      "claims": [
+        "changed Python compiles",
+        "diff whitespace check clean"
+      ],
+      "command": "uv run python -m py_compile supervisor/agentic_eval.py supervisor/agentic_eval_assembler.py && git diff --check",
+      "kind": "test_run",
+      "receipt_id": "pycompile-diffcheck-agentic-eval-acceleration-20260603",
+      "result": "passed",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/agentic-eval-acceleration-20260603/agentic-eval-parallelism/agentic_eval_three_arm_dataset.yaml",
+        "docs/dual-agent/agentic-eval-acceleration-20260603/agentic-eval-parallelism/report/report.json",
+        "docs/dual-agent/agentic-eval-acceleration-20260603/agentic-eval-parallelism/comparison-summary.json"
+      ],
+      "claims": [
+        "two parallelism-friendly accepted cases replayed",
+        "agentic_allowed and agentic_required qualify at equal budget",
+        "policy remains off and report-only"
+      ],
+      "kind": "eval_report",
+      "receipt_id": "agentic-eval-parallelism-report-20260603",
+      "status": "passed"
+    }
+  ]
+}

@@ -15,7 +15,7 @@ from typing import Any, Callable
 
 import yaml
 
-from .agentic_eval import DATASET_SCHEMA_VERSION, REQUIRED_MODES
+from .agentic_eval import DATASET_SCHEMA_VERSION, LATENCY_FIELDS, REQUIRED_MODES
 
 
 MODE_TO_POLICY = {
@@ -437,7 +437,7 @@ def _workflow_matches_expected(*, case: dict[str, Any], workflow_result: dict[st
 
 def _metrics_from_workflow_result(workflow_result: dict[str, Any], *, elapsed_s: float) -> dict[str, Any]:
     source_metrics = workflow_result.get("metrics") if isinstance(workflow_result.get("metrics"), dict) else {}
-    return {
+    metrics = {
         "wall_clock_s": _number(source_metrics.get("wall_clock_s"), default=round(elapsed_s, 3)),
         "cost_usd": _number(source_metrics.get("cost_usd"), default=_sum_key(workflow_result, "cost_usd")),
         "retries": _number(source_metrics.get("retries"), default=_retry_count(workflow_result)),
@@ -445,6 +445,10 @@ def _metrics_from_workflow_result(workflow_result: dict[str, Any], *, elapsed_s:
         "missed_issues": _number(source_metrics.get("missed_issues"), default=0),
         "operator_interventions": _number(source_metrics.get("operator_interventions"), default=0),
     }
+    for field in LATENCY_FIELDS:
+        if field in source_metrics:
+            metrics[field] = _number(source_metrics.get(field))
+    return metrics
 
 
 def _retry_count(workflow_result: dict[str, Any]) -> int:
