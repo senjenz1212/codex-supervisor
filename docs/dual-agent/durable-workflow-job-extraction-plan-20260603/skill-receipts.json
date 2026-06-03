@@ -1,0 +1,73 @@
+[
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-to-prd-durable-workflow-job-extraction-plan-20260603",
+    "skill": "to-prd",
+    "stage": "to_prd",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/durable-workflow-job-extraction-plan-20260603/source/prd.md"
+    ],
+    "claims": [
+      "PRD promise contracts produced",
+      "doc-only extraction planning boundary established",
+      "durable workflow job lifecycle inventory specified"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-prd-grill-durable-workflow-job-extraction-plan-20260603",
+    "skill": "grill-with-docs",
+    "stage": "prd_grill",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/durable-workflow-job-extraction-plan-20260603/source/grill-findings.md"
+    ],
+    "claims": [
+      "PRD grill findings resolved",
+      "MCP adapter boundary and terminal outcome authority addressed"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-to-issues-durable-workflow-job-extraction-plan-20260603",
+    "skill": "to-issues",
+    "stage": "to_issues",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/durable-workflow-job-extraction-plan-20260603/source/issues.md"
+    ],
+    "claims": [
+      "Issue slices cover P1-P5",
+      "behavior-preserving design doc delivery sliced separately from source extraction"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-tdd-durable-workflow-job-extraction-plan-20260603",
+    "skill": "tdd",
+    "stage": "tdd",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/durable-workflow-job-extraction-plan-20260603/source/tdd.md"
+    ],
+    "claims": [
+      "TDD names documentation boundary checks",
+      "existing durable workflow job tests selected as behavior safety net"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-tdd-grill-durable-workflow-job-extraction-plan-20260603",
+    "skill": "grill-with-docs",
+    "stage": "tdd_grill",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/durable-workflow-job-extraction-plan-20260603/source/grill-findings-tdd.md"
+    ],
+    "claims": [
+      "TDD grill findings resolved",
+      "translation audit completed"
+    ]
+  }
+]

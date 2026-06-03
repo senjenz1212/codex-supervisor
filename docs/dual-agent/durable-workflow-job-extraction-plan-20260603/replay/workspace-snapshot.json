@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "c8d20ddc03cabfcac9eb48fd12f8bcd673ca10b6531978a9aefe57f10b7dd181",
+  "git": {
+    "diff_bytes": 0,
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "diff_stat": "",
+    "head": "3694496",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "3694496",
+    "status_short": "?? .scratch/durable-workflow-job-no-telegram-config.yaml\n?? docs/dual-agent/durable-workflow-job-extraction-plan-20260603/\n?? docs/durable-workflow-job-extraction-plan.md"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "e060d694c8dc22c79ef5e3a076d56c52978d5002be09c120a1f431abc553d56f",
+    "implementation_plan": "39ff6b6dd853126502ffb18c5669dbfe6358d24f7b7bf85758a827a4f00e8aad",
+    "issues": "1488eea4f00c209061e47312aae1c0fa2cbb615872b09fd27bb20222a617259f",
+    "prd": "948555686f850175f9feaf87799330024981eaf2b809a9b5384cf4dfffa85dc6",
+    "tdd_plan": "d993359b044118eb71626587774d943be844bb53e8c7aa5b46242ff62602974f"
+  },
+  "status": "captured"
+}
