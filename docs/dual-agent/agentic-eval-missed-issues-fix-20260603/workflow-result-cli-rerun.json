@@ -1,0 +1,2270 @@
+{
+  "artifact_export": {
+    "files": [
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/index.md",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/triage.md",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/prd.md",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/tdd.md",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/grill-findings.md",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/issues.md",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/screenshots.md",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/outcome-review.md",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/interactions.md",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/transcript.md",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/transcript.jsonl",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/mast-coverage.md",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/replay/manifest.json",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/replay/workspace-snapshot.json",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/replay/mast-coverage.json",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/grill-findings-tdd.md",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/grill-findings.md",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/implementation-plan.md",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/issues.md",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/prd.md",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/tdd.md"
+    ],
+    "output_dir": "docs/dual-agent/agentic-eval-missed-issues-fix-20260603",
+    "run_id": "codex-agentic-eval-missed-issues-fix-20260603-87ac07e1-ae82-4720-8ace-bfc4538c51bf",
+    "status": "ok",
+    "task_id": "agentic-eval-missed-issues-fix-20260603"
+  },
+  "current_gate": "implementation_plan",
+  "final_gate_result": {
+    "artifact_rigor": {
+      "accepted_prerequisite_gates": [
+        "tdd_review"
+      ],
+      "artifact_policy": "strict",
+      "gate": "implementation_plan",
+      "gate_statuses": {
+        "issues_review": "accepted",
+        "prd_review": "accepted",
+        "tdd_review": "accepted"
+      },
+      "missing_artifact_paths": [],
+      "missing_artifacts": [],
+      "missing_prerequisite_gates": [],
+      "missing_screenshot_paths": [],
+      "present_artifacts": [
+        "grill_findings",
+        "implementation_plan",
+        "issues",
+        "prd",
+        "tdd_plan"
+      ],
+      "reason": "required_artifacts_present",
+      "required_artifacts": [
+        "prd",
+        "tdd_plan",
+        "grill_findings",
+        "issues"
+      ],
+      "required_prerequisite_gates": [
+        "tdd_review"
+      ],
+      "screenshots": [],
+      "status": "ok",
+      "user_facing": false,
+      "visual_validation": {
+        "allowed_sources": [
+          "browser",
+          "browser-use",
+          "browser_use",
+          "computer",
+          "computer-use",
+          "computer_use"
+        ],
+        "evidence": [],
+        "failures": [],
+        "reason": "no_screenshots_supplied",
+        "status": "not_required"
+      }
+    },
+    "attempts": 1,
+    "claim_verification": null,
+    "claude_decision": "accept",
+    "codex_decision": "revise",
+    "cursor_decision": "revise",
+    "cursor_review": {
+      "accepted": true,
+      "agent_id": "agent-0b694159-b3d3-42dc-a5a9-537a6ae466e3",
+      "attempts": 1,
+      "critical_review": {
+        "assumptions_to_verify": [
+          "Prior gates correctly accepted the same plan hash before implementation landed",
+          "Self-reported RED/GREEN/full-suite receipts in bridge test-evidence remain valid if tree changes"
+        ],
+        "contradictions_checked": [
+          "Plan file list vs git diff --name-only: exact match",
+          "Claude plan hash de62 vs shasum on disk: match",
+          "Receipt report_sha256 02f955\u2026 vs report.json field: match (file bytes hash differs by design)",
+          "P3 consistent-metrics: helper only flags when metric present and differs",
+          "Bridge +1 assertion ties P1 missed_issues to failed verdict count for clean-accept case"
+        ],
+        "decision": "accept",
+        "evidence_refs": [],
+        "missing_evidence": [
+          "Fresh full-suite pytest output at this gate (671-pass receipt not re-run here)",
+          "Automated pytest for P5 bridge regeneration (TDD Regeneration Check is manual/script-only)",
+          "Ta[REDACTED_API_KEY] docs/dual-agent/agentic-eval-missed-issues-fix-20260603/test-evidence.md is untracked and omitted from the plan file list"
+        ],
+        "schema_version": "critical-review/v1",
+        "severity": "low",
+        "strongest_objection": "Gate is retrospective: the full 7-file implementation diff is already in the worktree, so step 1 RED-first cannot be independently reproduced at this gate\u2014only self-reported RED in test-evidence.md.",
+        "what_would_change_my_mind": "Plan file list diverges from diff, a named traceability test is missing or vacuous, state.py or policy defaults change, or bridge report rows revert to missed_issues=0 without divergence for clean-accept-runner-report."
+      },
+      "diagnostics": {
+        "prompt_chars": 10900,
+        "prompt_sha256": "6e2bee88d1c0d7e70bcfdc1d13210754c6e2bbdb8466ca791d1855e6cd4e78c9"
+      },
+      "duration_ms": 35796,
+      "failure_classification": null,
+      "fallback_from_runtime": null,
+      "fallback_reason": null,
+      "independent_reviewer_panel_decision": {
+        "accepted_reviewers": [
+          "independent-reviewer-0"
+        ],
+        "aggregation_mode": "conservative",
+        "available_reviewers": [
+          "independent-reviewer-0"
+        ],
+        "blocking_reviewers": [],
+        "decision": "revise",
+        "low_confidence_reviewers": [],
+        "low_confidence_threshold": 0.0,
+        "missing_reviewers": [
+          "independent-reviewer-1"
+        ],
+        "non_accepting_reviewers": [],
+        "reason": "missing_reviewer_verdict",
+        "reviewer_inputs": [
+          {
+            "accepted": true,
+            "assurance_grade": "agentic",
+            "confidence": 0.88,
+            "decision": "accept",
+            "lineage": [
+              "cursor",
+              "cursor_sdk",
+              "composer-2.5"
+            ],
+            "model": "composer-2.5",
+            "provider_family": "cursor",
+            "reviewer_id": "independent-reviewer-0",
+            "runtime": "cursor_sdk",
+            "severity": "low",
+            "tool_access": "codebase_tools",
+            "verdict_present": true
+          },
+          {
+            "accepted": false,
+            "assurance_grade": "self_reported",
+            "confidence": null,
+            "decision": "revise",
+            "lineage": [
+              "openai",
+              "codex_cli",
+              "gpt-5.5"
+            ],
+            "model": "gpt-5.5",
+            "provider_family": "openai",
+            "reviewer_id": "independent-reviewer-1",
+            "runtime": "codex_cli",
+            "severity": "important",
+            "tool_access": "codebase_tools",
+            "verdict_present": false
+          }
+        ],
+        "schema_version": "independent-reviewer-panel-decision/v1"
+      },
+      "independent_reviewer_results": [
+        {
+          "accepted": true,
+          "assurance_grade": "agentic",
+          "attempts": 1,
+          "confidence": 0.88,
+          "critical_review": {
+            "assumptions_to_verify": [
+              "Prior gates correctly accepted the same plan hash before implementation landed",
+              "Self-reported RED/GREEN/full-suite receipts in bridge test-evidence remain valid if tree changes"
+            ],
+            "contradictions_checked": [
+              "Plan file list vs git diff --name-only: exact match",
+              "Claude plan hash de62 vs shasum on disk: match",
+              "Receipt report_sha256 02f955\u2026 vs report.json field: match (file bytes hash differs by design)",
+              "P3 consistent-metrics: helper only flags when metric present and differs",
+              "Bridge +1 assertion ties P1 missed_issues to failed verdict count for clean-accept case"
+            ],
+            "decision": "accept",
+            "missing_evidence": [
+              "Fresh full-suite pytest output at this gate (671-pass receipt not re-run here)",
+              "Automated pytest for P5 bridge regeneration (TDD Regeneration Check is manual/script-only)",
+              "Ta[REDACTED_API_KEY] docs/dual-agent/agentic-eval-missed-issues-fix-20260603/test-evidence.md is untracked and omitted from the plan file list"
+            ],
+            "severity": "low",
+            "strongest_objection": "Gate is retrospective: the full 7-file implementation diff is already in the worktree, so step 1 RED-first cannot be independently reproduced at this gate\u2014only self-reported RED in test-evidence.md.",
+            "what_would_change_my_mind": "Plan file list diverges from diff, a named traceability test is missing or vacuous, state.py or policy defaults change, or bridge report rows revert to missed_issues=0 without divergence for clean-accept-runner-report."
+          },
+          "decision": "accept",
+          "failure_classification": null,
+          "gate": "implementation_plan",
+          "lineage": [
+            "cursor",
+            "cursor_sdk",
+            "composer-2.5"
+          ],
+          "model": "composer-2.5",
+          "output_sha256": "bf2a030b6fcc1911438a40228150ee56b25db8522c84d5729f3f01c7617c7087",
+          "provider_family": "cursor",
+          "recoverable": false,
+          "reviewer_assurance": "tool_backed_primary",
+          "reviewer_id": "independent-reviewer-0",
+          "reviewer_output_mode": "cursor_sdk",
+          "reviewer_runtime": "cursor_sdk",
+          "round_index": 1,
+          "runtime": "cursor_sdk",
+          "schema_version": "independent-reviewer-panel-result/v1",
+          "severity": "low",
+          "task_id": "agentic-eval-missed-issues-fix-20260603",
+          "tests": [
+            "tests/test_agentic_eval.py::test_agentic_eval_runner_derives_missed_issues_from_verdicts",
+            "tests/test_agentic_eval.py::test_agentic_eval_runner_derives_rejected_gates_from_workflow",
+            "tests/test_agentic_eval.py::test_agentic_eval_runner_does_not_flag_consistent_quality_metrics",
+            "tests/test_agentic_eval_bridge.py::test_agentic_eval_bridge_expected_accept_requires_terminal_accept"
+          ],
+          "tool_access": "codebase_tools",
+          "transcript_refs": [
+            {
+              "chars": 4000,
+              "kind": "reviewer_transcript_tail",
+              "ref": "independent_reviewer_review:agentic-eval-missed-issues-fix-20260603:implementation_plan:1:independent-reviewer-0"
+            }
+          ],
+          "transcript_sha256": "3dccf3a3b6fad499344010d820b4e703fc95b85d680311cbf494dff84d57bc18",
+          "verdict_present": true
+        },
+        {
+          "accepted": false,
+          "assurance_grade": "self_reported",
+          "attempts": 1,
+          "confidence": null,
+          "critical_review": {},
+          "decision": "revise",
+          "failure_classification": "reviewer_infrastructure_unavailable",
+          "gate": "implementation_plan",
+          "lineage": [
+            "openai",
+            "codex_cli",
+            "gpt-5.5"
+          ],
+          "model": "gpt-5.5",
+          "output_sha256": null,
+          "provider_family": "openai",
+          "recoverable": true,
+          "reviewer_assurance": "unavailable",
+          "reviewer_id": "independent-reviewer-1",
+          "reviewer_output_mode": "codex_cli",
+          "reviewer_runtime": "codex_cli",
+          "round_index": 1,
+          "runtime": "codex_cli",
+          "schema_version": "independent-reviewer-panel-result/v1",
+          "severity": "important",
+          "task_id": "agentic-eval-missed-issues-fix-20260603",
+          "tests": [],
+          "tool_access": "codebase_tools",
+          "transcript_refs": [
+            {
+              "chars": 4000,
+              "kind": "reviewer_transcript_tail",
+              "ref": "independent_reviewer_review:agentic-eval-missed-issues-fix-20260603:implementation_plan:1:independent-reviewer-1"
+            }
+          ],
+          "transcript_sha256": "ec20e3f7c8dcba7c4b9311e02bbbfd0258c78fc450657442ed482358ea2ed6a4",
+          "verdict_present": false
+        }
+      ],
+      "model": "composer-2.5",
+      "outcome": {
+        "changed_files": [
+          "supervisor/agentic_eval.py",
+          "tests/test_agentic_eval.py",
+          "tests/test_agentic_eval_bridge.py",
+          "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/report.json",
+          "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/rows.jsonl",
+          "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/replay-manifest.json",
+          "docs/dual-agent/agentic-eval-bridge-20260603/test-evidence.md"
+        ],
+        "claims": [
+          "Six-step plan covers RED tests, divergence helper, authoritative fields, bridge replay, and suite runs with exact file ownership",
+          "P1\u2013P5 traceability to four verbatim tests is accurate and backed by current source",
+          "Fan-out/policy boundary preserved; no state.py diff"
+        ],
+        "confidence": 0.88,
+        "confidence_criteria": [
+          "Plan-declared files vs git diff --stat: 7==7 PASS",
+          "Plan hash de62a6f2 recomputed on disk PASS",
+          "Four traceability tests exist and passed when re-run PASS",
+          "Authoritative row fields + divergence helper in agentic_eval.py PASS",
+          "state.py and policy/report-only invariants unchanged PASS",
+          "P5 bridge rows and report_sha256 match test-evidence PASS"
+        ],
+        "confidence_rationale": "Plan file list and traceability checks pass; plan hash and four named tests re-run here; bridge report invariants match P5. Held below 0.95 because the gate is retrospective (full diff already present) and P5 regeneration is evidenced by artifacts/script, not a dedicated pytest in the plan traceability table.",
+        "critical_review": {
+          "assumptions_to_verify": [
+            "Prior gates correctly accepted the same plan hash before implementation landed",
+            "Self-reported RED/GREEN/full-suite receipts in bridge test-evidence remain valid if tree changes"
+          ],
+          "contradictions_checked": [
+            "Plan file list vs git diff --name-only: exact match",
+            "Claude plan hash de62 vs shasum on disk: match",
+            "Receipt report_sha256 02f955\u2026 vs report.json field: match (file bytes hash differs by design)",
+            "P3 consistent-metrics: helper only flags when metric present and differs",
+            "Bridge +1 assertion ties P1 missed_issues to failed verdict count for clean-accept case"
+          ],
+          "decision": "accept",
+          "missing_evidence": [
+            "Fresh full-suite pytest output at this gate (671-pass receipt not re-run here)",
+            "Automated pytest for P5 bridge regeneration (TDD Regeneration Check is manual/script-only)",
+            "Ta[REDACTED_API_KEY] docs/dual-agent/agentic-eval-missed-issues-fix-20260603/test-evidence.md is untracked and omitted from the plan file list"
+          ],
+          "severity": "low",
+          "strongest_objection": "Gate is retrospective: the full 7-file implementation diff is already in the worktree, so step 1 RED-first cannot be independently reproduced at this gate\u2014only self-reported RED in test-evidence.md.",
+          "what_would_change_my_mind": "Plan file list diverges from diff, a named traceability test is missing or vacuous, state.py or policy defaults change, or bridge report rows revert to missed_issues=0 without divergence for clean-accept-runner-report."
+        },
+        "decisions": [
+          "accept"
+        ],
+        "objections": [],
+        "specialists": [
+          {
+            "decision": "accept",
+            "name": "Cursor Reviewer",
+            "objection": null
+          }
+        ],
+        "summary": "implementation_plan ACCEPT: plan is complete/traceable; 7 declared files match git diff exactly; P1\u2013P5 map to four existing tests; source uses authoritative missed_issues/rejected_gates with divergence helper; bridge report shows missed_issues=2 and metrics_divergence on clean-accept rows; plan hash and four pytest targets independently verified this gate.",
+        "task_id": "agentic-eval-missed-issues-fix-20260603",
+        "test_status": "passed",
+        "tests": [
+          "tests/test_agentic_eval.py::test_agentic_eval_runner_derives_missed_issues_from_verdicts",
+          "tests/test_agentic_eval.py::test_agentic_eval_runner_derives_rejected_gates_from_workflow",
+          "tests/test_agentic_eval.py::test_agentic_eval_runner_does_not_flag_consistent_quality_metrics",
+          "tests/test_agentic_eval_bridge.py::test_agentic_eval_bridge_expected_accept_requires_terminal_accept"
+        ]
+      },
+      "panel_failure_classification": "reviewer_infrastructure_unavailable",
+      "panel_recoverable_failures": [
+        {
+          "failure_classification": "reviewer_infrastructure_unavailable",
+          "model": "gpt-5.5",
+          "recoverable": true,
+          "reviewer_id": "independent-reviewer-1",
+          "runtime": "codex_cli"
+        }
+      ],
+      "probe": {
+        "details": {},
+        "probe_id": "CURSOR",
+        "reason": "cursor_review_ok",
+        "status": "green"
+      },
+      "recoverable": false,
+      "retry_reasons": [],
+      "reviewer_assurance": "tool_backed_primary",
+      "reviewer_output_mode": "cursor_sdk",
+      "reviewer_runtime": "cursor_sdk",
+      "reviewer_unavailable_recovery": {
+        "authorization": null,
+        "available_reviewers_accept": true,
+        "classification": "reviewer_infrastructure_unavailable",
+        "decision": "escalate",
+        "escalation": {
+          "action_id": 1333,
+          "ask_id": 66,
+          "classification": "reviewer_infrastructure_unavailable",
+          "evidence_grade": "degraded",
+          "forced_by_safety": false,
+          "independent_reviewer": {
+            "accepted": true,
+            "agent_id": "agent-0b694159-b3d3-42dc-a5a9-537a6ae466e3",
+            "attempts": 1,
+            "critical_review": {
+              "assumptions_to_verify": [
+                "Prior gates correctly accepted the same plan hash before implementation landed",
+                "Self-reported RED/GREEN/full-suite receipts in bridge test-evidence remain valid if tree changes"
+              ],
+              "contradictions_checked": [
+                "Plan file list vs git diff --name-only: exact match",
+                "Claude plan hash de62 vs shasum on disk: match",
+                "Receipt report_sha256 02f955\u2026 vs report.json field: match (file bytes hash differs by design)",
+                "P3 consistent-metrics: helper only flags when metric present and differs",
+                "Bridge +1 assertion ties P1 missed_issues to failed verdict count for clean-accept case"
+              ],
+              "decision": "accept",
+              "evidence_refs": [],
+              "missing_evidence": [
+                "Fresh full-suite pytest output at this gate (671-pass receipt not re-run here)",
+                "Automated pytest for P5 bridge regeneration (TDD Regeneration Check is manual/script-only)",
+                "Ta[REDACTED_API_KEY] docs/dual-agent/agentic-eval-missed-issues-fix-20260603/test-evidence.md is untracked and omitted from the plan file list"
+              ],
+              "schema_version": "critical-review/v1",
+              "severity": "low",
+              "strongest_objection": "Gate is retrospective: the full 7-file implementation diff is already in the worktree, so step 1 RED-first cannot be independently reproduced at this gate\u2014only self-reported RED in test-evidence.md.",
+              "what_would_change_my_mind": "Plan file list diverges from diff, a named traceability test is missing or vacuous, state.py or policy defaults change, or bridge report rows revert to missed_issues=0 without divergence for clean-accept-runner-report."
+            },
+            "diagnostics": {
+              "prompt_chars": 10900,
+              "prompt_sha256": "6e2bee88d1c0d7e70bcfdc1d13210754c6e2bbdb8466ca791d1855e6cd4e78c9"
+            },
+            "duration_ms": 35796,
+            "failure_classification": null,
+            "fallback_from_runtime": null,
+            "fallback_reason": null,
+            "independent_reviewer_panel_decision": {
+              "accepted_reviewers": [
+                "independent-reviewer-0"
+              ],
+              "aggregation_mode": "conservative",
+              "available_reviewers": [
+                "independent-reviewer-0"
+              ],
+              "blocking_reviewers": [],
+              "decision": "revise",
+              "low_confidence_reviewers": [],
+              "low_confidence_threshold": 0.0,
+              "missing_reviewers": [
+                "independent-reviewer-1"
+              ],
+              "non_accepting_reviewers": [],
+              "reason": "missing_reviewer_verdict",
+              "reviewer_inputs": [
+                {
+                  "accepted": true,
+                  "assurance_grade": "agentic",
+                  "confidence": 0.88,
+                  "decision": "accept",
+                  "lineage": [
+                    "cursor",
+                    "cursor_sdk",
+                    "composer-2.5"
+                  ],
+                  "model": "composer-2.5",
+                  "provider_family": "cursor",
+                  "reviewer_id": "independent-reviewer-0",
+                  "runtime": "cursor_sdk",
+                  "severity": "low",
+                  "tool_access": "codebase_tools",
+                  "verdict_present": true
+                },
+                {
+                  "accepted": false,
+                  "assurance_grade": "self_reported",
+                  "confidence": null,
+                  "decision": "revise",
+                  "lineage": [
+                    "openai",
+                    "codex_cli",
+                    "gpt-5.5"
+                  ],
+                  "model": "gpt-5.5",
+                  "provider_family": "openai",
+                  "reviewer_id": "independent-reviewer-1",
+                  "runtime": "codex_cli",
+                  "severity": "important",
+                  "tool_access": "codebase_tools",
+                  "verdict_present": false
+                }
+              ],
+              "schema_version": "independent-reviewer-panel-decision/v1"
+            },
+            "independent_reviewer_results": [
+              {
+                "accepted": true,
+                "assurance_grade": "agentic",
+                "attempts": 1,
+                "confidence": 0.88,
+                "critical_review": {
+                  "assumptions_to_verify": [
+                    "Prior gates correctly accepted the same plan hash before implementation landed",
+                    "Self-reported RED/GREEN/full-suite receipts in bridge test-evidence remain valid if tree changes"
+                  ],
+                  "contradictions_checked": [
+                    "Plan file list vs git diff --name-only: exact match",
+                    "Claude plan hash de62 vs shasum on disk: match",
+                    "Receipt report_sha256 02f955\u2026 vs report.json field: match (file bytes hash differs by design)",
+                    "P3 consistent-metrics: helper only flags when metric present and differs",
+                    "Bridge +1 assertion ties P1 missed_issues to failed verdict count for clean-accept case"
+                  ],
+                  "decision": "accept",
+                  "missing_evidence": [
+                    "Fresh full-suite pytest output at this gate (671-pass receipt not re-run here)",
+                    "Automated pytest for P5 bridge regeneration (TDD Regeneration Check is manual/script-only)",
+                    "Ta[REDACTED_API_KEY] docs/dual-agent/agentic-eval-missed-issues-fix-20260603/test-evidence.md is untracked and omitted from the plan file list"
+                  ],
+                  "severity": "low",
+                  "strongest_objection": "Gate is retrospective: the full 7-file implementation diff is already in the worktree, so step 1 RED-first cannot be independently reproduced at this gate\u2014only self-reported RED in test-evidence.md.",
+                  "what_would_change_my_mind": "Plan file list diverges from diff, a named traceability test is missing or vacuous, state.py or policy defaults change, or bridge report rows revert to missed_issues=0 without divergence for clean-accept-runner-report."
+                },
+                "decision": "accept",
+                "failure_classification": null,
+                "gate": "implementation_plan",
+                "lineage": [
+                  "cursor",
+                  "cursor_sdk",
+                  "composer-2.5"
+                ],
+                "model": "composer-2.5",
+                "output_sha256": "bf2a030b6fcc1911438a40228150ee56b25db8522c84d5729f3f01c7617c7087",
+                "provider_family": "cursor",
+                "recoverable": false,
+                "reviewer_assurance": "tool_backed_primary",
+                "reviewer_id": "independent-reviewer-0",
+                "reviewer_output_mode": "cursor_sdk",
+                "reviewer_runtime": "cursor_sdk",
+                "round_index": 1,
+                "runtime": "cursor_sdk",
+                "schema_version": "independent-reviewer-panel-result/v1",
+                "severity": "low",
+                "task_id": "agentic-eval-missed-issues-fix-20260603",
+                "tests": [
+                  "tests/test_agentic_eval.py::test_agentic_eval_runner_derives_missed_issues_from_verdicts",
+                  "tests/test_agentic_eval.py::test_agentic_eval_runner_derives_rejected_gates_from_workflow",
+                  "tests/test_agentic_eval.py::test_agentic_eval_runner_does_not_flag_consistent_quality_metrics",
+                  "tests/test_agentic_eval_bridge.py::test_agentic_eval_bridge_expected_accept_requires_terminal_accept"
+                ],
+                "tool_access": "codebase_tools",
+                "transcript_refs": [
+                  {
+                    "chars": 4000,
+                    "kind": "reviewer_transcript_tail",
+                    "ref": "independent_reviewer_review:agentic-eval-missed-issues-fix-20260603:implementation_plan:1:independent-reviewer-0"
+                  }
+                ],
+                "transcript_sha256": "3dccf3a3b6fad499344010d820b4e703fc95b85d680311cbf494dff84d57bc18",
+                "verdict_present": true
+              },
+              {
+                "accepted": false,
+                "assurance_grade": "self_reported",
+                "attempts": 1,
+                "confidence": null,
+                "critical_review": {},
+                "decision": "revise",
+                "failure_classification": "reviewer_infrastructure_unavailable",
+                "gate": "implementation_plan",
+                "lineage": [
+                  "openai",
+                  "codex_cli",
+                  "gpt-5.5"
+                ],
+                "model": "gpt-5.5",
+                "output_sha256": null,
+                "provider_family": "openai",
+                "recoverable": true,
+                "reviewer_assurance": "unavailable",
+                "reviewer_id": "independent-reviewer-1",
+                "reviewer_output_mode": "codex_cli",
+                "reviewer_runtime": "codex_cli",
+                "round_index": 1,
+                "runtime": "codex_cli",
+                "schema_version": "independent-reviewer-panel-result/v1",
+                "severity": "important",
+                "task_id": "agentic-eval-missed-issues-fix-20260603",
+                "tests": [],
+                "tool_access": "codebase_tools",
+                "transcript_refs": [
+                  {
+                    "chars": 4000,
+                    "kind": "reviewer_transcript_tail",
+                    "ref": "independent_reviewer_review:agentic-eval-missed-issues-fix-20260603:implementation_plan:1:independent-reviewer-1"
+                  }
+                ],
+                "transcript_sha256": "ec20e3f7c8dcba7c4b9311e02bbbfd0258c78fc450657442ed482358ea2ed6a4",
+                "verdict_present": false
+              }
+            ],
+            "model": "composer-2.5",
+            "outcome": {
+              "changed_files": [
+                "supervisor/agentic_eval.py",
+                "tests/test_agentic_eval.py",
+                "tests/test_agentic_eval_bridge.py",
+                "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/report.json",
+                "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/rows.jsonl",
+                "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/replay-manifest.json",
+                "docs/dual-agent/agentic-eval-bridge-20260603/test-evidence.md"
+              ],
+              "claims": [
+                "Six-step plan covers RED tests, divergence helper, authoritative fields, bridge replay, and suite runs with exact file ownership",
+                "P1\u2013P5 traceability to four verbatim tests is accurate and backed by current source",
+                "Fan-out/policy boundary preserved; no state.py diff"
+              ],
+              "confidence": 0.88,
+              "confidence_criteria": [
+                "Plan-declared files vs git diff --stat: 7==7 PASS",
+                "Plan hash de62a6f2 recomputed on disk PASS",
+                "Four traceability tests exist and passed when re-run PASS",
+                "Authoritative row fields + divergence helper in agentic_eval.py PASS",
+                "state.py and policy/report-only invariants unchanged PASS",
+                "P5 bridge rows and report_sha256 match test-evidence PASS"
+              ],
+              "confidence_rationale": "Plan file list and traceability checks pass; plan hash and four named tests re-run here; bridge report invariants match P5. Held below 0.95 because the gate is retrospective (full diff already present) and P5 regeneration is evidenced by artifacts/script, not a dedicated pytest in the plan traceability table.",
+              "critical_review": {
+                "assumptions_to_verify": [
+                  "Prior gates correctly accepted the same plan hash before implementation landed",
+                  "Self-reported RED/GREEN/full-suite receipts in bridge test-evidence remain valid if tree changes"
+                ],
+                "contradictions_checked": [
+                  "Plan file list vs git diff --name-only: exact match",
+                  "Claude plan hash de62 vs shasum on disk: match",
+                  "Receipt report_sha256 02f955\u2026 vs report.json field: match (file bytes hash differs by design)",
+                  "P3 consistent-metrics: helper only flags when metric present and differs",
+                  "Bridge +1 assertion ties P1 missed_issues to failed verdict count for clean-accept case"
+                ],
+                "decision": "accept",
+                "missing_evidence": [
+                  "Fresh full-suite pytest output at this gate (671-pass receipt not re-run here)",
+                  "Automated pytest for P5 bridge regeneration (TDD Regeneration Check is manual/script-only)",
+                  "Ta[REDACTED_API_KEY] docs/dual-agent/agentic-eval-missed-issues-fix-20260603/test-evidence.md is untracked and omitted from the plan file list"
+                ],
+                "severity": "low",
+                "strongest_objection": "Gate is retrospective: the full 7-file implementation diff is already in the worktree, so step 1 RED-first cannot be independently reproduced at this gate\u2014only self-reported RED in test-evidence.md.",
+                "what_would_change_my_mind": "Plan file list diverges from diff, a named traceability test is missing or vacuous, state.py or policy defaults change, or bridge report rows revert to missed_issues=0 without divergence for clean-accept-runner-report."
+              },
+              "decisions": [
+                "accept"
+              ],
+              "objections": [],
+              "specialists": [
+                {
+                  "decision": "accept",
+                  "name": "Cursor Reviewer",
+                  "objection": null
+                }
+              ],
+              "summary": "implementation_plan ACCEPT: plan is complete/traceable; 7 declared files match git diff exactly; P1\u2013P5 map to four existing tests; source uses authoritative missed_issues/rejected_gates with divergence helper; bridge report shows missed_issues=2 and metrics_divergence on clean-accept rows; plan hash and four pytest targets independently verified this gate.",
+              "task_id": "agentic-eval-missed-issues-fix-20260603",
+              "test_status": "passed",
+              "tests": [
+                "tests/test_agentic_eval.py::test_agentic_eval_runner_derives_missed_issues_from_verdicts",
+                "tests/test_agentic_eval.py::test_agentic_eval_runner_derives_rejected_gates_from_workflow",
+                "tests/test_agentic_eval.py::test_agentic_eval_runner_does_not_flag_consistent_quality_metrics",
+                "tests/test_agentic_eval_bridge.py::test_agentic_eval_bridge_expected_accept_requires_terminal_accept"
+              ]
+            },
+            "panel_failure_classification": "reviewer_infrastructure_unavailable",
+            "panel_recoverable_failures": [
+              {
+                "failure_classification": "reviewer_infrastructure_unavailable",
+                "model": "gpt-5.5",
+                "recoverable": true,
+                "reviewer_id": "independent-reviewer-1",
+                "runtime": "codex_cli"
+              }
+            ],
+            "probe": {
+              "details": {},
+              "probe_id": "CURSOR",
+              "reason": "cursor_review_ok",
+              "status": "green"
+            },
+            "recoverable": false,
+            "retry_reasons": [],
+            "reviewer_assurance": "tool_backed_primary",
+            "reviewer_output_mode": "cursor_sdk",
+            "reviewer_runtime": "cursor_sdk",
+            "reviewer_unavailable_recovery": {
+              "authorization": null,
+              "available_reviewers_accept": true,
+              "classification": "reviewer_infrastructure_unavailable",
+              "decision": "escalate",
+              "evidence_grade": "degraded",
+              "forced_by_safety": false,
+              "gate": "implementation_plan",
+              "policy": "escalate",
+              "reason": "policy_escalate",
+              "reviewer_verdict_counted_as_accept": false,
+              "safety_reasons": [],
+              "schema_version": "reviewer-unavailable-recovery/v1",
+              "unavailable_reviewers": [
+                "independent-reviewer-1"
+              ]
+            },
+            "run_id": "run-593ad6b9-15fb-44c8-9353-ef96dbd9c391",
+            "schema_version": "independent-reviewer-result/v1",
+            "status": "finished",
+            "transcript_tail": "and matches what landed. The main weakness is process timing (implementation already in the tree), not plan defects.\n\n<dual_agent_outcome>{\"task_id\":\"agentic-eval-missed-issues-fix-20260603\",\"summary\":\"implementation_plan ACCEPT: plan is complete/traceable; 7 declared files match git diff exactly; P1\u2013P5 map to four existing tests; source uses authoritative missed_issues/rejected_gates with divergence helper; bridge report shows missed_issues=2 and metrics_divergence on clean-accept rows; plan hash and four pytest targets independently verified this gate.\",\"specialists\":[{\"name\":\"Cursor Reviewer\",\"decision\":\"accept\"}],\"decisions\":[\"accept\"],\"objections\":[],\"changed_files\":[\"supervisor/agentic_eval.py\",\"tests/test_agentic_eval.py\",\"tests/test_agentic_eval_bridge.py\",\"docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/report.json\",\"docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/rows.jsonl\",\"docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/replay-manifest.json\",\"docs/dual-agent/agentic-eval-bridge-20260603/test-evidence.md\"],\"tests\":[\"tests/test_agentic_eval.py::test_agentic_eval_runner_derives_missed_issues_from_verdicts\",\"tests/test_agentic_eval.py::test_agentic_eval_runner_derives_rejected_gates_from_workflow\",\"tests/test_agentic_eval.py::test_agentic_eval_runner_does_not_flag_consistent_quality_metrics\",\"tests/test_agentic_eval_bridge.py::test_agentic_eval_bridge_expected_accept_requires_terminal_accept\"],\"test_status\":\"passed\",\"confidence\":0.88,\"confidence_rationale\":\"Plan file list and traceability checks pass; plan hash and four named tests re-run here; bridge report invariants match P5. Held below 0.95 because the gate is retrospective (full diff already present) and P5 regeneration is evidenced by artifacts/script, not a dedicated pytest in the plan traceability table.\",\"confidence_criteria\":[\"Plan-declared files vs git diff --stat: 7==7 PASS\",\"Plan hash de62a6f2 recomputed on disk PASS\",\"Four traceability tests exist and passed when re-run PASS\",\"Authoritative row fields + divergence helper in agentic_eval.py PASS\",\"state.py and policy/report-only invariants unchanged PASS\",\"P5 bridge rows and report_sha256 match test-evidence PASS\"],\"claims\":[\"Six-step plan covers RED tests, divergence helper, authoritative fields, bridge replay, and suite runs with exact file ownership\",\"P1\u2013P5 traceability to four verbatim tests is accurate and backed by current source\",\"Fan-out/policy boundary preserved; no state.py diff\"],\"critical_review\":{\"strongest_objection\":\"Gate is retrospective: the full 7-file implementation diff is already in the worktree, so step 1 RED-first cannot be independently reproduced at this gate\u2014only self-reported RED in test-evidence.md.\",\"missing_evidence\":[\"Fresh full-suite pytest output at this gate (671-pass receipt not re-run here)\",\"Automated pytest for P5 bridge regeneration (TDD Regeneration Check is manual/script-only)\",\"Ta[REDACTED_API_KEY] docs/dual-agent/agentic-eval-missed-issues-fix-20260603/test-evidence.md is untracked and omitted from the plan file list\"],\"contradictions_checked\":[\"Plan file list vs git diff --name-only: exact match\",\"Claude plan hash de62 vs shasum on disk: match\",\"Receipt report_sha256 02f955\u2026 vs report.json field: match (file bytes hash differs by design)\",\"P3 consistent-metrics: helper only flags when metric present and differs\",\"Bridge +1 assertion ties P1 missed_issues to failed verdict count for clean-accept case\"],\"assumptions_to_verify\":[\"Prior gates correctly accepted the same plan hash before implementation landed\",\"Self-reported RED/GREEN/full-suite receipts in bridge test-evidence remain valid if tree changes\"],\"what_would_change_my_mind\":\"Plan file list diverges from diff, a named traceability test is missing or vacuous, state.py or policy defaults change, or bridge report rows revert to missed_issues=0 without divergence for clean-accept-runner-report.\",\"decision\":\"accept\",\"severity\":\"low\"}}</dual_agent_outcome>",
+            "unavailable_reviewer_ids": [
+              "independent-reviewer-1"
+            ]
+          },
+          "nonce": "bb740aecbe5c4184",
+          "options": [
+            "Pause",
+            "Kill",
+            "Continue"
+          ],
+          "policy": "escalate",
+          "reviewer_verdict_counted_as_accept": false,
+          "safety_reasons": [],
+          "status": "paused_for_human",
+          "unavailable_reviewers": [
+            "independent-reviewer-1"
+          ]
+        },
+        "event_id": 466049,
+        "evidence_grade": "degraded",
+        "forced_by_safety": false,
+        "gate": "implementation_plan",
+        "policy": "escalate",
+        "reason": "policy_escalate",
+        "reviewer_verdict_counted_as_accept": false,
+        "safety_reasons": [],
+        "schema_version": "reviewer-unavailable-recovery/v1",
+        "unavailable_reviewers": [
+          "independent-reviewer-1"
+        ]
+      },
+      "run_id": "run-593ad6b9-15fb-44c8-9353-ef96dbd9c391",
+      "schema_version": "independent-reviewer-result/v1",
+      "status": "finished",
+      "transcript_tail": "and matches what landed. The main weakness is process timing (implementation already in the tree), not plan defects.\n\n<dual_agent_outcome>{\"task_id\":\"agentic-eval-missed-issues-fix-20260603\",\"summary\":\"implementation_plan ACCEPT: plan is complete/traceable; 7 declared files match git diff exactly; P1\u2013P5 map to four existing tests; source uses authoritative missed_issues/rejected_gates with divergence helper; bridge report shows missed_issues=2 and metrics_divergence on clean-accept rows; plan hash and four pytest targets independently verified this gate.\",\"specialists\":[{\"name\":\"Cursor Reviewer\",\"decision\":\"accept\"}],\"decisions\":[\"accept\"],\"objections\":[],\"changed_files\":[\"supervisor/agentic_eval.py\",\"tests/test_agentic_eval.py\",\"tests/test_agentic_eval_bridge.py\",\"docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/report.json\",\"docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/rows.jsonl\",\"docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/replay-manifest.json\",\"docs/dual-agent/agentic-eval-bridge-20260603/test-evidence.md\"],\"tests\":[\"tests/test_agentic_eval.py::test_agentic_eval_runner_derives_missed_issues_from_verdicts\",\"tests/test_agentic_eval.py::test_agentic_eval_runner_derives_rejected_gates_from_workflow\",\"tests/test_agentic_eval.py::test_agentic_eval_runner_does_not_flag_consistent_quality_metrics\",\"tests/test_agentic_eval_bridge.py::test_agentic_eval_bridge_expected_accept_requires_terminal_accept\"],\"test_status\":\"passed\",\"confidence\":0.88,\"confidence_rationale\":\"Plan file list and traceability checks pass; plan hash and four named tests re-run here; bridge report invariants match P5. Held below 0.95 because the gate is retrospective (full diff already present) and P5 regeneration is evidenced by artifacts/script, not a dedicated pytest in the plan traceability table.\",\"confidence_criteria\":[\"Plan-declared files vs git diff --stat: 7==7 PASS\",\"Plan hash de62a6f2 recomputed on disk PASS\",\"Four traceability tests exist and passed when re-run PASS\",\"Authoritative row fields + divergence helper in agentic_eval.py PASS\",\"state.py and policy/report-only invariants unchanged PASS\",\"P5 bridge rows and report_sha256 match test-evidence PASS\"],\"claims\":[\"Six-step plan covers RED tests, divergence helper, authoritative fields, bridge replay, and suite runs with exact file ownership\",\"P1\u2013P5 traceability to four verbatim tests is accurate and backed by current source\",\"Fan-out/policy boundary preserved; no state.py diff\"],\"critical_review\":{\"strongest_objection\":\"Gate is retrospective: the full 7-file implementation diff is already in the worktree, so step 1 RED-first cannot be independently reproduced at this gate\u2014only self-reported RED in test-evidence.md.\",\"missing_evidence\":[\"Fresh full-suite pytest output at this gate (671-pass receipt not re-run here)\",\"Automated pytest for P5 bridge regeneration (TDD Regeneration Check is manual/script-only)\",\"Ta[REDACTED_API_KEY] docs/dual-agent/agentic-eval-missed-issues-fix-20260603/test-evidence.md is untracked and omitted from the plan file list\"],\"contradictions_checked\":[\"Plan file list vs git diff --name-only: exact match\",\"Claude plan hash de62 vs shasum on disk: match\",\"Receipt report_sha256 02f955\u2026 vs report.json field: match (file bytes hash differs by design)\",\"P3 consistent-metrics: helper only flags when metric present and differs\",\"Bridge +1 assertion ties P1 missed_issues to failed verdict count for clean-accept case\"],\"assumptions_to_verify\":[\"Prior gates correctly accepted the same plan hash before implementation landed\",\"Self-reported RED/GREEN/full-suite receipts in bridge test-evidence remain valid if tree changes\"],\"what_would_change_my_mind\":\"Plan file list diverges from diff, a named traceability test is missing or vacuous, state.py or policy defaults change, or bridge report rows revert to missed_issues=0 without divergence for clean-accept-runner-report.\",\"decision\":\"accept\",\"severity\":\"low\"}}</dual_agent_outcome>",
+      "unavailable_reviewer_ids": [
+        "independent-reviewer-1"
+      ]
+    },
+    "escalation": {
+      "claim_verification": null,
+      "reason": "reviewer_infrastructure_unavailable",
+      "type": "workflow_lifecycle"
+    },
+    "event_id": 466050,
+    "gate": "implementation_plan",
+    "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-eval-missed-issues-fix-20260603.json",
+    "independent_reviewer": {
+      "accepted": true,
+      "agent_id": "agent-0b694159-b3d3-42dc-a5a9-537a6ae466e3",
+      "attempts": 1,
+      "critical_review": {
+        "assumptions_to_verify": [
+          "Prior gates correctly accepted the same plan hash before implementation landed",
+          "Self-reported RED/GREEN/full-suite receipts in bridge test-evidence remain valid if tree changes"
+        ],
+        "contradictions_checked": [
+          "Plan file list vs git diff --name-only: exact match",
+          "Claude plan hash de62 vs shasum on disk: match",
+          "Receipt report_sha256 02f955\u2026 vs report.json field: match (file bytes hash differs by design)",
+          "P3 consistent-metrics: helper only flags when metric present and differs",
+          "Bridge +1 assertion ties P1 missed_issues to failed verdict count for clean-accept case"
+        ],
+        "decision": "accept",
+        "evidence_refs": [],
+        "missing_evidence": [
+          "Fresh full-suite pytest output at this gate (671-pass receipt not re-run here)",
+          "Automated pytest for P5 bridge regeneration (TDD Regeneration Check is manual/script-only)",
+          "Ta[REDACTED_API_KEY] docs/dual-agent/agentic-eval-missed-issues-fix-20260603/test-evidence.md is untracked and omitted from the plan file list"
+        ],
+        "schema_version": "critical-review/v1",
+        "severity": "low",
+        "strongest_objection": "Gate is retrospective: the full 7-file implementation diff is already in the worktree, so step 1 RED-first cannot be independently reproduced at this gate\u2014only self-reported RED in test-evidence.md.",
+        "what_would_change_my_mind": "Plan file list diverges from diff, a named traceability test is missing or vacuous, state.py or policy defaults change, or bridge report rows revert to missed_issues=0 without divergence for clean-accept-runner-report."
+      },
+      "diagnostics": {
+        "prompt_chars": 10900,
+        "prompt_sha256": "6e2bee88d1c0d7e70bcfdc1d13210754c6e2bbdb8466ca791d1855e6cd4e78c9"
+      },
+      "duration_ms": 35796,
+      "failure_classification": null,
+      "fallback_from_runtime": null,
+      "fallback_reason": null,
+      "independent_reviewer_panel_decision": {
+        "accepted_reviewers": [
+          "independent-reviewer-0"
+        ],
+        "aggregation_mode": "conservative",
+        "available_reviewers": [
+          "independent-reviewer-0"
+        ],
+        "blocking_reviewers": [],
+        "decision": "revise",
+        "low_confidence_reviewers": [],
+        "low_confidence_threshold": 0.0,
+        "missing_reviewers": [
+          "independent-reviewer-1"
+        ],
+        "non_accepting_reviewers": [],
+        "reason": "missing_reviewer_verdict",
+        "reviewer_inputs": [
+          {
+            "accepted": true,
+            "assurance_grade": "agentic",
+            "confidence": 0.88,
+            "decision": "accept",
+            "lineage": [
+              "cursor",
+              "cursor_sdk",
+              "composer-2.5"
+            ],
+            "model": "composer-2.5",
+            "provider_family": "cursor",
+            "reviewer_id": "independent-reviewer-0",
+            "runtime": "cursor_sdk",
+            "severity": "low",
+            "tool_access": "codebase_tools",
+            "verdict_present": true
+          },
+          {
+            "accepted": false,
+            "assurance_grade": "self_reported",
+            "confidence": null,
+            "decision": "revise",
+            "lineage": [
+              "openai",
+              "codex_cli",
+              "gpt-5.5"
+            ],
+            "model": "gpt-5.5",
+            "provider_family": "openai",
+            "reviewer_id": "independent-reviewer-1",
+            "runtime": "codex_cli",
+            "severity": "important",
+            "tool_access": "codebase_tools",
+            "verdict_present": false
+          }
+        ],
+        "schema_version": "independent-reviewer-panel-decision/v1"
+      },
+      "independent_reviewer_results": [
+        {
+          "accepted": true,
+          "assurance_grade": "agentic",
+          "attempts": 1,
+          "confidence": 0.88,
+          "critical_review": {
+            "assumptions_to_verify": [
+              "Prior gates correctly accepted the same plan hash before implementation landed",
+              "Self-reported RED/GREEN/full-suite receipts in bridge test-evidence remain valid if tree changes"
+            ],
+            "contradictions_checked": [
+              "Plan file list vs git diff --name-only: exact match",
+              "Claude plan hash de62 vs shasum on disk: match",
+              "Receipt report_sha256 02f955\u2026 vs report.json field: match (file bytes hash differs by design)",
+              "P3 consistent-metrics: helper only flags when metric present and differs",
+              "Bridge +1 assertion ties P1 missed_issues to failed verdict count for clean-accept case"
+            ],
+            "decision": "accept",
+            "missing_evidence": [
+              "Fresh full-suite pytest output at this gate (671-pass receipt not re-run here)",
+              "Automated pytest for P5 bridge regeneration (TDD Regeneration Check is manual/script-only)",
+              "Ta[REDACTED_API_KEY] docs/dual-agent/agentic-eval-missed-issues-fix-20260603/test-evidence.md is untracked and omitted from the plan file list"
+            ],
+            "severity": "low",
+            "strongest_objection": "Gate is retrospective: the full 7-file implementation diff is already in the worktree, so step 1 RED-first cannot be independently reproduced at this gate\u2014only self-reported RED in test-evidence.md.",
+            "what_would_change_my_mind": "Plan file list diverges from diff, a named traceability test is missing or vacuous, state.py or policy defaults change, or bridge report rows revert to missed_issues=0 without divergence for clean-accept-runner-report."
+          },
+          "decision": "accept",
+          "failure_classification": null,
+          "gate": "implementation_plan",
+          "lineage": [
+            "cursor",
+            "cursor_sdk",
+            "composer-2.5"
+          ],
+          "model": "composer-2.5",
+          "output_sha256": "bf2a030b6fcc1911438a40228150ee56b25db8522c84d5729f3f01c7617c7087",
+          "provider_family": "cursor",
+          "recoverable": false,
+          "reviewer_assurance": "tool_backed_primary",
+          "reviewer_id": "independent-reviewer-0",
+          "reviewer_output_mode": "cursor_sdk",
+          "reviewer_runtime": "cursor_sdk",
+          "round_index": 1,
+          "runtime": "cursor_sdk",
+          "schema_version": "independent-reviewer-panel-result/v1",
+          "severity": "low",
+          "task_id": "agentic-eval-missed-issues-fix-20260603",
+          "tests": [
+            "tests/test_agentic_eval.py::test_agentic_eval_runner_derives_missed_issues_from_verdicts",
+            "tests/test_agentic_eval.py::test_agentic_eval_runner_derives_rejected_gates_from_workflow",
+            "tests/test_agentic_eval.py::test_agentic_eval_runner_does_not_flag_consistent_quality_metrics",
+            "tests/test_agentic_eval_bridge.py::test_agentic_eval_bridge_expected_accept_requires_terminal_accept"
+          ],
+          "tool_access": "codebase_tools",
+          "transcript_refs": [
+            {
+              "chars": 4000,
+              "kind": "reviewer_transcript_tail",
+              "ref": "independent_reviewer_review:agentic-eval-missed-issues-fix-20260603:implementation_plan:1:independent-reviewer-0"
+            }
+          ],
+          "transcript_sha256": "3dccf3a3b6fad499344010d820b4e703fc95b85d680311cbf494dff84d57bc18",
+          "verdict_present": true
+        },
+        {
+          "accepted": false,
+          "assurance_grade": "self_reported",
+          "attempts": 1,
+          "confidence": null,
+          "critical_review": {},
+          "decision": "revise",
+          "failure_classification": "reviewer_infrastructure_unavailable",
+          "gate": "implementation_plan",
+          "lineage": [
+            "openai",
+            "codex_cli",
+            "gpt-5.5"
+          ],
+          "model": "gpt-5.5",
+          "output_sha256": null,
+          "provider_family": "openai",
+          "recoverable": true,
+          "reviewer_assurance": "unavailable",
+          "reviewer_id": "independent-reviewer-1",
+          "reviewer_output_mode": "codex_cli",
+          "reviewer_runtime": "codex_cli",
+          "round_index": 1,
+          "runtime": "codex_cli",
+          "schema_version": "independent-reviewer-panel-result/v1",
+          "severity": "important",
+          "task_id": "agentic-eval-missed-issues-fix-20260603",
+          "tests": [],
+          "tool_access": "codebase_tools",
+          "transcript_refs": [
+            {
+              "chars": 4000,
+              "kind": "reviewer_transcript_tail",
+              "ref": "independent_reviewer_review:agentic-eval-missed-issues-fix-20260603:implementation_plan:1:independent-reviewer-1"
+            }
+          ],
+          "transcript_sha256": "ec20e3f7c8dcba7c4b9311e02bbbfd0258c78fc450657442ed482358ea2ed6a4",
+          "verdict_present": false
+        }
+      ],
+      "model": "composer-2.5",
+      "outcome": {
+        "changed_files": [
+          "supervisor/agentic_eval.py",
+          "tests/test_agentic_eval.py",
+          "tests/test_agentic_eval_bridge.py",
+          "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/report.json",
+          "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/rows.jsonl",
+          "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/replay-manifest.json",
+          "docs/dual-agent/agentic-eval-bridge-20260603/test-evidence.md"
+        ],
+        "claims": [
+          "Six-step plan covers RED tests, divergence helper, authoritative fields, bridge replay, and suite runs with exact file ownership",
+          "P1\u2013P5 traceability to four verbatim tests is accurate and backed by current source",
+          "Fan-out/policy boundary preserved; no state.py diff"
+        ],
+        "confidence": 0.88,
+        "confidence_criteria": [
+          "Plan-declared files vs git diff --stat: 7==7 PASS",
+          "Plan hash de62a6f2 recomputed on disk PASS",
+          "Four traceability tests exist and passed when re-run PASS",
+          "Authoritative row fields + divergence helper in agentic_eval.py PASS",
+          "state.py and policy/report-only invariants unchanged PASS",
+          "P5 bridge rows and report_sha256 match test-evidence PASS"
+        ],
+        "confidence_rationale": "Plan file list and traceability checks pass; plan hash and four named tests re-run here; bridge report invariants match P5. Held below 0.95 because the gate is retrospective (full diff already present) and P5 regeneration is evidenced by artifacts/script, not a dedicated pytest in the plan traceability table.",
+        "critical_review": {
+          "assumptions_to_verify": [
+            "Prior gates correctly accepted the same plan hash before implementation landed",
+            "Self-reported RED/GREEN/full-suite receipts in bridge test-evidence remain valid if tree changes"
+          ],
+          "contradictions_checked": [
+            "Plan file list vs git diff --name-only: exact match",
+            "Claude plan hash de62 vs shasum on disk: match",
+            "Receipt report_sha256 02f955\u2026 vs report.json field: match (file bytes hash differs by design)",
+            "P3 consistent-metrics: helper only flags when metric present and differs",
+            "Bridge +1 assertion ties P1 missed_issues to failed verdict count for clean-accept case"
+          ],
+          "decision": "accept",
+          "missing_evidence": [
+            "Fresh full-suite pytest output at this gate (671-pass receipt not re-run here)",
+            "Automated pytest for P5 bridge regeneration (TDD Regeneration Check is manual/script-only)",
+            "Ta[REDACTED_API_KEY] docs/dual-agent/agentic-eval-missed-issues-fix-20260603/test-evidence.md is untracked and omitted from the plan file list"
+          ],
+          "severity": "low",
+          "strongest_objection": "Gate is retrospective: the full 7-file implementation diff is already in the worktree, so step 1 RED-first cannot be independently reproduced at this gate\u2014only self-reported RED in test-evidence.md.",
+          "what_would_change_my_mind": "Plan file list diverges from diff, a named traceability test is missing or vacuous, state.py or policy defaults change, or bridge report rows revert to missed_issues=0 without divergence for clean-accept-runner-report."
+        },
+        "decisions": [
+          "accept"
+        ],
+        "objections": [],
+        "specialists": [
+          {
+            "decision": "accept",
+            "name": "Cursor Reviewer",
+            "objection": null
+          }
+        ],
+        "summary": "implementation_plan ACCEPT: plan is complete/traceable; 7 declared files match git diff exactly; P1\u2013P5 map to four existing tests; source uses authoritative missed_issues/rejected_gates with divergence helper; bridge report shows missed_issues=2 and metrics_divergence on clean-accept rows; plan hash and four pytest targets independently verified this gate.",
+        "task_id": "agentic-eval-missed-issues-fix-20260603",
+        "test_status": "passed",
+        "tests": [
+          "tests/test_agentic_eval.py::test_agentic_eval_runner_derives_missed_issues_from_verdicts",
+          "tests/test_agentic_eval.py::test_agentic_eval_runner_derives_rejected_gates_from_workflow",
+          "tests/test_agentic_eval.py::test_agentic_eval_runner_does_not_flag_consistent_quality_metrics",
+          "tests/test_agentic_eval_bridge.py::test_agentic_eval_bridge_expected_accept_requires_terminal_accept"
+        ]
+      },
+      "panel_failure_classification": "reviewer_infrastructure_unavailable",
+      "panel_recoverable_failures": [
+        {
+          "failure_classification": "reviewer_infrastructure_unavailable",
+          "model": "gpt-5.5",
+          "recoverable": true,
+          "reviewer_id": "independent-reviewer-1",
+          "runtime": "codex_cli"
+        }
+      ],
+      "probe": {
+        "details": {},
+        "probe_id": "CURSOR",
+        "reason": "cursor_review_ok",
+        "status": "green"
+      },
+      "recoverable": false,
+      "retry_reasons": [],
+      "reviewer_assurance": "tool_backed_primary",
+      "reviewer_output_mode": "cursor_sdk",
+      "reviewer_runtime": "cursor_sdk",
+      "reviewer_unavailable_recovery": {
+        "authorization": null,
+        "available_reviewers_accept": true,
+        "classification": "reviewer_infrastructure_unavailable",
+        "decision": "escalate",
+        "escalation": {
+          "action_id": 1333,
+          "ask_id": 66,
+          "classification": "reviewer_infrastructure_unavailable",
+          "evidence_grade": "degraded",
+          "forced_by_safety": false,
+          "independent_reviewer": {
+            "accepted": true,
+            "agent_id": "agent-0b694159-b3d3-42dc-a5a9-537a6ae466e3",
+            "attempts": 1,
+            "critical_review": {
+              "assumptions_to_verify": [
+                "Prior gates correctly accepted the same plan hash before implementation landed",
+                "Self-reported RED/GREEN/full-suite receipts in bridge test-evidence remain valid if tree changes"
+              ],
+              "contradictions_checked": [
+                "Plan file list vs git diff --name-only: exact match",
+                "Claude plan hash de62 vs shasum on disk: match",
+                "Receipt report_sha256 02f955\u2026 vs report.json field: match (file bytes hash differs by design)",
+                "P3 consistent-metrics: helper only flags when metric present and differs",
+                "Bridge +1 assertion ties P1 missed_issues to failed verdict count for clean-accept case"
+              ],
+              "decision": "accept",
+              "evidence_refs": [],
+              "missing_evidence": [
+                "Fresh full-suite pytest output at this gate (671-pass receipt not re-run here)",
+                "Automated pytest for P5 bridge regeneration (TDD Regeneration Check is manual/script-only)",
+                "Ta[REDACTED_API_KEY] docs/dual-agent/agentic-eval-missed-issues-fix-20260603/test-evidence.md is untracked and omitted from the plan file list"
+              ],
+              "schema_version": "critical-review/v1",
+              "severity": "low",
+              "strongest_objection": "Gate is retrospective: the full 7-file implementation diff is already in the worktree, so step 1 RED-first cannot be independently reproduced at this gate\u2014only self-reported RED in test-evidence.md.",
+              "what_would_change_my_mind": "Plan file list diverges from diff, a named traceability test is missing or vacuous, state.py or policy defaults change, or bridge report rows revert to missed_issues=0 without divergence for clean-accept-runner-report."
+            },
+            "diagnostics": {
+              "prompt_chars": 10900,
+              "prompt_sha256": "6e2bee88d1c0d7e70bcfdc1d13210754c6e2bbdb8466ca791d1855e6cd4e78c9"
+            },
+            "duration_ms": 35796,
+            "failure_classification": null,
+            "fallback_from_runtime": null,
+            "fallback_reason": null,
+            "independent_reviewer_panel_decision": {
+              "accepted_reviewers": [
+                "independent-reviewer-0"
+              ],
+              "aggregation_mode": "conservative",
+              "available_reviewers": [
+                "independent-reviewer-0"
+              ],
+              "blocking_reviewers": [],
+              "decision": "revise",
+              "low_confidence_reviewers": [],
+              "low_confidence_threshold": 0.0,
+              "missing_reviewers": [
+                "independent-reviewer-1"
+              ],
+              "non_accepting_reviewers": [],
+              "reason": "missing_reviewer_verdict",
+              "reviewer_inputs": [
+                {
+                  "accepted": true,
+                  "assurance_grade": "agentic",
+                  "confidence": 0.88,
+                  "decision": "accept",
+                  "lineage": [
+                    "cursor",
+                    "cursor_sdk",
+                    "composer-2.5"
+                  ],
+                  "model": "composer-2.5",
+                  "provider_family": "cursor",
+                  "reviewer_id": "independent-reviewer-0",
+                  "runtime": "cursor_sdk",
+                  "severity": "low",
+                  "tool_access": "codebase_tools",
+                  "verdict_present": true
+                },
+                {
+                  "accepted": false,
+                  "assurance_grade": "self_reported",
+                  "confidence": null,
+                  "decision": "revise",
+                  "lineage": [
+                    "openai",
+                    "codex_cli",
+                    "gpt-5.5"
+                  ],
+                  "model": "gpt-5.5",
+                  "provider_family": "openai",
+                  "reviewer_id": "independent-reviewer-1",
+                  "runtime": "codex_cli",
+                  "severity": "important",
+                  "tool_access": "codebase_tools",
+                  "verdict_present": false
+                }
+              ],
+              "schema_version": "independent-reviewer-panel-decision/v1"
+            },
+            "independent_reviewer_results": [
+              {
+                "accepted": true,
+                "assurance_grade": "agentic",
+                "attempts": 1,
+                "confidence": 0.88,
+                "critical_review": {
+                  "assumptions_to_verify": [
+                    "Prior gates correctly accepted the same plan hash before implementation landed",
+                    "Self-reported RED/GREEN/full-suite receipts in bridge test-evidence remain valid if tree changes"
+                  ],
+                  "contradictions_checked": [
+                    "Plan file list vs git diff --name-only: exact match",
+                    "Claude plan hash de62 vs shasum on disk: match",
+                    "Receipt report_sha256 02f955\u2026 vs report.json field: match (file bytes hash differs by design)",
+                    "P3 consistent-metrics: helper only flags when metric present and differs",
+                    "Bridge +1 assertion ties P1 missed_issues to failed verdict count for clean-accept case"
+                  ],
+                  "decision": "accept",
+                  "missing_evidence": [
+                    "Fresh full-suite pytest output at this gate (671-pass receipt not re-run here)",
+                    "Automated pytest for P5 bridge regeneration (TDD Regeneration Check is manual/script-only)",
+                    "Ta[REDACTED_API_KEY] docs/dual-agent/agentic-eval-missed-issues-fix-20260603/test-evidence.md is untracked and omitted from the plan file list"
+                  ],
+                  "severity": "low",
+                  "strongest_objection": "Gate is retrospective: the full 7-file implementation diff is already in the worktree, so step 1 RED-first cannot be independently reproduced at this gate\u2014only self-reported RED in test-evidence.md.",
+                  "what_would_change_my_mind": "Plan file list diverges from diff, a named traceability test is missing or vacuous, state.py or policy defaults change, or bridge report rows revert to missed_issues=0 without divergence for clean-accept-runner-report."
+                },
+                "decision": "accept",
+                "failure_classification": null,
+                "gate": "implementation_plan",
+                "lineage": [
+                  "cursor",
+                  "cursor_sdk",
+                  "composer-2.5"
+                ],
+                "model": "composer-2.5",
+                "output_sha256": "bf2a030b6fcc1911438a40228150ee56b25db8522c84d5729f3f01c7617c7087",
+                "provider_family": "cursor",
+                "recoverable": false,
+                "reviewer_assurance": "tool_backed_primary",
+                "reviewer_id": "independent-reviewer-0",
+                "reviewer_output_mode": "cursor_sdk",
+                "reviewer_runtime": "cursor_sdk",
+                "round_index": 1,
+                "runtime": "cursor_sdk",
+                "schema_version": "independent-reviewer-panel-result/v1",
+                "severity": "low",
+                "task_id": "agentic-eval-missed-issues-fix-20260603",
+                "tests": [
+                  "tests/test_agentic_eval.py::test_agentic_eval_runner_derives_missed_issues_from_verdicts",
+                  "tests/test_agentic_eval.py::test_agentic_eval_runner_derives_rejected_gates_from_workflow",
+                  "tests/test_agentic_eval.py::test_agentic_eval_runner_does_not_flag_consistent_quality_metrics",
+                  "tests/test_agentic_eval_bridge.py::test_agentic_eval_bridge_expected_accept_requires_terminal_accept"
+                ],
+                "tool_access": "codebase_tools",
+                "transcript_refs": [
+                  {
+                    "chars": 4000,
+                    "kind": "reviewer_transcript_tail",
+                    "ref": "independent_reviewer_review:agentic-eval-missed-issues-fix-20260603:implementation_plan:1:independent-reviewer-0"
+                  }
+                ],
+                "transcript_sha256": "3dccf3a3b6fad499344010d820b4e703fc95b85d680311cbf494dff84d57bc18",
+                "verdict_present": true
+              },
+              {
+                "accepted": false,
+                "assurance_grade": "self_reported",
+                "attempts": 1,
+                "confidence": null,
+                "critical_review": {},
+                "decision": "revise",
+                "failure_classification": "reviewer_infrastructure_unavailable",
+                "gate": "implementation_plan",
+                "lineage": [
+                  "openai",
+                  "codex_cli",
+                  "gpt-5.5"
+                ],
+                "model": "gpt-5.5",
+                "output_sha256": null,
+                "provider_family": "openai",
+                "recoverable": true,
+                "reviewer_assurance": "unavailable",
+                "reviewer_id": "independent-reviewer-1",
+                "reviewer_output_mode": "codex_cli",
+                "reviewer_runtime": "codex_cli",
+                "round_index": 1,
+                "runtime": "codex_cli",
+                "schema_version": "independent-reviewer-panel-result/v1",
+                "severity": "important",
+                "task_id": "agentic-eval-missed-issues-fix-20260603",
+                "tests": [],
+                "tool_access": "codebase_tools",
+                "transcript_refs": [
+                  {
+                    "chars": 4000,
+                    "kind": "reviewer_transcript_tail",
+                    "ref": "independent_reviewer_review:agentic-eval-missed-issues-fix-20260603:implementation_plan:1:independent-reviewer-1"
+                  }
+                ],
+                "transcript_sha256": "ec20e3f7c8dcba7c4b9311e02bbbfd0258c78fc450657442ed482358ea2ed6a4",
+                "verdict_present": false
+              }
+            ],
+            "model": "composer-2.5",
+            "outcome": {
+              "changed_files": [
+                "supervisor/agentic_eval.py",
+                "tests/test_agentic_eval.py",
+                "tests/test_agentic_eval_bridge.py",
+                "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/report.json",
+                "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/rows.jsonl",
+                "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/replay-manifest.json",
+                "docs/dual-agent/agentic-eval-bridge-20260603/test-evidence.md"
+              ],
+              "claims": [
+                "Six-step plan covers RED tests, divergence helper, authoritative fields, bridge replay, and suite runs with exact file ownership",
+                "P1\u2013P5 traceability to four verbatim tests is accurate and backed by current source",
+                "Fan-out/policy boundary preserved; no state.py diff"
+              ],
+              "confidence": 0.88,
+              "confidence_criteria": [
+                "Plan-declared files vs git diff --stat: 7==7 PASS",
+                "Plan hash de62a6f2 recomputed on disk PASS",
+                "Four traceability tests exist and passed when re-run PASS",
+                "Authoritative row fields + divergence helper in agentic_eval.py PASS",
+                "state.py and policy/report-only invariants unchanged PASS",
+                "P5 bridge rows and report_sha256 match test-evidence PASS"
+              ],
+              "confidence_rationale": "Plan file list and traceability checks pass; plan hash and four named tests re-run here; bridge report invariants match P5. Held below 0.95 because the gate is retrospective (full diff already present) and P5 regeneration is evidenced by artifacts/script, not a dedicated pytest in the plan traceability table.",
+              "critical_review": {
+                "assumptions_to_verify": [
+                  "Prior gates correctly accepted the same plan hash before implementation landed",
+                  "Self-reported RED/GREEN/full-suite receipts in bridge test-evidence remain valid if tree changes"
+                ],
+                "contradictions_checked": [
+                  "Plan file list vs git diff --name-only: exact match",
+                  "Claude plan hash de62 vs shasum on disk: match",
+                  "Receipt report_sha256 02f955\u2026 vs report.json field: match (file bytes hash differs by design)",
+                  "P3 consistent-metrics: helper only flags when metric present and differs",
+                  "Bridge +1 assertion ties P1 missed_issues to failed verdict count for clean-accept case"
+                ],
+                "decision": "accept",
+                "missing_evidence": [
+                  "Fresh full-suite pytest output at this gate (671-pass receipt not re-run here)",
+                  "Automated pytest for P5 bridge regeneration (TDD Regeneration Check is manual/script-only)",
+                  "Ta[REDACTED_API_KEY] docs/dual-agent/agentic-eval-missed-issues-fix-20260603/test-evidence.md is untracked and omitted from the plan file list"
+                ],
+                "severity": "low",
+                "strongest_objection": "Gate is retrospective: the full 7-file implementation diff is already in the worktree, so step 1 RED-first cannot be independently reproduced at this gate\u2014only self-reported RED in test-evidence.md.",
+                "what_would_change_my_mind": "Plan file list diverges from diff, a named traceability test is missing or vacuous, state.py or policy defaults change, or bridge report rows revert to missed_issues=0 without divergence for clean-accept-runner-report."
+              },
+              "decisions": [
+                "accept"
+              ],
+              "objections": [],
+              "specialists": [
+                {
+                  "decision": "accept",
+                  "name": "Cursor Reviewer",
+                  "objection": null
+                }
+              ],
+              "summary": "implementation_plan ACCEPT: plan is complete/traceable; 7 declared files match git diff exactly; P1\u2013P5 map to four existing tests; source uses authoritative missed_issues/rejected_gates with divergence helper; bridge report shows missed_issues=2 and metrics_divergence on clean-accept rows; plan hash and four pytest targets independently verified this gate.",
+              "task_id": "agentic-eval-missed-issues-fix-20260603",
+              "test_status": "passed",
+              "tests": [
+                "tests/test_agentic_eval.py::test_agentic_eval_runner_derives_missed_issues_from_verdicts",
+                "tests/test_agentic_eval.py::test_agentic_eval_runner_derives_rejected_gates_from_workflow",
+                "tests/test_agentic_eval.py::test_agentic_eval_runner_does_not_flag_consistent_quality_metrics",
+                "tests/test_agentic_eval_bridge.py::test_agentic_eval_bridge_expected_accept_requires_terminal_accept"
+              ]
+            },
+            "panel_failure_classification": "reviewer_infrastructure_unavailable",
+            "panel_recoverable_failures": [
+              {
+                "failure_classification": "reviewer_infrastructure_unavailable",
+                "model": "gpt-5.5",
+                "recoverable": true,
+                "reviewer_id": "independent-reviewer-1",
+                "runtime": "codex_cli"
+              }
+            ],
+            "probe": {
+              "details": {},
+              "probe_id": "CURSOR",
+              "reason": "cursor_review_ok",
+              "status": "green"
+            },
+            "recoverable": false,
+            "retry_reasons": [],
+            "reviewer_assurance": "tool_backed_primary",
+            "reviewer_output_mode": "cursor_sdk",
+            "reviewer_runtime": "cursor_sdk",
+            "reviewer_unavailable_recovery": {
+              "authorization": null,
+              "available_reviewers_accept": true,
+              "classification": "reviewer_infrastructure_unavailable",
+              "decision": "escalate",
+              "evidence_grade": "degraded",
+              "forced_by_safety": false,
+              "gate": "implementation_plan",
+              "policy": "escalate",
+              "reason": "policy_escalate",
+              "reviewer_verdict_counted_as_accept": false,
+              "safety_reasons": [],
+              "schema_version": "reviewer-unavailable-recovery/v1",
+              "unavailable_reviewers": [
+                "independent-reviewer-1"
+              ]
+            },
+            "run_id": "run-593ad6b9-15fb-44c8-9353-ef96dbd9c391",
+            "schema_version": "independent-reviewer-result/v1",
+            "status": "finished",
+            "transcript_tail": "and matches what landed. The main weakness is process timing (implementation already in the tree), not plan defects.\n\n<dual_agent_outcome>{\"task_id\":\"agentic-eval-missed-issues-fix-20260603\",\"summary\":\"implementation_plan ACCEPT: plan is complete/traceable; 7 declared files match git diff exactly; P1\u2013P5 map to four existing tests; source uses authoritative missed_issues/rejected_gates with divergence helper; bridge report shows missed_issues=2 and metrics_divergence on clean-accept rows; plan hash and four pytest targets independently verified this gate.\",\"specialists\":[{\"name\":\"Cursor Reviewer\",\"decision\":\"accept\"}],\"decisions\":[\"accept\"],\"objections\":[],\"changed_files\":[\"supervisor/agentic_eval.py\",\"tests/test_agentic_eval.py\",\"tests/test_agentic_eval_bridge.py\",\"docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/report.json\",\"docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/rows.jsonl\",\"docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/replay-manifest.json\",\"docs/dual-agent/agentic-eval-bridge-20260603/test-evidence.md\"],\"tests\":[\"tests/test_agentic_eval.py::test_agentic_eval_runner_derives_missed_issues_from_verdicts\",\"tests/test_agentic_eval.py::test_agentic_eval_runner_derives_rejected_gates_from_workflow\",\"tests/test_agentic_eval.py::test_agentic_eval_runner_does_not_flag_consistent_quality_metrics\",\"tests/test_agentic_eval_bridge.py::test_agentic_eval_bridge_expected_accept_requires_terminal_accept\"],\"test_status\":\"passed\",\"confidence\":0.88,\"confidence_rationale\":\"Plan file list and traceability checks pass; plan hash and four named tests re-run here; bridge report invariants match P5. Held below 0.95 because the gate is retrospective (full diff already present) and P5 regeneration is evidenced by artifacts/script, not a dedicated pytest in the plan traceability table.\",\"confidence_criteria\":[\"Plan-declared files vs git diff --stat: 7==7 PASS\",\"Plan hash de62a6f2 recomputed on disk PASS\",\"Four traceability tests exist and passed when re-run PASS\",\"Authoritative row fields + divergence helper in agentic_eval.py PASS\",\"state.py and policy/report-only invariants unchanged PASS\",\"P5 bridge rows and report_sha256 match test-evidence PASS\"],\"claims\":[\"Six-step plan covers RED tests, divergence helper, authoritative fields, bridge replay, and suite runs with exact file ownership\",\"P1\u2013P5 traceability to four verbatim tests is accurate and backed by current source\",\"Fan-out/policy boundary preserved; no state.py diff\"],\"critical_review\":{\"strongest_objection\":\"Gate is retrospective: the full 7-file implementation diff is already in the worktree, so step 1 RED-first cannot be independently reproduced at this gate\u2014only self-reported RED in test-evidence.md.\",\"missing_evidence\":[\"Fresh full-suite pytest output at this gate (671-pass receipt not re-run here)\",\"Automated pytest for P5 bridge regeneration (TDD Regeneration Check is manual/script-only)\",\"Ta[REDACTED_API_KEY] docs/dual-agent/agentic-eval-missed-issues-fix-20260603/test-evidence.md is untracked and omitted from the plan file list\"],\"contradictions_checked\":[\"Plan file list vs git diff --name-only: exact match\",\"Claude plan hash de62 vs shasum on disk: match\",\"Receipt report_sha256 02f955\u2026 vs report.json field: match (file bytes hash differs by design)\",\"P3 consistent-metrics: helper only flags when metric present and differs\",\"Bridge +1 assertion ties P1 missed_issues to failed verdict count for clean-accept case\"],\"assumptions_to_verify\":[\"Prior gates correctly accepted the same plan hash before implementation landed\",\"Self-reported RED/GREEN/full-suite receipts in bridge test-evidence remain valid if tree changes\"],\"what_would_change_my_mind\":\"Plan file list diverges from diff, a named traceability test is missing or vacuous, state.py or policy defaults change, or bridge report rows revert to missed_issues=0 without divergence for clean-accept-runner-report.\",\"decision\":\"accept\",\"severity\":\"low\"}}</dual_agent_outcome>",
+            "unavailable_reviewer_ids": [
+              "independent-reviewer-1"
+            ]
+          },
+          "nonce": "bb740aecbe5c4184",
+          "options": [
+            "Pause",
+            "Kill",
+            "Continue"
+          ],
+          "policy": "escalate",
+          "reviewer_verdict_counted_as_accept": false,
+          "safety_reasons": [],
+          "status": "paused_for_human",
+          "unavailable_reviewers": [
+            "independent-reviewer-1"
+          ]
+        },
+        "event_id": 466049,
+        "evidence_grade": "degraded",
+        "forced_by_safety": false,
+        "gate": "implementation_plan",
+        "policy": "escalate",
+        "reason": "policy_escalate",
+        "reviewer_verdict_counted_as_accept": false,
+        "safety_reasons": [],
+        "schema_version": "reviewer-unavailable-recovery/v1",
+        "unavailable_reviewers": [
+          "independent-reviewer-1"
+        ]
+      },
+      "run_id": "run-593ad6b9-15fb-44c8-9353-ef96dbd9c391",
+      "schema_version": "independent-reviewer-result/v1",
+      "status": "finished",
+      "transcript_tail": "and matches what landed. The main weakness is process timing (implementation already in the tree), not plan defects.\n\n<dual_agent_outcome>{\"task_id\":\"agentic-eval-missed-issues-fix-20260603\",\"summary\":\"implementation_plan ACCEPT: plan is complete/traceable; 7 declared files match git diff exactly; P1\u2013P5 map to four existing tests; source uses authoritative missed_issues/rejected_gates with divergence helper; bridge report shows missed_issues=2 and metrics_divergence on clean-accept rows; plan hash and four pytest targets independently verified this gate.\",\"specialists\":[{\"name\":\"Cursor Reviewer\",\"decision\":\"accept\"}],\"decisions\":[\"accept\"],\"objections\":[],\"changed_files\":[\"supervisor/agentic_eval.py\",\"tests/test_agentic_eval.py\",\"tests/test_agentic_eval_bridge.py\",\"docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/report.json\",\"docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/rows.jsonl\",\"docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/replay-manifest.json\",\"docs/dual-agent/agentic-eval-bridge-20260603/test-evidence.md\"],\"tests\":[\"tests/test_agentic_eval.py::test_agentic_eval_runner_derives_missed_issues_from_verdicts\",\"tests/test_agentic_eval.py::test_agentic_eval_runner_derives_rejected_gates_from_workflow\",\"tests/test_agentic_eval.py::test_agentic_eval_runner_does_not_flag_consistent_quality_metrics\",\"tests/test_agentic_eval_bridge.py::test_agentic_eval_bridge_expected_accept_requires_terminal_accept\"],\"test_status\":\"passed\",\"confidence\":0.88,\"confidence_rationale\":\"Plan file list and traceability checks pass; plan hash and four named tests re-run here; bridge report invariants match P5. Held below 0.95 because the gate is retrospective (full diff already present) and P5 regeneration is evidenced by artifacts/script, not a dedicated pytest in the plan traceability table.\",\"confidence_criteria\":[\"Plan-declared files vs git diff --stat: 7==7 PASS\",\"Plan hash de62a6f2 recomputed on disk PASS\",\"Four traceability tests exist and passed when re-run PASS\",\"Authoritative row fields + divergence helper in agentic_eval.py PASS\",\"state.py and policy/report-only invariants unchanged PASS\",\"P5 bridge rows and report_sha256 match test-evidence PASS\"],\"claims\":[\"Six-step plan covers RED tests, divergence helper, authoritative fields, bridge replay, and suite runs with exact file ownership\",\"P1\u2013P5 traceability to four verbatim tests is accurate and backed by current source\",\"Fan-out/policy boundary preserved; no state.py diff\"],\"critical_review\":{\"strongest_objection\":\"Gate is retrospective: the full 7-file implementation diff is already in the worktree, so step 1 RED-first cannot be independently reproduced at this gate\u2014only self-reported RED in test-evidence.md.\",\"missing_evidence\":[\"Fresh full-suite pytest output at this gate (671-pass receipt not re-run here)\",\"Automated pytest for P5 bridge regeneration (TDD Regeneration Check is manual/script-only)\",\"Ta[REDACTED_API_KEY] docs/dual-agent/agentic-eval-missed-issues-fix-20260603/test-evidence.md is untracked and omitted from the plan file list\"],\"contradictions_checked\":[\"Plan file list vs git diff --name-only: exact match\",\"Claude plan hash de62 vs shasum on disk: match\",\"Receipt report_sha256 02f955\u2026 vs report.json field: match (file bytes hash differs by design)\",\"P3 consistent-metrics: helper only flags when metric present and differs\",\"Bridge +1 assertion ties P1 missed_issues to failed verdict count for clean-accept case\"],\"assumptions_to_verify\":[\"Prior gates correctly accepted the same plan hash before implementation landed\",\"Self-reported RED/GREEN/full-suite receipts in bridge test-evidence remain valid if tree changes\"],\"what_would_change_my_mind\":\"Plan file list diverges from diff, a named traceability test is missing or vacuous, state.py or policy defaults change, or bridge report rows revert to missed_issues=0 without divergence for clean-accept-runner-report.\",\"decision\":\"accept\",\"severity\":\"low\"}}</dual_agent_outcome>",
+      "unavailable_reviewer_ids": [
+        "independent-reviewer-1"
+      ]
+    },
+    "independent_reviewer_panel_decision": {
+      "accepted_reviewers": [
+        "independent-reviewer-0"
+      ],
+      "aggregation_mode": "conservative",
+      "available_reviewers": [
+        "independent-reviewer-0"
+      ],
+      "blocking_reviewers": [],
+      "decision": "revise",
+      "low_confidence_reviewers": [],
+      "low_confidence_threshold": 0.0,
+      "missing_reviewers": [
+        "independent-reviewer-1"
+      ],
+      "non_accepting_reviewers": [],
+      "reason": "missing_reviewer_verdict",
+      "reviewer_inputs": [
+        {
+          "accepted": true,
+          "assurance_grade": "agentic",
+          "confidence": 0.88,
+          "decision": "accept",
+          "lineage": [
+            "cursor",
+            "cursor_sdk",
+            "composer-2.5"
+          ],
+          "model": "composer-2.5",
+          "provider_family": "cursor",
+          "reviewer_id": "independent-reviewer-0",
+          "runtime": "cursor_sdk",
+          "severity": "low",
+          "tool_access": "codebase_tools",
+          "verdict_present": true
+        },
+        {
+          "accepted": false,
+          "assurance_grade": "self_reported",
+          "confidence": null,
+          "decision": "revise",
+          "lineage": [
+            "openai",
+            "codex_cli",
+            "gpt-5.5"
+          ],
+          "model": "gpt-5.5",
+          "provider_family": "openai",
+          "reviewer_id": "independent-reviewer-1",
+          "runtime": "codex_cli",
+          "severity": "important",
+          "tool_access": "codebase_tools",
+          "verdict_present": false
+        }
+      ],
+      "schema_version": "independent-reviewer-panel-decision/v1"
+    },
+    "independent_reviewer_results": [
+      {
+        "accepted": true,
+        "assurance_grade": "agentic",
+        "attempts": 1,
+        "confidence": 0.88,
+        "critical_review": {
+          "assumptions_to_verify": [
+            "Prior gates correctly accepted the same plan hash before implementation landed",
+            "Self-reported RED/GREEN/full-suite receipts in bridge test-evidence remain valid if tree changes"
+          ],
+          "contradictions_checked": [
+            "Plan file list vs git diff --name-only: exact match",
+            "Claude plan hash de62 vs shasum on disk: match",
+            "Receipt report_sha256 02f955\u2026 vs report.json field: match (file bytes hash differs by design)",
+            "P3 consistent-metrics: helper only flags when metric present and differs",
+            "Bridge +1 assertion ties P1 missed_issues to failed verdict count for clean-accept case"
+          ],
+          "decision": "accept",
+          "missing_evidence": [
+            "Fresh full-suite pytest output at this gate (671-pass receipt not re-run here)",
+            "Automated pytest for P5 bridge regeneration (TDD Regeneration Check is manual/script-only)",
+            "Ta[REDACTED_API_KEY] docs/dual-agent/agentic-eval-missed-issues-fix-20260603/test-evidence.md is untracked and omitted from the plan file list"
+          ],
+          "severity": "low",
+          "strongest_objection": "Gate is retrospective: the full 7-file implementation diff is already in the worktree, so step 1 RED-first cannot be independently reproduced at this gate\u2014only self-reported RED in test-evidence.md.",
+          "what_would_change_my_mind": "Plan file list diverges from diff, a named traceability test is missing or vacuous, state.py or policy defaults change, or bridge report rows revert to missed_issues=0 without divergence for clean-accept-runner-report."
+        },
+        "decision": "accept",
+        "failure_classification": null,
+        "gate": "implementation_plan",
+        "lineage": [
+          "cursor",
+          "cursor_sdk",
+          "composer-2.5"
+        ],
+        "model": "composer-2.5",
+        "output_sha256": "bf2a030b6fcc1911438a40228150ee56b25db8522c84d5729f3f01c7617c7087",
+        "provider_family": "cursor",
+        "recoverable": false,
+        "reviewer_assurance": "tool_backed_primary",
+        "reviewer_id": "independent-reviewer-0",
+        "reviewer_output_mode": "cursor_sdk",
+        "reviewer_runtime": "cursor_sdk",
+        "round_index": 1,
+        "runtime": "cursor_sdk",
+        "schema_version": "independent-reviewer-panel-result/v1",
+        "severity": "low",
+        "task_id": "agentic-eval-missed-issues-fix-20260603",
+        "tests": [
+          "tests/test_agentic_eval.py::test_agentic_eval_runner_derives_missed_issues_from_verdicts",
+          "tests/test_agentic_eval.py::test_agentic_eval_runner_derives_rejected_gates_from_workflow",
+          "tests/test_agentic_eval.py::test_agentic_eval_runner_does_not_flag_consistent_quality_metrics",
+          "tests/test_agentic_eval_bridge.py::test_agentic_eval_bridge_expected_accept_requires_terminal_accept"
+        ],
+        "tool_access": "codebase_tools",
+        "transcript_refs": [
+          {
+            "chars": 4000,
+            "kind": "reviewer_transcript_tail",
+            "ref": "independent_reviewer_review:agentic-eval-missed-issues-fix-20260603:implementation_plan:1:independent-reviewer-0"
+          }
+        ],
+        "transcript_sha256": "3dccf3a3b6fad499344010d820b4e703fc95b85d680311cbf494dff84d57bc18",
+        "verdict_present": true
+      },
+      {
+        "accepted": false,
+        "assurance_grade": "self_reported",
+        "attempts": 1,
+        "confidence": null,
+        "critical_review": {},
+        "decision": "revise",
+        "failure_classification": "reviewer_infrastructure_unavailable",
+        "gate": "implementation_plan",
+        "lineage": [
+          "openai",
+          "codex_cli",
+          "gpt-5.5"
+        ],
+        "model": "gpt-5.5",
+        "output_sha256": null,
+        "provider_family": "openai",
+        "recoverable": true,
+        "reviewer_assurance": "unavailable",
+        "reviewer_id": "independent-reviewer-1",
+        "reviewer_output_mode": "codex_cli",
+        "reviewer_runtime": "codex_cli",
+        "round_index": 1,
+        "runtime": "codex_cli",
+        "schema_version": "independent-reviewer-panel-result/v1",
+        "severity": "important",
+        "task_id": "agentic-eval-missed-issues-fix-20260603",
+        "tests": [],
+        "tool_access": "codebase_tools",
+        "transcript_refs": [
+          {
+            "chars": 4000,
+            "kind": "reviewer_transcript_tail",
+            "ref": "independent_reviewer_review:agentic-eval-missed-issues-fix-20260603:implementation_plan:1:independent-reviewer-1"
+          }
+        ],
+        "transcript_sha256": "ec20e3f7c8dcba7c4b9311e02bbbfd0258c78fc450657442ed482358ea2ed6a4",
+        "verdict_present": false
+      }
+    ],
+    "outcome": {
+      "changed_files": [
+        "supervisor/agentic_eval.py",
+        "tests/test_agentic_eval.py",
+        "tests/test_agentic_eval_bridge.py",
+        "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/report.json",
+        "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/rows.jsonl",
+        "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/replay-manifest.json",
+        "docs/dual-agent/agentic-eval-bridge-20260603/test-evidence.md"
+      ],
+      "claims": [
+        "Plan is sound/complete/traceable with exact file ownership matching the realized diff",
+        "Every P1-P5 promise maps to a test that exists verbatim in the tree",
+        "Fan-out policy and speed/cost semantics unchanged; state.py untouched"
+      ],
+      "confidence": 0.9,
+      "confidence_criteria": [
+        "File ownership in plan == actual diff (PASS)",
+        "Named tests exist verbatim (PASS 4/4)",
+        "Source backs each step at cited lines (PASS)",
+        "Out-of-scope state.py + policy unchanged (PASS)",
+        "shasum/pytest re-run this gate (NOT DONE; policy-compliant self_reported)"
+      ],
+      "confidence_rationale": "Plan file-list matches diff exactly, all named tests exist verbatim, and source backs every step at recorded lines; plan hash corroborated by 3 prior ACCEPTed gates. Held below 0.95 because shasum and pytest were not re-run this gate (approval denied; grade=self_reported matches handoff policy).",
+      "critical_review": {
+        "assumptions_to_verify": [
+          "Plan hash de62a6f2 still matches on disk (relied on 3 prior gate memories citing 'de62')",
+          "Self-reported 668+16 passing remains valid against current tree"
+        ],
+        "contradictions_checked": [
+          "Plan-declared file list vs actual git diff --stat: MATCH (7==7)",
+          "state.py out-of-scope claim vs git diff: EMPTY confirmed",
+          "P3 'consistent metrics don't flag' vs helper body: confirmed only flags when present AND differs"
+        ],
+        "decision": "accept",
+        "missing_evidence": [
+          "Fresh pytest run output for this gate",
+          "Independent shasum recomputation of implementation-plan.md (approval denied 3x)"
+        ],
+        "severity": "low",
+        "strongest_objection": "Tests are GREEN-not-RED (implementation landed alongside the plan, so RED-first cannot be demonstrated this gate) and shasum was not re-run to re-verify the plan hash.",
+        "what_would_change_my_mind": "If the declared file list diverged from the diff, a named traceability test were missing/vacuous, state.py showed a diff, or the report-only invariant were mutated, I would move to REVISE."
+      },
+      "decisions": [
+        "accept"
+      ],
+      "objections": [],
+      "specialists": [
+        {
+          "decision": "accept",
+          "name": "lead-gate-reviewer",
+          "objection": null
+        }
+      ],
+      "summary": "implementation_plan ACCEPT: 6-step plan sound/complete/traceable; 7 declared files == diff exactly (153 ins/31 del); P1-P5 map to 4 tests that exist verbatim; source backs every step (helper:295, missed_issues:125, rejected_gates:123, reported_* update:160, report_only:191-195); state.py untouched.",
+      "task_id": "agentic-eval-missed-issues-fix-20260603",
+      "test_status": "unknown",
+      "tests": [
+        "tests/test_agentic_eval.py::test_agentic_eval_runner_derives_missed_issues_from_verdicts",
+        "tests/test_agentic_eval.py::test_agentic_eval_runner_derives_rejected_gates_from_workflow",
+        "tests/test_agentic_eval.py::test_agentic_eval_runner_does_not_flag_consistent_quality_metrics",
+        "tests/test_agentic_eval_bridge.py::test_agentic_eval_bridge_expected_accept_requires_terminal_accept"
+      ]
+    },
+    "probes": {
+      "P1": {
+        "details": {},
+        "probe_id": "P1",
+        "reason": "planning_artifact_boundaries_ok",
+        "status": "green"
+      },
+      "P2": {
+        "details": {
+          "captured_bytes": 8122,
+          "captured_token_estimate": 2023,
+          "orchestration_surface": "/lead"
+        },
+        "probe_id": "P2",
+        "reason": "worker_orchestration_invocation_ok",
+        "status": "green"
+      },
+      "P3": {
+        "details": {},
+        "probe_id": "P3",
+        "reason": "outcome_fidelity_ok",
+        "status": "green"
+      },
+      "P4": {
+        "details": {
+          "decisions": [
+            "accept",
+            "accept",
+            "accept"
+          ]
+        },
+        "probe_id": "P4",
+        "reason": "outcome_gate_decision_ok",
+        "status": "green"
+      },
+      "P_planning": {
+        "details": {
+          "artifact_hashes": {
+            "grill_findings": "5f60343723df24f446f28e05c974b9c00a84717bd8142990c5a8e6ec30c9d8f6",
+            "implementation_plan": "de62a6f296707d477935533548549479bed3d85402648afa9f016377c93f5929",
+            "issues": "e9c8a26ec2e2361fdd88757e36e0a3366cb8375c284f1c1d4fdee9cb188720b4",
+            "prd": "2970799343450e901bdf30395ce021ecee0319fc48d96358c2b1264843ae3994",
+            "tdd_plan": "491ead8962c56987c1ce3e8ed2cc8bae57db76018f05063d64a9839c9ccf4c8a"
+          },
+          "artifacts": [
+            {
+              "kind": "prd",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/prd.md",
+              "sha256": "2970799343450e901bdf30395ce021ecee0319fc48d96358c2b1264843ae3994",
+              "status": "accepted"
+            },
+            {
+              "kind": "issues",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/issues.md",
+              "sha256": "e9c8a26ec2e2361fdd88757e36e0a3366cb8375c284f1c1d4fdee9cb188720b4",
+              "status": "accepted"
+            },
+            {
+              "kind": "tdd_plan",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/tdd.md",
+              "sha256": "491ead8962c56987c1ce3e8ed2cc8bae57db76018f05063d64a9839c9ccf4c8a",
+              "status": "accepted"
+            },
+            {
+              "kind": "grill_findings",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/grill-findings.md",
+              "sha256": "5f60343723df24f446f28e05c974b9c00a84717bd8142990c5a8e6ec30c9d8f6",
+              "status": "accepted"
+            },
+            {
+              "kind": "implementation_plan",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/implementation-plan.md",
+              "sha256": "de62a6f296707d477935533548549479bed3d85402648afa9f016377c93f5929",
+              "status": "accepted"
+            }
+          ],
+          "checks": {
+            "AGG-001": "pass",
+            "AGG-002": "pass",
+            "GRILL-001": "pass",
+            "GRILL-002": "pass",
+            "GRILL-003": "pass",
+            "ISS-001": "pass",
+            "ISS-002": "pass",
+            "ISS-003": "pass",
+            "ISS-004": "pass",
+            "PLAN-001": "pass",
+            "PLAN-002": "pass",
+            "PLAN-003": "pass",
+            "PLAN-004": "pass",
+            "PRD-001": "pass",
+            "PRD-002": "pass",
+            "PRD-003": "pass",
+            "PRD-004": "pass",
+            "PRD-005": "pass",
+            "PRD-006": "pass",
+            "TDD-001": "pass",
+            "TDD-002": "pass",
+            "TDD-003": "pass",
+            "TDD-004": "pass"
+          },
+          "gate": "implementation_plan",
+          "task_id": "agentic-eval-missed-issues-fix-20260603",
+          "validator_version": "1.0.0",
+          "verdict": "accepted"
+        },
+        "probe_id": "P_planning",
+        "reason": "planning_validation_ok",
+        "status": "green"
+      }
+    },
+    "status": "blocked",
+    "task_id": "agentic-eval-missed-issues-fix-20260603",
+    "trace_envelope": {
+      "artifacts": [],
+      "claims": [
+        "Plan is sound/complete/traceable with exact file ownership matching the realized diff",
+        "Every P1-P5 promise maps to a test that exists verbatim in the tree",
+        "Fan-out policy and speed/cost semantics unchanged; state.py untouched"
+      ],
+      "event_kind": "dual_agent_gate_result",
+      "failure_taxonomy": {
+        "category": "system_design",
+        "code": "reviewer_infrastructure_unavailable",
+        "framework": "MAST-inspired",
+        "mast_category": null,
+        "mast_code": null,
+        "mast_mode": null,
+        "probe_id": "",
+        "schema_version": "dual-agent-failure-taxonomy/v1",
+        "source": "result_escalation",
+        "subcategory": "unknown"
+      },
+      "gate": "implementation_plan",
+      "policy_verdict": "blocked",
+      "receipts": [],
+      "run_id": "codex-agentic-eval-missed-issues-fix-20260603-87ac07e1-ae82-4720-8ace-bfc4538c51bf",
+      "schema_version": "dual-agent-trace-envelope/v1",
+      "source": "dual_agent",
+      "task_id": "agentic-eval-missed-issues-fix-20260603",
+      "tool_calls": []
+    },
+    "workflow_reviewer_unavailable_escalation": {
+      "action_id": 1333,
+      "ask_id": 66,
+      "classification": "reviewer_infrastructure_unavailable",
+      "evidence_grade": "degraded",
+      "forced_by_safety": false,
+      "independent_reviewer": {
+        "accepted": true,
+        "agent_id": "agent-0b694159-b3d3-42dc-a5a9-537a6ae466e3",
+        "attempts": 1,
+        "critical_review": {
+          "assumptions_to_verify": [
+            "Prior gates correctly accepted the same plan hash before implementation landed",
+            "Self-reported RED/GREEN/full-suite receipts in bridge test-evidence remain valid if tree changes"
+          ],
+          "contradictions_checked": [
+            "Plan file list vs git diff --name-only: exact match",
+            "Claude plan hash de62 vs shasum on disk: match",
+            "Receipt report_sha256 02f955\u2026 vs report.json field: match (file bytes hash differs by design)",
+            "P3 consistent-metrics: helper only flags when metric present and differs",
+            "Bridge +1 assertion ties P1 missed_issues to failed verdict count for clean-accept case"
+          ],
+          "decision": "accept",
+          "evidence_refs": [],
+          "missing_evidence": [
+            "Fresh full-suite pytest output at this gate (671-pass receipt not re-run here)",
+            "Automated pytest for P5 bridge regeneration (TDD Regeneration Check is manual/script-only)",
+            "Ta[REDACTED_API_KEY] docs/dual-agent/agentic-eval-missed-issues-fix-20260603/test-evidence.md is untracked and omitted from the plan file list"
+          ],
+          "schema_version": "critical-review/v1",
+          "severity": "low",
+          "strongest_objection": "Gate is retrospective: the full 7-file implementation diff is already in the worktree, so step 1 RED-first cannot be independently reproduced at this gate\u2014only self-reported RED in test-evidence.md.",
+          "what_would_change_my_mind": "Plan file list diverges from diff, a named traceability test is missing or vacuous, state.py or policy defaults change, or bridge report rows revert to missed_issues=0 without divergence for clean-accept-runner-report."
+        },
+        "diagnostics": {
+          "prompt_chars": 10900,
+          "prompt_sha256": "6e2bee88d1c0d7e70bcfdc1d13210754c6e2bbdb8466ca791d1855e6cd4e78c9"
+        },
+        "duration_ms": 35796,
+        "failure_classification": null,
+        "fallback_from_runtime": null,
+        "fallback_reason": null,
+        "independent_reviewer_panel_decision": {
+          "accepted_reviewers": [
+            "independent-reviewer-0"
+          ],
+          "aggregation_mode": "conservative",
+          "available_reviewers": [
+            "independent-reviewer-0"
+          ],
+          "blocking_reviewers": [],
+          "decision": "revise",
+          "low_confidence_reviewers": [],
+          "low_confidence_threshold": 0.0,
+          "missing_reviewers": [
+            "independent-reviewer-1"
+          ],
+          "non_accepting_reviewers": [],
+          "reason": "missing_reviewer_verdict",
+          "reviewer_inputs": [
+            {
+              "accepted": true,
+              "assurance_grade": "agentic",
+              "confidence": 0.88,
+              "decision": "accept",
+              "lineage": [
+                "cursor",
+                "cursor_sdk",
+                "composer-2.5"
+              ],
+              "model": "composer-2.5",
+              "provider_family": "cursor",
+              "reviewer_id": "independent-reviewer-0",
+              "runtime": "cursor_sdk",
+              "severity": "low",
+              "tool_access": "codebase_tools",
+              "verdict_present": true
+            },
+            {
+              "accepted": false,
+              "assurance_grade": "self_reported",
+              "confidence": null,
+              "decision": "revise",
+              "lineage": [
+                "openai",
+                "codex_cli",
+                "gpt-5.5"
+              ],
+              "model": "gpt-5.5",
+              "provider_family": "openai",
+              "reviewer_id": "independent-reviewer-1",
+              "runtime": "codex_cli",
+              "severity": "important",
+              "tool_access": "codebase_tools",
+              "verdict_present": false
+            }
+          ],
+          "schema_version": "independent-reviewer-panel-decision/v1"
+        },
+        "independent_reviewer_results": [
+          {
+            "accepted": true,
+            "assurance_grade": "agentic",
+            "attempts": 1,
+            "confidence": 0.88,
+            "critical_review": {
+              "assumptions_to_verify": [
+                "Prior gates correctly accepted the same plan hash before implementation landed",
+                "Self-reported RED/GREEN/full-suite receipts in bridge test-evidence remain valid if tree changes"
+              ],
+              "contradictions_checked": [
+                "Plan file list vs git diff --name-only: exact match",
+                "Claude plan hash de62 vs shasum on disk: match",
+                "Receipt report_sha256 02f955\u2026 vs report.json field: match (file bytes hash differs by design)",
+                "P3 consistent-metrics: helper only flags when metric present and differs",
+                "Bridge +1 assertion ties P1 missed_issues to failed verdict count for clean-accept case"
+              ],
+              "decision": "accept",
+              "missing_evidence": [
+                "Fresh full-suite pytest output at this gate (671-pass receipt not re-run here)",
+                "Automated pytest for P5 bridge regeneration (TDD Regeneration Check is manual/script-only)",
+                "Ta[REDACTED_API_KEY] docs/dual-agent/agentic-eval-missed-issues-fix-20260603/test-evidence.md is untracked and omitted from the plan file list"
+              ],
+              "severity": "low",
+              "strongest_objection": "Gate is retrospective: the full 7-file implementation diff is already in the worktree, so step 1 RED-first cannot be independently reproduced at this gate\u2014only self-reported RED in test-evidence.md.",
+              "what_would_change_my_mind": "Plan file list diverges from diff, a named traceability test is missing or vacuous, state.py or policy defaults change, or bridge report rows revert to missed_issues=0 without divergence for clean-accept-runner-report."
+            },
+            "decision": "accept",
+            "failure_classification": null,
+            "gate": "implementation_plan",
+            "lineage": [
+              "cursor",
+              "cursor_sdk",
+              "composer-2.5"
+            ],
+            "model": "composer-2.5",
+            "output_sha256": "bf2a030b6fcc1911438a40228150ee56b25db8522c84d5729f3f01c7617c7087",
+            "provider_family": "cursor",
+            "recoverable": false,
+            "reviewer_assurance": "tool_backed_primary",
+            "reviewer_id": "independent-reviewer-0",
+            "reviewer_output_mode": "cursor_sdk",
+            "reviewer_runtime": "cursor_sdk",
+            "round_index": 1,
+            "runtime": "cursor_sdk",
+            "schema_version": "independent-reviewer-panel-result/v1",
+            "severity": "low",
+            "task_id": "agentic-eval-missed-issues-fix-20260603",
+            "tests": [
+              "tests/test_agentic_eval.py::test_agentic_eval_runner_derives_missed_issues_from_verdicts",
+              "tests/test_agentic_eval.py::test_agentic_eval_runner_derives_rejected_gates_from_workflow",
+              "tests/test_agentic_eval.py::test_agentic_eval_runner_does_not_flag_consistent_quality_metrics",
+              "tests/test_agentic_eval_bridge.py::test_agentic_eval_bridge_expected_accept_requires_terminal_accept"
+            ],
+            "tool_access": "codebase_tools",
+            "transcript_refs": [
+              {
+                "chars": 4000,
+                "kind": "reviewer_transcript_tail",
+                "ref": "independent_reviewer_review:agentic-eval-missed-issues-fix-20260603:implementation_plan:1:independent-reviewer-0"
+              }
+            ],
+            "transcript_sha256": "3dccf3a3b6fad499344010d820b4e703fc95b85d680311cbf494dff84d57bc18",
+            "verdict_present": true
+          },
+          {
+            "accepted": false,
+            "assurance_grade": "self_reported",
+            "attempts": 1,
+            "confidence": null,
+            "critical_review": {},
+            "decision": "revise",
+            "failure_classification": "reviewer_infrastructure_unavailable",
+            "gate": "implementation_plan",
+            "lineage": [
+              "openai",
+              "codex_cli",
+              "gpt-5.5"
+            ],
+            "model": "gpt-5.5",
+            "output_sha256": null,
+            "provider_family": "openai",
+            "recoverable": true,
+            "reviewer_assurance": "unavailable",
+            "reviewer_id": "independent-reviewer-1",
+            "reviewer_output_mode": "codex_cli",
+            "reviewer_runtime": "codex_cli",
+            "round_index": 1,
+            "runtime": "codex_cli",
+            "schema_version": "independent-reviewer-panel-result/v1",
+            "severity": "important",
+            "task_id": "agentic-eval-missed-issues-fix-20260603",
+            "tests": [],
+            "tool_access": "codebase_tools",
+            "transcript_refs": [
+              {
+                "chars": 4000,
+                "kind": "reviewer_transcript_tail",
+                "ref": "independent_reviewer_review:agentic-eval-missed-issues-fix-20260603:implementation_plan:1:independent-reviewer-1"
+              }
+            ],
+            "transcript_sha256": "ec20e3f7c8dcba7c4b9311e02bbbfd0258c78fc450657442ed482358ea2ed6a4",
+            "verdict_present": false
+          }
+        ],
+        "model": "composer-2.5",
+        "outcome": {
+          "changed_files": [
+            "supervisor/agentic_eval.py",
+            "tests/test_agentic_eval.py",
+            "tests/test_agentic_eval_bridge.py",
+            "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/report.json",
+            "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/rows.jsonl",
+            "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/replay-manifest.json",
+            "docs/dual-agent/agentic-eval-bridge-20260603/test-evidence.md"
+          ],
+          "claims": [
+            "Six-step plan covers RED tests, divergence helper, authoritative fields, bridge replay, and suite runs with exact file ownership",
+            "P1\u2013P5 traceability to four verbatim tests is accurate and backed by current source",
+            "Fan-out/policy boundary preserved; no state.py diff"
+          ],
+          "confidence": 0.88,
+          "confidence_criteria": [
+            "Plan-declared files vs git diff --stat: 7==7 PASS",
+            "Plan hash de62a6f2 recomputed on disk PASS",
+            "Four traceability tests exist and passed when re-run PASS",
+            "Authoritative row fields + divergence helper in agentic_eval.py PASS",
+            "state.py and policy/report-only invariants unchanged PASS",
+            "P5 bridge rows and report_sha256 match test-evidence PASS"
+          ],
+          "confidence_rationale": "Plan file list and traceability checks pass; plan hash and four named tests re-run here; bridge report invariants match P5. Held below 0.95 because the gate is retrospective (full diff already present) and P5 regeneration is evidenced by artifacts/script, not a dedicated pytest in the plan traceability table.",
+          "critical_review": {
+            "assumptions_to_verify": [
+              "Prior gates correctly accepted the same plan hash before implementation landed",
+              "Self-reported RED/GREEN/full-suite receipts in bridge test-evidence remain valid if tree changes"
+            ],
+            "contradictions_checked": [
+              "Plan file list vs git diff --name-only: exact match",
+              "Claude plan hash de62 vs shasum on disk: match",
+              "Receipt report_sha256 02f955\u2026 vs report.json field: match (file bytes hash differs by design)",
+              "P3 consistent-metrics: helper only flags when metric present and differs",
+              "Bridge +1 assertion ties P1 missed_issues to failed verdict count for clean-accept case"
+            ],
+            "decision": "accept",
+            "missing_evidence": [
+              "Fresh full-suite pytest output at this gate (671-pass receipt not re-run here)",
+              "Automated pytest for P5 bridge regeneration (TDD Regeneration Check is manual/script-only)",
+              "Ta[REDACTED_API_KEY] docs/dual-agent/agentic-eval-missed-issues-fix-20260603/test-evidence.md is untracked and omitted from the plan file list"
+            ],
+            "severity": "low",
+            "strongest_objection": "Gate is retrospective: the full 7-file implementation diff is already in the worktree, so step 1 RED-first cannot be independently reproduced at this gate\u2014only self-reported RED in test-evidence.md.",
+            "what_would_change_my_mind": "Plan file list diverges from diff, a named traceability test is missing or vacuous, state.py or policy defaults change, or bridge report rows revert to missed_issues=0 without divergence for clean-accept-runner-report."
+          },
+          "decisions": [
+            "accept"
+          ],
+          "objections": [],
+          "specialists": [
+            {
+              "decision": "accept",
+              "name": "Cursor Reviewer",
+              "objection": null
+            }
+          ],
+          "summary": "implementation_plan ACCEPT: plan is complete/traceable; 7 declared files match git diff exactly; P1\u2013P5 map to four existing tests; source uses authoritative missed_issues/rejected_gates with divergence helper; bridge report shows missed_issues=2 and metrics_divergence on clean-accept rows; plan hash and four pytest targets independently verified this gate.",
+          "task_id": "agentic-eval-missed-issues-fix-20260603",
+          "test_status": "passed",
+          "tests": [
+            "tests/test_agentic_eval.py::test_agentic_eval_runner_derives_missed_issues_from_verdicts",
+            "tests/test_agentic_eval.py::test_agentic_eval_runner_derives_rejected_gates_from_workflow",
+            "tests/test_agentic_eval.py::test_agentic_eval_runner_does_not_flag_consistent_quality_metrics",
+            "tests/test_agentic_eval_bridge.py::test_agentic_eval_bridge_expected_accept_requires_terminal_accept"
+          ]
+        },
+        "panel_failure_classification": "reviewer_infrastructure_unavailable",
+        "panel_recoverable_failures": [
+          {
+            "failure_classification": "reviewer_infrastructure_unavailable",
+            "model": "gpt-5.5",
+            "recoverable": true,
+            "reviewer_id": "independent-reviewer-1",
+            "runtime": "codex_cli"
+          }
+        ],
+        "probe": {
+          "details": {},
+          "probe_id": "CURSOR",
+          "reason": "cursor_review_ok",
+          "status": "green"
+        },
+        "recoverable": false,
+        "retry_reasons": [],
+        "reviewer_assurance": "tool_backed_primary",
+        "reviewer_output_mode": "cursor_sdk",
+        "reviewer_runtime": "cursor_sdk",
+        "reviewer_unavailable_recovery": {
+          "authorization": null,
+          "available_reviewers_accept": true,
+          "classification": "reviewer_infrastructure_unavailable",
+          "decision": "escalate",
+          "evidence_grade": "degraded",
+          "forced_by_safety": false,
+          "gate": "implementation_plan",
+          "policy": "escalate",
+          "reason": "policy_escalate",
+          "reviewer_verdict_counted_as_accept": false,
+          "safety_reasons": [],
+          "schema_version": "reviewer-unavailable-recovery/v1",
+          "unavailable_reviewers": [
+            "independent-reviewer-1"
+          ]
+        },
+        "run_id": "run-593ad6b9-15fb-44c8-9353-ef96dbd9c391",
+        "schema_version": "independent-reviewer-result/v1",
+        "status": "finished",
+        "transcript_tail": "and matches what landed. The main weakness is process timing (implementation already in the tree), not plan defects.\n\n<dual_agent_outcome>{\"task_id\":\"agentic-eval-missed-issues-fix-20260603\",\"summary\":\"implementation_plan ACCEPT: plan is complete/traceable; 7 declared files match git diff exactly; P1\u2013P5 map to four existing tests; source uses authoritative missed_issues/rejected_gates with divergence helper; bridge report shows missed_issues=2 and metrics_divergence on clean-accept rows; plan hash and four pytest targets independently verified this gate.\",\"specialists\":[{\"name\":\"Cursor Reviewer\",\"decision\":\"accept\"}],\"decisions\":[\"accept\"],\"objections\":[],\"changed_files\":[\"supervisor/agentic_eval.py\",\"tests/test_agentic_eval.py\",\"tests/test_agentic_eval_bridge.py\",\"docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/report.json\",\"docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/rows.jsonl\",\"docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/replay-manifest.json\",\"docs/dual-agent/agentic-eval-bridge-20260603/test-evidence.md\"],\"tests\":[\"tests/test_agentic_eval.py::test_agentic_eval_runner_derives_missed_issues_from_verdicts\",\"tests/test_agentic_eval.py::test_agentic_eval_runner_derives_rejected_gates_from_workflow\",\"tests/test_agentic_eval.py::test_agentic_eval_runner_does_not_flag_consistent_quality_metrics\",\"tests/test_agentic_eval_bridge.py::test_agentic_eval_bridge_expected_accept_requires_terminal_accept\"],\"test_status\":\"passed\",\"confidence\":0.88,\"confidence_rationale\":\"Plan file list and traceability checks pass; plan hash and four named tests re-run here; bridge report invariants match P5. Held below 0.95 because the gate is retrospective (full diff already present) and P5 regeneration is evidenced by artifacts/script, not a dedicated pytest in the plan traceability table.\",\"confidence_criteria\":[\"Plan-declared files vs git diff --stat: 7==7 PASS\",\"Plan hash de62a6f2 recomputed on disk PASS\",\"Four traceability tests exist and passed when re-run PASS\",\"Authoritative row fields + divergence helper in agentic_eval.py PASS\",\"state.py and policy/report-only invariants unchanged PASS\",\"P5 bridge rows and report_sha256 match test-evidence PASS\"],\"claims\":[\"Six-step plan covers RED tests, divergence helper, authoritative fields, bridge replay, and suite runs with exact file ownership\",\"P1\u2013P5 traceability to four verbatim tests is accurate and backed by current source\",\"Fan-out/policy boundary preserved; no state.py diff\"],\"critical_review\":{\"strongest_objection\":\"Gate is retrospective: the full 7-file implementation diff is already in the worktree, so step 1 RED-first cannot be independently reproduced at this gate\u2014only self-reported RED in test-evidence.md.\",\"missing_evidence\":[\"Fresh full-suite pytest output at this gate (671-pass receipt not re-run here)\",\"Automated pytest for P5 bridge regeneration (TDD Regeneration Check is manual/script-only)\",\"Ta[REDACTED_API_KEY] docs/dual-agent/agentic-eval-missed-issues-fix-20260603/test-evidence.md is untracked and omitted from the plan file list\"],\"contradictions_checked\":[\"Plan file list vs git diff --name-only: exact match\",\"Claude plan hash de62 vs shasum on disk: match\",\"Receipt report_sha256 02f955\u2026 vs report.json field: match (file bytes hash differs by design)\",\"P3 consistent-metrics: helper only flags when metric present and differs\",\"Bridge +1 assertion ties P1 missed_issues to failed verdict count for clean-accept case\"],\"assumptions_to_verify\":[\"Prior gates correctly accepted the same plan hash before implementation landed\",\"Self-reported RED/GREEN/full-suite receipts in bridge test-evidence remain valid if tree changes\"],\"what_would_change_my_mind\":\"Plan file list diverges from diff, a named traceability test is missing or vacuous, state.py or policy defaults change, or bridge report rows revert to missed_issues=0 without divergence for clean-accept-runner-report.\",\"decision\":\"accept\",\"severity\":\"low\"}}</dual_agent_outcome>",
+        "unavailable_reviewer_ids": [
+          "independent-reviewer-1"
+        ]
+      },
+      "nonce": "bb740aecbe5c4184",
+      "options": [
+        "Pause",
+        "Kill",
+        "Continue"
+      ],
+      "policy": "escalate",
+      "reviewer_verdict_counted_as_accept": false,
+      "safety_reasons": [],
+      "status": "paused_for_human",
+      "unavailable_reviewers": [
+        "independent-reviewer-1"
+      ]
+    }
+  },
+  "mandatory_artifacts": {
+    "missing": [],
+    "output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-missed-issues-fix-20260603",
+    "required": [
+      "source/prd.md",
+      "source/grill-findings.md",
+      "source/issues.md",
+      "source/tdd.md",
+      "source/grill-findings-tdd.md",
+      "source/implementation-plan.md",
+      "interactions.md",
+      "outcome-review.md",
+      "transcript.md"
+    ],
+    "status": "ok"
+  },
+  "resume": {
+    "artifact_output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-missed-issues-fix-20260603",
+    "blocker": {
+      "gate": "implementation_plan",
+      "latest_event_id": 466050,
+      "status": "blocked"
+    },
+    "current_gate": "implementation_plan",
+    "last_status": "blocked",
+    "latest_event_id": 466051,
+    "next_safe_action": "inspect blocker, provide corrective input, then rerun run_dual_agent_workflow",
+    "prompt": "Use codex_supervisor.\nContinue run_id=codex-agentic-eval-missed-issues-fix-20260603-87ac07e1-ae82-4720-8ace-bfc4538c51bf\ntask_id=agentic-eval-missed-issues-fix-20260603\ncurrent_gate=implementation_plan\nlast_status=blocked\nlatest_event_id=466051\nnext_safe_action=inspect blocker, provide corrective input, then rerun run_dual_agent_workflow\nartifact_output_dir=/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-missed-issues-fix-20260603\nfirst inspect: read_gate_transcript(run_id=codex-agentic-eval-missed-issues-fix-20260603-87ac07e1-ae82-4720-8ace-bfc4538c51bf, task_id=agentic-eval-missed-issues-fix-20260603)",
+    "run_id": "codex-agentic-eval-missed-issues-fix-20260603-87ac07e1-ae82-4720-8ace-bfc4538c51bf",
+    "status": "ok",
+    "steps": [
+      {
+        "attempt_count": 1,
+        "gate": "prd_review",
+        "latest_event_id": 465302,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "issues_review",
+        "latest_event_id": 465328,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "tdd_review",
+        "latest_event_id": 465785,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "implementation_plan",
+        "latest_event_id": 466050,
+        "status": "blocked"
+      }
+    ],
+    "task_id": "agentic-eval-missed-issues-fix-20260603",
+    "transcript_command": "read_gate_transcript(run_id=codex-agentic-eval-missed-issues-fix-20260603-87ac07e1-ae82-4720-8ace-bfc4538c51bf, task_id=agentic-eval-missed-issues-fix-20260603)"
+  },
+  "run_id": "codex-agentic-eval-missed-issues-fix-20260603-87ac07e1-ae82-4720-8ace-bfc4538c51bf",
+  "status": "blocked",
+  "steps": [
+    {
+      "attempt_count": 1,
+      "gate": "prd_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "issues_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "tdd_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "implementation_plan",
+      "status": "blocked"
+    }
+  ],
+  "task_id": "agentic-eval-missed-issues-fix-20260603",
+  "visual_evidence_policy": {
+    "artifact_matches": [
+      {
+        "kind": "prd",
+        "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/prd.md",
+        "terms": "live provider"
+      },
+      {
+        "kind": "prd",
+        "path": "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/prd.md",
+        "terms": "live provider"
+      }
+    ],
+    "matched_terms": [
+      "live provider"
+    ],
+    "required": true,
+    "source": "auto_live_surface"
+  },
+  "workflow_route": {
+    "agentic_lead_policy": {
+      "min_subagents": 0,
+      "policy": "off",
+      "required_evidence_grade": "self_reported",
+      "required_roles": [],
+      "solo_exception_for_artifact_only_gates": false
+    },
+    "cursor_review_gates": [
+      "tdd_review",
+      "implementation_plan",
+      "outcome_review"
+    ],
+    "cursor_review_profile": "rigorous",
+    "dynamic_workflow_task_class": null,
+    "effective_cursor_review": true,
+    "execution_layer_mode": "lead_direct",
+    "force_cursor_review": false,
+    "gate_count": 6,
+    "gates": [
+      "prd_review",
+      "issues_review",
+      "tdd_review",
+      "implementation_plan",
+      "execution",
+      "outcome_review"
+    ],
+    "planning_depth": "large",
+    "reasons": [
+      "user_facing_or_live_surface"
+    ],
+    "requested_cursor_review": true,
+    "required_skill_stages": [
+      "to_prd",
+      "prd_grill",
+      "to_issues",
+      "tdd",
+      "tdd_grill"
+    ],
+    "requires_agentic_lead_policy_receipts": false,
+    "requires_brainstorm": false,
+    "requires_dynamic_workflow_receipts": false,
+    "requires_skill_receipts": true,
+    "resume": {
+      "mode": "fresh",
+      "pending_gates": [
+        "prd_review",
+        "issues_review",
+        "tdd_review",
+        "implementation_plan",
+        "execution",
+        "outcome_review"
+      ],
+      "schema_version": "dual-agent-workflow-resume/v1",
+      "skipped_gates": [],
+      "skipped_steps": []
+    },
+    "reviewer_infra_retry_backoff_s": 1.0,
+    "reviewer_infra_retry_limit": 2,
+    "reviewer_low_confidence_threshold": 0.0,
+    "reviewer_max_tokens": 4096,
+    "reviewer_model": "composer-2.5",
+    "reviewer_output_mode": "cursor_sdk",
+    "reviewer_panel_calibration_active": false,
+    "reviewer_panel_calibration_path": null,
+    "reviewer_unavailable_policy": "escalate",
+    "schema_version": "dual-agent-workflow-route/v1",
+    "task_complexity": "large"
+  }
+}

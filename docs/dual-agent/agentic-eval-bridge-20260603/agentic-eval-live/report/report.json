@@ -576,7 +576,7 @@
     "default_change_allowed": false,
     "policy_mutated": false
   },
-  "report_sha256": "bc844776c28945364d16facea9659c9f4335cf6692eeef56bb949a9bae3b0187",
+  "report_sha256": "02f9551e7f547c45c55f75e5df10eca409b4c64e51c4a2c1dafda62fe82af308",
   "rows": [
     {
       "budget_usd_limit": 3.5,
@@ -585,13 +585,18 @@
         "prd_review": "blocked"
       },
       "graceful_degradation": 0.0,
-      "missed_issues": 0,
+      "metrics_divergence": true,
+      "metrics_divergence_fields": [
+        "missed_issues"
+      ],
+      "missed_issues": 2,
       "mode": "lead_direct",
       "operator_interventions": 0,
       "probe_statuses": {
         "P_planning": "red"
       },
       "rejected_gates": 2,
+      "reported_missed_issues": 0,
       "required_verdicts": [
         "report_only_invariant",
         "evidence_artifact_available"
@@ -612,13 +617,18 @@
         "prd_review": "blocked"
       },
       "graceful_degradation": 0.0,
-      "missed_issues": 0,
+      "metrics_divergence": true,
+      "metrics_divergence_fields": [
+        "missed_issues"
+      ],
+      "missed_issues": 2,
       "mode": "agentic_allowed",
       "operator_interventions": 0,
       "probe_statuses": {
         "P_planning": "red"
       },
       "rejected_gates": 2,
+      "reported_missed_issues": 0,
       "required_verdicts": [
         "report_only_invariant",
         "evidence_artifact_available"
@@ -639,13 +649,18 @@
         "workflow_start": "blocked"
       },
       "graceful_degradation": 0.0,
-      "missed_issues": 0,
+      "metrics_divergence": true,
+      "metrics_divergence_fields": [
+        "missed_issues"
+      ],
+      "missed_issues": 2,
       "mode": "agentic_required",
       "operator_interventions": 0,
       "probe_statuses": {
         "P13": "red"
       },
       "rejected_gates": 2,
+      "reported_missed_issues": 0,
       "required_verdicts": [
         "report_only_invariant",
         "evidence_artifact_available"
@@ -666,6 +681,8 @@
         "prd_review": "blocked"
       },
       "graceful_degradation": 0.333,
+      "metrics_divergence": false,
+      "metrics_divergence_fields": [],
       "missed_issues": 0,
       "mode": "lead_direct",
       "operator_interventions": 0,
@@ -693,6 +710,8 @@
         "prd_review": "blocked"
       },
       "graceful_degradation": 0.333,
+      "metrics_divergence": false,
+      "metrics_divergence_fields": [],
       "missed_issues": 0,
       "mode": "agentic_allowed",
       "operator_interventions": 0,
@@ -720,6 +739,8 @@
         "prd_review": "blocked"
       },
       "graceful_degradation": 0.333,
+      "metrics_divergence": false,
+      "metrics_divergence_fields": [],
       "missed_issues": 0,
       "mode": "agentic_required",
       "operator_interventions": 0,
@@ -747,6 +768,8 @@
         "prd_review": "blocked"
       },
       "graceful_degradation": 0.333,
+      "metrics_divergence": false,
+      "metrics_divergence_fields": [],
       "missed_issues": 0,
       "mode": "lead_direct",
       "operator_interventions": 0,
@@ -774,6 +797,8 @@
         "prd_review": "blocked"
       },
       "graceful_degradation": 0.333,
+      "metrics_divergence": false,
+      "metrics_divergence_fields": [],
       "missed_issues": 0,
       "mode": "agentic_allowed",
       "operator_interventions": 0,
@@ -801,6 +826,8 @@
         "workflow_start": "blocked"
       },
       "graceful_degradation": 0.333,
+      "metrics_divergence": false,
+      "metrics_divergence_fields": [],
       "missed_issues": 0,
       "mode": "agentic_required",
       "operator_interventions": 0,
@@ -838,7 +865,7 @@
       "avg_wall_clock_s": 131.68533333333332,
       "cost_usd": 0.0,
       "graceful_degradation": 0.666,
-      "missed_issues": 0,
+      "missed_issues": 2,
       "operator_interventions": 0,
       "rejected_gates": 6,
       "retries": 0,
@@ -853,7 +880,7 @@
       "avg_wall_clock_s": 244.72299999999998,
       "cost_usd": 0.0,
       "graceful_degradation": 0.666,
-      "missed_issues": 0,
+      "missed_issues": 2,
       "operator_interventions": 0,
       "rejected_gates": 6,
       "retries": 0,
@@ -868,7 +895,7 @@
       "avg_wall_clock_s": 3.36,
       "cost_usd": 0.0,
       "graceful_degradation": 0.666,
-      "missed_issues": 0,
+      "missed_issues": 2,
       "operator_interventions": 0,
       "rejected_gates": 6,
       "retries": 0,

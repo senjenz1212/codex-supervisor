@@ -3,7 +3,7 @@
   "evidence_sha256": "c06f2ebe904dd6dcc4691a87655fb93dc7156f590afd86ecab56eff227e63aa3",
   "execution_mode": "fixture_replay",
   "live_calls_allowed": false,
-  "report_sha256": "bc844776c28945364d16facea9659c9f4335cf6692eeef56bb949a9bae3b0187",
+  "report_sha256": "02f9551e7f547c45c55f75e5df10eca409b4c64e51c4a2c1dafda62fe82af308",
   "required_modes": [
     "lead_direct",
     "agentic_allowed",

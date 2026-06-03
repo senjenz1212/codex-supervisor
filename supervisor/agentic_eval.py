@@ -123,6 +123,13 @@ def agentic_eval_runner(
             rejected_gates = _rejected_gate_count(workflow_result)
             retries = _retry_count(workflow_result)
             missed_issues = int(score["failed_verdict_count"])
+            quality_divergence = _quality_metric_divergence(
+                metrics=metrics,
+                authoritative={
+                    "missed_issues": missed_issues,
+                    "rejected_gates": rejected_gates,
+                },
+            )
             probe_statuses = _probe_statuses(workflow_result)
             reviewer_panel_decisions = _reviewer_panel_decisions(workflow_result)
             row = {
@@ -133,8 +140,10 @@ def agentic_eval_runner(
                 "wall_clock_s": _number(metrics.get("wall_clock_s")),
                 "cost_usd": _number(metrics.get("cost_usd")),
                 "retries": _number(metrics.get("retries"), default=retries),
-                "rejected_gates": _number(metrics.get("rejected_gates"), default=rejected_gates),
-                "missed_issues": _number(metrics.get("missed_issues"), default=missed_issues),
+                "rejected_gates": rejected_gates,
+                "missed_issues": missed_issues,
+                "metrics_divergence": bool(quality_divergence["fields"]),
+                "metrics_divergence_fields": quality_divergence["fields"],
                 "operator_interventions": _number(metrics.get("operator_interventions")),
                 "graceful_degradation": _number(
                     metrics.get("graceful_degradation"),
@@ -148,6 +157,7 @@ def agentic_eval_runner(
                 "reviewer_panel_decisions": reviewer_panel_decisions,
                 "required_verdicts": [item["verdict_id"] for item in score["verdicts"]],
             }
+            row.update(quality_divergence["reported"])
             rows.append(row)
             evidence_records.append({
                 "task_id": task["task_id"],
@@ -280,6 +290,26 @@ def _normalise_row(row: dict[str, Any]) -> dict[str, Any]:
     result["token_budget"] = _number(row.get("token_budget"))
     result["budget_usd_limit"] = _number(row.get("budget_usd_limit"))
     return result
+
+
+def _quality_metric_divergence(
+    *,
+    metrics: dict[str, Any],
+    authoritative: dict[str, int | float],
+) -> dict[str, Any]:
+    reported: dict[str, int | float] = {}
+    fields: list[str] = []
+    for field, authoritative_value in authoritative.items():
+        if field not in metrics:
+            continue
+        reported_value = _number(metrics.get(field))
+        if reported_value != authoritative_value:
+            reported[f"reported_{field}"] = reported_value
+            fields.append(field)
+    return {
+        "fields": fields,
+        "reported": reported,
+    }
 
 
 def _number(value: Any, *, default: int | float = 0) -> int | float:

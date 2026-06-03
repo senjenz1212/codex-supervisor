@@ -1,0 +1,590 @@
+{
+  "event_ids": [
+    465202,
+    465204,
+    465232,
+    465234,
+    465236,
+    465237,
+    465238,
+    465239,
+    465240,
+    465280,
+    465282,
+    465284,
+    465285,
+    465300,
+    465301,
+    465302,
+    465303,
+    465306,
+    465307,
+    465326,
+    465327,
+    465328,
+    465329,
+    465332,
+    465333,
+    465352,
+    465353,
+    465354,
+    465782,
+    465783,
+    465784,
+    465785,
+    465790,
+    465793,
+    465794,
+    465883,
+    465884,
+    465885,
+    466043,
+    466044,
+    466045,
+    466046,
+    466048,
+    466049,
+    466050,
+    466179,
+    466181,
+    466183,
+    466184,
+    466227,
+    466228,
+    466229,
+    466380,
+    466381,
+    466382,
+    466383,
+    466389,
+    466393,
+    466394,
+    466524,
+    466525,
+    466526,
+    466527,
+    466530,
+    466531,
+    466532,
+    466658,
+    466660,
+    466662,
+    466663,
+    466806,
+    466807,
+    466808,
+    466836,
+    466838,
+    466840,
+    466841,
+    466909,
+    466910,
+    466911,
+    467248,
+    467249,
+    467250,
+    467251,
+    467252,
+    467343,
+    467344,
+    467345,
+    467346
+  ],
+  "event_kinds": [
+    "dual_agent_gate_result",
+    "dual_agent_gate_round",
+    "dual_agent_interaction_message",
+    "dual_agent_planning_validation",
+    "dual_agent_reviewer_unavailable_recovery",
+    "dual_agent_skill_receipt_validation",
+    "dual_agent_workflow_route",
+    "independent_reviewer_review",
+    "tri_agent_cursor_review"
+  ],
+  "events_count": 89,
+  "failure_summary": null,
+  "files": {
+    "index": "index.md",
+    "interactions": "interactions.md",
+    "mast_coverage_json": "replay/mast-coverage.json",
+    "mast_coverage_markdown": "mast-coverage.md",
+    "transcript_jsonl": "transcript.jsonl",
+    "transcript_markdown": "transcript.md",
+    "workspace_snapshot": "replay/workspace-snapshot.json"
+  },
+  "handoff_packets": [
+    {
+      "content": "{\n  \"cwd\": \"/Users/sam.zhang/Documents/codex-supervisor\",\n  \"execution_layer_policy\": {\n    \"agentic_lead_policy\": {\n      \"min_subagents\": 0,\n      \"policy\": \"off\",\n      \"required_evidence_grade\": \"self_reported\",\n      \"required_roles\": [],\n      \"solo_exception_for_artifact_only_gates\": false\n    },\n    \"allowed_dynamic_workflow_task_classes\": [],\n    \"codex_supervises_final_artifact\": true,\n    \"dynamic_workflow_task_class\": null,\n    \"lead_execution_layer\": \"single_lead_worker\",\n    \"mode\": \"lead_direct\",\n    \"preview_required_gates\": [],\n    \"supervision_layer\": \"codex_plus_lead\"\n  },\n  \"expected_decisions\": [],\n  \"expected_objections\": [],\n  \"expected_specialists\": [],\n  \"gate\": \"outcome_review\",\n  \"instruction\": \"Supervisor-owned workflow gate: outcome_review.\\n\\nIntent:\\nMake agentic eval quality signals authoritative from verdict/gate evidence, surface conflicting self-reported metrics as divergence, and regenerate the bridge report without changing fan-out policy.\\n\\nReview this gate against the current source artifacts and return a typed dual_agent_outcome.\\nUse decisions/objections to say whether the gate should accept, revise, or deny.\",\n  \"lead_skill\": null,\n  \"outcome_validation_policy\": {\n    \"fidelity_failure\": \"abort_to_operator\",\n    \"malformed_outcome\": \"retry_once_with_corrective_packet\",\n    \"subprocess_failure\": \"abort_to_operator\",\n    \"timeout\": \"abort_to_operator\"\n  },\n  \"packet_schema_version\": \"dual-agent-handoff/v1\",\n  \"planning_artifacts\": [\n    {\n      \"kind\": \"prd\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/prd.md\",\n      \"sha256\": \"0b5b1b0bd9da78b6f6a28edaca680caf33470be555a3c007850d5cf8a2cce83b\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/grill-findings.md\",\n      \"sha256\": \"5f60343723df24f446f28e05c974b9c00a84717bd8142990c5a8e6ec30c9d8f6\"\n    },\n    {\n      \"kind\": \"issues\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/issues.md\",\n      \"sha256\": \"e9c8a26ec2e2361fdd88757e36e0a3366cb8375c284f1c1d4fdee9cb188720b4\"\n    },\n    {\n      \"kind\": \"tdd_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/tdd.md\",\n      \"sha256\": \"491ead8962c56987c1ce3e8ed2cc8bae57db76018f05063d64a9839c9ccf4c8a\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/grill-findings-tdd.md\",\n      \"sha256\": \"a4e44b0e40f907021d2fddffc09f35e7f6321a6c970d3918b5880e0ba4504964\"\n    },\n    {\n      \"kind\": \"implementation_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/implementation-plan.md\",\n      \"sha256\": \"de62a6f296707d477935533548549479bed3d85402648afa9f016377c93f5929\"\n    },\n    {\n      \"kind\": \"prd\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/prd.md\",\n      \"sha256\": \"0b5b1b0bd9da78b6f6a28edaca680caf33470be555a3c007850d5cf8a2cce83b\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/grill-findings.md\",\n      \"sha256\": \"5f60343723df24f446f28e05c974b9c00a84717bd8142990c5a8e6ec30c9d8f6\"\n    },\n    {\n      \"kind\": \"issues\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/issues.md\",\n      \"sha256\": \"e9c8a26ec2e2361fdd88757e36e0a3366cb8375c284f1c1d4fdee9cb188720b4\"\n    },\n    {\n      \"kind\": \"tdd_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/tdd.md\",\n      \"sha256\": \"491ead8962c56987c1ce3e8ed2cc8bae57db76018f05063d64a9839c9ccf4c8a\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/grill-findings-tdd.md\",\n      \"sha256\": \"a4e44b0e40f907021d2fddffc09f35e7f6321a6c970d3918b5880e0ba4504964\"\n    },\n    {\n      \"kind\": \"implementation_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/implementation-plan.md\",\n      \"sha256\": \"de62a6f296707d477935533548549479bed3d85402648afa9f016377c93f5929\"\n    },\n    {\n      \"kind\": \"other\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/grill-findings-tdd.md\",\n      \"sha256\": \"a4e44b0e40f907021d2fddffc09f35e7f6321a6c970d3918b5880e0ba4504964\"\n    },\n    {\n      \"kind\": \"other\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/agentic-eval-missed-issues-fix-20260603/test-evidence.md\",\n      \"sha256\": \"79b144b03941f08cebb30d816f18b8431f052e5c69779eecaad0501d0889b6bd\"\n    }\n  ],\n  \"suggested_skills\": [\n    \"/lead\"\n  ],\n  \"task_id\": \"agentic-eval-missed-issues-fix-20260603\"\n}\n",
+      "event_ids": [
+        465238,
+        465301,
+        465327,
+        465353,
+        465884,
+        466050,
+        466228,
+        466525,
+        466807,
+        466910
+      ],
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-eval-missed-issues-fix-20260603.json",
+      "sha256": "3398badd481273f614cd4b83d61ebd906be9f62f30525038b5023ff158538162",
+      "status": "captured"
+    }
+  ],
+  "mast_coverage": [
+    {
+      "deterministic_probe": "blocked payload reason `disobey_task_spec` or planning artifact failure",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.1",
+      "mast_mode": "Disobey task specification",
+      "sources": [
+        {
+          "event_id": 465238,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 465238,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        },
+        {
+          "event_id": 466530,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 466530,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        }
+      ],
+      "status": "observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `role_violation_covenant`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload -> classify_failure",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.2",
+      "mast_mode": "Disobey role specification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "same gate and handoff packet observed twice",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "detect_sequence_failures",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "sources": [
+        {
+          "details": {
+            "signature": [
+              "prd_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-eval-missed-issues-fix-20260603.json"
+            ]
+          },
+          "event_ids": [
+            465238,
+            465301
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "implementation_plan",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-eval-missed-issues-fix-20260603.json"
+            ]
+          },
+          "event_ids": [
+            465884,
+            466050
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "implementation_plan",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-eval-missed-issues-fix-20260603.json"
+            ]
+          },
+          "event_ids": [
+            465884,
+            466228
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-eval-missed-issues-fix-20260603.json"
+            ]
+          },
+          "event_ids": [
+            466807,
+            466910
+          ],
+          "source": "sequence"
+        }
+      ],
+      "status": "observed_in_run",
+      "trigger_surface": "sequence"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `lost_conversation_history`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.4",
+      "mast_mode": "Loss of conversation history",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `agents_not_converged_max_rounds`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.5",
+      "mast_mode": "Unaware of termination conditions",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `conversation_reset`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.1",
+      "mast_mode": "Conversation reset",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `ambiguous_input_no_clarification`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.2",
+      "mast_mode": "Fail to ask for clarification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `scope_violation_off_scope`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.3",
+      "mast_mode": "Task derailment",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "Cursor or reviewer disagreement probe fails",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.4",
+      "mast_mode": "Information withholding",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "Claude response does not address a prior Codex objection",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "detect_sequence_failures",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "sources": [
+        {
+          "details": {
+            "objection": "gate blocked"
+          },
+          "event_ids": [
+            465239,
+            465300
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "independent_reviewer_missing_verdict: independent-reviewer-1"
+          },
+          "event_ids": [
+            466046,
+            466227
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "required_artifacts_missing"
+          },
+          "event_ids": [
+            466531,
+            466806
+          ],
+          "source": "sequence"
+        }
+      ],
+      "status": "observed_in_run",
+      "trigger_surface": "sequence"
+    },
+    {
+      "deterministic_probe": "outcome fidelity or message protocol failure",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.6",
+      "mast_mode": "Reasoning-action mismatch",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "accepted gate is missing a required probe",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload + detect_sequence_failures",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.1",
+      "mast_mode": "Premature termination",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload+sequence"
+    },
+    {
+      "deterministic_probe": "claim verification or evidence receipt probe fails",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.2",
+      "mast_mode": "No or incomplete verification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "Cursor rejects after the gate was accepted",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "detect_sequence_failures",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.3",
+      "mast_mode": "Incorrect verification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "sequence"
+    }
+  ],
+  "run_id": "codex-agentic-eval-missed-issues-fix-20260603-87ac07e1-ae82-4720-8ace-bfc4538c51bf",
+  "schema_version": "dual-agent-replay-manifest/v1",
+  "schema_versions": {
+    "agent_interaction": "dual-agent-interaction/v1",
+    "failure_taxonomy": "dual-agent-failure-taxonomy/v1",
+    "replay_manifest": "dual-agent-replay-manifest/v1",
+    "trace_envelope": "dual-agent-trace-envelope/v1"
+  },
+  "sequence_failures": [
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "gate blocked"
+      },
+      "event_ids": [
+        465239,
+        465300
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "prd_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-eval-missed-issues-fix-20260603.json"
+        ]
+      },
+      "event_ids": [
+        465238,
+        465301
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "implementation_plan",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-eval-missed-issues-fix-20260603.json"
+        ]
+      },
+      "event_ids": [
+        465884,
+        466050
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "independent_reviewer_missing_verdict: independent-reviewer-1"
+      },
+      "event_ids": [
+        466046,
+        466227
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "implementation_plan",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-eval-missed-issues-fix-20260603.json"
+        ]
+      },
+      "event_ids": [
+        465884,
+        466228
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "required_artifacts_missing"
+      },
+      "event_ids": [
+        466531,
+        466806
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-eval-missed-issues-fix-20260603.json"
+        ]
+      },
+      "event_ids": [
+        466807,
+        466910
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    }
+  ],
+  "state": {
+    "events_count_at_capture": 89,
+    "first_event_id": 465202,
+    "last_event_id": 467346,
+    "transcript_jsonl_sha256": "164682a57a64de76e0e8957827b62be78ac437a5ecee144d62f131eb1dec4f41"
+  },
+  "task_id": "agentic-eval-missed-issues-fix-20260603",
+  "tool_call_totals": {
+    "total_cost_usd": 71.692584,
+    "total_duration_ms": 3533017,
+    "total_duration_us": 3533047133,
+    "total_tokens_in": 19961426,
+    "total_tokens_out": 147390,
+    "unique_tool_calls": 130
+  },
+  "workspace_snapshot": {
+    "file_tree_sha256": "f634cf770d864f79d02dd9eda7afd1611027bd1a04acd605964c6ebd1d13fded",
+    "git": {
+      "diff_bytes": 25821,
+      "diff_sha256": "0efa873ff292c3731021e5e54c70f5a4b219aa4d2dbcc62cbcca91638308647e",
+      "diff_stat": ".../agentic-eval-live/report/replay-manifest.json  |  2 +-\n .../agentic-eval-live/report/report.json           | 41 +++++++++++---\n .../agentic-eval-live/report/rows.jsonl            | 18 +++---\n .../agentic-eval-bridge-20260603/test-evidence.md  | 24 ++++----\n supervisor/agentic_eval.py                         | 34 +++++++++++-\n tests/test_agentic_eval.py                         | 64 ++++++++++++++++++++++\n tests/test_agentic_eval_bridge.py                  |  1 +\n 7 files changed, 153 insertions(+), 31 deletions(-)",
+      "head": "7a3eaa3",
+      "head_label": "handoff_cwd_head",
+      "head_ref": "HEAD",
+      "head_sha": "7a3eaa3",
+      "status_short": "M docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/replay-manifest.json\n M docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/report.json\n M docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/rows.jsonl\n M docs/dual-agent/agentic-eval-bridge-20260603/test-evidence.md\n M supervisor/agentic_eval.py\n M tests/test_agentic_eval.py\n M tests/test_agentic_eval_bridge.py\n?? .scratch/agentic-eval-missed-issues-fix-outcome-request.json\n?? .scratch/agentic-eval-missed-issues-fix-resume-request.json\n?? docs/dual-agent/agentic-eval-missed-issues-fix-20260603/"
+    },
+    "root": "/Users/sam.zhang/Documents/codex-supervisor",
+    "root_source": "handoff_cwd",
+    "source_artifact_hashes": {
+      "grill_findings": "a4e44b0e40f907021d2fddffc09f35e7f6321a6c970d3918b5880e0ba4504964",
+      "implementation_plan": "de62a6f296707d477935533548549479bed3d85402648afa9f016377c93f5929",
+      "issues": "e9c8a26ec2e2361fdd88757e36e0a3366cb8375c284f1c1d4fdee9cb188720b4",
+      "other": "79b144b03941f08cebb30d816f18b8431f052e5c69779eecaad0501d0889b6bd",
+      "prd": "0b5b1b0bd9da78b6f6a28edaca680caf33470be555a3c007850d5cf8a2cce83b",
+      "tdd_plan": "491ead8962c56987c1ce3e8ed2cc8bae57db76018f05063d64a9839c9ccf4c8a"
+    },
+    "status": "captured"
+  }
+}

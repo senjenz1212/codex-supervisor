@@ -1,0 +1,443 @@
+{
+  "artifact_export": {
+    "files": [
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/index.md",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/triage.md",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/prd.md",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/tdd.md",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/grill-findings.md",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/issues.md",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/screenshots.md",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/outcome-review.md",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/interactions.md",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/transcript.md",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/transcript.jsonl",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/mast-coverage.md",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/replay/manifest.json",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/replay/workspace-snapshot.json",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/replay/mast-coverage.json",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/grill-findings-tdd.md",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/grill-findings.md",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/implementation-plan.md",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/issues.md",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/prd.md",
+      "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/tdd.md"
+    ],
+    "output_dir": "docs/dual-agent/agentic-eval-missed-issues-fix-20260603",
+    "run_id": "codex-agentic-eval-missed-issues-fix-20260603-87ac07e1-ae82-4720-8ace-bfc4538c51bf",
+    "status": "ok",
+    "task_id": "agentic-eval-missed-issues-fix-20260603"
+  },
+  "current_gate": "outcome_review",
+  "final_gate_result": {
+    "artifact_export": {
+      "files": [
+        "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/index.md",
+        "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/triage.md",
+        "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/prd.md",
+        "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/tdd.md",
+        "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/grill-findings.md",
+        "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/issues.md",
+        "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/screenshots.md",
+        "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/outcome-review.md",
+        "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/interactions.md",
+        "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/transcript.md",
+        "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/transcript.jsonl",
+        "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/mast-coverage.md",
+        "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/replay/manifest.json",
+        "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/replay/workspace-snapshot.json",
+        "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/replay/mast-coverage.json",
+        "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/grill-findings-tdd.md",
+        "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/grill-findings.md",
+        "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/implementation-plan.md",
+        "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/issues.md",
+        "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/prd.md",
+        "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/tdd.md"
+      ],
+      "output_dir": "docs/dual-agent/agentic-eval-missed-issues-fix-20260603",
+      "run_id": "codex-agentic-eval-missed-issues-fix-20260603-87ac07e1-ae82-4720-8ace-bfc4538c51bf",
+      "status": "ok",
+      "task_id": "agentic-eval-missed-issues-fix-20260603"
+    },
+    "artifact_rigor": {
+      "accepted_prerequisite_gates": [
+        "execution"
+      ],
+      "artifact_policy": "strict",
+      "gate": "outcome_review",
+      "gate_statuses": {
+        "execution": "accepted",
+        "implementation_plan": "accepted",
+        "issues_review": "accepted",
+        "prd_review": "accepted",
+        "tdd_review": "accepted"
+      },
+      "missing_artifact_paths": [],
+      "missing_artifacts": [
+        "screenshots"
+      ],
+      "missing_prerequisite_gates": [],
+      "missing_screenshot_paths": [],
+      "present_artifacts": [
+        "grill_findings",
+        "implementation_plan",
+        "issues",
+        "prd",
+        "tdd_plan"
+      ],
+      "reason": "required_artifacts_missing",
+      "required_artifacts": [
+        "prd",
+        "tdd_plan",
+        "grill_findings",
+        "issues",
+        "implementation_plan"
+      ],
+      "required_prerequisite_gates": [
+        "execution"
+      ],
+      "screenshots": [],
+      "status": "blocked",
+      "user_facing": true,
+      "visual_validation": {
+        "allowed_sources": [
+          "browser",
+          "browser-use",
+          "browser_use",
+          "computer",
+          "computer-use",
+          "computer_use"
+        ],
+        "evidence": [],
+        "failures": [],
+        "reason": "no_visual_evidence",
+        "status": "blocked"
+      }
+    },
+    "attempts": 0,
+    "claude_decision": "revise",
+    "claude_gate_status": "not_invoked",
+    "codex_decision": "deny",
+    "cursor_decision": "accept",
+    "escalation": {
+      "details": {
+        "accepted_prerequisite_gates": [
+          "execution"
+        ],
+        "artifact_policy": "strict",
+        "gate": "outcome_review",
+        "gate_statuses": {
+          "execution": "accepted",
+          "implementation_plan": "accepted",
+          "issues_review": "accepted",
+          "prd_review": "accepted",
+          "tdd_review": "accepted"
+        },
+        "missing_artifact_paths": [],
+        "missing_artifacts": [
+          "screenshots"
+        ],
+        "missing_prerequisite_gates": [],
+        "missing_screenshot_paths": [],
+        "present_artifacts": [
+          "grill_findings",
+          "implementation_plan",
+          "issues",
+          "prd",
+          "tdd_plan"
+        ],
+        "reason": "required_artifacts_missing",
+        "required_artifacts": [
+          "prd",
+          "tdd_plan",
+          "grill_findings",
+          "issues",
+          "implementation_plan"
+        ],
+        "required_prerequisite_gates": [
+          "execution"
+        ],
+        "screenshots": [],
+        "status": "blocked",
+        "user_facing": true,
+        "visual_validation": {
+          "allowed_sources": [
+            "browser",
+            "browser-use",
+            "browser_use",
+            "computer",
+            "computer-use",
+            "computer_use"
+          ],
+          "evidence": [],
+          "failures": [],
+          "reason": "no_visual_evidence",
+          "status": "blocked"
+        }
+      },
+      "reason": "required_artifacts_missing",
+      "type": "artifact_rigor"
+    },
+    "gate": "outcome_review",
+    "handoff_packet_path": null,
+    "independent_reviewer_panel_decision": {
+      "accepted_reviewers": [],
+      "aggregation_mode": "conservative",
+      "available_reviewers": [],
+      "blocking_reviewers": [],
+      "decision": "accept",
+      "low_confidence_reviewers": [],
+      "low_confidence_threshold": 0.0,
+      "missing_reviewers": [],
+      "non_accepting_reviewers": [],
+      "reason": "review_not_required",
+      "reviewer_inputs": [],
+      "schema_version": "independent-reviewer-panel-decision/v1"
+    },
+    "independent_reviewer_results": [],
+    "outcome": null,
+    "probes": {},
+    "status": "blocked",
+    "supervisor_final_status": "blocked",
+    "task_id": "agentic-eval-missed-issues-fix-20260603",
+    "trace_envelope": {
+      "artifacts": [],
+      "claims": [],
+      "event_kind": "dual_agent_gate_result",
+      "failure_taxonomy": {
+        "category": "system_design",
+        "code": "required_artifacts_missing",
+        "framework": "MAST-inspired",
+        "mast_category": "Specification Issues",
+        "mast_code": "FM-1.1",
+        "mast_mode": "Disobey task specification",
+        "probe_id": "",
+        "schema_version": "dual-agent-failure-taxonomy/v1",
+        "source": "result_escalation",
+        "subcategory": "artifact_quality"
+      },
+      "gate": "outcome_review",
+      "policy_verdict": "blocked",
+      "receipts": [],
+      "run_id": "codex-agentic-eval-missed-issues-fix-20260603-87ac07e1-ae82-4720-8ace-bfc4538c51bf",
+      "schema_version": "dual-agent-trace-envelope/v1",
+      "source": "dual_agent",
+      "task_id": "agentic-eval-missed-issues-fix-20260603",
+      "tool_calls": []
+    }
+  },
+  "mandatory_artifacts": {
+    "missing": [],
+    "output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-missed-issues-fix-20260603",
+    "required": [
+      "source/prd.md",
+      "source/grill-findings.md",
+      "source/issues.md",
+      "source/tdd.md",
+      "source/grill-findings-tdd.md",
+      "source/implementation-plan.md",
+      "interactions.md",
+      "outcome-review.md",
+      "transcript.md"
+    ],
+    "status": "ok"
+  },
+  "resume": {
+    "artifact_output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-missed-issues-fix-20260603",
+    "blocker": {
+      "gate": "outcome_review",
+      "latest_event_id": 466531,
+      "status": "blocked"
+    },
+    "current_gate": "outcome_review",
+    "last_status": "blocked",
+    "latest_event_id": 466534,
+    "next_safe_action": "inspect blocker, provide corrective input, then rerun run_dual_agent_workflow",
+    "prompt": "Use codex_supervisor.\nContinue run_id=codex-agentic-eval-missed-issues-fix-20260603-87ac07e1-ae82-4720-8ace-bfc4538c51bf\ntask_id=agentic-eval-missed-issues-fix-20260603\ncurrent_gate=outcome_review\nlast_status=blocked\nlatest_event_id=466534\nnext_safe_action=inspect blocker, provide corrective input, then rerun run_dual_agent_workflow\nartifact_output_dir=/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-missed-issues-fix-20260603\nfirst inspect: read_gate_transcript(run_id=codex-agentic-eval-missed-issues-fix-20260603-87ac07e1-ae82-4720-8ace-bfc4538c51bf, task_id=agentic-eval-missed-issues-fix-20260603)",
+    "run_id": "codex-agentic-eval-missed-issues-fix-20260603-87ac07e1-ae82-4720-8ace-bfc4538c51bf",
+    "status": "ok",
+    "steps": [
+      {
+        "attempt_count": 1,
+        "gate": "prd_review",
+        "latest_event_id": 465302,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "issues_review",
+        "latest_event_id": 465328,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "tdd_review",
+        "latest_event_id": 465785,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "implementation_plan",
+        "latest_event_id": 466383,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "execution",
+        "latest_event_id": 466526,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "outcome_review",
+        "latest_event_id": 466531,
+        "status": "blocked"
+      }
+    ],
+    "task_id": "agentic-eval-missed-issues-fix-20260603",
+    "transcript_command": "read_gate_transcript(run_id=codex-agentic-eval-missed-issues-fix-20260603-87ac07e1-ae82-4720-8ace-bfc4538c51bf, task_id=agentic-eval-missed-issues-fix-20260603)"
+  },
+  "run_id": "codex-agentic-eval-missed-issues-fix-20260603-87ac07e1-ae82-4720-8ace-bfc4538c51bf",
+  "status": "blocked",
+  "steps": [
+    {
+      "attempt_count": 1,
+      "gate": "prd_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "issues_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "tdd_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "implementation_plan",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "execution",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "outcome_review",
+      "status": "blocked"
+    }
+  ],
+  "task_id": "agentic-eval-missed-issues-fix-20260603",
+  "visual_evidence_policy": {
+    "artifact_matches": [
+      {
+        "kind": "prd",
+        "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/prd.md",
+        "terms": "live provider"
+      },
+      {
+        "kind": "prd",
+        "path": "docs/dual-agent/agentic-eval-missed-issues-fix-20260603/source/prd.md",
+        "terms": "live provider"
+      }
+    ],
+    "matched_terms": [
+      "live provider"
+    ],
+    "required": true,
+    "source": "auto_live_surface"
+  },
+  "workflow_route": {
+    "agentic_lead_policy": {
+      "min_subagents": 0,
+      "policy": "off",
+      "required_evidence_grade": "self_reported",
+      "required_roles": [],
+      "solo_exception_for_artifact_only_gates": false
+    },
+    "cursor_review_gates": [
+      "tdd_review",
+      "implementation_plan",
+      "outcome_review"
+    ],
+    "cursor_review_profile": "rigorous",
+    "dynamic_workflow_task_class": null,
+    "effective_cursor_review": true,
+    "execution_layer_mode": "lead_direct",
+    "force_cursor_review": false,
+    "gate_count": 6,
+    "gates": [
+      "prd_review",
+      "issues_review",
+      "tdd_review",
+      "implementation_plan",
+      "execution",
+      "outcome_review"
+    ],
+    "planning_depth": "large",
+    "reasons": [
+      "user_facing_or_live_surface"
+    ],
+    "requested_cursor_review": true,
+    "required_skill_stages": [
+      "to_prd",
+      "prd_grill",
+      "to_issues",
+      "tdd",
+      "tdd_grill"
+    ],
+    "requires_agentic_lead_policy_receipts": false,
+    "requires_brainstorm": false,
+    "requires_dynamic_workflow_receipts": false,
+    "requires_skill_receipts": true,
+    "resume": {
+      "mode": "resume_from_prior_steps",
+      "pending_gates": [
+        "implementation_plan",
+        "execution",
+        "outcome_review"
+      ],
+      "schema_version": "dual-agent-workflow-resume/v1",
+      "skipped_gates": [
+        "prd_review",
+        "issues_review",
+        "tdd_review"
+      ],
+      "skipped_steps": [
+        {
+          "attempt_count": 1,
+          "gate": "prd_review",
+          "latest_event_id": 465302,
+          "status": "accepted"
+        },
+        {
+          "attempt_count": 1,
+          "gate": "issues_review",
+          "latest_event_id": 465328,
+          "status": "accepted"
+        },
+        {
+          "attempt_count": 1,
+          "gate": "tdd_review",
+          "latest_event_id": 465785,
+          "status": "accepted"
+        }
+      ]
+    },
+    "reviewer_infra_retry_backoff_s": 1.0,
+    "reviewer_infra_retry_limit": 2,
+    "reviewer_low_confidence_threshold": 0.0,
+    "reviewer_max_tokens": 4096,
+    "reviewer_model": "composer-2.5",
+    "reviewer_output_mode": "cursor_sdk",
+    "reviewer_panel_calibration_active": false,
+    "reviewer_panel_calibration_path": null,
+    "reviewer_unavailable_policy": "escalate",
+    "schema_version": "dual-agent-workflow-route/v1",
+    "task_complexity": "large"
+  }
+}

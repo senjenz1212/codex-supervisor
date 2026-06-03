@@ -31,21 +31,21 @@ Result:
 - Report:
   `docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/report.json`
 - Report sha256:
-  `bc844776c28945364d16facea9659c9f4335cf6692eeef56bb949a9bae3b0187`
+  `02f9551e7f547c45c55f75e5df10eca409b4c64e51c4a2c1dafda62fe82af308`
 
 Rows:
 
-| task_id | mode | score | cost_usd | wall_clock_s | retries | rejected_gates | missed_issues | workflow_status |
-|---|---:|---:|---:|---:|---:|---:|---:|---|
-| clean-accept-runner-report | lead_direct | 0.0 | 0.0 | 3.372 | 0 | 2 | 0 | blocked |
-| clean-accept-runner-report | agentic_allowed | 0.0 | 0.0 | 151.141 | 0 | 2 | 0 | blocked |
-| clean-accept-runner-report | agentic_required | 0.0 | 0.0 | 515.577 | 0 | 2 | 0 | blocked |
-| planning-artifact-deny | lead_direct | 5.0 | 0.0 | 3.383 | 0 | 2 | 0 | blocked |
-| planning-artifact-deny | agentic_allowed | 5.0 | 0.0 | 127.149 | 0 | 2 | 0 | blocked |
-| planning-artifact-deny | agentic_required | 5.0 | 0.0 | 93.672 | 0 | 2 | 0 | blocked |
-| reviewer-unavailable-revise | lead_direct | 5.0 | 0.0 | 3.325 | 0 | 2 | 0 | blocked |
-| reviewer-unavailable-revise | agentic_allowed | 5.0 | 0.0 | 116.766 | 0 | 2 | 0 | blocked |
-| reviewer-unavailable-revise | agentic_required | 5.0 | 0.0 | 124.920 | 0 | 2 | 0 | blocked |
+| task_id | mode | score | cost_usd | wall_clock_s | retries | rejected_gates | missed_issues | metrics_divergence | workflow_status |
+|---|---:|---:|---:|---:|---:|---:|---:|---|---|
+| clean-accept-runner-report | lead_direct | 0.0 | 0.0 | 3.372 | 0 | 2 | 2 | true | blocked |
+| clean-accept-runner-report | agentic_allowed | 0.0 | 0.0 | 151.141 | 0 | 2 | 2 | true | blocked |
+| clean-accept-runner-report | agentic_required | 0.0 | 0.0 | 515.577 | 0 | 2 | 2 | true | blocked |
+| planning-artifact-deny | lead_direct | 5.0 | 0.0 | 3.383 | 0 | 2 | 0 | false | blocked |
+| planning-artifact-deny | agentic_allowed | 5.0 | 0.0 | 127.149 | 0 | 2 | 0 | false | blocked |
+| planning-artifact-deny | agentic_required | 5.0 | 0.0 | 93.672 | 0 | 2 | 0 | false | blocked |
+| reviewer-unavailable-revise | lead_direct | 5.0 | 0.0 | 3.325 | 0 | 2 | 0 | false | blocked |
+| reviewer-unavailable-revise | agentic_allowed | 5.0 | 0.0 | 116.766 | 0 | 2 | 0 | false | blocked |
+| reviewer-unavailable-revise | agentic_required | 5.0 | 0.0 | 124.920 | 0 | 2 | 0 | false | blocked |
 
 Summary:
 

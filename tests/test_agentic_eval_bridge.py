@@ -191,6 +191,7 @@ def test_agentic_eval_bridge_expected_accept_requires_terminal_accept(tmp_path):
     report = agentic_eval_runner(dataset_path=dataset_path)
 
     assert {row["score"] for row in report["rows"]} == {0.0}
+    assert {row["missed_issues"] for row in report["rows"]} == {len(clean_accept_case["required_verdicts"])}
 
 
 def _workflow_result(mode: str, *, status: str = "accepted") -> dict:

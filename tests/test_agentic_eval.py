@@ -150,6 +150,70 @@ def test_agentic_eval_runner_allows_real_early_block_replay(tmp_path):
     assert row["rejected_gates"] >= 1
 
 
+def test_agentic_eval_runner_derives_missed_issues_from_verdicts(tmp_path):
+    dataset = load_agentic_eval_dataset(FIXTURE)
+    task = dataset["tasks"][0]
+    lead_arm = task["arms"]["lead_direct"]
+    lead_arm["verdict_evidence"] = {
+        verdict["verdict_id"]: [
+            {"kind": "artifact_path", "ref": "tests/does_not_exist.py", "status": "passed"}
+        ]
+        for verdict in task["required_verdicts"]
+    }
+    lead_arm["metrics"]["missed_issues"] = 0
+    lead_arm["metrics"]["wall_clock_s"] = 123.4
+    lead_arm["metrics"]["cost_usd"] = 5.6
+    path = tmp_path / "quality-mask.json"
+    path.write_text(json.dumps({"tasks": dataset["tasks"]}), encoding="utf-8")
+
+    report = agentic_eval_runner(dataset_path=path)
+
+    row = next(row for row in report["rows"] if row["task_id"] == "resume-drop-catchup" and row["mode"] == "lead_direct")
+    assert row["score"] == 0.0
+    assert row["missed_issues"] == len(task["required_verdicts"])
+    assert row["reported_missed_issues"] == 0
+    assert row["metrics_divergence"] is True
+    assert "missed_issues" in row["metrics_divergence_fields"]
+    assert row["wall_clock_s"] == 123.4
+    assert row["cost_usd"] == 5.6
+
+
+def test_agentic_eval_runner_derives_rejected_gates_from_workflow(tmp_path):
+    dataset = load_agentic_eval_dataset(FIXTURE)
+    lead_arm = dataset["tasks"][0]["arms"]["lead_direct"]
+    lead_arm["workflow_result"]["steps"][0]["status"] = "blocked"
+    lead_arm["metrics"]["rejected_gates"] = 0
+    path = tmp_path / "rejected-gate-mask.json"
+    path.write_text(json.dumps({"tasks": dataset["tasks"]}), encoding="utf-8")
+
+    report = agentic_eval_runner(dataset_path=path)
+
+    row = next(row for row in report["rows"] if row["task_id"] == "resume-drop-catchup" and row["mode"] == "lead_direct")
+    assert row["rejected_gates"] == 1
+    assert row["reported_rejected_gates"] == 0
+    assert row["metrics_divergence"] is True
+    assert "rejected_gates" in row["metrics_divergence_fields"]
+
+
+def test_agentic_eval_runner_does_not_flag_consistent_quality_metrics(tmp_path):
+    dataset = load_agentic_eval_dataset(FIXTURE)
+    lead_arm = dataset["tasks"][0]["arms"]["lead_direct"]
+    lead_arm["metrics"]["missed_issues"] = 0
+    lead_arm["metrics"]["rejected_gates"] = 0
+    path = tmp_path / "consistent-quality.json"
+    path.write_text(json.dumps({"tasks": dataset["tasks"]}), encoding="utf-8")
+
+    report = agentic_eval_runner(dataset_path=path)
+
+    row = next(row for row in report["rows"] if row["task_id"] == "resume-drop-catchup" and row["mode"] == "lead_direct")
+    assert row["missed_issues"] == 0
+    assert row["rejected_gates"] == 0
+    assert row["metrics_divergence"] is False
+    assert row["metrics_divergence_fields"] == []
+    assert "reported_missed_issues" not in row
+    assert "reported_rejected_gates" not in row
+
+
 def test_agentic_eval_decision_tree_is_deterministic():
     dataset = load_agentic_eval_dataset(FIXTURE)
     task = dataset["tasks"][0]
