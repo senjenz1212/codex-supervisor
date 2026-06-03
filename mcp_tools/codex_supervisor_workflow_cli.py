@@ -54,6 +54,7 @@ WORKFLOW_KEYS = {
     "reviewer_infra_retry_limit",
     "reviewer_infra_retry_backoff_s",
     "reviewer_low_confidence_threshold",
+    "reviewer_panel_calibration_path",
     "task_complexity",
 }
 REQUIRED_WORKFLOW_KEYS = {"cwd", "task_id", "run_id", "intent"}

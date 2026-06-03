@@ -1,0 +1,193 @@
+{
+  "cursor_review": true,
+  "cursor_review_profile": "rigorous",
+  "cwd": "/Users/sam.zhang/Documents/codex-supervisor",
+  "execution_layer_mode": "lead_direct",
+  "intent": "Complete the reviewer panel: replace the conservative accept rule with DEPENDENCE/SEVERITY-weighted aggregation, using MEASURED reviewer dependency from the panel eval runner (supervisor/reviewer_panel_eval.py) \u2014 not hand-assigned weights. Grounded in Ising-model aggregation (arXiv:2601.22336) and entanglement reweighting (arXiv:2604.07650), both of which require measured dependency.\n\nEXACT STATE (grounded): the reviewer panel foundation, conservative aggregator, second reviewer route (provider_family), eval runner, and adjudication have all landed (e457637/458abc1/7527f95/a1d79fb/c5debfa). The eval runner currently records `does_not_emit_active_calibrated_weights` (supervisor/reviewer_panel_eval.py:88) \u2014 i.e., the panel runs conservative and weights are NOT yet applied. `independent_reviewer_results[]` + `provider_family` + `adjudicate_reviewer_panel` already exist in supervisor/reviewer_registry.py.\n\nBLOCKING OPEN QUESTION \u2014 resolve in PRD/grill with REAL data before TDD: run the reviewer-panel eval on a representative task set to MEASURE per-reviewer + pairwise correlation / failure-overlap / agreement, and produce a recalibratable calibration artifact. Weights MUST derive from this artifact; hand-assigned constants are not acceptable.\n\nSCOPE (do):\n1. Consume the panel eval's measured dependency to compute reviewer weights (down-weight measured-correlated reviewers \u2014 same provider_family or high failure-overlap). Persist the calibration as a versioned, rerunnable artifact.\n2. Apply dependence/severity-weighted aggregation in the panel: a unanimous \"accept\" across measured-correlated reviewers yields LOWER aggregate confidence + ESCALATION (not auto-advance); effectively-independent agreement advances.\n3. A real revise/deny at critical/important severity still HARD-BLOCKS (unchanged); the adjudication path (c5debfa) still fires on disagreement.\n4. Flip `does_not_emit_active_calibrated_weights` to active ONLY when a calibration artifact exists; otherwise fall back to the conservative aggregator (slice 458abc1).\n\nNON-GOALS: do NOT hand-assign weights (must be measured); do NOT weaken any block; do NOT change the gate sequence or P-probes; do NOT touch agentic_lead_policy / fan-out.\n\nACCEPTANCE:\n- Weights derive from the panel-eval calibration artifact (assert they are NOT constants).\n- A measured-correlated unanimous accept ESCALATES; an effectively-independent accept ADVANCES; a real revise/deny still BLOCKS.\n- With NO calibration artifact present, the panel falls back to conservative behavior (no regression).\n- Recalibration reproduces deterministically from a fixed eval input; deterministic replay preserved; full suite green; ledger + replay artifacts exported.",
+  "quality": "best",
+  "require_skill_receipts": true,
+  "reviewer_model": "gemini-3.1-pro-preview",
+  "reviewer_output_mode": "litellm_structured",
+  "reviewer_panel_calibration_path": "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/reviewer-panel-calibration.json",
+  "run_id": "codex-reviewer-panel-calibrated-weighting-20260602",
+  "task_id": "reviewer-panel-calibrated-weighting-20260602",
+  "timeout_s": 1200,
+  "tool_receipts": [
+    {
+      "artifacts": [
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/prd.md"
+      ],
+      "claims": [
+        "prd-to-tdd skill executed",
+        "PRD promise contracts produced",
+        "blocking calibration open question resolved with measured eval artifact"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-to-prd-reviewer-panel-calibrated-weighting-20260602",
+      "skill": "to-prd",
+      "stage": "to_prd",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/grill-findings.md"
+      ],
+      "claims": [
+        "prd-to-tdd skill executed",
+        "PRD grill findings resolved",
+        "dependency and severity weighting boundaries clarified"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-prd-grill-reviewer-panel-calibrated-weighting-20260602",
+      "skill": "grill-with-docs",
+      "stage": "prd_grill",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/issues.md"
+      ],
+      "claims": [
+        "prd-to-tdd skill executed",
+        "issues map to every PRD promise",
+        "public-boundary workflow behavior preserved"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-to-issues-reviewer-panel-calibrated-weighting-20260602",
+      "skill": "to-issues",
+      "stage": "to_issues",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/tdd.md"
+      ],
+      "claims": [
+        "prd-to-tdd skill executed",
+        "public-boundary RED tests planned",
+        "calibration derivation, active aggregation, fallback, and hard-block regressions covered"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-tdd-reviewer-panel-calibrated-weighting-20260602",
+      "skill": "tdd",
+      "stage": "tdd",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/grill-findings-tdd.md"
+      ],
+      "claims": [
+        "prd-to-tdd skill executed",
+        "TDD grill findings resolved",
+        "translation audit completed"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-tdd-grill-reviewer-panel-calibrated-weighting-20260602",
+      "skill": "grill-with-docs",
+      "stage": "tdd_grill",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/reviewer-panel-calibration-input.json",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/report.json",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/rows.jsonl",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/replay-manifest.json",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/reviewer-panel-calibration.json"
+      ],
+      "calibration_sha256": "064d745cd70016215161d6b2a4a1af4056473d96d90d4dda8e2f727aed05076e",
+      "claims": [
+        "reviewer-panel eval run produced measured dependency calibration artifact",
+        "calibration weights derive from report pairwise dependency signals",
+        "accept aggregation formula records severity multipliers"
+      ],
+      "kind": "calibration_eval",
+      "measured_weights": {
+        "independent-reviewer-0": 1.0,
+        "independent-reviewer-1": 1.0
+      },
+      "receipt_id": "calibration-eval-reviewer-panel-calibrated-weighting-20260602",
+      "report_sha256": "f04e90785d8d7b1c4a474b67a48a27e87a215f255396a0d94c7c22450f92f8be",
+      "status": "passed"
+    },
+    {
+      "claims": [
+        "focused calibrated weighting tests passed",
+        "15 tests passed",
+        "no-lineage calibration constants are rejected"
+      ],
+      "command": "uv run pytest tests/test_reviewer_panel_eval_runner.py tests/test_reviewer_panel_aggregation.py tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_correlated_accept_escalates tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_independent_accept_advances tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_missing_calibration_falls_back_to_conservative tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_real_revise_still_blocks tests/test_dual_agent_workflow_driver.py::test_workflow_kwargs_from_payload_preserves_dynamic_workflow_preview_fields -q",
+      "kind": "test",
+      "receipt_id": "pytest-focused-reviewer-panel-calibrated-weighting-20260602",
+      "status": "passed"
+    },
+    {
+      "claims": [
+        "reviewer panel eval and workflow-driver regression tests passed",
+        "113 tests passed"
+      ],
+      "command": "uv run pytest tests/test_reviewer_panel_eval_runner.py tests/test_reviewer_panel_aggregation.py tests/test_dual_agent_workflow_driver.py -q",
+      "kind": "test",
+      "receipt_id": "pytest-workflow-driver-reviewer-panel-calibrated-weighting-20260602",
+      "status": "passed"
+    },
+    {
+      "claims": [
+        "full test suite passed",
+        "638 tests passed"
+      ],
+      "command": "uv run --extra dev pytest -q",
+      "kind": "test",
+      "receipt_id": "pytest-full-reviewer-panel-calibrated-weighting-20260602",
+      "status": "passed"
+    },
+    {
+      "changed_files": [
+        "config.example.yaml",
+        "mcp_tools/codex_supervisor_stdio.py",
+        "mcp_tools/codex_supervisor_workflow_cli.py",
+        "supervisor/config.py",
+        "supervisor/reviewer_panel_eval.py",
+        "supervisor/reviewer_registry.py",
+        "tests/test_dual_agent_workflow_driver.py",
+        "tests/test_reviewer_panel_eval_runner.py",
+        "tests/test_reviewer_panel_aggregation.py",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/skill-receipts.json",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/test-evidence.md",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/prd.md",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/grill-findings.md",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/issues.md",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/tdd.md",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/grill-findings-tdd.md",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/implementation-plan.md",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/reviewer-panel-calibration-input.json",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/report.json",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/rows.jsonl",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/replay-manifest.json",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/reviewer-panel-calibration.json"
+      ],
+      "claims": [
+        "implemented measured calibrated reviewer-panel weighting with conservative fallback",
+        "calibration activation requires eval lineage and matching digest"
+      ],
+      "kind": "git_diff",
+      "receipt_id": "git-diff-reviewer-panel-calibrated-weighting-20260602",
+      "status": "present"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/interactions.md",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/transcript.jsonl"
+      ],
+      "claims": [
+        "cursor_sdk reviewer bridge exceeded timeout window during rerun2",
+        "rerun3 uses litellm_structured reviewer fallback while preserving cursor_review gate semantics",
+        "missing cursor verdict is not counted as accept"
+      ],
+      "kind": "transport_failure",
+      "receipt_id": "cursor-sdk-transport-timeout-reviewer-panel-calibrated-weighting-20260602",
+      "status": "recovered"
+    }
+  ]
+}

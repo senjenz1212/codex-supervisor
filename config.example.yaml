@@ -64,6 +64,10 @@ supervisor:
   # Permissive by default: clean reviewer accepts still advance until eval data
   # justifies a stricter low-confidence escalation threshold.
   reviewer_low_confidence_threshold: 0.0
+  # Optional. When this versioned calibration artifact exists, reviewer-panel
+  # accepts are dependence/severity weighted; when absent, the panel falls back
+  # to conservative aggregation.
+  reviewer_panel_calibration_path: ""
 
 modes:
   rollout_ingestion: enforce

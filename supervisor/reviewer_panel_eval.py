@@ -11,6 +11,7 @@ import copy
 import hashlib
 import json
 import math
+import re
 from dataclasses import asdict, is_dataclass
 from itertools import combinations
 from pathlib import Path
@@ -20,10 +21,17 @@ from .reviewer_registry import ReviewerSpec, configured_reviewers
 
 
 SCHEMA_VERSION = "reviewer-panel-eval/v1"
+CALIBRATION_SCHEMA_VERSION = "reviewer-panel-calibration/v1"
 LABELED_SET_SCHEMA_VERSION = "reviewer-panel-labeled-set/v1"
 ROW_SCHEMA_VERSION = "reviewer-panel-eval-row/v1"
 ALLOWED_LABELS = {"accept_allowed", "block_required"}
 DECISIONS = ("accept", "revise", "deny", "missing")
+REAL_REVIEWER_SOURCE_KINDS = {
+    "workflow_transcript",
+    "workflow_transcript_event",
+    "real_reviewer_result",
+    "live_reviewer_result",
+}
 
 
 def reviewer_panel_eval_runner(
@@ -35,6 +43,7 @@ def reviewer_panel_eval_runner(
     state: Any | None = None,
     run_id: str = "reviewer-panel-eval",
     execution_mode: str = "fixture_replay",
+    emit_calibration: bool = False,
 ) -> dict[str, Any]:
     """Replay labeled gate fixtures through the configured reviewer roster.
 
@@ -56,6 +65,8 @@ def reviewer_panel_eval_runner(
     )
     per_reviewer = _per_reviewer_metrics(rows, roster)
     pairwise = _pairwise_metrics(rows, roster)
+    provenance = _provenance_summary(rows)
+    provenance["row_roster_consistency"] = _row_roster_consistency(rows, roster)
     cassette_ids = sorted({
         row["cassette_id"]
         for row in rows
@@ -80,18 +91,21 @@ def reviewer_panel_eval_runner(
         "rows": rows,
         "per_reviewer": per_reviewer,
         "pairwise": pairwise,
+        "provenance": provenance,
         "policy_change_allowed": False,
         "active_weight_changes": [],
         "non_goals": [
             "does_not_change_gate_aggregation",
             "does_not_change_reviewer_roster_defaults",
-            "does_not_emit_active_calibrated_weights",
             "does_not_flip_agentic_or_reviewer_policy",
         ],
+        "calibration": None,
         "ledger_event_ids": [],
         "exports": {},
         "report_sha256": "",
     }
+    if not emit_calibration:
+        report["non_goals"].insert(2, "does_not_emit_active_calibrated_weights")
 
     if state is not None:
         event_id = state.write_event(
@@ -122,10 +136,215 @@ def reviewer_panel_eval_runner(
 
     report["report_sha256"] = _report_sha256(report)
 
+    if emit_calibration:
+        calibration_path = (
+            Path(output_dir) / "reviewer-panel-calibration.json"
+            if output_dir is not None else None
+        )
+        calibration = build_reviewer_panel_calibration(
+            report,
+            output_path=calibration_path,
+        )
+        report["calibration"] = calibration
+        if output_dir is not None:
+            report["exports"]["calibration_json"] = str(calibration_path)
+        report["active_weight_changes"] = [{
+            "schema_version": "reviewer-panel-active-weight-change/v1",
+            "status": "calibration_artifact_emitted",
+            "calibration_sha256": calibration["calibration_sha256"],
+            "calibration_path": str(calibration_path) if calibration_path else None,
+            "source_report_sha256": calibration["source_report_sha256"],
+        }]
+        report["report_sha256"] = _report_sha256(report)
+        if calibration_path is not None:
+            # Re-write after the report hash is final so the artifact can point
+            # back at the exact report digest used by deterministic replay.
+            calibration = build_reviewer_panel_calibration(
+                report,
+                output_path=calibration_path,
+            )
+            report["calibration"] = calibration
+            report["active_weight_changes"][0]["calibration_sha256"] = calibration["calibration_sha256"]
+            report["active_weight_changes"][0]["source_report_sha256"] = calibration["source_report_sha256"]
+
     if output_dir is not None:
         _export_report(report, Path(output_dir))
 
     return report
+
+
+def build_reviewer_panel_calibration(
+    report: dict[str, Any],
+    *,
+    output_path: str | Path | None = None,
+) -> dict[str, Any]:
+    """Build deterministic reviewer weights from measured eval dependencies."""
+    roster = list(report.get("reviewer_roster") or [])
+    pairwise = report.get("pairwise") if isinstance(report.get("pairwise"), dict) else {}
+    rows = list(report.get("rows") or [])
+    row_roster_consistency = _row_roster_consistency(rows, roster)
+    if not row_roster_consistency["all_rows_match_reviewer_roster"]:
+        raise ValueError("calibration rows must match reviewer roster metadata")
+    pair_dependencies = {
+        pair_id: _pair_dependency(pair_metrics, roster=roster)
+        for pair_id, pair_metrics in sorted(pairwise.items())
+        if isinstance(pair_metrics, dict)
+    }
+    reviewer_dependencies: dict[str, float] = {
+        str(reviewer.get("reviewer_id")): 0.0
+        for reviewer in roster
+        if reviewer.get("reviewer_id")
+    }
+    reviewer_dependency_sources: dict[str, list[dict[str, Any]]] = {
+        reviewer_id: [] for reviewer_id in reviewer_dependencies
+    }
+    for pair_id, dependency in pair_dependencies.items():
+        reviewer_ids = dependency["reviewer_ids"]
+        for reviewer_id in reviewer_ids:
+            current = reviewer_dependencies.get(reviewer_id, 0.0)
+            score = float(dependency["dependency_score"])
+            if score > current:
+                reviewer_dependencies[reviewer_id] = score
+            reviewer_dependency_sources.setdefault(reviewer_id, []).append({
+                "pair_id": pair_id,
+                "dependency_score": score,
+                "signals": dependency["signals"],
+            })
+
+    reviewer_weights: dict[str, dict[str, Any]] = {}
+    for reviewer in roster:
+        reviewer_id = str(reviewer.get("reviewer_id") or "")
+        if not reviewer_id:
+            continue
+        dependency_score = _clamp_unit(reviewer_dependencies.get(reviewer_id, 0.0))
+        reviewer_weights[reviewer_id] = {
+            "reviewer_id": reviewer_id,
+            "weight": round(max(0.05, 1.0 - dependency_score), 6),
+            "dependency_score": dependency_score,
+            "provider_family": reviewer.get("provider_family") or "unknown",
+            "runtime": reviewer.get("runtime") or "unknown",
+            "model": reviewer.get("model"),
+            "lineage": list(reviewer.get("lineage") or []),
+            "tool_access": reviewer.get("tool_access") or "unknown",
+            "assurance_grade": reviewer.get("assurance_grade") or "self_reported",
+            "derived_from_pairwise": sorted(
+                reviewer_dependency_sources.get(reviewer_id, []),
+                key=lambda item: str(item.get("pair_id") or ""),
+            ),
+        }
+
+    source_provenance = copy.deepcopy(report.get("provenance") or {})
+    source_provenance["row_roster_consistency"] = row_roster_consistency
+
+    calibration = {
+        "schema_version": CALIBRATION_SCHEMA_VERSION,
+        "source_report_schema_version": report.get("schema_version"),
+        "source_report_sha256": report.get("report_sha256") or _report_sha256(report),
+        "labeled_set_sha256": (report.get("labeled_set") or {}).get("sha256"),
+        "reviewer_roster_sha256": _sha256_json(roster),
+        "pairwise_dependency": pair_dependencies,
+        "reviewer_weights": reviewer_weights,
+        "source_provenance": source_provenance,
+        "accept_confidence_threshold": _accept_confidence_threshold(rows),
+        "weight_formula": {
+            "description": "weight = max(0.05, 1 - max_measured_pair_dependency)",
+            "dependency_signals": [
+                "same_provider_family",
+                "combined_failure_jaccard",
+                "false_accept_overlap.jaccard",
+                "false_block_overlap.jaccard",
+                "positive(block_decision_correlation.value)",
+                "positive(wrong_decision_correlation.value)",
+            ],
+            "threshold_formula": "0.8 * average observed accept confidence, clamped to [0.5, 0.95]",
+            "accept_aggregation_formula": (
+                "aggregate = sum(weight * confidence * severity_multiplier) / reviewer_count"
+            ),
+            "severity_multipliers": {
+                "none": 1.0,
+                "low": 0.95,
+                "medium": 0.85,
+                "important": 0.65,
+                "critical": 0.35,
+            },
+        },
+        "recalibratable": True,
+        "calibration_sha256": "",
+    }
+    calibration["calibration_sha256"] = _sha256_json({
+        **calibration,
+        "calibration_sha256": "",
+    })
+    if output_path is not None:
+        path = Path(output_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(calibration, sort_keys=True, indent=2, ensure_ascii=True) + "\n",
+            encoding="utf-8",
+        )
+    return calibration
+
+
+def _pair_dependency(pair_metrics: dict[str, Any], *, roster: list[dict[str, Any]]) -> dict[str, Any]:
+    reviewer_ids = [str(item) for item in pair_metrics.get("reviewer_ids") or []]
+    roster_by_id = {str(item.get("reviewer_id")): item for item in roster if item.get("reviewer_id")}
+    same_provider = False
+    if len(reviewer_ids) == 2:
+        families = [
+            str(roster_by_id.get(reviewer_id, {}).get("provider_family") or "unknown")
+            for reviewer_id in reviewer_ids
+        ]
+        same_provider = bool(families[0] != "unknown" and families[0] == families[1])
+    signals = {
+        "same_provider_family": 1.0 if same_provider else 0.0,
+        "combined_failure_jaccard": _clamp_unit(pair_metrics.get("combined_failure_jaccard")),
+        "false_accept_overlap_jaccard": _clamp_unit(
+            (pair_metrics.get("false_accept_overlap") or {}).get("jaccard")
+            if isinstance(pair_metrics.get("false_accept_overlap"), dict) else 0.0
+        ),
+        "false_block_overlap_jaccard": _clamp_unit(
+            (pair_metrics.get("false_block_overlap") or {}).get("jaccard")
+            if isinstance(pair_metrics.get("false_block_overlap"), dict) else 0.0
+        ),
+        "block_decision_positive_correlation": _positive_correlation(
+            pair_metrics.get("block_decision_correlation")
+        ),
+        "wrong_decision_positive_correlation": _positive_correlation(
+            pair_metrics.get("wrong_decision_correlation")
+        ),
+    }
+    score = max(signals.values()) if signals else 0.0
+    return {
+        "schema_version": "reviewer-panel-pair-dependency/v1",
+        "reviewer_ids": reviewer_ids,
+        "dependency_score": round(score, 6),
+        "signals": signals,
+    }
+
+
+def _accept_confidence_threshold(rows: list[dict[str, Any]]) -> float:
+    confidences = [
+        float(row["confidence"])
+        for row in rows
+        if row.get("decision") == "accept" and isinstance(row.get("confidence"), (int, float))
+    ]
+    if not confidences:
+        return 0.7
+    return round(max(0.5, min(0.95, (sum(confidences) / len(confidences)) * 0.8)), 6)
+
+
+def _positive_correlation(value: Any) -> float:
+    if not isinstance(value, dict) or value.get("status") != "ok":
+        return 0.0
+    return _clamp_unit(float(value.get("value") or 0.0))
+
+
+def _clamp_unit(value: Any) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return max(0.0, min(1.0, number))
 
 
 def _normalize_labeled_tasks(tasks: list[dict[str, Any]] | tuple[dict[str, Any], ...]) -> list[dict[str, Any]]:
@@ -275,6 +494,11 @@ def _row_from_fixture(
         "input_sha256": cassette.get("input_sha256") or task.get("input_sha256"),
         "output_sha256": cassette.get("output_sha256") if verdict_present else None,
         "failure_classification": cassette.get("failure_classification"),
+        "source_kind": cassette.get("source_kind") or "fixture",
+        "source_trace_path": cassette.get("source_trace_path"),
+        "source_event_id": cassette.get("source_event_id"),
+        "source_payload_sha256": cassette.get("source_payload_sha256"),
+        "transcript_sha256": cassette.get("transcript_sha256"),
         "cost_usd": float(_number(cassette.get("cost_usd"), default=0.0)),
         "latency_ms": int(latency_ms),
         "false_accept": false_accept,
@@ -285,6 +509,117 @@ def _row_from_fixture(
     if not verdict_present and row["failure_classification"] is None:
         row["failure_classification"] = "reviewer_verdict_missing"
     return row
+
+
+def _provenance_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    source_kind_counts: dict[str, int] = {}
+    source_trace_paths: set[str] = set()
+    source_event_ids: set[str] = set()
+    transcript_ref_count = 0
+    real_reviewer_output_count = 0
+    auditable_real_output_count = 0
+    fixture_row_count = 0
+
+    for row in rows:
+        source_kind = str(row.get("source_kind") or "fixture")
+        source_kind_counts[source_kind] = source_kind_counts.get(source_kind, 0) + 1
+        if source_kind == "fixture":
+            fixture_row_count += 1
+        if row.get("source_trace_path"):
+            source_trace_paths.add(str(row["source_trace_path"]))
+        if row.get("source_event_id") is not None:
+            source_event_ids.add(str(row["source_event_id"]))
+        refs = row.get("transcript_refs") if isinstance(row.get("transcript_refs"), list) else []
+        transcript_ref_count += len(refs)
+        if source_kind in REAL_REVIEWER_SOURCE_KINDS and row.get("verdict_present"):
+            real_reviewer_output_count += 1
+            if (
+                refs
+                and row.get("source_trace_path")
+                and row.get("source_event_id") is not None
+                and _looks_like_sha256(row.get("output_sha256"))
+                and _looks_like_sha256(row.get("transcript_sha256"))
+            ):
+                auditable_real_output_count += 1
+
+    return {
+        "schema_version": "reviewer-panel-eval-provenance/v1",
+        "source_kind_counts": dict(sorted(source_kind_counts.items())),
+        "source_trace_paths": sorted(source_trace_paths),
+        "source_event_ids": sorted(source_event_ids),
+        "transcript_ref_count": transcript_ref_count,
+        "real_reviewer_output_count": real_reviewer_output_count,
+        "auditable_real_output_count": auditable_real_output_count,
+        "fixture_row_count": fixture_row_count,
+        "all_rows_auditable_real_reviewer_outputs": bool(
+            rows and auditable_real_output_count == len(rows)
+        ),
+    }
+
+
+def _row_roster_consistency(
+    rows: list[dict[str, Any]],
+    roster: list[dict[str, Any]],
+) -> dict[str, Any]:
+    roster_by_id = {
+        str(item.get("reviewer_id") or ""): item
+        for item in roster
+        if str(item.get("reviewer_id") or "")
+    }
+    compared_fields = (
+        "runtime",
+        "model",
+        "provider_family",
+        "lineage",
+        "tool_access",
+        "assurance_grade",
+    )
+    mismatches: list[dict[str, Any]] = []
+    for row in rows:
+        reviewer_id = str(row.get("reviewer_id") or "")
+        reviewer = roster_by_id.get(reviewer_id)
+        if reviewer is None:
+            mismatches.append({
+                "task_id": row.get("task_id"),
+                "gate": row.get("gate"),
+                "reviewer_id": reviewer_id,
+                "reason": "reviewer_not_in_roster",
+            })
+            continue
+        field_mismatches = []
+        for field in compared_fields:
+            row_value = _normalise_roster_value(row.get(field))
+            roster_value = _normalise_roster_value(reviewer.get(field))
+            if row_value != roster_value:
+                field_mismatches.append({
+                    "field": field,
+                    "row": row_value,
+                    "roster": roster_value,
+                })
+        if field_mismatches:
+            mismatches.append({
+                "task_id": row.get("task_id"),
+                "gate": row.get("gate"),
+                "reviewer_id": reviewer_id,
+                "mismatches": field_mismatches,
+            })
+    return {
+        "schema_version": "reviewer-panel-row-roster-consistency/v1",
+        "row_count": len(rows),
+        "reviewer_count": len(roster_by_id),
+        "compared_fields": list(compared_fields),
+        "mismatched_row_count": len(mismatches),
+        "all_rows_match_reviewer_roster": not mismatches,
+        "mismatches": mismatches[:20],
+    }
+
+
+def _normalise_roster_value(value: Any) -> Any:
+    if isinstance(value, (list, tuple)):
+        return [str(item) for item in value]
+    if value is None:
+        return None
+    return str(value)
 
 
 def _false_block_cause(decision: str, verdict_present: bool) -> str:
@@ -503,6 +838,7 @@ def _replay_manifest(report: dict[str, Any]) -> dict[str, Any]:
         "labeled_set_sha256": report["labeled_set"]["sha256"],
         "cassette_ids": report["cassette_ids"],
         "reviewer_roster": report["reviewer_roster"],
+        "provenance": report.get("provenance") or {},
         "rows_sha256": _sha256_json(report["rows"]),
         "report_sha256": report["report_sha256"],
         "ledger_event_ids": report["ledger_event_ids"],
@@ -549,6 +885,11 @@ def _markdown_report(report: dict[str, Any]) -> str:
 def _report_sha256(report: dict[str, Any]) -> str:
     stable = copy.deepcopy(report)
     stable["report_sha256"] = ""
+    # Calibration points back to the eval report. Exclude it from the report
+    # digest to avoid a circular hash while keeping the labeled-set, row,
+    # metric, and roster bytes reproducible.
+    stable["calibration"] = None
+    stable["active_weight_changes"] = []
     return _sha256_json(stable)
 
 
@@ -556,6 +897,10 @@ def _sha256_json(value: Any) -> str:
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True, default=str).encode("utf-8")
     ).hexdigest()
+
+
+def _looks_like_sha256(value: Any) -> bool:
+    return bool(re.fullmatch(r"[0-9a-f]{64}", str(value or "")))
 
 
 def _number(value: Any, *, default: float | int = 0) -> float | int:

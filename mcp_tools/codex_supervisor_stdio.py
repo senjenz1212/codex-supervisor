@@ -41,6 +41,7 @@ from supervisor.reviewer_registry import (
     configured_reviewers,
     evaluate_reviewer_panel,
     independent_reviewer_results_from_review_results,
+    load_reviewer_panel_calibration,
 )
 from supervisor.dual_agent import GateRound, ProbeResult, evaluate_deadlock_budget
 from supervisor.dual_agent_artifacts import (
@@ -473,6 +474,7 @@ class CodexSupervisorMcpAPI:
         reviewer_infra_retry_limit: int | None = None,
         reviewer_infra_retry_backoff_s: float | None = None,
         reviewer_low_confidence_threshold: float | None = None,
+        reviewer_panel_calibration_path: str | None = None,
         task_complexity: str | None = None,
     ) -> dict[str, Any]:
         execution_layer_mode = _canonical_execution_layer_mode(execution_layer_mode)
@@ -514,6 +516,14 @@ class CodexSupervisorMcpAPI:
         reviewer_low_confidence_threshold_value = _reviewer_low_confidence_threshold_config(
             self.cfg,
             reviewer_low_confidence_threshold=reviewer_low_confidence_threshold,
+        )
+        reviewer_panel_calibration_path_value = _reviewer_panel_calibration_path_config(
+            self.cfg,
+            cwd=cwd,
+            reviewer_panel_calibration_path=reviewer_panel_calibration_path,
+        )
+        reviewer_panel_calibration = load_reviewer_panel_calibration(
+            reviewer_panel_calibration_path_value
         )
         max_rounds = max(1, int(max_rounds_per_gate))
         screenshot_payloads = screenshots or []
@@ -561,6 +571,8 @@ class CodexSupervisorMcpAPI:
             "reviewer_infra_retry_limit": reviewer_infra_retry_limit_value,
             "reviewer_infra_retry_backoff_s": reviewer_infra_retry_backoff_s_value,
             "reviewer_low_confidence_threshold": reviewer_low_confidence_threshold_value,
+            "reviewer_panel_calibration_path": reviewer_panel_calibration_path_value,
+            "reviewer_panel_calibration_active": reviewer_panel_calibration is not None,
             "execution_layer_mode": execution_layer_mode,
             "dynamic_workflow_task_class": dynamic_workflow_task_class,
             "requires_dynamic_workflow_receipts": _is_dynamic_workflow_preview(execution_layer_mode),
@@ -1318,6 +1330,7 @@ class CodexSupervisorMcpAPI:
                 independent_reviewer_panel_decision = evaluate_reviewer_panel(
                     independent_reviewer_results,
                     low_confidence_threshold=reviewer_low_confidence_threshold_value,
+                    calibration=reviewer_panel_calibration,
                 )
                 independent_reviewer_adjudication = adjudicate_reviewer_panel(
                     independent_reviewer_results,
@@ -1976,6 +1989,7 @@ class CodexSupervisorMcpAPI:
         reviewer_infra_retry_limit: int | None = None,
         reviewer_infra_retry_backoff_s: float | None = None,
         reviewer_low_confidence_threshold: float | None = None,
+        reviewer_panel_calibration_path: str | None = None,
         task_complexity: str | None = None,
         config_path: str | None = None,
         client_token: str | None = None,
@@ -2020,6 +2034,11 @@ class CodexSupervisorMcpAPI:
             self.cfg,
             reviewer_low_confidence_threshold=reviewer_low_confidence_threshold,
         )
+        reviewer_panel_calibration_path_value = _reviewer_panel_calibration_path_config(
+            self.cfg,
+            cwd=cwd,
+            reviewer_panel_calibration_path=reviewer_panel_calibration_path,
+        )
         cwd_path = Path(cwd).expanduser().resolve()
         payload = {
             "cwd": str(cwd_path),
@@ -2056,6 +2075,7 @@ class CodexSupervisorMcpAPI:
             "reviewer_infra_retry_limit": reviewer_infra_retry_limit_value,
             "reviewer_infra_retry_backoff_s": reviewer_infra_retry_backoff_s_value,
             "reviewer_low_confidence_threshold": reviewer_low_confidence_threshold_value,
+            "reviewer_panel_calibration_path": reviewer_panel_calibration_path_value,
             "task_complexity": task_complexity,
         }
         idempotency_token = _workflow_job_idempotency_token(
@@ -3482,6 +3502,7 @@ def build_codex_supervisor_mcp_server(
         reviewer_infra_retry_limit: int | None = None,
         reviewer_infra_retry_backoff_s: float | None = None,
         reviewer_low_confidence_threshold: float | None = None,
+        reviewer_panel_calibration_path: str | None = None,
         task_complexity: str | None = None,
     ) -> dict[str, Any]:
         return await tool_api.run_dual_agent_workflow(
@@ -3517,6 +3538,7 @@ def build_codex_supervisor_mcp_server(
             reviewer_infra_retry_limit=reviewer_infra_retry_limit,
             reviewer_infra_retry_backoff_s=reviewer_infra_retry_backoff_s,
             reviewer_low_confidence_threshold=reviewer_low_confidence_threshold,
+            reviewer_panel_calibration_path=reviewer_panel_calibration_path,
             task_complexity=task_complexity,
         )
 
@@ -3554,6 +3576,7 @@ def build_codex_supervisor_mcp_server(
         reviewer_infra_retry_limit: int | None = None,
         reviewer_infra_retry_backoff_s: float | None = None,
         reviewer_low_confidence_threshold: float | None = None,
+        reviewer_panel_calibration_path: str | None = None,
         task_complexity: str | None = None,
         config_path: str | None = None,
         client_token: str | None = None,
@@ -3591,6 +3614,7 @@ def build_codex_supervisor_mcp_server(
             reviewer_infra_retry_limit=reviewer_infra_retry_limit,
             reviewer_infra_retry_backoff_s=reviewer_infra_retry_backoff_s,
             reviewer_low_confidence_threshold=reviewer_low_confidence_threshold,
+            reviewer_panel_calibration_path=reviewer_panel_calibration_path,
             task_complexity=task_complexity,
             config_path=config_path,
             client_token=client_token,
@@ -3908,6 +3932,18 @@ def _workflow_round_objection(
                 )
                 suffix = f": {reviewers}" if reviewers else ""
                 return f"independent_reviewer_low_confidence_accept{suffix}"
+            if reason == "calibrated_dependency_accept":
+                calibrated = (
+                    panel_decision.get("calibrated_accept")
+                    if isinstance(panel_decision.get("calibrated_accept"), dict)
+                    else {}
+                )
+                aggregate = calibrated.get("aggregate_confidence")
+                threshold = calibrated.get("accept_confidence_threshold")
+                return (
+                    "independent_reviewer_calibrated_dependency_accept"
+                    f": aggregate={aggregate} threshold={threshold}"
+                )
             if reason == "missing_reviewer_verdict":
                 reviewers = ", ".join(
                     str(item)
@@ -4333,6 +4369,24 @@ def _reviewer_low_confidence_threshold_config(
     if requested is None:
         requested = float(getattr(cfg.supervisor, "reviewer_low_confidence_threshold", 0.0) or 0.0)
     return max(0.0, min(1.0, float(requested)))
+
+
+def _reviewer_panel_calibration_path_config(
+    cfg: Config,
+    *,
+    cwd: str | Path,
+    reviewer_panel_calibration_path: str | None,
+) -> str | None:
+    requested = reviewer_panel_calibration_path
+    if requested is None:
+        requested = str(getattr(cfg.supervisor, "reviewer_panel_calibration_path", "") or "")
+    text = str(requested or "").strip()
+    if not text:
+        return None
+    candidate = Path(text).expanduser()
+    if not candidate.is_absolute():
+        candidate = Path(cwd).expanduser() / candidate
+    return str(candidate)
 
 
 def _reviewer_unavailable_recovery_plan(

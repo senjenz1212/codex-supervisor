@@ -67,7 +67,8 @@ def _cassette(
         "runtime": "litellm_structured" if reviewer_id.endswith("-0") else "codex_cli",
         "model": "gemini-3.1-pro-preview" if reviewer_id.endswith("-0") else "gpt-5.5",
         "provider_family": "google" if reviewer_id.endswith("-0") else "openai",
-        "lineage": ["google"] if reviewer_id.endswith("-0") else ["openai", "codex_cli"],
+        "lineage": ["google", "litellm_structured", "gemini-3.1-pro-preview"]
+        if reviewer_id.endswith("-0") else ["openai", "codex_cli", "gpt-5.5"],
         "tool_access": "text_only" if reviewer_id.endswith("-0") else "codebase_tools",
         "assurance_grade": "text_only" if reviewer_id.endswith("-0") else "agentic",
         "transcript_refs": [{"kind": "fixture", "ref": f"transcripts/{task_id}-{reviewer_id}.jsonl"}],
@@ -110,6 +111,9 @@ def test_reviewer_panel_eval_runner_validates_labeled_fixture_schema():
     assert report["schema_version"] == "reviewer-panel-eval/v1"
     assert report["runner"]["public_boundary"] == "reviewer_panel_eval_runner"
     assert report["runner"]["execution_mode"] == "fixture_replay"
+    assert report["provenance"]["fixture_row_count"] == 2
+    assert report["provenance"]["real_reviewer_output_count"] == 0
+    assert report["provenance"]["row_roster_consistency"]["all_rows_match_reviewer_roster"] is True
     assert report["labeled_set"]["schema_version"] == "reviewer-panel-labeled-set/v1"
     assert report["policy_change_allowed"] is False
     assert report["schema_version"] != "agentic-lead-eval/v1"
@@ -284,6 +288,130 @@ def test_reviewer_panel_eval_runner_exports_replay_and_ledger_artifacts(tmp_path
     events = state.read_events_since("reviewer-panel-eval-run", after_event_id=0, limit=10)
     assert events[0]["kind"] == "reviewer_panel_eval_observation"
     assert events[0]["payload"]["policy_change_allowed"] is False
+
+
+def test_reviewer_panel_eval_runner_emits_calibration_artifact_when_requested(tmp_path):
+    from supervisor.reviewer_panel_eval import reviewer_panel_eval_runner
+
+    tasks = [
+        _task("shared-false-accept", "block_required"),
+        _task("shared-accept", "accept_allowed"),
+    ]
+    cassettes = [
+        _cassette("shared-false-accept", "independent-reviewer-0", decision="accept", confidence=0.9),
+        _cassette("shared-false-accept", "independent-reviewer-1", decision="accept", confidence=0.9),
+        _cassette("shared-accept", "independent-reviewer-0", decision="accept", confidence=0.8),
+        _cassette("shared-accept", "independent-reviewer-1", decision="accept", confidence=0.8),
+    ]
+    output_dir = tmp_path / "eval-artifacts"
+
+    report = reviewer_panel_eval_runner(
+        labeled_tasks=tasks,
+        reviewers=_reviewers(),
+        cassettes=cassettes,
+        output_dir=output_dir,
+        emit_calibration=True,
+    )
+
+    assert "does_not_emit_active_calibrated_weights" not in report["non_goals"]
+    assert report["active_weight_changes"]
+    calibration_path = Path(report["exports"]["calibration_json"])
+    assert calibration_path.exists()
+    calibration = json.loads(calibration_path.read_text(encoding="utf-8"))
+    assert calibration["schema_version"] == "reviewer-panel-calibration/v1"
+    assert calibration["source_report_sha256"] == report["report_sha256"]
+    assert calibration["source_provenance"]["fixture_row_count"] == 4
+    assert calibration["source_provenance"]["real_reviewer_output_count"] == 0
+    assert calibration["pairwise_dependency"]["independent-reviewer-0__independent-reviewer-1"][
+        "dependency_score"
+    ] == pytest.approx(1.0)
+    assert calibration["reviewer_weights"]["independent-reviewer-0"]["weight"] < 1.0
+    assert calibration["reviewer_weights"]["independent-reviewer-1"]["weight"] < 1.0
+    assert report["calibration"]["calibration_sha256"] == calibration["calibration_sha256"]
+    assert calibration["source_provenance"]["row_roster_consistency"][
+        "all_rows_match_reviewer_roster"
+    ] is True
+
+
+def test_reviewer_panel_calibration_rejects_mixed_lineage_rows(tmp_path):
+    from supervisor.reviewer_panel_eval import reviewer_panel_eval_runner
+
+    tasks = [_task("mixed-lineage", "accept_allowed")]
+    cassettes = [
+        {
+            **_cassette("mixed-lineage", "independent-reviewer-0", decision="accept"),
+            "runtime": "cursor_sdk",
+            "model": "composer-2.5",
+            "provider_family": "cursor",
+            "lineage": ["cursor", "cursor_sdk", "composer-2.5"],
+            "tool_access": "codebase_tools",
+            "assurance_grade": "agentic",
+        },
+        _cassette("mixed-lineage", "independent-reviewer-1", decision="accept"),
+    ]
+
+    report = reviewer_panel_eval_runner(
+        labeled_tasks=tasks,
+        reviewers=_reviewers(),
+        cassettes=cassettes,
+    )
+    consistency = report["provenance"]["row_roster_consistency"]
+    assert consistency["all_rows_match_reviewer_roster"] is False
+    assert consistency["mismatched_row_count"] == 1
+
+    with pytest.raises(ValueError, match="calibration rows must match reviewer roster metadata"):
+        reviewer_panel_eval_runner(
+            labeled_tasks=tasks,
+            reviewers=_reviewers(),
+            cassettes=cassettes,
+            output_dir=tmp_path,
+            emit_calibration=True,
+        )
+
+
+def test_reviewer_panel_calibration_is_deterministic_and_data_derived(tmp_path):
+    from supervisor.reviewer_panel_eval import (
+        build_reviewer_panel_calibration,
+        reviewer_panel_eval_runner,
+    )
+
+    independent_tasks = [_task("clean-accept", "accept_allowed"), _task("clean-block", "block_required")]
+    independent_cassettes = [
+        _cassette("clean-accept", "independent-reviewer-0", decision="accept", confidence=0.9),
+        _cassette("clean-accept", "independent-reviewer-1", decision="accept", confidence=0.9),
+        _cassette("clean-block", "independent-reviewer-0", decision="accept", confidence=0.9),
+        _cassette("clean-block", "independent-reviewer-1", decision="revise", severity="important", confidence=0.9),
+    ]
+    correlated_tasks = [_task("bad-accept", "block_required"), _task("ok-accept", "accept_allowed")]
+    correlated_cassettes = [
+        _cassette("bad-accept", "independent-reviewer-0", decision="accept", confidence=0.9),
+        _cassette("bad-accept", "independent-reviewer-1", decision="accept", confidence=0.9),
+        _cassette("ok-accept", "independent-reviewer-0", decision="accept", confidence=0.9),
+        _cassette("ok-accept", "independent-reviewer-1", decision="accept", confidence=0.9),
+    ]
+
+    independent_report = reviewer_panel_eval_runner(
+        labeled_tasks=independent_tasks,
+        reviewers=_reviewers(),
+        cassettes=independent_cassettes,
+    )
+    correlated_report = reviewer_panel_eval_runner(
+        labeled_tasks=correlated_tasks,
+        reviewers=_reviewers(),
+        cassettes=correlated_cassettes,
+    )
+    first = build_reviewer_panel_calibration(independent_report)
+    second = build_reviewer_panel_calibration(independent_report)
+    correlated = build_reviewer_panel_calibration(correlated_report)
+
+    assert first["calibration_sha256"] == second["calibration_sha256"]
+    assert first["reviewer_weights"]["independent-reviewer-0"]["weight"] != (
+        correlated["reviewer_weights"]["independent-reviewer-0"]["weight"]
+    )
+    assert first["reviewer_weights"]["independent-reviewer-1"]["weight"] != (
+        correlated["reviewer_weights"]["independent-reviewer-1"]["weight"]
+    )
+    assert first["calibration_sha256"] != correlated["calibration_sha256"]
 
 
 def test_reviewer_panel_eval_runner_is_distinct_from_agentic_eval_report():

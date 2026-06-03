@@ -1,0 +1,253 @@
+{
+  "artifact_export": {
+    "files": [
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/index.md",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/triage.md",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/prd.md",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/tdd.md",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/grill-findings.md",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/issues.md",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/screenshots.md",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/outcome-review.md",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/interactions.md",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/transcript.md",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/transcript.jsonl",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/mast-coverage.md",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/replay/manifest.json",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/replay/workspace-snapshot.json",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/replay/mast-coverage.json",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/replay-manifest.json",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/report.json",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/report.md",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/reviewer-panel-calibration.json",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/rows.jsonl",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/grill-findings-tdd.md",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/grill-findings.md",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/implementation-plan.md",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/issues.md",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/prd.md",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/reviewer-panel-calibration-input.json",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/tdd.md"
+    ],
+    "output_dir": "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602",
+    "run_id": "codex-reviewer-panel-calibrated-weighting-20260602",
+    "status": "ok",
+    "task_id": "reviewer-panel-calibrated-weighting-20260602"
+  },
+  "current_gate": "outcome_review",
+  "final_gate_result": null,
+  "mandatory_artifacts": {
+    "missing": [],
+    "output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-calibrated-weighting-20260602",
+    "required": [
+      "source/prd.md",
+      "source/grill-findings.md",
+      "source/issues.md",
+      "source/tdd.md",
+      "source/grill-findings-tdd.md",
+      "source/implementation-plan.md",
+      "interactions.md",
+      "outcome-review.md",
+      "transcript.md"
+    ],
+    "status": "ok"
+  },
+  "resume": {
+    "artifact_output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-calibrated-weighting-20260602",
+    "blocker": null,
+    "current_gate": "outcome_review",
+    "last_status": "accepted",
+    "latest_event_id": 445951,
+    "next_safe_action": "read_gate_transcript and inspect exported artifacts",
+    "prompt": "Use codex_supervisor.\nContinue run_id=codex-reviewer-panel-calibrated-weighting-20260602\ntask_id=reviewer-panel-calibrated-weighting-20260602\ncurrent_gate=outcome_review\nlast_status=accepted\nlatest_event_id=445951\nnext_safe_action=read_gate_transcript and inspect exported artifacts\nartifact_output_dir=/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-calibrated-weighting-20260602\nfirst inspect: read_gate_transcript(run_id=codex-reviewer-panel-calibrated-weighting-20260602, task_id=reviewer-panel-calibrated-weighting-20260602)",
+    "run_id": "codex-reviewer-panel-calibrated-weighting-20260602",
+    "status": "ok",
+    "steps": [
+      {
+        "attempt_count": 1,
+        "gate": "prd_review",
+        "latest_event_id": 439724,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "issues_review",
+        "latest_event_id": 439776,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "tdd_review",
+        "latest_event_id": 443289,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "implementation_plan",
+        "latest_event_id": 443592,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "execution",
+        "latest_event_id": 443640,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "outcome_review",
+        "latest_event_id": 445700,
+        "status": "accepted"
+      }
+    ],
+    "task_id": "reviewer-panel-calibrated-weighting-20260602",
+    "transcript_command": "read_gate_transcript(run_id=codex-reviewer-panel-calibrated-weighting-20260602, task_id=reviewer-panel-calibrated-weighting-20260602)"
+  },
+  "run_id": "codex-reviewer-panel-calibrated-weighting-20260602",
+  "status": "accepted",
+  "steps": [
+    {
+      "attempt_count": 1,
+      "gate": "prd_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "issues_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "tdd_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "implementation_plan",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "execution",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "outcome_review",
+      "status": "accepted"
+    }
+  ],
+  "task_id": "reviewer-panel-calibrated-weighting-20260602",
+  "visual_evidence_policy": {
+    "artifact_matches": [],
+    "matched_terms": [],
+    "required": false,
+    "source": "not_user_facing"
+  },
+  "workflow_route": {
+    "agentic_lead_policy": {
+      "min_subagents": 0,
+      "policy": "off",
+      "required_evidence_grade": "self_reported",
+      "required_roles": [],
+      "solo_exception_for_artifact_only_gates": false
+    },
+    "cursor_review_gates": [
+      "tdd_review",
+      "implementation_plan",
+      "outcome_review"
+    ],
+    "cursor_review_profile": "rigorous",
+    "dynamic_workflow_task_class": null,
+    "effective_cursor_review": true,
+    "execution_layer_mode": "lead_direct",
+    "force_cursor_review": false,
+    "gate_count": 6,
+    "gates": [
+      "prd_review",
+      "issues_review",
+      "tdd_review",
+      "implementation_plan",
+      "execution",
+      "outcome_review"
+    ],
+    "planning_depth": "large",
+    "reasons": [
+      "default_large"
+    ],
+    "requested_cursor_review": true,
+    "required_skill_stages": [
+      "to_prd",
+      "prd_grill",
+      "to_issues",
+      "tdd",
+      "tdd_grill"
+    ],
+    "requires_agentic_lead_policy_receipts": false,
+    "requires_brainstorm": false,
+    "requires_dynamic_workflow_receipts": false,
+    "requires_skill_receipts": true,
+    "resume": {
+      "mode": "resume_from_prior_steps",
+      "pending_gates": [],
+      "schema_version": "dual-agent-workflow-resume/v1",
+      "skipped_gates": [
+        "prd_review",
+        "issues_review",
+        "tdd_review",
+        "implementation_plan",
+        "execution",
+        "outcome_review"
+      ],
+      "skipped_steps": [
+        {
+          "attempt_count": 1,
+          "gate": "prd_review",
+          "latest_event_id": 439724,
+          "status": "accepted"
+        },
+        {
+          "attempt_count": 1,
+          "gate": "issues_review",
+          "latest_event_id": 439776,
+          "status": "accepted"
+        },
+        {
+          "attempt_count": 1,
+          "gate": "tdd_review",
+          "latest_event_id": 443289,
+          "status": "accepted"
+        },
+        {
+          "attempt_count": 1,
+          "gate": "implementation_plan",
+          "latest_event_id": 443592,
+          "status": "accepted"
+        },
+        {
+          "attempt_count": 1,
+          "gate": "execution",
+          "latest_event_id": 443640,
+          "status": "accepted"
+        },
+        {
+          "attempt_count": 1,
+          "gate": "outcome_review",
+          "latest_event_id": 445700,
+          "status": "accepted"
+        }
+      ]
+    },
+    "reviewer_infra_retry_backoff_s": 1.0,
+    "reviewer_infra_retry_limit": 2,
+    "reviewer_low_confidence_threshold": 0.0,
+    "reviewer_max_tokens": 4096,
+    "reviewer_model": "gemini-3.1-pro-preview",
+    "reviewer_output_mode": "litellm_structured",
+    "reviewer_panel_calibration_active": true,
+    "reviewer_panel_calibration_path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/reviewer-panel-calibration.json",
+    "reviewer_unavailable_policy": "escalate",
+    "schema_version": "dual-agent-workflow-route/v1",
+    "task_complexity": "large"
+  }
+}

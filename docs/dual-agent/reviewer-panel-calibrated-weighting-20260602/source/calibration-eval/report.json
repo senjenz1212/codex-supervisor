@@ -1,0 +1,873 @@
+{
+  "active_weight_changes": [
+    {
+      "calibration_path": "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/reviewer-panel-calibration.json",
+      "calibration_sha256": "c633f2168fb8adf987cb606305ef9d6c936e9ff5bab48ffda4bebb3b49a8fee7",
+      "schema_version": "reviewer-panel-active-weight-change/v1",
+      "source_report_sha256": "8583f100e9cb6a6dc1f718b58bd46067cb4cf9bf842f852e58b7bc4e4a0d97c7",
+      "status": "calibration_artifact_emitted"
+    }
+  ],
+  "calibration": {
+    "accept_confidence_threshold": 0.726222,
+    "calibration_sha256": "c633f2168fb8adf987cb606305ef9d6c936e9ff5bab48ffda4bebb3b49a8fee7",
+    "labeled_set_sha256": "37135f02eefe7b4fafcaf90769b639b61e4f7f343ecbce31471fc431cf1265f8",
+    "pairwise_dependency": {
+      "independent-reviewer-0__independent-reviewer-1": {
+        "dependency_score": 0.0,
+        "reviewer_ids": [
+          "independent-reviewer-0",
+          "independent-reviewer-1"
+        ],
+        "schema_version": "reviewer-panel-pair-dependency/v1",
+        "signals": {
+          "block_decision_positive_correlation": 0.0,
+          "combined_failure_jaccard": 0.0,
+          "false_accept_overlap_jaccard": 0.0,
+          "false_block_overlap_jaccard": 0.0,
+          "same_provider_family": 0.0,
+          "wrong_decision_positive_correlation": 0.0
+        }
+      }
+    },
+    "recalibratable": true,
+    "reviewer_roster_sha256": "70b069cd061ead35c78ba3a50a603515c15fbd41cb6d8d37ce851436a7e60ecb",
+    "reviewer_weights": {
+      "independent-reviewer-0": {
+        "assurance_grade": "text_only",
+        "dependency_score": 0.0,
+        "derived_from_pairwise": [
+          {
+            "dependency_score": 0.0,
+            "pair_id": "independent-reviewer-0__independent-reviewer-1",
+            "signals": {
+              "block_decision_positive_correlation": 0.0,
+              "combined_failure_jaccard": 0.0,
+              "false_accept_overlap_jaccard": 0.0,
+              "false_block_overlap_jaccard": 0.0,
+              "same_provider_family": 0.0,
+              "wrong_decision_positive_correlation": 0.0
+            }
+          }
+        ],
+        "lineage": [
+          "google",
+          "litellm_structured",
+          "gemini-3.1-pro-preview"
+        ],
+        "model": "gemini-3.1-pro-preview",
+        "provider_family": "google",
+        "reviewer_id": "independent-reviewer-0",
+        "runtime": "litellm_structured",
+        "tool_access": "text_only",
+        "weight": 1.0
+      },
+      "independent-reviewer-1": {
+        "assurance_grade": "agentic",
+        "dependency_score": 0.0,
+        "derived_from_pairwise": [
+          {
+            "dependency_score": 0.0,
+            "pair_id": "independent-reviewer-0__independent-reviewer-1",
+            "signals": {
+              "block_decision_positive_correlation": 0.0,
+              "combined_failure_jaccard": 0.0,
+              "false_accept_overlap_jaccard": 0.0,
+              "false_block_overlap_jaccard": 0.0,
+              "same_provider_family": 0.0,
+              "wrong_decision_positive_correlation": 0.0
+            }
+          }
+        ],
+        "lineage": [
+          "openai",
+          "codex_cli",
+          "gpt-5.5"
+        ],
+        "model": "gpt-5.5",
+        "provider_family": "openai",
+        "reviewer_id": "independent-reviewer-1",
+        "runtime": "codex_cli",
+        "tool_access": "codebase_tools",
+        "weight": 1.0
+      }
+    },
+    "schema_version": "reviewer-panel-calibration/v1",
+    "source_provenance": {
+      "all_rows_auditable_real_reviewer_outputs": true,
+      "auditable_real_output_count": 10,
+      "fixture_row_count": 0,
+      "real_reviewer_output_count": 10,
+      "row_roster_consistency": {
+        "all_rows_match_reviewer_roster": true,
+        "compared_fields": [
+          "runtime",
+          "model",
+          "provider_family",
+          "lineage",
+          "tool_access",
+          "assurance_grade"
+        ],
+        "mismatched_row_count": 0,
+        "mismatches": [],
+        "reviewer_count": 2,
+        "row_count": 10,
+        "schema_version": "reviewer-panel-row-roster-consistency/v1"
+      },
+      "schema_version": "reviewer-panel-eval-provenance/v1",
+      "source_event_ids": [
+        "434754",
+        "437877",
+        "438129",
+        "438414",
+        "441847"
+      ],
+      "source_kind_counts": {
+        "workflow_transcript_event": 10
+      },
+      "source_trace_paths": [
+        "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/transcript.jsonl",
+        "docs/dual-agent/reviewer-panel-eval-runner-20260601/transcript.jsonl"
+      ],
+      "transcript_ref_count": 20
+    },
+    "source_report_schema_version": "reviewer-panel-eval/v1",
+    "source_report_sha256": "8583f100e9cb6a6dc1f718b58bd46067cb4cf9bf842f852e58b7bc4e4a0d97c7",
+    "weight_formula": {
+      "accept_aggregation_formula": "aggregate = sum(weight * confidence * severity_multiplier) / reviewer_count",
+      "dependency_signals": [
+        "same_provider_family",
+        "combined_failure_jaccard",
+        "false_accept_overlap.jaccard",
+        "false_block_overlap.jaccard",
+        "positive(block_decision_correlation.value)",
+        "positive(wrong_decision_correlation.value)"
+      ],
+      "description": "weight = max(0.05, 1 - max_measured_pair_dependency)",
+      "severity_multipliers": {
+        "critical": 0.35,
+        "important": 0.65,
+        "low": 0.95,
+        "medium": 0.85,
+        "none": 1.0
+      },
+      "threshold_formula": "0.8 * average observed accept confidence, clamped to [0.5, 0.95]"
+    }
+  },
+  "cassette_ids": [
+    "real-434754-independent-reviewer-0-accept",
+    "real-434754-independent-reviewer-1-accept",
+    "real-437877-independent-reviewer-0-accept",
+    "real-437877-independent-reviewer-1-accept",
+    "real-438129-independent-reviewer-0-accept",
+    "real-438129-independent-reviewer-1-accept",
+    "real-438414-independent-reviewer-0-accept",
+    "real-438414-independent-reviewer-1-accept",
+    "real-441847-independent-reviewer-0-accept",
+    "real-441847-independent-reviewer-1-revise"
+  ],
+  "exports": {
+    "calibration_json": "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/reviewer-panel-calibration.json",
+    "replay_manifest": "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/replay-manifest.json",
+    "report_json": "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/report.json",
+    "report_markdown": "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/report.md",
+    "rows_jsonl": "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/rows.jsonl"
+  },
+  "labeled_set": {
+    "labels": [
+      "accept_allowed",
+      "block_required"
+    ],
+    "schema_version": "reviewer-panel-labeled-set/v1",
+    "sha256": "37135f02eefe7b4fafcaf90769b639b61e4f7f343ecbce31471fc431cf1265f8",
+    "task_count": 5
+  },
+  "ledger_event_ids": [],
+  "non_goals": [
+    "does_not_change_gate_aggregation",
+    "does_not_change_reviewer_roster_defaults",
+    "does_not_flip_agentic_or_reviewer_policy"
+  ],
+  "pairwise": {
+    "independent-reviewer-0__independent-reviewer-1": {
+      "agreement_count": 4,
+      "agreement_rate": 0.8,
+      "avg_cost_usd_delta": 0.0,
+      "avg_latency_ms_delta": 0.0,
+      "block_decision_correlation": {
+        "reason": "zero variance in one or both reviewer vectors",
+        "status": "not_applicable",
+        "value": null
+      },
+      "combined_failure_jaccard": 0.0,
+      "comparable_task_count": 5,
+      "contingency": {
+        "block_decision": {
+          "false_false": 4,
+          "false_true": 1,
+          "true_false": 0,
+          "true_true": 0
+        },
+        "wrong_decision": {
+          "false_false": 4,
+          "false_true": 0,
+          "true_false": 1,
+          "true_true": 0
+        }
+      },
+      "disagreement_count": 1,
+      "disagreement_counts": {
+        "accept_vs_revise": 1
+      },
+      "false_accept_overlap": {
+        "count": 0,
+        "jaccard": 0.0,
+        "left_count": 1,
+        "right_count": 0,
+        "task_ids": [],
+        "union_count": 1
+      },
+      "false_block_overlap": {
+        "count": 0,
+        "jaccard": 0.0,
+        "left_count": 0,
+        "right_count": 0,
+        "task_ids": [],
+        "union_count": 0
+      },
+      "reviewer_ids": [
+        "independent-reviewer-0",
+        "independent-reviewer-1"
+      ],
+      "wrong_decision_correlation": {
+        "reason": "zero variance in one or both reviewer vectors",
+        "status": "not_applicable",
+        "value": null
+      }
+    }
+  },
+  "per_reviewer": {
+    "independent-reviewer-0": {
+      "accept_count": 5,
+      "avg_cost_usd": 0.0,
+      "avg_latency_ms": 0.0,
+      "decision_counts": {
+        "accept": 5,
+        "deny": 0,
+        "missing": 0,
+        "revise": 0
+      },
+      "deny_count": 0,
+      "false_accept_count": 1,
+      "false_accept_denominator": 1,
+      "false_accept_rate": 1.0,
+      "false_block_cause_counts": {
+        "explicit_deny": 0,
+        "explicit_revise": 0,
+        "missing_unavailable": 0,
+        "other_non_accept": 0
+      },
+      "false_block_count": 0,
+      "false_block_denominator": 4,
+      "false_block_rate": 0.0,
+      "missing_count": 0,
+      "reviewer_id": "independent-reviewer-0",
+      "revise_count": 0,
+      "task_count": 5,
+      "total_cost_usd": 0.0,
+      "total_latency_ms": 0,
+      "unavailable_rate": 0.0,
+      "verdict_present_count": 5
+    },
+    "independent-reviewer-1": {
+      "accept_count": 4,
+      "avg_cost_usd": 0.0,
+      "avg_latency_ms": 0.0,
+      "decision_counts": {
+        "accept": 4,
+        "deny": 0,
+        "missing": 0,
+        "revise": 1
+      },
+      "deny_count": 0,
+      "false_accept_count": 0,
+      "false_accept_denominator": 1,
+      "false_accept_rate": 0.0,
+      "false_block_cause_counts": {
+        "explicit_deny": 0,
+        "explicit_revise": 0,
+        "missing_unavailable": 0,
+        "other_non_accept": 0
+      },
+      "false_block_count": 0,
+      "false_block_denominator": 4,
+      "false_block_rate": 0.0,
+      "missing_count": 0,
+      "reviewer_id": "independent-reviewer-1",
+      "revise_count": 1,
+      "task_count": 5,
+      "total_cost_usd": 0.0,
+      "total_latency_ms": 0,
+      "unavailable_rate": 0.0,
+      "verdict_present_count": 5
+    }
+  },
+  "policy_change_allowed": false,
+  "provenance": {
+    "all_rows_auditable_real_reviewer_outputs": true,
+    "auditable_real_output_count": 10,
+    "fixture_row_count": 0,
+    "real_reviewer_output_count": 10,
+    "row_roster_consistency": {
+      "all_rows_match_reviewer_roster": true,
+      "compared_fields": [
+        "runtime",
+        "model",
+        "provider_family",
+        "lineage",
+        "tool_access",
+        "assurance_grade"
+      ],
+      "mismatched_row_count": 0,
+      "mismatches": [],
+      "reviewer_count": 2,
+      "row_count": 10,
+      "schema_version": "reviewer-panel-row-roster-consistency/v1"
+    },
+    "schema_version": "reviewer-panel-eval-provenance/v1",
+    "source_event_ids": [
+      "434754",
+      "437877",
+      "438129",
+      "438414",
+      "441847"
+    ],
+    "source_kind_counts": {
+      "workflow_transcript_event": 10
+    },
+    "source_trace_paths": [
+      "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/transcript.jsonl",
+      "docs/dual-agent/reviewer-panel-eval-runner-20260601/transcript.jsonl"
+    ],
+    "transcript_ref_count": 20
+  },
+  "report_sha256": "8583f100e9cb6a6dc1f718b58bd46067cb4cf9bf842f852e58b7bc4e4a0d97c7",
+  "reviewer_roster": [
+    {
+      "assurance_grade": "text_only",
+      "lineage": [
+        "google",
+        "litellm_structured",
+        "gemini-3.1-pro-preview"
+      ],
+      "model": "gemini-3.1-pro-preview",
+      "provider_family": "google",
+      "reviewer_id": "independent-reviewer-0",
+      "runtime": "litellm_structured",
+      "tool_access": "text_only"
+    },
+    {
+      "assurance_grade": "agentic",
+      "lineage": [
+        "openai",
+        "codex_cli",
+        "gpt-5.5"
+      ],
+      "model": "gpt-5.5",
+      "provider_family": "openai",
+      "reviewer_id": "independent-reviewer-1",
+      "runtime": "codex_cli",
+      "tool_access": "codebase_tools"
+    }
+  ],
+  "rows": [
+    {
+      "accepted": true,
+      "assurance_grade": "text_only",
+      "blocks_gate": false,
+      "cassette_id": "real-438129-independent-reviewer-0-accept",
+      "confidence": 1.0,
+      "cost_usd": 0.0,
+      "decision": "accept",
+      "failure_classification": null,
+      "false_accept": false,
+      "false_block": false,
+      "false_block_cause": null,
+      "gate": "implementation_plan",
+      "input_sha256": "5eee310ab78d768cd430bd49f4d42a97d1f8d6629b4cd0377d6d7528a93c3104",
+      "label": "accept_allowed",
+      "latency_ms": 0,
+      "lineage": [
+        "google",
+        "litellm_structured",
+        "gemini-3.1-pro-preview"
+      ],
+      "model": "gemini-3.1-pro-preview",
+      "output_sha256": "dae9c1cd422df9dd3df28e91084ec6d683bd88ad7810c9b9f21e8790789b4d52",
+      "provider_family": "google",
+      "reviewer_id": "independent-reviewer-0",
+      "runtime": "litellm_structured",
+      "schema_version": "reviewer-panel-eval-row/v1",
+      "severity": "low",
+      "source_event_id": 438129,
+      "source_kind": "workflow_transcript_event",
+      "source_payload_sha256": "5eee310ab78d768cd430bd49f4d42a97d1f8d6629b4cd0377d6d7528a93c3104",
+      "source_trace_path": "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl",
+      "task_id": "reviewer-panel-adjudication-20260601-implementation_plan-438129",
+      "tool_access": "text_only",
+      "transcript_refs": [
+        {
+          "chars": 3082,
+          "kind": "reviewer_transcript_tail",
+          "ref": "independent_reviewer_review:reviewer-panel-adjudication-20260601:implementation_plan:1:independent-reviewer-0"
+        },
+        {
+          "kind": "workflow_transcript_event",
+          "ref": "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl#event_id=438129;reviewer_id=independent-reviewer-0"
+        }
+      ],
+      "transcript_sha256": "450bd2b7f545563984b63b9e6a5cbe4b7d17d3267aaee3c5f13c2aab3001b277",
+      "verdict_present": true
+    },
+    {
+      "accepted": true,
+      "assurance_grade": "agentic",
+      "blocks_gate": false,
+      "cassette_id": "real-438129-independent-reviewer-1-accept",
+      "confidence": 0.86,
+      "cost_usd": 0.0,
+      "decision": "accept",
+      "failure_classification": null,
+      "false_accept": false,
+      "false_block": false,
+      "false_block_cause": null,
+      "gate": "implementation_plan",
+      "input_sha256": "5eee310ab78d768cd430bd49f4d42a97d1f8d6629b4cd0377d6d7528a93c3104",
+      "label": "accept_allowed",
+      "latency_ms": 0,
+      "lineage": [
+        "openai",
+        "codex_cli",
+        "gpt-5.5"
+      ],
+      "model": "gpt-5.5",
+      "output_sha256": "b3d1c0202c4afab9e7688c2a6f448958f8710db4dfc91b87c0dfb8cd75c541f7",
+      "provider_family": "openai",
+      "reviewer_id": "independent-reviewer-1",
+      "runtime": "codex_cli",
+      "schema_version": "reviewer-panel-eval-row/v1",
+      "severity": "low",
+      "source_event_id": 438129,
+      "source_kind": "workflow_transcript_event",
+      "source_payload_sha256": "5eee310ab78d768cd430bd49f4d42a97d1f8d6629b4cd0377d6d7528a93c3104",
+      "source_trace_path": "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl",
+      "task_id": "reviewer-panel-adjudication-20260601-implementation_plan-438129",
+      "tool_access": "codebase_tools",
+      "transcript_refs": [
+        {
+          "chars": 4000,
+          "kind": "reviewer_transcript_tail",
+          "ref": "independent_reviewer_review:reviewer-panel-adjudication-20260601:implementation_plan:1:independent-reviewer-1"
+        },
+        {
+          "kind": "workflow_transcript_event",
+          "ref": "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl#event_id=438129;reviewer_id=independent-reviewer-1"
+        }
+      ],
+      "transcript_sha256": "e5cf42e73676fd885a026198debca68e9e7011c83eb6ad1be4ac9d309961cda4",
+      "verdict_present": true
+    },
+    {
+      "accepted": true,
+      "assurance_grade": "text_only",
+      "blocks_gate": false,
+      "cassette_id": "real-438414-independent-reviewer-0-accept",
+      "confidence": 0.95,
+      "cost_usd": 0.0,
+      "decision": "accept",
+      "failure_classification": null,
+      "false_accept": false,
+      "false_block": false,
+      "false_block_cause": null,
+      "gate": "outcome_review",
+      "input_sha256": "a604cfb4927a718eaa676af9b5a59462f4d4adfa334f19bbbb1aa99b56d074e6",
+      "label": "accept_allowed",
+      "latency_ms": 0,
+      "lineage": [
+        "google",
+        "litellm_structured",
+        "gemini-3.1-pro-preview"
+      ],
+      "model": "gemini-3.1-pro-preview",
+      "output_sha256": "0be7eeba1b788df02c93037fb141827c937a5d8667479e74458813f9f11bac19",
+      "provider_family": "google",
+      "reviewer_id": "independent-reviewer-0",
+      "runtime": "litellm_structured",
+      "schema_version": "reviewer-panel-eval-row/v1",
+      "severity": "low",
+      "source_event_id": 438414,
+      "source_kind": "workflow_transcript_event",
+      "source_payload_sha256": "a604cfb4927a718eaa676af9b5a59462f4d4adfa334f19bbbb1aa99b56d074e6",
+      "source_trace_path": "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl",
+      "task_id": "reviewer-panel-adjudication-20260601-outcome_review-438414",
+      "tool_access": "text_only",
+      "transcript_refs": [
+        {
+          "chars": 2469,
+          "kind": "reviewer_transcript_tail",
+          "ref": "independent_reviewer_review:reviewer-panel-adjudication-20260601:outcome_review:1:independent-reviewer-0"
+        },
+        {
+          "kind": "workflow_transcript_event",
+          "ref": "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl#event_id=438414;reviewer_id=independent-reviewer-0"
+        }
+      ],
+      "transcript_sha256": "ea3855ff3243fad99322dcd1e674153bf57dfb4e97f68e7e2b136c69389dbdc6",
+      "verdict_present": true
+    },
+    {
+      "accepted": true,
+      "assurance_grade": "agentic",
+      "blocks_gate": false,
+      "cassette_id": "real-438414-independent-reviewer-1-accept",
+      "confidence": 0.88,
+      "cost_usd": 0.0,
+      "decision": "accept",
+      "failure_classification": null,
+      "false_accept": false,
+      "false_block": false,
+      "false_block_cause": null,
+      "gate": "outcome_review",
+      "input_sha256": "a604cfb4927a718eaa676af9b5a59462f4d4adfa334f19bbbb1aa99b56d074e6",
+      "label": "accept_allowed",
+      "latency_ms": 0,
+      "lineage": [
+        "openai",
+        "codex_cli",
+        "gpt-5.5"
+      ],
+      "model": "gpt-5.5",
+      "output_sha256": "17a3cccc39f6e6da322831d0e2595126822407b2e84daac698f91c9d278ad83a",
+      "provider_family": "openai",
+      "reviewer_id": "independent-reviewer-1",
+      "runtime": "codex_cli",
+      "schema_version": "reviewer-panel-eval-row/v1",
+      "severity": "low",
+      "source_event_id": 438414,
+      "source_kind": "workflow_transcript_event",
+      "source_payload_sha256": "a604cfb4927a718eaa676af9b5a59462f4d4adfa334f19bbbb1aa99b56d074e6",
+      "source_trace_path": "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl",
+      "task_id": "reviewer-panel-adjudication-20260601-outcome_review-438414",
+      "tool_access": "codebase_tools",
+      "transcript_refs": [
+        {
+          "chars": 4000,
+          "kind": "reviewer_transcript_tail",
+          "ref": "independent_reviewer_review:reviewer-panel-adjudication-20260601:outcome_review:1:independent-reviewer-1"
+        },
+        {
+          "kind": "workflow_transcript_event",
+          "ref": "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl#event_id=438414;reviewer_id=independent-reviewer-1"
+        }
+      ],
+      "transcript_sha256": "2b39ad900482658125d1d498d54bd93103f1f926135092945b55ca12827ca3a9",
+      "verdict_present": true
+    },
+    {
+      "accepted": true,
+      "assurance_grade": "text_only",
+      "blocks_gate": false,
+      "cassette_id": "real-437877-independent-reviewer-0-accept",
+      "confidence": 0.95,
+      "cost_usd": 0.0,
+      "decision": "accept",
+      "failure_classification": null,
+      "false_accept": false,
+      "false_block": false,
+      "false_block_cause": null,
+      "gate": "tdd_review",
+      "input_sha256": "b191f1721eb9272f53a757ce0ceaac03a5574a13f4ee9054193b9d9e36b0a69b",
+      "label": "accept_allowed",
+      "latency_ms": 0,
+      "lineage": [
+        "google",
+        "litellm_structured",
+        "gemini-3.1-pro-preview"
+      ],
+      "model": "gemini-3.1-pro-preview",
+      "output_sha256": "8adcc4b4682439594995c193e5b9a24a9ac2a9564b8883ece5f21c71b068e425",
+      "provider_family": "google",
+      "reviewer_id": "independent-reviewer-0",
+      "runtime": "litellm_structured",
+      "schema_version": "reviewer-panel-eval-row/v1",
+      "severity": "low",
+      "source_event_id": 437877,
+      "source_kind": "workflow_transcript_event",
+      "source_payload_sha256": "b191f1721eb9272f53a757ce0ceaac03a5574a13f4ee9054193b9d9e36b0a69b",
+      "source_trace_path": "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl",
+      "task_id": "reviewer-panel-adjudication-20260601-tdd_review-437877",
+      "tool_access": "text_only",
+      "transcript_refs": [
+        {
+          "chars": 3359,
+          "kind": "reviewer_transcript_tail",
+          "ref": "independent_reviewer_review:reviewer-panel-adjudication-20260601:tdd_review:1:independent-reviewer-0"
+        },
+        {
+          "kind": "workflow_transcript_event",
+          "ref": "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl#event_id=437877;reviewer_id=independent-reviewer-0"
+        }
+      ],
+      "transcript_sha256": "1776cb36f3dda126b2201da68c05d5f20d573145be491e09a2bbc628d5d876da",
+      "verdict_present": true
+    },
+    {
+      "accepted": true,
+      "assurance_grade": "agentic",
+      "blocks_gate": false,
+      "cassette_id": "real-437877-independent-reviewer-1-accept",
+      "confidence": 0.81,
+      "cost_usd": 0.0,
+      "decision": "accept",
+      "failure_classification": null,
+      "false_accept": false,
+      "false_block": false,
+      "false_block_cause": null,
+      "gate": "tdd_review",
+      "input_sha256": "b191f1721eb9272f53a757ce0ceaac03a5574a13f4ee9054193b9d9e36b0a69b",
+      "label": "accept_allowed",
+      "latency_ms": 0,
+      "lineage": [
+        "openai",
+        "codex_cli",
+        "gpt-5.5"
+      ],
+      "model": "gpt-5.5",
+      "output_sha256": "f646663eec84c912cc156faa9b2258e37bd15e17a4227fa0dcb7cac58467b961",
+      "provider_family": "openai",
+      "reviewer_id": "independent-reviewer-1",
+      "runtime": "codex_cli",
+      "schema_version": "reviewer-panel-eval-row/v1",
+      "severity": "medium",
+      "source_event_id": 437877,
+      "source_kind": "workflow_transcript_event",
+      "source_payload_sha256": "b191f1721eb9272f53a757ce0ceaac03a5574a13f4ee9054193b9d9e36b0a69b",
+      "source_trace_path": "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl",
+      "task_id": "reviewer-panel-adjudication-20260601-tdd_review-437877",
+      "tool_access": "codebase_tools",
+      "transcript_refs": [
+        {
+          "chars": 4000,
+          "kind": "reviewer_transcript_tail",
+          "ref": "independent_reviewer_review:reviewer-panel-adjudication-20260601:tdd_review:1:independent-reviewer-1"
+        },
+        {
+          "kind": "workflow_transcript_event",
+          "ref": "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl#event_id=437877;reviewer_id=independent-reviewer-1"
+        }
+      ],
+      "transcript_sha256": "2a91c146926baeefb29e0dac7f3d7fdf11541bf72daa0481dc70d2c306aa45b2",
+      "verdict_present": true
+    },
+    {
+      "accepted": true,
+      "assurance_grade": "text_only",
+      "blocks_gate": false,
+      "cassette_id": "real-441847-independent-reviewer-0-accept",
+      "confidence": 0.95,
+      "cost_usd": 0.0,
+      "decision": "accept",
+      "failure_classification": null,
+      "false_accept": true,
+      "false_block": false,
+      "false_block_cause": null,
+      "gate": "tdd_review",
+      "input_sha256": "35f2f2345164491b16ce27dd719a31a6d68505cf6af559f5d7c45a191cce80bd",
+      "label": "block_required",
+      "latency_ms": 0,
+      "lineage": [
+        "google",
+        "litellm_structured",
+        "gemini-3.1-pro-preview"
+      ],
+      "model": "gemini-3.1-pro-preview",
+      "output_sha256": "3c40f4d452819af229f11127463a401ff7240ed362cb79eacebe63321f56c405",
+      "provider_family": "google",
+      "reviewer_id": "independent-reviewer-0",
+      "runtime": "litellm_structured",
+      "schema_version": "reviewer-panel-eval-row/v1",
+      "severity": "none",
+      "source_event_id": 441847,
+      "source_kind": "workflow_transcript_event",
+      "source_payload_sha256": "35f2f2345164491b16ce27dd719a31a6d68505cf6af559f5d7c45a191cce80bd",
+      "source_trace_path": "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/transcript.jsonl",
+      "task_id": "reviewer-panel-calibrated-weighting-20260602-tdd_review-441847",
+      "tool_access": "text_only",
+      "transcript_refs": [
+        {
+          "chars": 4000,
+          "kind": "reviewer_transcript_tail",
+          "ref": "independent_reviewer_review:reviewer-panel-calibrated-weighting-20260602:tdd_review:1:independent-reviewer-0"
+        },
+        {
+          "kind": "workflow_transcript_event",
+          "ref": "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/transcript.jsonl#event_id=441847;reviewer_id=independent-reviewer-0"
+        }
+      ],
+      "transcript_sha256": "564bd763fa17cca0ad4dc9a9d738806d8acc68a25831d7616f09eb7cce79d850",
+      "verdict_present": true
+    },
+    {
+      "accepted": false,
+      "assurance_grade": "agentic",
+      "blocks_gate": true,
+      "cassette_id": "real-441847-independent-reviewer-1-revise",
+      "confidence": 0.78,
+      "cost_usd": 0.0,
+      "decision": "revise",
+      "failure_classification": null,
+      "false_accept": false,
+      "false_block": false,
+      "false_block_cause": null,
+      "gate": "tdd_review",
+      "input_sha256": "35f2f2345164491b16ce27dd719a31a6d68505cf6af559f5d7c45a191cce80bd",
+      "label": "block_required",
+      "latency_ms": 0,
+      "lineage": [
+        "openai",
+        "codex_cli",
+        "gpt-5.5"
+      ],
+      "model": "gpt-5.5",
+      "output_sha256": "6e4856bc0f9d67b92f37c78aee9505e93d8c8bd5fc26e82b1aaafbd2faae674f",
+      "provider_family": "openai",
+      "reviewer_id": "independent-reviewer-1",
+      "runtime": "codex_cli",
+      "schema_version": "reviewer-panel-eval-row/v1",
+      "severity": "important",
+      "source_event_id": 441847,
+      "source_kind": "workflow_transcript_event",
+      "source_payload_sha256": "35f2f2345164491b16ce27dd719a31a6d68505cf6af559f5d7c45a191cce80bd",
+      "source_trace_path": "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/transcript.jsonl",
+      "task_id": "reviewer-panel-calibrated-weighting-20260602-tdd_review-441847",
+      "tool_access": "codebase_tools",
+      "transcript_refs": [
+        {
+          "chars": 4000,
+          "kind": "reviewer_transcript_tail",
+          "ref": "independent_reviewer_review:reviewer-panel-calibrated-weighting-20260602:tdd_review:1:independent-reviewer-1"
+        },
+        {
+          "kind": "workflow_transcript_event",
+          "ref": "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/transcript.jsonl#event_id=441847;reviewer_id=independent-reviewer-1"
+        }
+      ],
+      "transcript_sha256": "8cba038dc1b720ac93e9c4f45e6db5adc4c933091a64f9265e33a200030d8d96",
+      "verdict_present": true
+    },
+    {
+      "accepted": true,
+      "assurance_grade": "text_only",
+      "blocks_gate": false,
+      "cassette_id": "real-434754-independent-reviewer-0-accept",
+      "confidence": 0.95,
+      "cost_usd": 0.0,
+      "decision": "accept",
+      "failure_classification": null,
+      "false_accept": false,
+      "false_block": false,
+      "false_block_cause": null,
+      "gate": "tdd_review",
+      "input_sha256": "9658d6bcb056ce5a1903525c6934483e7f05cc16ebf140b8b89b3f7cbb7c4633",
+      "label": "accept_allowed",
+      "latency_ms": 0,
+      "lineage": [
+        "google",
+        "litellm_structured",
+        "gemini-3.1-pro-preview"
+      ],
+      "model": "gemini-3.1-pro-preview",
+      "output_sha256": "6c059060359d0848bf1cb3d43a0ee059cc1a004ca52db62fb375e403ee6d8bb4",
+      "provider_family": "google",
+      "reviewer_id": "independent-reviewer-0",
+      "runtime": "litellm_structured",
+      "schema_version": "reviewer-panel-eval-row/v1",
+      "severity": "low",
+      "source_event_id": 434754,
+      "source_kind": "workflow_transcript_event",
+      "source_payload_sha256": "9658d6bcb056ce5a1903525c6934483e7f05cc16ebf140b8b89b3f7cbb7c4633",
+      "source_trace_path": "docs/dual-agent/reviewer-panel-eval-runner-20260601/transcript.jsonl",
+      "task_id": "reviewer-panel-eval-runner-20260601-tdd_review-434754",
+      "tool_access": "text_only",
+      "transcript_refs": [
+        {
+          "chars": 3167,
+          "kind": "reviewer_transcript_tail",
+          "ref": "independent_reviewer_review:reviewer-panel-eval-runner-20260601:tdd_review:1:independent-reviewer-0"
+        },
+        {
+          "kind": "workflow_transcript_event",
+          "ref": "docs/dual-agent/reviewer-panel-eval-runner-20260601/transcript.jsonl#event_id=434754;reviewer_id=independent-reviewer-0"
+        }
+      ],
+      "transcript_sha256": "b45bdb2640e13d1823bf1318e3f03076562a6250b4bb12e2c51d04ebfcd87280",
+      "verdict_present": true
+    },
+    {
+      "accepted": true,
+      "assurance_grade": "agentic",
+      "blocks_gate": false,
+      "cassette_id": "real-434754-independent-reviewer-1-accept",
+      "confidence": 0.82,
+      "cost_usd": 0.0,
+      "decision": "accept",
+      "failure_classification": null,
+      "false_accept": false,
+      "false_block": false,
+      "false_block_cause": null,
+      "gate": "tdd_review",
+      "input_sha256": "9658d6bcb056ce5a1903525c6934483e7f05cc16ebf140b8b89b3f7cbb7c4633",
+      "label": "accept_allowed",
+      "latency_ms": 0,
+      "lineage": [
+        "openai",
+        "codex_cli",
+        "gpt-5.5"
+      ],
+      "model": "gpt-5.5",
+      "output_sha256": "20f3384fe10ecdbe719aa5a3037d1f3434957ee208b61640c4b9e60e0903c211",
+      "provider_family": "openai",
+      "reviewer_id": "independent-reviewer-1",
+      "runtime": "codex_cli",
+      "schema_version": "reviewer-panel-eval-row/v1",
+      "severity": "low",
+      "source_event_id": 434754,
+      "source_kind": "workflow_transcript_event",
+      "source_payload_sha256": "9658d6bcb056ce5a1903525c6934483e7f05cc16ebf140b8b89b3f7cbb7c4633",
+      "source_trace_path": "docs/dual-agent/reviewer-panel-eval-runner-20260601/transcript.jsonl",
+      "task_id": "reviewer-panel-eval-runner-20260601-tdd_review-434754",
+      "tool_access": "codebase_tools",
+      "transcript_refs": [
+        {
+          "chars": 4000,
+          "kind": "reviewer_transcript_tail",
+          "ref": "independent_reviewer_review:reviewer-panel-eval-runner-20260601:tdd_review:1:independent-reviewer-1"
+        },
+        {
+          "kind": "workflow_transcript_event",
+          "ref": "docs/dual-agent/reviewer-panel-eval-runner-20260601/transcript.jsonl#event_id=434754;reviewer_id=independent-reviewer-1"
+        }
+      ],
+      "transcript_sha256": "7a7706d9aa8d799fca5354d6a389577bfd680dbd4bf8c31600553627dc753aba",
+      "verdict_present": true
+    }
+  ],
+  "runner": {
+    "execution_mode": "fixture_replay",
+    "live_calls_allowed": false,
+    "public_boundary": "reviewer_panel_eval_runner"
+  },
+  "schema_version": "reviewer-panel-eval/v1"
+}

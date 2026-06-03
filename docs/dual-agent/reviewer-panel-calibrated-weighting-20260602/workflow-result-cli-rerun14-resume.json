@@ -1,0 +1,2350 @@
+{
+  "artifact_export": {
+    "files": [
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/index.md",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/triage.md",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/prd.md",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/tdd.md",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/grill-findings.md",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/issues.md",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/screenshots.md",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/outcome-review.md",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/interactions.md",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/transcript.md",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/transcript.jsonl",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/mast-coverage.md",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/replay/manifest.json",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/replay/workspace-snapshot.json",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/replay/mast-coverage.json",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/replay-manifest.json",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/report.json",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/report.md",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/reviewer-panel-calibration.json",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/rows.jsonl",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/grill-findings-tdd.md",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/grill-findings.md",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/implementation-plan.md",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/issues.md",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/prd.md",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/reviewer-panel-calibration-input.json",
+      "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/tdd.md"
+    ],
+    "output_dir": "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602",
+    "run_id": "codex-reviewer-panel-calibrated-weighting-20260602-row-roster-recovery",
+    "status": "ok",
+    "task_id": "reviewer-panel-calibrated-weighting-20260602"
+  },
+  "current_gate": "outcome_review",
+  "final_gate_result": {
+    "artifact_export": {
+      "files": [
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/index.md",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/triage.md",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/prd.md",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/tdd.md",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/grill-findings.md",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/issues.md",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/screenshots.md",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/outcome-review.md",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/interactions.md",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/transcript.md",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/transcript.jsonl",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/mast-coverage.md",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/replay/manifest.json",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/replay/workspace-snapshot.json",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/replay/mast-coverage.json",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/replay-manifest.json",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/report.json",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/report.md",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/reviewer-panel-calibration.json",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/rows.jsonl",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/grill-findings-tdd.md",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/grill-findings.md",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/implementation-plan.md",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/issues.md",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/prd.md",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/reviewer-panel-calibration-input.json",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/tdd.md"
+      ],
+      "output_dir": "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602",
+      "run_id": "codex-reviewer-panel-calibrated-weighting-20260602-row-roster-recovery",
+      "status": "ok",
+      "task_id": "reviewer-panel-calibrated-weighting-20260602"
+    },
+    "artifact_rigor": {
+      "accepted_prerequisite_gates": [
+        "execution"
+      ],
+      "artifact_policy": "strict",
+      "gate": "outcome_review",
+      "gate_statuses": {
+        "execution": "accepted",
+        "implementation_plan": "accepted",
+        "issues_review": "accepted",
+        "prd_review": "accepted",
+        "tdd_review": "accepted"
+      },
+      "missing_artifact_paths": [],
+      "missing_artifacts": [],
+      "missing_prerequisite_gates": [],
+      "missing_screenshot_paths": [],
+      "present_artifacts": [
+        "grill_findings",
+        "implementation_plan",
+        "issues",
+        "prd",
+        "tdd_plan"
+      ],
+      "reason": "required_artifacts_present",
+      "required_artifacts": [
+        "prd",
+        "tdd_plan",
+        "grill_findings",
+        "issues",
+        "implementation_plan"
+      ],
+      "required_prerequisite_gates": [
+        "execution"
+      ],
+      "screenshots": [],
+      "status": "ok",
+      "user_facing": false,
+      "visual_validation": {
+        "allowed_sources": [
+          "browser",
+          "browser-use",
+          "browser_use",
+          "computer",
+          "computer-use",
+          "computer_use"
+        ],
+        "evidence": [],
+        "failures": [],
+        "reason": "no_screenshots_supplied",
+        "status": "not_required"
+      }
+    },
+    "attempts": 1,
+    "claim_verification": {
+      "details": {
+        "legacy_verified_claims": [
+          "calibration activation requires active reviewer roster sha256 match",
+          "focused calibrated weighting tests passed: 20 passed in 9.21s",
+          "full test suite passed: 642 passed in 125.44s",
+          "git diff --check passed",
+          "reviewer panel eval, aggregation, and workflow-driver regression tests passed: 117 passed in 112.95s"
+        ],
+        "receipts": [
+          {
+            "artifacts": [
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/prd.md"
+            ],
+            "claims": [
+              "prd-to-tdd skill executed",
+              "PRD promise contracts produced",
+              "blocking calibration open question resolved with measured eval artifact"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-to-prd-reviewer-panel-calibrated-weighting-20260602",
+            "skill": "to-prd",
+            "stage": "to_prd",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/grill-findings.md"
+            ],
+            "claims": [
+              "prd-to-tdd skill executed",
+              "PRD grill findings resolved",
+              "dependency and severity weighting boundaries clarified"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-prd-grill-reviewer-panel-calibrated-weighting-20260602",
+            "skill": "grill-with-docs",
+            "stage": "prd_grill",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/issues.md"
+            ],
+            "claims": [
+              "prd-to-tdd skill executed",
+              "issues map to every PRD promise",
+              "public-boundary workflow behavior preserved"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-to-issues-reviewer-panel-calibrated-weighting-20260602",
+            "skill": "to-issues",
+            "stage": "to_issues",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/tdd.md"
+            ],
+            "claims": [
+              "prd-to-tdd skill executed",
+              "public-boundary RED tests planned",
+              "calibration derivation, active aggregation, fallback, and hard-block regressions covered"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-tdd-reviewer-panel-calibrated-weighting-20260602",
+            "skill": "tdd",
+            "stage": "tdd",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/grill-findings-tdd.md"
+            ],
+            "claims": [
+              "prd-to-tdd skill executed",
+              "TDD grill findings resolved",
+              "translation audit completed"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-tdd-grill-reviewer-panel-calibrated-weighting-20260602",
+            "skill": "grill-with-docs",
+            "stage": "tdd_grill",
+            "status": "passed"
+          },
+          {
+            "changed_files": [
+              "config.example.yaml",
+              "mcp_tools/codex_supervisor_stdio.py",
+              "mcp_tools/codex_supervisor_workflow_cli.py",
+              "supervisor/config.py",
+              "supervisor/reviewer_panel_eval.py",
+              "supervisor/reviewer_registry.py",
+              "tests/test_dual_agent_workflow_driver.py",
+              "tests/test_reviewer_panel_eval_runner.py",
+              "tests/test_reviewer_panel_aggregation.py",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/skill-receipts.json",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/test-evidence.md",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/prd.md",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/grill-findings.md",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/issues.md",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/tdd.md",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/grill-findings-tdd.md",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/implementation-plan.md",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/reviewer-panel-calibration-input.json",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/report.json",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/rows.jsonl",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/replay-manifest.json",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/reviewer-panel-calibration.json"
+            ],
+            "claims": [
+              "implemented measured calibrated reviewer-panel weighting with conservative fallback",
+              "calibration activation requires eval lineage, matching digest, auditable real reviewer-output provenance, and measured reviewer roster identity",
+              "Codex CLI reviewer subprocess closes stdin so reviewer-1 cannot hang reading inherited workflow stdin",
+              "calibration activation rejects formula-inconsistent lineaged reviewer weights",
+              "active calibration no longer defaults missing reviewer weights to 1.0"
+            ],
+            "kind": "git_diff",
+            "receipt_id": "git-diff-reviewer-panel-calibrated-weighting-20260602",
+            "status": "present"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/interactions.md",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/transcript.jsonl"
+            ],
+            "claims": [
+              "cursor_sdk reviewer bridge exceeded timeout window during rerun2",
+              "rerun3 uses litellm_structured reviewer fallback while preserving cursor_review gate semantics",
+              "missing cursor verdict is not counted as accept"
+            ],
+            "kind": "transport_failure",
+            "receipt_id": "cursor-sdk-transport-timeout-reviewer-panel-calibrated-weighting-20260602",
+            "status": "recovered"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/interactions.md",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/transcript.jsonl",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/test-evidence.md"
+            ],
+            "claims": [
+              "rerun4 exposed a Codex CLI reviewer transport hang while reviewer-1 was invoked from the workflow CLI",
+              "supervisor/reviewer_registry.py now passes stdin=subprocess.DEVNULL to CodexCliReviewer subprocesses",
+              "focused regression test verifies the reviewer runner closes stdin and still parses typed outcomes"
+            ],
+            "kind": "transport_failure",
+            "receipt_id": "codex-cli-stdin-transport-recovery-reviewer-panel-calibrated-weighting-20260602",
+            "status": "recovered"
+          },
+          {
+            "artifacts": [
+              "supervisor/reviewer_registry.py",
+              "tests/test_reviewer_panel_aggregation.py",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/test-evidence.md",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/transcript.jsonl"
+            ],
+            "claims": [
+              "independent-reviewer-1 found that lineaged calibration could trust hand-authored reviewer_weights",
+              "loader now requires dependency_score and weight to match measured pairwise dependency formula",
+              "evaluator falls back to conservative mode when calibration lacks any active reviewer weight",
+              "focused regression suite passes with 18 tests"
+            ],
+            "kind": "reviewer_block_recovery",
+            "receipt_id": "calibration-formula-consistency-reviewer-panel-calibrated-weighting-20260602",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "supervisor/reviewer_panel_eval.py",
+              "supervisor/reviewer_registry.py",
+              "tests/test_reviewer_panel_aggregation.py",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/reviewer-panel-calibration-input.json",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/report.json",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/rows.jsonl",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/replay-manifest.json",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/reviewer-panel-calibration.json",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/test-evidence.md"
+            ],
+            "calibration_sha256": "dfa4b57fe98035dc35b786de11e0103abf05416c2dad2974d84b50f55966babf",
+            "claims": [
+              "independent-reviewer-1 found fixture-only calibration provenance did not satisfy REAL data",
+              "eval rows now come from 16 auditable real reviewer outputs across 8 supervised workflow transcript events",
+              "calibration loader rejects fixture-only provenance for active weighting",
+              "focused, workflow-driver, and full suites pass after the provenance fix"
+            ],
+            "kind": "reviewer_block_recovery",
+            "receipt_id": "calibration-real-provenance-reviewer-panel-calibrated-weighting-20260602",
+            "report_sha256": "92d16d143eccef7453e594a8ae6b878cd3cdd092d70934ee2bd70e8b387f9302",
+            "reviewer_roster_sha256": "70b069cd061ead35c78ba3a50a603515c15fbd41cb6d8d37ce851436a7e60ecb",
+            "source_provenance": {
+              "all_rows_auditable_real_reviewer_outputs": true,
+              "auditable_real_output_count": 16,
+              "fixture_row_count": 0,
+              "real_reviewer_output_count": 16,
+              "schema_version": "reviewer-panel-eval-provenance/v1",
+              "source_event_ids": [
+                "434754",
+                "437877",
+                "438129",
+                "438414",
+                "440052",
+                "440801",
+                "441127",
+                "441847"
+              ],
+              "source_kind_counts": {
+                "workflow_transcript_event": 16
+              },
+              "source_trace_paths": [
+                "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl",
+                "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/transcript.jsonl",
+                "docs/dual-agent/reviewer-panel-eval-runner-20260601/transcript.jsonl"
+              ],
+              "transcript_ref_count": 32
+            },
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "supervisor/reviewer_registry.py",
+              "supervisor/reviewer_panel_eval.py",
+              "tests/test_reviewer_panel_aggregation.py",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/reviewer-panel-calibration.json",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/test-evidence.md"
+            ],
+            "calibration_sha256": "dfa4b57fe98035dc35b786de11e0103abf05416c2dad2974d84b50f55966babf",
+            "claims": [
+              "independent-reviewer-1 found active calibration could match only reviewer_id while runtime/provider roster changed",
+              "calibration activation now requires exact active reviewer roster sha256 match",
+              "calibration artifact records runtime/model/lineage/tool_access/assurance_grade per reviewer weight",
+              "regression test proves same reviewer IDs with different runtime/provider fall back to conservative aggregation",
+              "focused, workflow-driver, and full suites pass after the roster-lineage fix"
+            ],
+            "kind": "reviewer_block_recovery",
+            "receipt_id": "calibration-roster-lineage-recovery-reviewer-panel-calibrated-weighting-20260602",
+            "report_sha256": "92d16d143eccef7453e594a8ae6b878cd3cdd092d70934ee2bd70e8b387f9302",
+            "reviewer_roster_sha256": "70b069cd061ead35c78ba3a50a603515c15fbd41cb6d8d37ce851436a7e60ecb",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "supervisor/cursor_agent.py",
+              "tests/test_cursor_agent.py",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/test-evidence.md",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/outcome-review.md"
+            ],
+            "claims": [
+              "rerun10 outcome review exported accepted lead/probe result but workflow wrapper stalled in LiteLLM/OpenAI-compatible reviewer route",
+              "LiteLLM/OpenAI-compatible reviewer now carries supervisor timeout_s into the OpenAI client",
+              "missing reviewer verdict was not counted as accept; workflow is rerun through the gate after the recovery fix"
+            ],
+            "kind": "transport_failure",
+            "receipt_id": "litellm-timeout-recovery-reviewer-panel-calibrated-weighting-20260602",
+            "status": "recovered"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/reviewer-panel-calibration-input.json",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/report.json",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/rows.jsonl",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/replay-manifest.json",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/reviewer-panel-calibration.json"
+            ],
+            "calibration_sha256": "c633f2168fb8adf987cb606305ef9d6c936e9ff5bab48ffda4bebb3b49a8fee7",
+            "claims": [
+              "reviewer-panel eval run produced measured dependency calibration artifact",
+              "calibration rows derive from auditable real supervised workflow reviewer events, not fixture-only rows",
+              "active calibration rows match declared reviewer roster runtime/model/provider/lineage/tool metadata",
+              "calibration weights derive from report pairwise dependency signals",
+              "accept aggregation formula records severity multipliers"
+            ],
+            "kind": "calibration_eval",
+            "measured_weights": {
+              "independent-reviewer-0": 1.0,
+              "independent-reviewer-1": 1.0
+            },
+            "receipt_id": "calibration-eval-reviewer-panel-calibrated-weighting-20260602",
+            "report_sha256": "8583f100e9cb6a6dc1f718b58bd46067cb4cf9bf842f852e58b7bc4e4a0d97c7",
+            "reviewer_roster_sha256": "70b069cd061ead35c78ba3a50a603515c15fbd41cb6d8d37ce851436a7e60ecb",
+            "source_provenance": {
+              "auditable_real_output_count": 10,
+              "fixture_row_count": 0,
+              "real_reviewer_output_count": 10,
+              "row_roster_consistency": {
+                "all_rows_match_reviewer_roster": true,
+                "mismatched_row_count": 0,
+                "row_count": 10
+              },
+              "schema_version": "reviewer-panel-eval-provenance/v1",
+              "source_event_ids": [
+                "434754",
+                "437877",
+                "438129",
+                "438414",
+                "441847"
+              ],
+              "source_kind_counts": {
+                "workflow_transcript_event": 10
+              },
+              "transcript_ref_count": 20
+            },
+            "status": "passed"
+          },
+          {
+            "claims": [
+              "reviewer panel eval, aggregation, and workflow-driver regression tests passed",
+              "119 tests passed",
+              "row-roster consistency and active calibration regressions included"
+            ],
+            "command": "uv run pytest tests/test_reviewer_panel_eval_runner.py tests/test_reviewer_panel_aggregation.py tests/test_dual_agent_workflow_driver.py -q",
+            "kind": "test",
+            "receipt_id": "pytest-workflow-driver-reviewer-panel-calibrated-weighting-20260602",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "supervisor/reviewer_panel_eval.py",
+              "supervisor/reviewer_registry.py",
+              "tests/test_reviewer_panel_eval_runner.py",
+              "tests/test_reviewer_panel_aggregation.py",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/reviewer-panel-calibration-input.json",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/report.json",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/rows.jsonl",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/reviewer-panel-calibration.json",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/test-evidence.md"
+            ],
+            "calibration_sha256": "c633f2168fb8adf987cb606305ef9d6c936e9ff5bab48ffda4bebb3b49a8fee7",
+            "claims": [
+              "independent-reviewer-1 found active calibration used mixed lineage rows for reviewer-0",
+              "calibration emission now fails when rows do not match declared reviewer roster metadata",
+              "calibration loader rejects artifacts without row-roster consistency proof",
+              "regenerated calibration input excludes mixed-lineage rows and records the exclusion"
+            ],
+            "kind": "reviewer_block_recovery",
+            "receipt_id": "calibration-row-roster-recovery-reviewer-panel-calibrated-weighting-20260602",
+            "report_sha256": "8583f100e9cb6a6dc1f718b58bd46067cb4cf9bf842f852e58b7bc4e4a0d97c7",
+            "reviewer_roster_sha256": "70b069cd061ead35c78ba3a50a603515c15fbd41cb6d8d37ce851436a7e60ecb",
+            "status": "passed"
+          },
+          {
+            "claims": [
+              "focused calibrated weighting tests passed",
+              "21 tests passed",
+              "mixed-lineage calibration rows are rejected",
+              "LiteLLM reviewer client and request timeouts are bounded"
+            ],
+            "command": "uv run pytest tests/test_cursor_agent.py::test_run_litellm_structured_calls_openai_schema_gateway tests/test_reviewer_panel_aggregation.py tests/test_reviewer_panel_eval_runner.py tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_correlated_accept_escalates tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_independent_accept_advances tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_missing_calibration_falls_back_to_conservative tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_real_revise_still_blocks -q",
+            "kind": "test",
+            "receipt_id": "pytest-focused-reviewer-panel-calibrated-weighting-20260602",
+            "status": "passed"
+          },
+          {
+            "claims": [
+              "full test suite passed after request-timeout recovery",
+              "644 tests passed"
+            ],
+            "command": "uv run --extra dev pytest -q",
+            "kind": "test",
+            "receipt_id": "pytest-full-reviewer-panel-calibrated-weighting-20260602",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "supervisor/cursor_agent.py",
+              "tests/test_cursor_agent.py",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/test-evidence.md"
+            ],
+            "claims": [
+              "rerun13 stalled in the OpenAI-compatible reviewer route after tdd_review despite constructor-level timeout",
+              "LiteLLM/OpenAI-compatible reviewer now passes timeout to chat.completions.create as well as OpenAI client construction",
+              "missing reviewer verdict was not counted as accept; workflow resumes through the gate after the recovery fix"
+            ],
+            "kind": "transport_failure",
+            "receipt_id": "litellm-request-timeout-recovery-reviewer-panel-calibrated-weighting-20260602",
+            "status": "recovered"
+          }
+        ]
+      },
+      "probe_id": "P11",
+      "reason": "workflow_claims_verified",
+      "status": "green"
+    },
+    "claude_decision": "accept",
+    "claude_gate_status": "accepted",
+    "codex_decision": "accept",
+    "cursor_decision": "accept",
+    "cursor_review": {
+      "accepted": true,
+      "agent_id": null,
+      "attempts": 1,
+      "critical_review": {
+        "assumptions_to_verify": [
+          "Codex CLI test output accurately reflects the current state of the codebase"
+        ],
+        "contradictions_checked": [
+          "Checked if weights are hardcoded constants (they are derived from the formula)",
+          "Checked if timeout is applied to both constructor and request (verified in Claude's review)"
+        ],
+        "decision": "accept",
+        "evidence_refs": [],
+        "missing_evidence": [
+          "Independent execution of the test suite"
+        ],
+        "schema_version": "critical-review/v1",
+        "severity": "none",
+        "strongest_objection": "I cannot independently run pytest to verify the 644 passing tests, relying entirely on the Codex CLI evidence.",
+        "what_would_change_my_mind": "If the test evidence was fabricated or if the calibration artifact did not actually use the measured dependency formula."
+      },
+      "diagnostics": {
+        "completion_tokens": 1593,
+        "finish_reason": "stop",
+        "prompt_chars": 26252,
+        "prompt_sha256": "e3869f3676c5cee6fb022ea6bf5ae4253ea220fd2bd806f19ee52ac0027f7708",
+        "prompt_tokens": 8131
+      },
+      "duration_ms": null,
+      "failure_classification": null,
+      "fallback_from_runtime": null,
+      "fallback_reason": null,
+      "independent_reviewer_panel_decision": {
+        "accepted_reviewers": [
+          "independent-reviewer-0",
+          "independent-reviewer-1"
+        ],
+        "aggregation_mode": "calibrated_weighted",
+        "available_reviewers": [
+          "independent-reviewer-0",
+          "independent-reviewer-1"
+        ],
+        "blocking_reviewers": [],
+        "calibrated_accept": {
+          "accept_confidence_threshold": 0.726222,
+          "aggregate_confidence": 0.868,
+          "decision": "accept",
+          "schema_version": "independent-reviewer-calibrated-accept/v1",
+          "source_calibration_sha256": "c633f2168fb8adf987cb606305ef9d6c936e9ff5bab48ffda4bebb3b49a8fee7",
+          "source_report_sha256": "8583f100e9cb6a6dc1f718b58bd46067cb4cf9bf842f852e58b7bc4e4a0d97c7",
+          "weighted_inputs": [
+            {
+              "confidence": 0.9,
+              "dependency_score": 0.0,
+              "provider_family": "google",
+              "reviewer_id": "independent-reviewer-0",
+              "severity": "none",
+              "severity_multiplier": 1.0,
+              "weight": 1.0,
+              "weighted_confidence": 0.9
+            },
+            {
+              "confidence": 0.88,
+              "dependency_score": 0.0,
+              "provider_family": "openai",
+              "reviewer_id": "independent-reviewer-1",
+              "severity": "low",
+              "severity_multiplier": 0.95,
+              "weight": 1.0,
+              "weighted_confidence": 0.836
+            }
+          ]
+        },
+        "calibration": {
+          "accept_confidence_threshold": 0.726222,
+          "active": true,
+          "artifact_path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/reviewer-panel-calibration.json",
+          "calibration_sha256": "c633f2168fb8adf987cb606305ef9d6c936e9ff5bab48ffda4bebb3b49a8fee7",
+          "labeled_set_sha256": "37135f02eefe7b4fafcaf90769b639b61e4f7f343ecbce31471fc431cf1265f8",
+          "reviewer_roster_sha256": "70b069cd061ead35c78ba3a50a603515c15fbd41cb6d8d37ce851436a7e60ecb",
+          "reviewer_weights": {
+            "independent-reviewer-0": {
+              "dependency_score": 0.0,
+              "model": "gemini-3.1-pro-preview",
+              "provider_family": "google",
+              "runtime": "litellm_structured",
+              "weight": 1.0
+            },
+            "independent-reviewer-1": {
+              "dependency_score": 0.0,
+              "model": "gpt-5.5",
+              "provider_family": "openai",
+              "runtime": "codex_cli",
+              "weight": 1.0
+            }
+          },
+          "schema_version": "reviewer-panel-calibration/v1",
+          "source_provenance": {
+            "all_rows_auditable_real_reviewer_outputs": true,
+            "auditable_real_output_count": 10,
+            "fixture_row_count": 0,
+            "real_reviewer_output_count": 10,
+            "row_roster_consistency": {
+              "all_rows_match_reviewer_roster": true,
+              "compared_fields": [
+                "runtime",
+                "model",
+                "provider_family",
+                "lineage",
+                "tool_access",
+                "assurance_grade"
+              ],
+              "mismatched_row_count": 0,
+              "mismatches": [],
+              "reviewer_count": 2,
+              "row_count": 10,
+              "schema_version": "reviewer-panel-row-roster-consistency/v1"
+            },
+            "schema_version": "reviewer-panel-eval-provenance/v1",
+            "source_event_ids": [
+              "434754",
+              "437877",
+              "438129",
+              "438414",
+              "441847"
+            ],
+            "source_kind_counts": {
+              "workflow_transcript_event": 10
+            },
+            "source_trace_paths": [
+              "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/transcript.jsonl",
+              "docs/dual-agent/reviewer-panel-eval-runner-20260601/transcript.jsonl"
+            ],
+            "transcript_ref_count": 20
+          },
+          "source_report_sha256": "8583f100e9cb6a6dc1f718b58bd46067cb4cf9bf842f852e58b7bc4e4a0d97c7"
+        },
+        "decision": "accept",
+        "low_confidence_reviewers": [],
+        "low_confidence_threshold": 0.0,
+        "missing_reviewers": [],
+        "non_accepting_reviewers": [],
+        "reason": "all_available_reviewers_accept",
+        "reviewer_inputs": [
+          {
+            "accepted": true,
+            "assurance_grade": "text_only",
+            "confidence": 0.9,
+            "decision": "accept",
+            "lineage": [
+              "google",
+              "litellm_structured",
+              "gemini-3.1-pro-preview"
+            ],
+            "model": "gemini-3.1-pro-preview",
+            "provider_family": "google",
+            "reviewer_id": "independent-reviewer-0",
+            "runtime": "litellm_structured",
+            "severity": "none",
+            "tool_access": "text_only",
+            "verdict_present": true
+          },
+          {
+            "accepted": true,
+            "assurance_grade": "agentic",
+            "confidence": 0.88,
+            "decision": "accept",
+            "lineage": [
+              "openai",
+              "codex_cli",
+              "gpt-5.5"
+            ],
+            "model": "gpt-5.5",
+            "provider_family": "openai",
+            "reviewer_id": "independent-reviewer-1",
+            "runtime": "codex_cli",
+            "severity": "low",
+            "tool_access": "codebase_tools",
+            "verdict_present": true
+          }
+        ],
+        "schema_version": "independent-reviewer-panel-decision/v1"
+      },
+      "independent_reviewer_results": [
+        {
+          "accepted": true,
+          "assurance_grade": "text_only",
+          "attempts": 1,
+          "confidence": 0.9,
+          "critical_review": {
+            "assumptions_to_verify": [
+              "Codex CLI test output accurately reflects the current state of the codebase"
+            ],
+            "contradictions_checked": [
+              "Checked if weights are hardcoded constants (they are derived from the formula)",
+              "Checked if timeout is applied to both constructor and request (verified in Claude's review)"
+            ],
+            "decision": "accept",
+            "missing_evidence": [
+              "Independent execution of the test suite"
+            ],
+            "severity": "none",
+            "strongest_objection": "I cannot independently run pytest to verify the 644 passing tests, relying entirely on the Codex CLI evidence.",
+            "what_would_change_my_mind": "If the test evidence was fabricated or if the calibration artifact did not actually use the measured dependency formula."
+          },
+          "decision": "accept",
+          "failure_classification": null,
+          "gate": "outcome_review",
+          "lineage": [
+            "google",
+            "litellm_structured",
+            "gemini-3.1-pro-preview"
+          ],
+          "model": "gemini-3.1-pro-preview",
+          "output_sha256": "d90199f7b55c9d736cb0e5d17f00a6563518435e0c839fe54901b4d27f8f8def",
+          "provider_family": "google",
+          "recoverable": false,
+          "reviewer_assurance": "structured_text_only",
+          "reviewer_id": "independent-reviewer-0",
+          "reviewer_output_mode": "litellm_structured",
+          "reviewer_runtime": "litellm_structured",
+          "round_index": 1,
+          "runtime": "litellm_structured",
+          "schema_version": "independent-reviewer-panel-result/v1",
+          "severity": "none",
+          "task_id": "reviewer-panel-calibrated-weighting-20260602",
+          "tests": [
+            "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_correlated_accept_escalates",
+            "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_independent_accept_advances",
+            "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_missing_calibration_falls_back_to_conservative",
+            "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_real_revise_still_blocks",
+            "tests/test_cursor_agent.py::test_run_litellm_structured_calls_openai_schema_gateway"
+          ],
+          "tool_access": "text_only",
+          "transcript_refs": [
+            {
+              "chars": 3303,
+              "kind": "reviewer_transcript_tail",
+              "ref": "independent_reviewer_review:reviewer-panel-calibrated-weighting-20260602:outcome_review:1:independent-reviewer-0"
+            }
+          ],
+          "transcript_sha256": "6dcf9fb6a3492cc24db062dc5fde069fd4ca596aa88f722fdaae4298c1631b00",
+          "verdict_present": true
+        },
+        {
+          "accepted": true,
+          "assurance_grade": "agentic",
+          "attempts": 1,
+          "confidence": 0.88,
+          "critical_review": {
+            "assumptions_to_verify": [
+              "Recorded 644-test full suite was run against this same final tree",
+              "The current 5-task post-filter calibration set is acceptable as the representative seed until a broader recalibration exists",
+              "The active production reviewer roster remains google/litellm_structured/gemini-3.1-pro-preview plus openai/codex_cli/gpt-5.5"
+            ],
+            "contradictions_checked": [
+              "Weights as hand constants: not found; loader requires pairwise-derived dependency_score and expected weight formula match",
+              "Prior row-roster mismatch: not found; 10/10 rows match runtime/model/provider_family/lineage/tool_access/assurance_grade",
+              "Artifact drift: not found; calibration/report/input file hashes and internal digests match recorded evidence",
+              "Missing calibration regression: source and tests preserve conservative fallback",
+              "Real revise weakening: source evaluates blocking revise/deny before calibrated accept weighting",
+              "Timeout recovery incomplete: not found; OpenAI client and chat.completions.create both receive timeout"
+            ],
+            "decision": "accept",
+            "missing_evidence": [
+              "Independent pytest rerun by this reviewer",
+              "Larger or more balanced representative calibration corpus after excluding mixed-lineage rows",
+              "Raw full-suite logs beyond the durable test-evidence summary"
+            ],
+            "severity": "low",
+            "strongest_objection": "The active calibration set is narrow: 5 tasks/10 reviewer rows after roster filtering, with only 1 block_required task, so the resulting 1.0/1.0 weights are empirically weak and superficially resemble constants. This is non-blocking here because the artifact is measured, hash-bound, row-roster-consistent, formula-checked, and correlated behavior is covered by regression tests.",
+            "what_would_change_my_mind": "A failing recorded or rerun pytest, a recomputed hash mismatch, loader activation for a mismatched roster or formula-inconsistent artifact, evidence that correlated accepts advance, or a broader real calibration showing high dependency for the active reviewer pair."
+          },
+          "decision": "accept",
+          "failure_classification": null,
+          "gate": "outcome_review",
+          "lineage": [
+            "openai",
+            "codex_cli",
+            "gpt-5.5"
+          ],
+          "model": "gpt-5.5",
+          "output_sha256": "abfdd23523b7f646467a98787a622d12aa2990529bedb0239ca359348d958e6d",
+          "provider_family": "openai",
+          "recoverable": false,
+          "reviewer_assurance": "tool_backed_primary",
+          "reviewer_id": "independent-reviewer-1",
+          "reviewer_output_mode": "codex_cli",
+          "reviewer_runtime": "codex_cli",
+          "round_index": 1,
+          "runtime": "codex_cli",
+          "schema_version": "independent-reviewer-panel-result/v1",
+          "severity": "low",
+          "task_id": "reviewer-panel-calibrated-weighting-20260602",
+          "tests": [
+            "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_correlated_accept_escalates",
+            "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_independent_accept_advances",
+            "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_missing_calibration_falls_back_to_conservative",
+            "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_real_revise_still_blocks",
+            "tests/test_cursor_agent.py::test_run_litellm_structured_calls_openai_schema_gateway"
+          ],
+          "tool_access": "codebase_tools",
+          "transcript_refs": [
+            {
+              "chars": 4000,
+              "kind": "reviewer_transcript_tail",
+              "ref": "independent_reviewer_review:reviewer-panel-calibrated-weighting-20260602:outcome_review:1:independent-reviewer-1"
+            }
+          ],
+          "transcript_sha256": "42fa5220a038392cf2d6ed7d7075e2d834c0d369ce8a6d2f6115d1bad2987c33",
+          "verdict_present": true
+        }
+      ],
+      "model": "gemini-3.1-pro-preview",
+      "outcome": {
+        "changed_files": [
+          "supervisor/reviewer_panel_eval.py",
+          "supervisor/reviewer_registry.py",
+          "supervisor/cursor_agent.py",
+          "supervisor/config.py",
+          "mcp_tools/codex_supervisor_stdio.py",
+          "mcp_tools/codex_supervisor_workflow_cli.py",
+          "tests/test_reviewer_panel_aggregation.py",
+          "tests/test_reviewer_panel_eval_runner.py",
+          "tests/test_dual_agent_workflow_driver.py",
+          "tests/test_cursor_agent.py",
+          "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/"
+        ],
+        "claims": [
+          "Weights derive from measured calibration artifact, not hand-assigned constants",
+          "Measured-correlated unanimous accept escalates; effectively-independent accept advances; real revise/deny hard-blocks",
+          "No calibration artifact -> conservative fallback with no regression",
+          "NON-GOALs respected: no weakened blocks, gate sequence/P-probes untouched, agentic_lead_policy off/unchanged"
+        ],
+        "confidence": 0.9,
+        "confidence_criteria": [
+          "Test evidence is present and passes",
+          "Code changes align with PRD requirements",
+          "Recovery fixes are implemented"
+        ],
+        "confidence_rationale": "Relying on Codex CLI test evidence as instructed. The logic for the calibration artifact and fallback mechanisms aligns with the PRD.",
+        "critical_review": {
+          "assumptions_to_verify": [
+            "Codex CLI test output accurately reflects the current state of the codebase"
+          ],
+          "contradictions_checked": [
+            "Checked if weights are hardcoded constants (they are derived from the formula)",
+            "Checked if timeout is applied to both constructor and request (verified in Claude's review)"
+          ],
+          "decision": "accept",
+          "missing_evidence": [
+            "Independent execution of the test suite"
+          ],
+          "severity": "none",
+          "strongest_objection": "I cannot independently run pytest to verify the 644 passing tests, relying entirely on the Codex CLI evidence.",
+          "what_would_change_my_mind": "If the test evidence was fabricated or if the calibration artifact did not actually use the measured dependency formula."
+        },
+        "decisions": [
+          "accept"
+        ],
+        "objections": [],
+        "specialists": [
+          {
+            "decision": "accept",
+            "name": "Cursor Reviewer",
+            "objection": ""
+          }
+        ],
+        "summary": "Outcome review accepted. The implementation successfully replaces conservative aggregation with measured dependence/severity-weighted aggregation. Recovery fixes for LiteLLM timeouts and row-roster consistency are verified. Test evidence provided by Codex CLI is accepted per gate-recovery instructions.",
+        "task_id": "reviewer-panel-calibrated-weighting-20260602",
+        "test_status": "passed",
+        "tests": [
+          "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_correlated_accept_escalates",
+          "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_independent_accept_advances",
+          "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_missing_calibration_falls_back_to_conservative",
+          "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_real_revise_still_blocks",
+          "tests/test_cursor_agent.py::test_run_litellm_structured_calls_openai_schema_gateway"
+        ]
+      },
+      "probe": {
+        "details": {},
+        "probe_id": "CURSOR",
+        "reason": "cursor_review_ok",
+        "status": "green"
+      },
+      "recoverable": false,
+      "retry_reasons": [],
+      "reviewer_assurance": "structured_text_only",
+      "reviewer_output_mode": "litellm_structured",
+      "reviewer_runtime": "litellm_structured",
+      "run_id": "gJ4fatKhNvOcmecPxfvTiQY",
+      "schema_version": "independent-reviewer-result/v1",
+      "status": "finished",
+      "transcript_tail": "[cursor attempt 1/4]\n<dual_agent_outcome>{\n  \"task_id\": \"reviewer-panel-calibrated-weighting-20260602\",\n  \"summary\": \"Outcome review accepted. The implementation successfully replaces conservative aggregation with measured dependence/severity-weighted aggregation. Recovery fixes for LiteLLM timeouts and row-roster consistency are verified. Test evidence provided by Codex CLI is accepted per gate-recovery instructions.\",\n  \"specialists\": [\n    {\n      \"name\": \"Cursor Reviewer\",\n      \"decision\": \"accept\",\n      \"objection\": \"\"\n    }\n  ],\n  \"decisions\": [\n    \"accept\"\n  ],\n  \"objections\": [],\n  \"changed_files\": [\n    \"supervisor/reviewer_panel_eval.py\",\n    \"supervisor/reviewer_registry.py\",\n    \"supervisor/cursor_agent.py\",\n    \"supervisor/config.py\",\n    \"mcp_tools/codex_supervisor_stdio.py\",\n    \"mcp_tools/codex_supervisor_workflow_cli.py\",\n    \"tests/test_reviewer_panel_aggregation.py\",\n    \"tests/test_reviewer_panel_eval_runner.py\",\n    \"tests/test_dual_agent_workflow_driver.py\",\n    \"tests/test_cursor_agent.py\",\n    \"docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/\"\n  ],\n  \"tests\": [\n    \"tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_correlated_accept_escalates\",\n    \"tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_independent_accept_advances\",\n    \"tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_missing_calibration_falls_back_to_conservative\",\n    \"tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_real_revise_still_blocks\",\n    \"tests/test_cursor_agent.py::test_run_litellm_structured_calls_openai_schema_gateway\"\n  ],\n  \"test_status\": \"passed\",\n  \"confidence\": 0.9,\n  \"confidence_rationale\": \"Relying on Codex CLI test evidence as instructed. The logic for the calibration artifact and fallback mechanisms aligns with the PRD.\",\n  \"confidence_criteria\": [\n    \"Test evidence is present and passes\",\n    \"Code changes align with PRD requirements\",\n    \"Recovery fixes are implemented\"\n  ],\n  \"claims\": [\n    \"Weights derive from measured calibration artifact, not hand-assigned constants\",\n    \"Measured-correlated unanimous accept escalates; effectively-independent accept advances; real revise/deny hard-blocks\",\n    \"No calibration artifact -> conservative fallback with no regression\",\n    \"NON-GOALs respected: no weakened blocks, gate sequence/P-probes untouched, agentic_lead_policy off/unchanged\"\n  ],\n  \"critical_review\": {\n    \"strongest_objection\": \"I cannot independently run pytest to verify the 644 passing tests, relying entirely on the Codex CLI evidence.\",\n    \"missing_evidence\": [\n      \"Independent execution of the test suite\"\n    ],\n    \"contradictions_checked\": [\n      \"Checked if weights are hardcoded constants (they are derived from the formula)\",\n      \"Checked if timeout is applied to both constructor and request (verified in Claude's review)\"\n    ],\n    \"assumptions_to_verify\": [\n      \"Codex CLI test output accurately reflects the current state of the codebase\"\n    ],\n    \"what_would_change_my_mind\": \"If the test evidence was fabricated or if the calibration artifact did not actually use the measured dependency formula.\",\n    \"decision\": \"accept\",\n    \"severity\": \"none\"\n  }\n}</dual_agent_outcome>"
+    },
+    "escalation": null,
+    "gate": "outcome_review",
+    "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-panel-calibrated-weighting-20260602.json",
+    "independent_reviewer": {
+      "accepted": true,
+      "agent_id": null,
+      "attempts": 1,
+      "critical_review": {
+        "assumptions_to_verify": [
+          "Codex CLI test output accurately reflects the current state of the codebase"
+        ],
+        "contradictions_checked": [
+          "Checked if weights are hardcoded constants (they are derived from the formula)",
+          "Checked if timeout is applied to both constructor and request (verified in Claude's review)"
+        ],
+        "decision": "accept",
+        "evidence_refs": [],
+        "missing_evidence": [
+          "Independent execution of the test suite"
+        ],
+        "schema_version": "critical-review/v1",
+        "severity": "none",
+        "strongest_objection": "I cannot independently run pytest to verify the 644 passing tests, relying entirely on the Codex CLI evidence.",
+        "what_would_change_my_mind": "If the test evidence was fabricated or if the calibration artifact did not actually use the measured dependency formula."
+      },
+      "diagnostics": {
+        "completion_tokens": 1593,
+        "finish_reason": "stop",
+        "prompt_chars": 26252,
+        "prompt_sha256": "e3869f3676c5cee6fb022ea6bf5ae4253ea220fd2bd806f19ee52ac0027f7708",
+        "prompt_tokens": 8131
+      },
+      "duration_ms": null,
+      "failure_classification": null,
+      "fallback_from_runtime": null,
+      "fallback_reason": null,
+      "independent_reviewer_panel_decision": {
+        "accepted_reviewers": [
+          "independent-reviewer-0",
+          "independent-reviewer-1"
+        ],
+        "aggregation_mode": "calibrated_weighted",
+        "available_reviewers": [
+          "independent-reviewer-0",
+          "independent-reviewer-1"
+        ],
+        "blocking_reviewers": [],
+        "calibrated_accept": {
+          "accept_confidence_threshold": 0.726222,
+          "aggregate_confidence": 0.868,
+          "decision": "accept",
+          "schema_version": "independent-reviewer-calibrated-accept/v1",
+          "source_calibration_sha256": "c633f2168fb8adf987cb606305ef9d6c936e9ff5bab48ffda4bebb3b49a8fee7",
+          "source_report_sha256": "8583f100e9cb6a6dc1f718b58bd46067cb4cf9bf842f852e58b7bc4e4a0d97c7",
+          "weighted_inputs": [
+            {
+              "confidence": 0.9,
+              "dependency_score": 0.0,
+              "provider_family": "google",
+              "reviewer_id": "independent-reviewer-0",
+              "severity": "none",
+              "severity_multiplier": 1.0,
+              "weight": 1.0,
+              "weighted_confidence": 0.9
+            },
+            {
+              "confidence": 0.88,
+              "dependency_score": 0.0,
+              "provider_family": "openai",
+              "reviewer_id": "independent-reviewer-1",
+              "severity": "low",
+              "severity_multiplier": 0.95,
+              "weight": 1.0,
+              "weighted_confidence": 0.836
+            }
+          ]
+        },
+        "calibration": {
+          "accept_confidence_threshold": 0.726222,
+          "active": true,
+          "artifact_path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/reviewer-panel-calibration.json",
+          "calibration_sha256": "c633f2168fb8adf987cb606305ef9d6c936e9ff5bab48ffda4bebb3b49a8fee7",
+          "labeled_set_sha256": "37135f02eefe7b4fafcaf90769b639b61e4f7f343ecbce31471fc431cf1265f8",
+          "reviewer_roster_sha256": "70b069cd061ead35c78ba3a50a603515c15fbd41cb6d8d37ce851436a7e60ecb",
+          "reviewer_weights": {
+            "independent-reviewer-0": {
+              "dependency_score": 0.0,
+              "model": "gemini-3.1-pro-preview",
+              "provider_family": "google",
+              "runtime": "litellm_structured",
+              "weight": 1.0
+            },
+            "independent-reviewer-1": {
+              "dependency_score": 0.0,
+              "model": "gpt-5.5",
+              "provider_family": "openai",
+              "runtime": "codex_cli",
+              "weight": 1.0
+            }
+          },
+          "schema_version": "reviewer-panel-calibration/v1",
+          "source_provenance": {
+            "all_rows_auditable_real_reviewer_outputs": true,
+            "auditable_real_output_count": 10,
+            "fixture_row_count": 0,
+            "real_reviewer_output_count": 10,
+            "row_roster_consistency": {
+              "all_rows_match_reviewer_roster": true,
+              "compared_fields": [
+                "runtime",
+                "model",
+                "provider_family",
+                "lineage",
+                "tool_access",
+                "assurance_grade"
+              ],
+              "mismatched_row_count": 0,
+              "mismatches": [],
+              "reviewer_count": 2,
+              "row_count": 10,
+              "schema_version": "reviewer-panel-row-roster-consistency/v1"
+            },
+            "schema_version": "reviewer-panel-eval-provenance/v1",
+            "source_event_ids": [
+              "434754",
+              "437877",
+              "438129",
+              "438414",
+              "441847"
+            ],
+            "source_kind_counts": {
+              "workflow_transcript_event": 10
+            },
+            "source_trace_paths": [
+              "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl",
+              "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/transcript.jsonl",
+              "docs/dual-agent/reviewer-panel-eval-runner-20260601/transcript.jsonl"
+            ],
+            "transcript_ref_count": 20
+          },
+          "source_report_sha256": "8583f100e9cb6a6dc1f718b58bd46067cb4cf9bf842f852e58b7bc4e4a0d97c7"
+        },
+        "decision": "accept",
+        "low_confidence_reviewers": [],
+        "low_confidence_threshold": 0.0,
+        "missing_reviewers": [],
+        "non_accepting_reviewers": [],
+        "reason": "all_available_reviewers_accept",
+        "reviewer_inputs": [
+          {
+            "accepted": true,
+            "assurance_grade": "text_only",
+            "confidence": 0.9,
+            "decision": "accept",
+            "lineage": [
+              "google",
+              "litellm_structured",
+              "gemini-3.1-pro-preview"
+            ],
+            "model": "gemini-3.1-pro-preview",
+            "provider_family": "google",
+            "reviewer_id": "independent-reviewer-0",
+            "runtime": "litellm_structured",
+            "severity": "none",
+            "tool_access": "text_only",
+            "verdict_present": true
+          },
+          {
+            "accepted": true,
+            "assurance_grade": "agentic",
+            "confidence": 0.88,
+            "decision": "accept",
+            "lineage": [
+              "openai",
+              "codex_cli",
+              "gpt-5.5"
+            ],
+            "model": "gpt-5.5",
+            "provider_family": "openai",
+            "reviewer_id": "independent-reviewer-1",
+            "runtime": "codex_cli",
+            "severity": "low",
+            "tool_access": "codebase_tools",
+            "verdict_present": true
+          }
+        ],
+        "schema_version": "independent-reviewer-panel-decision/v1"
+      },
+      "independent_reviewer_results": [
+        {
+          "accepted": true,
+          "assurance_grade": "text_only",
+          "attempts": 1,
+          "confidence": 0.9,
+          "critical_review": {
+            "assumptions_to_verify": [
+              "Codex CLI test output accurately reflects the current state of the codebase"
+            ],
+            "contradictions_checked": [
+              "Checked if weights are hardcoded constants (they are derived from the formula)",
+              "Checked if timeout is applied to both constructor and request (verified in Claude's review)"
+            ],
+            "decision": "accept",
+            "missing_evidence": [
+              "Independent execution of the test suite"
+            ],
+            "severity": "none",
+            "strongest_objection": "I cannot independently run pytest to verify the 644 passing tests, relying entirely on the Codex CLI evidence.",
+            "what_would_change_my_mind": "If the test evidence was fabricated or if the calibration artifact did not actually use the measured dependency formula."
+          },
+          "decision": "accept",
+          "failure_classification": null,
+          "gate": "outcome_review",
+          "lineage": [
+            "google",
+            "litellm_structured",
+            "gemini-3.1-pro-preview"
+          ],
+          "model": "gemini-3.1-pro-preview",
+          "output_sha256": "d90199f7b55c9d736cb0e5d17f00a6563518435e0c839fe54901b4d27f8f8def",
+          "provider_family": "google",
+          "recoverable": false,
+          "reviewer_assurance": "structured_text_only",
+          "reviewer_id": "independent-reviewer-0",
+          "reviewer_output_mode": "litellm_structured",
+          "reviewer_runtime": "litellm_structured",
+          "round_index": 1,
+          "runtime": "litellm_structured",
+          "schema_version": "independent-reviewer-panel-result/v1",
+          "severity": "none",
+          "task_id": "reviewer-panel-calibrated-weighting-20260602",
+          "tests": [
+            "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_correlated_accept_escalates",
+            "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_independent_accept_advances",
+            "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_missing_calibration_falls_back_to_conservative",
+            "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_real_revise_still_blocks",
+            "tests/test_cursor_agent.py::test_run_litellm_structured_calls_openai_schema_gateway"
+          ],
+          "tool_access": "text_only",
+          "transcript_refs": [
+            {
+              "chars": 3303,
+              "kind": "reviewer_transcript_tail",
+              "ref": "independent_reviewer_review:reviewer-panel-calibrated-weighting-20260602:outcome_review:1:independent-reviewer-0"
+            }
+          ],
+          "transcript_sha256": "6dcf9fb6a3492cc24db062dc5fde069fd4ca596aa88f722fdaae4298c1631b00",
+          "verdict_present": true
+        },
+        {
+          "accepted": true,
+          "assurance_grade": "agentic",
+          "attempts": 1,
+          "confidence": 0.88,
+          "critical_review": {
+            "assumptions_to_verify": [
+              "Recorded 644-test full suite was run against this same final tree",
+              "The current 5-task post-filter calibration set is acceptable as the representative seed until a broader recalibration exists",
+              "The active production reviewer roster remains google/litellm_structured/gemini-3.1-pro-preview plus openai/codex_cli/gpt-5.5"
+            ],
+            "contradictions_checked": [
+              "Weights as hand constants: not found; loader requires pairwise-derived dependency_score and expected weight formula match",
+              "Prior row-roster mismatch: not found; 10/10 rows match runtime/model/provider_family/lineage/tool_access/assurance_grade",
+              "Artifact drift: not found; calibration/report/input file hashes and internal digests match recorded evidence",
+              "Missing calibration regression: source and tests preserve conservative fallback",
+              "Real revise weakening: source evaluates blocking revise/deny before calibrated accept weighting",
+              "Timeout recovery incomplete: not found; OpenAI client and chat.completions.create both receive timeout"
+            ],
+            "decision": "accept",
+            "missing_evidence": [
+              "Independent pytest rerun by this reviewer",
+              "Larger or more balanced representative calibration corpus after excluding mixed-lineage rows",
+              "Raw full-suite logs beyond the durable test-evidence summary"
+            ],
+            "severity": "low",
+            "strongest_objection": "The active calibration set is narrow: 5 tasks/10 reviewer rows after roster filtering, with only 1 block_required task, so the resulting 1.0/1.0 weights are empirically weak and superficially resemble constants. This is non-blocking here because the artifact is measured, hash-bound, row-roster-consistent, formula-checked, and correlated behavior is covered by regression tests.",
+            "what_would_change_my_mind": "A failing recorded or rerun pytest, a recomputed hash mismatch, loader activation for a mismatched roster or formula-inconsistent artifact, evidence that correlated accepts advance, or a broader real calibration showing high dependency for the active reviewer pair."
+          },
+          "decision": "accept",
+          "failure_classification": null,
+          "gate": "outcome_review",
+          "lineage": [
+            "openai",
+            "codex_cli",
+            "gpt-5.5"
+          ],
+          "model": "gpt-5.5",
+          "output_sha256": "abfdd23523b7f646467a98787a622d12aa2990529bedb0239ca359348d958e6d",
+          "provider_family": "openai",
+          "recoverable": false,
+          "reviewer_assurance": "tool_backed_primary",
+          "reviewer_id": "independent-reviewer-1",
+          "reviewer_output_mode": "codex_cli",
+          "reviewer_runtime": "codex_cli",
+          "round_index": 1,
+          "runtime": "codex_cli",
+          "schema_version": "independent-reviewer-panel-result/v1",
+          "severity": "low",
+          "task_id": "reviewer-panel-calibrated-weighting-20260602",
+          "tests": [
+            "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_correlated_accept_escalates",
+            "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_independent_accept_advances",
+            "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_missing_calibration_falls_back_to_conservative",
+            "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_real_revise_still_blocks",
+            "tests/test_cursor_agent.py::test_run_litellm_structured_calls_openai_schema_gateway"
+          ],
+          "tool_access": "codebase_tools",
+          "transcript_refs": [
+            {
+              "chars": 4000,
+              "kind": "reviewer_transcript_tail",
+              "ref": "independent_reviewer_review:reviewer-panel-calibrated-weighting-20260602:outcome_review:1:independent-reviewer-1"
+            }
+          ],
+          "transcript_sha256": "42fa5220a038392cf2d6ed7d7075e2d834c0d369ce8a6d2f6115d1bad2987c33",
+          "verdict_present": true
+        }
+      ],
+      "model": "gemini-3.1-pro-preview",
+      "outcome": {
+        "changed_files": [
+          "supervisor/reviewer_panel_eval.py",
+          "supervisor/reviewer_registry.py",
+          "supervisor/cursor_agent.py",
+          "supervisor/config.py",
+          "mcp_tools/codex_supervisor_stdio.py",
+          "mcp_tools/codex_supervisor_workflow_cli.py",
+          "tests/test_reviewer_panel_aggregation.py",
+          "tests/test_reviewer_panel_eval_runner.py",
+          "tests/test_dual_agent_workflow_driver.py",
+          "tests/test_cursor_agent.py",
+          "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/"
+        ],
+        "claims": [
+          "Weights derive from measured calibration artifact, not hand-assigned constants",
+          "Measured-correlated unanimous accept escalates; effectively-independent accept advances; real revise/deny hard-blocks",
+          "No calibration artifact -> conservative fallback with no regression",
+          "NON-GOALs respected: no weakened blocks, gate sequence/P-probes untouched, agentic_lead_policy off/unchanged"
+        ],
+        "confidence": 0.9,
+        "confidence_criteria": [
+          "Test evidence is present and passes",
+          "Code changes align with PRD requirements",
+          "Recovery fixes are implemented"
+        ],
+        "confidence_rationale": "Relying on Codex CLI test evidence as instructed. The logic for the calibration artifact and fallback mechanisms aligns with the PRD.",
+        "critical_review": {
+          "assumptions_to_verify": [
+            "Codex CLI test output accurately reflects the current state of the codebase"
+          ],
+          "contradictions_checked": [
+            "Checked if weights are hardcoded constants (they are derived from the formula)",
+            "Checked if timeout is applied to both constructor and request (verified in Claude's review)"
+          ],
+          "decision": "accept",
+          "missing_evidence": [
+            "Independent execution of the test suite"
+          ],
+          "severity": "none",
+          "strongest_objection": "I cannot independently run pytest to verify the 644 passing tests, relying entirely on the Codex CLI evidence.",
+          "what_would_change_my_mind": "If the test evidence was fabricated or if the calibration artifact did not actually use the measured dependency formula."
+        },
+        "decisions": [
+          "accept"
+        ],
+        "objections": [],
+        "specialists": [
+          {
+            "decision": "accept",
+            "name": "Cursor Reviewer",
+            "objection": ""
+          }
+        ],
+        "summary": "Outcome review accepted. The implementation successfully replaces conservative aggregation with measured dependence/severity-weighted aggregation. Recovery fixes for LiteLLM timeouts and row-roster consistency are verified. Test evidence provided by Codex CLI is accepted per gate-recovery instructions.",
+        "task_id": "reviewer-panel-calibrated-weighting-20260602",
+        "test_status": "passed",
+        "tests": [
+          "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_correlated_accept_escalates",
+          "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_independent_accept_advances",
+          "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_missing_calibration_falls_back_to_conservative",
+          "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_real_revise_still_blocks",
+          "tests/test_cursor_agent.py::test_run_litellm_structured_calls_openai_schema_gateway"
+        ]
+      },
+      "probe": {
+        "details": {},
+        "probe_id": "CURSOR",
+        "reason": "cursor_review_ok",
+        "status": "green"
+      },
+      "recoverable": false,
+      "retry_reasons": [],
+      "reviewer_assurance": "structured_text_only",
+      "reviewer_output_mode": "litellm_structured",
+      "reviewer_runtime": "litellm_structured",
+      "run_id": "gJ4fatKhNvOcmecPxfvTiQY",
+      "schema_version": "independent-reviewer-result/v1",
+      "status": "finished",
+      "transcript_tail": "[cursor attempt 1/4]\n<dual_agent_outcome>{\n  \"task_id\": \"reviewer-panel-calibrated-weighting-20260602\",\n  \"summary\": \"Outcome review accepted. The implementation successfully replaces conservative aggregation with measured dependence/severity-weighted aggregation. Recovery fixes for LiteLLM timeouts and row-roster consistency are verified. Test evidence provided by Codex CLI is accepted per gate-recovery instructions.\",\n  \"specialists\": [\n    {\n      \"name\": \"Cursor Reviewer\",\n      \"decision\": \"accept\",\n      \"objection\": \"\"\n    }\n  ],\n  \"decisions\": [\n    \"accept\"\n  ],\n  \"objections\": [],\n  \"changed_files\": [\n    \"supervisor/reviewer_panel_eval.py\",\n    \"supervisor/reviewer_registry.py\",\n    \"supervisor/cursor_agent.py\",\n    \"supervisor/config.py\",\n    \"mcp_tools/codex_supervisor_stdio.py\",\n    \"mcp_tools/codex_supervisor_workflow_cli.py\",\n    \"tests/test_reviewer_panel_aggregation.py\",\n    \"tests/test_reviewer_panel_eval_runner.py\",\n    \"tests/test_dual_agent_workflow_driver.py\",\n    \"tests/test_cursor_agent.py\",\n    \"docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/\"\n  ],\n  \"tests\": [\n    \"tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_correlated_accept_escalates\",\n    \"tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_independent_accept_advances\",\n    \"tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_missing_calibration_falls_back_to_conservative\",\n    \"tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_real_revise_still_blocks\",\n    \"tests/test_cursor_agent.py::test_run_litellm_structured_calls_openai_schema_gateway\"\n  ],\n  \"test_status\": \"passed\",\n  \"confidence\": 0.9,\n  \"confidence_rationale\": \"Relying on Codex CLI test evidence as instructed. The logic for the calibration artifact and fallback mechanisms aligns with the PRD.\",\n  \"confidence_criteria\": [\n    \"Test evidence is present and passes\",\n    \"Code changes align with PRD requirements\",\n    \"Recovery fixes are implemented\"\n  ],\n  \"claims\": [\n    \"Weights derive from measured calibration artifact, not hand-assigned constants\",\n    \"Measured-correlated unanimous accept escalates; effectively-independent accept advances; real revise/deny hard-blocks\",\n    \"No calibration artifact -> conservative fallback with no regression\",\n    \"NON-GOALs respected: no weakened blocks, gate sequence/P-probes untouched, agentic_lead_policy off/unchanged\"\n  ],\n  \"critical_review\": {\n    \"strongest_objection\": \"I cannot independently run pytest to verify the 644 passing tests, relying entirely on the Codex CLI evidence.\",\n    \"missing_evidence\": [\n      \"Independent execution of the test suite\"\n    ],\n    \"contradictions_checked\": [\n      \"Checked if weights are hardcoded constants (they are derived from the formula)\",\n      \"Checked if timeout is applied to both constructor and request (verified in Claude's review)\"\n    ],\n    \"assumptions_to_verify\": [\n      \"Codex CLI test output accurately reflects the current state of the codebase\"\n    ],\n    \"what_would_change_my_mind\": \"If the test evidence was fabricated or if the calibration artifact did not actually use the measured dependency formula.\",\n    \"decision\": \"accept\",\n    \"severity\": \"none\"\n  }\n}</dual_agent_outcome>"
+    },
+    "independent_reviewer_panel_decision": {
+      "accepted_reviewers": [
+        "independent-reviewer-0",
+        "independent-reviewer-1"
+      ],
+      "aggregation_mode": "calibrated_weighted",
+      "available_reviewers": [
+        "independent-reviewer-0",
+        "independent-reviewer-1"
+      ],
+      "blocking_reviewers": [],
+      "calibrated_accept": {
+        "accept_confidence_threshold": 0.726222,
+        "aggregate_confidence": 0.868,
+        "decision": "accept",
+        "schema_version": "independent-reviewer-calibrated-accept/v1",
+        "source_calibration_sha256": "c633f2168fb8adf987cb606305ef9d6c936e9ff5bab48ffda4bebb3b49a8fee7",
+        "source_report_sha256": "8583f100e9cb6a6dc1f718b58bd46067cb4cf9bf842f852e58b7bc4e4a0d97c7",
+        "weighted_inputs": [
+          {
+            "confidence": 0.9,
+            "dependency_score": 0.0,
+            "provider_family": "google",
+            "reviewer_id": "independent-reviewer-0",
+            "severity": "none",
+            "severity_multiplier": 1.0,
+            "weight": 1.0,
+            "weighted_confidence": 0.9
+          },
+          {
+            "confidence": 0.88,
+            "dependency_score": 0.0,
+            "provider_family": "openai",
+            "reviewer_id": "independent-reviewer-1",
+            "severity": "low",
+            "severity_multiplier": 0.95,
+            "weight": 1.0,
+            "weighted_confidence": 0.836
+          }
+        ]
+      },
+      "calibration": {
+        "accept_confidence_threshold": 0.726222,
+        "active": true,
+        "artifact_path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/reviewer-panel-calibration.json",
+        "calibration_sha256": "c633f2168fb8adf987cb606305ef9d6c936e9ff5bab48ffda4bebb3b49a8fee7",
+        "labeled_set_sha256": "37135f02eefe7b4fafcaf90769b639b61e4f7f343ecbce31471fc431cf1265f8",
+        "reviewer_roster_sha256": "70b069cd061ead35c78ba3a50a603515c15fbd41cb6d8d37ce851436a7e60ecb",
+        "reviewer_weights": {
+          "independent-reviewer-0": {
+            "dependency_score": 0.0,
+            "model": "gemini-3.1-pro-preview",
+            "provider_family": "google",
+            "runtime": "litellm_structured",
+            "weight": 1.0
+          },
+          "independent-reviewer-1": {
+            "dependency_score": 0.0,
+            "model": "gpt-5.5",
+            "provider_family": "openai",
+            "runtime": "codex_cli",
+            "weight": 1.0
+          }
+        },
+        "schema_version": "reviewer-panel-calibration/v1",
+        "source_provenance": {
+          "all_rows_auditable_real_reviewer_outputs": true,
+          "auditable_real_output_count": 10,
+          "fixture_row_count": 0,
+          "real_reviewer_output_count": 10,
+          "row_roster_consistency": {
+            "all_rows_match_reviewer_roster": true,
+            "compared_fields": [
+              "runtime",
+              "model",
+              "provider_family",
+              "lineage",
+              "tool_access",
+              "assurance_grade"
+            ],
+            "mismatched_row_count": 0,
+            "mismatches": [],
+            "reviewer_count": 2,
+            "row_count": 10,
+            "schema_version": "reviewer-panel-row-roster-consistency/v1"
+          },
+          "schema_version": "reviewer-panel-eval-provenance/v1",
+          "source_event_ids": [
+            "434754",
+            "437877",
+            "438129",
+            "438414",
+            "441847"
+          ],
+          "source_kind_counts": {
+            "workflow_transcript_event": 10
+          },
+          "source_trace_paths": [
+            "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl",
+            "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/transcript.jsonl",
+            "docs/dual-agent/reviewer-panel-eval-runner-20260601/transcript.jsonl"
+          ],
+          "transcript_ref_count": 20
+        },
+        "source_report_sha256": "8583f100e9cb6a6dc1f718b58bd46067cb4cf9bf842f852e58b7bc4e4a0d97c7"
+      },
+      "decision": "accept",
+      "low_confidence_reviewers": [],
+      "low_confidence_threshold": 0.0,
+      "missing_reviewers": [],
+      "non_accepting_reviewers": [],
+      "reason": "all_available_reviewers_accept",
+      "reviewer_inputs": [
+        {
+          "accepted": true,
+          "assurance_grade": "text_only",
+          "confidence": 0.9,
+          "decision": "accept",
+          "lineage": [
+            "google",
+            "litellm_structured",
+            "gemini-3.1-pro-preview"
+          ],
+          "model": "gemini-3.1-pro-preview",
+          "provider_family": "google",
+          "reviewer_id": "independent-reviewer-0",
+          "runtime": "litellm_structured",
+          "severity": "none",
+          "tool_access": "text_only",
+          "verdict_present": true
+        },
+        {
+          "accepted": true,
+          "assurance_grade": "agentic",
+          "confidence": 0.88,
+          "decision": "accept",
+          "lineage": [
+            "openai",
+            "codex_cli",
+            "gpt-5.5"
+          ],
+          "model": "gpt-5.5",
+          "provider_family": "openai",
+          "reviewer_id": "independent-reviewer-1",
+          "runtime": "codex_cli",
+          "severity": "low",
+          "tool_access": "codebase_tools",
+          "verdict_present": true
+        }
+      ],
+      "schema_version": "independent-reviewer-panel-decision/v1"
+    },
+    "independent_reviewer_results": [
+      {
+        "accepted": true,
+        "assurance_grade": "text_only",
+        "attempts": 1,
+        "confidence": 0.9,
+        "critical_review": {
+          "assumptions_to_verify": [
+            "Codex CLI test output accurately reflects the current state of the codebase"
+          ],
+          "contradictions_checked": [
+            "Checked if weights are hardcoded constants (they are derived from the formula)",
+            "Checked if timeout is applied to both constructor and request (verified in Claude's review)"
+          ],
+          "decision": "accept",
+          "missing_evidence": [
+            "Independent execution of the test suite"
+          ],
+          "severity": "none",
+          "strongest_objection": "I cannot independently run pytest to verify the 644 passing tests, relying entirely on the Codex CLI evidence.",
+          "what_would_change_my_mind": "If the test evidence was fabricated or if the calibration artifact did not actually use the measured dependency formula."
+        },
+        "decision": "accept",
+        "failure_classification": null,
+        "gate": "outcome_review",
+        "lineage": [
+          "google",
+          "litellm_structured",
+          "gemini-3.1-pro-preview"
+        ],
+        "model": "gemini-3.1-pro-preview",
+        "output_sha256": "d90199f7b55c9d736cb0e5d17f00a6563518435e0c839fe54901b4d27f8f8def",
+        "provider_family": "google",
+        "recoverable": false,
+        "reviewer_assurance": "structured_text_only",
+        "reviewer_id": "independent-reviewer-0",
+        "reviewer_output_mode": "litellm_structured",
+        "reviewer_runtime": "litellm_structured",
+        "round_index": 1,
+        "runtime": "litellm_structured",
+        "schema_version": "independent-reviewer-panel-result/v1",
+        "severity": "none",
+        "task_id": "reviewer-panel-calibrated-weighting-20260602",
+        "tests": [
+          "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_correlated_accept_escalates",
+          "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_independent_accept_advances",
+          "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_missing_calibration_falls_back_to_conservative",
+          "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_real_revise_still_blocks",
+          "tests/test_cursor_agent.py::test_run_litellm_structured_calls_openai_schema_gateway"
+        ],
+        "tool_access": "text_only",
+        "transcript_refs": [
+          {
+            "chars": 3303,
+            "kind": "reviewer_transcript_tail",
+            "ref": "independent_reviewer_review:reviewer-panel-calibrated-weighting-20260602:outcome_review:1:independent-reviewer-0"
+          }
+        ],
+        "transcript_sha256": "6dcf9fb6a3492cc24db062dc5fde069fd4ca596aa88f722fdaae4298c1631b00",
+        "verdict_present": true
+      },
+      {
+        "accepted": true,
+        "assurance_grade": "agentic",
+        "attempts": 1,
+        "confidence": 0.88,
+        "critical_review": {
+          "assumptions_to_verify": [
+            "Recorded 644-test full suite was run against this same final tree",
+            "The current 5-task post-filter calibration set is acceptable as the representative seed until a broader recalibration exists",
+            "The active production reviewer roster remains google/litellm_structured/gemini-3.1-pro-preview plus openai/codex_cli/gpt-5.5"
+          ],
+          "contradictions_checked": [
+            "Weights as hand constants: not found; loader requires pairwise-derived dependency_score and expected weight formula match",
+            "Prior row-roster mismatch: not found; 10/10 rows match runtime/model/provider_family/lineage/tool_access/assurance_grade",
+            "Artifact drift: not found; calibration/report/input file hashes and internal digests match recorded evidence",
+            "Missing calibration regression: source and tests preserve conservative fallback",
+            "Real revise weakening: source evaluates blocking revise/deny before calibrated accept weighting",
+            "Timeout recovery incomplete: not found; OpenAI client and chat.completions.create both receive timeout"
+          ],
+          "decision": "accept",
+          "missing_evidence": [
+            "Independent pytest rerun by this reviewer",
+            "Larger or more balanced representative calibration corpus after excluding mixed-lineage rows",
+            "Raw full-suite logs beyond the durable test-evidence summary"
+          ],
+          "severity": "low",
+          "strongest_objection": "The active calibration set is narrow: 5 tasks/10 reviewer rows after roster filtering, with only 1 block_required task, so the resulting 1.0/1.0 weights are empirically weak and superficially resemble constants. This is non-blocking here because the artifact is measured, hash-bound, row-roster-consistent, formula-checked, and correlated behavior is covered by regression tests.",
+          "what_would_change_my_mind": "A failing recorded or rerun pytest, a recomputed hash mismatch, loader activation for a mismatched roster or formula-inconsistent artifact, evidence that correlated accepts advance, or a broader real calibration showing high dependency for the active reviewer pair."
+        },
+        "decision": "accept",
+        "failure_classification": null,
+        "gate": "outcome_review",
+        "lineage": [
+          "openai",
+          "codex_cli",
+          "gpt-5.5"
+        ],
+        "model": "gpt-5.5",
+        "output_sha256": "abfdd23523b7f646467a98787a622d12aa2990529bedb0239ca359348d958e6d",
+        "provider_family": "openai",
+        "recoverable": false,
+        "reviewer_assurance": "tool_backed_primary",
+        "reviewer_id": "independent-reviewer-1",
+        "reviewer_output_mode": "codex_cli",
+        "reviewer_runtime": "codex_cli",
+        "round_index": 1,
+        "runtime": "codex_cli",
+        "schema_version": "independent-reviewer-panel-result/v1",
+        "severity": "low",
+        "task_id": "reviewer-panel-calibrated-weighting-20260602",
+        "tests": [
+          "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_correlated_accept_escalates",
+          "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_independent_accept_advances",
+          "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_missing_calibration_falls_back_to_conservative",
+          "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_real_revise_still_blocks",
+          "tests/test_cursor_agent.py::test_run_litellm_structured_calls_openai_schema_gateway"
+        ],
+        "tool_access": "codebase_tools",
+        "transcript_refs": [
+          {
+            "chars": 4000,
+            "kind": "reviewer_transcript_tail",
+            "ref": "independent_reviewer_review:reviewer-panel-calibrated-weighting-20260602:outcome_review:1:independent-reviewer-1"
+          }
+        ],
+        "transcript_sha256": "42fa5220a038392cf2d6ed7d7075e2d834c0d369ce8a6d2f6115d1bad2987c33",
+        "verdict_present": true
+      }
+    ],
+    "outcome": {
+      "changed_files": [
+        "supervisor/reviewer_panel_eval.py",
+        "supervisor/reviewer_registry.py",
+        "supervisor/cursor_agent.py",
+        "supervisor/config.py",
+        "mcp_tools/codex_supervisor_stdio.py",
+        "mcp_tools/codex_supervisor_workflow_cli.py",
+        "tests/test_reviewer_panel_aggregation.py",
+        "tests/test_reviewer_panel_eval_runner.py",
+        "tests/test_dual_agent_workflow_driver.py",
+        "tests/test_cursor_agent.py",
+        "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/"
+      ],
+      "claims": [
+        "Weights derive from measured calibration artifact, not hand-assigned constants",
+        "Measured-correlated unanimous accept escalates; effectively-independent accept advances; real revise/deny hard-blocks",
+        "No calibration artifact -> conservative fallback with no regression",
+        "NON-GOALs respected: no weakened blocks, gate sequence/P-probes untouched, agentic_lead_policy off/unchanged"
+      ],
+      "confidence": 0.9,
+      "confidence_criteria": [
+        "Behavioral driver tests present and non-vacuous (verified)",
+        "Recovery code fixes present in source with regression assertions (verified)",
+        "Artifact hashes consistent across handoff/test-evidence/artifact (verified)",
+        "Empirical full-suite-green confirmed only via recorded Codex CLI output, not personal rerun"
+      ],
+      "confidence_rationale": "All four acceptance behaviors and both recovery fixes verified non-vacuously in current source; artifact hashes internally consistent and 3-source matched. Not 0.95+ because pytest was not personally rerun (deferred to Codex CLI evidence per gate-recovery protocol) and file-level shasum could not be independently rederived (tool approval blocked).",
+      "critical_review": {
+        "assumptions_to_verify": [
+          "Codex-recorded CLI test counts (644 passed) reflect the current tree state",
+          "File-level artifact sha e2cdc92e equals on-disk bytes (internal calibration_sha256 self-check matched)"
+        ],
+        "contradictions_checked": [
+          "Whether weights are constants vs measured: refuted \u2014 formula weight=max(0.05,1-dependency) with measured dependency 0.0 yields 1.0 for genuinely independent reviewers; correlated driver test proves formula yields 0.05 under dependency",
+          "Whether rerun13 only patched the constructor: refuted \u2014 both cursor_agent.py:670 and :704 carry timeout, and the regression asserts both",
+          "Whether row-roster mismatch (rerun11) persists: refuted \u2014 artifact shows 0 mismatches, 10/10 rows",
+          "Whether artifact hashes drifted: refuted \u2014 calibration/roster/report shas match handoff and test-evidence"
+        ],
+        "decision": "accept",
+        "missing_evidence": [
+          "Independent (Claude-side) pytest execution",
+          "Independently recomputed file-level sha256 of the calibration artifact"
+        ],
+        "severity": "none",
+        "strongest_objection": "Active roster reviewer weights are both 1.0, which superficially resembles hand-assigned constants; and I could not personally rerun pytest or rederive file-level shasums (tool approvals blocked).",
+        "what_would_change_my_mind": "A pytest run showing any failure in the named suites, or a recomputed artifact sha256 diverging from the recorded c633f216/e2cdc92e, or finding a weight in the artifact inconsistent with the measured-dependency formula."
+      },
+      "decisions": [
+        "accept"
+      ],
+      "objections": [],
+      "specialists": [
+        {
+          "decision": "accept",
+          "name": "lead-verifier",
+          "objection": null
+        }
+      ],
+      "summary": "Final outcome_review ACCEPT: all acceptance clauses realized and tested in tree (formula-derived weights not constants; correlated accept escalates, independent advances, real revise blocks, missing calibration falls back to conservative). rerun11 row-roster consistency and rerun13 dual timeout placements verified in source with non-vacuous regression tests. Artifact hashes consistent across handoff/test-evidence/artifact. Full-suite-green satisfied by Codex CLI evidence per gate-recovery protocol.",
+      "task_id": "reviewer-panel-calibrated-weighting-20260602",
+      "test_status": "passed",
+      "tests": [
+        "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_correlated_accept_escalates",
+        "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_independent_accept_advances",
+        "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_missing_calibration_falls_back_to_conservative",
+        "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_calibrated_real_revise_still_blocks",
+        "tests/test_cursor_agent.py::test_run_litellm_structured_calls_openai_schema_gateway"
+      ]
+    },
+    "probes": {
+      "P1": {
+        "details": {},
+        "probe_id": "P1",
+        "reason": "planning_artifact_boundaries_ok",
+        "status": "green"
+      },
+      "P2": {
+        "details": {
+          "captured_bytes": 9363,
+          "captured_token_estimate": 2332,
+          "orchestration_surface": "/lead"
+        },
+        "probe_id": "P2",
+        "reason": "worker_orchestration_invocation_ok",
+        "status": "green"
+      },
+      "P3": {
+        "details": {},
+        "probe_id": "P3",
+        "reason": "outcome_fidelity_ok",
+        "status": "green"
+      },
+      "P4": {
+        "details": {
+          "decisions": [
+            "accept",
+            "accept",
+            "accept"
+          ]
+        },
+        "probe_id": "P4",
+        "reason": "outcome_gate_decision_ok",
+        "status": "green"
+      },
+      "P_planning": {
+        "details": {
+          "artifact_hashes": {
+            "grill_findings": "92c417aecbdcb6bdf2bc134fabb576f1701e5b224802998edd60cd2d4159d0a6",
+            "implementation_plan": "fafdcc3063ec3acaaa53289b1a3827cd146713eedd1a2cfc1231a2888b64cc81",
+            "issues": "0172935c882a582d2f46e7c3015784d9f3453fff6ac7a9cf49e9c26f3f06b83d",
+            "prd": "c9a07ab8e11c9ba385e1b55f7ad968a502aa14f5e816a743f02fc0d23926ce01",
+            "tdd_plan": "d519c677eda1fabb3aba73fcd38f2cad91a374571a63a50f49ff3afd47b60c0a"
+          },
+          "artifacts": [
+            {
+              "kind": "prd",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/prd.md",
+              "sha256": "c9a07ab8e11c9ba385e1b55f7ad968a502aa14f5e816a743f02fc0d23926ce01",
+              "status": "accepted"
+            },
+            {
+              "kind": "issues",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/issues.md",
+              "sha256": "0172935c882a582d2f46e7c3015784d9f3453fff6ac7a9cf49e9c26f3f06b83d",
+              "status": "accepted"
+            },
+            {
+              "kind": "tdd_plan",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/tdd.md",
+              "sha256": "d519c677eda1fabb3aba73fcd38f2cad91a374571a63a50f49ff3afd47b60c0a",
+              "status": "accepted"
+            },
+            {
+              "kind": "grill_findings",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/grill-findings.md",
+              "sha256": "92c417aecbdcb6bdf2bc134fabb576f1701e5b224802998edd60cd2d4159d0a6",
+              "status": "accepted"
+            },
+            {
+              "kind": "implementation_plan",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/implementation-plan.md",
+              "sha256": "fafdcc3063ec3acaaa53289b1a3827cd146713eedd1a2cfc1231a2888b64cc81",
+              "status": "accepted"
+            }
+          ],
+          "checks": {
+            "AGG-001": "pass",
+            "AGG-002": "pass",
+            "GRILL-001": "pass",
+            "GRILL-002": "pass",
+            "GRILL-003": "pass",
+            "ISS-001": "pass",
+            "ISS-002": "pass",
+            "ISS-003": "pass",
+            "ISS-004": "pass",
+            "PLAN-001": "pass",
+            "PLAN-002": "pass",
+            "PLAN-003": "pass",
+            "PLAN-004": "pass",
+            "PRD-001": "pass",
+            "PRD-002": "pass",
+            "PRD-003": "pass",
+            "PRD-004": "pass",
+            "PRD-005": "pass",
+            "PRD-006": "pass",
+            "TDD-001": "pass",
+            "TDD-002": "pass",
+            "TDD-003": "pass",
+            "TDD-004": "pass"
+          },
+          "gate": "outcome_review",
+          "task_id": "reviewer-panel-calibrated-weighting-20260602",
+          "validator_version": "1.0.0",
+          "verdict": "accepted"
+        },
+        "probe_id": "P_planning",
+        "reason": "planning_validation_ok",
+        "status": "green"
+      }
+    },
+    "status": "accepted",
+    "supervisor_final_status": "accepted",
+    "task_id": "reviewer-panel-calibrated-weighting-20260602",
+    "tool_calls": [
+      {
+        "args": {
+          "agentic_lead_policy": "off",
+          "artifact_policy": "strict",
+          "dynamic_workflow_task_class": null,
+          "execution_layer_mode": "lead_direct",
+          "gate": "outcome_review",
+          "min_subagents": 0,
+          "planning_artifact_count": 8,
+          "required_evidence_grade": "self_reported",
+          "required_roles": [],
+          "screenshot_count": 0,
+          "task_id": "reviewer-panel-calibrated-weighting-20260602",
+          "user_facing": false
+        },
+        "attempts": 1,
+        "duration_ms": 152063,
+        "duration_us": 152063229,
+        "ended_at_ms": 1780457087925,
+        "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-panel-calibrated-weighting-20260602.json",
+        "name": "start_dual_agent_gate",
+        "probe_id": null,
+        "result_summary": {
+          "claude_gate_status": "accepted",
+          "probe_statuses": {
+            "P1": "green",
+            "P2": "green",
+            "P3": "green",
+            "P4": "green",
+            "P_planning": "green"
+          },
+          "supervisor_final_status": "accepted"
+        },
+        "started_at_ms": 1780456935862,
+        "status": "completed",
+        "tool_call_id": "start_dual_agent_gate#1780456935862#152063229"
+      },
+      {
+        "args": {
+          "gate": "outcome_review",
+          "task_id": "reviewer-panel-calibrated-weighting-20260602"
+        },
+        "attempts": 1,
+        "cost_usd": 3.63800025,
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780457087928,
+        "model": "opus",
+        "name": "invoke_claude_lead",
+        "parent_tool_call_id": "start_dual_agent_gate#1780456935862#152063229",
+        "probe_id": null,
+        "result_summary": {
+          "outcome_present": true,
+          "probe_reason": "outcome_fidelity_ok",
+          "probe_status": "green",
+          "tokens_in": 1152062,
+          "tokens_out": 10822
+        },
+        "started_at_ms": 1780457087928,
+        "status": "completed",
+        "stderr_bytes": 0,
+        "stdout_bytes": 9363,
+        "token_usage": {
+          "cache_creation_input_tokens": 63653,
+          "cache_read_input_tokens": 1088391,
+          "context_window": 200000,
+          "input_tokens": 18,
+          "max_output_tokens": 32000,
+          "output_tokens": 10822,
+          "tokens_in": 1152062,
+          "tokens_out": 10822
+        },
+        "tokens_in": 1152062,
+        "tokens_out": 10822,
+        "tool_call_id": "invoke_claude_lead#1780457087928#0"
+      },
+      {
+        "args": {
+          "probe_id": "P2"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780457087928,
+        "name": "probe:P2",
+        "parent_tool_call_id": "invoke_claude_lead#1780457087928#0",
+        "probe_id": "P2",
+        "reason": "worker_orchestration_invocation_ok",
+        "result_summary": {
+          "probe_id": "P2",
+          "reason": "worker_orchestration_invocation_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780457087928,
+        "status": "green",
+        "tool_call_id": "probe_p2#1780457087928#0#p2"
+      },
+      {
+        "args": {
+          "probe_id": "P3"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780457087928,
+        "name": "probe:P3",
+        "parent_tool_call_id": "invoke_claude_lead#1780457087928#0",
+        "probe_id": "P3",
+        "reason": "outcome_fidelity_ok",
+        "result_summary": {
+          "probe_id": "P3",
+          "reason": "outcome_fidelity_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780457087928,
+        "status": "green",
+        "tool_call_id": "probe_p3#1780457087928#0#p3"
+      },
+      {
+        "args": {
+          "probe_id": "P1"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780457087928,
+        "name": "probe:P1",
+        "parent_tool_call_id": "invoke_claude_lead#1780457087928#0",
+        "probe_id": "P1",
+        "reason": "planning_artifact_boundaries_ok",
+        "result_summary": {
+          "probe_id": "P1",
+          "reason": "planning_artifact_boundaries_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780457087928,
+        "status": "green",
+        "tool_call_id": "probe_p1#1780457087928#0#p1"
+      },
+      {
+        "args": {
+          "probe_id": "P4"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780457087928,
+        "name": "probe:P4",
+        "parent_tool_call_id": "invoke_claude_lead#1780457087928#0",
+        "probe_id": "P4",
+        "reason": "outcome_gate_decision_ok",
+        "result_summary": {
+          "probe_id": "P4",
+          "reason": "outcome_gate_decision_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780457087928,
+        "status": "green",
+        "tool_call_id": "probe_p4#1780457087928#0#p4"
+      },
+      {
+        "args": {
+          "probe_id": "P_planning"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780457087928,
+        "name": "probe:P_planning",
+        "parent_tool_call_id": "invoke_claude_lead#1780457087928#0",
+        "probe_id": "P_planning",
+        "reason": "planning_validation_ok",
+        "result_summary": {
+          "probe_id": "P_planning",
+          "reason": "planning_validation_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780457087928,
+        "status": "green",
+        "tool_call_id": "probe_p_planning#1780457087928#0#p_planning"
+      }
+    ],
+    "trace_envelope": {
+      "artifacts": [],
+      "claims": [
+        "Weights derive from measured calibration artifact, not hand-assigned constants",
+        "Measured-correlated unanimous accept escalates; effectively-independent accept advances; real revise/deny hard-blocks",
+        "No calibration artifact -> conservative fallback with no regression",
+        "NON-GOALs respected: no weakened blocks, gate sequence/P-probes untouched, agentic_lead_policy off/unchanged"
+      ],
+      "event_kind": "dual_agent_gate_result",
+      "failure_taxonomy": null,
+      "gate": "outcome_review",
+      "policy_verdict": "accepted",
+      "receipts": [],
+      "run_id": "codex-reviewer-panel-calibrated-weighting-20260602-row-roster-recovery",
+      "schema_version": "dual-agent-trace-envelope/v1",
+      "source": "dual_agent",
+      "task_id": "reviewer-panel-calibrated-weighting-20260602",
+      "tool_calls": [
+        {
+          "args": {
+            "agentic_lead_policy": "off",
+            "artifact_policy": "strict",
+            "dynamic_workflow_task_class": null,
+            "execution_layer_mode": "lead_direct",
+            "gate": "outcome_review",
+            "min_subagents": 0,
+            "planning_artifact_count": 8,
+            "required_evidence_grade": "self_reported",
+            "required_roles": [],
+            "screenshot_count": 0,
+            "task_id": "reviewer-panel-calibrated-weighting-20260602",
+            "user_facing": false
+          },
+          "attempts": 1,
+          "duration_ms": 152063,
+          "duration_us": 152063229,
+          "ended_at_ms": 1780457087925,
+          "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/reviewer-panel-calibrated-weighting-20260602.json",
+          "name": "start_dual_agent_gate",
+          "probe_id": null,
+          "result_summary": {
+            "claude_gate_status": "accepted",
+            "probe_statuses": {
+              "P1": "green",
+              "P2": "green",
+              "P3": "green",
+              "P4": "green",
+              "P_planning": "green"
+            },
+            "supervisor_final_status": "accepted"
+          },
+          "started_at_ms": 1780456935862,
+          "status": "completed",
+          "tool_call_id": "start_dual_agent_gate#1780456935862#152063229"
+        },
+        {
+          "args": {
+            "gate": "outcome_review",
+            "task_id": "reviewer-panel-calibrated-weighting-20260602"
+          },
+          "attempts": 1,
+          "cost_usd": 3.63800025,
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780457087928,
+          "model": "opus",
+          "name": "invoke_claude_lead",
+          "parent_tool_call_id": "start_dual_agent_gate#1780456935862#152063229",
+          "probe_id": null,
+          "result_summary": {
+            "outcome_present": true,
+            "probe_reason": "outcome_fidelity_ok",
+            "probe_status": "green",
+            "tokens_in": 1152062,
+            "tokens_out": 10822
+          },
+          "started_at_ms": 1780457087928,
+          "status": "completed",
+          "stderr_bytes": 0,
+          "stdout_bytes": 9363,
+          "token_usage": {
+            "cache_creation_input_tokens": 63653,
+            "cache_read_input_tokens": 1088391,
+            "context_window": 200000,
+            "input_tokens": 18,
+            "max_output_tokens": 32000,
+            "output_tokens": 10822,
+            "tokens_in": 1152062,
+            "tokens_out": 10822
+          },
+          "tokens_in": 1152062,
+          "tokens_out": 10822,
+          "tool_call_id": "invoke_claude_lead#1780457087928#0"
+        },
+        {
+          "args": {
+            "probe_id": "P2"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780457087928,
+          "name": "probe:P2",
+          "parent_tool_call_id": "invoke_claude_lead#1780457087928#0",
+          "probe_id": "P2",
+          "reason": "worker_orchestration_invocation_ok",
+          "result_summary": {
+            "probe_id": "P2",
+            "reason": "worker_orchestration_invocation_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780457087928,
+          "status": "green",
+          "tool_call_id": "probe_p2#1780457087928#0#p2"
+        },
+        {
+          "args": {
+            "probe_id": "P3"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780457087928,
+          "name": "probe:P3",
+          "parent_tool_call_id": "invoke_claude_lead#1780457087928#0",
+          "probe_id": "P3",
+          "reason": "outcome_fidelity_ok",
+          "result_summary": {
+            "probe_id": "P3",
+            "reason": "outcome_fidelity_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780457087928,
+          "status": "green",
+          "tool_call_id": "probe_p3#1780457087928#0#p3"
+        },
+        {
+          "args": {
+            "probe_id": "P1"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780457087928,
+          "name": "probe:P1",
+          "parent_tool_call_id": "invoke_claude_lead#1780457087928#0",
+          "probe_id": "P1",
+          "reason": "planning_artifact_boundaries_ok",
+          "result_summary": {
+            "probe_id": "P1",
+            "reason": "planning_artifact_boundaries_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780457087928,
+          "status": "green",
+          "tool_call_id": "probe_p1#1780457087928#0#p1"
+        },
+        {
+          "args": {
+            "probe_id": "P4"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780457087928,
+          "name": "probe:P4",
+          "parent_tool_call_id": "invoke_claude_lead#1780457087928#0",
+          "probe_id": "P4",
+          "reason": "outcome_gate_decision_ok",
+          "result_summary": {
+            "probe_id": "P4",
+            "reason": "outcome_gate_decision_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780457087928,
+          "status": "green",
+          "tool_call_id": "probe_p4#1780457087928#0#p4"
+        },
+        {
+          "args": {
+            "probe_id": "P_planning"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780457087928,
+          "name": "probe:P_planning",
+          "parent_tool_call_id": "invoke_claude_lead#1780457087928#0",
+          "probe_id": "P_planning",
+          "reason": "planning_validation_ok",
+          "result_summary": {
+            "probe_id": "P_planning",
+            "reason": "planning_validation_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780457087928,
+          "status": "green",
+          "tool_call_id": "probe_p_planning#1780457087928#0#p_planning"
+        }
+      ]
+    }
+  },
+  "mandatory_artifacts": {
+    "missing": [],
+    "output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-calibrated-weighting-20260602",
+    "required": [
+      "source/prd.md",
+      "source/grill-findings.md",
+      "source/issues.md",
+      "source/tdd.md",
+      "source/grill-findings-tdd.md",
+      "source/implementation-plan.md",
+      "interactions.md",
+      "outcome-review.md",
+      "transcript.md"
+    ],
+    "status": "ok"
+  },
+  "resume": {
+    "artifact_output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-calibrated-weighting-20260602",
+    "blocker": null,
+    "current_gate": "outcome_review",
+    "last_status": "accepted",
+    "latest_event_id": 447499,
+    "next_safe_action": "read_gate_transcript and inspect exported artifacts",
+    "prompt": "Use codex_supervisor.\nContinue run_id=codex-reviewer-panel-calibrated-weighting-20260602-row-roster-recovery\ntask_id=reviewer-panel-calibrated-weighting-20260602\ncurrent_gate=outcome_review\nlast_status=accepted\nlatest_event_id=447499\nnext_safe_action=read_gate_transcript and inspect exported artifacts\nartifact_output_dir=/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-calibrated-weighting-20260602\nfirst inspect: read_gate_transcript(run_id=codex-reviewer-panel-calibrated-weighting-20260602-row-roster-recovery, task_id=reviewer-panel-calibrated-weighting-20260602)",
+    "run_id": "codex-reviewer-panel-calibrated-weighting-20260602-row-roster-recovery",
+    "status": "ok",
+    "steps": [
+      {
+        "attempt_count": 1,
+        "gate": "prd_review",
+        "latest_event_id": 446045,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "issues_review",
+        "latest_event_id": 446111,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "tdd_review",
+        "latest_event_id": 446350,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "implementation_plan",
+        "latest_event_id": 447015,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "execution",
+        "latest_event_id": 447150,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "outcome_review",
+        "latest_event_id": 447492,
+        "status": "accepted"
+      }
+    ],
+    "task_id": "reviewer-panel-calibrated-weighting-20260602",
+    "transcript_command": "read_gate_transcript(run_id=codex-reviewer-panel-calibrated-weighting-20260602-row-roster-recovery, task_id=reviewer-panel-calibrated-weighting-20260602)"
+  },
+  "run_id": "codex-reviewer-panel-calibrated-weighting-20260602-row-roster-recovery",
+  "status": "accepted",
+  "steps": [
+    {
+      "attempt_count": 1,
+      "gate": "prd_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "issues_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "tdd_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "implementation_plan",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "execution",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "outcome_review",
+      "status": "accepted"
+    }
+  ],
+  "task_id": "reviewer-panel-calibrated-weighting-20260602",
+  "visual_evidence_policy": {
+    "artifact_matches": [],
+    "matched_terms": [],
+    "required": false,
+    "source": "not_user_facing"
+  },
+  "workflow_route": {
+    "agentic_lead_policy": {
+      "min_subagents": 0,
+      "policy": "off",
+      "required_evidence_grade": "self_reported",
+      "required_roles": [],
+      "solo_exception_for_artifact_only_gates": false
+    },
+    "cursor_review_gates": [
+      "tdd_review",
+      "implementation_plan",
+      "outcome_review"
+    ],
+    "cursor_review_profile": "rigorous",
+    "dynamic_workflow_task_class": null,
+    "effective_cursor_review": true,
+    "execution_layer_mode": "lead_direct",
+    "force_cursor_review": false,
+    "gate_count": 6,
+    "gates": [
+      "prd_review",
+      "issues_review",
+      "tdd_review",
+      "implementation_plan",
+      "execution",
+      "outcome_review"
+    ],
+    "planning_depth": "large",
+    "reasons": [
+      "default_large"
+    ],
+    "requested_cursor_review": true,
+    "required_skill_stages": [
+      "to_prd",
+      "prd_grill",
+      "to_issues",
+      "tdd",
+      "tdd_grill"
+    ],
+    "requires_agentic_lead_policy_receipts": false,
+    "requires_brainstorm": false,
+    "requires_dynamic_workflow_receipts": false,
+    "requires_skill_receipts": true,
+    "resume": {
+      "mode": "resume_from_prior_steps",
+      "pending_gates": [
+        "implementation_plan",
+        "execution",
+        "outcome_review"
+      ],
+      "schema_version": "dual-agent-workflow-resume/v1",
+      "skipped_gates": [
+        "prd_review",
+        "issues_review",
+        "tdd_review"
+      ],
+      "skipped_steps": [
+        {
+          "attempt_count": 1,
+          "gate": "prd_review",
+          "latest_event_id": 446045,
+          "status": "accepted"
+        },
+        {
+          "attempt_count": 1,
+          "gate": "issues_review",
+          "latest_event_id": 446111,
+          "status": "accepted"
+        },
+        {
+          "attempt_count": 1,
+          "gate": "tdd_review",
+          "latest_event_id": 446350,
+          "status": "accepted"
+        }
+      ]
+    },
+    "reviewer_infra_retry_backoff_s": 1.0,
+    "reviewer_infra_retry_limit": 2,
+    "reviewer_low_confidence_threshold": 0.0,
+    "reviewer_max_tokens": 4096,
+    "reviewer_model": "gemini-3.1-pro-preview",
+    "reviewer_output_mode": "litellm_structured",
+    "reviewer_panel_calibration_active": true,
+    "reviewer_panel_calibration_path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/source/calibration-eval/reviewer-panel-calibration.json",
+    "reviewer_unavailable_policy": "escalate",
+    "schema_version": "dual-agent-workflow-route/v1",
+    "task_complexity": "large"
+  }
+}

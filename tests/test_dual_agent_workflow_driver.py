@@ -293,6 +293,7 @@ def test_workflow_kwargs_from_payload_preserves_dynamic_workflow_preview_fields(
         "reviewer_infra_retry_limit": 4,
         "reviewer_infra_retry_backoff_s": 0.25,
         "reviewer_low_confidence_threshold": 0.4,
+        "reviewer_panel_calibration_path": "docs/dual-agent/calibration.json",
         "irrelevant_field": "must not leak into workflow kwargs",
     })
 
@@ -310,6 +311,7 @@ def test_workflow_kwargs_from_payload_preserves_dynamic_workflow_preview_fields(
     assert kwargs["reviewer_infra_retry_limit"] == 4
     assert kwargs["reviewer_infra_retry_backoff_s"] == 0.25
     assert kwargs["reviewer_low_confidence_threshold"] == 0.4
+    assert kwargs["reviewer_panel_calibration_path"] == "docs/dual-agent/calibration.json"
     assert "irrelevant_field" not in kwargs
 
 
@@ -386,6 +388,111 @@ def _write_good_workflow_source_artifacts(tmp_path: Path, task_id: str = "workfl
             (FIXTURE_ROOT / kind / "good.md").read_text(encoding="utf-8"),
             encoding="utf-8",
         )
+
+
+def _write_reviewer_panel_calibration(
+    tmp_path: Path,
+    *,
+    correlated: bool,
+) -> Path:
+    from supervisor.reviewer_panel_eval import reviewer_panel_eval_runner
+    from supervisor.reviewer_registry import ReviewerSpec
+
+    reviewers = [
+        ReviewerSpec(
+            reviewer_id="independent-reviewer-0",
+            runtime="cursor_sdk",
+            model="composer-2.5",
+            provider_family="cursor",
+            lineage=("cursor", "cursor_sdk", "composer-2.5"),
+            tool_access="codebase_tools",
+            assurance_grade="agentic",
+        ),
+        ReviewerSpec(
+            reviewer_id="independent-reviewer-1",
+            runtime="codex_cli",
+            model="gpt-5.5",
+            provider_family="openai",
+            lineage=("openai", "codex_cli", "gpt-5.5"),
+            tool_access="codebase_tools",
+            assurance_grade="agentic",
+        ),
+    ]
+    tasks = [
+        {
+            "task_id": "calibration-accept",
+            "gate": "outcome_review",
+            "label": "accept_allowed",
+            "input_sha256": "input-calibration-accept",
+        },
+        {
+            "task_id": "calibration-block",
+            "gate": "outcome_review",
+            "label": "block_required",
+            "input_sha256": "input-calibration-block",
+        },
+    ]
+
+    def cassette(task_id: str, reviewer_id: str, decision: str) -> dict:
+        payload_seed = f"{task_id}:{reviewer_id}:{decision}".encode("utf-8")
+        payload_sha = sha256(payload_seed).hexdigest()
+        transcript_sha = sha256(b"transcript:" + payload_seed).hexdigest()
+        output_sha = sha256(b"output:" + payload_seed).hexdigest()
+        return {
+            "task_id": task_id,
+            "gate": "outcome_review",
+            "reviewer_id": reviewer_id,
+            "cassette_id": f"cassette-{task_id}-{reviewer_id}-{decision}",
+            "decision": decision,
+            "severity": "important" if decision == "revise" else "none",
+            "confidence": 0.9,
+            "verdict_present": True,
+            "runtime": "cursor_sdk" if reviewer_id.endswith("-0") else "codex_cli",
+            "model": "composer-2.5" if reviewer_id.endswith("-0") else "gpt-5.5",
+            "provider_family": "cursor" if reviewer_id.endswith("-0") else "openai",
+            "lineage": ["cursor", "cursor_sdk", "composer-2.5"]
+            if reviewer_id.endswith("-0") else ["openai", "codex_cli", "gpt-5.5"],
+            "tool_access": "codebase_tools",
+            "assurance_grade": "agentic",
+            "source_kind": "workflow_transcript_event",
+            "source_trace_path": f"docs/dual-agent/test/{task_id}/transcript.jsonl",
+            "source_event_id": f"{task_id}-{reviewer_id}",
+            "source_payload_sha256": payload_sha,
+            "transcript_sha256": transcript_sha,
+            "transcript_refs": [
+                {
+                    "kind": "workflow_transcript_event",
+                    "ref": f"docs/dual-agent/test/{task_id}/transcript.jsonl#{task_id}-{reviewer_id}",
+                }
+            ],
+            "output_sha256": output_sha,
+            "cost_usd": 0.1,
+            "latency_ms": 100,
+        }
+
+    if correlated:
+        cassettes = [
+            cassette("calibration-accept", "independent-reviewer-0", "accept"),
+            cassette("calibration-accept", "independent-reviewer-1", "accept"),
+            cassette("calibration-block", "independent-reviewer-0", "accept"),
+            cassette("calibration-block", "independent-reviewer-1", "accept"),
+        ]
+    else:
+        cassettes = [
+            cassette("calibration-accept", "independent-reviewer-0", "accept"),
+            cassette("calibration-accept", "independent-reviewer-1", "accept"),
+            cassette("calibration-block", "independent-reviewer-0", "accept"),
+            cassette("calibration-block", "independent-reviewer-1", "revise"),
+        ]
+    output_dir = tmp_path / "docs" / "dual-agent" / "calibration-eval"
+    report = reviewer_panel_eval_runner(
+        labeled_tasks=tasks,
+        reviewers=reviewers,
+        cassettes=cassettes,
+        output_dir=output_dir,
+        emit_calibration=True,
+    )
+    return Path(report["exports"]["calibration_json"])
 
 
 def test_workflow_visual_evidence_policy_does_not_require_evidence_for_product_name_only():
@@ -3119,10 +3226,10 @@ def test_reviewer_registry_returns_codex_cli_second_reviewer():
 def test_codex_cli_reviewer_parses_typed_outcome_with_hashes(tmp_path):
     from supervisor.reviewer_registry import CodexCliReviewer, ReviewerSpec
 
-    calls: list[list[str]] = []
+    calls: list[tuple[list[str], dict]] = []
 
     def fake_codex_runner(argv, **kwargs):
-        calls.append(list(argv))
+        calls.append((list(argv), dict(kwargs)))
         return subprocess.CompletedProcess(
             argv,
             0,
@@ -3160,8 +3267,10 @@ def test_codex_cli_reviewer_parses_typed_outcome_with_hashes(tmp_path):
     assert result.diagnostics["codex_cli"]["command_execution_count"] == 1
     assert result.diagnostics["codex_cli"]["stdout_sha256"]
     assert calls
-    assert "--sandbox" in calls[0]
-    assert "read-only" in calls[0]
+    argv, kwargs = calls[0]
+    assert "--sandbox" in argv
+    assert "read-only" in argv
+    assert kwargs["stdin"] is subprocess.DEVNULL
 
 
 def test_codex_cli_reviewer_without_command_evidence_is_not_agentic(tmp_path):
@@ -3817,6 +3926,126 @@ async def test_run_dual_agent_workflow_panel_low_confidence_accept_escalates_whe
         if event["message_type"] == "gate_decision" and event["gate"] == "outcome_review"
     )
     assert gate_decision["metadata"]["independent_reviewer_panel_decision"]["decision"] == "escalate"
+
+
+@pytest.mark.asyncio
+async def test_run_dual_agent_workflow_calibrated_correlated_accept_escalates(tmp_path):
+    calibration_path = _write_reviewer_panel_calibration(tmp_path, correlated=True)
+    server, state = _server(tmp_path, cursor_runner=_accepting_cursor_runner)
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Measured-correlated reviewer accepts should escalate.",
+        max_rounds_per_gate=1,
+        cursor_review=True,
+        reviewer_panel_calibration_path=str(calibration_path),
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert result["status"] == "blocked"
+    assert result["workflow_route"]["reviewer_panel_calibration_active"] is True
+    panel_decision = result["final_gate_result"]["independent_reviewer_panel_decision"]
+    assert panel_decision["aggregation_mode"] == "calibrated_weighted"
+    assert panel_decision["decision"] == "escalate"
+    assert panel_decision["reason"] == "calibrated_dependency_accept"
+    calibrated = panel_decision["calibrated_accept"]
+    assert calibrated["aggregate_confidence"] < calibrated["accept_confidence_threshold"]
+    assert {
+        item["reviewer_id"]: item["weight"]
+        for item in calibrated["weighted_inputs"]
+    } == {
+        "independent-reviewer-0": pytest.approx(0.05),
+        "independent-reviewer-1": pytest.approx(0.05),
+    }
+    assert result["final_gate_result"]["cursor_decision"] == "revise"
+    rounds = [
+        json.loads(row["payload_json"])["round"]
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "dual_agent_gate_round"
+    ]
+    assert rounds[-1]["objection"].startswith(
+        "independent_reviewer_calibrated_dependency_accept"
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_dual_agent_workflow_calibrated_independent_accept_advances(tmp_path):
+    calibration_path = _write_reviewer_panel_calibration(tmp_path, correlated=False)
+    server, _state = _server(tmp_path, cursor_runner=_accepting_cursor_runner)
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Effectively independent reviewer accepts should advance.",
+        max_rounds_per_gate=1,
+        cursor_review=True,
+        reviewer_panel_calibration_path=str(calibration_path),
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert result["status"] == "accepted"
+    panel_decision = result["final_gate_result"]["independent_reviewer_panel_decision"]
+    assert panel_decision["aggregation_mode"] == "calibrated_weighted"
+    assert panel_decision["decision"] == "accept"
+    assert panel_decision["reason"] == "all_available_reviewers_accept"
+    calibrated = panel_decision["calibrated_accept"]
+    assert calibrated["aggregate_confidence"] >= calibrated["accept_confidence_threshold"]
+    assert result["final_gate_result"]["cursor_decision"] == "accept"
+
+
+@pytest.mark.asyncio
+async def test_run_dual_agent_workflow_missing_calibration_falls_back_to_conservative(tmp_path):
+    missing_calibration = tmp_path / "docs" / "dual-agent" / "missing-calibration.json"
+    server, _state = _server(tmp_path, cursor_runner=_accepting_cursor_runner)
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Absent calibration must preserve conservative behavior.",
+        max_rounds_per_gate=1,
+        cursor_review=True,
+        reviewer_panel_calibration_path=str(missing_calibration),
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert result["status"] == "accepted"
+    assert result["workflow_route"]["reviewer_panel_calibration_active"] is False
+    panel_decision = result["final_gate_result"]["independent_reviewer_panel_decision"]
+    assert panel_decision["aggregation_mode"] == "conservative"
+    assert panel_decision["decision"] == "accept"
+    assert "calibration" not in panel_decision
+
+
+@pytest.mark.asyncio
+async def test_run_dual_agent_workflow_calibrated_real_revise_still_blocks(tmp_path):
+    calibration_path = _write_reviewer_panel_calibration(tmp_path, correlated=False)
+    server, _state = _server(
+        tmp_path,
+        cursor_runner=_accepting_cursor_runner,
+        codex_runner=_revising_codex_reviewer_runner,
+    )
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Real reviewer revise must hard block even under calibration.",
+        max_rounds_per_gate=1,
+        cursor_review=True,
+        reviewer_panel_calibration_path=str(calibration_path),
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert result["status"] == "blocked"
+    panel_decision = result["final_gate_result"]["independent_reviewer_panel_decision"]
+    assert panel_decision["aggregation_mode"] == "calibrated_weighted"
+    assert panel_decision["decision"] == "revise"
+    assert panel_decision["reason"] == "blocking_reviewer_objection"
+    assert "calibrated_accept" not in panel_decision
 
 
 @pytest.mark.asyncio

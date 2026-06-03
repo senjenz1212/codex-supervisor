@@ -665,7 +665,10 @@ def _run_litellm_structured(request: CursorInvocationRequest) -> tuple[str, dict
         raise RuntimeError("missing OPENAI_API_KEY for structured reviewer")
 
     prompt = build_cursor_prompt(request, compact=True)
-    client_kwargs: dict[str, Any] = {"api_key": api_key}
+    client_kwargs: dict[str, Any] = {
+        "api_key": api_key,
+        "timeout": max(1, int(request.timeout_s)),
+    }
     if base_url:
         client_kwargs["base_url"] = base_url
     client = OpenAI(**client_kwargs)
@@ -675,6 +678,7 @@ def _run_litellm_structured(request: CursorInvocationRequest) -> tuple[str, dict
         reviewer_model=request.reviewer_model,
         cursor_model=request.model,
     )
+    request_timeout = max(1, int(request.timeout_s))
     response = client.chat.completions.create(
         model=model,
         messages=[
@@ -697,6 +701,7 @@ def _run_litellm_structured(request: CursorInvocationRequest) -> tuple[str, dict
         },
         temperature=0,
         max_tokens=max(1, int(request.reviewer_max_tokens)),
+        timeout=request_timeout,
     )
     choice = response.choices[0]
     message = choice.message

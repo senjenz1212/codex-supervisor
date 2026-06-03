@@ -135,6 +135,7 @@ class SupervisorCfg(BaseModel):
     reviewer_infra_retry_limit: int = 2
     reviewer_infra_retry_backoff_s: float = 1.0
     reviewer_low_confidence_threshold: float = 0.0
+    reviewer_panel_calibration_path: str = ""
 
 
 class AgenticLeadCfg(BaseModel):

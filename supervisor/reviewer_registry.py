@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 import time
 from dataclasses import dataclass
@@ -90,6 +91,7 @@ class CodexCliReviewer:
                 argv,
                 cwd=str(Path(request.cwd).expanduser()),
                 capture_output=True,
+                stdin=subprocess.DEVNULL,
                 text=True,
                 timeout=request.timeout_s,
             )
@@ -338,9 +340,11 @@ def evaluate_reviewer_panel(
     results: list[dict[str, Any]] | tuple[dict[str, Any], ...],
     *,
     low_confidence_threshold: float = 0.0,
+    calibration: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Conservative non-weighted aggregation for independent reviewers."""
+    """Aggregate independent reviewers without weakening hard blocks."""
     threshold = _clamp_confidence(low_confidence_threshold)
+    active_calibration = _normalise_panel_calibration(calibration)
     reviewer_inputs = [_reviewer_input_summary(result) for result in results if isinstance(result, dict)]
     available_reviewers = [
         item["reviewer_id"]
@@ -398,11 +402,26 @@ def evaluate_reviewer_panel(
     elif low_confidence_reviewers:
         decision = "escalate"
         reason = "low_confidence_accept"
+    calibrated_accept: dict[str, Any] | None = None
+    if active_calibration is not None and not _calibration_covers_reviewer_inputs(
+        active_calibration,
+        reviewer_inputs,
+    ):
+        active_calibration = None
+    if decision == "accept" and active_calibration is not None and reviewer_inputs:
+        calibrated_accept = _calibrated_accept_summary(
+            reviewer_inputs,
+            calibration=active_calibration,
+        )
+        if calibrated_accept["aggregate_confidence"] < calibrated_accept["accept_confidence_threshold"]:
+            decision = "escalate"
+            reason = "calibrated_dependency_accept"
 
-    return {
+    payload = {
         "schema_version": "independent-reviewer-panel-decision/v1",
         "decision": decision,
         "reason": reason,
+        "aggregation_mode": "calibrated_weighted" if active_calibration is not None else "conservative",
         "low_confidence_threshold": threshold,
         "available_reviewers": available_reviewers,
         "accepted_reviewers": accepted_reviewers,
@@ -412,6 +431,53 @@ def evaluate_reviewer_panel(
         "low_confidence_reviewers": low_confidence_reviewers,
         "reviewer_inputs": reviewer_inputs,
     }
+    if active_calibration is not None:
+        payload["calibration"] = _calibration_decision_summary(active_calibration)
+    if calibrated_accept is not None:
+        payload["calibrated_accept"] = calibrated_accept
+    return payload
+
+
+def load_reviewer_panel_calibration(path: str | Path | None) -> dict[str, Any] | None:
+    if path is None or not str(path).strip():
+        return None
+    candidate = Path(path).expanduser()
+    if not candidate.exists() or not candidate.is_file():
+        return None
+    try:
+        payload = json.loads(candidate.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    payload = dict(payload)
+    payload["artifact_path"] = str(candidate)
+    return _normalise_panel_calibration(payload)
+
+
+def _calibration_covers_reviewer_inputs(
+    calibration: dict[str, Any],
+    reviewer_inputs: list[dict[str, Any]],
+) -> bool:
+    weights = calibration.get("reviewer_weights")
+    if not isinstance(weights, dict):
+        return False
+    reviewer_ids = {
+        str(item.get("reviewer_id") or "").strip()
+        for item in reviewer_inputs
+        if str(item.get("reviewer_id") or "").strip()
+    }
+    calibrated_ids = {
+        str(reviewer_id or "").strip()
+        for reviewer_id in weights
+        if str(reviewer_id or "").strip()
+    }
+    if reviewer_ids != calibrated_ids:
+        return False
+    expected_roster_sha = str(calibration.get("reviewer_roster_sha256") or "").strip()
+    if not _looks_like_sha256(expected_roster_sha):
+        return False
+    return _active_reviewer_roster_sha256(reviewer_inputs) == expected_roster_sha
 
 
 def adjudicate_reviewer_panel(
@@ -512,6 +578,297 @@ def adjudicate_reviewer_panel(
     }
 
 
+def _normalise_panel_calibration(calibration: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(calibration, dict):
+        return None
+    schema = str(calibration.get("schema_version") or "")
+    if schema != "reviewer-panel-calibration/v1":
+        return None
+    if not _looks_like_sha256(calibration.get("source_report_sha256")):
+        return None
+    if not _looks_like_sha256(calibration.get("labeled_set_sha256")):
+        return None
+    if not _looks_like_sha256(calibration.get("calibration_sha256")):
+        return None
+    if calibration.get("calibration_sha256") != _calibration_sha256(calibration):
+        return None
+    pairwise_dependency = calibration.get("pairwise_dependency")
+    if not isinstance(pairwise_dependency, dict) or not pairwise_dependency:
+        return None
+    if not _calibration_has_auditable_reviewer_provenance(
+        calibration.get("source_provenance")
+    ):
+        return None
+    if not _calibration_rows_match_declared_roster(
+        calibration.get("source_provenance")
+    ):
+        return None
+    weights = calibration.get("reviewer_weights")
+    if not isinstance(weights, dict) or not weights:
+        return None
+    normalised_weights: dict[str, dict[str, Any]] = {}
+    for reviewer_id, payload in weights.items():
+        if not isinstance(payload, dict):
+            continue
+        clean_id = str(payload.get("reviewer_id") or reviewer_id or "").strip()
+        if not clean_id:
+            continue
+        derived_from_pairwise = payload.get("derived_from_pairwise")
+        if not isinstance(derived_from_pairwise, list) or not derived_from_pairwise:
+            continue
+        pair_ids = {
+            str(source.get("pair_id") or "")
+            for source in derived_from_pairwise
+            if isinstance(source, dict)
+        }
+        if not pair_ids or not any(pair_id in pairwise_dependency for pair_id in pair_ids):
+            continue
+        weight = _coerce_confidence(payload.get("weight"))
+        dependency_score = _coerce_confidence(payload.get("dependency_score"))
+        if weight is None or dependency_score is None:
+            continue
+        expected_dependency = _derived_dependency_from_pairwise(
+            derived_from_pairwise,
+            pairwise_dependency=pairwise_dependency,
+        )
+        if expected_dependency is None:
+            continue
+        if not _close_confidence(dependency_score, expected_dependency):
+            continue
+        expected_weight = _expected_reviewer_weight(expected_dependency)
+        if not _close_confidence(weight, expected_weight):
+            continue
+        normalised_weights[clean_id] = {
+            **payload,
+            "reviewer_id": clean_id,
+            "weight": expected_weight,
+            "dependency_score": expected_dependency,
+        }
+    if not normalised_weights:
+        return None
+    threshold = _coerce_confidence(calibration.get("accept_confidence_threshold"))
+    return {
+        **calibration,
+        "reviewer_weights": normalised_weights,
+        "accept_confidence_threshold": 0.7 if threshold is None else threshold,
+    }
+
+
+def _calibration_has_auditable_reviewer_provenance(provenance: Any) -> bool:
+    if not isinstance(provenance, dict):
+        return False
+    real_count = _coerce_nonnegative_int(provenance.get("real_reviewer_output_count"))
+    auditable_count = _coerce_nonnegative_int(
+        provenance.get("auditable_real_output_count")
+    )
+    fixture_count = _coerce_nonnegative_int(provenance.get("fixture_row_count"))
+    transcript_ref_count = _coerce_nonnegative_int(
+        provenance.get("transcript_ref_count")
+    )
+    source_trace_paths = provenance.get("source_trace_paths")
+    source_event_ids = provenance.get("source_event_ids")
+    return bool(
+        real_count is not None
+        and auditable_count is not None
+        and fixture_count == 0
+        and real_count > 0
+        and auditable_count == real_count
+        and transcript_ref_count is not None
+        and transcript_ref_count >= real_count
+        and isinstance(source_trace_paths, list)
+        and source_trace_paths
+        and isinstance(source_event_ids, list)
+        and source_event_ids
+    )
+
+
+def _calibration_rows_match_declared_roster(provenance: Any) -> bool:
+    if not isinstance(provenance, dict):
+        return False
+    consistency = provenance.get("row_roster_consistency")
+    if not isinstance(consistency, dict):
+        return False
+    mismatched = _coerce_nonnegative_int(consistency.get("mismatched_row_count"))
+    return bool(
+        consistency.get("all_rows_match_reviewer_roster") is True
+        and mismatched == 0
+    )
+
+
+def _calibration_sha256(calibration: dict[str, Any]) -> str:
+    stable = {
+        key: value
+        for key, value in calibration.items()
+        if key != "artifact_path"
+    }
+    stable["calibration_sha256"] = ""
+    return hashlib.sha256(
+        json.dumps(
+            stable,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _active_reviewer_roster_sha256(reviewer_inputs: list[dict[str, Any]]) -> str:
+    roster = [
+        {
+            "reviewer_id": str(item.get("reviewer_id") or "").strip(),
+            "runtime": str(item.get("runtime") or "unknown"),
+            "model": item.get("model"),
+            "provider_family": str(item.get("provider_family") or "unknown"),
+            "lineage": list(item.get("lineage") or []),
+            "tool_access": str(item.get("tool_access") or "unknown"),
+            "assurance_grade": str(item.get("assurance_grade") or "self_reported"),
+        }
+        for item in reviewer_inputs
+        if str(item.get("reviewer_id") or "").strip()
+    ]
+    return _sha256_json(sorted(roster, key=lambda item: item["reviewer_id"]))
+
+
+def _sha256_json(value: Any) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _looks_like_sha256(value: Any) -> bool:
+    return bool(re.fullmatch(r"[0-9a-f]{64}", str(value or "")))
+
+
+def _coerce_nonnegative_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value >= 0 else None
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number >= 0 else None
+
+
+def _derived_dependency_from_pairwise(
+    derived_from_pairwise: list[Any],
+    *,
+    pairwise_dependency: dict[str, Any],
+) -> float | None:
+    scores: list[float] = []
+    for source in derived_from_pairwise:
+        if not isinstance(source, dict):
+            return None
+        pair_id = str(source.get("pair_id") or "")
+        pair_payload = pairwise_dependency.get(pair_id)
+        if not isinstance(pair_payload, dict):
+            return None
+        pair_score = _coerce_confidence(pair_payload.get("dependency_score"))
+        source_score = _coerce_confidence(source.get("dependency_score"))
+        if pair_score is None or source_score is None:
+            return None
+        if not _close_confidence(pair_score, source_score):
+            return None
+        scores.append(pair_score)
+    if not scores:
+        return None
+    return round(max(scores), 6)
+
+
+def _expected_reviewer_weight(dependency_score: float) -> float:
+    return round(max(0.05, 1.0 - _clamp_confidence(dependency_score)), 6)
+
+
+def _close_confidence(left: float, right: float) -> bool:
+    return abs(float(left) - float(right)) <= 0.000001
+
+
+def _calibrated_accept_summary(
+    reviewer_inputs: list[dict[str, Any]],
+    *,
+    calibration: dict[str, Any],
+) -> dict[str, Any]:
+    weights = calibration["reviewer_weights"]
+    threshold = float(calibration["accept_confidence_threshold"])
+    weighted_inputs: list[dict[str, Any]] = []
+    weighted_confidence_sum = 0.0
+    for item in reviewer_inputs:
+        reviewer_id = item["reviewer_id"]
+        weight_payload = weights.get(reviewer_id, {})
+        weight = _clamp_confidence(float(weight_payload.get("weight", 1.0)))
+        confidence = item["confidence"] if item["confidence"] is not None else 1.0
+        severity = str(item.get("severity") or "none").strip().lower()
+        severity_multiplier = _accept_severity_multiplier(severity)
+        contribution = weight * _clamp_confidence(float(confidence)) * severity_multiplier
+        weighted_confidence_sum += contribution
+        weighted_inputs.append({
+            "reviewer_id": reviewer_id,
+            "confidence": _clamp_confidence(float(confidence)),
+            "severity": severity,
+            "severity_multiplier": severity_multiplier,
+            "weight": weight,
+            "weighted_confidence": round(contribution, 6),
+            "dependency_score": _clamp_confidence(float(weight_payload.get("dependency_score", 0.0))),
+            "provider_family": item.get("provider_family"),
+        })
+    denominator = max(1, len(reviewer_inputs))
+    aggregate = weighted_confidence_sum / denominator
+    return {
+        "schema_version": "independent-reviewer-calibrated-accept/v1",
+        "aggregate_confidence": round(aggregate, 6),
+        "accept_confidence_threshold": threshold,
+        "decision": "accept" if aggregate >= threshold else "escalate",
+        "weighted_inputs": weighted_inputs,
+        "source_calibration_sha256": calibration.get("calibration_sha256"),
+        "source_report_sha256": calibration.get("source_report_sha256"),
+    }
+
+
+def _accept_severity_multiplier(severity: str) -> float:
+    rank = _severity_rank(severity)
+    if rank >= _severity_rank("critical"):
+        return 0.35
+    if rank >= _severity_rank("important"):
+        return 0.65
+    if rank >= _severity_rank("medium"):
+        return 0.85
+    if rank >= _severity_rank("low"):
+        return 0.95
+    return 1.0
+
+
+def _calibration_decision_summary(calibration: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "schema_version": calibration.get("schema_version"),
+        "active": True,
+        "artifact_path": calibration.get("artifact_path"),
+        "calibration_sha256": calibration.get("calibration_sha256"),
+        "source_report_sha256": calibration.get("source_report_sha256"),
+        "labeled_set_sha256": calibration.get("labeled_set_sha256"),
+        "reviewer_roster_sha256": calibration.get("reviewer_roster_sha256"),
+        "source_provenance": calibration.get("source_provenance"),
+        "reviewer_weights": {
+            reviewer_id: {
+                "weight": payload.get("weight"),
+                "dependency_score": payload.get("dependency_score"),
+                "provider_family": payload.get("provider_family"),
+                "runtime": payload.get("runtime"),
+                "model": payload.get("model"),
+            }
+            for reviewer_id, payload in sorted(calibration["reviewer_weights"].items())
+        },
+        "accept_confidence_threshold": calibration.get("accept_confidence_threshold"),
+    }
+
+
 def _reviewer_input_summary(result: dict[str, Any]) -> dict[str, Any]:
     reviewer_id = str(result.get("reviewer_id") or "unknown-reviewer")
     decision = str(result.get("decision") or "").strip().lower()
@@ -528,6 +885,8 @@ def _reviewer_input_summary(result: dict[str, Any]) -> dict[str, Any]:
         "runtime": result.get("runtime") or result.get("reviewer_runtime"),
         "model": result.get("model"),
         "provider_family": result.get("provider_family"),
+        "lineage": list(result.get("lineage") or []),
+        "tool_access": result.get("tool_access"),
         "assurance_grade": result.get("assurance_grade"),
     }
 

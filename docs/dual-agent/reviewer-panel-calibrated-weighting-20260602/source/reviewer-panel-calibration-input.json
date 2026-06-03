@@ -1,0 +1,577 @@
+{
+  "cassettes": [
+    {
+      "assurance_grade": "text_only",
+      "cassette_id": "real-437877-independent-reviewer-0-accept",
+      "confidence": 0.95,
+      "cost_usd": 0.0,
+      "decision": "accept",
+      "failure_classification": null,
+      "gate": "tdd_review",
+      "input_sha256": "b191f1721eb9272f53a757ce0ceaac03a5574a13f4ee9054193b9d9e36b0a69b",
+      "latency_ms": 0,
+      "lineage": [
+        "google",
+        "litellm_structured",
+        "gemini-3.1-pro-preview"
+      ],
+      "model": "gemini-3.1-pro-preview",
+      "output_sha256": "8adcc4b4682439594995c193e5b9a24a9ac2a9564b8883ece5f21c71b068e425",
+      "provider_family": "google",
+      "reviewer_id": "independent-reviewer-0",
+      "runtime": "litellm_structured",
+      "severity": "low",
+      "source_event_id": 437877,
+      "source_kind": "workflow_transcript_event",
+      "source_panel_decision": "accept",
+      "source_panel_reason": "all_available_reviewers_accept",
+      "source_payload_sha256": "b191f1721eb9272f53a757ce0ceaac03a5574a13f4ee9054193b9d9e36b0a69b",
+      "source_trace_path": "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl",
+      "task_id": "reviewer-panel-adjudication-20260601-tdd_review-437877",
+      "tool_access": "text_only",
+      "transcript_refs": [
+        {
+          "chars": 3359,
+          "kind": "reviewer_transcript_tail",
+          "ref": "independent_reviewer_review:reviewer-panel-adjudication-20260601:tdd_review:1:independent-reviewer-0"
+        },
+        {
+          "kind": "workflow_transcript_event",
+          "ref": "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl#event_id=437877;reviewer_id=independent-reviewer-0"
+        }
+      ],
+      "transcript_sha256": "1776cb36f3dda126b2201da68c05d5f20d573145be491e09a2bbc628d5d876da",
+      "verdict_present": true
+    },
+    {
+      "assurance_grade": "agentic",
+      "cassette_id": "real-437877-independent-reviewer-1-accept",
+      "confidence": 0.81,
+      "cost_usd": 0.0,
+      "decision": "accept",
+      "failure_classification": null,
+      "gate": "tdd_review",
+      "input_sha256": "b191f1721eb9272f53a757ce0ceaac03a5574a13f4ee9054193b9d9e36b0a69b",
+      "latency_ms": 0,
+      "lineage": [
+        "openai",
+        "codex_cli",
+        "gpt-5.5"
+      ],
+      "model": "gpt-5.5",
+      "output_sha256": "f646663eec84c912cc156faa9b2258e37bd15e17a4227fa0dcb7cac58467b961",
+      "provider_family": "openai",
+      "reviewer_id": "independent-reviewer-1",
+      "runtime": "codex_cli",
+      "severity": "medium",
+      "source_event_id": 437877,
+      "source_kind": "workflow_transcript_event",
+      "source_panel_decision": "accept",
+      "source_panel_reason": "all_available_reviewers_accept",
+      "source_payload_sha256": "b191f1721eb9272f53a757ce0ceaac03a5574a13f4ee9054193b9d9e36b0a69b",
+      "source_trace_path": "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl",
+      "task_id": "reviewer-panel-adjudication-20260601-tdd_review-437877",
+      "tool_access": "codebase_tools",
+      "transcript_refs": [
+        {
+          "chars": 4000,
+          "kind": "reviewer_transcript_tail",
+          "ref": "independent_reviewer_review:reviewer-panel-adjudication-20260601:tdd_review:1:independent-reviewer-1"
+        },
+        {
+          "kind": "workflow_transcript_event",
+          "ref": "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl#event_id=437877;reviewer_id=independent-reviewer-1"
+        }
+      ],
+      "transcript_sha256": "2a91c146926baeefb29e0dac7f3d7fdf11541bf72daa0481dc70d2c306aa45b2",
+      "verdict_present": true
+    },
+    {
+      "assurance_grade": "text_only",
+      "cassette_id": "real-438129-independent-reviewer-0-accept",
+      "confidence": 1.0,
+      "cost_usd": 0.0,
+      "decision": "accept",
+      "failure_classification": null,
+      "gate": "implementation_plan",
+      "input_sha256": "5eee310ab78d768cd430bd49f4d42a97d1f8d6629b4cd0377d6d7528a93c3104",
+      "latency_ms": 0,
+      "lineage": [
+        "google",
+        "litellm_structured",
+        "gemini-3.1-pro-preview"
+      ],
+      "model": "gemini-3.1-pro-preview",
+      "output_sha256": "dae9c1cd422df9dd3df28e91084ec6d683bd88ad7810c9b9f21e8790789b4d52",
+      "provider_family": "google",
+      "reviewer_id": "independent-reviewer-0",
+      "runtime": "litellm_structured",
+      "severity": "low",
+      "source_event_id": 438129,
+      "source_kind": "workflow_transcript_event",
+      "source_panel_decision": "accept",
+      "source_panel_reason": "all_available_reviewers_accept",
+      "source_payload_sha256": "5eee310ab78d768cd430bd49f4d42a97d1f8d6629b4cd0377d6d7528a93c3104",
+      "source_trace_path": "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl",
+      "task_id": "reviewer-panel-adjudication-20260601-implementation_plan-438129",
+      "tool_access": "text_only",
+      "transcript_refs": [
+        {
+          "chars": 3082,
+          "kind": "reviewer_transcript_tail",
+          "ref": "independent_reviewer_review:reviewer-panel-adjudication-20260601:implementation_plan:1:independent-reviewer-0"
+        },
+        {
+          "kind": "workflow_transcript_event",
+          "ref": "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl#event_id=438129;reviewer_id=independent-reviewer-0"
+        }
+      ],
+      "transcript_sha256": "450bd2b7f545563984b63b9e6a5cbe4b7d17d3267aaee3c5f13c2aab3001b277",
+      "verdict_present": true
+    },
+    {
+      "assurance_grade": "agentic",
+      "cassette_id": "real-438129-independent-reviewer-1-accept",
+      "confidence": 0.86,
+      "cost_usd": 0.0,
+      "decision": "accept",
+      "failure_classification": null,
+      "gate": "implementation_plan",
+      "input_sha256": "5eee310ab78d768cd430bd49f4d42a97d1f8d6629b4cd0377d6d7528a93c3104",
+      "latency_ms": 0,
+      "lineage": [
+        "openai",
+        "codex_cli",
+        "gpt-5.5"
+      ],
+      "model": "gpt-5.5",
+      "output_sha256": "b3d1c0202c4afab9e7688c2a6f448958f8710db4dfc91b87c0dfb8cd75c541f7",
+      "provider_family": "openai",
+      "reviewer_id": "independent-reviewer-1",
+      "runtime": "codex_cli",
+      "severity": "low",
+      "source_event_id": 438129,
+      "source_kind": "workflow_transcript_event",
+      "source_panel_decision": "accept",
+      "source_panel_reason": "all_available_reviewers_accept",
+      "source_payload_sha256": "5eee310ab78d768cd430bd49f4d42a97d1f8d6629b4cd0377d6d7528a93c3104",
+      "source_trace_path": "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl",
+      "task_id": "reviewer-panel-adjudication-20260601-implementation_plan-438129",
+      "tool_access": "codebase_tools",
+      "transcript_refs": [
+        {
+          "chars": 4000,
+          "kind": "reviewer_transcript_tail",
+          "ref": "independent_reviewer_review:reviewer-panel-adjudication-20260601:implementation_plan:1:independent-reviewer-1"
+        },
+        {
+          "kind": "workflow_transcript_event",
+          "ref": "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl#event_id=438129;reviewer_id=independent-reviewer-1"
+        }
+      ],
+      "transcript_sha256": "e5cf42e73676fd885a026198debca68e9e7011c83eb6ad1be4ac9d309961cda4",
+      "verdict_present": true
+    },
+    {
+      "assurance_grade": "text_only",
+      "cassette_id": "real-438414-independent-reviewer-0-accept",
+      "confidence": 0.95,
+      "cost_usd": 0.0,
+      "decision": "accept",
+      "failure_classification": null,
+      "gate": "outcome_review",
+      "input_sha256": "a604cfb4927a718eaa676af9b5a59462f4d4adfa334f19bbbb1aa99b56d074e6",
+      "latency_ms": 0,
+      "lineage": [
+        "google",
+        "litellm_structured",
+        "gemini-3.1-pro-preview"
+      ],
+      "model": "gemini-3.1-pro-preview",
+      "output_sha256": "0be7eeba1b788df02c93037fb141827c937a5d8667479e74458813f9f11bac19",
+      "provider_family": "google",
+      "reviewer_id": "independent-reviewer-0",
+      "runtime": "litellm_structured",
+      "severity": "low",
+      "source_event_id": 438414,
+      "source_kind": "workflow_transcript_event",
+      "source_panel_decision": "accept",
+      "source_panel_reason": "all_available_reviewers_accept",
+      "source_payload_sha256": "a604cfb4927a718eaa676af9b5a59462f4d4adfa334f19bbbb1aa99b56d074e6",
+      "source_trace_path": "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl",
+      "task_id": "reviewer-panel-adjudication-20260601-outcome_review-438414",
+      "tool_access": "text_only",
+      "transcript_refs": [
+        {
+          "chars": 2469,
+          "kind": "reviewer_transcript_tail",
+          "ref": "independent_reviewer_review:reviewer-panel-adjudication-20260601:outcome_review:1:independent-reviewer-0"
+        },
+        {
+          "kind": "workflow_transcript_event",
+          "ref": "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl#event_id=438414;reviewer_id=independent-reviewer-0"
+        }
+      ],
+      "transcript_sha256": "ea3855ff3243fad99322dcd1e674153bf57dfb4e97f68e7e2b136c69389dbdc6",
+      "verdict_present": true
+    },
+    {
+      "assurance_grade": "agentic",
+      "cassette_id": "real-438414-independent-reviewer-1-accept",
+      "confidence": 0.88,
+      "cost_usd": 0.0,
+      "decision": "accept",
+      "failure_classification": null,
+      "gate": "outcome_review",
+      "input_sha256": "a604cfb4927a718eaa676af9b5a59462f4d4adfa334f19bbbb1aa99b56d074e6",
+      "latency_ms": 0,
+      "lineage": [
+        "openai",
+        "codex_cli",
+        "gpt-5.5"
+      ],
+      "model": "gpt-5.5",
+      "output_sha256": "17a3cccc39f6e6da322831d0e2595126822407b2e84daac698f91c9d278ad83a",
+      "provider_family": "openai",
+      "reviewer_id": "independent-reviewer-1",
+      "runtime": "codex_cli",
+      "severity": "low",
+      "source_event_id": 438414,
+      "source_kind": "workflow_transcript_event",
+      "source_panel_decision": "accept",
+      "source_panel_reason": "all_available_reviewers_accept",
+      "source_payload_sha256": "a604cfb4927a718eaa676af9b5a59462f4d4adfa334f19bbbb1aa99b56d074e6",
+      "source_trace_path": "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl",
+      "task_id": "reviewer-panel-adjudication-20260601-outcome_review-438414",
+      "tool_access": "codebase_tools",
+      "transcript_refs": [
+        {
+          "chars": 4000,
+          "kind": "reviewer_transcript_tail",
+          "ref": "independent_reviewer_review:reviewer-panel-adjudication-20260601:outcome_review:1:independent-reviewer-1"
+        },
+        {
+          "kind": "workflow_transcript_event",
+          "ref": "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl#event_id=438414;reviewer_id=independent-reviewer-1"
+        }
+      ],
+      "transcript_sha256": "2b39ad900482658125d1d498d54bd93103f1f926135092945b55ca12827ca3a9",
+      "verdict_present": true
+    },
+    {
+      "assurance_grade": "text_only",
+      "cassette_id": "real-441847-independent-reviewer-0-accept",
+      "confidence": 0.95,
+      "cost_usd": 0.0,
+      "decision": "accept",
+      "failure_classification": null,
+      "gate": "tdd_review",
+      "input_sha256": "35f2f2345164491b16ce27dd719a31a6d68505cf6af559f5d7c45a191cce80bd",
+      "latency_ms": 0,
+      "lineage": [
+        "google",
+        "litellm_structured",
+        "gemini-3.1-pro-preview"
+      ],
+      "model": "gemini-3.1-pro-preview",
+      "output_sha256": "3c40f4d452819af229f11127463a401ff7240ed362cb79eacebe63321f56c405",
+      "provider_family": "google",
+      "reviewer_id": "independent-reviewer-0",
+      "runtime": "litellm_structured",
+      "severity": "none",
+      "source_event_id": 441847,
+      "source_kind": "workflow_transcript_event",
+      "source_panel_decision": "revise",
+      "source_panel_reason": "blocking_reviewer_objection",
+      "source_payload_sha256": "35f2f2345164491b16ce27dd719a31a6d68505cf6af559f5d7c45a191cce80bd",
+      "source_trace_path": "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/transcript.jsonl",
+      "task_id": "reviewer-panel-calibrated-weighting-20260602-tdd_review-441847",
+      "tool_access": "text_only",
+      "transcript_refs": [
+        {
+          "chars": 4000,
+          "kind": "reviewer_transcript_tail",
+          "ref": "independent_reviewer_review:reviewer-panel-calibrated-weighting-20260602:tdd_review:1:independent-reviewer-0"
+        },
+        {
+          "kind": "workflow_transcript_event",
+          "ref": "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/transcript.jsonl#event_id=441847;reviewer_id=independent-reviewer-0"
+        }
+      ],
+      "transcript_sha256": "564bd763fa17cca0ad4dc9a9d738806d8acc68a25831d7616f09eb7cce79d850",
+      "verdict_present": true
+    },
+    {
+      "assurance_grade": "agentic",
+      "cassette_id": "real-441847-independent-reviewer-1-revise",
+      "confidence": 0.78,
+      "cost_usd": 0.0,
+      "decision": "revise",
+      "failure_classification": null,
+      "gate": "tdd_review",
+      "input_sha256": "35f2f2345164491b16ce27dd719a31a6d68505cf6af559f5d7c45a191cce80bd",
+      "latency_ms": 0,
+      "lineage": [
+        "openai",
+        "codex_cli",
+        "gpt-5.5"
+      ],
+      "model": "gpt-5.5",
+      "output_sha256": "6e4856bc0f9d67b92f37c78aee9505e93d8c8bd5fc26e82b1aaafbd2faae674f",
+      "provider_family": "openai",
+      "reviewer_id": "independent-reviewer-1",
+      "runtime": "codex_cli",
+      "severity": "important",
+      "source_event_id": 441847,
+      "source_kind": "workflow_transcript_event",
+      "source_panel_decision": "revise",
+      "source_panel_reason": "blocking_reviewer_objection",
+      "source_payload_sha256": "35f2f2345164491b16ce27dd719a31a6d68505cf6af559f5d7c45a191cce80bd",
+      "source_trace_path": "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/transcript.jsonl",
+      "task_id": "reviewer-panel-calibrated-weighting-20260602-tdd_review-441847",
+      "tool_access": "codebase_tools",
+      "transcript_refs": [
+        {
+          "chars": 4000,
+          "kind": "reviewer_transcript_tail",
+          "ref": "independent_reviewer_review:reviewer-panel-calibrated-weighting-20260602:tdd_review:1:independent-reviewer-1"
+        },
+        {
+          "kind": "workflow_transcript_event",
+          "ref": "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/transcript.jsonl#event_id=441847;reviewer_id=independent-reviewer-1"
+        }
+      ],
+      "transcript_sha256": "8cba038dc1b720ac93e9c4f45e6db5adc4c933091a64f9265e33a200030d8d96",
+      "verdict_present": true
+    },
+    {
+      "assurance_grade": "text_only",
+      "cassette_id": "real-434754-independent-reviewer-0-accept",
+      "confidence": 0.95,
+      "cost_usd": 0.0,
+      "decision": "accept",
+      "failure_classification": null,
+      "gate": "tdd_review",
+      "input_sha256": "9658d6bcb056ce5a1903525c6934483e7f05cc16ebf140b8b89b3f7cbb7c4633",
+      "latency_ms": 0,
+      "lineage": [
+        "google",
+        "litellm_structured",
+        "gemini-3.1-pro-preview"
+      ],
+      "model": "gemini-3.1-pro-preview",
+      "output_sha256": "6c059060359d0848bf1cb3d43a0ee059cc1a004ca52db62fb375e403ee6d8bb4",
+      "provider_family": "google",
+      "reviewer_id": "independent-reviewer-0",
+      "runtime": "litellm_structured",
+      "severity": "low",
+      "source_event_id": 434754,
+      "source_kind": "workflow_transcript_event",
+      "source_panel_decision": "accept",
+      "source_panel_reason": "all_available_reviewers_accept",
+      "source_payload_sha256": "9658d6bcb056ce5a1903525c6934483e7f05cc16ebf140b8b89b3f7cbb7c4633",
+      "source_trace_path": "docs/dual-agent/reviewer-panel-eval-runner-20260601/transcript.jsonl",
+      "task_id": "reviewer-panel-eval-runner-20260601-tdd_review-434754",
+      "tool_access": "text_only",
+      "transcript_refs": [
+        {
+          "chars": 3167,
+          "kind": "reviewer_transcript_tail",
+          "ref": "independent_reviewer_review:reviewer-panel-eval-runner-20260601:tdd_review:1:independent-reviewer-0"
+        },
+        {
+          "kind": "workflow_transcript_event",
+          "ref": "docs/dual-agent/reviewer-panel-eval-runner-20260601/transcript.jsonl#event_id=434754;reviewer_id=independent-reviewer-0"
+        }
+      ],
+      "transcript_sha256": "b45bdb2640e13d1823bf1318e3f03076562a6250b4bb12e2c51d04ebfcd87280",
+      "verdict_present": true
+    },
+    {
+      "assurance_grade": "agentic",
+      "cassette_id": "real-434754-independent-reviewer-1-accept",
+      "confidence": 0.82,
+      "cost_usd": 0.0,
+      "decision": "accept",
+      "failure_classification": null,
+      "gate": "tdd_review",
+      "input_sha256": "9658d6bcb056ce5a1903525c6934483e7f05cc16ebf140b8b89b3f7cbb7c4633",
+      "latency_ms": 0,
+      "lineage": [
+        "openai",
+        "codex_cli",
+        "gpt-5.5"
+      ],
+      "model": "gpt-5.5",
+      "output_sha256": "20f3384fe10ecdbe719aa5a3037d1f3434957ee208b61640c4b9e60e0903c211",
+      "provider_family": "openai",
+      "reviewer_id": "independent-reviewer-1",
+      "runtime": "codex_cli",
+      "severity": "low",
+      "source_event_id": 434754,
+      "source_kind": "workflow_transcript_event",
+      "source_panel_decision": "accept",
+      "source_panel_reason": "all_available_reviewers_accept",
+      "source_payload_sha256": "9658d6bcb056ce5a1903525c6934483e7f05cc16ebf140b8b89b3f7cbb7c4633",
+      "source_trace_path": "docs/dual-agent/reviewer-panel-eval-runner-20260601/transcript.jsonl",
+      "task_id": "reviewer-panel-eval-runner-20260601-tdd_review-434754",
+      "tool_access": "codebase_tools",
+      "transcript_refs": [
+        {
+          "chars": 4000,
+          "kind": "reviewer_transcript_tail",
+          "ref": "independent_reviewer_review:reviewer-panel-eval-runner-20260601:tdd_review:1:independent-reviewer-1"
+        },
+        {
+          "kind": "workflow_transcript_event",
+          "ref": "docs/dual-agent/reviewer-panel-eval-runner-20260601/transcript.jsonl#event_id=434754;reviewer_id=independent-reviewer-1"
+        }
+      ],
+      "transcript_sha256": "7a7706d9aa8d799fca5354d6a389577bfd680dbd4bf8c31600553627dc753aba",
+      "verdict_present": true
+    }
+  ],
+  "labeled_tasks": [
+    {
+      "evidence_ref": "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl#event_id=437877",
+      "gate": "tdd_review",
+      "input_sha256": "b191f1721eb9272f53a757ce0ceaac03a5574a13f4ee9054193b9d9e36b0a69b",
+      "label": "accept_allowed",
+      "task_id": "reviewer-panel-adjudication-20260601-tdd_review-437877"
+    },
+    {
+      "evidence_ref": "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl#event_id=438129",
+      "gate": "implementation_plan",
+      "input_sha256": "5eee310ab78d768cd430bd49f4d42a97d1f8d6629b4cd0377d6d7528a93c3104",
+      "label": "accept_allowed",
+      "task_id": "reviewer-panel-adjudication-20260601-implementation_plan-438129"
+    },
+    {
+      "evidence_ref": "docs/dual-agent/reviewer-panel-adjudication-20260601/transcript.jsonl#event_id=438414",
+      "gate": "outcome_review",
+      "input_sha256": "a604cfb4927a718eaa676af9b5a59462f4d4adfa334f19bbbb1aa99b56d074e6",
+      "label": "accept_allowed",
+      "task_id": "reviewer-panel-adjudication-20260601-outcome_review-438414"
+    },
+    {
+      "evidence_ref": "docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/transcript.jsonl#event_id=441847",
+      "gate": "tdd_review",
+      "input_sha256": "35f2f2345164491b16ce27dd719a31a6d68505cf6af559f5d7c45a191cce80bd",
+      "label": "block_required",
+      "task_id": "reviewer-panel-calibrated-weighting-20260602-tdd_review-441847"
+    },
+    {
+      "evidence_ref": "docs/dual-agent/reviewer-panel-eval-runner-20260601/transcript.jsonl#event_id=434754",
+      "gate": "tdd_review",
+      "input_sha256": "9658d6bcb056ce5a1903525c6934483e7f05cc16ebf140b8b89b3f7cbb7c4633",
+      "label": "accept_allowed",
+      "task_id": "reviewer-panel-eval-runner-20260601-tdd_review-434754"
+    }
+  ],
+  "reviewers": [
+    {
+      "assurance_grade": "text_only",
+      "lineage": [
+        "google",
+        "litellm_structured",
+        "gemini-3.1-pro-preview"
+      ],
+      "model": "gemini-3.1-pro-preview",
+      "provider_family": "google",
+      "reviewer_id": "independent-reviewer-0",
+      "runtime": "litellm_structured",
+      "tool_access": "text_only"
+    },
+    {
+      "assurance_grade": "agentic",
+      "lineage": [
+        "openai",
+        "codex_cli",
+        "gpt-5.5"
+      ],
+      "model": "gpt-5.5",
+      "provider_family": "openai",
+      "reviewer_id": "independent-reviewer-1",
+      "runtime": "codex_cli",
+      "tool_access": "codebase_tools"
+    }
+  ],
+  "schema_version": "reviewer-panel-real-calibration-input/v1",
+  "selection": {
+    "accept_allowed_count": 4,
+    "block_required_count": 4,
+    "event_ids": [
+      437877,
+      438129,
+      438414,
+      440052,
+      440801,
+      441127,
+      441847,
+      434754
+    ],
+    "roster_filter": {
+      "compared_fields": [
+        "runtime",
+        "model",
+        "provider_family",
+        "lineage",
+        "tool_access",
+        "assurance_grade"
+      ],
+      "excluded_task_count": 3,
+      "excluded_tasks": [
+        {
+          "gate": "tdd_review",
+          "label": "block_required",
+          "mismatched_reviewers": [
+            "independent-reviewer-0"
+          ],
+          "reason": "reviewer_row_roster_mismatch",
+          "source_event_ids": [
+            "440052"
+          ],
+          "task_id": "reviewer-panel-calibrated-weighting-20260602-tdd_review-440052"
+        },
+        {
+          "gate": "tdd_review",
+          "label": "block_required",
+          "mismatched_reviewers": [
+            "independent-reviewer-0"
+          ],
+          "reason": "reviewer_row_roster_mismatch",
+          "source_event_ids": [
+            "440801"
+          ],
+          "task_id": "reviewer-panel-calibrated-weighting-20260602-tdd_review-440801"
+        },
+        {
+          "gate": "tdd_review",
+          "label": "block_required",
+          "mismatched_reviewers": [
+            "independent-reviewer-0"
+          ],
+          "reason": "reviewer_row_roster_mismatch",
+          "source_event_ids": [
+            "441127"
+          ],
+          "task_id": "reviewer-panel-calibrated-weighting-20260602-tdd_review-441127"
+        }
+      ],
+      "kept_cassette_count": 10,
+      "kept_task_count": 5,
+      "label_counts_after_filter": {
+        "accept_allowed": 4,
+        "block_required": 1
+      },
+      "policy": "active_calibration_uses_only_rows_matching_declared_reviewer_roster",
+      "schema_version": "reviewer-panel-calibration-roster-filter/v1"
+    },
+    "task_dirs": [
+      "reviewer-panel-adjudication-20260601",
+      "reviewer-panel-calibrated-weighting-20260602",
+      "reviewer-panel-eval-runner-20260601"
+    ]
+  },
+  "source": "supervised_workflow_transcript_events"
+}

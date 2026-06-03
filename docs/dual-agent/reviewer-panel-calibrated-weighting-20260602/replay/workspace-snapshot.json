@@ -1,0 +1,24 @@
+{
+  "file_tree_sha256": "75bb2ccd474e31fbe6ba8eca34eb2deb59a363b2b9f8807c4ecb828fe7379218",
+  "git": {
+    "diff_bytes": 67469,
+    "diff_sha256": "d75bb559529493e9674c3b117b9768ad74afd9e662020670661f264eeea8fdc4",
+    "diff_stat": "config.example.yaml                        |   4 +\n mcp_tools/codex_supervisor_stdio.py        |  54 +++++\n mcp_tools/codex_supervisor_workflow_cli.py |   1 +\n supervisor/config.py                       |   1 +\n supervisor/cursor_agent.py                 |   7 +-\n supervisor/reviewer_panel_eval.py          | 347 ++++++++++++++++++++++++++-\n supervisor/reviewer_registry.py            | 363 ++++++++++++++++++++++++++++-\n tests/test_cursor_agent.py                 |   2 +\n tests/test_dual_agent_workflow_driver.py   | 237 ++++++++++++++++++-\n tests/test_reviewer_panel_eval_runner.py   | 130 ++++++++++-\n 10 files changed, 1137 insertions(+), 9 deletions(-)",
+    "head": "c5debfa",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "c5debfa",
+    "status_short": "M config.example.yaml\n M mcp_tools/codex_supervisor_stdio.py\n M mcp_tools/codex_supervisor_workflow_cli.py\n M supervisor/config.py\n M supervisor/cursor_agent.py\n M supervisor/reviewer_panel_eval.py\n M supervisor/reviewer_registry.py\n M tests/test_cursor_agent.py\n M tests/test_dual_agent_workflow_driver.py\n M tests/test_reviewer_panel_eval_runner.py\n?? docs/dual-agent/reviewer-panel-calibrated-weighting-20260602/\n?? tests/test_reviewer_panel_aggregation.py"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "19550d55429c575d8be62ab54c1bc541731c8b6f3aa16e97fed795fb1ff77706",
+    "implementation_plan": "fafdcc3063ec3acaaa53289b1a3827cd146713eedd1a2cfc1231a2888b64cc81",
+    "issues": "0172935c882a582d2f46e7c3015784d9f3453fff6ac7a9cf49e9c26f3f06b83d",
+    "other": "e2cdc92e8e11365fcef33136f7d1c5d90ec5b2ef6e3880fa150d10387df9bcf0",
+    "prd": "c9a07ab8e11c9ba385e1b55f7ad968a502aa14f5e816a743f02fc0d23926ce01",
+    "tdd_plan": "d519c677eda1fabb3aba73fcd38f2cad91a374571a63a50f49ff3afd47b60c0a"
+  },
+  "status": "captured"
+}
