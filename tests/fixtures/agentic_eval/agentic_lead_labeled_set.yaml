@@ -1,0 +1,220 @@
+schema_version: agentic-lead-eval-labeled-set/v1
+execution_mode: fixture_replay
+roster_sha256: f09369bb8199a92a955603d86d80a47cf1ffd115ee00534447e4ccbd5220c728
+provenance:
+  curated: true
+  source: agentic-eval-corpus-20260603
+  notes:
+    - Balanced seed set for report-only agentic lead eval decisions.
+    - Cases are cassette-backed and do not execute target agents.
+tasks:
+  - task_id: clean-accept-runner-report
+    intent: Clean report-only eval runner outcome should be accepted.
+    case:
+      repo: codex-supervisor
+      commit: 0844d92
+      expected_outcome: accept
+      case_types: [clean_accept]
+      changed_files: [supervisor/agentic_eval.py, tests/test_agentic_eval.py]
+    budget: {total_tokens: 12000, total_usd: 3.5}
+    required_verdicts:
+      - id: report_only_invariant
+        description: The runner does not authorize a default policy change.
+        evidence_kind: probe_receipt
+        evidence_ref: tests/fixtures/agentic_eval/corpus_evidence/probe-receipts.json
+      - id: evidence_artifact_available
+        description: The report and evidence artifacts are available for replay.
+        evidence_kind: artifact_path
+        evidence_ref: tests/fixtures/agentic_eval/corpus_evidence/artifact-index.json
+    transcript_refs:
+      - kind: cassette
+        ref: tests/fixtures/agentic_eval/corpus_evidence/cassettes/clean-accept-runner-report.json
+    provenance:
+      mined_from: docs/dual-agent/agentic-eval-harness-runner-20260603/workflow-result-cli-resume.json
+      source_gate_result: accept
+      curated_reason: clean accepted report-only runner baseline
+
+  - task_id: planning-artifact-deny
+    intent: Planning-artifact validator should deny advancement when required evidence is absent.
+    case:
+      repo: codex-supervisor
+      commit: 0844d92
+      expected_outcome: deny
+      case_types: [deny_required, artifact_rigor]
+      changed_files: [docs/dual-agent/planning-artifact-validator-20260524/source/prd.md]
+    budget: {total_tokens: 12000, total_usd: 3.5}
+    required_verdicts:
+      - id: missing_artifact_blocks
+        description: Missing required artifacts produce a deny/revise outcome.
+        evidence_kind: probe_receipt
+        evidence_ref: tests/fixtures/agentic_eval/corpus_evidence/probe-receipts.json
+      - id: artifact_rigor_recorded
+        description: Artifact rigor metadata is captured in the replay cassette.
+        evidence_kind: artifact_path
+        evidence_ref: tests/fixtures/agentic_eval/corpus_evidence/artifact-index.json
+    transcript_refs:
+      - kind: cassette
+        ref: tests/fixtures/agentic_eval/corpus_evidence/cassettes/planning-artifact-deny.json
+    provenance:
+      mined_from: docs/dual-agent/planning-artifact-validator-20260524/source/tdd.md
+      source_gate_result: deny
+      curated_reason: deny class for missing planning artifact evidence
+
+  - task_id: reviewer-unavailable-revise
+    intent: Reviewer infrastructure outage should not count as accept.
+    case:
+      repo: codex-supervisor
+      commit: 0844d92
+      expected_outcome: revise
+      case_types: [revise_required, reviewer_unavailable]
+      changed_files: [supervisor/cursor_agent.py]
+    budget: {total_tokens: 12000, total_usd: 3.5}
+    required_verdicts:
+      - id: missing_verdict_not_accept
+        description: Missing reviewer verdict is treated as unavailable, not accept.
+        evidence_kind: probe_receipt
+        evidence_ref: tests/fixtures/agentic_eval/corpus_evidence/probe-receipts.json
+      - id: recovery_packet_available
+        description: Reviewer recovery metadata is captured.
+        evidence_kind: artifact_path
+        evidence_ref: tests/fixtures/agentic_eval/corpus_evidence/artifact-index.json
+    transcript_refs:
+      - kind: cassette
+        ref: tests/fixtures/agentic_eval/corpus_evidence/cassettes/reviewer-unavailable-revise.json
+    provenance:
+      mined_from: docs/dual-agent/cursor-sdk-infra-retry-hardening-20260601/workflow-result-cli.json
+      source_gate_result: revise
+      curated_reason: revise class for reviewer unavailable recovery
+
+  - task_id: artifact-only-skill-receipt-accept
+    intent: Artifact-only planning gates can accept when skill receipts and hashes are complete.
+    case:
+      repo: codex-supervisor
+      commit: 0844d92
+      expected_outcome: accept
+      case_types: [clean_accept, artifact_only_gate]
+      changed_files: [docs/dual-agent/agentic-eval-corpus-20260603/source/prd.md]
+    budget: {total_tokens: 12000, total_usd: 3.5}
+    required_verdicts:
+      - id: skill_receipts_present
+        description: PRD-to-TDD receipts are available for the gate.
+        evidence_kind: artifact_path
+        evidence_ref: docs/dual-agent/agentic-eval-corpus-20260603/skill-receipts.json
+      - id: planning_hashes_stable
+        description: Planning artifact hashes are stable inputs.
+        evidence_kind: probe_receipt
+        evidence_ref: tests/fixtures/agentic_eval/corpus_evidence/probe-receipts.json
+    transcript_refs:
+      - kind: cassette
+        ref: tests/fixtures/agentic_eval/corpus_evidence/cassettes/artifact-only-skill-receipt-accept.json
+    provenance:
+      mined_from: docs/dual-agent/agentic-eval-corpus-20260603/skill-receipts.json
+      source_gate_result: accept
+      curated_reason: artifact-only gate accept class
+
+  - task_id: multi-file-change-accept
+    intent: Multi-file implementation can accept when tests and evidence refs line up.
+    case:
+      repo: codex-supervisor
+      commit: 0844d92
+      expected_outcome: accept
+      case_types: [clean_accept, multi_file_change]
+      changed_files:
+        - supervisor/agentic_eval.py
+        - tests/test_agentic_eval.py
+        - tests/fixtures/agentic_eval/three_arm_tasks.yaml
+    budget: {total_tokens: 12000, total_usd: 3.5}
+    required_verdicts:
+      - id: multi_file_diff_scoped
+        description: Diff hunk shows source, test, and fixture edits together.
+        evidence_kind: diff_hunk
+        evidence_ref: tests/fixtures/agentic_eval/corpus_evidence/diff-hunks.patch:multi-file-change-accept
+      - id: regression_tests_recorded
+        description: Regression tests are represented in the probe cassette.
+        evidence_kind: probe_receipt
+        evidence_ref: tests/fixtures/agentic_eval/corpus_evidence/probe-receipts.json
+    transcript_refs:
+      - kind: cassette
+        ref: tests/fixtures/agentic_eval/corpus_evidence/cassettes/multi-file-change-accept.json
+    provenance:
+      mined_from: docs/dual-agent/agentic-eval-harness-runner-20260603/workflow-result-cli-resume.json
+      source_gate_result: accept
+      curated_reason: multi-file change accept class
+
+  - task_id: external-call-guard-deny
+    intent: Replay corpus must deny cases that require target-agent execution in fixture mode.
+    case:
+      repo: codex-supervisor
+      commit: 0844d92
+      expected_outcome: deny
+      case_types: [deny_required, replay_guard]
+      changed_files: [supervisor/agentic_eval.py]
+    budget: {total_tokens: 12000, total_usd: 3.5}
+    required_verdicts:
+      - id: replay_guard_blocks_execution
+        description: Fixture replay rejects external execution paths.
+        evidence_kind: probe_receipt
+        evidence_ref: tests/fixtures/agentic_eval/corpus_evidence/probe-receipts.json
+      - id: guard_artifact_available
+        description: Guard proof is available as a fixture artifact.
+        evidence_kind: artifact_path
+        evidence_ref: tests/fixtures/agentic_eval/corpus_evidence/artifact-index.json
+    transcript_refs:
+      - kind: cassette
+        ref: tests/fixtures/agentic_eval/corpus_evidence/cassettes/external-call-guard-deny.json
+    provenance:
+      mined_from: tests/test_agentic_eval.py
+      source_gate_result: deny
+      curated_reason: deny class for forbidden external execution in replay
+
+  - task_id: equal-budget-clean-accept
+    intent: Equal task-level budget shape should support clean accept scoring.
+    case:
+      repo: codex-supervisor
+      commit: 0844d92
+      expected_outcome: accept
+      case_types: [clean_accept, budget_guard]
+      changed_files: [tests/fixtures/agentic_eval/three_arm_tasks.yaml]
+    budget: {total_tokens: 10000, total_usd: 2.5}
+    required_verdicts:
+      - id: budget_shape_task_level
+        description: Corpus budget is task-level only.
+        evidence_kind: artifact_path
+        evidence_ref: tests/fixtures/agentic_eval/corpus_evidence/artifact-index.json
+      - id: equal_budget_probe_recorded
+        description: Equal budget guard is represented by a probe receipt.
+        evidence_kind: probe_receipt
+        evidence_ref: tests/fixtures/agentic_eval/corpus_evidence/probe-receipts.json
+    transcript_refs:
+      - kind: cassette
+        ref: tests/fixtures/agentic_eval/corpus_evidence/cassettes/equal-budget-clean-accept.json
+    provenance:
+      mined_from: tests/fixtures/agentic_eval/three_arm_tasks.yaml
+      source_gate_result: accept
+      curated_reason: budget shape accept class
+
+  - task_id: evidence-ref-revise
+    intent: Missing or stale evidence refs should force revise before scoring.
+    case:
+      repo: codex-supervisor
+      commit: 0844d92
+      expected_outcome: revise
+      case_types: [revise_required, evidence_resolution]
+      changed_files: [supervisor/agentic_eval_corpus.py, tests/test_agentic_eval_corpus.py]
+    budget: {total_tokens: 10000, total_usd: 2.5}
+    required_verdicts:
+      - id: evidence_resolution_checked
+        description: Evidence refs are file-resolved by the loader.
+        evidence_kind: artifact_path
+        evidence_ref: tests/fixtures/agentic_eval/corpus_evidence/artifact-index.json
+      - id: revise_when_evidence_missing
+        description: Missing evidence is a revise class for eval training.
+        evidence_kind: probe_receipt
+        evidence_ref: tests/fixtures/agentic_eval/corpus_evidence/probe-receipts.json
+    transcript_refs:
+      - kind: cassette
+        ref: tests/fixtures/agentic_eval/corpus_evidence/cassettes/evidence-ref-revise.json
+    provenance:
+      mined_from: tests/test_agentic_eval_corpus.py
+      source_gate_result: revise
+      curated_reason: revise class for stale evidence refs

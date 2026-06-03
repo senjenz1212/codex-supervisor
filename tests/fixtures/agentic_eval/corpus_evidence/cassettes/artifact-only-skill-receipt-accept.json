@@ -1,0 +1,1 @@
+{"task_id":"artifact-only-skill-receipt-accept","source_gate_result":"accept","status":"accepted","final_gate":"tdd_review","probes":["P1","P2","P3"],"notes":"Artifact-only planning gate accepted from complete skill receipts."}

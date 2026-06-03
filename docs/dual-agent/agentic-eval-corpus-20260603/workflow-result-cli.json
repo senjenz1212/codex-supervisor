@@ -1,0 +1,2120 @@
+{
+  "artifact_export": {
+    "files": [
+      "docs/dual-agent/agentic-eval-corpus-20260603/index.md",
+      "docs/dual-agent/agentic-eval-corpus-20260603/triage.md",
+      "docs/dual-agent/agentic-eval-corpus-20260603/prd.md",
+      "docs/dual-agent/agentic-eval-corpus-20260603/tdd.md",
+      "docs/dual-agent/agentic-eval-corpus-20260603/grill-findings.md",
+      "docs/dual-agent/agentic-eval-corpus-20260603/issues.md",
+      "docs/dual-agent/agentic-eval-corpus-20260603/screenshots.md",
+      "docs/dual-agent/agentic-eval-corpus-20260603/outcome-review.md",
+      "docs/dual-agent/agentic-eval-corpus-20260603/interactions.md",
+      "docs/dual-agent/agentic-eval-corpus-20260603/transcript.md",
+      "docs/dual-agent/agentic-eval-corpus-20260603/transcript.jsonl",
+      "docs/dual-agent/agentic-eval-corpus-20260603/mast-coverage.md",
+      "docs/dual-agent/agentic-eval-corpus-20260603/replay/manifest.json",
+      "docs/dual-agent/agentic-eval-corpus-20260603/replay/workspace-snapshot.json",
+      "docs/dual-agent/agentic-eval-corpus-20260603/replay/mast-coverage.json",
+      "docs/dual-agent/agentic-eval-corpus-20260603/source/grill-findings-tdd.md",
+      "docs/dual-agent/agentic-eval-corpus-20260603/source/grill-findings.md",
+      "docs/dual-agent/agentic-eval-corpus-20260603/source/implementation-plan.md",
+      "docs/dual-agent/agentic-eval-corpus-20260603/source/issues.md",
+      "docs/dual-agent/agentic-eval-corpus-20260603/source/prd.md",
+      "docs/dual-agent/agentic-eval-corpus-20260603/source/tdd.md"
+    ],
+    "output_dir": "docs/dual-agent/agentic-eval-corpus-20260603",
+    "run_id": "codex-agentic-eval-corpus-20260603-a12e759f-6920-4b52-9ed9-32322c4a401f",
+    "status": "ok",
+    "task_id": "agentic-eval-corpus-20260603"
+  },
+  "current_gate": "outcome_review",
+  "final_gate_result": {
+    "artifact_export": {
+      "files": [
+        "docs/dual-agent/agentic-eval-corpus-20260603/index.md",
+        "docs/dual-agent/agentic-eval-corpus-20260603/triage.md",
+        "docs/dual-agent/agentic-eval-corpus-20260603/prd.md",
+        "docs/dual-agent/agentic-eval-corpus-20260603/tdd.md",
+        "docs/dual-agent/agentic-eval-corpus-20260603/grill-findings.md",
+        "docs/dual-agent/agentic-eval-corpus-20260603/issues.md",
+        "docs/dual-agent/agentic-eval-corpus-20260603/screenshots.md",
+        "docs/dual-agent/agentic-eval-corpus-20260603/outcome-review.md",
+        "docs/dual-agent/agentic-eval-corpus-20260603/interactions.md",
+        "docs/dual-agent/agentic-eval-corpus-20260603/transcript.md",
+        "docs/dual-agent/agentic-eval-corpus-20260603/transcript.jsonl",
+        "docs/dual-agent/agentic-eval-corpus-20260603/mast-coverage.md",
+        "docs/dual-agent/agentic-eval-corpus-20260603/replay/manifest.json",
+        "docs/dual-agent/agentic-eval-corpus-20260603/replay/workspace-snapshot.json",
+        "docs/dual-agent/agentic-eval-corpus-20260603/replay/mast-coverage.json",
+        "docs/dual-agent/agentic-eval-corpus-20260603/source/grill-findings-tdd.md",
+        "docs/dual-agent/agentic-eval-corpus-20260603/source/grill-findings.md",
+        "docs/dual-agent/agentic-eval-corpus-20260603/source/implementation-plan.md",
+        "docs/dual-agent/agentic-eval-corpus-20260603/source/issues.md",
+        "docs/dual-agent/agentic-eval-corpus-20260603/source/prd.md",
+        "docs/dual-agent/agentic-eval-corpus-20260603/source/tdd.md"
+      ],
+      "output_dir": "docs/dual-agent/agentic-eval-corpus-20260603",
+      "run_id": "codex-agentic-eval-corpus-20260603-a12e759f-6920-4b52-9ed9-32322c4a401f",
+      "status": "ok",
+      "task_id": "agentic-eval-corpus-20260603"
+    },
+    "artifact_rigor": {
+      "accepted_prerequisite_gates": [
+        "execution"
+      ],
+      "artifact_policy": "strict",
+      "gate": "outcome_review",
+      "gate_statuses": {
+        "execution": "accepted",
+        "implementation_plan": "accepted",
+        "issues_review": "accepted",
+        "prd_review": "accepted",
+        "tdd_review": "accepted"
+      },
+      "missing_artifact_paths": [],
+      "missing_artifacts": [],
+      "missing_prerequisite_gates": [],
+      "missing_screenshot_paths": [],
+      "present_artifacts": [
+        "grill_findings",
+        "implementation_plan",
+        "issues",
+        "prd",
+        "tdd_plan"
+      ],
+      "reason": "required_artifacts_present",
+      "required_artifacts": [
+        "prd",
+        "tdd_plan",
+        "grill_findings",
+        "issues",
+        "implementation_plan"
+      ],
+      "required_prerequisite_gates": [
+        "execution"
+      ],
+      "screenshots": [],
+      "status": "ok",
+      "user_facing": false,
+      "visual_validation": {
+        "allowed_sources": [
+          "browser",
+          "browser-use",
+          "browser_use",
+          "computer",
+          "computer-use",
+          "computer_use"
+        ],
+        "evidence": [],
+        "failures": [],
+        "reason": "no_screenshots_supplied",
+        "status": "not_required"
+      }
+    },
+    "attempts": 1,
+    "claim_verification": {
+      "details": {
+        "legacy_verified_claims": [
+          "agentic_lead_policy remains off and no production policy default is changed",
+          "fixture replay exposes no workflow runner callback and rejects non-fixture execution mode",
+          "load_agentic_eval_labeled_set validates exact schema, ordered roster sha, task-level budget shape, and resolvable evidence refs",
+          "mine_agentic_eval_cases stages candidates from .handoff deterministically and refuses the curated corpus path",
+          "seed corpus contains 8 balanced cassette-backed cases with accept, revise, deny, artifact-only, and multi-file classes"
+        ],
+        "receipts": [
+          {
+            "artifacts": [
+              "docs/dual-agent/agentic-eval-corpus-20260603/source/prd.md"
+            ],
+            "claims": [
+              "PRD promise contracts produced",
+              "report-only corpus scope specified",
+              "public boundaries named"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-to-prd-agentic-eval-corpus-20260603",
+            "skill": "to-prd",
+            "stage": "to_prd",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/agentic-eval-corpus-20260603/source/grill-findings.md"
+            ],
+            "claims": [
+              "PRD grill findings resolved",
+              "runner/corpus boundary clarified",
+              "miner curation pause pinned"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-prd-grill-agentic-eval-corpus-20260603",
+            "skill": "grill-with-docs",
+            "stage": "prd_grill",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/agentic-eval-corpus-20260603/source/issues.md"
+            ],
+            "claims": [
+              "Issue slices cover every PRD promise",
+              "first RED tests name public boundaries"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-to-issues-agentic-eval-corpus-20260603",
+            "skill": "to-issues",
+            "stage": "to_issues",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/agentic-eval-corpus-20260603/source/tdd.md"
+            ],
+            "claims": [
+              "TDD plan starts at loader and miner public boundaries",
+              "schema, evidence, miner, seed, and report-only regressions planned"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-tdd-agentic-eval-corpus-20260603",
+            "skill": "tdd",
+            "stage": "tdd",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/agentic-eval-corpus-20260603/source/grill-findings-tdd.md"
+            ],
+            "claims": [
+              "TDD grill findings resolved",
+              "translation audit completed"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-tdd-grill-agentic-eval-corpus-20260603",
+            "skill": "grill-with-docs",
+            "stage": "tdd_grill",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/agentic-eval-corpus-20260603/source/prd.md",
+              "docs/dual-agent/agentic-eval-corpus-20260603/source/issues.md",
+              "docs/dual-agent/agentic-eval-corpus-20260603/source/tdd.md",
+              "docs/dual-agent/agentic-eval-corpus-20260603/source/grill-findings.md",
+              "docs/dual-agent/agentic-eval-corpus-20260603/source/grill-findings-tdd.md",
+              "docs/dual-agent/agentic-eval-corpus-20260603/source/implementation-plan.md"
+            ],
+            "claims": [
+              "local planning validator accepted all workflow gates"
+            ],
+            "command": "uv run python - <<PY ... validate_planning_artifacts(...) for all workflow gates",
+            "kind": "test",
+            "receipt_id": "planning-validator-agentic-eval-corpus-20260603",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "tests/test_agentic_eval_corpus.py"
+            ],
+            "claims": [
+              "8 corpus tests passed",
+              "schema, roster, evidence, miner, curated-path, and replay guard covered"
+            ],
+            "command": "uv run pytest tests/test_agentic_eval_corpus.py -q",
+            "kind": "test",
+            "receipt_id": "pytest-focused-agentic-eval-corpus-20260603",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "supervisor/agentic_eval_corpus.py",
+              "scripts/mine_agentic_eval_cases.py",
+              "tests/test_agentic_eval_corpus.py"
+            ],
+            "claims": [
+              "new corpus module, miner script, and tests compile"
+            ],
+            "command": "uv run python -m py_compile supervisor/agentic_eval_corpus.py scripts/mine_agentic_eval_cases.py tests/test_agentic_eval_corpus.py",
+            "kind": "test",
+            "receipt_id": "py-compile-agentic-eval-corpus-20260603",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "tests/test_agentic_eval_corpus.py",
+              "tests/test_agentic_eval.py",
+              "tests/test_reviewer_panel_eval_runner.py"
+            ],
+            "claims": [
+              "25 relevant eval tests passed"
+            ],
+            "command": "uv run pytest tests/test_agentic_eval_corpus.py tests/test_agentic_eval.py tests/test_reviewer_panel_eval_runner.py -q",
+            "kind": "test",
+            "receipt_id": "pytest-relevant-agentic-eval-corpus-20260603",
+            "status": "passed"
+          },
+          {
+            "claims": [
+              "no whitespace errors"
+            ],
+            "command": "git diff --check",
+            "kind": "test",
+            "receipt_id": "git-diff-check-agentic-eval-corpus-20260603",
+            "status": "passed"
+          },
+          {
+            "claims": [
+              "659 tests passed"
+            ],
+            "command": "uv run --extra dev pytest -q",
+            "kind": "test",
+            "receipt_id": "pytest-full-agentic-eval-corpus-20260603",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "tests/fixtures/agentic_eval/agentic_lead_labeled_set.yaml",
+              "tests/fixtures/agentic_eval/corpus_evidence/"
+            ],
+            "claims": [
+              "seed corpus has 8 cases",
+              "seed corpus includes accept, revise, and deny outcomes",
+              "seed corpus includes artifact-only and multi-file classes",
+              "roster sha256 f09369bb8199a92a955603d86d80a47cf1ffd115ee00534447e4ccbd5220c728",
+              "fixture sha256 46b9ce0b61b1596b9e0cb336b7886934d10a1a6dd94bb933147b20d6ef514ac4"
+            ],
+            "kind": "artifact",
+            "receipt_id": "seed-corpus-agentic-eval-corpus-20260603",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              ".scratch/agentic-eval/agentic-eval-corpus-20260603-candidates.json"
+            ],
+            "claims": [
+              "miner staged 2 candidates from .handoff",
+              "miner output curation_required true",
+              "miner did not write curated corpus"
+            ],
+            "command": "uv run python scripts/mine_agentic_eval_cases.py --handoff-dir .handoff --output .scratch/agentic-eval/agentic-eval-corpus-20260603-candidates.json --repo-root .",
+            "kind": "artifact",
+            "receipt_id": "handoff-miner-staging-agentic-eval-corpus-20260603",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/agentic-eval-corpus-20260603/test-evidence.md"
+            ],
+            "claims": [
+              "test commands summarized",
+              "seed task ids and verdicts recorded",
+              "miner staged sample recorded",
+              "report-only invariants documented"
+            ],
+            "kind": "test_evidence",
+            "receipt_id": "test-evidence-agentic-eval-corpus-20260603",
+            "status": "passed"
+          }
+        ]
+      },
+      "probe_id": "P11",
+      "reason": "workflow_claims_verified",
+      "status": "green"
+    },
+    "claude_decision": "accept",
+    "claude_gate_status": "accepted",
+    "codex_decision": "accept",
+    "cursor_decision": "accept",
+    "cursor_review": {
+      "accepted": true,
+      "agent_id": null,
+      "attempts": 1,
+      "critical_review": {
+        "assumptions_to_verify": [
+          "The seed fixture and roster hashes match the actual files on disk",
+          "Evidence references resolve correctly"
+        ],
+        "contradictions_checked": [
+          "Discrepancy between 8 tests reported in test-evidence.md and 9 test functions in the tree (resolved as documentation staleness)"
+        ],
+        "decision": "accept",
+        "evidence_refs": [],
+        "missing_evidence": [
+          "Live execution logs for pytest and shasum verification"
+        ],
+        "schema_version": "critical-review/v1",
+        "severity": "low",
+        "strongest_objection": "Test results and hashes are self-reported in the evidence receipts and not live-verified in this gate.",
+        "what_would_change_my_mind": "Evidence of policy mutation, live test failures, or the loader executing workflow arms."
+      },
+      "diagnostics": {
+        "completion_tokens": 3652,
+        "fallback": {
+          "attempted": true,
+          "from_runtime": "cursor_sdk",
+          "primary_failure": {
+            "attempts": 3,
+            "diagnostics": {
+              "failure": {
+                "attempts": 3,
+                "error": "Bridge request failed: ConnectError: [Errno 61] Connection refused",
+                "infrastructure_retries": {
+                  "attempt_count": 3,
+                  "attempts": [
+                    {
+                      "attempt": 1,
+                      "error": "Bridge request failed: ConnectError: [Errno 61] Connection refused",
+                      "reason": "reviewer_invocation_failed"
+                    },
+                    {
+                      "attempt": 2,
+                      "error": "Bridge request failed: ConnectError: [Errno 61] Connection refused",
+                      "reason": "reviewer_invocation_failed"
+                    },
+                    {
+                      "attempt": 3,
+                      "error": "Bridge request failed: ConnectError: [Errno 61] Connection refused",
+                      "reason": "reviewer_invocation_failed"
+                    }
+                  ],
+                  "backoff_s": [
+                    1.0,
+                    2.0
+                  ],
+                  "exhausted": true,
+                  "failed_attempt_count": 3,
+                  "retry_limit": 2
+                },
+                "original_reason": "reviewer_invocation_failed",
+                "reason": "reviewer_invocation_failed",
+                "retry_limit": 2,
+                "reviewer_output_mode": "cursor_sdk"
+              },
+              "infrastructure_retries": {
+                "attempt_count": 3,
+                "attempts": [
+                  {
+                    "attempt": 1,
+                    "error": "Bridge request failed: ConnectError: [Errno 61] Connection refused",
+                    "reason": "reviewer_invocation_failed"
+                  },
+                  {
+                    "attempt": 2,
+                    "error": "Bridge request failed: ConnectError: [Errno 61] Connection refused",
+                    "reason": "reviewer_invocation_failed"
+                  },
+                  {
+                    "attempt": 3,
+                    "error": "Bridge request failed: ConnectError: [Errno 61] Connection refused",
+                    "reason": "reviewer_invocation_failed"
+                  }
+                ],
+                "backoff_s": [
+                  1.0,
+                  2.0
+                ],
+                "exhausted": true,
+                "failed_attempt_count": 3,
+                "retry_limit": 2
+              }
+            },
+            "failure_classification": "reviewer_infrastructure_unavailable",
+            "model": null,
+            "probe": {
+              "details": {
+                "attempts": 3,
+                "error": "Bridge request failed: ConnectError: [Errno 61] Connection refused",
+                "infrastructure_retries": {
+                  "attempt_count": 3,
+                  "attempts": [
+                    {
+                      "attempt": 1,
+                      "error": "Bridge request failed: ConnectError: [Errno 61] Connection refused",
+                      "reason": "reviewer_invocation_failed"
+                    },
+                    {
+                      "attempt": 2,
+                      "error": "Bridge request failed: ConnectError: [Errno 61] Connection refused",
+                      "reason": "reviewer_invocation_failed"
+                    },
+                    {
+                      "attempt": 3,
+                      "error": "Bridge request failed: ConnectError: [Errno 61] Connection refused",
+                      "reason": "reviewer_invocation_failed"
+                    }
+                  ],
+                  "backoff_s": [
+                    1.0,
+                    2.0
+                  ],
+                  "exhausted": true,
+                  "failed_attempt_count": 3,
+                  "retry_limit": 2
+                },
+                "original_reason": "reviewer_invocation_failed",
+                "reason": "reviewer_invocation_failed",
+                "recoverable": true,
+                "retry_limit": 2,
+                "retry_reasons": []
+              },
+              "probe_id": "CURSOR",
+              "reason": "reviewer_infrastructure_unavailable",
+              "status": "red"
+            },
+            "recoverable": true,
+            "retry_reasons": [],
+            "reviewer_assurance": "unavailable",
+            "reviewer_output_mode": "cursor_sdk",
+            "reviewer_runtime": "cursor_sdk",
+            "status": null
+          },
+          "reason": "reviewer_invocation_failed",
+          "to_runtime": "litellm_structured"
+        },
+        "finish_reason": "stop",
+        "prompt_chars": 11435,
+        "prompt_sha256": "091916428900c0538ab2894474e502b19b6b2d1472c6a39a70c0a542ab305e9a",
+        "prompt_tokens": 3639
+      },
+      "duration_ms": null,
+      "failure_classification": null,
+      "fallback_from_runtime": "cursor_sdk",
+      "fallback_reason": "reviewer_invocation_failed",
+      "independent_reviewer_panel_decision": {
+        "accepted_reviewers": [
+          "independent-reviewer-0",
+          "independent-reviewer-1"
+        ],
+        "aggregation_mode": "conservative",
+        "available_reviewers": [
+          "independent-reviewer-0",
+          "independent-reviewer-1"
+        ],
+        "blocking_reviewers": [],
+        "decision": "accept",
+        "low_confidence_reviewers": [],
+        "low_confidence_threshold": 0.0,
+        "missing_reviewers": [],
+        "non_accepting_reviewers": [],
+        "reason": "all_available_reviewers_accept",
+        "reviewer_inputs": [
+          {
+            "accepted": true,
+            "assurance_grade": "text_only",
+            "confidence": 0.95,
+            "decision": "accept",
+            "lineage": [
+              "google",
+              "litellm_structured",
+              "gemini-3.1-pro-preview"
+            ],
+            "model": "gemini-3.1-pro-preview",
+            "provider_family": "google",
+            "reviewer_id": "independent-reviewer-0",
+            "runtime": "litellm_structured",
+            "severity": "low",
+            "tool_access": "text_only",
+            "verdict_present": true
+          },
+          {
+            "accepted": true,
+            "assurance_grade": "agentic",
+            "confidence": 0.86,
+            "decision": "accept",
+            "lineage": [
+              "openai",
+              "codex_cli",
+              "gpt-5.5"
+            ],
+            "model": "gpt-5.5",
+            "provider_family": "openai",
+            "reviewer_id": "independent-reviewer-1",
+            "runtime": "codex_cli",
+            "severity": "low",
+            "tool_access": "codebase_tools",
+            "verdict_present": true
+          }
+        ],
+        "schema_version": "independent-reviewer-panel-decision/v1"
+      },
+      "independent_reviewer_results": [
+        {
+          "accepted": true,
+          "assurance_grade": "text_only",
+          "attempts": 1,
+          "confidence": 0.95,
+          "critical_review": {
+            "assumptions_to_verify": [
+              "The seed fixture and roster hashes match the actual files on disk",
+              "Evidence references resolve correctly"
+            ],
+            "contradictions_checked": [
+              "Discrepancy between 8 tests reported in test-evidence.md and 9 test functions in the tree (resolved as documentation staleness)"
+            ],
+            "decision": "accept",
+            "missing_evidence": [
+              "Live execution logs for pytest and shasum verification"
+            ],
+            "severity": "low",
+            "strongest_objection": "Test results and hashes are self-reported in the evidence receipts and not live-verified in this gate.",
+            "what_would_change_my_mind": "Evidence of policy mutation, live test failures, or the loader executing workflow arms."
+          },
+          "decision": "accept",
+          "failure_classification": null,
+          "gate": "outcome_review",
+          "lineage": [
+            "google",
+            "litellm_structured",
+            "gemini-3.1-pro-preview"
+          ],
+          "model": "gemini-3.1-pro-preview",
+          "output_sha256": "ec09218321e09850f44667ba7050346191cb85cab88c4ea1bd4107f348ac227e",
+          "provider_family": "google",
+          "recoverable": false,
+          "reviewer_assurance": "fallback_text_only",
+          "reviewer_id": "independent-reviewer-0",
+          "reviewer_output_mode": "litellm_structured",
+          "reviewer_runtime": "litellm_structured",
+          "round_index": 1,
+          "runtime": "litellm_structured",
+          "schema_version": "independent-reviewer-panel-result/v1",
+          "severity": "low",
+          "task_id": "agentic-eval-corpus-20260603",
+          "tests": [
+            "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_loads_seed_fixture",
+            "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_bad_schema_version",
+            "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_roster_sha_mismatch",
+            "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_missing_evidence_ref",
+            "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_missing_diff_hunk_label",
+            "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_per_arm_budget",
+            "tests/test_agentic_eval_corpus.py::test_mine_agentic_eval_cases_is_deterministic",
+            "tests/test_agentic_eval_corpus.py::test_miner_stages_candidates_without_touching_curated_corpus",
+            "tests/test_agentic_eval_corpus.py::test_agentic_eval_corpus_replay_does_not_call_workflow_runner"
+          ],
+          "tool_access": "text_only",
+          "transcript_refs": [
+            {
+              "chars": 3141,
+              "kind": "reviewer_transcript_tail",
+              "ref": "independent_reviewer_review:agentic-eval-corpus-20260603:outcome_review:1:independent-reviewer-0"
+            }
+          ],
+          "transcript_sha256": "b2f2579b1b10eb68f908137acf254bb6bf4dda7efa6382a97462da2d79db137a",
+          "verdict_present": true
+        },
+        {
+          "accepted": true,
+          "assurance_grade": "agentic",
+          "attempts": 1,
+          "confidence": 0.86,
+          "critical_review": {
+            "assumptions_to_verify": [
+              "reported pytest and full-suite receipts came from the same reviewed tree",
+              "the untracked file pack is the intended implementation scope before commit",
+              "miner defaulting ambiguous workflow results to accept is acceptable because candidates remain review-staged only"
+            ],
+            "contradictions_checked": [
+              "test-evidence.md reports 8 focused tests passed, while tests/test_agentic_eval_corpus.py now contains 9 test functions; this appears to under-count rather than over-claim source coverage.",
+              "Claude cites git diff HEAD empty, but git diff excludes untracked files; I treated this only as no tracked-file mutation evidence and separately checked relevant policy/config/state paths.",
+              "The replay test defines a forbidden_runner but does not wire it; the actual guard is the loader signature plus fixture_replay-only execution_mode check, which the source supports.",
+              "Seed budgets have different numeric values for some tasks, but the PRD forbids runner-shaped/per-arm budget shape, not differing task-level budget amounts."
+            ],
+            "decision": "accept",
+            "missing_evidence": [
+              "live pytest output from this independent review",
+              "live py_compile output from this independent review",
+              "a staged or otherwise explicit diff/check that includes the untracked new files",
+              "CI or committed-revision evidence tying the receipts to the exact reviewed tree"
+            ],
+            "severity": "low",
+            "strongest_objection": "The strongest reason not to advance is evidence quality: pytest/py_compile/full-suite results were not independently executed here, and git diff HEAD/git diff --check are weak receipts because the implementation files are untracked new files.",
+            "what_would_change_my_mind": "A focused pytest or py_compile failure, missing evidence/cassette refs, a tracked policy/config/state/default mutation, a loader path that can invoke target/workflow execution, or proof the miner can overwrite the curated corpus would change this to revise or deny."
+          },
+          "decision": "accept",
+          "failure_classification": null,
+          "gate": "outcome_review",
+          "lineage": [
+            "openai",
+            "codex_cli",
+            "gpt-5.5"
+          ],
+          "model": "gpt-5.5",
+          "output_sha256": "bc3556c34f6fc816b8ff2313e651c42af01ece59a34209c01904429124697b2e",
+          "provider_family": "openai",
+          "recoverable": false,
+          "reviewer_assurance": "tool_backed_primary",
+          "reviewer_id": "independent-reviewer-1",
+          "reviewer_output_mode": "codex_cli",
+          "reviewer_runtime": "codex_cli",
+          "round_index": 1,
+          "runtime": "codex_cli",
+          "schema_version": "independent-reviewer-panel-result/v1",
+          "severity": "low",
+          "task_id": "agentic-eval-corpus-20260603",
+          "tests": [
+            "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_loads_seed_fixture",
+            "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_bad_schema_version",
+            "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_roster_sha_mismatch",
+            "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_missing_evidence_ref",
+            "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_missing_diff_hunk_label",
+            "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_per_arm_budget",
+            "tests/test_agentic_eval_corpus.py::test_mine_agentic_eval_cases_is_deterministic",
+            "tests/test_agentic_eval_corpus.py::test_miner_stages_candidates_without_touching_curated_corpus",
+            "tests/test_agentic_eval_corpus.py::test_agentic_eval_corpus_replay_does_not_call_workflow_runner"
+          ],
+          "tool_access": "codebase_tools",
+          "transcript_refs": [
+            {
+              "chars": 4000,
+              "kind": "reviewer_transcript_tail",
+              "ref": "independent_reviewer_review:agentic-eval-corpus-20260603:outcome_review:1:independent-reviewer-1"
+            }
+          ],
+          "transcript_sha256": "b37509979efe1af06886036f46c287ecd7beda129bccbcffa6b1565812f8f974",
+          "verdict_present": true
+        }
+      ],
+      "model": "gemini-3.1-pro-preview",
+      "outcome": {
+        "changed_files": [
+          "supervisor/agentic_eval_corpus.py",
+          "scripts/mine_agentic_eval_cases.py",
+          "tests/test_agentic_eval_corpus.py",
+          "tests/fixtures/agentic_eval/agentic_lead_labeled_set.yaml",
+          "tests/fixtures/agentic_eval/corpus_evidence/",
+          "docs/dual-agent/agentic-eval-corpus-20260603/",
+          ".scratch/agentic-eval/"
+        ],
+        "claims": [
+          "Report-only loader exposes no workflow arm execution",
+          "Miner stages candidates and refuses to overwrite the curated corpus path",
+          "No tracked policy/state/registry file was modified"
+        ],
+        "confidence": 0.95,
+        "confidence_criteria": [
+          "All intent invariants met",
+          "Tests pass",
+          "No policy mutation"
+        ],
+        "confidence_rationale": "Evidence receipts confirm that tests passed, the miner stages candidates correctly, and no policy defaults were mutated. The Claude outcome accurately reflects the state of the implementation.",
+        "critical_review": {
+          "assumptions_to_verify": [
+            "The seed fixture and roster hashes match the actual files on disk",
+            "Evidence references resolve correctly"
+          ],
+          "contradictions_checked": [
+            "Discrepancy between 8 tests reported in test-evidence.md and 9 test functions in the tree (resolved as documentation staleness)"
+          ],
+          "decision": "accept",
+          "missing_evidence": [
+            "Live execution logs for pytest and shasum verification"
+          ],
+          "severity": "low",
+          "strongest_objection": "Test results and hashes are self-reported in the evidence receipts and not live-verified in this gate.",
+          "what_would_change_my_mind": "Evidence of policy mutation, live test failures, or the loader executing workflow arms."
+        },
+        "decisions": [
+          "accept"
+        ],
+        "objections": [],
+        "specialists": [
+          {
+            "decision": "accept",
+            "name": "Cursor Reviewer",
+            "objection": "None"
+          }
+        ],
+        "summary": "The outcome review gate is accepted. The implementation successfully adds a report-only agentic eval labeled corpus and a review-staged handoff miner without mutating policy defaults. Evidence supports the claims and tests pass.",
+        "task_id": "agentic-eval-corpus-20260603",
+        "test_status": "passed",
+        "tests": [
+          "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_loads_seed_fixture",
+          "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_bad_schema_version",
+          "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_roster_sha_mismatch",
+          "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_missing_evidence_ref",
+          "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_missing_diff_hunk_label",
+          "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_per_arm_budget",
+          "tests/test_agentic_eval_corpus.py::test_mine_agentic_eval_cases_is_deterministic",
+          "tests/test_agentic_eval_corpus.py::test_miner_stages_candidates_without_touching_curated_corpus",
+          "tests/test_agentic_eval_corpus.py::test_agentic_eval_corpus_replay_does_not_call_workflow_runner"
+        ]
+      },
+      "probe": {
+        "details": {},
+        "probe_id": "CURSOR",
+        "reason": "cursor_review_ok",
+        "status": "green"
+      },
+      "recoverable": false,
+      "retry_reasons": [],
+      "reviewer_assurance": "fallback_text_only",
+      "reviewer_output_mode": "litellm_structured",
+      "reviewer_runtime": "litellm_structured",
+      "run_id": "HtUfatbACIvc7bEPtofvuAc",
+      "schema_version": "independent-reviewer-result/v1",
+      "status": "finished",
+      "transcript_tail": "[cursor attempt 1/4]\n<dual_agent_outcome>{\n  \"task_id\": \"agentic-eval-corpus-20260603\",\n  \"summary\": \"The outcome review gate is accepted. The implementation successfully adds a report-only agentic eval labeled corpus and a review-staged handoff miner without mutating policy defaults. Evidence supports the claims and tests pass.\",\n  \"specialists\": [\n    {\n      \"name\": \"Cursor Reviewer\",\n      \"decision\": \"accept\",\n      \"objection\": \"None\"\n    }\n  ],\n  \"decisions\": [\n    \"accept\"\n  ],\n  \"objections\": [],\n  \"changed_files\": [\n    \"supervisor/agentic_eval_corpus.py\",\n    \"scripts/mine_agentic_eval_cases.py\",\n    \"tests/test_agentic_eval_corpus.py\",\n    \"tests/fixtures/agentic_eval/agentic_lead_labeled_set.yaml\",\n    \"tests/fixtures/agentic_eval/corpus_evidence/\",\n    \"docs/dual-agent/agentic-eval-corpus-20260603/\",\n    \".scratch/agentic-eval/\"\n  ],\n  \"tests\": [\n    \"tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_loads_seed_fixture\",\n    \"tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_bad_schema_version\",\n    \"tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_roster_sha_mismatch\",\n    \"tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_missing_evidence_ref\",\n    \"tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_missing_diff_hunk_label\",\n    \"tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_per_arm_budget\",\n    \"tests/test_agentic_eval_corpus.py::test_mine_agentic_eval_cases_is_deterministic\",\n    \"tests/test_agentic_eval_corpus.py::test_miner_stages_candidates_without_touching_curated_corpus\",\n    \"tests/test_agentic_eval_corpus.py::test_agentic_eval_corpus_replay_does_not_call_workflow_runner\"\n  ],\n  \"test_status\": \"passed\",\n  \"confidence\": 0.95,\n  \"confidence_rationale\": \"Evidence receipts confirm that tests passed, the miner stages candidates correctly, and no policy defaults were mutated. The Claude outcome accurately reflects the state of the implementation.\",\n  \"confidence_criteria\": [\n    \"All intent invariants met\",\n    \"Tests pass\",\n    \"No policy mutation\"\n  ],\n  \"claims\": [\n    \"Report-only loader exposes no workflow arm execution\",\n    \"Miner stages candidates and refuses to overwrite the curated corpus path\",\n    \"No tracked policy/state/registry file was modified\"\n  ],\n  \"critical_review\": {\n    \"strongest_objection\": \"Test results and hashes are self-reported in the evidence receipts and not live-verified in this gate.\",\n    \"missing_evidence\": [\n      \"Live execution logs for pytest and shasum verification\"\n    ],\n    \"contradictions_checked\": [\n      \"Discrepancy between 8 tests reported in test-evidence.md and 9 test functions in the tree (resolved as documentation staleness)\"\n    ],\n    \"assumptions_to_verify\": [\n      \"The seed fixture and roster hashes match the actual files on disk\",\n      \"Evidence references resolve correctly\"\n    ],\n    \"what_would_change_my_mind\": \"Evidence of policy mutation, live test failures, or the loader executing workflow arms.\",\n    \"decision\": \"accept\",\n    \"severity\": \"low\"\n  }\n}</dual_agent_outcome>"
+    },
+    "escalation": null,
+    "gate": "outcome_review",
+    "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-eval-corpus-20260603.json",
+    "independent_reviewer": {
+      "accepted": true,
+      "agent_id": null,
+      "attempts": 1,
+      "critical_review": {
+        "assumptions_to_verify": [
+          "The seed fixture and roster hashes match the actual files on disk",
+          "Evidence references resolve correctly"
+        ],
+        "contradictions_checked": [
+          "Discrepancy between 8 tests reported in test-evidence.md and 9 test functions in the tree (resolved as documentation staleness)"
+        ],
+        "decision": "accept",
+        "evidence_refs": [],
+        "missing_evidence": [
+          "Live execution logs for pytest and shasum verification"
+        ],
+        "schema_version": "critical-review/v1",
+        "severity": "low",
+        "strongest_objection": "Test results and hashes are self-reported in the evidence receipts and not live-verified in this gate.",
+        "what_would_change_my_mind": "Evidence of policy mutation, live test failures, or the loader executing workflow arms."
+      },
+      "diagnostics": {
+        "completion_tokens": 3652,
+        "fallback": {
+          "attempted": true,
+          "from_runtime": "cursor_sdk",
+          "primary_failure": {
+            "attempts": 3,
+            "diagnostics": {
+              "failure": {
+                "attempts": 3,
+                "error": "Bridge request failed: ConnectError: [Errno 61] Connection refused",
+                "infrastructure_retries": {
+                  "attempt_count": 3,
+                  "attempts": [
+                    {
+                      "attempt": 1,
+                      "error": "Bridge request failed: ConnectError: [Errno 61] Connection refused",
+                      "reason": "reviewer_invocation_failed"
+                    },
+                    {
+                      "attempt": 2,
+                      "error": "Bridge request failed: ConnectError: [Errno 61] Connection refused",
+                      "reason": "reviewer_invocation_failed"
+                    },
+                    {
+                      "attempt": 3,
+                      "error": "Bridge request failed: ConnectError: [Errno 61] Connection refused",
+                      "reason": "reviewer_invocation_failed"
+                    }
+                  ],
+                  "backoff_s": [
+                    1.0,
+                    2.0
+                  ],
+                  "exhausted": true,
+                  "failed_attempt_count": 3,
+                  "retry_limit": 2
+                },
+                "original_reason": "reviewer_invocation_failed",
+                "reason": "reviewer_invocation_failed",
+                "retry_limit": 2,
+                "reviewer_output_mode": "cursor_sdk"
+              },
+              "infrastructure_retries": {
+                "attempt_count": 3,
+                "attempts": [
+                  {
+                    "attempt": 1,
+                    "error": "Bridge request failed: ConnectError: [Errno 61] Connection refused",
+                    "reason": "reviewer_invocation_failed"
+                  },
+                  {
+                    "attempt": 2,
+                    "error": "Bridge request failed: ConnectError: [Errno 61] Connection refused",
+                    "reason": "reviewer_invocation_failed"
+                  },
+                  {
+                    "attempt": 3,
+                    "error": "Bridge request failed: ConnectError: [Errno 61] Connection refused",
+                    "reason": "reviewer_invocation_failed"
+                  }
+                ],
+                "backoff_s": [
+                  1.0,
+                  2.0
+                ],
+                "exhausted": true,
+                "failed_attempt_count": 3,
+                "retry_limit": 2
+              }
+            },
+            "failure_classification": "reviewer_infrastructure_unavailable",
+            "model": null,
+            "probe": {
+              "details": {
+                "attempts": 3,
+                "error": "Bridge request failed: ConnectError: [Errno 61] Connection refused",
+                "infrastructure_retries": {
+                  "attempt_count": 3,
+                  "attempts": [
+                    {
+                      "attempt": 1,
+                      "error": "Bridge request failed: ConnectError: [Errno 61] Connection refused",
+                      "reason": "reviewer_invocation_failed"
+                    },
+                    {
+                      "attempt": 2,
+                      "error": "Bridge request failed: ConnectError: [Errno 61] Connection refused",
+                      "reason": "reviewer_invocation_failed"
+                    },
+                    {
+                      "attempt": 3,
+                      "error": "Bridge request failed: ConnectError: [Errno 61] Connection refused",
+                      "reason": "reviewer_invocation_failed"
+                    }
+                  ],
+                  "backoff_s": [
+                    1.0,
+                    2.0
+                  ],
+                  "exhausted": true,
+                  "failed_attempt_count": 3,
+                  "retry_limit": 2
+                },
+                "original_reason": "reviewer_invocation_failed",
+                "reason": "reviewer_invocation_failed",
+                "recoverable": true,
+                "retry_limit": 2,
+                "retry_reasons": []
+              },
+              "probe_id": "CURSOR",
+              "reason": "reviewer_infrastructure_unavailable",
+              "status": "red"
+            },
+            "recoverable": true,
+            "retry_reasons": [],
+            "reviewer_assurance": "unavailable",
+            "reviewer_output_mode": "cursor_sdk",
+            "reviewer_runtime": "cursor_sdk",
+            "status": null
+          },
+          "reason": "reviewer_invocation_failed",
+          "to_runtime": "litellm_structured"
+        },
+        "finish_reason": "stop",
+        "prompt_chars": 11435,
+        "prompt_sha256": "091916428900c0538ab2894474e502b19b6b2d1472c6a39a70c0a542ab305e9a",
+        "prompt_tokens": 3639
+      },
+      "duration_ms": null,
+      "failure_classification": null,
+      "fallback_from_runtime": "cursor_sdk",
+      "fallback_reason": "reviewer_invocation_failed",
+      "independent_reviewer_panel_decision": {
+        "accepted_reviewers": [
+          "independent-reviewer-0",
+          "independent-reviewer-1"
+        ],
+        "aggregation_mode": "conservative",
+        "available_reviewers": [
+          "independent-reviewer-0",
+          "independent-reviewer-1"
+        ],
+        "blocking_reviewers": [],
+        "decision": "accept",
+        "low_confidence_reviewers": [],
+        "low_confidence_threshold": 0.0,
+        "missing_reviewers": [],
+        "non_accepting_reviewers": [],
+        "reason": "all_available_reviewers_accept",
+        "reviewer_inputs": [
+          {
+            "accepted": true,
+            "assurance_grade": "text_only",
+            "confidence": 0.95,
+            "decision": "accept",
+            "lineage": [
+              "google",
+              "litellm_structured",
+              "gemini-3.1-pro-preview"
+            ],
+            "model": "gemini-3.1-pro-preview",
+            "provider_family": "google",
+            "reviewer_id": "independent-reviewer-0",
+            "runtime": "litellm_structured",
+            "severity": "low",
+            "tool_access": "text_only",
+            "verdict_present": true
+          },
+          {
+            "accepted": true,
+            "assurance_grade": "agentic",
+            "confidence": 0.86,
+            "decision": "accept",
+            "lineage": [
+              "openai",
+              "codex_cli",
+              "gpt-5.5"
+            ],
+            "model": "gpt-5.5",
+            "provider_family": "openai",
+            "reviewer_id": "independent-reviewer-1",
+            "runtime": "codex_cli",
+            "severity": "low",
+            "tool_access": "codebase_tools",
+            "verdict_present": true
+          }
+        ],
+        "schema_version": "independent-reviewer-panel-decision/v1"
+      },
+      "independent_reviewer_results": [
+        {
+          "accepted": true,
+          "assurance_grade": "text_only",
+          "attempts": 1,
+          "confidence": 0.95,
+          "critical_review": {
+            "assumptions_to_verify": [
+              "The seed fixture and roster hashes match the actual files on disk",
+              "Evidence references resolve correctly"
+            ],
+            "contradictions_checked": [
+              "Discrepancy between 8 tests reported in test-evidence.md and 9 test functions in the tree (resolved as documentation staleness)"
+            ],
+            "decision": "accept",
+            "missing_evidence": [
+              "Live execution logs for pytest and shasum verification"
+            ],
+            "severity": "low",
+            "strongest_objection": "Test results and hashes are self-reported in the evidence receipts and not live-verified in this gate.",
+            "what_would_change_my_mind": "Evidence of policy mutation, live test failures, or the loader executing workflow arms."
+          },
+          "decision": "accept",
+          "failure_classification": null,
+          "gate": "outcome_review",
+          "lineage": [
+            "google",
+            "litellm_structured",
+            "gemini-3.1-pro-preview"
+          ],
+          "model": "gemini-3.1-pro-preview",
+          "output_sha256": "ec09218321e09850f44667ba7050346191cb85cab88c4ea1bd4107f348ac227e",
+          "provider_family": "google",
+          "recoverable": false,
+          "reviewer_assurance": "fallback_text_only",
+          "reviewer_id": "independent-reviewer-0",
+          "reviewer_output_mode": "litellm_structured",
+          "reviewer_runtime": "litellm_structured",
+          "round_index": 1,
+          "runtime": "litellm_structured",
+          "schema_version": "independent-reviewer-panel-result/v1",
+          "severity": "low",
+          "task_id": "agentic-eval-corpus-20260603",
+          "tests": [
+            "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_loads_seed_fixture",
+            "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_bad_schema_version",
+            "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_roster_sha_mismatch",
+            "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_missing_evidence_ref",
+            "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_missing_diff_hunk_label",
+            "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_per_arm_budget",
+            "tests/test_agentic_eval_corpus.py::test_mine_agentic_eval_cases_is_deterministic",
+            "tests/test_agentic_eval_corpus.py::test_miner_stages_candidates_without_touching_curated_corpus",
+            "tests/test_agentic_eval_corpus.py::test_agentic_eval_corpus_replay_does_not_call_workflow_runner"
+          ],
+          "tool_access": "text_only",
+          "transcript_refs": [
+            {
+              "chars": 3141,
+              "kind": "reviewer_transcript_tail",
+              "ref": "independent_reviewer_review:agentic-eval-corpus-20260603:outcome_review:1:independent-reviewer-0"
+            }
+          ],
+          "transcript_sha256": "b2f2579b1b10eb68f908137acf254bb6bf4dda7efa6382a97462da2d79db137a",
+          "verdict_present": true
+        },
+        {
+          "accepted": true,
+          "assurance_grade": "agentic",
+          "attempts": 1,
+          "confidence": 0.86,
+          "critical_review": {
+            "assumptions_to_verify": [
+              "reported pytest and full-suite receipts came from the same reviewed tree",
+              "the untracked file pack is the intended implementation scope before commit",
+              "miner defaulting ambiguous workflow results to accept is acceptable because candidates remain review-staged only"
+            ],
+            "contradictions_checked": [
+              "test-evidence.md reports 8 focused tests passed, while tests/test_agentic_eval_corpus.py now contains 9 test functions; this appears to under-count rather than over-claim source coverage.",
+              "Claude cites git diff HEAD empty, but git diff excludes untracked files; I treated this only as no tracked-file mutation evidence and separately checked relevant policy/config/state paths.",
+              "The replay test defines a forbidden_runner but does not wire it; the actual guard is the loader signature plus fixture_replay-only execution_mode check, which the source supports.",
+              "Seed budgets have different numeric values for some tasks, but the PRD forbids runner-shaped/per-arm budget shape, not differing task-level budget amounts."
+            ],
+            "decision": "accept",
+            "missing_evidence": [
+              "live pytest output from this independent review",
+              "live py_compile output from this independent review",
+              "a staged or otherwise explicit diff/check that includes the untracked new files",
+              "CI or committed-revision evidence tying the receipts to the exact reviewed tree"
+            ],
+            "severity": "low",
+            "strongest_objection": "The strongest reason not to advance is evidence quality: pytest/py_compile/full-suite results were not independently executed here, and git diff HEAD/git diff --check are weak receipts because the implementation files are untracked new files.",
+            "what_would_change_my_mind": "A focused pytest or py_compile failure, missing evidence/cassette refs, a tracked policy/config/state/default mutation, a loader path that can invoke target/workflow execution, or proof the miner can overwrite the curated corpus would change this to revise or deny."
+          },
+          "decision": "accept",
+          "failure_classification": null,
+          "gate": "outcome_review",
+          "lineage": [
+            "openai",
+            "codex_cli",
+            "gpt-5.5"
+          ],
+          "model": "gpt-5.5",
+          "output_sha256": "bc3556c34f6fc816b8ff2313e651c42af01ece59a34209c01904429124697b2e",
+          "provider_family": "openai",
+          "recoverable": false,
+          "reviewer_assurance": "tool_backed_primary",
+          "reviewer_id": "independent-reviewer-1",
+          "reviewer_output_mode": "codex_cli",
+          "reviewer_runtime": "codex_cli",
+          "round_index": 1,
+          "runtime": "codex_cli",
+          "schema_version": "independent-reviewer-panel-result/v1",
+          "severity": "low",
+          "task_id": "agentic-eval-corpus-20260603",
+          "tests": [
+            "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_loads_seed_fixture",
+            "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_bad_schema_version",
+            "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_roster_sha_mismatch",
+            "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_missing_evidence_ref",
+            "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_missing_diff_hunk_label",
+            "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_per_arm_budget",
+            "tests/test_agentic_eval_corpus.py::test_mine_agentic_eval_cases_is_deterministic",
+            "tests/test_agentic_eval_corpus.py::test_miner_stages_candidates_without_touching_curated_corpus",
+            "tests/test_agentic_eval_corpus.py::test_agentic_eval_corpus_replay_does_not_call_workflow_runner"
+          ],
+          "tool_access": "codebase_tools",
+          "transcript_refs": [
+            {
+              "chars": 4000,
+              "kind": "reviewer_transcript_tail",
+              "ref": "independent_reviewer_review:agentic-eval-corpus-20260603:outcome_review:1:independent-reviewer-1"
+            }
+          ],
+          "transcript_sha256": "b37509979efe1af06886036f46c287ecd7beda129bccbcffa6b1565812f8f974",
+          "verdict_present": true
+        }
+      ],
+      "model": "gemini-3.1-pro-preview",
+      "outcome": {
+        "changed_files": [
+          "supervisor/agentic_eval_corpus.py",
+          "scripts/mine_agentic_eval_cases.py",
+          "tests/test_agentic_eval_corpus.py",
+          "tests/fixtures/agentic_eval/agentic_lead_labeled_set.yaml",
+          "tests/fixtures/agentic_eval/corpus_evidence/",
+          "docs/dual-agent/agentic-eval-corpus-20260603/",
+          ".scratch/agentic-eval/"
+        ],
+        "claims": [
+          "Report-only loader exposes no workflow arm execution",
+          "Miner stages candidates and refuses to overwrite the curated corpus path",
+          "No tracked policy/state/registry file was modified"
+        ],
+        "confidence": 0.95,
+        "confidence_criteria": [
+          "All intent invariants met",
+          "Tests pass",
+          "No policy mutation"
+        ],
+        "confidence_rationale": "Evidence receipts confirm that tests passed, the miner stages candidates correctly, and no policy defaults were mutated. The Claude outcome accurately reflects the state of the implementation.",
+        "critical_review": {
+          "assumptions_to_verify": [
+            "The seed fixture and roster hashes match the actual files on disk",
+            "Evidence references resolve correctly"
+          ],
+          "contradictions_checked": [
+            "Discrepancy between 8 tests reported in test-evidence.md and 9 test functions in the tree (resolved as documentation staleness)"
+          ],
+          "decision": "accept",
+          "missing_evidence": [
+            "Live execution logs for pytest and shasum verification"
+          ],
+          "severity": "low",
+          "strongest_objection": "Test results and hashes are self-reported in the evidence receipts and not live-verified in this gate.",
+          "what_would_change_my_mind": "Evidence of policy mutation, live test failures, or the loader executing workflow arms."
+        },
+        "decisions": [
+          "accept"
+        ],
+        "objections": [],
+        "specialists": [
+          {
+            "decision": "accept",
+            "name": "Cursor Reviewer",
+            "objection": "None"
+          }
+        ],
+        "summary": "The outcome review gate is accepted. The implementation successfully adds a report-only agentic eval labeled corpus and a review-staged handoff miner without mutating policy defaults. Evidence supports the claims and tests pass.",
+        "task_id": "agentic-eval-corpus-20260603",
+        "test_status": "passed",
+        "tests": [
+          "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_loads_seed_fixture",
+          "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_bad_schema_version",
+          "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_roster_sha_mismatch",
+          "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_missing_evidence_ref",
+          "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_missing_diff_hunk_label",
+          "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_per_arm_budget",
+          "tests/test_agentic_eval_corpus.py::test_mine_agentic_eval_cases_is_deterministic",
+          "tests/test_agentic_eval_corpus.py::test_miner_stages_candidates_without_touching_curated_corpus",
+          "tests/test_agentic_eval_corpus.py::test_agentic_eval_corpus_replay_does_not_call_workflow_runner"
+        ]
+      },
+      "probe": {
+        "details": {},
+        "probe_id": "CURSOR",
+        "reason": "cursor_review_ok",
+        "status": "green"
+      },
+      "recoverable": false,
+      "retry_reasons": [],
+      "reviewer_assurance": "fallback_text_only",
+      "reviewer_output_mode": "litellm_structured",
+      "reviewer_runtime": "litellm_structured",
+      "run_id": "HtUfatbACIvc7bEPtofvuAc",
+      "schema_version": "independent-reviewer-result/v1",
+      "status": "finished",
+      "transcript_tail": "[cursor attempt 1/4]\n<dual_agent_outcome>{\n  \"task_id\": \"agentic-eval-corpus-20260603\",\n  \"summary\": \"The outcome review gate is accepted. The implementation successfully adds a report-only agentic eval labeled corpus and a review-staged handoff miner without mutating policy defaults. Evidence supports the claims and tests pass.\",\n  \"specialists\": [\n    {\n      \"name\": \"Cursor Reviewer\",\n      \"decision\": \"accept\",\n      \"objection\": \"None\"\n    }\n  ],\n  \"decisions\": [\n    \"accept\"\n  ],\n  \"objections\": [],\n  \"changed_files\": [\n    \"supervisor/agentic_eval_corpus.py\",\n    \"scripts/mine_agentic_eval_cases.py\",\n    \"tests/test_agentic_eval_corpus.py\",\n    \"tests/fixtures/agentic_eval/agentic_lead_labeled_set.yaml\",\n    \"tests/fixtures/agentic_eval/corpus_evidence/\",\n    \"docs/dual-agent/agentic-eval-corpus-20260603/\",\n    \".scratch/agentic-eval/\"\n  ],\n  \"tests\": [\n    \"tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_loads_seed_fixture\",\n    \"tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_bad_schema_version\",\n    \"tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_roster_sha_mismatch\",\n    \"tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_missing_evidence_ref\",\n    \"tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_missing_diff_hunk_label\",\n    \"tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_per_arm_budget\",\n    \"tests/test_agentic_eval_corpus.py::test_mine_agentic_eval_cases_is_deterministic\",\n    \"tests/test_agentic_eval_corpus.py::test_miner_stages_candidates_without_touching_curated_corpus\",\n    \"tests/test_agentic_eval_corpus.py::test_agentic_eval_corpus_replay_does_not_call_workflow_runner\"\n  ],\n  \"test_status\": \"passed\",\n  \"confidence\": 0.95,\n  \"confidence_rationale\": \"Evidence receipts confirm that tests passed, the miner stages candidates correctly, and no policy defaults were mutated. The Claude outcome accurately reflects the state of the implementation.\",\n  \"confidence_criteria\": [\n    \"All intent invariants met\",\n    \"Tests pass\",\n    \"No policy mutation\"\n  ],\n  \"claims\": [\n    \"Report-only loader exposes no workflow arm execution\",\n    \"Miner stages candidates and refuses to overwrite the curated corpus path\",\n    \"No tracked policy/state/registry file was modified\"\n  ],\n  \"critical_review\": {\n    \"strongest_objection\": \"Test results and hashes are self-reported in the evidence receipts and not live-verified in this gate.\",\n    \"missing_evidence\": [\n      \"Live execution logs for pytest and shasum verification\"\n    ],\n    \"contradictions_checked\": [\n      \"Discrepancy between 8 tests reported in test-evidence.md and 9 test functions in the tree (resolved as documentation staleness)\"\n    ],\n    \"assumptions_to_verify\": [\n      \"The seed fixture and roster hashes match the actual files on disk\",\n      \"Evidence references resolve correctly\"\n    ],\n    \"what_would_change_my_mind\": \"Evidence of policy mutation, live test failures, or the loader executing workflow arms.\",\n    \"decision\": \"accept\",\n    \"severity\": \"low\"\n  }\n}</dual_agent_outcome>"
+    },
+    "independent_reviewer_panel_decision": {
+      "accepted_reviewers": [
+        "independent-reviewer-0",
+        "independent-reviewer-1"
+      ],
+      "aggregation_mode": "conservative",
+      "available_reviewers": [
+        "independent-reviewer-0",
+        "independent-reviewer-1"
+      ],
+      "blocking_reviewers": [],
+      "decision": "accept",
+      "low_confidence_reviewers": [],
+      "low_confidence_threshold": 0.0,
+      "missing_reviewers": [],
+      "non_accepting_reviewers": [],
+      "reason": "all_available_reviewers_accept",
+      "reviewer_inputs": [
+        {
+          "accepted": true,
+          "assurance_grade": "text_only",
+          "confidence": 0.95,
+          "decision": "accept",
+          "lineage": [
+            "google",
+            "litellm_structured",
+            "gemini-3.1-pro-preview"
+          ],
+          "model": "gemini-3.1-pro-preview",
+          "provider_family": "google",
+          "reviewer_id": "independent-reviewer-0",
+          "runtime": "litellm_structured",
+          "severity": "low",
+          "tool_access": "text_only",
+          "verdict_present": true
+        },
+        {
+          "accepted": true,
+          "assurance_grade": "agentic",
+          "confidence": 0.86,
+          "decision": "accept",
+          "lineage": [
+            "openai",
+            "codex_cli",
+            "gpt-5.5"
+          ],
+          "model": "gpt-5.5",
+          "provider_family": "openai",
+          "reviewer_id": "independent-reviewer-1",
+          "runtime": "codex_cli",
+          "severity": "low",
+          "tool_access": "codebase_tools",
+          "verdict_present": true
+        }
+      ],
+      "schema_version": "independent-reviewer-panel-decision/v1"
+    },
+    "independent_reviewer_results": [
+      {
+        "accepted": true,
+        "assurance_grade": "text_only",
+        "attempts": 1,
+        "confidence": 0.95,
+        "critical_review": {
+          "assumptions_to_verify": [
+            "The seed fixture and roster hashes match the actual files on disk",
+            "Evidence references resolve correctly"
+          ],
+          "contradictions_checked": [
+            "Discrepancy between 8 tests reported in test-evidence.md and 9 test functions in the tree (resolved as documentation staleness)"
+          ],
+          "decision": "accept",
+          "missing_evidence": [
+            "Live execution logs for pytest and shasum verification"
+          ],
+          "severity": "low",
+          "strongest_objection": "Test results and hashes are self-reported in the evidence receipts and not live-verified in this gate.",
+          "what_would_change_my_mind": "Evidence of policy mutation, live test failures, or the loader executing workflow arms."
+        },
+        "decision": "accept",
+        "failure_classification": null,
+        "gate": "outcome_review",
+        "lineage": [
+          "google",
+          "litellm_structured",
+          "gemini-3.1-pro-preview"
+        ],
+        "model": "gemini-3.1-pro-preview",
+        "output_sha256": "ec09218321e09850f44667ba7050346191cb85cab88c4ea1bd4107f348ac227e",
+        "provider_family": "google",
+        "recoverable": false,
+        "reviewer_assurance": "fallback_text_only",
+        "reviewer_id": "independent-reviewer-0",
+        "reviewer_output_mode": "litellm_structured",
+        "reviewer_runtime": "litellm_structured",
+        "round_index": 1,
+        "runtime": "litellm_structured",
+        "schema_version": "independent-reviewer-panel-result/v1",
+        "severity": "low",
+        "task_id": "agentic-eval-corpus-20260603",
+        "tests": [
+          "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_loads_seed_fixture",
+          "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_bad_schema_version",
+          "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_roster_sha_mismatch",
+          "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_missing_evidence_ref",
+          "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_missing_diff_hunk_label",
+          "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_per_arm_budget",
+          "tests/test_agentic_eval_corpus.py::test_mine_agentic_eval_cases_is_deterministic",
+          "tests/test_agentic_eval_corpus.py::test_miner_stages_candidates_without_touching_curated_corpus",
+          "tests/test_agentic_eval_corpus.py::test_agentic_eval_corpus_replay_does_not_call_workflow_runner"
+        ],
+        "tool_access": "text_only",
+        "transcript_refs": [
+          {
+            "chars": 3141,
+            "kind": "reviewer_transcript_tail",
+            "ref": "independent_reviewer_review:agentic-eval-corpus-20260603:outcome_review:1:independent-reviewer-0"
+          }
+        ],
+        "transcript_sha256": "b2f2579b1b10eb68f908137acf254bb6bf4dda7efa6382a97462da2d79db137a",
+        "verdict_present": true
+      },
+      {
+        "accepted": true,
+        "assurance_grade": "agentic",
+        "attempts": 1,
+        "confidence": 0.86,
+        "critical_review": {
+          "assumptions_to_verify": [
+            "reported pytest and full-suite receipts came from the same reviewed tree",
+            "the untracked file pack is the intended implementation scope before commit",
+            "miner defaulting ambiguous workflow results to accept is acceptable because candidates remain review-staged only"
+          ],
+          "contradictions_checked": [
+            "test-evidence.md reports 8 focused tests passed, while tests/test_agentic_eval_corpus.py now contains 9 test functions; this appears to under-count rather than over-claim source coverage.",
+            "Claude cites git diff HEAD empty, but git diff excludes untracked files; I treated this only as no tracked-file mutation evidence and separately checked relevant policy/config/state paths.",
+            "The replay test defines a forbidden_runner but does not wire it; the actual guard is the loader signature plus fixture_replay-only execution_mode check, which the source supports.",
+            "Seed budgets have different numeric values for some tasks, but the PRD forbids runner-shaped/per-arm budget shape, not differing task-level budget amounts."
+          ],
+          "decision": "accept",
+          "missing_evidence": [
+            "live pytest output from this independent review",
+            "live py_compile output from this independent review",
+            "a staged or otherwise explicit diff/check that includes the untracked new files",
+            "CI or committed-revision evidence tying the receipts to the exact reviewed tree"
+          ],
+          "severity": "low",
+          "strongest_objection": "The strongest reason not to advance is evidence quality: pytest/py_compile/full-suite results were not independently executed here, and git diff HEAD/git diff --check are weak receipts because the implementation files are untracked new files.",
+          "what_would_change_my_mind": "A focused pytest or py_compile failure, missing evidence/cassette refs, a tracked policy/config/state/default mutation, a loader path that can invoke target/workflow execution, or proof the miner can overwrite the curated corpus would change this to revise or deny."
+        },
+        "decision": "accept",
+        "failure_classification": null,
+        "gate": "outcome_review",
+        "lineage": [
+          "openai",
+          "codex_cli",
+          "gpt-5.5"
+        ],
+        "model": "gpt-5.5",
+        "output_sha256": "bc3556c34f6fc816b8ff2313e651c42af01ece59a34209c01904429124697b2e",
+        "provider_family": "openai",
+        "recoverable": false,
+        "reviewer_assurance": "tool_backed_primary",
+        "reviewer_id": "independent-reviewer-1",
+        "reviewer_output_mode": "codex_cli",
+        "reviewer_runtime": "codex_cli",
+        "round_index": 1,
+        "runtime": "codex_cli",
+        "schema_version": "independent-reviewer-panel-result/v1",
+        "severity": "low",
+        "task_id": "agentic-eval-corpus-20260603",
+        "tests": [
+          "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_loads_seed_fixture",
+          "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_bad_schema_version",
+          "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_roster_sha_mismatch",
+          "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_missing_evidence_ref",
+          "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_missing_diff_hunk_label",
+          "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_per_arm_budget",
+          "tests/test_agentic_eval_corpus.py::test_mine_agentic_eval_cases_is_deterministic",
+          "tests/test_agentic_eval_corpus.py::test_miner_stages_candidates_without_touching_curated_corpus",
+          "tests/test_agentic_eval_corpus.py::test_agentic_eval_corpus_replay_does_not_call_workflow_runner"
+        ],
+        "tool_access": "codebase_tools",
+        "transcript_refs": [
+          {
+            "chars": 4000,
+            "kind": "reviewer_transcript_tail",
+            "ref": "independent_reviewer_review:agentic-eval-corpus-20260603:outcome_review:1:independent-reviewer-1"
+          }
+        ],
+        "transcript_sha256": "b37509979efe1af06886036f46c287ecd7beda129bccbcffa6b1565812f8f974",
+        "verdict_present": true
+      }
+    ],
+    "outcome": {
+      "changed_files": [
+        "supervisor/agentic_eval_corpus.py",
+        "scripts/mine_agentic_eval_cases.py",
+        "tests/test_agentic_eval_corpus.py",
+        "tests/fixtures/agentic_eval/agentic_lead_labeled_set.yaml",
+        "tests/fixtures/agentic_eval/corpus_evidence/",
+        "docs/dual-agent/agentic-eval-corpus-20260603/",
+        ".scratch/agentic-eval/"
+      ],
+      "claims": [
+        "Report-only loader exposes no workflow arm execution (no workflow_runner param)",
+        "Miner stages candidates and refuses to overwrite the curated corpus path",
+        "No tracked policy/state/registry file was modified (git diff HEAD empty)",
+        "9 tests cover all 3 invariants and are non-vacuous"
+      ],
+      "confidence": 0.9,
+      "confidence_criteria": [
+        "intent invariants realized at source: yes",
+        "non-vacuous public-boundary tests covering invariants: yes (9)",
+        "out-of-scope/no-mutation invariant: yes (git diff HEAD empty)",
+        "live test execution: no (approval declined)",
+        "fixture/roster hash re-derived: no (shasum approval declined)"
+      ],
+      "confidence_rationale": "All 3 intent invariants verified at source boundaries and via git diff, and covered by 9 non-vacuous public-boundary tests read directly. Sole residual is live pytest/shasum un-run (approval declined, consistent workflow pattern); self-reported evidence and direct code/diff inspection corroborate.",
+      "critical_review": {
+        "assumptions_to_verify": [
+          "roster_sha256 in seed yaml matches re-derivation \u2014 mitigated: loads_seed test (:30) re-derives and asserts equality",
+          "evidence/cassette refs resolve on disk \u2014 mitigated: loader _ref_exists checks + missing-evidence rejection tests"
+        ],
+        "contradictions_checked": [
+          "test-evidence.md:8 says '8 passed' but tree has 9 test funcs \u2014 resolved: doc staleness that under-claims coverage, non-blocking",
+          "budget shape: _validate_budget_shapes (corpus.py:406-409) checks budget KEYS only, so per-task value differences (12000/3.5) are allowed, not a shape violation"
+        ],
+        "decision": "accept",
+        "missing_evidence": [
+          "live pytest output for tests/test_agentic_eval_corpus.py",
+          "shasum re-derivation of seed fixture (46b9ce0b) and roster (f09369bb)"
+        ],
+        "severity": "low",
+        "strongest_objection": "pytest and shasum were not executed in this gate (approval declined), so the 8/25/659-passed and fixture/roster hashes are self-reported rather than live-verified.",
+        "what_would_change_my_mind": "A tracked-file diff touching state.py/policy/registry (P5 violation), or a workflow_runner/live-execution hook in the loader, or a live pytest failure."
+      },
+      "decisions": [
+        "accept"
+      ],
+      "objections": [],
+      "specialists": [
+        {
+          "decision": "accept",
+          "name": "lead-gate-reviewer",
+          "objection": null
+        }
+      ],
+      "summary": "Final outcome_review: all 3 intent invariants (report-only loader with no workflow_runner param, review-staged miner that refuses curated-path writes, no policy/state mutation via empty git diff HEAD) realized at source and covered by 9 non-vacuous public-boundary tests. ACCEPT.",
+      "task_id": "agentic-eval-corpus-20260603",
+      "test_status": "unknown",
+      "tests": [
+        "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_loads_seed_fixture",
+        "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_bad_schema_version",
+        "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_roster_sha_mismatch",
+        "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_missing_evidence_ref",
+        "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_missing_diff_hunk_label",
+        "tests/test_agentic_eval_corpus.py::test_agentic_eval_labeled_set_rejects_per_arm_budget",
+        "tests/test_agentic_eval_corpus.py::test_mine_agentic_eval_cases_is_deterministic",
+        "tests/test_agentic_eval_corpus.py::test_miner_stages_candidates_without_touching_curated_corpus",
+        "tests/test_agentic_eval_corpus.py::test_agentic_eval_corpus_replay_does_not_call_workflow_runner"
+      ]
+    },
+    "probes": {
+      "P1": {
+        "details": {},
+        "probe_id": "P1",
+        "reason": "planning_artifact_boundaries_ok",
+        "status": "green"
+      },
+      "P2": {
+        "details": {
+          "captured_bytes": 8016,
+          "captured_token_estimate": 1998,
+          "orchestration_surface": "/lead"
+        },
+        "probe_id": "P2",
+        "reason": "worker_orchestration_invocation_ok",
+        "status": "green"
+      },
+      "P3": {
+        "details": {},
+        "probe_id": "P3",
+        "reason": "outcome_fidelity_ok",
+        "status": "green"
+      },
+      "P4": {
+        "details": {
+          "decisions": [
+            "accept",
+            "accept",
+            "accept"
+          ]
+        },
+        "probe_id": "P4",
+        "reason": "outcome_gate_decision_ok",
+        "status": "green"
+      },
+      "P_planning": {
+        "details": {
+          "artifact_hashes": {
+            "grill_findings": "517760b850486b263acf4235533e2d45f1c0f5169fe3a1035e3ca44522b0e4bf",
+            "implementation_plan": "819583695b36bbe41b3c997955f7e6c16054fdd9c9b25be36adbbe552fd39a5d",
+            "issues": "854e9d97642f06a8f4512b05df271d493fbe0af6953d7369c8454aba0c23bf5e",
+            "prd": "19bd6379a9de6ff8d5df155c332543883cbfbdfa2a40d36d82c7e21c2eb98fe7",
+            "tdd_plan": "d3aa8f8c72da625cda1720152ab7d894ffa03ab92a0873ffe18476a58dedfa3d"
+          },
+          "artifacts": [
+            {
+              "kind": "prd",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-corpus-20260603/source/prd.md",
+              "sha256": "19bd6379a9de6ff8d5df155c332543883cbfbdfa2a40d36d82c7e21c2eb98fe7",
+              "status": "accepted"
+            },
+            {
+              "kind": "issues",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-corpus-20260603/source/issues.md",
+              "sha256": "854e9d97642f06a8f4512b05df271d493fbe0af6953d7369c8454aba0c23bf5e",
+              "status": "accepted"
+            },
+            {
+              "kind": "tdd_plan",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-corpus-20260603/source/tdd.md",
+              "sha256": "d3aa8f8c72da625cda1720152ab7d894ffa03ab92a0873ffe18476a58dedfa3d",
+              "status": "accepted"
+            },
+            {
+              "kind": "grill_findings",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-corpus-20260603/source/grill-findings.md",
+              "sha256": "517760b850486b263acf4235533e2d45f1c0f5169fe3a1035e3ca44522b0e4bf",
+              "status": "accepted"
+            },
+            {
+              "kind": "implementation_plan",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-corpus-20260603/source/implementation-plan.md",
+              "sha256": "819583695b36bbe41b3c997955f7e6c16054fdd9c9b25be36adbbe552fd39a5d",
+              "status": "accepted"
+            }
+          ],
+          "checks": {
+            "AGG-001": "pass",
+            "AGG-002": "pass",
+            "GRILL-001": "pass",
+            "GRILL-002": "pass",
+            "GRILL-003": "pass",
+            "ISS-001": "pass",
+            "ISS-002": "pass",
+            "ISS-003": "pass",
+            "ISS-004": "pass",
+            "PLAN-001": "pass",
+            "PLAN-002": "pass",
+            "PLAN-003": "pass",
+            "PLAN-004": "pass",
+            "PRD-001": "pass",
+            "PRD-002": "pass",
+            "PRD-003": "pass",
+            "PRD-004": "pass",
+            "PRD-005": "pass",
+            "PRD-006": "pass",
+            "TDD-001": "pass",
+            "TDD-002": "pass",
+            "TDD-003": "pass",
+            "TDD-004": "pass"
+          },
+          "gate": "outcome_review",
+          "task_id": "agentic-eval-corpus-20260603",
+          "validator_version": "1.0.0",
+          "verdict": "accepted"
+        },
+        "probe_id": "P_planning",
+        "reason": "planning_validation_ok",
+        "status": "green"
+      }
+    },
+    "status": "accepted",
+    "supervisor_final_status": "accepted",
+    "task_id": "agentic-eval-corpus-20260603",
+    "tool_calls": [
+      {
+        "args": {
+          "agentic_lead_policy": "off",
+          "artifact_policy": "strict",
+          "dynamic_workflow_task_class": null,
+          "execution_layer_mode": "lead_direct",
+          "gate": "outcome_review",
+          "min_subagents": 0,
+          "planning_artifact_count": 13,
+          "required_evidence_grade": "self_reported",
+          "required_roles": [],
+          "screenshot_count": 0,
+          "task_id": "agentic-eval-corpus-20260603",
+          "user_facing": false
+        },
+        "attempts": 1,
+        "duration_ms": 132238,
+        "duration_us": 132238710,
+        "ended_at_ms": 1780471065606,
+        "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-eval-corpus-20260603.json",
+        "name": "start_dual_agent_gate",
+        "probe_id": null,
+        "result_summary": {
+          "claude_gate_status": "accepted",
+          "probe_statuses": {
+            "P1": "green",
+            "P2": "green",
+            "P3": "green",
+            "P4": "green",
+            "P_planning": "green"
+          },
+          "supervisor_final_status": "accepted"
+        },
+        "started_at_ms": 1780470933368,
+        "status": "completed",
+        "tool_call_id": "start_dual_agent_gate#1780470933368#132238710"
+      },
+      {
+        "args": {
+          "gate": "outcome_review",
+          "task_id": "agentic-eval-corpus-20260603"
+        },
+        "attempts": 1,
+        "cost_usd": 3.7150612499999998,
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780471065607,
+        "model": "opus",
+        "name": "invoke_claude_lead",
+        "parent_tool_call_id": "start_dual_agent_gate#1780470933368#132238710",
+        "probe_id": null,
+        "result_summary": {
+          "outcome_present": true,
+          "probe_reason": "outcome_fidelity_ok",
+          "probe_status": "green",
+          "tokens_in": 1370780,
+          "tokens_out": 8766
+        },
+        "started_at_ms": 1780471065607,
+        "status": "completed",
+        "stderr_bytes": 0,
+        "stdout_bytes": 8016,
+        "token_usage": {
+          "cache_creation_input_tokens": 56739,
+          "cache_read_input_tokens": 1312360,
+          "context_window": 200000,
+          "input_tokens": 1681,
+          "max_output_tokens": 32000,
+          "output_tokens": 8766,
+          "tokens_in": 1370780,
+          "tokens_out": 8766
+        },
+        "tokens_in": 1370780,
+        "tokens_out": 8766,
+        "tool_call_id": "invoke_claude_lead#1780471065607#0"
+      },
+      {
+        "args": {
+          "probe_id": "P2"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780471065607,
+        "name": "probe:P2",
+        "parent_tool_call_id": "invoke_claude_lead#1780471065607#0",
+        "probe_id": "P2",
+        "reason": "worker_orchestration_invocation_ok",
+        "result_summary": {
+          "probe_id": "P2",
+          "reason": "worker_orchestration_invocation_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780471065607,
+        "status": "green",
+        "tool_call_id": "probe_p2#1780471065607#0#p2"
+      },
+      {
+        "args": {
+          "probe_id": "P3"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780471065607,
+        "name": "probe:P3",
+        "parent_tool_call_id": "invoke_claude_lead#1780471065607#0",
+        "probe_id": "P3",
+        "reason": "outcome_fidelity_ok",
+        "result_summary": {
+          "probe_id": "P3",
+          "reason": "outcome_fidelity_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780471065607,
+        "status": "green",
+        "tool_call_id": "probe_p3#1780471065607#0#p3"
+      },
+      {
+        "args": {
+          "probe_id": "P1"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780471065607,
+        "name": "probe:P1",
+        "parent_tool_call_id": "invoke_claude_lead#1780471065607#0",
+        "probe_id": "P1",
+        "reason": "planning_artifact_boundaries_ok",
+        "result_summary": {
+          "probe_id": "P1",
+          "reason": "planning_artifact_boundaries_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780471065607,
+        "status": "green",
+        "tool_call_id": "probe_p1#1780471065607#0#p1"
+      },
+      {
+        "args": {
+          "probe_id": "P4"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780471065607,
+        "name": "probe:P4",
+        "parent_tool_call_id": "invoke_claude_lead#1780471065607#0",
+        "probe_id": "P4",
+        "reason": "outcome_gate_decision_ok",
+        "result_summary": {
+          "probe_id": "P4",
+          "reason": "outcome_gate_decision_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780471065607,
+        "status": "green",
+        "tool_call_id": "probe_p4#1780471065607#0#p4"
+      },
+      {
+        "args": {
+          "probe_id": "P_planning"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780471065607,
+        "name": "probe:P_planning",
+        "parent_tool_call_id": "invoke_claude_lead#1780471065607#0",
+        "probe_id": "P_planning",
+        "reason": "planning_validation_ok",
+        "result_summary": {
+          "probe_id": "P_planning",
+          "reason": "planning_validation_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780471065607,
+        "status": "green",
+        "tool_call_id": "probe_p_planning#1780471065607#0#p_planning"
+      }
+    ],
+    "trace_envelope": {
+      "artifacts": [],
+      "claims": [
+        "Report-only loader exposes no workflow arm execution (no workflow_runner param)",
+        "Miner stages candidates and refuses to overwrite the curated corpus path",
+        "No tracked policy/state/registry file was modified (git diff HEAD empty)",
+        "9 tests cover all 3 invariants and are non-vacuous"
+      ],
+      "event_kind": "dual_agent_gate_result",
+      "failure_taxonomy": null,
+      "gate": "outcome_review",
+      "policy_verdict": "accepted",
+      "receipts": [],
+      "run_id": "codex-agentic-eval-corpus-20260603-a12e759f-6920-4b52-9ed9-32322c4a401f",
+      "schema_version": "dual-agent-trace-envelope/v1",
+      "source": "dual_agent",
+      "task_id": "agentic-eval-corpus-20260603",
+      "tool_calls": [
+        {
+          "args": {
+            "agentic_lead_policy": "off",
+            "artifact_policy": "strict",
+            "dynamic_workflow_task_class": null,
+            "execution_layer_mode": "lead_direct",
+            "gate": "outcome_review",
+            "min_subagents": 0,
+            "planning_artifact_count": 13,
+            "required_evidence_grade": "self_reported",
+            "required_roles": [],
+            "screenshot_count": 0,
+            "task_id": "agentic-eval-corpus-20260603",
+            "user_facing": false
+          },
+          "attempts": 1,
+          "duration_ms": 132238,
+          "duration_us": 132238710,
+          "ended_at_ms": 1780471065606,
+          "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-eval-corpus-20260603.json",
+          "name": "start_dual_agent_gate",
+          "probe_id": null,
+          "result_summary": {
+            "claude_gate_status": "accepted",
+            "probe_statuses": {
+              "P1": "green",
+              "P2": "green",
+              "P3": "green",
+              "P4": "green",
+              "P_planning": "green"
+            },
+            "supervisor_final_status": "accepted"
+          },
+          "started_at_ms": 1780470933368,
+          "status": "completed",
+          "tool_call_id": "start_dual_agent_gate#1780470933368#132238710"
+        },
+        {
+          "args": {
+            "gate": "outcome_review",
+            "task_id": "agentic-eval-corpus-20260603"
+          },
+          "attempts": 1,
+          "cost_usd": 3.7150612499999998,
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780471065607,
+          "model": "opus",
+          "name": "invoke_claude_lead",
+          "parent_tool_call_id": "start_dual_agent_gate#1780470933368#132238710",
+          "probe_id": null,
+          "result_summary": {
+            "outcome_present": true,
+            "probe_reason": "outcome_fidelity_ok",
+            "probe_status": "green",
+            "tokens_in": 1370780,
+            "tokens_out": 8766
+          },
+          "started_at_ms": 1780471065607,
+          "status": "completed",
+          "stderr_bytes": 0,
+          "stdout_bytes": 8016,
+          "token_usage": {
+            "cache_creation_input_tokens": 56739,
+            "cache_read_input_tokens": 1312360,
+            "context_window": 200000,
+            "input_tokens": 1681,
+            "max_output_tokens": 32000,
+            "output_tokens": 8766,
+            "tokens_in": 1370780,
+            "tokens_out": 8766
+          },
+          "tokens_in": 1370780,
+          "tokens_out": 8766,
+          "tool_call_id": "invoke_claude_lead#1780471065607#0"
+        },
+        {
+          "args": {
+            "probe_id": "P2"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780471065607,
+          "name": "probe:P2",
+          "parent_tool_call_id": "invoke_claude_lead#1780471065607#0",
+          "probe_id": "P2",
+          "reason": "worker_orchestration_invocation_ok",
+          "result_summary": {
+            "probe_id": "P2",
+            "reason": "worker_orchestration_invocation_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780471065607,
+          "status": "green",
+          "tool_call_id": "probe_p2#1780471065607#0#p2"
+        },
+        {
+          "args": {
+            "probe_id": "P3"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780471065607,
+          "name": "probe:P3",
+          "parent_tool_call_id": "invoke_claude_lead#1780471065607#0",
+          "probe_id": "P3",
+          "reason": "outcome_fidelity_ok",
+          "result_summary": {
+            "probe_id": "P3",
+            "reason": "outcome_fidelity_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780471065607,
+          "status": "green",
+          "tool_call_id": "probe_p3#1780471065607#0#p3"
+        },
+        {
+          "args": {
+            "probe_id": "P1"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780471065607,
+          "name": "probe:P1",
+          "parent_tool_call_id": "invoke_claude_lead#1780471065607#0",
+          "probe_id": "P1",
+          "reason": "planning_artifact_boundaries_ok",
+          "result_summary": {
+            "probe_id": "P1",
+            "reason": "planning_artifact_boundaries_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780471065607,
+          "status": "green",
+          "tool_call_id": "probe_p1#1780471065607#0#p1"
+        },
+        {
+          "args": {
+            "probe_id": "P4"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780471065607,
+          "name": "probe:P4",
+          "parent_tool_call_id": "invoke_claude_lead#1780471065607#0",
+          "probe_id": "P4",
+          "reason": "outcome_gate_decision_ok",
+          "result_summary": {
+            "probe_id": "P4",
+            "reason": "outcome_gate_decision_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780471065607,
+          "status": "green",
+          "tool_call_id": "probe_p4#1780471065607#0#p4"
+        },
+        {
+          "args": {
+            "probe_id": "P_planning"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780471065607,
+          "name": "probe:P_planning",
+          "parent_tool_call_id": "invoke_claude_lead#1780471065607#0",
+          "probe_id": "P_planning",
+          "reason": "planning_validation_ok",
+          "result_summary": {
+            "probe_id": "P_planning",
+            "reason": "planning_validation_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780471065607,
+          "status": "green",
+          "tool_call_id": "probe_p_planning#1780471065607#0#p_planning"
+        }
+      ]
+    }
+  },
+  "mandatory_artifacts": {
+    "missing": [],
+    "output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-corpus-20260603",
+    "required": [
+      "source/prd.md",
+      "source/grill-findings.md",
+      "source/issues.md",
+      "source/tdd.md",
+      "source/grill-findings-tdd.md",
+      "source/implementation-plan.md",
+      "interactions.md",
+      "outcome-review.md",
+      "transcript.md"
+    ],
+    "status": "ok"
+  },
+  "resume": {
+    "artifact_output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-corpus-20260603",
+    "blocker": null,
+    "current_gate": "outcome_review",
+    "last_status": "accepted",
+    "latest_event_id": 454934,
+    "next_safe_action": "read_gate_transcript and inspect exported artifacts",
+    "prompt": "Use codex_supervisor.\nContinue run_id=codex-agentic-eval-corpus-20260603-a12e759f-6920-4b52-9ed9-32322c4a401f\ntask_id=agentic-eval-corpus-20260603\ncurrent_gate=outcome_review\nlast_status=accepted\nlatest_event_id=454934\nnext_safe_action=read_gate_transcript and inspect exported artifacts\nartifact_output_dir=/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-corpus-20260603\nfirst inspect: read_gate_transcript(run_id=codex-agentic-eval-corpus-20260603-a12e759f-6920-4b52-9ed9-32322c4a401f, task_id=agentic-eval-corpus-20260603)",
+    "run_id": "codex-agentic-eval-corpus-20260603-a12e759f-6920-4b52-9ed9-32322c4a401f",
+    "status": "ok",
+    "steps": [
+      {
+        "attempt_count": 1,
+        "gate": "prd_review",
+        "latest_event_id": 453354,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "issues_review",
+        "latest_event_id": 453486,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "tdd_review",
+        "latest_event_id": 453847,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 2,
+        "gate": "implementation_plan",
+        "latest_event_id": 454415,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "execution",
+        "latest_event_id": 454473,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "outcome_review",
+        "latest_event_id": 454927,
+        "status": "accepted"
+      }
+    ],
+    "task_id": "agentic-eval-corpus-20260603",
+    "transcript_command": "read_gate_transcript(run_id=codex-agentic-eval-corpus-20260603-a12e759f-6920-4b52-9ed9-32322c4a401f, task_id=agentic-eval-corpus-20260603)"
+  },
+  "run_id": "codex-agentic-eval-corpus-20260603-a12e759f-6920-4b52-9ed9-32322c4a401f",
+  "status": "accepted",
+  "steps": [
+    {
+      "attempt_count": 1,
+      "gate": "prd_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "issues_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "tdd_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 2,
+      "gate": "implementation_plan",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "execution",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "outcome_review",
+      "status": "accepted"
+    }
+  ],
+  "task_id": "agentic-eval-corpus-20260603",
+  "visual_evidence_policy": {
+    "artifact_matches": [],
+    "matched_terms": [],
+    "required": false,
+    "source": "not_user_facing"
+  },
+  "workflow_route": {
+    "agentic_lead_policy": {
+      "min_subagents": 0,
+      "policy": "off",
+      "required_evidence_grade": "self_reported",
+      "required_roles": [],
+      "solo_exception_for_artifact_only_gates": false
+    },
+    "cursor_review_gates": [
+      "tdd_review",
+      "implementation_plan",
+      "outcome_review"
+    ],
+    "cursor_review_profile": "rigorous",
+    "dynamic_workflow_task_class": null,
+    "effective_cursor_review": true,
+    "execution_layer_mode": "lead_direct",
+    "force_cursor_review": false,
+    "gate_count": 6,
+    "gates": [
+      "prd_review",
+      "issues_review",
+      "tdd_review",
+      "implementation_plan",
+      "execution",
+      "outcome_review"
+    ],
+    "planning_depth": "large",
+    "reasons": [
+      "default_large"
+    ],
+    "requested_cursor_review": true,
+    "required_skill_stages": [
+      "to_prd",
+      "prd_grill",
+      "to_issues",
+      "tdd",
+      "tdd_grill"
+    ],
+    "requires_agentic_lead_policy_receipts": false,
+    "requires_brainstorm": false,
+    "requires_dynamic_workflow_receipts": false,
+    "requires_skill_receipts": true,
+    "resume": {
+      "mode": "fresh",
+      "pending_gates": [
+        "prd_review",
+        "issues_review",
+        "tdd_review",
+        "implementation_plan",
+        "execution",
+        "outcome_review"
+      ],
+      "schema_version": "dual-agent-workflow-resume/v1",
+      "skipped_gates": [],
+      "skipped_steps": []
+    },
+    "reviewer_infra_retry_backoff_s": 1.0,
+    "reviewer_infra_retry_limit": 2,
+    "reviewer_low_confidence_threshold": 0.0,
+    "reviewer_max_tokens": 4096,
+    "reviewer_model": "composer-2.5",
+    "reviewer_output_mode": "cursor_sdk",
+    "reviewer_panel_calibration_active": false,
+    "reviewer_panel_calibration_path": null,
+    "reviewer_unavailable_policy": "escalate",
+    "schema_version": "dual-agent-workflow-route/v1",
+    "task_complexity": "large"
+  }
+}

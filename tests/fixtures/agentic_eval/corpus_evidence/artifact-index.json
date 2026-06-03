@@ -1,0 +1,12 @@
+{
+  "schema_version": "agentic-lead-eval-corpus-artifact-index/v1",
+  "artifacts": [
+    "docs/dual-agent/agentic-eval-harness-runner-20260603/workflow-result-cli-resume.json",
+    "docs/dual-agent/agentic-eval-corpus-20260603/skill-receipts.json",
+    "tests/fixtures/agentic_eval/three_arm_tasks.yaml",
+    "tests/test_agentic_eval.py",
+    "tests/test_agentic_eval_corpus.py"
+  ],
+  "policy_change_allowed": false,
+  "agentic_lead_policy": "off"
+}

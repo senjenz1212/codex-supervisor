@@ -1,0 +1,1 @@
+{"task_id":"planning-artifact-deny","source_gate_result":"deny","status":"blocked","final_gate":"prd_review","probes":["P1"],"notes":"Missing immutable planning evidence must deny advancement."}

@@ -1,0 +1,1 @@
+{"task_id":"evidence-ref-revise","source_gate_result":"revise","status":"blocked","final_gate":"execution","probes":["P1","P2","P3"],"notes":"Missing or stale evidence refs require revision."}

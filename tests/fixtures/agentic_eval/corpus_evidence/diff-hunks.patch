@@ -1,0 +1,15 @@
+diff --git a/supervisor/agentic_eval.py b/supervisor/agentic_eval.py
+--- a/supervisor/agentic_eval.py
++++ b/supervisor/agentic_eval.py
+@@ multi-file-change-accept
++agentic_eval_runner(...)
+diff --git a/tests/test_agentic_eval.py b/tests/test_agentic_eval.py
+--- a/tests/test_agentic_eval.py
++++ b/tests/test_agentic_eval.py
+@@ multi-file-change-accept
++def test_agentic_eval_runner_covers_required_modes(): ...
+diff --git a/tests/fixtures/agentic_eval/three_arm_tasks.yaml b/tests/fixtures/agentic_eval/three_arm_tasks.yaml
+--- a/tests/fixtures/agentic_eval/three_arm_tasks.yaml
++++ b/tests/fixtures/agentic_eval/three_arm_tasks.yaml
+@@ multi-file-change-accept
++schema_version: agentic-lead-eval-dataset/v1

@@ -1,0 +1,1 @@
+{"task_id":"equal-budget-clean-accept","source_gate_result":"accept","status":"accepted","final_gate":"execution","probes":["P1","P2","P3"],"notes":"Task-level equal budget shape is valid."}

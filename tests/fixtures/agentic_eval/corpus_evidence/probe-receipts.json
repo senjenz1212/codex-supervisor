@@ -1,0 +1,11 @@
+{
+  "schema_version": "agentic-lead-eval-corpus-probe-receipts/v1",
+  "receipts": [
+    {"probe_id": "P1", "status": "green", "reason": "planning_artifact_boundaries_ok"},
+    {"probe_id": "P2", "status": "green", "reason": "worker_orchestration_invocation_ok"},
+    {"probe_id": "P3", "status": "green", "reason": "outcome_fidelity_ok"},
+    {"probe_id": "P13", "status": "green", "reason": "worker_receipt_hash_verified"},
+    {"probe_id": "P14", "status": "green", "reason": "worker_summary_by_reference_verified"},
+    {"probe_id": "CORPUS", "status": "green", "reason": "file_refs_resolve"}
+  ]
+}

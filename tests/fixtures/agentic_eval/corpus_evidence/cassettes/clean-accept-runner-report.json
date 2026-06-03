@@ -1,0 +1,1 @@
+{"task_id":"clean-accept-runner-report","source_gate_result":"accept","status":"accepted","final_gate":"outcome_review","probes":["P1","P2","P3"],"notes":"Clean report-only runner accepted with evidence artifacts."}

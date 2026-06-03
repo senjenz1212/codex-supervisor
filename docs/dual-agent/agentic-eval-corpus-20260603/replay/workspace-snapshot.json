@@ -1,0 +1,24 @@
+{
+  "file_tree_sha256": "e38d2524f2524e56d68679652ef6e82990f498235416287c37b8a0c5eff2bc9d",
+  "git": {
+    "diff_bytes": 0,
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "diff_stat": "",
+    "head": "0844d92",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "0844d92",
+    "status_short": "?? .scratch/agentic-eval/\n?? docs/dual-agent/agentic-eval-corpus-20260603/\n?? scripts/mine_agentic_eval_cases.py\n?? supervisor/agentic_eval_corpus.py\n?? tests/fixtures/agentic_eval/agentic_lead_labeled_set.yaml\n?? tests/fixtures/agentic_eval/corpus_evidence/\n?? tests/test_agentic_eval_corpus.py"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "d1eff16044edce32552d7aa88a69ff8ed88c157d824a22fad65d0eb84ac13ce6",
+    "implementation_plan": "819583695b36bbe41b3c997955f7e6c16054fdd9c9b25be36adbbe552fd39a5d",
+    "issues": "854e9d97642f06a8f4512b05df271d493fbe0af6953d7369c8454aba0c23bf5e",
+    "other": "1a8d2d824e3eb59911bee7fcaa1212ca71a2e0971bd473f418b6a1aac0db135f",
+    "prd": "19bd6379a9de6ff8d5df155c332543883cbfbdfa2a40d36d82c7e21c2eb98fe7",
+    "tdd_plan": "d3aa8f8c72da625cda1720152ab7d894ffa03ab92a0873ffe18476a58dedfa3d"
+  },
+  "status": "captured"
+}

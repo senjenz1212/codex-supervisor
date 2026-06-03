@@ -1,0 +1,1 @@
+{"task_id":"external-call-guard-deny","source_gate_result":"deny","status":"blocked","final_gate":"execution","probes":["P1","P2","P3"],"notes":"Fixture replay forbids target-agent execution."}

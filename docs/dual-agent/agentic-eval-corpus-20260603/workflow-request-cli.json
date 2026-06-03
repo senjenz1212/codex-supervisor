@@ -1,0 +1,260 @@
+{
+  "agentic_lead_policy": "off",
+  "cursor_review": true,
+  "cursor_review_profile": "rigorous",
+  "cwd": "/Users/sam.zhang/Documents/codex-supervisor",
+  "execution_layer_mode": "lead_direct",
+  "intent": "Add a report-only agentic eval labeled corpus and review-staged handoff miner with no policy default mutation.",
+  "max_rounds_per_gate": 5,
+  "planning_artifacts": [
+    {
+      "kind": "prd",
+      "mutable_by_worker": false,
+      "path": "docs/dual-agent/agentic-eval-corpus-20260603/source/prd.md",
+      "sha256": "19bd6379a9de6ff8d5df155c332543883cbfbdfa2a40d36d82c7e21c2eb98fe7"
+    },
+    {
+      "kind": "grill_findings",
+      "mutable_by_worker": false,
+      "path": "docs/dual-agent/agentic-eval-corpus-20260603/source/grill-findings.md",
+      "sha256": "517760b850486b263acf4235533e2d45f1c0f5169fe3a1035e3ca44522b0e4bf"
+    },
+    {
+      "kind": "issues",
+      "mutable_by_worker": false,
+      "path": "docs/dual-agent/agentic-eval-corpus-20260603/source/issues.md",
+      "sha256": "854e9d97642f06a8f4512b05df271d493fbe0af6953d7369c8454aba0c23bf5e"
+    },
+    {
+      "kind": "tdd_plan",
+      "mutable_by_worker": false,
+      "path": "docs/dual-agent/agentic-eval-corpus-20260603/source/tdd.md",
+      "sha256": "d3aa8f8c72da625cda1720152ab7d894ffa03ab92a0873ffe18476a58dedfa3d"
+    },
+    {
+      "kind": "grill_findings",
+      "mutable_by_worker": false,
+      "path": "docs/dual-agent/agentic-eval-corpus-20260603/source/grill-findings-tdd.md",
+      "sha256": "d1eff16044edce32552d7aa88a69ff8ed88c157d824a22fad65d0eb84ac13ce6"
+    },
+    {
+      "kind": "implementation_plan",
+      "mutable_by_worker": false,
+      "path": "docs/dual-agent/agentic-eval-corpus-20260603/source/implementation-plan.md",
+      "sha256": "819583695b36bbe41b3c997955f7e6c16054fdd9c9b25be36adbbe552fd39a5d"
+    },
+    {
+      "kind": "other",
+      "mutable_by_worker": false,
+      "path": "docs/dual-agent/agentic-eval-corpus-20260603/test-evidence.md",
+      "sha256": "1a8d2d824e3eb59911bee7fcaa1212ca71a2e0971bd473f418b6a1aac0db135f"
+    }
+  ],
+  "quality": "best",
+  "require_skill_receipts": true,
+  "run_id": "codex-agentic-eval-corpus-20260603-a12e759f-6920-4b52-9ed9-32322c4a401f",
+  "task_id": "agentic-eval-corpus-20260603",
+  "timeout_s": 1200,
+  "tool_receipts": [
+    {
+      "artifacts": [
+        "docs/dual-agent/agentic-eval-corpus-20260603/source/prd.md"
+      ],
+      "claims": [
+        "PRD promise contracts produced",
+        "report-only corpus scope specified",
+        "public boundaries named"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-to-prd-agentic-eval-corpus-20260603",
+      "skill": "to-prd",
+      "stage": "to_prd",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/agentic-eval-corpus-20260603/source/grill-findings.md"
+      ],
+      "claims": [
+        "PRD grill findings resolved",
+        "runner/corpus boundary clarified",
+        "miner curation pause pinned"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-prd-grill-agentic-eval-corpus-20260603",
+      "skill": "grill-with-docs",
+      "stage": "prd_grill",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/agentic-eval-corpus-20260603/source/issues.md"
+      ],
+      "claims": [
+        "Issue slices cover every PRD promise",
+        "first RED tests name public boundaries"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-to-issues-agentic-eval-corpus-20260603",
+      "skill": "to-issues",
+      "stage": "to_issues",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/agentic-eval-corpus-20260603/source/tdd.md"
+      ],
+      "claims": [
+        "TDD plan starts at loader and miner public boundaries",
+        "schema, evidence, miner, seed, and report-only regressions planned"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-tdd-agentic-eval-corpus-20260603",
+      "skill": "tdd",
+      "stage": "tdd",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/agentic-eval-corpus-20260603/source/grill-findings-tdd.md"
+      ],
+      "claims": [
+        "TDD grill findings resolved",
+        "translation audit completed"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-tdd-grill-agentic-eval-corpus-20260603",
+      "skill": "grill-with-docs",
+      "stage": "tdd_grill",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/agentic-eval-corpus-20260603/source/prd.md",
+        "docs/dual-agent/agentic-eval-corpus-20260603/source/issues.md",
+        "docs/dual-agent/agentic-eval-corpus-20260603/source/tdd.md",
+        "docs/dual-agent/agentic-eval-corpus-20260603/source/grill-findings.md",
+        "docs/dual-agent/agentic-eval-corpus-20260603/source/grill-findings-tdd.md",
+        "docs/dual-agent/agentic-eval-corpus-20260603/source/implementation-plan.md"
+      ],
+      "claims": [
+        "local planning validator accepted all workflow gates"
+      ],
+      "command": "uv run python - <<PY ... validate_planning_artifacts(...) for all workflow gates",
+      "kind": "test",
+      "receipt_id": "planning-validator-agentic-eval-corpus-20260603",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "tests/test_agentic_eval_corpus.py"
+      ],
+      "claims": [
+        "8 corpus tests passed",
+        "schema, roster, evidence, miner, curated-path, and replay guard covered"
+      ],
+      "command": "uv run pytest tests/test_agentic_eval_corpus.py -q",
+      "kind": "test",
+      "receipt_id": "pytest-focused-agentic-eval-corpus-20260603",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "supervisor/agentic_eval_corpus.py",
+        "scripts/mine_agentic_eval_cases.py",
+        "tests/test_agentic_eval_corpus.py"
+      ],
+      "claims": [
+        "new corpus module, miner script, and tests compile"
+      ],
+      "command": "uv run python -m py_compile supervisor/agentic_eval_corpus.py scripts/mine_agentic_eval_cases.py tests/test_agentic_eval_corpus.py",
+      "kind": "test",
+      "receipt_id": "py-compile-agentic-eval-corpus-20260603",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "tests/test_agentic_eval_corpus.py",
+        "tests/test_agentic_eval.py",
+        "tests/test_reviewer_panel_eval_runner.py"
+      ],
+      "claims": [
+        "25 relevant eval tests passed"
+      ],
+      "command": "uv run pytest tests/test_agentic_eval_corpus.py tests/test_agentic_eval.py tests/test_reviewer_panel_eval_runner.py -q",
+      "kind": "test",
+      "receipt_id": "pytest-relevant-agentic-eval-corpus-20260603",
+      "status": "passed"
+    },
+    {
+      "claims": [
+        "no whitespace errors"
+      ],
+      "command": "git diff --check",
+      "kind": "test",
+      "receipt_id": "git-diff-check-agentic-eval-corpus-20260603",
+      "status": "passed"
+    },
+    {
+      "claims": [
+        "659 tests passed"
+      ],
+      "command": "uv run --extra dev pytest -q",
+      "kind": "test",
+      "receipt_id": "pytest-full-agentic-eval-corpus-20260603",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "tests/fixtures/agentic_eval/agentic_lead_labeled_set.yaml",
+        "tests/fixtures/agentic_eval/corpus_evidence/"
+      ],
+      "claims": [
+        "seed corpus has 8 cases",
+        "seed corpus includes accept, revise, and deny outcomes",
+        "seed corpus includes artifact-only and multi-file classes",
+        "roster sha256 f09369bb8199a92a955603d86d80a47cf1ffd115ee00534447e4ccbd5220c728",
+        "fixture sha256 46b9ce0b61b1596b9e0cb336b7886934d10a1a6dd94bb933147b20d6ef514ac4"
+      ],
+      "kind": "artifact",
+      "receipt_id": "seed-corpus-agentic-eval-corpus-20260603",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        ".scratch/agentic-eval/agentic-eval-corpus-20260603-candidates.json"
+      ],
+      "claims": [
+        "miner staged 2 candidates from .handoff",
+        "miner output curation_required true",
+        "miner did not write curated corpus"
+      ],
+      "command": "uv run python scripts/mine_agentic_eval_cases.py --handoff-dir .handoff --output .scratch/agentic-eval/agentic-eval-corpus-20260603-candidates.json --repo-root .",
+      "kind": "artifact",
+      "receipt_id": "handoff-miner-staging-agentic-eval-corpus-20260603",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/agentic-eval-corpus-20260603/test-evidence.md"
+      ],
+      "claims": [
+        "test commands summarized",
+        "seed task ids and verdicts recorded",
+        "miner staged sample recorded",
+        "report-only invariants documented"
+      ],
+      "kind": "test_evidence",
+      "receipt_id": "test-evidence-agentic-eval-corpus-20260603",
+      "status": "passed"
+    }
+  ],
+  "user_facing": false,
+  "verified_claims": [
+    "load_agentic_eval_labeled_set validates exact schema, ordered roster sha, task-level budget shape, and resolvable evidence refs",
+    "seed corpus contains 8 balanced cassette-backed cases with accept, revise, deny, artifact-only, and multi-file classes",
+    "mine_agentic_eval_cases stages candidates from .handoff deterministically and refuses the curated corpus path",
+    "fixture replay exposes no workflow runner callback and rejects non-fixture execution mode",
+    "agentic_lead_policy remains off and no production policy default is changed"
+  ]
+}
