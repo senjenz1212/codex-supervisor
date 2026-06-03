@@ -164,6 +164,37 @@ def _stub_prd_artifact() -> list[dict]:
     }]
 
 
+def test_tdd_grill_findings_kind_alias_resolves_to_grill_findings(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import (
+        _maybe_artifact,
+        _normalise_artifact_kind,
+        _planning_artifact_role,
+    )
+
+    path = tmp_path / "source" / "grill-findings-tdd.md"
+    path.parent.mkdir()
+    path.write_text(
+        (FIXTURE_ROOT / "grill_findings" / "good.md").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
+    for kind in ("grill-findings-tdd", "grill_findings_tdd", "grill.findings.tdd"):
+        payload = {"path": str(path), "kind": kind, "mutable_by_worker": False}
+        assert _normalise_artifact_kind(kind) == "grill_findings"
+        assert _planning_artifact_role(payload) == "grill_findings"
+        assert _maybe_artifact(payload).kind == "grill_findings"
+
+
+def test_artifact_kind_normalisation_preserves_existing_kinds():
+    from mcp_tools.codex_supervisor_stdio import _normalise_artifact_kind
+
+    assert _normalise_artifact_kind("prd") == "prd"
+    assert _normalise_artifact_kind("tdd_plan") == "tdd_plan"
+    assert _normalise_artifact_kind("grill_findings") == "grill_findings"
+    assert _normalise_artifact_kind("implementation_plan") == "implementation_plan"
+    assert _normalise_artifact_kind("unknown_kind") == "unknown_kind"
+
+
 def _write_accepted_gate(
     state: State,
     *,

@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "1a7f2f2c4733027a40323b50577da3bcfd17d6520545e4ff8e226a0a2dded644",
+  "git": {
+    "diff_bytes": 2806,
+    "diff_sha256": "6380c79b65555ae5b2aaaf3944e0e0aac7c2dad69dfbc03bcac1de697c74cb7a",
+    "diff_stat": "mcp_tools/codex_supervisor_stdio.py      |  8 ++++++--\n tests/test_codex_supervisor_mcp_stdio.py | 31 +++++++++++++++++++++++++++++++\n 2 files changed, 37 insertions(+), 2 deletions(-)",
+    "head": "ea4577b",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "ea4577b",
+    "status_short": "M mcp_tools/codex_supervisor_stdio.py\n M tests/test_codex_supervisor_mcp_stdio.py\n?? .scratch/agentic-eval-missed-issues-fix-outcome-request.json\n?? .scratch/agentic-eval-missed-issues-fix-resume-request.json\n?? .scratch/mcp-grill-kind-alias-20260603-config.yaml\n?? docs/dual-agent/mcp-grill-kind-alias-20260603/"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "7e8838d38ac73933498d96a16f23241480279c204a51eea742dc2375114b718e",
+    "implementation_plan": "ad5e16659f1f41ed45080f95c332c04f4a17213dff9a18a439c7459a6bb7763c",
+    "issues": "203636a23ad20a93b1ff543f37dee26eb8c508ac91a95c86ea97bf8d5b67500d",
+    "prd": "eee958046a7d04db3664d9c93baed6c4170795b4dff5f6f1ba55898234d09438",
+    "tdd_plan": "38b18466d8dd25896ccae05abff56f30049985cc90fcde1f85a950dba1bf0161"
+  },
+  "status": "captured"
+}

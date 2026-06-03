@@ -11,6 +11,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import time
@@ -4904,7 +4905,10 @@ def _planning_artifact_role(artifact: dict[str, Any]) -> str | None:
 
 
 def _normalise_artifact_kind(value: Any) -> str:
-    return str(value or "").strip().lower().replace("-", "_")
+    kind = str(value or "").strip().lower().replace("-", "_")
+    if re.fullmatch(r"grill.*findings.*tdd", kind):
+        return "grill_findings"
+    return kind
 
 
 def _valid_screenshot_paths(
@@ -5024,7 +5028,7 @@ def _maybe_artifact(payload: dict[str, Any]) -> PlanningArtifact | None:
         return None
     return PlanningArtifact(
         path=Path(str(path)).expanduser(),
-        kind=str(kind),  # type: ignore[arg-type]
+        kind=_normalise_artifact_kind(kind),  # type: ignore[arg-type]
         mutable_by_worker=bool(payload.get("mutable_by_worker", False)),
     )
 
