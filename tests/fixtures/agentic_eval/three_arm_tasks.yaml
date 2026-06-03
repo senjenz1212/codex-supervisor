@@ -12,6 +12,7 @@ accepted_reviewer_panel: &accepted_reviewer_panel
     confidence: 0.91
 tasks:
   - task_id: resume-drop-catchup
+    task_class: resumability
     intent: Verify reconnect catch-up behavior without restarting.
     required_verdicts:
       - id: bug_fixed
@@ -139,6 +140,7 @@ tasks:
           gate_passed_honestly:
             - {kind: probe_receipt, ref: outcome_review:P1-P3-P13-P14, status: passed}
   - task_id: reviewer-roster-calibration
+    task_class: reviewer-panel
     intent: Verify calibration rejects mixed-lineage rows.
     required_verdicts:
       - id: bug_fixed
@@ -266,6 +268,7 @@ tasks:
           gate_passed_honestly:
             - {kind: probe_receipt, ref: outcome_review:P1-P3-P13-P14, status: passed}
   - task_id: multi-file-code-archaeology
+    task_class: multi-file-code-archaeology
     intent: Find all files touched by a broad agentic-eval reporting change.
     required_verdicts:
       - id: affected_files_identified
@@ -396,6 +399,7 @@ tasks:
           gate_passed_honestly:
             - {kind: probe_receipt, ref: outcome_review:P1-P3-P13-P14, status: passed}
   - task_id: affected-path-dependency-trace
+    task_class: dependency-tracing
     intent: Trace dependency paths for a report-only eval change.
     required_verdicts:
       - id: dependency_paths_traced

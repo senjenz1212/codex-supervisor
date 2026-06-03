@@ -27,6 +27,8 @@ LATENCY_FIELDS = (
     "worker_idle_wait_s",
 )
 ACCELERATION_WIN_THRESHOLD = 1.2
+P95_MIN_TASK_COUNT = 20
+DEFAULT_TASK_CLASS = "unclassified"
 
 REQUIRED_MODES = ("lead_direct", "agentic_allowed", "agentic_required")
 DATASET_SCHEMA_VERSION = "agentic-lead-eval-dataset/v1"
@@ -56,81 +58,28 @@ def build_agentic_eval_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """
     normalized_rows = [_normalise_row(row) for row in rows]
     _attach_acceleration_and_qualification(normalized_rows)
-    summary: dict[str, dict[str, Any]] = {}
+    summary_by_task_class: dict[str, dict[str, dict[str, Any]]] = {}
+    pooled_mode_summary: dict[str, dict[str, Any]] = {}
     for row in normalized_rows:
         mode = str(row.get("mode") or "unknown")
-        bucket = summary.setdefault(mode, {
-            "task_count": 0,
-            "wall_clock_s": 0.0,
-            "cost_usd": 0.0,
-            "retries": 0,
-            "rejected_gates": 0,
-            "missed_issues": 0,
-            "operator_interventions": 0,
-            "graceful_degradation": 0.0,
-            "score": 0.0,
-            "qualifying_task_count": 0,
-            "non_qualifying_task_count": 0,
-            "qualified_task_ids": [],
-            "non_qualifying_task_ids": [],
-            "qualification_failing_predicates": [],
-            "_acceleration_ratios": [],
-            "_latency_values": {field: [] for field in LATENCY_FIELDS},
-            "_latency_unavailable": {field: 0 for field in LATENCY_FIELDS},
-        })
-        bucket["task_count"] += 1
-        for field in _NUMERIC_FIELDS:
-            bucket[field] += row[field]
-        if row.get("qualifies"):
-            bucket["qualifying_task_count"] += 1
-            bucket["qualified_task_ids"].append(row["task_id"])
-        else:
-            bucket["non_qualifying_task_count"] += 1
-            bucket["non_qualifying_task_ids"].append(row["task_id"])
-            for predicate in row.get("qualification_failing_predicates") or []:
-                if predicate not in bucket["qualification_failing_predicates"]:
-                    bucket["qualification_failing_predicates"].append(predicate)
-        ratio = row.get("acceleration_ratio")
-        if isinstance(ratio, (int, float)):
-            bucket["_acceleration_ratios"].append(float(ratio))
-        for field in LATENCY_FIELDS:
-            value = row.get(field)
-            if isinstance(value, (int, float)):
-                bucket["_latency_values"][field].append(float(value))
-            else:
-                bucket["_latency_unavailable"][field] += 1
+        task_class = str(row.get("task_class") or DEFAULT_TASK_CLASS)
+        class_bucket = summary_by_task_class.setdefault(task_class, {})
+        _add_row_to_summary_bucket(class_bucket.setdefault(mode, _new_summary_bucket()), row)
+        _add_row_to_summary_bucket(pooled_mode_summary.setdefault(mode, _new_summary_bucket()), row)
 
-    for bucket in summary.values():
-        task_count = max(1, int(bucket["task_count"]))
-        bucket["avg_wall_clock_s"] = bucket["wall_clock_s"] / task_count
-        bucket["avg_cost_usd"] = bucket["cost_usd"] / task_count
-        bucket["avg_score"] = bucket["score"] / task_count
-        bucket["avg_graceful_degradation"] = bucket["graceful_degradation"] / task_count
-        ratios = bucket.pop("_acceleration_ratios")
-        bucket["acceleration_ratio_p50"] = _percentile(ratios, 50)
-        bucket["acceleration_ratio_p95"] = _percentile(ratios, 95)
-        latency_values = bucket.pop("_latency_values")
-        latency_unavailable = bucket.pop("_latency_unavailable")
-        bucket["latency"] = {
-            field: {
-                "avg": _mean_or_none(values),
-                "p50": _percentile(values, 50),
-                "p95": _percentile(values, 95),
-                "unavailable_count": latency_unavailable[field],
-            }
-            for field, values in latency_values.items()
-        }
-        bucket["qualifies"] = (
-            bucket["task_count"] > 0
-            and bucket["qualifying_task_count"] == bucket["task_count"]
-            and not bucket["qualification_failing_predicates"]
-        )
+    for class_summary in summary_by_task_class.values():
+        for bucket in class_summary.values():
+            _finalize_summary_bucket(bucket, n_gate_p95=True)
+    for bucket in pooled_mode_summary.values():
+        _finalize_summary_bucket(bucket, n_gate_p95=False)
 
     return {
         "schema_version": "agentic-lead-eval/v1",
         "rows": normalized_rows,
-        "summary": summary,
-        "recommendation": _build_report_only_recommendation(summary),
+        "summary": summary_by_task_class,
+        "summary_by_task_class": summary_by_task_class,
+        "pooled_mode_summary": pooled_mode_summary,
+        "recommendation": _build_report_only_recommendation(summary_by_task_class),
         "default_change_allowed": False,
         "default_change_gate": {
             "required_modes": list(REQUIRED_MODES),
@@ -160,69 +109,45 @@ def agentic_eval_runner(
     rows: list[dict[str, Any]] = []
     evidence_records: list[dict[str, Any]] = []
     for task in dataset["tasks"]:
+        task_class = str(task.get("task_class") or DEFAULT_TASK_CLASS)
         arms = task["arms"]
         _assert_required_modes(task["task_id"], arms)
         budget = _assert_equal_task_budget(task["task_id"], arms)
         for mode in REQUIRED_MODES:
             arm = arms[mode]
-            workflow_result = _workflow_result_for_arm(
-                task=task,
-                mode=mode,
-                arm=arm,
-                execution_mode=execution_mode,
-                workflow_runner=workflow_runner,
-                allow_live_calls=allow_live_calls,
-            )
-            score = score_agentic_eval_arm(task=task, mode=mode, arm=arm, workflow_result=workflow_result)
-            metrics = arm.get("metrics") if isinstance(arm.get("metrics"), dict) else {}
-            rejected_gates = _rejected_gate_count(workflow_result)
-            retries = _retry_count(workflow_result)
-            missed_issues = int(score["failed_verdict_count"])
-            quality_divergence = _quality_metric_divergence(
-                metrics=metrics,
-                authoritative={
-                    "missed_issues": missed_issues,
-                    "rejected_gates": rejected_gates,
-                },
-            )
-            probe_statuses = _probe_statuses(workflow_result)
-            reviewer_panel_decisions = _reviewer_panel_decisions(workflow_result)
-            row = {
-                "task_id": task["task_id"],
-                "mode": mode,
-                "token_budget": budget["token_budget"],
-                "budget_usd_limit": budget["budget_usd_limit"],
-                "wall_clock_s": _number(metrics.get("wall_clock_s")),
-                "cost_usd": _number(metrics.get("cost_usd")),
-                "retries": _number(metrics.get("retries"), default=retries),
-                "rejected_gates": rejected_gates,
-                "missed_issues": missed_issues,
-                "metrics_divergence": bool(quality_divergence["fields"]),
-                "metrics_divergence_fields": quality_divergence["fields"],
-                "operator_interventions": _number(metrics.get("operator_interventions")),
-                "graceful_degradation": _number(
-                    metrics.get("graceful_degradation"),
-                    default=_graceful_degradation(score=score, rejected_gates=rejected_gates),
-                ),
-                "score": score["score"],
-                "score_max": score["score_max"],
-                "workflow_status": str(workflow_result.get("status") or "unknown"),
-                "gate_statuses": _gate_statuses(workflow_result),
-                "probe_statuses": probe_statuses,
-                "reviewer_panel_decisions": reviewer_panel_decisions,
-                "required_verdicts": [item["verdict_id"] for item in score["verdicts"]],
-            }
-            row.update(_latency_fields_from_metrics(metrics))
-            row.update(quality_divergence["reported"])
+            trial_rows = [
+                _row_for_trial(
+                    task=task,
+                    task_class=task_class,
+                    mode=mode,
+                    trial_arm=trial_arm,
+                    trial_index=index,
+                    budget=budget,
+                    execution_mode=execution_mode,
+                    workflow_runner=workflow_runner,
+                    allow_live_calls=allow_live_calls,
+                )
+                for index, trial_arm in enumerate(_trials_for_arm(arm))
+            ]
+            row = _reduce_trial_rows(trial_rows)
             rows.append(row)
             evidence_records.append({
                 "task_id": task["task_id"],
+                "task_class": task_class,
                 "mode": mode,
-                "score": score,
+                "score": row["score_record"],
+                "trials": [
+                    {
+                        "trial_index": trial_row["trial_index"],
+                        "score": trial_row["score_record"],
+                        "workflow_status": trial_row["workflow_status"],
+                    }
+                    for trial_row in trial_rows
+                ],
                 "workflow_status": row["workflow_status"],
                 "gate_statuses": row["gate_statuses"],
-                "probe_statuses": probe_statuses,
-                "reviewer_panel_decisions": reviewer_panel_decisions,
+                "probe_statuses": row["probe_statuses"],
+                "reviewer_panel_decisions": row["reviewer_panel_decisions"],
             })
 
     report = build_agentic_eval_report(rows)
@@ -337,9 +262,151 @@ def score_agentic_eval_arm(
     }
 
 
+def _row_for_trial(
+    *,
+    task: dict[str, Any],
+    task_class: str,
+    mode: str,
+    trial_arm: dict[str, Any],
+    trial_index: int,
+    budget: dict[str, int | float],
+    execution_mode: str,
+    workflow_runner: Any | None,
+    allow_live_calls: bool,
+) -> dict[str, Any]:
+    workflow_result = _workflow_result_for_arm(
+        task=task,
+        mode=mode,
+        arm=trial_arm,
+        execution_mode=execution_mode,
+        workflow_runner=workflow_runner,
+        allow_live_calls=allow_live_calls,
+    )
+    score = score_agentic_eval_arm(task=task, mode=mode, arm=trial_arm, workflow_result=workflow_result)
+    metrics = trial_arm.get("metrics") if isinstance(trial_arm.get("metrics"), dict) else {}
+    rejected_gates = _rejected_gate_count(workflow_result)
+    retries = _retry_count(workflow_result)
+    missed_issues = int(score["failed_verdict_count"])
+    quality_divergence = _quality_metric_divergence(
+        metrics=metrics,
+        authoritative={
+            "missed_issues": missed_issues,
+            "rejected_gates": rejected_gates,
+        },
+    )
+    probe_statuses = _probe_statuses(workflow_result)
+    reviewer_panel_decisions = _reviewer_panel_decisions(workflow_result)
+    row = {
+        "task_id": task["task_id"],
+        "task_class": task_class,
+        "mode": mode,
+        "trial_index": trial_index,
+        "token_budget": budget["token_budget"],
+        "budget_usd_limit": budget["budget_usd_limit"],
+        "wall_clock_s": _number(metrics.get("wall_clock_s")),
+        "cost_usd": _number(metrics.get("cost_usd")),
+        "retries": _number(metrics.get("retries"), default=retries),
+        "rejected_gates": rejected_gates,
+        "missed_issues": missed_issues,
+        "metrics_divergence": bool(quality_divergence["fields"]),
+        "metrics_divergence_fields": quality_divergence["fields"],
+        "operator_interventions": _number(metrics.get("operator_interventions")),
+        "graceful_degradation": _number(
+            metrics.get("graceful_degradation"),
+            default=_graceful_degradation(score=score, rejected_gates=rejected_gates),
+        ),
+        "score": score["score"],
+        "score_record": score,
+        "score_max": score["score_max"],
+        "workflow_status": str(workflow_result.get("status") or "unknown"),
+        "gate_statuses": _gate_statuses(workflow_result),
+        "probe_statuses": probe_statuses,
+        "reviewer_panel_decisions": reviewer_panel_decisions,
+        "required_verdicts": [item["verdict_id"] for item in score["verdicts"]],
+    }
+    row.update(_latency_fields_from_metrics(metrics))
+    row.update(quality_divergence["reported"])
+    return row
+
+
+def _reduce_trial_rows(trial_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    if not trial_rows:
+        raise ValueError("agentic eval trial reduction requires at least one trial")
+    representative = _representative_trial_row(trial_rows)
+    result = dict(representative)
+    result.pop("trial_index", None)
+
+    result["trial_count"] = len(trial_rows)
+    result["trial_wall_clock_s"] = [
+        value
+        for value in (_optional_number(row.get("wall_clock_s")) for row in trial_rows)
+        if value is not None
+    ]
+    result["trial_scores"] = [row["score"] for row in trial_rows]
+    result["trial_missed_issues"] = [row["missed_issues"] for row in trial_rows]
+    result["quality_unstable_fields"] = [
+        field
+        for field in ("score", "missed_issues")
+        if len({row[field] for row in trial_rows}) > 1
+    ]
+    result["quality_unstable_across_trials"] = bool(result["quality_unstable_fields"])
+
+    for field in ("wall_clock_s", "cost_usd", *LATENCY_FIELDS):
+        values = [
+            value
+            for value in (_optional_number(row.get(field)) for row in trial_rows)
+            if value is not None
+        ]
+        if values:
+            result[field] = _median(values)
+            result[f"{field}_unavailable_reason"] = None
+        elif field in LATENCY_FIELDS:
+            result[field] = None
+            result[f"{field}_unavailable_reason"] = "not_recorded"
+
+    for field in ("retries", "rejected_gates", "missed_issues", "operator_interventions"):
+        result[field] = max(_number(row.get(field)) for row in trial_rows)
+    result["score"] = min(float(row.get("score") or 0.0) for row in trial_rows)
+    result["graceful_degradation"] = min(float(row.get("graceful_degradation") or 0.0) for row in trial_rows)
+    result["score_record"] = representative["score_record"]
+
+    divergence_fields: list[str] = []
+    reported: dict[str, int | float] = {}
+    for row in trial_rows:
+        for field in row.get("metrics_divergence_fields") or []:
+            if field not in divergence_fields:
+                divergence_fields.append(field)
+        for field in ("reported_missed_issues", "reported_rejected_gates"):
+            if field in row:
+                reported[field] = row[field]
+    result["metrics_divergence_fields"] = divergence_fields
+    result["metrics_divergence"] = bool(divergence_fields)
+    result.update(reported)
+
+    if any(_status(row.get("workflow_status")) != "accepted" for row in trial_rows):
+        first_non_accept = next(row for row in trial_rows if _status(row.get("workflow_status")) != "accepted")
+        result["workflow_status"] = first_non_accept["workflow_status"]
+        result["gate_statuses"] = first_non_accept["gate_statuses"]
+        result["probe_statuses"] = first_non_accept["probe_statuses"]
+        result["reviewer_panel_decisions"] = first_non_accept["reviewer_panel_decisions"]
+    return result
+
+
+def _representative_trial_row(trial_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    return min(
+        trial_rows,
+        key=lambda row: (
+            float(row.get("score") or 0.0),
+            -int(_number(row.get("missed_issues"))),
+            int(row.get("trial_index") or 0),
+        ),
+    )
+
+
 def _normalise_row(row: dict[str, Any]) -> dict[str, Any]:
     result = dict(row)
     result["task_id"] = str(row.get("task_id") or "")
+    result["task_class"] = _normalise_task_class(row.get("task_class"))
     result["mode"] = str(row.get("mode") or "unknown")
     result["workflow_status"] = str(row.get("workflow_status") or "unknown").strip().lower()
     for field in _NUMERIC_FIELDS:
@@ -355,6 +422,11 @@ def _normalise_row(row: dict[str, Any]) -> dict[str, Any]:
             else str(row.get(f"{field}_unavailable_reason") or "not_recorded")
         )
     return result
+
+
+def _normalise_task_class(value: Any) -> str:
+    task_class = str(value or DEFAULT_TASK_CLASS).strip()
+    return task_class or DEFAULT_TASK_CLASS
 
 
 def _attach_acceleration_and_qualification(rows: list[dict[str, Any]]) -> None:
@@ -428,20 +500,146 @@ def _latency_fields_from_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
     return values
 
 
-def _build_report_only_recommendation(summary: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    modes: dict[str, dict[str, Any]] = {}
-    qualifying_modes: list[str] = []
-    for mode in REQUIRED_MODES:
-        bucket = summary.get(mode, {})
-        qualifies = bool(bucket.get("qualifies")) if mode != "lead_direct" else False
-        if qualifies:
-            qualifying_modes.append(mode)
-        modes[mode] = {
-            "qualifies": qualifies,
-            "failing_predicates": list(bucket.get("qualification_failing_predicates") or []),
-            "qualifying_task_count": int(bucket.get("qualifying_task_count") or 0),
-            "task_count": int(bucket.get("task_count") or 0),
+def _new_summary_bucket() -> dict[str, Any]:
+    return {
+        "task_count": 0,
+        "wall_clock_s": 0.0,
+        "cost_usd": 0.0,
+        "retries": 0,
+        "rejected_gates": 0,
+        "missed_issues": 0,
+        "operator_interventions": 0,
+        "graceful_degradation": 0.0,
+        "score": 0.0,
+        "qualifying_task_count": 0,
+        "non_qualifying_task_count": 0,
+        "qualified_task_ids": [],
+        "non_qualifying_task_ids": [],
+        "qualification_failing_predicates": [],
+        "_acceleration_ratios": [],
+        "_latency_values": {field: [] for field in LATENCY_FIELDS},
+        "_latency_unavailable": {field: 0 for field in LATENCY_FIELDS},
+    }
+
+
+def _add_row_to_summary_bucket(bucket: dict[str, Any], row: dict[str, Any]) -> None:
+    bucket["task_count"] += 1
+    for field in _NUMERIC_FIELDS:
+        bucket[field] += row[field]
+    if row.get("qualifies"):
+        bucket["qualifying_task_count"] += 1
+        bucket["qualified_task_ids"].append(row["task_id"])
+    else:
+        bucket["non_qualifying_task_count"] += 1
+        bucket["non_qualifying_task_ids"].append(row["task_id"])
+        for predicate in row.get("qualification_failing_predicates") or []:
+            if predicate not in bucket["qualification_failing_predicates"]:
+                bucket["qualification_failing_predicates"].append(predicate)
+    ratio = row.get("acceleration_ratio")
+    if isinstance(ratio, (int, float)):
+        bucket["_acceleration_ratios"].append(float(ratio))
+    for field in LATENCY_FIELDS:
+        value = row.get(field)
+        if isinstance(value, (int, float)):
+            bucket["_latency_values"][field].append(float(value))
+        else:
+            bucket["_latency_unavailable"][field] += 1
+
+
+def _finalize_summary_bucket(bucket: dict[str, Any], *, n_gate_p95: bool) -> None:
+    task_count = max(1, int(bucket["task_count"]))
+    bucket["avg_wall_clock_s"] = bucket["wall_clock_s"] / task_count
+    bucket["avg_cost_usd"] = bucket["cost_usd"] / task_count
+    bucket["avg_score"] = bucket["score"] / task_count
+    bucket["avg_graceful_degradation"] = bucket["graceful_degradation"] / task_count
+    ratios = bucket.pop("_acceleration_ratios")
+    distribution = _acceleration_distribution(ratios, task_count=task_count, n_gate_p95=n_gate_p95)
+    bucket.update(distribution)
+    latency_values = bucket.pop("_latency_values")
+    latency_unavailable = bucket.pop("_latency_unavailable")
+    bucket["latency"] = {
+        field: {
+            "avg": _mean_or_none(values),
+            "p50": _percentile(values, 50),
+            "p95": _percentile(values, 95),
+            "unavailable_count": latency_unavailable[field],
         }
+        for field, values in latency_values.items()
+    }
+    bucket["qualifies"] = (
+        bucket["task_count"] > 0
+        and bucket["qualifying_task_count"] == bucket["task_count"]
+        and not bucket["qualification_failing_predicates"]
+    )
+
+
+def _acceleration_distribution(
+    ratios: list[float],
+    *,
+    task_count: int,
+    n_gate_p95: bool,
+) -> dict[str, Any]:
+    if not ratios:
+        return {
+            "acceleration_ratio_p50": None,
+            "acceleration_ratio_iqr": None,
+            "acceleration_ratio_min": None,
+            "acceleration_ratio_max": None,
+            "acceleration_ratio_p95": None,
+            "acceleration_ratio_p95_unavailable_reason": "no_acceleration_ratios",
+        }
+    p25 = _percentile(ratios, 25)
+    p75 = _percentile(ratios, 75)
+    p95_allowed = (not n_gate_p95) or task_count >= P95_MIN_TASK_COUNT
+    return {
+        "acceleration_ratio_p50": _percentile(ratios, 50),
+        "acceleration_ratio_iqr": round(float(p75) - float(p25), 3) if p25 is not None and p75 is not None else None,
+        "acceleration_ratio_min": round(min(ratios), 3),
+        "acceleration_ratio_max": round(max(ratios), 3),
+        "acceleration_ratio_p95": _percentile(ratios, 95) if p95_allowed else None,
+        "acceleration_ratio_p95_unavailable_reason": None if p95_allowed else "insufficient_n_for_p95",
+    }
+
+
+def _build_report_only_recommendation(summary_by_task_class: dict[str, dict[str, dict[str, Any]]]) -> dict[str, Any]:
+    task_classes: dict[str, dict[str, Any]] = {}
+    modes: dict[str, dict[str, Any]] = {}
+    qualifying_mode_classes: dict[str, list[str]] = {mode: [] for mode in REQUIRED_MODES}
+    failing_mode_classes: dict[str, list[str]] = {mode: [] for mode in REQUIRED_MODES}
+    class_qualified_modes: dict[str, list[str]] = {}
+    for task_class, class_summary in sorted(summary_by_task_class.items()):
+        class_modes: dict[str, dict[str, Any]] = {}
+        qualified_modes: list[str] = []
+        for mode in REQUIRED_MODES:
+            bucket = class_summary.get(mode, {})
+            qualifies = bool(bucket.get("qualifies")) if mode != "lead_direct" else False
+            if qualifies:
+                qualified_modes.append(mode)
+                qualifying_mode_classes[mode].append(task_class)
+            elif mode != "lead_direct":
+                failing_mode_classes[mode].append(task_class)
+            class_modes[mode] = {
+                "qualifies": qualifies,
+                "failing_predicates": list(bucket.get("qualification_failing_predicates") or []),
+                "qualifying_task_count": int(bucket.get("qualifying_task_count") or 0),
+                "task_count": int(bucket.get("task_count") or 0),
+            }
+        class_qualified_modes[task_class] = qualified_modes
+        task_classes[task_class] = {
+            "modes": class_modes,
+            "qualifying_modes": qualified_modes,
+        }
+    for mode in REQUIRED_MODES:
+        modes[mode] = {
+            "qualifies_any_task_class": bool(qualifying_mode_classes[mode]) if mode != "lead_direct" else False,
+            "qualified_task_classes": qualifying_mode_classes[mode],
+            "failing_task_classes": failing_mode_classes[mode],
+        }
+    qualifying_modes = [
+        mode
+        for mode in REQUIRED_MODES
+        if mode != "lead_direct" and qualifying_mode_classes[mode]
+    ]
     return {
         "schema_version": "agentic-lead-eval-recommendation/v1",
         "report_only": True,
@@ -454,9 +652,11 @@ def _build_report_only_recommendation(summary: dict[str, dict[str, Any]]) -> dic
             "requires_missed_issues_no_more_than_lead_direct": True,
             "requires_rejected_gates_no_more_than_lead_direct": True,
         },
+        "task_classes": task_classes,
         "modes": modes,
         "recommended_policy": "keep_off" if not qualifying_modes else "operator_review_required",
         "qualifying_modes": qualifying_modes,
+        "qualified_modes_by_task_class": class_qualified_modes,
     }
 
 
@@ -514,6 +714,19 @@ def _mean_or_none(values: list[float]) -> float | None:
     return round(sum(values) / len(values), 3)
 
 
+def _median(values: list[int | float]) -> int | float:
+    if not values:
+        return 0
+    ordered = sorted(float(value) for value in values)
+    midpoint = len(ordered) // 2
+    if len(ordered) % 2:
+        value = ordered[midpoint]
+    else:
+        value = (ordered[midpoint - 1] + ordered[midpoint]) / 2.0
+    rounded = round(value, 3)
+    return int(rounded) if float(rounded).is_integer() else rounded
+
+
 def _percentile(values: list[float], percentile: int | float) -> float | None:
     if not values:
         return None
@@ -545,6 +758,7 @@ def _normalise_task(task: Any, *, index: int) -> dict[str, Any]:
     return {
         "schema_version": "agentic-lead-eval-task/v1",
         "task_id": task_id,
+        "task_class": _normalise_task_class(task.get("task_class")),
         "intent": str(task.get("intent") or ""),
         "required_verdicts": required_verdicts,
         "arms": normalized_arms,
@@ -562,7 +776,7 @@ def _normalise_arm(*, task_id: str, mode: str, arm: Any) -> dict[str, Any]:
         workflow_result = arm.get("workflow")
     if not isinstance(workflow_result, dict):
         raise ValueError(f"agentic eval arm {task_id}/{mode} requires workflow_result")
-    return {
+    normalized = {
         "budget": {
             "token_budget": _number(budget.get("token_budget")),
             "budget_usd_limit": _number(budget.get("budget_usd_limit")),
@@ -570,6 +784,58 @@ def _normalise_arm(*, task_id: str, mode: str, arm: Any) -> dict[str, Any]:
         "workflow_result": workflow_result,
         "metrics": dict(arm.get("metrics") or {}),
         "verdict_evidence": dict(arm.get("verdict_evidence") or {}),
+    }
+    raw_trials = arm.get("trials")
+    if raw_trials is None or (raw_trials == [] and arm.get("_implicit_single_trial")):
+        normalized["trials"] = []
+        normalized["_implicit_single_trial"] = True
+    elif isinstance(raw_trials, list) and raw_trials:
+        normalized["trials"] = [
+            _normalise_trial(base=normalized, trial=trial, trial_index=index)
+            for index, trial in enumerate(raw_trials)
+        ]
+        normalized["_implicit_single_trial"] = False
+    else:
+        raise ValueError(f"agentic eval arm {task_id}/{mode} trials must be a non-empty list")
+    return normalized
+
+
+def _trials_for_arm(arm: dict[str, Any]) -> list[dict[str, Any]]:
+    if arm.get("_implicit_single_trial"):
+        return [_trial_from_base(arm, trial_index=0)]
+    return list(arm.get("trials") or [])
+
+
+def _trial_from_base(base: dict[str, Any], *, trial_index: int) -> dict[str, Any]:
+    return {
+        "trial_index": trial_index,
+        "workflow_result": base["workflow_result"],
+        "metrics": dict(base.get("metrics") or {}),
+        "verdict_evidence": dict(base.get("verdict_evidence") or {}),
+    }
+
+
+def _normalise_trial(*, base: dict[str, Any], trial: Any, trial_index: int) -> dict[str, Any]:
+    if not isinstance(trial, dict):
+        raise ValueError(f"agentic eval trial {trial_index} must be an object")
+    workflow_result = trial.get("workflow_result")
+    if workflow_result is None:
+        workflow_result = trial.get("workflow")
+    if workflow_result is None:
+        workflow_result = base["workflow_result"]
+    if not isinstance(workflow_result, dict):
+        raise ValueError(f"agentic eval trial {trial_index} requires workflow_result")
+    metrics = dict(base.get("metrics") or {})
+    if isinstance(trial.get("metrics"), dict):
+        metrics.update(trial["metrics"])
+    verdict_evidence = dict(base.get("verdict_evidence") or {})
+    if isinstance(trial.get("verdict_evidence"), dict):
+        verdict_evidence.update(trial["verdict_evidence"])
+    return {
+        "trial_index": trial_index,
+        "workflow_result": workflow_result,
+        "metrics": metrics,
+        "verdict_evidence": verdict_evidence,
     }
 
 

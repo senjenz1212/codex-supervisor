@@ -10,7 +10,7 @@ from supervisor.agentic_eval import agentic_eval_runner, build_agentic_eval_repo
 
 
 FIXTURE = "tests/fixtures/agentic_eval/three_arm_tasks.yaml"
-ACCELERATION_REPORT_SHA256 = "5f5239f0bc0dfacd64b1e71f0b3a8abc53d051b2c4d0c7f24d455eb425393e74"
+ACCELERATION_REPORT_SHA256 = "0bc7c8ec57b8978708e36f56671ac824ee59488eb86c1e0a9ef2d973c1532f96"
 
 
 def _write_dataset(tmp_path, dataset: dict, name: str = "dataset.json") -> Path:
@@ -19,10 +19,34 @@ def _write_dataset(tmp_path, dataset: dict, name: str = "dataset.json") -> Path:
     return path
 
 
+def _report_row(
+    *,
+    task_id: str,
+    mode: str,
+    task_class: str,
+    wall_clock_s: float,
+    workflow_status: str = "accepted",
+    score: float = 5.0,
+    missed_issues: int = 0,
+    rejected_gates: int = 0,
+) -> dict:
+    return {
+        "task_id": task_id,
+        "task_class": task_class,
+        "mode": mode,
+        "wall_clock_s": wall_clock_s,
+        "workflow_status": workflow_status,
+        "score": score,
+        "missed_issues": missed_issues,
+        "rejected_gates": rejected_gates,
+    }
+
+
 def test_agentic_eval_report_compares_required_modes():
     report = build_agentic_eval_report([
         {
             "task_id": "historical-1",
+            "task_class": "historical",
             "mode": "lead_direct",
             "wall_clock_s": 120,
             "cost_usd": 4.2,
@@ -33,6 +57,7 @@ def test_agentic_eval_report_compares_required_modes():
         },
         {
             "task_id": "historical-1",
+            "task_class": "historical",
             "mode": "agentic_allowed",
             "wall_clock_s": 80,
             "cost_usd": 5.1,
@@ -43,6 +68,7 @@ def test_agentic_eval_report_compares_required_modes():
         },
         {
             "task_id": "historical-1",
+            "task_class": "historical",
             "mode": "agentic_required",
             "wall_clock_s": 95,
             "cost_usd": 5.8,
@@ -59,8 +85,9 @@ def test_agentic_eval_report_compares_required_modes():
         "agentic_allowed",
         "agentic_required",
     ]
-    assert report["summary"]["lead_direct"]["task_count"] == 1
-    assert report["summary"]["agentic_required"]["missed_issues"] == 0
+    historical = report["summary"]["historical"]
+    assert historical["lead_direct"]["task_count"] == 1
+    assert historical["agentic_required"]["missed_issues"] == 0
     assert report["default_change_allowed"] is False
     assert report["default_change_gate"]["required_modes"] == [
         "lead_direct",
@@ -96,6 +123,7 @@ def test_agentic_eval_runner_covers_required_modes():
     assert {row["token_budget"] for row in rows if row["task_id"] == "resume-drop-catchup"} == {12000}
     assert {row["budget_usd_limit"] for row in rows if row["task_id"] == "resume-drop-catchup"} == {3.5}
     for row in rows:
+        assert row["task_class"]
         assert row["workflow_status"] == "accepted"
         assert row["gate_statuses"]["outcome_review"] == "accepted"
         assert {"P1", "P2", "P3"} <= set(row["probe_statuses"])
@@ -115,13 +143,127 @@ def test_agentic_eval_runner_reports_acceleration_percentiles():
     assert rows[("resume-drop-catchup", "agentic_allowed")]["acceleration_ratio"] == 1.2
     assert rows[("resume-drop-catchup", "agentic_required")]["acceleration_ratio"] == pytest.approx(1.364)
 
-    allowed = report["summary"]["agentic_allowed"]
-    required = report["summary"]["agentic_required"]
+    pooled = report["pooled_mode_summary"]
+    allowed = pooled["agentic_allowed"]
+    required = pooled["agentic_required"]
     assert allowed["acceleration_ratio_p50"] == pytest.approx(1.281)
-    assert allowed["acceleration_ratio_p95"] == pytest.approx(1.409)
     assert required["acceleration_ratio_p50"] == pytest.approx(1.372)
-    assert required["acceleration_ratio_p95"] == pytest.approx(1.514)
-    assert report["summary"]["lead_direct"]["acceleration_ratio_p50"] == 1.0
+    assert pooled["lead_direct"]["acceleration_ratio_p50"] == 1.0
+
+
+def test_agentic_eval_runner_reduces_repeated_trials_to_median_wall_clock(tmp_path):
+    dataset = load_agentic_eval_dataset(FIXTURE)
+    task = dataset["tasks"][0]
+    task["task_class"] = "resumability"
+    task["arms"]["lead_direct"]["trials"] = [
+        {"metrics": {"wall_clock_s": 95}},
+        {"metrics": {"wall_clock_s": 100}},
+        {"metrics": {"wall_clock_s": 140}},
+    ]
+    task["arms"]["agentic_allowed"]["trials"] = [
+        {"metrics": {"wall_clock_s": 45}},
+        {"metrics": {"wall_clock_s": 50}},
+        {"metrics": {"wall_clock_s": 110}},
+    ]
+    path = _write_dataset(tmp_path, dataset, "trials-median.json")
+
+    report = agentic_eval_runner(dataset_path=path)
+
+    rows = {
+        (row["task_id"], row["mode"]): row
+        for row in report["rows"]
+    }
+    lead = rows[(task["task_id"], "lead_direct")]
+    allowed = rows[(task["task_id"], "agentic_allowed")]
+    assert lead["wall_clock_s"] == 100
+    assert lead["trial_count"] == 3
+    assert lead["trial_wall_clock_s"] == [95, 100, 140]
+    assert allowed["wall_clock_s"] == 50
+    assert allowed["acceleration_ratio"] == 2.0
+
+
+def test_agentic_eval_runner_flags_quality_unstable_across_trials(tmp_path):
+    dataset = load_agentic_eval_dataset(FIXTURE)
+    task = dataset["tasks"][0]
+    task["task_class"] = "resumability"
+    passing_evidence = copy.deepcopy(task["arms"]["agentic_allowed"]["verdict_evidence"])
+    failing_evidence = copy.deepcopy(passing_evidence)
+    failing_evidence["no_regression"] = [
+        {"kind": "artifact_path", "ref": "tests/does_not_exist.py", "status": "passed"}
+    ]
+    task["arms"]["agentic_allowed"]["trials"] = [
+        {"metrics": {"wall_clock_s": 80}, "verdict_evidence": passing_evidence},
+        {"metrics": {"wall_clock_s": 90}, "verdict_evidence": failing_evidence},
+        {"metrics": {"wall_clock_s": 100}, "verdict_evidence": passing_evidence},
+    ]
+    path = _write_dataset(tmp_path, dataset, "trials-quality.json")
+
+    report = agentic_eval_runner(dataset_path=path)
+
+    row = next(row for row in report["rows"] if row["task_id"] == task["task_id"] and row["mode"] == "agentic_allowed")
+    assert row["quality_unstable_across_trials"] is True
+    assert row["quality_unstable_fields"] == ["score", "missed_issues"]
+    assert row["score"] < 5.0
+    assert row["missed_issues"] == 1
+
+
+def test_agentic_eval_report_segments_win_gate_by_task_class():
+    report = build_agentic_eval_report([
+        _report_row(task_id="broad-1", task_class="broad", mode="lead_direct", wall_clock_s=120),
+        _report_row(task_id="broad-1", task_class="broad", mode="agentic_allowed", wall_clock_s=80),
+        _report_row(task_id="narrow-1", task_class="narrow", mode="lead_direct", wall_clock_s=120),
+        _report_row(task_id="narrow-1", task_class="narrow", mode="agentic_allowed", wall_clock_s=80, score=4),
+    ])
+
+    broad = report["summary"]["broad"]["agentic_allowed"]
+    narrow = report["summary"]["narrow"]["agentic_allowed"]
+    assert broad["qualifies"] is True
+    assert broad["qualifying_task_count"] == 1
+    assert narrow["qualifies"] is False
+    assert narrow["qualifying_task_count"] == 0
+    assert "score_below_lead_direct" in narrow["qualification_failing_predicates"]
+    assert report["recommendation"]["task_classes"]["broad"]["modes"]["agentic_allowed"]["qualifies"] is True
+    assert report["recommendation"]["task_classes"]["narrow"]["modes"]["agentic_allowed"]["qualifies"] is False
+
+
+def test_agentic_eval_report_suppresses_p95_until_class_has_twenty_tasks():
+    report = build_agentic_eval_report([
+        _report_row(task_id="small-1", task_class="small", mode="lead_direct", wall_clock_s=120),
+        _report_row(task_id="small-1", task_class="small", mode="agentic_allowed", wall_clock_s=80),
+        _report_row(task_id="small-2", task_class="small", mode="lead_direct", wall_clock_s=120),
+        _report_row(task_id="small-2", task_class="small", mode="agentic_allowed", wall_clock_s=90),
+    ])
+
+    allowed = report["summary"]["small"]["agentic_allowed"]
+    assert allowed["task_count"] == 2
+    assert allowed["acceleration_ratio_p50"] == pytest.approx(1.417)
+    assert allowed["acceleration_ratio_iqr"] is not None
+    assert allowed["acceleration_ratio_min"] == pytest.approx(1.333)
+    assert allowed["acceleration_ratio_max"] == pytest.approx(1.5)
+    assert allowed["acceleration_ratio_p95"] is None
+    assert allowed["acceleration_ratio_p95_unavailable_reason"] == "insufficient_n_for_p95"
+
+
+def test_agentic_eval_report_emits_p95_when_class_has_twenty_tasks():
+    rows = []
+    for index in range(20):
+        task_id = f"batch-{index:02d}"
+        rows.append(_report_row(task_id=task_id, task_class="batch", mode="lead_direct", wall_clock_s=120))
+        rows.append(
+            _report_row(
+                task_id=task_id,
+                task_class="batch",
+                mode="agentic_allowed",
+                wall_clock_s=120 / (1.0 + index / 10.0),
+            )
+        )
+
+    report = build_agentic_eval_report(rows)
+
+    allowed = report["summary"]["batch"]["agentic_allowed"]
+    assert allowed["task_count"] == 20
+    assert allowed["acceleration_ratio_p95"] == pytest.approx(2.805)
+    assert allowed["acceleration_ratio_p95_unavailable_reason"] is None
 
 
 def test_agentic_eval_quality_gated_win_condition_truth_table():

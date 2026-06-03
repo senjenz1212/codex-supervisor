@@ -1,0 +1,73 @@
+[
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-to-prd-agentic-eval-trials-strata-20260603",
+    "skill": "to-prd",
+    "stage": "to_prd",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/agentic-eval-trials-strata-20260603/source/prd.md"
+    ],
+    "claims": [
+      "PRD promise contracts produced",
+      "repeated trials and task-class strata specified",
+      "report-only boundary preserved"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-prd-grill-agentic-eval-trials-strata-20260603",
+    "skill": "grill-with-docs",
+    "stage": "prd_grill",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/agentic-eval-trials-strata-20260603/source/grill-findings.md"
+    ],
+    "claims": [
+      "PRD grill findings resolved",
+      "quality instability and class pooling risks addressed"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-to-issues-agentic-eval-trials-strata-20260603",
+    "skill": "to-issues",
+    "stage": "to_issues",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/agentic-eval-trials-strata-20260603/source/issues.md"
+    ],
+    "claims": [
+      "Issue slices cover P1-P5",
+      "runner public boundary retained"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-tdd-agentic-eval-trials-strata-20260603",
+    "skill": "tdd",
+    "stage": "tdd",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/agentic-eval-trials-strata-20260603/source/tdd.md"
+    ],
+    "claims": [
+      "TDD starts at agentic_eval_runner/build_agentic_eval_report boundaries",
+      "median, instability, strata, and p95 tests planned"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-tdd-grill-agentic-eval-trials-strata-20260603",
+    "skill": "grill-with-docs",
+    "stage": "tdd_grill",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/agentic-eval-trials-strata-20260603/source/grill-findings-tdd.md"
+    ],
+    "claims": [
+      "TDD grill findings resolved",
+      "translation audit completed"
+    ]
+  }
+]
