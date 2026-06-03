@@ -1,0 +1,284 @@
+{
+  "event_ids": [
+    462004,
+    462005,
+    462006,
+    462007,
+    462013,
+    462015,
+    462016,
+    462017,
+    462018,
+    462019,
+    462020
+  ],
+  "event_kinds": [
+    "dual_agent_agentic_worker_production",
+    "dual_agent_agentic_worker_progress",
+    "dual_agent_dynamic_workflow_receipt_validation",
+    "dual_agent_gate_result",
+    "dual_agent_gate_round",
+    "dual_agent_interaction_message",
+    "dual_agent_planning_validation",
+    "dual_agent_workflow_route"
+  ],
+  "events_count": 11,
+  "failure_summary": {
+    "event_id": 462018,
+    "failure_taxonomy": {
+      "category": "system_design",
+      "code": "planning_validation_failed",
+      "details": {
+        "artifact_hashes": {
+          "prd": "0375c7d111667d06b8e5e5ac4b6581b45ef6c2458e84eaeed817fe694eaba217"
+        },
+        "artifacts": [
+          {
+            "kind": "prd",
+            "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/source/prd.md",
+            "sha256": "0375c7d111667d06b8e5e5ac4b6581b45ef6c2458e84eaeed817fe694eaba217",
+            "status": "blocked"
+          }
+        ],
+        "checks": {
+          "AGG-001": "pass",
+          "AGG-002": "pass",
+          "PRD-001": "fail: seed or draft marker present",
+          "PRD-002": "fail: blocked stub phrase present",
+          "PRD-003": "fail: missing sections: problem statement, solution, user stories, prd promise contracts, implementation decisions, testing decisions, out of scope",
+          "PRD-004": "pass",
+          "PRD-005": "fail: only 0 PRD promise contracts",
+          "PRD-006": "fail: only 12 unique content tokens"
+        },
+        "gate": "prd_review",
+        "task_id": "agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed",
+        "validator_version": "1.0.0",
+        "verdict": "blocked"
+      },
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.1",
+      "mast_mode": "Disobey task specification",
+      "probe_id": "P_planning",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "validation_probe",
+      "subcategory": "artifact_quality"
+    },
+    "policy_verdict": "blocked"
+  },
+  "files": {
+    "index": "index.md",
+    "interactions": "interactions.md",
+    "mast_coverage_json": "replay/mast-coverage.json",
+    "mast_coverage_markdown": "mast-coverage.md",
+    "transcript_jsonl": "transcript.jsonl",
+    "transcript_markdown": "transcript.md",
+    "workspace_snapshot": "replay/workspace-snapshot.json"
+  },
+  "handoff_packets": [
+    {
+      "content": null,
+      "event_ids": [
+        462018
+      ],
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed.json",
+      "sha256": null,
+      "status": "missing_at_export"
+    }
+  ],
+  "mast_coverage": [
+    {
+      "deterministic_probe": "blocked payload reason `disobey_task_spec` or planning artifact failure",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.1",
+      "mast_mode": "Disobey task specification",
+      "sources": [
+        {
+          "event_id": 462018,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 462018,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        }
+      ],
+      "status": "observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `role_violation_covenant`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload -> classify_failure",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.2",
+      "mast_mode": "Disobey role specification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "same gate and handoff packet observed twice",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "detect_sequence_failures",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "sequence"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `lost_conversation_history`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.4",
+      "mast_mode": "Loss of conversation history",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `agents_not_converged_max_rounds`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.5",
+      "mast_mode": "Unaware of termination conditions",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `conversation_reset`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.1",
+      "mast_mode": "Conversation reset",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `ambiguous_input_no_clarification`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.2",
+      "mast_mode": "Fail to ask for clarification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `scope_violation_off_scope`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.3",
+      "mast_mode": "Task derailment",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "Cursor or reviewer disagreement probe fails",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.4",
+      "mast_mode": "Information withholding",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "Claude response does not address a prior Codex objection",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "detect_sequence_failures",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "sequence"
+    },
+    {
+      "deterministic_probe": "outcome fidelity or message protocol failure",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.6",
+      "mast_mode": "Reasoning-action mismatch",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "accepted gate is missing a required probe",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload + detect_sequence_failures",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.1",
+      "mast_mode": "Premature termination",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload+sequence"
+    },
+    {
+      "deterministic_probe": "claim verification or evidence receipt probe fails",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.2",
+      "mast_mode": "No or incomplete verification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "Cursor rejects after the gate was accepted",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "detect_sequence_failures",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.3",
+      "mast_mode": "Incorrect verification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "sequence"
+    }
+  ],
+  "run_id": "agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed-b6c1fa851b74",
+  "schema_version": "dual-agent-replay-manifest/v1",
+  "schema_versions": {
+    "agent_interaction": "dual-agent-interaction/v1",
+    "failure_taxonomy": "dual-agent-failure-taxonomy/v1",
+    "replay_manifest": "dual-agent-replay-manifest/v1",
+    "trace_envelope": "dual-agent-trace-envelope/v1"
+  },
+  "sequence_failures": [],
+  "state": {
+    "events_count_at_capture": 11,
+    "first_event_id": 462004,
+    "last_event_id": 462020,
+    "transcript_jsonl_sha256": "c5502f4db2528077232a3becc28d632696af8d3b51a8b953676aec3e20d26bdf"
+  },
+  "task_id": "agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed",
+  "tool_call_totals": {
+    "total_cost_usd": 0.0,
+    "total_duration_ms": 147827,
+    "total_duration_us": 147829191,
+    "total_tokens_in": 0,
+    "total_tokens_out": 0,
+    "unique_tool_calls": 7
+  },
+  "workspace_snapshot": {
+    "reason": "handoff_cwd_missing",
+    "status": "not_found"
+  }
+}

@@ -1,0 +1,473 @@
+{
+  "agentic_eval_bridge": {
+    "mode": "agentic_allowed",
+    "raw_output_path": "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/requests/clean-accept-runner-report--agentic_allowed.workflow-result.json",
+    "request_path": "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/requests/clean-accept-runner-report--agentic_allowed.request.json",
+    "returncode": 0,
+    "schema_version": "agentic-lead-eval-bridge/v1"
+  },
+  "artifact_export": {
+    "files": [
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/index.md",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/triage.md",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/prd.md",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/tdd.md",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/grill-findings.md",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/issues.md",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/screenshots.md",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/outcome-review.md",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/interactions.md",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/transcript.md",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/transcript.jsonl",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/mast-coverage.md",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/replay/manifest.json",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/replay/workspace-snapshot.json",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/replay/mast-coverage.json",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/source/grill-findings-tdd.md",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/source/grill-findings.md",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/source/implementation-plan.md",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/source/issues.md",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/source/prd.md",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/source/tdd.md"
+    ],
+    "output_dir": "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed",
+    "run_id": "agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed-b6c1fa851b74",
+    "status": "ok",
+    "task_id": "agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed"
+  },
+  "current_gate": "prd_review",
+  "final_gate_result": {
+    "artifact_export": {
+      "files": [
+        "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/index.md",
+        "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/triage.md",
+        "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/prd.md",
+        "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/tdd.md",
+        "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/grill-findings.md",
+        "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/issues.md",
+        "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/screenshots.md",
+        "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/outcome-review.md",
+        "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/interactions.md",
+        "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/transcript.md",
+        "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/transcript.jsonl",
+        "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/mast-coverage.md",
+        "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/replay/manifest.json",
+        "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/replay/workspace-snapshot.json",
+        "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/replay/mast-coverage.json",
+        "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/source/grill-findings-tdd.md",
+        "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/source/grill-findings.md",
+        "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/source/implementation-plan.md",
+        "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/source/issues.md",
+        "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/source/prd.md",
+        "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/source/tdd.md"
+      ],
+      "output_dir": "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed",
+      "run_id": "agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed-b6c1fa851b74",
+      "status": "ok",
+      "task_id": "agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed"
+    },
+    "artifact_rigor": {
+      "accepted_prerequisite_gates": [],
+      "artifact_policy": "strict",
+      "gate": "prd_review",
+      "gate_statuses": {},
+      "missing_artifact_paths": [],
+      "missing_artifacts": [],
+      "missing_prerequisite_gates": [],
+      "missing_screenshot_paths": [],
+      "present_artifacts": [
+        "grill_findings",
+        "implementation_plan",
+        "issues",
+        "prd",
+        "tdd_plan"
+      ],
+      "reason": "required_artifacts_present",
+      "required_artifacts": [
+        "prd"
+      ],
+      "required_prerequisite_gates": [],
+      "screenshots": [],
+      "status": "ok",
+      "user_facing": false,
+      "visual_validation": {
+        "allowed_sources": [
+          "browser",
+          "browser-use",
+          "browser_use",
+          "computer",
+          "computer-use",
+          "computer_use"
+        ],
+        "evidence": [],
+        "failures": [],
+        "reason": "no_screenshots_supplied",
+        "status": "not_required"
+      }
+    },
+    "attempts": 0,
+    "claude_decision": "revise",
+    "claude_gate_status": "blocked",
+    "codex_decision": "deny",
+    "cursor_decision": "accept",
+    "escalation": null,
+    "gate": "prd_review",
+    "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed.json",
+    "independent_reviewer_panel_decision": {
+      "accepted_reviewers": [],
+      "aggregation_mode": "conservative",
+      "available_reviewers": [],
+      "blocking_reviewers": [],
+      "decision": "accept",
+      "low_confidence_reviewers": [],
+      "low_confidence_threshold": 0.0,
+      "missing_reviewers": [],
+      "non_accepting_reviewers": [],
+      "reason": "review_not_required",
+      "reviewer_inputs": [],
+      "schema_version": "independent-reviewer-panel-decision/v1"
+    },
+    "independent_reviewer_results": [],
+    "outcome": null,
+    "probes": {
+      "P_planning": {
+        "details": {
+          "artifact_hashes": {
+            "prd": "0375c7d111667d06b8e5e5ac4b6581b45ef6c2458e84eaeed817fe694eaba217"
+          },
+          "artifacts": [
+            {
+              "kind": "prd",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/source/prd.md",
+              "sha256": "0375c7d111667d06b8e5e5ac4b6581b45ef6c2458e84eaeed817fe694eaba217",
+              "status": "blocked"
+            }
+          ],
+          "checks": {
+            "AGG-001": "pass",
+            "AGG-002": "pass",
+            "PRD-001": "fail: seed or draft marker present",
+            "PRD-002": "fail: blocked stub phrase present",
+            "PRD-003": "fail: missing sections: problem statement, solution, user stories, prd promise contracts, implementation decisions, testing decisions, out of scope",
+            "PRD-004": "pass",
+            "PRD-005": "fail: only 0 PRD promise contracts",
+            "PRD-006": "fail: only 12 unique content tokens"
+          },
+          "gate": "prd_review",
+          "task_id": "agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed",
+          "validator_version": "1.0.0",
+          "verdict": "blocked"
+        },
+        "probe_id": "P_planning",
+        "reason": "planning_validation_failed",
+        "status": "red"
+      }
+    },
+    "status": "blocked",
+    "supervisor_final_status": "blocked",
+    "task_id": "agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed",
+    "tool_calls": [
+      {
+        "args": {
+          "agentic_lead_policy": "allowed",
+          "artifact_policy": "strict",
+          "dynamic_workflow_task_class": null,
+          "execution_layer_mode": "lead_direct",
+          "gate": "prd_review",
+          "min_subagents": 1,
+          "planning_artifact_count": 6,
+          "required_evidence_grade": "self_reported",
+          "required_roles": [],
+          "screenshot_count": 0,
+          "task_id": "agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed",
+          "user_facing": false
+        },
+        "attempts": 0,
+        "duration_ms": 5,
+        "duration_us": 5294,
+        "ended_at_ms": 1780502578645,
+        "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed.json",
+        "name": "start_dual_agent_gate",
+        "probe_id": null,
+        "result_summary": {
+          "claude_gate_status": "blocked",
+          "probe_statuses": {
+            "P_planning": "red"
+          },
+          "supervisor_final_status": "blocked"
+        },
+        "started_at_ms": 1780502578640,
+        "status": "completed",
+        "tool_call_id": "start_dual_agent_gate#1780502578640#5294"
+      },
+      {
+        "args": {
+          "probe_id": "P_planning"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780502578645,
+        "error": "planning_validation_failed",
+        "name": "probe:P_planning",
+        "parent_tool_call_id": "start_dual_agent_gate#1780502578640#5294",
+        "probe_id": "P_planning",
+        "reason": "planning_validation_failed",
+        "result_summary": {
+          "probe_id": "P_planning",
+          "reason": "planning_validation_failed",
+          "status": "red"
+        },
+        "started_at_ms": 1780502578645,
+        "status": "red",
+        "tool_call_id": "probe_p_planning#1780502578645#0#p_planning"
+      }
+    ],
+    "trace_envelope": {
+      "artifacts": [],
+      "claims": [],
+      "event_kind": "dual_agent_gate_result",
+      "failure_taxonomy": {
+        "category": "system_design",
+        "code": "planning_validation_failed",
+        "details": {
+          "artifact_hashes": {
+            "prd": "0375c7d111667d06b8e5e5ac4b6581b45ef6c2458e84eaeed817fe694eaba217"
+          },
+          "artifacts": [
+            {
+              "kind": "prd",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/source/prd.md",
+              "sha256": "0375c7d111667d06b8e5e5ac4b6581b45ef6c2458e84eaeed817fe694eaba217",
+              "status": "blocked"
+            }
+          ],
+          "checks": {
+            "AGG-001": "pass",
+            "AGG-002": "pass",
+            "PRD-001": "fail: seed or draft marker present",
+            "PRD-002": "fail: blocked stub phrase present",
+            "PRD-003": "fail: missing sections: problem statement, solution, user stories, prd promise contracts, implementation decisions, testing decisions, out of scope",
+            "PRD-004": "pass",
+            "PRD-005": "fail: only 0 PRD promise contracts",
+            "PRD-006": "fail: only 12 unique content tokens"
+          },
+          "gate": "prd_review",
+          "task_id": "agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed",
+          "validator_version": "1.0.0",
+          "verdict": "blocked"
+        },
+        "framework": "MAST-inspired",
+        "mast_category": "Specification Issues",
+        "mast_code": "FM-1.1",
+        "mast_mode": "Disobey task specification",
+        "probe_id": "P_planning",
+        "schema_version": "dual-agent-failure-taxonomy/v1",
+        "source": "validation_probe",
+        "subcategory": "artifact_quality"
+      },
+      "gate": "prd_review",
+      "policy_verdict": "blocked",
+      "receipts": [],
+      "run_id": "agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed-b6c1fa851b74",
+      "schema_version": "dual-agent-trace-envelope/v1",
+      "source": "dual_agent",
+      "task_id": "agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed",
+      "tool_calls": [
+        {
+          "args": {
+            "agentic_lead_policy": "allowed",
+            "artifact_policy": "strict",
+            "dynamic_workflow_task_class": null,
+            "execution_layer_mode": "lead_direct",
+            "gate": "prd_review",
+            "min_subagents": 1,
+            "planning_artifact_count": 6,
+            "required_evidence_grade": "self_reported",
+            "required_roles": [],
+            "screenshot_count": 0,
+            "task_id": "agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed",
+            "user_facing": false
+          },
+          "attempts": 0,
+          "duration_ms": 5,
+          "duration_us": 5294,
+          "ended_at_ms": 1780502578645,
+          "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed.json",
+          "name": "start_dual_agent_gate",
+          "probe_id": null,
+          "result_summary": {
+            "claude_gate_status": "blocked",
+            "probe_statuses": {
+              "P_planning": "red"
+            },
+            "supervisor_final_status": "blocked"
+          },
+          "started_at_ms": 1780502578640,
+          "status": "completed",
+          "tool_call_id": "start_dual_agent_gate#1780502578640#5294"
+        },
+        {
+          "args": {
+            "probe_id": "P_planning"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780502578645,
+          "error": "planning_validation_failed",
+          "name": "probe:P_planning",
+          "parent_tool_call_id": "start_dual_agent_gate#1780502578640#5294",
+          "probe_id": "P_planning",
+          "reason": "planning_validation_failed",
+          "result_summary": {
+            "probe_id": "P_planning",
+            "reason": "planning_validation_failed",
+            "status": "red"
+          },
+          "started_at_ms": 1780502578645,
+          "status": "red",
+          "tool_call_id": "probe_p_planning#1780502578645#0#p_planning"
+        }
+      ]
+    }
+  },
+  "mandatory_artifacts": {
+    "missing": [],
+    "output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed",
+    "required": [
+      "source/prd.md",
+      "source/grill-findings.md",
+      "source/issues.md",
+      "source/tdd.md",
+      "source/grill-findings-tdd.md",
+      "source/implementation-plan.md",
+      "interactions.md",
+      "outcome-review.md",
+      "transcript.md"
+    ],
+    "status": "ok"
+  },
+  "metrics": {
+    "wall_clock_s": 151.141
+  },
+  "resume": {
+    "artifact_output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed",
+    "blocker": {
+      "gate": "prd_review",
+      "latest_event_id": 462019,
+      "status": "blocked"
+    },
+    "current_gate": "prd_review",
+    "last_status": "blocked",
+    "latest_event_id": 462022,
+    "next_safe_action": "inspect blocker, provide corrective input, then rerun run_dual_agent_workflow",
+    "prompt": "Use codex_supervisor.\nContinue run_id=agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed-b6c1fa851b74\ntask_id=agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed\ncurrent_gate=prd_review\nlast_status=blocked\nlatest_event_id=462022\nnext_safe_action=inspect blocker, provide corrective input, then rerun run_dual_agent_workflow\nartifact_output_dir=/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed\nfirst inspect: read_gate_transcript(run_id=agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed-b6c1fa851b74, task_id=agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed)",
+    "run_id": "agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed-b6c1fa851b74",
+    "status": "ok",
+    "steps": [
+      {
+        "attempt_count": 1,
+        "gate": "prd_review",
+        "latest_event_id": 462019,
+        "status": "blocked"
+      }
+    ],
+    "task_id": "agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed",
+    "transcript_command": "read_gate_transcript(run_id=agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed-b6c1fa851b74, task_id=agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed)"
+  },
+  "run_id": "agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed-b6c1fa851b74",
+  "status": "blocked",
+  "steps": [
+    {
+      "attempt_count": 1,
+      "gate": "prd_review",
+      "status": "blocked"
+    }
+  ],
+  "task_id": "agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed",
+  "visual_evidence_policy": {
+    "artifact_matches": [],
+    "matched_terms": [],
+    "required": false,
+    "source": "not_user_facing"
+  },
+  "workflow_route": {
+    "agentic_lead_policy": {
+      "min_subagents": 1,
+      "policy": "allowed",
+      "required_evidence_grade": "self_reported",
+      "required_roles": [],
+      "solo_exception_for_artifact_only_gates": false
+    },
+    "agentic_worker_hydration": {
+      "receipt_count": 0,
+      "receipt_ids": [],
+      "status": "empty"
+    },
+    "agentic_worker_production": {
+      "blocking_findings": [],
+      "hydrated_receipt_count": 0,
+      "receipt_count": 2,
+      "status": "passed"
+    },
+    "cursor_review_gates": [
+      "tdd_review",
+      "implementation_plan",
+      "outcome_review"
+    ],
+    "cursor_review_profile": "rigorous",
+    "dynamic_workflow_task_class": null,
+    "effective_cursor_review": true,
+    "execution_layer_mode": "lead_direct",
+    "force_cursor_review": false,
+    "gate_count": 6,
+    "gates": [
+      "prd_review",
+      "issues_review",
+      "tdd_review",
+      "implementation_plan",
+      "execution",
+      "outcome_review"
+    ],
+    "planning_depth": "large",
+    "reasons": [
+      "explicit:large"
+    ],
+    "requested_cursor_review": true,
+    "required_skill_stages": [
+      "to_prd",
+      "prd_grill",
+      "to_issues",
+      "tdd",
+      "tdd_grill"
+    ],
+    "requires_agentic_lead_policy_receipts": true,
+    "requires_brainstorm": false,
+    "requires_dynamic_workflow_receipts": false,
+    "requires_skill_receipts": true,
+    "resume": {
+      "mode": "fresh",
+      "pending_gates": [
+        "prd_review",
+        "issues_review",
+        "tdd_review",
+        "implementation_plan",
+        "execution",
+        "outcome_review"
+      ],
+      "schema_version": "dual-agent-workflow-resume/v1",
+      "skipped_gates": [],
+      "skipped_steps": []
+    },
+    "reviewer_infra_retry_backoff_s": 1.0,
+    "reviewer_infra_retry_limit": 2,
+    "reviewer_low_confidence_threshold": 0.0,
+    "reviewer_max_tokens": 4096,
+    "reviewer_model": "composer-2.5",
+    "reviewer_output_mode": "cursor_sdk",
+    "reviewer_panel_calibration_active": false,
+    "reviewer_panel_calibration_path": null,
+    "reviewer_unavailable_policy": "escalate",
+    "schema_version": "dual-agent-workflow-route/v1",
+    "task_complexity": "large"
+  }
+}

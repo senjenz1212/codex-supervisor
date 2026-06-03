@@ -1,0 +1,13 @@
+{
+  "dataset_sha256": "532299a3bcd1de79bebdeaea1723ae1f58bf730643506cf48a38c7d83e1df978",
+  "evidence_sha256": "c06f2ebe904dd6dcc4691a87655fb93dc7156f590afd86ecab56eff227e63aa3",
+  "execution_mode": "fixture_replay",
+  "live_calls_allowed": false,
+  "report_sha256": "bc844776c28945364d16facea9659c9f4335cf6692eeef56bb949a9bae3b0187",
+  "required_modes": [
+    "lead_direct",
+    "agentic_allowed",
+    "agentic_required"
+  ],
+  "schema_version": "agentic-lead-eval-replay-manifest/v1"
+}

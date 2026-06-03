@@ -128,6 +128,28 @@ def test_agentic_eval_runner_requires_gated_replay_shape(tmp_path):
         agentic_eval_runner(dataset_path=path)
 
 
+def test_agentic_eval_runner_allows_real_early_block_replay(tmp_path):
+    dataset = load_agentic_eval_dataset(FIXTURE)
+    lead_arm = dataset["tasks"][0]["arms"]["lead_direct"]
+    lead_arm["workflow_result"] = {
+        "status": "blocked",
+        "steps": [{"gate": "prd_review", "status": "blocked", "attempt_count": 1}],
+        "final_gate_result": {
+            "gate": "prd_review",
+            "status": "blocked",
+            "probes": {"P_planning": {"status": "red"}},
+        },
+    }
+    path = tmp_path / "early-block.json"
+    path.write_text(json.dumps({"tasks": dataset["tasks"]}), encoding="utf-8")
+
+    report = agentic_eval_runner(dataset_path=path)
+
+    row = next(row for row in report["rows"] if row["task_id"] == "resume-drop-catchup" and row["mode"] == "lead_direct")
+    assert row["workflow_status"] == "blocked"
+    assert row["rejected_gates"] >= 1
+
+
 def test_agentic_eval_decision_tree_is_deterministic():
     dataset = load_agentic_eval_dataset(FIXTURE)
     task = dataset["tasks"][0]

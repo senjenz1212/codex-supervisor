@@ -1,0 +1,18 @@
+{
+  "agentic_lead_policy": "allowed",
+  "budget_usd": 1.75,
+  "cursor_review": true,
+  "cursor_review_profile": "rigorous",
+  "cwd": "/Users/sam.zhang/Documents/codex-supervisor",
+  "execution_layer_mode": "lead_direct",
+  "intent": "Planning-artifact validator should deny advancement when required evidence is absent.",
+  "min_subagents": 1,
+  "quality": "best",
+  "require_skill_receipts": false,
+  "required_roles": [],
+  "run_id": "agentic-eval-bridge-20260603-3b1eab94-planning-artifact-deny-agentic_allowed-5de6d0dbe5c1",
+  "task_complexity": "large",
+  "task_id": "agentic-eval-bridge-20260603-3b1eab94-planning-artifact-deny-agentic_allowed",
+  "timeout_s": 900,
+  "user_facing": false
+}

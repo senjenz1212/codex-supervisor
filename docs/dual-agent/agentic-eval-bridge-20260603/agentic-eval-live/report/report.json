@@ -1,0 +1,880 @@
+{
+  "agentic_lead_policy_snapshot": {
+    "mutated": false,
+    "policy": "off",
+    "source": "report_only_runner_invariant"
+  },
+  "dataset": {
+    "path": "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/agentic_eval_three_arm_dataset.yaml",
+    "schema_version": "agentic-lead-eval-dataset/v1",
+    "sha256": "532299a3bcd1de79bebdeaea1723ae1f58bf730643506cf48a38c7d83e1df978",
+    "task_count": 3
+  },
+  "default_change_allowed": false,
+  "default_change_gate": {
+    "required_modes": [
+      "lead_direct",
+      "agentic_allowed",
+      "agentic_required"
+    ],
+    "required_review": "operator_accepts_eval_report"
+  },
+  "evidence": {
+    "records": [
+      {
+        "gate_statuses": {
+          "prd_review": "blocked"
+        },
+        "mode": "lead_direct",
+        "probe_statuses": {
+          "P_planning": "red"
+        },
+        "reviewer_panel_decisions": [],
+        "score": {
+          "failed_verdict_count": 2,
+          "mode": "lead_direct",
+          "passed_verdict_count": 0,
+          "schema_version": "agentic-lead-eval-score/v1",
+          "score": 0.0,
+          "score_max": 5,
+          "task_id": "clean-accept-runner-report",
+          "verdicts": [
+            {
+              "description": "The runner does not authorize a default policy change.",
+              "evidence": [
+                {
+                  "kind": "probe_receipt",
+                  "ref": "tests/fixtures/agentic_eval/corpus_evidence/probe-receipts.json",
+                  "status": "failed"
+                },
+                {
+                  "kind": "artifact_path",
+                  "ref": "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/cassettes/clean-accept-runner-report--lead_direct.json",
+                  "status": "failed"
+                }
+              ],
+              "reason": "evidence_status_not_passing",
+              "status": "failed",
+              "verdict_id": "report_only_invariant"
+            },
+            {
+              "description": "The report and evidence artifacts are available for replay.",
+              "evidence": [
+                {
+                  "kind": "artifact_path",
+                  "ref": "tests/fixtures/agentic_eval/corpus_evidence/artifact-index.json",
+                  "status": "failed"
+                },
+                {
+                  "kind": "artifact_path",
+                  "ref": "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/cassettes/clean-accept-runner-report--lead_direct.json",
+                  "status": "failed"
+                }
+              ],
+              "reason": "evidence_status_not_passing",
+              "status": "failed",
+              "verdict_id": "evidence_artifact_available"
+            }
+          ],
+          "workflow_status": "blocked"
+        },
+        "task_id": "clean-accept-runner-report",
+        "workflow_status": "blocked"
+      },
+      {
+        "gate_statuses": {
+          "prd_review": "blocked"
+        },
+        "mode": "agentic_allowed",
+        "probe_statuses": {
+          "P_planning": "red"
+        },
+        "reviewer_panel_decisions": [],
+        "score": {
+          "failed_verdict_count": 2,
+          "mode": "agentic_allowed",
+          "passed_verdict_count": 0,
+          "schema_version": "agentic-lead-eval-score/v1",
+          "score": 0.0,
+          "score_max": 5,
+          "task_id": "clean-accept-runner-report",
+          "verdicts": [
+            {
+              "description": "The runner does not authorize a default policy change.",
+              "evidence": [
+                {
+                  "kind": "probe_receipt",
+                  "ref": "tests/fixtures/agentic_eval/corpus_evidence/probe-receipts.json",
+                  "status": "failed"
+                },
+                {
+                  "kind": "artifact_path",
+                  "ref": "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/cassettes/clean-accept-runner-report--agentic_allowed.json",
+                  "status": "failed"
+                }
+              ],
+              "reason": "evidence_status_not_passing",
+              "status": "failed",
+              "verdict_id": "report_only_invariant"
+            },
+            {
+              "description": "The report and evidence artifacts are available for replay.",
+              "evidence": [
+                {
+                  "kind": "artifact_path",
+                  "ref": "tests/fixtures/agentic_eval/corpus_evidence/artifact-index.json",
+                  "status": "failed"
+                },
+                {
+                  "kind": "artifact_path",
+                  "ref": "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/cassettes/clean-accept-runner-report--agentic_allowed.json",
+                  "status": "failed"
+                }
+              ],
+              "reason": "evidence_status_not_passing",
+              "status": "failed",
+              "verdict_id": "evidence_artifact_available"
+            }
+          ],
+          "workflow_status": "blocked"
+        },
+        "task_id": "clean-accept-runner-report",
+        "workflow_status": "blocked"
+      },
+      {
+        "gate_statuses": {
+          "workflow_start": "blocked"
+        },
+        "mode": "agentic_required",
+        "probe_statuses": {
+          "P13": "red"
+        },
+        "reviewer_panel_decisions": [],
+        "score": {
+          "failed_verdict_count": 2,
+          "mode": "agentic_required",
+          "passed_verdict_count": 0,
+          "schema_version": "agentic-lead-eval-score/v1",
+          "score": 0.0,
+          "score_max": 5,
+          "task_id": "clean-accept-runner-report",
+          "verdicts": [
+            {
+              "description": "The runner does not authorize a default policy change.",
+              "evidence": [
+                {
+                  "kind": "probe_receipt",
+                  "ref": "tests/fixtures/agentic_eval/corpus_evidence/probe-receipts.json",
+                  "status": "failed"
+                },
+                {
+                  "kind": "artifact_path",
+                  "ref": "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/cassettes/clean-accept-runner-report--agentic_required.json",
+                  "status": "failed"
+                }
+              ],
+              "reason": "evidence_status_not_passing",
+              "status": "failed",
+              "verdict_id": "report_only_invariant"
+            },
+            {
+              "description": "The report and evidence artifacts are available for replay.",
+              "evidence": [
+                {
+                  "kind": "artifact_path",
+                  "ref": "tests/fixtures/agentic_eval/corpus_evidence/artifact-index.json",
+                  "status": "failed"
+                },
+                {
+                  "kind": "artifact_path",
+                  "ref": "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/cassettes/clean-accept-runner-report--agentic_required.json",
+                  "status": "failed"
+                }
+              ],
+              "reason": "evidence_status_not_passing",
+              "status": "failed",
+              "verdict_id": "evidence_artifact_available"
+            }
+          ],
+          "workflow_status": "blocked"
+        },
+        "task_id": "clean-accept-runner-report",
+        "workflow_status": "blocked"
+      },
+      {
+        "gate_statuses": {
+          "prd_review": "blocked"
+        },
+        "mode": "lead_direct",
+        "probe_statuses": {
+          "P_planning": "red"
+        },
+        "reviewer_panel_decisions": [],
+        "score": {
+          "failed_verdict_count": 0,
+          "mode": "lead_direct",
+          "passed_verdict_count": 2,
+          "schema_version": "agentic-lead-eval-score/v1",
+          "score": 5.0,
+          "score_max": 5,
+          "task_id": "planning-artifact-deny",
+          "verdicts": [
+            {
+              "description": "Missing required artifacts produce a deny/revise outcome.",
+              "evidence": [
+                {
+                  "kind": "probe_receipt",
+                  "ref": "tests/fixtures/agentic_eval/corpus_evidence/probe-receipts.json",
+                  "status": "passed"
+                },
+                {
+                  "kind": "artifact_path",
+                  "ref": "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/cassettes/planning-artifact-deny--lead_direct.json",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "missing_artifact_blocks"
+            },
+            {
+              "description": "Artifact rigor metadata is captured in the replay cassette.",
+              "evidence": [
+                {
+                  "kind": "artifact_path",
+                  "ref": "tests/fixtures/agentic_eval/corpus_evidence/artifact-index.json",
+                  "status": "passed"
+                },
+                {
+                  "kind": "artifact_path",
+                  "ref": "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/cassettes/planning-artifact-deny--lead_direct.json",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "artifact_rigor_recorded"
+            }
+          ],
+          "workflow_status": "blocked"
+        },
+        "task_id": "planning-artifact-deny",
+        "workflow_status": "blocked"
+      },
+      {
+        "gate_statuses": {
+          "prd_review": "blocked"
+        },
+        "mode": "agentic_allowed",
+        "probe_statuses": {
+          "P_planning": "red"
+        },
+        "reviewer_panel_decisions": [],
+        "score": {
+          "failed_verdict_count": 0,
+          "mode": "agentic_allowed",
+          "passed_verdict_count": 2,
+          "schema_version": "agentic-lead-eval-score/v1",
+          "score": 5.0,
+          "score_max": 5,
+          "task_id": "planning-artifact-deny",
+          "verdicts": [
+            {
+              "description": "Missing required artifacts produce a deny/revise outcome.",
+              "evidence": [
+                {
+                  "kind": "probe_receipt",
+                  "ref": "tests/fixtures/agentic_eval/corpus_evidence/probe-receipts.json",
+                  "status": "passed"
+                },
+                {
+                  "kind": "artifact_path",
+                  "ref": "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/cassettes/planning-artifact-deny--agentic_allowed.json",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "missing_artifact_blocks"
+            },
+            {
+              "description": "Artifact rigor metadata is captured in the replay cassette.",
+              "evidence": [
+                {
+                  "kind": "artifact_path",
+                  "ref": "tests/fixtures/agentic_eval/corpus_evidence/artifact-index.json",
+                  "status": "passed"
+                },
+                {
+                  "kind": "artifact_path",
+                  "ref": "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/cassettes/planning-artifact-deny--agentic_allowed.json",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "artifact_rigor_recorded"
+            }
+          ],
+          "workflow_status": "blocked"
+        },
+        "task_id": "planning-artifact-deny",
+        "workflow_status": "blocked"
+      },
+      {
+        "gate_statuses": {
+          "prd_review": "blocked"
+        },
+        "mode": "agentic_required",
+        "probe_statuses": {
+          "P_planning": "red"
+        },
+        "reviewer_panel_decisions": [],
+        "score": {
+          "failed_verdict_count": 0,
+          "mode": "agentic_required",
+          "passed_verdict_count": 2,
+          "schema_version": "agentic-lead-eval-score/v1",
+          "score": 5.0,
+          "score_max": 5,
+          "task_id": "planning-artifact-deny",
+          "verdicts": [
+            {
+              "description": "Missing required artifacts produce a deny/revise outcome.",
+              "evidence": [
+                {
+                  "kind": "probe_receipt",
+                  "ref": "tests/fixtures/agentic_eval/corpus_evidence/probe-receipts.json",
+                  "status": "passed"
+                },
+                {
+                  "kind": "artifact_path",
+                  "ref": "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/cassettes/planning-artifact-deny--agentic_required.json",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "missing_artifact_blocks"
+            },
+            {
+              "description": "Artifact rigor metadata is captured in the replay cassette.",
+              "evidence": [
+                {
+                  "kind": "artifact_path",
+                  "ref": "tests/fixtures/agentic_eval/corpus_evidence/artifact-index.json",
+                  "status": "passed"
+                },
+                {
+                  "kind": "artifact_path",
+                  "ref": "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/cassettes/planning-artifact-deny--agentic_required.json",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "artifact_rigor_recorded"
+            }
+          ],
+          "workflow_status": "blocked"
+        },
+        "task_id": "planning-artifact-deny",
+        "workflow_status": "blocked"
+      },
+      {
+        "gate_statuses": {
+          "prd_review": "blocked"
+        },
+        "mode": "lead_direct",
+        "probe_statuses": {
+          "P_planning": "red"
+        },
+        "reviewer_panel_decisions": [],
+        "score": {
+          "failed_verdict_count": 0,
+          "mode": "lead_direct",
+          "passed_verdict_count": 2,
+          "schema_version": "agentic-lead-eval-score/v1",
+          "score": 5.0,
+          "score_max": 5,
+          "task_id": "reviewer-unavailable-revise",
+          "verdicts": [
+            {
+              "description": "Missing reviewer verdict is treated as unavailable, not accept.",
+              "evidence": [
+                {
+                  "kind": "probe_receipt",
+                  "ref": "tests/fixtures/agentic_eval/corpus_evidence/probe-receipts.json",
+                  "status": "passed"
+                },
+                {
+                  "kind": "artifact_path",
+                  "ref": "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/cassettes/reviewer-unavailable-revise--lead_direct.json",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "missing_verdict_not_accept"
+            },
+            {
+              "description": "Reviewer recovery metadata is captured.",
+              "evidence": [
+                {
+                  "kind": "artifact_path",
+                  "ref": "tests/fixtures/agentic_eval/corpus_evidence/artifact-index.json",
+                  "status": "passed"
+                },
+                {
+                  "kind": "artifact_path",
+                  "ref": "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/cassettes/reviewer-unavailable-revise--lead_direct.json",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "recovery_packet_available"
+            }
+          ],
+          "workflow_status": "blocked"
+        },
+        "task_id": "reviewer-unavailable-revise",
+        "workflow_status": "blocked"
+      },
+      {
+        "gate_statuses": {
+          "prd_review": "blocked"
+        },
+        "mode": "agentic_allowed",
+        "probe_statuses": {
+          "P_planning": "red"
+        },
+        "reviewer_panel_decisions": [],
+        "score": {
+          "failed_verdict_count": 0,
+          "mode": "agentic_allowed",
+          "passed_verdict_count": 2,
+          "schema_version": "agentic-lead-eval-score/v1",
+          "score": 5.0,
+          "score_max": 5,
+          "task_id": "reviewer-unavailable-revise",
+          "verdicts": [
+            {
+              "description": "Missing reviewer verdict is treated as unavailable, not accept.",
+              "evidence": [
+                {
+                  "kind": "probe_receipt",
+                  "ref": "tests/fixtures/agentic_eval/corpus_evidence/probe-receipts.json",
+                  "status": "passed"
+                },
+                {
+                  "kind": "artifact_path",
+                  "ref": "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/cassettes/reviewer-unavailable-revise--agentic_allowed.json",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "missing_verdict_not_accept"
+            },
+            {
+              "description": "Reviewer recovery metadata is captured.",
+              "evidence": [
+                {
+                  "kind": "artifact_path",
+                  "ref": "tests/fixtures/agentic_eval/corpus_evidence/artifact-index.json",
+                  "status": "passed"
+                },
+                {
+                  "kind": "artifact_path",
+                  "ref": "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/cassettes/reviewer-unavailable-revise--agentic_allowed.json",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "recovery_packet_available"
+            }
+          ],
+          "workflow_status": "blocked"
+        },
+        "task_id": "reviewer-unavailable-revise",
+        "workflow_status": "blocked"
+      },
+      {
+        "gate_statuses": {
+          "workflow_start": "blocked"
+        },
+        "mode": "agentic_required",
+        "probe_statuses": {
+          "P13": "red"
+        },
+        "reviewer_panel_decisions": [],
+        "score": {
+          "failed_verdict_count": 0,
+          "mode": "agentic_required",
+          "passed_verdict_count": 2,
+          "schema_version": "agentic-lead-eval-score/v1",
+          "score": 5.0,
+          "score_max": 5,
+          "task_id": "reviewer-unavailable-revise",
+          "verdicts": [
+            {
+              "description": "Missing reviewer verdict is treated as unavailable, not accept.",
+              "evidence": [
+                {
+                  "kind": "probe_receipt",
+                  "ref": "tests/fixtures/agentic_eval/corpus_evidence/probe-receipts.json",
+                  "status": "passed"
+                },
+                {
+                  "kind": "artifact_path",
+                  "ref": "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/cassettes/reviewer-unavailable-revise--agentic_required.json",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "missing_verdict_not_accept"
+            },
+            {
+              "description": "Reviewer recovery metadata is captured.",
+              "evidence": [
+                {
+                  "kind": "artifact_path",
+                  "ref": "tests/fixtures/agentic_eval/corpus_evidence/artifact-index.json",
+                  "status": "passed"
+                },
+                {
+                  "kind": "artifact_path",
+                  "ref": "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/cassettes/reviewer-unavailable-revise--agentic_required.json",
+                  "status": "passed"
+                }
+              ],
+              "reason": "evidence_present",
+              "status": "passed",
+              "verdict_id": "recovery_packet_available"
+            }
+          ],
+          "workflow_status": "blocked"
+        },
+        "task_id": "reviewer-unavailable-revise",
+        "workflow_status": "blocked"
+      }
+    ],
+    "schema_version": "agentic-lead-eval-evidence/v1",
+    "sha256": "c06f2ebe904dd6dcc4691a87655fb93dc7156f590afd86ecab56eff227e63aa3"
+  },
+  "exports": {
+    "evidence_json": "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/evidence.json",
+    "replay_manifest": "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/replay-manifest.json",
+    "report_json": "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/report.json",
+    "rows_jsonl": "docs/dual-agent/agentic-eval-bridge-20260603/agentic-eval-live/report/rows.jsonl"
+  },
+  "report_only": {
+    "config_mutated": false,
+    "default_change_allowed": false,
+    "policy_mutated": false
+  },
+  "report_sha256": "bc844776c28945364d16facea9659c9f4335cf6692eeef56bb949a9bae3b0187",
+  "rows": [
+    {
+      "budget_usd_limit": 3.5,
+      "cost_usd": 0.0,
+      "gate_statuses": {
+        "prd_review": "blocked"
+      },
+      "graceful_degradation": 0.0,
+      "missed_issues": 0,
+      "mode": "lead_direct",
+      "operator_interventions": 0,
+      "probe_statuses": {
+        "P_planning": "red"
+      },
+      "rejected_gates": 2,
+      "required_verdicts": [
+        "report_only_invariant",
+        "evidence_artifact_available"
+      ],
+      "retries": 0,
+      "reviewer_panel_decisions": [],
+      "score": 0.0,
+      "score_max": 5,
+      "task_id": "clean-accept-runner-report",
+      "token_budget": 12000,
+      "wall_clock_s": 3.372,
+      "workflow_status": "blocked"
+    },
+    {
+      "budget_usd_limit": 3.5,
+      "cost_usd": 0.0,
+      "gate_statuses": {
+        "prd_review": "blocked"
+      },
+      "graceful_degradation": 0.0,
+      "missed_issues": 0,
+      "mode": "agentic_allowed",
+      "operator_interventions": 0,
+      "probe_statuses": {
+        "P_planning": "red"
+      },
+      "rejected_gates": 2,
+      "required_verdicts": [
+        "report_only_invariant",
+        "evidence_artifact_available"
+      ],
+      "retries": 0,
+      "reviewer_panel_decisions": [],
+      "score": 0.0,
+      "score_max": 5,
+      "task_id": "clean-accept-runner-report",
+      "token_budget": 12000,
+      "wall_clock_s": 151.141,
+      "workflow_status": "blocked"
+    },
+    {
+      "budget_usd_limit": 3.5,
+      "cost_usd": 0.0,
+      "gate_statuses": {
+        "workflow_start": "blocked"
+      },
+      "graceful_degradation": 0.0,
+      "missed_issues": 0,
+      "mode": "agentic_required",
+      "operator_interventions": 0,
+      "probe_statuses": {
+        "P13": "red"
+      },
+      "rejected_gates": 2,
+      "required_verdicts": [
+        "report_only_invariant",
+        "evidence_artifact_available"
+      ],
+      "retries": 0,
+      "reviewer_panel_decisions": [],
+      "score": 0.0,
+      "score_max": 5,
+      "task_id": "clean-accept-runner-report",
+      "token_budget": 12000,
+      "wall_clock_s": 515.577,
+      "workflow_status": "blocked"
+    },
+    {
+      "budget_usd_limit": 3.5,
+      "cost_usd": 0.0,
+      "gate_statuses": {
+        "prd_review": "blocked"
+      },
+      "graceful_degradation": 0.333,
+      "missed_issues": 0,
+      "mode": "lead_direct",
+      "operator_interventions": 0,
+      "probe_statuses": {
+        "P_planning": "red"
+      },
+      "rejected_gates": 2,
+      "required_verdicts": [
+        "missing_artifact_blocks",
+        "artifact_rigor_recorded"
+      ],
+      "retries": 0,
+      "reviewer_panel_decisions": [],
+      "score": 5.0,
+      "score_max": 5,
+      "task_id": "planning-artifact-deny",
+      "token_budget": 12000,
+      "wall_clock_s": 3.383,
+      "workflow_status": "blocked"
+    },
+    {
+      "budget_usd_limit": 3.5,
+      "cost_usd": 0.0,
+      "gate_statuses": {
+        "prd_review": "blocked"
+      },
+      "graceful_degradation": 0.333,
+      "missed_issues": 0,
+      "mode": "agentic_allowed",
+      "operator_interventions": 0,
+      "probe_statuses": {
+        "P_planning": "red"
+      },
+      "rejected_gates": 2,
+      "required_verdicts": [
+        "missing_artifact_blocks",
+        "artifact_rigor_recorded"
+      ],
+      "retries": 0,
+      "reviewer_panel_decisions": [],
+      "score": 5.0,
+      "score_max": 5,
+      "task_id": "planning-artifact-deny",
+      "token_budget": 12000,
+      "wall_clock_s": 127.149,
+      "workflow_status": "blocked"
+    },
+    {
+      "budget_usd_limit": 3.5,
+      "cost_usd": 0.0,
+      "gate_statuses": {
+        "prd_review": "blocked"
+      },
+      "graceful_degradation": 0.333,
+      "missed_issues": 0,
+      "mode": "agentic_required",
+      "operator_interventions": 0,
+      "probe_statuses": {
+        "P_planning": "red"
+      },
+      "rejected_gates": 2,
+      "required_verdicts": [
+        "missing_artifact_blocks",
+        "artifact_rigor_recorded"
+      ],
+      "retries": 0,
+      "reviewer_panel_decisions": [],
+      "score": 5.0,
+      "score_max": 5,
+      "task_id": "planning-artifact-deny",
+      "token_budget": 12000,
+      "wall_clock_s": 93.672,
+      "workflow_status": "blocked"
+    },
+    {
+      "budget_usd_limit": 3.5,
+      "cost_usd": 0.0,
+      "gate_statuses": {
+        "prd_review": "blocked"
+      },
+      "graceful_degradation": 0.333,
+      "missed_issues": 0,
+      "mode": "lead_direct",
+      "operator_interventions": 0,
+      "probe_statuses": {
+        "P_planning": "red"
+      },
+      "rejected_gates": 2,
+      "required_verdicts": [
+        "missing_verdict_not_accept",
+        "recovery_packet_available"
+      ],
+      "retries": 0,
+      "reviewer_panel_decisions": [],
+      "score": 5.0,
+      "score_max": 5,
+      "task_id": "reviewer-unavailable-revise",
+      "token_budget": 12000,
+      "wall_clock_s": 3.325,
+      "workflow_status": "blocked"
+    },
+    {
+      "budget_usd_limit": 3.5,
+      "cost_usd": 0.0,
+      "gate_statuses": {
+        "prd_review": "blocked"
+      },
+      "graceful_degradation": 0.333,
+      "missed_issues": 0,
+      "mode": "agentic_allowed",
+      "operator_interventions": 0,
+      "probe_statuses": {
+        "P_planning": "red"
+      },
+      "rejected_gates": 2,
+      "required_verdicts": [
+        "missing_verdict_not_accept",
+        "recovery_packet_available"
+      ],
+      "retries": 0,
+      "reviewer_panel_decisions": [],
+      "score": 5.0,
+      "score_max": 5,
+      "task_id": "reviewer-unavailable-revise",
+      "token_budget": 12000,
+      "wall_clock_s": 116.766,
+      "workflow_status": "blocked"
+    },
+    {
+      "budget_usd_limit": 3.5,
+      "cost_usd": 0.0,
+      "gate_statuses": {
+        "workflow_start": "blocked"
+      },
+      "graceful_degradation": 0.333,
+      "missed_issues": 0,
+      "mode": "agentic_required",
+      "operator_interventions": 0,
+      "probe_statuses": {
+        "P13": "red"
+      },
+      "rejected_gates": 2,
+      "required_verdicts": [
+        "missing_verdict_not_accept",
+        "recovery_packet_available"
+      ],
+      "retries": 0,
+      "reviewer_panel_decisions": [],
+      "score": 5.0,
+      "score_max": 5,
+      "task_id": "reviewer-unavailable-revise",
+      "token_budget": 12000,
+      "wall_clock_s": 124.92,
+      "workflow_status": "blocked"
+    }
+  ],
+  "runner": {
+    "execution_mode": "fixture_replay",
+    "live_calls_allowed": false,
+    "public_boundary": "agentic_eval_runner",
+    "schema_version": "agentic-lead-eval-runner/v1",
+    "workflow_runner_used": false
+  },
+  "schema_version": "agentic-lead-eval/v1",
+  "summary": {
+    "agentic_allowed": {
+      "avg_cost_usd": 0.0,
+      "avg_graceful_degradation": 0.222,
+      "avg_score": 3.3333333333333335,
+      "avg_wall_clock_s": 131.68533333333332,
+      "cost_usd": 0.0,
+      "graceful_degradation": 0.666,
+      "missed_issues": 0,
+      "operator_interventions": 0,
+      "rejected_gates": 6,
+      "retries": 0,
+      "score": 10.0,
+      "task_count": 3,
+      "wall_clock_s": 395.056
+    },
+    "agentic_required": {
+      "avg_cost_usd": 0.0,
+      "avg_graceful_degradation": 0.222,
+      "avg_score": 3.3333333333333335,
+      "avg_wall_clock_s": 244.72299999999998,
+      "cost_usd": 0.0,
+      "graceful_degradation": 0.666,
+      "missed_issues": 0,
+      "operator_interventions": 0,
+      "rejected_gates": 6,
+      "retries": 0,
+      "score": 10.0,
+      "task_count": 3,
+      "wall_clock_s": 734.169
+    },
+    "lead_direct": {
+      "avg_cost_usd": 0.0,
+      "avg_graceful_degradation": 0.222,
+      "avg_score": 3.3333333333333335,
+      "avg_wall_clock_s": 3.36,
+      "cost_usd": 0.0,
+      "graceful_degradation": 0.666,
+      "missed_issues": 0,
+      "operator_interventions": 0,
+      "rejected_gates": 6,
+      "retries": 0,
+      "score": 10.0,
+      "task_count": 3,
+      "wall_clock_s": 10.08
+    }
+  }
+}

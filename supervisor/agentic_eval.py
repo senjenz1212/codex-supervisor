@@ -513,8 +513,18 @@ def _reviewer_panel_decisions(workflow_result: dict[str, Any]) -> list[dict[str,
 
 def _validate_replay_workflow_shape(*, task_id: str, mode: str, workflow_result: dict[str, Any]) -> None:
     gates = _gate_statuses(workflow_result)
+    if not gates:
+        raise ValueError(f"agentic eval task {task_id}/{mode} replay missing workflow gates")
+    final = workflow_result.get("final_gate_result")
+    final = final if isinstance(final, dict) else {}
+    final_status = str(final.get("status") or workflow_result.get("status") or "").strip().lower()
+    reached_outcome_review = "outcome_review" in gates
+    terminal_accept = final_status in {"accept", "accepted"} or str(workflow_result.get("status") or "").strip().lower() in {
+        "accept",
+        "accepted",
+    }
     missing_gates = [gate for gate in REQUIRED_WORKFLOW_GATES if gate not in gates]
-    if missing_gates:
+    if missing_gates and (terminal_accept or reached_outcome_review):
         raise ValueError(f"agentic eval task {task_id}/{mode} replay missing workflow gates: {missing_gates}")
 
     probe_statuses = _probe_statuses(workflow_result)
@@ -522,10 +532,10 @@ def _validate_replay_workflow_shape(*, task_id: str, mode: str, workflow_result:
     if mode in {"agentic_allowed", "agentic_required"}:
         required_probes.extend(REQUIRED_AGENTIC_PROBES)
     missing_probes = [probe for probe in required_probes if probe not in probe_statuses]
-    if missing_probes:
+    if missing_probes and (terminal_accept or reached_outcome_review):
         raise ValueError(f"agentic eval task {task_id}/{mode} replay missing probes: {missing_probes}")
 
-    if not _reviewer_panel_decisions(workflow_result):
+    if not _reviewer_panel_decisions(workflow_result) and (terminal_accept or reached_outcome_review):
         raise ValueError(f"agentic eval task {task_id}/{mode} replay missing reviewer panel decisions")
 
 
@@ -580,6 +590,7 @@ def _export_agentic_eval(report: dict[str, Any], output_dir: Path) -> None:
 def _report_without_sha(report: dict[str, Any]) -> dict[str, Any]:
     result = dict(report)
     result["report_sha256"] = ""
+    result["exports"] = {}
     return result
 
 

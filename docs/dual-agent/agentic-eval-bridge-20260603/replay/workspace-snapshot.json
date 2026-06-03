@@ -1,0 +1,24 @@
+{
+  "file_tree_sha256": "7d7881eaa00cd08256292e9a942a1704a2099cfd64ad85a415ff2a904cf77743",
+  "git": {
+    "diff_bytes": 3724,
+    "diff_sha256": "cdc7387fdc104016e7118068cb1f045faa1bce37c570a109114de628c14c35cd",
+    "diff_stat": "supervisor/agentic_eval.py | 17 ++++++++++++++---\n tests/test_agentic_eval.py | 22 ++++++++++++++++++++++\n 2 files changed, 36 insertions(+), 3 deletions(-)",
+    "head": "60142bb",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "60142bb",
+    "status_short": "M supervisor/agentic_eval.py\n M tests/test_agentic_eval.py\n?? docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_allowed/\n?? docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-agentic_required/\n?? docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-clean-accept-runner-report-lead_direct/\n?? docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-planning-artifact-deny-agentic_allowed/\n?? docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-planning-artifact-deny-agentic_required/\n?? docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-planning-artifact-deny-lead_direct/\n?? docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_allowed/\n?? docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/\n?? docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-lead_direct/\n?? docs/dual-agent/agentic-eval-bridge-20260603/\n?? scripts/run_agentic_eval_live.py\n?? supervisor/agentic_eval_assembler.py\n?? tests/test_agentic_eval_bridge.py"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "266f5e57a7e5e2d53ab5e5cb30c13030c952449654b289b27b8a04de5bb3c69f",
+    "implementation_plan": "ae9e2872d5f0def59fb750d4a0dd922a72cef0e3e66953188978764a7e1ca584",
+    "issues": "be0ceffa725d6fa3b8f9b1a59144c3bea51e0567ec7a6c8e125e8d046377c62a",
+    "other": "0c6a0223acad97db9c8b24660305a7cbf920c1adf9003f3415dfd45732738fb8",
+    "prd": "5c17d0c16a17826993101577110c7b1c2499d00c38ddff993ef3fec45f5d862d",
+    "tdd_plan": "028f9577698a9dfb1a6a509fb8f96899e42e53fa9eaa64f1ac95e9c2b93dbb3b"
+  },
+  "status": "captured"
+}

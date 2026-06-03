@@ -1,0 +1,415 @@
+{
+  "artifact_export": {
+    "files": [
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/index.md",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/triage.md",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/prd.md",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/tdd.md",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/grill-findings.md",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/issues.md",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/screenshots.md",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/outcome-review.md",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/interactions.md",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/transcript.md",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/transcript.jsonl",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/mast-coverage.md",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/replay/manifest.json",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/replay/workspace-snapshot.json",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/replay/mast-coverage.json",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/source/grill-findings-tdd.md",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/source/grill-findings.md",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/source/implementation-plan.md",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/source/issues.md",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/source/prd.md",
+      "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/source/tdd.md"
+    ],
+    "output_dir": "docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required",
+    "run_id": "agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required-c4adc6bfc844",
+    "status": "ok",
+    "task_id": "agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required"
+  },
+  "current_gate": "workflow_start",
+  "final_gate_result": {
+    "artifact_rigor": {
+      "reason": "agentic_lead_policy_blocked",
+      "status": "blocked"
+    },
+    "attempts": 0,
+    "escalation": {
+      "details": {
+        "agentic_policy": {
+          "achieved_evidence_grade": "runtime_native",
+          "blocking_findings": [
+            {
+              "reason": "subagent_status_not_passing",
+              "status": "failed",
+              "task_id": "agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required"
+            }
+          ],
+          "gate": "workflow_start",
+          "lead_solo_execution": [],
+          "min_subagents": 1,
+          "policy": "required",
+          "required_evidence_grade": "self_reported",
+          "required_roles": [],
+          "schema_version": "agentic-lead-policy/v1",
+          "solo_exception_applies": false,
+          "solo_exception_for_artifact_only_gates": false,
+          "status": "blocked",
+          "subagents": [
+            {
+              "agent_id": "audit-1",
+              "agent_runtime": "claude_code",
+              "budget_usd": 1.0,
+              "decision": "revise",
+              "declared_evidence_grade": "",
+              "evidence_grade": "runtime_native",
+              "objections": [
+                "worker exited with 1"
+              ],
+              "output_ref": ".handoff/agentic-workers/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/audit-1/output.json",
+              "permission_mode": "readOnly",
+              "persona_id": "reviewer.codebase_audit",
+              "replay_problems": [],
+              "role": "codebase_audit",
+              "severity": "important",
+              "status": "failed",
+              "task_id": "agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required",
+              "timeout_s": 600,
+              "tool_pins": [
+                "rg",
+                "sed",
+                "ls"
+              ],
+              "transcript_ref": ".handoff/agentic-workers/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/audit-1/transcript.jsonl",
+              "verified_refs": [
+                {
+                  "label": "subagent_0_transcript",
+                  "ref": ".handoff/agentic-workers/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/audit-1/transcript.jsonl",
+                  "sha256": "560870f09ec33e9712485c7ec9d94b5bfbaa6f56facf8f0ca6839a770d7c72c1"
+                },
+                {
+                  "label": "subagent_0_output",
+                  "ref": ".handoff/agentic-workers/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/audit-1/output.json",
+                  "sha256": "42c862b40a617f7f9ef49ffee06546fae0770d17d2f289ac4d3108ac486f328d"
+                }
+              ]
+            },
+            {
+              "agent_id": "audit-2",
+              "agent_runtime": "claude_code",
+              "budget_usd": 1.0,
+              "decision": "accept",
+              "declared_evidence_grade": "",
+              "evidence_grade": "runtime_native",
+              "objections": [],
+              "output_ref": ".handoff/agentic-workers/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/audit-2/output.json",
+              "permission_mode": "readOnly",
+              "persona_id": "reviewer.codebase_audit",
+              "replay_problems": [],
+              "role": "test_audit",
+              "severity": "none",
+              "status": "passed",
+              "task_id": "agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required",
+              "timeout_s": 600,
+              "tool_pins": [
+                "rg",
+                "sed",
+                "ls"
+              ],
+              "transcript_ref": ".handoff/agentic-workers/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/audit-2/transcript.jsonl",
+              "verified_refs": [
+                {
+                  "label": "subagent_1_transcript",
+                  "ref": ".handoff/agentic-workers/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/audit-2/transcript.jsonl",
+                  "sha256": "1a40d0d6246761523bc5ea96fc9dce18633565c3df2f8a6b59a56fc5a75eaf39"
+                },
+                {
+                  "label": "subagent_1_output",
+                  "ref": ".handoff/agentic-workers/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/audit-2/output.json",
+                  "sha256": "add1e135401c2bba3ddcd50efba21fa7afdd674d5ed345207db4b612515b6f59"
+                }
+              ]
+            }
+          ]
+        },
+        "execution_layer_mode": "lead_direct"
+      },
+      "reason": "agentic_lead_policy_blocked",
+      "type": "dynamic_workflow_receipt_validation"
+    },
+    "gate": "workflow_start",
+    "handoff_packet_path": null,
+    "outcome": null,
+    "probes": {
+      "P13": {
+        "details": {
+          "agentic_policy": {
+            "achieved_evidence_grade": "runtime_native",
+            "blocking_findings": [
+              {
+                "reason": "subagent_status_not_passing",
+                "status": "failed",
+                "task_id": "agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required"
+              }
+            ],
+            "gate": "workflow_start",
+            "lead_solo_execution": [],
+            "min_subagents": 1,
+            "policy": "required",
+            "required_evidence_grade": "self_reported",
+            "required_roles": [],
+            "schema_version": "agentic-lead-policy/v1",
+            "solo_exception_applies": false,
+            "solo_exception_for_artifact_only_gates": false,
+            "status": "blocked",
+            "subagents": [
+              {
+                "agent_id": "audit-1",
+                "agent_runtime": "claude_code",
+                "budget_usd": 1.0,
+                "decision": "revise",
+                "declared_evidence_grade": "",
+                "evidence_grade": "runtime_native",
+                "objections": [
+                  "worker exited with 1"
+                ],
+                "output_ref": ".handoff/agentic-workers/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/audit-1/output.json",
+                "permission_mode": "readOnly",
+                "persona_id": "reviewer.codebase_audit",
+                "replay_problems": [],
+                "role": "codebase_audit",
+                "severity": "important",
+                "status": "failed",
+                "task_id": "agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required",
+                "timeout_s": 600,
+                "tool_pins": [
+                  "rg",
+                  "sed",
+                  "ls"
+                ],
+                "transcript_ref": ".handoff/agentic-workers/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/audit-1/transcript.jsonl",
+                "verified_refs": [
+                  {
+                    "label": "subagent_0_transcript",
+                    "ref": ".handoff/agentic-workers/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/audit-1/transcript.jsonl",
+                    "sha256": "560870f09ec33e9712485c7ec9d94b5bfbaa6f56facf8f0ca6839a770d7c72c1"
+                  },
+                  {
+                    "label": "subagent_0_output",
+                    "ref": ".handoff/agentic-workers/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/audit-1/output.json",
+                    "sha256": "42c862b40a617f7f9ef49ffee06546fae0770d17d2f289ac4d3108ac486f328d"
+                  }
+                ]
+              },
+              {
+                "agent_id": "audit-2",
+                "agent_runtime": "claude_code",
+                "budget_usd": 1.0,
+                "decision": "accept",
+                "declared_evidence_grade": "",
+                "evidence_grade": "runtime_native",
+                "objections": [],
+                "output_ref": ".handoff/agentic-workers/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/audit-2/output.json",
+                "permission_mode": "readOnly",
+                "persona_id": "reviewer.codebase_audit",
+                "replay_problems": [],
+                "role": "test_audit",
+                "severity": "none",
+                "status": "passed",
+                "task_id": "agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required",
+                "timeout_s": 600,
+                "tool_pins": [
+                  "rg",
+                  "sed",
+                  "ls"
+                ],
+                "transcript_ref": ".handoff/agentic-workers/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/audit-2/transcript.jsonl",
+                "verified_refs": [
+                  {
+                    "label": "subagent_1_transcript",
+                    "ref": ".handoff/agentic-workers/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/audit-2/transcript.jsonl",
+                    "sha256": "1a40d0d6246761523bc5ea96fc9dce18633565c3df2f8a6b59a56fc5a75eaf39"
+                  },
+                  {
+                    "label": "subagent_1_output",
+                    "ref": ".handoff/agentic-workers/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required/audit-2/output.json",
+                    "sha256": "add1e135401c2bba3ddcd50efba21fa7afdd674d5ed345207db4b612515b6f59"
+                  }
+                ]
+              }
+            ]
+          },
+          "execution_layer_mode": "lead_direct"
+        },
+        "probe_id": "P13",
+        "reason": "agentic_lead_policy_blocked",
+        "status": "red"
+      }
+    },
+    "status": "blocked",
+    "task_id": "agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required",
+    "trace_envelope": {
+      "artifacts": [],
+      "claims": [],
+      "event_kind": "dual_agent_gate_result",
+      "failure_taxonomy": {
+        "category": "system_design",
+        "code": "agentic_lead_policy_blocked",
+        "framework": "MAST-inspired",
+        "mast_category": null,
+        "mast_code": null,
+        "mast_mode": null,
+        "probe_id": "",
+        "schema_version": "dual-agent-failure-taxonomy/v1",
+        "source": "result_escalation",
+        "subcategory": "resource_contention"
+      },
+      "gate": "workflow_start",
+      "policy_verdict": "blocked",
+      "receipts": [],
+      "run_id": "agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required-c4adc6bfc844",
+      "schema_version": "dual-agent-trace-envelope/v1",
+      "source": "dual_agent",
+      "task_id": "agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required",
+      "tool_calls": []
+    }
+  },
+  "mandatory_artifacts": {
+    "missing": [],
+    "output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required",
+    "required": [
+      "source/prd.md",
+      "source/grill-findings.md",
+      "source/issues.md",
+      "source/tdd.md",
+      "source/grill-findings-tdd.md",
+      "source/implementation-plan.md",
+      "interactions.md",
+      "outcome-review.md",
+      "transcript.md"
+    ],
+    "status": "ok"
+  },
+  "resume": {
+    "artifact_output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required",
+    "blocker": {
+      "gate": "workflow_start",
+      "latest_event_id": 462577,
+      "status": "blocked"
+    },
+    "current_gate": "workflow_start",
+    "last_status": "blocked",
+    "latest_event_id": 462578,
+    "next_safe_action": "inspect blocker, provide corrective input, then rerun run_dual_agent_workflow",
+    "prompt": "Use codex_supervisor.\nContinue run_id=agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required-c4adc6bfc844\ntask_id=agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required\ncurrent_gate=workflow_start\nlast_status=blocked\nlatest_event_id=462578\nnext_safe_action=inspect blocker, provide corrective input, then rerun run_dual_agent_workflow\nartifact_output_dir=/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required\nfirst inspect: read_gate_transcript(run_id=agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required-c4adc6bfc844, task_id=agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required)",
+    "run_id": "agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required-c4adc6bfc844",
+    "status": "ok",
+    "steps": [
+      {
+        "attempt_count": 0,
+        "gate": "workflow_start",
+        "latest_event_id": 462577,
+        "status": "blocked"
+      }
+    ],
+    "task_id": "agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required",
+    "transcript_command": "read_gate_transcript(run_id=agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required-c4adc6bfc844, task_id=agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required)"
+  },
+  "run_id": "agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required-c4adc6bfc844",
+  "status": "blocked",
+  "steps": [
+    {
+      "attempt_count": 0,
+      "gate": "workflow_start",
+      "status": "blocked"
+    }
+  ],
+  "task_id": "agentic-eval-bridge-20260603-3b1eab94-reviewer-unavailable-revise-agentic_required",
+  "visual_evidence_policy": {
+    "artifact_matches": [],
+    "matched_terms": [],
+    "required": false,
+    "source": "not_user_facing"
+  },
+  "workflow_route": {
+    "agentic_lead_policy": {
+      "min_subagents": 1,
+      "policy": "required",
+      "required_evidence_grade": "self_reported",
+      "required_roles": [],
+      "solo_exception_for_artifact_only_gates": false
+    },
+    "agentic_worker_hydration": {
+      "receipt_count": 0,
+      "receipt_ids": [],
+      "status": "empty"
+    },
+    "agentic_worker_production": {
+      "blocking_findings": [],
+      "hydrated_receipt_count": 0,
+      "receipt_count": 2,
+      "status": "passed"
+    },
+    "cursor_review_gates": [
+      "tdd_review",
+      "implementation_plan",
+      "outcome_review"
+    ],
+    "cursor_review_profile": "rigorous",
+    "dynamic_workflow_task_class": null,
+    "effective_cursor_review": true,
+    "execution_layer_mode": "lead_direct",
+    "force_cursor_review": false,
+    "gate_count": 6,
+    "gates": [
+      "prd_review",
+      "issues_review",
+      "tdd_review",
+      "implementation_plan",
+      "execution",
+      "outcome_review"
+    ],
+    "planning_depth": "large",
+    "reasons": [
+      "explicit:large"
+    ],
+    "requested_cursor_review": true,
+    "required_skill_stages": [
+      "to_prd",
+      "prd_grill",
+      "to_issues",
+      "tdd",
+      "tdd_grill"
+    ],
+    "requires_agentic_lead_policy_receipts": true,
+    "requires_brainstorm": false,
+    "requires_dynamic_workflow_receipts": false,
+    "requires_skill_receipts": true,
+    "resume": {
+      "mode": "fresh",
+      "pending_gates": [
+        "prd_review",
+        "issues_review",
+        "tdd_review",
+        "implementation_plan",
+        "execution",
+        "outcome_review"
+      ],
+      "schema_version": "dual-agent-workflow-resume/v1",
+      "skipped_gates": [],
+      "skipped_steps": []
+    },
+    "reviewer_infra_retry_backoff_s": 1.0,
+    "reviewer_infra_retry_limit": 2,
+    "reviewer_low_confidence_threshold": 0.0,
+    "reviewer_max_tokens": 4096,
+    "reviewer_model": "composer-2.5",
+    "reviewer_output_mode": "cursor_sdk",
+    "reviewer_panel_calibration_active": false,
+    "reviewer_panel_calibration_path": null,
+    "reviewer_unavailable_policy": "escalate",
+    "schema_version": "dual-agent-workflow-route/v1",
+    "task_complexity": "large"
+  }
+}
