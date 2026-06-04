@@ -1,0 +1,24 @@
+{
+  "file_tree_sha256": "c3c34df7d81d47074ecca55e63a7d3e14acb202d04fc63906ef97fee6ecfd38a",
+  "git": {
+    "diff_bytes": 0,
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "diff_stat": "",
+    "head": "64bf69a",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "64bf69a",
+    "status_short": "?? docs/dual-agent/bench-terminalbench21-gpt55-20260603/\n?? scripts/run_terminal_bench_pilot.py\n?? supervisor/terminal_bench_eval.py\n?? supervisor/terminal_bench_harbor_agent.py\n?? tests/fixtures/terminal_bench/\n?? tests/test_terminal_bench_eval.py"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "31489582439f4013bacedfc3cbb943ef369d64edc94d845d3234cd6cd3ca5d00",
+    "implementation_plan": "39233959d121e07fb88f8d58a16dacd0adeb996f03dae91161b376b2cfa2de3f",
+    "issues": "f4ac761377636807c11ce7a52cd4fa1478c080377bb848df56ddbc14d4a3929b",
+    "other": "4d63b4479f522a9b5721108d744718795a595f7b469fa601e92055eb8e788c13",
+    "prd": "0ee8c02b12af81a607cf5821181d8f9a867563ac95bfe2c42bdfd7ed2a7c9a40",
+    "tdd_plan": "8b62c4839dadbbdb14a6617078b3955e16ccd17a3f24b8224a1461658db761d3"
+  },
+  "status": "captured"
+}

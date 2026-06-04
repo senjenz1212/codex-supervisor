@@ -1,0 +1,425 @@
+{
+  "event_ids": [
+    477848,
+    477849,
+    477851,
+    477853,
+    477854,
+    477897,
+    477898,
+    477899,
+    477900,
+    477903,
+    477904,
+    477929,
+    477930,
+    477931,
+    477932,
+    477935,
+    477936,
+    477951,
+    477952,
+    477953,
+    478116,
+    478117,
+    478118,
+    478119,
+    478124,
+    478127,
+    478128,
+    478212,
+    478213,
+    478214,
+    478412,
+    478413,
+    478414,
+    478415,
+    478416,
+    478424,
+    478425,
+    478426,
+    478427,
+    478515,
+    478516,
+    478517,
+    478790,
+    478792,
+    478793,
+    478794,
+    478795,
+    478798,
+    478799,
+    478902,
+    478903,
+    478904,
+    478905,
+    478908,
+    478909,
+    478995,
+    478996,
+    478997,
+    479169,
+    479170,
+    479171,
+    479172,
+    479173
+  ],
+  "event_kinds": [
+    "dual_agent_gate_result",
+    "dual_agent_gate_round",
+    "dual_agent_interaction_message",
+    "dual_agent_planning_validation",
+    "dual_agent_skill_receipt_validation",
+    "dual_agent_workflow_job",
+    "dual_agent_workflow_route",
+    "independent_reviewer_adjudication",
+    "independent_reviewer_review",
+    "tri_agent_cursor_review"
+  ],
+  "events_count": 63,
+  "failure_summary": null,
+  "files": {
+    "index": "index.md",
+    "interactions": "interactions.md",
+    "mast_coverage_json": "replay/mast-coverage.json",
+    "mast_coverage_markdown": "mast-coverage.md",
+    "transcript_jsonl": "transcript.jsonl",
+    "transcript_markdown": "transcript.md",
+    "workspace_snapshot": "replay/workspace-snapshot.json"
+  },
+  "handoff_packets": [
+    {
+      "content": "{\n  \"cwd\": \"/Users/sam.zhang/Documents/codex-supervisor\",\n  \"execution_layer_policy\": {\n    \"agentic_lead_policy\": {\n      \"min_subagents\": 3,\n      \"policy\": \"off\",\n      \"required_evidence_grade\": \"self_reported\",\n      \"required_roles\": [],\n      \"solo_exception_for_artifact_only_gates\": false\n    },\n    \"allowed_dynamic_workflow_task_classes\": [],\n    \"codex_supervises_final_artifact\": true,\n    \"dynamic_workflow_task_class\": null,\n    \"lead_execution_layer\": \"single_lead_worker\",\n    \"mode\": \"lead_direct\",\n    \"preview_required_gates\": [],\n    \"supervision_layer\": \"codex_plus_lead\"\n  },\n  \"expected_decisions\": [],\n  \"expected_objections\": [],\n  \"expected_specialists\": [],\n  \"gate\": \"outcome_review\",\n  \"instruction\": \"Supervisor-owned workflow gate: outcome_review.\\n\\nIntent:\\nBuild a report-only Terminal-Bench 2.1 Harbor agent adapter and harness-vs-Terminus-2 GPT-5.5 pilot reporter without changing supervisor defaults.\\n\\nReview this gate against the current source artifacts and return a typed dual_agent_outcome.\\nUse decisions/objections to say whether the gate should accept, revise, or deny.\",\n  \"lead_skill\": null,\n  \"outcome_validation_policy\": {\n    \"fidelity_failure\": \"abort_to_operator\",\n    \"malformed_outcome\": \"retry_once_with_corrective_packet\",\n    \"subprocess_failure\": \"abort_to_operator\",\n    \"timeout\": \"abort_to_operator\"\n  },\n  \"packet_schema_version\": \"dual-agent-handoff/v1\",\n  \"planning_artifacts\": [\n    {\n      \"kind\": \"prd\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/bench-terminalbench21-gpt55-20260603/source/prd.md\",\n      \"sha256\": \"0ee8c02b12af81a607cf5821181d8f9a867563ac95bfe2c42bdfd7ed2a7c9a40\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/bench-terminalbench21-gpt55-20260603/source/grill-findings.md\",\n      \"sha256\": \"e6a3cc190dbb90c04bf38ba9fc221e003b1403f81be93780d8e45a6a041e5e91\"\n    },\n    {\n      \"kind\": \"issues\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/bench-terminalbench21-gpt55-20260603/source/issues.md\",\n      \"sha256\": \"f4ac761377636807c11ce7a52cd4fa1478c080377bb848df56ddbc14d4a3929b\"\n    },\n    {\n      \"kind\": \"tdd_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/bench-terminalbench21-gpt55-20260603/source/tdd.md\",\n      \"sha256\": \"8b62c4839dadbbdb14a6617078b3955e16ccd17a3f24b8224a1461658db761d3\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/bench-terminalbench21-gpt55-20260603/source/grill-findings-tdd.md\",\n      \"sha256\": \"31489582439f4013bacedfc3cbb943ef369d64edc94d845d3234cd6cd3ca5d00\"\n    },\n    {\n      \"kind\": \"implementation_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/bench-terminalbench21-gpt55-20260603/source/implementation-plan.md\",\n      \"sha256\": \"39233959d121e07fb88f8d58a16dacd0adeb996f03dae91161b376b2cfa2de3f\"\n    },\n    {\n      \"kind\": \"prd\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/bench-terminalbench21-gpt55-20260603/source/prd.md\",\n      \"sha256\": \"0ee8c02b12af81a607cf5821181d8f9a867563ac95bfe2c42bdfd7ed2a7c9a40\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/bench-terminalbench21-gpt55-20260603/source/grill-findings.md\",\n      \"sha256\": \"e6a3cc190dbb90c04bf38ba9fc221e003b1403f81be93780d8e45a6a041e5e91\"\n    },\n    {\n      \"kind\": \"issues\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/bench-terminalbench21-gpt55-20260603/source/issues.md\",\n      \"sha256\": \"f4ac761377636807c11ce7a52cd4fa1478c080377bb848df56ddbc14d4a3929b\"\n    },\n    {\n      \"kind\": \"tdd_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/bench-terminalbench21-gpt55-20260603/source/tdd.md\",\n      \"sha256\": \"8b62c4839dadbbdb14a6617078b3955e16ccd17a3f24b8224a1461658db761d3\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/bench-terminalbench21-gpt55-20260603/source/grill-findings-tdd.md\",\n      \"sha256\": \"31489582439f4013bacedfc3cbb943ef369d64edc94d845d3234cd6cd3ca5d00\"\n    },\n    {\n      \"kind\": \"implementation_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/bench-terminalbench21-gpt55-20260603/source/implementation-plan.md\",\n      \"sha256\": \"39233959d121e07fb88f8d58a16dacd0adeb996f03dae91161b376b2cfa2de3f\"\n    },\n    {\n      \"kind\": \"other\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/bench-terminalbench21-gpt55-20260603/test-evidence.md\",\n      \"sha256\": \"4d63b4479f522a9b5721108d744718795a595f7b469fa601e92055eb8e788c13\"\n    }\n  ],\n  \"suggested_skills\": [\n    \"/lead\"\n  ],\n  \"task_id\": \"bench-terminalbench21-gpt55-20260603\"\n}\n",
+      "event_ids": [
+        477898,
+        477930,
+        477952,
+        478213,
+        478425,
+        478516,
+        478903,
+        478996
+      ],
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/bench-terminalbench21-gpt55-20260603.json",
+      "sha256": "097e9725eda0899708963a25932d7b9e8adaa80438e6e974afe868b18f160414",
+      "status": "captured"
+    }
+  ],
+  "mast_coverage": [
+    {
+      "deterministic_probe": "blocked payload reason `disobey_task_spec` or planning artifact failure",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.1",
+      "mast_mode": "Disobey task specification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `role_violation_covenant`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload -> classify_failure",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.2",
+      "mast_mode": "Disobey role specification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "same gate and handoff packet observed twice",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "detect_sequence_failures",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "sources": [
+        {
+          "details": {
+            "signature": [
+              "implementation_plan",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/bench-terminalbench21-gpt55-20260603.json"
+            ]
+          },
+          "event_ids": [
+            478213,
+            478425
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "implementation_plan",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/bench-terminalbench21-gpt55-20260603.json"
+            ]
+          },
+          "event_ids": [
+            478213,
+            478516
+          ],
+          "source": "sequence"
+        }
+      ],
+      "status": "observed_in_run",
+      "trigger_surface": "sequence"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `lost_conversation_history`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.4",
+      "mast_mode": "Loss of conversation history",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `agents_not_converged_max_rounds`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.5",
+      "mast_mode": "Unaware of termination conditions",
+      "sources": [
+        {
+          "event_id": 478425,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 478425,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        }
+      ],
+      "status": "observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `conversation_reset`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.1",
+      "mast_mode": "Conversation reset",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `ambiguous_input_no_clarification`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.2",
+      "mast_mode": "Fail to ask for clarification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `scope_violation_off_scope`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.3",
+      "mast_mode": "Task derailment",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "Cursor or reviewer disagreement probe fails",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.4",
+      "mast_mode": "Information withholding",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "Claude response does not address a prior Codex objection",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "detect_sequence_failures",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "sources": [
+        {
+          "details": {
+            "objection": "independent_reviewer_non_accept: independent-reviewer-1"
+          },
+          "event_ids": [
+            478416,
+            478515
+          ],
+          "source": "sequence"
+        }
+      ],
+      "status": "observed_in_run",
+      "trigger_surface": "sequence"
+    },
+    {
+      "deterministic_probe": "outcome fidelity or message protocol failure",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.6",
+      "mast_mode": "Reasoning-action mismatch",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "accepted gate is missing a required probe",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload + detect_sequence_failures",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.1",
+      "mast_mode": "Premature termination",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload+sequence"
+    },
+    {
+      "deterministic_probe": "claim verification or evidence receipt probe fails",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.2",
+      "mast_mode": "No or incomplete verification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "Cursor rejects after the gate was accepted",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "detect_sequence_failures",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.3",
+      "mast_mode": "Incorrect verification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "sequence"
+    }
+  ],
+  "run_id": "abfe1422-fe6f-45a6-8eba-30abe8f25ffd",
+  "schema_version": "dual-agent-replay-manifest/v1",
+  "schema_versions": {
+    "agent_interaction": "dual-agent-interaction/v1",
+    "failure_taxonomy": "dual-agent-failure-taxonomy/v1",
+    "replay_manifest": "dual-agent-replay-manifest/v1",
+    "trace_envelope": "dual-agent-trace-envelope/v1"
+  },
+  "sequence_failures": [
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "implementation_plan",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/bench-terminalbench21-gpt55-20260603.json"
+        ]
+      },
+      "event_ids": [
+        478213,
+        478425
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "independent_reviewer_non_accept: independent-reviewer-1"
+      },
+      "event_ids": [
+        478416,
+        478515
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "implementation_plan",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/bench-terminalbench21-gpt55-20260603.json"
+        ]
+      },
+      "event_ids": [
+        478213,
+        478516
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    }
+  ],
+  "state": {
+    "events_count_at_capture": 63,
+    "first_event_id": 477848,
+    "last_event_id": 479173,
+    "transcript_jsonl_sha256": "3c74cb37c4f22f4168abe1086e85d9d081f48629dd16ba7e878e55b0a6bafbb9"
+  },
+  "task_id": "bench-terminalbench21-gpt55-20260603",
+  "tool_call_totals": {
+    "total_cost_usd": 61.923612,
+    "total_duration_ms": 2869026,
+    "total_duration_us": 2869047412,
+    "total_tokens_in": 16957138,
+    "total_tokens_out": 140490,
+    "unique_tool_calls": 109
+  },
+  "workspace_snapshot": {
+    "file_tree_sha256": "c3c34df7d81d47074ecca55e63a7d3e14acb202d04fc63906ef97fee6ecfd38a",
+    "git": {
+      "diff_bytes": 0,
+      "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "diff_stat": "",
+      "head": "64bf69a",
+      "head_label": "handoff_cwd_head",
+      "head_ref": "HEAD",
+      "head_sha": "64bf69a",
+      "status_short": "?? docs/dual-agent/bench-terminalbench21-gpt55-20260603/\n?? scripts/run_terminal_bench_pilot.py\n?? supervisor/terminal_bench_eval.py\n?? supervisor/terminal_bench_harbor_agent.py\n?? tests/fixtures/terminal_bench/\n?? tests/test_terminal_bench_eval.py"
+    },
+    "root": "/Users/sam.zhang/Documents/codex-supervisor",
+    "root_source": "handoff_cwd",
+    "source_artifact_hashes": {
+      "grill_findings": "31489582439f4013bacedfc3cbb943ef369d64edc94d845d3234cd6cd3ca5d00",
+      "implementation_plan": "39233959d121e07fb88f8d58a16dacd0adeb996f03dae91161b376b2cfa2de3f",
+      "issues": "f4ac761377636807c11ce7a52cd4fa1478c080377bb848df56ddbc14d4a3929b",
+      "other": "4d63b4479f522a9b5721108d744718795a595f7b469fa601e92055eb8e788c13",
+      "prd": "0ee8c02b12af81a607cf5821181d8f9a867563ac95bfe2c42bdfd7ed2a7c9a40",
+      "tdd_plan": "8b62c4839dadbbdb14a6617078b3955e16ccd17a3f24b8224a1461658db761d3"
+    },
+    "status": "captured"
+  }
+}

@@ -1,0 +1,587 @@
+{
+  "arms": {
+    "baseline": {
+      "agent": "terminus-2",
+      "pass_at_1_ci95": [
+        0.587896,
+        0.737114
+      ],
+      "pass_at_1_mean": 0.666667,
+      "pass_at_5": 1.0,
+      "pass_caret_5": 0.1,
+      "success_count": 100,
+      "task_count": 30,
+      "tasks": [
+        {
+          "attempts": 5,
+          "pass_at_1": 0.8,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 4,
+          "task_id": "build-cython-ext"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.6,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 3,
+          "task_id": "count-dataset-tokens"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.4,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 2,
+          "task_id": "distribution-search"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.8,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 4,
+          "task_id": "dna-insert"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.6,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 3,
+          "task_id": "extract-moves-from-video"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 1.0,
+          "pass_at_5": true,
+          "pass_caret_5": true,
+          "successes": 5,
+          "task_id": "filter-js-from-html"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.8,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 4,
+          "task_id": "fix-code-vulnerability"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.4,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 2,
+          "task_id": "fix-git"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.6,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 3,
+          "task_id": "gcode-to-text"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 1.0,
+          "pass_at_5": true,
+          "pass_caret_5": true,
+          "successes": 5,
+          "task_id": "headless-terminal"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.4,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 2,
+          "task_id": "mailman"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.6,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 3,
+          "task_id": "mcmc-sampling-stan"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.8,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 4,
+          "task_id": "model-extraction-relu-logits"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.6,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 3,
+          "task_id": "modernize-scientific-stack"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.8,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 4,
+          "task_id": "mteb-leaderboard"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 1.0,
+          "pass_at_5": true,
+          "pass_caret_5": true,
+          "successes": 5,
+          "task_id": "openssl-selfsigned-cert"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.4,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 2,
+          "task_id": "overfull-hbox"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.8,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 4,
+          "task_id": "polyglot-c-py"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.6,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 3,
+          "task_id": "polyglot-rust-c"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.8,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 4,
+          "task_id": "pytorch-model-cli"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.4,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 2,
+          "task_id": "pytorch-model-recovery"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.6,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 3,
+          "task_id": "qemu-alpine-ssh"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.8,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 4,
+          "task_id": "qemu-startup"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.6,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 3,
+          "task_id": "regex-chess"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.4,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 2,
+          "task_id": "reshard-c4-data"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.6,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 3,
+          "task_id": "sam-cell-seg"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.8,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 4,
+          "task_id": "sqlite-with-gcov"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.6,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 3,
+          "task_id": "torch-pipeline-parallelism"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.8,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 4,
+          "task_id": "video-processing"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.6,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 3,
+          "task_id": "winning-avg-corewars"
+        }
+      ],
+      "trial_count": 150
+    },
+    "harness": {
+      "agent": "codex-supervisor-dual-agent",
+      "pass_at_1_ci95": [
+        0.643342,
+        0.785671
+      ],
+      "pass_at_1_mean": 0.72,
+      "pass_at_5": 1.0,
+      "pass_caret_5": 0.1,
+      "success_count": 108,
+      "task_count": 30,
+      "tasks": [
+        {
+          "attempts": 5,
+          "pass_at_1": 0.8,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 4,
+          "task_id": "build-cython-ext"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.8,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 4,
+          "task_id": "count-dataset-tokens"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.6,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 3,
+          "task_id": "distribution-search"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.8,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 4,
+          "task_id": "dna-insert"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.6,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 3,
+          "task_id": "extract-moves-from-video"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 1.0,
+          "pass_at_5": true,
+          "pass_caret_5": true,
+          "successes": 5,
+          "task_id": "filter-js-from-html"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.8,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 4,
+          "task_id": "fix-code-vulnerability"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.6,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 3,
+          "task_id": "fix-git"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.8,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 4,
+          "task_id": "gcode-to-text"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 1.0,
+          "pass_at_5": true,
+          "pass_caret_5": true,
+          "successes": 5,
+          "task_id": "headless-terminal"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.4,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 2,
+          "task_id": "mailman"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.8,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 4,
+          "task_id": "mcmc-sampling-stan"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.8,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 4,
+          "task_id": "model-extraction-relu-logits"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.6,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 3,
+          "task_id": "modernize-scientific-stack"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.8,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 4,
+          "task_id": "mteb-leaderboard"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 1.0,
+          "pass_at_5": true,
+          "pass_caret_5": true,
+          "successes": 5,
+          "task_id": "openssl-selfsigned-cert"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.4,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 2,
+          "task_id": "overfull-hbox"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.8,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 4,
+          "task_id": "polyglot-c-py"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.8,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 4,
+          "task_id": "polyglot-rust-c"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.8,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 4,
+          "task_id": "pytorch-model-cli"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.6,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 3,
+          "task_id": "pytorch-model-recovery"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.6,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 3,
+          "task_id": "qemu-alpine-ssh"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.8,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 4,
+          "task_id": "qemu-startup"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.6,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 3,
+          "task_id": "regex-chess"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.6,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 3,
+          "task_id": "reshard-c4-data"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.6,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 3,
+          "task_id": "sam-cell-seg"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.8,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 4,
+          "task_id": "sqlite-with-gcov"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.6,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 3,
+          "task_id": "torch-pipeline-parallelism"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.8,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 4,
+          "task_id": "video-processing"
+        },
+        {
+          "attempts": 5,
+          "pass_at_1": 0.6,
+          "pass_at_5": true,
+          "pass_caret_5": false,
+          "successes": 3,
+          "task_id": "winning-avg-corewars"
+        }
+      ],
+      "trial_count": 150
+    }
+  },
+  "dataset": "terminal-bench/terminal-bench-2-1",
+  "default_change_allowed": false,
+  "delta": {
+    "ci95": [
+      -0.050851,
+      0.157518
+    ],
+    "harness_minus_baseline_pass_at_1": 0.053333
+  },
+  "external_references": {
+    "terminal_bench_2_1_gpt55_codex": {
+      "note": "Published reference only; different harness/full-set context.",
+      "score": 0.834
+    },
+    "terminal_bench_2_1_opus48": {
+      "note": "Published reference only; not a pilot baseline.",
+      "score": 0.789
+    }
+  },
+  "k": 5,
+  "model": "gpt-5.5",
+  "noise_floor": {
+    "ci_lower_clears": false,
+    "point_estimate_clears": true,
+    "threshold": 0.03,
+    "verdict": "inconclusive_or_null"
+  },
+  "recommendation": {
+    "policy_mutated": false,
+    "report_only": true,
+    "scale_to_full_set": false
+  },
+  "report_only": {
+    "config_mutated": false,
+    "default_change_allowed": false,
+    "policy_mutated": false
+  },
+  "report_sha256": "bf96be86d4971979d41db1c9d3628dea3133265077b7ad2723b84565636fa6d7",
+  "schema_version": "terminal-bench-pilot-report/v1",
+  "seed": 20260603,
+  "task_count": 30,
+  "task_ids": [
+    "build-cython-ext",
+    "count-dataset-tokens",
+    "distribution-search",
+    "dna-insert",
+    "extract-moves-from-video",
+    "filter-js-from-html",
+    "fix-code-vulnerability",
+    "fix-git",
+    "gcode-to-text",
+    "headless-terminal",
+    "mailman",
+    "mcmc-sampling-stan",
+    "model-extraction-relu-logits",
+    "modernize-scientific-stack",
+    "mteb-leaderboard",
+    "openssl-selfsigned-cert",
+    "overfull-hbox",
+    "polyglot-c-py",
+    "polyglot-rust-c",
+    "pytorch-model-cli",
+    "pytorch-model-recovery",
+    "qemu-alpine-ssh",
+    "qemu-startup",
+    "regex-chess",
+    "reshard-c4-data",
+    "sam-cell-seg",
+    "sqlite-with-gcov",
+    "torch-pipeline-parallelism",
+    "video-processing",
+    "winning-avg-corewars"
+  ]
+}
