@@ -1,0 +1,522 @@
+{
+  "artifact_export": {
+    "files": [
+      "docs/dual-agent/dispatcher-leases-admission-20260604/index.md",
+      "docs/dual-agent/dispatcher-leases-admission-20260604/triage.md",
+      "docs/dual-agent/dispatcher-leases-admission-20260604/prd.md",
+      "docs/dual-agent/dispatcher-leases-admission-20260604/tdd.md",
+      "docs/dual-agent/dispatcher-leases-admission-20260604/grill-findings.md",
+      "docs/dual-agent/dispatcher-leases-admission-20260604/issues.md",
+      "docs/dual-agent/dispatcher-leases-admission-20260604/screenshots.md",
+      "docs/dual-agent/dispatcher-leases-admission-20260604/outcome-review.md",
+      "docs/dual-agent/dispatcher-leases-admission-20260604/interactions.md",
+      "docs/dual-agent/dispatcher-leases-admission-20260604/transcript.md",
+      "docs/dual-agent/dispatcher-leases-admission-20260604/transcript.jsonl",
+      "docs/dual-agent/dispatcher-leases-admission-20260604/mast-coverage.md",
+      "docs/dual-agent/dispatcher-leases-admission-20260604/replay/manifest.json",
+      "docs/dual-agent/dispatcher-leases-admission-20260604/replay/workspace-snapshot.json",
+      "docs/dual-agent/dispatcher-leases-admission-20260604/replay/mast-coverage.json",
+      "docs/dual-agent/dispatcher-leases-admission-20260604/source/grill-findings-tdd.md",
+      "docs/dual-agent/dispatcher-leases-admission-20260604/source/grill-findings.md",
+      "docs/dual-agent/dispatcher-leases-admission-20260604/source/implementation-plan.md",
+      "docs/dual-agent/dispatcher-leases-admission-20260604/source/issues.md",
+      "docs/dual-agent/dispatcher-leases-admission-20260604/source/prd.md",
+      "docs/dual-agent/dispatcher-leases-admission-20260604/source/tdd.md"
+    ],
+    "output_dir": "docs/dual-agent/dispatcher-leases-admission-20260604",
+    "run_id": "15a4c835-2b1b-4604-a91a-d500daa87d90",
+    "status": "ok",
+    "task_id": "dispatcher-leases-admission-20260604"
+  },
+  "current_gate": "issues_review",
+  "final_gate_result": {
+    "artifact_export": {
+      "files": [
+        "docs/dual-agent/dispatcher-leases-admission-20260604/index.md",
+        "docs/dual-agent/dispatcher-leases-admission-20260604/triage.md",
+        "docs/dual-agent/dispatcher-leases-admission-20260604/prd.md",
+        "docs/dual-agent/dispatcher-leases-admission-20260604/tdd.md",
+        "docs/dual-agent/dispatcher-leases-admission-20260604/grill-findings.md",
+        "docs/dual-agent/dispatcher-leases-admission-20260604/issues.md",
+        "docs/dual-agent/dispatcher-leases-admission-20260604/screenshots.md",
+        "docs/dual-agent/dispatcher-leases-admission-20260604/outcome-review.md",
+        "docs/dual-agent/dispatcher-leases-admission-20260604/interactions.md",
+        "docs/dual-agent/dispatcher-leases-admission-20260604/transcript.md",
+        "docs/dual-agent/dispatcher-leases-admission-20260604/transcript.jsonl",
+        "docs/dual-agent/dispatcher-leases-admission-20260604/mast-coverage.md",
+        "docs/dual-agent/dispatcher-leases-admission-20260604/replay/manifest.json",
+        "docs/dual-agent/dispatcher-leases-admission-20260604/replay/workspace-snapshot.json",
+        "docs/dual-agent/dispatcher-leases-admission-20260604/replay/mast-coverage.json",
+        "docs/dual-agent/dispatcher-leases-admission-20260604/source/grill-findings-tdd.md",
+        "docs/dual-agent/dispatcher-leases-admission-20260604/source/grill-findings.md",
+        "docs/dual-agent/dispatcher-leases-admission-20260604/source/implementation-plan.md",
+        "docs/dual-agent/dispatcher-leases-admission-20260604/source/issues.md",
+        "docs/dual-agent/dispatcher-leases-admission-20260604/source/prd.md",
+        "docs/dual-agent/dispatcher-leases-admission-20260604/source/tdd.md"
+      ],
+      "output_dir": "docs/dual-agent/dispatcher-leases-admission-20260604",
+      "run_id": "15a4c835-2b1b-4604-a91a-d500daa87d90",
+      "status": "ok",
+      "task_id": "dispatcher-leases-admission-20260604"
+    },
+    "artifact_rigor": {
+      "accepted_prerequisite_gates": [
+        "prd_review"
+      ],
+      "artifact_policy": "strict",
+      "gate": "issues_review",
+      "gate_statuses": {
+        "issues_review": "blocked",
+        "prd_review": "accepted"
+      },
+      "missing_artifact_paths": [],
+      "missing_artifacts": [],
+      "missing_prerequisite_gates": [],
+      "missing_screenshot_paths": [],
+      "present_artifacts": [
+        "grill_findings",
+        "implementation_plan",
+        "issues",
+        "prd",
+        "tdd_plan"
+      ],
+      "reason": "required_artifacts_present",
+      "required_artifacts": [
+        "prd",
+        "issues",
+        "grill_findings"
+      ],
+      "required_prerequisite_gates": [
+        "prd_review"
+      ],
+      "screenshots": [],
+      "status": "ok",
+      "user_facing": false,
+      "visual_validation": {
+        "allowed_sources": [
+          "browser",
+          "browser-use",
+          "browser_use",
+          "computer",
+          "computer-use",
+          "computer_use"
+        ],
+        "evidence": [],
+        "failures": [],
+        "reason": "no_screenshots_supplied",
+        "status": "not_required"
+      }
+    },
+    "attempts": 0,
+    "claude_decision": "revise",
+    "claude_gate_status": "blocked",
+    "codex_decision": "deny",
+    "cursor_decision": "accept",
+    "escalation": null,
+    "gate": "issues_review",
+    "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/dispatcher-leases-admission-20260604.json",
+    "independent_reviewer_panel_decision": {
+      "accepted_reviewers": [],
+      "aggregation_mode": "conservative",
+      "available_reviewers": [],
+      "blocking_reviewers": [],
+      "decision": "accept",
+      "low_confidence_reviewers": [],
+      "low_confidence_threshold": 0.0,
+      "missing_reviewers": [],
+      "non_accepting_reviewers": [],
+      "reason": "review_not_required",
+      "reviewer_inputs": [],
+      "schema_version": "independent-reviewer-panel-decision/v1"
+    },
+    "independent_reviewer_results": [],
+    "outcome": null,
+    "probes": {
+      "P_planning": {
+        "details": {
+          "artifact_hashes": {
+            "grill_findings": "54c4d678ef1f75e41432e4de762ee339138500eaee308f84a63c5d04585aec58",
+            "issues": "5b93a141884c2dc56074853e9655469f1fce40ccd256867eefa0bf3cdce557c0",
+            "prd": "62afeb1db7bb8d2abbf2a9c28d4722ffc388bdb4058bfeb94c59cd82047c6bc8"
+          },
+          "artifacts": [
+            {
+              "kind": "prd",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/dispatcher-leases-admission-20260604/source/prd.md",
+              "sha256": "62afeb1db7bb8d2abbf2a9c28d4722ffc388bdb4058bfeb94c59cd82047c6bc8",
+              "status": "accepted"
+            },
+            {
+              "kind": "issues",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/dispatcher-leases-admission-20260604/source/issues.md",
+              "sha256": "5b93a141884c2dc56074853e9655469f1fce40ccd256867eefa0bf3cdce557c0",
+              "status": "accepted"
+            },
+            {
+              "kind": "grill_findings",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/dispatcher-leases-admission-20260604/source/grill-findings.md",
+              "sha256": "54c4d678ef1f75e41432e4de762ee339138500eaee308f84a63c5d04585aec58",
+              "status": "blocked"
+            }
+          ],
+          "checks": {
+            "AGG-001": "pass",
+            "AGG-002": "pass",
+            "GRILL-001": "fail: invalid or missing finding statuses: ",
+            "GRILL-002": "pass",
+            "GRILL-003": "pass",
+            "ISS-001": "pass",
+            "ISS-002": "pass",
+            "ISS-003": "pass",
+            "ISS-004": "pass",
+            "PRD-001": "pass",
+            "PRD-002": "pass",
+            "PRD-003": "pass",
+            "PRD-004": "pass",
+            "PRD-005": "pass",
+            "PRD-006": "pass"
+          },
+          "gate": "issues_review",
+          "task_id": "dispatcher-leases-admission-20260604",
+          "validator_version": "1.0.0",
+          "verdict": "blocked"
+        },
+        "probe_id": "P_planning",
+        "reason": "planning_validation_failed",
+        "status": "red"
+      }
+    },
+    "status": "blocked",
+    "supervisor_final_status": "blocked",
+    "task_id": "dispatcher-leases-admission-20260604",
+    "tool_calls": [
+      {
+        "args": {
+          "agentic_lead_policy": "off",
+          "artifact_policy": "strict",
+          "dynamic_workflow_task_class": null,
+          "execution_layer_mode": "lead_direct",
+          "gate": "issues_review",
+          "min_subagents": 3,
+          "planning_artifact_count": 12,
+          "required_evidence_grade": "self_reported",
+          "required_roles": [],
+          "screenshot_count": 0,
+          "task_id": "dispatcher-leases-admission-20260604",
+          "user_facing": false
+        },
+        "attempts": 0,
+        "duration_ms": 5,
+        "duration_us": 5542,
+        "ended_at_ms": 1780566809665,
+        "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/dispatcher-leases-admission-20260604.json",
+        "name": "start_dual_agent_gate",
+        "probe_id": null,
+        "result_summary": {
+          "claude_gate_status": "blocked",
+          "probe_statuses": {
+            "P_planning": "red"
+          },
+          "supervisor_final_status": "blocked"
+        },
+        "started_at_ms": 1780566809660,
+        "status": "completed",
+        "tool_call_id": "start_dual_agent_gate#1780566809660#5542"
+      },
+      {
+        "args": {
+          "probe_id": "P_planning"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780566809666,
+        "error": "planning_validation_failed",
+        "name": "probe:P_planning",
+        "parent_tool_call_id": "start_dual_agent_gate#1780566809660#5542",
+        "probe_id": "P_planning",
+        "reason": "planning_validation_failed",
+        "result_summary": {
+          "probe_id": "P_planning",
+          "reason": "planning_validation_failed",
+          "status": "red"
+        },
+        "started_at_ms": 1780566809666,
+        "status": "red",
+        "tool_call_id": "probe_p_planning#1780566809666#0#p_planning"
+      }
+    ],
+    "trace_envelope": {
+      "artifacts": [],
+      "claims": [],
+      "event_kind": "dual_agent_gate_result",
+      "failure_taxonomy": {
+        "category": "system_design",
+        "code": "planning_validation_failed",
+        "details": {
+          "artifact_hashes": {
+            "grill_findings": "54c4d678ef1f75e41432e4de762ee339138500eaee308f84a63c5d04585aec58",
+            "issues": "5b93a141884c2dc56074853e9655469f1fce40ccd256867eefa0bf3cdce557c0",
+            "prd": "62afeb1db7bb8d2abbf2a9c28d4722ffc388bdb4058bfeb94c59cd82047c6bc8"
+          },
+          "artifacts": [
+            {
+              "kind": "prd",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/dispatcher-leases-admission-20260604/source/prd.md",
+              "sha256": "62afeb1db7bb8d2abbf2a9c28d4722ffc388bdb4058bfeb94c59cd82047c6bc8",
+              "status": "accepted"
+            },
+            {
+              "kind": "issues",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/dispatcher-leases-admission-20260604/source/issues.md",
+              "sha256": "5b93a141884c2dc56074853e9655469f1fce40ccd256867eefa0bf3cdce557c0",
+              "status": "accepted"
+            },
+            {
+              "kind": "grill_findings",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/dispatcher-leases-admission-20260604/source/grill-findings.md",
+              "sha256": "54c4d678ef1f75e41432e4de762ee339138500eaee308f84a63c5d04585aec58",
+              "status": "blocked"
+            }
+          ],
+          "checks": {
+            "AGG-001": "pass",
+            "AGG-002": "pass",
+            "GRILL-001": "fail: invalid or missing finding statuses: ",
+            "GRILL-002": "pass",
+            "GRILL-003": "pass",
+            "ISS-001": "pass",
+            "ISS-002": "pass",
+            "ISS-003": "pass",
+            "ISS-004": "pass",
+            "PRD-001": "pass",
+            "PRD-002": "pass",
+            "PRD-003": "pass",
+            "PRD-004": "pass",
+            "PRD-005": "pass",
+            "PRD-006": "pass"
+          },
+          "gate": "issues_review",
+          "task_id": "dispatcher-leases-admission-20260604",
+          "validator_version": "1.0.0",
+          "verdict": "blocked"
+        },
+        "framework": "MAST-inspired",
+        "mast_category": "Specification Issues",
+        "mast_code": "FM-1.1",
+        "mast_mode": "Disobey task specification",
+        "probe_id": "P_planning",
+        "schema_version": "dual-agent-failure-taxonomy/v1",
+        "source": "validation_probe",
+        "subcategory": "artifact_quality"
+      },
+      "gate": "issues_review",
+      "policy_verdict": "blocked",
+      "receipts": [],
+      "run_id": "15a4c835-2b1b-4604-a91a-d500daa87d90",
+      "schema_version": "dual-agent-trace-envelope/v1",
+      "source": "dual_agent",
+      "task_id": "dispatcher-leases-admission-20260604",
+      "tool_calls": [
+        {
+          "args": {
+            "agentic_lead_policy": "off",
+            "artifact_policy": "strict",
+            "dynamic_workflow_task_class": null,
+            "execution_layer_mode": "lead_direct",
+            "gate": "issues_review",
+            "min_subagents": 3,
+            "planning_artifact_count": 12,
+            "required_evidence_grade": "self_reported",
+            "required_roles": [],
+            "screenshot_count": 0,
+            "task_id": "dispatcher-leases-admission-20260604",
+            "user_facing": false
+          },
+          "attempts": 0,
+          "duration_ms": 5,
+          "duration_us": 5542,
+          "ended_at_ms": 1780566809665,
+          "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/dispatcher-leases-admission-20260604.json",
+          "name": "start_dual_agent_gate",
+          "probe_id": null,
+          "result_summary": {
+            "claude_gate_status": "blocked",
+            "probe_statuses": {
+              "P_planning": "red"
+            },
+            "supervisor_final_status": "blocked"
+          },
+          "started_at_ms": 1780566809660,
+          "status": "completed",
+          "tool_call_id": "start_dual_agent_gate#1780566809660#5542"
+        },
+        {
+          "args": {
+            "probe_id": "P_planning"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780566809666,
+          "error": "planning_validation_failed",
+          "name": "probe:P_planning",
+          "parent_tool_call_id": "start_dual_agent_gate#1780566809660#5542",
+          "probe_id": "P_planning",
+          "reason": "planning_validation_failed",
+          "result_summary": {
+            "probe_id": "P_planning",
+            "reason": "planning_validation_failed",
+            "status": "red"
+          },
+          "started_at_ms": 1780566809666,
+          "status": "red",
+          "tool_call_id": "probe_p_planning#1780566809666#0#p_planning"
+        }
+      ]
+    }
+  },
+  "mandatory_artifacts": {
+    "missing": [],
+    "output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/dispatcher-leases-admission-20260604",
+    "required": [
+      "source/prd.md",
+      "source/grill-findings.md",
+      "source/issues.md",
+      "source/tdd.md",
+      "source/grill-findings-tdd.md",
+      "source/implementation-plan.md",
+      "interactions.md",
+      "outcome-review.md",
+      "transcript.md"
+    ],
+    "status": "ok"
+  },
+  "resume": {
+    "artifact_output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/dispatcher-leases-admission-20260604",
+    "blocker": {
+      "gate": "issues_review",
+      "latest_event_id": 487499,
+      "status": "blocked"
+    },
+    "current_gate": "issues_review",
+    "last_status": "blocked",
+    "latest_event_id": 487502,
+    "next_safe_action": "inspect blocker, provide corrective input, then rerun run_dual_agent_workflow",
+    "prompt": "Use codex_supervisor.\nContinue run_id=15a4c835-2b1b-4604-a91a-d500daa87d90\ntask_id=dispatcher-leases-admission-20260604\ncurrent_gate=issues_review\nlast_status=blocked\nlatest_event_id=487502\nnext_safe_action=inspect blocker, provide corrective input, then rerun run_dual_agent_workflow\nartifact_output_dir=/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/dispatcher-leases-admission-20260604\nfirst inspect: read_gate_transcript(run_id=15a4c835-2b1b-4604-a91a-d500daa87d90, task_id=dispatcher-leases-admission-20260604)",
+    "run_id": "15a4c835-2b1b-4604-a91a-d500daa87d90",
+    "status": "ok",
+    "steps": [
+      {
+        "attempt_count": 1,
+        "gate": "prd_review",
+        "latest_event_id": 487458,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "issues_review",
+        "latest_event_id": 487499,
+        "status": "blocked"
+      }
+    ],
+    "task_id": "dispatcher-leases-admission-20260604",
+    "transcript_command": "read_gate_transcript(run_id=15a4c835-2b1b-4604-a91a-d500daa87d90, task_id=dispatcher-leases-admission-20260604)"
+  },
+  "run_id": "15a4c835-2b1b-4604-a91a-d500daa87d90",
+  "status": "blocked",
+  "steps": [
+    {
+      "attempt_count": 1,
+      "gate": "prd_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "issues_review",
+      "status": "blocked"
+    }
+  ],
+  "task_id": "dispatcher-leases-admission-20260604",
+  "visual_evidence_policy": {
+    "artifact_matches": [],
+    "matched_terms": [],
+    "required": false,
+    "source": "not_user_facing"
+  },
+  "workflow_route": {
+    "agentic_lead_policy": {
+      "min_subagents": 3,
+      "policy": "off",
+      "required_evidence_grade": "self_reported",
+      "required_roles": [],
+      "solo_exception_for_artifact_only_gates": false
+    },
+    "cursor_review_gates": [
+      "tdd_review",
+      "implementation_plan",
+      "outcome_review"
+    ],
+    "cursor_review_profile": "rigorous",
+    "dynamic_workflow_task_class": null,
+    "effective_cursor_review": true,
+    "execution_layer_mode": "lead_direct",
+    "force_cursor_review": false,
+    "gate_count": 6,
+    "gates": [
+      "prd_review",
+      "issues_review",
+      "tdd_review",
+      "implementation_plan",
+      "execution",
+      "outcome_review"
+    ],
+    "planning_depth": "large",
+    "reasons": [
+      "default_large"
+    ],
+    "requested_cursor_review": true,
+    "required_skill_stages": [
+      "to_prd",
+      "prd_grill",
+      "to_issues",
+      "tdd",
+      "tdd_grill"
+    ],
+    "requires_agentic_lead_policy_receipts": false,
+    "requires_brainstorm": false,
+    "requires_dynamic_workflow_receipts": false,
+    "requires_skill_receipts": true,
+    "resume": {
+      "mode": "resume_from_prior_steps",
+      "pending_gates": [
+        "issues_review",
+        "tdd_review",
+        "implementation_plan",
+        "execution",
+        "outcome_review"
+      ],
+      "schema_version": "dual-agent-workflow-resume/v1",
+      "skipped_gates": [
+        "prd_review"
+      ],
+      "skipped_steps": [
+        {
+          "attempt_count": 1,
+          "gate": "prd_review",
+          "latest_event_id": 487458,
+          "status": "accepted"
+        }
+      ]
+    },
+    "reviewer_infra_retry_backoff_s": 1.0,
+    "reviewer_infra_retry_limit": 2,
+    "reviewer_low_confidence_threshold": 0.0,
+    "reviewer_max_tokens": 4096,
+    "reviewer_model": "composer-2.5",
+    "reviewer_output_mode": "cursor_sdk",
+    "reviewer_panel_calibration_active": false,
+    "reviewer_panel_calibration_path": null,
+    "reviewer_unavailable_policy": "escalate",
+    "schema_version": "dual-agent-workflow-route/v1",
+    "task_complexity": "large"
+  }
+}

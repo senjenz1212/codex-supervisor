@@ -1,0 +1,47 @@
+[
+  {
+    "receipt_id": "skill-to-prd-dispatcher-leases-admission-20260604",
+    "kind": "skill_run",
+    "skill": "to-prd",
+    "stage": "to_prd",
+    "status": "passed",
+    "artifacts": ["docs/dual-agent/dispatcher-leases-admission-20260604/source/prd.md"],
+    "claims": ["PRD promise contracts P1-P5 produced", "SQLite single-dispatcher boundary recorded"]
+  },
+  {
+    "receipt_id": "skill-prd-grill-dispatcher-leases-admission-20260604",
+    "kind": "skill_run",
+    "skill": "grill-with-docs",
+    "stage": "prd_grill",
+    "status": "passed",
+    "artifacts": ["docs/dual-agent/dispatcher-leases-admission-20260604/source/grill-findings.md"],
+    "claims": ["PRD grill findings resolved", "Poll compatibility, spawned lease expiry, and retry ownership risks incorporated"]
+  },
+  {
+    "receipt_id": "skill-to-issues-dispatcher-leases-admission-20260604",
+    "kind": "skill_run",
+    "skill": "to-issues",
+    "stage": "to_issues",
+    "status": "passed",
+    "artifacts": ["docs/dual-agent/dispatcher-leases-admission-20260604/source/issues.md"],
+    "claims": ["Issues sliced across lease schema, dispatcher spawn, admission/backoff, and worker heartbeat"]
+  },
+  {
+    "receipt_id": "skill-tdd-dispatcher-leases-admission-20260604",
+    "kind": "skill_run",
+    "skill": "tdd",
+    "stage": "tdd",
+    "status": "passed",
+    "artifacts": ["docs/dual-agent/dispatcher-leases-admission-20260604/source/tdd.md"],
+    "claims": ["TDD maps public-boundary tests for P1-P5", "Dispatcher, lease, reaper, admission, retry, and poison behavior are test mapped"]
+  },
+  {
+    "receipt_id": "skill-tdd-grill-dispatcher-leases-admission-20260604",
+    "kind": "skill_run",
+    "skill": "grill-with-docs",
+    "stage": "tdd_grill",
+    "status": "passed",
+    "artifacts": ["docs/dual-agent/dispatcher-leases-admission-20260604/source/grill-findings-tdd.md"],
+    "claims": ["TDD grill findings resolved", "Backpressure, poison parking, and heartbeat ownership tests tightened"]
+  }
+]

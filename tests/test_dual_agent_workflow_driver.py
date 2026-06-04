@@ -1656,13 +1656,14 @@ async def test_poll_dual_agent_workflow_job_stale_spawn_claim_fails_without_resp
         job_id="job-stale-spawn-claim",
     ))
 
-    assert poll["status"] == "failed"
-    assert poll["recovery_point"] == "terminal"
-    assert poll["result"]["error"] == "stale_spawn_claim_without_persisted_pid"
+    assert poll["status"] == "parked"
+    assert poll["recovery_point"] == "request_written"
+    assert poll["error"] == "stale_spawn_claim_without_persisted_pid"
     assert popen_calls == []
     job = state.get_dual_agent_workflow_job(job_id="job-stale-spawn-claim")
-    assert job["status"] == "failed"
-    assert job["recovery_point"] == "terminal"
+    assert job["status"] == "parked"
+    assert job["parked_reason"] == "stale_spawn_claim_without_persisted_pid"
+    assert job["recovery_point"] == "request_written"
     assert job["recovery_claim_token"] is None
     assert job["recovery_claimed_at"] is None
 
@@ -1721,24 +1722,25 @@ async def test_poll_dual_agent_workflow_job_kills_worker_when_spawn_persist_fail
         job_id=submit["job_id"],
     ))
 
-    assert poll["status"] == "failed"
-    assert poll["recovery_point"] == "terminal"
-    assert "failed_to_persist_spawned_worker: persist denied" == poll["result"]["error"]
+    assert poll["status"] == "parked"
+    assert poll["recovery_point"] == "request_written"
+    assert "failed_to_persist_spawned_worker: persist denied" == poll["error"]
     assert len(popen_instances) == 1
     assert popen_instances[0].terminated is True
     assert popen_instances[0].killed is False
-    assert second_poll["status"] == "failed"
+    assert second_poll["status"] == "parked"
     assert len(popen_instances) == 1
     job = state.get_dual_agent_workflow_job(job_id=submit["job_id"])
-    assert job["status"] == "failed"
-    assert job["recovery_point"] == "terminal"
+    assert job["status"] == "parked"
+    assert job["recovery_point"] == "request_written"
+    assert job["parked_reason"] == "failed_to_persist_spawned_worker: persist denied"
     assert job["pid"] is None
     assert job["recovery_claim_token"] is None
     assert job["recovery_claimed_at"] is None
 
 
 @pytest.mark.asyncio
-async def test_poll_dual_agent_workflow_job_records_terminal_failure_when_spawn_fails(
+async def test_poll_dual_agent_workflow_job_schedules_retry_when_spawn_fails(
     monkeypatch,
     tmp_path,
 ):
@@ -1761,13 +1763,679 @@ async def test_poll_dual_agent_workflow_job_records_terminal_failure_when_spawn_
 
     poll = await _maybe_await(server.tools["poll_dual_agent_workflow_job"](job_id=submit["job_id"]))
 
-    assert poll["status"] == "failed"
-    assert poll["recovery_point"] == "terminal"
-    assert poll["result"]["error"] == "spawn denied"
+    assert poll["status"] == "submitted"
+    assert poll["recovery_point"] == "request_written"
+    assert poll["error"] == "spawn denied"
     job = state.get_dual_agent_workflow_job(job_id=submit["job_id"])
+    assert job["status"] == "submitted"
+    assert job["recovery_point"] == "request_written"
+    assert job["dispatch_attempts"] == 1
+    assert job["next_dispatch_at"] is not None
+    assert job["terminal_outcome_json"] is None
+
+
+@pytest.mark.asyncio
+async def test_poll_dual_agent_workflow_job_uses_dispatcher_bridge(
+    monkeypatch,
+    tmp_path,
+):
+    import mcp_tools.codex_supervisor_stdio as stdio
+
+    server, state = _server(tmp_path)
+    calls: list[tuple[str, str | None]] = []
+
+    class FakeDispatcher:
+        def __init__(self, state_arg, **kwargs):
+            self.state = state_arg
+            calls.append(("init", kwargs["dispatcher_id"]))
+
+        def reap_stale_leases(self):
+            calls.append(("reap", None))
+            return {"reclaimed": [], "failed": [], "completed": []}
+
+        def run_once(self, *, job_id=None):
+            calls.append(("run_once", job_id))
+            self.state.update_dual_agent_workflow_job(
+                job_id=job_id,
+                status="running",
+                pid=54321,
+                recovery_point="spawned",
+            )
+            return {"status": "spawned", "job_id": job_id}
+
+    monkeypatch.setattr(stdio, "WorkflowJobDispatcher", FakeDispatcher)
+    monkeypatch.setattr(stdio, "_pid_alive", lambda pid: True)
+    submit = await _maybe_await(server.tools["submit_dual_agent_workflow_job"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Run long workflow out of band.",
+        tool_receipts=_tool_receipts(),
+        config_path=str(tmp_path / "config.yaml"),
+    ))
+
+    poll = await _maybe_await(server.tools["poll_dual_agent_workflow_job"](job_id=submit["job_id"]))
+
+    assert poll["status"] == "running"
+    assert poll["recovery_point"] == "spawned"
+    assert ("reap", None) in calls
+    assert ("run_once", submit["job_id"]) in calls
+    assert calls[0][0] == "init"
+
+
+def _reserve_dispatcher_test_job(
+    state: State,
+    tmp_path: Path,
+    *,
+    job_id: str = "job-dispatcher",
+    token: str = "token-dispatcher",
+    recovery_point: str = "reserved",
+    request_payload_json: str | None = None,
+):
+    payload = {
+        "cwd": str(tmp_path),
+        "task_id": "workflow-1",
+        "run_id": "workflow-run",
+        "intent": "Run long workflow out of band.",
+        "tool_receipts": _tool_receipts(),
+    }
+    job_dir = tmp_path / ".handoff" / "workflow-jobs" / job_id
+    request_path = job_dir / "request.json"
+    result_path = job_dir / "result.json"
+    log_path = job_dir / "worker.log"
+    row, _created = state.reserve_dual_agent_workflow_job(
+        job_id=job_id,
+        run_id="workflow-run",
+        task_id="workflow-1",
+        cwd=str(tmp_path),
+        status="submitted",
+        request_path=str(request_path),
+        result_path=str(result_path),
+        log_path=str(log_path),
+        idempotency_token=token,
+        request_payload_json=(
+            request_payload_json
+            if request_payload_json is not None
+            else json.dumps(payload, sort_keys=True)
+        ),
+        config_path=str(tmp_path / "config.yaml"),
+    )
+    if recovery_point != "reserved":
+        job_dir.mkdir(parents=True, exist_ok=True)
+        request_path.write_text(
+            json.dumps({**payload, "job_id": job_id}, sort_keys=True),
+            encoding="utf-8",
+        )
+        state.update_dual_agent_workflow_job(
+            job_id=job_id,
+            recovery_point=recovery_point,
+            status="submitted",
+        )
+        refreshed = state.get_dual_agent_workflow_job(job_id=job_id)
+        assert refreshed is not None
+        row = refreshed
+    return row
+
+
+def test_dispatcher_claims_reserved_job_and_spawns_worker(monkeypatch, tmp_path):
+    from supervisor.workflow_job_dispatcher import WorkflowJobDispatcher
+
+    _server(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    _reserve_dispatcher_test_job(state, tmp_path)
+    popen_calls: list[list[str]] = []
+
+    class FakePopen:
+        pid = 43210
+
+        def __init__(self, argv, **kwargs):
+            popen_calls.append(list(argv))
+
+    dispatcher = WorkflowJobDispatcher(
+        state,
+        dispatcher_id="dispatcher-test",
+        popen=FakePopen,
+        pid_alive=lambda pid: True,
+        now=lambda: 1000,
+        jitter=lambda _delay: 0,
+    )
+
+    result = dispatcher.run_once()
+
+    assert result["status"] == "spawned"
+    assert result["job_id"] == "job-dispatcher"
+    assert len(popen_calls) == 1
+    job = state.get_dual_agent_workflow_job(job_id="job-dispatcher")
+    assert job["status"] == "running"
+    assert job["pid"] == 43210
+    assert job["recovery_point"] == "spawned"
+    assert job["leased_by"] == "worker:43210"
+    assert job["lease_expires_at"] == 1060
+    assert Path(job["request_path"]).exists()
+
+
+def test_dispatcher_restarts_from_request_written(monkeypatch, tmp_path):
+    from supervisor.workflow_job_dispatcher import WorkflowJobDispatcher
+
+    _server(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    _reserve_dispatcher_test_job(
+        state,
+        tmp_path,
+        job_id="job-request-written-dispatcher",
+        token="token-request-written-dispatcher",
+        recovery_point="request_written",
+    )
+    popen_calls: list[list[str]] = []
+
+    class FakePopen:
+        pid = 43211
+
+        def __init__(self, argv, **kwargs):
+            popen_calls.append(list(argv))
+
+    dispatcher = WorkflowJobDispatcher(
+        state,
+        dispatcher_id="dispatcher-test",
+        popen=FakePopen,
+        pid_alive=lambda pid: True,
+        now=lambda: 1000,
+        jitter=lambda _delay: 0,
+    )
+
+    result = dispatcher.run_once()
+
+    assert result["status"] == "spawned"
+    assert result["job_id"] == "job-request-written-dispatcher"
+    assert len(popen_calls) == 1
+    job = state.get_dual_agent_workflow_job(job_id="job-request-written-dispatcher")
+    assert job["recovery_point"] == "spawned"
+    assert job["pid"] == 43211
+
+
+def test_heartbeat_extends_lease_for_matching_worker(tmp_path):
+    _server(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    _reserve_dispatcher_test_job(state, tmp_path)
+    state.update_dual_agent_workflow_job(
+        job_id="job-dispatcher",
+        status="running",
+        pid=43210,
+        recovery_point="spawned",
+        leased_by="worker:43210",
+        lease_expires_at=1010,
+    )
+
+    assert state.heartbeat_dual_agent_workflow_job(
+        job_id="job-dispatcher",
+        leased_by="worker:wrong",
+        lease_ttl_s=60,
+        now=1005,
+    ) is False
+    assert state.heartbeat_dual_agent_workflow_job(
+        job_id="job-dispatcher",
+        leased_by="worker:43210",
+        lease_ttl_s=60,
+        now=1005,
+    ) is True
+    job = state.get_dual_agent_workflow_job(job_id="job-dispatcher")
+    assert job["lease_expires_at"] == 1065
+    assert job["heartbeat_at"] == 1005
+
+
+def test_workflow_job_lease_heartbeat_runs_until_worker_lease_rejected():
+    from supervisor.workflow_job_dispatcher import WorkflowJobLeaseHeartbeat
+
+    calls: list[dict[str, object]] = []
+    second_heartbeat = threading.Event()
+
+    class FakeState:
+        def heartbeat_dual_agent_workflow_job(self, **kwargs):
+            calls.append(kwargs)
+            if len(calls) >= 2:
+                second_heartbeat.set()
+                return False
+            return True
+
+    heartbeat = WorkflowJobLeaseHeartbeat(
+        FakeState(),
+        job_id="job-dispatcher",
+        leased_by="worker:43210",
+        lease_ttl_s=9,
+        interval_s=0.01,
+    )
+
+    heartbeat.start()
+    assert second_heartbeat.wait(timeout=1.0)
+    heartbeat.stop()
+
+    assert calls[0]["job_id"] == "job-dispatcher"
+    assert calls[0]["leased_by"] == "worker:43210"
+    assert calls[0]["lease_ttl_s"] == 9
+    assert len(calls) >= 2
+    assert not heartbeat._thread.is_alive()
+
+
+def test_dispatcher_reaper_reclaims_expired_pre_spawn_lease(tmp_path):
+    from supervisor.workflow_job_dispatcher import WorkflowJobDispatcher
+
+    _server(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    _reserve_dispatcher_test_job(state, tmp_path)
+    state.update_dual_agent_workflow_job(
+        job_id="job-dispatcher",
+        leased_by="dispatcher-old",
+        lease_expires_at=900,
+    )
+    popen_calls: list[list[str]] = []
+
+    class FakePopen:
+        pid = 43212
+
+        def __init__(self, argv, **kwargs):
+            popen_calls.append(list(argv))
+
+    dispatcher = WorkflowJobDispatcher(
+        state,
+        dispatcher_id="dispatcher-test",
+        popen=FakePopen,
+        pid_alive=lambda pid: True,
+        now=lambda: 1000,
+    )
+
+    result = dispatcher.reap_stale_leases()
+
+    assert result["reclaimed"] == ["job-dispatcher"]
+    job = state.get_dual_agent_workflow_job(job_id="job-dispatcher")
+    assert job["leased_by"] is None
+    assert job["lease_expires_at"] is None
+
+    redrive = dispatcher.run_once()
+
+    assert redrive["status"] == "spawned"
+    assert popen_calls
+    job = state.get_dual_agent_workflow_job(job_id="job-dispatcher")
+    assert job["pid"] == 43212
+    assert job["recovery_point"] == "spawned"
+
+
+def test_dispatcher_reaper_fails_dead_spawned_worker(tmp_path):
+    from supervisor.workflow_job_dispatcher import WorkflowJobDispatcher
+
+    _server(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    _reserve_dispatcher_test_job(state, tmp_path)
+    state.update_dual_agent_workflow_job(
+        job_id="job-dispatcher",
+        status="running",
+        pid=43210,
+        recovery_point="spawned",
+        leased_by="worker:43210",
+        lease_expires_at=2000,
+    )
+    dispatcher = WorkflowJobDispatcher(
+        state,
+        dispatcher_id="dispatcher-test",
+        popen=lambda *args, **kwargs: None,
+        pid_alive=lambda pid: False,
+        now=lambda: 1000,
+    )
+
+    result = dispatcher.reap_stale_leases()
+
+    assert result["failed"] == ["job-dispatcher"]
+    job = state.get_dual_agent_workflow_job(job_id="job-dispatcher")
     assert job["status"] == "failed"
     assert job["recovery_point"] == "terminal"
-    assert json.loads(job["terminal_outcome_json"])["error"] == "spawn denied"
+    assert json.loads(job["terminal_outcome_json"])["error"] == "worker_lease_stale_or_dead"
+
+
+def test_dispatcher_admission_cap_prevents_claim_when_full(tmp_path):
+    from supervisor.workflow_job_dispatcher import WorkflowJobDispatcher
+
+    _server(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    _reserve_dispatcher_test_job(state, tmp_path, job_id="job-waiting", token="token-waiting")
+    _reserve_dispatcher_test_job(state, tmp_path, job_id="job-running", token="token-running")
+    state.update_dual_agent_workflow_job(
+        job_id="job-running",
+        status="running",
+        pid=43210,
+        recovery_point="spawned",
+        leased_by="worker:43210",
+        lease_expires_at=2000,
+    )
+    dispatcher = WorkflowJobDispatcher(
+        state,
+        dispatcher_id="dispatcher-test",
+        max_concurrent_spawns=1,
+        popen=lambda *args, **kwargs: None,
+        pid_alive=lambda pid: True,
+        now=lambda: 1000,
+    )
+
+    result = dispatcher.run_once()
+
+    assert result["status"] == "backpressure"
+    waiting = state.get_dual_agent_workflow_job(job_id="job-waiting")
+    assert waiting["leased_by"] is None
+    assert waiting["recovery_point"] == "reserved"
+
+
+def test_dispatcher_retryable_spawn_failure_uses_capped_backoff(tmp_path):
+    from supervisor.workflow_job_dispatcher import WorkflowJobDispatcher
+
+    _server(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    _reserve_dispatcher_test_job(state, tmp_path)
+
+    def fail_popen(*args, **kwargs):
+        raise OSError("temporary spawn failure")
+
+    dispatcher = WorkflowJobDispatcher(
+        state,
+        dispatcher_id="dispatcher-test",
+        popen=fail_popen,
+        pid_alive=lambda pid: True,
+        now=lambda: 1000,
+        base_backoff_s=10,
+        max_backoff_s=60,
+        max_dispatch_attempts=3,
+        jitter=lambda _delay: 0,
+    )
+
+    result = dispatcher.run_once()
+    immediate = dispatcher.run_once()
+
+    assert result["status"] == "retry_scheduled"
+    assert immediate["status"] == "idle"
+    job = state.get_dual_agent_workflow_job(job_id="job-dispatcher")
+    assert job["status"] == "submitted"
+    assert job["recovery_point"] == "request_written"
+    assert job["dispatch_attempts"] == 1
+    assert job["next_dispatch_at"] == 1010
+    assert job["leased_by"] is None
+
+
+def test_dispatcher_retryable_spawn_failure_caps_backoff_after_jitter(tmp_path):
+    from supervisor.workflow_job_dispatcher import WorkflowJobDispatcher
+
+    _server(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    _reserve_dispatcher_test_job(state, tmp_path)
+    now = {"value": 1000}
+
+    def fail_popen(*args, **kwargs):
+        raise OSError("temporary spawn failure")
+
+    dispatcher = WorkflowJobDispatcher(
+        state,
+        dispatcher_id="dispatcher-test",
+        popen=fail_popen,
+        pid_alive=lambda pid: True,
+        now=lambda: now["value"],
+        base_backoff_s=10,
+        max_backoff_s=15,
+        max_dispatch_attempts=4,
+        jitter=lambda _delay: 999,
+    )
+
+    first = dispatcher.run_once()
+    now["value"] = int(first["next_dispatch_at"])
+    second = dispatcher.run_once()
+
+    assert first["status"] == "retry_scheduled"
+    assert first["next_dispatch_at"] == 1015
+    assert second["status"] == "retry_scheduled"
+    assert second["next_dispatch_at"] == 1030
+    job = state.get_dual_agent_workflow_job(job_id="job-dispatcher")
+    assert job["dispatch_attempts"] == 2
+
+
+def test_dispatcher_retryable_spawn_failure_parks_at_attempt_cap(tmp_path):
+    from supervisor.workflow_job_dispatcher import WorkflowJobDispatcher
+
+    _server(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    _reserve_dispatcher_test_job(state, tmp_path)
+    now = {"value": 1000}
+
+    def fail_popen(*args, **kwargs):
+        raise OSError("temporary spawn failure")
+
+    dispatcher = WorkflowJobDispatcher(
+        state,
+        dispatcher_id="dispatcher-test",
+        popen=fail_popen,
+        pid_alive=lambda pid: True,
+        now=lambda: now["value"],
+        base_backoff_s=10,
+        max_backoff_s=60,
+        max_dispatch_attempts=2,
+        jitter=lambda _delay: 0,
+    )
+
+    first = dispatcher.run_once()
+    now["value"] = 1010
+    second = dispatcher.run_once()
+    third = dispatcher.run_once()
+
+    assert first["status"] == "retry_scheduled"
+    assert second["status"] == "parked"
+    assert second["parked_reason"] == "max_dispatch_attempts_exceeded: temporary spawn failure"
+    assert third["status"] == "idle"
+    job = state.get_dual_agent_workflow_job(job_id="job-dispatcher")
+    assert job["status"] == "parked"
+    assert job["dispatch_attempts"] == 2
+    assert job["leased_by"] is None
+    assert job["parked_reason"] == "max_dispatch_attempts_exceeded: temporary spawn failure"
+
+
+def test_dispatcher_budget_hook_parks_before_spawn(tmp_path):
+    from supervisor.workflow_job_dispatcher import WorkflowJobDispatcher
+
+    _server(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    _reserve_dispatcher_test_job(state, tmp_path)
+    popen_calls: list[list[str]] = []
+
+    class FakePopen:
+        pid = 43210
+
+        def __init__(self, argv, **kwargs):
+            popen_calls.append(list(argv))
+
+    dispatcher = WorkflowJobDispatcher(
+        state,
+        dispatcher_id="dispatcher-test",
+        budget_hook=lambda _row: False,
+        popen=FakePopen,
+        pid_alive=lambda pid: True,
+        now=lambda: 1000,
+    )
+
+    result = dispatcher.run_once()
+    second = dispatcher.run_once()
+
+    assert result["status"] == "parked"
+    assert result["reason"] == "budget_cap_exceeded"
+    assert second["status"] == "idle"
+    assert popen_calls == []
+    job = state.get_dual_agent_workflow_job(job_id="job-dispatcher")
+    assert job["status"] == "parked"
+    assert job["parked_reason"] == "budget_cap_exceeded"
+    assert job["leased_by"] is None
+
+
+def test_dispatcher_poison_job_parks_without_retry_loop(tmp_path):
+    from supervisor.workflow_job_dispatcher import WorkflowJobDispatcher
+
+    _server(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    _reserve_dispatcher_test_job(
+        state,
+        tmp_path,
+        request_payload_json="{not valid json",
+    )
+    popen_calls: list[list[str]] = []
+
+    class FakePopen:
+        pid = 43210
+
+        def __init__(self, argv, **kwargs):
+            popen_calls.append(list(argv))
+
+    dispatcher = WorkflowJobDispatcher(
+        state,
+        dispatcher_id="dispatcher-test",
+        popen=FakePopen,
+        pid_alive=lambda pid: True,
+        now=lambda: 1000,
+        jitter=lambda _delay: 0,
+    )
+
+    result = dispatcher.run_once()
+    second = dispatcher.run_once()
+
+    assert result["status"] == "parked"
+    assert second["status"] == "idle"
+    assert popen_calls == []
+    job = state.get_dual_agent_workflow_job(job_id="job-dispatcher")
+    assert job["status"] == "parked"
+    assert job["parked_reason"].startswith("invalid_request_payload_json")
+    assert job["leased_by"] is None
+
+
+def test_dispatcher_run_forever_repeats_reaper_and_dispatch_until_stopped(monkeypatch):
+    from supervisor.workflow_job_dispatcher import WorkflowJobDispatcher
+
+    dispatcher = WorkflowJobDispatcher(
+        object(),
+        dispatcher_id="dispatcher-test",
+        now=lambda: 1000,
+    )
+    stop_event = threading.Event()
+    calls: list[str] = []
+
+    def fake_reap():
+        calls.append("reap")
+        return {"reclaimed": [], "failed": [], "completed": []}
+
+    def fake_run_once():
+        calls.append("dispatch")
+        if calls.count("dispatch") == 2:
+            stop_event.set()
+        return {"status": "idle"}
+
+    monkeypatch.setattr(dispatcher, "reap_stale_leases", fake_reap)
+    monkeypatch.setattr(dispatcher, "run_once", fake_run_once)
+
+    dispatcher.run_forever(interval_s=0.01, stop_event=stop_event)
+
+    assert calls == ["reap", "dispatch", "reap", "dispatch"]
+
+
+def test_dispatcher_cli_once_runs_reaper_and_dispatch(monkeypatch, capsys, tmp_path):
+    import supervisor.workflow_job_dispatcher as dispatcher_module
+
+    constructed: dict[str, object] = {}
+
+    class FakeSupervisor:
+        state_db = str(tmp_path / "state.db")
+
+    class FakeConfig:
+        supervisor = FakeSupervisor()
+
+    class FakeState:
+        def __init__(self, db_path):
+            constructed["state_db"] = db_path
+
+    class FakeDispatcher:
+        def __init__(self, state, **kwargs):
+            constructed["state_type"] = type(state).__name__
+            constructed.update(kwargs)
+
+        def reap_stale_leases(self):
+            return {"reclaimed": ["job-old"], "failed": [], "completed": []}
+
+        def run_once(self):
+            return {"status": "spawned", "job_id": "job-new"}
+
+    monkeypatch.setattr(dispatcher_module.Config, "load", lambda path: FakeConfig())
+    monkeypatch.setattr(dispatcher_module, "State", FakeState)
+    monkeypatch.setattr(dispatcher_module, "WorkflowJobDispatcher", FakeDispatcher)
+
+    exit_code = dispatcher_module.main([
+        "--config",
+        str(tmp_path / "config.yaml"),
+        "--once",
+        "--dispatcher-id",
+        "dispatcher-cli-test",
+        "--max-concurrent-spawns",
+        "2",
+        "--lease-ttl-s",
+        "7",
+    ])
+
+    output = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert output == {
+        "dispatch": {"job_id": "job-new", "status": "spawned"},
+        "reaper": {"completed": [], "failed": [], "reclaimed": ["job-old"]},
+    }
+    assert constructed["state_db"] == str(tmp_path / "state.db")
+    assert constructed["dispatcher_id"] == "dispatcher-cli-test"
+    assert constructed["max_concurrent_spawns"] == 2
+    assert constructed["lease_ttl_s"] == 7
+
+
+def test_dispatcher_cli_without_once_runs_long_lived_loop(monkeypatch, capsys, tmp_path):
+    import supervisor.workflow_job_dispatcher as dispatcher_module
+
+    constructed: dict[str, object] = {}
+
+    class FakeSupervisor:
+        state_db = str(tmp_path / "state.db")
+
+    class FakeConfig:
+        supervisor = FakeSupervisor()
+
+    class FakeState:
+        def __init__(self, db_path):
+            constructed["state_db"] = db_path
+
+    class FakeDispatcher:
+        def __init__(self, state, **kwargs):
+            constructed["state_type"] = type(state).__name__
+            constructed.update(kwargs)
+
+        def run_forever(self, *, interval_s):
+            constructed["run_forever_interval_s"] = interval_s
+
+    monkeypatch.setattr(dispatcher_module.Config, "load", lambda path: FakeConfig())
+    monkeypatch.setattr(dispatcher_module, "State", FakeState)
+    monkeypatch.setattr(dispatcher_module, "WorkflowJobDispatcher", FakeDispatcher)
+
+    exit_code = dispatcher_module.main([
+        "--config",
+        str(tmp_path / "config.yaml"),
+        "--dispatcher-id",
+        "dispatcher-cli-test",
+        "--max-concurrent-spawns",
+        "2",
+        "--lease-ttl-s",
+        "7",
+        "--interval-s",
+        "0.25",
+    ])
+
+    assert exit_code == 0
+    assert capsys.readouterr().out == ""
+    assert constructed["state_db"] == str(tmp_path / "state.db")
+    assert constructed["dispatcher_id"] == "dispatcher-cli-test"
+    assert constructed["max_concurrent_spawns"] == 2
+    assert constructed["lease_ttl_s"] == 7
+    assert constructed["run_forever_interval_s"] == 0.25
 
 
 @pytest.mark.asyncio

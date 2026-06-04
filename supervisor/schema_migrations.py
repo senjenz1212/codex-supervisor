@@ -161,6 +161,34 @@ def _migration_workflow_job_recovery_claims(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE dual_agent_workflow_jobs ADD COLUMN recovery_claimed_at INTEGER")
 
 
+def _migration_workflow_job_dispatcher_leases(conn: sqlite3.Connection) -> None:
+    if not _table_exists(conn, "dual_agent_workflow_jobs"):
+        return
+    columns = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(dual_agent_workflow_jobs)").fetchall()
+    }
+    if "leased_by" not in columns:
+        conn.execute("ALTER TABLE dual_agent_workflow_jobs ADD COLUMN leased_by TEXT")
+    if "lease_expires_at" not in columns:
+        conn.execute("ALTER TABLE dual_agent_workflow_jobs ADD COLUMN lease_expires_at INTEGER")
+    if "heartbeat_at" not in columns:
+        conn.execute("ALTER TABLE dual_agent_workflow_jobs ADD COLUMN heartbeat_at INTEGER")
+    if "dispatch_attempts" not in columns:
+        conn.execute(
+            "ALTER TABLE dual_agent_workflow_jobs ADD COLUMN dispatch_attempts INTEGER NOT NULL DEFAULT 0"
+        )
+    if "next_dispatch_at" not in columns:
+        conn.execute("ALTER TABLE dual_agent_workflow_jobs ADD COLUMN next_dispatch_at INTEGER")
+    if "parked_reason" not in columns:
+        conn.execute("ALTER TABLE dual_agent_workflow_jobs ADD COLUMN parked_reason TEXT")
+    conn.execute(
+        """CREATE INDEX IF NOT EXISTS idx_dual_agent_workflow_jobs_dispatchable
+           ON dual_agent_workflow_jobs(status, recovery_point, next_dispatch_at, lease_expires_at)
+           WHERE recovery_point IN ('reserved', 'request_written')"""
+    )
+
+
 def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
     row = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
@@ -211,5 +239,10 @@ MIGRATIONS: tuple[SchemaMigration, ...] = (
         5,
         "dual_agent_workflow_jobs.recovery_claims",
         _migration_workflow_job_recovery_claims,
+    ),
+    SchemaMigration(
+        6,
+        "dual_agent_workflow_jobs.dispatcher_leases",
+        _migration_workflow_job_dispatcher_leases,
     ),
 )

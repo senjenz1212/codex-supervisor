@@ -244,6 +244,12 @@ CREATE TABLE IF NOT EXISTS dual_agent_workflow_jobs (
   recovery_point TEXT NOT NULL DEFAULT 'reserved',
   recovery_claim_token TEXT,
   recovery_claimed_at INTEGER,
+  leased_by TEXT,
+  lease_expires_at INTEGER,
+  heartbeat_at INTEGER,
+  dispatch_attempts INTEGER NOT NULL DEFAULT 0,
+  next_dispatch_at INTEGER,
+  parked_reason TEXT,
   request_payload_json TEXT,
   config_path TEXT,
   terminal_status TEXT,
@@ -905,6 +911,14 @@ class State:
         recovery_point: str | None = None,
         request_payload_json: str | None = None,
         config_path: str | None = None,
+        leased_by: str | None = None,
+        lease_expires_at: int | None = None,
+        heartbeat_at: int | None = None,
+        dispatch_attempts: int | None = None,
+        next_dispatch_at: int | None = None,
+        parked_reason: str | None = None,
+        clear_lease: bool = False,
+        clear_next_dispatch_at: bool = False,
     ) -> None:
         assignments = ["updated_at=?"]
         params: list[Any] = [int(time.time())]
@@ -931,6 +945,30 @@ class State:
         if config_path is not None:
             assignments.append("config_path=?")
             params.append(config_path)
+        if leased_by is not None:
+            assignments.append("leased_by=?")
+            params.append(leased_by)
+        if lease_expires_at is not None:
+            assignments.append("lease_expires_at=?")
+            params.append(lease_expires_at)
+        if heartbeat_at is not None:
+            assignments.append("heartbeat_at=?")
+            params.append(heartbeat_at)
+        if dispatch_attempts is not None:
+            assignments.append("dispatch_attempts=?")
+            params.append(dispatch_attempts)
+        if next_dispatch_at is not None:
+            assignments.append("next_dispatch_at=?")
+            params.append(next_dispatch_at)
+        if parked_reason is not None:
+            assignments.append("parked_reason=?")
+            params.append(parked_reason)
+        if clear_lease:
+            assignments.append("leased_by=NULL")
+            assignments.append("lease_expires_at=NULL")
+            assignments.append("heartbeat_at=NULL")
+        if clear_next_dispatch_at:
+            assignments.append("next_dispatch_at=NULL")
         params.append(job_id)
         with self._write_lock:
             self._conn.execute(
@@ -940,6 +978,182 @@ class State:
                 params,
             )
             self._conn.commit()
+
+    def count_active_dual_agent_workflow_job_leases(self, *, now: int) -> int:
+        row = self._conn.execute(
+            """SELECT COUNT(*) AS count
+               FROM dual_agent_workflow_jobs
+               WHERE recovery_point='spawned'
+                 AND status='running'
+                 AND terminal_outcome_json IS NULL
+                 AND leased_by IS NOT NULL
+                 AND lease_expires_at IS NOT NULL
+                 AND lease_expires_at > ?""",
+            (now,),
+        ).fetchone()
+        return int(row["count"] if row is not None else 0)
+
+    def claim_next_dual_agent_workflow_job_for_dispatch(
+        self,
+        *,
+        dispatcher_id: str,
+        lease_ttl_s: int,
+        now: int,
+        job_id: str | None = None,
+    ) -> sqlite3.Row | None:
+        lease_expires_at = now + max(1, int(lease_ttl_s))
+        with self._write_lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                filters = [
+                    "recovery_point IN ('reserved', 'request_written')",
+                    """status NOT IN ('parked', 'accepted', 'blocked',
+                                      'cancelled', 'completed', 'denied', 'failed')""",
+                    "terminal_outcome_json IS NULL",
+                    "pid IS NULL",
+                    "(next_dispatch_at IS NULL OR next_dispatch_at <= ?)",
+                    """(
+                           leased_by IS NULL
+                        OR lease_expires_at IS NULL
+                        OR lease_expires_at <= ?
+                       )""",
+                ]
+                params: list[Any] = [now, now]
+                if job_id is not None:
+                    filters.append("job_id=?")
+                    params.append(job_id)
+                row = self._conn.execute(
+                    f"""SELECT *
+                       FROM dual_agent_workflow_jobs
+                       WHERE {" AND ".join(filters)}
+                       ORDER BY created_at ASC, job_id ASC
+                       LIMIT 1""",
+                    params,
+                ).fetchone()
+                if row is None:
+                    self._conn.commit()
+                    return None
+                self._conn.execute(
+                    """UPDATE dual_agent_workflow_jobs
+                          SET leased_by=?,
+                              lease_expires_at=?,
+                              heartbeat_at=?,
+                              updated_at=?
+                        WHERE job_id=?""",
+                    (dispatcher_id, lease_expires_at, now, now, row["job_id"]),
+                )
+                claimed = self._conn.execute(
+                    "SELECT * FROM dual_agent_workflow_jobs WHERE job_id=?",
+                    (row["job_id"],),
+                ).fetchone()
+                self._conn.commit()
+                return claimed
+            except Exception:
+                self._conn.rollback()
+                raise
+
+    def clear_dual_agent_workflow_job_lease(
+        self,
+        *,
+        job_id: str,
+        next_dispatch_at: int | None = None,
+        dispatch_attempts: int | None = None,
+        error: str | None = None,
+    ) -> sqlite3.Row | None:
+        assignments = [
+            "leased_by=NULL",
+            "lease_expires_at=NULL",
+            "heartbeat_at=NULL",
+            "updated_at=?",
+        ]
+        params: list[Any] = [int(time.time())]
+        if next_dispatch_at is not None:
+            assignments.append("next_dispatch_at=?")
+            params.append(next_dispatch_at)
+        if dispatch_attempts is not None:
+            assignments.append("dispatch_attempts=?")
+            params.append(dispatch_attempts)
+        if error is not None:
+            assignments.append("error=?")
+            params.append(error)
+        params.append(job_id)
+        with self._write_lock:
+            self._conn.execute(
+                f"""UPDATE dual_agent_workflow_jobs
+                       SET {", ".join(assignments)}
+                     WHERE job_id=?""",
+                params,
+            )
+            row = self._conn.execute(
+                "SELECT * FROM dual_agent_workflow_jobs WHERE job_id=?",
+                (job_id,),
+            ).fetchone()
+            self._conn.commit()
+            return row
+
+    def heartbeat_dual_agent_workflow_job(
+        self,
+        *,
+        job_id: str,
+        leased_by: str,
+        lease_ttl_s: int,
+        now: int | None = None,
+    ) -> bool:
+        now_value = int(time.time()) if now is None else int(now)
+        lease_expires_at = now_value + max(1, int(lease_ttl_s))
+        with self._write_lock:
+            cursor = self._conn.execute(
+                """UPDATE dual_agent_workflow_jobs
+                      SET lease_expires_at=?,
+                          heartbeat_at=?,
+                          updated_at=?
+                    WHERE job_id=?
+                      AND leased_by=?
+                      AND recovery_point='spawned'
+                      AND terminal_outcome_json IS NULL""",
+                (lease_expires_at, now_value, now_value, job_id, leased_by),
+            )
+            self._conn.commit()
+            return cursor.rowcount == 1
+
+    def park_dual_agent_workflow_job(
+        self,
+        *,
+        job_id: str,
+        reason: str,
+    ) -> sqlite3.Row | None:
+        now = int(time.time())
+        with self._write_lock:
+            self._conn.execute(
+                """UPDATE dual_agent_workflow_jobs
+                      SET status='parked',
+                          error=?,
+                          parked_reason=?,
+                          leased_by=NULL,
+                          lease_expires_at=NULL,
+                          heartbeat_at=NULL,
+                          recovery_claim_token=NULL,
+                          recovery_claimed_at=NULL,
+                          updated_at=?
+                    WHERE job_id=?""",
+                (reason, reason, now, job_id),
+            )
+            row = self._conn.execute(
+                "SELECT * FROM dual_agent_workflow_jobs WHERE job_id=?",
+                (job_id,),
+            ).fetchone()
+            self._conn.commit()
+            return row
+
+    def list_dual_agent_workflow_job_leases(self) -> list[sqlite3.Row]:
+        return list(self._conn.execute(
+            """SELECT *
+               FROM dual_agent_workflow_jobs
+               WHERE leased_by IS NOT NULL
+                 AND terminal_outcome_json IS NULL
+                 AND status!='parked'
+               ORDER BY updated_at ASC, job_id ASC"""
+        ))
 
     def claim_dual_agent_workflow_job_recovery_point(
         self,
@@ -1029,6 +1243,9 @@ class State:
                               recovery_point='terminal',
                               recovery_claim_token=NULL,
                               recovery_claimed_at=NULL,
+                              leased_by=NULL,
+                              lease_expires_at=NULL,
+                              heartbeat_at=NULL,
                               terminal_status=?,
                               terminal_outcome_json=?,
                               terminal_outcome_recorded_at=?,

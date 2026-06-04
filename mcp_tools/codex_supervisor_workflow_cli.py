@@ -19,6 +19,7 @@ from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI, Runner
 from supervisor.config import Config
 from supervisor.cursor_agent import CursorRunner
 from supervisor.state import State
+from supervisor.workflow_job_dispatcher import WorkflowJobLeaseHeartbeat
 
 
 WORKFLOW_KEYS = {
@@ -209,7 +210,20 @@ def main(argv: list[str] | None = None) -> int:
     cfg = Config.load(args.config)
     state = State(cfg.supervisor.state_db)
     request = read_json_payload(args.request)
-    result = asyncio.run(run_workflow_payload(request, cfg=cfg, state=state))
+    heartbeat: WorkflowJobLeaseHeartbeat | None = None
+    job_id = str(request.get("job_id") or "").strip()
+    if job_id:
+        heartbeat = WorkflowJobLeaseHeartbeat(
+            state,
+            job_id=job_id,
+            leased_by=f"worker:{os.getpid()}",
+        )
+        heartbeat.start()
+    try:
+        result = asyncio.run(run_workflow_payload(request, cfg=cfg, state=state))
+    finally:
+        if heartbeat is not None:
+            heartbeat.stop()
     exit_code = 2 if args.fail_on_blocked and result.get("status") != "accepted" else 0
     output_path = Path(args.output).expanduser() if args.output else None
 

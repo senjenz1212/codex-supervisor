@@ -35,6 +35,7 @@ def test_forward_migration_adds_resume_requested_at_to_old_actions_table(tmp_pat
         {"version": 3, "name": "dual_agent_workflow_jobs.terminal_outcome"},
         {"version": 4, "name": "dual_agent_workflow_jobs.recovery_points"},
         {"version": 5, "name": "dual_agent_workflow_jobs.recovery_claims"},
+        {"version": 6, "name": "dual_agent_workflow_jobs.dispatcher_leases"},
     ]
 
 
@@ -52,6 +53,7 @@ def test_forward_migrations_are_idempotent(tmp_path):
         {"version": 3, "name": "dual_agent_workflow_jobs.terminal_outcome"},
         {"version": 4, "name": "dual_agent_workflow_jobs.recovery_points"},
         {"version": 5, "name": "dual_agent_workflow_jobs.recovery_claims"},
+        {"version": 6, "name": "dual_agent_workflow_jobs.dispatcher_leases"},
     ]
 
 
@@ -116,6 +118,7 @@ def test_state_constructor_applies_forward_migration_to_old_db(tmp_path):
         {"version": 3, "name": "dual_agent_workflow_jobs.terminal_outcome"},
         {"version": 4, "name": "dual_agent_workflow_jobs.recovery_points"},
         {"version": 5, "name": "dual_agent_workflow_jobs.recovery_claims"},
+        {"version": 6, "name": "dual_agent_workflow_jobs.dispatcher_leases"},
     ]
 
 
@@ -153,6 +156,61 @@ def test_forward_migration_adds_workflow_job_idempotency(tmp_path):
         for row in conn.execute("PRAGMA index_list(dual_agent_workflow_jobs)").fetchall()
     }
     assert "idx_dual_agent_workflow_jobs_active_idempotency_token" in indexes
+
+
+def test_forward_migration_adds_workflow_job_dispatcher_leases(tmp_path):
+    conn = sqlite3.connect(tmp_path / "state.db")
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        """CREATE TABLE dual_agent_workflow_jobs (
+             job_id TEXT PRIMARY KEY,
+             run_id TEXT NOT NULL,
+             task_id TEXT NOT NULL,
+             cwd TEXT NOT NULL,
+             status TEXT NOT NULL,
+             pid INTEGER,
+             request_path TEXT NOT NULL,
+             result_path TEXT NOT NULL,
+             log_path TEXT NOT NULL,
+             idempotency_token TEXT,
+             recovery_point TEXT NOT NULL DEFAULT 'reserved',
+             recovery_claim_token TEXT,
+             recovery_claimed_at INTEGER,
+             request_payload_json TEXT,
+             config_path TEXT,
+             terminal_status TEXT,
+             terminal_outcome_json TEXT,
+             terminal_outcome_recorded_at INTEGER,
+             returncode INTEGER,
+             error TEXT,
+             created_at INTEGER NOT NULL,
+             updated_at INTEGER NOT NULL
+           )"""
+    )
+
+    run_forward_migrations(conn)
+
+    columns = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(dual_agent_workflow_jobs)").fetchall()
+    }
+    assert {
+        "leased_by",
+        "lease_expires_at",
+        "heartbeat_at",
+        "dispatch_attempts",
+        "next_dispatch_at",
+        "parked_reason",
+    } <= columns
+    indexes = {
+        row["name"]
+        for row in conn.execute("PRAGMA index_list(dual_agent_workflow_jobs)").fetchall()
+    }
+    assert "idx_dual_agent_workflow_jobs_dispatchable" in indexes
+    assert applied_migrations(conn)[-1] == {
+        "version": 6,
+        "name": "dual_agent_workflow_jobs.dispatcher_leases",
+    }
     conn.execute(
         """INSERT INTO dual_agent_workflow_jobs(
              job_id, run_id, task_id, cwd, status, request_path, result_path,
@@ -254,6 +312,7 @@ def test_forward_migration_adds_workflow_job_terminal_outcome_fields(tmp_path):
         {"version": 3, "name": "dual_agent_workflow_jobs.terminal_outcome"},
         {"version": 4, "name": "dual_agent_workflow_jobs.recovery_points"},
         {"version": 5, "name": "dual_agent_workflow_jobs.recovery_claims"},
+        {"version": 6, "name": "dual_agent_workflow_jobs.dispatcher_leases"},
     ]
 
 

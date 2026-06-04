@@ -83,6 +83,7 @@ from supervisor.redaction import redact
 from supervisor.state import State, canonical_terminal_outcome_json
 from supervisor.trace_envelope import ensure_tool_call_timing, stamp_trace_envelope, timed_tool_call
 from supervisor.telegram import TelegramNotifier, telegram_enabled
+from supervisor.workflow_job_dispatcher import WorkflowJobDispatcher
 
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
@@ -2167,12 +2168,16 @@ class CodexSupervisorMcpAPI:
         recovery_point = str(row["recovery_point"] or "reserved")
         if recovery_point == "terminal" or row["terminal_outcome_json"]:
             return row
-        if recovery_point == "reserved":
-            row = self._write_workflow_job_request(row)
-            recovery_point = str(row["recovery_point"] or "request_written")
-        if recovery_point == "request_written":
-            row = self._spawn_workflow_job_worker(row)
-        return row
+        dispatcher = WorkflowJobDispatcher(
+            self.state,
+            dispatcher_id=f"poller:{os.getpid()}",
+            popen=subprocess.Popen,
+            pid_alive=_pid_alive,
+        )
+        dispatcher.reap_stale_leases()
+        dispatcher.run_once(job_id=row["job_id"])
+        refreshed = self.state.get_dual_agent_workflow_job(job_id=row["job_id"])
+        return refreshed or row
 
     def _write_workflow_job_request(self, row: Any) -> Any:
         claimed = self.state.claim_dual_agent_workflow_job_recovery_point(
