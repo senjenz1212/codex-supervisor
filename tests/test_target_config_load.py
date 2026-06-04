@@ -37,6 +37,15 @@ def test_target_config_load_selects_claude_code_without_codex():
     assert adapter.__class__.__name__ == "ClaudeCodeAdapter"
 
 
+def test_agentic_lead_defaults_to_allowed_with_three_subagents():
+    from supervisor.config import Config
+
+    cfg = Config.load(str(FIXTURE))
+
+    assert cfg.agentic_lead.policy == "allowed"
+    assert cfg.agentic_lead.min_subagents == 3
+
+
 def test_legacy_codex_config_still_selects_codex(tmp_path):
     """Back-compat: an older config that has `codex:` and no `target:` still loads
     and selects the Codex adapter."""

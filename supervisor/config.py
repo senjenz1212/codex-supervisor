@@ -139,8 +139,8 @@ class SupervisorCfg(BaseModel):
 
 
 class AgenticLeadCfg(BaseModel):
-    policy: Literal["off", "allowed", "required"] = "off"
-    min_subagents: int = 0
+    policy: Literal["off", "allowed", "required"] = "allowed"
+    min_subagents: int = 3
     required_roles: list[str] = Field(default_factory=list)
     solo_exception_for_artifact_only_gates: bool = False
     required_evidence_grade: Literal["self_reported", "lead_captured", "runtime_native"] = "self_reported"
