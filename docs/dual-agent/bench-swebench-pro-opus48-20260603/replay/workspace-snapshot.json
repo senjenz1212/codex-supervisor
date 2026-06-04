@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "db309a84d6b11db6505c03eaaab9f5f36429f4d93e45600b430d1b6401596826",
+  "git": {
+    "diff_bytes": 0,
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "diff_stat": "",
+    "head": "5109873",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "5109873",
+    "status_short": "?? docs/dual-agent/bench-swebench-pro-opus48-20260603/\n?? scripts/run_swe_bench_pro_pilot.py\n?? supervisor/swe_bench_eval.py\n?? supervisor/swe_bench_solver.py\n?? tests/fixtures/swe_bench_pro/\n?? tests/test_swe_bench_pro_eval.py"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "6f9fd723f6346fff750b824aed00531bc5609536e8bdec5b15ea833599fd5fab",
+    "implementation_plan": "763f41f339431f4fca211990d39c9605f7fa0ba893ce4805fb1ef0c6640372bd",
+    "issues": "cc2ae58ef2e9a8dd4e4d78e1a574137f207cf13d7fe0e400219872a083293ce2",
+    "prd": "f5e8e077c5264f12f7a075d764c4b7948928c4721971ee1fba9900be8f0ec5c5",
+    "tdd_plan": "18b770e0c3f00383b6ef88d272971ff954e22975999cd925773675e228c2c7e2"
+  },
+  "status": "captured"
+}

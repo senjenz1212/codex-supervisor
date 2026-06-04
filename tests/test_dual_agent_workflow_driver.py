@@ -2232,6 +2232,7 @@ async def test_run_dual_agent_workflow_passes_budget_to_each_lead_gate(tmp_path)
         run_id="workflow-run",
         intent="Run workflow with a non-default live probe budget.",
         max_rounds_per_gate=1,
+        agentic_lead_policy="off",
         budget_usd=42.5,
         tool_receipts=_tool_receipts(),
     ))
@@ -2329,6 +2330,7 @@ async def test_run_dual_agent_workflow_blocks_dynamic_preview_with_forged_replay
         intent="Run a forged dynamic preview receipt.",
         max_rounds_per_gate=1,
         execution_layer_mode="dynamic_workflow_preview",
+        agentic_lead_policy="off",
         dynamic_workflow_task_class="codebase_audit",
         tool_receipts=[*_tool_receipts(), *_dynamic_workflow_receipts()],
     ))
@@ -2813,6 +2815,7 @@ async def test_dynamic_reviewer_synthesis_blocks_on_critical_disagreement(tmp_pa
         intent="Run a fan-out task with a critical reviewer disagreement.",
         max_rounds_per_gate=1,
         execution_layer_mode="dynamic_workflow_preview",
+        agentic_lead_policy="off",
         dynamic_workflow_task_class="codebase_audit",
         tool_receipts=[
             *_tool_receipts(),
@@ -2909,6 +2912,7 @@ async def test_run_dual_agent_workflow_blocks_auto_seeded_planning_stubs(tmp_pat
         run_id="workflow-run",
         intent="Build the supervisor-owned workflow driver.",
         max_rounds_per_gate=5,
+        agentic_lead_policy="off",
         tool_receipts=_skill_receipts(),
     ))
 
@@ -4764,6 +4768,7 @@ async def test_run_dual_agent_workflow_resumes_after_transport_loss_from_pending
         run_id="workflow-run",
         intent="Resume after the previous MCP transport closed.",
         max_rounds_per_gate=1,
+        agentic_lead_policy="off",
         cursor_review=False,
         tool_receipts=_tool_receipts(),
     ))
