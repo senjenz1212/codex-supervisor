@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "77af8a8856bfcd8fb2a0555abba39de33740be25c00a4cfcf65800dec8bd2158",
+  "git": {
+    "diff_bytes": 1624,
+    "diff_sha256": "6f3dc344008f85c6aa3ea7d3d32a4d7e1b8d06ee2cc4f2a54e33bd4220624bac",
+    "diff_stat": "config.example.yaml  | 7 +++++++\n supervisor/config.py | 7 +++++++\n 2 files changed, 14 insertions(+)",
+    "head": "3989ea4",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "3989ea4",
+    "status_short": "M config.example.yaml\n M supervisor/config.py\n?? docs/adr/0004-durable-execution-engine-decision.md\n?? docs/dual-agent/durable-execution-engine-adr-20260604/\n?? supervisor/durable_execution_engine_spike.py\n?? tests/test_durable_execution_engine_adr.py\n?? tests/test_durable_execution_engine_spike.py"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "9cd22ce12dd46c3d93c3e7a4acd489a1f5c3f16eec3fde7a4a71ab4fd0e36f04",
+    "implementation_plan": "142a2b87b59605e1fd611840d2782ce9eb56a225c6a69b9062b858108a3de7c4",
+    "issues": "de40ccf9fb19d75c694b7e949780c8bbe16c4d0139b55e56c2a2070018c4175f",
+    "prd": "b18b5bf2265174eb3094570cbdb86ba280995797abcd48f46396ac0e6e8dd783",
+    "tdd_plan": "4f6dee569232c8254b4bca9c312b8a056d7dd1bb4a8d9781e63b720fe99d646f"
+  },
+  "status": "captured"
+}

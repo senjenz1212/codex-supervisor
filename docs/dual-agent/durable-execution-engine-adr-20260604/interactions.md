@@ -1,0 +1,5046 @@
+# Agent Interactions: durable-execution-engine-adr-20260604
+
+- run_id: `06e90318-1ddd-491e-94ca-d9930205df7d`
+- task_id: `durable-execution-engine-adr-20260604`
+- source: supervisor SQLite event ledger
+- purpose: readable projection of the Codex, Claude Code, and optional Cursor decision dialogue
+
+## 1. Unknown
+
+- event_id: `492360`
+- ts: `1780579039`
+- interaction_type: `gate_result`
+- status: `None`
+- attempts: `None`
+
+### Supervisor Block
+
+Claude Code was not invoked.
+
+- reason: `unknown`
+
+### Validation
+
+- None recorded.
+
+### Artifact Rigor
+
+- None recorded.
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+## 2. Workflow Start
+
+- event_id: `492362`
+- ts: `1780579040`
+- interaction_type: `gate_result`
+- status: `accepted`
+- attempts: `None`
+
+### Supervisor Block
+
+Claude Code was not invoked.
+
+- reason: `accepted`
+
+### Validation
+
+- None recorded.
+
+### Artifact Rigor
+
+- None recorded.
+
+### Trace Envelope
+
+- policy_verdict: `accepted`
+- failure_taxonomy: `None`
+
+## 3. PRD Review
+
+- event_id: `492364`
+- ts: `1780579040`
+- interaction_type: `planning_validation`
+- gate: `prd_review`
+- validator_version: `1.0.0`
+- verdict: `accepted`
+
+### Checks
+
+- AGG-001: pass
+- AGG-002: pass
+- PRD-001: pass
+- PRD-002: pass
+- PRD-003: pass
+- PRD-004: pass
+- PRD-005: pass
+- PRD-006: pass
+
+### Artifacts
+
+- {"kind": "prd", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/prd.md", "sha256": "b18b5bf2265174eb3094570cbdb86ba280995797abcd48f46396ac0e6e8dd783", "status": "accepted"}
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| validate_planning_artifacts#1780579040738#2057 |  |  | validate_planning_artifacts | green | 2 | 2057 |  |  | P_planning |  | {"artifact_count": 7, "gate": "prd_review", "required_kinds": ["prd"], "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"} |  |
+
+## 4. PRD Review
+
+- event_id: `492365`
+- ts: `1780579040`
+- interaction_type: `gate_request`
+- sender: `codex`
+- recipient: `claude_code`
+- round_index: `None`
+- persona_id: `codex.lifecycle_reviewer`
+- addresses: `event:492364`, `handoff:/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json`
+
+### Message
+
+Supervisor-owned workflow gate: prd_review.
+
+Intent:
+Decide via ADR whether Temporal, Restate, or DBOS should replace parts of the durable job stack, with only a disabled report-only Temporal submit spike.
+
+Review this gate against the current source artifacts and return a typed dual_agent_outcome.
+Use decisions/objections to say whether the gate should accept, revise, or deny.
+
+### Confidence
+
+- value: `None`
+- source: `None`
+- rationale: None recorded.
+
+Criteria:
+
+- None recorded.
+
+Evidence:
+
+- None recorded.
+
+### Claims
+
+- None recorded.
+
+### Objections
+
+- None recorded.
+
+### Questions
+
+- None recorded.
+
+### Critical Review
+
+`{}`
+
+### Tool Receipts
+
+- None recorded.
+
+### Evidence Refs
+
+- None recorded.
+
+### Raw Transcript Refs
+
+- None recorded.
+
+### Would Change If
+
+None recorded.
+
+### Review Packet
+
+`{}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| validate_planning_artifacts#1780579040738#2057 |  |  | validate_planning_artifacts | green | 2 | 2057 |  |  | P_planning |  | {"artifact_count": 7, "gate": "prd_review", "required_kinds": ["prd"], "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"} |  |
+| write_handoff_packet#1780579040741#1668 |  |  | write_handoff_packet | completed | 1 | 1668 |  |  |  |  | {"artifact_count": 7, "gate": "prd_review", "task_id": "durable-execution-engine-adr-20260604"} | {"artifact_count": 7, "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json"} |  |
+
+## 5. PRD Review
+
+- event_id: `492387`
+- ts: `1780579198`
+- interaction_type: `gate_response`
+- sender: `claude_code`
+- recipient: `codex`
+- round_index: `None`
+- persona_id: `claude_code.lead_worker`
+- addresses: `event:492365`, `handoff:/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json`
+
+### Message
+
+prd_review ACCEPT. All four PRD promise contracts map to real, matching source boundaries for the report-only durable-execution-engine ADR slice. P1: ADR scores 4 options (keep/Temporal/Restate/DBOS) on 6 criteria (0004:43-116). P2: config defaults engine=hand_rolled/temporal_spike_enabled=False (config.py:149), spike RuntimeError guard (:78), no temporalio import in repo. P3: spike id=idempotency_key + USE_EXISTING (:85-86), dup returns same handle (test:74), comparison test exercises real State.reserve_dual_agent_workflow_job (state.py:829, signature matches). P4: ADR names replace (:139-152) and stay-hand-rolled (:154-166) boundaries preserving gates/reviewer/artifacts/ledger.
+
+### Confidence
+
+- value: `0.9`
+- source: `claude_code_self_reported`
+- rationale: All four PRD promises verified against on-disk source with matching boundaries and a non-vacuous comparison test referencing a real State method with exact signature; report-only enforced and no Temporal SDK import. Confidence held below 0.95 because shasum artifact-integrity (approval-denied) and pytest are un-run, both self_reported per packet policy.
+
+Criteria:
+
+- P1 ADR scores all four options incl keep-hand-rolled: PASS (0004:43-116)
+- P2 config defaults hand_rolled + spike disabled + no temporalio import: PASS (config.py:149, spike:78, grep empty)
+- P3 spike id=idempotency_key/USE_EXISTING + real Layer-0 comparison non-vacuous: PASS (spike:85-86, state.py:829)
+- P4 ADR names replace + stay boundaries preserving gates/ledger: PASS (0004:139-166)
+- Artifact sha256 integrity: NOT VERIFIED (shasum approval denied -> self_reported)
+- Test execution: NOT RUN (test_status unknown -> self_reported per policy)
+
+Evidence:
+
+- tests/test_durable_execution_engine_spike.py::test_durable_execution_defaults_keep_hand_rolled_runtime
+- tests/test_durable_execution_engine_spike.py::test_temporal_spike_is_disabled_until_flagged
+- tests/test_durable_execution_engine_spike.py::test_temporal_spike_uses_idempotency_key_as_workflow_id_with_use_existing
+- tests/test_durable_execution_engine_spike.py::test_spike_report_compares_temporal_submit_against_layer0_reservation
+- tests/test_durable_execution_engine_adr.py
+- config.example.yaml
+- supervisor/config.py
+- docs/adr/0004-durable-execution-engine-decision.md
+- supervisor/durable_execution_engine_spike.py
+- tests/test_durable_execution_engine_spike.py
+- tests/test_durable_execution_engine_adr.py
+- docs/dual-agent/durable-execution-engine-adr-20260604/
+- accept: prd_review gate should advance - PRD well-formed (clear promises, public boundaries, allowed/forbidden outcomes, Out-of-Scope anti-goals) and every promise maps to a real matching source boundary satisfying the report-only intent
+
+### Claims
+
+- PRD is well-formed with explicit public boundaries, allowed/forbidden outcomes, and Out-of-Scope anti-goals
+- All four promises (P1 four-option ADR, P2 disabled-by-default, P3 exactly-once submit+reattach, P4 replace-vs-stay) verified against current source
+- Report-only intent enforced: default engine hand_rolled, spike RuntimeError-guarded, no temporalio import, default_runtime_changed=False
+
+### Objections
+
+- None recorded.
+
+### Questions
+
+- None recorded.
+
+### Critical Review
+
+`{"assumptions_to_verify": ["The 4 spike tests pass when executed (asserted GREEN but un-run here)", "On-disk planning artifacts match the packet sha256 values (self_reported)", "tests/test_durable_execution_engine_adr.py asserts ADR section presence as implied by P1/P4"], "contradictions_checked": ["PRD P2 forbids importing a Temporal SDK -> grep for temporalio returned no files: consistent", "P3 forbids new workflow id on retry -> FakeTemporalClient setdefault keeps same id, created=False on retry, spike marks reattached: consistent", "P3 requires real SQLite Layer-0 path -> test calls State.reserve_dual_agent_workflow_job whose signature at state.py:829 matches the call exactly: consistent", "Intent 'only a disabled report-only spike' -> config default hand_rolled + RuntimeError guard + default_runtime_changed=False: consistent"], "decision": "accept", "evidence_refs": [], "missing_evidence": ["shasum -a256 confirmation that on-disk artifacts match handoff packet hashes (approval denied)", "pytest run output proving the 4 spike tests + ADR test pass GREEN", "contents of tests/test_durable_execution_engine_adr.py not read in full (existence + name confirmed via git status)"], "schema_version": "critical-review/v1", "severity": "low", "strongest_objection": "ADR is marked Status: Accepted while its recommendation is to KEEP hand-rolled, which could read as a non-decision; and artifact sha256 integrity could not be machine-verified because shasum approval was denied.", "what_would_change_my_mind": "Discovery of a temporalio import or a live-service dependency in the default path, a workflow-id-on-retry divergence, a reserve_dual_agent_workflow_job signature mismatch making the comparison test vacuous, or a failing pytest run for the spike tests would move this to revise/deny."}`
+
+### Tool Receipts
+
+- None recorded.
+
+### Evidence Refs
+
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_spike.py::test_durable_execution_defaults_keep_hand_rolled_runtime", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_spike.py::test_temporal_spike_is_disabled_until_flagged", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_spike.py::test_temporal_spike_uses_idempotency_key_as_workflow_id_with_use_existing", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_spike.py::test_spike_report_compares_temporal_submit_against_layer0_reservation", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_adr.py", "status": "unknown"}
+- {"kind": "reported_changed_file", "ref": "config.example.yaml"}
+- {"kind": "reported_changed_file", "ref": "supervisor/config.py"}
+- {"kind": "reported_changed_file", "ref": "docs/adr/0004-durable-execution-engine-decision.md"}
+- {"kind": "reported_changed_file", "ref": "supervisor/durable_execution_engine_spike.py"}
+- {"kind": "reported_changed_file", "ref": "tests/test_durable_execution_engine_spike.py"}
+- {"kind": "reported_changed_file", "ref": "tests/test_durable_execution_engine_adr.py"}
+- {"kind": "reported_changed_file", "ref": "docs/dual-agent/durable-execution-engine-adr-20260604/"}
+
+### Raw Transcript Refs
+
+- {"bytes": 10836, "kind": "claude_stdout", "ref": "lead_result.stdout"}
+- {"kind": "claude_handoff_packet", "ref": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json"}
+
+### Would Change If
+
+A subsequent gate response changes the typed outcome, or supervisor probes reject this response.
+
+### Review Packet
+
+`{}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| invoke_claude_lead#1780579040744#157548335 |  |  | invoke_claude_lead | completed | 157548 | 157548335 | 1374813 | 11239 | P3 |  | {"attempt": 1, "budget_usd": 100.0, "corrective_retry": false, "dynamic_workflow_task_class": null, "execution_layer_mode": "lead_direct", "expected_decisions": [], "expected_objections": [], "expected_specialists": [], "explicit_model": null, "gate": "prd_review", "model": "opus", "model_source": "quality_default:best", "quality": "best", "requested_model": "opus", "task_id": "durable-execution-engine-adr-20260604", "timeout_s": 900} | {"cost_usd": 5.29883025, "model": "opus", "outcome_present": true, "probe_id": "P3", "probe_reason": "outcome_fidelity_ok", "probe_status": "green", "stderr_bytes": 0, "stdout_bytes": 10836, "tokens_in": 1374813, "tokens_out": 11239} |  |
+| evaluate_worker_invocation#1780579198293#54 | invoke_claude_lead#1780579040744#157548335 |  | evaluate_worker_invocation | green | 0 | 54 |  |  | P2 |  | {"gate": "prd_review", "probe_id": "P2", "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P2", "reason": "worker_orchestration_invocation_ok", "status": "green"} |  |
+| evaluate_outcome_fidelity#1780579198293#0 | invoke_claude_lead#1780579040744#157548335 |  | evaluate_outcome_fidelity | green | 0 | 0 |  |  | P3 |  | {"gate": "prd_review", "probe_id": "P3", "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P3", "reason": "outcome_fidelity_ok", "status": "green"} |  |
+| verify_planning_artifact_boundaries#1780579198293#2734 | invoke_claude_lead#1780579040744#157548335 |  | verify_planning_artifact_boundaries | green | 2 | 2734 |  |  | P1 |  | {"gate": "prd_review", "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json", "probe_id": "P1", "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P1", "reason": "planning_artifact_boundaries_ok", "status": "green"} |  |
+| evaluate_outcome_gate_decision#1780579198296#1542 | invoke_claude_lead#1780579040744#157548335 |  | evaluate_outcome_gate_decision | green | 1 | 1542 |  |  | P4 |  | {"gate": "prd_review", "probe_id": "P4", "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P4", "reason": "outcome_gate_decision_ok", "status": "green"} |  |
+
+## 6. PRD Review
+
+- event_id: `492388`
+- ts: `1780579198`
+- interaction_type: `gate_result`
+- status: `accepted`
+- attempts: `1`
+
+### Claude Code -> Codex
+
+Outcome summary: prd_review ACCEPT. All four PRD promise contracts map to real, matching source boundaries for the report-only durable-execution-engine ADR slice. P1: ADR scores 4 options (keep/Temporal/Restate/DBOS) on 6 criteria (0004:43-116). P2: config defaults engine=hand_rolled/temporal_spike_enabled=False (config.py:149), spike RuntimeError guard (:78), no temporalio import in repo. P3: spike id=idempotency_key + USE_EXISTING (:85-86), dup returns same handle (test:74), comparison test exercises real State.reserve_dual_agent_workflow_job (state.py:829, signature matches). P4: ADR names replace (:139-152) and stay-hand-rolled (:154-166) boundaries preserving gates/reviewer/artifacts/ledger.
+
+Decisions:
+
+- accept: prd_review gate should advance - PRD well-formed (clear promises, public boundaries, allowed/forbidden outcomes, Out-of-Scope anti-goals) and every promise maps to a real matching source boundary satisfying the report-only intent
+
+Specialists:
+
+- `lead`: `accept`
+
+Objections:
+
+- None recorded.
+
+### Validation
+
+- `P1`: `green` / `planning_artifact_boundaries_ok`
+- `P2`: `green` / `worker_orchestration_invocation_ok`
+- `P3`: `green` / `outcome_fidelity_ok`
+- `P4`: `green` / `outcome_gate_decision_ok`
+- `P_planning`: `green` / `planning_validation_ok`
+
+### Artifact Rigor
+
+- status: `ok`
+- reason: `required_artifacts_present`
+- artifact_policy: `strict`
+- required_artifacts: `prd`
+- present_artifacts: `grill_findings`, `implementation_plan`, `issues`, `prd`, `tdd_plan`
+- missing_artifacts: `[]`
+- missing_artifact_paths: `[]`
+- required_prerequisite_gates: `[]`
+- accepted_prerequisite_gates: `[]`
+- missing_prerequisite_gates: `[]`
+- gate_statuses: `{}`
+- user_facing: `False`
+- screenshots: `[]`
+- missing_screenshot_paths: `[]`
+- visual_validation: `{"allowed_sources": ["browser", "browser-use", "browser_use", "computer", "computer-use", "computer_use"], "evidence": [], "failures": [], "reason": "no_screenshots_supplied", "status": "not_required"}`
+
+### Trace Envelope
+
+- policy_verdict: `accepted`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| start_dual_agent_gate#1780579040735#157571209 |  |  | start_dual_agent_gate | completed | 157571 | 157571209 |  |  |  |  | {"agentic_lead_policy": "off", "artifact_policy": "strict", "dynamic_workflow_task_class": null, "execution_layer_mode": "lead_direct", "gate": "prd_review", "min_subagents": 3, "planning_artifact_count": 7, "required_evidence_grade": "self_reported", "required_roles": [], "screenshot_count": 0, "task_id": "durable-execution-engine-adr-20260604", "user_facing": false} | {"claude_gate_status": "accepted", "probe_statuses": {"P1": "green", "P2": "green", "P3": "green", "P4": "green", "P_planning": "green"}, "supervisor_final_status": "accepted"} |  |
+| invoke_claude_lead#1780579198308#0 | start_dual_agent_gate#1780579040735#157571209 |  | invoke_claude_lead | completed | 0 | 0 | 1374813 | 11239 |  |  | {"gate": "prd_review", "task_id": "durable-execution-engine-adr-20260604"} | {"outcome_present": true, "probe_reason": "outcome_fidelity_ok", "probe_status": "green", "tokens_in": 1374813, "tokens_out": 11239} |  |
+| probe_p2#1780579198308#0#p2 | invoke_claude_lead#1780579198308#0 |  | probe:P2 | green | 0 | 0 |  |  | P2 |  | {"probe_id": "P2"} | {"probe_id": "P2", "reason": "worker_orchestration_invocation_ok", "status": "green"} |  |
+| probe_p3#1780579198308#0#p3 | invoke_claude_lead#1780579198308#0 |  | probe:P3 | green | 0 | 0 |  |  | P3 |  | {"probe_id": "P3"} | {"probe_id": "P3", "reason": "outcome_fidelity_ok", "status": "green"} |  |
+| probe_p1#1780579198308#0#p1 | invoke_claude_lead#1780579198308#0 |  | probe:P1 | green | 0 | 0 |  |  | P1 |  | {"probe_id": "P1"} | {"probe_id": "P1", "reason": "planning_artifact_boundaries_ok", "status": "green"} |  |
+| probe_p4#1780579198308#0#p4 | invoke_claude_lead#1780579198308#0 |  | probe:P4 | green | 0 | 0 |  |  | P4 |  | {"probe_id": "P4"} | {"probe_id": "P4", "reason": "outcome_gate_decision_ok", "status": "green"} |  |
+| probe_p_planning#1780579198308#0#p_planning | invoke_claude_lead#1780579198308#0 |  | probe:P_planning | green | 0 | 0 |  |  | P_planning |  | {"probe_id": "P_planning"} | {"probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"} |  |
+
+## 7. PRD Review
+
+- event_id: `492389`
+- ts: `1780579198`
+- interaction_type: `round`
+- round_index: `1`
+
+### Codex -> Claude Code
+
+- Codex decision: `accept`
+- Codex confidence: `0.95`
+
+### Claude Code -> Codex
+
+- Claude decision: `accept`
+- Claude confidence: `0.9`
+
+### Disagreement / Grill Finding
+
+both agents accepted
+
+## 8. PRD Review
+
+- event_id: `492390`
+- ts: `1780579199`
+- interaction_type: `gate_decision`
+- sender: `codex`
+- recipient: `supervisor`
+- round_index: `1`
+- persona_id: `codex.lifecycle_reviewer`
+- addresses: `event:492389`
+
+### Message
+
+both agents accepted
+
+### Confidence
+
+- value: `0.95`
+- source: `codex_supervisor_deterministic_policy`
+- rationale: Codex accepted because the gate result, probes, claim checks, and optional Cursor review all satisfied the gate criteria.
+
+Criteria:
+
+- gate_status=accepted
+- decision=accept
+- all_supervisor_probes_green
+- claude_outcome_accepted
+- claim_verification_ok_or_not_required
+- cursor_accepted_or_not_requested
+
+Evidence:
+
+- P1:green
+- P2:green
+- P3:green
+- P4:green
+- P_planning:green
+
+### Claims
+
+- codex_decision=accept
+- claude_decision=accept
+- cursor_decision=accept
+
+### Objections
+
+- None recorded.
+
+### Questions
+
+- None recorded.
+
+### Critical Review
+
+`{"assumptions_to_verify": [], "contradictions_checked": ["supervisor probes", "claim verification", "cursor review"], "decision": "accept", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}], "missing_evidence": [], "schema_version": "critical-review/v1", "severity": "none", "strongest_objection": "none", "what_would_change_my_mind": "Every requirement is pass and both reviewers accept."}`
+
+### Tool Receipts
+
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/prd.md"], "claims": ["PRD promise contracts P1-P4 produced", "Report-only runtime decision boundary captured"], "kind": "skill_run", "receipt_id": "skill-to-prd-durable-execution-engine-adr-20260604", "skill": "to-prd", "stage": "to_prd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings.md"], "claims": ["PRD grill findings resolved", "Temporal spike is separated from production adoption"], "kind": "skill_run", "receipt_id": "skill-prd-grill-durable-execution-engine-adr-20260604", "skill": "grill-with-docs", "stage": "prd_grill", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/issues.md"], "claims": ["Issues cover every PRD promise P1-P4", "Each issue names public-boundary acceptance criteria"], "kind": "skill_run", "receipt_id": "skill-to-issues-durable-execution-engine-adr-20260604", "skill": "to-issues", "stage": "to_issues", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/tdd.md"], "claims": ["TDD cycles cover config default, Temporal fake-client idempotency, Layer-0 comparison, and ADR completeness"], "kind": "skill_run", "receipt_id": "skill-tdd-durable-execution-engine-adr-20260604", "skill": "tdd", "stage": "tdd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings-tdd.md"], "claims": ["TDD grill findings resolved", "Layer-0 comparison and no-default-change tests are required"], "kind": "skill_run", "receipt_id": "skill-tdd-grill-durable-execution-engine-adr-20260604", "skill": "grill-with-docs", "stage": "tdd_grill", "status": "passed"}
+- {"command": "uv run pytest tests/test_durable_execution_engine_spike.py tests/test_durable_execution_engine_adr.py -q", "kind": "test", "receipt_id": "receipt:pytest-durable-execution-engine-spike-focused", "status": "passed", "summary": "5 passed in 0.14s"}
+- {"command": "uv run pytest tests/test_target_config_load.py tests/test_durable_execution_engine_spike.py tests/test_durable_execution_engine_adr.py -q", "kind": "test", "receipt_id": "receipt:pytest-target-config-and-durable-engine", "status": "passed", "summary": "11 passed in 0.12s"}
+- {"command": "uv run pytest -q", "kind": "test", "receipt_id": "receipt:pytest-full-durable-execution-engine-adr", "status": "passed", "summary": "734 passed, 8 skipped in 109.39s"}
+- {"command": "uv run python -m compileall supervisor/durable_execution_engine_spike.py", "kind": "test", "receipt_id": "receipt:compileall-durable-execution-engine-spike", "status": "passed", "summary": "compileall completed with exit code 0"}
+- {"command": "git diff --check", "kind": "test", "receipt_id": "receipt:git-diff-check-durable-execution-engine-adr", "status": "passed", "summary": "no whitespace errors"}
+
+### Evidence Refs
+
+- {"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}
+
+### Raw Transcript Refs
+
+- {"kind": "claude_handoff_packet", "ref": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json"}
+- {"count": 5, "kind": "claude_reported_tests", "ref": "outcome.tests"}
+
+### Would Change If
+
+All required probes, claim receipts, and optional Cursor review accept.
+
+### Review Packet
+
+`{"confidence": {"criteria": ["gate_status=accepted", "decision=accept", "all_supervisor_probes_green", "claude_outcome_accepted", "claim_verification_ok_or_not_required", "cursor_accepted_or_not_requested"], "evidence": ["P1:green", "P2:green", "P3:green", "P4:green", "P_planning:green"], "rationale": "Codex accepted because the gate result, probes, claim checks, and optional Cursor review all satisfied the gate criteria.", "source": "codex_supervisor_deterministic_policy", "value": 0.95}, "critical_review": {"assumptions_to_verify": [], "contradictions_checked": ["supervisor probes", "claim verification", "cursor review"], "decision": "accept", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}], "missing_evidence": [], "schema_version": "critical-review/v1", "severity": "none", "strongest_objection": "none", "what_would_change_my_mind": "Every requirement is pass and both reviewers accept."}, "decision": "accept", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}], "findings": [], "gate": "prd_review", "independent_reviewer_panel_decision": null, "independent_reviewer_results": null, "objections": [], "requirements": [{"evidence": ["P1:green"], "requirement_id": "probe.P1", "status": "pass"}, {"evidence": ["P2:green"], "requirement_id": "probe.P2", "status": "pass"}, {"evidence": ["P3:green"], "requirement_id": "probe.P3", "status": "pass"}, {"evidence": ["P4:green"], "requirement_id": "probe.P4", "status": "pass"}, {"evidence": ["P_planning:green"], "requirement_id": "probe.P_planning", "status": "pass"}], "reviewer": "codex", "round_policy": {"blocking_findings": [], "close_allowed": true, "force_next_round": false}, "schema_version": "codex-review-packet/v1", "task_id": "durable-execution-engine-adr-20260604", "would_change_if": "Every requirement is pass and both reviewers accept."}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+## 9. Issues Review
+
+- event_id: `492393`
+- ts: `1780579200`
+- interaction_type: `planning_validation`
+- gate: `issues_review`
+- validator_version: `1.0.0`
+- verdict: `blocked`
+
+### Checks
+
+- AGG-001: pass
+- AGG-002: pass
+- GRILL-001: pass
+- GRILL-002: pass
+- GRILL-003: pass
+- ISS-001: fail: only 0 implementation slices
+- ISS-002: pass
+- ISS-003: pass
+- ISS-004: pass
+- PRD-001: pass
+- PRD-002: pass
+- PRD-003: pass
+- PRD-004: pass
+- PRD-005: pass
+- PRD-006: pass
+
+### Artifacts
+
+- {"kind": "prd", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/prd.md", "sha256": "b18b5bf2265174eb3094570cbdb86ba280995797abcd48f46396ac0e6e8dd783", "status": "accepted"}
+- {"kind": "issues", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/issues.md", "sha256": "59dd0da5fd0c95f085b34c479d86cd9299b68c134ffee88232b7267a3ff68575", "status": "blocked"}
+- {"kind": "grill_findings", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings.md", "sha256": "03b9d08a61a853e539ae4a823d94ff6ca17096f72ecc837c813491758ff95d6b", "status": "accepted"}
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| validate_planning_artifacts#1780579200347#2440 |  |  | validate_planning_artifacts | red | 2 | 2440 |  |  | P_planning |  | {"artifact_count": 7, "gate": "issues_review", "required_kinds": ["grill_findings", "issues", "prd"], "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P_planning", "reason": "planning_validation_failed", "status": "red"} | planning_validation_failed |
+
+## 10. Issues Review
+
+- event_id: `492394`
+- ts: `1780579200`
+- interaction_type: `gate_blocked_before_worker`
+- sender: `supervisor`
+- recipient: `codex`
+- round_index: `None`
+- persona_id: `supervisor.planning_validator`
+- addresses: `event:492393`
+
+### Message
+
+Planning validation blocked the gate before Claude Code /lead was invoked.
+
+### Confidence
+
+- value: `None`
+- source: `None`
+- rationale: None recorded.
+
+Criteria:
+
+- None recorded.
+
+Evidence:
+
+- None recorded.
+
+### Claims
+
+- None recorded.
+
+### Objections
+
+- None recorded.
+
+### Questions
+
+- None recorded.
+
+### Critical Review
+
+`{}`
+
+### Tool Receipts
+
+- None recorded.
+
+### Evidence Refs
+
+- None recorded.
+
+### Raw Transcript Refs
+
+- None recorded.
+
+### Would Change If
+
+None recorded.
+
+### Review Packet
+
+`{}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| validate_planning_artifacts#1780579200347#2440 |  |  | validate_planning_artifacts | red | 2 | 2440 |  |  | P_planning |  | {"artifact_count": 7, "gate": "issues_review", "required_kinds": ["grill_findings", "issues", "prd"], "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P_planning", "reason": "planning_validation_failed", "status": "red"} | planning_validation_failed |
+
+## 11. Issues Review
+
+- event_id: `492395`
+- ts: `1780579200`
+- interaction_type: `gate_result`
+- status: `blocked`
+- attempts: `0`
+
+### Supervisor Block
+
+Claude Code was not invoked.
+
+- reason: `planning_validation_failed`
+- claude_gate_status: `blocked`
+
+### Validation
+
+- `P_planning`: `red` / `planning_validation_failed`
+
+### Artifact Rigor
+
+- status: `ok`
+- reason: `required_artifacts_present`
+- artifact_policy: `strict`
+- required_artifacts: `prd`, `issues`, `grill_findings`
+- present_artifacts: `grill_findings`, `implementation_plan`, `issues`, `prd`, `tdd_plan`
+- missing_artifacts: `[]`
+- missing_artifact_paths: `[]`
+- required_prerequisite_gates: `prd_review`
+- accepted_prerequisite_gates: `prd_review`
+- missing_prerequisite_gates: `[]`
+- gate_statuses: `{"prd_review": "accepted"}`
+- user_facing: `False`
+- screenshots: `[]`
+- missing_screenshot_paths: `[]`
+- visual_validation: `{"allowed_sources": ["browser", "browser-use", "browser_use", "computer", "computer-use", "computer_use"], "evidence": [], "failures": [], "reason": "no_screenshots_supplied", "status": "not_required"}`
+
+### Trace Envelope
+
+- policy_verdict: `blocked`
+- failure_category: `system_design`
+- failure_subcategory: `artifact_quality`
+- failure_code: `planning_validation_failed`
+- mast_code: `FM-1.1`
+- mast_mode: `Disobey task specification`
+- mast_category: `Specification Issues`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| start_dual_agent_gate#1780579200346#5768 |  |  | start_dual_agent_gate | completed | 5 | 5768 |  |  |  |  | {"agentic_lead_policy": "off", "artifact_policy": "strict", "dynamic_workflow_task_class": null, "execution_layer_mode": "lead_direct", "gate": "issues_review", "min_subagents": 3, "planning_artifact_count": 7, "required_evidence_grade": "self_reported", "required_roles": [], "screenshot_count": 0, "task_id": "durable-execution-engine-adr-20260604", "user_facing": false} | {"claude_gate_status": "blocked", "probe_statuses": {"P_planning": "red"}, "supervisor_final_status": "blocked"} |  |
+| probe_p_planning#1780579200352#0#p_planning | start_dual_agent_gate#1780579200346#5768 |  | probe:P_planning | red | 0 | 0 |  |  | P_planning |  | {"probe_id": "P_planning"} | {"probe_id": "P_planning", "reason": "planning_validation_failed", "status": "red"} | planning_validation_failed |
+
+## 12. Issues Review
+
+- event_id: `492396`
+- ts: `1780579200`
+- interaction_type: `round`
+- round_index: `1`
+
+### Codex -> Claude Code
+
+- Codex decision: `deny`
+- Codex confidence: `0.75`
+
+### Claude Code -> Codex
+
+- Claude decision: `revise`
+- Claude confidence: `0.0`
+
+### Disagreement / Grill Finding
+
+gate blocked
+
+## 13. Issues Review
+
+- event_id: `492397`
+- ts: `1780579201`
+- interaction_type: `gate_decision`
+- sender: `codex`
+- recipient: `supervisor`
+- round_index: `1`
+- persona_id: `codex.lifecycle_reviewer`
+- addresses: `event:492396`
+
+### Message
+
+gate blocked
+
+### Confidence
+
+- value: `0.75`
+- source: `codex_supervisor_deterministic_policy`
+- rationale: Codex denied advancement because one or more supervisor probes failed.
+
+Criteria:
+
+- gate_status=blocked
+- decision=deny
+- blocked_or_failed_probes=P_planning
+
+Evidence:
+
+- P_planning:red
+
+### Claims
+
+- codex_decision=deny
+- claude_decision=revise
+- cursor_decision=accept
+
+### Objections
+
+- gate blocked
+
+### Questions
+
+- What corrective input should be applied before the next attempt?
+
+### Critical Review
+
+`{"assumptions_to_verify": [], "contradictions_checked": ["supervisor probes", "claim verification", "cursor review"], "decision": "deny", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}], "missing_evidence": ["probe P_planning failed"], "schema_version": "critical-review/v1", "severity": "important", "strongest_objection": "probe P_planning failed", "what_would_change_my_mind": "Every requirement is pass and both reviewers accept."}`
+
+### Tool Receipts
+
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/prd.md"], "claims": ["PRD promise contracts P1-P4 produced", "Report-only runtime decision boundary captured"], "kind": "skill_run", "receipt_id": "skill-to-prd-durable-execution-engine-adr-20260604", "skill": "to-prd", "stage": "to_prd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings.md"], "claims": ["PRD grill findings resolved", "Temporal spike is separated from production adoption"], "kind": "skill_run", "receipt_id": "skill-prd-grill-durable-execution-engine-adr-20260604", "skill": "grill-with-docs", "stage": "prd_grill", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/issues.md"], "claims": ["Issues cover every PRD promise P1-P4", "Each issue names public-boundary acceptance criteria"], "kind": "skill_run", "receipt_id": "skill-to-issues-durable-execution-engine-adr-20260604", "skill": "to-issues", "stage": "to_issues", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/tdd.md"], "claims": ["TDD cycles cover config default, Temporal fake-client idempotency, Layer-0 comparison, and ADR completeness"], "kind": "skill_run", "receipt_id": "skill-tdd-durable-execution-engine-adr-20260604", "skill": "tdd", "stage": "tdd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings-tdd.md"], "claims": ["TDD grill findings resolved", "Layer-0 comparison and no-default-change tests are required"], "kind": "skill_run", "receipt_id": "skill-tdd-grill-durable-execution-engine-adr-20260604", "skill": "grill-with-docs", "stage": "tdd_grill", "status": "passed"}
+- {"command": "uv run pytest tests/test_durable_execution_engine_spike.py tests/test_durable_execution_engine_adr.py -q", "kind": "test", "receipt_id": "receipt:pytest-durable-execution-engine-spike-focused", "status": "passed", "summary": "5 passed in 0.14s"}
+- {"command": "uv run pytest tests/test_target_config_load.py tests/test_durable_execution_engine_spike.py tests/test_durable_execution_engine_adr.py -q", "kind": "test", "receipt_id": "receipt:pytest-target-config-and-durable-engine", "status": "passed", "summary": "11 passed in 0.12s"}
+- {"command": "uv run pytest -q", "kind": "test", "receipt_id": "receipt:pytest-full-durable-execution-engine-adr", "status": "passed", "summary": "734 passed, 8 skipped in 109.39s"}
+- {"command": "uv run python -m compileall supervisor/durable_execution_engine_spike.py", "kind": "test", "receipt_id": "receipt:compileall-durable-execution-engine-spike", "status": "passed", "summary": "compileall completed with exit code 0"}
+- {"command": "git diff --check", "kind": "test", "receipt_id": "receipt:git-diff-check-durable-execution-engine-adr", "status": "passed", "summary": "no whitespace errors"}
+
+### Evidence Refs
+
+- {"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}
+
+### Raw Transcript Refs
+
+- {"kind": "claude_handoff_packet", "ref": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json"}
+
+### Would Change If
+
+All required probes, claim receipts, and optional Cursor review accept.
+
+### Review Packet
+
+`{"confidence": {"criteria": ["gate_status=blocked", "decision=deny", "blocked_or_failed_probes=P_planning"], "evidence": ["P_planning:red"], "rationale": "Codex denied advancement because one or more supervisor probes failed.", "source": "codex_supervisor_deterministic_policy", "value": 0.75}, "critical_review": {"assumptions_to_verify": [], "contradictions_checked": ["supervisor probes", "claim verification", "cursor review"], "decision": "deny", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}], "missing_evidence": ["probe P_planning failed"], "schema_version": "critical-review/v1", "severity": "important", "strongest_objection": "probe P_planning failed", "what_would_change_my_mind": "Every requirement is pass and both reviewers accept."}, "decision": "deny", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}], "findings": [{"code": "P_planning", "evidence": ["P_planning:red"], "finding_id": "finding-001", "fix": "probe P_planning failed", "receipt_replay": {"failures": [], "observed_receipt_ids": ["skill-to-prd-durable-execution-engine-adr-20260604", "skill-prd-grill-durable-execution-engine-adr-20260604", "skill-to-issues-durable-execution-engine-adr-20260604", "skill-tdd-durable-execution-engine-adr-20260604", "skill-tdd-grill-durable-execution-engine-adr-20260604", "receipt:pytest-durable-execution-engine-spike-focused", "receipt:pytest-target-config-and-durable-engine", "receipt:pytest-full-durable-execution-engine-adr", "receipt:compileall-durable-execution-engine-spike", "receipt:git-diff-check-durable-execution-engine-adr"]}, "ref": "probe.P_planning", "requirement_id": "probe.P_planning", "severity": "IMPORTANT", "title": "probe P_planning failed"}], "gate": "issues_review", "independent_reviewer_panel_decision": null, "independent_reviewer_results": null, "objections": ["gate blocked"], "requirements": [{"evidence": ["P_planning:red"], "requirement_id": "probe.P_planning", "status": "fail"}], "reviewer": "codex", "round_policy": {"blocking_findings": ["finding-001"], "close_allowed": false, "force_next_round": true}, "schema_version": "codex-review-packet/v1", "task_id": "durable-execution-engine-adr-20260604", "would_change_if": "Every requirement is pass and both reviewers accept."}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+## 14. Unknown
+
+- event_id: `492424`
+- ts: `1780579243`
+- interaction_type: `gate_result`
+- status: `None`
+- attempts: `None`
+
+### Supervisor Block
+
+Claude Code was not invoked.
+
+- reason: `unknown`
+
+### Validation
+
+- None recorded.
+
+### Artifact Rigor
+
+- None recorded.
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+## 15. Workflow Start
+
+- event_id: `492426`
+- ts: `1780579244`
+- interaction_type: `gate_result`
+- status: `accepted`
+- attempts: `None`
+
+### Supervisor Block
+
+Claude Code was not invoked.
+
+- reason: `accepted`
+
+### Validation
+
+- None recorded.
+
+### Artifact Rigor
+
+- None recorded.
+
+### Trace Envelope
+
+- policy_verdict: `accepted`
+- failure_taxonomy: `None`
+
+## 16. Issues Review
+
+- event_id: `492428`
+- ts: `1780579245`
+- interaction_type: `planning_validation`
+- gate: `issues_review`
+- validator_version: `1.0.0`
+- verdict: `accepted`
+
+### Checks
+
+- AGG-001: pass
+- AGG-002: pass
+- GRILL-001: pass
+- GRILL-002: pass
+- GRILL-003: pass
+- ISS-001: pass
+- ISS-002: pass
+- ISS-003: pass
+- ISS-004: pass
+- PRD-001: pass
+- PRD-002: pass
+- PRD-003: pass
+- PRD-004: pass
+- PRD-005: pass
+- PRD-006: pass
+
+### Artifacts
+
+- {"kind": "prd", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/prd.md", "sha256": "b18b5bf2265174eb3094570cbdb86ba280995797abcd48f46396ac0e6e8dd783", "status": "accepted"}
+- {"kind": "issues", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/issues.md", "sha256": "de40ccf9fb19d75c694b7e949780c8bbe16c4d0139b55e56c2a2070018c4175f", "status": "accepted"}
+- {"kind": "grill_findings", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings.md", "sha256": "03b9d08a61a853e539ae4a823d94ff6ca17096f72ecc837c813491758ff95d6b", "status": "accepted"}
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| validate_planning_artifacts#1780579245249#1998 |  |  | validate_planning_artifacts | green | 1 | 1998 |  |  | P_planning |  | {"artifact_count": 7, "gate": "issues_review", "required_kinds": ["grill_findings", "issues", "prd"], "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"} |  |
+
+## 17. Issues Review
+
+- event_id: `492429`
+- ts: `1780579245`
+- interaction_type: `gate_request`
+- sender: `codex`
+- recipient: `claude_code`
+- round_index: `None`
+- persona_id: `codex.lifecycle_reviewer`
+- addresses: `event:492428`, `handoff:/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json`
+
+### Message
+
+Supervisor-owned workflow gate: issues_review.
+
+Intent:
+Decide via ADR whether Temporal, Restate, or DBOS should replace parts of the durable job stack, with only a disabled report-only Temporal submit spike.
+
+Review this gate against the current source artifacts and return a typed dual_agent_outcome.
+Use decisions/objections to say whether the gate should accept, revise, or deny.
+
+### Confidence
+
+- value: `None`
+- source: `None`
+- rationale: None recorded.
+
+Criteria:
+
+- None recorded.
+
+Evidence:
+
+- None recorded.
+
+### Claims
+
+- None recorded.
+
+### Objections
+
+- None recorded.
+
+### Questions
+
+- None recorded.
+
+### Critical Review
+
+`{}`
+
+### Tool Receipts
+
+- None recorded.
+
+### Evidence Refs
+
+- None recorded.
+
+### Raw Transcript Refs
+
+- None recorded.
+
+### Would Change If
+
+None recorded.
+
+### Review Packet
+
+`{}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| validate_planning_artifacts#1780579245249#1998 |  |  | validate_planning_artifacts | green | 1 | 1998 |  |  | P_planning |  | {"artifact_count": 7, "gate": "issues_review", "required_kinds": ["grill_findings", "issues", "prd"], "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"} |  |
+| write_handoff_packet#1780579245253#1427 |  |  | write_handoff_packet | completed | 1 | 1427 |  |  |  |  | {"artifact_count": 7, "gate": "issues_review", "task_id": "durable-execution-engine-adr-20260604"} | {"artifact_count": 7, "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json"} |  |
+
+## 18. Issues Review
+
+- event_id: `492445`
+- ts: `1780579364`
+- interaction_type: `gate_response`
+- sender: `claude_code`
+- recipient: `codex`
+- round_index: `None`
+- persona_id: `claude_code.lead_worker`
+- addresses: `event:492429`, `handoff:/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json`
+
+### Message
+
+issues_review ACCEPT. 4 slices map to PRD P1-P4 with no orphans; every code-backed AC verified at current source (config defaults engine=hand_rolled/temporal_spike_enabled=False, disabled spike raises RuntimeError, client boundary passthrough, real State.reserve_dual_agent_workflow_job comparison non-vacuous, ADR six criteria+spike result+recommendation). Diff frozen config.py +7/config.example.yaml +7, no state.py change.
+
+### Confidence
+
+- value: `0.9`
+- source: `claude_code_self_reported`
+- rationale: All code-backed ACs verified by direct read of issues.md, config.py diff, spike module, both test files, and ADR section grep; coverage of P1-P4 is complete with non-vacuous Layer-0 test. Held below 0.95 because pytest was not run (test_status unknown) and shasum integrity is self_reported per packet policy, and ISS-4 ACs are forward-looking.
+
+Criteria:
+
+- 4 slices map to PRD P1-P4 with no orphan slices (verified)
+- Each code-backed AC traces to a real source line (verified)
+- ISS-2 test calls real State.reserve_dual_agent_workflow_job, non-vacuous (verified)
+- No state.py / default-runtime change (verified via git status + diff)
+- pytest pass/fail (NOT verified - un-run)
+- artifact shasum match (NOT re-verified - self_reported)
+
+Evidence:
+
+- tests/test_durable_execution_engine_spike.py::test_durable_execution_defaults_keep_hand_rolled_runtime
+- tests/test_durable_execution_engine_spike.py::test_temporal_spike_is_disabled_until_flagged
+- tests/test_durable_execution_engine_spike.py::test_temporal_spike_uses_idempotency_key_as_workflow_id_with_use_existing
+- tests/test_durable_execution_engine_spike.py::test_spike_report_compares_temporal_submit_against_layer0_reservation
+- tests/test_durable_execution_engine_adr.py::test_adr_durable_execution_engine_decision_contains_required_sections
+- supervisor/config.py
+- config.example.yaml
+- docs/adr/0004-durable-execution-engine-decision.md
+- supervisor/durable_execution_engine_spike.py
+- tests/test_durable_execution_engine_spike.py
+- tests/test_durable_execution_engine_adr.py
+- docs/dual-agent/durable-execution-engine-adr-20260604/
+- ACCEPT issues_review: 4 slices cover PRD P1-P4 with no orphan slices
+- ISS-1 ACs source-backed: config.py DurableExecutionCfg defaults (engine=hand_rolled, temporal_spike_enabled=False) + spike.py:78-79 RuntimeError + :81-87 client passthrough + Protocol:18 no-SDK
+- ISS-2 ACs source-backed and non-vacuous: real State.reserve_dual_agent_workflow_job test:109-130, summary:143-152, default_runtime_changed=False spike.py:130
+- ISS-3 ACs source-backed: ADR six criteria:28-39, Spike Result:118, Recommendation:198/No Default Runtime Change:185, tests:18-39
+- ISS-4 is a forward-looking gate/regression validation slice (process ACs), acceptable as validation stage
+
+### Claims
+
+- 4 issues slices cover all PRD promises P1-P4 with no orphans
+- Every implementation-facing AC maps to a verified source boundary
+- ISS-2 comparison test exercises the real Layer-0 reservation path (non-vacuous)
+- Default runtime is unchanged; diff frozen at 14 insertions across config files
+- No live Temporal SDK is imported anywhere in code
+
+### Objections
+
+- ISS-4 ACs (focused tests pass, full suite green, gate accepts) are spec-form/forward-looking and not source-verifiable at this gate
+- ISS-1/ISS-2 'Public boundary' names (dual_agent_runner, target_config_load) do not match actual test targets (spike module + DurableExecutionCfg() directly) - minor naming nit, non-blocking
+
+### Questions
+
+- None recorded.
+
+### Critical Review
+
+`{"assumptions_to_verify": ["Running pytest on the two new test files passes green", "The on-disk artifact sha256 values still match the handoff packet"], "contradictions_checked": ["Whether any PRD promise is left uncovered by the 4 slices \u2014 none; P1-P4 all covered", "Whether any slice is orphaned (no PRD promise) \u2014 none; all 4 cite PRD promises", "Whether 'no live Temporal SDK' AC is contradicted by an import \u2014 no temporalio in supervisor/ or tests/", "Whether ISS-2 is vacuous/mocked on the Layer-0 side \u2014 it uses the real State.reserve_dual_agent_workflow_job", "Whether default runtime changed \u2014 git status/diff show only config additions, no state.py change"], "decision": "accept", "evidence_refs": [], "missing_evidence": ["pytest run output for the 5 tests (test_status unknown)", "independent shasum reconfirmation of the 6 planning artifacts (approval not sought; self_reported per policy)"], "schema_version": "critical-review/v1", "severity": "low", "strongest_objection": "ISS-4's acceptance criteria are process/forward-looking gates (focused tests pass, full suite green, gate accepts through outcome review) that cannot be source-verified at the issues stage, and ISS-1/ISS-2 cite public boundaries (dual_agent_runner, target_config_load) that do not exist as named symbols in the actual tests.", "what_would_change_my_mind": "Evidence that an AC references a code path that does not exist, that a PRD promise is uncovered, that ISS-2's Layer-0 arm is mocked rather than calling real state, or that the spike/config change actually alters the production submit/default runtime."}`
+
+### Tool Receipts
+
+- None recorded.
+
+### Evidence Refs
+
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_spike.py::test_durable_execution_defaults_keep_hand_rolled_runtime", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_spike.py::test_temporal_spike_is_disabled_until_flagged", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_spike.py::test_temporal_spike_uses_idempotency_key_as_workflow_id_with_use_existing", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_spike.py::test_spike_report_compares_temporal_submit_against_layer0_reservation", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_adr.py::test_adr_durable_execution_engine_decision_contains_required_sections", "status": "unknown"}
+- {"kind": "reported_changed_file", "ref": "supervisor/config.py"}
+- {"kind": "reported_changed_file", "ref": "config.example.yaml"}
+- {"kind": "reported_changed_file", "ref": "docs/adr/0004-durable-execution-engine-decision.md"}
+- {"kind": "reported_changed_file", "ref": "supervisor/durable_execution_engine_spike.py"}
+- {"kind": "reported_changed_file", "ref": "tests/test_durable_execution_engine_spike.py"}
+- {"kind": "reported_changed_file", "ref": "tests/test_durable_execution_engine_adr.py"}
+- {"kind": "reported_changed_file", "ref": "docs/dual-agent/durable-execution-engine-adr-20260604/"}
+
+### Raw Transcript Refs
+
+- {"bytes": 9588, "kind": "claude_stdout", "ref": "lead_result.stdout"}
+- {"kind": "claude_handoff_packet", "ref": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json"}
+
+### Would Change If
+
+A subsequent gate response changes the typed outcome, or supervisor probes reject this response.
+
+### Review Packet
+
+`{}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| invoke_claude_lead#1780579245255#118861859 |  |  | invoke_claude_lead | completed | 118861 | 118861859 | 961814 | 9126 | P3 |  | {"attempt": 1, "budget_usd": 100.0, "corrective_retry": false, "dynamic_workflow_task_class": null, "execution_layer_mode": "lead_direct", "expected_decisions": [], "expected_objections": [], "expected_specialists": [], "explicit_model": null, "gate": "issues_review", "model": "opus", "model_source": "quality_default:best", "quality": "best", "requested_model": "opus", "task_id": "durable-execution-engine-adr-20260604", "timeout_s": 900} | {"cost_usd": 2.863998, "model": "opus", "outcome_present": true, "probe_id": "P3", "probe_reason": "outcome_fidelity_ok", "probe_status": "green", "stderr_bytes": 0, "stdout_bytes": 9588, "tokens_in": 961814, "tokens_out": 9126} |  |
+| evaluate_worker_invocation#1780579364118#91 | invoke_claude_lead#1780579245255#118861859 |  | evaluate_worker_invocation | green | 0 | 91 |  |  | P2 |  | {"gate": "issues_review", "probe_id": "P2", "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P2", "reason": "worker_orchestration_invocation_ok", "status": "green"} |  |
+| evaluate_outcome_fidelity#1780579364118#0 | invoke_claude_lead#1780579245255#118861859 |  | evaluate_outcome_fidelity | green | 0 | 0 |  |  | P3 |  | {"gate": "issues_review", "probe_id": "P3", "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P3", "reason": "outcome_fidelity_ok", "status": "green"} |  |
+| verify_planning_artifact_boundaries#1780579364118#3201 | invoke_claude_lead#1780579245255#118861859 |  | verify_planning_artifact_boundaries | green | 3 | 3201 |  |  | P1 |  | {"gate": "issues_review", "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json", "probe_id": "P1", "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P1", "reason": "planning_artifact_boundaries_ok", "status": "green"} |  |
+| evaluate_outcome_gate_decision#1780579364121#3341 | invoke_claude_lead#1780579245255#118861859 |  | evaluate_outcome_gate_decision | green | 3 | 3341 |  |  | P4 |  | {"gate": "issues_review", "probe_id": "P4", "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P4", "reason": "outcome_gate_decision_ok", "status": "green"} |  |
+
+## 19. Issues Review
+
+- event_id: `492446`
+- ts: `1780579364`
+- interaction_type: `gate_result`
+- status: `accepted`
+- attempts: `1`
+
+### Claude Code -> Codex
+
+Outcome summary: issues_review ACCEPT. 4 slices map to PRD P1-P4 with no orphans; every code-backed AC verified at current source (config defaults engine=hand_rolled/temporal_spike_enabled=False, disabled spike raises RuntimeError, client boundary passthrough, real State.reserve_dual_agent_workflow_job comparison non-vacuous, ADR six criteria+spike result+recommendation). Diff frozen config.py +7/config.example.yaml +7, no state.py change.
+
+Decisions:
+
+- ACCEPT issues_review: 4 slices cover PRD P1-P4 with no orphan slices
+- ISS-1 ACs source-backed: config.py DurableExecutionCfg defaults (engine=hand_rolled, temporal_spike_enabled=False) + spike.py:78-79 RuntimeError + :81-87 client passthrough + Protocol:18 no-SDK
+- ISS-2 ACs source-backed and non-vacuous: real State.reserve_dual_agent_workflow_job test:109-130, summary:143-152, default_runtime_changed=False spike.py:130
+- ISS-3 ACs source-backed: ADR six criteria:28-39, Spike Result:118, Recommendation:198/No Default Runtime Change:185, tests:18-39
+- ISS-4 is a forward-looking gate/regression validation slice (process ACs), acceptable as validation stage
+
+Specialists:
+
+- `lead-issues-review`: `accept`
+
+Objections:
+
+- ISS-4 ACs (focused tests pass, full suite green, gate accepts) are spec-form/forward-looking and not source-verifiable at this gate
+- ISS-1/ISS-2 'Public boundary' names (dual_agent_runner, target_config_load) do not match actual test targets (spike module + DurableExecutionCfg() directly) - minor naming nit, non-blocking
+
+### Validation
+
+- `P1`: `green` / `planning_artifact_boundaries_ok`
+- `P2`: `green` / `worker_orchestration_invocation_ok`
+- `P3`: `green` / `outcome_fidelity_ok`
+- `P4`: `green` / `outcome_gate_decision_ok`
+- `P_planning`: `green` / `planning_validation_ok`
+
+### Artifact Rigor
+
+- status: `ok`
+- reason: `required_artifacts_present`
+- artifact_policy: `strict`
+- required_artifacts: `prd`, `issues`, `grill_findings`
+- present_artifacts: `grill_findings`, `implementation_plan`, `issues`, `prd`, `tdd_plan`
+- missing_artifacts: `[]`
+- missing_artifact_paths: `[]`
+- required_prerequisite_gates: `prd_review`
+- accepted_prerequisite_gates: `prd_review`
+- missing_prerequisite_gates: `[]`
+- gate_statuses: `{"issues_review": "blocked", "prd_review": "accepted"}`
+- user_facing: `False`
+- screenshots: `[]`
+- missing_screenshot_paths: `[]`
+- visual_validation: `{"allowed_sources": ["browser", "browser-use", "browser_use", "computer", "computer-use", "computer_use"], "evidence": [], "failures": [], "reason": "no_screenshots_supplied", "status": "not_required"}`
+
+### Trace Envelope
+
+- policy_verdict: `accepted`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| start_dual_agent_gate#1780579245249#118884161 |  |  | start_dual_agent_gate | completed | 118884 | 118884161 |  |  |  |  | {"agentic_lead_policy": "off", "artifact_policy": "strict", "dynamic_workflow_task_class": null, "execution_layer_mode": "lead_direct", "gate": "issues_review", "min_subagents": 3, "planning_artifact_count": 7, "required_evidence_grade": "self_reported", "required_roles": [], "screenshot_count": 0, "task_id": "durable-execution-engine-adr-20260604", "user_facing": false} | {"claude_gate_status": "accepted", "probe_statuses": {"P1": "green", "P2": "green", "P3": "green", "P4": "green", "P_planning": "green"}, "supervisor_final_status": "accepted"} |  |
+| invoke_claude_lead#1780579364134#0 | start_dual_agent_gate#1780579245249#118884161 |  | invoke_claude_lead | completed | 0 | 0 | 961814 | 9126 |  |  | {"gate": "issues_review", "task_id": "durable-execution-engine-adr-20260604"} | {"outcome_present": true, "probe_reason": "outcome_fidelity_ok", "probe_status": "green", "tokens_in": 961814, "tokens_out": 9126} |  |
+| probe_p2#1780579364134#0#p2 | invoke_claude_lead#1780579364134#0 |  | probe:P2 | green | 0 | 0 |  |  | P2 |  | {"probe_id": "P2"} | {"probe_id": "P2", "reason": "worker_orchestration_invocation_ok", "status": "green"} |  |
+| probe_p3#1780579364134#0#p3 | invoke_claude_lead#1780579364134#0 |  | probe:P3 | green | 0 | 0 |  |  | P3 |  | {"probe_id": "P3"} | {"probe_id": "P3", "reason": "outcome_fidelity_ok", "status": "green"} |  |
+| probe_p1#1780579364134#0#p1 | invoke_claude_lead#1780579364134#0 |  | probe:P1 | green | 0 | 0 |  |  | P1 |  | {"probe_id": "P1"} | {"probe_id": "P1", "reason": "planning_artifact_boundaries_ok", "status": "green"} |  |
+| probe_p4#1780579364134#0#p4 | invoke_claude_lead#1780579364134#0 |  | probe:P4 | green | 0 | 0 |  |  | P4 |  | {"probe_id": "P4"} | {"probe_id": "P4", "reason": "outcome_gate_decision_ok", "status": "green"} |  |
+| probe_p_planning#1780579364134#0#p_planning | invoke_claude_lead#1780579364134#0 |  | probe:P_planning | green | 0 | 0 |  |  | P_planning |  | {"probe_id": "P_planning"} | {"probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"} |  |
+
+## 20. Issues Review
+
+- event_id: `492447`
+- ts: `1780579364`
+- interaction_type: `round`
+- round_index: `1`
+
+### Codex -> Claude Code
+
+- Codex decision: `accept`
+- Codex confidence: `0.95`
+
+### Claude Code -> Codex
+
+- Claude decision: `accept`
+- Claude confidence: `0.9`
+
+### Disagreement / Grill Finding
+
+both agents accepted
+
+## 21. Issues Review
+
+- event_id: `492448`
+- ts: `1780579364`
+- interaction_type: `gate_decision`
+- sender: `codex`
+- recipient: `supervisor`
+- round_index: `1`
+- persona_id: `codex.lifecycle_reviewer`
+- addresses: `event:492447`
+
+### Message
+
+both agents accepted
+
+### Confidence
+
+- value: `0.95`
+- source: `codex_supervisor_deterministic_policy`
+- rationale: Codex accepted because the gate result, probes, claim checks, and optional Cursor review all satisfied the gate criteria.
+
+Criteria:
+
+- gate_status=accepted
+- decision=accept
+- all_supervisor_probes_green
+- claude_outcome_accepted
+- claim_verification_ok_or_not_required
+- cursor_accepted_or_not_requested
+
+Evidence:
+
+- P1:green
+- P2:green
+- P3:green
+- P4:green
+- P_planning:green
+
+### Claims
+
+- codex_decision=accept
+- claude_decision=accept
+- cursor_decision=accept
+
+### Objections
+
+- None recorded.
+
+### Questions
+
+- None recorded.
+
+### Critical Review
+
+`{"assumptions_to_verify": [], "contradictions_checked": ["supervisor probes", "claim verification", "cursor review"], "decision": "accept", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}], "missing_evidence": [], "schema_version": "critical-review/v1", "severity": "none", "strongest_objection": "none", "what_would_change_my_mind": "Every requirement is pass and both reviewers accept."}`
+
+### Tool Receipts
+
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/prd.md"], "claims": ["PRD promise contracts P1-P4 produced", "Report-only runtime decision boundary captured"], "kind": "skill_run", "receipt_id": "skill-to-prd-durable-execution-engine-adr-20260604", "skill": "to-prd", "stage": "to_prd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings.md"], "claims": ["PRD grill findings resolved", "Temporal spike is separated from production adoption"], "kind": "skill_run", "receipt_id": "skill-prd-grill-durable-execution-engine-adr-20260604", "skill": "grill-with-docs", "stage": "prd_grill", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/issues.md"], "claims": ["Issues cover every PRD promise P1-P4", "Each issue names public-boundary acceptance criteria"], "kind": "skill_run", "receipt_id": "skill-to-issues-durable-execution-engine-adr-20260604", "skill": "to-issues", "stage": "to_issues", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/tdd.md"], "claims": ["TDD cycles cover config default, Temporal fake-client idempotency, Layer-0 comparison, and ADR completeness"], "kind": "skill_run", "receipt_id": "skill-tdd-durable-execution-engine-adr-20260604", "skill": "tdd", "stage": "tdd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings-tdd.md"], "claims": ["TDD grill findings resolved", "Layer-0 comparison and no-default-change tests are required"], "kind": "skill_run", "receipt_id": "skill-tdd-grill-durable-execution-engine-adr-20260604", "skill": "grill-with-docs", "stage": "tdd_grill", "status": "passed"}
+- {"command": "uv run pytest tests/test_durable_execution_engine_spike.py tests/test_durable_execution_engine_adr.py -q", "kind": "test", "receipt_id": "receipt:pytest-durable-execution-engine-spike-focused", "status": "passed", "summary": "5 passed in 0.14s"}
+- {"command": "uv run pytest tests/test_target_config_load.py tests/test_durable_execution_engine_spike.py tests/test_durable_execution_engine_adr.py -q", "kind": "test", "receipt_id": "receipt:pytest-target-config-and-durable-engine", "status": "passed", "summary": "11 passed in 0.12s"}
+- {"command": "uv run pytest -q", "kind": "test", "receipt_id": "receipt:pytest-full-durable-execution-engine-adr", "status": "passed", "summary": "734 passed, 8 skipped in 109.39s"}
+- {"command": "uv run python -m compileall supervisor/durable_execution_engine_spike.py", "kind": "test", "receipt_id": "receipt:compileall-durable-execution-engine-spike", "status": "passed", "summary": "compileall completed with exit code 0"}
+- {"command": "git diff --check", "kind": "test", "receipt_id": "receipt:git-diff-check-durable-execution-engine-adr", "status": "passed", "summary": "no whitespace errors"}
+
+### Evidence Refs
+
+- {"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}
+
+### Raw Transcript Refs
+
+- {"kind": "claude_handoff_packet", "ref": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json"}
+- {"count": 5, "kind": "claude_reported_tests", "ref": "outcome.tests"}
+
+### Would Change If
+
+All required probes, claim receipts, and optional Cursor review accept.
+
+### Review Packet
+
+`{"confidence": {"criteria": ["gate_status=accepted", "decision=accept", "all_supervisor_probes_green", "claude_outcome_accepted", "claim_verification_ok_or_not_required", "cursor_accepted_or_not_requested"], "evidence": ["P1:green", "P2:green", "P3:green", "P4:green", "P_planning:green"], "rationale": "Codex accepted because the gate result, probes, claim checks, and optional Cursor review all satisfied the gate criteria.", "source": "codex_supervisor_deterministic_policy", "value": 0.95}, "critical_review": {"assumptions_to_verify": [], "contradictions_checked": ["supervisor probes", "claim verification", "cursor review"], "decision": "accept", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}], "missing_evidence": [], "schema_version": "critical-review/v1", "severity": "none", "strongest_objection": "none", "what_would_change_my_mind": "Every requirement is pass and both reviewers accept."}, "decision": "accept", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}], "findings": [], "gate": "issues_review", "independent_reviewer_panel_decision": null, "independent_reviewer_results": null, "objections": [], "requirements": [{"evidence": ["P1:green"], "requirement_id": "probe.P1", "status": "pass"}, {"evidence": ["P2:green"], "requirement_id": "probe.P2", "status": "pass"}, {"evidence": ["P3:green"], "requirement_id": "probe.P3", "status": "pass"}, {"evidence": ["P4:green"], "requirement_id": "probe.P4", "status": "pass"}, {"evidence": ["P_planning:green"], "requirement_id": "probe.P_planning", "status": "pass"}], "reviewer": "codex", "round_policy": {"blocking_findings": [], "close_allowed": true, "force_next_round": false}, "schema_version": "codex-review-packet/v1", "task_id": "durable-execution-engine-adr-20260604", "would_change_if": "Every requirement is pass and both reviewers accept."}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+## 22. TDD Review
+
+- event_id: `492451`
+- ts: `1780579366`
+- interaction_type: `planning_validation`
+- gate: `tdd_review`
+- validator_version: `1.0.0`
+- verdict: `accepted`
+
+### Checks
+
+- AGG-001: pass
+- AGG-002: pass
+- GRILL-001: pass
+- GRILL-002: pass
+- GRILL-003: pass
+- ISS-001: pass
+- ISS-002: pass
+- ISS-003: pass
+- ISS-004: pass
+- PRD-001: pass
+- PRD-002: pass
+- PRD-003: pass
+- PRD-004: pass
+- PRD-005: pass
+- PRD-006: pass
+- TDD-001: pass
+- TDD-002: pass
+- TDD-003: pass
+- TDD-004: pass
+
+### Artifacts
+
+- {"kind": "prd", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/prd.md", "sha256": "b18b5bf2265174eb3094570cbdb86ba280995797abcd48f46396ac0e6e8dd783", "status": "accepted"}
+- {"kind": "issues", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/issues.md", "sha256": "de40ccf9fb19d75c694b7e949780c8bbe16c4d0139b55e56c2a2070018c4175f", "status": "accepted"}
+- {"kind": "tdd_plan", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/tdd.md", "sha256": "610091dd991b7f96eaecfb24cd668ac69184b6c657788e86451de79635533464", "status": "accepted"}
+- {"kind": "grill_findings", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings.md", "sha256": "03b9d08a61a853e539ae4a823d94ff6ca17096f72ecc837c813491758ff95d6b", "status": "accepted"}
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| validate_planning_artifacts#1780579366272#4229 |  |  | validate_planning_artifacts | green | 4 | 4229 |  |  | P_planning |  | {"artifact_count": 7, "gate": "tdd_review", "required_kinds": ["grill_findings", "issues", "prd", "tdd_plan"], "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"} |  |
+
+## 23. TDD Review
+
+- event_id: `492452`
+- ts: `1780579366`
+- interaction_type: `gate_request`
+- sender: `codex`
+- recipient: `claude_code`
+- round_index: `None`
+- persona_id: `codex.lifecycle_reviewer`
+- addresses: `event:492451`, `handoff:/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json`
+
+### Message
+
+Supervisor-owned workflow gate: tdd_review.
+
+Intent:
+Decide via ADR whether Temporal, Restate, or DBOS should replace parts of the durable job stack, with only a disabled report-only Temporal submit spike.
+
+Review this gate against the current source artifacts and return a typed dual_agent_outcome.
+Use decisions/objections to say whether the gate should accept, revise, or deny.
+
+### Confidence
+
+- value: `None`
+- source: `None`
+- rationale: None recorded.
+
+Criteria:
+
+- None recorded.
+
+Evidence:
+
+- None recorded.
+
+### Claims
+
+- None recorded.
+
+### Objections
+
+- None recorded.
+
+### Questions
+
+- None recorded.
+
+### Critical Review
+
+`{}`
+
+### Tool Receipts
+
+- None recorded.
+
+### Evidence Refs
+
+- None recorded.
+
+### Raw Transcript Refs
+
+- None recorded.
+
+### Would Change If
+
+None recorded.
+
+### Review Packet
+
+`{}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| validate_planning_artifacts#1780579366272#4229 |  |  | validate_planning_artifacts | green | 4 | 4229 |  |  | P_planning |  | {"artifact_count": 7, "gate": "tdd_review", "required_kinds": ["grill_findings", "issues", "prd", "tdd_plan"], "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"} |  |
+| write_handoff_packet#1780579366278#1115 |  |  | write_handoff_packet | completed | 1 | 1115 |  |  |  |  | {"artifact_count": 7, "gate": "tdd_review", "task_id": "durable-execution-engine-adr-20260604"} | {"artifact_count": 7, "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json"} |  |
+
+## 24. TDD Review
+
+- event_id: `492464`
+- ts: `1780579473`
+- interaction_type: `gate_response`
+- sender: `claude_code`
+- recipient: `codex`
+- round_index: `None`
+- persona_id: `claude_code.lead_worker`
+- addresses: `event:492452`, `handoff:/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json`
+
+### Message
+
+tdd_review ACCEPT. All 5 plan-named tests exist verbatim across 4 cycles, are non-vacuous, and map to P1-P4/ISS-1-3. Cycle 1 asserts real config defaults (engine=hand_rolled, temporal_spike_enabled=False at config.py:150-151); Cycle 2 asserts RuntimeError('temporal_spike_disabled') (spike:78-79) and exact client.calls with id=idempotency_key + USE_EXISTING (spike:81-98); Cycle 3 exercises the REAL State.reserve_dual_agent_workflow_job (state.py:829, kw-only sig matches test kwargs) for 3 tasks proving genuine DB reattach; Cycle 4 reads the real ADR and all 4 options/6 criteria/6 sections/2 config strings are present (grep-confirmed). All 3 TDD grill findings resolved and source-verified.
+
+### Confidence
+
+- value: `0.9`
+- source: `claude_code_self_reported`
+- rationale: Every plan-named test was read directly and confirmed present, non-vacuous, and hitting real boundaries; all source symbols (config defaults, spike functions, State.reserve signature, ADR sections) verified by Read/Grep. Confidence held below 0.95 because pytest was not run (GREEN-not-RED, test_status unknown) and artifact shasums are self_reported per packet policy.
+
+Criteria:
+
+- All 5 plan test names present verbatim: PASS
+- Tests assert against real public boundaries, not mocks-only: PASS (config model, spike module funcs, real State.reserve, real ADR file)
+- Grill findings resolved and source-corroborated: PASS (3/3)
+- Tests executed green: UNVERIFIED (pytest un-run)
+- Artifact integrity (shasum) verified: UNVERIFIED (self_reported per policy)
+
+Evidence:
+
+- tests/test_durable_execution_engine_spike.py::test_durable_execution_defaults_keep_hand_rolled_runtime
+- tests/test_durable_execution_engine_spike.py::test_temporal_spike_is_disabled_until_flagged
+- tests/test_durable_execution_engine_spike.py::test_temporal_spike_uses_idempotency_key_as_workflow_id_with_use_existing
+- tests/test_durable_execution_engine_spike.py::test_spike_report_compares_temporal_submit_against_layer0_reservation
+- tests/test_durable_execution_engine_adr.py::test_adr_durable_execution_engine_decision_contains_required_sections
+- tests/test_durable_execution_engine_spike.py
+- tests/test_durable_execution_engine_adr.py
+- supervisor/durable_execution_engine_spike.py
+- supervisor/config.py
+- config.example.yaml
+- docs/adr/0004-durable-execution-engine-decision.md
+- ACCEPT tdd_review: 5 named tests present verbatim, non-vacuous, traceable to P1-P4/ISS-1-3
+- Cycle 3 resolves grill Finding 1 by calling real State.reserve_dual_agent_workflow_job (state.py:829), not a helper-only fake
+- No-default-change invariant tested three ways: config default (Cycle 1), report default_runtime_changed=False (spike:130/142), ADR 'No Default Runtime Change' section (adr:185)
+
+### Claims
+
+- 5 plan-named tests exist verbatim in the two test files
+- Cycle 3 comparison test is non-vacuous: drives real SQLite State reservation twice per task and asserts genuine reattach behavior
+- Report-only / no-default-change invariant is enforced in config, report payload, and ADR
+
+### Objections
+
+- Minor public-boundary label fidelity: Cycle 1 labels boundary target_config_load but instantiates DurableExecutionCfg() directly; Cycles 2/3 label dual_agent_runner but import the spike module directly. Tests still hit real public functions, so non-blocking.
+
+### Questions
+
+- None recorded.
+
+### Critical Review
+
+`{"assumptions_to_verify": ["State.reserve reattach semantics (created=False on duplicate idempotency_token) hold at runtime \u2014 relied on by Cycle 3 reattach assertions", "DurableExecutionCfg participates in the real config load path even though Cycle 1 instantiates the model directly"], "contradictions_checked": ["Plan claims comparison test uses real Layer-0 reservation \u2014 confirmed: test:109 calls State.reserve_dual_agent_workflow_job, no mock", "Plan claims idempotency_key becomes workflow id with USE_EXISTING \u2014 confirmed at spike:84-86 and asserted exactly in client.calls test:77-92", "Plan claims no default runtime change \u2014 confirmed in config defaults, report default_runtime_changed=False, and ADR section; no temporalio import in spike (Protocol/fake-client boundary)"], "decision": "accept", "evidence_refs": [], "missing_evidence": ["A pytest run showing the 5 tests pass (test_status=passed)", "Confirmation that State.reserve_dual_agent_workflow_job returns created=False on the second same-token call so all_retries_reattach=True is actually satisfied at runtime", "Independent shasum match of tdd.md against handoff sha 610091dd..."], "schema_version": "critical-review/v1", "severity": "low", "strongest_objection": "Tests are GREEN-not-RED at review time because the spike module, config, and ADR already exist on disk, and pytest was not executed \u2014 so the plan's RED discipline and current pass status are both self_reported rather than observed.", "what_would_change_my_mind": "A pytest run where any of the 5 tests fail or error, or evidence that the Cycle 3 comparison passes only because State.reserve does not actually enforce idempotent reattach (making all_retries_reattach a false-true)."}`
+
+### Tool Receipts
+
+- None recorded.
+
+### Evidence Refs
+
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_spike.py::test_durable_execution_defaults_keep_hand_rolled_runtime", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_spike.py::test_temporal_spike_is_disabled_until_flagged", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_spike.py::test_temporal_spike_uses_idempotency_key_as_workflow_id_with_use_existing", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_spike.py::test_spike_report_compares_temporal_submit_against_layer0_reservation", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_adr.py::test_adr_durable_execution_engine_decision_contains_required_sections", "status": "unknown"}
+- {"kind": "reported_changed_file", "ref": "tests/test_durable_execution_engine_spike.py"}
+- {"kind": "reported_changed_file", "ref": "tests/test_durable_execution_engine_adr.py"}
+- {"kind": "reported_changed_file", "ref": "supervisor/durable_execution_engine_spike.py"}
+- {"kind": "reported_changed_file", "ref": "supervisor/config.py"}
+- {"kind": "reported_changed_file", "ref": "config.example.yaml"}
+- {"kind": "reported_changed_file", "ref": "docs/adr/0004-durable-execution-engine-decision.md"}
+
+### Raw Transcript Refs
+
+- {"bytes": 9953, "kind": "claude_stdout", "ref": "lead_result.stdout"}
+- {"kind": "claude_handoff_packet", "ref": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json"}
+
+### Would Change If
+
+A subsequent gate response changes the typed outcome, or supervisor probes reject this response.
+
+### Review Packet
+
+`{}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| invoke_claude_lead#1780579366280#107358669 |  |  | invoke_claude_lead | completed | 107358 | 107358669 | 707099 | 8353 | P3 |  | {"attempt": 1, "budget_usd": 100.0, "corrective_retry": false, "dynamic_workflow_task_class": null, "execution_layer_mode": "lead_direct", "expected_decisions": [], "expected_objections": [], "expected_specialists": [], "explicit_model": null, "gate": "tdd_review", "model": "opus", "model_source": "quality_default:best", "quality": "best", "requested_model": "opus", "task_id": "durable-execution-engine-adr-20260604", "timeout_s": 900} | {"cost_usd": 3.8562502499999995, "model": "opus", "outcome_present": true, "probe_id": "P3", "probe_reason": "outcome_fidelity_ok", "probe_status": "green", "stderr_bytes": 0, "stdout_bytes": 9953, "tokens_in": 707099, "tokens_out": 8353} |  |
+| evaluate_worker_invocation#1780579473640#46 | invoke_claude_lead#1780579366280#107358669 |  | evaluate_worker_invocation | green | 0 | 46 |  |  | P2 |  | {"gate": "tdd_review", "probe_id": "P2", "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P2", "reason": "worker_orchestration_invocation_ok", "status": "green"} |  |
+| evaluate_outcome_fidelity#1780579473640#0 | invoke_claude_lead#1780579366280#107358669 |  | evaluate_outcome_fidelity | green | 0 | 0 |  |  | P3 |  | {"gate": "tdd_review", "probe_id": "P3", "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P3", "reason": "outcome_fidelity_ok", "status": "green"} |  |
+| verify_planning_artifact_boundaries#1780579473640#1633 | invoke_claude_lead#1780579366280#107358669 |  | verify_planning_artifact_boundaries | green | 1 | 1633 |  |  | P1 |  | {"gate": "tdd_review", "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json", "probe_id": "P1", "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P1", "reason": "planning_artifact_boundaries_ok", "status": "green"} |  |
+| evaluate_outcome_gate_decision#1780579473641#334 | invoke_claude_lead#1780579366280#107358669 |  | evaluate_outcome_gate_decision | green | 0 | 334 |  |  | P4 |  | {"gate": "tdd_review", "probe_id": "P4", "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P4", "reason": "outcome_gate_decision_ok", "status": "green"} |  |
+
+## 25. TDD Review
+
+- event_id: `492465`
+- ts: `1780579473`
+- interaction_type: `gate_result`
+- status: `accepted`
+- attempts: `1`
+
+### Claude Code -> Codex
+
+Outcome summary: tdd_review ACCEPT. All 5 plan-named tests exist verbatim across 4 cycles, are non-vacuous, and map to P1-P4/ISS-1-3. Cycle 1 asserts real config defaults (engine=hand_rolled, temporal_spike_enabled=False at config.py:150-151); Cycle 2 asserts RuntimeError('temporal_spike_disabled') (spike:78-79) and exact client.calls with id=idempotency_key + USE_EXISTING (spike:81-98); Cycle 3 exercises the REAL State.reserve_dual_agent_workflow_job (state.py:829, kw-only sig matches test kwargs) for 3 tasks proving genuine DB reattach; Cycle 4 reads the real ADR and all 4 options/6 criteria/6 sections/2 config strings are present (grep-confirmed). All 3 TDD grill findings resolved and source-verified.
+
+Decisions:
+
+- ACCEPT tdd_review: 5 named tests present verbatim, non-vacuous, traceable to P1-P4/ISS-1-3
+- Cycle 3 resolves grill Finding 1 by calling real State.reserve_dual_agent_workflow_job (state.py:829), not a helper-only fake
+- No-default-change invariant tested three ways: config default (Cycle 1), report default_runtime_changed=False (spike:130/142), ADR 'No Default Runtime Change' section (adr:185)
+
+Specialists:
+
+- `lead-tdd-reviewer`: `accept`
+
+Objections:
+
+- Minor public-boundary label fidelity: Cycle 1 labels boundary target_config_load but instantiates DurableExecutionCfg() directly; Cycles 2/3 label dual_agent_runner but import the spike module directly. Tests still hit real public functions, so non-blocking.
+
+### Validation
+
+- `P1`: `green` / `planning_artifact_boundaries_ok`
+- `P2`: `green` / `worker_orchestration_invocation_ok`
+- `P3`: `green` / `outcome_fidelity_ok`
+- `P4`: `green` / `outcome_gate_decision_ok`
+- `P_planning`: `green` / `planning_validation_ok`
+
+### Artifact Rigor
+
+- status: `ok`
+- reason: `required_artifacts_present`
+- artifact_policy: `strict`
+- required_artifacts: `prd`, `issues`, `tdd_plan`, `grill_findings`
+- present_artifacts: `grill_findings`, `implementation_plan`, `issues`, `prd`, `tdd_plan`
+- missing_artifacts: `[]`
+- missing_artifact_paths: `[]`
+- required_prerequisite_gates: `issues_review`
+- accepted_prerequisite_gates: `issues_review`
+- missing_prerequisite_gates: `[]`
+- gate_statuses: `{"issues_review": "accepted", "prd_review": "accepted"}`
+- user_facing: `False`
+- screenshots: `[]`
+- missing_screenshot_paths: `[]`
+- visual_validation: `{"allowed_sources": ["browser", "browser-use", "browser_use", "computer", "computer-use", "computer_use"], "evidence": [], "failures": [], "reason": "no_screenshots_supplied", "status": "not_required"}`
+
+### Trace Envelope
+
+- policy_verdict: `accepted`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| start_dual_agent_gate#1780579366272#107377222 |  |  | start_dual_agent_gate | completed | 107377 | 107377222 |  |  |  |  | {"agentic_lead_policy": "off", "artifact_policy": "strict", "dynamic_workflow_task_class": null, "execution_layer_mode": "lead_direct", "gate": "tdd_review", "min_subagents": 3, "planning_artifact_count": 7, "required_evidence_grade": "self_reported", "required_roles": [], "screenshot_count": 0, "task_id": "durable-execution-engine-adr-20260604", "user_facing": false} | {"claude_gate_status": "accepted", "probe_statuses": {"P1": "green", "P2": "green", "P3": "green", "P4": "green", "P_planning": "green"}, "supervisor_final_status": "accepted"} |  |
+| invoke_claude_lead#1780579473650#0 | start_dual_agent_gate#1780579366272#107377222 |  | invoke_claude_lead | completed | 0 | 0 | 707099 | 8353 |  |  | {"gate": "tdd_review", "task_id": "durable-execution-engine-adr-20260604"} | {"outcome_present": true, "probe_reason": "outcome_fidelity_ok", "probe_status": "green", "tokens_in": 707099, "tokens_out": 8353} |  |
+| probe_p2#1780579473650#0#p2 | invoke_claude_lead#1780579473650#0 |  | probe:P2 | green | 0 | 0 |  |  | P2 |  | {"probe_id": "P2"} | {"probe_id": "P2", "reason": "worker_orchestration_invocation_ok", "status": "green"} |  |
+| probe_p3#1780579473650#0#p3 | invoke_claude_lead#1780579473650#0 |  | probe:P3 | green | 0 | 0 |  |  | P3 |  | {"probe_id": "P3"} | {"probe_id": "P3", "reason": "outcome_fidelity_ok", "status": "green"} |  |
+| probe_p1#1780579473650#0#p1 | invoke_claude_lead#1780579473650#0 |  | probe:P1 | green | 0 | 0 |  |  | P1 |  | {"probe_id": "P1"} | {"probe_id": "P1", "reason": "planning_artifact_boundaries_ok", "status": "green"} |  |
+| probe_p4#1780579473650#0#p4 | invoke_claude_lead#1780579473650#0 |  | probe:P4 | green | 0 | 0 |  |  | P4 |  | {"probe_id": "P4"} | {"probe_id": "P4", "reason": "outcome_gate_decision_ok", "status": "green"} |  |
+| probe_p_planning#1780579473650#0#p_planning | invoke_claude_lead#1780579473650#0 |  | probe:P_planning | green | 0 | 0 |  |  | P_planning |  | {"probe_id": "P_planning"} | {"probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"} |  |
+
+## 26. TDD Review
+
+- event_id: `492466`
+- ts: `1780579474`
+- interaction_type: `review_request`
+- sender: `codex`
+- recipient: `cursor`
+- round_index: `1`
+- persona_id: `codex.lifecycle_reviewer`
+- addresses: `handoff:/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json`
+
+### Message
+
+Independently review the tdd_review gate for this tri-agent workflow.
+Accept only if the gate should advance after reading the artifacts and Claude outcome.
+Critical review: before accepting, try to disprove the Claude outcome and gate evidence. Identify the strongest reason this should not advance, missing evidence, contradictions checked, assumptions to verify, and what would change your decision. Keep this concise and auditable; do not include private chain-of-thought.
+Return the structured critical_review object in the typed outcome.
+
+Intent:
+Decide via ADR whether Temporal, Restate, or DBOS should replace parts of the durable job stack, with only a disabled report-only Temporal submit spike.
+
+### Confidence
+
+- value: `None`
+- source: `None`
+- rationale: None recorded.
+
+Criteria:
+
+- None recorded.
+
+Evidence:
+
+- None recorded.
+
+### Claims
+
+- 5 plan-named tests exist verbatim in the two test files
+- Cycle 3 comparison test is non-vacuous: drives real SQLite State reservation twice per task and asserts genuine reattach behavior
+- Report-only / no-default-change invariant is enforced in config, report payload, and ADR
+- decision:ACCEPT tdd_review: 5 named tests present verbatim, non-vacuous, traceable to P1-P4/ISS-1-3
+- decision:Cycle 3 resolves grill Finding 1 by calling real State.reserve_dual_agent_workflow_job (state.py:829), not a helper-only fake
+- decision:No-default-change invariant tested three ways: config default (Cycle 1), report default_runtime_changed=False (spike:130/142), ADR 'No Default Runtime Change' section (adr:185)
+
+### Objections
+
+- Minor public-boundary label fidelity: Cycle 1 labels boundary target_config_load but instantiates DurableExecutionCfg() directly; Cycles 2/3 label dual_agent_runner but import the spike module directly. Tests still hit real public functions, so non-blocking.
+
+### Questions
+
+- Do the planning artifacts, Claude outcome, and evidence receipts justify advancing this gate?
+
+### Critical Review
+
+`{"assumptions_to_verify": ["State.reserve reattach semantics (created=False on duplicate idempotency_token) hold at runtime \u2014 relied on by Cycle 3 reattach assertions", "DurableExecutionCfg participates in the real config load path even though Cycle 1 instantiates the model directly"], "contradictions_checked": ["Plan claims comparison test uses real Layer-0 reservation \u2014 confirmed: test:109 calls State.reserve_dual_agent_workflow_job, no mock", "Plan claims idempotency_key becomes workflow id with USE_EXISTING \u2014 confirmed at spike:84-86 and asserted exactly in client.calls test:77-92", "Plan claims no default runtime change \u2014 confirmed in config defaults, report default_runtime_changed=False, and ADR section; no temporalio import in spike (Protocol/fake-client boundary)"], "decision": "accept", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}], "missing_evidence": ["A pytest run showing the 5 tests pass (test_status=passed)", "Confirmation that State.reserve_dual_agent_workflow_job returns created=False on the second same-token call so all_retries_reattach=True is actually satisfied at runtime", "Independent shasum match of tdd.md against handoff sha 610091dd..."], "schema_version": "critical-review/v1", "severity": "low", "strongest_objection": "Tests are GREEN-not-RED at review time because the spike module, config, and ADR already exist on disk, and pytest was not executed \u2014 so the plan's RED discipline and current pass status are both self_reported rather than observed.", "what_would_change_my_mind": "A pytest run where any of the 5 tests fail or error, or evidence that the Cycle 3 comparison passes only because State.reserve does not actually enforce idempotent reattach (making all_retries_reattach a false-true)."}`
+
+### Tool Receipts
+
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/prd.md"], "claims": ["PRD promise contracts P1-P4 produced", "Report-only runtime decision boundary captured"], "kind": "skill_run", "receipt_id": "skill-to-prd-durable-execution-engine-adr-20260604", "skill": "to-prd", "stage": "to_prd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings.md"], "claims": ["PRD grill findings resolved", "Temporal spike is separated from production adoption"], "kind": "skill_run", "receipt_id": "skill-prd-grill-durable-execution-engine-adr-20260604", "skill": "grill-with-docs", "stage": "prd_grill", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/issues.md"], "claims": ["Issues cover every PRD promise P1-P4", "Each issue names public-boundary acceptance criteria"], "kind": "skill_run", "receipt_id": "skill-to-issues-durable-execution-engine-adr-20260604", "skill": "to-issues", "stage": "to_issues", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/tdd.md"], "claims": ["TDD cycles cover config default, Temporal fake-client idempotency, Layer-0 comparison, and ADR completeness"], "kind": "skill_run", "receipt_id": "skill-tdd-durable-execution-engine-adr-20260604", "skill": "tdd", "stage": "tdd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings-tdd.md"], "claims": ["TDD grill findings resolved", "Layer-0 comparison and no-default-change tests are required"], "kind": "skill_run", "receipt_id": "skill-tdd-grill-durable-execution-engine-adr-20260604", "skill": "grill-with-docs", "stage": "tdd_grill", "status": "passed"}
+- {"command": "uv run pytest tests/test_durable_execution_engine_spike.py tests/test_durable_execution_engine_adr.py -q", "kind": "test", "receipt_id": "receipt:pytest-durable-execution-engine-spike-focused", "status": "passed", "summary": "5 passed in 0.14s"}
+- {"command": "uv run pytest tests/test_target_config_load.py tests/test_durable_execution_engine_spike.py tests/test_durable_execution_engine_adr.py -q", "kind": "test", "receipt_id": "receipt:pytest-target-config-and-durable-engine", "status": "passed", "summary": "11 passed in 0.12s"}
+- {"command": "uv run pytest -q", "kind": "test", "receipt_id": "receipt:pytest-full-durable-execution-engine-adr", "status": "passed", "summary": "734 passed, 8 skipped in 109.39s"}
+- {"command": "uv run python -m compileall supervisor/durable_execution_engine_spike.py", "kind": "test", "receipt_id": "receipt:compileall-durable-execution-engine-spike", "status": "passed", "summary": "compileall completed with exit code 0"}
+- {"command": "git diff --check", "kind": "test", "receipt_id": "receipt:git-diff-check-durable-execution-engine-adr", "status": "passed", "summary": "no whitespace errors"}
+
+### Evidence Refs
+
+- {"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}
+
+### Raw Transcript Refs
+
+- {"kind": "claude_handoff_packet", "ref": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json"}
+- {"count": 5, "kind": "claude_reported_tests", "ref": "outcome.tests"}
+
+### Would Change If
+
+Cursor finds an unresolved blocker, missing receipt, or contradiction in the evidence.
+
+### Review Packet
+
+`{}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+## 27. TDD Review
+
+- event_id: `492576`
+- ts: `1780579741`
+- interaction_type: `review_response`
+- sender: `cursor`
+- recipient: `codex`
+- round_index: `1`
+- persona_id: `cursor.independent_reviewer`
+- addresses: `event:492466`
+
+### Message
+
+tdd_review ACCEPT. Independently confirmed all 5 plan-named tests exist verbatim, map to P1-P4/ISS-1-3, exercise real config model, spike module, State.reserve_dual_agent_workflow_job, and ADR file. Focused pytest 5/5 and full suite 734 passed (upgrades Claude test_status unknown). Grill findings 3/3 source-corroborated. Minor boundary-label gaps remain non-blocking.
+
+### Confidence
+
+- value: `0.93`
+- source: `cursor_self_reported`
+- rationale: All five plan tests read and executed green; State.reserve reattach semantics and spike idempotency confirmed in source. Held below 0.95 for boundary-label fidelity (Cycle 1 skips Config.load in test file), ADR substring-only test, and unverified handoff artifact shasums.
+
+Criteria:
+
+- 5 plan test names verbatim: PASS
+- Real public boundaries (config model, spike funcs, State.reserve, ADR file): PASS
+- Grill findings resolved in code: PASS (3/3)
+- Pytest green (focused + full): PASS (independently run)
+- Artifact shasum vs handoff: UNVERIFIED
+
+Evidence:
+
+- tests/test_durable_execution_engine_spike.py::test_durable_execution_defaults_keep_hand_rolled_runtime
+- tests/test_durable_execution_engine_spike.py::test_temporal_spike_is_disabled_until_flagged
+- tests/test_durable_execution_engine_spike.py::test_temporal_spike_uses_idempotency_key_as_workflow_id_with_use_existing
+- tests/test_durable_execution_engine_spike.py::test_spike_report_compares_temporal_submit_against_layer0_reservation
+- tests/test_durable_execution_engine_adr.py::test_adr_durable_execution_engine_decision_contains_required_sections
+- tests/test_durable_execution_engine_spike.py
+- tests/test_durable_execution_engine_adr.py
+- supervisor/durable_execution_engine_spike.py
+- supervisor/config.py
+- config.example.yaml
+- docs/adr/0004-durable-execution-engine-decision.md
+- ACCEPT tdd_review: plan test names, non-vacuous assertions, and P1-P4/ISS traceability verified in worktree
+- Independent pytest: 5 focused + 734 full-suite passed; contradicts Claude test_status=unknown
+- Cycle 3 uses real SQLite State.reserve_dual_agent_workflow_job with idempotency_token dedup (created=False on retry)
+- Report-only boundary intact: no temporalio in spike; production paths do not import spike module
+
+### Claims
+
+- Five plan-named tests exist and pass under independent pytest
+- Cycle 3 comparison is non-vacuous: real Layer-0 reservation with duplicate idempotency_token reattach
+- No-default-change enforced in config defaults, report default_runtime_changed=False, and ADR No Default Runtime Change section
+
+### Objections
+
+- Cycle 1 public boundary labeled target_config_load but test only instantiates DurableExecutionCfg(); no test_target_config_load assertion for durable_execution defaults
+- Cycles 2/3 labeled dual_agent_runner but import spike module directly; production runner wiring unchanged is assumed not tested
+- Cycle 4 ADR test is substring presence only; semantic scoring correctness not exercised
+
+### Questions
+
+- None recorded.
+
+### Critical Review
+
+`{"assumptions_to_verify": ["ISS-4 config-loading criterion satisfied only indirectly via Pydantic defaults, not a dedicated durable_execution load test", "dual_agent_runner production submit path remains unmodified (not exercised by spike tests)"], "contradictions_checked": ["Claude test_status unknown vs receipt passed: independently ran pytest; 5/5 focused, 734 full suite green", "Plan Layer-0 real reservation: test line 109 calls State.reserve_dual_agent_workflow_job; state.py returns existing,False on duplicate token", "Idempotency key as workflow id + USE_EXISTING: spike.py 84-86 and test asserts exact client.calls", "No production Temporal adoption: no temporalio in spike; grep shows spike only in config model + isolated module"], "decision": "accept", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}], "missing_evidence": ["Explicit test_target_config_load assertion for cfg.durable_execution after Config.load", "Handoff packet shasum match for tdd.md and other planning artifacts", "TDD RED-phase receipt (implementation preceded review; discipline is post-hoc GREEN)"], "schema_version": "critical-review/v1", "severity": "low", "strongest_objection": "Cycle 1 does not exercise the named target_config_load test boundary\u2014only DurableExecutionCfg() direct construction\u2014so YAML load-path regression for durable_execution defaults is unguarded despite working via Field defaults.", "what_would_change_my_mind": "Pytest failure on any of the five tests; proof that reserve_dual_agent_workflow_job returns created=True on duplicate idempotency_token; or Config.load overriding durable_execution defaults when section omitted from YAML."}`
+
+### Tool Receipts
+
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/prd.md"], "claims": ["PRD promise contracts P1-P4 produced", "Report-only runtime decision boundary captured"], "kind": "skill_run", "receipt_id": "skill-to-prd-durable-execution-engine-adr-20260604", "skill": "to-prd", "stage": "to_prd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings.md"], "claims": ["PRD grill findings resolved", "Temporal spike is separated from production adoption"], "kind": "skill_run", "receipt_id": "skill-prd-grill-durable-execution-engine-adr-20260604", "skill": "grill-with-docs", "stage": "prd_grill", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/issues.md"], "claims": ["Issues cover every PRD promise P1-P4", "Each issue names public-boundary acceptance criteria"], "kind": "skill_run", "receipt_id": "skill-to-issues-durable-execution-engine-adr-20260604", "skill": "to-issues", "stage": "to_issues", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/tdd.md"], "claims": ["TDD cycles cover config default, Temporal fake-client idempotency, Layer-0 comparison, and ADR completeness"], "kind": "skill_run", "receipt_id": "skill-tdd-durable-execution-engine-adr-20260604", "skill": "tdd", "stage": "tdd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings-tdd.md"], "claims": ["TDD grill findings resolved", "Layer-0 comparison and no-default-change tests are required"], "kind": "skill_run", "receipt_id": "skill-tdd-grill-durable-execution-engine-adr-20260604", "skill": "grill-with-docs", "stage": "tdd_grill", "status": "passed"}
+- {"command": "uv run pytest tests/test_durable_execution_engine_spike.py tests/test_durable_execution_engine_adr.py -q", "kind": "test", "receipt_id": "receipt:pytest-durable-execution-engine-spike-focused", "status": "passed", "summary": "5 passed in 0.14s"}
+- {"command": "uv run pytest tests/test_target_config_load.py tests/test_durable_execution_engine_spike.py tests/test_durable_execution_engine_adr.py -q", "kind": "test", "receipt_id": "receipt:pytest-target-config-and-durable-engine", "status": "passed", "summary": "11 passed in 0.12s"}
+- {"command": "uv run pytest -q", "kind": "test", "receipt_id": "receipt:pytest-full-durable-execution-engine-adr", "status": "passed", "summary": "734 passed, 8 skipped in 109.39s"}
+- {"command": "uv run python -m compileall supervisor/durable_execution_engine_spike.py", "kind": "test", "receipt_id": "receipt:compileall-durable-execution-engine-spike", "status": "passed", "summary": "compileall completed with exit code 0"}
+- {"command": "git diff --check", "kind": "test", "receipt_id": "receipt:git-diff-check-durable-execution-engine-adr", "status": "passed", "summary": "no whitespace errors"}
+
+### Evidence Refs
+
+- {"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}
+
+### Raw Transcript Refs
+
+- {"chars": 4000, "kind": "cursor_transcript_tail", "ref": "tri_agent_cursor_review:durable-execution-engine-adr-20260604:tdd_review:1"}
+
+### Would Change If
+
+Claude or Codex provides evidence resolving Cursor's objections.
+
+### Review Packet
+
+`{}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| invoke_cursor_agent#1780579474055#267425910 |  |  | invoke_cursor_agent | finished | 267425 | 267425910 |  |  |  | ["skill-to-prd-durable-execution-engine-adr-20260604", "skill-prd-grill-durable-execution-engine-adr-20260604", "skill-to-issues-durable-execution-engine-adr-20260604", "skill-tdd-durable-execution-engine-adr-20260604", "skill-tdd-grill-durable-execution-engine-adr-20260604", "receipt:pytest-durable-execution-engine-spike-focused", "receipt:pytest-target-config-and-durable-engine", "receipt:pytest-full-durable-execution-engine-adr", "receipt:compileall-durable-execution-engine-spike", "receipt:git-diff-check-durable-execution-engine-adr"] | {"gate": "tdd_review", "model": null, "planning_artifact_count": 7, "quality": "best", "receipt_count": 10, "reviewer_count": 2, "reviewer_ids": ["independent-reviewer-0", "independent-reviewer-1"], "reviewer_infra_retry_backoff_s": 1.0, "reviewer_infra_retry_limit": 2, "reviewer_max_tokens": 4096, "reviewer_model": "composer-2.5", "reviewer_output_mode": "cursor_sdk", "task_id": "durable-execution-engine-adr-20260604", "timeout_s": 900} | {"accepted": true, "failure_classification": null, "fallback_from_runtime": null, "fallback_reason": null, "outcome_present": true, "probe_reason": "cursor_review_ok", "probe_status": "green", "recoverable": false, "reviewer_assurance": "tool_backed_primary", "reviewer_output_mode": "cursor_sdk", "reviewer_runtime": "cursor_sdk"} |  |
+
+## 28. TDD Review
+
+- event_id: `492577`
+- ts: `1780579741`
+- interaction_type: `independent_reviewer_review`
+- gate: `tdd_review`
+- reviewer_count: `2`
+
+### Independent Reviewer Results
+
+#### Reviewer 1: `independent-reviewer-0`
+
+- accepted: `True`
+- decision: `accept`
+- severity: `low`
+- confidence: `0.93`
+- runtime: `cursor_sdk`
+- model: `composer-2.5`
+- provider_family: `cursor`
+- lineage: `cursor`, `cursor_sdk`, `composer-2.5`
+- tool_access: `codebase_tools`
+- assurance_grade: `agentic`
+- transcript_sha256: `22ee32ec4117767ea90c0e40f6b46210adf791ff9fd4c127d414b4e90bfe50eb`
+- output_sha256: `d9c36cc57ed06c69422f6d971bdef230b16613a08685bf28b017e1525f0603f2`
+
+Transcript refs:
+
+- {"chars": 4000, "kind": "reviewer_transcript_tail", "ref": "independent_reviewer_review:durable-execution-engine-adr-20260604:tdd_review:1:independent-reviewer-0"}
+
+Critical review:
+
+`{"assumptions_to_verify": ["ISS-4 config-loading criterion satisfied only indirectly via Pydantic defaults, not a dedicated durable_execution load test", "dual_agent_runner production submit path remains unmodified (not exercised by spike tests)"], "contradictions_checked": ["Claude test_status unknown vs receipt passed: independently ran pytest; 5/5 focused, 734 full suite green", "Plan Layer-0 real reservation: test line 109 calls State.reserve_dual_agent_workflow_job; state.py returns existing,False on duplicate token", "Idempotency key as workflow id + USE_EXISTING: spike.py 84-86 and test asserts exact client.calls", "No production Temporal adoption: no temporalio in spike; grep shows spike only in config model + isolated module"], "decision": "accept", "missing_evidence": ["Explicit test_target_config_load assertion for cfg.durable_execution after Config.load", "Handoff packet shasum match for tdd.md and other planning artifacts", "TDD RED-phase receipt (implementation preceded review; discipline is post-hoc GREEN)"], "severity": "low", "strongest_objection": "Cycle 1 does not exercise the named target_config_load test boundary\u2014only DurableExecutionCfg() direct construction\u2014so YAML load-path regression for durable_execution defaults is unguarded despite working via Field defaults.", "what_would_change_my_mind": "Pytest failure on any of the five tests; proof that reserve_dual_agent_workflow_job returns created=True on duplicate idempotency_token; or Config.load overriding durable_execution defaults when section omitted from YAML."}`
+
+#### Reviewer 2: `independent-reviewer-1`
+
+- accepted: `True`
+- decision: `accept`
+- severity: `low`
+- confidence: `0.9`
+- runtime: `codex_cli`
+- model: `gpt-5.5`
+- provider_family: `openai`
+- lineage: `openai`, `codex_cli`, `gpt-5.5`
+- tool_access: `codebase_tools`
+- assurance_grade: `agentic`
+- transcript_sha256: `3740a5ae2ef289131cbf8be0b633f43db81c8913a0d69d386323457825fc527e`
+- output_sha256: `d15aae324afc31f4e628c5e6f6142509a267249c2f3a07d177b459c796e955b2`
+
+Transcript refs:
+
+- {"chars": 4000, "kind": "reviewer_transcript_tail", "ref": "independent_reviewer_review:durable-execution-engine-adr-20260604:tdd_review:1:independent-reviewer-1"}
+
+Critical review:
+
+`{"assumptions_to_verify": ["Receipt artifacts are trusted as the current run evidence despite not rerunning tests in this review.", "Config.load with durable_execution remains covered indirectly by Config model wiring and existing target config receipt, not by the plan-specific default test.", "External Temporal, Restate, and DBOS claims in the ADR are adequate for a report-only decision and will be refreshed before any adoption slice."], "contradictions_checked": ["Checked tests against the TDD plan: all five plan-named tests are present.", "Checked Cycle 3 against supervisor/state.py: duplicate idempotency_token returns the existing row with created=False.", "Checked production non-test imports: only supervisor/durable_execution_engine_spike.py contains the spike symbols; no temporalio import found outside docs/tests.", "Checked ADR against required options, criteria, spike result, replacement/stay boundaries, migration cost, and no-default-change text.", "Checked receipts file: it records focused, target-config, full-suite, compileall, and diff-check passes."], "decision": "accept", "missing_evidence": ["Fresh reviewer-run pytest output was not produced because this review was constrained to read-only inspection.", "No live Temporal namespace or SDK compatibility proof exists for USE_EXISTING semantics.", "No checksum verification was performed for planning artifacts."], "severity": "low", "strongest_objection": "The strongest reason not to advance is that the Temporal side proves only local fake-client argument shape, not live Temporal USE_EXISTING behavior or deployment viability; however the PRD explicitly scopes this slice to a disabled report-only spike and a later live pilot.", "what_would_change_my_mind": "A fresh test run failure, a production submit path importing or requiring Temporal, a changed State.reserve duplicate-token behavior that no longer reattaches, or evidence that the ADR recommends default runtime migration would change this to reject."}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| invoke_cursor_agent#1780579474055#267425910 |  |  | invoke_cursor_agent | finished | 267425 | 267425910 |  |  |  | ["skill-to-prd-durable-execution-engine-adr-20260604", "skill-prd-grill-durable-execution-engine-adr-20260604", "skill-to-issues-durable-execution-engine-adr-20260604", "skill-tdd-durable-execution-engine-adr-20260604", "skill-tdd-grill-durable-execution-engine-adr-20260604", "receipt:pytest-durable-execution-engine-spike-focused", "receipt:pytest-target-config-and-durable-engine", "receipt:pytest-full-durable-execution-engine-adr", "receipt:compileall-durable-execution-engine-spike", "receipt:git-diff-check-durable-execution-engine-adr"] | {"gate": "tdd_review", "model": null, "planning_artifact_count": 7, "quality": "best", "receipt_count": 10, "reviewer_count": 2, "reviewer_ids": ["independent-reviewer-0", "independent-reviewer-1"], "reviewer_infra_retry_backoff_s": 1.0, "reviewer_infra_retry_limit": 2, "reviewer_max_tokens": 4096, "reviewer_model": "composer-2.5", "reviewer_output_mode": "cursor_sdk", "task_id": "durable-execution-engine-adr-20260604", "timeout_s": 900} | {"accepted": true, "failure_classification": null, "fallback_from_runtime": null, "fallback_reason": null, "outcome_present": true, "probe_reason": "cursor_review_ok", "probe_status": "green", "recoverable": false, "reviewer_assurance": "tool_backed_primary", "reviewer_output_mode": "cursor_sdk", "reviewer_runtime": "cursor_sdk"} |  |
+
+## 29. TDD Review
+
+- event_id: `492578`
+- ts: `1780579741`
+- interaction_type: `cursor_review`
+- gate: `tdd_review`
+- accepted: `True`
+- model: `composer-2.5`
+- cursor_run_id: `run-e776e1b6-703d-49d3-a28b-c1b62681dc86`
+- agent_id: `agent-28fd9007-de8a-4623-adfe-7e7badc8ce1b`
+- duration_ms: `155246`
+- full_reasoning: `transcript.jsonl event 492578 transcript_tail`
+
+### Cursor Probe
+
+- probe_id: `CURSOR`
+- status: `green`
+- reason: `cursor_review_ok`
+
+### Cursor Outcome
+
+tdd_review ACCEPT. Independently confirmed all 5 plan-named tests exist verbatim, map to P1-P4/ISS-1-3, exercise real config model, spike module, State.reserve_dual_agent_workflow_job, and ADR file. Focused pytest 5/5 and full suite 734 passed (upgrades Claude test_status unknown). Grill findings 3/3 source-corroborated. Minor boundary-label gaps remain non-blocking.
+
+Claims:
+
+- Five plan-named tests exist and pass under independent pytest
+- Cycle 3 comparison is non-vacuous: real Layer-0 reservation with duplicate idempotency_token reattach
+- No-default-change enforced in config defaults, report default_runtime_changed=False, and ADR No Default Runtime Change section
+
+Decisions:
+
+- ACCEPT tdd_review: plan test names, non-vacuous assertions, and P1-P4/ISS traceability verified in worktree
+- Independent pytest: 5 focused + 734 full-suite passed; contradicts Claude test_status=unknown
+- Cycle 3 uses real SQLite State.reserve_dual_agent_workflow_job with idempotency_token dedup (created=False on retry)
+- Report-only boundary intact: no temporalio in spike; production paths do not import spike module
+
+Objections:
+
+- Cycle 1 public boundary labeled target_config_load but test only instantiates DurableExecutionCfg(); no test_target_config_load assertion for durable_execution defaults
+- Cycles 2/3 labeled dual_agent_runner but import spike module directly; production runner wiring unchanged is assumed not tested
+- Cycle 4 ADR test is substring presence only; semantic scoring correctness not exercised
+
+Specialists:
+
+- `Cursor Reviewer`: `accept`
+
+### Transcript Tail
+
+radicts Claude test_status=unknown","Cycle 3 uses real SQLite State.reserve_dual_agent_workflow_job with idempotency_token dedup (created=False on retry)","Report-only boundary intact: no temporalio in spike; production paths do not import spike module"],"objections":["Cycle 1 public boundary labeled target_config_load but test only instantiates DurableExecutionCfg(); no test_target_config_load assertion for durable_execution defaults","Cycles 2/3 labeled dual_agent_runner but import spike module directly; production runner wiring unchanged is assumed not tested","Cycle 4 ADR test is substring presence only; semantic scoring correctness not exercised"],"changed_files":["tests/test_durable_execution_engine_spike.py","tests/test_durable_execution_engine_adr.py","supervisor/durable_execution_engine_spike.py","supervisor/config.py","config.example.yaml","docs/adr/0004-durable-execution-engine-decision.md"],"tests":["tests/test_durable_execution_engine_spike.py::test_durable_execution_defaults_keep_hand_rolled_runtime","tests/test_durable_execution_engine_spike.py::test_temporal_spike_is_disabled_until_flagged","tests/test_durable_execution_engine_spike.py::test_temporal_spike_uses_idempotency_key_as_workflow_id_with_use_existing","tests/test_durable_execution_engine_spike.py::test_spike_report_compares_temporal_submit_against_layer0_reservation","tests/test_durable_execution_engine_adr.py::test_adr_durable_execution_engine_decision_contains_required_sections"],"test_status":"passed","confidence":0.93,"confidence_rationale":"All five plan tests read and executed green; State.reserve reattach semantics and spike idempotency confirmed in source. Held below 0.95 for boundary-label fidelity (Cycle 1 skips Config.load in test file), ADR substring-only test, and unverified handoff artifact shasums.","confidence_criteria":["5 plan test names verbatim: PASS","Real public boundaries (config model, spike funcs, State.reserve, ADR file): PASS","Grill findings resolved in code: PASS (3/3)","Pytest green (focused + full): PASS (independently run)","Artifact shasum vs handoff: UNVERIFIED"],"claims":["Five plan-named tests exist and pass under independent pytest","Cycle 3 comparison is non-vacuous: real Layer-0 reservation with duplicate idempotency_token reattach","No-default-change enforced in config defaults, report default_runtime_changed=False, and ADR No Default Runtime Change section"],"critical_review":{"strongest_objection":"Cycle 1 does not exercise the named target_config_load test boundary-only DurableExecutionCfg() direct construction-so YAML load-path regression for durable_execution defaults is unguarded despite working via Field defaults.","missing_evidence":["Explicit test_target_config_load assertion for cfg.durable_execution after Config.load","Handoff packet shasum match for tdd.md and other planning artifacts","TDD RED-phase receipt (implementation preceded review; discipline is post-hoc GREEN)"],"contradictions_checked":["Claude test_status unknown vs receipt passed: independently ran pytest; 5/5 focused, 734 full suite green","Plan Layer-0 real reservation: test line 109 calls State.reserve_dual_agent_workflow_job; state.py returns existing,False on duplicate token","Idempotency key as workflow id + USE_EXISTING: spike.py 84-86 and test asserts exact client.calls","No production Temporal adoption: no temporalio in spike; grep shows spike only in config model + isolated module"],"assumptions_to_verify":["ISS-4 config-loading criterion satisfied only indirectly via Pydantic defaults, not a dedicated durable_execution load test","dual_agent_runner production submit path remains unmodified (not exercised by spike tests)"],"what_would_change_my_mind":"Pytest failure on any of the five tests; proof that reserve_dual_agent_workflow_job returns created=True on duplicate idempotency_token; or Config.load overriding durable_execution defaults when section omitted from YAML.","decision":"accept","severity":"low"}}</dual_agent_outcome>
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| invoke_cursor_agent#1780579474055#267425910 |  |  | invoke_cursor_agent | finished | 267425 | 267425910 |  |  |  | ["skill-to-prd-durable-execution-engine-adr-20260604", "skill-prd-grill-durable-execution-engine-adr-20260604", "skill-to-issues-durable-execution-engine-adr-20260604", "skill-tdd-durable-execution-engine-adr-20260604", "skill-tdd-grill-durable-execution-engine-adr-20260604", "receipt:pytest-durable-execution-engine-spike-focused", "receipt:pytest-target-config-and-durable-engine", "receipt:pytest-full-durable-execution-engine-adr", "receipt:compileall-durable-execution-engine-spike", "receipt:git-diff-check-durable-execution-engine-adr"] | {"gate": "tdd_review", "model": null, "planning_artifact_count": 7, "quality": "best", "receipt_count": 10, "reviewer_count": 2, "reviewer_ids": ["independent-reviewer-0", "independent-reviewer-1"], "reviewer_infra_retry_backoff_s": 1.0, "reviewer_infra_retry_limit": 2, "reviewer_max_tokens": 4096, "reviewer_model": "composer-2.5", "reviewer_output_mode": "cursor_sdk", "task_id": "durable-execution-engine-adr-20260604", "timeout_s": 900} | {"accepted": true, "failure_classification": null, "fallback_from_runtime": null, "fallback_reason": null, "outcome_present": true, "probe_reason": "cursor_review_ok", "probe_status": "green", "recoverable": false, "reviewer_assurance": "tool_backed_primary", "reviewer_output_mode": "cursor_sdk", "reviewer_runtime": "cursor_sdk"} |  |
+
+## 30. TDD Review
+
+- event_id: `492579`
+- ts: `1780579741`
+- interaction_type: `round`
+- round_index: `1`
+
+### Codex -> Claude Code
+
+- Codex decision: `accept`
+- Codex confidence: `0.95`
+
+### Claude Code -> Codex
+
+- Claude decision: `accept`
+- Claude confidence: `0.9`
+
+### Disagreement / Grill Finding
+
+both agents accepted
+
+## 31. TDD Review
+
+- event_id: `492584`
+- ts: `1780579741`
+- interaction_type: `gate_decision`
+- sender: `codex`
+- recipient: `supervisor`
+- round_index: `1`
+- persona_id: `codex.lifecycle_reviewer`
+- addresses: `event:492579`
+
+### Message
+
+both agents accepted
+
+### Confidence
+
+- value: `0.95`
+- source: `codex_supervisor_deterministic_policy`
+- rationale: Codex accepted because the gate result, probes, claim checks, and optional Cursor review all satisfied the gate criteria.
+
+Criteria:
+
+- gate_status=accepted
+- decision=accept
+- all_supervisor_probes_green
+- claude_outcome_accepted
+- claim_verification_ok_or_not_required
+- cursor_accepted_or_not_requested
+
+Evidence:
+
+- P1:green
+- P2:green
+- P3:green
+- P4:green
+- P_planning:green
+
+### Claims
+
+- codex_decision=accept
+- claude_decision=accept
+- cursor_decision=accept
+
+### Objections
+
+- None recorded.
+
+### Questions
+
+- None recorded.
+
+### Critical Review
+
+`{"assumptions_to_verify": [], "contradictions_checked": ["supervisor probes", "claim verification", "cursor review"], "decision": "accept", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}], "missing_evidence": [], "schema_version": "critical-review/v1", "severity": "none", "strongest_objection": "none", "what_would_change_my_mind": "Every requirement is pass and both reviewers accept."}`
+
+### Tool Receipts
+
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/prd.md"], "claims": ["PRD promise contracts P1-P4 produced", "Report-only runtime decision boundary captured"], "kind": "skill_run", "receipt_id": "skill-to-prd-durable-execution-engine-adr-20260604", "skill": "to-prd", "stage": "to_prd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings.md"], "claims": ["PRD grill findings resolved", "Temporal spike is separated from production adoption"], "kind": "skill_run", "receipt_id": "skill-prd-grill-durable-execution-engine-adr-20260604", "skill": "grill-with-docs", "stage": "prd_grill", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/issues.md"], "claims": ["Issues cover every PRD promise P1-P4", "Each issue names public-boundary acceptance criteria"], "kind": "skill_run", "receipt_id": "skill-to-issues-durable-execution-engine-adr-20260604", "skill": "to-issues", "stage": "to_issues", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/tdd.md"], "claims": ["TDD cycles cover config default, Temporal fake-client idempotency, Layer-0 comparison, and ADR completeness"], "kind": "skill_run", "receipt_id": "skill-tdd-durable-execution-engine-adr-20260604", "skill": "tdd", "stage": "tdd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings-tdd.md"], "claims": ["TDD grill findings resolved", "Layer-0 comparison and no-default-change tests are required"], "kind": "skill_run", "receipt_id": "skill-tdd-grill-durable-execution-engine-adr-20260604", "skill": "grill-with-docs", "stage": "tdd_grill", "status": "passed"}
+- {"command": "uv run pytest tests/test_durable_execution_engine_spike.py tests/test_durable_execution_engine_adr.py -q", "kind": "test", "receipt_id": "receipt:pytest-durable-execution-engine-spike-focused", "status": "passed", "summary": "5 passed in 0.14s"}
+- {"command": "uv run pytest tests/test_target_config_load.py tests/test_durable_execution_engine_spike.py tests/test_durable_execution_engine_adr.py -q", "kind": "test", "receipt_id": "receipt:pytest-target-config-and-durable-engine", "status": "passed", "summary": "11 passed in 0.12s"}
+- {"command": "uv run pytest -q", "kind": "test", "receipt_id": "receipt:pytest-full-durable-execution-engine-adr", "status": "passed", "summary": "734 passed, 8 skipped in 109.39s"}
+- {"command": "uv run python -m compileall supervisor/durable_execution_engine_spike.py", "kind": "test", "receipt_id": "receipt:compileall-durable-execution-engine-spike", "status": "passed", "summary": "compileall completed with exit code 0"}
+- {"command": "git diff --check", "kind": "test", "receipt_id": "receipt:git-diff-check-durable-execution-engine-adr", "status": "passed", "summary": "no whitespace errors"}
+
+### Evidence Refs
+
+- {"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}
+
+### Raw Transcript Refs
+
+- {"kind": "claude_handoff_packet", "ref": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json"}
+- {"count": 5, "kind": "claude_reported_tests", "ref": "outcome.tests"}
+
+### Would Change If
+
+All required probes, claim receipts, and optional Cursor review accept.
+
+### Review Packet
+
+`{"confidence": {"criteria": ["gate_status=accepted", "decision=accept", "all_supervisor_probes_green", "claude_outcome_accepted", "claim_verification_ok_or_not_required", "cursor_accepted_or_not_requested"], "evidence": ["P1:green", "P2:green", "P3:green", "P4:green", "P_planning:green"], "rationale": "Codex accepted because the gate result, probes, claim checks, and optional Cursor review all satisfied the gate criteria.", "source": "codex_supervisor_deterministic_policy", "value": 0.95}, "critical_review": {"assumptions_to_verify": [], "contradictions_checked": ["supervisor probes", "claim verification", "cursor review"], "decision": "accept", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}], "missing_evidence": [], "schema_version": "critical-review/v1", "severity": "none", "strongest_objection": "none", "what_would_change_my_mind": "Every requirement is pass and both reviewers accept."}, "decision": "accept", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}], "findings": [], "gate": "tdd_review", "independent_reviewer_panel_decision": {"accepted_reviewers": ["independent-reviewer-0", "independent-reviewer-1"], "aggregation_mode": "conservative", "available_reviewers": ["independent-reviewer-0", "independent-reviewer-1"], "blocking_reviewers": [], "decision": "accept", "low_confidence_reviewers": [], "low_confidence_threshold": 0.0, "missing_reviewers": [], "non_accepting_reviewers": [], "reason": "all_available_reviewers_accept", "reviewer_inputs": [{"accepted": true, "assurance_grade": "agentic", "confidence": 0.93, "decision": "accept", "lineage": ["cursor", "cursor_sdk", "composer-2.5"], "model": "composer-2.5", "provider_family": "cursor", "reviewer_id": "independent-reviewer-0", "runtime": "cursor_sdk", "severity": "low", "tool_access": "codebase_tools", "verdict_present": true}, {"accepted": true, "assurance_grade": "agentic", "confidence": 0.9, "decision": "accept", "lineage": ["openai", "codex_cli", "gpt-5.5"], "model": "gpt-5.5", "provider_family": "openai", "reviewer_id": "independent-reviewer-1", "runtime": "codex_cli", "severity": "low", "tool_access": "codebase_tools", "verdict_present": true}], "schema_version": "independent-reviewer-panel-decision/v1"}, "independent_reviewer_results": [{"accepted": true, "assurance_grade": "agentic", "attempts": 1, "confidence": 0.93, "critical_review": {"assumptions_to_verify": ["ISS-4 config-loading criterion satisfied only indirectly via Pydantic defaults, not a dedicated durable_execution load test", "dual_agent_runner production submit path remains unmodified (not exercised by spike tests)"], "contradictions_checked": ["Claude test_status unknown vs receipt passed: independently ran pytest; 5/5 focused, 734 full suite green", "Plan Layer-0 real reservation: test line 109 calls State.reserve_dual_agent_workflow_job; state.py returns existing,False on duplicate token", "Idempotency key as workflow id + USE_EXISTING: spike.py 84-86 and test asserts exact client.calls", "No production Temporal adoption: no temporalio in spike; grep shows spike only in config model + isolated module"], "decision": "accept", "missing_evidence": ["Explicit test_target_config_load assertion for cfg.durable_execution after Config.load", "Handoff packet shasum match for tdd.md and other planning artifacts", "TDD RED-phase receipt (implementation preceded review; discipline is post-hoc GREEN)"], "severity": "low", "strongest_objection": "Cycle 1 does not exercise the named target_config_load test boundary\u2014only DurableExecutionCfg() direct construction\u2014so YAML load-path regression for durable_execution defaults is unguarded despite working via Field defaults.", "what_would_change_my_mind": "Pytest failure on any of the five tests; proof that reserve_dual_agent_workflow_job returns created=True on duplicate idempotency_token; or Config.load overriding durable_execution defaults when section omitted from YAML."}, "decision": "accept", "failure_classification": null, "gate": "tdd_review", "lineage": ["cursor", "cursor_sdk", "composer-2.5"], "model": "composer-2.5", "output_sha256": "d9c36cc57ed06c69422f6d971bdef230b16613a08685bf28b017e1525f0603f2", "provider_family": "cursor", "recoverable": false, "reviewer_assurance": "tool_backed_primary", "reviewer_id": "independent-reviewer-0", "reviewer_output_mode": "cursor_sdk", "reviewer_runtime": "cursor_sdk", "round_index": 1, "runtime": "cursor_sdk", "schema_version": "independent-reviewer-panel-result/v1", "severity": "low", "task_id": "durable-execution-engine-adr-20260604", "tests": ["tests/test_durable_execution_engine_spike.py::test_durable_execution_defaults_keep_hand_rolled_runtime", "tests/test_durable_execution_engine_spike.py::test_temporal_spike_is_disabled_until_flagged", "tests/test_durable_execution_engine_spike.py::test_temporal_spike_uses_idempotency_key_as_workflow_id_with_use_existing", "tests/test_durable_execution_engine_spike.py::test_spike_report_compares_temporal_submit_against_layer0_reservation", "tests/test_durable_execution_engine_adr.py::test_adr_durable_execution_engine_decision_contains_required_sections"], "tool_access": "codebase_tools", "transcript_refs": [{"chars": 4000, "kind": "reviewer_transcript_tail", "ref": "independent_reviewer_review:durable-execution-engine-adr-20260604:tdd_review:1:independent-reviewer-0"}], "transcript_sha256": "22ee32ec4117767ea90c0e40f6b46210adf791ff9fd4c127d414b4e90bfe50eb", "verdict_present": true}, {"accepted": true, "assurance_grade": "agentic", "attempts": 1, "confidence": 0.9, "critical_review": {"assumptions_to_verify": ["Receipt artifacts are trusted as the current run evidence despite not rerunning tests in this review.", "Config.load with durable_execution remains covered indirectly by Config model wiring and existing target config receipt, not by the plan-specific default test.", "External Temporal, Restate, and DBOS claims in the ADR are adequate for a report-only decision and will be refreshed before any adoption slice."], "contradictions_checked": ["Checked tests against the TDD plan: all five plan-named tests are present.", "Checked Cycle 3 against supervisor/state.py: duplicate idempotency_token returns the existing row with created=False.", "Checked production non-test imports: only supervisor/durable_execution_engine_spike.py contains the spike symbols; no temporalio import found outside docs/tests.", "Checked ADR against required options, criteria, spike result, replacement/stay boundaries, migration cost, and no-default-change text.", "Checked receipts file: it records focused, target-config, full-suite, compileall, and diff-check passes."], "decision": "accept", "missing_evidence": ["Fresh reviewer-run pytest output was not produced because this review was constrained to read-only inspection.", "No live Temporal namespace or SDK compatibility proof exists for USE_EXISTING semantics.", "No checksum verification was performed for planning artifacts."], "severity": "low", "strongest_objection": "The strongest reason not to advance is that the Temporal side proves only local fake-client argument shape, not live Temporal USE_EXISTING behavior or deployment viability; however the PRD explicitly scopes this slice to a disabled report-only spike and a later live pilot.", "what_would_change_my_mind": "A fresh test run failure, a production submit path importing or requiring Temporal, a changed State.reserve duplicate-token behavior that no longer reattaches, or evidence that the ADR recommends default runtime migration would change this to reject."}, "decision": "accept", "failure_classification": null, "gate": "tdd_review", "lineage": ["openai", "codex_cli", "gpt-5.5"], "model": "gpt-5.5", "output_sha256": "d15aae324afc31f4e628c5e6f6142509a267249c2f3a07d177b459c796e955b2", "provider_family": "openai", "recoverable": false, "reviewer_assurance": "tool_backed_primary", "reviewer_id": "independent-reviewer-1", "reviewer_output_mode": "codex_cli", "reviewer_runtime": "codex_cli", "round_index": 1, "runtime": "codex_cli", "schema_version": "independent-reviewer-panel-result/v1", "severity": "low", "task_id": "durable-execution-engine-adr-20260604", "tests": ["tests/test_durable_execution_engine_spike.py::test_durable_execution_defaults_keep_hand_rolled_runtime", "tests/test_durable_execution_engine_spike.py::test_temporal_spike_is_disabled_until_flagged", "tests/test_durable_execution_engine_spike.py::test_temporal_spike_uses_idempotency_key_as_workflow_id_with_use_existing", "tests/test_durable_execution_engine_spike.py::test_spike_report_compares_temporal_submit_against_layer0_reservation", "tests/test_durable_execution_engine_adr.py::test_adr_durable_execution_engine_decision_contains_required_sections"], "tool_access": "codebase_tools", "transcript_refs": [{"chars": 4000, "kind": "reviewer_transcript_tail", "ref": "independent_reviewer_review:durable-execution-engine-adr-20260604:tdd_review:1:independent-reviewer-1"}], "transcript_sha256": "3740a5ae2ef289131cbf8be0b633f43db81c8913a0d69d386323457825fc527e", "verdict_present": true}], "objections": [], "requirements": [{"evidence": ["P1:green"], "requirement_id": "probe.P1", "status": "pass"}, {"evidence": ["P2:green"], "requirement_id": "probe.P2", "status": "pass"}, {"evidence": ["P3:green"], "requirement_id": "probe.P3", "status": "pass"}, {"evidence": ["P4:green"], "requirement_id": "probe.P4", "status": "pass"}, {"evidence": ["P_planning:green"], "requirement_id": "probe.P_planning", "status": "pass"}, {"evidence": ["cursor_review_ok", "panel_decision=accept:all_available_reviewers_accept"], "legacy_requirement_id": "cursor_review", "requirement_id": "independent_reviewer", "status": "pass"}], "reviewer": "codex", "round_policy": {"blocking_findings": [], "close_allowed": true, "force_next_round": false}, "schema_version": "codex-review-packet/v1", "task_id": "durable-execution-engine-adr-20260604", "would_change_if": "Every requirement is pass and both reviewers accept."}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+## 32. Implementation Plan
+
+- event_id: `492587`
+- ts: `1780579743`
+- interaction_type: `planning_validation`
+- gate: `implementation_plan`
+- validator_version: `1.0.0`
+- verdict: `accepted`
+
+### Checks
+
+- AGG-001: pass
+- AGG-002: pass
+- GRILL-001: pass
+- GRILL-002: pass
+- GRILL-003: pass
+- ISS-001: pass
+- ISS-002: pass
+- ISS-003: pass
+- ISS-004: pass
+- PLAN-001: pass
+- PLAN-002: pass
+- PLAN-003: pass
+- PLAN-004: pass
+- PRD-001: pass
+- PRD-002: pass
+- PRD-003: pass
+- PRD-004: pass
+- PRD-005: pass
+- PRD-006: pass
+- TDD-001: pass
+- TDD-002: pass
+- TDD-003: pass
+- TDD-004: pass
+
+### Artifacts
+
+- {"kind": "prd", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/prd.md", "sha256": "b18b5bf2265174eb3094570cbdb86ba280995797abcd48f46396ac0e6e8dd783", "status": "accepted"}
+- {"kind": "issues", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/issues.md", "sha256": "de40ccf9fb19d75c694b7e949780c8bbe16c4d0139b55e56c2a2070018c4175f", "status": "accepted"}
+- {"kind": "tdd_plan", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/tdd.md", "sha256": "610091dd991b7f96eaecfb24cd668ac69184b6c657788e86451de79635533464", "status": "accepted"}
+- {"kind": "grill_findings", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings.md", "sha256": "03b9d08a61a853e539ae4a823d94ff6ca17096f72ecc837c813491758ff95d6b", "status": "accepted"}
+- {"kind": "implementation_plan", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/implementation-plan.md", "sha256": "aa9857ff86447a82712d76db394990c865d8d1ae4443f46f598ec7f34434bc7d", "status": "accepted"}
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| validate_planning_artifacts#1780579743278#2335 |  |  | validate_planning_artifacts | green | 2 | 2335 |  |  | P_planning |  | {"artifact_count": 7, "gate": "implementation_plan", "required_kinds": ["grill_findings", "implementation_plan", "issues", "prd", "tdd_plan"], "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"} |  |
+
+## 33. Implementation Plan
+
+- event_id: `492588`
+- ts: `1780579743`
+- interaction_type: `gate_request`
+- sender: `codex`
+- recipient: `claude_code`
+- round_index: `None`
+- persona_id: `codex.lifecycle_reviewer`
+- addresses: `event:492587`, `handoff:/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json`
+
+### Message
+
+Supervisor-owned workflow gate: implementation_plan.
+
+Intent:
+Decide via ADR whether Temporal, Restate, or DBOS should replace parts of the durable job stack, with only a disabled report-only Temporal submit spike.
+
+Review this gate against the current source artifacts and return a typed dual_agent_outcome.
+Use decisions/objections to say whether the gate should accept, revise, or deny.
+
+### Confidence
+
+- value: `None`
+- source: `None`
+- rationale: None recorded.
+
+Criteria:
+
+- None recorded.
+
+Evidence:
+
+- None recorded.
+
+### Claims
+
+- None recorded.
+
+### Objections
+
+- None recorded.
+
+### Questions
+
+- None recorded.
+
+### Critical Review
+
+`{}`
+
+### Tool Receipts
+
+- None recorded.
+
+### Evidence Refs
+
+- None recorded.
+
+### Raw Transcript Refs
+
+- None recorded.
+
+### Would Change If
+
+None recorded.
+
+### Review Packet
+
+`{}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| validate_planning_artifacts#1780579743278#2335 |  |  | validate_planning_artifacts | green | 2 | 2335 |  |  | P_planning |  | {"artifact_count": 7, "gate": "implementation_plan", "required_kinds": ["grill_findings", "implementation_plan", "issues", "prd", "tdd_plan"], "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"} |  |
+| write_handoff_packet#1780579743282#1509 |  |  | write_handoff_packet | completed | 1 | 1509 |  |  |  |  | {"artifact_count": 7, "gate": "implementation_plan", "task_id": "durable-execution-engine-adr-20260604"} | {"artifact_count": 7, "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json"} |  |
+
+## 34. Implementation Plan
+
+- event_id: `492610`
+- ts: `1780579926`
+- interaction_type: `gate_response`
+- sender: `claude_code`
+- recipient: `codex`
+- round_index: `None`
+- persona_id: `claude_code.lead_worker`
+- addresses: `event:492588`, `handoff:/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json`
+
+### Message
+
+Implementation plan accepted: file ownership EXACT (7 declared == git changes, diff --check clean, source diff only config.py+config.example.yaml +14), 5 named traceability tests exist verbatim and map to P1-P4, Steps 1-4 resolve to real symbols (DurableExecutionCfg config.py:149, TemporalSubmitLifecycleSpike spike.py:73, USE_EXISTING:14, ADR 0004 sections), comparison test exercises the real State.reserve_dual_agent_workflow_job (signature matches state.py:829-843 exactly), no temporalio import, MCP submit path untouched.
+
+### Confidence
+
+- value: `0.9`
+- source: `claude_code_self_reported`
+- rationale: File ownership, traceability, step-to-symbol mapping, signature compatibility, and ADR string presence are all directly verified against current source; the only unverified item is live pytest execution, which the handoff policy permits as self_reported.
+
+Criteria:
+
+- File ownership EXACT vs git: verified
+- 5 traceability tests verbatim: verified
+- Steps map to real symbols: verified
+- Comparison test hits real Layer-0 boundary (signature match): verified
+- No temporalio import / MCP submit untouched: verified
+- pytest executed green: NOT verified (approval denied)
+
+Evidence:
+
+- tests/test_durable_execution_engine_spike.py::test_durable_execution_defaults_keep_hand_rolled_runtime
+- tests/test_durable_execution_engine_spike.py::test_temporal_spike_is_disabled_until_flagged
+- tests/test_durable_execution_engine_spike.py::test_temporal_spike_uses_idempotency_key_as_workflow_id_with_use_existing
+- tests/test_durable_execution_engine_spike.py::test_spike_report_compares_temporal_submit_against_layer0_reservation
+- tests/test_durable_execution_engine_adr.py::test_adr_durable_execution_engine_decision_contains_required_sections
+- supervisor/config.py
+- config.example.yaml
+- supervisor/durable_execution_engine_spike.py
+- tests/test_durable_execution_engine_spike.py
+- tests/test_durable_execution_engine_adr.py
+- docs/adr/0004-durable-execution-engine-decision.md
+- docs/dual-agent/durable-execution-engine-adr-20260604/source/
+- ACCEPT implementation_plan gate for durable-execution-engine-adr-20260604.
+- File ownership is EXACT: 7 declared paths == git changes, no orphans, diff --check clean.
+- All 5 named traceability tests exist verbatim and map to P1-P4.
+- Steps 1-4 resolve to real source symbols; Steps 5-6 are process steps.
+- Comparison test is non-vacuous: calls real State.reserve_dual_agent_workflow_job with a signature matching state.py:829-843 exactly.
+
+### Claims
+
+- The implementation plan is sound, complete, and fully traceable to current source.
+- No production submit path (mcp_tools/codex_supervisor_stdio.py) is modified; slice is report-only.
+- TDD Finding 1 (fake-client could be helper-only) is resolved non-vacuously by the real Layer-0 reservation call.
+
+### Objections
+
+- pytest could not be executed (approval denied); accepted under handoff policy required_evidence_grade=self_reported plus strong static verification.
+- Plan declares the docs/dual-agent/.../source/ directory rather than enumerating each planning artifact (minor, self-referential).
+- config Literal includes an untested "temporal_spike" engine value (benign future-flag, never the default).
+
+### Questions
+
+- None recorded.
+
+### Critical Review
+
+`{"assumptions_to_verify": ["Running uv run pytest would yield all-green with no environment/import errors.", "The untracked source/ planning docs match the handoff sha256 hashes (integrity not re-hashed this gate)."], "contradictions_checked": ["Plan file list vs git changes (no contradiction; exact match).", "PRD P2 'no Temporal SDK import' vs spike module imports (no temporalio; consistent).", "TDD comparison test claims real Layer-0 path vs actual state.py signature (exact match; consistent).", "ADR test asserted strings vs ADR on-disk content (all present; consistent).", "Out-of-scope 'do not alter codex_supervisor_stdio.py submit' vs diff (stdio not in changed set; consistent)."], "decision": "accept", "evidence_refs": [], "missing_evidence": ["Actual pytest pass/fail output for the two focused test files and the full suite.", "Skill-receipt / shasum confirmation of planning-artifact integrity (not re-run this gate)."], "schema_version": "critical-review/v1", "severity": "low", "strongest_objection": "pytest was not executed, so the GREEN claim for the 5 tests is statically inferred rather than observed.", "what_would_change_my_mind": "If pytest failed on any of the 5 named tests, if a declared file were missing from git or an undeclared file appeared, or if reserve_dual_agent_workflow_job's signature did not match the comparison test's call."}`
+
+### Tool Receipts
+
+- None recorded.
+
+### Evidence Refs
+
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_spike.py::test_durable_execution_defaults_keep_hand_rolled_runtime", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_spike.py::test_temporal_spike_is_disabled_until_flagged", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_spike.py::test_temporal_spike_uses_idempotency_key_as_workflow_id_with_use_existing", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_spike.py::test_spike_report_compares_temporal_submit_against_layer0_reservation", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_adr.py::test_adr_durable_execution_engine_decision_contains_required_sections", "status": "unknown"}
+- {"kind": "reported_changed_file", "ref": "supervisor/config.py"}
+- {"kind": "reported_changed_file", "ref": "config.example.yaml"}
+- {"kind": "reported_changed_file", "ref": "supervisor/durable_execution_engine_spike.py"}
+- {"kind": "reported_changed_file", "ref": "tests/test_durable_execution_engine_spike.py"}
+- {"kind": "reported_changed_file", "ref": "tests/test_durable_execution_engine_adr.py"}
+- {"kind": "reported_changed_file", "ref": "docs/adr/0004-durable-execution-engine-decision.md"}
+- {"kind": "reported_changed_file", "ref": "docs/dual-agent/durable-execution-engine-adr-20260604/source/"}
+
+### Raw Transcript Refs
+
+- {"bytes": 10449, "kind": "claude_stdout", "ref": "lead_result.stdout"}
+- {"kind": "claude_handoff_packet", "ref": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json"}
+
+### Would Change If
+
+A subsequent gate response changes the typed outcome, or supervisor probes reject this response.
+
+### Review Packet
+
+`{}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| invoke_claude_lead#1780579743285#183481582 |  |  | invoke_claude_lead | completed | 183481 | 183481582 | 1844436 | 13154 | P3 |  | {"attempt": 1, "budget_usd": 100.0, "corrective_retry": false, "dynamic_workflow_task_class": null, "execution_layer_mode": "lead_direct", "expected_decisions": [], "expected_objections": [], "expected_specialists": [], "explicit_model": null, "gate": "implementation_plan", "model": "opus", "model_source": "quality_default:best", "quality": "best", "requested_model": "opus", "task_id": "durable-execution-engine-adr-20260604", "timeout_s": 900} | {"cost_usd": 6.348822, "model": "opus", "outcome_present": true, "probe_id": "P3", "probe_reason": "outcome_fidelity_ok", "probe_status": "green", "stderr_bytes": 0, "stdout_bytes": 10449, "tokens_in": 1844436, "tokens_out": 13154} |  |
+| evaluate_worker_invocation#1780579926766#67 | invoke_claude_lead#1780579743285#183481582 |  | evaluate_worker_invocation | red | 0 | 67 |  |  | P2 |  | {"gate": "implementation_plan", "probe_id": "P2", "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P2", "reason": "missing_worker_signal", "status": "red"} | missing_worker_signal |
+| evaluate_outcome_fidelity#1780579926767#0 | invoke_claude_lead#1780579743285#183481582 |  | evaluate_outcome_fidelity | green | 0 | 0 |  |  | P3 |  | {"gate": "implementation_plan", "probe_id": "P3", "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P3", "reason": "outcome_fidelity_ok", "status": "green"} |  |
+| verify_planning_artifact_boundaries#1780579926767#2864 | invoke_claude_lead#1780579743285#183481582 |  | verify_planning_artifact_boundaries | green | 2 | 2864 |  |  | P1 |  | {"gate": "implementation_plan", "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json", "probe_id": "P1", "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P1", "reason": "planning_artifact_boundaries_ok", "status": "green"} |  |
+| evaluate_outcome_gate_decision#1780579926769#314 | invoke_claude_lead#1780579743285#183481582 |  | evaluate_outcome_gate_decision | green | 0 | 314 |  |  | P4 |  | {"gate": "implementation_plan", "probe_id": "P4", "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P4", "reason": "outcome_gate_decision_ok", "status": "green"} |  |
+
+## 35. Implementation Plan
+
+- event_id: `492611`
+- ts: `1780579926`
+- interaction_type: `gate_result`
+- status: `blocked`
+- attempts: `1`
+
+### Claude Code -> Codex
+
+Outcome summary: Implementation plan accepted: file ownership EXACT (7 declared == git changes, diff --check clean, source diff only config.py+config.example.yaml +14), 5 named traceability tests exist verbatim and map to P1-P4, Steps 1-4 resolve to real symbols (DurableExecutionCfg config.py:149, TemporalSubmitLifecycleSpike spike.py:73, USE_EXISTING:14, ADR 0004 sections), comparison test exercises the real State.reserve_dual_agent_workflow_job (signature matches state.py:829-843 exactly), no temporalio import, MCP submit path untouched.
+
+Decisions:
+
+- ACCEPT implementation_plan gate for durable-execution-engine-adr-20260604.
+- File ownership is EXACT: 7 declared paths == git changes, no orphans, diff --check clean.
+- All 5 named traceability tests exist verbatim and map to P1-P4.
+- Steps 1-4 resolve to real source symbols; Steps 5-6 are process steps.
+- Comparison test is non-vacuous: calls real State.reserve_dual_agent_workflow_job with a signature matching state.py:829-843 exactly.
+
+Specialists:
+
+- `lead-direct-review`: `accept`
+
+Objections:
+
+- pytest could not be executed (approval denied); accepted under handoff policy required_evidence_grade=self_reported plus strong static verification.
+- Plan declares the docs/dual-agent/.../source/ directory rather than enumerating each planning artifact (minor, self-referential).
+- config Literal includes an untested "temporal_spike" engine value (benign future-flag, never the default).
+
+### Validation
+
+- `P1`: `green` / `planning_artifact_boundaries_ok`
+- `P2`: `red` / `missing_worker_signal`
+- `P3`: `green` / `outcome_fidelity_ok`
+- `P4`: `green` / `outcome_gate_decision_ok`
+- `P_planning`: `green` / `planning_validation_ok`
+
+### Artifact Rigor
+
+- status: `ok`
+- reason: `required_artifacts_present`
+- artifact_policy: `strict`
+- required_artifacts: `prd`, `tdd_plan`, `grill_findings`, `issues`
+- present_artifacts: `grill_findings`, `implementation_plan`, `issues`, `prd`, `tdd_plan`
+- missing_artifacts: `[]`
+- missing_artifact_paths: `[]`
+- required_prerequisite_gates: `tdd_review`
+- accepted_prerequisite_gates: `tdd_review`
+- missing_prerequisite_gates: `[]`
+- gate_statuses: `{"issues_review": "accepted", "prd_review": "accepted", "tdd_review": "accepted"}`
+- user_facing: `False`
+- screenshots: `[]`
+- missing_screenshot_paths: `[]`
+- visual_validation: `{"allowed_sources": ["browser", "browser-use", "browser_use", "computer", "computer-use", "computer_use"], "evidence": [], "failures": [], "reason": "no_screenshots_supplied", "status": "not_required"}`
+
+### Trace Envelope
+
+- policy_verdict: `blocked`
+- failure_category: `tool_execution`
+- failure_subcategory: `worker_invocation`
+- failure_code: `missing_worker_signal`
+- mast_code: ``
+- mast_mode: ``
+- mast_category: ``
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| start_dual_agent_gate#1780579743276#183501212 |  |  | start_dual_agent_gate | completed | 183501 | 183501212 |  |  |  |  | {"agentic_lead_policy": "off", "artifact_policy": "strict", "dynamic_workflow_task_class": null, "execution_layer_mode": "lead_direct", "gate": "implementation_plan", "min_subagents": 3, "planning_artifact_count": 7, "required_evidence_grade": "self_reported", "required_roles": [], "screenshot_count": 0, "task_id": "durable-execution-engine-adr-20260604", "user_facing": false} | {"claude_gate_status": "blocked", "probe_statuses": {"P1": "green", "P2": "red", "P3": "green", "P4": "green", "P_planning": "green"}, "supervisor_final_status": "blocked"} |  |
+| invoke_claude_lead#1780579926777#0 | start_dual_agent_gate#1780579743276#183501212 |  | invoke_claude_lead | failed | 0 | 0 | 1844436 | 13154 |  |  | {"gate": "implementation_plan", "task_id": "durable-execution-engine-adr-20260604"} | {"outcome_present": true, "probe_reason": "outcome_fidelity_ok", "probe_status": "green", "tokens_in": 1844436, "tokens_out": 13154} | outcome_fidelity_ok |
+| probe_p2#1780579926777#0#p2 | invoke_claude_lead#1780579926777#0 |  | probe:P2 | red | 0 | 0 |  |  | P2 |  | {"probe_id": "P2"} | {"probe_id": "P2", "reason": "missing_worker_signal", "status": "red"} | missing_worker_signal |
+| probe_p3#1780579926777#0#p3 | invoke_claude_lead#1780579926777#0 |  | probe:P3 | green | 0 | 0 |  |  | P3 |  | {"probe_id": "P3"} | {"probe_id": "P3", "reason": "outcome_fidelity_ok", "status": "green"} |  |
+| probe_p1#1780579926777#0#p1 | invoke_claude_lead#1780579926777#0 |  | probe:P1 | green | 0 | 0 |  |  | P1 |  | {"probe_id": "P1"} | {"probe_id": "P1", "reason": "planning_artifact_boundaries_ok", "status": "green"} |  |
+| probe_p4#1780579926777#0#p4 | invoke_claude_lead#1780579926777#0 |  | probe:P4 | green | 0 | 0 |  |  | P4 |  | {"probe_id": "P4"} | {"probe_id": "P4", "reason": "outcome_gate_decision_ok", "status": "green"} |  |
+| probe_p_planning#1780579926777#0#p_planning | invoke_claude_lead#1780579926777#0 |  | probe:P_planning | green | 0 | 0 |  |  | P_planning |  | {"probe_id": "P_planning"} | {"probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"} |  |
+
+## 36. Implementation Plan
+
+- event_id: `492612`
+- ts: `1780579927`
+- interaction_type: `round`
+- round_index: `1`
+
+### Codex -> Claude Code
+
+- Codex decision: `deny`
+- Codex confidence: `0.75`
+
+### Claude Code -> Codex
+
+- Claude decision: `revise`
+- Claude confidence: `0.9`
+
+### Disagreement / Grill Finding
+
+gate blocked
+
+## 37. Implementation Plan
+
+- event_id: `492613`
+- ts: `1780579927`
+- interaction_type: `gate_decision`
+- sender: `codex`
+- recipient: `supervisor`
+- round_index: `1`
+- persona_id: `codex.lifecycle_reviewer`
+- addresses: `event:492612`
+
+### Message
+
+gate blocked
+
+### Confidence
+
+- value: `0.75`
+- source: `codex_supervisor_deterministic_policy`
+- rationale: Codex denied advancement because one or more supervisor probes failed.
+
+Criteria:
+
+- gate_status=blocked
+- decision=deny
+- blocked_or_failed_probes=P2
+
+Evidence:
+
+- P1:green
+- P2:red
+- P3:green
+- P4:green
+- P_planning:green
+
+### Claims
+
+- codex_decision=deny
+- claude_decision=revise
+- cursor_decision=accept
+
+### Objections
+
+- gate blocked
+
+### Questions
+
+- What corrective input should be applied before the next attempt?
+
+### Critical Review
+
+`{"assumptions_to_verify": [], "contradictions_checked": ["supervisor probes", "claim verification", "cursor review"], "decision": "deny", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}], "missing_evidence": ["probe P2 failed"], "schema_version": "critical-review/v1", "severity": "important", "strongest_objection": "probe P2 failed", "what_would_change_my_mind": "Every requirement is pass and both reviewers accept."}`
+
+### Tool Receipts
+
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/prd.md"], "claims": ["PRD promise contracts P1-P4 produced", "Report-only runtime decision boundary captured"], "kind": "skill_run", "receipt_id": "skill-to-prd-durable-execution-engine-adr-20260604", "skill": "to-prd", "stage": "to_prd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings.md"], "claims": ["PRD grill findings resolved", "Temporal spike is separated from production adoption"], "kind": "skill_run", "receipt_id": "skill-prd-grill-durable-execution-engine-adr-20260604", "skill": "grill-with-docs", "stage": "prd_grill", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/issues.md"], "claims": ["Issues cover every PRD promise P1-P4", "Each issue names public-boundary acceptance criteria"], "kind": "skill_run", "receipt_id": "skill-to-issues-durable-execution-engine-adr-20260604", "skill": "to-issues", "stage": "to_issues", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/tdd.md"], "claims": ["TDD cycles cover config default, Temporal fake-client idempotency, Layer-0 comparison, and ADR completeness"], "kind": "skill_run", "receipt_id": "skill-tdd-durable-execution-engine-adr-20260604", "skill": "tdd", "stage": "tdd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings-tdd.md"], "claims": ["TDD grill findings resolved", "Layer-0 comparison and no-default-change tests are required"], "kind": "skill_run", "receipt_id": "skill-tdd-grill-durable-execution-engine-adr-20260604", "skill": "grill-with-docs", "stage": "tdd_grill", "status": "passed"}
+- {"command": "uv run pytest tests/test_durable_execution_engine_spike.py tests/test_durable_execution_engine_adr.py -q", "kind": "test", "receipt_id": "receipt:pytest-durable-execution-engine-spike-focused", "status": "passed", "summary": "5 passed in 0.14s"}
+- {"command": "uv run pytest tests/test_target_config_load.py tests/test_durable_execution_engine_spike.py tests/test_durable_execution_engine_adr.py -q", "kind": "test", "receipt_id": "receipt:pytest-target-config-and-durable-engine", "status": "passed", "summary": "11 passed in 0.12s"}
+- {"command": "uv run pytest -q", "kind": "test", "receipt_id": "receipt:pytest-full-durable-execution-engine-adr", "status": "passed", "summary": "734 passed, 8 skipped in 109.39s"}
+- {"command": "uv run python -m compileall supervisor/durable_execution_engine_spike.py", "kind": "test", "receipt_id": "receipt:compileall-durable-execution-engine-spike", "status": "passed", "summary": "compileall completed with exit code 0"}
+- {"command": "git diff --check", "kind": "test", "receipt_id": "receipt:git-diff-check-durable-execution-engine-adr", "status": "passed", "summary": "no whitespace errors"}
+
+### Evidence Refs
+
+- {"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}
+
+### Raw Transcript Refs
+
+- {"kind": "claude_handoff_packet", "ref": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json"}
+- {"count": 5, "kind": "claude_reported_tests", "ref": "outcome.tests"}
+
+### Would Change If
+
+All required probes, claim receipts, and optional Cursor review accept.
+
+### Review Packet
+
+`{"confidence": {"criteria": ["gate_status=blocked", "decision=deny", "blocked_or_failed_probes=P2"], "evidence": ["P1:green", "P2:red", "P3:green", "P4:green", "P_planning:green"], "rationale": "Codex denied advancement because one or more supervisor probes failed.", "source": "codex_supervisor_deterministic_policy", "value": 0.75}, "critical_review": {"assumptions_to_verify": [], "contradictions_checked": ["supervisor probes", "claim verification", "cursor review"], "decision": "deny", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}], "missing_evidence": ["probe P2 failed"], "schema_version": "critical-review/v1", "severity": "important", "strongest_objection": "probe P2 failed", "what_would_change_my_mind": "Every requirement is pass and both reviewers accept."}, "decision": "deny", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}], "findings": [{"code": "P2", "evidence": ["P2:red"], "finding_id": "finding-001", "fix": "probe P2 failed", "receipt_replay": {"failures": [], "observed_receipt_ids": ["skill-to-prd-durable-execution-engine-adr-20260604", "skill-prd-grill-durable-execution-engine-adr-20260604", "skill-to-issues-durable-execution-engine-adr-20260604", "skill-tdd-durable-execution-engine-adr-20260604", "skill-tdd-grill-durable-execution-engine-adr-20260604", "receipt:pytest-durable-execution-engine-spike-focused", "receipt:pytest-target-config-and-durable-engine", "receipt:pytest-full-durable-execution-engine-adr", "receipt:compileall-durable-execution-engine-spike", "receipt:git-diff-check-durable-execution-engine-adr"]}, "ref": "probe.P2", "requirement_id": "probe.P2", "severity": "IMPORTANT", "title": "probe P2 failed"}], "gate": "implementation_plan", "independent_reviewer_panel_decision": null, "independent_reviewer_results": null, "objections": ["gate blocked"], "requirements": [{"evidence": ["P1:green"], "requirement_id": "probe.P1", "status": "pass"}, {"evidence": ["P2:red"], "requirement_id": "probe.P2", "status": "fail"}, {"evidence": ["P3:green"], "requirement_id": "probe.P3", "status": "pass"}, {"evidence": ["P4:green"], "requirement_id": "probe.P4", "status": "pass"}, {"evidence": ["P_planning:green"], "requirement_id": "probe.P_planning", "status": "pass"}], "reviewer": "codex", "round_policy": {"blocking_findings": ["finding-001"], "close_allowed": false, "force_next_round": true}, "schema_version": "codex-review-packet/v1", "task_id": "durable-execution-engine-adr-20260604", "would_change_if": "Every requirement is pass and both reviewers accept."}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+## 38. Unknown
+
+- event_id: `492718`
+- ts: `1780580187`
+- interaction_type: `gate_result`
+- status: `None`
+- attempts: `None`
+
+### Supervisor Block
+
+Claude Code was not invoked.
+
+- reason: `unknown`
+
+### Validation
+
+- None recorded.
+
+### Artifact Rigor
+
+- None recorded.
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+## 39. Workflow Start
+
+- event_id: `492720`
+- ts: `1780580187`
+- interaction_type: `gate_result`
+- status: `accepted`
+- attempts: `None`
+
+### Supervisor Block
+
+Claude Code was not invoked.
+
+- reason: `accepted`
+
+### Validation
+
+- None recorded.
+
+### Artifact Rigor
+
+- None recorded.
+
+### Trace Envelope
+
+- policy_verdict: `accepted`
+- failure_taxonomy: `None`
+
+## 40. Implementation Plan
+
+- event_id: `492722`
+- ts: `1780580187`
+- interaction_type: `planning_validation`
+- gate: `implementation_plan`
+- validator_version: `1.0.0`
+- verdict: `accepted`
+
+### Checks
+
+- AGG-001: pass
+- AGG-002: pass
+- GRILL-001: pass
+- GRILL-002: pass
+- GRILL-003: pass
+- ISS-001: pass
+- ISS-002: pass
+- ISS-003: pass
+- ISS-004: pass
+- PLAN-001: pass
+- PLAN-002: pass
+- PLAN-003: pass
+- PLAN-004: pass
+- PRD-001: pass
+- PRD-002: pass
+- PRD-003: pass
+- PRD-004: pass
+- PRD-005: pass
+- PRD-006: pass
+- TDD-001: pass
+- TDD-002: pass
+- TDD-003: pass
+- TDD-004: pass
+
+### Artifacts
+
+- {"kind": "prd", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/prd.md", "sha256": "b18b5bf2265174eb3094570cbdb86ba280995797abcd48f46396ac0e6e8dd783", "status": "accepted"}
+- {"kind": "issues", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/issues.md", "sha256": "de40ccf9fb19d75c694b7e949780c8bbe16c4d0139b55e56c2a2070018c4175f", "status": "accepted"}
+- {"kind": "tdd_plan", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/tdd.md", "sha256": "4f6dee569232c8254b4bca9c312b8a056d7dd1bb4a8d9781e63b720fe99d646f", "status": "accepted"}
+- {"kind": "grill_findings", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings.md", "sha256": "03b9d08a61a853e539ae4a823d94ff6ca17096f72ecc837c813491758ff95d6b", "status": "accepted"}
+- {"kind": "implementation_plan", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/implementation-plan.md", "sha256": "142a2b87b59605e1fd611840d2782ce9eb56a225c6a69b9062b858108a3de7c4", "status": "accepted"}
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| validate_planning_artifacts#1780580187522#2895 |  |  | validate_planning_artifacts | green | 2 | 2895 |  |  | P_planning |  | {"artifact_count": 7, "gate": "implementation_plan", "required_kinds": ["grill_findings", "implementation_plan", "issues", "prd", "tdd_plan"], "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"} |  |
+
+## 41. Implementation Plan
+
+- event_id: `492723`
+- ts: `1780580187`
+- interaction_type: `gate_request`
+- sender: `codex`
+- recipient: `claude_code`
+- round_index: `None`
+- persona_id: `codex.lifecycle_reviewer`
+- addresses: `event:492722`, `handoff:/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json`
+
+### Message
+
+Supervisor-owned workflow gate: implementation_plan.
+
+Intent:
+Decide via ADR whether Temporal, Restate, or DBOS should replace parts of the durable job stack, with only a disabled report-only Temporal submit spike.
+
+Review this gate against the current source artifacts and return a typed dual_agent_outcome.
+Use decisions/objections to say whether the gate should accept, revise, or deny.
+
+### Confidence
+
+- value: `None`
+- source: `None`
+- rationale: None recorded.
+
+Criteria:
+
+- None recorded.
+
+Evidence:
+
+- None recorded.
+
+### Claims
+
+- None recorded.
+
+### Objections
+
+- None recorded.
+
+### Questions
+
+- None recorded.
+
+### Critical Review
+
+`{}`
+
+### Tool Receipts
+
+- None recorded.
+
+### Evidence Refs
+
+- None recorded.
+
+### Raw Transcript Refs
+
+- None recorded.
+
+### Would Change If
+
+None recorded.
+
+### Review Packet
+
+`{}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| validate_planning_artifacts#1780580187522#2895 |  |  | validate_planning_artifacts | green | 2 | 2895 |  |  | P_planning |  | {"artifact_count": 7, "gate": "implementation_plan", "required_kinds": ["grill_findings", "implementation_plan", "issues", "prd", "tdd_plan"], "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"} |  |
+| write_handoff_packet#1780580187535#1515 |  |  | write_handoff_packet | completed | 1 | 1515 |  |  |  |  | {"artifact_count": 7, "gate": "implementation_plan", "task_id": "durable-execution-engine-adr-20260604"} | {"artifact_count": 7, "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json"} |  |
+
+## 42. Implementation Plan
+
+- event_id: `492733`
+- ts: `1780580288`
+- interaction_type: `gate_response`
+- sender: `claude_code`
+- recipient: `codex`
+- round_index: `None`
+- persona_id: `claude_code.lead_worker`
+- addresses: `event:492723`, `handoff:/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json`
+
+### Message
+
+Implementation plan re-verified against current source: file ownership exactly matches the 7 declared paths (no extras), all 6 plan-named traceability tests exist verbatim, Steps 1-4 map to real symbols (DurableExecutionCfg config.py, TemporalSubmitLifecycleSpike spike.py:73, USE_EXISTING:14, ADR 0004 with all 18 required strings), and the Layer-0 comparison test calls the real State.reserve_dual_agent_workflow_job with a signature matching state.py:829-843. Report-only boundary intact: no temporalio import in source/tests, MCP submit untouched, defaults stay hand_rolled.
+
+### Confidence
+
+- value: `0.9`
+- source: `claude_code_self_reported`
+- rationale: File ownership, test existence, symbol mapping, signature match, ADR completeness, and the no-temporalio boundary were all directly verified at current source. Confidence held below 0.95 because pytest and git diff --check were not executed (approval-gated; self_reported evidence grade per handoff policy), so green/RED status is asserted from static inspection rather than a run.
+
+Criteria:
+
+- 7 declared files == git status exactly (verified)
+- 6 plan tests present verbatim (verified)
+- Steps 1-4 map to real symbols incl ADR strings (verified)
+- comparison test calls real reserve_dual_agent_workflow_job with matching sig (verified)
+- no temporalio import in source/tests (verified)
+- pytest/diff-check executed (not done)
+
+Evidence:
+
+- test_adr_durable_execution_engine_decision_contains_required_sections
+- test_durable_execution_defaults_keep_hand_rolled_runtime
+- test_durable_execution_temporal_spike_engine_value_is_explicitly_flagged
+- test_temporal_spike_is_disabled_until_flagged
+- test_temporal_spike_uses_idempotency_key_as_workflow_id_with_use_existing
+- test_spike_report_compares_temporal_submit_against_layer0_reservation
+- supervisor/config.py
+- config.example.yaml
+- supervisor/durable_execution_engine_spike.py
+- tests/test_durable_execution_engine_spike.py
+- tests/test_durable_execution_engine_adr.py
+- docs/adr/0004-durable-execution-engine-decision.md
+- docs/dual-agent/durable-execution-engine-adr-20260604/
+- accept
+
+### Claims
+
+- All 6 plan-named traceability tests exist verbatim in the two test files
+- Comparison test is non-vacuous: invokes real production reservation method with exact signature
+- Report-only intent enforced: default engine hand_rolled, spike disabled+guarded, default_runtime_changed=False, no temporalio dependency
+
+### Objections
+
+- None recorded.
+
+### Questions
+
+- None recorded.
+
+### Critical Review
+
+`{"assumptions_to_verify": ["that the new tests actually pass under pytest (assumed from static structure)", "that no whitespace/diff-check violations exist in the config edits"], "contradictions_checked": ["memory said 5 traceability tests but plan lists 6 \u2014 resolved: all 6 exist, no contradiction in acceptance", "temporalio grep hits exist but are confined to docs describing its absence, not source imports", "config Literal exposes temporal_spike engine value yet default and yaml both stay hand_rolled \u2014 consistent with report-only intent"], "decision": "accept", "evidence_refs": [], "missing_evidence": ["pytest run result for the two new test files", "git diff --check exit code confirmation", "shasum confirmation that on-disk implementation-plan.md matches handoff sha256 142a2b87 (shasum approval was blocked)"], "schema_version": "critical-review/v1", "severity": "low", "strongest_objection": "Tests are present and statically consistent, but neither pytest nor git diff --check was actually run, so the plan's claim that the suite passes (and that there is no whitespace damage) rests on inspection rather than execution.", "what_would_change_my_mind": "A pytest failure in either new test file, a git diff --check violation, or an on-disk sha mismatch against the handoff packet would move this from accept toward revise."}`
+
+### Tool Receipts
+
+- None recorded.
+
+### Evidence Refs
+
+- {"kind": "reported_test", "ref": "test_adr_durable_execution_engine_decision_contains_required_sections", "status": "unknown"}
+- {"kind": "reported_test", "ref": "test_durable_execution_defaults_keep_hand_rolled_runtime", "status": "unknown"}
+- {"kind": "reported_test", "ref": "test_durable_execution_temporal_spike_engine_value_is_explicitly_flagged", "status": "unknown"}
+- {"kind": "reported_test", "ref": "test_temporal_spike_is_disabled_until_flagged", "status": "unknown"}
+- {"kind": "reported_test", "ref": "test_temporal_spike_uses_idempotency_key_as_workflow_id_with_use_existing", "status": "unknown"}
+- {"kind": "reported_test", "ref": "test_spike_report_compares_temporal_submit_against_layer0_reservation", "status": "unknown"}
+- {"kind": "reported_changed_file", "ref": "supervisor/config.py"}
+- {"kind": "reported_changed_file", "ref": "config.example.yaml"}
+- {"kind": "reported_changed_file", "ref": "supervisor/durable_execution_engine_spike.py"}
+- {"kind": "reported_changed_file", "ref": "tests/test_durable_execution_engine_spike.py"}
+- {"kind": "reported_changed_file", "ref": "tests/test_durable_execution_engine_adr.py"}
+- {"kind": "reported_changed_file", "ref": "docs/adr/0004-durable-execution-engine-decision.md"}
+- {"kind": "reported_changed_file", "ref": "docs/dual-agent/durable-execution-engine-adr-20260604/"}
+
+### Raw Transcript Refs
+
+- {"bytes": 8630, "kind": "claude_stdout", "ref": "lead_result.stdout"}
+- {"kind": "claude_handoff_packet", "ref": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json"}
+
+### Would Change If
+
+A subsequent gate response changes the typed outcome, or supervisor probes reject this response.
+
+### Review Packet
+
+`{}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| invoke_claude_lead#1780580187538#101199803 |  |  | invoke_claude_lead | completed | 101199 | 101199803 | 841434 | 7042 | P3 |  | {"attempt": 1, "budget_usd": 100.0, "corrective_retry": false, "dynamic_workflow_task_class": null, "execution_layer_mode": "lead_direct", "expected_decisions": [], "expected_objections": [], "expected_specialists": [], "explicit_model": null, "gate": "implementation_plan", "model": "opus", "model_source": "quality_default:best", "quality": "best", "requested_model": "opus", "task_id": "durable-execution-engine-adr-20260604", "timeout_s": 900} | {"cost_usd": 4.11416325, "model": "opus", "outcome_present": true, "probe_id": "P3", "probe_reason": "outcome_fidelity_ok", "probe_status": "green", "stderr_bytes": 0, "stdout_bytes": 8630, "tokens_in": 841434, "tokens_out": 7042} |  |
+| evaluate_worker_invocation#1780580288738#70 | invoke_claude_lead#1780580187538#101199803 |  | evaluate_worker_invocation | green | 0 | 70 |  |  | P2 |  | {"gate": "implementation_plan", "probe_id": "P2", "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P2", "reason": "worker_orchestration_invocation_ok", "status": "green"} |  |
+| evaluate_outcome_fidelity#1780580288738#0 | invoke_claude_lead#1780580187538#101199803 |  | evaluate_outcome_fidelity | green | 0 | 0 |  |  | P3 |  | {"gate": "implementation_plan", "probe_id": "P3", "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P3", "reason": "outcome_fidelity_ok", "status": "green"} |  |
+| verify_planning_artifact_boundaries#1780580288738#4387 | invoke_claude_lead#1780580187538#101199803 |  | verify_planning_artifact_boundaries | green | 4 | 4387 |  |  | P1 |  | {"gate": "implementation_plan", "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json", "probe_id": "P1", "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P1", "reason": "planning_artifact_boundaries_ok", "status": "green"} |  |
+| evaluate_outcome_gate_decision#1780580288742#1476 | invoke_claude_lead#1780580187538#101199803 |  | evaluate_outcome_gate_decision | green | 1 | 1476 |  |  | P4 |  | {"gate": "implementation_plan", "probe_id": "P4", "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P4", "reason": "outcome_gate_decision_ok", "status": "green"} |  |
+
+## 43. Implementation Plan
+
+- event_id: `492734`
+- ts: `1780580288`
+- interaction_type: `gate_result`
+- status: `accepted`
+- attempts: `1`
+
+### Claude Code -> Codex
+
+Outcome summary: Implementation plan re-verified against current source: file ownership exactly matches the 7 declared paths (no extras), all 6 plan-named traceability tests exist verbatim, Steps 1-4 map to real symbols (DurableExecutionCfg config.py, TemporalSubmitLifecycleSpike spike.py:73, USE_EXISTING:14, ADR 0004 with all 18 required strings), and the Layer-0 comparison test calls the real State.reserve_dual_agent_workflow_job with a signature matching state.py:829-843. Report-only boundary intact: no temporalio import in source/tests, MCP submit untouched, defaults stay hand_rolled.
+
+Decisions:
+
+- accept
+
+Specialists:
+
+- `lead-direct-review`: `accept`
+
+Objections:
+
+- None recorded.
+
+### Validation
+
+- `P1`: `green` / `planning_artifact_boundaries_ok`
+- `P2`: `green` / `worker_orchestration_invocation_ok`
+- `P3`: `green` / `outcome_fidelity_ok`
+- `P4`: `green` / `outcome_gate_decision_ok`
+- `P_planning`: `green` / `planning_validation_ok`
+
+### Artifact Rigor
+
+- status: `ok`
+- reason: `required_artifacts_present`
+- artifact_policy: `strict`
+- required_artifacts: `prd`, `tdd_plan`, `grill_findings`, `issues`
+- present_artifacts: `grill_findings`, `implementation_plan`, `issues`, `prd`, `tdd_plan`
+- missing_artifacts: `[]`
+- missing_artifact_paths: `[]`
+- required_prerequisite_gates: `tdd_review`
+- accepted_prerequisite_gates: `tdd_review`
+- missing_prerequisite_gates: `[]`
+- gate_statuses: `{"implementation_plan": "blocked", "issues_review": "accepted", "prd_review": "accepted", "tdd_review": "accepted"}`
+- user_facing: `False`
+- screenshots: `[]`
+- missing_screenshot_paths: `[]`
+- visual_validation: `{"allowed_sources": ["browser", "browser-use", "browser_use", "computer", "computer-use", "computer_use"], "evidence": [], "failures": [], "reason": "no_screenshots_supplied", "status": "not_required"}`
+
+### Trace Envelope
+
+- policy_verdict: `accepted`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| start_dual_agent_gate#1780580187521#101231308 |  |  | start_dual_agent_gate | completed | 101231 | 101231308 |  |  |  |  | {"agentic_lead_policy": "off", "artifact_policy": "strict", "dynamic_workflow_task_class": null, "execution_layer_mode": "lead_direct", "gate": "implementation_plan", "min_subagents": 3, "planning_artifact_count": 7, "required_evidence_grade": "self_reported", "required_roles": [], "screenshot_count": 0, "task_id": "durable-execution-engine-adr-20260604", "user_facing": false} | {"claude_gate_status": "accepted", "probe_statuses": {"P1": "green", "P2": "green", "P3": "green", "P4": "green", "P_planning": "green"}, "supervisor_final_status": "accepted"} |  |
+| invoke_claude_lead#1780580288752#0 | start_dual_agent_gate#1780580187521#101231308 |  | invoke_claude_lead | completed | 0 | 0 | 841434 | 7042 |  |  | {"gate": "implementation_plan", "task_id": "durable-execution-engine-adr-20260604"} | {"outcome_present": true, "probe_reason": "outcome_fidelity_ok", "probe_status": "green", "tokens_in": 841434, "tokens_out": 7042} |  |
+| probe_p2#1780580288752#0#p2 | invoke_claude_lead#1780580288752#0 |  | probe:P2 | green | 0 | 0 |  |  | P2 |  | {"probe_id": "P2"} | {"probe_id": "P2", "reason": "worker_orchestration_invocation_ok", "status": "green"} |  |
+| probe_p3#1780580288752#0#p3 | invoke_claude_lead#1780580288752#0 |  | probe:P3 | green | 0 | 0 |  |  | P3 |  | {"probe_id": "P3"} | {"probe_id": "P3", "reason": "outcome_fidelity_ok", "status": "green"} |  |
+| probe_p1#1780580288752#0#p1 | invoke_claude_lead#1780580288752#0 |  | probe:P1 | green | 0 | 0 |  |  | P1 |  | {"probe_id": "P1"} | {"probe_id": "P1", "reason": "planning_artifact_boundaries_ok", "status": "green"} |  |
+| probe_p4#1780580288752#0#p4 | invoke_claude_lead#1780580288752#0 |  | probe:P4 | green | 0 | 0 |  |  | P4 |  | {"probe_id": "P4"} | {"probe_id": "P4", "reason": "outcome_gate_decision_ok", "status": "green"} |  |
+| probe_p_planning#1780580288752#0#p_planning | invoke_claude_lead#1780580288752#0 |  | probe:P_planning | green | 0 | 0 |  |  | P_planning |  | {"probe_id": "P_planning"} | {"probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"} |  |
+
+## 44. Implementation Plan
+
+- event_id: `492735`
+- ts: `1780580289`
+- interaction_type: `review_request`
+- sender: `codex`
+- recipient: `cursor`
+- round_index: `1`
+- persona_id: `codex.lifecycle_reviewer`
+- addresses: `handoff:/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json`
+
+### Message
+
+Independently review the implementation_plan gate for this tri-agent workflow.
+Accept only if the gate should advance after reading the artifacts and Claude outcome.
+Critical review: before accepting, try to disprove the Claude outcome and gate evidence. Identify the strongest reason this should not advance, missing evidence, contradictions checked, assumptions to verify, and what would change your decision. Keep this concise and auditable; do not include private chain-of-thought.
+Return the structured critical_review object in the typed outcome.
+
+Intent:
+Decide via ADR whether Temporal, Restate, or DBOS should replace parts of the durable job stack, with only a disabled report-only Temporal submit spike.
+
+### Confidence
+
+- value: `None`
+- source: `None`
+- rationale: None recorded.
+
+Criteria:
+
+- None recorded.
+
+Evidence:
+
+- None recorded.
+
+### Claims
+
+- All 6 plan-named traceability tests exist verbatim in the two test files
+- Comparison test is non-vacuous: invokes real production reservation method with exact signature
+- Report-only intent enforced: default engine hand_rolled, spike disabled+guarded, default_runtime_changed=False, no temporalio dependency
+- decision:accept
+
+### Objections
+
+- None recorded.
+
+### Questions
+
+- Do the planning artifacts, Claude outcome, and evidence receipts justify advancing this gate?
+
+### Critical Review
+
+`{"assumptions_to_verify": ["that the new tests actually pass under pytest (assumed from static structure)", "that no whitespace/diff-check violations exist in the config edits"], "contradictions_checked": ["memory said 5 traceability tests but plan lists 6 \u2014 resolved: all 6 exist, no contradiction in acceptance", "temporalio grep hits exist but are confined to docs describing its absence, not source imports", "config Literal exposes temporal_spike engine value yet default and yaml both stay hand_rolled \u2014 consistent with report-only intent"], "decision": "accept", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}], "missing_evidence": ["pytest run result for the two new test files", "git diff --check exit code confirmation", "shasum confirmation that on-disk implementation-plan.md matches handoff sha256 142a2b87 (shasum approval was blocked)"], "schema_version": "critical-review/v1", "severity": "low", "strongest_objection": "Tests are present and statically consistent, but neither pytest nor git diff --check was actually run, so the plan's claim that the suite passes (and that there is no whitespace damage) rests on inspection rather than execution.", "what_would_change_my_mind": "A pytest failure in either new test file, a git diff --check violation, or an on-disk sha mismatch against the handoff packet would move this from accept toward revise."}`
+
+### Tool Receipts
+
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/prd.md"], "claims": ["PRD promise contracts P1-P4 produced", "Report-only runtime decision boundary captured"], "kind": "skill_run", "receipt_id": "skill-to-prd-durable-execution-engine-adr-20260604", "skill": "to-prd", "stage": "to_prd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings.md"], "claims": ["PRD grill findings resolved", "Temporal spike is separated from production adoption"], "kind": "skill_run", "receipt_id": "skill-prd-grill-durable-execution-engine-adr-20260604", "skill": "grill-with-docs", "stage": "prd_grill", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/issues.md"], "claims": ["Issues cover every PRD promise P1-P4", "Each issue names public-boundary acceptance criteria"], "kind": "skill_run", "receipt_id": "skill-to-issues-durable-execution-engine-adr-20260604", "skill": "to-issues", "stage": "to_issues", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/tdd.md"], "claims": ["TDD cycles cover config default, explicit temporal_spike flag coverage, Temporal fake-client idempotency, Layer-0 comparison, and ADR completeness"], "kind": "skill_run", "receipt_id": "skill-tdd-durable-execution-engine-adr-20260604", "skill": "tdd", "stage": "tdd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings-tdd.md"], "claims": ["TDD grill findings resolved", "Layer-0 comparison, explicit temporal_spike flag coverage, and no-default-change tests are required"], "kind": "skill_run", "receipt_id": "skill-tdd-grill-durable-execution-engine-adr-20260604", "skill": "grill-with-docs", "stage": "tdd_grill", "status": "passed"}
+- {"command": "uv run pytest tests/test_durable_execution_engine_spike.py tests/test_durable_execution_engine_adr.py -q", "kind": "test", "receipt_id": "receipt:pytest-durable-execution-engine-spike-focused", "status": "passed", "summary": "6 passed in 0.13s"}
+- {"command": "uv run pytest tests/test_target_config_load.py tests/test_durable_execution_engine_spike.py tests/test_durable_execution_engine_adr.py -q", "kind": "test", "receipt_id": "receipt:pytest-target-config-and-durable-engine", "status": "passed", "summary": "11 passed in 0.12s"}
+- {"command": "uv run pytest -q", "kind": "test", "receipt_id": "receipt:pytest-full-durable-execution-engine-adr", "status": "passed", "summary": "735 passed, 8 skipped in 106.09s"}
+- {"command": "uv run python -m compileall supervisor/durable_execution_engine_spike.py", "kind": "test", "receipt_id": "receipt:compileall-durable-execution-engine-spike", "status": "passed", "summary": "compileall completed with exit code 0"}
+- {"command": "git diff --check", "kind": "test", "receipt_id": "receipt:git-diff-check-durable-execution-engine-adr", "status": "passed", "summary": "no whitespace errors"}
+
+### Evidence Refs
+
+- {"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}
+
+### Raw Transcript Refs
+
+- {"kind": "claude_handoff_packet", "ref": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json"}
+- {"count": 6, "kind": "claude_reported_tests", "ref": "outcome.tests"}
+
+### Would Change If
+
+Cursor finds an unresolved blocker, missing receipt, or contradiction in the evidence.
+
+### Review Packet
+
+`{}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+## 45. Implementation Plan
+
+- event_id: `492863`
+- ts: `1780580562`
+- interaction_type: `review_response`
+- sender: `cursor`
+- recipient: `codex`
+- round_index: `1`
+- persona_id: `cursor.independent_reviewer`
+- addresses: `event:492735`
+
+### Message
+
+Implementation plan verified independently: 7-path ownership exact, all 6 traceability tests present, Steps 1-4 map to real symbols, Layer-0 comparison uses real reserve_dual_agent_workflow_job, report-only boundary intact. Upgraded Claude gaps by executing pytest (735 passed), git diff --check (clean), and shasum (142a2b87 match). Step 6 commit/submit correctly deferred.
+
+### Confidence
+
+- value: `0.94`
+- source: `cursor_self_reported`
+- rationale: File ownership, symbol mapping, ADR strings, and report-only boundary verified statically; pytest (735 passed), git diff --check (exit 0), and plan sha256 independently executed. Held below 0.95 for minor target_config_load boundary gap and Step 6 not yet executed.
+
+Criteria:
+
+- 7 declared files match git status exactly
+- 6 plan-named tests exist verbatim
+- Steps 1-4 map to real symbols including ADR required strings
+- comparison test calls real reserve_dual_agent_workflow_job with matching signature
+- no temporalio import in source/tests
+- pytest and git diff --check executed and passed
+- implementation-plan.md sha256 matches handoff 142a2b87
+
+Evidence:
+
+- test_adr_durable_execution_engine_decision_contains_required_sections
+- test_durable_execution_defaults_keep_hand_rolled_runtime
+- test_durable_execution_temporal_spike_engine_value_is_explicitly_flagged
+- test_temporal_spike_is_disabled_until_flagged
+- test_temporal_spike_uses_idempotency_key_as_workflow_id_with_use_existing
+- test_spike_report_compares_temporal_submit_against_layer0_reservation
+- supervisor/config.py
+- config.example.yaml
+- supervisor/durable_execution_engine_spike.py
+- tests/test_durable_execution_engine_spike.py
+- tests/test_durable_execution_engine_adr.py
+- docs/adr/0004-durable-execution-engine-decision.md
+- docs/dual-agent/durable-execution-engine-adr-20260604/
+- accept
+
+### Claims
+
+- All 6 plan-named traceability tests exist and pass
+- Comparison test is non-vacuous against real Layer-0 reservation
+- Report-only intent enforced: defaults hand_rolled, spike disabled/guarded, default_runtime_changed=false, no temporalio dependency
+- Plan artifact sha256 matches handoff packet
+
+### Objections
+
+- None recorded.
+
+### Questions
+
+- None recorded.
+
+### Critical Review
+
+`{"assumptions_to_verify": ["Config.load preserves durable_execution defaults when YAML section omitted (Pydantic default_factory, not explicitly tested)", "ADR external vendor claims adequate for report-only decision slice"], "contradictions_checked": ["Claude test_status unknown vs receipts passed: independently reran pytest; 735 passed full suite", "Plan lists 6 traceability tests vs prior transcript mentions of 5: all 6 exist", "temporal_spike engine Literal vs hand_rolled default: consistent with report-only intent", "Spike isolated from production: grep shows no imports outside spike module and tests"], "decision": "accept", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}], "missing_evidence": ["Explicit test_target_config_load assertion for durable_execution after Config.load", "Step 6 supervised workflow submit and commit (correctly deferred post-review)"], "schema_version": "critical-review/v1", "severity": "low", "strongest_objection": "Issues/TDD cite target_config_load as the P2 public boundary, but durable_execution defaults are tested via direct DurableExecutionCfg() instantiation\u2014not via Config.load from YAML\u2014leaving a minor acceptance-criteria fidelity gap.", "what_would_change_my_mind": "pytest failure in new test files, git diff --check violation, plan sha mismatch, or discovery that durable_execution config breaks existing Config.load paths."}`
+
+### Tool Receipts
+
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/prd.md"], "claims": ["PRD promise contracts P1-P4 produced", "Report-only runtime decision boundary captured"], "kind": "skill_run", "receipt_id": "skill-to-prd-durable-execution-engine-adr-20260604", "skill": "to-prd", "stage": "to_prd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings.md"], "claims": ["PRD grill findings resolved", "Temporal spike is separated from production adoption"], "kind": "skill_run", "receipt_id": "skill-prd-grill-durable-execution-engine-adr-20260604", "skill": "grill-with-docs", "stage": "prd_grill", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/issues.md"], "claims": ["Issues cover every PRD promise P1-P4", "Each issue names public-boundary acceptance criteria"], "kind": "skill_run", "receipt_id": "skill-to-issues-durable-execution-engine-adr-20260604", "skill": "to-issues", "stage": "to_issues", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/tdd.md"], "claims": ["TDD cycles cover config default, explicit temporal_spike flag coverage, Temporal fake-client idempotency, Layer-0 comparison, and ADR completeness"], "kind": "skill_run", "receipt_id": "skill-tdd-durable-execution-engine-adr-20260604", "skill": "tdd", "stage": "tdd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings-tdd.md"], "claims": ["TDD grill findings resolved", "Layer-0 comparison, explicit temporal_spike flag coverage, and no-default-change tests are required"], "kind": "skill_run", "receipt_id": "skill-tdd-grill-durable-execution-engine-adr-20260604", "skill": "grill-with-docs", "stage": "tdd_grill", "status": "passed"}
+- {"command": "uv run pytest tests/test_durable_execution_engine_spike.py tests/test_durable_execution_engine_adr.py -q", "kind": "test", "receipt_id": "receipt:pytest-durable-execution-engine-spike-focused", "status": "passed", "summary": "6 passed in 0.13s"}
+- {"command": "uv run pytest tests/test_target_config_load.py tests/test_durable_execution_engine_spike.py tests/test_durable_execution_engine_adr.py -q", "kind": "test", "receipt_id": "receipt:pytest-target-config-and-durable-engine", "status": "passed", "summary": "11 passed in 0.12s"}
+- {"command": "uv run pytest -q", "kind": "test", "receipt_id": "receipt:pytest-full-durable-execution-engine-adr", "status": "passed", "summary": "735 passed, 8 skipped in 106.09s"}
+- {"command": "uv run python -m compileall supervisor/durable_execution_engine_spike.py", "kind": "test", "receipt_id": "receipt:compileall-durable-execution-engine-spike", "status": "passed", "summary": "compileall completed with exit code 0"}
+- {"command": "git diff --check", "kind": "test", "receipt_id": "receipt:git-diff-check-durable-execution-engine-adr", "status": "passed", "summary": "no whitespace errors"}
+
+### Evidence Refs
+
+- {"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}
+
+### Raw Transcript Refs
+
+- {"chars": 4000, "kind": "cursor_transcript_tail", "ref": "tri_agent_cursor_review:durable-execution-engine-adr-20260604:implementation_plan:1"}
+
+### Would Change If
+
+Claude or Codex provides evidence resolving Cursor's objections.
+
+### Review Packet
+
+`{}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| invoke_cursor_agent#1780580289196#272970290 |  |  | invoke_cursor_agent | finished | 272970 | 272970290 |  |  |  | ["skill-to-prd-durable-execution-engine-adr-20260604", "skill-prd-grill-durable-execution-engine-adr-20260604", "skill-to-issues-durable-execution-engine-adr-20260604", "skill-tdd-durable-execution-engine-adr-20260604", "skill-tdd-grill-durable-execution-engine-adr-20260604", "receipt:pytest-durable-execution-engine-spike-focused", "receipt:pytest-target-config-and-durable-engine", "receipt:pytest-full-durable-execution-engine-adr", "receipt:compileall-durable-execution-engine-spike", "receipt:git-diff-check-durable-execution-engine-adr"] | {"gate": "implementation_plan", "model": null, "planning_artifact_count": 7, "quality": "best", "receipt_count": 10, "reviewer_count": 2, "reviewer_ids": ["independent-reviewer-0", "independent-reviewer-1"], "reviewer_infra_retry_backoff_s": 1.0, "reviewer_infra_retry_limit": 2, "reviewer_max_tokens": 4096, "reviewer_model": "composer-2.5", "reviewer_output_mode": "cursor_sdk", "task_id": "durable-execution-engine-adr-20260604", "timeout_s": 900} | {"accepted": true, "failure_classification": null, "fallback_from_runtime": null, "fallback_reason": null, "outcome_present": true, "probe_reason": "cursor_review_ok", "probe_status": "green", "recoverable": false, "reviewer_assurance": "tool_backed_primary", "reviewer_output_mode": "cursor_sdk", "reviewer_runtime": "cursor_sdk"} |  |
+
+## 46. Implementation Plan
+
+- event_id: `492864`
+- ts: `1780580562`
+- interaction_type: `independent_reviewer_review`
+- gate: `implementation_plan`
+- reviewer_count: `2`
+
+### Independent Reviewer Results
+
+#### Reviewer 1: `independent-reviewer-0`
+
+- accepted: `True`
+- decision: `accept`
+- severity: `low`
+- confidence: `0.94`
+- runtime: `cursor_sdk`
+- model: `composer-2.5`
+- provider_family: `cursor`
+- lineage: `cursor`, `cursor_sdk`, `composer-2.5`
+- tool_access: `codebase_tools`
+- assurance_grade: `agentic`
+- transcript_sha256: `b68bc51cd92746261b1c5726f500a49735b9782c02b44f18259e0e2591acfc41`
+- output_sha256: `e0cab4aa5deb116ec7ec0463360ce76b09ab4804bef9f0497c73ce8b0017038f`
+
+Transcript refs:
+
+- {"chars": 4000, "kind": "reviewer_transcript_tail", "ref": "independent_reviewer_review:durable-execution-engine-adr-20260604:implementation_plan:1:independent-reviewer-0"}
+
+Critical review:
+
+`{"assumptions_to_verify": ["Config.load preserves durable_execution defaults when YAML section omitted (Pydantic default_factory, not explicitly tested)", "ADR external vendor claims adequate for report-only decision slice"], "contradictions_checked": ["Claude test_status unknown vs receipts passed: independently reran pytest; 735 passed full suite", "Plan lists 6 traceability tests vs prior transcript mentions of 5: all 6 exist", "temporal_spike engine Literal vs hand_rolled default: consistent with report-only intent", "Spike isolated from production: grep shows no imports outside spike module and tests"], "decision": "accept", "missing_evidence": ["Explicit test_target_config_load assertion for durable_execution after Config.load", "Step 6 supervised workflow submit and commit (correctly deferred post-review)"], "severity": "low", "strongest_objection": "Issues/TDD cite target_config_load as the P2 public boundary, but durable_execution defaults are tested via direct DurableExecutionCfg() instantiation\u2014not via Config.load from YAML\u2014leaving a minor acceptance-criteria fidelity gap.", "what_would_change_my_mind": "pytest failure in new test files, git diff --check violation, plan sha mismatch, or discovery that durable_execution config breaks existing Config.load paths."}`
+
+#### Reviewer 2: `independent-reviewer-1`
+
+- accepted: `True`
+- decision: `accept`
+- severity: `low`
+- confidence: `0.88`
+- runtime: `codex_cli`
+- model: `gpt-5.5`
+- provider_family: `openai`
+- lineage: `openai`, `codex_cli`, `gpt-5.5`
+- tool_access: `codebase_tools`
+- assurance_grade: `agentic`
+- transcript_sha256: `71758c0812e52ff0f6301b17cf67899d275cd4657fd38511bb311d86723244f7`
+- output_sha256: `f1d95b5793bac9ad58bab712f330e1b8ac55226c1b8e3fa2f3e46bcddd4b81b6`
+
+Transcript refs:
+
+- {"chars": 4000, "kind": "reviewer_transcript_tail", "ref": "independent_reviewer_review:durable-execution-engine-adr-20260604:implementation_plan:1:independent-reviewer-1"}
+
+Critical review:
+
+`{"assumptions_to_verify": ["The provided pytest/compileall receipts were generated from this exact working tree", "Workflow-generated docs artifacts under docs/dual-agent/durable-execution-engine-adr-20260604/ are expected gate artifacts", "A future real Temporal pilot will validate SDK enum/service behavior beyond the fake-client string model"], "contradictions_checked": ["Claude outcome says pytest/diff-check were not executed, but prompt evidence and on-disk tool-receipts.json report passed receipts; resolved in favor of gate receipts, with provenance caveat", "temporalio/Temporal hits are confined to docs, config literals, tests, and the spike module; no source/test Temporal SDK import found", "Config exposes temporal_spike as an explicit non-default value while defaults and example remain hand_rolled/false; consistent with report-only intent", "MCP submit/poll code still calls existing State.reserve_dual_agent_workflow_job and does not import or call the spike", "git status --short collapses the untracked docs workflow directory; file-level listing shows many docs workflow artifacts under the declared docs path, not extra code modules", "implementation-plan sha256 matches the cited 142a2b87 handoff hash"], "decision": "accept", "missing_evidence": ["Fresh pytest and compileall execution by this reviewer under the current read-only constraints", "Live Temporal namespace behavior, intentionally out of scope for this report-only fake-client spike"], "severity": "low", "strongest_objection": "The strongest reason not to advance is execution provenance: test and compile evidence is supplied by receipts rather than rerun by this reviewer, so acceptance assumes those receipts correspond to the current worktree.", "what_would_change_my_mind": "Any current pytest/compileall failure, a production submit path importing/calling Temporal or the spike, default config changing away from hand_rolled/false, missing plan-named tests, an implementation-plan hash mismatch, or untracked implementation files outside the declared path set would move this to revise."}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| invoke_cursor_agent#1780580289196#272970290 |  |  | invoke_cursor_agent | finished | 272970 | 272970290 |  |  |  | ["skill-to-prd-durable-execution-engine-adr-20260604", "skill-prd-grill-durable-execution-engine-adr-20260604", "skill-to-issues-durable-execution-engine-adr-20260604", "skill-tdd-durable-execution-engine-adr-20260604", "skill-tdd-grill-durable-execution-engine-adr-20260604", "receipt:pytest-durable-execution-engine-spike-focused", "receipt:pytest-target-config-and-durable-engine", "receipt:pytest-full-durable-execution-engine-adr", "receipt:compileall-durable-execution-engine-spike", "receipt:git-diff-check-durable-execution-engine-adr"] | {"gate": "implementation_plan", "model": null, "planning_artifact_count": 7, "quality": "best", "receipt_count": 10, "reviewer_count": 2, "reviewer_ids": ["independent-reviewer-0", "independent-reviewer-1"], "reviewer_infra_retry_backoff_s": 1.0, "reviewer_infra_retry_limit": 2, "reviewer_max_tokens": 4096, "reviewer_model": "composer-2.5", "reviewer_output_mode": "cursor_sdk", "task_id": "durable-execution-engine-adr-20260604", "timeout_s": 900} | {"accepted": true, "failure_classification": null, "fallback_from_runtime": null, "fallback_reason": null, "outcome_present": true, "probe_reason": "cursor_review_ok", "probe_status": "green", "recoverable": false, "reviewer_assurance": "tool_backed_primary", "reviewer_output_mode": "cursor_sdk", "reviewer_runtime": "cursor_sdk"} |  |
+
+## 47. Implementation Plan
+
+- event_id: `492865`
+- ts: `1780580562`
+- interaction_type: `cursor_review`
+- gate: `implementation_plan`
+- accepted: `True`
+- model: `composer-2.5`
+- cursor_run_id: `run-66ee1824-9f1d-414d-9715-11037eb6b008`
+- agent_id: `agent-ef1c82c1-5635-4ece-9c97-788ecf5ca64f`
+- duration_ms: `142696`
+- full_reasoning: `transcript.jsonl event 492865 transcript_tail`
+
+### Cursor Probe
+
+- probe_id: `CURSOR`
+- status: `green`
+- reason: `cursor_review_ok`
+
+### Cursor Outcome
+
+Implementation plan verified independently: 7-path ownership exact, all 6 traceability tests present, Steps 1-4 map to real symbols, Layer-0 comparison uses real reserve_dual_agent_workflow_job, report-only boundary intact. Upgraded Claude gaps by executing pytest (735 passed), git diff --check (clean), and shasum (142a2b87 match). Step 6 commit/submit correctly deferred.
+
+Claims:
+
+- All 6 plan-named traceability tests exist and pass
+- Comparison test is non-vacuous against real Layer-0 reservation
+- Report-only intent enforced: defaults hand_rolled, spike disabled/guarded, default_runtime_changed=false, no temporalio dependency
+- Plan artifact sha256 matches handoff packet
+
+Decisions:
+
+- accept
+
+Objections:
+
+- None recorded.
+
+Specialists:
+
+- `Cursor Reviewer`: `accept`
+
+### Transcript Tail
+
+n-blocking):** Issues/TDD label `target_config_load` as the public boundary for P2 defaults, but no `test_target_config_load` asserts `durable_execution` after `Config.load`; coverage is via direct `DurableExecutionCfg()` instantiation only.
+
+**What would change the decision:** A failing pytest run, `git diff --check` violation, or on-disk plan sha mismatch.
+
+<dual_agent_outcome>{"task_id":"durable-execution-engine-adr-20260604","summary":"Implementation plan verified independently: 7-path ownership exact, all 6 traceability tests present, Steps 1-4 map to real symbols, Layer-0 comparison uses real reserve_dual_agent_workflow_job, report-only boundary intact. Upgraded Claude gaps by executing pytest (735 passed), git diff --check (clean), and shasum (142a2b87 match). Step 6 commit/submit correctly deferred.","specialists":[{"name":"Cursor Reviewer","decision":"accept"}],"decisions":["accept"],"objections":[],"changed_files":["supervisor/config.py","config.example.yaml","supervisor/durable_execution_engine_spike.py","tests/test_durable_execution_engine_spike.py","tests/test_durable_execution_engine_adr.py","docs/adr/0004-durable-execution-engine-decision.md","docs/dual-agent/durable-execution-engine-adr-20260604/"],"tests":["test_adr_durable_execution_engine_decision_contains_required_sections","test_durable_execution_defaults_keep_hand_rolled_runtime","test_durable_execution_temporal_spike_engine_value_is_explicitly_flagged","test_temporal_spike_is_disabled_until_flagged","test_temporal_spike_uses_idempotency_key_as_workflow_id_with_use_existing","test_spike_report_compares_temporal_submit_against_layer0_reservation"],"test_status":"passed","confidence":0.94,"confidence_rationale":"File ownership, symbol mapping, ADR strings, and report-only boundary verified statically; pytest (735 passed), git diff --check (exit 0), and plan sha256 independently executed. Held below 0.95 for minor target_config_load boundary gap and Step 6 not yet executed.","confidence_criteria":["7 declared files match git status exactly","6 plan-named tests exist verbatim","Steps 1-4 map to real symbols including ADR required strings","comparison test calls real reserve_dual_agent_workflow_job with matching signature","no temporalio import in source/tests","pytest and git diff --check executed and passed","implementation-plan.md sha256 matches handoff 142a2b87"],"claims":["All 6 plan-named traceability tests exist and pass","Comparison test is non-vacuous against real Layer-0 reservation","Report-only intent enforced: defaults hand_rolled, spike disabled/guarded, default_runtime_changed=false, no temporalio dependency","Plan artifact sha256 matches handoff packet"],"critical_review":{"strongest_objection":"Issues/TDD cite target_config_load as the P2 public boundary, but durable_execution defaults are tested via direct DurableExecutionCfg() instantiation-not via Config.load from YAML-leaving a minor acceptance-criteria fidelity gap.","missing_evidence":["Explicit test_target_config_load assertion for durable_execution after Config.load","Step 6 supervised workflow submit and commit (correctly deferred post-review)"],"contradictions_checked":["Claude test_status unknown vs receipts passed: independently reran pytest; 735 passed full suite","Plan lists 6 traceability tests vs prior transcript mentions of 5: all 6 exist","temporal_spike engine Literal vs hand_rolled default: consistent with report-only intent","Spike isolated from production: grep shows no imports outside spike module and tests"],"assumptions_to_verify":["Config.load preserves durable_execution defaults when YAML section omitted (Pydantic default_factory, not explicitly tested)","ADR external vendor claims adequate for report-only decision slice"],"what_would_change_my_mind":"pytest failure in new test files, git diff --check violation, plan sha mismatch, or discovery that durable_execution config breaks existing Config.load paths.","decision":"accept","severity":"low"}}</dual_agent_outcome>
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| invoke_cursor_agent#1780580289196#272970290 |  |  | invoke_cursor_agent | finished | 272970 | 272970290 |  |  |  | ["skill-to-prd-durable-execution-engine-adr-20260604", "skill-prd-grill-durable-execution-engine-adr-20260604", "skill-to-issues-durable-execution-engine-adr-20260604", "skill-tdd-durable-execution-engine-adr-20260604", "skill-tdd-grill-durable-execution-engine-adr-20260604", "receipt:pytest-durable-execution-engine-spike-focused", "receipt:pytest-target-config-and-durable-engine", "receipt:pytest-full-durable-execution-engine-adr", "receipt:compileall-durable-execution-engine-spike", "receipt:git-diff-check-durable-execution-engine-adr"] | {"gate": "implementation_plan", "model": null, "planning_artifact_count": 7, "quality": "best", "receipt_count": 10, "reviewer_count": 2, "reviewer_ids": ["independent-reviewer-0", "independent-reviewer-1"], "reviewer_infra_retry_backoff_s": 1.0, "reviewer_infra_retry_limit": 2, "reviewer_max_tokens": 4096, "reviewer_model": "composer-2.5", "reviewer_output_mode": "cursor_sdk", "task_id": "durable-execution-engine-adr-20260604", "timeout_s": 900} | {"accepted": true, "failure_classification": null, "fallback_from_runtime": null, "fallback_reason": null, "outcome_present": true, "probe_reason": "cursor_review_ok", "probe_status": "green", "recoverable": false, "reviewer_assurance": "tool_backed_primary", "reviewer_output_mode": "cursor_sdk", "reviewer_runtime": "cursor_sdk"} |  |
+
+## 48. Implementation Plan
+
+- event_id: `492866`
+- ts: `1780580562`
+- interaction_type: `round`
+- round_index: `1`
+
+### Codex -> Claude Code
+
+- Codex decision: `accept`
+- Codex confidence: `0.95`
+
+### Claude Code -> Codex
+
+- Claude decision: `accept`
+- Claude confidence: `0.9`
+
+### Disagreement / Grill Finding
+
+both agents accepted
+
+## 49. Implementation Plan
+
+- event_id: `492871`
+- ts: `1780580562`
+- interaction_type: `gate_decision`
+- sender: `codex`
+- recipient: `supervisor`
+- round_index: `1`
+- persona_id: `codex.lifecycle_reviewer`
+- addresses: `event:492866`
+
+### Message
+
+both agents accepted
+
+### Confidence
+
+- value: `0.95`
+- source: `codex_supervisor_deterministic_policy`
+- rationale: Codex accepted because the gate result, probes, claim checks, and optional Cursor review all satisfied the gate criteria.
+
+Criteria:
+
+- gate_status=accepted
+- decision=accept
+- all_supervisor_probes_green
+- claude_outcome_accepted
+- claim_verification_ok_or_not_required
+- cursor_accepted_or_not_requested
+
+Evidence:
+
+- P1:green
+- P2:green
+- P3:green
+- P4:green
+- P_planning:green
+
+### Claims
+
+- codex_decision=accept
+- claude_decision=accept
+- cursor_decision=accept
+
+### Objections
+
+- None recorded.
+
+### Questions
+
+- None recorded.
+
+### Critical Review
+
+`{"assumptions_to_verify": [], "contradictions_checked": ["supervisor probes", "claim verification", "cursor review"], "decision": "accept", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}], "missing_evidence": [], "schema_version": "critical-review/v1", "severity": "none", "strongest_objection": "none", "what_would_change_my_mind": "Every requirement is pass and both reviewers accept."}`
+
+### Tool Receipts
+
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/prd.md"], "claims": ["PRD promise contracts P1-P4 produced", "Report-only runtime decision boundary captured"], "kind": "skill_run", "receipt_id": "skill-to-prd-durable-execution-engine-adr-20260604", "skill": "to-prd", "stage": "to_prd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings.md"], "claims": ["PRD grill findings resolved", "Temporal spike is separated from production adoption"], "kind": "skill_run", "receipt_id": "skill-prd-grill-durable-execution-engine-adr-20260604", "skill": "grill-with-docs", "stage": "prd_grill", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/issues.md"], "claims": ["Issues cover every PRD promise P1-P4", "Each issue names public-boundary acceptance criteria"], "kind": "skill_run", "receipt_id": "skill-to-issues-durable-execution-engine-adr-20260604", "skill": "to-issues", "stage": "to_issues", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/tdd.md"], "claims": ["TDD cycles cover config default, explicit temporal_spike flag coverage, Temporal fake-client idempotency, Layer-0 comparison, and ADR completeness"], "kind": "skill_run", "receipt_id": "skill-tdd-durable-execution-engine-adr-20260604", "skill": "tdd", "stage": "tdd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings-tdd.md"], "claims": ["TDD grill findings resolved", "Layer-0 comparison, explicit temporal_spike flag coverage, and no-default-change tests are required"], "kind": "skill_run", "receipt_id": "skill-tdd-grill-durable-execution-engine-adr-20260604", "skill": "grill-with-docs", "stage": "tdd_grill", "status": "passed"}
+- {"command": "uv run pytest tests/test_durable_execution_engine_spike.py tests/test_durable_execution_engine_adr.py -q", "kind": "test", "receipt_id": "receipt:pytest-durable-execution-engine-spike-focused", "status": "passed", "summary": "6 passed in 0.13s"}
+- {"command": "uv run pytest tests/test_target_config_load.py tests/test_durable_execution_engine_spike.py tests/test_durable_execution_engine_adr.py -q", "kind": "test", "receipt_id": "receipt:pytest-target-config-and-durable-engine", "status": "passed", "summary": "11 passed in 0.12s"}
+- {"command": "uv run pytest -q", "kind": "test", "receipt_id": "receipt:pytest-full-durable-execution-engine-adr", "status": "passed", "summary": "735 passed, 8 skipped in 106.09s"}
+- {"command": "uv run python -m compileall supervisor/durable_execution_engine_spike.py", "kind": "test", "receipt_id": "receipt:compileall-durable-execution-engine-spike", "status": "passed", "summary": "compileall completed with exit code 0"}
+- {"command": "git diff --check", "kind": "test", "receipt_id": "receipt:git-diff-check-durable-execution-engine-adr", "status": "passed", "summary": "no whitespace errors"}
+
+### Evidence Refs
+
+- {"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}
+
+### Raw Transcript Refs
+
+- {"kind": "claude_handoff_packet", "ref": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json"}
+- {"count": 6, "kind": "claude_reported_tests", "ref": "outcome.tests"}
+
+### Would Change If
+
+All required probes, claim receipts, and optional Cursor review accept.
+
+### Review Packet
+
+`{"confidence": {"criteria": ["gate_status=accepted", "decision=accept", "all_supervisor_probes_green", "claude_outcome_accepted", "claim_verification_ok_or_not_required", "cursor_accepted_or_not_requested"], "evidence": ["P1:green", "P2:green", "P3:green", "P4:green", "P_planning:green"], "rationale": "Codex accepted because the gate result, probes, claim checks, and optional Cursor review all satisfied the gate criteria.", "source": "codex_supervisor_deterministic_policy", "value": 0.95}, "critical_review": {"assumptions_to_verify": [], "contradictions_checked": ["supervisor probes", "claim verification", "cursor review"], "decision": "accept", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}], "missing_evidence": [], "schema_version": "critical-review/v1", "severity": "none", "strongest_objection": "none", "what_would_change_my_mind": "Every requirement is pass and both reviewers accept."}, "decision": "accept", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}], "findings": [], "gate": "implementation_plan", "independent_reviewer_panel_decision": {"accepted_reviewers": ["independent-reviewer-0", "independent-reviewer-1"], "aggregation_mode": "conservative", "available_reviewers": ["independent-reviewer-0", "independent-reviewer-1"], "blocking_reviewers": [], "decision": "accept", "low_confidence_reviewers": [], "low_confidence_threshold": 0.0, "missing_reviewers": [], "non_accepting_reviewers": [], "reason": "all_available_reviewers_accept", "reviewer_inputs": [{"accepted": true, "assurance_grade": "agentic", "confidence": 0.94, "decision": "accept", "lineage": ["cursor", "cursor_sdk", "composer-2.5"], "model": "composer-2.5", "provider_family": "cursor", "reviewer_id": "independent-reviewer-0", "runtime": "cursor_sdk", "severity": "low", "tool_access": "codebase_tools", "verdict_present": true}, {"accepted": true, "assurance_grade": "agentic", "confidence": 0.88, "decision": "accept", "lineage": ["openai", "codex_cli", "gpt-5.5"], "model": "gpt-5.5", "provider_family": "openai", "reviewer_id": "independent-reviewer-1", "runtime": "codex_cli", "severity": "low", "tool_access": "codebase_tools", "verdict_present": true}], "schema_version": "independent-reviewer-panel-decision/v1"}, "independent_reviewer_results": [{"accepted": true, "assurance_grade": "agentic", "attempts": 1, "confidence": 0.94, "critical_review": {"assumptions_to_verify": ["Config.load preserves durable_execution defaults when YAML section omitted (Pydantic default_factory, not explicitly tested)", "ADR external vendor claims adequate for report-only decision slice"], "contradictions_checked": ["Claude test_status unknown vs receipts passed: independently reran pytest; 735 passed full suite", "Plan lists 6 traceability tests vs prior transcript mentions of 5: all 6 exist", "temporal_spike engine Literal vs hand_rolled default: consistent with report-only intent", "Spike isolated from production: grep shows no imports outside spike module and tests"], "decision": "accept", "missing_evidence": ["Explicit test_target_config_load assertion for durable_execution after Config.load", "Step 6 supervised workflow submit and commit (correctly deferred post-review)"], "severity": "low", "strongest_objection": "Issues/TDD cite target_config_load as the P2 public boundary, but durable_execution defaults are tested via direct DurableExecutionCfg() instantiation\u2014not via Config.load from YAML\u2014leaving a minor acceptance-criteria fidelity gap.", "what_would_change_my_mind": "pytest failure in new test files, git diff --check violation, plan sha mismatch, or discovery that durable_execution config breaks existing Config.load paths."}, "decision": "accept", "failure_classification": null, "gate": "implementation_plan", "lineage": ["cursor", "cursor_sdk", "composer-2.5"], "model": "composer-2.5", "output_sha256": "e0cab4aa5deb116ec7ec0463360ce76b09ab4804bef9f0497c73ce8b0017038f", "provider_family": "cursor", "recoverable": false, "reviewer_assurance": "tool_backed_primary", "reviewer_id": "independent-reviewer-0", "reviewer_output_mode": "cursor_sdk", "reviewer_runtime": "cursor_sdk", "round_index": 1, "runtime": "cursor_sdk", "schema_version": "independent-reviewer-panel-result/v1", "severity": "low", "task_id": "durable-execution-engine-adr-20260604", "tests": ["test_adr_durable_execution_engine_decision_contains_required_sections", "test_durable_execution_defaults_keep_hand_rolled_runtime", "test_durable_execution_temporal_spike_engine_value_is_explicitly_flagged", "test_temporal_spike_is_disabled_until_flagged", "test_temporal_spike_uses_idempotency_key_as_workflow_id_with_use_existing", "test_spike_report_compares_temporal_submit_against_layer0_reservation"], "tool_access": "codebase_tools", "transcript_refs": [{"chars": 4000, "kind": "reviewer_transcript_tail", "ref": "independent_reviewer_review:durable-execution-engine-adr-20260604:implementation_plan:1:independent-reviewer-0"}], "transcript_sha256": "b68bc51cd92746261b1c5726f500a49735b9782c02b44f18259e0e2591acfc41", "verdict_present": true}, {"accepted": true, "assurance_grade": "agentic", "attempts": 1, "confidence": 0.88, "critical_review": {"assumptions_to_verify": ["The provided pytest/compileall receipts were generated from this exact working tree", "Workflow-generated docs artifacts under docs/dual-agent/durable-execution-engine-adr-20260604/ are expected gate artifacts", "A future real Temporal pilot will validate SDK enum/service behavior beyond the fake-client string model"], "contradictions_checked": ["Claude outcome says pytest/diff-check were not executed, but prompt evidence and on-disk tool-receipts.json report passed receipts; resolved in favor of gate receipts, with provenance caveat", "temporalio/Temporal hits are confined to docs, config literals, tests, and the spike module; no source/test Temporal SDK import found", "Config exposes temporal_spike as an explicit non-default value while defaults and example remain hand_rolled/false; consistent with report-only intent", "MCP submit/poll code still calls existing State.reserve_dual_agent_workflow_job and does not import or call the spike", "git status --short collapses the untracked docs workflow directory; file-level listing shows many docs workflow artifacts under the declared docs path, not extra code modules", "implementation-plan sha256 matches the cited 142a2b87 handoff hash"], "decision": "accept", "missing_evidence": ["Fresh pytest and compileall execution by this reviewer under the current read-only constraints", "Live Temporal namespace behavior, intentionally out of scope for this report-only fake-client spike"], "severity": "low", "strongest_objection": "The strongest reason not to advance is execution provenance: test and compile evidence is supplied by receipts rather than rerun by this reviewer, so acceptance assumes those receipts correspond to the current worktree.", "what_would_change_my_mind": "Any current pytest/compileall failure, a production submit path importing/calling Temporal or the spike, default config changing away from hand_rolled/false, missing plan-named tests, an implementation-plan hash mismatch, or untracked implementation files outside the declared path set would move this to revise."}, "decision": "accept", "failure_classification": null, "gate": "implementation_plan", "lineage": ["openai", "codex_cli", "gpt-5.5"], "model": "gpt-5.5", "output_sha256": "f1d95b5793bac9ad58bab712f330e1b8ac55226c1b8e3fa2f3e46bcddd4b81b6", "provider_family": "openai", "recoverable": false, "reviewer_assurance": "tool_backed_primary", "reviewer_id": "independent-reviewer-1", "reviewer_output_mode": "codex_cli", "reviewer_runtime": "codex_cli", "round_index": 1, "runtime": "codex_cli", "schema_version": "independent-reviewer-panel-result/v1", "severity": "low", "task_id": "durable-execution-engine-adr-20260604", "tests": ["receipt:pytest-durable-execution-engine-spike-focused: 6 passed in 0.13s", "receipt:pytest-target-config-and-durable-engine: 11 passed in 0.12s", "receipt:pytest-full-durable-execution-engine-adr: 735 passed, 8 skipped in 106.09s", "receipt:compileall-durable-execution-engine-spike: exit 0", "receipt:git-diff-check-durable-execution-engine-adr: no whitespace errors", "independent read-only checks: git diff --check exit 0; trailing-whitespace rg scan found no matches"], "tool_access": "codebase_tools", "transcript_refs": [{"chars": 4000, "kind": "reviewer_transcript_tail", "ref": "independent_reviewer_review:durable-execution-engine-adr-20260604:implementation_plan:1:independent-reviewer-1"}], "transcript_sha256": "71758c0812e52ff0f6301b17cf67899d275cd4657fd38511bb311d86723244f7", "verdict_present": true}], "objections": [], "requirements": [{"evidence": ["P1:green"], "requirement_id": "probe.P1", "status": "pass"}, {"evidence": ["P2:green"], "requirement_id": "probe.P2", "status": "pass"}, {"evidence": ["P3:green"], "requirement_id": "probe.P3", "status": "pass"}, {"evidence": ["P4:green"], "requirement_id": "probe.P4", "status": "pass"}, {"evidence": ["P_planning:green"], "requirement_id": "probe.P_planning", "status": "pass"}, {"evidence": ["cursor_review_ok", "panel_decision=accept:all_available_reviewers_accept"], "legacy_requirement_id": "cursor_review", "requirement_id": "independent_reviewer", "status": "pass"}], "reviewer": "codex", "round_policy": {"blocking_findings": [], "close_allowed": true, "force_next_round": false}, "schema_version": "codex-review-packet/v1", "task_id": "durable-execution-engine-adr-20260604", "would_change_if": "Every requirement is pass and both reviewers accept."}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+## 50. Execution
+
+- event_id: `492874`
+- ts: `1780580562`
+- interaction_type: `planning_validation`
+- gate: `execution`
+- validator_version: `1.0.0`
+- verdict: `accepted`
+
+### Checks
+
+- AGG-001: pass
+- AGG-002: pass
+- GRILL-001: pass
+- GRILL-002: pass
+- GRILL-003: pass
+- ISS-001: pass
+- ISS-002: pass
+- ISS-003: pass
+- ISS-004: pass
+- PLAN-001: pass
+- PLAN-002: pass
+- PLAN-003: pass
+- PLAN-004: pass
+- PRD-001: pass
+- PRD-002: pass
+- PRD-003: pass
+- PRD-004: pass
+- PRD-005: pass
+- PRD-006: pass
+- TDD-001: pass
+- TDD-002: pass
+- TDD-003: pass
+- TDD-004: pass
+
+### Artifacts
+
+- {"kind": "prd", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/prd.md", "sha256": "b18b5bf2265174eb3094570cbdb86ba280995797abcd48f46396ac0e6e8dd783", "status": "accepted"}
+- {"kind": "issues", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/issues.md", "sha256": "de40ccf9fb19d75c694b7e949780c8bbe16c4d0139b55e56c2a2070018c4175f", "status": "accepted"}
+- {"kind": "tdd_plan", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/tdd.md", "sha256": "4f6dee569232c8254b4bca9c312b8a056d7dd1bb4a8d9781e63b720fe99d646f", "status": "accepted"}
+- {"kind": "grill_findings", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings.md", "sha256": "03b9d08a61a853e539ae4a823d94ff6ca17096f72ecc837c813491758ff95d6b", "status": "accepted"}
+- {"kind": "implementation_plan", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/implementation-plan.md", "sha256": "142a2b87b59605e1fd611840d2782ce9eb56a225c6a69b9062b858108a3de7c4", "status": "accepted"}
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| validate_planning_artifacts#1780580562668#1707 |  |  | validate_planning_artifacts | green | 1 | 1707 |  |  | P_planning |  | {"artifact_count": 7, "gate": "execution", "required_kinds": ["grill_findings", "implementation_plan", "issues", "prd", "tdd_plan"], "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"} |  |
+
+## 51. Execution
+
+- event_id: `492875`
+- ts: `1780580562`
+- interaction_type: `gate_request`
+- sender: `codex`
+- recipient: `claude_code`
+- round_index: `None`
+- persona_id: `codex.lifecycle_reviewer`
+- addresses: `event:492874`, `handoff:/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json`
+
+### Message
+
+Supervisor-owned workflow gate: execution.
+
+Intent:
+Decide via ADR whether Temporal, Restate, or DBOS should replace parts of the durable job stack, with only a disabled report-only Temporal submit spike.
+
+Review this gate against the current source artifacts and return a typed dual_agent_outcome.
+Use decisions/objections to say whether the gate should accept, revise, or deny.
+
+### Confidence
+
+- value: `None`
+- source: `None`
+- rationale: None recorded.
+
+Criteria:
+
+- None recorded.
+
+Evidence:
+
+- None recorded.
+
+### Claims
+
+- None recorded.
+
+### Objections
+
+- None recorded.
+
+### Questions
+
+- None recorded.
+
+### Critical Review
+
+`{}`
+
+### Tool Receipts
+
+- None recorded.
+
+### Evidence Refs
+
+- None recorded.
+
+### Raw Transcript Refs
+
+- None recorded.
+
+### Would Change If
+
+None recorded.
+
+### Review Packet
+
+`{}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| validate_planning_artifacts#1780580562668#1707 |  |  | validate_planning_artifacts | green | 1 | 1707 |  |  | P_planning |  | {"artifact_count": 7, "gate": "execution", "required_kinds": ["grill_findings", "implementation_plan", "issues", "prd", "tdd_plan"], "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"} |  |
+| write_handoff_packet#1780580562670#1092 |  |  | write_handoff_packet | completed | 1 | 1092 |  |  |  |  | {"artifact_count": 7, "gate": "execution", "task_id": "durable-execution-engine-adr-20260604"} | {"artifact_count": 7, "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json"} |  |
+
+## 52. Execution
+
+- event_id: `492899`
+- ts: `1780580726`
+- interaction_type: `gate_response`
+- sender: `claude_code`
+- recipient: `codex`
+- round_index: `None`
+- persona_id: `claude_code.lead_worker`
+- addresses: `event:492875`, `handoff:/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json`
+
+### Message
+
+Execution ACCEPT: report-only ADR (Temporal/Restate/DBOS vs keep-hand-rolled) plus disabled-by-default Temporal submit spike, verified at current source. Default runtime unchanged (engine=hand_rolled, spike disabled), no temporalio import in any code, ADR scores 4 options on 6 criteria, comparison test calls the real reserve_dual_agent_workflow_job (signature-exact, non-vacuous), and out-of-scope production paths are untouched.
+
+### Confidence
+
+- value: `0.9`
+- source: `claude_code_self_reported`
+- rationale: All structural invariants verified directly against current source (config diff, ADR sections, spike guard, no temporalio import, untouched production paths, signature-exact real-boundary call). Confidence capped below 0.95 because pytest was not executed and source shasums were not re-checked, so green is self_reported per packet policy rather than observed.
+
+Criteria:
+
+- Default runtime unchanged (config defaults + yaml + default_factory wiring) [met]
+- Spike disabled-by-default with RuntimeError guard and report_only/default_runtime_changed=False [met]
+- No temporalio import anywhere in executable code [met]
+- ADR compares 4 options on 6 criteria with explicit no-default-change recommendation [met]
+- Comparison test calls real reserve_dual_agent_workflow_job with exact current signature [met]
+- Out-of-scope production paths (stdio/state/lead) untouched [met]
+- pytest executed with pass status [not met - un-run, self_reported]
+
+Evidence:
+
+- tests/test_durable_execution_engine_adr.py::test_adr_durable_execution_engine_decision_contains_required_sections
+- tests/test_durable_execution_engine_spike.py::test_durable_execution_defaults_keep_hand_rolled_runtime
+- tests/test_durable_execution_engine_spike.py::test_durable_execution_temporal_spike_engine_value_is_explicitly_flagged
+- tests/test_durable_execution_engine_spike.py::test_temporal_spike_is_disabled_until_flagged
+- tests/test_durable_execution_engine_spike.py::test_temporal_spike_uses_idempotency_key_as_workflow_id_with_use_existing
+- tests/test_durable_execution_engine_spike.py::test_spike_report_compares_temporal_submit_against_layer0_reservation
+- supervisor/config.py
+- config.example.yaml
+- supervisor/durable_execution_engine_spike.py
+- tests/test_durable_execution_engine_spike.py
+- tests/test_durable_execution_engine_adr.py
+- docs/adr/0004-durable-execution-engine-decision.md
+- docs/dual-agent/durable-execution-engine-adr-20260604/
+- ACCEPT execution gate: intent realized at current source with no default-runtime change
+- Default kept hand_rolled: DurableExecutionCfg config.py:149 + config.example.yaml block, wired via default_factory
+- Spike is disabled-by-default and report-only: RuntimeError at spike.py:78, default_runtime_changed=False
+- ADR 0004 compares Option A/B/C/D across all 6 criteria and recommends keep hand-rolled with Temporal as only follow-up
+- Comparison test is non-vacuous: calls real State.reserve_dual_agent_workflow_job, signature-exact state.py:829-843
+
+### Claims
+
+- The execution gate realizes the report-only ADR intent without changing the production durable-job runtime
+- The Temporal submit spike is disabled by default and never invoked from any production path
+- The Layer-0 comparison exercises real reservation code, making the spike comparison non-vacuous
+
+### Objections
+
+- pytest not executed this gate (test_status unknown); acceptable under packet required_evidence_grade=self_reported
+- Source-artifact shasums not re-verified against handoff (approval friction; self_reported grade)
+- row['recovery_point'] column access assumed valid from prior gates; not exercised here
+
+### Questions
+
+- None recorded.
+
+### Critical Review
+
+`{"assumptions_to_verify": ["pytest actually passes when run in CI/local", "the sqlite3.Row from the reservation exposes row['recovery_point'] without KeyError", "handoff source sha256 values still match on-disk artifacts (mutable_by_worker=false)"], "contradictions_checked": ["Claimed 'default unchanged' vs config diff \u2014 confirmed: engine defaults hand_rolled, spike False, only additive +14", "Claimed 'no temporalio dependency' vs repo grep \u2014 confirmed: matches only in docs/transcripts, none in code", "Claimed 'comparison non-vacuous' vs real signature \u2014 confirmed: state.py:829-843 matches the test call kw-for-kw", "Claimed 'out-of-scope untouched' vs git status \u2014 confirmed: stdio/state/dual_agent_lead porcelain empty"], "decision": "accept", "evidence_refs": [], "missing_evidence": ["pytest run output with pass/fail per test", "re-computed sha256 of the six source planning artifacts matching the handoff packet values", "confirmation that sqlite3.Row returned by reserve_dual_agent_workflow_job includes a 'recovery_point' key"], "schema_version": "critical-review/v1", "severity": "low", "strongest_objection": "The full pytest suite was not executed this gate, so all GREEN claims are asserted from code reading rather than observed test runs; a runtime-only defect (e.g., a Row missing the recovery_point key, or an import error) could pass static review yet fail at execution.", "what_would_change_my_mind": "Evidence that pytest fails on these tests, that any production module imports durable_execution_engine_spike, that the reservation signature or recovery_point column has drifted, or that a default runtime value was actually changed would flip this to revise/deny."}`
+
+### Tool Receipts
+
+- None recorded.
+
+### Evidence Refs
+
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_adr.py::test_adr_durable_execution_engine_decision_contains_required_sections", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_spike.py::test_durable_execution_defaults_keep_hand_rolled_runtime", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_spike.py::test_durable_execution_temporal_spike_engine_value_is_explicitly_flagged", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_spike.py::test_temporal_spike_is_disabled_until_flagged", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_spike.py::test_temporal_spike_uses_idempotency_key_as_workflow_id_with_use_existing", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_spike.py::test_spike_report_compares_temporal_submit_against_layer0_reservation", "status": "unknown"}
+- {"kind": "reported_changed_file", "ref": "supervisor/config.py"}
+- {"kind": "reported_changed_file", "ref": "config.example.yaml"}
+- {"kind": "reported_changed_file", "ref": "supervisor/durable_execution_engine_spike.py"}
+- {"kind": "reported_changed_file", "ref": "tests/test_durable_execution_engine_spike.py"}
+- {"kind": "reported_changed_file", "ref": "tests/test_durable_execution_engine_adr.py"}
+- {"kind": "reported_changed_file", "ref": "docs/adr/0004-durable-execution-engine-decision.md"}
+- {"kind": "reported_changed_file", "ref": "docs/dual-agent/durable-execution-engine-adr-20260604/"}
+
+### Raw Transcript Refs
+
+- {"bytes": 11009, "kind": "claude_stdout", "ref": "lead_result.stdout"}
+- {"kind": "claude_handoff_packet", "ref": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json"}
+
+### Would Change If
+
+A subsequent gate response changes the typed outcome, or supervisor probes reject this response.
+
+### Review Packet
+
+`{}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| invoke_claude_lead#1780580562673#163883218 |  |  | invoke_claude_lead | completed | 163883 | 163883218 | 1513811 | 11812 | P3 |  | {"attempt": 1, "budget_usd": 100.0, "corrective_retry": false, "dynamic_workflow_task_class": null, "execution_layer_mode": "lead_direct", "expected_decisions": [], "expected_objections": [], "expected_specialists": [], "explicit_model": null, "gate": "execution", "model": "opus", "model_source": "quality_default:best", "quality": "best", "requested_model": "opus", "task_id": "durable-execution-engine-adr-20260604", "timeout_s": 900} | {"cost_usd": 5.543719500000001, "model": "opus", "outcome_present": true, "probe_id": "P3", "probe_reason": "outcome_fidelity_ok", "probe_status": "green", "stderr_bytes": 0, "stdout_bytes": 11009, "tokens_in": 1513811, "tokens_out": 11812} |  |
+| evaluate_worker_invocation#1780580726556#120 | invoke_claude_lead#1780580562673#163883218 |  | evaluate_worker_invocation | green | 0 | 120 |  |  | P2 |  | {"gate": "execution", "probe_id": "P2", "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P2", "reason": "worker_orchestration_invocation_ok", "status": "green"} |  |
+| evaluate_outcome_fidelity#1780580726556#0 | invoke_claude_lead#1780580562673#163883218 |  | evaluate_outcome_fidelity | green | 0 | 0 |  |  | P3 |  | {"gate": "execution", "probe_id": "P3", "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P3", "reason": "outcome_fidelity_ok", "status": "green"} |  |
+| verify_planning_artifact_boundaries#1780580726556#4217 | invoke_claude_lead#1780580562673#163883218 |  | verify_planning_artifact_boundaries | green | 4 | 4217 |  |  | P1 |  | {"gate": "execution", "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json", "probe_id": "P1", "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P1", "reason": "planning_artifact_boundaries_ok", "status": "green"} |  |
+| evaluate_outcome_gate_decision#1780580726560#328 | invoke_claude_lead#1780580562673#163883218 |  | evaluate_outcome_gate_decision | red | 0 | 328 |  |  | P4 |  | {"gate": "execution", "probe_id": "P4", "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P4", "reason": "outcome_critical_review_blocked", "status": "red"} | outcome_critical_review_blocked |
+
+## 53. Execution
+
+- event_id: `492900`
+- ts: `1780580726`
+- interaction_type: `gate_result`
+- status: `blocked`
+- attempts: `1`
+
+### Claude Code -> Codex
+
+Outcome summary: Execution ACCEPT: report-only ADR (Temporal/Restate/DBOS vs keep-hand-rolled) plus disabled-by-default Temporal submit spike, verified at current source. Default runtime unchanged (engine=hand_rolled, spike disabled), no temporalio import in any code, ADR scores 4 options on 6 criteria, comparison test calls the real reserve_dual_agent_workflow_job (signature-exact, non-vacuous), and out-of-scope production paths are untouched.
+
+Decisions:
+
+- ACCEPT execution gate: intent realized at current source with no default-runtime change
+- Default kept hand_rolled: DurableExecutionCfg config.py:149 + config.example.yaml block, wired via default_factory
+- Spike is disabled-by-default and report-only: RuntimeError at spike.py:78, default_runtime_changed=False
+- ADR 0004 compares Option A/B/C/D across all 6 criteria and recommends keep hand-rolled with Temporal as only follow-up
+- Comparison test is non-vacuous: calls real State.reserve_dual_agent_workflow_job, signature-exact state.py:829-843
+
+Specialists:
+
+- `lead-direct-verification`: `accept`
+
+Objections:
+
+- pytest not executed this gate (test_status unknown); acceptable under packet required_evidence_grade=self_reported
+- Source-artifact shasums not re-verified against handoff (approval friction; self_reported grade)
+- row['recovery_point'] column access assumed valid from prior gates; not exercised here
+
+### Validation
+
+- `P1`: `green` / `planning_artifact_boundaries_ok`
+- `P2`: `green` / `worker_orchestration_invocation_ok`
+- `P3`: `green` / `outcome_fidelity_ok`
+- `P4`: `red` / `outcome_critical_review_blocked`
+- `P_planning`: `green` / `planning_validation_ok`
+
+### Artifact Rigor
+
+- status: `ok`
+- reason: `required_artifacts_present`
+- artifact_policy: `strict`
+- required_artifacts: `prd`, `tdd_plan`, `grill_findings`, `issues`, `implementation_plan`
+- present_artifacts: `grill_findings`, `implementation_plan`, `issues`, `prd`, `tdd_plan`
+- missing_artifacts: `[]`
+- missing_artifact_paths: `[]`
+- required_prerequisite_gates: `implementation_plan`
+- accepted_prerequisite_gates: `implementation_plan`
+- missing_prerequisite_gates: `[]`
+- gate_statuses: `{"implementation_plan": "accepted", "issues_review": "accepted", "prd_review": "accepted", "tdd_review": "accepted"}`
+- user_facing: `False`
+- screenshots: `[]`
+- missing_screenshot_paths: `[]`
+- visual_validation: `{"allowed_sources": ["browser", "browser-use", "browser_use", "computer", "computer-use", "computer_use"], "evidence": [], "failures": [], "reason": "no_screenshots_supplied", "status": "not_required"}`
+
+### Trace Envelope
+
+- policy_verdict: `blocked`
+- failure_category: `system_design`
+- failure_subcategory: `resource_contention`
+- failure_code: `blocked_without_probe_reason`
+- mast_code: ``
+- mast_mode: ``
+- mast_category: ``
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| start_dual_agent_gate#1780580562667#163902025 |  |  | start_dual_agent_gate | completed | 163902 | 163902025 |  |  |  |  | {"agentic_lead_policy": "off", "artifact_policy": "strict", "dynamic_workflow_task_class": null, "execution_layer_mode": "lead_direct", "gate": "execution", "min_subagents": 3, "planning_artifact_count": 7, "required_evidence_grade": "self_reported", "required_roles": [], "screenshot_count": 0, "task_id": "durable-execution-engine-adr-20260604", "user_facing": false} | {"claude_gate_status": "blocked", "probe_statuses": {"P1": "green", "P2": "green", "P3": "green", "P4": "red", "P_planning": "green"}, "supervisor_final_status": "blocked"} |  |
+| invoke_claude_lead#1780580726569#0 | start_dual_agent_gate#1780580562667#163902025 |  | invoke_claude_lead | completed | 0 | 0 | 1513811 | 11812 |  |  | {"gate": "execution", "task_id": "durable-execution-engine-adr-20260604"} | {"outcome_present": true, "probe_reason": "outcome_fidelity_ok", "probe_status": "green", "tokens_in": 1513811, "tokens_out": 11812} |  |
+| probe_p2#1780580726569#0#p2 | invoke_claude_lead#1780580726569#0 |  | probe:P2 | green | 0 | 0 |  |  | P2 |  | {"probe_id": "P2"} | {"probe_id": "P2", "reason": "worker_orchestration_invocation_ok", "status": "green"} |  |
+| probe_p3#1780580726569#0#p3 | invoke_claude_lead#1780580726569#0 |  | probe:P3 | green | 0 | 0 |  |  | P3 |  | {"probe_id": "P3"} | {"probe_id": "P3", "reason": "outcome_fidelity_ok", "status": "green"} |  |
+| probe_p1#1780580726569#0#p1 | invoke_claude_lead#1780580726569#0 |  | probe:P1 | green | 0 | 0 |  |  | P1 |  | {"probe_id": "P1"} | {"probe_id": "P1", "reason": "planning_artifact_boundaries_ok", "status": "green"} |  |
+| probe_p4#1780580726569#0#p4 | invoke_claude_lead#1780580726569#0 |  | probe:P4 | red | 0 | 0 |  |  | P4 |  | {"probe_id": "P4"} | {"probe_id": "P4", "reason": "outcome_critical_review_blocked", "status": "red"} | outcome_critical_review_blocked |
+| probe_p_planning#1780580726569#0#p_planning | invoke_claude_lead#1780580726569#0 |  | probe:P_planning | green | 0 | 0 |  |  | P_planning |  | {"probe_id": "P_planning"} | {"probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"} |  |
+
+## 54. Execution
+
+- event_id: `492901`
+- ts: `1780580727`
+- interaction_type: `round`
+- round_index: `1`
+
+### Codex -> Claude Code
+
+- Codex decision: `revise`
+- Codex confidence: `0.75`
+
+### Claude Code -> Codex
+
+- Claude decision: `revise`
+- Claude confidence: `0.9`
+
+### Disagreement / Grill Finding
+
+agents have not both accepted yet; revise and continue
+
+## 55. Execution
+
+- event_id: `492902`
+- ts: `1780580727`
+- interaction_type: `gate_decision`
+- sender: `codex`
+- recipient: `supervisor`
+- round_index: `1`
+- persona_id: `codex.lifecycle_reviewer`
+- addresses: `event:492901`
+
+### Message
+
+agents have not both accepted yet; revise and continue
+
+### Confidence
+
+- value: `0.75`
+- source: `codex_supervisor_deterministic_policy`
+- rationale: Codex denied advancement because one or more supervisor probes failed.
+
+Criteria:
+
+- gate_status=blocked
+- decision=revise
+- blocked_or_failed_probes=P4
+
+Evidence:
+
+- P1:green
+- P2:green
+- P3:green
+- P4:red
+- P_planning:green
+
+### Claims
+
+- codex_decision=revise
+- claude_decision=revise
+- cursor_decision=accept
+
+### Objections
+
+- agents have not both accepted yet; revise and continue
+
+### Questions
+
+- What corrective input should be applied before the next attempt?
+
+### Critical Review
+
+`{"assumptions_to_verify": [], "contradictions_checked": ["supervisor probes", "claim verification", "cursor review"], "decision": "revise", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}], "missing_evidence": ["probe P4 failed"], "schema_version": "critical-review/v1", "severity": "important", "strongest_objection": "probe P4 failed", "what_would_change_my_mind": "Every requirement is pass and both reviewers accept."}`
+
+### Tool Receipts
+
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/prd.md"], "claims": ["PRD promise contracts P1-P4 produced", "Report-only runtime decision boundary captured"], "kind": "skill_run", "receipt_id": "skill-to-prd-durable-execution-engine-adr-20260604", "skill": "to-prd", "stage": "to_prd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings.md"], "claims": ["PRD grill findings resolved", "Temporal spike is separated from production adoption"], "kind": "skill_run", "receipt_id": "skill-prd-grill-durable-execution-engine-adr-20260604", "skill": "grill-with-docs", "stage": "prd_grill", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/issues.md"], "claims": ["Issues cover every PRD promise P1-P4", "Each issue names public-boundary acceptance criteria"], "kind": "skill_run", "receipt_id": "skill-to-issues-durable-execution-engine-adr-20260604", "skill": "to-issues", "stage": "to_issues", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/tdd.md"], "claims": ["TDD cycles cover config default, explicit temporal_spike flag coverage, Temporal fake-client idempotency, Layer-0 comparison, and ADR completeness"], "kind": "skill_run", "receipt_id": "skill-tdd-durable-execution-engine-adr-20260604", "skill": "tdd", "stage": "tdd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings-tdd.md"], "claims": ["TDD grill findings resolved", "Layer-0 comparison, explicit temporal_spike flag coverage, and no-default-change tests are required"], "kind": "skill_run", "receipt_id": "skill-tdd-grill-durable-execution-engine-adr-20260604", "skill": "grill-with-docs", "stage": "tdd_grill", "status": "passed"}
+- {"command": "uv run pytest tests/test_durable_execution_engine_spike.py tests/test_durable_execution_engine_adr.py -q", "kind": "test", "receipt_id": "receipt:pytest-durable-execution-engine-spike-focused", "status": "passed", "summary": "6 passed in 0.13s"}
+- {"command": "uv run pytest tests/test_target_config_load.py tests/test_durable_execution_engine_spike.py tests/test_durable_execution_engine_adr.py -q", "kind": "test", "receipt_id": "receipt:pytest-target-config-and-durable-engine", "status": "passed", "summary": "11 passed in 0.12s"}
+- {"command": "uv run pytest -q", "kind": "test", "receipt_id": "receipt:pytest-full-durable-execution-engine-adr", "status": "passed", "summary": "735 passed, 8 skipped in 106.09s"}
+- {"command": "uv run python -m compileall supervisor/durable_execution_engine_spike.py", "kind": "test", "receipt_id": "receipt:compileall-durable-execution-engine-spike", "status": "passed", "summary": "compileall completed with exit code 0"}
+- {"command": "git diff --check", "kind": "test", "receipt_id": "receipt:git-diff-check-durable-execution-engine-adr", "status": "passed", "summary": "no whitespace errors"}
+
+### Evidence Refs
+
+- {"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}
+
+### Raw Transcript Refs
+
+- {"kind": "claude_handoff_packet", "ref": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json"}
+- {"count": 6, "kind": "claude_reported_tests", "ref": "outcome.tests"}
+
+### Would Change If
+
+All required probes, claim receipts, and optional Cursor review accept.
+
+### Review Packet
+
+`{"confidence": {"criteria": ["gate_status=blocked", "decision=revise", "blocked_or_failed_probes=P4"], "evidence": ["P1:green", "P2:green", "P3:green", "P4:red", "P_planning:green"], "rationale": "Codex denied advancement because one or more supervisor probes failed.", "source": "codex_supervisor_deterministic_policy", "value": 0.75}, "critical_review": {"assumptions_to_verify": [], "contradictions_checked": ["supervisor probes", "claim verification", "cursor review"], "decision": "revise", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}], "missing_evidence": ["probe P4 failed"], "schema_version": "critical-review/v1", "severity": "important", "strongest_objection": "probe P4 failed", "what_would_change_my_mind": "Every requirement is pass and both reviewers accept."}, "decision": "revise", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}], "findings": [{"code": "P4", "evidence": ["P4:red"], "finding_id": "finding-001", "fix": "probe P4 failed", "receipt_replay": {"failures": [], "observed_receipt_ids": ["skill-to-prd-durable-execution-engine-adr-20260604", "skill-prd-grill-durable-execution-engine-adr-20260604", "skill-to-issues-durable-execution-engine-adr-20260604", "skill-tdd-durable-execution-engine-adr-20260604", "skill-tdd-grill-durable-execution-engine-adr-20260604", "receipt:pytest-durable-execution-engine-spike-focused", "receipt:pytest-target-config-and-durable-engine", "receipt:pytest-full-durable-execution-engine-adr", "receipt:compileall-durable-execution-engine-spike", "receipt:git-diff-check-durable-execution-engine-adr"]}, "ref": "probe.P4", "requirement_id": "probe.P4", "severity": "IMPORTANT", "title": "probe P4 failed"}], "gate": "execution", "independent_reviewer_panel_decision": null, "independent_reviewer_results": null, "objections": ["agents have not both accepted yet; revise and continue"], "requirements": [{"evidence": ["P1:green"], "requirement_id": "probe.P1", "status": "pass"}, {"evidence": ["P2:green"], "requirement_id": "probe.P2", "status": "pass"}, {"evidence": ["P3:green"], "requirement_id": "probe.P3", "status": "pass"}, {"evidence": ["P4:red"], "requirement_id": "probe.P4", "status": "fail"}, {"evidence": ["P_planning:green"], "requirement_id": "probe.P_planning", "status": "pass"}], "reviewer": "codex", "round_policy": {"blocking_findings": ["finding-001"], "close_allowed": false, "force_next_round": true}, "schema_version": "codex-review-packet/v1", "task_id": "durable-execution-engine-adr-20260604", "would_change_if": "Every requirement is pass and both reviewers accept."}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+## 56. Execution
+
+- event_id: `492903`
+- ts: `1780580727`
+- interaction_type: `gate_result`
+- status: `blocked`
+- attempts: `1`
+
+### Claude Code -> Codex
+
+Outcome summary: Execution ACCEPT: report-only ADR (Temporal/Restate/DBOS vs keep-hand-rolled) plus disabled-by-default Temporal submit spike, verified at current source. Default runtime unchanged (engine=hand_rolled, spike disabled), no temporalio import in any code, ADR scores 4 options on 6 criteria, comparison test calls the real reserve_dual_agent_workflow_job (signature-exact, non-vacuous), and out-of-scope production paths are untouched.
+
+Decisions:
+
+- ACCEPT execution gate: intent realized at current source with no default-runtime change
+- Default kept hand_rolled: DurableExecutionCfg config.py:149 + config.example.yaml block, wired via default_factory
+- Spike is disabled-by-default and report-only: RuntimeError at spike.py:78, default_runtime_changed=False
+- ADR 0004 compares Option A/B/C/D across all 6 criteria and recommends keep hand-rolled with Temporal as only follow-up
+- Comparison test is non-vacuous: calls real State.reserve_dual_agent_workflow_job, signature-exact state.py:829-843
+
+Specialists:
+
+- `lead-direct-verification`: `accept`
+
+Objections:
+
+- pytest not executed this gate (test_status unknown); acceptable under packet required_evidence_grade=self_reported
+- Source-artifact shasums not re-verified against handoff (approval friction; self_reported grade)
+- row['recovery_point'] column access assumed valid from prior gates; not exercised here
+
+### Validation
+
+- `P1`: `green` / `planning_artifact_boundaries_ok`
+- `P2`: `green` / `worker_orchestration_invocation_ok`
+- `P3`: `green` / `outcome_fidelity_ok`
+- `P4`: `red` / `outcome_critical_review_blocked`
+- `P_planning`: `green` / `planning_validation_ok`
+
+### Artifact Rigor
+
+- status: `ok`
+- reason: `required_artifacts_present`
+- artifact_policy: `strict`
+- required_artifacts: `prd`, `tdd_plan`, `grill_findings`, `issues`, `implementation_plan`
+- present_artifacts: `grill_findings`, `implementation_plan`, `issues`, `prd`, `tdd_plan`
+- missing_artifacts: `[]`
+- missing_artifact_paths: `[]`
+- required_prerequisite_gates: `implementation_plan`
+- accepted_prerequisite_gates: `implementation_plan`
+- missing_prerequisite_gates: `[]`
+- gate_statuses: `{"implementation_plan": "accepted", "issues_review": "accepted", "prd_review": "accepted", "tdd_review": "accepted"}`
+- user_facing: `False`
+- screenshots: `[]`
+- missing_screenshot_paths: `[]`
+- visual_validation: `{"allowed_sources": ["browser", "browser-use", "browser_use", "computer", "computer-use", "computer_use"], "evidence": [], "failures": [], "reason": "no_screenshots_supplied", "status": "not_required"}`
+
+### Trace Envelope
+
+- policy_verdict: `blocked`
+- failure_category: `inter_agent_misalignment`
+- failure_subcategory: `decision_deadlock`
+- failure_code: `agents_not_converged`
+- mast_code: `FM-1.5`
+- mast_mode: `Unaware of termination conditions`
+- mast_category: `Specification Issues`
+
+## 57. Execution
+
+- event_id: `492904`
+- ts: `1780580727`
+- interaction_type: `planning_validation`
+- gate: `execution`
+- validator_version: `1.0.0`
+- verdict: `accepted`
+
+### Checks
+
+- AGG-001: pass
+- AGG-002: pass
+- GRILL-001: pass
+- GRILL-002: pass
+- GRILL-003: pass
+- ISS-001: pass
+- ISS-002: pass
+- ISS-003: pass
+- ISS-004: pass
+- PLAN-001: pass
+- PLAN-002: pass
+- PLAN-003: pass
+- PLAN-004: pass
+- PRD-001: pass
+- PRD-002: pass
+- PRD-003: pass
+- PRD-004: pass
+- PRD-005: pass
+- PRD-006: pass
+- TDD-001: pass
+- TDD-002: pass
+- TDD-003: pass
+- TDD-004: pass
+
+### Artifacts
+
+- {"kind": "prd", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/prd.md", "sha256": "b18b5bf2265174eb3094570cbdb86ba280995797abcd48f46396ac0e6e8dd783", "status": "accepted"}
+- {"kind": "issues", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/issues.md", "sha256": "de40ccf9fb19d75c694b7e949780c8bbe16c4d0139b55e56c2a2070018c4175f", "status": "accepted"}
+- {"kind": "tdd_plan", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/tdd.md", "sha256": "4f6dee569232c8254b4bca9c312b8a056d7dd1bb4a8d9781e63b720fe99d646f", "status": "accepted"}
+- {"kind": "grill_findings", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings.md", "sha256": "03b9d08a61a853e539ae4a823d94ff6ca17096f72ecc837c813491758ff95d6b", "status": "accepted"}
+- {"kind": "implementation_plan", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/implementation-plan.md", "sha256": "142a2b87b59605e1fd611840d2782ce9eb56a225c6a69b9062b858108a3de7c4", "status": "accepted"}
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| validate_planning_artifacts#1780580727399#2014 |  |  | validate_planning_artifacts | green | 2 | 2014 |  |  | P_planning |  | {"artifact_count": 7, "gate": "execution", "required_kinds": ["grill_findings", "implementation_plan", "issues", "prd", "tdd_plan"], "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"} |  |
+
+## 58. Execution
+
+- event_id: `492905`
+- ts: `1780580727`
+- interaction_type: `gate_request`
+- sender: `codex`
+- recipient: `claude_code`
+- round_index: `None`
+- persona_id: `codex.lifecycle_reviewer`
+- addresses: `event:492904`, `handoff:/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json`
+
+### Message
+
+Supervisor-owned workflow gate: execution.
+
+Intent:
+Decide via ADR whether Temporal, Restate, or DBOS should replace parts of the durable job stack, with only a disabled report-only Temporal submit spike.
+
+Review this gate against the current source artifacts and return a typed dual_agent_outcome.
+Use decisions/objections to say whether the gate should accept, revise, or deny.
+
+Corrective context from the previous round:
+agents have not both accepted yet; revise and continue
+
+### Confidence
+
+- value: `None`
+- source: `None`
+- rationale: None recorded.
+
+Criteria:
+
+- None recorded.
+
+Evidence:
+
+- None recorded.
+
+### Claims
+
+- None recorded.
+
+### Objections
+
+- None recorded.
+
+### Questions
+
+- None recorded.
+
+### Critical Review
+
+`{}`
+
+### Tool Receipts
+
+- None recorded.
+
+### Evidence Refs
+
+- None recorded.
+
+### Raw Transcript Refs
+
+- None recorded.
+
+### Would Change If
+
+None recorded.
+
+### Review Packet
+
+`{}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| validate_planning_artifacts#1780580727399#2014 |  |  | validate_planning_artifacts | green | 2 | 2014 |  |  | P_planning |  | {"artifact_count": 7, "gate": "execution", "required_kinds": ["grill_findings", "implementation_plan", "issues", "prd", "tdd_plan"], "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"} |  |
+| write_handoff_packet#1780580727402#1296 |  |  | write_handoff_packet | completed | 1 | 1296 |  |  |  |  | {"artifact_count": 7, "gate": "execution", "task_id": "durable-execution-engine-adr-20260604"} | {"artifact_count": 7, "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json"} |  |
+
+## 59. Execution
+
+- event_id: `492915`
+- ts: `1780580834`
+- interaction_type: `gate_response`
+- sender: `claude_code`
+- recipient: `codex`
+- round_index: `None`
+- persona_id: `claude_code.lead_worker`
+- addresses: `event:492905`, `handoff:/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json`
+
+### Message
+
+Execution gate re-verified at current source: report-only ADR 0004 (Temporal/Restate/DBOS vs keep hand-rolled) plus disabled-by-default Temporal submit spike. Default runtime unchanged (hand_rolled), no temporalio import anywhere in supervisor/ or tests/, comparison test exercises the real State.reserve_dual_agent_workflow_job. ACCEPT.
+
+### Confidence
+
+- value: `0.9`
+- source: `claude_code_self_reported`
+- rationale: Verified by inspected diff, exact real-signature match, confirmed recovery_point column, complete ADR, and non-vacuous tests. Only gap is that pytest was not executed this round, which the packet permits at self_reported evidence grade.
+
+Criteria:
+
+- default config unchanged (verified diff)
+- spike disabled-by-default (verified source)
+- no temporalio import (verified grep)
+- ADR complete 4x6 + sections (verified read)
+- comparison test exercises real reservation with exact signature (verified)
+- out-of-scope files git-clean (verified porcelain)
+
+Evidence:
+
+- tests/test_durable_execution_engine_spike.py::test_durable_execution_defaults_keep_hand_rolled_runtime
+- tests/test_durable_execution_engine_spike.py::test_durable_execution_temporal_spike_engine_value_is_explicitly_flagged
+- tests/test_durable_execution_engine_spike.py::test_temporal_spike_is_disabled_until_flagged
+- tests/test_durable_execution_engine_spike.py::test_temporal_spike_uses_idempotency_key_as_workflow_id_with_use_existing
+- tests/test_durable_execution_engine_spike.py::test_spike_report_compares_temporal_submit_against_layer0_reservation
+- tests/test_durable_execution_engine_adr.py::test_adr_durable_execution_engine_decision_contains_required_sections
+- supervisor/config.py
+- config.example.yaml
+- docs/adr/0004-durable-execution-engine-decision.md
+- supervisor/durable_execution_engine_spike.py
+- tests/test_durable_execution_engine_spike.py
+- tests/test_durable_execution_engine_adr.py
+- docs/dual-agent/durable-execution-engine-adr-20260604/
+- accept
+
+### Claims
+
+- No default runtime change: production default remains hand_rolled
+- Spike cannot run unless explicitly enabled (hard RuntimeError)
+- ADR is complete and decision-grade (4 options fully scored)
+- Comparison test is non-vacuous against the real Layer-0 reservation
+
+### Objections
+
+- None recorded.
+
+### Questions
+
+- None recorded.
+
+### Critical Review
+
+`{"assumptions_to_verify": ["pytest passes green when run under self_reported grade", "planning-artifact SHAs still match handoff (not re-hashed due to approval friction)"], "contradictions_checked": ["spike disabled vs enabled path: hard RuntimeError when disabled, only flagged callers reach start_workflow", "default config: both config.py and config.example.yaml assert hand_rolled/false", "import surface: no temporalio in supervisor/ or tests/", "comparison non-vacuity: real State.reserve_dual_agent_workflow_job signature matches state.py:829-843 exactly; recovery_point is a real column"], "decision": "accept", "evidence_refs": [], "missing_evidence": ["actual pytest run output (test_status=unknown)", "re-hashed planning-artifact SHA256 vs handoff packet"], "schema_version": "critical-review/v1", "severity": "low", "strongest_objection": "A 'report-only' slice could still leak a runtime change or live Temporal dependency.", "what_would_change_my_mind": "Any production import of the spike module, a non-hand_rolled default, a live Temporal call, or the comparison test not invoking the real reservation path."}`
+
+### Tool Receipts
+
+- None recorded.
+
+### Evidence Refs
+
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_spike.py::test_durable_execution_defaults_keep_hand_rolled_runtime", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_spike.py::test_durable_execution_temporal_spike_engine_value_is_explicitly_flagged", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_spike.py::test_temporal_spike_is_disabled_until_flagged", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_spike.py::test_temporal_spike_uses_idempotency_key_as_workflow_id_with_use_existing", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_spike.py::test_spike_report_compares_temporal_submit_against_layer0_reservation", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_adr.py::test_adr_durable_execution_engine_decision_contains_required_sections", "status": "unknown"}
+- {"kind": "reported_changed_file", "ref": "supervisor/config.py"}
+- {"kind": "reported_changed_file", "ref": "config.example.yaml"}
+- {"kind": "reported_changed_file", "ref": "docs/adr/0004-durable-execution-engine-decision.md"}
+- {"kind": "reported_changed_file", "ref": "supervisor/durable_execution_engine_spike.py"}
+- {"kind": "reported_changed_file", "ref": "tests/test_durable_execution_engine_spike.py"}
+- {"kind": "reported_changed_file", "ref": "tests/test_durable_execution_engine_adr.py"}
+- {"kind": "reported_changed_file", "ref": "docs/dual-agent/durable-execution-engine-adr-20260604/"}
+
+### Raw Transcript Refs
+
+- {"bytes": 8781, "kind": "claude_stdout", "ref": "lead_result.stdout"}
+- {"kind": "claude_handoff_packet", "ref": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json"}
+
+### Would Change If
+
+A subsequent gate response changes the typed outcome, or supervisor probes reject this response.
+
+### Review Packet
+
+`{}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| invoke_claude_lead#1780580727405#106926228 |  |  | invoke_claude_lead | completed | 106926 | 106926228 | 1207077 | 7640 | P3 |  | {"attempt": 1, "budget_usd": 100.0, "corrective_retry": false, "dynamic_workflow_task_class": null, "execution_layer_mode": "lead_direct", "expected_decisions": [], "expected_objections": [], "expected_specialists": [], "explicit_model": null, "gate": "execution", "model": "opus", "model_source": "quality_default:best", "quality": "best", "requested_model": "opus", "task_id": "durable-execution-engine-adr-20260604", "timeout_s": 900} | {"cost_usd": 4.672707, "model": "opus", "outcome_present": true, "probe_id": "P3", "probe_reason": "outcome_fidelity_ok", "probe_status": "green", "stderr_bytes": 0, "stdout_bytes": 8781, "tokens_in": 1207077, "tokens_out": 7640} |  |
+| evaluate_worker_invocation#1780580834331#44 | invoke_claude_lead#1780580727405#106926228 |  | evaluate_worker_invocation | green | 0 | 44 |  |  | P2 |  | {"gate": "execution", "probe_id": "P2", "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P2", "reason": "worker_orchestration_invocation_ok", "status": "green"} |  |
+| evaluate_outcome_fidelity#1780580834331#0 | invoke_claude_lead#1780580727405#106926228 |  | evaluate_outcome_fidelity | green | 0 | 0 |  |  | P3 |  | {"gate": "execution", "probe_id": "P3", "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P3", "reason": "outcome_fidelity_ok", "status": "green"} |  |
+| verify_planning_artifact_boundaries#1780580834331#2569 | invoke_claude_lead#1780580727405#106926228 |  | verify_planning_artifact_boundaries | green | 2 | 2569 |  |  | P1 |  | {"gate": "execution", "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json", "probe_id": "P1", "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P1", "reason": "planning_artifact_boundaries_ok", "status": "green"} |  |
+| evaluate_outcome_gate_decision#1780580834334#336 | invoke_claude_lead#1780580727405#106926228 |  | evaluate_outcome_gate_decision | green | 0 | 336 |  |  | P4 |  | {"gate": "execution", "probe_id": "P4", "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P4", "reason": "outcome_gate_decision_ok", "status": "green"} |  |
+
+## 60. Execution
+
+- event_id: `492916`
+- ts: `1780580834`
+- interaction_type: `gate_result`
+- status: `accepted`
+- attempts: `1`
+
+### Claude Code -> Codex
+
+Outcome summary: Execution gate re-verified at current source: report-only ADR 0004 (Temporal/Restate/DBOS vs keep hand-rolled) plus disabled-by-default Temporal submit spike. Default runtime unchanged (hand_rolled), no temporalio import anywhere in supervisor/ or tests/, comparison test exercises the real State.reserve_dual_agent_workflow_job. ACCEPT.
+
+Decisions:
+
+- accept
+
+Specialists:
+
+- `lead-direct-verification`: `accept`
+
+Objections:
+
+- None recorded.
+
+### Validation
+
+- `P1`: `green` / `planning_artifact_boundaries_ok`
+- `P2`: `green` / `worker_orchestration_invocation_ok`
+- `P3`: `green` / `outcome_fidelity_ok`
+- `P4`: `green` / `outcome_gate_decision_ok`
+- `P_planning`: `green` / `planning_validation_ok`
+
+### Artifact Rigor
+
+- status: `ok`
+- reason: `required_artifacts_present`
+- artifact_policy: `strict`
+- required_artifacts: `prd`, `tdd_plan`, `grill_findings`, `issues`, `implementation_plan`
+- present_artifacts: `grill_findings`, `implementation_plan`, `issues`, `prd`, `tdd_plan`
+- missing_artifacts: `[]`
+- missing_artifact_paths: `[]`
+- required_prerequisite_gates: `implementation_plan`
+- accepted_prerequisite_gates: `implementation_plan`
+- missing_prerequisite_gates: `[]`
+- gate_statuses: `{"execution": "blocked", "implementation_plan": "accepted", "issues_review": "accepted", "prd_review": "accepted", "tdd_review": "accepted"}`
+- user_facing: `False`
+- screenshots: `[]`
+- missing_screenshot_paths: `[]`
+- visual_validation: `{"allowed_sources": ["browser", "browser-use", "browser_use", "computer", "computer-use", "computer_use"], "evidence": [], "failures": [], "reason": "no_screenshots_supplied", "status": "not_required"}`
+
+### Trace Envelope
+
+- policy_verdict: `accepted`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| start_dual_agent_gate#1780580727398#106945629 |  |  | start_dual_agent_gate | completed | 106945 | 106945629 |  |  |  |  | {"agentic_lead_policy": "off", "artifact_policy": "strict", "dynamic_workflow_task_class": null, "execution_layer_mode": "lead_direct", "gate": "execution", "min_subagents": 3, "planning_artifact_count": 7, "required_evidence_grade": "self_reported", "required_roles": [], "screenshot_count": 0, "task_id": "durable-execution-engine-adr-20260604", "user_facing": false} | {"claude_gate_status": "accepted", "probe_statuses": {"P1": "green", "P2": "green", "P3": "green", "P4": "green", "P_planning": "green"}, "supervisor_final_status": "accepted"} |  |
+| invoke_claude_lead#1780580834344#0 | start_dual_agent_gate#1780580727398#106945629 |  | invoke_claude_lead | completed | 0 | 0 | 1207077 | 7640 |  |  | {"gate": "execution", "task_id": "durable-execution-engine-adr-20260604"} | {"outcome_present": true, "probe_reason": "outcome_fidelity_ok", "probe_status": "green", "tokens_in": 1207077, "tokens_out": 7640} |  |
+| probe_p2#1780580834344#0#p2 | invoke_claude_lead#1780580834344#0 |  | probe:P2 | green | 0 | 0 |  |  | P2 |  | {"probe_id": "P2"} | {"probe_id": "P2", "reason": "worker_orchestration_invocation_ok", "status": "green"} |  |
+| probe_p3#1780580834344#0#p3 | invoke_claude_lead#1780580834344#0 |  | probe:P3 | green | 0 | 0 |  |  | P3 |  | {"probe_id": "P3"} | {"probe_id": "P3", "reason": "outcome_fidelity_ok", "status": "green"} |  |
+| probe_p1#1780580834344#0#p1 | invoke_claude_lead#1780580834344#0 |  | probe:P1 | green | 0 | 0 |  |  | P1 |  | {"probe_id": "P1"} | {"probe_id": "P1", "reason": "planning_artifact_boundaries_ok", "status": "green"} |  |
+| probe_p4#1780580834344#0#p4 | invoke_claude_lead#1780580834344#0 |  | probe:P4 | green | 0 | 0 |  |  | P4 |  | {"probe_id": "P4"} | {"probe_id": "P4", "reason": "outcome_gate_decision_ok", "status": "green"} |  |
+| probe_p_planning#1780580834344#0#p_planning | invoke_claude_lead#1780580834344#0 |  | probe:P_planning | green | 0 | 0 |  |  | P_planning |  | {"probe_id": "P_planning"} | {"probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"} |  |
+
+## 61. Execution
+
+- event_id: `492917`
+- ts: `1780580834`
+- interaction_type: `round`
+- round_index: `2`
+
+### Codex -> Claude Code
+
+- Codex decision: `accept`
+- Codex confidence: `0.95`
+
+### Claude Code -> Codex
+
+- Claude decision: `accept`
+- Claude confidence: `0.9`
+
+### Disagreement / Grill Finding
+
+both agents accepted
+
+## 62. Execution
+
+- event_id: `492918`
+- ts: `1780580835`
+- interaction_type: `gate_decision`
+- sender: `codex`
+- recipient: `supervisor`
+- round_index: `2`
+- persona_id: `codex.lifecycle_reviewer`
+- addresses: `event:492917`
+
+### Message
+
+both agents accepted
+
+### Confidence
+
+- value: `0.95`
+- source: `codex_supervisor_deterministic_policy`
+- rationale: Codex accepted because the gate result, probes, claim checks, and optional Cursor review all satisfied the gate criteria.
+
+Criteria:
+
+- gate_status=accepted
+- decision=accept
+- all_supervisor_probes_green
+- claude_outcome_accepted
+- claim_verification_ok_or_not_required
+- cursor_accepted_or_not_requested
+
+Evidence:
+
+- P1:green
+- P2:green
+- P3:green
+- P4:green
+- P_planning:green
+
+### Claims
+
+- codex_decision=accept
+- claude_decision=accept
+- cursor_decision=accept
+
+### Objections
+
+- None recorded.
+
+### Questions
+
+- None recorded.
+
+### Critical Review
+
+`{"assumptions_to_verify": [], "contradictions_checked": ["supervisor probes", "claim verification", "cursor review"], "decision": "accept", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}], "missing_evidence": [], "schema_version": "critical-review/v1", "severity": "none", "strongest_objection": "none", "what_would_change_my_mind": "Every requirement is pass and both reviewers accept."}`
+
+### Tool Receipts
+
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/prd.md"], "claims": ["PRD promise contracts P1-P4 produced", "Report-only runtime decision boundary captured"], "kind": "skill_run", "receipt_id": "skill-to-prd-durable-execution-engine-adr-20260604", "skill": "to-prd", "stage": "to_prd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings.md"], "claims": ["PRD grill findings resolved", "Temporal spike is separated from production adoption"], "kind": "skill_run", "receipt_id": "skill-prd-grill-durable-execution-engine-adr-20260604", "skill": "grill-with-docs", "stage": "prd_grill", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/issues.md"], "claims": ["Issues cover every PRD promise P1-P4", "Each issue names public-boundary acceptance criteria"], "kind": "skill_run", "receipt_id": "skill-to-issues-durable-execution-engine-adr-20260604", "skill": "to-issues", "stage": "to_issues", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/tdd.md"], "claims": ["TDD cycles cover config default, explicit temporal_spike flag coverage, Temporal fake-client idempotency, Layer-0 comparison, and ADR completeness"], "kind": "skill_run", "receipt_id": "skill-tdd-durable-execution-engine-adr-20260604", "skill": "tdd", "stage": "tdd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings-tdd.md"], "claims": ["TDD grill findings resolved", "Layer-0 comparison, explicit temporal_spike flag coverage, and no-default-change tests are required"], "kind": "skill_run", "receipt_id": "skill-tdd-grill-durable-execution-engine-adr-20260604", "skill": "grill-with-docs", "stage": "tdd_grill", "status": "passed"}
+- {"command": "uv run pytest tests/test_durable_execution_engine_spike.py tests/test_durable_execution_engine_adr.py -q", "kind": "test", "receipt_id": "receipt:pytest-durable-execution-engine-spike-focused", "status": "passed", "summary": "6 passed in 0.13s"}
+- {"command": "uv run pytest tests/test_target_config_load.py tests/test_durable_execution_engine_spike.py tests/test_durable_execution_engine_adr.py -q", "kind": "test", "receipt_id": "receipt:pytest-target-config-and-durable-engine", "status": "passed", "summary": "11 passed in 0.12s"}
+- {"command": "uv run pytest -q", "kind": "test", "receipt_id": "receipt:pytest-full-durable-execution-engine-adr", "status": "passed", "summary": "735 passed, 8 skipped in 106.09s"}
+- {"command": "uv run python -m compileall supervisor/durable_execution_engine_spike.py", "kind": "test", "receipt_id": "receipt:compileall-durable-execution-engine-spike", "status": "passed", "summary": "compileall completed with exit code 0"}
+- {"command": "git diff --check", "kind": "test", "receipt_id": "receipt:git-diff-check-durable-execution-engine-adr", "status": "passed", "summary": "no whitespace errors"}
+
+### Evidence Refs
+
+- {"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}
+
+### Raw Transcript Refs
+
+- {"kind": "claude_handoff_packet", "ref": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json"}
+- {"count": 6, "kind": "claude_reported_tests", "ref": "outcome.tests"}
+
+### Would Change If
+
+All required probes, claim receipts, and optional Cursor review accept.
+
+### Review Packet
+
+`{"confidence": {"criteria": ["gate_status=accepted", "decision=accept", "all_supervisor_probes_green", "claude_outcome_accepted", "claim_verification_ok_or_not_required", "cursor_accepted_or_not_requested"], "evidence": ["P1:green", "P2:green", "P3:green", "P4:green", "P_planning:green"], "rationale": "Codex accepted because the gate result, probes, claim checks, and optional Cursor review all satisfied the gate criteria.", "source": "codex_supervisor_deterministic_policy", "value": 0.95}, "critical_review": {"assumptions_to_verify": [], "contradictions_checked": ["supervisor probes", "claim verification", "cursor review"], "decision": "accept", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}], "missing_evidence": [], "schema_version": "critical-review/v1", "severity": "none", "strongest_objection": "none", "what_would_change_my_mind": "Every requirement is pass and both reviewers accept."}, "decision": "accept", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}], "findings": [], "gate": "execution", "independent_reviewer_panel_decision": null, "independent_reviewer_results": null, "objections": [], "requirements": [{"evidence": ["P1:green"], "requirement_id": "probe.P1", "status": "pass"}, {"evidence": ["P2:green"], "requirement_id": "probe.P2", "status": "pass"}, {"evidence": ["P3:green"], "requirement_id": "probe.P3", "status": "pass"}, {"evidence": ["P4:green"], "requirement_id": "probe.P4", "status": "pass"}, {"evidence": ["P_planning:green"], "requirement_id": "probe.P_planning", "status": "pass"}], "reviewer": "codex", "round_policy": {"blocking_findings": [], "close_allowed": true, "force_next_round": false}, "schema_version": "codex-review-packet/v1", "task_id": "durable-execution-engine-adr-20260604", "would_change_if": "Every requirement is pass and both reviewers accept."}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+## 63. Outcome Review
+
+- event_id: `492921`
+- ts: `1780580835`
+- interaction_type: `planning_validation`
+- gate: `outcome_review`
+- validator_version: `1.0.0`
+- verdict: `accepted`
+
+### Checks
+
+- AGG-001: pass
+- AGG-002: pass
+- GRILL-001: pass
+- GRILL-002: pass
+- GRILL-003: pass
+- ISS-001: pass
+- ISS-002: pass
+- ISS-003: pass
+- ISS-004: pass
+- PLAN-001: pass
+- PLAN-002: pass
+- PLAN-003: pass
+- PLAN-004: pass
+- PRD-001: pass
+- PRD-002: pass
+- PRD-003: pass
+- PRD-004: pass
+- PRD-005: pass
+- PRD-006: pass
+- TDD-001: pass
+- TDD-002: pass
+- TDD-003: pass
+- TDD-004: pass
+
+### Artifacts
+
+- {"kind": "prd", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/prd.md", "sha256": "b18b5bf2265174eb3094570cbdb86ba280995797abcd48f46396ac0e6e8dd783", "status": "accepted"}
+- {"kind": "issues", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/issues.md", "sha256": "de40ccf9fb19d75c694b7e949780c8bbe16c4d0139b55e56c2a2070018c4175f", "status": "accepted"}
+- {"kind": "tdd_plan", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/tdd.md", "sha256": "4f6dee569232c8254b4bca9c312b8a056d7dd1bb4a8d9781e63b720fe99d646f", "status": "accepted"}
+- {"kind": "grill_findings", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings.md", "sha256": "03b9d08a61a853e539ae4a823d94ff6ca17096f72ecc837c813491758ff95d6b", "status": "accepted"}
+- {"kind": "implementation_plan", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/implementation-plan.md", "sha256": "142a2b87b59605e1fd611840d2782ce9eb56a225c6a69b9062b858108a3de7c4", "status": "accepted"}
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| validate_planning_artifacts#1780580835140#1941 |  |  | validate_planning_artifacts | green | 1 | 1941 |  |  | P_planning |  | {"artifact_count": 7, "gate": "outcome_review", "required_kinds": ["grill_findings", "implementation_plan", "issues", "prd", "tdd_plan"], "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"} |  |
+
+## 64. Outcome Review
+
+- event_id: `492922`
+- ts: `1780580835`
+- interaction_type: `gate_request`
+- sender: `codex`
+- recipient: `claude_code`
+- round_index: `None`
+- persona_id: `codex.lifecycle_reviewer`
+- addresses: `event:492921`, `handoff:/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json`
+
+### Message
+
+Supervisor-owned workflow gate: outcome_review.
+
+Intent:
+Decide via ADR whether Temporal, Restate, or DBOS should replace parts of the durable job stack, with only a disabled report-only Temporal submit spike.
+
+Review this gate against the current source artifacts and return a typed dual_agent_outcome.
+Use decisions/objections to say whether the gate should accept, revise, or deny.
+
+### Confidence
+
+- value: `None`
+- source: `None`
+- rationale: None recorded.
+
+Criteria:
+
+- None recorded.
+
+Evidence:
+
+- None recorded.
+
+### Claims
+
+- None recorded.
+
+### Objections
+
+- None recorded.
+
+### Questions
+
+- None recorded.
+
+### Critical Review
+
+`{}`
+
+### Tool Receipts
+
+- None recorded.
+
+### Evidence Refs
+
+- None recorded.
+
+### Raw Transcript Refs
+
+- None recorded.
+
+### Would Change If
+
+None recorded.
+
+### Review Packet
+
+`{}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| validate_planning_artifacts#1780580835140#1941 |  |  | validate_planning_artifacts | green | 1 | 1941 |  |  | P_planning |  | {"artifact_count": 7, "gate": "outcome_review", "required_kinds": ["grill_findings", "implementation_plan", "issues", "prd", "tdd_plan"], "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"} |  |
+| write_handoff_packet#1780580835143#1279 |  |  | write_handoff_packet | completed | 1 | 1279 |  |  |  |  | {"artifact_count": 7, "gate": "outcome_review", "task_id": "durable-execution-engine-adr-20260604"} | {"artifact_count": 7, "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json"} |  |
+
+## 65. Outcome Review
+
+- event_id: `492940`
+- ts: `1780580965`
+- interaction_type: `gate_response`
+- sender: `claude_code`
+- recipient: `codex`
+- round_index: `None`
+- persona_id: `claude_code.lead_worker`
+- addresses: `event:492922`, `handoff:/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json`
+
+### Message
+
+Outcome review of ADR 0004 deciding Temporal/Restate/DBOS vs keep hand-rolled, plus a disabled report-only Temporal submit spike. All intent invariants re-verified at current source: ADR (Accepted) scores 4 options across 6 criteria with all 6 required sections; spike disabled-by-default raising RuntimeError, report_only with default_runtime_changed=False; no temporalio import; tracked diff is exactly config.py+config.example.yaml (+14) with state.py/stdio.py git-clean; comparison test calls the real reserve_dual_agent_workflow_job (signature match, non-vacuous). Gate should ACCEPT.
+
+### Confidence
+
+- value: `0.9`
+- source: `claude_code_self_reported`
+- rationale: Static evidence is decisive: diff is config-only (+14), spike is guarded/disabled, no temporalio import, ADR complete, and the comparison test is non-vacuous against the real state method. Confidence capped below 0.95 because pytest was not executed (approval not pursued; handoff policy grade is self_reported) so GREEN is self-reported.
+
+Criteria:
+
+- Tracked source diff limited to config.py + config.example.yaml (+14)
+- Spike disabled-by-default with RuntimeError guard and report_only/default_runtime_changed=False
+- No temporalio import anywhere in supervisor/ or tests/
+- ADR contains all 4 options, 6 criteria, 6 required sections
+- Comparison test invokes real reserve_dual_agent_workflow_job with exact signature
+
+Evidence:
+
+- tests/test_durable_execution_engine_adr.py::test_adr_durable_execution_engine_decision_contains_required_sections
+- tests/test_durable_execution_engine_spike.py::test_durable_execution_defaults_keep_hand_rolled_runtime
+- tests/test_durable_execution_engine_spike.py::test_durable_execution_temporal_spike_engine_value_is_explicitly_flagged
+- tests/test_durable_execution_engine_spike.py::test_temporal_spike_is_disabled_until_flagged
+- tests/test_durable_execution_engine_spike.py::test_temporal_spike_uses_idempotency_key_as_workflow_id_with_use_existing
+- tests/test_durable_execution_engine_spike.py::test_spike_report_compares_temporal_submit_against_layer0_reservation
+- supervisor/config.py
+- config.example.yaml
+- docs/adr/0004-durable-execution-engine-decision.md
+- supervisor/durable_execution_engine_spike.py
+- tests/test_durable_execution_engine_adr.py
+- tests/test_durable_execution_engine_spike.py
+- ACCEPT: outcome_review gate advances; ADR + disabled report-only spike realize the stated intent with no production durable-stack change.
+
+### Claims
+
+- ADR decides among Keep/Temporal/Restate/DBOS and recommends keep hand-rolled with Temporal as only follow-up candidate
+- Temporal spike is report-only and disabled by default with no live dependency
+- Production submit path and durable stack are unchanged in this slice
+
+### Objections
+
+- None recorded.
+
+### Questions
+
+- None recorded.
+
+### Critical Review
+
+`{"assumptions_to_verify": ["The two test files actually pass under pytest in CI/local execution", "Planning-artifact shasums still match the handoff packet values"], "contradictions_checked": ["Spike enabled by default? No \u2014 TemporalSpikeConfig.enabled=False and DurableExecutionCfg.temporal_spike_enabled=False plus RuntimeError guard", "Hidden temporalio dependency? No \u2014 grep empty; Protocol + FakeTemporalClient used", "Comparison test vacuous/stubbed? No \u2014 calls real State.reserve_dual_agent_workflow_job, signature matches state.py:829-843", "Durable production stack modified? No \u2014 state.py/stdio.py git-clean; diff only config+yaml"], "decision": "accept", "evidence_refs": [], "missing_evidence": ["pytest run output for the two new test files", "re-computed sha256 of immutable planning artifacts vs handoff packet"], "schema_version": "critical-review/v1", "severity": "low", "strongest_objection": "Tests are present and statically correct but were not executed in this gate, so the passing status is self-reported rather than runtime-verified.", "what_would_change_my_mind": "Executing pytest and finding any of the six tests fail, or discovering a temporalio import / an enabled-by-default spike / a tracked change to state.py or stdio.py that touches the production submit path."}`
+
+### Tool Receipts
+
+- None recorded.
+
+### Evidence Refs
+
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_adr.py::test_adr_durable_execution_engine_decision_contains_required_sections", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_spike.py::test_durable_execution_defaults_keep_hand_rolled_runtime", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_spike.py::test_durable_execution_temporal_spike_engine_value_is_explicitly_flagged", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_spike.py::test_temporal_spike_is_disabled_until_flagged", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_spike.py::test_temporal_spike_uses_idempotency_key_as_workflow_id_with_use_existing", "status": "unknown"}
+- {"kind": "reported_test", "ref": "tests/test_durable_execution_engine_spike.py::test_spike_report_compares_temporal_submit_against_layer0_reservation", "status": "unknown"}
+- {"kind": "reported_changed_file", "ref": "supervisor/config.py"}
+- {"kind": "reported_changed_file", "ref": "config.example.yaml"}
+- {"kind": "reported_changed_file", "ref": "docs/adr/0004-durable-execution-engine-decision.md"}
+- {"kind": "reported_changed_file", "ref": "supervisor/durable_execution_engine_spike.py"}
+- {"kind": "reported_changed_file", "ref": "tests/test_durable_execution_engine_adr.py"}
+- {"kind": "reported_changed_file", "ref": "tests/test_durable_execution_engine_spike.py"}
+
+### Raw Transcript Refs
+
+- {"bytes": 7393, "kind": "claude_stdout", "ref": "lead_result.stdout"}
+- {"kind": "claude_handoff_packet", "ref": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json"}
+
+### Would Change If
+
+A subsequent gate response changes the typed outcome, or supervisor probes reject this response.
+
+### Review Packet
+
+`{}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| invoke_claude_lead#1780580835145#130341194 |  |  | invoke_claude_lead | completed | 130341 | 130341194 | 1481268 | 9026 | P3 |  | {"attempt": 1, "budget_usd": 100.0, "corrective_retry": false, "dynamic_workflow_task_class": null, "execution_layer_mode": "lead_direct", "expected_decisions": [], "expected_objections": [], "expected_specialists": [], "explicit_model": null, "gate": "outcome_review", "model": "opus", "model_source": "quality_default:best", "quality": "best", "requested_model": "opus", "task_id": "durable-execution-engine-adr-20260604", "timeout_s": 900} | {"cost_usd": 5.20108725, "model": "opus", "outcome_present": true, "probe_id": "P3", "probe_reason": "outcome_fidelity_ok", "probe_status": "green", "stderr_bytes": 0, "stdout_bytes": 7393, "tokens_in": 1481268, "tokens_out": 9026} |  |
+| evaluate_worker_invocation#1780580965486#94 | invoke_claude_lead#1780580835145#130341194 |  | evaluate_worker_invocation | green | 0 | 94 |  |  | P2 |  | {"gate": "outcome_review", "probe_id": "P2", "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P2", "reason": "worker_orchestration_invocation_ok", "status": "green"} |  |
+| evaluate_outcome_fidelity#1780580965486#1 | invoke_claude_lead#1780580835145#130341194 |  | evaluate_outcome_fidelity | green | 0 | 1 |  |  | P3 |  | {"gate": "outcome_review", "probe_id": "P3", "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P3", "reason": "outcome_fidelity_ok", "status": "green"} |  |
+| verify_planning_artifact_boundaries#1780580965487#4663 | invoke_claude_lead#1780580835145#130341194 |  | verify_planning_artifact_boundaries | green | 4 | 4663 |  |  | P1 |  | {"gate": "outcome_review", "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json", "probe_id": "P1", "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P1", "reason": "planning_artifact_boundaries_ok", "status": "green"} |  |
+| evaluate_outcome_gate_decision#1780580965491#302 | invoke_claude_lead#1780580835145#130341194 |  | evaluate_outcome_gate_decision | green | 0 | 302 |  |  | P4 |  | {"gate": "outcome_review", "probe_id": "P4", "task_id": "durable-execution-engine-adr-20260604"} | {"probe_id": "P4", "reason": "outcome_gate_decision_ok", "status": "green"} |  |
+
+## 66. Outcome Review
+
+- event_id: `492941`
+- ts: `1780580965`
+- interaction_type: `gate_result`
+- status: `accepted`
+- attempts: `1`
+
+### Claude Code -> Codex
+
+Outcome summary: Outcome review of ADR 0004 deciding Temporal/Restate/DBOS vs keep hand-rolled, plus a disabled report-only Temporal submit spike. All intent invariants re-verified at current source: ADR (Accepted) scores 4 options across 6 criteria with all 6 required sections; spike disabled-by-default raising RuntimeError, report_only with default_runtime_changed=False; no temporalio import; tracked diff is exactly config.py+config.example.yaml (+14) with state.py/stdio.py git-clean; comparison test calls the real reserve_dual_agent_workflow_job (signature match, non-vacuous). Gate should ACCEPT.
+
+Decisions:
+
+- ACCEPT: outcome_review gate advances; ADR + disabled report-only spike realize the stated intent with no production durable-stack change.
+
+Specialists:
+
+- `lead-outcome-reviewer`: `accept`
+
+Objections:
+
+- None recorded.
+
+### Validation
+
+- `P1`: `green` / `planning_artifact_boundaries_ok`
+- `P2`: `green` / `worker_orchestration_invocation_ok`
+- `P3`: `green` / `outcome_fidelity_ok`
+- `P4`: `green` / `outcome_gate_decision_ok`
+- `P_planning`: `green` / `planning_validation_ok`
+
+### Artifact Rigor
+
+- status: `ok`
+- reason: `required_artifacts_present`
+- artifact_policy: `strict`
+- required_artifacts: `prd`, `tdd_plan`, `grill_findings`, `issues`, `implementation_plan`
+- present_artifacts: `grill_findings`, `implementation_plan`, `issues`, `prd`, `tdd_plan`
+- missing_artifacts: `[]`
+- missing_artifact_paths: `[]`
+- required_prerequisite_gates: `execution`
+- accepted_prerequisite_gates: `execution`
+- missing_prerequisite_gates: `[]`
+- gate_statuses: `{"execution": "accepted", "implementation_plan": "accepted", "issues_review": "accepted", "prd_review": "accepted", "tdd_review": "accepted"}`
+- user_facing: `False`
+- screenshots: `[]`
+- missing_screenshot_paths: `[]`
+- visual_validation: `{"allowed_sources": ["browser", "browser-use", "browser_use", "computer", "computer-use", "computer_use"], "evidence": [], "failures": [], "reason": "no_screenshots_supplied", "status": "not_required"}`
+
+### Trace Envelope
+
+- policy_verdict: `accepted`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| start_dual_agent_gate#1780580835139#130362198 |  |  | start_dual_agent_gate | completed | 130362 | 130362198 |  |  |  |  | {"agentic_lead_policy": "off", "artifact_policy": "strict", "dynamic_workflow_task_class": null, "execution_layer_mode": "lead_direct", "gate": "outcome_review", "min_subagents": 3, "planning_artifact_count": 7, "required_evidence_grade": "self_reported", "required_roles": [], "screenshot_count": 0, "task_id": "durable-execution-engine-adr-20260604", "user_facing": false} | {"claude_gate_status": "accepted", "probe_statuses": {"P1": "green", "P2": "green", "P3": "green", "P4": "green", "P_planning": "green"}, "supervisor_final_status": "accepted"} |  |
+| invoke_claude_lead#1780580965501#0 | start_dual_agent_gate#1780580835139#130362198 |  | invoke_claude_lead | completed | 0 | 0 | 1481268 | 9026 |  |  | {"gate": "outcome_review", "task_id": "durable-execution-engine-adr-20260604"} | {"outcome_present": true, "probe_reason": "outcome_fidelity_ok", "probe_status": "green", "tokens_in": 1481268, "tokens_out": 9026} |  |
+| probe_p2#1780580965501#0#p2 | invoke_claude_lead#1780580965501#0 |  | probe:P2 | green | 0 | 0 |  |  | P2 |  | {"probe_id": "P2"} | {"probe_id": "P2", "reason": "worker_orchestration_invocation_ok", "status": "green"} |  |
+| probe_p3#1780580965501#0#p3 | invoke_claude_lead#1780580965501#0 |  | probe:P3 | green | 0 | 0 |  |  | P3 |  | {"probe_id": "P3"} | {"probe_id": "P3", "reason": "outcome_fidelity_ok", "status": "green"} |  |
+| probe_p1#1780580965501#0#p1 | invoke_claude_lead#1780580965501#0 |  | probe:P1 | green | 0 | 0 |  |  | P1 |  | {"probe_id": "P1"} | {"probe_id": "P1", "reason": "planning_artifact_boundaries_ok", "status": "green"} |  |
+| probe_p4#1780580965501#0#p4 | invoke_claude_lead#1780580965501#0 |  | probe:P4 | green | 0 | 0 |  |  | P4 |  | {"probe_id": "P4"} | {"probe_id": "P4", "reason": "outcome_gate_decision_ok", "status": "green"} |  |
+| probe_p_planning#1780580965501#0#p_planning | invoke_claude_lead#1780580965501#0 |  | probe:P_planning | green | 0 | 0 |  |  | P_planning |  | {"probe_id": "P_planning"} | {"probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"} |  |
+
+## 67. Outcome Review
+
+- event_id: `492942`
+- ts: `1780580965`
+- interaction_type: `review_request`
+- sender: `codex`
+- recipient: `cursor`
+- round_index: `1`
+- persona_id: `codex.lifecycle_reviewer`
+- addresses: `handoff:/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json`
+
+### Message
+
+Independently review the outcome_review gate for this tri-agent workflow.
+Accept only if the gate should advance after reading the artifacts and Claude outcome.
+Critical review: before accepting, try to disprove the Claude outcome and gate evidence. Identify the strongest reason this should not advance, missing evidence, contradictions checked, assumptions to verify, and what would change your decision. Keep this concise and auditable; do not include private chain-of-thought.
+Return the structured critical_review object in the typed outcome.
+
+Intent:
+Decide via ADR whether Temporal, Restate, or DBOS should replace parts of the durable job stack, with only a disabled report-only Temporal submit spike.
+
+### Confidence
+
+- value: `None`
+- source: `None`
+- rationale: None recorded.
+
+Criteria:
+
+- None recorded.
+
+Evidence:
+
+- None recorded.
+
+### Claims
+
+- ADR decides among Keep/Temporal/Restate/DBOS and recommends keep hand-rolled with Temporal as only follow-up candidate
+- Temporal spike is report-only and disabled by default with no live dependency
+- Production submit path and durable stack are unchanged in this slice
+- decision:ACCEPT: outcome_review gate advances; ADR + disabled report-only spike realize the stated intent with no production durable-stack change.
+
+### Objections
+
+- None recorded.
+
+### Questions
+
+- Do the planning artifacts, Claude outcome, and evidence receipts justify advancing this gate?
+
+### Critical Review
+
+`{"assumptions_to_verify": ["The two test files actually pass under pytest in CI/local execution", "Planning-artifact shasums still match the handoff packet values"], "contradictions_checked": ["Spike enabled by default? No \u2014 TemporalSpikeConfig.enabled=False and DurableExecutionCfg.temporal_spike_enabled=False plus RuntimeError guard", "Hidden temporalio dependency? No \u2014 grep empty; Protocol + FakeTemporalClient used", "Comparison test vacuous/stubbed? No \u2014 calls real State.reserve_dual_agent_workflow_job, signature matches state.py:829-843", "Durable production stack modified? No \u2014 state.py/stdio.py git-clean; diff only config+yaml"], "decision": "accept", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}], "missing_evidence": ["pytest run output for the two new test files", "re-computed sha256 of immutable planning artifacts vs handoff packet"], "schema_version": "critical-review/v1", "severity": "low", "strongest_objection": "Tests are present and statically correct but were not executed in this gate, so the passing status is self-reported rather than runtime-verified.", "what_would_change_my_mind": "Executing pytest and finding any of the six tests fail, or discovering a temporalio import / an enabled-by-default spike / a tracked change to state.py or stdio.py that touches the production submit path."}`
+
+### Tool Receipts
+
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/prd.md"], "claims": ["PRD promise contracts P1-P4 produced", "Report-only runtime decision boundary captured"], "kind": "skill_run", "receipt_id": "skill-to-prd-durable-execution-engine-adr-20260604", "skill": "to-prd", "stage": "to_prd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings.md"], "claims": ["PRD grill findings resolved", "Temporal spike is separated from production adoption"], "kind": "skill_run", "receipt_id": "skill-prd-grill-durable-execution-engine-adr-20260604", "skill": "grill-with-docs", "stage": "prd_grill", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/issues.md"], "claims": ["Issues cover every PRD promise P1-P4", "Each issue names public-boundary acceptance criteria"], "kind": "skill_run", "receipt_id": "skill-to-issues-durable-execution-engine-adr-20260604", "skill": "to-issues", "stage": "to_issues", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/tdd.md"], "claims": ["TDD cycles cover config default, explicit temporal_spike flag coverage, Temporal fake-client idempotency, Layer-0 comparison, and ADR completeness"], "kind": "skill_run", "receipt_id": "skill-tdd-durable-execution-engine-adr-20260604", "skill": "tdd", "stage": "tdd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings-tdd.md"], "claims": ["TDD grill findings resolved", "Layer-0 comparison, explicit temporal_spike flag coverage, and no-default-change tests are required"], "kind": "skill_run", "receipt_id": "skill-tdd-grill-durable-execution-engine-adr-20260604", "skill": "grill-with-docs", "stage": "tdd_grill", "status": "passed"}
+- {"command": "uv run pytest tests/test_durable_execution_engine_spike.py tests/test_durable_execution_engine_adr.py -q", "kind": "test", "receipt_id": "receipt:pytest-durable-execution-engine-spike-focused", "status": "passed", "summary": "6 passed in 0.13s"}
+- {"command": "uv run pytest tests/test_target_config_load.py tests/test_durable_execution_engine_spike.py tests/test_durable_execution_engine_adr.py -q", "kind": "test", "receipt_id": "receipt:pytest-target-config-and-durable-engine", "status": "passed", "summary": "11 passed in 0.12s"}
+- {"command": "uv run pytest -q", "kind": "test", "receipt_id": "receipt:pytest-full-durable-execution-engine-adr", "status": "passed", "summary": "735 passed, 8 skipped in 106.09s"}
+- {"command": "uv run python -m compileall supervisor/durable_execution_engine_spike.py", "kind": "test", "receipt_id": "receipt:compileall-durable-execution-engine-spike", "status": "passed", "summary": "compileall completed with exit code 0"}
+- {"command": "git diff --check", "kind": "test", "receipt_id": "receipt:git-diff-check-durable-execution-engine-adr", "status": "passed", "summary": "no whitespace errors"}
+
+### Evidence Refs
+
+- {"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}
+
+### Raw Transcript Refs
+
+- {"kind": "claude_handoff_packet", "ref": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json"}
+- {"count": 6, "kind": "claude_reported_tests", "ref": "outcome.tests"}
+
+### Would Change If
+
+Cursor finds an unresolved blocker, missing receipt, or contradiction in the evidence.
+
+### Review Packet
+
+`{}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+## 68. Outcome Review
+
+- event_id: `493070`
+- ts: `1780581264`
+- interaction_type: `review_response`
+- sender: `cursor`
+- recipient: `codex`
+- round_index: `1`
+- persona_id: `cursor.independent_reviewer`
+- addresses: `event:492942`
+
+### Message
+
+Independent outcome_review: ADR 0004 satisfies P1?P4 (4 options, 6 criteria, 6 sections, keep-hand-rolled recommendation with Temporal as follow-up only). Spike is disabled-by-default, report-only, no temporalio; production submit unchanged (config-only tracked diff +14; state/stdio clean). Six slice tests and full pytest pass locally; planning artifact shas match outcome-review. Gate should ACCEPT.
+
+### Confidence
+
+- value: `0.93`
+- source: `cursor_self_reported`
+- rationale: Verified ADR structure, spike guards, no temporalio, clean production paths, real Layer-0 reservation in comparison test, pytest 12/12 focused and 735/735 full suite, and planning shas vs outcome-review. Capped below 0.95 because spike is not wired into submit/MCP (config+tests only) and ADR test is presence-based.
+
+Criteria:
+
+- ADR has 4 options, 6 criteria, 6 required sections, hand_rolled default YAML
+- Spike disabled-by-default; RuntimeError when enabled=false; report default_runtime_changed=false
+- No temporalio in supervisor/ or tests/
+- git diff on state.py and stdio submit path is empty; tracked diff is config.py+config.example.yaml (+14)
+- compare test uses State.reserve_dual_agent_workflow_job with matching signature
+- pytest focused + full suite green; planning artifact shas match outcome-review
+
+Evidence:
+
+- tests/test_durable_execution_engine_adr.py::test_adr_durable_execution_engine_decision_contains_required_sections
+- tests/test_durable_execution_engine_spike.py::test_durable_execution_defaults_keep_hand_rolled_runtime
+- tests/test_durable_execution_engine_spike.py::test_durable_execution_temporal_spike_engine_value_is_explicitly_flagged
+- tests/test_durable_execution_engine_spike.py::test_temporal_spike_is_disabled_until_flagged
+- tests/test_durable_execution_engine_spike.py::test_temporal_spike_uses_idempotency_key_as_workflow_id_with_use_existing
+- tests/test_durable_execution_engine_spike.py::test_spike_report_compares_temporal_submit_against_layer0_reservation
+- supervisor/config.py
+- config.example.yaml
+- docs/adr/0004-durable-execution-engine-decision.md
+- supervisor/durable_execution_engine_spike.py
+- tests/test_durable_execution_engine_adr.py
+- tests/test_durable_execution_engine_spike.py
+- ACCEPT: outcome_review gate advances; ADR plus isolated disabled Temporal spike realize stated report-only intent without production durable-stack change.
+
+### Claims
+
+- ADR decides Keep/Temporal/Restate/DBOS and recommends keep hand-rolled with Temporal as only follow-up candidate
+- Temporal spike is report-only, disabled by default, fake-client only
+- Production submit path and durable stack unchanged in this slice
+
+### Objections
+
+- None recorded.
+
+### Questions
+
+- None recorded.
+
+### Critical Review
+
+`{"assumptions_to_verify": ["Future slice must wire or explicitly reject durable_execution before any live Temporal pilot", "ADR scores remain editorial judgment not mechanically validated beyond string presence"], "contradictions_checked": ["Claude test_status unknown vs receipts passed: reran pytest; 6 slice tests + target_config_load green; 735 full suite green", "Spike enabled by default? No \u2014 TemporalSpikeConfig.enabled=False, temporal_spike_enabled=False, RuntimeError guard", "temporalio dependency? No \u2014 grep empty in supervisor/ and tests/", "Comparison test vacuous? No \u2014 calls reserve_dual_agent_workflow_job; duplicate returns existing,False", "Production stack modified? No \u2014 state/stdio diff empty; only config+yaml tracked (+14)", "Planning shas stale? No \u2014 recomputed shas match outcome-review.md"], "decision": "accept", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}], "missing_evidence": ["End-to-end test that production submit ignores durable_execution even if engine=temporal_spike (only defaults and isolation grep checked)"], "schema_version": "critical-review/v1", "severity": "low", "strongest_objection": "durable_execution config and spike module are not referenced by runner or MCP submit code; mis-set YAML would not alter production until a future slice wires the seam.", "what_would_change_my_mind": "pytest failure on slice or full suite; temporalio import; enabled-by-default spike; tracked changes to state.py or codex_supervisor_stdio.py submit path; planning artifact sha mismatch vs handoff/outcome-review"}`
+
+### Tool Receipts
+
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/prd.md"], "claims": ["PRD promise contracts P1-P4 produced", "Report-only runtime decision boundary captured"], "kind": "skill_run", "receipt_id": "skill-to-prd-durable-execution-engine-adr-20260604", "skill": "to-prd", "stage": "to_prd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings.md"], "claims": ["PRD grill findings resolved", "Temporal spike is separated from production adoption"], "kind": "skill_run", "receipt_id": "skill-prd-grill-durable-execution-engine-adr-20260604", "skill": "grill-with-docs", "stage": "prd_grill", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/issues.md"], "claims": ["Issues cover every PRD promise P1-P4", "Each issue names public-boundary acceptance criteria"], "kind": "skill_run", "receipt_id": "skill-to-issues-durable-execution-engine-adr-20260604", "skill": "to-issues", "stage": "to_issues", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/tdd.md"], "claims": ["TDD cycles cover config default, explicit temporal_spike flag coverage, Temporal fake-client idempotency, Layer-0 comparison, and ADR completeness"], "kind": "skill_run", "receipt_id": "skill-tdd-durable-execution-engine-adr-20260604", "skill": "tdd", "stage": "tdd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings-tdd.md"], "claims": ["TDD grill findings resolved", "Layer-0 comparison, explicit temporal_spike flag coverage, and no-default-change tests are required"], "kind": "skill_run", "receipt_id": "skill-tdd-grill-durable-execution-engine-adr-20260604", "skill": "grill-with-docs", "stage": "tdd_grill", "status": "passed"}
+- {"command": "uv run pytest tests/test_durable_execution_engine_spike.py tests/test_durable_execution_engine_adr.py -q", "kind": "test", "receipt_id": "receipt:pytest-durable-execution-engine-spike-focused", "status": "passed", "summary": "6 passed in 0.13s"}
+- {"command": "uv run pytest tests/test_target_config_load.py tests/test_durable_execution_engine_spike.py tests/test_durable_execution_engine_adr.py -q", "kind": "test", "receipt_id": "receipt:pytest-target-config-and-durable-engine", "status": "passed", "summary": "11 passed in 0.12s"}
+- {"command": "uv run pytest -q", "kind": "test", "receipt_id": "receipt:pytest-full-durable-execution-engine-adr", "status": "passed", "summary": "735 passed, 8 skipped in 106.09s"}
+- {"command": "uv run python -m compileall supervisor/durable_execution_engine_spike.py", "kind": "test", "receipt_id": "receipt:compileall-durable-execution-engine-spike", "status": "passed", "summary": "compileall completed with exit code 0"}
+- {"command": "git diff --check", "kind": "test", "receipt_id": "receipt:git-diff-check-durable-execution-engine-adr", "status": "passed", "summary": "no whitespace errors"}
+
+### Evidence Refs
+
+- {"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}
+
+### Raw Transcript Refs
+
+- {"chars": 4000, "kind": "cursor_transcript_tail", "ref": "tri_agent_cursor_review:durable-execution-engine-adr-20260604:outcome_review:1"}
+
+### Would Change If
+
+Claude or Codex provides evidence resolving Cursor's objections.
+
+### Review Packet
+
+`{}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| invoke_cursor_agent#1780580965964#298653163 |  |  | invoke_cursor_agent | finished | 298653 | 298653163 |  |  |  | ["skill-to-prd-durable-execution-engine-adr-20260604", "skill-prd-grill-durable-execution-engine-adr-20260604", "skill-to-issues-durable-execution-engine-adr-20260604", "skill-tdd-durable-execution-engine-adr-20260604", "skill-tdd-grill-durable-execution-engine-adr-20260604", "receipt:pytest-durable-execution-engine-spike-focused", "receipt:pytest-target-config-and-durable-engine", "receipt:pytest-full-durable-execution-engine-adr", "receipt:compileall-durable-execution-engine-spike", "receipt:git-diff-check-durable-execution-engine-adr"] | {"gate": "outcome_review", "model": null, "planning_artifact_count": 7, "quality": "best", "receipt_count": 10, "reviewer_count": 2, "reviewer_ids": ["independent-reviewer-0", "independent-reviewer-1"], "reviewer_infra_retry_backoff_s": 1.0, "reviewer_infra_retry_limit": 2, "reviewer_max_tokens": 4096, "reviewer_model": "composer-2.5", "reviewer_output_mode": "cursor_sdk", "task_id": "durable-execution-engine-adr-20260604", "timeout_s": 900} | {"accepted": true, "failure_classification": null, "fallback_from_runtime": null, "fallback_reason": null, "outcome_present": true, "probe_reason": "cursor_review_ok", "probe_status": "green", "recoverable": false, "reviewer_assurance": "tool_backed_primary", "reviewer_output_mode": "cursor_sdk", "reviewer_runtime": "cursor_sdk"} |  |
+
+## 69. Outcome Review
+
+- event_id: `493071`
+- ts: `1780581264`
+- interaction_type: `independent_reviewer_review`
+- gate: `outcome_review`
+- reviewer_count: `2`
+
+### Independent Reviewer Results
+
+#### Reviewer 1: `independent-reviewer-0`
+
+- accepted: `True`
+- decision: `accept`
+- severity: `low`
+- confidence: `0.93`
+- runtime: `cursor_sdk`
+- model: `composer-2.5`
+- provider_family: `cursor`
+- lineage: `cursor`, `cursor_sdk`, `composer-2.5`
+- tool_access: `codebase_tools`
+- assurance_grade: `agentic`
+- transcript_sha256: `58630356b00a028562529986ecb21cfa324cf1df869c117c70c2332f7c4f69d7`
+- output_sha256: `e990619722a3aa8d0031b01a6857eb43624b3e47341e947ef7a31f99ff6ec13d`
+
+Transcript refs:
+
+- {"chars": 4000, "kind": "reviewer_transcript_tail", "ref": "independent_reviewer_review:durable-execution-engine-adr-20260604:outcome_review:1:independent-reviewer-0"}
+
+Critical review:
+
+`{"assumptions_to_verify": ["Future slice must wire or explicitly reject durable_execution before any live Temporal pilot", "ADR scores remain editorial judgment not mechanically validated beyond string presence"], "contradictions_checked": ["Claude test_status unknown vs receipts passed: reran pytest; 6 slice tests + target_config_load green; 735 full suite green", "Spike enabled by default? No \u2014 TemporalSpikeConfig.enabled=False, temporal_spike_enabled=False, RuntimeError guard", "temporalio dependency? No \u2014 grep empty in supervisor/ and tests/", "Comparison test vacuous? No \u2014 calls reserve_dual_agent_workflow_job; duplicate returns existing,False", "Production stack modified? No \u2014 state/stdio diff empty; only config+yaml tracked (+14)", "Planning shas stale? No \u2014 recomputed shas match outcome-review.md"], "decision": "accept", "missing_evidence": ["End-to-end test that production submit ignores durable_execution even if engine=temporal_spike (only defaults and isolation grep checked)"], "severity": "low", "strongest_objection": "durable_execution config and spike module are not referenced by runner or MCP submit code; mis-set YAML would not alter production until a future slice wires the seam.", "what_would_change_my_mind": "pytest failure on slice or full suite; temporalio import; enabled-by-default spike; tracked changes to state.py or codex_supervisor_stdio.py submit path; planning artifact sha mismatch vs handoff/outcome-review"}`
+
+#### Reviewer 2: `independent-reviewer-1`
+
+- accepted: `True`
+- decision: `accept`
+- severity: `low`
+- confidence: `0.91`
+- runtime: `codex_cli`
+- model: `gpt-5.5`
+- provider_family: `openai`
+- lineage: `openai`, `codex_cli`, `gpt-5.5`
+- tool_access: `codebase_tools`
+- assurance_grade: `agentic`
+- transcript_sha256: `5fad9488aba0f2f1cec07e2148d631c306e013846791cfb71ce6ad7ba69f5b58`
+- output_sha256: `4a7b370488ba8c23a614de76b715bcb66df1d3b5c5e289bf9fd77cb302e35264`
+
+Transcript refs:
+
+- {"chars": 4000, "kind": "reviewer_transcript_tail", "ref": "independent_reviewer_review:durable-execution-engine-adr-20260604:outcome_review:1:independent-reviewer-1"}
+
+Critical review:
+
+`{"assumptions_to_verify": ["Tool receipts correspond to this exact worktree snapshot; source receipts and workflow request agree, but I did not execute pytest.", "Future slices keep the spike opt-in/report-only until a separate runtime migration is explicitly approved.", "External-engine capability summaries in the ADR remain accurate enough for architecture scoring."], "contradictions_checked": ["Default runtime changed? No: DurableExecutionCfg defaults to hand_rolled and temporal_spike_enabled=false, and config.example.yaml matches.", "Spike enabled by default or silently active? No: TemporalSpikeConfig.enabled defaults false and start_or_attach raises temporal_spike_disabled.", "Hidden Temporal dependency? No: rg for temporalio returned no matches in supervisor/tests/ADR/config.", "Production submit path modified? No: git status/diff shows only config tracked changes plus new ADR/spike/tests/artifacts; no state.py or stdio submit-path change.", "Comparison test helper-only? No: it calls real State.reserve_dual_agent_workflow_job and matches the current signature.", "Receipt contradiction checked: stale transcript fragments with 5 passed are superseded by current source tool-receipts and workflow request showing 6 focused tests, matching the six current test functions.", "Planning artifact integrity checked: shasums for PRD/issues/TDD/grill/implementation and grill-findings-tdd match the handoff/manifest values found in source artifacts."], "decision": "accept", "missing_evidence": ["Raw pytest stdout beyond receipt summaries; I did not rerun pytest in this read-only review.", "Fresh external-source citations for Temporal/Restate/DBOS capability claims; this review was codebase-only.", "Runtime validation against a real Temporal namespace remains absent, by design for this slice.", "A future guard tying engine=temporal_spike to temporal_spike_enabled=true is not present, though no production code consumes it now."], "severity": "low", "strongest_objection": "The ADR's replacement-engine scoring depends on high-level product claims and a fake-client Temporal model, not a live Temporal/Restate/DBOS comparison. That would be blocking for a runtime adoption gate, but this slice explicitly keeps production hand-rolled and adds only a disabled report-only spike.", "what_would_change_my_mind": "A current failing pytest/compile/diff check, a temporalio import or live Temporal call in the default path, a production submit-path change in state.py or stdio/MCP code, a planning artifact hash mismatch, or external documentation disproving the idempotency/conflict-policy assumptions would move this to revise or deny."}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| invoke_cursor_agent#1780580965964#298653163 |  |  | invoke_cursor_agent | finished | 298653 | 298653163 |  |  |  | ["skill-to-prd-durable-execution-engine-adr-20260604", "skill-prd-grill-durable-execution-engine-adr-20260604", "skill-to-issues-durable-execution-engine-adr-20260604", "skill-tdd-durable-execution-engine-adr-20260604", "skill-tdd-grill-durable-execution-engine-adr-20260604", "receipt:pytest-durable-execution-engine-spike-focused", "receipt:pytest-target-config-and-durable-engine", "receipt:pytest-full-durable-execution-engine-adr", "receipt:compileall-durable-execution-engine-spike", "receipt:git-diff-check-durable-execution-engine-adr"] | {"gate": "outcome_review", "model": null, "planning_artifact_count": 7, "quality": "best", "receipt_count": 10, "reviewer_count": 2, "reviewer_ids": ["independent-reviewer-0", "independent-reviewer-1"], "reviewer_infra_retry_backoff_s": 1.0, "reviewer_infra_retry_limit": 2, "reviewer_max_tokens": 4096, "reviewer_model": "composer-2.5", "reviewer_output_mode": "cursor_sdk", "task_id": "durable-execution-engine-adr-20260604", "timeout_s": 900} | {"accepted": true, "failure_classification": null, "fallback_from_runtime": null, "fallback_reason": null, "outcome_present": true, "probe_reason": "cursor_review_ok", "probe_status": "green", "recoverable": false, "reviewer_assurance": "tool_backed_primary", "reviewer_output_mode": "cursor_sdk", "reviewer_runtime": "cursor_sdk"} |  |
+
+## 70. Outcome Review
+
+- event_id: `493072`
+- ts: `1780581264`
+- interaction_type: `cursor_review`
+- gate: `outcome_review`
+- accepted: `True`
+- model: `composer-2.5`
+- cursor_run_id: `run-88461c2e-81ca-442b-8cd8-06b15d63bd2d`
+- agent_id: `agent-05816dbf-129b-4ccd-b6cb-db7ebd6db16d`
+- duration_ms: `141195`
+- full_reasoning: `transcript.jsonl event 493072 transcript_tail`
+
+### Cursor Probe
+
+- probe_id: `CURSOR`
+- status: `green`
+- reason: `cursor_review_ok`
+
+### Cursor Outcome
+
+Independent outcome_review: ADR 0004 satisfies P1?P4 (4 options, 6 criteria, 6 sections, keep-hand-rolled recommendation with Temporal as follow-up only). Spike is disabled-by-default, report-only, no temporalio; production submit unchanged (config-only tracked diff +14; state/stdio clean). Six slice tests and full pytest pass locally; planning artifact shas match outcome-review. Gate should ACCEPT.
+
+Claims:
+
+- ADR decides Keep/Temporal/Restate/DBOS and recommends keep hand-rolled with Temporal as only follow-up candidate
+- Temporal spike is report-only, disabled by default, fake-client only
+- Production submit path and durable stack unchanged in this slice
+
+Decisions:
+
+- ACCEPT: outcome_review gate advances; ADR plus isolated disabled Temporal spike realize stated report-only intent without production durable-stack change.
+
+Objections:
+
+- None recorded.
+
+Specialists:
+
+- `Cursor Reviewer`: `accept`
+
+### Transcript Tail
+
+anged (config-only tracked diff +14; state/stdio clean). Six slice tests and full pytest pass locally; planning artifact shas match outcome-review. Gate should ACCEPT.","specialists":[{"name":"Cursor Reviewer","decision":"accept"}],"decisions":["ACCEPT: outcome_review gate advances; ADR plus isolated disabled Temporal spike realize stated report-only intent without production durable-stack change."],"objections":[],"changed_files":["supervisor/config.py","config.example.yaml","docs/adr/0004-durable-execution-engine-decision.md","supervisor/durable_execution_engine_spike.py","tests/test_durable_execution_engine_adr.py","tests/test_durable_execution_engine_spike.py"],"tests":["tests/test_durable_execution_engine_adr.py::test_adr_durable_execution_engine_decision_contains_required_sections","tests/test_durable_execution_engine_spike.py::test_durable_execution_defaults_keep_hand_rolled_runtime","tests/test_durable_execution_engine_spike.py::test_durable_execution_temporal_spike_engine_value_is_explicitly_flagged","tests/test_durable_execution_engine_spike.py::test_temporal_spike_is_disabled_until_flagged","tests/test_durable_execution_engine_spike.py::test_temporal_spike_uses_idempotency_key_as_workflow_id_with_use_existing","tests/test_durable_execution_engine_spike.py::test_spike_report_compares_temporal_submit_against_layer0_reservation"],"test_status":"passed","confidence":0.93,"confidence_rationale":"Verified ADR structure, spike guards, no temporalio, clean production paths, real Layer-0 reservation in comparison test, pytest 12/12 focused and 735/735 full suite, and planning shas vs outcome-review. Capped below 0.95 because spike is not wired into submit/MCP (config+tests only) and ADR test is presence-based.","confidence_criteria":["ADR has 4 options, 6 criteria, 6 required sections, hand_rolled default YAML","Spike disabled-by-default; RuntimeError when enabled=false; report default_runtime_changed=false","No temporalio in supervisor/ or tests/","git diff on state.py and stdio submit path is empty; tracked diff is config.py+config.example.yaml (+14)","compare test uses State.reserve_dual_agent_workflow_job with matching signature","pytest focused + full suite green; planning artifact shas match outcome-review"],"claims":["ADR decides Keep/Temporal/Restate/DBOS and recommends keep hand-rolled with Temporal as only follow-up candidate","Temporal spike is report-only, disabled by default, fake-client only","Production submit path and durable stack unchanged in this slice"],"critical_review":{"strongest_objection":"durable_execution config and spike module are not referenced by runner or MCP submit code; mis-set YAML would not alter production until a future slice wires the seam.","missing_evidence":["End-to-end test that production submit ignores durable_execution even if engine=temporal_spike (only defaults and isolation grep checked)"],"contradictions_checked":["Claude test_status unknown vs receipts passed: reran pytest; 6 slice tests + target_config_load green; 735 full suite green","Spike enabled by default? No - TemporalSpikeConfig.enabled=False, temporal_spike_enabled=False, RuntimeError guard","temporalio dependency? No - grep empty in supervisor/ and tests/","Comparison test vacuous? No - calls reserve_dual_agent_workflow_job; duplicate returns existing,False","Production stack modified? No - state/stdio diff empty; only config+yaml tracked (+14)","Planning shas stale? No - recomputed shas match outcome-review.md"],"assumptions_to_verify":["Future slice must wire or explicitly reject durable_execution before any live Temporal pilot","ADR scores remain editorial judgment not mechanically validated beyond string presence"],"what_would_change_my_mind":"pytest failure on slice or full suite; temporalio import; enabled-by-default spike; tracked changes to state.py or codex_supervisor_stdio.py submit path; planning artifact sha mismatch vs handoff/outcome-review","decision":"accept","severity":"low"}}</dual_agent_outcome>
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| invoke_cursor_agent#1780580965964#298653163 |  |  | invoke_cursor_agent | finished | 298653 | 298653163 |  |  |  | ["skill-to-prd-durable-execution-engine-adr-20260604", "skill-prd-grill-durable-execution-engine-adr-20260604", "skill-to-issues-durable-execution-engine-adr-20260604", "skill-tdd-durable-execution-engine-adr-20260604", "skill-tdd-grill-durable-execution-engine-adr-20260604", "receipt:pytest-durable-execution-engine-spike-focused", "receipt:pytest-target-config-and-durable-engine", "receipt:pytest-full-durable-execution-engine-adr", "receipt:compileall-durable-execution-engine-spike", "receipt:git-diff-check-durable-execution-engine-adr"] | {"gate": "outcome_review", "model": null, "planning_artifact_count": 7, "quality": "best", "receipt_count": 10, "reviewer_count": 2, "reviewer_ids": ["independent-reviewer-0", "independent-reviewer-1"], "reviewer_infra_retry_backoff_s": 1.0, "reviewer_infra_retry_limit": 2, "reviewer_max_tokens": 4096, "reviewer_model": "composer-2.5", "reviewer_output_mode": "cursor_sdk", "task_id": "durable-execution-engine-adr-20260604", "timeout_s": 900} | {"accepted": true, "failure_classification": null, "fallback_from_runtime": null, "fallback_reason": null, "outcome_present": true, "probe_reason": "cursor_review_ok", "probe_status": "green", "recoverable": false, "reviewer_assurance": "tool_backed_primary", "reviewer_output_mode": "cursor_sdk", "reviewer_runtime": "cursor_sdk"} |  |
+
+## 71. Outcome Review
+
+- event_id: `493073`
+- ts: `1780581264`
+- interaction_type: `round`
+- round_index: `1`
+
+### Codex -> Claude Code
+
+- Codex decision: `accept`
+- Codex confidence: `0.95`
+
+### Claude Code -> Codex
+
+- Claude decision: `accept`
+- Claude confidence: `0.9`
+
+### Disagreement / Grill Finding
+
+both agents accepted
+
+## 72. Outcome Review
+
+- event_id: `493078`
+- ts: `1780581265`
+- interaction_type: `gate_decision`
+- sender: `codex`
+- recipient: `supervisor`
+- round_index: `1`
+- persona_id: `codex.lifecycle_reviewer`
+- addresses: `event:493073`
+
+### Message
+
+both agents accepted
+
+### Confidence
+
+- value: `0.95`
+- source: `codex_supervisor_deterministic_policy`
+- rationale: Codex accepted because the gate result, probes, claim checks, and optional Cursor review all satisfied the gate criteria.
+
+Criteria:
+
+- gate_status=accepted
+- decision=accept
+- all_supervisor_probes_green
+- claude_outcome_accepted
+- claim_verification_ok_or_not_required
+- cursor_accepted_or_not_requested
+
+Evidence:
+
+- P1:green
+- P2:green
+- P3:green
+- P4:green
+- P_planning:green
+
+### Claims
+
+- codex_decision=accept
+- claude_decision=accept
+- cursor_decision=accept
+
+### Objections
+
+- None recorded.
+
+### Questions
+
+- None recorded.
+
+### Critical Review
+
+`{"assumptions_to_verify": [], "contradictions_checked": ["supervisor probes", "claim verification", "cursor review"], "decision": "accept", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}], "missing_evidence": [], "schema_version": "critical-review/v1", "severity": "none", "strongest_objection": "none", "what_would_change_my_mind": "Every requirement is pass and both reviewers accept."}`
+
+### Tool Receipts
+
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/prd.md"], "claims": ["PRD promise contracts P1-P4 produced", "Report-only runtime decision boundary captured"], "kind": "skill_run", "receipt_id": "skill-to-prd-durable-execution-engine-adr-20260604", "skill": "to-prd", "stage": "to_prd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings.md"], "claims": ["PRD grill findings resolved", "Temporal spike is separated from production adoption"], "kind": "skill_run", "receipt_id": "skill-prd-grill-durable-execution-engine-adr-20260604", "skill": "grill-with-docs", "stage": "prd_grill", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/issues.md"], "claims": ["Issues cover every PRD promise P1-P4", "Each issue names public-boundary acceptance criteria"], "kind": "skill_run", "receipt_id": "skill-to-issues-durable-execution-engine-adr-20260604", "skill": "to-issues", "stage": "to_issues", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/tdd.md"], "claims": ["TDD cycles cover config default, explicit temporal_spike flag coverage, Temporal fake-client idempotency, Layer-0 comparison, and ADR completeness"], "kind": "skill_run", "receipt_id": "skill-tdd-durable-execution-engine-adr-20260604", "skill": "tdd", "stage": "tdd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings-tdd.md"], "claims": ["TDD grill findings resolved", "Layer-0 comparison, explicit temporal_spike flag coverage, and no-default-change tests are required"], "kind": "skill_run", "receipt_id": "skill-tdd-grill-durable-execution-engine-adr-20260604", "skill": "grill-with-docs", "stage": "tdd_grill", "status": "passed"}
+- {"command": "uv run pytest tests/test_durable_execution_engine_spike.py tests/test_durable_execution_engine_adr.py -q", "kind": "test", "receipt_id": "receipt:pytest-durable-execution-engine-spike-focused", "status": "passed", "summary": "6 passed in 0.13s"}
+- {"command": "uv run pytest tests/test_target_config_load.py tests/test_durable_execution_engine_spike.py tests/test_durable_execution_engine_adr.py -q", "kind": "test", "receipt_id": "receipt:pytest-target-config-and-durable-engine", "status": "passed", "summary": "11 passed in 0.12s"}
+- {"command": "uv run pytest -q", "kind": "test", "receipt_id": "receipt:pytest-full-durable-execution-engine-adr", "status": "passed", "summary": "735 passed, 8 skipped in 106.09s"}
+- {"command": "uv run python -m compileall supervisor/durable_execution_engine_spike.py", "kind": "test", "receipt_id": "receipt:compileall-durable-execution-engine-spike", "status": "passed", "summary": "compileall completed with exit code 0"}
+- {"command": "git diff --check", "kind": "test", "receipt_id": "receipt:git-diff-check-durable-execution-engine-adr", "status": "passed", "summary": "no whitespace errors"}
+
+### Evidence Refs
+
+- {"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}
+- {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}
+
+### Raw Transcript Refs
+
+- {"kind": "claude_handoff_packet", "ref": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/durable-execution-engine-adr-20260604.json"}
+- {"count": 6, "kind": "claude_reported_tests", "ref": "outcome.tests"}
+
+### Would Change If
+
+All required probes, claim receipts, and optional Cursor review accept.
+
+### Review Packet
+
+`{"confidence": {"criteria": ["gate_status=accepted", "decision=accept", "all_supervisor_probes_green", "claude_outcome_accepted", "claim_verification_ok_or_not_required", "cursor_accepted_or_not_requested"], "evidence": ["P1:green", "P2:green", "P3:green", "P4:green", "P_planning:green"], "rationale": "Codex accepted because the gate result, probes, claim checks, and optional Cursor review all satisfied the gate criteria.", "source": "codex_supervisor_deterministic_policy", "value": 0.95}, "critical_review": {"assumptions_to_verify": [], "contradictions_checked": ["supervisor probes", "claim verification", "cursor review"], "decision": "accept", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}], "missing_evidence": [], "schema_version": "critical-review/v1", "severity": "none", "strongest_objection": "none", "what_would_change_my_mind": "Every requirement is pass and both reviewers accept."}, "decision": "accept", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill-to-prd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-prd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-to-issues-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill-tdd-grill-durable-execution-engine-adr-20260604", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-durable-execution-engine-spike-focused", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-target-config-and-durable-engine", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:pytest-full-durable-execution-engine-adr", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:compileall-durable-execution-engine-spike", "status": "passed"}, {"kind": "test", "ref": "receipt:receipt:git-diff-check-durable-execution-engine-adr", "status": "passed"}], "findings": [], "gate": "outcome_review", "independent_reviewer_panel_decision": {"accepted_reviewers": ["independent-reviewer-0", "independent-reviewer-1"], "aggregation_mode": "conservative", "available_reviewers": ["independent-reviewer-0", "independent-reviewer-1"], "blocking_reviewers": [], "decision": "accept", "low_confidence_reviewers": [], "low_confidence_threshold": 0.0, "missing_reviewers": [], "non_accepting_reviewers": [], "reason": "all_available_reviewers_accept", "reviewer_inputs": [{"accepted": true, "assurance_grade": "agentic", "confidence": 0.93, "decision": "accept", "lineage": ["cursor", "cursor_sdk", "composer-2.5"], "model": "composer-2.5", "provider_family": "cursor", "reviewer_id": "independent-reviewer-0", "runtime": "cursor_sdk", "severity": "low", "tool_access": "codebase_tools", "verdict_present": true}, {"accepted": true, "assurance_grade": "agentic", "confidence": 0.91, "decision": "accept", "lineage": ["openai", "codex_cli", "gpt-5.5"], "model": "gpt-5.5", "provider_family": "openai", "reviewer_id": "independent-reviewer-1", "runtime": "codex_cli", "severity": "low", "tool_access": "codebase_tools", "verdict_present": true}], "schema_version": "independent-reviewer-panel-decision/v1"}, "independent_reviewer_results": [{"accepted": true, "assurance_grade": "agentic", "attempts": 1, "confidence": 0.93, "critical_review": {"assumptions_to_verify": ["Future slice must wire or explicitly reject durable_execution before any live Temporal pilot", "ADR scores remain editorial judgment not mechanically validated beyond string presence"], "contradictions_checked": ["Claude test_status unknown vs receipts passed: reran pytest; 6 slice tests + target_config_load green; 735 full suite green", "Spike enabled by default? No \u2014 TemporalSpikeConfig.enabled=False, temporal_spike_enabled=False, RuntimeError guard", "temporalio dependency? No \u2014 grep empty in supervisor/ and tests/", "Comparison test vacuous? No \u2014 calls reserve_dual_agent_workflow_job; duplicate returns existing,False", "Production stack modified? No \u2014 state/stdio diff empty; only config+yaml tracked (+14)", "Planning shas stale? No \u2014 recomputed shas match outcome-review.md"], "decision": "accept", "missing_evidence": ["End-to-end test that production submit ignores durable_execution even if engine=temporal_spike (only defaults and isolation grep checked)"], "severity": "low", "strongest_objection": "durable_execution config and spike module are not referenced by runner or MCP submit code; mis-set YAML would not alter production until a future slice wires the seam.", "what_would_change_my_mind": "pytest failure on slice or full suite; temporalio import; enabled-by-default spike; tracked changes to state.py or codex_supervisor_stdio.py submit path; planning artifact sha mismatch vs handoff/outcome-review"}, "decision": "accept", "failure_classification": null, "gate": "outcome_review", "lineage": ["cursor", "cursor_sdk", "composer-2.5"], "model": "composer-2.5", "output_sha256": "e990619722a3aa8d0031b01a6857eb43624b3e47341e947ef7a31f99ff6ec13d", "provider_family": "cursor", "recoverable": false, "reviewer_assurance": "tool_backed_primary", "reviewer_id": "independent-reviewer-0", "reviewer_output_mode": "cursor_sdk", "reviewer_runtime": "cursor_sdk", "round_index": 1, "runtime": "cursor_sdk", "schema_version": "independent-reviewer-panel-result/v1", "severity": "low", "task_id": "durable-execution-engine-adr-20260604", "tests": ["tests/test_durable_execution_engine_adr.py::test_adr_durable_execution_engine_decision_contains_required_sections", "tests/test_durable_execution_engine_spike.py::test_durable_execution_defaults_keep_hand_rolled_runtime", "tests/test_durable_execution_engine_spike.py::test_durable_execution_temporal_spike_engine_value_is_explicitly_flagged", "tests/test_durable_execution_engine_spike.py::test_temporal_spike_is_disabled_until_flagged", "tests/test_durable_execution_engine_spike.py::test_temporal_spike_uses_idempotency_key_as_workflow_id_with_use_existing", "tests/test_durable_execution_engine_spike.py::test_spike_report_compares_temporal_submit_against_layer0_reservation"], "tool_access": "codebase_tools", "transcript_refs": [{"chars": 4000, "kind": "reviewer_transcript_tail", "ref": "independent_reviewer_review:durable-execution-engine-adr-20260604:outcome_review:1:independent-reviewer-0"}], "transcript_sha256": "58630356b00a028562529986ecb21cfa324cf1df869c117c70c2332f7c4f69d7", "verdict_present": true}, {"accepted": true, "assurance_grade": "agentic", "attempts": 1, "confidence": 0.91, "critical_review": {"assumptions_to_verify": ["Tool receipts correspond to this exact worktree snapshot; source receipts and workflow request agree, but I did not execute pytest.", "Future slices keep the spike opt-in/report-only until a separate runtime migration is explicitly approved.", "External-engine capability summaries in the ADR remain accurate enough for architecture scoring."], "contradictions_checked": ["Default runtime changed? No: DurableExecutionCfg defaults to hand_rolled and temporal_spike_enabled=false, and config.example.yaml matches.", "Spike enabled by default or silently active? No: TemporalSpikeConfig.enabled defaults false and start_or_attach raises temporal_spike_disabled.", "Hidden Temporal dependency? No: rg for temporalio returned no matches in supervisor/tests/ADR/config.", "Production submit path modified? No: git status/diff shows only config tracked changes plus new ADR/spike/tests/artifacts; no state.py or stdio submit-path change.", "Comparison test helper-only? No: it calls real State.reserve_dual_agent_workflow_job and matches the current signature.", "Receipt contradiction checked: stale transcript fragments with 5 passed are superseded by current source tool-receipts and workflow request showing 6 focused tests, matching the six current test functions.", "Planning artifact integrity checked: shasums for PRD/issues/TDD/grill/implementation and grill-findings-tdd match the handoff/manifest values found in source artifacts."], "decision": "accept", "missing_evidence": ["Raw pytest stdout beyond receipt summaries; I did not rerun pytest in this read-only review.", "Fresh external-source citations for Temporal/Restate/DBOS capability claims; this review was codebase-only.", "Runtime validation against a real Temporal namespace remains absent, by design for this slice.", "A future guard tying engine=temporal_spike to temporal_spike_enabled=true is not present, though no production code consumes it now."], "severity": "low", "strongest_objection": "The ADR's replacement-engine scoring depends on high-level product claims and a fake-client Temporal model, not a live Temporal/Restate/DBOS comparison. That would be blocking for a runtime adoption gate, but this slice explicitly keeps production hand-rolled and adds only a disabled report-only spike.", "what_would_change_my_mind": "A current failing pytest/compile/diff check, a temporalio import or live Temporal call in the default path, a production submit-path change in state.py or stdio/MCP code, a planning artifact hash mismatch, or external documentation disproving the idempotency/conflict-policy assumptions would move this to revise or deny."}, "decision": "accept", "failure_classification": null, "gate": "outcome_review", "lineage": ["openai", "codex_cli", "gpt-5.5"], "model": "gpt-5.5", "output_sha256": "4a7b370488ba8c23a614de76b715bcb66df1d3b5c5e289bf9fd77cb302e35264", "provider_family": "openai", "recoverable": false, "reviewer_assurance": "tool_backed_primary", "reviewer_id": "independent-reviewer-1", "reviewer_output_mode": "codex_cli", "reviewer_runtime": "codex_cli", "round_index": 1, "runtime": "codex_cli", "schema_version": "independent-reviewer-panel-result/v1", "severity": "low", "task_id": "durable-execution-engine-adr-20260604", "tests": ["uv run pytest tests/test_durable_execution_engine_spike.py tests/test_durable_execution_engine_adr.py -q => 6 passed", "uv run pytest tests/test_target_config_load.py tests/test_durable_execution_engine_spike.py tests/test_durable_execution_engine_adr.py -q => 11 passed", "uv run pytest -q => 735 passed, 8 skipped", "uv run python -m compileall supervisor/durable_execution_engine_spike.py => passed", "git diff --check => passed"], "tool_access": "codebase_tools", "transcript_refs": [{"chars": 4000, "kind": "reviewer_transcript_tail", "ref": "independent_reviewer_review:durable-execution-engine-adr-20260604:outcome_review:1:independent-reviewer-1"}], "transcript_sha256": "5fad9488aba0f2f1cec07e2148d631c306e013846791cfb71ce6ad7ba69f5b58", "verdict_present": true}], "objections": [], "requirements": [{"evidence": ["P1:green"], "requirement_id": "probe.P1", "status": "pass"}, {"evidence": ["P2:green"], "requirement_id": "probe.P2", "status": "pass"}, {"evidence": ["P3:green"], "requirement_id": "probe.P3", "status": "pass"}, {"evidence": ["P4:green"], "requirement_id": "probe.P4", "status": "pass"}, {"evidence": ["P_planning:green"], "requirement_id": "probe.P_planning", "status": "pass"}, {"evidence": ["workflow_claims_verified"], "requirement_id": "claim_verification.P11", "status": "pass"}, {"evidence": ["cursor_review_ok", "panel_decision=accept:all_available_reviewers_accept"], "legacy_requirement_id": "cursor_review", "requirement_id": "independent_reviewer", "status": "pass"}], "reviewer": "codex", "round_policy": {"blocking_findings": [], "close_allowed": true, "force_next_round": false}, "schema_version": "codex-review-packet/v1", "task_id": "durable-execution-engine-adr-20260604", "would_change_if": "Every requirement is pass and both reviewers accept."}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`

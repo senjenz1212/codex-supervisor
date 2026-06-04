@@ -146,6 +146,12 @@ class AgenticLeadCfg(BaseModel):
     required_evidence_grade: Literal["self_reported", "lead_captured", "runtime_native"] = "self_reported"
 
 
+class DurableExecutionCfg(BaseModel):
+    engine: Literal["hand_rolled", "temporal_spike"] = "hand_rolled"
+    temporal_spike_enabled: bool = False
+    temporal_task_queue: str = "codex-supervisor-spike"
+
+
 class LocalFallbackCfg(BaseModel):
     enabled: bool = False
     base_url: str = "http://localhost:8000/v1"
@@ -210,6 +216,7 @@ class Config(BaseModel):
     orchestrator: OrchestratorCfg
     supervisor: SupervisorCfg
     agentic_lead: AgenticLeadCfg = Field(default_factory=AgenticLeadCfg)
+    durable_execution: DurableExecutionCfg = Field(default_factory=DurableExecutionCfg)
     modes: ModesCfg = Field(default_factory=ModesCfg)
     models: ModelsCfg
     telegram: TelegramCfg

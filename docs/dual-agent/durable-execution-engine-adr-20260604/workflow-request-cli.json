@@ -1,0 +1,144 @@
+{
+  "agentic_lead_policy": "off",
+  "cursor_review": true,
+  "cursor_review_profile": "rigorous",
+  "cwd": "/Users/sam.zhang/Documents/codex-supervisor",
+  "execution_layer_mode": "lead_direct",
+  "intent": "Decide via ADR whether Temporal, Restate, or DBOS should replace parts of the durable job stack, with only a disabled report-only Temporal submit spike.",
+  "planning_artifacts": [
+    {
+      "kind": "prd",
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/prd.md"
+    },
+    {
+      "kind": "grill_findings",
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings.md"
+    },
+    {
+      "kind": "issues",
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/issues.md"
+    },
+    {
+      "kind": "tdd_plan",
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/tdd.md"
+    },
+    {
+      "kind": "grill-findings-tdd",
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings-tdd.md"
+    },
+    {
+      "kind": "implementation_plan",
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/durable-execution-engine-adr-20260604/source/implementation-plan.md"
+    }
+  ],
+  "quality": "best",
+  "require_skill_receipts": true,
+  "run_id": "06e90318-1ddd-491e-94ca-d9930205df7d",
+  "task_id": "durable-execution-engine-adr-20260604",
+  "tool_receipts": [
+    {
+      "artifacts": [
+        "docs/dual-agent/durable-execution-engine-adr-20260604/source/prd.md"
+      ],
+      "claims": [
+        "PRD promise contracts P1-P4 produced",
+        "Report-only runtime decision boundary captured"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-to-prd-durable-execution-engine-adr-20260604",
+      "skill": "to-prd",
+      "stage": "to_prd",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings.md"
+      ],
+      "claims": [
+        "PRD grill findings resolved",
+        "Temporal spike is separated from production adoption"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-prd-grill-durable-execution-engine-adr-20260604",
+      "skill": "grill-with-docs",
+      "stage": "prd_grill",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/durable-execution-engine-adr-20260604/source/issues.md"
+      ],
+      "claims": [
+        "Issues cover every PRD promise P1-P4",
+        "Each issue names public-boundary acceptance criteria"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-to-issues-durable-execution-engine-adr-20260604",
+      "skill": "to-issues",
+      "stage": "to_issues",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/durable-execution-engine-adr-20260604/source/tdd.md"
+      ],
+      "claims": [
+        "TDD cycles cover config default, explicit temporal_spike flag coverage, Temporal fake-client idempotency, Layer-0 comparison, and ADR completeness"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-tdd-durable-execution-engine-adr-20260604",
+      "skill": "tdd",
+      "stage": "tdd",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/durable-execution-engine-adr-20260604/source/grill-findings-tdd.md"
+      ],
+      "claims": [
+        "TDD grill findings resolved",
+        "Layer-0 comparison, explicit temporal_spike flag coverage, and no-default-change tests are required"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-tdd-grill-durable-execution-engine-adr-20260604",
+      "skill": "grill-with-docs",
+      "stage": "tdd_grill",
+      "status": "passed"
+    },
+    {
+      "command": "uv run pytest tests/test_durable_execution_engine_spike.py tests/test_durable_execution_engine_adr.py -q",
+      "kind": "test",
+      "receipt_id": "receipt:pytest-durable-execution-engine-spike-focused",
+      "status": "passed",
+      "summary": "6 passed in 0.13s"
+    },
+    {
+      "command": "uv run pytest tests/test_target_config_load.py tests/test_durable_execution_engine_spike.py tests/test_durable_execution_engine_adr.py -q",
+      "kind": "test",
+      "receipt_id": "receipt:pytest-target-config-and-durable-engine",
+      "status": "passed",
+      "summary": "11 passed in 0.12s"
+    },
+    {
+      "command": "uv run pytest -q",
+      "kind": "test",
+      "receipt_id": "receipt:pytest-full-durable-execution-engine-adr",
+      "status": "passed",
+      "summary": "735 passed, 8 skipped in 106.09s"
+    },
+    {
+      "command": "uv run python -m compileall supervisor/durable_execution_engine_spike.py",
+      "kind": "test",
+      "receipt_id": "receipt:compileall-durable-execution-engine-spike",
+      "status": "passed",
+      "summary": "compileall completed with exit code 0"
+    },
+    {
+      "command": "git diff --check",
+      "kind": "test",
+      "receipt_id": "receipt:git-diff-check-durable-execution-engine-adr",
+      "status": "passed",
+      "summary": "no whitespace errors"
+    }
+  ]
+}

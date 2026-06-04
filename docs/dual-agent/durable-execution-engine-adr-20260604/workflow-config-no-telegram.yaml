@@ -1,0 +1,63 @@
+target:
+  kind: codex
+  codex:
+    sessions_root: ~/.codex/sessions
+    cli_command: /Users/sam.zhang/.local/bin/codex
+    steering_delivery: resume
+    resume_extra_args:
+      - --skip-git-repo-check
+    resume_timeout_s: 60
+    app_server_transport: stdio
+    app_server_load_thread_before_inject: true
+    app_server_timeout_s: 30
+    cli_search_paths:
+      - ~/.local/bin/codex
+      - ~/.npm-global/bin/codex
+      - /Applications/Codex.app/Contents/Resources/codex
+      - /opt/homebrew/bin/codex
+      - /usr/local/bin/codex
+    desktop_process_names:
+      - Codex
+
+orchestrator:
+  run_registry_dir: ~/.codex-supervisor/runs
+
+supervisor:
+  state_db: ~/.codex-supervisor/state.db
+  hook_server_port: 19001
+  hook_critique_strategy: model_first
+  drift_check_interval_s: 30
+  stall_threshold_s: 90
+  nudge_cooldown_s: 300
+  reviewer_unavailable_policy: escalate
+  reviewer_model: composer-2.5
+  reviewer_output_mode: cursor_sdk
+  reviewer_max_tokens: 4096
+  reviewer_infra_retry_limit: 2
+  reviewer_infra_retry_backoff_s: 1.0
+  reviewer_low_confidence_threshold: 0.0
+  reviewer_panel_calibration_path: ""
+
+models:
+  anthropic_api_key: ${ANTHROPIC_API_KEY}
+  anthropic_auth_token: ${ANTHROPIC_AUTH_TOKEN}
+  anthropic_base_url: ${ANTHROPIC_BASE_URL}
+  realtime_critique_model: claude-opus-4-7
+  drift_l3_model: claude-opus-4-7
+  drift_l4_model: claude-opus-4-7
+  post_run_eval_model: claude-opus-4-7
+  openai_api_key: ${OPENAI_API_KEY}
+  openai_base_url: ${OPENAI_BASE_URL}
+  embedding_model: text-embedding-3-small
+
+telegram:
+  bot_token: fake
+  chat_id: fake
+
+drift:
+  l1_scope_violation_threshold: 3
+  l2_similarity_threshold: 0.4
+
+logging:
+  level: INFO
+  file: /tmp/codex-supervisor.log

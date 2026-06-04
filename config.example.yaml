@@ -74,6 +74,13 @@ supervisor:
   # to conservative aggregation.
   reviewer_panel_calibration_path: ""
 
+durable_execution:
+  # Report-only spike lane. The default runtime remains the hand-rolled
+  # Layer 0/0.5/1 stack unless an operator explicitly enables a future slice.
+  engine: hand_rolled
+  temporal_spike_enabled: false
+  temporal_task_queue: codex-supervisor-spike
+
 modes:
   rollout_ingestion: enforce
   # advise: send routine watched-run FYI/progress pings.
