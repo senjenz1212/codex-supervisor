@@ -33,6 +33,8 @@ def test_forward_migration_adds_resume_requested_at_to_old_actions_table(tmp_pat
         {"version": 1, "name": "actions.resume_requested_at"},
         {"version": 2, "name": "dual_agent_workflow_jobs.idempotency_token"},
         {"version": 3, "name": "dual_agent_workflow_jobs.terminal_outcome"},
+        {"version": 4, "name": "dual_agent_workflow_jobs.recovery_points"},
+        {"version": 5, "name": "dual_agent_workflow_jobs.recovery_claims"},
     ]
 
 
@@ -48,6 +50,8 @@ def test_forward_migrations_are_idempotent(tmp_path):
         {"version": 1, "name": "actions.resume_requested_at"},
         {"version": 2, "name": "dual_agent_workflow_jobs.idempotency_token"},
         {"version": 3, "name": "dual_agent_workflow_jobs.terminal_outcome"},
+        {"version": 4, "name": "dual_agent_workflow_jobs.recovery_points"},
+        {"version": 5, "name": "dual_agent_workflow_jobs.recovery_claims"},
     ]
 
 
@@ -110,6 +114,8 @@ def test_state_constructor_applies_forward_migration_to_old_db(tmp_path):
         {"version": 1, "name": "actions.resume_requested_at"},
         {"version": 2, "name": "dual_agent_workflow_jobs.idempotency_token"},
         {"version": 3, "name": "dual_agent_workflow_jobs.terminal_outcome"},
+        {"version": 4, "name": "dual_agent_workflow_jobs.recovery_points"},
+        {"version": 5, "name": "dual_agent_workflow_jobs.recovery_claims"},
     ]
 
 
@@ -146,7 +152,7 @@ def test_forward_migration_adds_workflow_job_idempotency(tmp_path):
         row["name"]
         for row in conn.execute("PRAGMA index_list(dual_agent_workflow_jobs)").fetchall()
     }
-    assert "idx_dual_agent_workflow_jobs_idempotency_token" in indexes
+    assert "idx_dual_agent_workflow_jobs_active_idempotency_token" in indexes
     conn.execute(
         """INSERT INTO dual_agent_workflow_jobs(
              job_id, run_id, task_id, cwd, status, request_path, result_path,
@@ -160,6 +166,18 @@ def test_forward_migration_adds_workflow_job_idempotency(tmp_path):
                  log_path, idempotency_token, created_at, updated_at)
                VALUES('job-2', 'run', 'task', '.', 'running', 'req', 'res', 'log', 'token', 1, 1)"""
         )
+    conn.execute(
+        """INSERT INTO dual_agent_workflow_jobs(
+             job_id, run_id, task_id, cwd, status, request_path, result_path,
+             log_path, idempotency_token, recovery_point, created_at, updated_at)
+           VALUES('job-terminal', 'run', 'task', '.', 'accepted', 'req', 'res', 'log', 'done-token', 'terminal', 1, 1)"""
+    )
+    conn.execute(
+        """INSERT INTO dual_agent_workflow_jobs(
+             job_id, run_id, task_id, cwd, status, request_path, result_path,
+             log_path, idempotency_token, recovery_point, created_at, updated_at)
+           VALUES('job-active-after-terminal', 'run', 'task', '.', 'submitted', 'req', 'res', 'log', 'done-token', 'reserved', 1, 1)"""
+    )
 
 
 def test_state_constructor_adds_workflow_job_idempotency_to_existing_db(tmp_path):
@@ -196,7 +214,7 @@ def test_state_constructor_adds_workflow_job_idempotency_to_existing_db(tmp_path
         row["name"]
         for row in state._conn.execute("PRAGMA index_list(dual_agent_workflow_jobs)").fetchall()
     }
-    assert "idx_dual_agent_workflow_jobs_idempotency_token" in indexes
+    assert "idx_dual_agent_workflow_jobs_active_idempotency_token" in indexes
 
 
 def test_forward_migration_adds_workflow_job_terminal_outcome_fields(tmp_path):
@@ -234,4 +252,69 @@ def test_forward_migration_adds_workflow_job_terminal_outcome_fields(tmp_path):
         {"version": 1, "name": "actions.resume_requested_at"},
         {"version": 2, "name": "dual_agent_workflow_jobs.idempotency_token"},
         {"version": 3, "name": "dual_agent_workflow_jobs.terminal_outcome"},
+        {"version": 4, "name": "dual_agent_workflow_jobs.recovery_points"},
+        {"version": 5, "name": "dual_agent_workflow_jobs.recovery_claims"},
     ]
+
+
+def test_forward_migration_adds_workflow_job_recovery_points(tmp_path):
+    conn = sqlite3.connect(tmp_path / "state.db")
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        """CREATE TABLE dual_agent_workflow_jobs (
+             job_id TEXT PRIMARY KEY,
+             run_id TEXT NOT NULL,
+             task_id TEXT NOT NULL,
+             cwd TEXT NOT NULL,
+             status TEXT NOT NULL,
+             pid INTEGER,
+             request_path TEXT NOT NULL,
+             result_path TEXT NOT NULL,
+             log_path TEXT NOT NULL,
+             idempotency_token TEXT,
+             terminal_status TEXT,
+             terminal_outcome_json TEXT,
+             terminal_outcome_recorded_at INTEGER,
+             returncode INTEGER,
+             error TEXT,
+             created_at INTEGER NOT NULL,
+             updated_at INTEGER NOT NULL
+           )"""
+    )
+    conn.execute(
+        """INSERT INTO dual_agent_workflow_jobs(
+             job_id, run_id, task_id, cwd, status, pid, request_path, result_path,
+             log_path, idempotency_token, created_at, updated_at)
+           VALUES('job-running', 'run', 'task', '.', 'running', 123, 'req', 'res', 'log', 'token-a', 1, 1)"""
+    )
+    conn.execute(
+        """INSERT INTO dual_agent_workflow_jobs(
+             job_id, run_id, task_id, cwd, status, request_path, result_path,
+             log_path, idempotency_token, terminal_outcome_json, created_at, updated_at)
+           VALUES('job-terminal', 'run', 'task', '.', 'accepted', 'req', 'res', 'log', 'token-b', '{}', 1, 1)"""
+    )
+
+    run_forward_migrations(conn)
+
+    columns = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(dual_agent_workflow_jobs)").fetchall()
+    }
+    assert {
+        "recovery_point",
+        "recovery_claim_token",
+        "recovery_claimed_at",
+        "request_payload_json",
+        "config_path",
+    } <= columns
+    rows = {
+        row["job_id"]: row["recovery_point"]
+        for row in conn.execute("SELECT job_id, recovery_point FROM dual_agent_workflow_jobs")
+    }
+    assert rows["job-running"] == "spawned"
+    assert rows["job-terminal"] == "terminal"
+    indexes = {
+        row["name"]
+        for row in conn.execute("PRAGMA index_list(dual_agent_workflow_jobs)").fetchall()
+    }
+    assert "idx_dual_agent_workflow_jobs_active_idempotency_token" in indexes

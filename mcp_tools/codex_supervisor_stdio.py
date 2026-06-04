@@ -2089,6 +2089,7 @@ class CodexSupervisorMcpAPI:
         request_path = job_dir / "request.json"
         result_path = job_dir / "result.json"
         log_path = job_dir / "worker.log"
+        request_payload_json = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
         reserved_job, created = self.state.reserve_dual_agent_workflow_job(
             job_id=job_id,
             run_id=run_id,
@@ -2099,102 +2100,211 @@ class CodexSupervisorMcpAPI:
             result_path=str(result_path),
             log_path=str(log_path),
             idempotency_token=idempotency_token,
+            request_payload_json=request_payload_json,
+            config_path=str(Path(config_path or "~/.codex-supervisor/config.yaml").expanduser()),
         )
-        if not created:
-            return redact({
-                "job_id": reserved_job["job_id"],
-                "run_id": reserved_job["run_id"],
-                "task_id": reserved_job["task_id"],
-                "status": reserved_job["status"],
-                "pid": reserved_job["pid"],
-                "request_path": reserved_job["request_path"],
-                "result_path": reserved_job["result_path"],
-                "log_path": reserved_job["log_path"],
-                "error": reserved_job["error"],
-                "reattached": True,
-                "poll_tool": "poll_dual_agent_workflow_job",
-            })
-        job_dir.mkdir(parents=True, exist_ok=True)
-        payload["job_id"] = job_id
-        request_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        command = [
-            sys.executable,
-            "-m",
-            "mcp_tools.codex_supervisor_workflow_cli",
-            "--config",
-            str(Path(config_path or "~/.codex-supervisor/config.yaml").expanduser()),
-            "--request",
-            str(request_path),
-            "--output",
-            str(result_path),
-        ]
-        try:
-            with log_path.open("ab") as log_file:
-                process = subprocess.Popen(
-                    command,
-                    cwd=str(cwd_path),
-                    stdout=log_file,
-                    stderr=subprocess.STDOUT,
-                    start_new_session=True,
-                )
-        except OSError as e:
-            self.state.complete_dual_agent_workflow_job(
-                job_id=job_id,
-                status="failed",
-                terminal_outcome={
-                    "status": "failed",
-                    "run_id": run_id,
-                    "task_id": task_id,
-                    "error": str(e),
-                },
-                error=str(e),
-            )
+        if created:
             self.state.write_event(
                 run_id=run_id,
                 source="dual_agent",
                 kind="dual_agent_workflow_job",
                 payload={
-                    "job_id": job_id,
+                    "job_id": reserved_job["job_id"],
                     "task_id": task_id,
-                    "status": "failed",
-                    "error": str(e),
+                    "status": "submitted",
+                    "recovery_point": "reserved",
                     "request_path": str(request_path),
                     "result_path": str(result_path),
                     "log_path": str(log_path),
                     "transport_recovery": "detached_cli_worker",
                 },
             )
-            return redact({
-                "job_id": job_id,
-                "run_id": run_id,
-                "task_id": task_id,
-                "status": "failed",
-                "error": str(e),
-                "request_path": str(request_path),
-                "result_path": str(result_path),
-                "log_path": str(log_path),
-            })
+            return self._workflow_job_response(reserved_job)
+        if not created:
+            return self._workflow_job_response(reserved_job, reattached=True)
 
-        self.state.upsert_dual_agent_workflow_job(
-            job_id=job_id,
-            run_id=run_id,
-            task_id=task_id,
-            cwd=str(cwd_path),
-            status="running",
-            pid=int(process.pid),
-            request_path=str(request_path),
-            result_path=str(result_path),
-            log_path=str(log_path),
-            idempotency_token=idempotency_token,
+        raise RuntimeError("unreachable workflow job reservation state")
+
+    def _workflow_job_response(
+        self,
+        row: Any,
+        *,
+        reattached: bool | None = None,
+        result: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "job_id": row["job_id"],
+            "run_id": row["run_id"],
+            "task_id": row["task_id"],
+            "status": row["terminal_status"] or row["status"],
+            "pid": row["pid"],
+            "request_path": row["request_path"],
+            "result_path": row["result_path"],
+            "log_path": row["log_path"],
+            "error": row["error"],
+            "recovery_point": row["recovery_point"],
+            "poll_tool": "poll_dual_agent_workflow_job",
+        }
+        if reattached is not None:
+            payload["reattached"] = reattached
+        terminal_outcome_json = row["terminal_outcome_json"] if "terminal_outcome_json" in row.keys() else None
+        if result is None and terminal_outcome_json:
+            try:
+                loaded = json.loads(str(terminal_outcome_json))
+                result = loaded if isinstance(loaded, dict) else {"raw_result": loaded}
+            except json.JSONDecodeError:
+                result = {
+                    "status": "failed",
+                    "run_id": row["run_id"],
+                    "task_id": row["task_id"],
+                    "error": "invalid_terminal_outcome_json",
+                }
+        if result is not None:
+            payload["result"] = result
+        return redact(payload)
+
+    def _drive_dual_agent_workflow_job(self, row: Any) -> Any:
+        recovery_point = str(row["recovery_point"] or "reserved")
+        if recovery_point == "terminal" or row["terminal_outcome_json"]:
+            return row
+        if recovery_point == "reserved":
+            row = self._write_workflow_job_request(row)
+            recovery_point = str(row["recovery_point"] or "request_written")
+        if recovery_point == "request_written":
+            row = self._spawn_workflow_job_worker(row)
+        return row
+
+    def _write_workflow_job_request(self, row: Any) -> Any:
+        claimed = self.state.claim_dual_agent_workflow_job_recovery_point(
+            job_id=row["job_id"],
+            expected_recovery_point="reserved",
+            claim_token=f"request:{os.getpid()}:{uuid.uuid4()}",
+        )
+        if claimed is None:
+            refreshed = self.state.get_dual_agent_workflow_job(job_id=row["job_id"])
+            return refreshed or row
+        row = claimed
+        request_path = Path(str(row["request_path"]))
+        request_payload_json = row["request_payload_json"] if "request_payload_json" in row.keys() else None
+        if request_payload_json:
+            try:
+                payload = json.loads(str(request_payload_json))
+            except json.JSONDecodeError as e:
+                return self._fail_workflow_job_phase(
+                    row,
+                    error=f"invalid_request_payload_json: {e}",
+                )
+            if not isinstance(payload, dict):
+                return self._fail_workflow_job_phase(
+                    row,
+                    error="invalid_request_payload_json: expected object",
+                )
+            payload["job_id"] = row["job_id"]
+            request_path.parent.mkdir(parents=True, exist_ok=True)
+            request_path.write_text(
+                json.dumps(payload, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+        elif not request_path.exists():
+            return self._fail_workflow_job_phase(
+                row,
+                error="missing_request_payload_for_reserved_job",
+            )
+        self.state.update_dual_agent_workflow_job(
+            job_id=row["job_id"],
+            status="submitted",
+            recovery_point="request_written",
         )
         self.state.write_event(
-            run_id=run_id,
+            run_id=row["run_id"],
             source="dual_agent",
             kind="dual_agent_workflow_job",
             payload={
-                "job_id": job_id,
-                "task_id": task_id,
+                "job_id": row["job_id"],
+                "task_id": row["task_id"],
+                "status": "submitted",
+                "recovery_point": "request_written",
+                "request_path": str(request_path),
+                "result_path": row["result_path"],
+                "log_path": row["log_path"],
+                "transport_recovery": "detached_cli_worker",
+            },
+        )
+        refreshed = self.state.get_dual_agent_workflow_job(job_id=row["job_id"])
+        return refreshed or row
+
+    def _spawn_workflow_job_worker(self, row: Any) -> Any:
+        if self._has_stale_spawn_claim(row):
+            return self._fail_workflow_job_phase(
+                row,
+                error="stale_spawn_claim_without_persisted_pid",
+            )
+        claimed = self.state.claim_dual_agent_workflow_job_recovery_point(
+            job_id=row["job_id"],
+            expected_recovery_point="request_written",
+            claim_token=f"spawn:{os.getpid()}:{uuid.uuid4()}",
+        )
+        if claimed is None:
+            refreshed = self.state.get_dual_agent_workflow_job(job_id=row["job_id"])
+            return refreshed or row
+        row = claimed
+        request_path = Path(str(row["request_path"]))
+        result_path = Path(str(row["result_path"]))
+        log_path = Path(str(row["log_path"]))
+        config_path = row["config_path"] if "config_path" in row.keys() else None
+        command = [
+            sys.executable,
+            "-m",
+            "mcp_tools.codex_supervisor_workflow_cli",
+            "--config",
+            str(Path(str(config_path or "~/.codex-supervisor/config.yaml")).expanduser()),
+            "--request",
+            str(request_path),
+            "--output",
+            str(result_path),
+        ]
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with log_path.open("ab") as log_file:
+                process = subprocess.Popen(
+                    command,
+                    cwd=str(row["cwd"]),
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                    start_new_session=True,
+                )
+        except OSError as e:
+            return self._fail_workflow_job_phase(row, error=str(e))
+
+        try:
+            self.state.upsert_dual_agent_workflow_job(
+                job_id=row["job_id"],
+                run_id=row["run_id"],
+                task_id=row["task_id"],
+                cwd=str(row["cwd"]),
+                status="running",
+                pid=int(process.pid),
+                request_path=str(request_path),
+                result_path=str(result_path),
+                log_path=str(log_path),
+                idempotency_token=row["idempotency_token"],
+                recovery_point="spawned",
+            )
+        except Exception as e:
+            self._terminate_workflow_job_process(process)
+            return self._fail_workflow_job_phase(
+                row,
+                error=f"failed_to_persist_spawned_worker: {e}",
+            )
+        self.state.write_event(
+            run_id=row["run_id"],
+            source="dual_agent",
+            kind="dual_agent_workflow_job",
+            payload={
+                "job_id": row["job_id"],
+                "task_id": row["task_id"],
                 "status": "running",
+                "recovery_point": "spawned",
                 "pid": int(process.pid),
                 "request_path": str(request_path),
                 "result_path": str(result_path),
@@ -2202,22 +2312,85 @@ class CodexSupervisorMcpAPI:
                 "transport_recovery": "detached_cli_worker",
             },
         )
-        return redact({
-            "job_id": job_id,
-            "run_id": run_id,
-            "task_id": task_id,
-            "status": "running",
-            "pid": int(process.pid),
-            "request_path": str(request_path),
-            "result_path": str(result_path),
-            "log_path": str(log_path),
-            "poll_tool": "poll_dual_agent_workflow_job",
-        })
+        refreshed = self.state.get_dual_agent_workflow_job(job_id=row["job_id"])
+        return refreshed or row
+
+    @staticmethod
+    def _has_stale_spawn_claim(row: Any, *, claim_ttl_s: int = 60) -> bool:
+        try:
+            claim_token = row["recovery_claim_token"]
+            claimed_at = row["recovery_claimed_at"]
+        except (KeyError, IndexError):
+            return False
+        if not claim_token or not str(claim_token).startswith("spawn:"):
+            return False
+        if claimed_at is None:
+            return True
+        try:
+            claimed_at_int = int(claimed_at)
+        except (TypeError, ValueError):
+            return True
+        return claimed_at_int <= int(time.time()) - max(0, claim_ttl_s)
+
+    @staticmethod
+    def _terminate_workflow_job_process(process: Any) -> None:
+        terminate = getattr(process, "terminate", None)
+        if callable(terminate):
+            try:
+                terminate()
+            except Exception:
+                pass
+        wait = getattr(process, "wait", None)
+        if callable(wait):
+            try:
+                wait(timeout=2)
+                return
+            except Exception:
+                pass
+        kill = getattr(process, "kill", None)
+        if callable(kill):
+            try:
+                kill()
+            except Exception:
+                pass
+
+    def _fail_workflow_job_phase(self, row: Any, *, error: str) -> Any:
+        result = {
+            "status": "failed",
+            "run_id": row["run_id"],
+            "task_id": row["task_id"],
+            "error": error,
+        }
+        self.state.complete_dual_agent_workflow_job(
+            job_id=row["job_id"],
+            status="failed",
+            terminal_outcome=result,
+            error=error,
+        )
+        self.state.write_event(
+            run_id=row["run_id"],
+            source="dual_agent",
+            kind="dual_agent_workflow_job",
+            payload={
+                "job_id": row["job_id"],
+                "task_id": row["task_id"],
+                "status": "failed",
+                "recovery_point": "terminal",
+                "error": error,
+                "request_path": row["request_path"],
+                "result_path": row["result_path"],
+                "log_path": row["log_path"],
+                "transport_recovery": "detached_cli_worker",
+            },
+        )
+        refreshed = self.state.get_dual_agent_workflow_job(job_id=row["job_id"])
+        return refreshed or row
 
     def poll_dual_agent_workflow_job(self, *, job_id: str) -> dict[str, Any]:
         row = self.state.get_dual_agent_workflow_job(job_id=job_id)
         if row is None:
             return {"job_id": job_id, "status": "missing"}
+        row = self._drive_dual_agent_workflow_job(row)
         result_path = Path(str(row["result_path"]))
         result: dict[str, Any] | None = None
         original_status = str(row["status"])
@@ -2322,6 +2495,12 @@ class CodexSupervisorMcpAPI:
                 terminal_outcome=result,
                 error=error,
             )
+        if status not in {"running", "submitted"}:
+            refreshed = self.state.get_dual_agent_workflow_job(job_id=job_id)
+            if refreshed is not None:
+                row = refreshed
+                status = str(row["terminal_status"] or row["status"] or status)
+                error = row["error"]
         payload = {
             "job_id": job_id,
             "run_id": row["run_id"],
@@ -2329,6 +2508,7 @@ class CodexSupervisorMcpAPI:
             "cwd": row["cwd"],
             "status": status,
             "pid": row["pid"],
+            "recovery_point": row["recovery_point"],
             "request_path": row["request_path"],
             "result_path": row["result_path"],
             "log_path": row["log_path"],
@@ -2342,13 +2522,14 @@ class CodexSupervisorMcpAPI:
                 source="dual_agent",
                 kind="dual_agent_workflow_job",
                 payload={
-                    "job_id": job_id,
-                    "task_id": row["task_id"],
-                    "status": status,
-                    "error": error,
-                    "result_path": row["result_path"],
-                    "transport_recovery": "detached_cli_worker",
-                },
+                        "job_id": job_id,
+                        "task_id": row["task_id"],
+                        "status": status,
+                        "recovery_point": "terminal",
+                        "error": error,
+                        "result_path": row["result_path"],
+                        "transport_recovery": "detached_cli_worker",
+                    },
             )
         return redact(payload)
 

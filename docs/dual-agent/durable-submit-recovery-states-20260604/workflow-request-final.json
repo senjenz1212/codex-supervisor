@@ -1,0 +1,164 @@
+{
+  "agentic_lead_policy": "off",
+  "budget_usd": 100.0,
+  "client_token": "durable-submit-recovery-states-20260604-a532ccbf",
+  "cursor_review": true,
+  "cursor_review_profile": "rigorous",
+  "cwd": "/Users/sam.zhang/Documents/codex-supervisor",
+  "execution_layer_mode": "lead_direct",
+  "intent": "Layer 0 durable submit: reserve-only submit, DB-enforced active idempotency, recovery-point phases, poll-side resume, and stranded reservation recovery.",
+  "planning_artifacts": [
+    {
+      "kind": "prd",
+      "mutable_by_worker": false,
+      "path": "docs/dual-agent/durable-submit-recovery-states-20260604/source/prd.md",
+      "sha256": "2591ee626ab8dcf9260b96d2fdf2b16c1fccdb78104647eb1b2b4125c8987f0a"
+    },
+    {
+      "kind": "grill_findings",
+      "mutable_by_worker": false,
+      "path": "docs/dual-agent/durable-submit-recovery-states-20260604/source/grill-findings.md",
+      "sha256": "0ed37e34e5bf7a4e6a52334bc3ff8b62eba34195aa6efa34ddb3d6aa0a7add10"
+    },
+    {
+      "kind": "issues",
+      "mutable_by_worker": false,
+      "path": "docs/dual-agent/durable-submit-recovery-states-20260604/source/issues.md",
+      "sha256": "cafc7aef6ac47a4ee04376bc6e7dbf524bda7e297629fcaf6c8fea39a3a2a290"
+    },
+    {
+      "kind": "tdd_plan",
+      "mutable_by_worker": false,
+      "path": "docs/dual-agent/durable-submit-recovery-states-20260604/source/tdd.md",
+      "sha256": "29ee28d9f9c5346af7d92fe6e3e46816ec9eda0cadaf86440b4dc6f2e7a1bb80"
+    },
+    {
+      "kind": "grill_findings",
+      "mutable_by_worker": false,
+      "path": "docs/dual-agent/durable-submit-recovery-states-20260604/source/grill-findings-tdd.md",
+      "sha256": "7193b1d50ddae33665f70a8b174646ff3c1ad8d01943ad3fe4785210a5ec486c"
+    },
+    {
+      "kind": "implementation_plan",
+      "mutable_by_worker": false,
+      "path": "docs/dual-agent/durable-submit-recovery-states-20260604/source/implementation-plan.md",
+      "sha256": "344b23fca954410cbfa991b61aa3e65c83809e395ed4c09d6519dd57a8389bf4"
+    }
+  ],
+  "quality": "best",
+  "require_skill_receipts": true,
+  "run_id": "a532ccbf-13a5-42cd-ad89-7987ca3828f0",
+  "task_id": "durable-submit-recovery-states-20260604",
+  "tool_receipts": [
+    {
+      "artifacts": [
+        "docs/dual-agent/durable-submit-recovery-states-20260604/source/prd.md"
+      ],
+      "claims": [
+        "PRD promise contracts P1-P5 produced",
+        "SQLite-only durable submit boundaries recorded"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-to-prd-durable-submit-recovery-states-20260604",
+      "skill": "to-prd",
+      "stage": "to_prd",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/durable-submit-recovery-states-20260604/source/grill-findings.md"
+      ],
+      "claims": [
+        "PRD grill findings resolved",
+        "Pure submit, active-token uniqueness, terminal replay, and payload durability risks incorporated"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-prd-grill-durable-submit-recovery-states-20260604",
+      "skill": "grill-with-docs",
+      "stage": "prd_grill",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/durable-submit-recovery-states-20260604/source/issues.md"
+      ],
+      "claims": [
+        "Issues sliced across schema/state, submit, poll-side recovery, and regression evidence"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-to-issues-durable-submit-recovery-states-20260604",
+      "skill": "to-issues",
+      "stage": "to_issues",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/durable-submit-recovery-states-20260604/source/tdd.md"
+      ],
+      "claims": [
+        "TDD maps public-boundary tests for P1-P5",
+        "Concurrency, pure submit, recovery phases, stranded jobs, and terminal replay are test mapped"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-tdd-durable-submit-recovery-states-20260604",
+      "skill": "tdd",
+      "stage": "tdd",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/durable-submit-recovery-states-20260604/source/grill-findings-tdd.md"
+      ],
+      "claims": [
+        "TDD grill findings resolved",
+        "Boundary, multiprocessing, phase-order, terminal replay, and legacy durable-result checks tightened"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-tdd-grill-durable-submit-recovery-states-20260604",
+      "skill": "grill-with-docs",
+      "stage": "tdd_grill",
+      "status": "passed"
+    },
+    {
+      "claims": [
+        "concurrent poll on one request_written job spawns exactly one worker",
+        "stale recovery phase claims are recoverable",
+        "migration receipts include recovery claim columns",
+        "4 focused regressions passed"
+      ],
+      "command": "uv run pytest tests/test_dual_agent_workflow_driver.py::test_poll_dual_agent_workflow_job_concurrent_request_written_spawns_once tests/test_dual_agent_workflow_driver.py::test_poll_dual_agent_workflow_job_recovers_stale_recovery_claim tests/test_schema_migrations.py::test_state_constructor_applies_forward_migration_to_old_db tests/test_schema_migrations.py::test_forward_migration_adds_workflow_job_terminal_outcome_fields -q",
+      "kind": "test",
+      "receipt_id": "pytest-focused-phase-claim-4",
+      "status": "passed"
+    },
+    {
+      "claims": [
+        "workflow driver and schema migration tests green after phase claims",
+        "117 tests passed"
+      ],
+      "command": "uv run pytest tests/test_dual_agent_workflow_driver.py tests/test_schema_migrations.py -q",
+      "kind": "test",
+      "receipt_id": "pytest-workflow-driver-schema-117",
+      "status": "passed"
+    },
+    {
+      "claims": [
+        "full suite green after poll-side recovery phase claim fix",
+        "704 tests passed"
+      ],
+      "command": "uv run pytest -q",
+      "kind": "test",
+      "receipt_id": "pytest-full-704-after-phase-claim",
+      "status": "passed"
+    },
+    {
+      "claims": [
+        "diff whitespace check passed after phase claim fix"
+      ],
+      "command": "git diff --check",
+      "kind": "test",
+      "receipt_id": "git-diff-check-after-phase-claim",
+      "status": "passed"
+    }
+  ]
+}

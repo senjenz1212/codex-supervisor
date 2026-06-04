@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "4ffb9ce746b3bdeec635377030c98253232cc10b937feb5bc823f485c4c8fa37",
+  "git": {
+    "diff_bytes": 63636,
+    "diff_sha256": "c5e5a445a9a0c326f8d485193607e7798abcfe0501084aef26e1270d5127c633",
+    "diff_stat": "mcp_tools/codex_supervisor_stdio.py      | 353 ++++++++++++++++------\n supervisor/schema_migrations.py          |  56 ++++\n supervisor/state.py                      | 191 ++++++++++--\n tests/test_dual_agent_workflow_driver.py | 484 ++++++++++++++++++++++++++++++-\n tests/test_schema_migrations.py          |  87 +++++-\n 5 files changed, 1045 insertions(+), 126 deletions(-)",
+    "head": "a52331b",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "a52331b",
+    "status_short": "M mcp_tools/codex_supervisor_stdio.py\n M supervisor/schema_migrations.py\n M supervisor/state.py\n M tests/test_dual_agent_workflow_driver.py\n M tests/test_schema_migrations.py\n?? docs/dual-agent/durable-submit-recovery-states-20260604/"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "7127f5e639098bff8348bbc9bc56dcba10d8e0dc6a7b4decf8b21f701d5503fa",
+    "implementation_plan": "1fdc34104a168c96edc99897a7f492862f65df0c57daf4f1fede7955c57427f2",
+    "issues": "cafc7aef6ac47a4ee04376bc6e7dbf524bda7e297629fcaf6c8fea39a3a2a290",
+    "prd": "2591ee626ab8dcf9260b96d2fdf2b16c1fccdb78104647eb1b2b4125c8987f0a",
+    "tdd_plan": "e706b07f37b229a4c6bea07340af31d018e5eba7d8573a990d5ebcccc6e9323e"
+  },
+  "status": "captured"
+}

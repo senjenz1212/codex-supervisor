@@ -3,9 +3,11 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import multiprocessing
 import os
 import re
 import subprocess
+import threading
 import time
 from hashlib import sha256
 from pathlib import Path
@@ -25,6 +27,34 @@ from supervisor.state import State
 
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "planning_validator"
+
+
+def _reserve_same_workflow_token_process(
+    db_path: str,
+    barrier: multiprocessing.synchronize.Barrier,
+    queue: multiprocessing.Queue,
+    index: int,
+) -> None:
+    state = State(db_path)
+    barrier.wait()
+    row, created = state.reserve_dual_agent_workflow_job(
+        job_id=f"job-{index}",
+        run_id="workflow-run",
+        task_id="workflow-1",
+        cwd="/tmp",
+        status="submitted",
+        request_path=f"/tmp/request-{index}.json",
+        result_path=f"/tmp/result-{index}.json",
+        log_path=f"/tmp/log-{index}.txt",
+        idempotency_token="same-process-token",
+        request_payload_json=json.dumps({
+            "cwd": "/tmp",
+            "task_id": "workflow-1",
+            "run_id": "workflow-run",
+            "intent": "race",
+        }),
+    )
+    queue.put((index, bool(created), row["job_id"], row["recovery_point"]))
 
 
 class _FakeMCP:
@@ -1307,16 +1337,21 @@ async def test_workflow_cli_payload_runs_same_supervisor_api(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_submit_dual_agent_workflow_job_spawns_detached_worker_and_records_job(monkeypatch, tmp_path):
+async def test_submit_dual_agent_workflow_job_reserves_then_poll_spawns_worker(monkeypatch, tmp_path):
     import mcp_tools.codex_supervisor_stdio as stdio
 
     server, state = _server(tmp_path)
     popen_calls: list[dict] = []
+    phase_at_spawn: list[str] = []
 
     class FakePopen:
         pid = 43210
 
         def __init__(self, argv, **kwargs):
+            row = state._conn.execute(
+                "SELECT recovery_point FROM dual_agent_workflow_jobs"
+            ).fetchone()
+            phase_at_spawn.append(row["recovery_point"] if row else "missing")
             popen_calls.append({"argv": list(argv), "kwargs": kwargs})
 
     monkeypatch.setattr(stdio.subprocess, "Popen", FakePopen)
@@ -1334,8 +1369,23 @@ async def test_submit_dual_agent_workflow_job_spawns_detached_worker_and_records
         config_path=str(tmp_path / "config.yaml"),
     ))
 
-    assert result["status"] == "running"
+    assert result["status"] == "submitted"
+    assert result["recovery_point"] == "reserved"
     assert result["poll_tool"] == "poll_dual_agent_workflow_job"
+    assert popen_calls == []
+    assert not Path(result["request_path"]).exists()
+
+    job = state.get_dual_agent_workflow_job(job_id=result["job_id"])
+    assert job is not None
+    assert job["status"] == "submitted"
+    assert job["pid"] is None
+    assert job["recovery_point"] == "reserved"
+
+    poll = await _maybe_await(server.tools["poll_dual_agent_workflow_job"](job_id=result["job_id"]))
+
+    assert poll["status"] == "running"
+    assert poll["recovery_point"] == "spawned"
+    assert phase_at_spawn == ["request_written"]
     assert popen_calls
     assert popen_calls[0]["argv"][1:3] == ["-m", "mcp_tools.codex_supervisor_workflow_cli"]
     assert popen_calls[0]["kwargs"]["start_new_session"] is True
@@ -1343,17 +1393,381 @@ async def test_submit_dual_agent_workflow_job_spawns_detached_worker_and_records
     request = json.loads(Path(result["request_path"]).read_text(encoding="utf-8"))
     assert request["execution_layer_mode"] == "dynamic_workflow_preview"
     assert request["dynamic_workflow_task_class"] == "codebase_audit"
+    assert request["job_id"] == result["job_id"]
 
     job = state.get_dual_agent_workflow_job(job_id=result["job_id"])
     assert job is not None
     assert job["status"] == "running"
     assert job["pid"] == 43210
+    assert job["recovery_point"] == "spawned"
 
     transcript = await _maybe_await(server.tools["read_gate_transcript"](
         run_id="workflow-run",
         task_id="workflow-1",
     ))
-    assert transcript["workflow_jobs"][0]["status"] == "running"
+    assert transcript["workflow_jobs"][-1]["status"] == "running"
+
+
+@pytest.mark.asyncio
+async def test_poll_dual_agent_workflow_job_restarts_from_request_written(monkeypatch, tmp_path):
+    import mcp_tools.codex_supervisor_stdio as stdio
+
+    server, state = _server(tmp_path)
+    popen_calls: list[list[str]] = []
+
+    class FakePopen:
+        pid = 43210
+
+        def __init__(self, argv, **kwargs):
+            popen_calls.append(list(argv))
+
+    monkeypatch.setattr(stdio.subprocess, "Popen", FakePopen)
+    monkeypatch.setattr(stdio, "_pid_alive", lambda pid: True)
+    monkeypatch.setattr(stdio, "_pid_alive", lambda pid: True)
+    payload = {
+        "cwd": str(tmp_path),
+        "task_id": "workflow-1",
+        "run_id": "workflow-run",
+        "intent": "Run long workflow out of band.",
+        "tool_receipts": _tool_receipts(),
+    }
+    job_dir = tmp_path / ".handoff" / "workflow-jobs" / "job-request-written"
+    request_path = job_dir / "request.json"
+    result_path = job_dir / "result.json"
+    log_path = job_dir / "worker.log"
+    job_dir.mkdir(parents=True)
+    request_path.write_text(json.dumps({**payload, "job_id": "job-request-written"}), encoding="utf-8")
+    state.upsert_dual_agent_workflow_job(
+        job_id="job-request-written",
+        run_id="workflow-run",
+        task_id="workflow-1",
+        cwd=str(tmp_path),
+        status="submitted",
+        request_path=str(request_path),
+        result_path=str(result_path),
+        log_path=str(log_path),
+        idempotency_token="token-request-written",
+        recovery_point="request_written",
+        request_payload_json=json.dumps(payload),
+    )
+
+    poll = await _maybe_await(server.tools["poll_dual_agent_workflow_job"](job_id="job-request-written"))
+
+    assert poll["status"] == "running"
+    assert poll["recovery_point"] == "spawned"
+    assert len(popen_calls) == 1
+    job = state.get_dual_agent_workflow_job(job_id="job-request-written")
+    assert job["pid"] == 43210
+    assert job["recovery_point"] == "spawned"
+
+
+@pytest.mark.asyncio
+async def test_poll_dual_agent_workflow_job_concurrent_request_written_spawns_once(
+    monkeypatch,
+    tmp_path,
+):
+    import mcp_tools.codex_supervisor_stdio as stdio
+
+    server, state = _server(tmp_path)
+    popen_calls: list[list[str]] = []
+    popen_lock = threading.Lock()
+
+    class FakePopen:
+        def __init__(self, argv, **kwargs):
+            with popen_lock:
+                popen_calls.append(list(argv))
+                self.pid = 43210 + len(popen_calls)
+            time.sleep(0.05)
+
+    monkeypatch.setattr(stdio.subprocess, "Popen", FakePopen)
+    monkeypatch.setattr(stdio, "_pid_alive", lambda pid: True)
+
+    payload = {
+        "cwd": str(tmp_path),
+        "task_id": "workflow-1",
+        "run_id": "workflow-run",
+        "intent": "Run long workflow out of band.",
+        "tool_receipts": _tool_receipts(),
+    }
+    job_dir = tmp_path / ".handoff" / "workflow-jobs" / "job-request-written-race"
+    request_path = job_dir / "request.json"
+    result_path = job_dir / "result.json"
+    log_path = job_dir / "worker.log"
+    job_dir.mkdir(parents=True)
+    request_path.write_text(json.dumps({**payload, "job_id": "job-request-written-race"}), encoding="utf-8")
+    state.upsert_dual_agent_workflow_job(
+        job_id="job-request-written-race",
+        run_id="workflow-run",
+        task_id="workflow-1",
+        cwd=str(tmp_path),
+        status="submitted",
+        request_path=str(request_path),
+        result_path=str(result_path),
+        log_path=str(log_path),
+        idempotency_token="token-request-written-race",
+        recovery_point="request_written",
+        request_payload_json=json.dumps(payload),
+    )
+
+    async def poll_once():
+        def poll_with_fresh_connection():
+            local_server, _local_state = _server(tmp_path)
+            return local_server.tools["poll_dual_agent_workflow_job"](
+                job_id="job-request-written-race",
+            )
+
+        return await asyncio.to_thread(
+            poll_with_fresh_connection,
+        )
+
+    results = await asyncio.gather(*(poll_once() for _ in range(8)))
+
+    assert len(popen_calls) == 1
+    assert any(result["status"] == "running" for result in results)
+    job = state.get_dual_agent_workflow_job(job_id="job-request-written-race")
+    assert job["pid"] == 43211
+    assert job["recovery_point"] == "spawned"
+    assert job["recovery_claim_token"] is None
+    assert job["recovery_claimed_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_poll_dual_agent_workflow_job_recovers_stale_recovery_claim(
+    monkeypatch,
+    tmp_path,
+):
+    import mcp_tools.codex_supervisor_stdio as stdio
+
+    server, state = _server(tmp_path)
+    popen_calls: list[list[str]] = []
+
+    class FakePopen:
+        pid = 43210
+
+        def __init__(self, argv, **kwargs):
+            popen_calls.append(list(argv))
+
+    monkeypatch.setattr(stdio.subprocess, "Popen", FakePopen)
+    monkeypatch.setattr(stdio, "_pid_alive", lambda pid: True)
+
+    payload = {
+        "cwd": str(tmp_path),
+        "task_id": "workflow-1",
+        "run_id": "workflow-run",
+        "intent": "Run long workflow out of band.",
+        "tool_receipts": _tool_receipts(),
+    }
+    job_dir = tmp_path / ".handoff" / "workflow-jobs" / "job-stale-claim"
+    request_path = job_dir / "request.json"
+    result_path = job_dir / "result.json"
+    log_path = job_dir / "worker.log"
+    job_dir.mkdir(parents=True)
+    request_path.write_text(json.dumps({**payload, "job_id": "job-stale-claim"}), encoding="utf-8")
+    state.upsert_dual_agent_workflow_job(
+        job_id="job-stale-claim",
+        run_id="workflow-run",
+        task_id="workflow-1",
+        cwd=str(tmp_path),
+        status="submitted",
+        request_path=str(request_path),
+        result_path=str(result_path),
+        log_path=str(log_path),
+        idempotency_token="token-stale-claim",
+        recovery_point="request_written",
+        request_payload_json=json.dumps(payload),
+    )
+    state._conn.execute(
+        """UPDATE dual_agent_workflow_jobs
+              SET recovery_claim_token='dead-poller',
+                  recovery_claimed_at=0
+            WHERE job_id='job-stale-claim'"""
+    )
+    state._conn.commit()
+
+    poll = await _maybe_await(server.tools["poll_dual_agent_workflow_job"](
+        job_id="job-stale-claim",
+    ))
+
+    assert poll["status"] == "running"
+    assert poll["recovery_point"] == "spawned"
+    assert len(popen_calls) == 1
+    job = state.get_dual_agent_workflow_job(job_id="job-stale-claim")
+    assert job["recovery_claim_token"] is None
+    assert job["recovery_claimed_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_poll_dual_agent_workflow_job_stale_spawn_claim_fails_without_respawn(
+    monkeypatch,
+    tmp_path,
+):
+    import mcp_tools.codex_supervisor_stdio as stdio
+
+    server, state = _server(tmp_path)
+    popen_calls: list[list[str]] = []
+
+    class FakePopen:
+        pid = 43210
+
+        def __init__(self, argv, **kwargs):
+            popen_calls.append(list(argv))
+
+    monkeypatch.setattr(stdio.subprocess, "Popen", FakePopen)
+    monkeypatch.setattr(stdio, "_pid_alive", lambda pid: True)
+
+    payload = {
+        "cwd": str(tmp_path),
+        "task_id": "workflow-1",
+        "run_id": "workflow-run",
+        "intent": "Run long workflow out of band.",
+        "tool_receipts": _tool_receipts(),
+    }
+    job_dir = tmp_path / ".handoff" / "workflow-jobs" / "job-stale-spawn-claim"
+    request_path = job_dir / "request.json"
+    result_path = job_dir / "result.json"
+    log_path = job_dir / "worker.log"
+    job_dir.mkdir(parents=True)
+    request_path.write_text(
+        json.dumps({**payload, "job_id": "job-stale-spawn-claim"}),
+        encoding="utf-8",
+    )
+    state.upsert_dual_agent_workflow_job(
+        job_id="job-stale-spawn-claim",
+        run_id="workflow-run",
+        task_id="workflow-1",
+        cwd=str(tmp_path),
+        status="submitted",
+        request_path=str(request_path),
+        result_path=str(result_path),
+        log_path=str(log_path),
+        idempotency_token="token-stale-spawn-claim",
+        recovery_point="request_written",
+        request_payload_json=json.dumps(payload),
+    )
+    state._conn.execute(
+        """UPDATE dual_agent_workflow_jobs
+              SET recovery_claim_token='spawn:dead-poller',
+                  recovery_claimed_at=0
+            WHERE job_id='job-stale-spawn-claim'"""
+    )
+    state._conn.commit()
+
+    poll = await _maybe_await(server.tools["poll_dual_agent_workflow_job"](
+        job_id="job-stale-spawn-claim",
+    ))
+
+    assert poll["status"] == "failed"
+    assert poll["recovery_point"] == "terminal"
+    assert poll["result"]["error"] == "stale_spawn_claim_without_persisted_pid"
+    assert popen_calls == []
+    job = state.get_dual_agent_workflow_job(job_id="job-stale-spawn-claim")
+    assert job["status"] == "failed"
+    assert job["recovery_point"] == "terminal"
+    assert job["recovery_claim_token"] is None
+    assert job["recovery_claimed_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_poll_dual_agent_workflow_job_kills_worker_when_spawn_persist_fails(
+    monkeypatch,
+    tmp_path,
+):
+    import mcp_tools.codex_supervisor_stdio as stdio
+
+    server, state = _server(tmp_path)
+    popen_instances = []
+
+    class FakePopen:
+        pid = 43210
+
+        def __init__(self, argv, **kwargs):
+            self.argv = list(argv)
+            self.terminated = False
+            self.killed = False
+            popen_instances.append(self)
+
+        def terminate(self):
+            self.terminated = True
+
+        def wait(self, timeout=None):
+            return 0
+
+        def kill(self):
+            self.killed = True
+
+    monkeypatch.setattr(stdio.subprocess, "Popen", FakePopen)
+    monkeypatch.setattr(stdio, "_pid_alive", lambda pid: True)
+
+    original_upsert = state.upsert_dual_agent_workflow_job
+
+    def fail_spawned_upsert(**kwargs):
+        if kwargs.get("recovery_point") == "spawned":
+            raise RuntimeError("persist denied")
+        return original_upsert(**kwargs)
+
+    monkeypatch.setattr(state, "upsert_dual_agent_workflow_job", fail_spawned_upsert)
+
+    submit = await _maybe_await(server.tools["submit_dual_agent_workflow_job"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Run long workflow out of band.",
+        tool_receipts=_tool_receipts(),
+        config_path=str(tmp_path / "config.yaml"),
+    ))
+
+    poll = await _maybe_await(server.tools["poll_dual_agent_workflow_job"](job_id=submit["job_id"]))
+    second_poll = await _maybe_await(server.tools["poll_dual_agent_workflow_job"](
+        job_id=submit["job_id"],
+    ))
+
+    assert poll["status"] == "failed"
+    assert poll["recovery_point"] == "terminal"
+    assert "failed_to_persist_spawned_worker: persist denied" == poll["result"]["error"]
+    assert len(popen_instances) == 1
+    assert popen_instances[0].terminated is True
+    assert popen_instances[0].killed is False
+    assert second_poll["status"] == "failed"
+    assert len(popen_instances) == 1
+    job = state.get_dual_agent_workflow_job(job_id=submit["job_id"])
+    assert job["status"] == "failed"
+    assert job["recovery_point"] == "terminal"
+    assert job["pid"] is None
+    assert job["recovery_claim_token"] is None
+    assert job["recovery_claimed_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_poll_dual_agent_workflow_job_records_terminal_failure_when_spawn_fails(
+    monkeypatch,
+    tmp_path,
+):
+    import mcp_tools.codex_supervisor_stdio as stdio
+
+    server, state = _server(tmp_path)
+
+    def fail_popen(*args, **kwargs):
+        raise OSError("spawn denied")
+
+    monkeypatch.setattr(stdio.subprocess, "Popen", fail_popen)
+    submit = await _maybe_await(server.tools["submit_dual_agent_workflow_job"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Run long workflow out of band.",
+        tool_receipts=_tool_receipts(),
+        config_path=str(tmp_path / "config.yaml"),
+    ))
+
+    poll = await _maybe_await(server.tools["poll_dual_agent_workflow_job"](job_id=submit["job_id"]))
+
+    assert poll["status"] == "failed"
+    assert poll["recovery_point"] == "terminal"
+    assert poll["result"]["error"] == "spawn denied"
+    job = state.get_dual_agent_workflow_job(job_id=submit["job_id"])
+    assert job["status"] == "failed"
+    assert job["recovery_point"] == "terminal"
+    assert json.loads(job["terminal_outcome_json"])["error"] == "spawn denied"
 
 
 @pytest.mark.asyncio
@@ -1371,6 +1785,7 @@ async def test_submit_workflow_job_payload_round_trips_agentic_policy_fields(mon
 
     monkeypatch.setattr(stdio.subprocess, "Popen", FakePopen)
     monkeypatch.setattr(stdio, "_pid_alive", lambda pid: True)
+    monkeypatch.setattr(stdio, "_pid_alive", lambda pid: True)
 
     result = await _maybe_await(server.tools["submit_dual_agent_workflow_job"](
         cwd=str(tmp_path),
@@ -1386,18 +1801,18 @@ async def test_submit_workflow_job_payload_round_trips_agentic_policy_fields(mon
         required_evidence_grade="runtime_native",
         config_path=str(tmp_path / "config.yaml"),
     ))
+    poll = await _maybe_await(server.tools["poll_dual_agent_workflow_job"](job_id=result["job_id"]))
 
     request = json.loads(Path(result["request_path"]).read_text(encoding="utf-8"))
     kwargs = workflow_kwargs_from_payload(request)
 
-    assert result["status"] == "running"
+    assert result["status"] == "submitted"
+    assert poll["status"] == "running"
     assert kwargs["agentic_lead_policy"] == "required"
     assert kwargs["min_subagents"] == 2
     assert kwargs["required_roles"] == ["codebase_audit", "independent_reviewer"]
     assert kwargs["solo_exception_for_artifact_only_gates"] is True
     assert kwargs["required_evidence_grade"] == "runtime_native"
-    poll = await _maybe_await(server.tools["poll_dual_agent_workflow_job"](job_id=result["job_id"]))
-    assert poll["status"] == "running"
     assert poll["job_id"] == result["job_id"]
 
 
@@ -1431,11 +1846,13 @@ async def test_submit_workflow_job_payload_round_trips_reviewer_infra_retry_poli
         reviewer_infra_retry_backoff_s=0.25,
         config_path=str(tmp_path / "config.yaml"),
     ))
+    poll = await _maybe_await(server.tools["poll_dual_agent_workflow_job"](job_id=result["job_id"]))
 
     request = json.loads(Path(result["request_path"]).read_text(encoding="utf-8"))
     kwargs = workflow_kwargs_from_payload(request)
 
-    assert result["status"] == "running"
+    assert result["status"] == "submitted"
+    assert poll["status"] == "running"
     assert request["reviewer_infra_retry_limit"] == 4
     assert request["reviewer_infra_retry_backoff_s"] == 0.25
     assert kwargs["reviewer_infra_retry_limit"] == 4
@@ -1456,6 +1873,7 @@ async def test_submit_dual_agent_workflow_job_dedupes_same_client_token(monkeypa
             popen_calls.append(list(argv))
 
     monkeypatch.setattr(stdio.subprocess, "Popen", FakePopen)
+    monkeypatch.setattr(stdio, "_pid_alive", lambda pid: True)
 
     kwargs = {
         "cwd": str(tmp_path),
@@ -1470,10 +1888,13 @@ async def test_submit_dual_agent_workflow_job_dedupes_same_client_token(monkeypa
     first = await _maybe_await(server.tools["submit_dual_agent_workflow_job"](**kwargs))
     second = await _maybe_await(server.tools["submit_dual_agent_workflow_job"](**kwargs))
 
-    assert first["status"] == "running"
+    assert first["status"] == "submitted"
     assert second["job_id"] == first["job_id"]
-    assert second["status"] == "running"
+    assert second["status"] == "submitted"
     assert second["reattached"] is True
+    assert len(popen_calls) == 0
+    poll = await _maybe_await(server.tools["poll_dual_agent_workflow_job"](job_id=first["job_id"]))
+    assert poll["status"] == "running"
     assert len(popen_calls) == 1
     rows = state._conn.execute("SELECT COUNT(*) FROM dual_agent_workflow_jobs").fetchone()
     assert rows[0] == 1
@@ -1508,7 +1929,7 @@ async def test_submit_dual_agent_workflow_job_derives_idempotency_for_legacy_cal
 
     assert second["job_id"] == first["job_id"]
     assert second["reattached"] is True
-    assert len(popen_calls) == 1
+    assert len(popen_calls) == 0
 
 
 @pytest.mark.asyncio
@@ -1545,7 +1966,7 @@ async def test_submit_dual_agent_workflow_job_derived_tokens_differ_for_differen
 
     assert second["job_id"] != first["job_id"]
     assert "reattached" not in second
-    assert len(popen_calls) == 2
+    assert len(popen_calls) == 0
 
 
 @pytest.mark.asyncio
@@ -1583,7 +2004,7 @@ async def test_submit_dual_agent_workflow_job_keeps_different_tokens_independent
 
     assert second["job_id"] != first["job_id"]
     assert "reattached" not in second
-    assert len(popen_calls) == 2
+    assert len(popen_calls) == 0
 
 
 @pytest.mark.asyncio
@@ -1621,7 +2042,39 @@ async def test_submit_dual_agent_workflow_job_concurrent_same_token_launches_onc
 
     job_ids = {result["job_id"] for result in results}
     assert len(job_ids) == 1
-    assert len(popen_calls) == 1
+    assert len(popen_calls) == 0
+    rows = state._conn.execute("SELECT COUNT(*) FROM dual_agent_workflow_jobs").fetchone()
+    assert rows[0] == 1
+
+
+def test_reserve_dual_agent_workflow_job_eight_process_race_reserves_once(tmp_path):
+    db_path = str(tmp_path / "state.db")
+    State(db_path)
+    context = multiprocessing.get_context("spawn")
+    barrier = context.Barrier(8)
+    queue = context.Queue()
+    processes = [
+        context.Process(
+            target=_reserve_same_workflow_token_process,
+            args=(db_path, barrier, queue, index),
+        )
+        for index in range(8)
+    ]
+
+    for process in processes:
+        process.start()
+    results = [queue.get(timeout=10) for _ in processes]
+    for process in processes:
+        process.join(timeout=10)
+        assert process.exitcode == 0
+
+    created = [result for result in results if result[1] is True]
+    assert len(created) == 1
+    job_ids = {result[2] for result in results}
+    assert len(job_ids) == 1
+    assert {result[3] for result in results} == {"reserved"}
+
+    state = State(db_path)
     rows = state._conn.execute("SELECT COUNT(*) FROM dual_agent_workflow_jobs").fetchone()
     assert rows[0] == 1
 
@@ -1774,7 +2227,9 @@ async def test_resumable_transport_drop_reconnect_catches_up_and_polls_terminal_
 
     assert second_submit["job_id"] == first_submit["job_id"]
     assert second_submit["reattached"] is True
-    assert len(popen_calls) == 1
+    assert second_submit["status"] == "accepted"
+    assert second_submit["result"] == terminal_outcome
+    assert len(popen_calls) == 0
     caught_ids = [event["event_id"] for event in catch_up["events"]]
     assert caught_ids == sorted(set(caught_ids))
     assert missed_progress in caught_ids
@@ -1837,6 +2292,7 @@ async def test_poll_dual_agent_workflow_job_reads_durable_result_after_transport
     result = await _maybe_await(server.tools["poll_dual_agent_workflow_job"](job_id="job-1"))
 
     assert result["status"] == "accepted"
+    assert result["recovery_point"] == "terminal"
     assert result["result"]["steps"] == [{"gate": "outcome_review", "status": "accepted"}]
     job = state.get_dual_agent_workflow_job(job_id="job-1")
     assert job["status"] == "accepted"

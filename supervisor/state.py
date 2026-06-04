@@ -35,10 +35,32 @@ BUILTIN_NEVER_TOUCH: tuple[str, ...] = (
     "**/*.key",
 )
 
+TERMINAL_WORKFLOW_JOB_STATUSES: frozenset[str] = frozenset({
+    "accepted",
+    "blocked",
+    "cancelled",
+    "completed",
+    "denied",
+    "failed",
+})
+
 
 def canonical_terminal_outcome_json(outcome: dict[str, Any]) -> str:
     """Canonical redacted workflow-result JSON for ledger storage/comparison."""
     return json.dumps(redact(outcome), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+
+def _workflow_job_recovery_point(
+    *,
+    status: str,
+    pid: int | None = None,
+    terminal_outcome_json: str | None = None,
+) -> str:
+    if terminal_outcome_json or str(status) in TERMINAL_WORKFLOW_JOB_STATUSES:
+        return "terminal"
+    if pid is not None:
+        return "spawned"
+    return "reserved"
 
 
 SCHEMA = """
@@ -219,6 +241,11 @@ CREATE TABLE IF NOT EXISTS dual_agent_workflow_jobs (
   result_path  TEXT NOT NULL,
   log_path     TEXT NOT NULL,
   idempotency_token TEXT,
+  recovery_point TEXT NOT NULL DEFAULT 'reserved',
+  recovery_claim_token TEXT,
+  recovery_claimed_at INTEGER,
+  request_payload_json TEXT,
+  config_path TEXT,
   terminal_status TEXT,
   terminal_outcome_json TEXT,
   terminal_outcome_recorded_at INTEGER,
@@ -718,24 +745,43 @@ class State:
         result_path: str,
         log_path: str,
         idempotency_token: str | None = None,
+        recovery_point: str | None = None,
+        request_payload_json: str | None = None,
+        config_path: str | None = None,
         pid: int | None = None,
         returncode: int | None = None,
         error: str | None = None,
     ) -> None:
         now = int(time.time())
+        recovery_point_value = recovery_point or _workflow_job_recovery_point(
+            status=status,
+            pid=pid,
+        )
         with self._write_lock:
             self._conn.execute(
                 """INSERT INTO dual_agent_workflow_jobs(
                        job_id, run_id, task_id, cwd, status, pid,
                        request_path, result_path, log_path, idempotency_token,
+                       recovery_point, request_payload_json, config_path,
                        returncode, error, created_at, updated_at)
-                   VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(job_id) DO UPDATE SET
                        status=excluded.status,
                        pid=excluded.pid,
                        idempotency_token=COALESCE(
                            excluded.idempotency_token,
                            dual_agent_workflow_jobs.idempotency_token
+                       ),
+                       recovery_point=excluded.recovery_point,
+                       recovery_claim_token=NULL,
+                       recovery_claimed_at=NULL,
+                       request_payload_json=COALESCE(
+                           excluded.request_payload_json,
+                           dual_agent_workflow_jobs.request_payload_json
+                       ),
+                       config_path=COALESCE(
+                           excluded.config_path,
+                           dual_agent_workflow_jobs.config_path
                        ),
                        returncode=excluded.returncode,
                        error=excluded.error,
@@ -751,6 +797,9 @@ class State:
                     result_path,
                     log_path,
                     idempotency_token,
+                    recovery_point_value,
+                    request_payload_json,
+                    config_path,
                     returncode,
                     error,
                     now,
@@ -771,11 +820,13 @@ class State:
         result_path: str,
         log_path: str,
         idempotency_token: str,
+        request_payload_json: str | None = None,
+        config_path: str | None = None,
     ) -> tuple[sqlite3.Row, bool]:
         """Atomically reserve a detached workflow job before launching its worker.
 
         The idempotency token is the deduplication boundary for submit retries.
-        Callers must launch a subprocess only when this returns created=True.
+        Spawning is intentionally outside this reservation boundary.
         """
         now = int(time.time())
         with self._write_lock:
@@ -783,34 +834,53 @@ class State:
             try:
                 existing = self._conn.execute(
                     """SELECT * FROM dual_agent_workflow_jobs
-                       WHERE idempotency_token=?""",
+                       WHERE idempotency_token=?
+                       ORDER BY CASE WHEN recovery_point != 'terminal' THEN 0 ELSE 1 END,
+                                created_at ASC
+                       LIMIT 1""",
                     (idempotency_token,),
                 ).fetchone()
                 if existing is not None:
                     self._conn.commit()
                     return existing, False
 
-                self._conn.execute(
-                    """INSERT INTO dual_agent_workflow_jobs(
-                           job_id, run_id, task_id, cwd, status, pid,
-                           request_path, result_path, log_path,
-                           idempotency_token, returncode, error,
-                           created_at, updated_at)
-                       VALUES(?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, NULL, NULL, ?, ?)""",
-                    (
-                        job_id,
-                        run_id,
-                        task_id,
-                        cwd,
-                        status,
-                        request_path,
-                        result_path,
-                        log_path,
-                        idempotency_token,
-                        now,
-                        now,
-                    ),
-                )
+                try:
+                    self._conn.execute(
+                        """INSERT INTO dual_agent_workflow_jobs(
+                               job_id, run_id, task_id, cwd, status, pid,
+                               request_path, result_path, log_path,
+                               idempotency_token, recovery_point, request_payload_json,
+                               config_path, returncode, error, created_at, updated_at)
+                           VALUES(?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 'reserved', ?, ?, NULL, NULL, ?, ?)""",
+                        (
+                            job_id,
+                            run_id,
+                            task_id,
+                            cwd,
+                            status,
+                            request_path,
+                            result_path,
+                            log_path,
+                            idempotency_token,
+                            request_payload_json,
+                            config_path,
+                            now,
+                            now,
+                        ),
+                    )
+                except sqlite3.IntegrityError:
+                    existing = self._conn.execute(
+                        """SELECT * FROM dual_agent_workflow_jobs
+                           WHERE idempotency_token=?
+                           ORDER BY CASE WHEN recovery_point != 'terminal' THEN 0 ELSE 1 END,
+                                    created_at ASC
+                           LIMIT 1""",
+                        (idempotency_token,),
+                    ).fetchone()
+                    if existing is None:
+                        raise
+                    self._conn.commit()
+                    return existing, False
                 row = self._conn.execute(
                     """SELECT * FROM dual_agent_workflow_jobs
                        WHERE job_id=?""",
@@ -832,6 +902,9 @@ class State:
         pid: int | None = None,
         returncode: int | None = None,
         error: str | None = None,
+        recovery_point: str | None = None,
+        request_payload_json: str | None = None,
+        config_path: str | None = None,
     ) -> None:
         assignments = ["updated_at=?"]
         params: list[Any] = [int(time.time())]
@@ -847,6 +920,17 @@ class State:
         if error is not None:
             assignments.append("error=?")
             params.append(error)
+        if recovery_point is not None:
+            assignments.append("recovery_point=?")
+            params.append(recovery_point)
+            assignments.append("recovery_claim_token=NULL")
+            assignments.append("recovery_claimed_at=NULL")
+        if request_payload_json is not None:
+            assignments.append("request_payload_json=?")
+            params.append(request_payload_json)
+        if config_path is not None:
+            assignments.append("config_path=?")
+            params.append(config_path)
         params.append(job_id)
         with self._write_lock:
             self._conn.execute(
@@ -856,6 +940,62 @@ class State:
                 params,
             )
             self._conn.commit()
+
+    def claim_dual_agent_workflow_job_recovery_point(
+        self,
+        *,
+        job_id: str,
+        expected_recovery_point: str,
+        claim_token: str,
+        claim_ttl_s: int = 60,
+    ) -> sqlite3.Row | None:
+        """Claim ownership to drive one recovery phase.
+
+        This is a compare-and-set boundary for poll-side recovery. A caller that
+        only holds a stale job row must win this claim before writing a request
+        file or spawning a worker.
+        """
+        now = int(time.time())
+        stale_before = now - max(0, claim_ttl_s)
+        with self._write_lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                cursor = self._conn.execute(
+                    """UPDATE dual_agent_workflow_jobs
+                          SET recovery_claim_token=?,
+                              recovery_claimed_at=?,
+                              updated_at=?
+                        WHERE job_id=?
+                          AND recovery_point=?
+                          AND pid IS NULL
+                          AND terminal_outcome_json IS NULL
+                          AND (
+                                recovery_claim_token IS NULL
+                             OR recovery_claimed_at IS NULL
+                             OR recovery_claimed_at <= ?
+                          )""",
+                    (
+                        claim_token,
+                        now,
+                        now,
+                        job_id,
+                        expected_recovery_point,
+                        stale_before,
+                    ),
+                )
+                if cursor.rowcount != 1:
+                    self._conn.commit()
+                    return None
+                row = self._conn.execute(
+                    """SELECT * FROM dual_agent_workflow_jobs
+                       WHERE job_id=?""",
+                    (job_id,),
+                ).fetchone()
+                self._conn.commit()
+                return row
+            except Exception:
+                self._conn.rollback()
+                raise
 
     def complete_dual_agent_workflow_job(
         self,
@@ -886,6 +1026,9 @@ class State:
                 self._conn.execute(
                     """UPDATE dual_agent_workflow_jobs
                           SET status=?,
+                              recovery_point='terminal',
+                              recovery_claim_token=NULL,
+                              recovery_claimed_at=NULL,
                               terminal_status=?,
                               terminal_outcome_json=?,
                               terminal_outcome_recorded_at=?,

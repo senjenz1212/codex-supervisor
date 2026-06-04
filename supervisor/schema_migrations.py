@@ -115,6 +115,52 @@ def _migration_workflow_job_terminal_outcome(conn: sqlite3.Connection) -> None:
         )
 
 
+def _migration_workflow_job_recovery_points(conn: sqlite3.Connection) -> None:
+    if not _table_exists(conn, "dual_agent_workflow_jobs"):
+        return
+    columns = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(dual_agent_workflow_jobs)").fetchall()
+    }
+    if "recovery_point" not in columns:
+        conn.execute(
+            "ALTER TABLE dual_agent_workflow_jobs ADD COLUMN recovery_point TEXT NOT NULL DEFAULT 'reserved'"
+        )
+    if "request_payload_json" not in columns:
+        conn.execute("ALTER TABLE dual_agent_workflow_jobs ADD COLUMN request_payload_json TEXT")
+    if "config_path" not in columns:
+        conn.execute("ALTER TABLE dual_agent_workflow_jobs ADD COLUMN config_path TEXT")
+    conn.execute(
+        """UPDATE dual_agent_workflow_jobs
+              SET recovery_point = CASE
+                    WHEN terminal_outcome_json IS NOT NULL
+                      OR status IN ('accepted', 'blocked', 'cancelled', 'completed', 'denied', 'failed')
+                      THEN 'terminal'
+                    WHEN pid IS NOT NULL THEN 'spawned'
+                    ELSE recovery_point
+                  END"""
+    )
+    conn.execute("DROP INDEX IF EXISTS idx_dual_agent_workflow_jobs_idempotency_token")
+    conn.execute(
+        """CREATE UNIQUE INDEX IF NOT EXISTS idx_dual_agent_workflow_jobs_active_idempotency_token
+           ON dual_agent_workflow_jobs(idempotency_token)
+           WHERE idempotency_token IS NOT NULL AND recovery_point != 'terminal'"""
+    )
+
+
+def _migration_workflow_job_recovery_claims(conn: sqlite3.Connection) -> None:
+    if not _table_exists(conn, "dual_agent_workflow_jobs"):
+        return
+    columns = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(dual_agent_workflow_jobs)").fetchall()
+    }
+    if "recovery_claim_token" not in columns:
+        conn.execute("ALTER TABLE dual_agent_workflow_jobs ADD COLUMN recovery_claim_token TEXT")
+    if "recovery_claimed_at" not in columns:
+        conn.execute("ALTER TABLE dual_agent_workflow_jobs ADD COLUMN recovery_claimed_at INTEGER")
+
+
 def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
     row = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
@@ -155,5 +201,15 @@ MIGRATIONS: tuple[SchemaMigration, ...] = (
         3,
         "dual_agent_workflow_jobs.terminal_outcome",
         _migration_workflow_job_terminal_outcome,
+    ),
+    SchemaMigration(
+        4,
+        "dual_agent_workflow_jobs.recovery_points",
+        _migration_workflow_job_recovery_points,
+    ),
+    SchemaMigration(
+        5,
+        "dual_agent_workflow_jobs.recovery_claims",
+        _migration_workflow_job_recovery_claims,
     ),
 )
