@@ -1,0 +1,47 @@
+[
+  {
+    "receipt_id": "skill-to-prd-postgres-ledger-skiplocked-20260604",
+    "kind": "skill_run",
+    "skill": "to-prd",
+    "stage": "to_prd",
+    "status": "passed",
+    "artifacts": ["docs/dual-agent/postgres-ledger-skiplocked-20260604/source/prd.md"],
+    "claims": ["PRD promise contracts P1-P5 produced", "SQLite default and Postgres opt-in boundaries recorded"]
+  },
+  {
+    "receipt_id": "skill-prd-grill-postgres-ledger-skiplocked-20260604",
+    "kind": "skill_run",
+    "skill": "grill-with-docs",
+    "stage": "prd_grill",
+    "status": "passed",
+    "artifacts": ["docs/dual-agent/postgres-ledger-skiplocked-20260604/source/grill-findings.md"],
+    "claims": ["PRD grill findings resolved", "Partial unique replay, SKIP LOCKED fence, per-run catch-up, and PgBouncer boundaries incorporated"]
+  },
+  {
+    "receipt_id": "skill-to-issues-postgres-ledger-skiplocked-20260604",
+    "kind": "skill_run",
+    "skill": "to-issues",
+    "stage": "to_issues",
+    "status": "passed",
+    "artifacts": ["docs/dual-agent/postgres-ledger-skiplocked-20260604/source/issues.md"],
+    "claims": ["Issues cover every PRD promise P1-P5", "Each issue names a public-boundary RED test"]
+  },
+  {
+    "receipt_id": "skill-tdd-postgres-ledger-skiplocked-20260604",
+    "kind": "skill_run",
+    "skill": "tdd",
+    "stage": "tdd",
+    "status": "passed",
+    "artifacts": ["docs/dual-agent/postgres-ledger-skiplocked-20260604/source/tdd.md"],
+    "claims": ["TDD cycles start at supervisor_event_ledger, dual_agent_runner, and target_config_load boundaries", "Postgres live tests and SQL-shape tests separated"]
+  },
+  {
+    "receipt_id": "skill-tdd-grill-postgres-ledger-skiplocked-20260604",
+    "kind": "skill_run",
+    "skill": "grill-with-docs",
+    "stage": "tdd_grill",
+    "status": "passed",
+    "artifacts": ["docs/dual-agent/postgres-ledger-skiplocked-20260604/source/grill-findings-tdd.md"],
+    "claims": ["TDD grill findings resolved", "Live Postgres requirements and migration proof tightened"]
+  }
+]

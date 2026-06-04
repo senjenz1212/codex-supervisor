@@ -49,6 +49,11 @@ orchestrator:
 
 supervisor:
   state_db: ~/.codex-supervisor/state.db
+  # Production multi-agent lane: set state_db to a Postgres/PgBouncer
+  # transaction-pool DSN, then run:
+  #   make migrate POSTGRES_DSN=postgresql://...
+  # SQLite remains the dev/local default.
+  # state_db: postgresql://codex-supervisor-pgbouncer:6432/codex_supervisor
   hook_server_port: 19001
   # model_first sends every hook to Claude Agent SDK before deterministic
   # fallback rules. Use deterministic_first if you want cheaper/faster hooks.

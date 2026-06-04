@@ -1,0 +1,178 @@
+{
+  "agentic_lead_policy": "off",
+  "client_token": "postgres-ledger-skiplocked-20260604-2fd7170b-f71a-4b13-899e-1c9ac6e534d2",
+  "cursor_review": true,
+  "cursor_review_profile": "rigorous",
+  "cwd": "/Users/sam.zhang/Documents/codex-supervisor",
+  "execution_layer_mode": "lead_direct",
+  "intent": "Layer 1 Postgres ledger/job lane with DB-enforced idempotency, SKIP LOCKED multi-claimer claims, and run-partitioned catch-up while keeping SQLite default.",
+  "planning_artifacts": [
+    {
+      "kind": "prd",
+      "path": "docs/dual-agent/postgres-ledger-skiplocked-20260604/source/prd.md"
+    },
+    {
+      "kind": "grill_findings",
+      "path": "docs/dual-agent/postgres-ledger-skiplocked-20260604/source/grill-findings.md"
+    },
+    {
+      "kind": "issues",
+      "path": "docs/dual-agent/postgres-ledger-skiplocked-20260604/source/issues.md"
+    },
+    {
+      "kind": "tdd_plan",
+      "path": "docs/dual-agent/postgres-ledger-skiplocked-20260604/source/tdd.md"
+    },
+    {
+      "kind": "grill_findings",
+      "path": "docs/dual-agent/postgres-ledger-skiplocked-20260604/source/grill-findings-tdd.md"
+    },
+    {
+      "kind": "implementation_plan",
+      "path": "docs/dual-agent/postgres-ledger-skiplocked-20260604/source/implementation-plan.md"
+    }
+  ],
+  "quality": "best",
+  "require_skill_receipts": true,
+  "run_id": "2fd7170b-f71a-4b13-899e-1c9ac6e534d2",
+  "task_id": "postgres-ledger-skiplocked-20260604",
+  "tool_receipts": [
+    {
+      "artifacts": [
+        "docs/dual-agent/postgres-ledger-skiplocked-20260604/source/prd.md"
+      ],
+      "claims": [
+        "PRD promise contracts P1-P5 produced",
+        "SQLite default and Postgres opt-in boundaries recorded"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-to-prd-postgres-ledger-skiplocked-20260604",
+      "skill": "to-prd",
+      "stage": "to_prd",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/postgres-ledger-skiplocked-20260604/source/grill-findings.md"
+      ],
+      "claims": [
+        "PRD grill findings resolved",
+        "Partial unique replay, SKIP LOCKED fence, per-run catch-up, and PgBouncer boundaries incorporated"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-prd-grill-postgres-ledger-skiplocked-20260604",
+      "skill": "grill-with-docs",
+      "stage": "prd_grill",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/postgres-ledger-skiplocked-20260604/source/issues.md"
+      ],
+      "claims": [
+        "Issues cover every PRD promise P1-P5",
+        "Each issue names a public-boundary RED test"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-to-issues-postgres-ledger-skiplocked-20260604",
+      "skill": "to-issues",
+      "stage": "to_issues",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/postgres-ledger-skiplocked-20260604/source/tdd.md"
+      ],
+      "claims": [
+        "TDD cycles start at supervisor_event_ledger, dual_agent_runner, and target_config_load boundaries",
+        "Postgres live tests and SQL-shape tests separated"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-tdd-postgres-ledger-skiplocked-20260604",
+      "skill": "tdd",
+      "stage": "tdd",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/postgres-ledger-skiplocked-20260604/source/grill-findings-tdd.md"
+      ],
+      "claims": [
+        "TDD grill findings resolved",
+        "Live Postgres requirements and migration proof tightened"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-tdd-grill-postgres-ledger-skiplocked-20260604",
+      "skill": "grill-with-docs",
+      "stage": "tdd_grill",
+      "status": "passed"
+    },
+    {
+      "claims": [
+        "Live Postgres lane executed against pgvector/pgvector:pg16 on 127.0.0.1:5432",
+        "14 passed in 1.72s",
+        "Covers multi-writer duplicate-token submit equals one job, SKIP LOCKED disjoint multi-claimer batches, CTE bounded claim limit, per-run catch-up, terminal replay, and migration/schema shape"
+      ],
+      "command": "CODEX_SUPERVISOR_POSTGRES_TEST_DSN='postgresql://cortex:cortex@127.0.0.1:5432/cortex' uv run --extra postgres pytest tests/test_postgres_ledger_lane.py -q",
+      "kind": "test",
+      "receipt_id": "pytest-live-postgres-ledger-lane",
+      "status": "passed"
+    },
+    {
+      "claims": [
+        "Alembic upgrade head applied cleanly to a fresh Postgres database",
+        "Alembic downgrade base completed cleanly",
+        "Migration uses installed psycopg driver through URL normalization"
+      ],
+      "command": "docker exec cortex-local-postgres-1 psql -U cortex -d cortex -c CREATE DATABASE ...; POSTGRES_DSN='postgresql://cortex:cortex@127.0.0.1:5432/<throwaway>' make migrate; DATABASE_URL='postgresql://cortex:cortex@127.0.0.1:5432/<throwaway>' uv run --extra postgres alembic -c alembic.ini downgrade base; DROP DATABASE ...",
+      "kind": "test",
+      "receipt_id": "alembic-live-upgrade-downgrade-postgres-layer1",
+      "status": "passed"
+    },
+    {
+      "claims": [
+        "Full default suite passed with SQLite/dev lane intact",
+        "729 passed, 8 skipped in 111.67s"
+      ],
+      "command": "uv run pytest -q",
+      "kind": "test",
+      "receipt_id": "pytest-full-default-suite-postgres-layer1",
+      "status": "passed"
+    },
+    {
+      "claims": [
+        "supervisor and mcp_tools compile successfully"
+      ],
+      "command": "python3 -m compileall -q supervisor mcp_tools",
+      "kind": "test",
+      "receipt_id": "compileall-supervisor-mcp-layer1",
+      "status": "passed"
+    },
+    {
+      "claims": [
+        "diff whitespace check passed"
+      ],
+      "command": "git diff --check",
+      "kind": "test",
+      "receipt_id": "git-diff-check-layer1",
+      "status": "passed"
+    },
+    {
+      "claims": [
+        "uv lock is consistent with pyproject optional postgres dependencies"
+      ],
+      "command": "uv lock --check",
+      "kind": "test",
+      "receipt_id": "uv-lock-check-layer1",
+      "status": "passed"
+    }
+  ],
+  "verified_claims": [
+    "SQLite remains the default lane for filesystem state_db paths; Postgres is selected only for postgres/postgresql DSNs.",
+    "Postgres lane carries a partial unique idempotency_token index over active workflow jobs.",
+    "Live Postgres test proves eight concurrent submissions with one token create exactly one active job and all callers reattach to the same job_id.",
+    "Live Postgres test proves concurrent SKIP LOCKED claimers receive disjoint job batches with no double-claim.",
+    "Catch-up in the Postgres lane uses run-local event_id plus previous_event_id rather than one global required ordering counter.",
+    "Alembic upgrade and downgrade were executed on a throwaway Postgres database."
+  ]
+}

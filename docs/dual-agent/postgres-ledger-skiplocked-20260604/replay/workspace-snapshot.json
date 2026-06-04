@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "38430fc38215663803efb68d533185e5fc716b35bc36eaa660efa0394903186c",
+  "git": {
+    "diff_bytes": 88218,
+    "diff_sha256": "20bdbc4f434b948bcb04bbe757626821611561e9f85ab9dfb767dbccca6be2e5",
+    "diff_stat": "config.example.yaml |   5 +\n pyproject.toml      |   1 +\n supervisor/state.py |  12 ++\n uv.lock             | 336 +++++++++++++++++++++++++++++++++++++++++++++++++++-\n 4 files changed, 353 insertions(+), 1 deletion(-)",
+    "head": "144d8a6",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "144d8a6",
+    "status_short": "M config.example.yaml\n M pyproject.toml\n M supervisor/state.py\n M uv.lock\n?? Makefile\n?? alembic.ini\n?? docs/dual-agent/postgres-ledger-skiplocked-20260604/\n?? migrations/\n?? supervisor/postgres_state.py\n?? tests/test_postgres_ledger_lane.py"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "6e6386d2d1dbccd38b9f2f4387f1185db4c6cdd921d6d118c465d142eb627b62",
+    "implementation_plan": "3e04462a3dedc211aa8864cbdf1f252338872075e9f28cd6d386780352a0a014",
+    "issues": "e605240327205cb19ee492d342eb82334e5055dfe8097faf426dd72d6af86f72",
+    "prd": "b9f63b0e84b14ede359fd8a65eac7126c0da6e9a33a09510a9979ce470de07bf",
+    "tdd_plan": "2c1e4b4cd8853161fa30ee35475f5f948b475b2ea697d43e7e219d058531c507"
+  },
+  "status": "captured"
+}

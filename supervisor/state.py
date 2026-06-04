@@ -45,6 +45,11 @@ TERMINAL_WORKFLOW_JOB_STATUSES: frozenset[str] = frozenset({
 })
 
 
+def is_postgres_state_dsn(value: str | Path) -> bool:
+    raw = str(value).strip().lower()
+    return raw.startswith(("postgres://", "postgresql://"))
+
+
 def canonical_terminal_outcome_json(outcome: dict[str, Any]) -> str:
     """Canonical redacted workflow-result JSON for ledger storage/comparison."""
     return json.dumps(redact(outcome), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
@@ -283,6 +288,13 @@ def _merge_never_touch(supplied: tuple[str, ...]) -> tuple[str, ...]:
 
 class State:
     """Connection wrapper + decision queue. Thread-safe for the daemon's single-process use."""
+
+    def __new__(cls, db_path: str):
+        if cls is State and is_postgres_state_dsn(db_path):
+            from .postgres_state import PostgresState
+
+            return PostgresState(db_path)
+        return super().__new__(cls)
 
     def __init__(self, db_path: str):
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
