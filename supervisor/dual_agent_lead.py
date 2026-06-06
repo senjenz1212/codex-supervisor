@@ -249,11 +249,26 @@ def build_lead_prompt(request: LeadInvocationRequest) -> str:
             "replace gate review, outcome validation, receipts, or the final Codex-supervised artifact. "
             "Use it only for fan-out execution work and report the preview gates in the outcome claims.\n"
         )
+    implementation_contract = ""
+    if request.gate == "execution":
+        implementation_contract = (
+            "\nIMPLEMENTATION CONTRACT (execution gate): You are the IMPLEMENTER, not a reviewer. "
+            "Edit real worktree files to satisfy the accepted PRD / issues / TDD / "
+            "implementation-plan referenced in the handoff. Do NOT merely review, validate, or summarize "
+            "this gate. Work RED-first: confirm the planned tests fail, then implement until they pass. "
+            "For code tasks, you MUST produce a non-empty implementation diff in the task-relevant source "
+            "and/or test files. For explicit docs/report-only tasks, edit the requested docs/report "
+            "artifacts. Incidental docs-only or handoff-only changes do not count as execution. If you "
+            "cannot edit the required deliverable files, STOP and report the blocker instead of returning "
+            "an accept. In the outcome, changed_files MUST list the files you actually changed and "
+            "test_status MUST reflect tests you actually ran.\n"
+        )
     return (
         f"/lead Gate mode: {request.gate}. Task id: {request.task_id}.\n"
         f"{request.instruction.strip()}\n\n"
         f"{handoff}"
         f"{execution_layer}"
+        f"{implementation_contract}"
         f"{expected}\n\n"
         "Use the strongest available reasoning for this gate. Keep routine progress concise. "
         f"{critical_review_prompt('gate handoff')} "

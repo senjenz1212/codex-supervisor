@@ -478,6 +478,31 @@ def test_dynamic_workflow_preview_is_serialized_as_execution_layer_not_supervisi
     assert "native workflow fan-out must not replace gate review" in prompt
 
 
+def test_execution_gate_prompt_requires_real_implementation_diff(tmp_path):
+    execution_request = LeadInvocationRequest(
+        task_id="slice0-lead",
+        gate="execution",
+        instruction="Implement the accepted issue.",
+        cwd=tmp_path,
+    )
+    review_request = LeadInvocationRequest(
+        task_id="slice0-lead",
+        gate="tdd_review",
+        instruction="Review the TDD plan.",
+        cwd=tmp_path,
+    )
+
+    execution_prompt = build_lead_prompt(execution_request)
+    review_prompt = build_lead_prompt(review_request)
+
+    assert "IMPLEMENTATION CONTRACT (execution gate)" in execution_prompt
+    assert "You are the IMPLEMENTER, not a reviewer" in execution_prompt
+    assert "For code tasks, you MUST produce a non-empty implementation diff" in execution_prompt
+    assert "For explicit docs/report-only tasks, edit the requested docs/report artifacts" in execution_prompt
+    assert "changed_files MUST list the files you actually changed" in execution_prompt
+    assert "IMPLEMENTATION CONTRACT (execution gate)" not in review_prompt
+
+
 def test_handoff_packet_carries_agentic_lead_policy(tmp_path):
     request = LeadInvocationRequest(
         task_id="slice0-lead",
