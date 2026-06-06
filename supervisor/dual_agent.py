@@ -282,6 +282,50 @@ class Outcome(BaseModel):
             return "unknown"
         return value
 
+    @field_validator("decisions", "objections", "claims", "confidence_criteria", mode="before")
+    @classmethod
+    def _coerce_text_list(cls, value: Any) -> Any:
+        # Leads/reviewers frequently emit these as objects (e.g.
+        # {"decision": "accept", "rationale": ...} — the richer shape used by
+        # dynamic_workflow synthesis) or as a bare scalar instead of list[str].
+        # Normalise the SHAPE so a well-meant outcome parses instead of being
+        # rejected as malformed. This does NOT change accept/block semantics:
+        # P4 still reads the accept/block token from the normalised decision text.
+        # (fix: prd_review blocked rejecting top-level `decisions` shape, 2026-06-06.)
+        if value is None:
+            return []
+        if isinstance(value, (str, dict)):
+            value = [value]
+        if not isinstance(value, (list, tuple)):
+            return value
+        normalised: list[str] = []
+        for item in value:
+            if item is None:
+                continue
+            if isinstance(item, str):
+                text = item.strip()
+            elif isinstance(item, dict):
+                text = ""
+                for key in (
+                    "decision", "verdict", "text", "objection",
+                    "summary", "claim", "value",
+                ):
+                    candidate = item.get(key)
+                    if isinstance(candidate, str) and candidate.strip():
+                        text = candidate.strip()
+                        break
+                if not text:
+                    text = " ".join(
+                        f"{k}: {v}"
+                        for k, v in item.items()
+                        if isinstance(v, (str, int, float))
+                    ).strip()
+            else:
+                text = str(item).strip()
+            if text:
+                normalised.append(text)
+        return normalised
+
     @field_validator("confidence")
     @classmethod
     def _confidence_range(cls, value: float | None) -> float | None:

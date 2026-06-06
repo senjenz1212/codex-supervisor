@@ -16,6 +16,7 @@ from supervisor.dual_agent import (
     evaluate_credential_boundary,
     evaluate_deadlock_budget,
     evaluate_outcome_fidelity,
+    evaluate_outcome_gate_decision,
     evaluate_test_coverage_gate,
     evaluate_worker_invocation,
     evaluate_worktree_boundary,
@@ -323,6 +324,55 @@ def test_p3_worker_outcome_adapter_normalizes_live_test_status_aliases():
     assert result.ok
     assert outcome is not None
     assert outcome.test_status == "passed"
+
+
+def test_p4_outcome_adapter_coerces_object_shaped_decisions_and_preserves_semantics():
+    # Regression: leads/reviewers sometimes emit `decisions`/`objections` as
+    # objects (the richer dynamic_workflow shape) instead of list[str]. Before
+    # the shape-coercion validator this raised "invalid dual_agent_outcome
+    # block" and blocked the gate (e.g. prd_review). It must now parse, and P4
+    # must still read the accept/block token. (fix 2026-06-06.)
+    accept_payload = {
+        "task_id": "slice0",
+        "summary": "Reviewer accepted PRD.",
+        "decisions": [
+            {"gate": "prd_review", "decision": "accept", "rationale": "scope ok"},
+        ],
+        "objections": [{"objection": "none"}],
+        "changed_files": [],
+        "tests": [],
+        "test_status": "unknown",
+        "confidence": 0.8,
+    }
+    transcript = f"<dual_agent_outcome>{json.dumps(accept_payload)}</dual_agent_outcome>"
+    result, outcome = evaluate_outcome_fidelity(
+        transcript,
+        expected_specialists=(),
+        expected_decisions=("accept",),
+        expected_objections=(),
+    )
+    assert result.ok  # parsed instead of "invalid dual_agent_outcome block"
+    assert outcome is not None
+    assert all(isinstance(d, str) for d in outcome.decisions)
+    assert "accept" in outcome.decisions
+    assert evaluate_outcome_gate_decision(outcome).ok  # P4 green
+
+    # A revise object must STILL block (semantics preserved, not weakened).
+    revise_payload = {
+        **accept_payload,
+        "summary": "Reviewer asked for revision.",
+        "decisions": [{"decision": "revise", "rationale": "tighten scope"}],
+    }
+    _, revise_outcome = evaluate_outcome_fidelity(
+        f"<dual_agent_outcome>{json.dumps(revise_payload)}</dual_agent_outcome>",
+        expected_specialists=(),
+        expected_decisions=("revise",),
+        expected_objections=(),
+    )
+    assert revise_outcome is not None
+    revise_probe = evaluate_outcome_gate_decision(revise_outcome)
+    assert not revise_probe.ok
+    assert revise_probe.reason == "outcome_critical_review_blocked"
 
 
 def test_p3_fails_when_adapter_drops_worker_signal():
