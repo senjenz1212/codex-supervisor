@@ -375,6 +375,46 @@ def test_p4_outcome_adapter_coerces_object_shaped_decisions_and_preserves_semant
     assert revise_probe.reason == "outcome_critical_review_blocked"
 
 
+def test_p4_allows_accept_with_blocked_with_reason_condition_text():
+    outcome = Outcome(
+        task_id="slice0",
+        summary="Implementation plan accepted with Windows evidence conditions.",
+        decisions=[
+            "ACCEPT with noted risks -- risks are acknowledged; Windows can use blocked-with-reason artifacts",
+            "Windows EP-01 and EP-02 require real Windows artifacts or explicit blocked-with-reason packets",
+        ],
+        changed_files=[],
+        tests=[],
+        test_status="unknown",
+        confidence=0.8,
+        critical_review={"decision": "ACCEPT", "severity": "low"},
+    )
+
+    probe = evaluate_outcome_gate_decision(outcome)
+
+    assert probe.ok
+    assert probe.reason == "outcome_gate_decision_ok"
+
+
+def test_p4_still_blocks_leading_blocking_decisions_with_rationale():
+    outcome = Outcome(
+        task_id="slice0",
+        summary="Implementation plan needs more work.",
+        decisions=["revise because Windows evidence is not specified"],
+        changed_files=[],
+        tests=[],
+        test_status="unknown",
+        confidence=0.8,
+        critical_review={"decision": "accept", "severity": "low"},
+    )
+
+    probe = evaluate_outcome_gate_decision(outcome)
+
+    assert not probe.ok
+    assert probe.reason == "outcome_critical_review_blocked"
+    assert probe.details["blocking_decisions"] == ["revise"]
+
+
 def test_p3_fails_when_adapter_drops_worker_signal():
     payload = {
         "task_id": "slice0",

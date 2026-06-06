@@ -470,7 +470,7 @@ def _outcome_decision_texts(outcome: dict[str, Any]) -> list[str]:
 def _normalise_decision_text(value: str) -> str:
     text = value.strip()
     match = re.match(
-        r"^(accept|accepted|approve|approved|deny|denied|block|blocked|revise|reject|rejected|fail|failed)\s*[:\-–—]",
+        r"^(accept|accepted|approve|approved|deny|denied|block|blocked|revise|reject|rejected|fail|failed)\b",
         text,
         flags=re.IGNORECASE,
     )
@@ -478,8 +478,11 @@ def _normalise_decision_text(value: str) -> str:
 
 
 def _has_decision_token(value: str, tokens: tuple[str, ...]) -> bool:
-    lowered = value.lower()
-    return any(re.search(rf"\b{re.escape(token)}\b", lowered) for token in tokens)
+    lowered = value.strip().lower()
+    return any(
+        lowered == token or re.match(rf"^{re.escape(token)}\b", lowered)
+        for token in tokens
+    )
 
 
 @dataclass(frozen=True)
