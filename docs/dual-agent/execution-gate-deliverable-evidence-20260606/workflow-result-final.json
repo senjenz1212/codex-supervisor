@@ -1,0 +1,2018 @@
+{
+  "artifact_export": {
+    "files": [
+      "docs/dual-agent/execution-gate-deliverable-evidence-20260606/index.md",
+      "docs/dual-agent/execution-gate-deliverable-evidence-20260606/triage.md",
+      "docs/dual-agent/execution-gate-deliverable-evidence-20260606/prd.md",
+      "docs/dual-agent/execution-gate-deliverable-evidence-20260606/tdd.md",
+      "docs/dual-agent/execution-gate-deliverable-evidence-20260606/grill-findings.md",
+      "docs/dual-agent/execution-gate-deliverable-evidence-20260606/issues.md",
+      "docs/dual-agent/execution-gate-deliverable-evidence-20260606/screenshots.md",
+      "docs/dual-agent/execution-gate-deliverable-evidence-20260606/outcome-review.md",
+      "docs/dual-agent/execution-gate-deliverable-evidence-20260606/interactions.md",
+      "docs/dual-agent/execution-gate-deliverable-evidence-20260606/transcript.md",
+      "docs/dual-agent/execution-gate-deliverable-evidence-20260606/transcript.jsonl",
+      "docs/dual-agent/execution-gate-deliverable-evidence-20260606/mast-coverage.md",
+      "docs/dual-agent/execution-gate-deliverable-evidence-20260606/replay/manifest.json",
+      "docs/dual-agent/execution-gate-deliverable-evidence-20260606/replay/workspace-snapshot.json",
+      "docs/dual-agent/execution-gate-deliverable-evidence-20260606/replay/mast-coverage.json",
+      "docs/dual-agent/execution-gate-deliverable-evidence-20260606/source/grill-findings-tdd.md",
+      "docs/dual-agent/execution-gate-deliverable-evidence-20260606/source/grill-findings.md",
+      "docs/dual-agent/execution-gate-deliverable-evidence-20260606/source/implementation-plan.md",
+      "docs/dual-agent/execution-gate-deliverable-evidence-20260606/source/issues.md",
+      "docs/dual-agent/execution-gate-deliverable-evidence-20260606/source/prd.md",
+      "docs/dual-agent/execution-gate-deliverable-evidence-20260606/source/tdd.md"
+    ],
+    "output_dir": "docs/dual-agent/execution-gate-deliverable-evidence-20260606",
+    "run_id": "444f8987-dd5c-452a-8f1a-3f07032212b5-cli",
+    "status": "ok",
+    "task_id": "execution-gate-deliverable-evidence-20260606"
+  },
+  "current_gate": "outcome_review",
+  "final_gate_result": {
+    "artifact_export": {
+      "files": [
+        "docs/dual-agent/execution-gate-deliverable-evidence-20260606/index.md",
+        "docs/dual-agent/execution-gate-deliverable-evidence-20260606/triage.md",
+        "docs/dual-agent/execution-gate-deliverable-evidence-20260606/prd.md",
+        "docs/dual-agent/execution-gate-deliverable-evidence-20260606/tdd.md",
+        "docs/dual-agent/execution-gate-deliverable-evidence-20260606/grill-findings.md",
+        "docs/dual-agent/execution-gate-deliverable-evidence-20260606/issues.md",
+        "docs/dual-agent/execution-gate-deliverable-evidence-20260606/screenshots.md",
+        "docs/dual-agent/execution-gate-deliverable-evidence-20260606/outcome-review.md",
+        "docs/dual-agent/execution-gate-deliverable-evidence-20260606/interactions.md",
+        "docs/dual-agent/execution-gate-deliverable-evidence-20260606/transcript.md",
+        "docs/dual-agent/execution-gate-deliverable-evidence-20260606/transcript.jsonl",
+        "docs/dual-agent/execution-gate-deliverable-evidence-20260606/mast-coverage.md",
+        "docs/dual-agent/execution-gate-deliverable-evidence-20260606/replay/manifest.json",
+        "docs/dual-agent/execution-gate-deliverable-evidence-20260606/replay/workspace-snapshot.json",
+        "docs/dual-agent/execution-gate-deliverable-evidence-20260606/replay/mast-coverage.json",
+        "docs/dual-agent/execution-gate-deliverable-evidence-20260606/source/grill-findings-tdd.md",
+        "docs/dual-agent/execution-gate-deliverable-evidence-20260606/source/grill-findings.md",
+        "docs/dual-agent/execution-gate-deliverable-evidence-20260606/source/implementation-plan.md",
+        "docs/dual-agent/execution-gate-deliverable-evidence-20260606/source/issues.md",
+        "docs/dual-agent/execution-gate-deliverable-evidence-20260606/source/prd.md",
+        "docs/dual-agent/execution-gate-deliverable-evidence-20260606/source/tdd.md"
+      ],
+      "output_dir": "docs/dual-agent/execution-gate-deliverable-evidence-20260606",
+      "run_id": "444f8987-dd5c-452a-8f1a-3f07032212b5-cli",
+      "status": "ok",
+      "task_id": "execution-gate-deliverable-evidence-20260606"
+    },
+    "artifact_rigor": {
+      "accepted_prerequisite_gates": [
+        "execution"
+      ],
+      "artifact_policy": "strict",
+      "gate": "outcome_review",
+      "gate_statuses": {
+        "execution": "accepted",
+        "implementation_plan": "accepted",
+        "issues_review": "accepted",
+        "prd_review": "accepted",
+        "tdd_review": "accepted"
+      },
+      "missing_artifact_paths": [],
+      "missing_artifacts": [],
+      "missing_prerequisite_gates": [],
+      "missing_screenshot_paths": [],
+      "present_artifacts": [
+        "grill_findings",
+        "implementation_plan",
+        "issues",
+        "prd",
+        "tdd_plan"
+      ],
+      "reason": "required_artifacts_present",
+      "required_artifacts": [
+        "prd",
+        "tdd_plan",
+        "grill_findings",
+        "issues",
+        "implementation_plan"
+      ],
+      "required_prerequisite_gates": [
+        "execution"
+      ],
+      "screenshots": [],
+      "status": "ok",
+      "user_facing": false,
+      "visual_validation": {
+        "allowed_sources": [
+          "browser",
+          "browser-use",
+          "browser_use",
+          "computer",
+          "computer-use",
+          "computer_use"
+        ],
+        "evidence": [],
+        "failures": [],
+        "reason": "no_screenshots_supplied",
+        "status": "not_required"
+      }
+    },
+    "attempts": 1,
+    "claim_verification": {
+      "details": {
+        "legacy_verified_claims": [],
+        "receipts": [
+          {
+            "artifacts": [
+              "docs/dual-agent/execution-gate-deliverable-evidence-20260606/source/prd.md"
+            ],
+            "claims": [
+              "PRD promise contracts P1-P4 produced",
+              "Execution deliverable evidence boundary recorded"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-to-prd-execution-gate-deliverable-evidence-20260606",
+            "skill": "to-prd",
+            "stage": "to_prd",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/execution-gate-deliverable-evidence-20260606/source/grill-findings.md"
+            ],
+            "claims": [
+              "PRD grill findings resolved",
+              "Prompt-only, report-only, and incidental artifact risks incorporated"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-prd-grill-execution-gate-deliverable-evidence-20260606",
+            "skill": "grill-with-docs",
+            "stage": "prd_grill",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/execution-gate-deliverable-evidence-20260606/source/issues.md"
+            ],
+            "claims": [
+              "Issues map P1-P4 to implementation slices",
+              "Each issue names public boundary expectations"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-to-issues-execution-gate-deliverable-evidence-20260606",
+            "skill": "to-issues",
+            "stage": "to_issues",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/execution-gate-deliverable-evidence-20260606/source/tdd.md"
+            ],
+            "claims": [
+              "TDD maps public-boundary tests for P1-P4 including outcome-review and docs-only failures",
+              "RED tests were observed before implementation"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-tdd-execution-gate-deliverable-evidence-20260606",
+            "skill": "tdd",
+            "stage": "tdd",
+            "status": "passed"
+          },
+          {
+            "artifacts": [
+              "docs/dual-agent/execution-gate-deliverable-evidence-20260606/source/grill-findings-tdd.md"
+            ],
+            "claims": [
+              "TDD grill findings resolved",
+              "Workflow-boundary and report-only positive case required"
+            ],
+            "kind": "skill_run",
+            "receipt_id": "skill-tdd-grill-execution-gate-deliverable-evidence-20260606",
+            "skill": "grill-with-docs",
+            "stage": "tdd_grill",
+            "status": "passed"
+          },
+          {
+            "changed_files": [
+              "supervisor/dual_agent_workflow.py",
+              "supervisor/agent_mailbox.py",
+              "mcp_tools/codex_supervisor_stdio.py",
+              "tests/test_dual_agent_workflow_driver.py",
+              "tests/test_agent_mailbox.py"
+            ],
+            "claims": [
+              "tests passed",
+              "deliverable evidence regressions passed including incidental-only, docs-only, and outcome-review P11 cases"
+            ],
+            "command": "uv run pytest tests/test_agent_mailbox.py::test_codex_review_packet_does_not_hide_red_p11_when_claim_verification_is_green tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_accept_without_deliverable_changes tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_code_change_without_diff_receipt tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_accept_with_only_incidental_workflow_files tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_docs_only_change_without_explicit_report_scope tests/test_dual_agent_workflow_driver.py::test_execution_gate_allows_explicit_report_only_artifact_with_receipt tests/test_dual_agent_workflow_driver.py::test_outcome_review_blocks_deliverable_failure_even_when_claims_verify tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_requires_test_receipts_for_claims tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_rejects_diff_receipt_without_changed_file_replay tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_rejects_partial_changed_file_receipt -q",
+            "kind": "test",
+            "receipt_id": "pytest-focused-deliverable-evidence-current",
+            "status": "passed",
+            "summary": "10 passed in 9.15s"
+          },
+          {
+            "changed_files": [
+              "supervisor/dual_agent_workflow.py",
+              "supervisor/agent_mailbox.py",
+              "mcp_tools/codex_supervisor_stdio.py",
+              "tests/test_dual_agent_workflow_driver.py",
+              "tests/test_agent_mailbox.py"
+            ],
+            "claims": [
+              "tests passed",
+              "related workflow, P11, and mailbox tests passed"
+            ],
+            "command": "uv run pytest tests/test_dual_agent_workflow_driver.py tests/test_dual_agent_live_lead_fixture.py tests/test_agent_mailbox.py -q",
+            "kind": "test",
+            "receipt_id": "pytest-related-deliverable-evidence",
+            "status": "passed",
+            "summary": "143 passed in 115.16s"
+          },
+          {
+            "changed_files": [
+              "supervisor/dual_agent_workflow.py",
+              "supervisor/agent_mailbox.py",
+              "mcp_tools/codex_supervisor_stdio.py",
+              "tests/test_dual_agent_workflow_driver.py",
+              "tests/test_agent_mailbox.py"
+            ],
+            "claims": [
+              "tests passed",
+              "full suite passed"
+            ],
+            "command": "uv run pytest -q",
+            "kind": "test",
+            "receipt_id": "pytest-full-deliverable-evidence",
+            "status": "passed",
+            "summary": "743 passed, 8 skipped in 137.02s"
+          },
+          {
+            "changed_files": [
+              "supervisor/dual_agent_workflow.py",
+              "supervisor/agent_mailbox.py",
+              "mcp_tools/codex_supervisor_stdio.py",
+              "tests/test_dual_agent_workflow_driver.py",
+              "tests/test_agent_mailbox.py"
+            ],
+            "claims": [
+              "implemented",
+              "diff whitespace check passed",
+              "py_compile passed"
+            ],
+            "command": "git diff --check && uv run python -m py_compile supervisor/dual_agent_workflow.py supervisor/agent_mailbox.py mcp_tools/codex_supervisor_stdio.py tests/test_dual_agent_workflow_driver.py tests/test_agent_mailbox.py",
+            "kind": "git_diff",
+            "receipt_id": "pycompile-diffcheck-deliverable-evidence",
+            "status": "passed"
+          }
+        ]
+      },
+      "probe_id": "P11",
+      "reason": "workflow_claims_verified",
+      "status": "green"
+    },
+    "claude_decision": "accept",
+    "claude_gate_status": "accepted",
+    "codex_decision": "accept",
+    "cursor_decision": "accept",
+    "cursor_review": {
+      "accepted": true,
+      "agent_id": "agent-604cbce1-d576-4b11-aecd-690fd615a95a",
+      "attempts": 1,
+      "critical_review": {
+        "assumptions_to_verify": [
+          "P2-P4 behavior at outcome_review gate mirrors execution because both call the same verify_gate_deliverable_evidence function",
+          "Negative docs-only fixture intent lacks report-only markers so cannot accidentally satisfy explicit_docs_report"
+        ],
+        "contradictions_checked": [
+          "Reviewers overriding red P11: no \u2014 :1142 requires deliverable_probe.ok before reviewer invocation",
+          "Probe limited to execution only: no \u2014 :1128 gate-in-set includes outcome_review; :422 guard matches",
+          "Outcome_review test vacuous: no \u2014 :810 asserts claim_verification green, P11 red, codex_decision revise",
+          "Marker looseness bypasses code gates without explicit_docs_report: no \u2014 receipt_kinds expansion (:460) only when code_or_test_files empty AND explicit_docs_report true"
+        ],
+        "decision": "accept",
+        "evidence_refs": [],
+        "missing_evidence": [
+          "RED-state observation before implementation (receipt-only, not re-observed)",
+          "Dedicated outcome_review tests for P2-P4 failure modes (shared probe logic tested at execution gate only)"
+        ],
+        "schema_version": "critical-review/v1",
+        "severity": "low",
+        "strongest_objection": "_explicit_docs_report_task substring markers (adr/benchmark/design-doc/report-only) are broad enough that incidental mentions in a code-task deliverable could relax required receipt kinds for docs-only changes.",
+        "what_would_change_my_mind": "Evidence that deliverable probe can be skipped or reviewers can accept on red P11 at execution/outcome_review, or any failing run of the named focused tests on current tree."
+      },
+      "diagnostics": {
+        "prompt_chars": 11873,
+        "prompt_sha256": "d31bf12063ddb470be6933b546d0e148d6c89a081fa67d608d30fc0e0c80d794"
+      },
+      "duration_ms": 333421,
+      "failure_classification": null,
+      "fallback_from_runtime": null,
+      "fallback_reason": null,
+      "independent_reviewer_panel_decision": {
+        "accepted_reviewers": [
+          "independent-reviewer-0",
+          "independent-reviewer-1"
+        ],
+        "aggregation_mode": "conservative",
+        "available_reviewers": [
+          "independent-reviewer-0",
+          "independent-reviewer-1"
+        ],
+        "blocking_reviewers": [],
+        "decision": "accept",
+        "low_confidence_reviewers": [],
+        "low_confidence_threshold": 0.0,
+        "missing_reviewers": [],
+        "non_accepting_reviewers": [],
+        "reason": "all_available_reviewers_accept",
+        "reviewer_inputs": [
+          {
+            "accepted": true,
+            "assurance_grade": "agentic",
+            "confidence": 0.95,
+            "decision": "accept",
+            "lineage": [
+              "cursor",
+              "cursor_sdk",
+              "composer-2.5"
+            ],
+            "model": "composer-2.5",
+            "provider_family": "cursor",
+            "reviewer_id": "independent-reviewer-0",
+            "runtime": "cursor_sdk",
+            "severity": "low",
+            "tool_access": "codebase_tools",
+            "verdict_present": true
+          },
+          {
+            "accepted": true,
+            "assurance_grade": "agentic",
+            "confidence": 0.88,
+            "decision": "accept",
+            "lineage": [
+              "openai",
+              "codex_cli",
+              "gpt-5.5"
+            ],
+            "model": "gpt-5.5",
+            "provider_family": "openai",
+            "reviewer_id": "independent-reviewer-1",
+            "runtime": "codex_cli",
+            "severity": "low",
+            "tool_access": "codebase_tools",
+            "verdict_present": true
+          }
+        ],
+        "schema_version": "independent-reviewer-panel-decision/v1"
+      },
+      "independent_reviewer_results": [
+        {
+          "accepted": true,
+          "assurance_grade": "agentic",
+          "attempts": 1,
+          "confidence": 0.95,
+          "critical_review": {
+            "assumptions_to_verify": [
+              "P2-P4 behavior at outcome_review gate mirrors execution because both call the same verify_gate_deliverable_evidence function",
+              "Negative docs-only fixture intent lacks report-only markers so cannot accidentally satisfy explicit_docs_report"
+            ],
+            "contradictions_checked": [
+              "Reviewers overriding red P11: no \u2014 :1142 requires deliverable_probe.ok before reviewer invocation",
+              "Probe limited to execution only: no \u2014 :1128 gate-in-set includes outcome_review; :422 guard matches",
+              "Outcome_review test vacuous: no \u2014 :810 asserts claim_verification green, P11 red, codex_decision revise",
+              "Marker looseness bypasses code gates without explicit_docs_report: no \u2014 receipt_kinds expansion (:460) only when code_or_test_files empty AND explicit_docs_report true"
+            ],
+            "decision": "accept",
+            "missing_evidence": [
+              "RED-state observation before implementation (receipt-only, not re-observed)",
+              "Dedicated outcome_review tests for P2-P4 failure modes (shared probe logic tested at execution gate only)"
+            ],
+            "severity": "low",
+            "strongest_objection": "_explicit_docs_report_task substring markers (adr/benchmark/design-doc/report-only) are broad enough that incidental mentions in a code-task deliverable could relax required receipt kinds for docs-only changes.",
+            "what_would_change_my_mind": "Evidence that deliverable probe can be skipped or reviewers can accept on red P11 at execution/outcome_review, or any failing run of the named focused tests on current tree."
+          },
+          "decision": "accept",
+          "failure_classification": null,
+          "gate": "outcome_review",
+          "lineage": [
+            "cursor",
+            "cursor_sdk",
+            "composer-2.5"
+          ],
+          "model": "composer-2.5",
+          "output_sha256": "02ecb178609f73200980cf8f4bdda1e074c3e3cadef98aa8fa529b80d89ef8cd",
+          "provider_family": "cursor",
+          "recoverable": false,
+          "reviewer_assurance": "tool_backed_primary",
+          "reviewer_id": "independent-reviewer-0",
+          "reviewer_output_mode": "cursor_sdk",
+          "reviewer_runtime": "cursor_sdk",
+          "round_index": 1,
+          "runtime": "cursor_sdk",
+          "schema_version": "independent-reviewer-panel-result/v1",
+          "severity": "low",
+          "task_id": "execution-gate-deliverable-evidence-20260606",
+          "tests": [
+            "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_accept_without_deliverable_changes",
+            "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_code_change_without_diff_receipt",
+            "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_accept_with_only_incidental_workflow_files",
+            "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_docs_only_change_without_explicit_report_scope",
+            "tests/test_dual_agent_workflow_driver.py::test_execution_gate_allows_explicit_report_only_artifact_with_receipt",
+            "tests/test_dual_agent_workflow_driver.py::test_outcome_review_blocks_deliverable_failure_even_when_claims_verify",
+            "tests/test_agent_mailbox.py::test_codex_review_packet_does_not_hide_red_p11_when_claim_verification_is_green"
+          ],
+          "tool_access": "codebase_tools",
+          "transcript_refs": [
+            {
+              "chars": 4000,
+              "kind": "reviewer_transcript_tail",
+              "ref": "independent_reviewer_review:execution-gate-deliverable-evidence-20260606:outcome_review:1:independent-reviewer-0"
+            }
+          ],
+          "transcript_sha256": "875370657a4bfead776a83b91ffa23434983803fb43ae87dcca758e55bc4fd28",
+          "verdict_present": true
+        },
+        {
+          "accepted": true,
+          "assurance_grade": "agentic",
+          "attempts": 1,
+          "confidence": 0.88,
+          "critical_review": {
+            "assumptions_to_verify": [
+              "Provided pytest receipts correspond to this exact tree; current diff and file hashes were inspected but pytest was not rerun.",
+              "Report-only marker breadth is acceptable for this slice or will be tightened in a follow-up.",
+              "Workflow P3 continues to block missing required outcome fields before deliverable verification is reached."
+            ],
+            "contradictions_checked": [
+              "Live tracked diff is exactly the five claimed files with +477/-15 and no diff-check findings.",
+              "Planning P1-P4 requirements match the new probe, workflow wiring, and tests.",
+              "Red deliverable P11 cannot be accepted by final codex_decision because acceptance requires deliverable_probe.ok.",
+              "Reviewer invocation is gated on deliverable_probe.ok before Cursor or independent reviewer calls.",
+              "The outcome_review regression is non-vacuous: claim_verification is green, deliverable P11 is red, workflow blocks, and codex_decision is revise.",
+              "P11 mailbox de-dup only suppresses probe P11 when claim_verification itself failed; green claim verification leaves red P11 visible."
+            ],
+            "decision": "accept",
+            "missing_evidence": [
+              "I did not rerun pytest or py_compile in this read-only review; pass status is from provided receipts.",
+              "No direct regression test observed for cursor_review=True proving a red deliverable_probe skips reviewer invocation; source wiring supports it.",
+              "No negative test for broad report-only marker false positives such as incidental use of adr or benchmark in a non-report docs task."
+            ],
+            "severity": "low",
+            "strongest_objection": "Report-only detection accepts broad markers such as adr and benchmark from intent/outcome/receipt text, so a docs-only task with loose wording plus an artifact/docs receipt could be allowed more widely than intended.",
+            "what_would_change_my_mind": "A failing run of the named focused tests, evidence that an accepted execution/outcome_review can proceed with deliverable_probe red, or a realistic non-report docs task that passes due only to broad marker matching."
+          },
+          "decision": "accept",
+          "failure_classification": null,
+          "gate": "outcome_review",
+          "lineage": [
+            "openai",
+            "codex_cli",
+            "gpt-5.5"
+          ],
+          "model": "gpt-5.5",
+          "output_sha256": "65119c8e77e0bbb9ed84ebc76cb0bb390687f8eb1dfccedfcb31744be15f2955",
+          "provider_family": "openai",
+          "recoverable": false,
+          "reviewer_assurance": "tool_backed_primary",
+          "reviewer_id": "independent-reviewer-1",
+          "reviewer_output_mode": "codex_cli",
+          "reviewer_runtime": "codex_cli",
+          "round_index": 1,
+          "runtime": "codex_cli",
+          "schema_version": "independent-reviewer-panel-result/v1",
+          "severity": "low",
+          "task_id": "execution-gate-deliverable-evidence-20260606",
+          "tests": [
+            "tests/test_agent_mailbox.py::test_codex_review_packet_does_not_hide_red_p11_when_claim_verification_is_green",
+            "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_accept_without_deliverable_changes",
+            "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_code_change_without_diff_receipt",
+            "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_accept_with_only_incidental_workflow_files",
+            "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_docs_only_change_without_explicit_report_scope",
+            "tests/test_dual_agent_workflow_driver.py::test_execution_gate_allows_explicit_report_only_artifact_with_receipt",
+            "tests/test_dual_agent_workflow_driver.py::test_outcome_review_blocks_deliverable_failure_even_when_claims_verify",
+            "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_requires_test_receipts_for_claims",
+            "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_rejects_diff_receipt_without_changed_file_replay",
+            "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_rejects_partial_changed_file_receipt"
+          ],
+          "tool_access": "codebase_tools",
+          "transcript_refs": [
+            {
+              "chars": 4000,
+              "kind": "reviewer_transcript_tail",
+              "ref": "independent_reviewer_review:execution-gate-deliverable-evidence-20260606:outcome_review:1:independent-reviewer-1"
+            }
+          ],
+          "transcript_sha256": "2b73f5c78380817d380ced2fda1a3970c3a374cc1d41cb1dd73b2d11396e2976",
+          "verdict_present": true
+        }
+      ],
+      "model": "composer-2.5",
+      "outcome": {
+        "changed_files": [
+          "supervisor/dual_agent_workflow.py",
+          "supervisor/agent_mailbox.py",
+          "mcp_tools/codex_supervisor_stdio.py",
+          "tests/test_dual_agent_workflow_driver.py",
+          "tests/test_agent_mailbox.py"
+        ],
+        "claims": [
+          "Deliverable-evidence gate is deterministic and source-backed for execution and outcome_review",
+          "Report-only allowance present and tested with explicit scope + artifact_export receipt",
+          "outcome_review blocks deliverable failure even when claim verification is green",
+          "Probe gates reviewers; red P11 cannot be overridden to accept"
+        ],
+        "confidence": 0.95,
+        "confidence_criteria": [
+          "diff exactly 5 files +477/-15 --check clean: met (independent)",
+          "verify_gate_deliverable_evidence P1-P4 + report-only at :414: met",
+          "6 driver tests + mailbox test exist verbatim: met",
+          "outcome_review test non-vacuous (GREEN claims, RED P11, blocked+revise): met",
+          "stdio probe before reviewers + skip-on-red: met",
+          "independent pytest focused/related/full: met (10/143/743)",
+          "planning artifact SHA256 match outcome-review.md: met"
+        ],
+        "confidence_rationale": "Source symbols, wiring, and tests verified at cited lines; independent pytest (10/143/743 pass) and SHA256 reconfirmation succeeded this session. Held below 0.98 for substring marker looseness in _explicit_docs_report_task.",
+        "critical_review": {
+          "assumptions_to_verify": [
+            "P2-P4 behavior at outcome_review gate mirrors execution because both call the same verify_gate_deliverable_evidence function",
+            "Negative docs-only fixture intent lacks report-only markers so cannot accidentally satisfy explicit_docs_report"
+          ],
+          "contradictions_checked": [
+            "Reviewers overriding red P11: no \u2014 :1142 requires deliverable_probe.ok before reviewer invocation",
+            "Probe limited to execution only: no \u2014 :1128 gate-in-set includes outcome_review; :422 guard matches",
+            "Outcome_review test vacuous: no \u2014 :810 asserts claim_verification green, P11 red, codex_decision revise",
+            "Marker looseness bypasses code gates without explicit_docs_report: no \u2014 receipt_kinds expansion (:460) only when code_or_test_files empty AND explicit_docs_report true"
+          ],
+          "decision": "accept",
+          "missing_evidence": [
+            "RED-state observation before implementation (receipt-only, not re-observed)",
+            "Dedicated outcome_review tests for P2-P4 failure modes (shared probe logic tested at execution gate only)"
+          ],
+          "severity": "low",
+          "strongest_objection": "_explicit_docs_report_task substring markers (adr/benchmark/design-doc/report-only) are broad enough that incidental mentions in a code-task deliverable could relax required receipt kinds for docs-only changes.",
+          "what_would_change_my_mind": "Evidence that deliverable probe can be skipped or reviewers can accept on red P11 at execution/outcome_review, or any failing run of the named focused tests on current tree."
+        },
+        "decisions": [
+          "accept"
+        ],
+        "objections": [],
+        "specialists": [
+          {
+            "decision": "accept",
+            "name": "Cursor Reviewer",
+            "objection": null
+          }
+        ],
+        "summary": "ACCEPT. Independently verified: diff 5 files +477/-15 clean; verify_gate_deliverable_evidence at :414 covers P1-P4 and report-only branch; stdio probe at :1128 for execution+outcome_review with reviewer skip on red P11 (:1142); mailbox surfaces P11 CRITICAL when claims green (:265); outcome_review test :810 non-vacuous (claims GREEN, P11 RED, blocked+revise); focused 10/10, related 143/143, full 743 passed; planning SHA256 match outcome-review.md.",
+        "task_id": "execution-gate-deliverable-evidence-20260606",
+        "test_status": "passed",
+        "tests": [
+          "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_accept_without_deliverable_changes",
+          "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_code_change_without_diff_receipt",
+          "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_accept_with_only_incidental_workflow_files",
+          "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_docs_only_change_without_explicit_report_scope",
+          "tests/test_dual_agent_workflow_driver.py::test_execution_gate_allows_explicit_report_only_artifact_with_receipt",
+          "tests/test_dual_agent_workflow_driver.py::test_outcome_review_blocks_deliverable_failure_even_when_claims_verify",
+          "tests/test_agent_mailbox.py::test_codex_review_packet_does_not_hide_red_p11_when_claim_verification_is_green"
+        ]
+      },
+      "probe": {
+        "details": {},
+        "probe_id": "CURSOR",
+        "reason": "cursor_review_ok",
+        "status": "green"
+      },
+      "recoverable": false,
+      "retry_reasons": [],
+      "reviewer_assurance": "tool_backed_primary",
+      "reviewer_output_mode": "cursor_sdk",
+      "reviewer_runtime": "cursor_sdk",
+      "run_id": "run-ef35de1a-53d9-4356-aa58-3125566d8e62",
+      "schema_version": "independent-reviewer-result/v1",
+      "status": "finished",
+      "transcript_tail": "dio probe at :1128 for execution+outcome_review with reviewer skip on red P11 (:1142); mailbox surfaces P11 CRITICAL when claims green (:265); outcome_review test :810 non-vacuous (claims GREEN, P11 RED, blocked+revise); focused 10/10, related 143/143, full 743 passed; planning SHA256 match outcome-review.md.\",\"specialists\":[{\"name\":\"Cursor Reviewer\",\"decision\":\"accept\",\"objection\":null}],\"decisions\":[\"accept\"],\"objections\":[],\"changed_files\":[\"supervisor/dual_agent_workflow.py\",\"supervisor/agent_mailbox.py\",\"mcp_tools/codex_supervisor_stdio.py\",\"tests/test_dual_agent_workflow_driver.py\",\"tests/test_agent_mailbox.py\"],\"tests\":[\"tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_accept_without_deliverable_changes\",\"tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_code_change_without_diff_receipt\",\"tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_accept_with_only_incidental_workflow_files\",\"tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_docs_only_change_without_explicit_report_scope\",\"tests/test_dual_agent_workflow_driver.py::test_execution_gate_allows_explicit_report_only_artifact_with_receipt\",\"tests/test_dual_agent_workflow_driver.py::test_outcome_review_blocks_deliverable_failure_even_when_claims_verify\",\"tests/test_agent_mailbox.py::test_codex_review_packet_does_not_hide_red_p11_when_claim_verification_is_green\"],\"test_status\":\"passed\",\"confidence\":0.95,\"confidence_rationale\":\"Source symbols, wiring, and tests verified at cited lines; independent pytest (10/143/743 pass) and SHA256 reconfirmation succeeded this session. Held below 0.98 for substring marker looseness in _explicit_docs_report_task.\",\"confidence_criteria\":[\"diff exactly 5 files +477/-15 --check clean: met (independent)\",\"verify_gate_deliverable_evidence P1-P4 + report-only at :414: met\",\"6 driver tests + mailbox test exist verbatim: met\",\"outcome_review test non-vacuous (GREEN claims, RED P11, blocked+revise): met\",\"stdio probe before reviewers + skip-on-red: met\",\"independent pytest focused/related/full: met (10/143/743)\",\"planning artifact SHA256 match outcome-review.md: met\"],\"claims\":[\"Deliverable-evidence gate is deterministic and source-backed for execution and outcome_review\",\"Report-only allowance present and tested with explicit scope + artifact_export receipt\",\"outcome_review blocks deliverable failure even when claim verification is green\",\"Probe gates reviewers; red P11 cannot be overridden to accept\"],\"critical_review\":{\"strongest_objection\":\"_explicit_docs_report_task substring markers (adr/benchmark/design-doc/report-only) are broad enough that incidental mentions in a code-task deliverable could relax required receipt kinds for docs-only changes.\",\"missing_evidence\":[\"RED-state observation before implementation (receipt-only, not re-observed)\",\"Dedicated outcome_review tests for P2-P4 failure modes (shared probe logic tested at execution gate only)\"],\"contradictions_checked\":[\"Reviewers overriding red P11: no \u2014 :1142 requires deliverable_probe.ok before reviewer invocation\",\"Probe limited to execution only: no \u2014 :1128 gate-in-set includes outcome_review; :422 guard matches\",\"Outcome_review test vacuous: no \u2014 :810 asserts claim_verification green, P11 red, codex_decision revise\",\"Marker looseness bypasses code gates without explicit_docs_report: no \u2014 receipt_kinds expansion (:460) only when code_or_test_files empty AND explicit_docs_report true\"],\"assumptions_to_verify\":[\"P2-P4 behavior at outcome_review gate mirrors execution because both call the same verify_gate_deliverable_evidence function\",\"Negative docs-only fixture intent lacks report-only markers so cannot accidentally satisfy explicit_docs_report\"],\"what_would_change_my_mind\":\"Evidence that deliverable probe can be skipped or reviewers can accept on red P11 at execution/outcome_review, or any failing run of the named focused tests on current tree.\",\"decision\":\"accept\",\"severity\":\"low\"}}</dual_agent_outcome>"
+    },
+    "escalation": null,
+    "gate": "outcome_review",
+    "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/execution-gate-deliverable-evidence-20260606.json",
+    "independent_reviewer": {
+      "accepted": true,
+      "agent_id": "agent-604cbce1-d576-4b11-aecd-690fd615a95a",
+      "attempts": 1,
+      "critical_review": {
+        "assumptions_to_verify": [
+          "P2-P4 behavior at outcome_review gate mirrors execution because both call the same verify_gate_deliverable_evidence function",
+          "Negative docs-only fixture intent lacks report-only markers so cannot accidentally satisfy explicit_docs_report"
+        ],
+        "contradictions_checked": [
+          "Reviewers overriding red P11: no \u2014 :1142 requires deliverable_probe.ok before reviewer invocation",
+          "Probe limited to execution only: no \u2014 :1128 gate-in-set includes outcome_review; :422 guard matches",
+          "Outcome_review test vacuous: no \u2014 :810 asserts claim_verification green, P11 red, codex_decision revise",
+          "Marker looseness bypasses code gates without explicit_docs_report: no \u2014 receipt_kinds expansion (:460) only when code_or_test_files empty AND explicit_docs_report true"
+        ],
+        "decision": "accept",
+        "evidence_refs": [],
+        "missing_evidence": [
+          "RED-state observation before implementation (receipt-only, not re-observed)",
+          "Dedicated outcome_review tests for P2-P4 failure modes (shared probe logic tested at execution gate only)"
+        ],
+        "schema_version": "critical-review/v1",
+        "severity": "low",
+        "strongest_objection": "_explicit_docs_report_task substring markers (adr/benchmark/design-doc/report-only) are broad enough that incidental mentions in a code-task deliverable could relax required receipt kinds for docs-only changes.",
+        "what_would_change_my_mind": "Evidence that deliverable probe can be skipped or reviewers can accept on red P11 at execution/outcome_review, or any failing run of the named focused tests on current tree."
+      },
+      "diagnostics": {
+        "prompt_chars": 11873,
+        "prompt_sha256": "d31bf12063ddb470be6933b546d0e148d6c89a081fa67d608d30fc0e0c80d794"
+      },
+      "duration_ms": 333421,
+      "failure_classification": null,
+      "fallback_from_runtime": null,
+      "fallback_reason": null,
+      "independent_reviewer_panel_decision": {
+        "accepted_reviewers": [
+          "independent-reviewer-0",
+          "independent-reviewer-1"
+        ],
+        "aggregation_mode": "conservative",
+        "available_reviewers": [
+          "independent-reviewer-0",
+          "independent-reviewer-1"
+        ],
+        "blocking_reviewers": [],
+        "decision": "accept",
+        "low_confidence_reviewers": [],
+        "low_confidence_threshold": 0.0,
+        "missing_reviewers": [],
+        "non_accepting_reviewers": [],
+        "reason": "all_available_reviewers_accept",
+        "reviewer_inputs": [
+          {
+            "accepted": true,
+            "assurance_grade": "agentic",
+            "confidence": 0.95,
+            "decision": "accept",
+            "lineage": [
+              "cursor",
+              "cursor_sdk",
+              "composer-2.5"
+            ],
+            "model": "composer-2.5",
+            "provider_family": "cursor",
+            "reviewer_id": "independent-reviewer-0",
+            "runtime": "cursor_sdk",
+            "severity": "low",
+            "tool_access": "codebase_tools",
+            "verdict_present": true
+          },
+          {
+            "accepted": true,
+            "assurance_grade": "agentic",
+            "confidence": 0.88,
+            "decision": "accept",
+            "lineage": [
+              "openai",
+              "codex_cli",
+              "gpt-5.5"
+            ],
+            "model": "gpt-5.5",
+            "provider_family": "openai",
+            "reviewer_id": "independent-reviewer-1",
+            "runtime": "codex_cli",
+            "severity": "low",
+            "tool_access": "codebase_tools",
+            "verdict_present": true
+          }
+        ],
+        "schema_version": "independent-reviewer-panel-decision/v1"
+      },
+      "independent_reviewer_results": [
+        {
+          "accepted": true,
+          "assurance_grade": "agentic",
+          "attempts": 1,
+          "confidence": 0.95,
+          "critical_review": {
+            "assumptions_to_verify": [
+              "P2-P4 behavior at outcome_review gate mirrors execution because both call the same verify_gate_deliverable_evidence function",
+              "Negative docs-only fixture intent lacks report-only markers so cannot accidentally satisfy explicit_docs_report"
+            ],
+            "contradictions_checked": [
+              "Reviewers overriding red P11: no \u2014 :1142 requires deliverable_probe.ok before reviewer invocation",
+              "Probe limited to execution only: no \u2014 :1128 gate-in-set includes outcome_review; :422 guard matches",
+              "Outcome_review test vacuous: no \u2014 :810 asserts claim_verification green, P11 red, codex_decision revise",
+              "Marker looseness bypasses code gates without explicit_docs_report: no \u2014 receipt_kinds expansion (:460) only when code_or_test_files empty AND explicit_docs_report true"
+            ],
+            "decision": "accept",
+            "missing_evidence": [
+              "RED-state observation before implementation (receipt-only, not re-observed)",
+              "Dedicated outcome_review tests for P2-P4 failure modes (shared probe logic tested at execution gate only)"
+            ],
+            "severity": "low",
+            "strongest_objection": "_explicit_docs_report_task substring markers (adr/benchmark/design-doc/report-only) are broad enough that incidental mentions in a code-task deliverable could relax required receipt kinds for docs-only changes.",
+            "what_would_change_my_mind": "Evidence that deliverable probe can be skipped or reviewers can accept on red P11 at execution/outcome_review, or any failing run of the named focused tests on current tree."
+          },
+          "decision": "accept",
+          "failure_classification": null,
+          "gate": "outcome_review",
+          "lineage": [
+            "cursor",
+            "cursor_sdk",
+            "composer-2.5"
+          ],
+          "model": "composer-2.5",
+          "output_sha256": "02ecb178609f73200980cf8f4bdda1e074c3e3cadef98aa8fa529b80d89ef8cd",
+          "provider_family": "cursor",
+          "recoverable": false,
+          "reviewer_assurance": "tool_backed_primary",
+          "reviewer_id": "independent-reviewer-0",
+          "reviewer_output_mode": "cursor_sdk",
+          "reviewer_runtime": "cursor_sdk",
+          "round_index": 1,
+          "runtime": "cursor_sdk",
+          "schema_version": "independent-reviewer-panel-result/v1",
+          "severity": "low",
+          "task_id": "execution-gate-deliverable-evidence-20260606",
+          "tests": [
+            "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_accept_without_deliverable_changes",
+            "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_code_change_without_diff_receipt",
+            "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_accept_with_only_incidental_workflow_files",
+            "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_docs_only_change_without_explicit_report_scope",
+            "tests/test_dual_agent_workflow_driver.py::test_execution_gate_allows_explicit_report_only_artifact_with_receipt",
+            "tests/test_dual_agent_workflow_driver.py::test_outcome_review_blocks_deliverable_failure_even_when_claims_verify",
+            "tests/test_agent_mailbox.py::test_codex_review_packet_does_not_hide_red_p11_when_claim_verification_is_green"
+          ],
+          "tool_access": "codebase_tools",
+          "transcript_refs": [
+            {
+              "chars": 4000,
+              "kind": "reviewer_transcript_tail",
+              "ref": "independent_reviewer_review:execution-gate-deliverable-evidence-20260606:outcome_review:1:independent-reviewer-0"
+            }
+          ],
+          "transcript_sha256": "875370657a4bfead776a83b91ffa23434983803fb43ae87dcca758e55bc4fd28",
+          "verdict_present": true
+        },
+        {
+          "accepted": true,
+          "assurance_grade": "agentic",
+          "attempts": 1,
+          "confidence": 0.88,
+          "critical_review": {
+            "assumptions_to_verify": [
+              "Provided pytest receipts correspond to this exact tree; current diff and file hashes were inspected but pytest was not rerun.",
+              "Report-only marker breadth is acceptable for this slice or will be tightened in a follow-up.",
+              "Workflow P3 continues to block missing required outcome fields before deliverable verification is reached."
+            ],
+            "contradictions_checked": [
+              "Live tracked diff is exactly the five claimed files with +477/-15 and no diff-check findings.",
+              "Planning P1-P4 requirements match the new probe, workflow wiring, and tests.",
+              "Red deliverable P11 cannot be accepted by final codex_decision because acceptance requires deliverable_probe.ok.",
+              "Reviewer invocation is gated on deliverable_probe.ok before Cursor or independent reviewer calls.",
+              "The outcome_review regression is non-vacuous: claim_verification is green, deliverable P11 is red, workflow blocks, and codex_decision is revise.",
+              "P11 mailbox de-dup only suppresses probe P11 when claim_verification itself failed; green claim verification leaves red P11 visible."
+            ],
+            "decision": "accept",
+            "missing_evidence": [
+              "I did not rerun pytest or py_compile in this read-only review; pass status is from provided receipts.",
+              "No direct regression test observed for cursor_review=True proving a red deliverable_probe skips reviewer invocation; source wiring supports it.",
+              "No negative test for broad report-only marker false positives such as incidental use of adr or benchmark in a non-report docs task."
+            ],
+            "severity": "low",
+            "strongest_objection": "Report-only detection accepts broad markers such as adr and benchmark from intent/outcome/receipt text, so a docs-only task with loose wording plus an artifact/docs receipt could be allowed more widely than intended.",
+            "what_would_change_my_mind": "A failing run of the named focused tests, evidence that an accepted execution/outcome_review can proceed with deliverable_probe red, or a realistic non-report docs task that passes due only to broad marker matching."
+          },
+          "decision": "accept",
+          "failure_classification": null,
+          "gate": "outcome_review",
+          "lineage": [
+            "openai",
+            "codex_cli",
+            "gpt-5.5"
+          ],
+          "model": "gpt-5.5",
+          "output_sha256": "65119c8e77e0bbb9ed84ebc76cb0bb390687f8eb1dfccedfcb31744be15f2955",
+          "provider_family": "openai",
+          "recoverable": false,
+          "reviewer_assurance": "tool_backed_primary",
+          "reviewer_id": "independent-reviewer-1",
+          "reviewer_output_mode": "codex_cli",
+          "reviewer_runtime": "codex_cli",
+          "round_index": 1,
+          "runtime": "codex_cli",
+          "schema_version": "independent-reviewer-panel-result/v1",
+          "severity": "low",
+          "task_id": "execution-gate-deliverable-evidence-20260606",
+          "tests": [
+            "tests/test_agent_mailbox.py::test_codex_review_packet_does_not_hide_red_p11_when_claim_verification_is_green",
+            "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_accept_without_deliverable_changes",
+            "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_code_change_without_diff_receipt",
+            "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_accept_with_only_incidental_workflow_files",
+            "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_docs_only_change_without_explicit_report_scope",
+            "tests/test_dual_agent_workflow_driver.py::test_execution_gate_allows_explicit_report_only_artifact_with_receipt",
+            "tests/test_dual_agent_workflow_driver.py::test_outcome_review_blocks_deliverable_failure_even_when_claims_verify",
+            "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_requires_test_receipts_for_claims",
+            "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_rejects_diff_receipt_without_changed_file_replay",
+            "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_rejects_partial_changed_file_receipt"
+          ],
+          "tool_access": "codebase_tools",
+          "transcript_refs": [
+            {
+              "chars": 4000,
+              "kind": "reviewer_transcript_tail",
+              "ref": "independent_reviewer_review:execution-gate-deliverable-evidence-20260606:outcome_review:1:independent-reviewer-1"
+            }
+          ],
+          "transcript_sha256": "2b73f5c78380817d380ced2fda1a3970c3a374cc1d41cb1dd73b2d11396e2976",
+          "verdict_present": true
+        }
+      ],
+      "model": "composer-2.5",
+      "outcome": {
+        "changed_files": [
+          "supervisor/dual_agent_workflow.py",
+          "supervisor/agent_mailbox.py",
+          "mcp_tools/codex_supervisor_stdio.py",
+          "tests/test_dual_agent_workflow_driver.py",
+          "tests/test_agent_mailbox.py"
+        ],
+        "claims": [
+          "Deliverable-evidence gate is deterministic and source-backed for execution and outcome_review",
+          "Report-only allowance present and tested with explicit scope + artifact_export receipt",
+          "outcome_review blocks deliverable failure even when claim verification is green",
+          "Probe gates reviewers; red P11 cannot be overridden to accept"
+        ],
+        "confidence": 0.95,
+        "confidence_criteria": [
+          "diff exactly 5 files +477/-15 --check clean: met (independent)",
+          "verify_gate_deliverable_evidence P1-P4 + report-only at :414: met",
+          "6 driver tests + mailbox test exist verbatim: met",
+          "outcome_review test non-vacuous (GREEN claims, RED P11, blocked+revise): met",
+          "stdio probe before reviewers + skip-on-red: met",
+          "independent pytest focused/related/full: met (10/143/743)",
+          "planning artifact SHA256 match outcome-review.md: met"
+        ],
+        "confidence_rationale": "Source symbols, wiring, and tests verified at cited lines; independent pytest (10/143/743 pass) and SHA256 reconfirmation succeeded this session. Held below 0.98 for substring marker looseness in _explicit_docs_report_task.",
+        "critical_review": {
+          "assumptions_to_verify": [
+            "P2-P4 behavior at outcome_review gate mirrors execution because both call the same verify_gate_deliverable_evidence function",
+            "Negative docs-only fixture intent lacks report-only markers so cannot accidentally satisfy explicit_docs_report"
+          ],
+          "contradictions_checked": [
+            "Reviewers overriding red P11: no \u2014 :1142 requires deliverable_probe.ok before reviewer invocation",
+            "Probe limited to execution only: no \u2014 :1128 gate-in-set includes outcome_review; :422 guard matches",
+            "Outcome_review test vacuous: no \u2014 :810 asserts claim_verification green, P11 red, codex_decision revise",
+            "Marker looseness bypasses code gates without explicit_docs_report: no \u2014 receipt_kinds expansion (:460) only when code_or_test_files empty AND explicit_docs_report true"
+          ],
+          "decision": "accept",
+          "missing_evidence": [
+            "RED-state observation before implementation (receipt-only, not re-observed)",
+            "Dedicated outcome_review tests for P2-P4 failure modes (shared probe logic tested at execution gate only)"
+          ],
+          "severity": "low",
+          "strongest_objection": "_explicit_docs_report_task substring markers (adr/benchmark/design-doc/report-only) are broad enough that incidental mentions in a code-task deliverable could relax required receipt kinds for docs-only changes.",
+          "what_would_change_my_mind": "Evidence that deliverable probe can be skipped or reviewers can accept on red P11 at execution/outcome_review, or any failing run of the named focused tests on current tree."
+        },
+        "decisions": [
+          "accept"
+        ],
+        "objections": [],
+        "specialists": [
+          {
+            "decision": "accept",
+            "name": "Cursor Reviewer",
+            "objection": null
+          }
+        ],
+        "summary": "ACCEPT. Independently verified: diff 5 files +477/-15 clean; verify_gate_deliverable_evidence at :414 covers P1-P4 and report-only branch; stdio probe at :1128 for execution+outcome_review with reviewer skip on red P11 (:1142); mailbox surfaces P11 CRITICAL when claims green (:265); outcome_review test :810 non-vacuous (claims GREEN, P11 RED, blocked+revise); focused 10/10, related 143/143, full 743 passed; planning SHA256 match outcome-review.md.",
+        "task_id": "execution-gate-deliverable-evidence-20260606",
+        "test_status": "passed",
+        "tests": [
+          "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_accept_without_deliverable_changes",
+          "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_code_change_without_diff_receipt",
+          "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_accept_with_only_incidental_workflow_files",
+          "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_docs_only_change_without_explicit_report_scope",
+          "tests/test_dual_agent_workflow_driver.py::test_execution_gate_allows_explicit_report_only_artifact_with_receipt",
+          "tests/test_dual_agent_workflow_driver.py::test_outcome_review_blocks_deliverable_failure_even_when_claims_verify",
+          "tests/test_agent_mailbox.py::test_codex_review_packet_does_not_hide_red_p11_when_claim_verification_is_green"
+        ]
+      },
+      "probe": {
+        "details": {},
+        "probe_id": "CURSOR",
+        "reason": "cursor_review_ok",
+        "status": "green"
+      },
+      "recoverable": false,
+      "retry_reasons": [],
+      "reviewer_assurance": "tool_backed_primary",
+      "reviewer_output_mode": "cursor_sdk",
+      "reviewer_runtime": "cursor_sdk",
+      "run_id": "run-ef35de1a-53d9-4356-aa58-3125566d8e62",
+      "schema_version": "independent-reviewer-result/v1",
+      "status": "finished",
+      "transcript_tail": "dio probe at :1128 for execution+outcome_review with reviewer skip on red P11 (:1142); mailbox surfaces P11 CRITICAL when claims green (:265); outcome_review test :810 non-vacuous (claims GREEN, P11 RED, blocked+revise); focused 10/10, related 143/143, full 743 passed; planning SHA256 match outcome-review.md.\",\"specialists\":[{\"name\":\"Cursor Reviewer\",\"decision\":\"accept\",\"objection\":null}],\"decisions\":[\"accept\"],\"objections\":[],\"changed_files\":[\"supervisor/dual_agent_workflow.py\",\"supervisor/agent_mailbox.py\",\"mcp_tools/codex_supervisor_stdio.py\",\"tests/test_dual_agent_workflow_driver.py\",\"tests/test_agent_mailbox.py\"],\"tests\":[\"tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_accept_without_deliverable_changes\",\"tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_code_change_without_diff_receipt\",\"tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_accept_with_only_incidental_workflow_files\",\"tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_docs_only_change_without_explicit_report_scope\",\"tests/test_dual_agent_workflow_driver.py::test_execution_gate_allows_explicit_report_only_artifact_with_receipt\",\"tests/test_dual_agent_workflow_driver.py::test_outcome_review_blocks_deliverable_failure_even_when_claims_verify\",\"tests/test_agent_mailbox.py::test_codex_review_packet_does_not_hide_red_p11_when_claim_verification_is_green\"],\"test_status\":\"passed\",\"confidence\":0.95,\"confidence_rationale\":\"Source symbols, wiring, and tests verified at cited lines; independent pytest (10/143/743 pass) and SHA256 reconfirmation succeeded this session. Held below 0.98 for substring marker looseness in _explicit_docs_report_task.\",\"confidence_criteria\":[\"diff exactly 5 files +477/-15 --check clean: met (independent)\",\"verify_gate_deliverable_evidence P1-P4 + report-only at :414: met\",\"6 driver tests + mailbox test exist verbatim: met\",\"outcome_review test non-vacuous (GREEN claims, RED P11, blocked+revise): met\",\"stdio probe before reviewers + skip-on-red: met\",\"independent pytest focused/related/full: met (10/143/743)\",\"planning artifact SHA256 match outcome-review.md: met\"],\"claims\":[\"Deliverable-evidence gate is deterministic and source-backed for execution and outcome_review\",\"Report-only allowance present and tested with explicit scope + artifact_export receipt\",\"outcome_review blocks deliverable failure even when claim verification is green\",\"Probe gates reviewers; red P11 cannot be overridden to accept\"],\"critical_review\":{\"strongest_objection\":\"_explicit_docs_report_task substring markers (adr/benchmark/design-doc/report-only) are broad enough that incidental mentions in a code-task deliverable could relax required receipt kinds for docs-only changes.\",\"missing_evidence\":[\"RED-state observation before implementation (receipt-only, not re-observed)\",\"Dedicated outcome_review tests for P2-P4 failure modes (shared probe logic tested at execution gate only)\"],\"contradictions_checked\":[\"Reviewers overriding red P11: no \u2014 :1142 requires deliverable_probe.ok before reviewer invocation\",\"Probe limited to execution only: no \u2014 :1128 gate-in-set includes outcome_review; :422 guard matches\",\"Outcome_review test vacuous: no \u2014 :810 asserts claim_verification green, P11 red, codex_decision revise\",\"Marker looseness bypasses code gates without explicit_docs_report: no \u2014 receipt_kinds expansion (:460) only when code_or_test_files empty AND explicit_docs_report true\"],\"assumptions_to_verify\":[\"P2-P4 behavior at outcome_review gate mirrors execution because both call the same verify_gate_deliverable_evidence function\",\"Negative docs-only fixture intent lacks report-only markers so cannot accidentally satisfy explicit_docs_report\"],\"what_would_change_my_mind\":\"Evidence that deliverable probe can be skipped or reviewers can accept on red P11 at execution/outcome_review, or any failing run of the named focused tests on current tree.\",\"decision\":\"accept\",\"severity\":\"low\"}}</dual_agent_outcome>"
+    },
+    "independent_reviewer_panel_decision": {
+      "accepted_reviewers": [
+        "independent-reviewer-0",
+        "independent-reviewer-1"
+      ],
+      "aggregation_mode": "conservative",
+      "available_reviewers": [
+        "independent-reviewer-0",
+        "independent-reviewer-1"
+      ],
+      "blocking_reviewers": [],
+      "decision": "accept",
+      "low_confidence_reviewers": [],
+      "low_confidence_threshold": 0.0,
+      "missing_reviewers": [],
+      "non_accepting_reviewers": [],
+      "reason": "all_available_reviewers_accept",
+      "reviewer_inputs": [
+        {
+          "accepted": true,
+          "assurance_grade": "agentic",
+          "confidence": 0.95,
+          "decision": "accept",
+          "lineage": [
+            "cursor",
+            "cursor_sdk",
+            "composer-2.5"
+          ],
+          "model": "composer-2.5",
+          "provider_family": "cursor",
+          "reviewer_id": "independent-reviewer-0",
+          "runtime": "cursor_sdk",
+          "severity": "low",
+          "tool_access": "codebase_tools",
+          "verdict_present": true
+        },
+        {
+          "accepted": true,
+          "assurance_grade": "agentic",
+          "confidence": 0.88,
+          "decision": "accept",
+          "lineage": [
+            "openai",
+            "codex_cli",
+            "gpt-5.5"
+          ],
+          "model": "gpt-5.5",
+          "provider_family": "openai",
+          "reviewer_id": "independent-reviewer-1",
+          "runtime": "codex_cli",
+          "severity": "low",
+          "tool_access": "codebase_tools",
+          "verdict_present": true
+        }
+      ],
+      "schema_version": "independent-reviewer-panel-decision/v1"
+    },
+    "independent_reviewer_results": [
+      {
+        "accepted": true,
+        "assurance_grade": "agentic",
+        "attempts": 1,
+        "confidence": 0.95,
+        "critical_review": {
+          "assumptions_to_verify": [
+            "P2-P4 behavior at outcome_review gate mirrors execution because both call the same verify_gate_deliverable_evidence function",
+            "Negative docs-only fixture intent lacks report-only markers so cannot accidentally satisfy explicit_docs_report"
+          ],
+          "contradictions_checked": [
+            "Reviewers overriding red P11: no \u2014 :1142 requires deliverable_probe.ok before reviewer invocation",
+            "Probe limited to execution only: no \u2014 :1128 gate-in-set includes outcome_review; :422 guard matches",
+            "Outcome_review test vacuous: no \u2014 :810 asserts claim_verification green, P11 red, codex_decision revise",
+            "Marker looseness bypasses code gates without explicit_docs_report: no \u2014 receipt_kinds expansion (:460) only when code_or_test_files empty AND explicit_docs_report true"
+          ],
+          "decision": "accept",
+          "missing_evidence": [
+            "RED-state observation before implementation (receipt-only, not re-observed)",
+            "Dedicated outcome_review tests for P2-P4 failure modes (shared probe logic tested at execution gate only)"
+          ],
+          "severity": "low",
+          "strongest_objection": "_explicit_docs_report_task substring markers (adr/benchmark/design-doc/report-only) are broad enough that incidental mentions in a code-task deliverable could relax required receipt kinds for docs-only changes.",
+          "what_would_change_my_mind": "Evidence that deliverable probe can be skipped or reviewers can accept on red P11 at execution/outcome_review, or any failing run of the named focused tests on current tree."
+        },
+        "decision": "accept",
+        "failure_classification": null,
+        "gate": "outcome_review",
+        "lineage": [
+          "cursor",
+          "cursor_sdk",
+          "composer-2.5"
+        ],
+        "model": "composer-2.5",
+        "output_sha256": "02ecb178609f73200980cf8f4bdda1e074c3e3cadef98aa8fa529b80d89ef8cd",
+        "provider_family": "cursor",
+        "recoverable": false,
+        "reviewer_assurance": "tool_backed_primary",
+        "reviewer_id": "independent-reviewer-0",
+        "reviewer_output_mode": "cursor_sdk",
+        "reviewer_runtime": "cursor_sdk",
+        "round_index": 1,
+        "runtime": "cursor_sdk",
+        "schema_version": "independent-reviewer-panel-result/v1",
+        "severity": "low",
+        "task_id": "execution-gate-deliverable-evidence-20260606",
+        "tests": [
+          "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_accept_without_deliverable_changes",
+          "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_code_change_without_diff_receipt",
+          "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_accept_with_only_incidental_workflow_files",
+          "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_docs_only_change_without_explicit_report_scope",
+          "tests/test_dual_agent_workflow_driver.py::test_execution_gate_allows_explicit_report_only_artifact_with_receipt",
+          "tests/test_dual_agent_workflow_driver.py::test_outcome_review_blocks_deliverable_failure_even_when_claims_verify",
+          "tests/test_agent_mailbox.py::test_codex_review_packet_does_not_hide_red_p11_when_claim_verification_is_green"
+        ],
+        "tool_access": "codebase_tools",
+        "transcript_refs": [
+          {
+            "chars": 4000,
+            "kind": "reviewer_transcript_tail",
+            "ref": "independent_reviewer_review:execution-gate-deliverable-evidence-20260606:outcome_review:1:independent-reviewer-0"
+          }
+        ],
+        "transcript_sha256": "875370657a4bfead776a83b91ffa23434983803fb43ae87dcca758e55bc4fd28",
+        "verdict_present": true
+      },
+      {
+        "accepted": true,
+        "assurance_grade": "agentic",
+        "attempts": 1,
+        "confidence": 0.88,
+        "critical_review": {
+          "assumptions_to_verify": [
+            "Provided pytest receipts correspond to this exact tree; current diff and file hashes were inspected but pytest was not rerun.",
+            "Report-only marker breadth is acceptable for this slice or will be tightened in a follow-up.",
+            "Workflow P3 continues to block missing required outcome fields before deliverable verification is reached."
+          ],
+          "contradictions_checked": [
+            "Live tracked diff is exactly the five claimed files with +477/-15 and no diff-check findings.",
+            "Planning P1-P4 requirements match the new probe, workflow wiring, and tests.",
+            "Red deliverable P11 cannot be accepted by final codex_decision because acceptance requires deliverable_probe.ok.",
+            "Reviewer invocation is gated on deliverable_probe.ok before Cursor or independent reviewer calls.",
+            "The outcome_review regression is non-vacuous: claim_verification is green, deliverable P11 is red, workflow blocks, and codex_decision is revise.",
+            "P11 mailbox de-dup only suppresses probe P11 when claim_verification itself failed; green claim verification leaves red P11 visible."
+          ],
+          "decision": "accept",
+          "missing_evidence": [
+            "I did not rerun pytest or py_compile in this read-only review; pass status is from provided receipts.",
+            "No direct regression test observed for cursor_review=True proving a red deliverable_probe skips reviewer invocation; source wiring supports it.",
+            "No negative test for broad report-only marker false positives such as incidental use of adr or benchmark in a non-report docs task."
+          ],
+          "severity": "low",
+          "strongest_objection": "Report-only detection accepts broad markers such as adr and benchmark from intent/outcome/receipt text, so a docs-only task with loose wording plus an artifact/docs receipt could be allowed more widely than intended.",
+          "what_would_change_my_mind": "A failing run of the named focused tests, evidence that an accepted execution/outcome_review can proceed with deliverable_probe red, or a realistic non-report docs task that passes due only to broad marker matching."
+        },
+        "decision": "accept",
+        "failure_classification": null,
+        "gate": "outcome_review",
+        "lineage": [
+          "openai",
+          "codex_cli",
+          "gpt-5.5"
+        ],
+        "model": "gpt-5.5",
+        "output_sha256": "65119c8e77e0bbb9ed84ebc76cb0bb390687f8eb1dfccedfcb31744be15f2955",
+        "provider_family": "openai",
+        "recoverable": false,
+        "reviewer_assurance": "tool_backed_primary",
+        "reviewer_id": "independent-reviewer-1",
+        "reviewer_output_mode": "codex_cli",
+        "reviewer_runtime": "codex_cli",
+        "round_index": 1,
+        "runtime": "codex_cli",
+        "schema_version": "independent-reviewer-panel-result/v1",
+        "severity": "low",
+        "task_id": "execution-gate-deliverable-evidence-20260606",
+        "tests": [
+          "tests/test_agent_mailbox.py::test_codex_review_packet_does_not_hide_red_p11_when_claim_verification_is_green",
+          "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_accept_without_deliverable_changes",
+          "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_code_change_without_diff_receipt",
+          "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_accept_with_only_incidental_workflow_files",
+          "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_docs_only_change_without_explicit_report_scope",
+          "tests/test_dual_agent_workflow_driver.py::test_execution_gate_allows_explicit_report_only_artifact_with_receipt",
+          "tests/test_dual_agent_workflow_driver.py::test_outcome_review_blocks_deliverable_failure_even_when_claims_verify",
+          "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_requires_test_receipts_for_claims",
+          "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_rejects_diff_receipt_without_changed_file_replay",
+          "tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_rejects_partial_changed_file_receipt"
+        ],
+        "tool_access": "codebase_tools",
+        "transcript_refs": [
+          {
+            "chars": 4000,
+            "kind": "reviewer_transcript_tail",
+            "ref": "independent_reviewer_review:execution-gate-deliverable-evidence-20260606:outcome_review:1:independent-reviewer-1"
+          }
+        ],
+        "transcript_sha256": "2b73f5c78380817d380ced2fda1a3970c3a374cc1d41cb1dd73b2d11396e2976",
+        "verdict_present": true
+      }
+    ],
+    "outcome": {
+      "changed_files": [
+        "supervisor/dual_agent_workflow.py",
+        "supervisor/agent_mailbox.py",
+        "mcp_tools/codex_supervisor_stdio.py",
+        "tests/test_dual_agent_workflow_driver.py",
+        "tests/test_agent_mailbox.py"
+      ],
+      "claims": [
+        "Deliverable-evidence gate is deterministic and source-backed",
+        "Report-only allowance present and tested",
+        "outcome_review blocks deliverable failure even when claims verify",
+        "Probe gates reviewers (skip on red), cannot be overridden green"
+      ],
+      "confidence": 0.93,
+      "confidence_criteria": [
+        "diff exactly 5 files +477/-15 --check clean: met",
+        "verify_gate_deliverable_evidence P1-P4 + report-only at named lines: met",
+        "6 driver tests + mailbox test exist verbatim: met",
+        "outcome_review test non-vacuous (GREEN claims, RED P11, blocked+revise): met",
+        "stdio probe before reviewers + skip-on-red: met",
+        "independent pytest/shasum re-run this session: not met (approval-denied, self_reported)"
+      ],
+      "confidence_rationale": "All symbols, line numbers, failure modes, wiring, and 6+1 tests verified verbatim at current source; diff matches handoff exactly and is whitespace-clean; key invariant proven by non-vacuous outcome_review test. Held below 0.95 only because pytest/shasum re-execution were approval-denied this session and rely on handoff self-reported receipts.",
+      "critical_review": {
+        "assumptions_to_verify": [
+          "Handoff pytest receipts (10/143/743 pass) reflect the current tree \u2014 diff matches handoff exactly so highly likely",
+          "Planning artifact sha256 still match handoff (not re-run this session)"
+        ],
+        "contradictions_checked": [
+          "Whether reviewers could override a red P11 \u2014 no: :1142 skips reviewers when deliverable_probe not ok",
+          "Whether probe runs for outcome_review not just execution \u2014 yes: gate-in-set check :1128 and fn guard :422",
+          "Whether outcome_review test is vacuous \u2014 no: asserts claim_verification GREEN while P11 RED and final blocked+revise",
+          "Whether marker looseness affects code gates \u2014 no: report-only receipt expansion (:460) only when code_or_test_files empty"
+        ],
+        "decision": "accept",
+        "missing_evidence": [
+          "Independent pytest execution this session (approval-denied)",
+          "Independent sha256 reconfirmation of planning artifacts (approval-denied)"
+        ],
+        "severity": "low",
+        "strongest_objection": "_explicit_docs_report_task markers (adr/benchmark/report-only) are broad enough that a deliverable mentioning them could relax required receipt kinds.",
+        "what_would_change_my_mind": "Evidence that the deliverable probe can be skipped or overridden on an accepted execution/outcome_review gate, or a failing run of the named focused tests."
+      },
+      "decisions": [
+        "accept"
+      ],
+      "objections": [],
+      "specialists": [
+        {
+          "decision": "accept",
+          "name": "lead-outcome-reviewer",
+          "objection": null
+        }
+      ],
+      "summary": "FINAL ACCEPT. Execution+outcome_review gates now deterministically require real deliverable evidence via verify_gate_deliverable_evidence (dual_agent_workflow.py:414) with explicit report-only allowance. Diff exactly 5 files +477/-15, --check clean. P1-P4 failure modes and report-only branch all source-backed; 6 driver tests verbatim incl non-vacuous outcome_review test (:810) where claims verify GREEN but P11 RED blocks with codex_decision==revise. stdio probe (:1128) runs on accepted exec/outcome and reviewers skip on red (:1142); mailbox surfaces P11 CRITICAL with dedup (:265).",
+      "task_id": "execution-gate-deliverable-evidence-20260606",
+      "test_status": "passed",
+      "tests": [
+        "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_accept_without_deliverable_changes",
+        "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_code_change_without_diff_receipt",
+        "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_accept_with_only_incidental_workflow_files",
+        "tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_docs_only_change_without_explicit_report_scope",
+        "tests/test_dual_agent_workflow_driver.py::test_execution_gate_allows_explicit_report_only_artifact_with_receipt",
+        "tests/test_dual_agent_workflow_driver.py::test_outcome_review_blocks_deliverable_failure_even_when_claims_verify",
+        "tests/test_agent_mailbox.py::test_codex_review_packet_does_not_hide_red_p11_when_claim_verification_is_green"
+      ]
+    },
+    "probes": {
+      "P1": {
+        "details": {},
+        "probe_id": "P1",
+        "reason": "planning_artifact_boundaries_ok",
+        "status": "green"
+      },
+      "P11": {
+        "details": {
+          "changed_files": [
+            "supervisor/dual_agent_workflow.py",
+            "supervisor/agent_mailbox.py",
+            "mcp_tools/codex_supervisor_stdio.py",
+            "tests/test_dual_agent_workflow_driver.py",
+            "tests/test_agent_mailbox.py"
+          ],
+          "code_or_test_files": [
+            "supervisor/dual_agent_workflow.py",
+            "supervisor/agent_mailbox.py",
+            "mcp_tools/codex_supervisor_stdio.py",
+            "tests/test_dual_agent_workflow_driver.py",
+            "tests/test_agent_mailbox.py"
+          ],
+          "deliverable_files": [
+            "supervisor/dual_agent_workflow.py",
+            "supervisor/agent_mailbox.py",
+            "mcp_tools/codex_supervisor_stdio.py",
+            "tests/test_dual_agent_workflow_driver.py",
+            "tests/test_agent_mailbox.py"
+          ],
+          "doc_report_files": [],
+          "explicit_docs_report": true,
+          "gate": "outcome_review",
+          "receipts": [
+            {
+              "artifacts": [
+                "docs/dual-agent/execution-gate-deliverable-evidence-20260606/source/prd.md"
+              ],
+              "claims": [
+                "PRD promise contracts P1-P4 produced",
+                "Execution deliverable evidence boundary recorded"
+              ],
+              "kind": "skill_run",
+              "receipt_id": "skill-to-prd-execution-gate-deliverable-evidence-20260606",
+              "skill": "to-prd",
+              "stage": "to_prd",
+              "status": "passed"
+            },
+            {
+              "artifacts": [
+                "docs/dual-agent/execution-gate-deliverable-evidence-20260606/source/grill-findings.md"
+              ],
+              "claims": [
+                "PRD grill findings resolved",
+                "Prompt-only, report-only, and incidental artifact risks incorporated"
+              ],
+              "kind": "skill_run",
+              "receipt_id": "skill-prd-grill-execution-gate-deliverable-evidence-20260606",
+              "skill": "grill-with-docs",
+              "stage": "prd_grill",
+              "status": "passed"
+            },
+            {
+              "artifacts": [
+                "docs/dual-agent/execution-gate-deliverable-evidence-20260606/source/issues.md"
+              ],
+              "claims": [
+                "Issues map P1-P4 to implementation slices",
+                "Each issue names public boundary expectations"
+              ],
+              "kind": "skill_run",
+              "receipt_id": "skill-to-issues-execution-gate-deliverable-evidence-20260606",
+              "skill": "to-issues",
+              "stage": "to_issues",
+              "status": "passed"
+            },
+            {
+              "artifacts": [
+                "docs/dual-agent/execution-gate-deliverable-evidence-20260606/source/tdd.md"
+              ],
+              "claims": [
+                "TDD maps public-boundary tests for P1-P4 including outcome-review and docs-only failures",
+                "RED tests were observed before implementation"
+              ],
+              "kind": "skill_run",
+              "receipt_id": "skill-tdd-execution-gate-deliverable-evidence-20260606",
+              "skill": "tdd",
+              "stage": "tdd",
+              "status": "passed"
+            },
+            {
+              "artifacts": [
+                "docs/dual-agent/execution-gate-deliverable-evidence-20260606/source/grill-findings-tdd.md"
+              ],
+              "claims": [
+                "TDD grill findings resolved",
+                "Workflow-boundary and report-only positive case required"
+              ],
+              "kind": "skill_run",
+              "receipt_id": "skill-tdd-grill-execution-gate-deliverable-evidence-20260606",
+              "skill": "grill-with-docs",
+              "stage": "tdd_grill",
+              "status": "passed"
+            },
+            {
+              "changed_files": [
+                "supervisor/dual_agent_workflow.py",
+                "supervisor/agent_mailbox.py",
+                "mcp_tools/codex_supervisor_stdio.py",
+                "tests/test_dual_agent_workflow_driver.py",
+                "tests/test_agent_mailbox.py"
+              ],
+              "claims": [
+                "tests passed",
+                "deliverable evidence regressions passed including incidental-only, docs-only, and outcome-review P11 cases"
+              ],
+              "command": "uv run pytest tests/test_agent_mailbox.py::test_codex_review_packet_does_not_hide_red_p11_when_claim_verification_is_green tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_accept_without_deliverable_changes tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_code_change_without_diff_receipt tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_accept_with_only_incidental_workflow_files tests/test_dual_agent_workflow_driver.py::test_execution_gate_blocks_docs_only_change_without_explicit_report_scope tests/test_dual_agent_workflow_driver.py::test_execution_gate_allows_explicit_report_only_artifact_with_receipt tests/test_dual_agent_workflow_driver.py::test_outcome_review_blocks_deliverable_failure_even_when_claims_verify tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_requires_test_receipts_for_claims tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_rejects_diff_receipt_without_changed_file_replay tests/test_dual_agent_workflow_driver.py::test_run_dual_agent_workflow_rejects_partial_changed_file_receipt -q",
+              "kind": "test",
+              "receipt_id": "pytest-focused-deliverable-evidence-current",
+              "status": "passed",
+              "summary": "10 passed in 9.15s"
+            },
+            {
+              "changed_files": [
+                "supervisor/dual_agent_workflow.py",
+                "supervisor/agent_mailbox.py",
+                "mcp_tools/codex_supervisor_stdio.py",
+                "tests/test_dual_agent_workflow_driver.py",
+                "tests/test_agent_mailbox.py"
+              ],
+              "claims": [
+                "tests passed",
+                "related workflow, P11, and mailbox tests passed"
+              ],
+              "command": "uv run pytest tests/test_dual_agent_workflow_driver.py tests/test_dual_agent_live_lead_fixture.py tests/test_agent_mailbox.py -q",
+              "kind": "test",
+              "receipt_id": "pytest-related-deliverable-evidence",
+              "status": "passed",
+              "summary": "143 passed in 115.16s"
+            },
+            {
+              "changed_files": [
+                "supervisor/dual_agent_workflow.py",
+                "supervisor/agent_mailbox.py",
+                "mcp_tools/codex_supervisor_stdio.py",
+                "tests/test_dual_agent_workflow_driver.py",
+                "tests/test_agent_mailbox.py"
+              ],
+              "claims": [
+                "tests passed",
+                "full suite passed"
+              ],
+              "command": "uv run pytest -q",
+              "kind": "test",
+              "receipt_id": "pytest-full-deliverable-evidence",
+              "status": "passed",
+              "summary": "743 passed, 8 skipped in 137.02s"
+            },
+            {
+              "changed_files": [
+                "supervisor/dual_agent_workflow.py",
+                "supervisor/agent_mailbox.py",
+                "mcp_tools/codex_supervisor_stdio.py",
+                "tests/test_dual_agent_workflow_driver.py",
+                "tests/test_agent_mailbox.py"
+              ],
+              "claims": [
+                "implemented",
+                "diff whitespace check passed",
+                "py_compile passed"
+              ],
+              "command": "git diff --check && uv run python -m py_compile supervisor/dual_agent_workflow.py supervisor/agent_mailbox.py mcp_tools/codex_supervisor_stdio.py tests/test_dual_agent_workflow_driver.py tests/test_agent_mailbox.py",
+              "kind": "git_diff",
+              "receipt_id": "pycompile-diffcheck-deliverable-evidence",
+              "status": "passed"
+            }
+          ]
+        },
+        "probe_id": "P11",
+        "reason": "deliverable_evidence_ok",
+        "status": "green"
+      },
+      "P2": {
+        "details": {
+          "captured_bytes": 9147,
+          "captured_token_estimate": 2278,
+          "orchestration_surface": "/lead"
+        },
+        "probe_id": "P2",
+        "reason": "worker_orchestration_invocation_ok",
+        "status": "green"
+      },
+      "P3": {
+        "details": {},
+        "probe_id": "P3",
+        "reason": "outcome_fidelity_ok",
+        "status": "green"
+      },
+      "P4": {
+        "details": {
+          "decisions": [
+            "accept",
+            "accept",
+            "accept"
+          ]
+        },
+        "probe_id": "P4",
+        "reason": "outcome_gate_decision_ok",
+        "status": "green"
+      },
+      "P_planning": {
+        "details": {
+          "artifact_hashes": {
+            "grill_findings": "90e481ba070f006af3f8da5ea69c0f537c8e2a2923244f5158dc2906076f5d33",
+            "implementation_plan": "7fea535466f48741a8a52d1fc8276f5bc992f1bc92a200bd24ce7050ee524bcf",
+            "issues": "8efeed775df5556e5d4cc0405893d3a632ca7bd45fc8abd8160e7fa24dfa43d7",
+            "prd": "d197fff25c89b6a3e932297ce32248d410d549b1a5470d1e49c043d1c811fbec",
+            "tdd_plan": "7549f817c635549f4c499874d280405416bbb75f9ded1f5c9daa9f759185c59e"
+          },
+          "artifacts": [
+            {
+              "kind": "prd",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/execution-gate-deliverable-evidence-20260606/source/prd.md",
+              "sha256": "d197fff25c89b6a3e932297ce32248d410d549b1a5470d1e49c043d1c811fbec",
+              "status": "accepted"
+            },
+            {
+              "kind": "issues",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/execution-gate-deliverable-evidence-20260606/source/issues.md",
+              "sha256": "8efeed775df5556e5d4cc0405893d3a632ca7bd45fc8abd8160e7fa24dfa43d7",
+              "status": "accepted"
+            },
+            {
+              "kind": "tdd_plan",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/execution-gate-deliverable-evidence-20260606/source/tdd.md",
+              "sha256": "7549f817c635549f4c499874d280405416bbb75f9ded1f5c9daa9f759185c59e",
+              "status": "accepted"
+            },
+            {
+              "kind": "grill_findings",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/execution-gate-deliverable-evidence-20260606/source/grill-findings.md",
+              "sha256": "90e481ba070f006af3f8da5ea69c0f537c8e2a2923244f5158dc2906076f5d33",
+              "status": "accepted"
+            },
+            {
+              "kind": "implementation_plan",
+              "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/execution-gate-deliverable-evidence-20260606/source/implementation-plan.md",
+              "sha256": "7fea535466f48741a8a52d1fc8276f5bc992f1bc92a200bd24ce7050ee524bcf",
+              "status": "accepted"
+            }
+          ],
+          "checks": {
+            "AGG-001": "pass",
+            "AGG-002": "pass",
+            "GRILL-001": "pass",
+            "GRILL-002": "pass",
+            "GRILL-003": "pass",
+            "ISS-001": "pass",
+            "ISS-002": "pass",
+            "ISS-003": "pass",
+            "ISS-004": "pass",
+            "PLAN-001": "pass",
+            "PLAN-002": "pass",
+            "PLAN-003": "pass",
+            "PLAN-004": "pass",
+            "PRD-001": "pass",
+            "PRD-002": "pass",
+            "PRD-003": "pass",
+            "PRD-004": "pass",
+            "PRD-005": "pass",
+            "PRD-006": "pass",
+            "TDD-001": "pass",
+            "TDD-002": "pass",
+            "TDD-003": "pass",
+            "TDD-004": "pass"
+          },
+          "gate": "outcome_review",
+          "task_id": "execution-gate-deliverable-evidence-20260606",
+          "validator_version": "1.0.0",
+          "verdict": "accepted"
+        },
+        "probe_id": "P_planning",
+        "reason": "planning_validation_ok",
+        "status": "green"
+      }
+    },
+    "status": "accepted",
+    "supervisor_final_status": "accepted",
+    "task_id": "execution-gate-deliverable-evidence-20260606",
+    "tool_calls": [
+      {
+        "args": {
+          "agentic_lead_policy": "off",
+          "artifact_policy": "strict",
+          "dynamic_workflow_task_class": null,
+          "execution_layer_mode": "lead_direct",
+          "gate": "outcome_review",
+          "min_subagents": 3,
+          "planning_artifact_count": 6,
+          "required_evidence_grade": "self_reported",
+          "required_roles": [],
+          "screenshot_count": 0,
+          "task_id": "execution-gate-deliverable-evidence-20260606",
+          "user_facing": false
+        },
+        "attempts": 1,
+        "duration_ms": 154968,
+        "duration_us": 154968172,
+        "ended_at_ms": 1780776423653,
+        "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/execution-gate-deliverable-evidence-20260606.json",
+        "name": "start_dual_agent_gate",
+        "probe_id": null,
+        "result_summary": {
+          "claude_gate_status": "accepted",
+          "probe_statuses": {
+            "P1": "green",
+            "P2": "green",
+            "P3": "green",
+            "P4": "green",
+            "P_planning": "green"
+          },
+          "supervisor_final_status": "accepted"
+        },
+        "started_at_ms": 1780776268685,
+        "status": "completed",
+        "tool_call_id": "start_dual_agent_gate#1780776268685#154968172"
+      },
+      {
+        "args": {
+          "gate": "outcome_review",
+          "task_id": "execution-gate-deliverable-evidence-20260606"
+        },
+        "attempts": 1,
+        "cost_usd": 4.603839,
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780776423655,
+        "model": "opus",
+        "name": "invoke_claude_lead",
+        "parent_tool_call_id": "start_dual_agent_gate#1780776268685#154968172",
+        "probe_id": null,
+        "result_summary": {
+          "outcome_present": true,
+          "probe_reason": "outcome_fidelity_ok",
+          "probe_status": "green",
+          "tokens_in": 1756837,
+          "tokens_out": 11486
+        },
+        "started_at_ms": 1780776423655,
+        "status": "completed",
+        "stderr_bytes": 0,
+        "stdout_bytes": 9147,
+        "token_usage": {
+          "cache_creation_input_tokens": 61124,
+          "cache_read_input_tokens": 1691806,
+          "context_window": 200000,
+          "input_tokens": 3907,
+          "max_output_tokens": 32000,
+          "output_tokens": 11486,
+          "tokens_in": 1756837,
+          "tokens_out": 11486
+        },
+        "tokens_in": 1756837,
+        "tokens_out": 11486,
+        "tool_call_id": "invoke_claude_lead#1780776423655#0"
+      },
+      {
+        "args": {
+          "probe_id": "P2"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780776423655,
+        "name": "probe:P2",
+        "parent_tool_call_id": "invoke_claude_lead#1780776423655#0",
+        "probe_id": "P2",
+        "reason": "worker_orchestration_invocation_ok",
+        "result_summary": {
+          "probe_id": "P2",
+          "reason": "worker_orchestration_invocation_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780776423655,
+        "status": "green",
+        "tool_call_id": "probe_p2#1780776423655#0#p2"
+      },
+      {
+        "args": {
+          "probe_id": "P3"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780776423655,
+        "name": "probe:P3",
+        "parent_tool_call_id": "invoke_claude_lead#1780776423655#0",
+        "probe_id": "P3",
+        "reason": "outcome_fidelity_ok",
+        "result_summary": {
+          "probe_id": "P3",
+          "reason": "outcome_fidelity_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780776423655,
+        "status": "green",
+        "tool_call_id": "probe_p3#1780776423655#0#p3"
+      },
+      {
+        "args": {
+          "probe_id": "P1"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780776423655,
+        "name": "probe:P1",
+        "parent_tool_call_id": "invoke_claude_lead#1780776423655#0",
+        "probe_id": "P1",
+        "reason": "planning_artifact_boundaries_ok",
+        "result_summary": {
+          "probe_id": "P1",
+          "reason": "planning_artifact_boundaries_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780776423655,
+        "status": "green",
+        "tool_call_id": "probe_p1#1780776423655#0#p1"
+      },
+      {
+        "args": {
+          "probe_id": "P4"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780776423655,
+        "name": "probe:P4",
+        "parent_tool_call_id": "invoke_claude_lead#1780776423655#0",
+        "probe_id": "P4",
+        "reason": "outcome_gate_decision_ok",
+        "result_summary": {
+          "probe_id": "P4",
+          "reason": "outcome_gate_decision_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780776423655,
+        "status": "green",
+        "tool_call_id": "probe_p4#1780776423655#0#p4"
+      },
+      {
+        "args": {
+          "probe_id": "P_planning"
+        },
+        "duration_ms": 0,
+        "duration_us": 0,
+        "ended_at_ms": 1780776423655,
+        "name": "probe:P_planning",
+        "parent_tool_call_id": "invoke_claude_lead#1780776423655#0",
+        "probe_id": "P_planning",
+        "reason": "planning_validation_ok",
+        "result_summary": {
+          "probe_id": "P_planning",
+          "reason": "planning_validation_ok",
+          "status": "green"
+        },
+        "started_at_ms": 1780776423655,
+        "status": "green",
+        "tool_call_id": "probe_p_planning#1780776423655#0#p_planning"
+      }
+    ],
+    "trace_envelope": {
+      "artifacts": [],
+      "claims": [
+        "Deliverable-evidence gate is deterministic and source-backed",
+        "Report-only allowance present and tested",
+        "outcome_review blocks deliverable failure even when claims verify",
+        "Probe gates reviewers (skip on red), cannot be overridden green"
+      ],
+      "event_kind": "dual_agent_gate_result",
+      "failure_taxonomy": null,
+      "gate": "outcome_review",
+      "policy_verdict": "accepted",
+      "receipts": [],
+      "run_id": "444f8987-dd5c-452a-8f1a-3f07032212b5-cli",
+      "schema_version": "dual-agent-trace-envelope/v1",
+      "source": "dual_agent",
+      "task_id": "execution-gate-deliverable-evidence-20260606",
+      "tool_calls": [
+        {
+          "args": {
+            "agentic_lead_policy": "off",
+            "artifact_policy": "strict",
+            "dynamic_workflow_task_class": null,
+            "execution_layer_mode": "lead_direct",
+            "gate": "outcome_review",
+            "min_subagents": 3,
+            "planning_artifact_count": 6,
+            "required_evidence_grade": "self_reported",
+            "required_roles": [],
+            "screenshot_count": 0,
+            "task_id": "execution-gate-deliverable-evidence-20260606",
+            "user_facing": false
+          },
+          "attempts": 1,
+          "duration_ms": 154968,
+          "duration_us": 154968172,
+          "ended_at_ms": 1780776423653,
+          "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/execution-gate-deliverable-evidence-20260606.json",
+          "name": "start_dual_agent_gate",
+          "probe_id": null,
+          "result_summary": {
+            "claude_gate_status": "accepted",
+            "probe_statuses": {
+              "P1": "green",
+              "P2": "green",
+              "P3": "green",
+              "P4": "green",
+              "P_planning": "green"
+            },
+            "supervisor_final_status": "accepted"
+          },
+          "started_at_ms": 1780776268685,
+          "status": "completed",
+          "tool_call_id": "start_dual_agent_gate#1780776268685#154968172"
+        },
+        {
+          "args": {
+            "gate": "outcome_review",
+            "task_id": "execution-gate-deliverable-evidence-20260606"
+          },
+          "attempts": 1,
+          "cost_usd": 4.603839,
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780776423655,
+          "model": "opus",
+          "name": "invoke_claude_lead",
+          "parent_tool_call_id": "start_dual_agent_gate#1780776268685#154968172",
+          "probe_id": null,
+          "result_summary": {
+            "outcome_present": true,
+            "probe_reason": "outcome_fidelity_ok",
+            "probe_status": "green",
+            "tokens_in": 1756837,
+            "tokens_out": 11486
+          },
+          "started_at_ms": 1780776423655,
+          "status": "completed",
+          "stderr_bytes": 0,
+          "stdout_bytes": 9147,
+          "token_usage": {
+            "cache_creation_input_tokens": 61124,
+            "cache_read_input_tokens": 1691806,
+            "context_window": 200000,
+            "input_tokens": 3907,
+            "max_output_tokens": 32000,
+            "output_tokens": 11486,
+            "tokens_in": 1756837,
+            "tokens_out": 11486
+          },
+          "tokens_in": 1756837,
+          "tokens_out": 11486,
+          "tool_call_id": "invoke_claude_lead#1780776423655#0"
+        },
+        {
+          "args": {
+            "probe_id": "P2"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780776423655,
+          "name": "probe:P2",
+          "parent_tool_call_id": "invoke_claude_lead#1780776423655#0",
+          "probe_id": "P2",
+          "reason": "worker_orchestration_invocation_ok",
+          "result_summary": {
+            "probe_id": "P2",
+            "reason": "worker_orchestration_invocation_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780776423655,
+          "status": "green",
+          "tool_call_id": "probe_p2#1780776423655#0#p2"
+        },
+        {
+          "args": {
+            "probe_id": "P3"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780776423655,
+          "name": "probe:P3",
+          "parent_tool_call_id": "invoke_claude_lead#1780776423655#0",
+          "probe_id": "P3",
+          "reason": "outcome_fidelity_ok",
+          "result_summary": {
+            "probe_id": "P3",
+            "reason": "outcome_fidelity_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780776423655,
+          "status": "green",
+          "tool_call_id": "probe_p3#1780776423655#0#p3"
+        },
+        {
+          "args": {
+            "probe_id": "P1"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780776423655,
+          "name": "probe:P1",
+          "parent_tool_call_id": "invoke_claude_lead#1780776423655#0",
+          "probe_id": "P1",
+          "reason": "planning_artifact_boundaries_ok",
+          "result_summary": {
+            "probe_id": "P1",
+            "reason": "planning_artifact_boundaries_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780776423655,
+          "status": "green",
+          "tool_call_id": "probe_p1#1780776423655#0#p1"
+        },
+        {
+          "args": {
+            "probe_id": "P4"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780776423655,
+          "name": "probe:P4",
+          "parent_tool_call_id": "invoke_claude_lead#1780776423655#0",
+          "probe_id": "P4",
+          "reason": "outcome_gate_decision_ok",
+          "result_summary": {
+            "probe_id": "P4",
+            "reason": "outcome_gate_decision_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780776423655,
+          "status": "green",
+          "tool_call_id": "probe_p4#1780776423655#0#p4"
+        },
+        {
+          "args": {
+            "probe_id": "P_planning"
+          },
+          "duration_ms": 0,
+          "duration_us": 0,
+          "ended_at_ms": 1780776423655,
+          "name": "probe:P_planning",
+          "parent_tool_call_id": "invoke_claude_lead#1780776423655#0",
+          "probe_id": "P_planning",
+          "reason": "planning_validation_ok",
+          "result_summary": {
+            "probe_id": "P_planning",
+            "reason": "planning_validation_ok",
+            "status": "green"
+          },
+          "started_at_ms": 1780776423655,
+          "status": "green",
+          "tool_call_id": "probe_p_planning#1780776423655#0#p_planning"
+        }
+      ]
+    }
+  },
+  "mandatory_artifacts": {
+    "missing": [],
+    "output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/execution-gate-deliverable-evidence-20260606",
+    "required": [
+      "source/prd.md",
+      "source/grill-findings.md",
+      "source/issues.md",
+      "source/tdd.md",
+      "source/grill-findings-tdd.md",
+      "source/implementation-plan.md",
+      "interactions.md",
+      "outcome-review.md",
+      "transcript.md"
+    ],
+    "status": "ok"
+  },
+  "resume": {
+    "artifact_output_dir": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/execution-gate-deliverable-evidence-20260606",
+    "blocker": null,
+    "current_gate": "outcome_review",
+    "last_status": "accepted",
+    "latest_event_id": 559190,
+    "next_safe_action": "read_gate_transcript and inspect exported artifacts",
+    "prompt": "Use codex_supervisor.\nContinue run_id=444f8987-dd5c-452a-8f1a-3f07032212b5-cli\ntask_id=execution-gate-deliverable-evidence-20260606\ncurrent_gate=outcome_review\nlast_status=accepted\nlatest_event_id=559190\nnext_safe_action=read_gate_transcript and inspect exported artifacts\nartifact_output_dir=/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/execution-gate-deliverable-evidence-20260606\nfirst inspect: read_gate_transcript(run_id=444f8987-dd5c-452a-8f1a-3f07032212b5-cli, task_id=execution-gate-deliverable-evidence-20260606)",
+    "run_id": "444f8987-dd5c-452a-8f1a-3f07032212b5-cli",
+    "status": "ok",
+    "steps": [
+      {
+        "attempt_count": 1,
+        "gate": "prd_review",
+        "latest_event_id": 557452,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "issues_review",
+        "latest_event_id": 557579,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "tdd_review",
+        "latest_event_id": 557938,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "implementation_plan",
+        "latest_event_id": 558512,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "execution",
+        "latest_event_id": 558560,
+        "status": "accepted"
+      },
+      {
+        "attempt_count": 1,
+        "gate": "outcome_review",
+        "latest_event_id": 559187,
+        "status": "accepted"
+      }
+    ],
+    "task_id": "execution-gate-deliverable-evidence-20260606",
+    "transcript_command": "read_gate_transcript(run_id=444f8987-dd5c-452a-8f1a-3f07032212b5-cli, task_id=execution-gate-deliverable-evidence-20260606)"
+  },
+  "run_id": "444f8987-dd5c-452a-8f1a-3f07032212b5-cli",
+  "status": "accepted",
+  "steps": [
+    {
+      "attempt_count": 1,
+      "gate": "prd_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "issues_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "tdd_review",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "implementation_plan",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "execution",
+      "status": "accepted"
+    },
+    {
+      "attempt_count": 1,
+      "gate": "outcome_review",
+      "status": "accepted"
+    }
+  ],
+  "task_id": "execution-gate-deliverable-evidence-20260606",
+  "visual_evidence_policy": {
+    "artifact_matches": [],
+    "matched_terms": [],
+    "required": false,
+    "source": "not_user_facing"
+  },
+  "workflow_route": {
+    "agentic_lead_policy": {
+      "min_subagents": 3,
+      "policy": "off",
+      "required_evidence_grade": "self_reported",
+      "required_roles": [],
+      "solo_exception_for_artifact_only_gates": false
+    },
+    "cursor_review_gates": [
+      "tdd_review",
+      "implementation_plan",
+      "outcome_review"
+    ],
+    "cursor_review_profile": "rigorous",
+    "dynamic_workflow_task_class": null,
+    "effective_cursor_review": true,
+    "execution_layer_mode": "lead_direct",
+    "force_cursor_review": false,
+    "gate_count": 6,
+    "gates": [
+      "prd_review",
+      "issues_review",
+      "tdd_review",
+      "implementation_plan",
+      "execution",
+      "outcome_review"
+    ],
+    "planning_depth": "large",
+    "reasons": [
+      "default_large"
+    ],
+    "requested_cursor_review": true,
+    "required_skill_stages": [
+      "to_prd",
+      "prd_grill",
+      "to_issues",
+      "tdd",
+      "tdd_grill"
+    ],
+    "requires_agentic_lead_policy_receipts": false,
+    "requires_brainstorm": false,
+    "requires_dynamic_workflow_receipts": false,
+    "requires_skill_receipts": true,
+    "resume": {
+      "mode": "fresh",
+      "pending_gates": [
+        "prd_review",
+        "issues_review",
+        "tdd_review",
+        "implementation_plan",
+        "execution",
+        "outcome_review"
+      ],
+      "schema_version": "dual-agent-workflow-resume/v1",
+      "skipped_gates": [],
+      "skipped_steps": []
+    },
+    "reviewer_infra_retry_backoff_s": 1.0,
+    "reviewer_infra_retry_limit": 2,
+    "reviewer_low_confidence_threshold": 0.0,
+    "reviewer_max_tokens": 4096,
+    "reviewer_model": "composer-2.5",
+    "reviewer_output_mode": "cursor_sdk",
+    "reviewer_panel_calibration_active": false,
+    "reviewer_panel_calibration_path": null,
+    "reviewer_unavailable_policy": "escalate",
+    "schema_version": "dual-agent-workflow-route/v1",
+    "task_complexity": "large"
+  }
+}

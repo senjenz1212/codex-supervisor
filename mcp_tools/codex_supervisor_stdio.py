@@ -60,6 +60,7 @@ from supervisor.dual_agent_workflow import (
     required_artifacts_for_complexity,
     required_planning_kinds_for_complexity,
     select_workflow_route,
+    verify_gate_deliverable_evidence,
     verify_prd_tdd_skill_receipts,
     verify_workflow_claims,
     workflow_visual_evidence_policy,
@@ -1108,6 +1109,7 @@ class CodexSupervisorMcpAPI:
                 )
                 final_payload = payload
                 claim_probe = None
+                deliverable_probe = None
                 cursor_result: CursorInvocationResult | None = None
                 cursor_payload: dict[str, Any] | None = None
                 cursor_tool_calls: list[dict[str, Any]] = []
@@ -1123,7 +1125,22 @@ class CodexSupervisorMcpAPI:
                         tool_receipts=receipt_payloads,
                     )
                     payload["claim_verification"] = asdict(claim_probe)
-                if cursor_reviews_this_gate and payload.get("status") == "accepted":
+                if payload.get("status") == "accepted" and gate in {"execution", "outcome_review"}:
+                    deliverable_probe = verify_gate_deliverable_evidence(
+                        gate=str(gate),
+                        task_id=task_id,
+                        intent=intent,
+                        outcome_payload=payload.get("outcome")
+                        if isinstance(payload.get("outcome"), dict)
+                        else None,
+                        tool_receipts=receipt_payloads,
+                    )
+                    payload.setdefault("probes", {})["P11"] = asdict(deliverable_probe)
+                if (
+                    cursor_reviews_this_gate
+                    and payload.get("status") == "accepted"
+                    and (deliverable_probe is None or deliverable_probe.ok)
+                ):
                     cursor_evidence_refs = _receipt_evidence_refs(receipt_payloads, screenshot_payloads)
                     cursor_would_change_if = (
                         "Cursor finds an unresolved blocker, missing receipt, "
@@ -1469,6 +1486,7 @@ class CodexSupervisorMcpAPI:
                     else "accept"
                     if (
                         payload.get("status") == "accepted"
+                        and (deliverable_probe is None or deliverable_probe.ok)
                         and (claim_probe is None or claim_probe.ok)
                         and cursor_decision == "accept"
                     )
@@ -1856,6 +1874,8 @@ class CodexSupervisorMcpAPI:
                     attempts=attempts,
                     reason="claim_verification_failed"
                     if claim_probe is not None and not claim_probe.ok
+                    else "deliverable_evidence_failed"
+                    if deliverable_probe is not None and not deliverable_probe.ok
                     else "agents_not_converged",
                     source_payload=payload,
                     claim_probe=asdict(claim_probe) if claim_probe is not None else None,

@@ -111,16 +111,29 @@ def _cfg(tmp_path: Path) -> Config:
     })
 
 
-def _outcome_block(task_id: str, *, decision: str = "accept", claims: list[str] | None = None) -> str:
+def _outcome_block(
+    task_id: str,
+    *,
+    decision: str = "accept",
+    claims: list[str] | None = None,
+    changed_files: list[str] | None = None,
+    tests: list[str] | None = None,
+    test_status: str = "passed",
+) -> str:
     payload = {
         "task_id": task_id,
         "summary": "Workflow response complete.",
         "specialists": [{"name": "Planner", "decision": decision}],
         "decisions": [decision],
         "objections": [] if decision == "accept" else ["Needs another revision."],
-        "changed_files": ["supervisor/dual_agent_workflow.py", "tests/test_dual_agent_workflow_driver.py"],
-        "tests": ["uv run pytest tests/test_dual_agent_workflow_driver.py"],
-        "test_status": "passed",
+        "changed_files": changed_files
+        if changed_files is not None else [
+            "supervisor/dual_agent_workflow.py",
+            "tests/test_dual_agent_workflow_driver.py",
+        ],
+        "tests": tests
+        if tests is not None else ["uv run pytest tests/test_dual_agent_workflow_driver.py"],
+        "test_status": test_status,
         "confidence": 0.94,
         "claims": claims or ["tests passed", "implemented"],
     }
@@ -368,6 +381,10 @@ def _server(
     *,
     decision: str = "accept",
     claims: list[str] | None = None,
+    changed_files: list[str] | None = None,
+    tests: list[str] | None = None,
+    test_status: str = "passed",
+    gate_outcomes: dict[str, dict] | None = None,
     notifier=None,
     cursor_runner=None,
     codex_runner=None,
@@ -379,11 +396,20 @@ def _server(
     state = State(str(tmp_path / "state.db"))
 
     def fake_runner(argv, **kwargs):
+        gate = _gate_from_argv(argv)
+        overrides = dict(gate_outcomes.get(gate, {})) if gate_outcomes else {}
         return subprocess.CompletedProcess(
             argv,
             0,
             stdout=build_lead_replay_stdout(
-                "Workflow response.\n" + _outcome_block("workflow-1", decision=decision, claims=claims),
+                "Workflow response.\n" + _outcome_block(
+                    "workflow-1",
+                    decision=overrides.pop("decision", decision),
+                    claims=overrides.pop("claims", claims),
+                    changed_files=overrides.pop("changed_files", changed_files),
+                    tests=overrides.pop("tests", tests),
+                    test_status=overrides.pop("test_status", test_status),
+                ),
             ),
             stderr="",
         )
@@ -398,6 +424,12 @@ def _server(
         notifier=notifier,
     )
     return server, state
+
+
+def _gate_from_argv(argv) -> str:
+    text = " ".join(str(item) for item in argv)
+    match = re.search(r"Gate mode:\s*([A-Za-z_]+)", text)
+    return match.group(1) if match else ""
 
 
 def _write_good_workflow_source_artifacts(tmp_path: Path, task_id: str = "workflow-1") -> None:
@@ -610,6 +642,212 @@ def test_cursor_review_gate_profiles_are_policy_not_prompt():
         cursor_review=True,
         cursor_review_gates=["issues_review", "outcome_review", "not_a_gate"],
     ) == ("issues_review", "outcome_review")
+
+
+@pytest.mark.asyncio
+async def test_execution_gate_blocks_accept_without_deliverable_changes(tmp_path):
+    server, _state = _server(
+        tmp_path,
+        claims=["reviewed current artifacts"],
+        changed_files=[],
+        tests=[],
+        test_status="unknown",
+    )
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Implement the accepted code change.",
+        max_rounds_per_gate=1,
+        task_complexity="trivial",
+        cursor_review=False,
+        tool_receipts=[],
+    ))
+
+    assert result["status"] == "blocked"
+    assert result["current_gate"] == "execution"
+    p11 = result["final_gate_result"]["probes"]["P11"]
+    assert p11["status"] == "red"
+    assert p11["reason"] == "deliverable_evidence_failed"
+    assert "accepted_gate_without_changed_files" in p11["details"]["failures"]
+
+
+@pytest.mark.asyncio
+async def test_execution_gate_blocks_code_change_without_diff_receipt(tmp_path):
+    server, _state = _server(
+        tmp_path,
+        claims=["implemented"],
+        changed_files=["supervisor/dual_agent_workflow.py"],
+        tests=[],
+        test_status="unknown",
+    )
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Implement the accepted code change.",
+        max_rounds_per_gate=1,
+        task_complexity="trivial",
+        cursor_review=False,
+        tool_receipts=[],
+    ))
+
+    assert result["status"] == "blocked"
+    assert result["current_gate"] == "execution"
+    p11 = result["final_gate_result"]["probes"]["P11"]
+    assert p11["status"] == "red"
+    assert p11["reason"] == "deliverable_evidence_failed"
+    assert "accepted_gate_without_deliverable_receipt" in p11["details"]["failures"]
+
+
+@pytest.mark.asyncio
+async def test_execution_gate_blocks_accept_with_only_incidental_workflow_files(tmp_path):
+    server, _state = _server(
+        tmp_path,
+        claims=["updated workflow artifacts"],
+        changed_files=[
+            "docs/dual-agent/workflow-1/source/prd.md",
+            "docs/dual-agent/workflow-1/transcript.jsonl",
+            ".handoff/workflow-1.json",
+        ],
+        tests=[],
+        test_status="unknown",
+    )
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Implement the accepted code change.",
+        max_rounds_per_gate=1,
+        task_complexity="trivial",
+        cursor_review=False,
+        tool_receipts=[],
+    ))
+
+    assert result["status"] == "blocked"
+    assert result["current_gate"] == "execution"
+    p11 = result["final_gate_result"]["probes"]["P11"]
+    assert p11["status"] == "red"
+    assert p11["reason"] == "deliverable_evidence_failed"
+    assert p11["details"]["deliverable_files"] == []
+    assert "accepted_gate_only_incidental_files" in p11["details"]["failures"]
+
+
+@pytest.mark.asyncio
+async def test_execution_gate_blocks_docs_only_change_without_explicit_report_scope(tmp_path):
+    docs_path = "docs/operator-notes.md"
+    server, _state = _server(
+        tmp_path,
+        claims=["updated documentation"],
+        changed_files=[docs_path],
+        tests=[],
+        test_status="unknown",
+    )
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Implement the accepted code change.",
+        max_rounds_per_gate=1,
+        task_complexity="trivial",
+        cursor_review=False,
+        tool_receipts=[{
+            "receipt_id": "docs-diff",
+            "kind": "git_diff",
+            "status": "present",
+            "changed_files": [docs_path],
+            "claims": ["updated documentation"],
+        }],
+    ))
+
+    assert result["status"] == "blocked"
+    assert result["current_gate"] == "execution"
+    p11 = result["final_gate_result"]["probes"]["P11"]
+    assert p11["status"] == "red"
+    assert p11["reason"] == "deliverable_evidence_failed"
+    assert p11["details"]["doc_report_files"] == [docs_path]
+    assert "docs_report_deliverable_without_explicit_scope" in p11["details"]["failures"]
+
+
+@pytest.mark.asyncio
+async def test_execution_gate_allows_explicit_report_only_artifact_with_receipt(tmp_path):
+    report_path = "docs/dual-agent/workflow-1/pilot/report.json"
+    server, _state = _server(
+        tmp_path,
+        claims=["report-only artifact updated"],
+        changed_files=[report_path],
+        tests=[],
+        test_status="not_run",
+    )
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Produce a report-only benchmark artifact.",
+        max_rounds_per_gate=1,
+        task_complexity="trivial",
+        cursor_review=False,
+        tool_receipts=[{
+            "receipt_id": "report-export",
+            "kind": "artifact_export",
+            "status": "passed",
+            "changed_files": [report_path],
+            "claims": ["report-only deliverable"],
+        }],
+    ))
+
+    assert result["status"] == "accepted"
+    assert result["final_gate_result"]["gate"] == "outcome_review"
+    assert result["final_gate_result"]["probes"]["P11"]["status"] == "green"
+
+
+@pytest.mark.asyncio
+async def test_outcome_review_blocks_deliverable_failure_even_when_claims_verify(tmp_path):
+    source_file = "supervisor/dual_agent_workflow.py"
+    server, _state = _server(
+        tmp_path,
+        claims=["reviewed evidence"],
+        changed_files=[source_file],
+        gate_outcomes={
+            "outcome_review": {
+                "claims": ["reviewed evidence"],
+                "changed_files": [],
+                "tests": [],
+                "test_status": "passed",
+            },
+        },
+    )
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Implement the accepted code change.",
+        max_rounds_per_gate=1,
+        task_complexity="trivial",
+        cursor_review=False,
+        tool_receipts=[{
+            "receipt_id": "diff",
+            "kind": "git_diff",
+            "status": "present",
+            "changed_files": [source_file],
+            "claims": ["implemented"],
+        }],
+    ))
+
+    assert result["status"] == "blocked"
+    assert result["current_gate"] == "outcome_review"
+    assert result["final_gate_result"]["claim_verification"]["status"] == "green"
+    p11 = result["final_gate_result"]["probes"]["P11"]
+    assert p11["status"] == "red"
+    assert p11["reason"] == "deliverable_evidence_failed"
+    assert "accepted_gate_without_changed_files" in p11["details"]["failures"]
+    assert result["final_gate_result"]["codex_decision"] == "revise"
 
 
 def test_workflow_cli_loads_codex_mcp_env_without_overriding_existing(tmp_path, monkeypatch):
@@ -6012,7 +6250,7 @@ async def test_run_dual_agent_workflow_verifies_final_claims(tmp_path):
         intent="Claim remote push without evidence.",
         max_rounds_per_gate=1,
         verified_claims=["pushed"],
-        tool_receipts=_skill_receipts(),
+        tool_receipts=_tool_receipts(),
     ))
 
     assert result["status"] == "blocked"
@@ -6024,8 +6262,12 @@ async def test_run_dual_agent_workflow_verifies_final_claims(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_run_dual_agent_workflow_requires_test_and_diff_receipts_for_claims(tmp_path):
+async def test_run_dual_agent_workflow_requires_test_receipts_for_claims(tmp_path):
     server, _state = _server(tmp_path, claims=["tests passed", "implemented"])
+    receipts = [
+        receipt for receipt in _tool_receipts()
+        if receipt.get("receipt_id") != "pytest-focused"
+    ]
 
     result = await _maybe_await(server.tools["run_dual_agent_workflow"](
         cwd=str(tmp_path),
@@ -6033,13 +6275,13 @@ async def test_run_dual_agent_workflow_requires_test_and_diff_receipts_for_claim
         run_id="workflow-run",
         intent="Claim tests and implementation without receipts.",
         max_rounds_per_gate=1,
-        tool_receipts=_skill_receipts(),
+        tool_receipts=receipts,
     ))
 
     assert result["status"] == "blocked"
+    assert result["current_gate"] == "outcome_review"
     failures = result["final_gate_result"]["claim_verification"]["details"]["failures"]
     assert "tests_passed_without_test_receipt" in failures
-    assert "implemented_without_diff_receipt" in failures
 
 
 @pytest.mark.asyncio
@@ -6082,8 +6324,10 @@ async def test_run_dual_agent_workflow_rejects_diff_receipt_without_changed_file
     ))
 
     assert result["status"] == "blocked"
-    failures = result["final_gate_result"]["claim_verification"]["details"]["failures"]
-    assert "implemented_without_diff_receipt" in failures
+    assert result["current_gate"] == "execution"
+    p11 = result["final_gate_result"]["probes"]["P11"]
+    assert p11["reason"] == "deliverable_evidence_failed"
+    assert "accepted_gate_without_deliverable_receipt" in p11["details"]["failures"]
 
 
 @pytest.mark.asyncio
@@ -6104,8 +6348,10 @@ async def test_run_dual_agent_workflow_rejects_partial_changed_file_receipt(tmp_
     ))
 
     assert result["status"] == "blocked"
-    failures = result["final_gate_result"]["claim_verification"]["details"]["failures"]
-    assert "implemented_without_diff_receipt" in failures
+    assert result["current_gate"] == "execution"
+    p11 = result["final_gate_result"]["probes"]["P11"]
+    assert p11["reason"] == "deliverable_evidence_failed"
+    assert "accepted_gate_without_deliverable_receipt" in p11["details"]["failures"]
 
 
 @pytest.mark.asyncio

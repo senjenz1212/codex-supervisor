@@ -119,6 +119,33 @@ def test_codex_confidence_report_and_review_packet_explain_decision():
     assert packet["critical_review"]["decision"] == "deny"
 
 
+def test_codex_review_packet_does_not_hide_red_p11_when_claim_verification_is_green():
+    report = codex_confidence_report(
+        decision="accept",
+        gate_status="accepted",
+        probe_statuses={"P11": "red"},
+        claim_verification={"status": "green", "reason": "workflow_claims_verified"},
+        cursor_review=None,
+    )
+
+    packet = codex_review_packet(
+        task_id="trace-task",
+        gate="outcome_review",
+        decision="accept",
+        confidence=report,
+        probe_statuses={"P11": "red"},
+        claim_verification={"status": "green", "reason": "workflow_claims_verified"},
+        cursor_review=None,
+        objection="both agents accepted",
+        evidence_refs=(),
+    )
+
+    assert packet["round_policy"]["force_next_round"] is True
+    assert packet["round_policy"]["blocking_findings"] == ["finding-001"]
+    assert packet["findings"][0]["code"] == "P11"
+    assert packet["findings"][0]["title"] == "probe P11 failed"
+
+
 def test_codex_review_packet_links_claim_failures_to_receipt_replay():
     report = codex_confidence_report(
         decision="deny",

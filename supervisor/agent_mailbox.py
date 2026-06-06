@@ -258,7 +258,11 @@ def codex_review_packet(
             "status": "pass" if status == "green" else "fail",
             "evidence": evidence,
         })
-        if status != "green" and not (probe_id == "P11" and claim_verification is not None):
+        claim_verification_failed = (
+            claim_verification is not None
+            and claim_verification.get("status") != "green"
+        )
+        if status != "green" and not (probe_id == "P11" and claim_verification_failed):
             add_finding(
                 severity="CRITICAL" if probe_id in {"P3", "P11", "P12"} else "IMPORTANT",
                 code=probe_id,

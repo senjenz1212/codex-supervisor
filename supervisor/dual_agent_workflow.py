@@ -411,6 +411,80 @@ def verify_workflow_claims(
     return ProbeResult("P11", "green", "workflow_claims_verified", details)
 
 
+def verify_gate_deliverable_evidence(
+    *,
+    gate: str,
+    task_id: str,
+    intent: str,
+    outcome_payload: dict[str, Any] | None,
+    tool_receipts: list[dict[str, Any]] | None = None,
+) -> ProbeResult:
+    if gate not in {"execution", "outcome_review"}:
+        return ProbeResult("P11", "green", "deliverable_evidence_not_required", {"gate": gate})
+    if not isinstance(outcome_payload, dict):
+        return ProbeResult("P11", "red", "deliverable_evidence_failed", {
+            "failures": ["missing_outcome_for_deliverable_verification"],
+        })
+
+    outcome = Outcome(**outcome_payload)
+    receipts = _normalise_tool_receipts(tool_receipts or [], screenshots=[])
+    changed_files = [str(path).strip() for path in outcome.changed_files if str(path).strip()]
+    deliverable_files = [
+        path for path in changed_files
+        if _is_deliverable_changed_file(path, task_id=task_id)
+    ]
+    doc_report_files = [
+        path for path in deliverable_files
+        if _is_docs_or_report_path(path)
+    ]
+    code_or_test_files = [
+        path for path in deliverable_files
+        if path not in doc_report_files
+    ]
+    explicit_docs_report = _explicit_docs_report_task(
+        intent=intent,
+        outcome=outcome,
+        receipts=receipts,
+    )
+
+    failures: list[str] = []
+    if not changed_files:
+        failures.append("accepted_gate_without_changed_files")
+    elif not deliverable_files:
+        failures.append("accepted_gate_only_incidental_files")
+
+    if deliverable_files and not code_or_test_files and not explicit_docs_report:
+        failures.append("docs_report_deliverable_without_explicit_scope")
+
+    receipt_kinds = {"git_diff", "changed_files", "implementation"}
+    if deliverable_files and not code_or_test_files and explicit_docs_report:
+        receipt_kinds |= {"artifact_export", "report", "docs", "documentation"}
+
+    if deliverable_files and not _has_receipt(
+        receipts,
+        kinds=receipt_kinds,
+        statuses=_PRESENT_RECEIPT_STATUSES,
+        changed_files=deliverable_files,
+    ):
+        failures.append("accepted_gate_without_deliverable_receipt")
+
+    details = {
+        "gate": gate,
+        "changed_files": changed_files,
+        "deliverable_files": deliverable_files,
+        "code_or_test_files": code_or_test_files,
+        "doc_report_files": doc_report_files,
+        "explicit_docs_report": explicit_docs_report,
+        "receipts": receipts,
+    }
+    if failures:
+        return ProbeResult("P11", "red", "deliverable_evidence_failed", {
+            **details,
+            "failures": failures,
+        })
+    return ProbeResult("P11", "green", "deliverable_evidence_ok", details)
+
+
 def verify_prd_tdd_skill_receipts(
     tool_receipts: list[dict[str, Any]] | None,
     *,
@@ -698,6 +772,97 @@ def _receipt_covers_changed_files(
         receipt_file_set = {str(receipt_files)}
     expected = {str(path) for path in changed_files if str(path).strip()}
     return expected <= receipt_file_set
+
+
+def _is_deliverable_changed_file(path: str, *, task_id: str) -> bool:
+    value = _normalise_changed_path(path)
+    if not value:
+        return False
+    if value.startswith((".handoff/", ".scratch/")):
+        return False
+    task_prefix = f"docs/dual-agent/{task_id}/"
+    generated_names = {
+        "grill-findings.md",
+        "index.md",
+        "interactions.md",
+        "issues.md",
+        "mast-coverage.md",
+        "outcome-review.md",
+        "prd.md",
+        "screenshots.md",
+        "skill-receipts.json",
+        "tdd.md",
+        "transcript.jsonl",
+        "transcript.md",
+        "triage.md",
+    }
+    if value.startswith(task_prefix):
+        remainder = value[len(task_prefix):]
+        if remainder.startswith(("source/", "replay/")):
+            return False
+        if remainder in generated_names:
+            return False
+    return True
+
+
+def _is_docs_or_report_path(path: str) -> bool:
+    value = _normalise_changed_path(path)
+    suffix = Path(value).suffix.lower()
+    if value.startswith(("docs/", "reviews/")):
+        return True
+    if suffix in {".md", ".markdown", ".txt"}:
+        return True
+    name = Path(value).name.lower()
+    return suffix in {".json", ".jsonl", ".yaml", ".yml"} and any(
+        marker in name for marker in ("report", "adr", "decision", "plan")
+    )
+
+
+def _explicit_docs_report_task(
+    *,
+    intent: str,
+    outcome: Outcome,
+    receipts: list[dict[str, Any]],
+) -> bool:
+    chunks: list[str] = [intent, outcome.summary]
+    chunks.extend(str(item) for item in outcome.claims)
+    chunks.extend(str(item) for item in outcome.decisions)
+    for receipt in receipts:
+        chunks.extend(
+            str(receipt.get(key) or "")
+            for key in ("kind", "receipt_id", "summary", "command")
+        )
+        claims = receipt.get("claims") or receipt.get("claim")
+        if isinstance(claims, str):
+            chunks.append(claims)
+        elif isinstance(claims, (list, tuple, set)):
+            chunks.extend(str(item) for item in claims)
+    text = " ".join(chunks).lower().replace("_", "-")
+    markers = (
+        "report-only",
+        "report only",
+        "docs-only",
+        "docs only",
+        "documentation-only",
+        "documentation only",
+        "artifact-only",
+        "artifact only",
+        "design doc",
+        "adr",
+        "architecture decision record",
+        "benchmark",
+        "pilot report",
+        "report artifact",
+        "eval report",
+    )
+    return any(marker in text for marker in markers)
+
+
+def _normalise_changed_path(path: str) -> str:
+    value = str(path).replace("\\", "/").strip()
+    while value.startswith("./"):
+        value = value[2:]
+    return value
 
 
 def _normalise_claim_text(value: Any) -> str:

@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "bc7677dd4902a567cd34cc14f995aab69e30853a91d53efc975a9041dd3668a4",
+  "git": {
+    "diff_bytes": 25453,
+    "diff_sha256": "e5b880b7c2cf29d348597e851d82d2a09fd70d9716cc5d098054ef4a9a78238e",
+    "diff_stat": "mcp_tools/codex_supervisor_stdio.py      |  22 ++-\n supervisor/agent_mailbox.py              |   6 +-\n supervisor/dual_agent_workflow.py        | 165 +++++++++++++++++++\n tests/test_agent_mailbox.py              |  27 +++\n tests/test_dual_agent_workflow_driver.py | 272 +++++++++++++++++++++++++++++--\n 5 files changed, 477 insertions(+), 15 deletions(-)",
+    "head": "ce63a00",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "ce63a00",
+    "status_short": "M mcp_tools/codex_supervisor_stdio.py\n M supervisor/agent_mailbox.py\n M supervisor/dual_agent_workflow.py\n M tests/test_agent_mailbox.py\n M tests/test_dual_agent_workflow_driver.py\n?? docs/dual-agent/execution-gate-deliverable-evidence-20260606/"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "24ffab8f034dfe924e1b26bfabe52cc8dc1d797560e9573c727bd9788c66c1cf",
+    "implementation_plan": "7fea535466f48741a8a52d1fc8276f5bc992f1bc92a200bd24ce7050ee524bcf",
+    "issues": "8efeed775df5556e5d4cc0405893d3a632ca7bd45fc8abd8160e7fa24dfa43d7",
+    "prd": "d197fff25c89b6a3e932297ce32248d410d549b1a5470d1e49c043d1c811fbec",
+    "tdd_plan": "7549f817c635549f4c499874d280405416bbb75f9ded1f5c9daa9f759185c59e"
+  },
+  "status": "captured"
+}
