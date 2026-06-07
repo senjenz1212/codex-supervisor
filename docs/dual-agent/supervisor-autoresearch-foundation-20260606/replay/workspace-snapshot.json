@@ -1,0 +1,24 @@
+{
+  "file_tree_sha256": "49b46c7c0940bb37a2d3ed2aa6689d7baac8b6f6d9b72cf703b8c157f6689231",
+  "git": {
+    "diff_bytes": 0,
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "diff_stat": "",
+    "head": "ad22a32",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "ad22a32",
+    "status_short": "?? docs/dual-agent/supervisor-autoresearch-foundation-20260606/\n?? scripts/run_supervisor_autoresearch.py\n?? supervisor/autoresearch/\n?? tests/fixtures/autoresearch/\n?? tests/test_autoresearch.py"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "28495c56197dd978b0cbd4a63d524e9eb719d93087516e6df392e28bbad96e67",
+    "implementation_plan": "f49f9b1d21c4ddbb53f8d2a2ea80cec1de3d322c830339b35b2373a12a9f98ea",
+    "issues": "c069fefb04cc8cca008ef2f0c2cc06c0c7866c122a885c7fb8b34d7dd520b878",
+    "other": "8bd34ab144023b55f78e84131a62e4137dae9175ee3aaad3147df85a557c1716",
+    "prd": "8ab3b43c3bc661319b805ae86444671093ca7d38076339dc4223712d8a74c4f1",
+    "tdd_plan": "bb1f2e6526cd05d0aee68075a14a7f7bbe89e67ad495e4675f8172c9839bb654"
+  },
+  "status": "captured"
+}

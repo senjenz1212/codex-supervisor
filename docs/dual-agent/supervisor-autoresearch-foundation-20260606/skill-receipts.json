@@ -1,0 +1,77 @@
+[
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-to-prd-supervisor-autoresearch-foundation-20260606",
+    "skill": "to-prd",
+    "stage": "to_prd",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/supervisor-autoresearch-foundation-20260606/source/prd.md"
+    ],
+    "claims": [
+      "prd-to-tdd skill executed",
+      "PRD promise contracts produced",
+      "report-only AutoResearch boundary specified"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-prd-grill-supervisor-autoresearch-foundation-20260606",
+    "skill": "grill-with-docs",
+    "stage": "prd_grill",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/supervisor-autoresearch-foundation-20260606/source/grill-findings.md"
+    ],
+    "claims": [
+      "prd-to-tdd skill executed",
+      "PRD grill findings resolved",
+      "mutable surface and report-only risks addressed"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-to-issues-supervisor-autoresearch-foundation-20260606",
+    "skill": "to-issues",
+    "stage": "to_issues",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/supervisor-autoresearch-foundation-20260606/source/issues.md"
+    ],
+    "claims": [
+      "prd-to-tdd skill executed",
+      "issue slices cover every PRD promise",
+      "public-boundary tests named"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-tdd-supervisor-autoresearch-foundation-20260606",
+    "skill": "tdd",
+    "stage": "tdd",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/supervisor-autoresearch-foundation-20260606/source/tdd.md"
+    ],
+    "claims": [
+      "prd-to-tdd skill executed",
+      "TDD plan starts at public AutoResearch boundaries",
+      "validation, report-only, and runner guard tests planned"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-tdd-grill-supervisor-autoresearch-foundation-20260606",
+    "skill": "grill-with-docs",
+    "stage": "tdd_grill",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/supervisor-autoresearch-foundation-20260606/source/grill-findings-tdd.md"
+    ],
+    "claims": [
+      "prd-to-tdd skill executed",
+      "TDD grill findings resolved",
+      "translation audit completed"
+    ]
+  }
+]

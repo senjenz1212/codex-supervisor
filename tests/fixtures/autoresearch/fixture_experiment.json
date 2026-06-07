@@ -1,0 +1,47 @@
+{
+  "experiment": {
+    "experiment_id": "fixture-autoresearch-001",
+    "task_id": "supervisor-autoresearch-foundation-20260606",
+    "hypothesis": "A constrained mutable skill overlay can improve reviewer evidence without changing production gates.",
+    "baseline_ref": "baseline:current-supervisor",
+    "mutable_paths": [
+      "docs/dual-agent/supervisor-autoresearch-foundation-20260606/experiments",
+      "skills/reviewer-rubrics"
+    ],
+    "immutable_paths": [
+      "supervisor/state.py",
+      "supervisor/reviewer_registry.py",
+      "tests/fixtures/autoresearch/locked"
+    ],
+    "evaluator_ref": "tests/fixtures/autoresearch/locked/evaluator.json",
+    "evaluator_hash": "3dc33d4148ae5324bdc6d9751ce255cecf121800c52a77fc788b7ca4ca5d352f",
+    "metric_name": "reviewer_evidence_score",
+    "max_attempts": 1,
+    "k_trials": 3,
+    "budget_usd": 0.25,
+    "execution_mode": "fixture_replay"
+  },
+  "attempts": [
+    {
+      "attempt_id": "attempt-reviewer-rubric-001",
+      "worker_id": "worker-fixture-1",
+      "hypothesis": "Require explicit evidence refs in reviewer rubric text.",
+      "changed_files": [
+        "skills/reviewer-rubrics/evidence.md"
+      ],
+      "patch_ref": "patches/attempt-reviewer-rubric-001.patch",
+      "artifact_hashes": {},
+      "evidence_refs": [
+        "fixture:evidence-rubric"
+      ],
+      "metric_trials": [
+        0.86,
+        0.88,
+        0.87
+      ],
+      "cost_usd": 0.03,
+      "wall_clock_s": 12.5,
+      "status": "pending"
+    }
+  ]
+}
