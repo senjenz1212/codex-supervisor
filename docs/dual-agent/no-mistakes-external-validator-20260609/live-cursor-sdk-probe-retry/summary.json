@@ -1,0 +1,80 @@
+{
+  "accepted": true,
+  "agent_id": "agent-820c69c9-42cc-419c-8842-ff853ea17f3f",
+  "api_key_present": true,
+  "created_at": 1781029901,
+  "cursor_sdk_import": "ok",
+  "cursor_status": "finished",
+  "diagnostics": {
+    "prompt_chars": 1693,
+    "prompt_sha256": "b0fca474794e39d259387019607871b1ea9d30459bf84193574d5d43b6dd130c"
+  },
+  "duration_ms": 13252,
+  "fallback_from_runtime": null,
+  "fallback_reason": null,
+  "loaded_codex_mcp_env_keys": [
+    "CURSOR_API_KEY"
+  ],
+  "model": "composer-2.5",
+  "outcome": {
+    "changed_files": [],
+    "claims": [
+      "README.md exists"
+    ],
+    "confidence": 0.95,
+    "confidence_criteria": [
+      "README.md exists at repository root",
+      "No non-git implementation files in worktree",
+      "Task instruction explicitly waives implementation",
+      "Claude claim independently verified"
+    ],
+    "confidence_rationale": "Direct filesystem read of README.md succeeded; glob shows no implementation artifacts beyond .git. Single minor uncertainty: no corroborating evidence receipts.",
+    "critical_review": {
+      "assumptions_to_verify": [
+        "Repository root is the authoritative scope",
+        "README at root satisfies gate requirement",
+        "Task is probe-only with no hidden implementation phase"
+      ],
+      "contradictions_checked": [
+        "Claude README.md exists claim vs direct read",
+        "No-implementation gate vs worktree contents",
+        "README review-only instruction vs gate scope"
+      ],
+      "decision": "accept",
+      "missing_evidence": [
+        "Formal evidence receipts",
+        "Test execution records",
+        "Commit history beyond initial scaffold"
+      ],
+      "severity": "low",
+      "strongest_objection": "No evidence receipts corroborate Claude outcome; acceptance relies solely on independent filesystem verification.",
+      "what_would_change_my_mind": "README.md absent or empty, implementation files present, or task spec requiring deliverables beyond README existence."
+    },
+    "decisions": [
+      "accept"
+    ],
+    "objections": [],
+    "specialists": [
+      {
+        "decision": "accept",
+        "name": "Cursor Reviewer",
+        "objection": null
+      }
+    ],
+    "summary": "Independent read-only inspection confirms README.md exists at repo root; worktree contains only README and .git metadata. Gate criteria met\u2014no implementation required.",
+    "task_id": "live-cursor-sdk-probe",
+    "test_status": "unknown",
+    "tests": []
+  },
+  "probe": {
+    "details": {},
+    "probe_id": "CURSOR",
+    "reason": "cursor_review_ok",
+    "status": "green"
+  },
+  "reviewer_assurance": "tool_backed_primary",
+  "reviewer_output_mode": "cursor_sdk",
+  "reviewer_runtime": "cursor_sdk",
+  "run_id": "run-5c7803ac-141a-4f5e-9708-f4ed50b4c93a",
+  "status": "completed"
+}

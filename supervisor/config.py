@@ -152,6 +152,16 @@ class DurableExecutionCfg(BaseModel):
     temporal_task_queue: str = "codex-supervisor-spike"
 
 
+class NoMistakesCfg(BaseModel):
+    policy: Literal["off", "advisory", "required", "shipping"] = "off"
+    binary: str = "no-mistakes"
+    skip_steps: list[str] = Field(default_factory=lambda: ["push", "pr", "ci"])
+    auto_yes: bool = False
+    timeout_s: int = 900
+    require_clean_committed_branch: bool = True
+    allow_shipping_steps: bool = False
+
+
 class LocalFallbackCfg(BaseModel):
     enabled: bool = False
     base_url: str = "http://localhost:8000/v1"
@@ -217,6 +227,7 @@ class Config(BaseModel):
     supervisor: SupervisorCfg
     agentic_lead: AgenticLeadCfg = Field(default_factory=AgenticLeadCfg)
     durable_execution: DurableExecutionCfg = Field(default_factory=DurableExecutionCfg)
+    no_mistakes: NoMistakesCfg = Field(default_factory=NoMistakesCfg)
     modes: ModesCfg = Field(default_factory=ModesCfg)
     models: ModelsCfg
     telegram: TelegramCfg

@@ -81,6 +81,22 @@ durable_execution:
   temporal_spike_enabled: false
   temporal_task_queue: codex-supervisor-spike
 
+no_mistakes:
+  # Optional external post-outcome validator. The default is off so local/dev
+  # workflows do not require the no-mistakes binary.
+  policy: "off"
+  binary: no-mistakes
+  # First integration is local validation only; shipping steps require an
+  # explicit policy/config change.
+  skip_steps:
+    - push
+    - pr
+    - ci
+  auto_yes: false
+  timeout_s: 900
+  require_clean_committed_branch: true
+  allow_shipping_steps: false
+
 modes:
   rollout_ingestion: enforce
   # advise: send routine watched-run FYI/progress pings.

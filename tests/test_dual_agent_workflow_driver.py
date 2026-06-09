@@ -368,11 +368,17 @@ def test_workflow_kwargs_from_payload_preserves_reviewer_infra_retry_fields():
         "intent": "Run Cursor reviewer with bounded infra retries.",
         "reviewer_infra_retry_limit": 4,
         "reviewer_infra_retry_backoff_s": 0.25,
+        "no_mistakes_policy": "advisory",
+        "no_mistakes_skip_steps": ["push", "pr", "ci"],
+        "no_mistakes_timeout_s": 120,
         "irrelevant_field": "must not leak into workflow kwargs",
     })
 
     assert kwargs["reviewer_infra_retry_limit"] == 4
     assert kwargs["reviewer_infra_retry_backoff_s"] == 0.25
+    assert kwargs["no_mistakes_policy"] == "advisory"
+    assert kwargs["no_mistakes_skip_steps"] == ["push", "pr", "ci"]
+    assert kwargs["no_mistakes_timeout_s"] == 120
     assert "irrelevant_field" not in kwargs
 
 
@@ -388,6 +394,7 @@ def _server(
     notifier=None,
     cursor_runner=None,
     codex_runner=None,
+    no_mistakes_runner=None,
 ):
     from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
     from supervisor.dual_agent_runner import build_lead_replay_stdout
@@ -414,13 +421,17 @@ def _server(
             stderr="",
         )
 
+    cfg = _cfg(tmp_path)
+    if no_mistakes_runner is not None:
+        cfg.no_mistakes.require_clean_committed_branch = False
     server = build_codex_supervisor_mcp_server(
-        _cfg(tmp_path),
+        cfg,
         state,
         mcp_cls=_FakeMCP,
         runner=fake_runner,
         codex_runner=codex_runner or _accepting_codex_reviewer_runner,
         cursor_runner=cursor_runner or _accepting_cursor_runner,
+        no_mistakes_runner=no_mistakes_runner,
         notifier=notifier,
     )
     return server, state
@@ -1600,6 +1611,93 @@ async def test_run_dual_agent_workflow_happy_path_owns_full_lifecycle(tmp_path):
     assert all(round_payload["objection"] == "both agents accepted" for round_payload in rounds)
     assert any("dual-agent workflow started" in message for message in notifier.messages)
     assert any("dual-agent workflow accepted" in message for message in notifier.messages)
+
+
+@pytest.mark.asyncio
+async def test_run_dual_agent_workflow_records_advisory_no_mistakes_after_outcome_review(tmp_path):
+    no_mistakes_calls: list[list[str]] = []
+
+    def fake_no_mistakes_runner(argv, **kwargs):
+        no_mistakes_calls.append(list(argv))
+        return subprocess.CompletedProcess(argv, 0, stdout="outcome: checks-passed\n", stderr="")
+
+    server, state = _server(
+        tmp_path,
+        no_mistakes_runner=fake_no_mistakes_runner,
+    )
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Build the supervisor-owned workflow driver.",
+        max_rounds_per_gate=5,
+        tool_receipts=_tool_receipts(),
+        no_mistakes_policy="advisory",
+    ))
+
+    assert result["status"] == "accepted"
+    assert no_mistakes_calls
+    assert no_mistakes_calls[0][-1] == "--skip=push,pr,ci"
+    assert "--yes" not in no_mistakes_calls[0]
+    assert result["no_mistakes_validation"]["verdict"] == "accepted"
+    assert result["no_mistakes_validation"]["receipt"]["kind"] == "no_mistakes_validation_receipt"
+
+    events = [
+        json.loads(row["payload_json"])
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"].startswith("no_mistakes_")
+    ]
+    assert [event["kind"] for event in events] == [
+        "no_mistakes_validation_started",
+        "no_mistakes_validation_completed",
+    ]
+    outcome_index = next(
+        index
+        for index, row in enumerate(state.read_dual_agent_gate_events("workflow-run"))
+        if row["kind"] == "dual_agent_gate_result"
+        and json.loads(row["payload_json"]).get("gate") == "outcome_review"
+    )
+    no_mistakes_index = next(
+        index
+        for index, row in enumerate(state.read_dual_agent_gate_events("workflow-run"))
+        if row["kind"] == "no_mistakes_validation_started"
+    )
+    assert no_mistakes_index > outcome_index
+
+
+@pytest.mark.asyncio
+async def test_required_no_mistakes_unavailable_blocks_without_rewriting_gate_acceptance(tmp_path):
+    def missing_no_mistakes_runner(argv, **kwargs):
+        raise FileNotFoundError("no-mistakes")
+
+    server, state = _server(
+        tmp_path,
+        no_mistakes_runner=missing_no_mistakes_runner,
+    )
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Build the supervisor-owned workflow driver.",
+        max_rounds_per_gate=5,
+        tool_receipts=_tool_receipts(),
+        no_mistakes_policy="required",
+    ))
+
+    assert result["status"] == "blocked"
+    assert result["current_gate"] == "no_mistakes_validation"
+    assert result["no_mistakes_validation"]["verdict"] == "required_blocked"
+    assert result["final_gate_result"]["gate"] == "no_mistakes_validation"
+
+    gate_statuses = [
+        json.loads(row["payload_json"]).get("status")
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "dual_agent_gate_result"
+        and json.loads(row["payload_json"]).get("gate") == "outcome_review"
+    ]
+    assert gate_statuses == ["accepted"]
 
 
 @pytest.mark.asyncio

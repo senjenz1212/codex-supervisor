@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "6b3debe941ad483ef568db1b4f1cfc5d8d43a5c4b98bf5b62f97cf75425b4e0b",
+  "git": {
+    "diff_bytes": 26121,
+    "diff_sha256": "95ed9e79983a737f95c2693adfcbc01db03a2d4ac4180879a00222df4ec5570c",
+    "diff_stat": "config.example.yaml                        |  16 ++\n mcp_tools/codex_supervisor_stdio.py        | 258 +++++++++++++++++++++++++++++\n mcp_tools/codex_supervisor_workflow_cli.py |   3 +\n supervisor/config.py                       |  11 ++\n supervisor/state.py                        |   5 +\n tests/test_dual_agent_workflow_driver.py   | 100 ++++++++++-\n 6 files changed, 392 insertions(+), 1 deletion(-)",
+    "head": "9853f21",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "9853f21",
+    "status_short": "M config.example.yaml\n M mcp_tools/codex_supervisor_stdio.py\n M mcp_tools/codex_supervisor_workflow_cli.py\n M supervisor/config.py\n M supervisor/state.py\n M tests/test_dual_agent_workflow_driver.py\n?? docs/dual-agent/no-mistakes-external-validator-20260609/\n?? docs/dual-agent/supervisor-flow-autoresearch-run-20260609/\n?? supervisor/no_mistakes.py\n?? tests/test_no_mistakes.py"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "6c437dd3fbde8b8c5b12b740f416c82000f3ad829f2613b09d002b96ceaef5e6",
+    "implementation_plan": "346769de605cbea47caae21b99300f7157341e77533cab1666494a3b80c23907",
+    "issues": "9f69b9fbbe81ae4caff3c10a11d0cd0f2faa6c58e8ee7f0d2c732e05350edcb1",
+    "prd": "f53f6b04f2e8963daedc87cb165559a05974acfbfbf84972eda32e8011c35722",
+    "tdd_plan": "9b0c0872c50b217bc426b71a6296fd2ffafd78c7adf5faf864ba1cd3a957e3c6"
+  },
+  "status": "captured"
+}

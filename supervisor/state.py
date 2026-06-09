@@ -546,6 +546,11 @@ class State:
                    'dual_agent_interaction_message',
                    'independent_reviewer_adjudication',
                    'independent_reviewer_review',
+                   'no_mistakes_finding',
+                   'no_mistakes_validation_completed',
+                   'no_mistakes_validation_failed',
+                   'no_mistakes_validation_skipped',
+                   'no_mistakes_validation_started',
                    'tri_agent_cursor_review'
                  )
                ORDER BY event_id ASC""",

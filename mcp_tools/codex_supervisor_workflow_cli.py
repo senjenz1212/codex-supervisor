@@ -57,6 +57,9 @@ WORKFLOW_KEYS = {
     "reviewer_low_confidence_threshold",
     "reviewer_panel_calibration_path",
     "task_complexity",
+    "no_mistakes_policy",
+    "no_mistakes_skip_steps",
+    "no_mistakes_timeout_s",
 }
 REQUIRED_WORKFLOW_KEYS = {"cwd", "task_id", "run_id", "intent"}
 

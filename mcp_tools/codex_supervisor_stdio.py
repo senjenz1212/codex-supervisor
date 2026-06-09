@@ -71,6 +71,13 @@ from supervisor.dynamic_workflow_receipts import verify_dynamic_workflow_receipt
 from supervisor.dynamic_workflow import prepare_dynamic_workflow_preview
 from supervisor.agentic_executor import produce_agentic_worker_receipts
 from supervisor.agentic_workers import discover_agentic_worker_receipts
+from supervisor.no_mistakes import (
+    NoMistakesConfig,
+    NoMistakesValidationRequest,
+    NoMistakesValidationResult,
+    build_no_mistakes_command,
+    run_no_mistakes_validation,
+)
 from supervisor.dual_agent_runner import (
     DualAgentGateResult,
     DualAgentGateSpec,
@@ -110,6 +117,7 @@ RELAXED_ARTIFACT_POLICIES = {"relaxed", "audit", "off"}
 VISUAL_VALIDATION_SOURCES = {"browser", "browser_use", "browser-use", "computer_use", "computer-use", "computer"}
 VISUAL_VALIDATION_PASSED = {"passed", "pass", "accepted", "accept", "ok"}
 REVIEWER_UNAVAILABLE_POLICIES = {"block", "escalate", "proceed_degraded"}
+NO_MISTAKES_POLICIES = {"off", "advisory", "required", "shipping"}
 
 
 def _canonical_workflow_job_payload(payload: dict[str, Any]) -> str:
@@ -148,6 +156,7 @@ class CodexSupervisorMcpAPI:
         runner: Runner = subprocess.run,
         codex_runner: Runner = subprocess.run,
         cursor_runner: CursorRunner | None = None,
+        no_mistakes_runner: Runner = subprocess.run,
         notifier: Any | None = None,
     ) -> None:
         self.cfg = cfg
@@ -155,6 +164,7 @@ class CodexSupervisorMcpAPI:
         self.runner = runner
         self.codex_runner = codex_runner
         self.cursor_runner = cursor_runner or invoke_cursor_agent
+        self.no_mistakes_runner = no_mistakes_runner
         self.notifier = notifier
 
     async def start_dual_agent_gate(
@@ -479,6 +489,9 @@ class CodexSupervisorMcpAPI:
         reviewer_low_confidence_threshold: float | None = None,
         reviewer_panel_calibration_path: str | None = None,
         task_complexity: str | None = None,
+        no_mistakes_policy: str | None = None,
+        no_mistakes_skip_steps: list[str] | None = None,
+        no_mistakes_timeout_s: int | None = None,
     ) -> dict[str, Any]:
         execution_layer_mode = _canonical_execution_layer_mode(execution_layer_mode)
         dynamic_workflow_task_class = _canonical_dynamic_workflow_task_class(dynamic_workflow_task_class)
@@ -528,6 +541,12 @@ class CodexSupervisorMcpAPI:
         reviewer_panel_calibration = load_reviewer_panel_calibration(
             reviewer_panel_calibration_path_value
         )
+        no_mistakes_config = _no_mistakes_config(
+            self.cfg,
+            policy=no_mistakes_policy,
+            skip_steps=no_mistakes_skip_steps,
+            timeout_s=no_mistakes_timeout_s,
+        )
         max_rounds = max(1, int(max_rounds_per_gate))
         screenshot_payloads = screenshots or []
         receipt_payloads = _normalise_receipt_payloads(tool_receipts or [])
@@ -576,6 +595,14 @@ class CodexSupervisorMcpAPI:
             "reviewer_low_confidence_threshold": reviewer_low_confidence_threshold_value,
             "reviewer_panel_calibration_path": reviewer_panel_calibration_path_value,
             "reviewer_panel_calibration_active": reviewer_panel_calibration is not None,
+            "no_mistakes": {
+                "policy": no_mistakes_config.policy,
+                "skip_steps": list(no_mistakes_config.skip_steps),
+                "auto_yes": no_mistakes_config.auto_yes,
+                "timeout_s": no_mistakes_config.timeout_s,
+                "allow_shipping_steps": no_mistakes_config.allow_shipping_steps,
+                "require_clean_committed_branch": no_mistakes_config.require_clean_committed_branch,
+            },
             "execution_layer_mode": execution_layer_mode,
             "dynamic_workflow_task_class": dynamic_workflow_task_class,
             "requires_dynamic_workflow_receipts": _is_dynamic_workflow_preview(execution_layer_mode),
@@ -1937,6 +1964,78 @@ class CodexSupervisorMcpAPI:
                     workflow_route=workflow_route,
                 )
 
+        no_mistakes_result = self._run_no_mistakes_post_acceptance(
+            cwd=cwd,
+            task_id=task_id,
+            run_id=run_id,
+            intent=intent,
+            config=no_mistakes_config,
+        )
+        if no_mistakes_result is not None and _no_mistakes_blocks_workflow(no_mistakes_result):
+            final_payload = {
+                "task_id": task_id,
+                "gate": "no_mistakes_validation",
+                "status": "blocked",
+                "attempts": 1,
+                "handoff_packet_path": None,
+                "probes": {
+                    "NO_MISTAKES": {
+                        "probe_id": "NO_MISTAKES",
+                        "status": "red",
+                        "reason": no_mistakes_result.reason,
+                        "details": no_mistakes_result.to_event_payload(),
+                    },
+                },
+                "outcome": None,
+                "escalation": {
+                    "type": "no_mistakes_validation",
+                    "reason": no_mistakes_result.reason,
+                    "details": no_mistakes_result.to_event_payload(),
+                },
+                "no_mistakes_validation": no_mistakes_result.to_event_payload(),
+                "no_mistakes_validation_receipt": no_mistakes_result.to_receipt(),
+            }
+            self.state.write_event(
+                run_id=run_id,
+                source="dual_agent",
+                kind="dual_agent_gate_result",
+                payload=final_payload,
+            )
+            self.state.record_dual_agent_workflow_step(
+                run_id=run_id,
+                task_id=task_id,
+                gate="no_mistakes_validation",
+                status="blocked",
+                attempt_count=1,
+                latest_event_id=self.state.latest_event_id(run_id),
+            )
+            self.state.update_dual_agent_workflow(
+                run_id=run_id,
+                task_id=task_id,
+                status="blocked",
+                current_gate="no_mistakes_validation",
+            )
+            await self._emit_workflow_milestone(
+                notifier=notifier,
+                run_id=run_id,
+                task_id=task_id,
+                milestone="needs_user_input",
+                gate="no_mistakes_validation",
+            )
+            return self._workflow_result(
+                run_id=run_id,
+                task_id=task_id,
+                status="blocked",
+                current_gate="no_mistakes_validation",
+                steps=steps + [_workflow_step_dict("no_mistakes_validation", "blocked", 1)],
+                final_gate_result=final_payload,
+                cwd=cwd,
+                screenshots=screenshot_payloads,
+                visual_evidence_policy=visual_policy,
+                workflow_route=workflow_route,
+                no_mistakes_validation=no_mistakes_result,
+            )
+
         artifact_status = mandatory_artifact_status(
             cwd=cwd,
             task_id=task_id,
@@ -1974,7 +2073,75 @@ class CodexSupervisorMcpAPI:
             mandatory_artifacts=artifact_status,
             visual_evidence_policy=visual_policy,
             workflow_route=workflow_route,
+            no_mistakes_validation=no_mistakes_result,
         )
+
+    def _run_no_mistakes_post_acceptance(
+        self,
+        *,
+        cwd: str,
+        task_id: str,
+        run_id: str,
+        intent: str,
+        config: NoMistakesConfig,
+    ) -> NoMistakesValidationResult | None:
+        if config.policy == "off":
+            return None
+        request = NoMistakesValidationRequest(
+            cwd=cwd,
+            task_id=task_id,
+            run_id=run_id,
+            intent=intent,
+            config=config,
+        )
+        command = list(build_no_mistakes_command(config, intent=intent))
+        self.state.write_event(
+            run_id=run_id,
+            source="dual_agent",
+            kind="no_mistakes_validation_started",
+            payload={
+                "kind": "no_mistakes_validation_started",
+                "schema_version": "no-mistakes-validation/v1",
+                "task_id": task_id,
+                "run_id": run_id,
+                "policy": config.policy,
+                "command": command,
+                "skip_steps": _no_mistakes_command_skip_steps(command),
+            },
+        )
+        result = run_no_mistakes_validation(request, runner=self.no_mistakes_runner)
+        for finding in result.findings:
+            self.state.write_event(
+                run_id=run_id,
+                source="dual_agent",
+                kind="no_mistakes_finding",
+                payload={
+                    "kind": "no_mistakes_finding",
+                    "schema_version": "no-mistakes-finding/v1",
+                    "task_id": task_id,
+                    "run_id": run_id,
+                    "policy": config.policy,
+                    "finding": finding.to_dict(),
+                },
+            )
+        event_kind = (
+            "no_mistakes_validation_skipped"
+            if result.verdict in {"skipped", "unavailable"}
+            else "no_mistakes_validation_failed"
+            if result.status == "failed"
+            else "no_mistakes_validation_completed"
+        )
+        self.state.write_event(
+            run_id=run_id,
+            source="dual_agent",
+            kind=event_kind,
+            payload={
+                "kind": event_kind,
+                **result.to_event_payload(),
+                "receipt": result.to_receipt(),
+            },
+        )
+        return result
 
     def submit_dual_agent_workflow_job(
         self,
@@ -2013,6 +2180,9 @@ class CodexSupervisorMcpAPI:
         reviewer_low_confidence_threshold: float | None = None,
         reviewer_panel_calibration_path: str | None = None,
         task_complexity: str | None = None,
+        no_mistakes_policy: str | None = None,
+        no_mistakes_skip_steps: list[str] | None = None,
+        no_mistakes_timeout_s: int | None = None,
         config_path: str | None = None,
         client_token: str | None = None,
     ) -> dict[str, Any]:
@@ -2061,6 +2231,12 @@ class CodexSupervisorMcpAPI:
             cwd=cwd,
             reviewer_panel_calibration_path=reviewer_panel_calibration_path,
         )
+        no_mistakes_config = _no_mistakes_config(
+            self.cfg,
+            policy=no_mistakes_policy,
+            skip_steps=no_mistakes_skip_steps,
+            timeout_s=no_mistakes_timeout_s,
+        )
         cwd_path = Path(cwd).expanduser().resolve()
         payload = {
             "cwd": str(cwd_path),
@@ -2099,6 +2275,9 @@ class CodexSupervisorMcpAPI:
             "reviewer_low_confidence_threshold": reviewer_low_confidence_threshold_value,
             "reviewer_panel_calibration_path": reviewer_panel_calibration_path_value,
             "task_complexity": task_complexity,
+            "no_mistakes_policy": no_mistakes_config.policy,
+            "no_mistakes_skip_steps": list(no_mistakes_config.skip_steps),
+            "no_mistakes_timeout_s": no_mistakes_config.timeout_s,
         }
         idempotency_token = _workflow_job_idempotency_token(
             run_id=run_id,
@@ -3232,6 +3411,7 @@ class CodexSupervisorMcpAPI:
         visual_evidence_policy: dict[str, Any],
         workflow_route: dict[str, Any] | None = None,
         mandatory_artifacts: dict[str, Any] | None = None,
+        no_mistakes_validation: NoMistakesValidationResult | None = None,
     ) -> dict[str, Any]:
         if final_gate_result is not None:
             final_gate_result = stamp_trace_envelope(
@@ -3262,6 +3442,14 @@ class CodexSupervisorMcpAPI:
             "workflow_route": workflow_route,
             "artifact_export": artifact_export,
             "mandatory_artifacts": mandatory,
+            "no_mistakes_validation": (
+                {
+                    **no_mistakes_validation.to_event_payload(),
+                    "receipt": no_mistakes_validation.to_receipt(),
+                }
+                if no_mistakes_validation is not None
+                else None
+            ),
             "resume": workflow_resume_prompt(self.state, run_id=run_id, task_id=task_id),
         })
 
@@ -3461,6 +3649,7 @@ def build_codex_supervisor_mcp_server(
     runner: Runner = subprocess.run,
     codex_runner: Runner = subprocess.run,
     cursor_runner: CursorRunner | None = None,
+    no_mistakes_runner: Runner = subprocess.run,
     notifier: Any | None = None,
 ) -> Any:
     if mcp_cls is None:
@@ -3473,6 +3662,7 @@ def build_codex_supervisor_mcp_server(
         runner=runner,
         codex_runner=codex_runner,
         cursor_runner=cursor_runner,
+        no_mistakes_runner=no_mistakes_runner,
         notifier=notifier,
     )
     _configure_mcp_transport_logging()
@@ -3711,6 +3901,9 @@ def build_codex_supervisor_mcp_server(
         reviewer_low_confidence_threshold: float | None = None,
         reviewer_panel_calibration_path: str | None = None,
         task_complexity: str | None = None,
+        no_mistakes_policy: str | None = None,
+        no_mistakes_skip_steps: list[str] | None = None,
+        no_mistakes_timeout_s: int | None = None,
     ) -> dict[str, Any]:
         return await tool_api.run_dual_agent_workflow(
             cwd=cwd,
@@ -3747,6 +3940,9 @@ def build_codex_supervisor_mcp_server(
             reviewer_low_confidence_threshold=reviewer_low_confidence_threshold,
             reviewer_panel_calibration_path=reviewer_panel_calibration_path,
             task_complexity=task_complexity,
+            no_mistakes_policy=no_mistakes_policy,
+            no_mistakes_skip_steps=no_mistakes_skip_steps,
+            no_mistakes_timeout_s=no_mistakes_timeout_s,
         )
 
     @mcp.tool()
@@ -3785,6 +3981,9 @@ def build_codex_supervisor_mcp_server(
         reviewer_low_confidence_threshold: float | None = None,
         reviewer_panel_calibration_path: str | None = None,
         task_complexity: str | None = None,
+        no_mistakes_policy: str | None = None,
+        no_mistakes_skip_steps: list[str] | None = None,
+        no_mistakes_timeout_s: int | None = None,
         config_path: str | None = None,
         client_token: str | None = None,
     ) -> dict[str, Any]:
@@ -3823,6 +4022,9 @@ def build_codex_supervisor_mcp_server(
             reviewer_low_confidence_threshold=reviewer_low_confidence_threshold,
             reviewer_panel_calibration_path=reviewer_panel_calibration_path,
             task_complexity=task_complexity,
+            no_mistakes_policy=no_mistakes_policy,
+            no_mistakes_skip_steps=no_mistakes_skip_steps,
+            no_mistakes_timeout_s=no_mistakes_timeout_s,
             config_path=config_path,
             client_token=client_token,
         )
@@ -4594,6 +4796,62 @@ def _reviewer_panel_calibration_path_config(
     if not candidate.is_absolute():
         candidate = Path(cwd).expanduser() / candidate
     return str(candidate)
+
+
+def _no_mistakes_config(
+    cfg: Config,
+    *,
+    policy: str | None,
+    skip_steps: list[str] | None,
+    timeout_s: int | None,
+) -> NoMistakesConfig:
+    configured = cfg.no_mistakes
+    requested_policy = (
+        configured.policy if policy is None else str(policy)
+    )
+    normalized_policy = _canonical_no_mistakes_policy(requested_policy)
+    requested_skip_steps = (
+        list(configured.skip_steps)
+        if skip_steps is None
+        else [str(step) for step in skip_steps]
+    )
+    return NoMistakesConfig(
+        policy=normalized_policy,  # type: ignore[arg-type]
+        binary=str(configured.binary or "no-mistakes"),
+        skip_steps=tuple(
+            step.strip().lower()
+            for step in requested_skip_steps
+            if str(step).strip()
+        ),
+        auto_yes=bool(configured.auto_yes),
+        timeout_s=max(1, int(timeout_s if timeout_s is not None else configured.timeout_s)),
+        require_clean_committed_branch=bool(configured.require_clean_committed_branch),
+        allow_shipping_steps=bool(configured.allow_shipping_steps),
+    )
+
+
+def _canonical_no_mistakes_policy(value: str | None) -> str:
+    text = str(value or "off").strip().lower().replace("-", "_").replace(" ", "_")
+    return text if text in NO_MISTAKES_POLICIES else "off"
+
+
+def _no_mistakes_blocks_workflow(result: NoMistakesValidationResult) -> bool:
+    if result.verdict == "changed_requires_rerun":
+        return True
+    if result.policy in {"required", "shipping"} and result.verdict != "accepted":
+        return True
+    return False
+
+
+def _no_mistakes_command_skip_steps(command: list[str]) -> list[str]:
+    for arg in command:
+        if arg.startswith("--skip="):
+            return [
+                step.strip()
+                for step in arg.split("=", 1)[1].split(",")
+                if step.strip()
+            ]
+    return []
 
 
 def _reviewer_unavailable_recovery_plan(
