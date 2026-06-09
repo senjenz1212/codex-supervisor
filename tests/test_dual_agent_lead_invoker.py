@@ -503,6 +503,48 @@ def test_execution_gate_prompt_requires_real_implementation_diff(tmp_path):
     assert "IMPLEMENTATION CONTRACT (execution gate)" not in review_prompt
 
 
+def test_report_only_execution_gate_command_includes_narrow_allowed_tools(tmp_path):
+    request = LeadInvocationRequest(
+        task_id="vela-autoresearch-live-rigorous-20260607",
+        gate="execution",
+        instruction=(
+            "Continue the report-only Vela AutoResearch rigorous trial. "
+            "The lead must edit docs/dual-agent/vela-autoresearch-live-rigorous-20260607/"
+            "autoresearch-report.md and run the focused pytest receipt."
+        ),
+        cwd=tmp_path,
+    )
+
+    argv = build_claude_lead_command(request)
+
+    assert argv[argv.index("--permission-mode") + 1] == "dontAsk"
+    assert "--allowedTools" in argv
+    allowed = argv[argv.index("--allowedTools") + 1:]
+    assert "Edit" in allowed
+    assert "MultiEdit" in allowed
+    assert "Write" in allowed
+    assert "Bash(git status*)" in allowed
+    assert "Bash(git diff*)" in allowed
+    assert "Bash(*.venv/bin/python -m pytest*)" in allowed
+    assert "Bash(python -m pytest*)" in allowed
+    assert "Bash(rm *)" not in allowed
+    assert "Bash(*)" not in allowed
+
+
+def test_normal_execution_gate_command_does_not_get_report_only_allowed_tools(tmp_path):
+    request = LeadInvocationRequest(
+        task_id="code-change",
+        gate="execution",
+        instruction="Implement the accepted code change.",
+        cwd=tmp_path,
+    )
+
+    argv = build_claude_lead_command(request)
+
+    assert argv[argv.index("--permission-mode") + 1] == "bypassPermissions"
+    assert "--allowedTools" not in argv
+
+
 def test_handoff_packet_carries_agentic_lead_policy(tmp_path):
     request = LeadInvocationRequest(
         task_id="slice0-lead",

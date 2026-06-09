@@ -807,6 +807,81 @@ async def test_execution_gate_allows_explicit_report_only_artifact_with_receipt(
 
 
 @pytest.mark.asyncio
+async def test_execution_gate_allows_vela_style_report_only_artifact_with_receipt(tmp_path):
+    report_path = "docs/dual-agent/workflow-1/autoresearch-report.md"
+    server, _state = _server(
+        tmp_path,
+        claims=["report-only artifact updated"],
+        changed_files=[report_path],
+        tests=[
+            "tests/unit/test_vela2_rewind_packet.py",
+            "tests/unit/test_vela2_replay_regrade.py",
+        ],
+        test_status="passed",
+    )
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Run a report-only Vela AutoResearch trial and update the report artifact.",
+        max_rounds_per_gate=1,
+        task_complexity="trivial",
+        cursor_review=False,
+        tool_receipts=[{
+            "receipt_id": "report-export",
+            "kind": "report",
+            "status": "passed",
+            "changed_files": [report_path],
+            "claims": ["report-only artifact"],
+        }],
+    ))
+
+    assert result["status"] == "accepted"
+    p11 = result["final_gate_result"]["probes"]["P11"]
+    assert p11["status"] == "green"
+    assert p11["details"]["deliverable_files"] == [report_path]
+    assert p11["details"]["doc_report_files"] == [report_path]
+
+
+@pytest.mark.asyncio
+async def test_execution_gate_blocks_vela_style_report_receipt_without_changed_file(tmp_path):
+    report_path = "docs/dual-agent/workflow-1/autoresearch-report.md"
+    server, _state = _server(
+        tmp_path,
+        claims=["report-only artifact verified"],
+        changed_files=[],
+        tests=[
+            "tests/unit/test_vela2_rewind_packet.py",
+            "tests/unit/test_vela2_replay_regrade.py",
+        ],
+        test_status="passed",
+    )
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Run a report-only Vela AutoResearch trial and update the report artifact.",
+        max_rounds_per_gate=1,
+        task_complexity="trivial",
+        cursor_review=False,
+        tool_receipts=[{
+            "receipt_id": "report-export",
+            "kind": "report",
+            "status": "passed",
+            "changed_files": [report_path],
+            "claims": ["report-only artifact"],
+        }],
+    ))
+
+    assert result["status"] == "blocked"
+    p11 = result["final_gate_result"]["probes"]["P11"]
+    assert p11["reason"] == "deliverable_evidence_failed"
+    assert "accepted_gate_without_changed_files" in p11["details"]["failures"]
+
+
+@pytest.mark.asyncio
 async def test_outcome_review_blocks_deliverable_failure_even_when_claims_verify(tmp_path):
     source_file = "supervisor/dual_agent_workflow.py"
     server, _state = _server(

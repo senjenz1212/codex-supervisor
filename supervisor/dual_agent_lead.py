@@ -31,6 +31,21 @@ CLAUDE_OPUS_ULTIMATE_EXTRA_BODY = {
     "thinking": {"type": "adaptive"},
     "output_config": {"effort": "xhigh"},
 }
+REPORT_ONLY_EXECUTION_ALLOWED_TOOLS: tuple[str, ...] = (
+    "Read",
+    "Grep",
+    "Glob",
+    "LS",
+    "Edit",
+    "MultiEdit",
+    "Write",
+    "Bash(git status*)",
+    "Bash(git diff*)",
+    "Bash(*.venv/bin/python -m pytest*)",
+    "Bash(python -m pytest*)",
+    "Bash(python3 -m pytest*)",
+)
+REPORT_ONLY_EXECUTION_PERMISSION_MODE = "dontAsk"
 
 GateName = Literal[
     "intent",
@@ -424,12 +439,59 @@ def build_claude_lead_command(request: LeadInvocationRequest) -> list[str]:
         "--max-budget-usd",
         _format_budget(request.budget_usd),
         "--permission-mode",
-        request.permission_mode,
+        _permission_mode_for_request(request),
     ]
     if not _uses_adaptive_opus_effort(model):
         command.extend(["--effort", request.effort])
     command.extend(["--tools", request.tools])
+    allowed_tools = _allowed_tools_for_request(request)
+    if allowed_tools:
+        command.extend(["--allowedTools", *allowed_tools])
     return command
+
+
+def _allowed_tools_for_request(request: LeadInvocationRequest) -> tuple[str, ...]:
+    if _is_report_only_execution_request(request):
+        return REPORT_ONLY_EXECUTION_ALLOWED_TOOLS
+    return ()
+
+
+def _permission_mode_for_request(request: LeadInvocationRequest) -> str:
+    if _is_report_only_execution_request(request):
+        return REPORT_ONLY_EXECUTION_PERMISSION_MODE
+    return request.permission_mode
+
+
+def _is_report_only_execution_request(request: LeadInvocationRequest) -> bool:
+    if request.gate != "execution":
+        return False
+    text = " ".join((
+        request.instruction,
+        request.task_id,
+        str(request.handoff_packet_path or ""),
+    )).lower().replace("_", "-")
+    report_markers = (
+        "report-only",
+        "report only",
+        "docs-only",
+        "docs only",
+        "documentation-only",
+        "documentation only",
+        "artifact-only",
+        "artifact only",
+        "pilot report",
+        "report artifact",
+        "benchmark artifact",
+    )
+    deliverable_markers = (
+        "docs/dual-agent/",
+        "autoresearch-report",
+        "report.md",
+        "outcome-review.md",
+    )
+    return any(marker in text for marker in report_markers) and any(
+        marker in text for marker in deliverable_markers
+    )
 
 
 def invoke_claude_lead(

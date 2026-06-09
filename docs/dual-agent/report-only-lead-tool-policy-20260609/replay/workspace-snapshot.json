@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "4ddfb3fb671f85ac9578ec5a2b7e926881c775c136f5013b70a98a6aec890c7c",
+  "git": {
+    "diff_bytes": 8099,
+    "diff_sha256": "5c1941ca583e82abce7680d05ee9099109cf1b0a28dc52a2de6ffb53b8776c0c",
+    "diff_stat": "supervisor/dual_agent_lead.py            | 64 ++++++++++++++++++++++++++-\n tests/test_dual_agent_lead_invoker.py    | 42 ++++++++++++++++++\n tests/test_dual_agent_workflow_driver.py | 75 ++++++++++++++++++++++++++++++++\n 3 files changed, 180 insertions(+), 1 deletion(-)",
+    "head": "7253ff2",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "7253ff2",
+    "status_short": "M supervisor/dual_agent_lead.py\n M tests/test_dual_agent_lead_invoker.py\n M tests/test_dual_agent_workflow_driver.py\n?? docs/dual-agent/report-only-lead-tool-policy-20260609/"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "78f04db273f969977291c0dc6c62996fa1fef2572db5020db7a70246fa2d6d57",
+    "implementation_plan": "ce54f1c7cdb4e7d7d79f1e7cd71f534e21c58f0b3eb872bff7212f0b4b736fbc",
+    "issues": "501121d57a74642e8bae223d5d044d35c1a96b6cba0b590920f5fff261d35bd4",
+    "prd": "ba65ecc832b4f02dad0d47dfcf0b72a0d558116dcec483839b7d02feee78a321",
+    "tdd_plan": "6c7bccf5dd7648eb1a7dce8a2fb01a5871d2727b2523382062e1b23f0e178471"
+  },
+  "status": "captured"
+}

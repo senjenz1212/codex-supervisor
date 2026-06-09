@@ -1,0 +1,42 @@
+[
+  {
+    "receipt_id": "report-only-lead-tool-policy-20260609-to-prd",
+    "kind": "skill_run",
+    "skill": "to-prd",
+    "stage": "to_prd",
+    "status": "passed",
+    "artifact": "docs/dual-agent/report-only-lead-tool-policy-20260609/source/prd.md"
+  },
+  {
+    "receipt_id": "report-only-lead-tool-policy-20260609-prd-grill",
+    "kind": "skill_run",
+    "skill": "grill-with-docs",
+    "stage": "prd_grill",
+    "status": "passed",
+    "artifact": "docs/dual-agent/report-only-lead-tool-policy-20260609/source/grill-findings.md"
+  },
+  {
+    "receipt_id": "report-only-lead-tool-policy-20260609-to-issues",
+    "kind": "skill_run",
+    "skill": "to-issues",
+    "stage": "to_issues",
+    "status": "passed",
+    "artifact": "docs/dual-agent/report-only-lead-tool-policy-20260609/source/issues.md"
+  },
+  {
+    "receipt_id": "report-only-lead-tool-policy-20260609-tdd",
+    "kind": "skill_run",
+    "skill": "tdd",
+    "stage": "tdd",
+    "status": "passed",
+    "artifact": "docs/dual-agent/report-only-lead-tool-policy-20260609/source/tdd.md"
+  },
+  {
+    "receipt_id": "report-only-lead-tool-policy-20260609-tdd-grill",
+    "kind": "skill_run",
+    "skill": "grill-with-docs",
+    "stage": "tdd_grill",
+    "status": "passed",
+    "artifact": "docs/dual-agent/report-only-lead-tool-policy-20260609/source/grill-findings-tdd.md"
+  }
+]
