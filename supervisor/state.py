@@ -538,6 +538,7 @@ class State:
                    'dual_agent_dynamic_workflow_receipt_validation',
                    'dual_agent_dynamic_workflow_manifest',
                    'dual_agent_dynamic_workflow_synthesis',
+                   'dual_agent_runtime_evidence',
                    'dual_agent_reviewer_unavailable_recovery',
                    'dual_agent_workflow_job',
                    'dual_agent_workflow_terminal_outcome',

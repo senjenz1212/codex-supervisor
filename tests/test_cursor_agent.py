@@ -50,6 +50,34 @@ def test_build_cursor_prompt_is_review_only_and_uses_typed_outcome_contract(tmp_
     assert "pytest-focused" in prompt
 
 
+def test_build_cursor_prompt_compacts_large_runtime_receipt_file_lists(tmp_path: Path):
+    changed_files = [f"generated/file-{index}.txt" for index in range(25)]
+    request = CursorInvocationRequest(
+        task_id="tri-agent",
+        gate="outcome_review",
+        instruction="Challenge the outcome.",
+        cwd=tmp_path,
+        claude_outcome={"summary": "Claude accepted."},
+        tool_receipts=(
+            {
+                "receipt_id": "runtime-git-diff-outcome_review-1",
+                "kind": "git_diff",
+                "status": "present",
+                "source": "supervisor",
+                "evidence_grade": "runtime_native",
+                "changed_files": changed_files,
+            },
+        ),
+    )
+
+    prompt = build_cursor_prompt(request)
+
+    assert "changed_files_count" in prompt
+    assert "changed_files_omitted_count" in prompt
+    assert "generated/file-19.txt" in prompt
+    assert "generated/file-20.txt" not in prompt
+
+
 def test_cursor_accepts_requires_green_probe_and_accept_decision():
     accepted = Outcome(
         task_id="tri-agent",

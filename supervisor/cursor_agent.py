@@ -991,6 +991,11 @@ def _receipt_prompt_payload(receipt: dict[str, Any], *, compact: bool = False) -
         )
         if receipt.get(key) not in (None, "", [], {})
     }
+    changed_files = allowed.get("changed_files")
+    if isinstance(changed_files, list) and len(changed_files) > 20:
+        allowed["changed_files"] = changed_files[:20]
+        allowed["changed_files_count"] = len(changed_files)
+        allowed["changed_files_omitted_count"] = len(changed_files) - 20
     payload = allowed or receipt
     if compact:
         payload = _compact_for_prompt(payload)

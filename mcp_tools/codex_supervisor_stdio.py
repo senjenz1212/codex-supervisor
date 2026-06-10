@@ -72,6 +72,7 @@ from supervisor.dynamic_workflow_receipts import verify_dynamic_workflow_receipt
 from supervisor.dynamic_workflow import prepare_dynamic_workflow_preview
 from supervisor.agentic_executor import produce_agentic_worker_receipts
 from supervisor.agentic_workers import discover_agentic_worker_receipts
+from supervisor.runtime_evidence import capture_runtime_baseline, collect_runtime_evidence
 from supervisor.no_mistakes import (
     NoMistakesConfig,
     NoMistakesValidationRequest,
@@ -1092,6 +1093,11 @@ class CodexSupervisorMcpAPI:
             gate_rounds: list[GateRound] = []
             for round_index in range(1, max_rounds + 1):
                 attempts = round_index
+                runtime_baseline = (
+                    capture_runtime_baseline(cwd)
+                    if gate in {"execution", "outcome_review"}
+                    else None
+                )
                 payload = await self.start_dual_agent_gate(
                     task_id=task_id,
                     run_id=run_id,
@@ -1138,12 +1144,44 @@ class CodexSupervisorMcpAPI:
                 final_payload = payload
                 claim_probe = None
                 deliverable_probe = None
+                runtime_probe = None
                 cursor_result: CursorInvocationResult | None = None
                 cursor_payload: dict[str, Any] | None = None
                 cursor_tool_calls: list[dict[str, Any]] = []
                 review_results: list[tuple[Any, CursorInvocationResult]] = []
                 independent_reviewer_results: list[dict[str, Any]] = []
                 independent_reviewer_adjudication: dict[str, Any] | None = None
+                if payload.get("status") == "accepted" and gate in {"execution", "outcome_review"}:
+                    runtime_evidence_result = collect_runtime_evidence(
+                        cwd=cwd,
+                        task_id=task_id,
+                        run_id=run_id,
+                        gate=str(gate),
+                        round_index=round_index,
+                        baseline=runtime_baseline or {},
+                        outcome_payload=payload.get("outcome")
+                        if isinstance(payload.get("outcome"), dict)
+                        else {},
+                        test_timeout_s=min(timeout_s, 120),
+                    )
+                    receipt_payloads = _dedupe_receipt_payloads(_normalise_receipt_payloads([
+                        *receipt_payloads,
+                        *runtime_evidence_result.receipts,
+                    ]))
+                    payload["runtime_evidence"] = runtime_evidence_result.event_payload
+                    runtime_probe = runtime_evidence_result.probe
+                    self.state.write_event(
+                        run_id=run_id,
+                        source="dual_agent",
+                        kind="dual_agent_runtime_evidence",
+                        payload=runtime_evidence_result.event_payload,
+                    )
+                    self.export_gate_artifacts(
+                        run_id=run_id,
+                        task_id=task_id,
+                        cwd=cwd,
+                        screenshots=screenshot_payloads,
+                    )
                 if gate == "outcome_review" and payload.get("status") == "accepted":
                     claim_probe = verify_workflow_claims(
                         outcome_payload=payload.get("outcome"),
@@ -1432,6 +1470,7 @@ class CodexSupervisorMcpAPI:
                 available_reviewers_accept = (
                     payload.get("status") == "accepted"
                     and claude_decision == "accept"
+                    and (runtime_probe is None or runtime_probe.ok)
                     and (claim_probe is None or claim_probe.ok)
                     and _panel_available_reviewers_accept(independent_reviewer_results)
                 )
@@ -1514,6 +1553,7 @@ class CodexSupervisorMcpAPI:
                     else "accept"
                     if (
                         payload.get("status") == "accepted"
+                        and (runtime_probe is None or runtime_probe.ok)
                         and (deliverable_probe is None or deliverable_probe.ok)
                         and (claim_probe is None or claim_probe.ok)
                         and cursor_decision == "accept"
@@ -1900,7 +1940,9 @@ class CodexSupervisorMcpAPI:
                     task_id=task_id,
                     gate=gate,
                     attempts=attempts,
-                    reason="claim_verification_failed"
+                    reason="runtime_evidence_failed"
+                    if runtime_probe is not None and not runtime_probe.ok
+                    else "claim_verification_failed"
                     if claim_probe is not None and not claim_probe.ok
                     else "deliverable_evidence_failed"
                     if deliverable_probe is not None and not deliverable_probe.ok
@@ -2916,6 +2958,7 @@ class CodexSupervisorMcpAPI:
                    'dual_agent_dynamic_workflow_receipt_validation',
                    'dual_agent_dynamic_workflow_manifest',
                    'dual_agent_dynamic_workflow_synthesis',
+                   'dual_agent_runtime_evidence',
                    'dual_agent_reviewer_unavailable_recovery',
                    'dual_agent_workflow_job',
                    'dual_agent_workflow_terminal_outcome',
@@ -2937,6 +2980,7 @@ class CodexSupervisorMcpAPI:
         dynamic_workflow_receipt_validations: list[dict[str, Any]] = []
         dynamic_workflow_manifests: list[dict[str, Any]] = []
         dynamic_workflow_syntheses: list[dict[str, Any]] = []
+        runtime_evidence: list[dict[str, Any]] = []
         reviewer_unavailable_recoveries: list[dict[str, Any]] = []
         workflow_jobs: list[dict[str, Any]] = []
         workflow_routes: list[dict[str, Any]] = []
@@ -2996,6 +3040,12 @@ class CodexSupervisorMcpAPI:
                 }))
             elif row["kind"] == "dual_agent_dynamic_workflow_synthesis":
                 dynamic_workflow_syntheses.append(redact({
+                    "event_id": row["event_id"],
+                    "occurred_at": row["ts"],
+                    **payload,
+                }))
+            elif row["kind"] == "dual_agent_runtime_evidence":
+                runtime_evidence.append(redact({
                     "event_id": row["event_id"],
                     "occurred_at": row["ts"],
                     **payload,
@@ -3071,7 +3121,8 @@ class CodexSupervisorMcpAPI:
             and not agentic_worker_productions
             and not agentic_worker_progress
             and not dynamic_workflow_receipt_validations and not dynamic_workflow_manifests
-            and not dynamic_workflow_syntheses and not reviewer_unavailable_recoveries
+            and not dynamic_workflow_syntheses and not runtime_evidence
+            and not reviewer_unavailable_recoveries
             and not workflow_jobs and not workflow_routes
             and not cursor_reviews
             and not independent_reviewer_reviews
@@ -3090,6 +3141,7 @@ class CodexSupervisorMcpAPI:
                 "dynamic_workflow_receipt_validations": [],
                 "dynamic_workflow_manifests": [],
                 "dynamic_workflow_syntheses": [],
+                "runtime_evidence": [],
                 "reviewer_unavailable_recoveries": [],
                 "workflow_jobs": [],
                 "workflow_routes": [],
@@ -3112,6 +3164,7 @@ class CodexSupervisorMcpAPI:
             "dynamic_workflow_receipt_validations": dynamic_workflow_receipt_validations,
             "dynamic_workflow_manifests": dynamic_workflow_manifests,
             "dynamic_workflow_syntheses": dynamic_workflow_syntheses,
+            "runtime_evidence": runtime_evidence,
             "reviewer_unavailable_recoveries": reviewer_unavailable_recoveries,
             "workflow_jobs": workflow_jobs,
             "workflow_routes": workflow_routes,
@@ -3274,6 +3327,7 @@ class CodexSupervisorMcpAPI:
             "codex_decision": source_payload.get("codex_decision"),
             "claude_decision": source_payload.get("claude_decision"),
             "claim_verification": claim_probe,
+            "runtime_evidence": source_payload.get("runtime_evidence"),
             "escalation": {
                 "type": "workflow_lifecycle",
                 "reason": reason,

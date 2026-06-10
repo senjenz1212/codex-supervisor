@@ -7,6 +7,7 @@ import multiprocessing
 import os
 import re
 import subprocess
+import sys
 import threading
 import time
 from hashlib import sha256
@@ -132,7 +133,7 @@ def _outcome_block(
             "tests/test_dual_agent_workflow_driver.py",
         ],
         "tests": tests
-        if tests is not None else ["uv run pytest tests/test_dual_agent_workflow_driver.py"],
+        if tests is not None else [f"{sys.executable} -c \"pass\""],
         "test_status": test_status,
         "confidence": 0.94,
         "claims": claims or ["tests passed", "implemented"],
@@ -155,7 +156,7 @@ def _tool_receipts(*, include_push: bool = False) -> list[dict]:
             "receipt_id": "pytest-focused",
             "kind": "test",
             "status": "passed",
-            "command": "uv run pytest tests/test_dual_agent_workflow_driver.py",
+            "command": f"{sys.executable} -c \"pass\"",
             "claims": ["tests passed"],
         },
         {
@@ -395,6 +396,7 @@ def _server(
     cursor_runner=None,
     codex_runner=None,
     no_mistakes_runner=None,
+    runtime_materialize: bool = True,
 ):
     from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
     from supervisor.dual_agent_runner import build_lead_replay_stdout
@@ -424,6 +426,13 @@ def _server(
     cfg = _cfg(tmp_path)
     if no_mistakes_runner is not None:
         cfg.no_mistakes.require_clean_committed_branch = False
+    if runtime_materialize:
+        _materialize_runtime_evidence_fixture(
+            tmp_path,
+            changed_files=changed_files,
+            tests=tests,
+            gate_outcomes=gate_outcomes,
+        )
     server = build_codex_supervisor_mcp_server(
         cfg,
         state,
@@ -435,6 +444,53 @@ def _server(
         notifier=notifier,
     )
     return server, state
+
+
+def _materialize_runtime_evidence_fixture(
+    root: Path,
+    *,
+    changed_files: list[str] | None,
+    tests: list[str] | None,
+    gate_outcomes: dict[str, dict] | None,
+) -> None:
+    if not (root / ".git").exists():
+        _init_runtime_git_repo(root)
+
+    file_set: set[str] = set(
+        changed_files
+        if changed_files is not None else [
+            "supervisor/dual_agent_workflow.py",
+            "tests/test_dual_agent_workflow_driver.py",
+        ]
+    )
+    test_items: list[str] = list(tests if tests is not None else [f"{sys.executable} -c \"pass\""])
+    for overrides in (gate_outcomes or {}).values():
+        if "changed_files" in overrides:
+            file_set.update(str(item) for item in overrides.get("changed_files") or [])
+        if "tests" in overrides:
+            test_items.extend(str(item) for item in overrides.get("tests") or [])
+
+    for relative in sorted(path for path in file_set if path):
+        _write_runtime_file(root, relative, _runtime_fixture_content(relative))
+    for item in test_items:
+        if _runtime_test_item_is_path(item):
+            _write_runtime_file(root, item, _runtime_fixture_content(item))
+
+
+def _runtime_test_item_is_path(value: str) -> bool:
+    text = str(value or "").strip()
+    return bool(text) and " " not in text and text.endswith(".py")
+
+
+def _runtime_fixture_content(relative: str) -> str:
+    path = str(relative)
+    if path.endswith(".py") and "/test" in path:
+        return "def test_runtime_fixture_materialized():\n    assert True\n"
+    if path.endswith(".py"):
+        return "RUNTIME_FIXTURE = True\n"
+    if path.endswith(".json"):
+        return "{}\n"
+    return "runtime fixture artifact\n"
 
 
 def _gate_from_argv(argv) -> str:
@@ -461,6 +517,26 @@ def _write_good_workflow_source_artifacts(tmp_path: Path, task_id: str = "workfl
             (FIXTURE_ROOT / kind / "good.md").read_text(encoding="utf-8"),
             encoding="utf-8",
         )
+
+
+def _init_runtime_git_repo(path: Path) -> None:
+    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=path, check=True)
+    subprocess.run(["git", "add", "."], cwd=path, check=True, capture_output=True, text=True)
+    subprocess.run(
+        ["git", "commit", "-m", "baseline"],
+        cwd=path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _write_runtime_file(root: Path, relative: str, text: str) -> None:
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
 
 
 def _write_reviewer_panel_calibration(
@@ -685,7 +761,7 @@ async def test_execution_gate_blocks_accept_without_deliverable_changes(tmp_path
 
 
 @pytest.mark.asyncio
-async def test_execution_gate_blocks_code_change_without_diff_receipt(tmp_path):
+async def test_execution_gate_accepts_code_change_with_supervisor_runtime_diff_receipt(tmp_path):
     server, _state = _server(
         tmp_path,
         claims=["implemented"],
@@ -705,12 +781,16 @@ async def test_execution_gate_blocks_code_change_without_diff_receipt(tmp_path):
         tool_receipts=[],
     ))
 
-    assert result["status"] == "blocked"
-    assert result["current_gate"] == "execution"
-    p11 = result["final_gate_result"]["probes"]["P11"]
-    assert p11["status"] == "red"
-    assert p11["reason"] == "deliverable_evidence_failed"
-    assert "accepted_gate_without_deliverable_receipt" in p11["details"]["failures"]
+    assert result["status"] == "accepted"
+    assert result["final_gate_result"]["gate"] == "outcome_review"
+    runtime_receipts = result["final_gate_result"]["runtime_evidence"]["receipts"]
+    assert any(
+        receipt["kind"] == "git_diff"
+        and receipt["source"] == "supervisor"
+        and receipt["evidence_grade"] == "runtime_native"
+        and receipt["status"] == "present"
+        for receipt in runtime_receipts
+    )
 
 
 @pytest.mark.asyncio
@@ -934,6 +1014,294 @@ async def test_outcome_review_blocks_deliverable_failure_even_when_claims_verify
     assert p11["reason"] == "deliverable_evidence_failed"
     assert "accepted_gate_without_changed_files" in p11["details"]["failures"]
     assert result["final_gate_result"]["codex_decision"] == "revise"
+
+
+@pytest.mark.asyncio
+async def test_execution_gate_rejects_fabricated_runtime_receipts_for_missing_file(tmp_path):
+    fake_path = "supervisor/fake.py"
+    server, _state = _server(
+        tmp_path,
+        claims=["implemented"],
+        changed_files=[fake_path],
+        tests=[],
+        test_status="unknown",
+        runtime_materialize=False,
+    )
+    _init_runtime_git_repo(tmp_path)
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Reject fabricated runtime evidence for a missing file.",
+        max_rounds_per_gate=1,
+        task_complexity="trivial",
+        cursor_review=False,
+        tool_receipts=[
+            *_skill_receipts(),
+            {
+                "receipt_id": "agent-fabricated-diff",
+                "kind": "git_diff",
+                "status": "present",
+                "source": "supervisor",
+                "evidence_grade": "runtime_native",
+                "changed_files": [fake_path],
+                "claims": ["implemented"],
+            },
+            {
+                "receipt_id": "agent-fabricated-test",
+                "kind": "test",
+                "status": "passed",
+                "source": "supervisor",
+                "evidence_grade": "runtime_native",
+                "command": "python -m pytest tests/test_fake.py",
+                "claims": ["tests passed"],
+            },
+        ],
+    ))
+
+    assert result["status"] == "blocked"
+    assert result["current_gate"] == "execution"
+    runtime_probe = result["final_gate_result"]["runtime_evidence"]["probe"]
+    assert runtime_probe["status"] == "red"
+    assert "runtime_changed_files_missing_from_diff" in runtime_probe["details"]["failures"]
+    assert "runtime_deliverable_missing" in runtime_probe["details"]["failures"]
+    p11 = result["final_gate_result"]["probes"]["P11"]
+    assert "accepted_gate_without_supervisor_runtime_deliverable_receipt" in p11["details"]["failures"]
+
+
+@pytest.mark.asyncio
+async def test_outcome_review_requires_supervisor_rerun_for_tests_passed_claim(tmp_path):
+    source_path = "supervisor/runtime_target.py"
+    server, _state = _server(
+        tmp_path,
+        gate_outcomes={
+            "execution": {
+                "claims": ["implemented"],
+                "changed_files": [source_path],
+                "tests": [],
+                "test_status": "unknown",
+            },
+            "outcome_review": {
+                "claims": ["tests passed", "implemented"],
+                "changed_files": [source_path],
+                "tests": ['python -c "raise SystemExit(1)"'],
+                "test_status": "passed",
+            },
+        },
+        runtime_materialize=False,
+    )
+    _init_runtime_git_repo(tmp_path)
+    _write_runtime_file(tmp_path, source_path, "VALUE = 1\n")
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Reject self-reported tests when supervisor rerun fails.",
+        max_rounds_per_gate=1,
+        task_complexity="trivial",
+        cursor_review=False,
+        tool_receipts=[
+            *_skill_receipts(),
+            {
+                "receipt_id": "agent-claimed-tests",
+                "kind": "test",
+                "status": "passed",
+                "command": 'python -c "raise SystemExit(1)"',
+                "claims": ["tests passed"],
+            },
+        ],
+    ))
+
+    assert result["status"] == "blocked"
+    assert result["current_gate"] == "outcome_review"
+    runtime_probe = result["final_gate_result"]["runtime_evidence"]["probe"]
+    assert "runtime_tests_failed" in runtime_probe["details"]["failures"]
+    claim_probe = result["final_gate_result"]["claim_verification"]
+    assert claim_probe["status"] == "red"
+    assert "tests_passed_without_supervisor_runtime_test_receipt" in claim_probe["details"]["failures"]
+
+
+@pytest.mark.asyncio
+async def test_agent_supplied_tests_passed_receipt_without_supervisor_rerun_fails(tmp_path):
+    source_path = "supervisor/runtime_target.py"
+    server, _state = _server(
+        tmp_path,
+        gate_outcomes={
+            "execution": {
+                "claims": ["implemented"],
+                "changed_files": [source_path],
+                "tests": [],
+                "test_status": "unknown",
+            },
+            "outcome_review": {
+                "claims": ["tests passed", "implemented"],
+                "changed_files": [source_path],
+                "tests": [],
+                "test_status": "passed",
+            },
+        },
+        runtime_materialize=False,
+    )
+    _init_runtime_git_repo(tmp_path)
+    _write_runtime_file(tmp_path, source_path, "VALUE = 1\n")
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Reject tests-passed claims without a command the supervisor can rerun.",
+        max_rounds_per_gate=1,
+        task_complexity="trivial",
+        cursor_review=False,
+        tool_receipts=[
+            *_skill_receipts(),
+            {
+                "receipt_id": "agent-claimed-tests",
+                "kind": "test",
+                "status": "passed",
+                "claims": ["tests passed"],
+            },
+        ],
+    ))
+
+    assert result["status"] == "blocked"
+    assert result["current_gate"] == "outcome_review"
+    runtime_probe = result["final_gate_result"]["runtime_evidence"]["probe"]
+    assert "runtime_test_command_missing" in runtime_probe["details"]["failures"]
+    claim_probe = result["final_gate_result"]["claim_verification"]
+    assert claim_probe["status"] == "red"
+    assert "tests_passed_without_supervisor_runtime_test_receipt" in claim_probe["details"]["failures"]
+
+
+@pytest.mark.asyncio
+async def test_execution_gate_accepts_supervisor_runtime_native_receipts(tmp_path):
+    source_path = "supervisor/runtime_target.py"
+    test_path = "tests/test_runtime_target.py"
+    test_command = f"{sys.executable} -m pytest {test_path}::test_runtime_target_value:999 -q"
+    server, state = _server(
+        tmp_path,
+        changed_files=[source_path, test_path],
+        tests=[test_command],
+        test_status="passed",
+        runtime_materialize=False,
+    )
+    _init_runtime_git_repo(tmp_path)
+    _write_runtime_file(tmp_path, source_path, "VALUE = 42\n")
+    _write_runtime_file(
+        tmp_path,
+        test_path,
+        "from supervisor.runtime_target import VALUE\n\n"
+        "def test_runtime_target_value():\n"
+        "    assert VALUE == 42\n",
+    )
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Implement a runtime evidence verified code change.",
+        max_rounds_per_gate=1,
+        task_complexity="trivial",
+        cursor_review=False,
+        tool_receipts=_skill_receipts(),
+    ))
+
+    assert result["status"] == "accepted"
+    assert result["final_gate_result"]["claim_verification"]["status"] == "green"
+    runtime_receipts = result["final_gate_result"]["runtime_evidence"]["receipts"]
+    assert any(
+        receipt["kind"] == "test"
+        and receipt["source"] == "supervisor"
+        and receipt["evidence_grade"] == "runtime_native"
+        and receipt["status"] == "passed"
+        for receipt in runtime_receipts
+    )
+    test_receipt = next(receipt for receipt in runtime_receipts if receipt["kind"] == "test")
+    assert test_receipt["commands"] == [
+        f"{sys.executable} -m pytest {test_path}::test_runtime_target_value -q"
+    ]
+    events = [
+        json.loads(row["payload_json"])
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "dual_agent_runtime_evidence"
+    ]
+    assert events
+
+
+@pytest.mark.asyncio
+async def test_read_gate_transcript_includes_runtime_evidence_events(tmp_path):
+    source_path = "supervisor/runtime_target.py"
+    server, _state = _server(
+        tmp_path,
+        claims=["implemented"],
+        changed_files=[source_path],
+        tests=[],
+        test_status="unknown",
+        runtime_materialize=False,
+    )
+    _init_runtime_git_repo(tmp_path)
+    _write_runtime_file(tmp_path, source_path, "VALUE = 2\n")
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Expose runtime evidence in the gate transcript.",
+        max_rounds_per_gate=1,
+        task_complexity="trivial",
+        cursor_review=False,
+        tool_receipts=_skill_receipts(),
+    ))
+    assert result["status"] == "accepted"
+
+    transcript = await _maybe_await(server.tools["read_gate_transcript"](
+        run_id="workflow-run",
+        task_id="workflow-1",
+    ))
+    assert transcript["runtime_evidence"]
+    assert transcript["runtime_evidence"][0]["receipts"][0]["source"] == "supervisor"
+
+
+@pytest.mark.asyncio
+async def test_runtime_evidence_is_exported_before_cursor_review(tmp_path):
+    source_path = "supervisor/runtime_target.py"
+    observed = {"review_called": False}
+
+    def checking_cursor_runner(request) -> CursorInvocationResult:
+        observed["review_called"] = True
+        transcript_path = tmp_path / "docs" / "dual-agent" / "workflow-1" / "transcript.jsonl"
+        assert transcript_path.exists()
+        assert "dual_agent_runtime_evidence" in transcript_path.read_text(encoding="utf-8")
+        return _accepting_cursor_runner(request)
+
+    server, _state = _server(
+        tmp_path,
+        claims=["implemented"],
+        changed_files=[source_path],
+        tests=[],
+        test_status="unknown",
+        cursor_runner=checking_cursor_runner,
+        runtime_materialize=False,
+    )
+    _init_runtime_git_repo(tmp_path)
+    _write_runtime_file(tmp_path, source_path, "VALUE = 3\n")
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Expose runtime evidence before reviewer inspection.",
+        max_rounds_per_gate=1,
+        task_complexity="trivial",
+        cursor_review=True,
+        cursor_review_gates=["execution"],
+        tool_receipts=_skill_receipts(),
+    ))
+
+    assert result["status"] == "accepted"
+    assert observed["review_called"] is True
 
 
 def test_workflow_cli_loads_codex_mcp_env_without_overriding_existing(tmp_path, monkeypatch):
@@ -1707,6 +2075,12 @@ async def test_workflow_cli_payload_runs_same_supervisor_api(tmp_path):
 
     _write_good_workflow_source_artifacts(tmp_path)
     state = State(str(tmp_path / "state.db"))
+    _materialize_runtime_evidence_fixture(
+        tmp_path,
+        changed_files=None,
+        tests=None,
+        gate_outcomes=None,
+    )
     runner_calls: list[list[str]] = []
 
     def fake_runner(argv, **kwargs):
@@ -3739,6 +4113,12 @@ async def test_run_dual_agent_workflow_passes_budget_to_each_lead_gate(tmp_path)
 
     _write_good_workflow_source_artifacts(tmp_path)
     state = State(str(tmp_path / "state.db"))
+    _materialize_runtime_evidence_fixture(
+        tmp_path,
+        changed_files=None,
+        tests=None,
+        gate_outcomes=None,
+    )
     runner_calls: list[list[str]] = []
 
     def fake_runner(argv, **kwargs):
@@ -3786,6 +4166,12 @@ async def test_run_dual_agent_workflow_can_pass_dynamic_workflow_preview_policy(
 
     _write_good_workflow_source_artifacts(tmp_path)
     state = State(str(tmp_path / "state.db"))
+    _materialize_runtime_evidence_fixture(
+        tmp_path,
+        changed_files=None,
+        tests=None,
+        gate_outcomes=None,
+    )
 
     def fake_runner(argv, **kwargs):
         return subprocess.CompletedProcess(
@@ -3986,6 +4372,12 @@ async def test_run_dual_agent_workflow_required_policy_still_blocks_without_exec
 
     _write_good_workflow_source_artifacts(tmp_path)
     state = State(str(tmp_path / "state.db"))
+    _materialize_runtime_evidence_fixture(
+        tmp_path,
+        changed_files=None,
+        tests=None,
+        gate_outcomes=None,
+    )
     planner_calls = []
     lead_calls = []
 
@@ -4050,6 +4442,12 @@ async def test_run_dual_agent_workflow_required_policy_spawns_agentic_workers_an
 
     _write_good_workflow_source_artifacts(tmp_path)
     state = State(str(tmp_path / "state.db"))
+    _materialize_runtime_evidence_fixture(
+        tmp_path,
+        changed_files=None,
+        tests=None,
+        gate_outcomes=None,
+    )
     planner_calls = []
     worker_calls = []
     lead_calls = []
@@ -4165,6 +4563,12 @@ async def test_run_dual_agent_workflow_hydrates_durable_agentic_worker_receipts_
 
     _write_good_workflow_source_artifacts(tmp_path)
     state = State(str(tmp_path / "state.db"))
+    _materialize_runtime_evidence_fixture(
+        tmp_path,
+        changed_files=None,
+        tests=None,
+        gate_outcomes=None,
+    )
     receipt = run_agentic_worker(
         AgenticWorkerSpec(
             task_id="workflow-1",
@@ -4248,6 +4652,12 @@ async def test_run_dual_agent_workflow_allowed_policy_runs_producer_without_bloc
 
     _write_good_workflow_source_artifacts(tmp_path)
     state = State(str(tmp_path / "state.db"))
+    _materialize_runtime_evidence_fixture(
+        tmp_path,
+        changed_files=None,
+        tests=None,
+        gate_outcomes=None,
+    )
     planner_calls = []
     lead_calls = []
 
@@ -6099,6 +6509,12 @@ async def test_run_dual_agent_workflow_retries_malformed_outcome_once(tmp_path):
 
     _write_good_workflow_source_artifacts(tmp_path)
     state = State(str(tmp_path / "state.db"))
+    _materialize_runtime_evidence_fixture(
+        tmp_path,
+        changed_files=None,
+        tests=None,
+        gate_outcomes=None,
+    )
     calls = 0
 
     def fake_runner(argv, **kwargs):
@@ -6186,6 +6602,12 @@ async def test_run_dual_agent_workflow_can_rerun_after_corrective_input(tmp_path
 
     _write_good_workflow_source_artifacts(tmp_path)
     state = State(str(tmp_path / "state.db"))
+    _materialize_runtime_evidence_fixture(
+        tmp_path,
+        changed_files=None,
+        tests=None,
+        gate_outcomes=None,
+    )
 
     def fake_runner(argv, **kwargs):
         return subprocess.CompletedProcess(
@@ -6238,6 +6660,12 @@ async def test_run_dual_agent_workflow_resumes_after_transport_loss_from_pending
 
     _write_good_workflow_source_artifacts(tmp_path)
     state = State(str(tmp_path / "state.db"))
+    _materialize_runtime_evidence_fixture(
+        tmp_path,
+        changed_files=None,
+        tests=None,
+        gate_outcomes=None,
+    )
     for gate in ("prd_review", "issues_review", "tdd_review"):
         state.write_event(
             run_id="workflow-run",
@@ -6435,7 +6863,7 @@ async def test_run_dual_agent_workflow_verifies_final_claims(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_run_dual_agent_workflow_requires_test_receipts_for_claims(tmp_path):
+async def test_run_dual_agent_workflow_accepts_claims_with_supervisor_runtime_test_receipt(tmp_path):
     server, _state = _server(tmp_path, claims=["tests passed", "implemented"])
     receipts = [
         receipt for receipt in _tool_receipts()
@@ -6451,14 +6879,18 @@ async def test_run_dual_agent_workflow_requires_test_receipts_for_claims(tmp_pat
         tool_receipts=receipts,
     ))
 
-    assert result["status"] == "blocked"
-    assert result["current_gate"] == "outcome_review"
-    failures = result["final_gate_result"]["claim_verification"]["details"]["failures"]
-    assert "tests_passed_without_test_receipt" in failures
+    assert result["status"] == "accepted"
+    receipts = result["final_gate_result"]["claim_verification"]["details"]["receipts"]
+    assert any(
+        receipt["kind"] == "test"
+        and receipt["source"] == "supervisor"
+        and receipt["evidence_grade"] == "runtime_native"
+        for receipt in receipts
+    )
 
 
 @pytest.mark.asyncio
-async def test_run_dual_agent_workflow_rejects_unrelated_receipts_for_claims(tmp_path):
+async def test_run_dual_agent_workflow_ignores_unrelated_agent_receipts_when_runtime_receipts_pass(tmp_path):
     server, _state = _server(tmp_path, claims=["tests passed", "implemented"])
     unrelated_receipts = _tool_receipts()
     for receipt in unrelated_receipts:
@@ -6473,14 +6905,12 @@ async def test_run_dual_agent_workflow_rejects_unrelated_receipts_for_claims(tmp
         tool_receipts=unrelated_receipts,
     ))
 
-    assert result["status"] == "blocked"
-    failures = result["final_gate_result"]["claim_verification"]["details"]["failures"]
-    assert "tests_passed_without_test_receipt" in failures
-    assert "implemented_without_diff_receipt" in failures
+    assert result["status"] == "accepted"
+    assert result["final_gate_result"]["claim_verification"]["status"] == "green"
 
 
 @pytest.mark.asyncio
-async def test_run_dual_agent_workflow_rejects_diff_receipt_without_changed_file_replay(tmp_path):
+async def test_run_dual_agent_workflow_accepts_when_supervisor_diff_covers_agent_receipt_without_files(tmp_path):
     server, _state = _server(tmp_path, claims=["tests passed", "implemented"])
     receipts = _tool_receipts()
     for receipt in receipts:
@@ -6496,15 +6926,12 @@ async def test_run_dual_agent_workflow_rejects_diff_receipt_without_changed_file
         tool_receipts=receipts,
     ))
 
-    assert result["status"] == "blocked"
-    assert result["current_gate"] == "execution"
-    p11 = result["final_gate_result"]["probes"]["P11"]
-    assert p11["reason"] == "deliverable_evidence_failed"
-    assert "accepted_gate_without_deliverable_receipt" in p11["details"]["failures"]
+    assert result["status"] == "accepted"
+    assert result["final_gate_result"]["probes"]["P11"]["status"] == "green"
 
 
 @pytest.mark.asyncio
-async def test_run_dual_agent_workflow_rejects_partial_changed_file_receipt(tmp_path):
+async def test_run_dual_agent_workflow_accepts_when_supervisor_diff_covers_partial_agent_receipt(tmp_path):
     server, _state = _server(tmp_path, claims=["tests passed", "implemented"])
     receipts = _tool_receipts()
     for receipt in receipts:
@@ -6520,15 +6947,12 @@ async def test_run_dual_agent_workflow_rejects_partial_changed_file_receipt(tmp_
         tool_receipts=receipts,
     ))
 
-    assert result["status"] == "blocked"
-    assert result["current_gate"] == "execution"
-    p11 = result["final_gate_result"]["probes"]["P11"]
-    assert p11["reason"] == "deliverable_evidence_failed"
-    assert "accepted_gate_without_deliverable_receipt" in p11["details"]["failures"]
+    assert result["status"] == "accepted"
+    assert result["final_gate_result"]["probes"]["P11"]["status"] == "green"
 
 
 @pytest.mark.asyncio
-async def test_run_dual_agent_workflow_rejects_vague_substring_claim_receipts(tmp_path):
+async def test_run_dual_agent_workflow_accepts_when_supervisor_diff_covers_vague_agent_claim_receipt(tmp_path):
     server, _state = _server(tmp_path, claims=["tests passed", "implemented"])
     receipts = _tool_receipts()
     for receipt in receipts:
@@ -6544,9 +6968,8 @@ async def test_run_dual_agent_workflow_rejects_vague_substring_claim_receipts(tm
         tool_receipts=receipts,
     ))
 
-    assert result["status"] == "blocked"
-    failures = result["final_gate_result"]["claim_verification"]["details"]["failures"]
-    assert "implemented_without_diff_receipt" in failures
+    assert result["status"] == "accepted"
+    assert result["final_gate_result"]["claim_verification"]["status"] == "green"
 
 
 @pytest.mark.asyncio

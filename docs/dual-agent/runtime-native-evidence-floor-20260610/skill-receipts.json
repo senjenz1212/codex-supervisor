@@ -1,0 +1,47 @@
+[
+  {
+    "receipt_id": "runtime-evidence-to-prd",
+    "kind": "skill_run",
+    "skill": "to_prd",
+    "stage": "to_prd",
+    "status": "passed",
+    "artifact": "docs/dual-agent/runtime-native-evidence-floor-20260610/prd.md",
+    "claims": ["prd generated"]
+  },
+  {
+    "receipt_id": "runtime-evidence-prd-grill",
+    "kind": "skill_run",
+    "skill": "grill_with_docs",
+    "stage": "prd_grill",
+    "status": "passed",
+    "artifact": "docs/dual-agent/runtime-native-evidence-floor-20260610/grill-findings.md",
+    "claims": ["prd grill completed"]
+  },
+  {
+    "receipt_id": "runtime-evidence-to-issues",
+    "kind": "skill_run",
+    "skill": "to_issues",
+    "stage": "to_issues",
+    "status": "passed",
+    "artifact": "docs/dual-agent/runtime-native-evidence-floor-20260610/issues.md",
+    "claims": ["issues generated"]
+  },
+  {
+    "receipt_id": "runtime-evidence-tdd",
+    "kind": "skill_run",
+    "skill": "tdd",
+    "stage": "tdd",
+    "status": "passed",
+    "artifact": "docs/dual-agent/runtime-native-evidence-floor-20260610/tdd.md",
+    "claims": ["tdd generated"]
+  },
+  {
+    "receipt_id": "runtime-evidence-tdd-grill",
+    "kind": "skill_run",
+    "skill": "grill_with_docs",
+    "stage": "tdd_grill",
+    "status": "passed",
+    "artifact": "docs/dual-agent/runtime-native-evidence-floor-20260610/grill-findings-tdd.md",
+    "claims": ["tdd grill completed"]
+  }
+]

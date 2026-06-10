@@ -359,8 +359,10 @@ def verify_workflow_claims(
             statuses=_PASSING_RECEIPT_STATUSES,
             claim="tests passed",
             require_claim=True,
+            required_source="supervisor",
+            required_evidence_grade="runtime_native",
         ):
-            failures.append("tests_passed_without_test_receipt")
+            failures.append("tests_passed_without_supervisor_runtime_test_receipt")
     if "visual review passed" in joined or "visual validation passed" in joined or user_facing:
         if not _has_visual_evidence(screenshots):
             failures.append("visual_review_without_screenshot_evidence")
@@ -381,8 +383,10 @@ def verify_workflow_claims(
             claim="implemented",
             require_claim=True,
             changed_files=outcome.changed_files or [],
+            required_source="supervisor",
+            required_evidence_grade="runtime_native",
         ):
-            failures.append("implemented_without_diff_receipt")
+            failures.append("implemented_without_supervisor_runtime_diff_receipt")
     if "no files changed" in joined and outcome.changed_files:
         failures.append("no_files_changed_claim_with_changed_files")
     if "no files changed" in joined and not _has_receipt(
@@ -465,8 +469,20 @@ def verify_gate_deliverable_evidence(
         kinds=receipt_kinds,
         statuses=_PRESENT_RECEIPT_STATUSES,
         changed_files=deliverable_files,
+        required_source="supervisor",
+        required_evidence_grade="runtime_native",
     ):
-        failures.append("accepted_gate_without_deliverable_receipt")
+        failures.append("accepted_gate_without_supervisor_runtime_diff_receipt")
+
+    if deliverable_files and not _has_receipt(
+        receipts,
+        kinds={"runtime_deliverable_check"},
+        statuses=_PASSING_RECEIPT_STATUSES,
+        changed_files=deliverable_files,
+        required_source="supervisor",
+        required_evidence_grade="runtime_native",
+    ):
+        failures.append("accepted_gate_without_supervisor_runtime_deliverable_receipt")
 
     details = {
         "gate": gate,
@@ -688,11 +704,20 @@ def _has_receipt(
     claim: str | None = None,
     require_claim: bool = False,
     changed_files: list[str] | None = None,
+    required_source: str | None = None,
+    required_evidence_grade: str | None = None,
 ) -> bool:
     for receipt in receipts:
         kind = _normalise_receipt_value(receipt.get("kind") or receipt.get("type"))
         status = _normalise_receipt_value(receipt.get("status") or receipt.get("result"))
         if kind not in kinds or status not in statuses:
+            continue
+        if required_source is not None and _normalise_receipt_value(receipt.get("source")) != required_source:
+            continue
+        if (
+            required_evidence_grade is not None
+            and _normalise_receipt_value(receipt.get("evidence_grade")) != required_evidence_grade
+        ):
             continue
         if claim is not None and not _receipt_matches_claim(
             receipt,

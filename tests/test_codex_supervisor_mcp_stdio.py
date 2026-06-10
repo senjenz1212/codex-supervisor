@@ -97,7 +97,7 @@ def _outcome_block(
         "decisions": [decision],
         "objections": [],
         "changed_files": ["supervisor/dual_agent.py"],
-        "tests": ["pytest tests/test_codex_supervisor_mcp_stdio.py"],
+        "tests": [f"{sys.executable} -c \"pass\""],
         "test_status": "passed",
         "confidence": 0.94,
     }
@@ -122,6 +122,26 @@ async def _maybe_await(value):
     if inspect.isawaitable(value):
         return await value
     return value
+
+
+def _init_runtime_git_repo(path: Path) -> None:
+    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=path, check=True)
+    subprocess.run(["git", "add", "."], cwd=path, check=True, capture_output=True, text=True)
+    subprocess.run(
+        ["git", "commit", "-m", "baseline"],
+        cwd=path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _write_runtime_file(root: Path, relative: str, text: str) -> None:
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
 
 
 def _tiny_png() -> bytes:
@@ -602,6 +622,8 @@ async def test_read_gate_transcript_includes_skill_receipt_validation(tmp_path):
             (FIXTURE_ROOT / kind / "good.md").read_text(encoding="utf-8"),
             encoding="utf-8",
         )
+    _init_runtime_git_repo(tmp_path)
+    _write_runtime_file(tmp_path, "supervisor/dual_agent.py", "RUNTIME_FIXTURE = True\n")
 
     def fake_runner(argv, **kwargs):
         return subprocess.CompletedProcess(

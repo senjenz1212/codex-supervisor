@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "8d2f8f35d1bead2268ffda684fad06528d10ab2e4453f09a983a9716f30d2e2f",
+  "git": {
+    "diff_bytes": 43214,
+    "diff_sha256": "155d00eb955eb9bad6d9c948178c23dc4b67eecbc84fc8bf0e7555d958ba0bd0",
+    "diff_stat": "mcp_tools/codex_supervisor_stdio.py      |  58 +++-\n supervisor/cursor_agent.py               |   5 +\n supervisor/dual_agent_workflow.py        |  31 +-\n supervisor/state.py                      |   1 +\n tests/test_codex_supervisor_mcp_stdio.py |  24 +-\n tests/test_cursor_agent.py               |  28 ++\n tests/test_dual_agent_workflow_driver.py | 493 ++++++++++++++++++++++++++++---\n 7 files changed, 599 insertions(+), 41 deletions(-)",
+    "head": "50f2fc2",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "50f2fc2",
+    "status_short": "M mcp_tools/codex_supervisor_stdio.py\n M supervisor/cursor_agent.py\n M supervisor/dual_agent_workflow.py\n M supervisor/state.py\n M tests/test_codex_supervisor_mcp_stdio.py\n M tests/test_cursor_agent.py\n M tests/test_dual_agent_workflow_driver.py\n?? .scratch/cocreate-checkpoint-files-only-dual-agent-prompt.md\n?? .scratch/cocreate-ckpt-tdd-review-corrective-input.md\n?? docs/dual-agent/runtime-native-evidence-floor-20260610/\n?? docs/dual-agent/supervisor-flow-autoresearch-run-20260609/\n?? docs/supervisor-improvement-audit-20260609.md\n?? docs/supervisor-improvement-prompts-coverage-20260609.md\n?? supervisor/runtime_evidence.py\n?? tests/test_runtime_evidence.py"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "f4e1edf414cdff4b8de2a08a34a9ecd0efebfe1522ed7a8555f2b5aa148f1abc",
+    "implementation_plan": "e59b32377ce0064936b7456bbf9a97bc0fbcd49d23bd22194689434f5b10138b",
+    "issues": "5a88b6081b0a92e4c995b79e02da4ae73d74ec72af168ddd2075600047697f2a",
+    "prd": "4c8a521fd7736313d56c020b579a0ffe34dfc121c701cd269c24fd6af889bc37",
+    "tdd_plan": "a4b060d3ebe64d68dabb641e89341626e411ec5683bf4b10c5e49655e57c697f"
+  },
+  "status": "captured"
+}
