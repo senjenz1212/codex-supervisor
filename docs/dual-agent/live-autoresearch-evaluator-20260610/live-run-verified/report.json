@@ -1,0 +1,137 @@
+{
+  "default_change_allowed": false,
+  "event_ids": [
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18
+  ],
+  "event_kinds": [
+    "autoresearch_experiment_started",
+    "autoresearch_attempt_started",
+    "autoresearch_attempt_execution_job_submitted",
+    "autoresearch_attempt_execution_job_started",
+    "autoresearch_attempt_execution_job_completed",
+    "autoresearch_attempt_completed",
+    "autoresearch_validation_started",
+    "autoresearch_validation_completed",
+    "autoresearch_report_emitted"
+  ],
+  "experiment": {
+    "baseline_ref": "baseline:current-supervisor",
+    "budget_usd": 0.25,
+    "evaluator_hash": "0bc15daef9bd07f8f99d9d68fe0008be6c9f4aadeee14e9b491bc35d6b27980e",
+    "evaluator_ref": "tests/fixtures/autoresearch/locked/evaluator.py",
+    "execution_mode": "live",
+    "experiment_id": "fixture-autoresearch-001",
+    "hypothesis": "A constrained mutable skill overlay can improve reviewer evidence without changing production gates.",
+    "immutable_paths": [
+      "supervisor/state.py",
+      "supervisor/reviewer_registry.py",
+      "tests/fixtures/autoresearch/locked"
+    ],
+    "k_trials": 3,
+    "max_attempts": 1,
+    "metric_name": "reviewer_evidence_score",
+    "mutable_paths": [
+      "docs/dual-agent/supervisor-autoresearch-foundation-20260606/experiments",
+      "skills/reviewer-rubrics"
+    ],
+    "schema_version": "supervisor-autoresearch/v1",
+    "task_id": "supervisor-autoresearch-foundation-20260606",
+    "timeout_s": 5.0
+  },
+  "recommendation": {
+    "decision": "review_required",
+    "operator_review_required": true,
+    "reason": "one_or_more_attempts_failed_validation"
+  },
+  "records": [
+    {
+      "artifact_hashes": {},
+      "attempt_id": "attempt-reviewer-rubric-001",
+      "changed_files": [
+        "skills/reviewer-rubrics/evidence.md"
+      ],
+      "cost_usd": 0.033,
+      "default_change_allowed": false,
+      "evaluator_run_hash": "5123d7e3a8a1ef0d8674a376e300aae20c23a8ccf05ebdf255610f5b9bd6dedc",
+      "evaluator_run_ref": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/live-autoresearch-evaluator-20260610/live-run-verified/evaluator-runs/attempt-reviewer-rubric-001.json",
+      "experiment_id": "fixture-autoresearch-001",
+      "gaming_flags": [
+        "outside_mutable_surface"
+      ],
+      "gate_advanced": false,
+      "immutable_paths": [
+        "supervisor/state.py",
+        "supervisor/postgres_state.py",
+        "supervisor/config.py",
+        "supervisor/dual_agent_workflow.py",
+        "supervisor/dual_agent_runner.py",
+        "supervisor/reviewer_registry.py",
+        "supervisor/dynamic_workflow_receipts.py",
+        "supervisor/autoresearch/validation.py",
+        "supervisor/autoresearch/report.py",
+        "tests/fixtures/agentic_eval",
+        "tests/fixtures/autoresearch/locked",
+        "config.example.yaml"
+      ],
+      "metric_iqr": 0.02,
+      "metric_median": 0.87,
+      "metric_name": "reviewer_evidence_score",
+      "metric_source": "evaluator_execution",
+      "metric_trials": [
+        0.86,
+        0.87,
+        0.88
+      ],
+      "mutable_paths": [
+        "docs/dual-agent/supervisor-autoresearch-foundation-20260606/experiments",
+        "skills/reviewer-rubrics"
+      ],
+      "policy_mutated": false,
+      "quality_unstable_across_trials": true,
+      "recommendation": "reject attempt for validation errors; do not promote",
+      "report_sha256": "0bc12f3689cb693c4684c81bee6be88f17aac5de3a8fbbcab314f99d141ed158",
+      "schema_version": "supervisor-autoresearch-report/v1",
+      "task_id": "supervisor-autoresearch-foundation-20260606",
+      "validation_errors": [
+        "evaluator modified source checkout outside mutable surface: .git/objects/26/03d8589bcbe022b403c3ad8b416a0e169dad5a, .git/objects/46/74e04e9d28c0562bf69da25501f7f0ed4e6fa9, .git/objects/52/f07f2794494dd032e0edff29a74ccdf4fa6946, .git/objects/83/502eeb926d6e8a4f3a1fd3b6e48ffe4e33c322, .git/objects/90/cc88f5ce5090c5e9a69b3226122098813ad8c6, .git/objects/fe/5f289f5aa10d46734bb7104b158ed05bb6e5c9"
+      ],
+      "validation_status": "rejected",
+      "wall_clock_s": 9.250694
+    }
+  ],
+  "report_only": {
+    "config_mutated": false,
+    "default_change_allowed": false,
+    "operator_review_required": true,
+    "policy_mutated": false
+  },
+  "report_sha256": "20adc87de3519cc12c4655b846058b6e0cdaad6d6909ea68319f3f6b387176fa",
+  "schema_version": "supervisor-autoresearch-summary/v1",
+  "summary": {
+    "accepted_attempt_count": 0,
+    "attempt_count": 1,
+    "gaming_flag_count": 1,
+    "rejected_attempt_count": 1,
+    "report_only": true
+  },
+  "supported_event_kinds": [
+    "autoresearch_experiment_started",
+    "autoresearch_attempt_started",
+    "autoresearch_attempt_execution_job_submitted",
+    "autoresearch_attempt_execution_job_started",
+    "autoresearch_attempt_execution_job_completed",
+    "autoresearch_attempt_execution_job_failed",
+    "autoresearch_attempt_completed",
+    "autoresearch_validation_started",
+    "autoresearch_validation_completed",
+    "autoresearch_report_emitted"
+  ]
+}

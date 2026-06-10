@@ -1,0 +1,45 @@
+{
+  "attempt_id": "attempt-reviewer-rubric-001",
+  "attempt_worktree_ref": "isolated:temporary",
+  "budget_usd": 0.25,
+  "cost_usd": 0.003,
+  "evaluator_hash": "0bc15daef9bd07f8f99d9d68fe0008be6c9f4aadeee14e9b491bc35d6b27980e",
+  "evaluator_ref": "tests/fixtures/autoresearch/locked/evaluator.py",
+  "execution_errors": [
+    "evaluator modified source checkout outside mutable surface: .git/objects/26/03d8589bcbe022b403c3ad8b416a0e169dad5a, .git/objects/46/74e04e9d28c0562bf69da25501f7f0ed4e6fa9, .git/objects/52/f07f2794494dd032e0edff29a74ccdf4fa6946, .git/objects/83/502eeb926d6e8a4f3a1fd3b6e48ffe4e33c322, .git/objects/90/cc88f5ce5090c5e9a69b3226122098813ad8c6, .git/objects/fe/5f289f5aa10d46734bb7104b158ed05bb6e5c9"
+  ],
+  "experiment_id": "fixture-autoresearch-001",
+  "k_trials": 3,
+  "metric_name": "reviewer_evidence_score",
+  "metric_trials": [
+    0.86,
+    0.87,
+    0.88
+  ],
+  "schema_version": "supervisor-autoresearch-evaluator-run/v1",
+  "timeout_s": 5.0,
+  "trial_records": [
+    {
+      "duration_s": 0.067857,
+      "metric_value": 0.86,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "9c4732be69e8ae77afacb279091ec20335ed192d2dc5aefaba0d19c0fdd1cebc",
+      "trial_index": 0
+    },
+    {
+      "duration_s": 0.051009,
+      "metric_value": 0.87,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "6b794fbe2de48b5cd1fbf11b8650e0ef6d89a3b3009114a47ca3ca43d63c20d0",
+      "trial_index": 1
+    },
+    {
+      "duration_s": 0.050177,
+      "metric_value": 0.88,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "ac4c0bdc95ece120a8b7de88151dd7b535d01485ad517b66f1f8deef6f116572",
+      "trial_index": 2
+    }
+  ],
+  "wall_clock_s": 9.250277
+}

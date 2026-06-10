@@ -35,6 +35,7 @@ class AutoresearchExperiment:
     max_attempts: int = 1
     k_trials: int = 1
     budget_usd: float = 0.0
+    timeout_s: float = 60.0
     execution_mode: str = "fixture_replay"
 
     @classmethod
@@ -52,6 +53,7 @@ class AutoresearchExperiment:
             max_attempts=int(raw.get("max_attempts") or 1),
             k_trials=int(raw.get("k_trials") or 1),
             budget_usd=float(raw.get("budget_usd") or 0.0),
+            timeout_s=float(raw.get("timeout_s") or 60.0),
             execution_mode=str(raw.get("execution_mode") or "fixture_replay"),
         )
 
@@ -70,6 +72,7 @@ class AutoresearchExperiment:
             "max_attempts": self.max_attempts,
             "k_trials": self.k_trials,
             "budget_usd": self.budget_usd,
+            "timeout_s": self.timeout_s,
             "execution_mode": self.execution_mode,
         }
 
@@ -84,9 +87,14 @@ class AutoresearchAttempt:
     changed_files: tuple[str, ...]
     metric_trials: tuple[float, ...]
     parent_attempt_id: str | None = None
+    metric_source: str = "fixture"
+    evaluator_run_ref: str = ""
+    evaluator_run_hash: str = ""
+    attempt_worktree_ref: str = ""
     patch_ref: str = ""
     artifact_hashes: dict[str, str] = field(default_factory=dict)
     evidence_refs: tuple[str, ...] = field(default_factory=tuple)
+    execution_errors: tuple[str, ...] = field(default_factory=tuple)
     cost_usd: float = 0.0
     wall_clock_s: float = 0.0
     status: ValidationStatus = "pending"
@@ -106,9 +114,14 @@ class AutoresearchAttempt:
                 if raw.get("parent_attempt_id") not in {None, ""}
                 else None
             ),
+            metric_source=str(raw.get("metric_source") or "fixture"),
+            evaluator_run_ref=str(raw.get("evaluator_run_ref") or ""),
+            evaluator_run_hash=str(raw.get("evaluator_run_hash") or ""),
+            attempt_worktree_ref=str(raw.get("attempt_worktree_ref") or ""),
             patch_ref=str(raw.get("patch_ref") or ""),
             artifact_hashes={str(key): str(value) for key, value in dict(raw.get("artifact_hashes") or {}).items()},
             evidence_refs=tuple(str(ref) for ref in raw.get("evidence_refs", ())),
+            execution_errors=tuple(str(error) for error in raw.get("execution_errors", ())),
             cost_usd=float(raw.get("cost_usd") or 0.0),
             wall_clock_s=float(raw.get("wall_clock_s") or 0.0),
             status=str(raw.get("status") or "pending"),  # type: ignore[arg-type]
@@ -123,10 +136,15 @@ class AutoresearchAttempt:
             "worker_id": self.worker_id,
             "hypothesis": self.hypothesis,
             "parent_attempt_id": self.parent_attempt_id,
+            "metric_source": self.metric_source,
+            "evaluator_run_ref": self.evaluator_run_ref,
+            "evaluator_run_hash": self.evaluator_run_hash,
+            "attempt_worktree_ref": self.attempt_worktree_ref,
             "patch_ref": self.patch_ref,
             "changed_files": list(self.changed_files),
             "artifact_hashes": dict(sorted(self.artifact_hashes.items())),
             "evidence_refs": list(self.evidence_refs),
+            "execution_errors": list(self.execution_errors),
             "metric_trials": list(self.metric_trials),
             "cost_usd": self.cost_usd,
             "wall_clock_s": self.wall_clock_s,
@@ -143,6 +161,9 @@ class AutoresearchValidationReport:
     recommendation: str
     metric_name: str
     metric_trials: tuple[float, ...]
+    metric_source: str
+    evaluator_run_ref: str
+    evaluator_run_hash: str
     metric_median: float | None
     metric_iqr: float | None
     quality_unstable_across_trials: bool
@@ -168,6 +189,9 @@ class AutoresearchValidationReport:
             "recommendation": self.recommendation,
             "metric_name": self.metric_name,
             "metric_trials": list(self.metric_trials),
+            "metric_source": self.metric_source,
+            "evaluator_run_ref": self.evaluator_run_ref,
+            "evaluator_run_hash": self.evaluator_run_hash,
             "metric_median": self.metric_median,
             "metric_iqr": self.metric_iqr,
             "quality_unstable_across_trials": self.quality_unstable_across_trials,
@@ -199,6 +223,9 @@ class AutoresearchValidationReport:
             "recommendation": self.recommendation,
             "metric_name": self.metric_name,
             "metric_trials": list(self.metric_trials),
+            "metric_source": self.metric_source,
+            "evaluator_run_ref": self.evaluator_run_ref,
+            "evaluator_run_hash": self.evaluator_run_hash,
             "metric_median": self.metric_median,
             "metric_iqr": self.metric_iqr,
             "quality_unstable_across_trials": self.quality_unstable_across_trials,

@@ -1,0 +1,810 @@
+[
+  {
+    "deterministic_probe": "blocked payload reason `disobey_task_spec` or planning artifact failure",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "failure_taxonomy_for_payload",
+    "mast_category": "Specification Issues",
+    "mast_code": "FM-1.1",
+    "mast_mode": "Disobey task specification",
+    "sources": [
+      {
+        "event_id": 621531,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 621531,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      }
+    ],
+    "status": "observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "blocked payload reason `role_violation_covenant`",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "failure_taxonomy_for_payload -> classify_failure",
+    "mast_category": "Specification Issues",
+    "mast_code": "FM-1.2",
+    "mast_mode": "Disobey role specification",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "same gate and handoff packet observed twice",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "detect_sequence_failures",
+    "mast_category": "Specification Issues",
+    "mast_code": "FM-1.3",
+    "mast_mode": "Step repetition",
+    "sources": [
+      {
+        "details": {
+          "signature": [
+            "prd_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/live-autoresearch-evaluator-20260610.json"
+          ]
+        },
+        "event_ids": [
+          621531,
+          621703
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "tdd_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/live-autoresearch-evaluator-20260610.json"
+          ]
+        },
+        "event_ids": [
+          621871,
+          622088
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "tdd_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/live-autoresearch-evaluator-20260610.json"
+          ]
+        },
+        "event_ids": [
+          621871,
+          622562
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "tdd_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/live-autoresearch-evaluator-20260610.json"
+          ]
+        },
+        "event_ids": [
+          621871,
+          622773
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "tdd_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/live-autoresearch-evaluator-20260610.json"
+          ]
+        },
+        "event_ids": [
+          621871,
+          623009
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "tdd_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/live-autoresearch-evaluator-20260610.json"
+          ]
+        },
+        "event_ids": [
+          621871,
+          623269
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "tdd_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/live-autoresearch-evaluator-20260610.json"
+          ]
+        },
+        "event_ids": [
+          621871,
+          623454
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "execution",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/live-autoresearch-evaluator-20260610.json"
+          ]
+        },
+        "event_ids": [
+          624413,
+          624417
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "execution",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/live-autoresearch-evaluator-20260610.json"
+          ]
+        },
+        "event_ids": [
+          624413,
+          624481
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/live-autoresearch-evaluator-20260610.json"
+          ]
+        },
+        "event_ids": [
+          624561,
+          624965
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/live-autoresearch-evaluator-20260610.json"
+          ]
+        },
+        "event_ids": [
+          624561,
+          625050
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/live-autoresearch-evaluator-20260610.json"
+          ]
+        },
+        "event_ids": [
+          624561,
+          625327
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/live-autoresearch-evaluator-20260610.json"
+          ]
+        },
+        "event_ids": [
+          624561,
+          625396
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/live-autoresearch-evaluator-20260610.json"
+          ]
+        },
+        "event_ids": [
+          624561,
+          625641
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/live-autoresearch-evaluator-20260610.json"
+          ]
+        },
+        "event_ids": [
+          624561,
+          625867
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/live-autoresearch-evaluator-20260610.json"
+          ]
+        },
+        "event_ids": [
+          624561,
+          625870
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/live-autoresearch-evaluator-20260610.json"
+          ]
+        },
+        "event_ids": [
+          624561,
+          625915
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/live-autoresearch-evaluator-20260610.json"
+          ]
+        },
+        "event_ids": [
+          624561,
+          625918
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/live-autoresearch-evaluator-20260610.json"
+          ]
+        },
+        "event_ids": [
+          624561,
+          626847
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/live-autoresearch-evaluator-20260610.json"
+          ]
+        },
+        "event_ids": [
+          624561,
+          627256
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/live-autoresearch-evaluator-20260610.json"
+          ]
+        },
+        "event_ids": [
+          624561,
+          627346
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/live-autoresearch-evaluator-20260610.json"
+          ]
+        },
+        "event_ids": [
+          624561,
+          627589
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/live-autoresearch-evaluator-20260610.json"
+          ]
+        },
+        "event_ids": [
+          624561,
+          627699
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/live-autoresearch-evaluator-20260610.json"
+          ]
+        },
+        "event_ids": [
+          624561,
+          627997
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/live-autoresearch-evaluator-20260610.json"
+          ]
+        },
+        "event_ids": [
+          624561,
+          628132
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/live-autoresearch-evaluator-20260610.json"
+          ]
+        },
+        "event_ids": [
+          624561,
+          628404
+        ],
+        "source": "sequence"
+      }
+    ],
+    "status": "observed_in_run",
+    "trigger_surface": "sequence"
+  },
+  {
+    "deterministic_probe": "blocked payload reason `lost_conversation_history`",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "classify_failure",
+    "mast_category": "Specification Issues",
+    "mast_code": "FM-1.4",
+    "mast_mode": "Loss of conversation history",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "blocked payload reason `agents_not_converged_max_rounds`",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "classify_failure",
+    "mast_category": "Specification Issues",
+    "mast_code": "FM-1.5",
+    "mast_mode": "Unaware of termination conditions",
+    "sources": [
+      {
+        "event_id": 622088,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 622088,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 622773,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 622773,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 623269,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 623269,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 625327,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 625327,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 625641,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 625641,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 625870,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 625870,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 625918,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 625918,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 627589,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 627589,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      }
+    ],
+    "status": "observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "blocked payload reason `conversation_reset`",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "classify_failure",
+    "mast_category": "Inter-Agent Misalignment",
+    "mast_code": "FM-2.1",
+    "mast_mode": "Conversation reset",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "blocked payload reason `ambiguous_input_no_clarification`",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "classify_failure",
+    "mast_category": "Inter-Agent Misalignment",
+    "mast_code": "FM-2.2",
+    "mast_mode": "Fail to ask for clarification",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "blocked payload reason `scope_violation_off_scope`",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "classify_failure",
+    "mast_category": "Inter-Agent Misalignment",
+    "mast_code": "FM-2.3",
+    "mast_mode": "Task derailment",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "Cursor or reviewer disagreement probe fails",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "failure_taxonomy_for_payload",
+    "mast_category": "Inter-Agent Misalignment",
+    "mast_code": "FM-2.4",
+    "mast_mode": "Information withholding",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "Claude response does not address a prior Codex objection",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "detect_sequence_failures",
+    "mast_category": "Inter-Agent Misalignment",
+    "mast_code": "FM-2.5",
+    "mast_mode": "Ignored other agent input",
+    "sources": [
+      {
+        "details": {
+          "objection": "gate blocked"
+        },
+        "event_ids": [
+          621532,
+          621702
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "cursor_review_failed: Folded CLI tests fail at runtime: subprocess.run omits repo root from PYTHONPATH \u2192 ModuleNotFoundError before guard/allow-live logic executes; Plan test #8 test_autoresearch_report_only_invariants_remain_false_for_live_run absent; live path only asserts default_change_allowed False (:157-158), not policy_mutated+gate_advanced together per TDD GREEN; Claude accept relied on test_status unknown; independent run shows failed not unknown"
+        },
+        "event_ids": [
+          622082,
+          622561
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "independent_reviewer_non_accept: independent-reviewer-1"
+        },
+        "event_ids": [
+          622767,
+          623008
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "independent_reviewer_non_accept: independent-reviewer-1"
+        },
+        "event_ids": [
+          623263,
+          623453
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "agents have not both accepted yet; revise and continue"
+        },
+        "event_ids": [
+          624415,
+          624480
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "independent_reviewer_non_accept: independent-reviewer-1"
+        },
+        "event_ids": [
+          624959,
+          625049
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "independent_reviewer_non_accept: independent-reviewer-1"
+        },
+        "event_ids": [
+          625321,
+          625395
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "cursor_review_failed: P3 incomplete: hash-pinned evaluator absolute-path write to source checkout is undetected; validation_status=accepted, gaming_flags=[] (probe confirmed)"
+        },
+        "event_ids": [
+          625639,
+          625866
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "agents have not both accepted yet; revise and continue"
+        },
+        "event_ids": [
+          625868,
+          625914
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "max_rounds_per_gate exhausted without both agents accepting"
+        },
+        "event_ids": [
+          625916,
+          626846
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "independent_reviewer_non_accept: independent-reviewer-1"
+        },
+        "event_ids": [
+          627250,
+          627345
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "independent_reviewer_non_accept: independent-reviewer-1"
+        },
+        "event_ids": [
+          627583,
+          627698
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "agents have not both accepted yet; revise and continue"
+        },
+        "event_ids": [
+          627989,
+          628131
+        ],
+        "source": "sequence"
+      }
+    ],
+    "status": "observed_in_run",
+    "trigger_surface": "sequence"
+  },
+  {
+    "deterministic_probe": "outcome fidelity or message protocol failure",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "failure_taxonomy_for_payload",
+    "mast_category": "Inter-Agent Misalignment",
+    "mast_code": "FM-2.6",
+    "mast_mode": "Reasoning-action mismatch",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "accepted gate is missing a required probe",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "failure_taxonomy_for_payload + detect_sequence_failures",
+    "mast_category": "Task Verification",
+    "mast_code": "FM-3.1",
+    "mast_mode": "Premature termination",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload+sequence"
+  },
+  {
+    "deterministic_probe": "claim verification or evidence receipt probe fails",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "failure_taxonomy_for_payload",
+    "mast_category": "Task Verification",
+    "mast_code": "FM-3.2",
+    "mast_mode": "No or incomplete verification",
+    "sources": [
+      {
+        "event_id": 624414,
+        "event_kind": "dual_agent_runtime_evidence",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 624414,
+        "event_kind": "dual_agent_runtime_evidence",
+        "source": "payload"
+      },
+      {
+        "event_id": 624562,
+        "event_kind": "dual_agent_runtime_evidence",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 624562,
+        "event_kind": "dual_agent_runtime_evidence",
+        "source": "payload"
+      },
+      {
+        "event_id": 626852,
+        "event_kind": "dual_agent_runtime_evidence",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 626852,
+        "event_kind": "dual_agent_runtime_evidence",
+        "source": "payload"
+      },
+      {
+        "event_id": 627700,
+        "event_kind": "dual_agent_runtime_evidence",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 627700,
+        "event_kind": "dual_agent_runtime_evidence",
+        "source": "payload"
+      },
+      {
+        "event_id": 628133,
+        "event_kind": "dual_agent_runtime_evidence",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 628133,
+        "event_kind": "dual_agent_runtime_evidence",
+        "source": "payload"
+      }
+    ],
+    "status": "observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "Cursor rejects after the gate was accepted",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "detect_sequence_failures",
+    "mast_category": "Task Verification",
+    "mast_code": "FM-3.3",
+    "mast_mode": "Incorrect verification",
+    "sources": [
+      {
+        "details": {
+          "accepted_gate_event_id": 621871
+        },
+        "event_ids": [
+          621871,
+          622080
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "accepted_gate_event_id": 621871
+        },
+        "event_ids": [
+          621871,
+          622081
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "accepted_gate_event_id": 625396
+        },
+        "event_ids": [
+          625396,
+          625637
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "accepted_gate_event_id": 625396
+        },
+        "event_ids": [
+          625396,
+          625638
+        ],
+        "source": "sequence"
+      }
+    ],
+    "status": "observed_in_run",
+    "trigger_surface": "sequence"
+  }
+]

@@ -13,12 +13,13 @@
       "supervisor/reviewer_registry.py",
       "tests/fixtures/autoresearch/locked"
     ],
-    "evaluator_ref": "tests/fixtures/autoresearch/locked/evaluator.json",
-    "evaluator_hash": "3dc33d4148ae5324bdc6d9751ce255cecf121800c52a77fc788b7ca4ca5d352f",
+    "evaluator_ref": "tests/fixtures/autoresearch/locked/evaluator.py",
+    "evaluator_hash": "0bc15daef9bd07f8f99d9d68fe0008be6c9f4aadeee14e9b491bc35d6b27980e",
     "metric_name": "reviewer_evidence_score",
     "max_attempts": 1,
     "k_trials": 3,
     "budget_usd": 0.25,
+    "timeout_s": 5.0,
     "execution_mode": "fixture_replay"
   },
   "attempts": [

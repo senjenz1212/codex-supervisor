@@ -361,7 +361,7 @@ def _test_commands(value: Any, cwd: Path) -> list[str]:
         if _looks_like_command(text):
             commands.append(_normalise_python_command(text, cwd))
         else:
-            target = _normalise_pytest_target_token(text, cwd)
+            target = _normalise_pytest_label(text, cwd)
             commands.append(f"{shlex.quote(sys.executable)} -m pytest {shlex.quote(target)} -q")
     return list(dict.fromkeys(commands))
 
@@ -425,6 +425,32 @@ _BARE_PYTEST_TARGET_RE = re.compile(
     r"^(?:(?P<class_name>[A-Za-z_][A-Za-z0-9_]*)::)?"
     r"(?P<test_name>test_[A-Za-z0-9_]+)(?P<params>\\[.*\\])?$"
 )
+_PYTEST_LABEL_TEST_RE = re.compile(r"\b(?P<test_name>test_[A-Za-z0-9_]+)(?!\.py)(?P<params>\[[^\]]+\])?\b")
+_PYTEST_LABEL_FILE_RE = re.compile(r"\b(?P<path>(?:[\w.-]+/)*test_[\w.-]+\.py)(?::\d+)?\b")
+
+
+def _normalise_pytest_label(text: str, cwd: Path) -> str:
+    test_match = _PYTEST_LABEL_TEST_RE.search(text)
+    if test_match:
+        target = test_match.group("test_name") + (test_match.group("params") or "")
+        resolved = _normalise_pytest_target_token(target, cwd)
+        if resolved != target or "::" in resolved:
+            return resolved
+    file_match = _PYTEST_LABEL_FILE_RE.search(text)
+    if file_match:
+        return _normalise_pytest_file_label(file_match.group("path"), cwd)
+    return _normalise_pytest_target_token(text, cwd)
+
+
+def _normalise_pytest_file_label(path_text: str, cwd: Path) -> str:
+    path = path_text.replace("\\", "/")
+    candidates = [path]
+    if "/" not in path:
+        candidates.append(f"tests/{path}")
+    for candidate in candidates:
+        if (cwd / candidate).is_file():
+            return candidate
+    return path
 
 
 def _normalise_pytest_target_token(target: str, cwd: Path) -> str:
@@ -479,8 +505,7 @@ def _append_index(index: dict[str, list[str]], key: str, value: str) -> None:
 def _looks_like_command(text: str) -> bool:
     first = text.split(maxsplit=1)[0]
     return (
-        " " in text
-        or first in {"python", "python3", "pytest", "uv", "tox", "npm", "pnpm", "yarn"}
+        first in {"python", "python3", "pytest", "uv", "tox", "npm", "pnpm", "yarn"}
         or first.endswith("/python")
     )
 

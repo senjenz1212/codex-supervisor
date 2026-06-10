@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from supervisor.autoresearch.orchestrator import run_autoresearch_fixture
 from supervisor.state import State
@@ -33,6 +38,7 @@ def main() -> int:
         run_id=args.run_id,
         repo_root=args.repo_root,
         output_dir=output_dir,
+        execution_mode=args.execution_mode,
     )
     print(json.dumps({
         "report_path": str(output_dir / "report.json"),

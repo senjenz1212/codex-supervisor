@@ -68,6 +68,16 @@ def validate_attempt(
     if not attempt.evidence_refs:
         gaming_flags.append("missing_evidence_refs")
         errors.append("attempt has no evidence refs")
+    else:
+        dangling_refs = _dangling_evidence_refs(attempt)
+        if dangling_refs:
+            gaming_flags.append("dangling_evidence_ref")
+            errors.append("dangling evidence refs: " + ", ".join(dangling_refs))
+
+    if attempt.execution_errors:
+        errors.extend(attempt.execution_errors)
+        if any("outside mutable surface" in error for error in attempt.execution_errors):
+            gaming_flags.append("outside_mutable_surface")
 
     hash_errors = _artifact_hash_errors(attempt.artifact_hashes, repo_root=repo_root_path)
     if hash_errors:
@@ -83,6 +93,11 @@ def validate_attempt(
     if metrics["trial_count"] == 0:
         gaming_flags.append("missing_metric_trials")
         errors.append("attempt has no metric trials")
+    if attempt.metric_source != "evaluator_execution" or not attempt.evaluator_run_ref or not attempt.evaluator_run_hash:
+        gaming_flags.append("evaluator_not_executed")
+        errors.append("metric trials require evaluator_execution provenance")
+    if len(attempt.metric_trials) > 1 and len(set(float(value) for value in attempt.metric_trials)) == 1:
+        gaming_flags.append("zero_variance_trials")
 
     status = "accepted" if not errors else "rejected"
     recommendation = (
@@ -99,6 +114,9 @@ def validate_attempt(
         recommendation=recommendation,
         metric_name=experiment.metric_name,
         metric_trials=tuple(float(value) for value in attempt.metric_trials),
+        metric_source=attempt.metric_source,
+        evaluator_run_ref=attempt.evaluator_run_ref,
+        evaluator_run_hash=attempt.evaluator_run_hash,
         metric_median=metrics["metric_median"],  # type: ignore[arg-type]
         metric_iqr=metrics["metric_iqr"],  # type: ignore[arg-type]
         quality_unstable_across_trials=bool(metrics["quality_unstable_across_trials"]),
@@ -114,6 +132,23 @@ def validate_attempt(
         policy_mutated=False,
         gate_advanced=False,
     )
+
+
+def _dangling_evidence_refs(attempt: AutoresearchAttempt) -> list[str]:
+    dangling: list[str] = []
+    for ref in attempt.evidence_refs:
+        if ref.startswith("evaluator_run:"):
+            expected = ref.removeprefix("evaluator_run:")
+            if not attempt.evaluator_run_ref or expected != attempt.evaluator_run_ref:
+                dangling.append(ref)
+            continue
+        if ref.startswith("artifact:"):
+            expected = ref.removeprefix("artifact:")
+            if expected not in attempt.artifact_hashes:
+                dangling.append(ref)
+            continue
+        dangling.append(ref)
+    return dangling
 
 
 def _artifact_hash_errors(artifact_hashes: dict[str, str], *, repo_root: Path) -> list[str]:

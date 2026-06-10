@@ -1,0 +1,60 @@
+# Grill Findings
+
+These findings are derived from dual-agent gate objections in the ledger.
+Future duo-agent runs should also create this file through the `prd-to-tdd` skill's `grill-with-docs` gates before implementation.
+
+- event_id 621532 `prd_review`: gate blocked
+- event_id 621703 `prd_review`: LOW: evaluator subprocess runs with cwd=repo_root_path (evaluator.py:87) while before/after snapshot covers only the temp worktree; a relative-path write could bypass outside_mutable_surface detection into the real repo. Mitigated by pre-execution hash-pinning (only trusted bytes run); flag as implementation hardening note, not a PRD gate blocker
+- event_id 621704 `prd_review`: both agents accepted
+- event_id 621779 `issues_review`: implementation-plan.md:35 names a P5 test (test_autoresearch_report_only_invariants_remain_false_for_live_run) absent from tests/test_autoresearch.py; P5 remains non-vacuously covered elsewhere so this is non-fatal at issues_review.
+- event_id 621780 `issues_review`: both agents accepted
+- event_id 621871 `tdd_review`: #8 named test absent verbatim; live-run invariant coverage partial (default_change_allowed False at :157 only); policy_mutated/gate_advanced False proven in non-live tests :474/:533 plus source-hardcoded to_payload - adjacent-tested, not blocking
+- event_id 621871 `tdd_review`: #7 named test cli_allow_live_executes_evaluator folded into fixture_runner_writes_report :500 + blocks_live_by_default :478 - naming deviation, coverage equivalent
+- event_id 622082 `tdd_review`: cursor_review_failed: Folded CLI tests fail at runtime: subprocess.run omits repo root from PYTHONPATH ? ModuleNotFoundError before guard/allow-live logic executes; Plan test #8 test_autoresearch_report_only_invariants_remain_false_for_live_run absent; live path only asserts default_change_allowed False (:157-158), not policy_mutated+gate_advanced together per TDD GREEN; Claude accept relied on test_status unknown; independent run shows failed not unknown
+- event_id 622088 `tdd_review`: #8 named test absent verbatim; live-run invariant coverage partial (default_change_allowed False at :157 only); policy_mutated/gate_advanced False proven in non-live tests :474/:533 plus source-hardcoded to_payload - adjacent-tested, not blocking
+- event_id 622088 `tdd_review`: #7 named test cli_allow_live_executes_evaluator folded into fixture_runner_writes_report :500 + blocks_live_by_default :478 - naming deviation, coverage equivalent
+- event_id 622767 `tdd_review`: independent_reviewer_non_accept: independent-reviewer-1
+- event_id 623263 `tdd_review`: independent_reviewer_non_accept: independent-reviewer-1
+- event_id 623454 `tdd_review`: Tests are GREEN (implementation already present) rather than verified RED-first; cannot confirm authored-failing-first from current tree.
+- event_id 623454 `tdd_review`: pytest not executed by lead; test_status is unknown.
+- event_id 623454 `tdd_review`: Fixture evaluator_hash not independently re-verified via shasum.
+- event_id 623771 `tdd_review`: both agents accepted
+- event_id 624298 `implementation_plan`: both agents accepted
+- event_id 624413 `execution`: Cannot independently verify the fixture's pinned evaluator_hash matches the locked evaluator.py sha256 (shasum and python both environment-gated).
+- event_id 624413 `execution`: Cannot independently confirm pytest is GREEN (pytest environment-gated); test_status is self_reported per required_evidence_grade.
+- event_id 624415 `execution`: agents have not both accepted yet; revise and continue
+- event_id 624417 `execution`: Cannot independently verify the fixture's pinned evaluator_hash matches the locked evaluator.py sha256 (shasum and python both environment-gated).
+- event_id 624417 `execution`: Cannot independently confirm pytest is GREEN (pytest environment-gated); test_status is self_reported per required_evidence_grade.
+- event_id 624492 `execution`: both agents accepted
+- event_id 624959 `outcome_review`: independent_reviewer_non_accept: independent-reviewer-1
+- event_id 625321 `outcome_review`: independent_reviewer_non_accept: independent-reviewer-1
+- event_id 625639 `outcome_review`: cursor_review_failed: P3 incomplete: hash-pinned evaluator absolute-path write to source checkout is undetected; validation_status=accepted, gaming_flags=[] (probe confirmed)
+- event_id 625867 `outcome_review`: evaluator.py _snapshot_files is called only on the temp worktree (:74,:121); _snapshot_files(root) at :254-262 is bounded to root.rglob('*') so absolute writes outside the worktree are never observed
+- event_id 625867 `outcome_review`: No sandbox/chroot/seccomp on subprocess.run (:89-104); evaluator runs with full os.environ and can write anywhere the user can
+- event_id 625867 `outcome_review`: test_autoresearch_live_evaluator_blocks_mutable_path_escape (tests/test_autoresearch.py:431) writes a RELATIVE path that resolves inside cwd=worktree, so it is vacuous for the source-checkout-escape scenario
+- event_id 625867 `outcome_review`: test_autoresearch_validation_rejects_absolute_immutable_path (:246) only exercises declared changed_files normalization in validate_attempt, not a live evaluator runtime write
+- event_id 625867 `outcome_review`: This is the same defect flagged by the corrective round (probe confirmed) returned without remediation
+- event_id 625868 `outcome_review`: agents have not both accepted yet; revise and continue
+- event_id 625870 `outcome_review`: evaluator.py _snapshot_files is called only on the temp worktree (:74,:121); _snapshot_files(root) at :254-262 is bounded to root.rglob('*') so absolute writes outside the worktree are never observed
+- event_id 625870 `outcome_review`: No sandbox/chroot/seccomp on subprocess.run (:89-104); evaluator runs with full os.environ and can write anywhere the user can
+- event_id 625870 `outcome_review`: test_autoresearch_live_evaluator_blocks_mutable_path_escape (tests/test_autoresearch.py:431) writes a RELATIVE path that resolves inside cwd=worktree, so it is vacuous for the source-checkout-escape scenario
+- event_id 625870 `outcome_review`: test_autoresearch_validation_rejects_absolute_immutable_path (:246) only exercises declared changed_files normalization in validate_attempt, not a live evaluator runtime write
+- event_id 625870 `outcome_review`: This is the same defect flagged by the corrective round (probe confirmed) returned without remediation
+- event_id 625915 `outcome_review`: P3 source-checkout escape unfixed: _snapshot_files(worktree) at evaluator.py:74/:121 and unsandboxed subprocess at :89-104 cannot detect an absolute write into the source checkout; result is accepted with gaming_flags=[].
+- event_id 625915 `outcome_review`: Escape test tests/test_autoresearch.py:431 writes relative Path('outside.txt') resolving inside cwd=worktree (caught) - vacuous for the real scenario; no absolute-write-to-source RED test.
+- event_id 625915 `outcome_review`: grep across supervisor/autoresearch confirms no repo_root snapshot, source-checkout integrity check, sandbox/chroot/seccomp anywhere.
+- event_id 625916 `outcome_review`: max_rounds_per_gate exhausted without both agents accepting
+- event_id 625918 `outcome_review`: P3 source-checkout escape unfixed: _snapshot_files(worktree) at evaluator.py:74/:121 and unsandboxed subprocess at :89-104 cannot detect an absolute write into the source checkout; result is accepted with gaming_flags=[].
+- event_id 625918 `outcome_review`: Escape test tests/test_autoresearch.py:431 writes relative Path('outside.txt') resolving inside cwd=worktree (caught) - vacuous for the real scenario; no absolute-write-to-source RED test.
+- event_id 625918 `outcome_review`: grep across supervisor/autoresearch confirms no repo_root snapshot, source-checkout integrity check, sandbox/chroot/seccomp anywhere.
+- event_id 626847 `outcome_review`: pytest could not be executed this round (denied), so the GREEN status of the new tests is self_reported, not independently verified
+- event_id 626847 `outcome_review`: Writes to absolute paths OUTSIDE repo_root remain undetected - this is detection, not sandboxing (honestly scoped; HOME/TMP/PWD sanitized to reduce incidental surface)
+- event_id 627250 `outcome_review`: independent_reviewer_non_accept: independent-reviewer-1
+- event_id 627256 `outcome_review`: pytest could not be executed this round (denied), so the GREEN status of the new tests is self_reported, not independently verified
+- event_id 627256 `outcome_review`: Writes to absolute paths OUTSIDE repo_root remain undetected - this is detection, not sandboxing (honestly scoped; HOME/TMP/PWD sanitized to reduce incidental surface)
+- event_id 627583 `outcome_review`: independent_reviewer_non_accept: independent-reviewer-1
+- event_id 627989 `outcome_review`: agents have not both accepted yet; revise and continue
+- event_id 628404 `outcome_review`: Out-of-scope drift: runtime_evidence.py and tests/test_runtime_evidence.py are modified in the working tree but are not part of this task's declared 6-modified+2-untracked ownership (they belong to runtime-native-evidence-floor); not a blocker for this gate but should not be attributed to this task's diff.
+- event_id 628404 `outcome_review`: Detection-not-sandboxing: writes to absolute paths entirely outside repo_root remain undetected (honestly scoped; HOME/TMP/PWD sanitized to reduce incidental surface).
+- event_id 628404 `outcome_review`: test_status unknown: pytest not approved this round; GREEN unconfirmed (self_reported per handoff policy).
+- event_id 628626 `outcome_review`: both agents accepted
