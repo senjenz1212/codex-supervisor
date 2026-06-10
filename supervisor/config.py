@@ -129,7 +129,7 @@ class SupervisorCfg(BaseModel):
     stall_threshold_s: int = 90
     nudge_cooldown_s: int = 300
     reviewer_unavailable_policy: Literal["block", "escalate", "proceed_degraded"] = "escalate"
-    reviewer_model: str = "gemini-3.1-pro-preview"
+    reviewer_model: str = "claude-fable-5"
     reviewer_output_mode: Literal["litellm_structured", "cursor_sdk"] = "cursor_sdk"
     reviewer_max_tokens: int = 4096
     reviewer_infra_retry_limit: int = 2

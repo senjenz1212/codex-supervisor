@@ -34,6 +34,7 @@ from supervisor.cursor_agent import (
     CursorInvocationRequest,
     CursorInvocationResult,
     CursorRunner,
+    DEFAULT_STRUCTURED_REVIEWER_MODEL,
     cursor_accepts,
     invoke_cursor_agent,
 )
@@ -4731,7 +4732,7 @@ def _reviewer_model_config(
         requested = reviewer_model or cursor_model or "composer-2.5"
         return str(requested)
     requested = reviewer_model or getattr(cfg.supervisor, "reviewer_model", "") or cursor_model
-    return str(requested or "gemini-3.1-pro-preview")
+    return str(requested or DEFAULT_STRUCTURED_REVIEWER_MODEL)
 
 
 def _reviewer_output_mode_config(cfg: Config, *, reviewer_output_mode: str | None) -> str:

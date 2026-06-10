@@ -112,7 +112,7 @@ def test_select_reviewer_defaults_to_cursor_sdk_primary():
             quality="best",
             reviewer_output_mode="litellm_structured",
         )
-        == "gemini-3.1-pro-preview"
+        == "claude-fable-5"
     )
     assert (
         select_reviewer_model(
@@ -155,7 +155,7 @@ def _litellm_metadata(*, finish_reason: str = "stop") -> dict[str, object]:
         "agent_id": None,
         "run_id": "chatcmpl-1",
         "status": "finished",
-        "model": "gemini-3.1-pro-preview",
+        "model": "claude-fable-5",
         "reviewer_runtime": "litellm_structured",
         "reviewer_output_mode": "litellm_structured",
         "duration_ms": None,
@@ -273,7 +273,7 @@ def test_structured_litellm_reviewer_returns_fidelity_passing_outcome(
 
     assert result.probe.ok
     assert cursor_accepts(result)
-    assert result.model == "gemini-3.1-pro-preview"
+    assert result.model == "claude-fable-5"
     assert result.reviewer_runtime == "litellm_structured"
     assert result.reviewer_output_mode == "litellm_structured"
 
@@ -420,7 +420,7 @@ def test_structured_litellm_access_denied_classifies_distinctly_without_retry(
 
     class GatewayAccessDenied(RuntimeError):
         status_code = 403
-        body = {"error": {"message": "Access denied for gemini-3.1-pro-preview"}}
+        body = {"error": {"message": "Access denied for claude-fable-5"}}
 
     def fake_run(request: CursorInvocationRequest):
         calls.append(request)
