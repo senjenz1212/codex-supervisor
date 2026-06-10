@@ -11,6 +11,7 @@ from typing import Any
 from .redaction import redact
 from .state import TERMINAL_WORKFLOW_JOB_STATUSES, canonical_terminal_outcome_json
 from .trace_envelope import stamp_trace_envelope
+from .lessons import canonical_lesson_id
 
 
 POSTGRES_LOCK_ORDER = "priority ASC, created_at ASC, id ASC"
@@ -154,6 +155,19 @@ CREATE INDEX IF NOT EXISTS idx_dual_agent_workflow_jobs_dispatchable
   WHERE recovery_point IN ('reserved', 'request_written')
     AND terminal_outcome_json IS NULL
     AND pid IS NULL;
+
+CREATE TABLE IF NOT EXISTS supervisor_lessons (
+  lesson_id TEXT PRIMARY KEY,
+  task_class TEXT NOT NULL,
+  gate TEXT NOT NULL,
+  taxonomy_code TEXT NOT NULL,
+  root_cause TEXT NOT NULL,
+  remediation TEXT NOT NULL,
+  source_run_id TEXT NOT NULL,
+  created_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_supervisor_lessons_task_gate
+  ON supervisor_lessons(task_class, gate, created_at);
 """
 
 
@@ -402,6 +416,8 @@ class PostgresState:
                    'dual_agent_interaction_message',
                    'independent_reviewer_adjudication',
                    'independent_reviewer_review',
+                   'supervisor_lesson_injection',
+                   'supervisor_lesson_recorded',
                    'tri_agent_cursor_review'
                  )
                ORDER BY event_id ASC""",
@@ -414,6 +430,81 @@ class PostgresState:
             }
             for row in rows
         ]
+
+    def record_supervisor_lesson(
+        self,
+        *,
+        task_class: str,
+        gate: str,
+        taxonomy_code: str,
+        root_cause: str,
+        remediation: str,
+        source_run_id: str,
+        created_at: int | None = None,
+    ) -> tuple[dict[str, Any], bool]:
+        now = int(time.time()) if created_at is None else int(created_at)
+        lesson_id = canonical_lesson_id(
+            task_class=task_class,
+            gate=gate,
+            taxonomy_code=taxonomy_code,
+            root_cause=root_cause,
+            remediation=remediation,
+            source_run_id=source_run_id,
+        )
+        with self._write_lock:
+            with self._conn.transaction():
+                row = self._conn.execute(
+                    """INSERT INTO supervisor_lessons(
+                         lesson_id, task_class, gate, taxonomy_code, root_cause,
+                         remediation, source_run_id, created_at)
+                       VALUES(%s, %s, %s, %s, %s, %s, %s, %s)
+                       ON CONFLICT(lesson_id) DO NOTHING
+                       RETURNING *""",
+                    (
+                        lesson_id,
+                        str(task_class or "general"),
+                        str(gate or "unknown"),
+                        str(taxonomy_code or "unknown_failure"),
+                        str(root_cause or "unknown failure"),
+                        str(remediation or "Verify this known failure mode before claiming completion."),
+                        str(source_run_id),
+                        now,
+                    ),
+                ).fetchone()
+                created = row is not None
+                if row is None:
+                    row = self._conn.execute(
+                        "SELECT * FROM supervisor_lessons WHERE lesson_id=%s",
+                        (lesson_id,),
+                    ).fetchone()
+                if row is None:
+                    raise RuntimeError("supervisor lesson was not persisted")
+                return dict(row), created
+
+    def query_supervisor_lessons(
+        self,
+        *,
+        task_class: str,
+        gate: str,
+        limit: int = 5,
+    ) -> list[dict[str, Any]]:
+        rows = self._conn.execute(
+            """SELECT * FROM supervisor_lessons
+               WHERE task_class=%s AND gate=%s
+               ORDER BY created_at DESC, lesson_id ASC
+               LIMIT %s""",
+            (str(task_class or "general"), str(gate or "unknown"), int(limit)),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_supervisor_lessons(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        rows = self._conn.execute(
+            """SELECT * FROM supervisor_lessons
+               ORDER BY created_at DESC, lesson_id ASC
+               LIMIT %s""",
+            (int(limit),),
+        ).fetchall()
+        return [dict(row) for row in rows]
 
     def get_event(self, *, run_id: str, event_id: int) -> dict[str, Any] | None:
         row = self._conn.execute(

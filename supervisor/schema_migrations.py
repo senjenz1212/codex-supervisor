@@ -189,6 +189,25 @@ def _migration_workflow_job_dispatcher_leases(conn: sqlite3.Connection) -> None:
     )
 
 
+def _migration_supervisor_lessons(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS supervisor_lessons (
+             lesson_id     TEXT PRIMARY KEY,
+             task_class    TEXT NOT NULL,
+             gate          TEXT NOT NULL,
+             taxonomy_code TEXT NOT NULL,
+             root_cause    TEXT NOT NULL,
+             remediation   TEXT NOT NULL,
+             source_run_id TEXT NOT NULL,
+             created_at    INTEGER NOT NULL
+           )"""
+    )
+    conn.execute(
+        """CREATE INDEX IF NOT EXISTS idx_supervisor_lessons_task_gate
+           ON supervisor_lessons(task_class, gate, created_at)"""
+    )
+
+
 def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
     row = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
@@ -244,5 +263,10 @@ MIGRATIONS: tuple[SchemaMigration, ...] = (
         6,
         "dual_agent_workflow_jobs.dispatcher_leases",
         _migration_workflow_job_dispatcher_leases,
+    ),
+    SchemaMigration(
+        7,
+        "supervisor_lessons",
+        _migration_supervisor_lessons,
     ),
 )

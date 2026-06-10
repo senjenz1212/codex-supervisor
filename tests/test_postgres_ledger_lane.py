@@ -6,6 +6,7 @@ import re
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import pytest
 
@@ -70,25 +71,33 @@ def test_postgres_schema_carries_idempotency_and_partitioned_catch_up():
 
 
 def test_alembic_migration_and_make_target_exist():
-    migration = Path("migrations/versions/20260604_0001_postgres_event_job_lane.py").read_text(
+    base_migration = Path("migrations/versions/20260604_0001_postgres_event_job_lane.py").read_text(
+        encoding="utf-8"
+    )
+    lessons_migration = Path("migrations/versions/20260610_0001_supervisor_lessons.py").read_text(
         encoding="utf-8"
     )
     makefile = Path("Makefile").read_text(encoding="utf-8")
     config_example = Path("config.example.yaml").read_text(encoding="utf-8")
 
-    assert "event_stream_sequences" in migration
-    assert "dual_agent_workflows" in migration
-    assert "dual_agent_workflow_steps" in migration
-    assert "idx_dual_agent_workflow_jobs_active_idempotency_token" in migration
-    assert "idx_dual_agent_workflow_jobs_dispatchable" in migration
+    assert "event_stream_sequences" in base_migration
+    assert "dual_agent_workflows" in base_migration
+    assert "dual_agent_workflow_steps" in base_migration
+    assert "idx_dual_agent_workflow_jobs_active_idempotency_token" in base_migration
+    assert "idx_dual_agent_workflow_jobs_dispatchable" in base_migration
+    assert "supervisor_lessons" not in base_migration
+    assert 'revision = "20260610_0001"' in lessons_migration
+    assert 'down_revision = "20260604_0001"' in lessons_migration
+    assert "supervisor_lessons" in lessons_migration
     assert "uv run --extra postgres alembic -c alembic.ini upgrade head" in makefile
     assert "PgBouncer" in config_example
     assert "state_db: ~/.codex-supervisor/state.db" in config_example
 
 
 def test_postgres_inline_schema_and_alembic_migration_stay_structurally_equivalent():
-    migration = Path("migrations/versions/20260604_0001_postgres_event_job_lane.py").read_text(
-        encoding="utf-8"
+    migration = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted(Path("migrations/versions").glob("*.py"))
     )
     inline_tables = set(re.findall(r"CREATE TABLE IF NOT EXISTS ([a-z_]+)", POSTGRES_SCHEMA_SQL))
     migration_tables = set(re.findall(r"CREATE TABLE IF NOT EXISTS ([a-z_]+)", migration))
@@ -106,9 +115,51 @@ def test_postgres_inline_schema_and_alembic_migration_stay_structurally_equivale
         "WHERE idempotency_token IS NOT NULL AND recovery_point != 'terminal'",
         "idx_dual_agent_workflow_jobs_dispatchable",
         "recovery_point IN ('reserved', 'request_written')",
+        "supervisor_lessons",
+        "idx_supervisor_lessons_task_gate",
     ):
         assert required_snippet in POSTGRES_SCHEMA_SQL
         assert required_snippet in migration
+
+
+def test_alembic_lessons_revision_upgrades_from_applied_base(monkeypatch):
+    dsn = os.environ.get("CODEX_SUPERVISOR_POSTGRES_TEST_DSN", "").strip()
+    if not dsn:
+        pytest.skip("CODEX_SUPERVISOR_POSTGRES_TEST_DSN is not set")
+    psycopg = pytest.importorskip("psycopg")
+    command = pytest.importorskip("alembic.command")
+    alembic_config = pytest.importorskip("alembic.config")
+
+    schema = f"cs_migrate_{uuid.uuid4().hex}"
+    dsn_with_schema = _dsn_with_search_path(dsn, schema)
+    with psycopg.connect(dsn) as conn:
+        conn.execute(f"CREATE SCHEMA {schema}")
+        conn.commit()
+    try:
+        cfg = alembic_config.Config("alembic.ini")
+        monkeypatch.setenv("DATABASE_URL", dsn_with_schema)
+        monkeypatch.delenv("POSTGRES_DSN", raising=False)
+
+        command.upgrade(cfg, "20260604_0001")
+        with psycopg.connect(dsn_with_schema) as conn:
+            row = conn.execute("SELECT to_regclass('supervisor_lessons') AS table_name").fetchone()
+            assert row[0] is None
+
+        command.upgrade(cfg, "head")
+        with psycopg.connect(dsn_with_schema) as conn:
+            row = conn.execute("SELECT to_regclass('supervisor_lessons') AS table_name").fetchone()
+            assert row[0] == "supervisor_lessons"
+    finally:
+        with psycopg.connect(dsn) as conn:
+            conn.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
+            conn.commit()
+
+
+def _dsn_with_search_path(dsn: str, schema: str) -> str:
+    parts = urlsplit(dsn)
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    query["options"] = f"-csearch_path={schema}"
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
 
 
 def _postgres_dsn() -> str:
@@ -257,6 +308,34 @@ def test_postgres_workflow_resume_prompt_uses_workflow_metadata(postgres_state, 
         "attempt_count": 1,
         "latest_event_id": 7,
     }]
+
+
+def test_postgres_supervisor_lesson_record_query_and_list(postgres_state):
+    lesson, created = postgres_state.record_supervisor_lesson(
+        task_class="large",
+        gate="execution",
+        taxonomy_code="FM-3.2",
+        root_cause="No or incomplete verification",
+        remediation="Verify supervisor-generated receipts before accepting.",
+        source_run_id="source-run",
+        created_at=10,
+    )
+    duplicate, duplicate_created = postgres_state.record_supervisor_lesson(
+        task_class="large",
+        gate="execution",
+        taxonomy_code="FM-3.2",
+        root_cause="No or incomplete verification",
+        remediation="Verify supervisor-generated receipts before accepting.",
+        source_run_id="source-run",
+        created_at=20,
+    )
+
+    assert created is True
+    assert duplicate_created is False
+    assert duplicate["lesson_id"] == lesson["lesson_id"]
+    assert postgres_state.query_supervisor_lessons(task_class="large", gate="execution") == [lesson]
+    assert postgres_state.query_supervisor_lessons(task_class="small", gate="execution") == []
+    assert postgres_state.list_supervisor_lessons() == [lesson]
 
 
 def test_postgres_multi_writer_double_submit_creates_one_job(postgres_state, tmp_path):

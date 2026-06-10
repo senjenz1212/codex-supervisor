@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "de197d98a0b406150c5c68fd38a07c49984ce5300dbc362de600c986c2d854bc",
+  "git": {
+    "diff_bytes": 35111,
+    "diff_sha256": "6e096a0c6fbe166ccd7564858ffecbd8924511c9473811fba1bb0e9ab6dfabfa",
+    "diff_stat": "mcp_tools/codex_supervisor_stdio.py | 158 +++++++++++++++++++++++++++++++++++-\n supervisor/dual_agent_lead.py       |  13 +++\n supervisor/dual_agent_runner.py     |  11 +++\n supervisor/postgres_state.py        |  91 +++++++++++++++++++++\n supervisor/schema_migrations.py     |  24 ++++++\n supervisor/state.py                 |  93 +++++++++++++++++++++\n tests/test_postgres_ledger_lane.py  |  95 ++++++++++++++++++++--\n tests/test_schema_migrations.py     |  39 ++++++++-\n 8 files changed, 510 insertions(+), 14 deletions(-)",
+    "head": "6a62eda",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "6a62eda",
+    "status_short": "M mcp_tools/codex_supervisor_stdio.py\n M supervisor/dual_agent_lead.py\n M supervisor/dual_agent_runner.py\n M supervisor/postgres_state.py\n M supervisor/schema_migrations.py\n M supervisor/state.py\n M tests/test_postgres_ledger_lane.py\n M tests/test_schema_migrations.py\n?? .scratch/cocreate-checkpoint-files-only-dual-agent-prompt.md\n?? .scratch/cocreate-ckpt-tdd-review-corrective-input.md\n?? docs/dual-agent/supervisor-flow-autoresearch-run-20260609/\n?? docs/dual-agent/supervisor-lessons-loop-20260610/\n?? docs/supervisor-improvement-audit-20260609.md\n?? docs/supervisor-improvement-prompts-coverage-20260609.md\n?? migrations/versions/20260610_0001_supervisor_lessons.py\n?? supervisor/lessons.py\n?? tests/test_supervisor_lessons.py"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "a957c0abe9cda5562193f8c0c2ce433b832de67a76579dcbb34dc3686d2c2134",
+    "implementation_plan": "b83fff5f1f33340ef5bbd4dd746ee0c636f02acc62e7800c993f3631bb8160ef",
+    "issues": "5f4692c57fbfe504670895bbf445555f8b179aa6f747aee5e7e9fc47f37fda1f",
+    "prd": "d5fa1d53d8f509bf79b01dad398ff17422cdc67e664caebcb8c8d1cfca55e12b",
+    "tdd_plan": "4caa93913e7cf541fe99c4b0a99206b2ab5a969606e0cc5c8f6555403bea1ee0"
+  },
+  "status": "captured"
+}

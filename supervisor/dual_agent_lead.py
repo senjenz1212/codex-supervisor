@@ -122,6 +122,9 @@ class LeadInvocationRequest:
     required_evidence_grade: EvidenceGrade = "self_reported"
     explicit_env: dict[str, str] = field(default_factory=dict)
     handoff_packet_path: str | Path | None = None
+    injected_lesson_block: str = ""
+    injected_lesson_block_sha256: str = ""
+    injected_lesson_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -209,6 +212,9 @@ class HandoffPacket(BaseModel):
     lead_skill: LeadSkillPin | None = None
     execution_layer_policy: ExecutionLayerPolicy = Field(default_factory=ExecutionLayerPolicy)
     outcome_validation_policy: OutcomeValidationPolicy = Field(default_factory=OutcomeValidationPolicy)
+    injected_lesson_block: str = ""
+    injected_lesson_block_sha256: str = ""
+    injected_lesson_ids: list[str] = Field(default_factory=list)
 
     @field_validator("packet_schema_version")
     @classmethod
@@ -278,9 +284,13 @@ def build_lead_prompt(request: LeadInvocationRequest) -> str:
             "an accept. In the outcome, changed_files MUST list the files you actually changed and "
             "test_status MUST reflect tests you actually ran.\n"
         )
+    lesson_block = ""
+    if request.injected_lesson_block and request.injected_lesson_block not in request.instruction:
+        lesson_block = "\n\n" + request.injected_lesson_block.strip()
     return (
         f"/lead Gate mode: {request.gate}. Task id: {request.task_id}.\n"
         f"{request.instruction.strip()}\n\n"
+        f"{lesson_block}"
         f"{handoff}"
         f"{execution_layer}"
         f"{implementation_contract}"
@@ -334,6 +344,9 @@ def build_handoff_packet(
         lead_skill=lead_skill,
         execution_layer_policy=_execution_layer_policy(request),
         outcome_validation_policy=outcome_validation_policy or OutcomeValidationPolicy(),
+        injected_lesson_block=request.injected_lesson_block,
+        injected_lesson_block_sha256=request.injected_lesson_block_sha256,
+        injected_lesson_ids=list(request.injected_lesson_ids),
     )
 
 

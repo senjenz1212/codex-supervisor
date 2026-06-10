@@ -36,6 +36,7 @@ def test_forward_migration_adds_resume_requested_at_to_old_actions_table(tmp_pat
         {"version": 4, "name": "dual_agent_workflow_jobs.recovery_points"},
         {"version": 5, "name": "dual_agent_workflow_jobs.recovery_claims"},
         {"version": 6, "name": "dual_agent_workflow_jobs.dispatcher_leases"},
+        {"version": 7, "name": "supervisor_lessons"},
     ]
 
 
@@ -54,6 +55,7 @@ def test_forward_migrations_are_idempotent(tmp_path):
         {"version": 4, "name": "dual_agent_workflow_jobs.recovery_points"},
         {"version": 5, "name": "dual_agent_workflow_jobs.recovery_claims"},
         {"version": 6, "name": "dual_agent_workflow_jobs.dispatcher_leases"},
+        {"version": 7, "name": "supervisor_lessons"},
     ]
 
 
@@ -119,6 +121,7 @@ def test_state_constructor_applies_forward_migration_to_old_db(tmp_path):
         {"version": 4, "name": "dual_agent_workflow_jobs.recovery_points"},
         {"version": 5, "name": "dual_agent_workflow_jobs.recovery_claims"},
         {"version": 6, "name": "dual_agent_workflow_jobs.dispatcher_leases"},
+        {"version": 7, "name": "supervisor_lessons"},
     ]
 
 
@@ -208,8 +211,8 @@ def test_forward_migration_adds_workflow_job_dispatcher_leases(tmp_path):
     }
     assert "idx_dual_agent_workflow_jobs_dispatchable" in indexes
     assert applied_migrations(conn)[-1] == {
-        "version": 6,
-        "name": "dual_agent_workflow_jobs.dispatcher_leases",
+        "version": 7,
+        "name": "supervisor_lessons",
     }
     conn.execute(
         """INSERT INTO dual_agent_workflow_jobs(
@@ -236,6 +239,37 @@ def test_forward_migration_adds_workflow_job_dispatcher_leases(tmp_path):
              log_path, idempotency_token, recovery_point, created_at, updated_at)
            VALUES('job-active-after-terminal', 'run', 'task', '.', 'submitted', 'req', 'res', 'log', 'done-token', 'reserved', 1, 1)"""
     )
+
+
+def test_forward_migration_adds_supervisor_lessons(tmp_path):
+    conn = sqlite3.connect(tmp_path / "state.db")
+    conn.row_factory = sqlite3.Row
+
+    run_forward_migrations(conn)
+
+    columns = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(supervisor_lessons)").fetchall()
+    }
+    assert {
+        "lesson_id",
+        "task_class",
+        "gate",
+        "taxonomy_code",
+        "root_cause",
+        "remediation",
+        "source_run_id",
+        "created_at",
+    } <= columns
+    indexes = {
+        row["name"]
+        for row in conn.execute("PRAGMA index_list(supervisor_lessons)").fetchall()
+    }
+    assert "idx_supervisor_lessons_task_gate" in indexes
+    assert applied_migrations(conn)[-1] == {
+        "version": 7,
+        "name": "supervisor_lessons",
+    }
 
 
 def test_state_constructor_adds_workflow_job_idempotency_to_existing_db(tmp_path):
@@ -313,6 +347,7 @@ def test_forward_migration_adds_workflow_job_terminal_outcome_fields(tmp_path):
         {"version": 4, "name": "dual_agent_workflow_jobs.recovery_points"},
         {"version": 5, "name": "dual_agent_workflow_jobs.recovery_claims"},
         {"version": 6, "name": "dual_agent_workflow_jobs.dispatcher_leases"},
+        {"version": 7, "name": "supervisor_lessons"},
     ]
 
 

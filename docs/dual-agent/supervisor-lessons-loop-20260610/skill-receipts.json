@@ -1,0 +1,71 @@
+[
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-to-prd-supervisor-lessons-loop-20260610",
+    "skill": "to-prd",
+    "stage": "to_prd",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/supervisor-lessons-loop-20260610/prd.md"
+    ],
+    "claims": [
+      "PRD promise contracts P1-P5 produced",
+      "advisory lessons and replayable injection hashes specified"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-prd-grill-supervisor-lessons-loop-20260610",
+    "skill": "grill-with-docs",
+    "stage": "prd_grill",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/supervisor-lessons-loop-20260610/grill-findings.md"
+    ],
+    "claims": [
+      "PRD grill findings resolved",
+      "authority, matching, hash, idempotency, and deterministic-source risks captured"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-to-issues-supervisor-lessons-loop-20260610",
+    "skill": "to-issues",
+    "stage": "to_issues",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/supervisor-lessons-loop-20260610/issues.md"
+    ],
+    "claims": [
+      "Issues slice every PRD promise",
+      "public-boundary RED tests named"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-tdd-supervisor-lessons-loop-20260610",
+    "skill": "tdd",
+    "stage": "tdd",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/supervisor-lessons-loop-20260610/tdd.md"
+    ],
+    "claims": [
+      "TDD plan covers lesson persistence, matching injection, stable hashes, replay reconstruction, and advisory semantics"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-tdd-grill-supervisor-lessons-loop-20260610",
+    "skill": "grill-with-docs",
+    "stage": "tdd_grill",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/supervisor-lessons-loop-20260610/grill-findings-tdd.md"
+    ],
+    "claims": [
+      "TDD grill findings resolved",
+      "translation audit completed"
+    ]
+  }
+]

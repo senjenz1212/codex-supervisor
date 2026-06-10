@@ -73,6 +73,11 @@ from supervisor.dynamic_workflow import prepare_dynamic_workflow_preview
 from supervisor.agentic_executor import produce_agentic_worker_receipts
 from supervisor.agentic_workers import discover_agentic_worker_receipts
 from supervisor.runtime_evidence import capture_runtime_baseline, collect_runtime_evidence
+from supervisor.lessons import (
+    append_lesson_block,
+    build_lesson_injection,
+    record_lessons_for_run,
+)
 from supervisor.no_mistakes import (
     NoMistakesConfig,
     NoMistakesValidationRequest,
@@ -199,6 +204,9 @@ class CodexSupervisorMcpAPI:
         required_artifacts: tuple[str, ...] | list[str] | None = None,
         required_prerequisite_gates: tuple[str, ...] | list[str] | None = None,
         required_planning_kinds: tuple[str, ...] | list[str] | None = None,
+        injected_lesson_block: str = "",
+        injected_lesson_block_sha256: str = "",
+        injected_lesson_ids: list[str] | tuple[str, ...] | None = None,
     ) -> dict[str, Any]:
         execution_layer_mode = _canonical_execution_layer_mode(execution_layer_mode)
         dynamic_workflow_task_class = _canonical_dynamic_workflow_task_class(dynamic_workflow_task_class)
@@ -275,6 +283,9 @@ class CodexSupervisorMcpAPI:
             agentic_policy=agentic_policy,
             planning_artifacts=planning_artifacts,
             required_planning_kinds=required_planning_kinds,
+            injected_lesson_block=injected_lesson_block,
+            injected_lesson_block_sha256=injected_lesson_block_sha256,
+            injected_lesson_ids=tuple(str(item) for item in (injected_lesson_ids or ())),
         )
         notifier = self._notifier()
         with timed_tool_call(
@@ -583,6 +594,10 @@ class CodexSupervisorMcpAPI:
             cursor_review_gates=cursor_review_gates,
         )
         effective_cursor_review = bool(selected_cursor_gates)
+        lesson_task_class = _lesson_task_class(
+            dynamic_workflow_task_class=dynamic_workflow_task_class,
+            workflow_route=workflow_route,
+        )
         workflow_route = {
             **workflow_route,
             "requested_cursor_review": bool(cursor_review),
@@ -607,6 +622,12 @@ class CodexSupervisorMcpAPI:
             },
             "execution_layer_mode": execution_layer_mode,
             "dynamic_workflow_task_class": dynamic_workflow_task_class,
+            "lesson_task_class": lesson_task_class,
+            "lesson_snapshot": _workflow_lesson_snapshot(
+                self.state,
+                lesson_task_class=lesson_task_class,
+                route_gates=route_gates,
+            ),
             "requires_dynamic_workflow_receipts": _is_dynamic_workflow_preview(execution_layer_mode),
             "agentic_lead_policy": _workflow_agentic_policy_route(agentic_policy),
             "reviewer_unavailable_policy": reviewer_policy,
@@ -1099,13 +1120,17 @@ class CodexSupervisorMcpAPI:
                     else None
                 )
                 payload = await self.start_dual_agent_gate(
-                    task_id=task_id,
-                    run_id=run_id,
-                    gate=gate,  # type: ignore[arg-type]
-                    instruction=_workflow_gate_instruction(
+                    **self._workflow_gate_start_kwargs(
+                        run_id=run_id,
+                        task_id=task_id,
                         gate=gate,
                         intent=intent,
                         corrective_context=corrective_context,
+                        lesson_task_class=str(workflow_route["lesson_task_class"]),
+                        lesson_snapshot=workflow_route.get("lesson_snapshot")
+                        if isinstance(workflow_route.get("lesson_snapshot"), dict)
+                        else None,
+                        round_index=round_index,
                     ),
                     cwd=cwd,
                     expected_specialists=[],
@@ -3475,6 +3500,12 @@ class CodexSupervisorMcpAPI:
                 kind="dual_agent_gate_result",
                 payload=final_gate_result,
             )
+        lesson_records = record_lessons_for_run(
+            self.state,
+            run_id=run_id,
+            task_id=task_id,
+            task_class=str((workflow_route or {}).get("lesson_task_class") or "general"),
+        )
         artifact_export = self.export_gate_artifacts(
             run_id=run_id,
             task_id=task_id,
@@ -3497,6 +3528,12 @@ class CodexSupervisorMcpAPI:
             "workflow_route": workflow_route,
             "artifact_export": artifact_export,
             "mandatory_artifacts": mandatory,
+            "lessons": {
+                "recorded_count": len([item for item in lesson_records if item.get("created")]),
+                "observed_count": len(lesson_records),
+                "lesson_ids": [str(item.get("lesson_id")) for item in lesson_records],
+                "advisory_only": True,
+            },
             "no_mistakes_validation": (
                 {
                     **no_mistakes_validation.to_event_payload(),
@@ -3507,6 +3544,75 @@ class CodexSupervisorMcpAPI:
             ),
             "resume": workflow_resume_prompt(self.state, run_id=run_id, task_id=task_id),
         })
+
+    def _workflow_gate_start_kwargs(
+        self,
+        *,
+        run_id: str,
+        task_id: str,
+        gate: str,
+        intent: str,
+        corrective_context: str,
+        lesson_task_class: str,
+        lesson_snapshot: dict[str, Any] | None = None,
+        round_index: int,
+    ) -> dict[str, Any]:
+        base_instruction = _workflow_gate_instruction(
+            gate=gate,
+            intent=intent,
+            corrective_context=corrective_context,
+        )
+        snapshot_gates = (
+            lesson_snapshot.get("gates")
+            if isinstance(lesson_snapshot, dict) and isinstance(lesson_snapshot.get("gates"), dict)
+            else {}
+        )
+        snapshot_injection = snapshot_gates.get(gate) if isinstance(snapshot_gates, dict) else None
+        if isinstance(snapshot_injection, dict):
+            injection = {
+                "schema_version": snapshot_injection.get("schema_version")
+                or "supervisor-lesson-injection/v1",
+                "lesson_ids": list(snapshot_injection.get("lesson_ids") or []),
+                "lesson_count": int(snapshot_injection.get("lesson_count") or 0),
+                "block": str(snapshot_injection.get("block") or ""),
+                "block_sha256": str(snapshot_injection.get("block_sha256") or ""),
+            }
+        else:
+            lessons = self.state.query_supervisor_lessons(
+                task_class=lesson_task_class,
+                gate=gate,
+                limit=5,
+            )
+            injection = build_lesson_injection(lessons)
+        instruction = append_lesson_block(base_instruction, injection)
+        if injection["lesson_count"]:
+            self.state.write_event(
+                run_id=run_id,
+                source="supervisor",
+                kind="supervisor_lesson_injection",
+                payload={
+                    "schema_version": injection["schema_version"],
+                    "task_id": task_id,
+                    "gate": gate,
+                    "round_index": int(round_index),
+                    "task_class": lesson_task_class,
+                    "lesson_ids": injection["lesson_ids"],
+                    "lesson_count": injection["lesson_count"],
+                    "block": injection["block"],
+                    "block_sha256": injection["block_sha256"],
+                    "advisory_only": True,
+                    "gate_authority": "unchanged",
+                },
+            )
+        return {
+            "task_id": task_id,
+            "run_id": run_id,
+            "gate": gate,
+            "instruction": instruction,
+            "injected_lesson_block": str(injection["block"]),
+            "injected_lesson_block_sha256": str(injection["block_sha256"]),
+            "injected_lesson_ids": list(injection["lesson_ids"]),
+        }
 
     def _gate_spec(
         self,
@@ -3528,6 +3634,9 @@ class CodexSupervisorMcpAPI:
         agentic_policy: dict[str, Any],
         planning_artifacts: list[dict[str, Any]] | None,
         required_planning_kinds: tuple[str, ...] | list[str] | None = None,
+        injected_lesson_block: str = "",
+        injected_lesson_block_sha256: str = "",
+        injected_lesson_ids: tuple[str, ...] = (),
     ) -> DualAgentGateSpec:
         return DualAgentGateSpec(
             task_id=task_id,
@@ -3555,6 +3664,9 @@ class CodexSupervisorMcpAPI:
                 tuple(str(kind) for kind in required_planning_kinds)
                 if required_planning_kinds is not None else None
             ),
+            injected_lesson_block=injected_lesson_block,
+            injected_lesson_block_sha256=injected_lesson_block_sha256,
+            injected_lesson_ids=injected_lesson_ids,
             planning_artifacts=tuple(
                 artifact
                 for artifact in (
@@ -4323,6 +4435,44 @@ def _workflow_gate_instruction(
             corrective_context.strip(),
         ])
     return "\n".join(lines)
+
+
+def _lesson_task_class(
+    *,
+    dynamic_workflow_task_class: str | None,
+    workflow_route: dict[str, Any],
+) -> str:
+    explicit = str(dynamic_workflow_task_class or "").strip().replace("-", "_")
+    if explicit:
+        return explicit
+    route_class = str(workflow_route.get("task_complexity") or "").strip().replace("-", "_")
+    return route_class or "general"
+
+
+def _workflow_lesson_snapshot(
+    state: State,
+    *,
+    lesson_task_class: str,
+    route_gates: tuple[str, ...],
+) -> dict[str, Any]:
+    gates: dict[str, Any] = {}
+    for gate in route_gates:
+        injection = build_lesson_injection(
+            state.query_supervisor_lessons(
+                task_class=lesson_task_class,
+                gate=gate,
+                limit=5,
+            )
+        )
+        if injection["lesson_count"]:
+            gates[gate] = injection
+    return {
+        "schema_version": "supervisor-lesson-snapshot/v1",
+        "task_class": lesson_task_class,
+        "gates": gates,
+        "advisory_only": True,
+        "gate_authority": "unchanged",
+    }
 
 
 def _cursor_review_instruction(

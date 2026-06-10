@@ -112,6 +112,9 @@ class DualAgentGateSpec:
     lead_skill_path: str | Path | None = None
     outcome_validation_policy: OutcomeValidationPolicy = field(default_factory=OutcomeValidationPolicy)
     required_planning_kinds: tuple[str, ...] | None = None
+    injected_lesson_block: str = ""
+    injected_lesson_block_sha256: str = ""
+    injected_lesson_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -318,6 +321,11 @@ def run_dual_agent_gate(
                         "expected_specialists": list(spec.expected_specialists),
                         "expected_decisions": list(spec.expected_decisions),
                         "expected_objections": list(spec.expected_objections),
+                        "lesson_injection": {
+                            "block_sha256": spec.injected_lesson_block_sha256,
+                            "lesson_ids": list(spec.injected_lesson_ids),
+                            "advisory_only": True,
+                        },
                         "tool_calls": [
                             _probe_tool_call(
                                 name="validate_planning_artifacts",
@@ -1187,6 +1195,9 @@ def _lead_request(
         solo_exception_for_artifact_only_gates=spec.solo_exception_for_artifact_only_gates,
         required_evidence_grade=spec.required_evidence_grade,
         handoff_packet_path=packet_path,
+        injected_lesson_block=spec.injected_lesson_block,
+        injected_lesson_block_sha256=spec.injected_lesson_block_sha256,
+        injected_lesson_ids=spec.injected_lesson_ids,
     )
 
 

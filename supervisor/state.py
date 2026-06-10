@@ -23,6 +23,7 @@ from .target.types import ScopeContract
 from .redaction import redact
 from .schema_migrations import run_forward_migrations
 from .trace_envelope import stamp_trace_envelope
+from .lessons import canonical_lesson_id
 
 
 # Built-in baseline. Always merged into the stored never_touch_patterns
@@ -267,6 +268,19 @@ CREATE TABLE IF NOT EXISTS dual_agent_workflow_jobs (
 );
 CREATE INDEX IF NOT EXISTS idx_dual_agent_workflow_jobs_task
   ON dual_agent_workflow_jobs(run_id, task_id, status);
+
+CREATE TABLE IF NOT EXISTS supervisor_lessons (
+  lesson_id     TEXT PRIMARY KEY,
+  task_class    TEXT NOT NULL,
+  gate          TEXT NOT NULL,
+  taxonomy_code TEXT NOT NULL,
+  root_cause    TEXT NOT NULL,
+  remediation   TEXT NOT NULL,
+  source_run_id TEXT NOT NULL,
+  created_at    INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_supervisor_lessons_task_gate
+  ON supervisor_lessons(task_class, gate, created_at);
 """
 
 
@@ -552,11 +566,90 @@ class State:
                    'no_mistakes_validation_failed',
                    'no_mistakes_validation_skipped',
                    'no_mistakes_validation_started',
+                   'supervisor_lesson_injection',
+                   'supervisor_lesson_recorded',
                    'tri_agent_cursor_review'
                  )
                ORDER BY event_id ASC""",
             (run_id,),
         ))
+
+    # --- cross-run lessons ---
+    def record_supervisor_lesson(
+        self,
+        *,
+        task_class: str,
+        gate: str,
+        taxonomy_code: str,
+        root_cause: str,
+        remediation: str,
+        source_run_id: str,
+        created_at: int | None = None,
+    ) -> tuple[dict[str, Any], bool]:
+        now = int(time.time()) if created_at is None else int(created_at)
+        lesson_id = canonical_lesson_id(
+            task_class=task_class,
+            gate=gate,
+            taxonomy_code=taxonomy_code,
+            root_cause=root_cause,
+            remediation=remediation,
+            source_run_id=source_run_id,
+        )
+        with self._write_lock:
+            cur = self._conn.execute(
+                """INSERT OR IGNORE INTO supervisor_lessons(
+                     lesson_id, task_class, gate, taxonomy_code, root_cause,
+                     remediation, source_run_id, created_at)
+                   VALUES(?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    lesson_id,
+                    str(task_class or "general"),
+                    str(gate or "unknown"),
+                    str(taxonomy_code or "unknown_failure"),
+                    str(root_cause or "unknown failure"),
+                    str(remediation or "Verify this known failure mode before claiming completion."),
+                    str(source_run_id),
+                    now,
+                ),
+            )
+            created = cur.rowcount > 0
+            row = self._conn.execute(
+                "SELECT * FROM supervisor_lessons WHERE lesson_id=?",
+                (lesson_id,),
+            ).fetchone()
+            if row is None:
+                raise RuntimeError("supervisor lesson was not persisted")
+            self._conn.commit()
+            return dict(row), created
+
+    def query_supervisor_lessons(
+        self,
+        *,
+        task_class: str,
+        gate: str,
+        limit: int = 5,
+    ) -> list[dict[str, Any]]:
+        return [
+            dict(row)
+            for row in self._conn.execute(
+                """SELECT * FROM supervisor_lessons
+                   WHERE task_class=? AND gate=?
+                   ORDER BY created_at DESC, lesson_id ASC
+                   LIMIT ?""",
+                (str(task_class or "general"), str(gate or "unknown"), int(limit)),
+            ).fetchall()
+        ]
+
+    def list_supervisor_lessons(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        return [
+            dict(row)
+            for row in self._conn.execute(
+                """SELECT * FROM supervisor_lessons
+                   ORDER BY created_at DESC, lesson_id ASC
+                   LIMIT ?""",
+                (int(limit),),
+            ).fetchall()
+        ]
 
     def get_event(self, *, run_id: str, event_id: int) -> sqlite3.Row | None:
         return self._conn.execute(
