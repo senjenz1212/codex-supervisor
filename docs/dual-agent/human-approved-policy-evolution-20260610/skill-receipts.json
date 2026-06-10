@@ -1,0 +1,47 @@
+[
+  {
+    "kind": "skill_run",
+    "receipt_id": "to_prd-human-approved-policy-evolution-20260610",
+    "skill": "prd-to-tdd/to-prd",
+    "stage": "to_prd",
+    "status": "passed",
+    "artifact": "docs/dual-agent/human-approved-policy-evolution-20260610/prd.md",
+    "sha256": "4e75a274439eab2ab9ee0ea84b9cfe753bca906d60a1c2e4be3c87ce326998cf"
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "prd_grill-human-approved-policy-evolution-20260610",
+    "skill": "prd-to-tdd/grill-with-docs",
+    "stage": "prd_grill",
+    "status": "passed",
+    "artifact": "docs/dual-agent/human-approved-policy-evolution-20260610/grill-findings.md",
+    "sha256": "fcd29eb2b0173848aaaa06ac1875996bb1fcfacc26c6a56d2a4b507555c19e5d"
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "to_issues-human-approved-policy-evolution-20260610",
+    "skill": "prd-to-tdd/to-issues",
+    "stage": "to_issues",
+    "status": "passed",
+    "artifact": "docs/dual-agent/human-approved-policy-evolution-20260610/issues.md",
+    "sha256": "2857829596d2a1bdf2ff7536793f2017f7774e99da7bce4bd0022e96c46e5ac8"
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "tdd-human-approved-policy-evolution-20260610",
+    "skill": "prd-to-tdd/tdd",
+    "stage": "tdd",
+    "status": "passed",
+    "artifact": "docs/dual-agent/human-approved-policy-evolution-20260610/tdd.md",
+    "sha256": "e8eb94ffb1ff2f85d3c33edb0eac30fed3e38f65de6318120260a772031f050f"
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "tdd_grill-human-approved-policy-evolution-20260610",
+    "skill": "prd-to-tdd/grill-with-docs",
+    "stage": "tdd_grill",
+    "status": "passed",
+    "artifact": "docs/dual-agent/human-approved-policy-evolution-20260610/grill-findings-tdd.md",
+    "sha256": "c0ddd6f1c41d7452e0a6ca18a237f9c33062a4cb9a81b9ce33dfd0ef8f536c23"
+  }
+]

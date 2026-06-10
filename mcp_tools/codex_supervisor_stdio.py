@@ -85,6 +85,12 @@ from supervisor.no_mistakes import (
     build_no_mistakes_command,
     run_no_mistakes_validation,
 )
+from supervisor.autoresearch.policy_evolution import (
+    approve_policy_proposal,
+    create_policy_evolution_proposals,
+    deny_policy_proposal,
+    rollback_policy_proposal,
+)
 from supervisor.dual_agent_runner import (
     DualAgentGateResult,
     DualAgentGateSpec,
@@ -152,6 +158,51 @@ def _workflow_job_idempotency_token(
     canonical = _canonical_workflow_job_payload(payload)
     digest = hashlib.sha256(f"{run_id}\n{canonical}".encode("utf-8")).hexdigest()
     return f"derived:{digest}"
+
+
+def _resolve_repo_path(repo_root: Path, value: str) -> Path:
+    path = Path(str(value or "").strip()).expanduser()
+    if not path.is_absolute():
+        path = repo_root / path
+    return path.resolve(strict=False)
+
+
+def _read_json_mapping(path: Path) -> dict[str, Any]:
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise ValueError(f"unable to read JSON artifact: {path}") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"invalid JSON artifact: {path}: {exc}") from exc
+    if not isinstance(loaded, dict):
+        raise ValueError(f"JSON artifact must be an object: {path}")
+    return loaded
+
+
+def _proposal_payload(
+    *,
+    proposal: dict[str, Any] | None,
+    proposal_path: str | None,
+    repo_root: Path,
+) -> dict[str, Any]:
+    if proposal is not None:
+        return dict(proposal)
+    if proposal_path:
+        return _read_json_mapping(_resolve_repo_path(repo_root, proposal_path))
+    raise ValueError("proposal or proposal_path is required")
+
+
+def _rollback_pointer_payload(
+    *,
+    rollback_pointer: dict[str, Any] | None,
+    rollback_pointer_path: str | None,
+    repo_root: Path,
+) -> dict[str, Any]:
+    if rollback_pointer is not None:
+        return dict(rollback_pointer)
+    if rollback_pointer_path:
+        return _read_json_mapping(_resolve_repo_path(repo_root, rollback_pointer_path))
+    raise ValueError("rollback_pointer or rollback_pointer_path is required")
 
 
 class CodexSupervisorMcpAPI:
@@ -2211,6 +2262,118 @@ class CodexSupervisorMcpAPI:
         )
         return result
 
+    def create_autoresearch_policy_proposals(
+        self,
+        *,
+        report_path: str,
+        repo_root: str,
+        candidate_changes: dict[str, str],
+        affected_gates: list[str],
+        run_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Create operator-reviewable policy proposals from an accepted AutoResearch report."""
+        repo_root_path = Path(repo_root).expanduser().resolve()
+        report = _read_json_mapping(_resolve_repo_path(repo_root_path, report_path))
+        proposals = create_policy_evolution_proposals(
+            report,
+            repo_root=repo_root_path,
+            candidate_changes=candidate_changes,
+            affected_gates=affected_gates,
+            state=self.state,
+            run_id=run_id,
+        )
+        return redact({
+            "status": "ok",
+            "proposal_count": len(proposals),
+            "proposals": proposals,
+        })
+
+    def approve_autoresearch_policy_proposal(
+        self,
+        *,
+        proposal: dict[str, Any] | None = None,
+        proposal_path: str | None = None,
+        repo_root: str,
+        run_id: str,
+        approver: str,
+        approval_channel: str,
+        rollback_root: str = ".handoff/policy-rollbacks",
+    ) -> dict[str, Any]:
+        """Apply exactly one recorded policy proposal after explicit operator approval."""
+        repo_root_path = Path(repo_root).expanduser().resolve()
+        proposal_payload = _proposal_payload(
+            proposal=proposal,
+            proposal_path=proposal_path,
+            repo_root=repo_root_path,
+        )
+        approval = approve_policy_proposal(
+            proposal_payload,
+            state=self.state,
+            run_id=run_id,
+            repo_root=repo_root_path,
+            approver=approver,
+            approval_channel=approval_channel,
+            rollback_root=rollback_root,
+        )
+        return redact({"status": "ok", "approval": approval})
+
+    def deny_autoresearch_policy_proposal(
+        self,
+        *,
+        proposal: dict[str, Any] | None = None,
+        proposal_path: str | None = None,
+        repo_root: str,
+        run_id: str,
+        approver: str,
+        approval_channel: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        """Record an explicit operator denial without applying the proposal."""
+        repo_root_path = Path(repo_root).expanduser().resolve()
+        proposal_payload = _proposal_payload(
+            proposal=proposal,
+            proposal_path=proposal_path,
+            repo_root=repo_root_path,
+        )
+        denial = deny_policy_proposal(
+            proposal_payload,
+            state=self.state,
+            run_id=run_id,
+            approver=approver,
+            approval_channel=approval_channel,
+            reason=reason,
+        )
+        return redact({"status": "ok", "denial": denial})
+
+    def rollback_autoresearch_policy_proposal(
+        self,
+        *,
+        rollback_pointer: dict[str, Any] | None = None,
+        rollback_pointer_path: str | None = None,
+        repo_root: str,
+        run_id: str,
+        approver: str,
+        approval_channel: str,
+        reason: str = "",
+    ) -> dict[str, Any]:
+        """Restore proposal changes through a recorded rollback pointer."""
+        repo_root_path = Path(repo_root).expanduser().resolve()
+        pointer_payload = _rollback_pointer_payload(
+            rollback_pointer=rollback_pointer,
+            rollback_pointer_path=rollback_pointer_path,
+            repo_root=repo_root_path,
+        )
+        rollback = rollback_policy_proposal(
+            pointer_payload,
+            state=self.state,
+            run_id=run_id,
+            repo_root=repo_root_path,
+            approver=approver,
+            approval_channel=approval_channel,
+            reason=reason,
+        )
+        return redact({"status": "ok", "rollback": rollback})
+
     def submit_dual_agent_workflow_job(
         self,
         *,
@@ -4030,6 +4193,82 @@ def build_codex_supervisor_mcp_server(
             cwd=cwd,
             output_dir=output_dir,
             screenshots=screenshots,
+        )
+
+    @mcp.tool()
+    def create_autoresearch_policy_proposals(
+        report_path: str,
+        repo_root: str,
+        candidate_changes: dict[str, str],
+        affected_gates: list[str],
+        run_id: str | None = None,
+    ) -> dict[str, Any]:
+        return tool_api.create_autoresearch_policy_proposals(
+            report_path=report_path,
+            repo_root=repo_root,
+            candidate_changes=candidate_changes,
+            affected_gates=affected_gates,
+            run_id=run_id,
+        )
+
+    @mcp.tool()
+    def approve_autoresearch_policy_proposal(
+        repo_root: str,
+        run_id: str,
+        approver: str,
+        approval_channel: str,
+        proposal: dict[str, Any] | None = None,
+        proposal_path: str | None = None,
+        rollback_root: str = ".handoff/policy-rollbacks",
+    ) -> dict[str, Any]:
+        return tool_api.approve_autoresearch_policy_proposal(
+            proposal=proposal,
+            proposal_path=proposal_path,
+            repo_root=repo_root,
+            run_id=run_id,
+            approver=approver,
+            approval_channel=approval_channel,
+            rollback_root=rollback_root,
+        )
+
+    @mcp.tool()
+    def deny_autoresearch_policy_proposal(
+        repo_root: str,
+        run_id: str,
+        approver: str,
+        approval_channel: str,
+        reason: str,
+        proposal: dict[str, Any] | None = None,
+        proposal_path: str | None = None,
+    ) -> dict[str, Any]:
+        return tool_api.deny_autoresearch_policy_proposal(
+            proposal=proposal,
+            proposal_path=proposal_path,
+            repo_root=repo_root,
+            run_id=run_id,
+            approver=approver,
+            approval_channel=approval_channel,
+            reason=reason,
+        )
+
+    @mcp.tool()
+    def rollback_autoresearch_policy_proposal(
+        repo_root: str,
+        run_id: str,
+        approver: str,
+        approval_channel: str,
+        reason: str = "",
+        rollback_pointer: dict[str, Any] | None = None,
+        rollback_pointer_path: str | None = None,
+    ) -> dict[str, Any]:
+        return tool_api.rollback_autoresearch_policy_proposal(
+            rollback_pointer=rollback_pointer,
+            rollback_pointer_path=rollback_pointer_path,
+            repo_root=repo_root,
+            run_id=run_id,
+            approver=approver,
+            approval_channel=approval_channel,
+            reason=reason,
         )
 
     @mcp.tool()

@@ -305,6 +305,10 @@ async def test_codex_supervisor_mcp_exposes_dual_agent_gate_tools(tmp_path):
         "read_gate_transcript",
         "read_outcome",
         "export_gate_artifacts",
+        "create_autoresearch_policy_proposals",
+        "approve_autoresearch_policy_proposal",
+        "deny_autoresearch_policy_proposal",
+        "rollback_autoresearch_policy_proposal",
         "run_dual_agent_workflow",
         "submit_dual_agent_workflow_job",
         "poll_dual_agent_workflow_job",
@@ -337,6 +341,118 @@ async def test_codex_supervisor_mcp_exposes_dual_agent_gate_tools(tmp_path):
     ))
     assert outcome["status"] == "ok"
     assert outcome["result"]["status"] == "accepted"
+
+
+@pytest.mark.asyncio
+async def test_autoresearch_policy_evolution_tools_apply_only_after_operator_approval(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
+    from supervisor.autoresearch.policy_evolution import PolicyEvolutionError
+
+    state = State(str(tmp_path / "state.db"))
+    server = build_codex_supervisor_mcp_server(
+        _cfg(tmp_path),
+        state,
+        mcp_cls=_FakeMCP,
+    )
+    target = tmp_path / "prompts" / "outcome-review.md"
+    candidate = tmp_path / "candidates" / "outcome-review.md"
+    target.parent.mkdir(parents=True)
+    candidate.parent.mkdir(parents=True)
+    target.write_text("before prompt\n", encoding="utf-8")
+    candidate.write_text("after prompt\n", encoding="utf-8")
+    report_path = tmp_path / "autoresearch-report.json"
+    report_path.write_text(json.dumps({
+        "schema_version": "supervisor-autoresearch-summary/v1",
+        "report_sha256": "report-sha",
+        "records": [{
+            "experiment_id": "exp-policy-1",
+            "task_id": "task-policy-1",
+            "attempt_id": "attempt-policy-1",
+            "validation_status": "accepted",
+            "recommendation": "candidate needs operator approval",
+            "metric_name": "reviewer_evidence_score",
+            "metric_trials": [0.74, 0.82, 0.86],
+            "metric_median": 0.82,
+            "metric_iqr": 0.12,
+            "metric_source": "evaluator_execution",
+            "evaluator_run_ref": "docs/dual-agent/run/evaluator-runs/attempt-policy-1.json",
+            "evaluator_run_hash": "evaluator-run-hash",
+            "changed_files": ["candidates/outcome-review.md"],
+            "gaming_flags": [],
+            "validation_errors": [],
+            "cost_usd": 0.19,
+            "wall_clock_s": 12.5,
+            "default_change_allowed": False,
+            "policy_mutated": False,
+            "gate_advanced": False,
+        }],
+    }), encoding="utf-8")
+
+    created = await _maybe_await(server.tools["create_autoresearch_policy_proposals"](
+        report_path=str(report_path),
+        repo_root=str(tmp_path),
+        candidate_changes={"prompts/outcome-review.md": "candidates/outcome-review.md"},
+        affected_gates=["outcome_review"],
+        run_id="policy-run",
+    ))
+
+    assert created["proposal_count"] == 1
+    assert target.read_text(encoding="utf-8") == "before prompt\n"
+    proposal = created["proposals"][0]
+
+    with pytest.raises(PolicyEvolutionError):
+        await _maybe_await(server.tools["approve_autoresearch_policy_proposal"](
+            proposal=proposal,
+            repo_root=str(tmp_path),
+            run_id="policy-run",
+            approver="",
+            approval_channel="codex_desktop",
+        ))
+    assert target.read_text(encoding="utf-8") == "before prompt\n"
+
+    denial = await _maybe_await(server.tools["deny_autoresearch_policy_proposal"](
+        proposal=proposal,
+        repo_root=str(tmp_path),
+        run_id="policy-run",
+        approver="sam.zhang",
+        approval_channel="codex_desktop",
+        reason="needs more evidence",
+    ))
+    assert denial["denial"]["status"] == "denied"
+    assert target.read_text(encoding="utf-8") == "before prompt\n"
+
+    approval = await _maybe_await(server.tools["approve_autoresearch_policy_proposal"](
+        proposal=proposal,
+        repo_root=str(tmp_path),
+        run_id="policy-run",
+        approver="sam.zhang",
+        approval_channel="codex_desktop",
+    ))
+    assert approval["approval"]["operator_approved"] is True
+    assert approval["approval"]["default_change_allowed"] is False
+    assert target.read_text(encoding="utf-8") == "after prompt\n"
+
+    rollback = await _maybe_await(server.tools["rollback_autoresearch_policy_proposal"](
+        rollback_pointer=approval["approval"]["rollback_pointer"],
+        repo_root=str(tmp_path),
+        run_id="policy-run",
+        approver="sam.zhang",
+        approval_channel="codex_desktop",
+        reason="operator revert",
+    ))
+    assert target.read_text(encoding="utf-8") == "before prompt\n"
+    assert rollback["rollback"]["gate_authority"] == "unchanged"
+    assert rollback["rollback"]["reviewer_panel_authority"] == "unchanged"
+    assert rollback["rollback"]["typed_outcome_authority"] == "unchanged"
+    assert rollback["rollback"]["gate_advanced"] is False
+
+    events = state.read_events_since("policy-run", after_event_id=0, limit=10)
+    assert [event["kind"] for event in events] == [
+        "autoresearch_policy_proposal_created",
+        "autoresearch_policy_proposal_denied",
+        "autoresearch_policy_proposal_approved",
+        "autoresearch_policy_proposal_rolled_back",
+    ]
 
 
 @pytest.mark.asyncio

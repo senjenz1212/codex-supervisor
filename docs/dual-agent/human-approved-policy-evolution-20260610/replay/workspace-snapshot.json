@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "b193774ceb1815ead9568eab08f9136a6fa9e79903ad1029ad46344e1ab965d5",
+  "git": {
+    "diff_bytes": 15602,
+    "diff_sha256": "2244380f399fa37c4f74e014dc85c5481af6eb4f1791f2c7a90106c059736568",
+    "diff_stat": "mcp_tools/codex_supervisor_stdio.py      | 239 +++++++++++++++++++++++++++++++\n supervisor/autoresearch/orchestrator.py  |   4 +\n tests/test_codex_supervisor_mcp_stdio.py | 116 +++++++++++++++\n 3 files changed, 359 insertions(+)",
+    "head": "957a985",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "957a985",
+    "status_short": "M mcp_tools/codex_supervisor_stdio.py\n M supervisor/autoresearch/orchestrator.py\n M tests/test_codex_supervisor_mcp_stdio.py\n?? .scratch/cocreate-checkpoint-files-only-dual-agent-prompt.md\n?? .scratch/cocreate-ckpt-tdd-review-corrective-input.md\n?? docs/dual-agent/human-approved-policy-evolution-20260610/\n?? docs/dual-agent/supervisor-flow-autoresearch-run-20260609/\n?? docs/supervisor-improvement-audit-20260609.md\n?? docs/supervisor-improvement-prompts-coverage-20260609.md\n?? docs/supervisor-improvement-prompts-finish-20260610.md\n?? supervisor/autoresearch/policy_evolution.py\n?? tests/test_autoresearch_policy_evolution.py"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "12da97e315bbee5ed748e42fae0289bc06d78c38f9f51eaccde26c6c581b6ae6",
+    "implementation_plan": "b47dd4a3cf79482471ab038a18bf16cbdb9b92cb47d3e69026a5d3f5ab943181",
+    "issues": "ac6cbb21edac79c048eb05ce3f0ac8507e23eb697e1109adb644d5eaffbe5c25",
+    "prd": "258ee36a52464d62a92bae17f091476a0c361134faa39024cf3c87594dcdf282",
+    "tdd_plan": "f3156ece7faf7d012c59ed780070d25299ba112e1595d94e43c72fc3ab93fa7c"
+  },
+  "status": "captured"
+}

@@ -28,6 +28,10 @@ AUTORESEARCH_EVENT_KINDS = (
     "autoresearch_attempt_completed",
     "autoresearch_validation_started",
     "autoresearch_validation_completed",
+    "autoresearch_policy_proposal_created",
+    "autoresearch_policy_proposal_approved",
+    "autoresearch_policy_proposal_denied",
+    "autoresearch_policy_proposal_rolled_back",
     "autoresearch_report_emitted",
 )
 
