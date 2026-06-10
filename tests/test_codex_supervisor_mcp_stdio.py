@@ -97,8 +97,8 @@ def _outcome_block(
         "decisions": [decision],
         "objections": [],
         "changed_files": ["supervisor/dual_agent.py"],
-        "tests": [f"{sys.executable} -c \"pass\""],
-        "test_status": "passed",
+        "tests": [],
+        "test_status": "unknown",
         "confidence": 0.94,
     }
     if critical_review is not None:

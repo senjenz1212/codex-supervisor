@@ -73,6 +73,10 @@ from supervisor.dynamic_workflow import prepare_dynamic_workflow_preview
 from supervisor.agentic_executor import produce_agentic_worker_receipts
 from supervisor.agentic_workers import discover_agentic_worker_receipts
 from supervisor.runtime_evidence import capture_runtime_baseline, collect_runtime_evidence
+from supervisor.receipt_provenance import (
+    provenance_downgrade_event_payload,
+    sanitize_receipt_provenance,
+)
 from supervisor.lessons import (
     append_lesson_block,
     build_lesson_injection,
@@ -258,6 +262,7 @@ class CodexSupervisorMcpAPI:
         injected_lesson_block: str = "",
         injected_lesson_block_sha256: str = "",
         injected_lesson_ids: list[str] | tuple[str, ...] | None = None,
+        sanitize_tool_receipts: bool = True,
     ) -> dict[str, Any]:
         execution_layer_mode = _canonical_execution_layer_mode(execution_layer_mode)
         dynamic_workflow_task_class = _canonical_dynamic_workflow_task_class(dynamic_workflow_task_class)
@@ -269,6 +274,14 @@ class CodexSupervisorMcpAPI:
             solo_exception_for_artifact_only_gates=solo_exception_for_artifact_only_gates,
             required_evidence_grade=required_evidence_grade,
         )
+        if sanitize_tool_receipts:
+            tool_receipts = _normalise_receipt_payloads(tool_receipts or [])
+            self._write_receipt_provenance_downgrade_events(
+                run_id=run_id,
+                task_id=task_id,
+                receipts=tool_receipts,
+                scope=f"{gate}:caller_tool_receipts",
+            )
         artifact_preflight = _artifact_preflight(
             state=self.state,
             run_id=run_id,
@@ -614,6 +627,12 @@ class CodexSupervisorMcpAPI:
         max_rounds = max(1, int(max_rounds_per_gate))
         screenshot_payloads = screenshots or []
         receipt_payloads = _normalise_receipt_payloads(tool_receipts or [])
+        self._write_receipt_provenance_downgrade_events(
+            run_id=run_id,
+            task_id=task_id,
+            receipts=receipt_payloads,
+            scope="caller_tool_receipts",
+        )
         source_artifacts = ensure_workflow_source_artifacts(
             cwd=cwd,
             task_id=task_id,
@@ -1216,6 +1235,7 @@ class CodexSupervisorMcpAPI:
                         gate=gate,
                         task_complexity=str(workflow_route["task_complexity"]),
                     ),
+                    sanitize_tool_receipts=False,
                 )
                 final_payload = payload
                 claim_probe = None
@@ -1227,6 +1247,7 @@ class CodexSupervisorMcpAPI:
                 review_results: list[tuple[Any, CursorInvocationResult]] = []
                 independent_reviewer_results: list[dict[str, Any]] = []
                 independent_reviewer_adjudication: dict[str, Any] | None = None
+                current_runtime_receipt_ids: set[str] = set()
                 if payload.get("status") == "accepted" and gate in {"execution", "outcome_review"}:
                     runtime_evidence_result = collect_runtime_evidence(
                         cwd=cwd,
@@ -1240,10 +1261,17 @@ class CodexSupervisorMcpAPI:
                         else {},
                         test_timeout_s=min(timeout_s, 120),
                     )
-                    receipt_payloads = _dedupe_receipt_payloads(_normalise_receipt_payloads([
-                        *receipt_payloads,
-                        *runtime_evidence_result.receipts,
-                    ]))
+                    current_runtime_receipt_ids = _trusted_runtime_receipt_ids(
+                        list(runtime_evidence_result.receipts)
+                    )
+                    runtime_receipts = _normalise_receipt_payloads(
+                        list(runtime_evidence_result.receipts),
+                        trusted_runtime_receipt_ids=current_runtime_receipt_ids,
+                    )
+                    receipt_payloads = _merge_runtime_receipt_payloads(
+                        receipt_payloads,
+                        runtime_receipts,
+                    )
                     payload["runtime_evidence"] = runtime_evidence_result.event_payload
                     runtime_probe = runtime_evidence_result.probe
                     self.state.write_event(
@@ -1265,6 +1293,7 @@ class CodexSupervisorMcpAPI:
                         screenshots=screenshot_payloads,
                         verified_claims=verified_claims,
                         tool_receipts=receipt_payloads,
+                        trusted_runtime_receipt_ids=current_runtime_receipt_ids,
                     )
                     payload["claim_verification"] = asdict(claim_probe)
                 if payload.get("status") == "accepted" and gate in {"execution", "outcome_review"}:
@@ -1276,6 +1305,7 @@ class CodexSupervisorMcpAPI:
                         if isinstance(payload.get("outcome"), dict)
                         else None,
                         tool_receipts=receipt_payloads,
+                        trusted_runtime_receipt_ids=current_runtime_receipt_ids,
                     )
                     payload.setdefault("probes", {})["P11"] = asdict(deliverable_probe)
                 if (
@@ -2469,6 +2499,7 @@ class CodexSupervisorMcpAPI:
             timeout_s=no_mistakes_timeout_s,
         )
         cwd_path = Path(cwd).expanduser().resolve()
+        receipt_payloads = _normalise_receipt_payloads(tool_receipts or [])
         payload = {
             "cwd": str(cwd_path),
             "task_id": task_id,
@@ -2492,7 +2523,7 @@ class CodexSupervisorMcpAPI:
             "planning_artifacts": planning_artifacts,
             "screenshots": screenshots,
             "verified_claims": verified_claims,
-            "tool_receipts": tool_receipts,
+            "tool_receipts": receipt_payloads,
             "require_skill_receipts": require_skill_receipts,
             "cursor_review": cursor_review,
             "cursor_review_profile": cursor_review_profile,
@@ -2535,6 +2566,12 @@ class CodexSupervisorMcpAPI:
             config_path=str(Path(config_path or "~/.codex-supervisor/config.yaml").expanduser()),
         )
         if created:
+            self._write_receipt_provenance_downgrade_events(
+                run_id=run_id,
+                task_id=task_id,
+                receipts=receipt_payloads,
+                scope="submit:caller_tool_receipts",
+            )
             self.state.write_event(
                 run_id=run_id,
                 source="dual_agent",
@@ -3471,6 +3508,29 @@ class CodexSupervisorMcpAPI:
         send = getattr(notifier, "send_message", None)
         if send is not None:
             await send(text)
+
+    def _write_receipt_provenance_downgrade_events(
+        self,
+        *,
+        run_id: str,
+        task_id: str,
+        receipts: list[dict[str, Any]],
+        scope: str,
+    ) -> None:
+        for receipt in receipts:
+            if not receipt.get("provenance_downgraded"):
+                continue
+            self.state.write_event(
+                run_id=run_id,
+                source="dual_agent",
+                kind="receipt_provenance_downgraded",
+                payload=provenance_downgrade_event_payload(
+                    receipt,
+                    task_id=task_id,
+                    run_id=run_id,
+                    scope=scope,
+                ),
+            )
 
     def _write_interaction_message(
         self,
@@ -5087,12 +5147,44 @@ def _panel_available_reviewers_accept(
     return True
 
 
-def _normalise_receipt_payloads(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _normalise_receipt_payloads(
+    receipts: list[dict[str, Any]],
+    *,
+    trusted_runtime_receipt_ids: set[str] | None = None,
+) -> list[dict[str, Any]]:
     normalised: list[dict[str, Any]] = []
     for receipt in receipts:
         if isinstance(receipt, dict):
-            normalised.append(dict(receipt))
+            normalised.append(
+                sanitize_receipt_provenance(
+                    receipt,
+                    trusted_runtime_receipt_ids=trusted_runtime_receipt_ids,
+                )
+            )
     return normalised
+
+
+def _trusted_runtime_receipt_ids(receipts: list[dict[str, Any]]) -> set[str]:
+    ids: set[str] = set()
+    for receipt in receipts:
+        receipt_id = str(receipt.get("receipt_id") or receipt.get("id") or "").strip()
+        if receipt_id:
+            ids.add(receipt_id)
+    return ids
+
+
+def _merge_runtime_receipt_payloads(
+    existing_receipts: list[dict[str, Any]],
+    runtime_receipts: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    runtime_keys = {_receipt_identity(receipt) for receipt in runtime_receipts}
+    return _dedupe_receipt_payloads([
+        *[
+            receipt for receipt in existing_receipts
+            if _receipt_identity(receipt) not in runtime_keys
+        ],
+        *runtime_receipts,
+    ])
 
 
 def _hydrate_agentic_worker_receipts(

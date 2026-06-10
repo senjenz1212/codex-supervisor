@@ -566,6 +566,7 @@ class State:
                    'no_mistakes_validation_failed',
                    'no_mistakes_validation_skipped',
                    'no_mistakes_validation_started',
+                   'receipt_provenance_downgraded',
                    'supervisor_lesson_injection',
                    'supervisor_lesson_recorded',
                    'tri_agent_cursor_review'

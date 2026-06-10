@@ -7,6 +7,7 @@ from typing import Any
 
 from .dual_agent import Outcome, ProbeResult, outcome_accepts
 from .dual_agent_artifacts import default_dual_agent_artifact_dir
+from .receipt_provenance import sanitize_receipt_provenance
 from .state import State
 
 
@@ -338,11 +339,16 @@ def verify_workflow_claims(
     screenshots: list[dict[str, Any]],
     verified_claims: list[str] | None = None,
     tool_receipts: list[dict[str, Any]] | None = None,
+    trusted_runtime_receipt_ids: set[str] | None = None,
 ) -> ProbeResult:
     if not isinstance(outcome_payload, dict):
         return ProbeResult("P11", "red", "missing_outcome_for_claim_verification")
     outcome = Outcome(**outcome_payload)
-    receipts = _normalise_tool_receipts(tool_receipts or [], screenshots=screenshots)
+    receipts = _normalise_tool_receipts(
+        tool_receipts or [],
+        screenshots=screenshots,
+        trusted_runtime_receipt_ids=trusted_runtime_receipt_ids,
+    )
     legacy_verified = sorted({claim.lower() for claim in (verified_claims or [])})
     failures: list[str] = []
     claims = [claim.lower() for claim in outcome.claims]
@@ -422,6 +428,7 @@ def verify_gate_deliverable_evidence(
     intent: str,
     outcome_payload: dict[str, Any] | None,
     tool_receipts: list[dict[str, Any]] | None = None,
+    trusted_runtime_receipt_ids: set[str] | None = None,
 ) -> ProbeResult:
     if gate not in {"execution", "outcome_review"}:
         return ProbeResult("P11", "green", "deliverable_evidence_not_required", {"gate": gate})
@@ -431,7 +438,11 @@ def verify_gate_deliverable_evidence(
         })
 
     outcome = Outcome(**outcome_payload)
-    receipts = _normalise_tool_receipts(tool_receipts or [], screenshots=[])
+    receipts = _normalise_tool_receipts(
+        tool_receipts or [],
+        screenshots=[],
+        trusted_runtime_receipt_ids=trusted_runtime_receipt_ids,
+    )
     changed_files = [str(path).strip() for path in outcome.changed_files if str(path).strip()]
     deliverable_files = [
         path for path in changed_files
@@ -659,12 +670,16 @@ def _normalise_tool_receipts(
     tool_receipts: list[dict[str, Any]],
     *,
     screenshots: list[dict[str, Any]],
+    trusted_runtime_receipt_ids: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     receipts: list[dict[str, Any]] = []
     for receipt in tool_receipts:
         if not isinstance(receipt, dict):
             continue
-        item = dict(receipt)
+        item = sanitize_receipt_provenance(
+            receipt,
+            trusted_runtime_receipt_ids=trusted_runtime_receipt_ids,
+        )
         item["kind"] = _normalise_receipt_value(item.get("kind") or item.get("type"))
         item["status"] = _normalise_receipt_value(item.get("status") or item.get("result"))
         receipts.append(item)

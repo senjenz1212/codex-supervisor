@@ -15,8 +15,15 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .dual_agent import ProbeResult
+from .receipt_provenance import mark_supervisor_runtime_receipt
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
+
+_SHELL_META_TOKENS = {";", "&&", "||", "|", ">", ">>", "<", "2>", "2>>"}
+_SECRET_ENV_KEY_RE = re.compile(
+    r"(api[_-]?key|token|secret|password|credential|auth|private[_-]?key)",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -206,7 +213,7 @@ def _receipt(
         "claims": claims or [],
     }
     payload.update(extra or {})
-    return payload
+    return mark_supervisor_runtime_receipt(payload)
 
 
 def _current_changed_files(cwd: Path, *, runner: Runner) -> dict[str, Any]:
@@ -275,27 +282,58 @@ def _run_declared_tests(
     try:
         for command in test_commands:
             started = time.monotonic()
+            command_plan = _runtime_test_command_argv(command, validation_cwd)
+            if command_plan["status"] != "allowed":
+                results.append({
+                    "command": command,
+                    "argv": [],
+                    "returncode": None,
+                    "status": "failed",
+                    "duration_ms": int((time.monotonic() - started) * 1000),
+                    "reason": "runtime_test_command_rejected",
+                    "rejection_reason": command_plan["reason"],
+                })
+                continue
             try:
                 completed = runner(
-                    command,
+                    command_plan["argv"],
                     cwd=str(validation_cwd),
-                    shell=True,
+                    shell=False,
                     capture_output=True,
                     text=True,
                     timeout=max(1, int(timeout_s)),
+                    env=_runtime_test_env(validation_cwd),
                 )
                 duration_ms = int((time.monotonic() - started) * 1000)
+                reason = (
+                    "runtime_test_environment_unavailable"
+                    if completed.returncode != 0 and _pytest_environment_unavailable(completed)
+                    else None
+                )
                 results.append({
                     "command": command,
+                    "argv": command_plan["argv"],
                     "returncode": completed.returncode,
                     "status": "passed" if completed.returncode == 0 else "failed",
                     "duration_ms": duration_ms,
+                    **({"reason": reason} if reason else {}),
                     "stdout_tail": _tail(completed.stdout),
                     "stderr_tail": _tail(completed.stderr),
+                })
+            except FileNotFoundError as exc:
+                results.append({
+                    "command": command,
+                    "argv": command_plan["argv"],
+                    "returncode": None,
+                    "status": "failed",
+                    "duration_ms": int((time.monotonic() - started) * 1000),
+                    "reason": "runtime_test_environment_unavailable",
+                    "stderr_tail": _tail(str(exc)),
                 })
             except subprocess.TimeoutExpired as exc:
                 results.append({
                     "command": command,
+                    "argv": command_plan["argv"],
                     "returncode": None,
                     "status": "failed",
                     "duration_ms": int((time.monotonic() - started) * 1000),
@@ -320,6 +358,94 @@ def _run_declared_tests(
             "isolated_worktree": True,
             "isolation_strategy": "copytree_current_worktree",
         },
+    )
+
+
+def _runtime_test_command_argv(command: str, validation_cwd: Path) -> dict[str, Any]:
+    try:
+        parts = shlex.split(command)
+    except ValueError as exc:
+        return {"status": "rejected", "reason": f"parse_error:{exc}", "argv": []}
+    if not parts:
+        return {"status": "rejected", "reason": "empty_command", "argv": []}
+    if _contains_shell_metacharacters(parts):
+        return {"status": "rejected", "reason": "shell_metacharacter", "argv": []}
+
+    executable = Path(parts[0]).name
+    if executable == "pytest":
+        return {
+            "status": "allowed",
+            "reason": "pytest_module",
+            "argv": [_runtime_python(validation_cwd), "-m", "pytest", *parts[1:]],
+        }
+    if executable == "python" or executable.startswith("python3"):
+        if len(parts) >= 3 and parts[1] == "-m" and parts[2] == "pytest":
+            return {
+                "status": "allowed",
+                "reason": "python_module_pytest",
+                "argv": [_runtime_python(validation_cwd), "-m", "pytest", *parts[3:]],
+            }
+        return {"status": "rejected", "reason": "python_non_pytest_module", "argv": []}
+    if executable == "make":
+        targets = parts[1:]
+        if len(targets) == 1 and targets[0] in {"test", "tests", "pytest"}:
+            return {"status": "allowed", "reason": "make_test_target", "argv": ["make", targets[0]]}
+        return {"status": "rejected", "reason": "make_target_not_allowlisted", "argv": []}
+    return {"status": "rejected", "reason": "command_not_allowlisted", "argv": []}
+
+
+def _runtime_python(validation_cwd: Path) -> str:
+    venv_python = validation_cwd / ".venv" / "bin" / "python"
+    if venv_python.exists():
+        return str(venv_python)
+    return sys.executable
+
+
+def _contains_shell_metacharacters(parts: list[str]) -> bool:
+    for part in parts:
+        if part in _SHELL_META_TOKENS:
+            return True
+        if "`" in part or "$(" in part:
+            return True
+        if any(token in part for token in (";", "&&", "||", "|", ">", "<")):
+            return True
+    return False
+
+
+def _runtime_test_env(validation_cwd: Path) -> dict[str, str]:
+    env: dict[str, str] = {
+        "HOME": str(validation_cwd),
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONNOUSERSITE": "1",
+    }
+    venv_dir = validation_cwd / ".venv"
+    path_parts = []
+    if (venv_dir / "bin").exists():
+        env["VIRTUAL_ENV"] = str(venv_dir)
+        path_parts.append(str(venv_dir / "bin"))
+    path_parts.extend([
+        str(Path(sys.executable).parent),
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+        "/usr/sbin",
+        "/sbin",
+    ])
+    env["PATH"] = os.pathsep.join(dict.fromkeys(path_parts))
+    for key, value in os.environ.items():
+        if key in env or _SECRET_ENV_KEY_RE.search(key):
+            continue
+        if key in {"TMPDIR", "TEMP", "TMP"} and value:
+            env[key] = value
+    return env
+
+
+def _pytest_environment_unavailable(completed: subprocess.CompletedProcess[str]) -> bool:
+    output = f"{completed.stdout or ''}\n{completed.stderr or ''}".lower()
+    return (
+        "no module named pytest" in output
+        or "module pytest not found" in output
+        or "pytest: command not found" in output
     )
 
 
@@ -505,7 +631,7 @@ def _append_index(index: dict[str, list[str]], key: str, value: str) -> None:
 def _looks_like_command(text: str) -> bool:
     first = text.split(maxsplit=1)[0]
     return (
-        first in {"python", "python3", "pytest", "uv", "tox", "npm", "pnpm", "yarn"}
+        first in {"python", "python3", "pytest", "make", "uv", "tox", "npm", "pnpm", "yarn"}
         or first.endswith("/python")
     )
 

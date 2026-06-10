@@ -416,6 +416,7 @@ class PostgresState:
                    'dual_agent_interaction_message',
                    'independent_reviewer_adjudication',
                    'independent_reviewer_review',
+                   'receipt_provenance_downgraded',
                    'supervisor_lesson_injection',
                    'supervisor_lesson_recorded',
                    'tri_agent_cursor_review'

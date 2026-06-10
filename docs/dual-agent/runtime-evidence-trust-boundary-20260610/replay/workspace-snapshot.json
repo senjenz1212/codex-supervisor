@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "cb53bb9d49da5cf2c6063f2b7e7a1488ef558e95e46c2885bcc4da9c2a5ff0ec",
+  "git": {
+    "diff_bytes": 40501,
+    "diff_sha256": "548e11c90c9f0515f51969cef836e011e3f4017268c36816ec75622890ace9f4",
+    "diff_stat": "mcp_tools/codex_supervisor_stdio.py      | 106 ++++++++++++-\n supervisor/dual_agent_workflow.py        |  21 ++-\n supervisor/postgres_state.py             |   1 +\n supervisor/runtime_evidence.py           | 134 +++++++++++++++-\n supervisor/state.py                      |   1 +\n tests/test_codex_supervisor_mcp_stdio.py |   4 +-\n tests/test_dual_agent_workflow_driver.py | 256 ++++++++++++++++++++++++++++++-\n tests/test_runtime_evidence.py           | 130 +++++++++++++++-\n 8 files changed, 632 insertions(+), 21 deletions(-)",
+    "head": "4ca2a5c",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "4ca2a5c",
+    "status_short": "M mcp_tools/codex_supervisor_stdio.py\n M supervisor/dual_agent_workflow.py\n M supervisor/postgres_state.py\n M supervisor/runtime_evidence.py\n M supervisor/state.py\n M tests/test_codex_supervisor_mcp_stdio.py\n M tests/test_dual_agent_workflow_driver.py\n M tests/test_runtime_evidence.py\n?? .scratch/cocreate-checkpoint-files-only-dual-agent-prompt.md\n?? .scratch/cocreate-ckpt-tdd-review-corrective-input.md\n?? .scratch/cocreate-global-purge-dual-agent-prompt.md\n?? docs/dual-agent/runtime-evidence-trust-boundary-20260610/\n?? docs/dual-agent/supervisor-flow-autoresearch-run-20260609/\n?? docs/supervisor-improvement-audit-20260609.md\n?? docs/supervisor-improvement-completion-prompts-20260610.md\n?? docs/supervisor-improvement-prompts-coverage-20260609.md\n?? docs/supervisor-improvement-prompts-finish-20260610.md\n?? supervisor/receipt_provenance.py"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "881a1e08ff31aaac130f749f42ddf3ee4b218cba94a6c041519c211989433c74",
+    "implementation_plan": "f80ae285dd72213c7172cdf60475f9ceb80e6ab3ac8bf9690088d5c30169d43c",
+    "issues": "51823346c86ca9f9b92a07510536a9355507d46c809f4e0e9b90f20c507b3ae5",
+    "prd": "36c0ec76f833b0e5d7f9ff7bafca62f4098f293344a6953b018bcf310c7ff3c4",
+    "tdd_plan": "330ada8ab71873f6175823aca95ac3afe7294e438d2b47d14c6585d1c43146b3"
+  },
+  "status": "captured"
+}
