@@ -82,6 +82,7 @@ from supervisor.lessons import (
     build_lesson_injection,
     record_lessons_for_run,
 )
+from supervisor.quality_trends import record_quality_trends_for_run
 from supervisor.no_mistakes import (
     NoMistakesConfig,
     NoMistakesValidationRequest,
@@ -3729,6 +3730,29 @@ class CodexSupervisorMcpAPI:
             task_id=task_id,
             task_class=str((workflow_route or {}).get("lesson_task_class") or "general"),
         )
+        quality_trends: dict[str, Any]
+        try:
+            trend_rows = record_quality_trends_for_run(
+                self.state,
+                run_id=run_id,
+                task_id=task_id,
+                task_class=str((workflow_route or {}).get("lesson_task_class") or "general"),
+            )
+            quality_trends = {
+                "recorded_count": len(trend_rows),
+                "gates": [str(row.get("gate")) for row in trend_rows],
+                "observational_only": True,
+                "gate_authority": "unchanged",
+            }
+        except Exception as exc:
+            quality_trends = {
+                "recorded_count": 0,
+                "observational_only": True,
+                "gate_authority": "unchanged",
+                "status": "failed",
+                "reason": type(exc).__name__,
+                "message": str(exc),
+            }
         artifact_export = self.export_gate_artifacts(
             run_id=run_id,
             task_id=task_id,
@@ -3757,6 +3781,7 @@ class CodexSupervisorMcpAPI:
                 "lesson_ids": [str(item.get("lesson_id")) for item in lesson_records],
                 "advisory_only": True,
             },
+            "quality_trends": quality_trends,
             "no_mistakes_validation": (
                 {
                     **no_mistakes_validation.to_event_payload(),

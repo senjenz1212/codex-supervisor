@@ -77,6 +77,9 @@ def test_alembic_migration_and_make_target_exist():
     lessons_migration = Path("migrations/versions/20260610_0001_supervisor_lessons.py").read_text(
         encoding="utf-8"
     )
+    trends_migration = Path("migrations/versions/20260610_0002_supervisor_quality_trends.py").read_text(
+        encoding="utf-8"
+    )
     makefile = Path("Makefile").read_text(encoding="utf-8")
     config_example = Path("config.example.yaml").read_text(encoding="utf-8")
 
@@ -89,6 +92,10 @@ def test_alembic_migration_and_make_target_exist():
     assert 'revision = "20260610_0001"' in lessons_migration
     assert 'down_revision = "20260604_0001"' in lessons_migration
     assert "supervisor_lessons" in lessons_migration
+    assert 'revision = "20260610_0002"' in trends_migration
+    assert 'down_revision = "20260610_0001"' in trends_migration
+    assert "supervisor_quality_trends" in trends_migration
+    assert "idx_supervisor_quality_trends_task_gate" in trends_migration
     assert "uv run --extra postgres alembic -c alembic.ini upgrade head" in makefile
     assert "PgBouncer" in config_example
     assert "state_db: ~/.codex-supervisor/state.db" in config_example
@@ -117,6 +124,9 @@ def test_postgres_inline_schema_and_alembic_migration_stay_structurally_equivale
         "recovery_point IN ('reserved', 'request_written')",
         "supervisor_lessons",
         "idx_supervisor_lessons_task_gate",
+        "supervisor_quality_trends",
+        "idx_supervisor_quality_trends_task_gate",
+        "UNIQUE(run_id, gate)",
     ):
         assert required_snippet in POSTGRES_SCHEMA_SQL
         assert required_snippet in migration
@@ -149,6 +159,8 @@ def test_alembic_lessons_revision_upgrades_from_applied_base(monkeypatch):
         with psycopg.connect(dsn_with_schema) as conn:
             row = conn.execute("SELECT to_regclass('supervisor_lessons') AS table_name").fetchone()
             assert row[0] == "supervisor_lessons"
+            row = conn.execute("SELECT to_regclass('supervisor_quality_trends') AS table_name").fetchone()
+            assert row[0] == "supervisor_quality_trends"
     finally:
         with psycopg.connect(dsn) as conn:
             conn.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")

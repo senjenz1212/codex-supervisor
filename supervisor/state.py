@@ -281,6 +281,27 @@ CREATE TABLE IF NOT EXISTS supervisor_lessons (
 );
 CREATE INDEX IF NOT EXISTS idx_supervisor_lessons_task_gate
   ON supervisor_lessons(task_class, gate, created_at);
+
+CREATE TABLE IF NOT EXISTS supervisor_quality_trends (
+  id                             INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id                         TEXT NOT NULL,
+  task_id                        TEXT NOT NULL,
+  task_class                     TEXT NOT NULL,
+  gate                           TEXT NOT NULL,
+  accepted                       INTEGER NOT NULL,
+  first_pass_accepted            INTEGER NOT NULL,
+  revision_rounds                INTEGER NOT NULL,
+  time_to_accepted_outcome_s     REAL,
+  p11_audit_sample_size          INTEGER NOT NULL DEFAULT 0,
+  false_accept_count             INTEGER NOT NULL DEFAULT 0,
+  false_accept_denominator       INTEGER NOT NULL DEFAULT 0,
+  false_accept_rate              REAL NOT NULL DEFAULT 0.0,
+  details_json                   TEXT NOT NULL DEFAULT '{}',
+  computed_at                    INTEGER NOT NULL,
+  UNIQUE(run_id, gate)
+);
+CREATE INDEX IF NOT EXISTS idx_supervisor_quality_trends_task_gate
+  ON supervisor_quality_trends(task_class, gate, computed_at);
 """
 
 
@@ -298,6 +319,61 @@ def _merge_never_touch(supplied: tuple[str, ...]) -> tuple[str, ...]:
         if pat not in seen:
             seen.append(pat)
     return tuple(seen)
+
+
+def _quality_trend_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    payload = dict(row)
+    for key in (
+        "accepted",
+        "first_pass_accepted",
+        "revision_rounds",
+        "p11_audit_sample_size",
+        "false_accept_count",
+        "false_accept_denominator",
+        "computed_at",
+    ):
+        payload[key] = int(payload.get(key) or 0)
+    payload["accepted"] = bool(payload["accepted"])
+    payload["first_pass_accepted"] = bool(payload["first_pass_accepted"])
+    payload["false_accept_rate"] = float(payload.get("false_accept_rate") or 0.0)
+    if payload.get("time_to_accepted_outcome_s") is not None:
+        payload["time_to_accepted_outcome_s"] = float(payload["time_to_accepted_outcome_s"])
+    try:
+        payload["details"] = json.loads(str(payload.pop("details_json") or "{}"))
+    except json.JSONDecodeError:
+        payload["details"] = {}
+    return payload
+
+
+def _quality_trend_summary_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    run_count = int(row["run_count"] or 0)
+    accepted_count = int(row["accepted_count"] or 0)
+    first_pass_count = int(row["first_pass_accepted_count"] or 0)
+    false_accept_denominator = int(row["false_accept_denominator"] or 0)
+    false_accept_count = int(row["false_accept_count"] or 0)
+    return {
+        "task_class": row["task_class"],
+        "gate": row["gate"],
+        "run_count": run_count,
+        "accepted_count": accepted_count,
+        "acceptance_rate": (accepted_count / run_count) if run_count else 0.0,
+        "first_pass_accepted_count": first_pass_count,
+        "first_pass_acceptance_rate": (first_pass_count / run_count) if run_count else 0.0,
+        "avg_revision_rounds": float(row["avg_revision_rounds"] or 0.0),
+        "avg_time_to_accepted_outcome_s": (
+            float(row["avg_time_to_accepted_outcome_s"])
+            if row["avg_time_to_accepted_outcome_s"] is not None
+            else None
+        ),
+        "p11_audit_sample_size": int(row["p11_audit_sample_size"] or 0),
+        "false_accept_count": false_accept_count,
+        "false_accept_denominator": false_accept_denominator,
+        "false_accept_rate": (
+            false_accept_count / false_accept_denominator
+            if false_accept_denominator
+            else 0.0
+        ),
+    }
 
 
 class State:
@@ -651,6 +727,154 @@ class State:
                 (int(limit),),
             ).fetchall()
         ]
+
+    # --- quality trend metrics ---
+    def upsert_quality_trend_row(
+        self,
+        *,
+        run_id: str,
+        task_id: str,
+        task_class: str,
+        gate: str,
+        accepted: bool,
+        first_pass_accepted: bool,
+        revision_rounds: int,
+        time_to_accepted_outcome_s: float | None,
+        details: dict[str, Any] | None = None,
+        computed_at: int | None = None,
+    ) -> dict[str, Any]:
+        now = int(time.time()) if computed_at is None else int(computed_at)
+        details_json = json.dumps(redact(details or {}), sort_keys=True)
+        with self._write_lock:
+            self._conn.execute(
+                """INSERT INTO supervisor_quality_trends(
+                     run_id, task_id, task_class, gate, accepted,
+                     first_pass_accepted, revision_rounds,
+                     time_to_accepted_outcome_s, details_json, computed_at)
+                   VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(run_id, gate) DO UPDATE SET
+                     task_id=excluded.task_id,
+                     task_class=excluded.task_class,
+                     accepted=excluded.accepted,
+                     first_pass_accepted=excluded.first_pass_accepted,
+                     revision_rounds=excluded.revision_rounds,
+                     time_to_accepted_outcome_s=excluded.time_to_accepted_outcome_s,
+                     details_json=excluded.details_json,
+                     computed_at=excluded.computed_at""",
+                (
+                    run_id,
+                    task_id,
+                    str(task_class or "unclassified"),
+                    gate,
+                    1 if accepted else 0,
+                    1 if first_pass_accepted else 0,
+                    int(revision_rounds),
+                    time_to_accepted_outcome_s,
+                    details_json,
+                    now,
+                ),
+            )
+            row = self._conn.execute(
+                "SELECT * FROM supervisor_quality_trends WHERE run_id=? AND gate=?",
+                (run_id, gate),
+            ).fetchone()
+            self._conn.commit()
+            if row is None:
+                raise RuntimeError("quality trend row was not persisted")
+            return _quality_trend_row_to_dict(row)
+
+    def update_quality_trend_audit(
+        self,
+        *,
+        run_id: str,
+        gate: str,
+        sample_size: int,
+        false_accept_count: int,
+        false_accept_denominator: int,
+        audit_details: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        denominator = max(0, int(false_accept_denominator))
+        false_count = max(0, int(false_accept_count))
+        rate = (false_count / denominator) if denominator else 0.0
+        with self._write_lock:
+            existing = self._conn.execute(
+                "SELECT details_json FROM supervisor_quality_trends WHERE run_id=? AND gate=?",
+                (run_id, gate),
+            ).fetchone()
+            if existing is None:
+                return None
+            try:
+                details = json.loads(existing["details_json"] or "{}")
+            except json.JSONDecodeError:
+                details = {}
+            details["p11_audit"] = redact(audit_details or {})
+            self._conn.execute(
+                """UPDATE supervisor_quality_trends
+                      SET p11_audit_sample_size=?,
+                          false_accept_count=?,
+                          false_accept_denominator=?,
+                          false_accept_rate=?,
+                          details_json=?,
+                          computed_at=?
+                    WHERE run_id=? AND gate=?""",
+                (
+                    int(sample_size),
+                    false_count,
+                    denominator,
+                    rate,
+                    json.dumps(details, sort_keys=True),
+                    int(time.time()),
+                    run_id,
+                    gate,
+                ),
+            )
+            row = self._conn.execute(
+                "SELECT * FROM supervisor_quality_trends WHERE run_id=? AND gate=?",
+                (run_id, gate),
+            ).fetchone()
+            self._conn.commit()
+            return _quality_trend_row_to_dict(row) if row is not None else None
+
+    def query_quality_trends(
+        self,
+        *,
+        task_class: str | None = None,
+        gate: str | None = None,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if task_class:
+            clauses.append("task_class=?")
+            params.append(task_class)
+        if gate:
+            clauses.append("gate=?")
+            params.append(gate)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = self._conn.execute(
+            f"""SELECT
+                    task_class,
+                    gate,
+                    COUNT(*) AS run_count,
+                    SUM(accepted) AS accepted_count,
+                    SUM(first_pass_accepted) AS first_pass_accepted_count,
+                    AVG(revision_rounds) AS avg_revision_rounds,
+                    AVG(time_to_accepted_outcome_s) AS avg_time_to_accepted_outcome_s,
+                    SUM(p11_audit_sample_size) AS p11_audit_sample_size,
+                    SUM(false_accept_count) AS false_accept_count,
+                    SUM(false_accept_denominator) AS false_accept_denominator
+                  FROM supervisor_quality_trends
+                  {where}
+                  GROUP BY task_class, gate
+                  ORDER BY task_class ASC, gate ASC""",
+            tuple(params),
+        ).fetchall()
+        return [_quality_trend_summary_to_dict(row) for row in rows]
+
+    def count_quality_trend_rows(self) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS count FROM supervisor_quality_trends"
+        ).fetchone()
+        return int(row["count"] if row is not None else 0)
 
     def get_event(self, *, run_id: str, event_id: int) -> sqlite3.Row | None:
         return self._conn.execute(

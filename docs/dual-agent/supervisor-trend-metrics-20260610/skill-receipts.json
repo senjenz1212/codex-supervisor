@@ -1,0 +1,62 @@
+[
+  {
+    "receipt_id": "to_prd-supervisor-trend-metrics-20260610",
+    "kind": "skill_run",
+    "skill": "prd-to-tdd",
+    "stage": "to_prd",
+    "status": "passed",
+    "artifact_path": "docs/dual-agent/supervisor-trend-metrics-20260610/source/prd.md",
+    "artifact_sha256": "6e74c9748fe1ac98e2d2ecd748fa92e0341f97bce111ffb8076e4915fd99a207",
+    "claims": [
+      "prd-tdd skill executed"
+    ]
+  },
+  {
+    "receipt_id": "prd_grill-supervisor-trend-metrics-20260610",
+    "kind": "skill_run",
+    "skill": "grill-with-docs",
+    "stage": "prd_grill",
+    "status": "passed",
+    "artifact_path": "docs/dual-agent/supervisor-trend-metrics-20260610/source/grill-findings.md",
+    "artifact_sha256": "69f89bae27cc851ce7fbadebbbaf8fe4325921eea673473d0a5321646ae06ee6",
+    "claims": [
+      "prd-tdd skill executed"
+    ]
+  },
+  {
+    "receipt_id": "to_issues-supervisor-trend-metrics-20260610",
+    "kind": "skill_run",
+    "skill": "to-issues",
+    "stage": "to_issues",
+    "status": "passed",
+    "artifact_path": "docs/dual-agent/supervisor-trend-metrics-20260610/source/issues.md",
+    "artifact_sha256": "a5407f0df144dcb587c5b7fe4c1e19264820b94b335ad17670cd23e4707b9e1e",
+    "claims": [
+      "prd-tdd skill executed"
+    ]
+  },
+  {
+    "receipt_id": "tdd-supervisor-trend-metrics-20260610",
+    "kind": "skill_run",
+    "skill": "tdd",
+    "stage": "tdd",
+    "status": "passed",
+    "artifact_path": "docs/dual-agent/supervisor-trend-metrics-20260610/source/tdd.md",
+    "artifact_sha256": "350009b7c844c75a4ea95b5c8d21cdcad04e9eb3c7893ccb20707db301de4115",
+    "claims": [
+      "prd-tdd skill executed"
+    ]
+  },
+  {
+    "receipt_id": "tdd_grill-supervisor-trend-metrics-20260610",
+    "kind": "skill_run",
+    "skill": "grill-with-docs",
+    "stage": "tdd_grill",
+    "status": "passed",
+    "artifact_path": "docs/dual-agent/supervisor-trend-metrics-20260610/source/grill-findings-tdd.md",
+    "artifact_sha256": "29da40a963cd6d6ff90f9d3582aaeacecb4b01c7daed7981a504fe650f7d7c9b",
+    "claims": [
+      "prd-tdd skill executed"
+    ]
+  }
+]

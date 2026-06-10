@@ -168,6 +168,27 @@ CREATE TABLE IF NOT EXISTS supervisor_lessons (
 );
 CREATE INDEX IF NOT EXISTS idx_supervisor_lessons_task_gate
   ON supervisor_lessons(task_class, gate, created_at);
+
+CREATE TABLE IF NOT EXISTS supervisor_quality_trends (
+  id BIGSERIAL PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  task_class TEXT NOT NULL,
+  gate TEXT NOT NULL,
+  accepted BOOLEAN NOT NULL,
+  first_pass_accepted BOOLEAN NOT NULL,
+  revision_rounds INTEGER NOT NULL,
+  time_to_accepted_outcome_s DOUBLE PRECISION,
+  p11_audit_sample_size INTEGER NOT NULL DEFAULT 0,
+  false_accept_count INTEGER NOT NULL DEFAULT 0,
+  false_accept_denominator INTEGER NOT NULL DEFAULT 0,
+  false_accept_rate DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+  details_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  computed_at BIGINT NOT NULL,
+  UNIQUE(run_id, gate)
+);
+CREATE INDEX IF NOT EXISTS idx_supervisor_quality_trends_task_gate
+  ON supervisor_quality_trends(task_class, gate, computed_at);
 """
 
 
@@ -212,6 +233,62 @@ def _payload_json_text(value: Any) -> str:
     if isinstance(value, str):
         return value
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+
+def _quality_trend_row_to_dict(row: dict[str, Any]) -> dict[str, Any]:
+    payload = dict(row)
+    for key in (
+        "revision_rounds",
+        "p11_audit_sample_size",
+        "false_accept_count",
+        "false_accept_denominator",
+        "computed_at",
+    ):
+        payload[key] = int(payload.get(key) or 0)
+    payload["accepted"] = bool(payload.get("accepted"))
+    payload["first_pass_accepted"] = bool(payload.get("first_pass_accepted"))
+    payload["false_accept_rate"] = float(payload.get("false_accept_rate") or 0.0)
+    if payload.get("time_to_accepted_outcome_s") is not None:
+        payload["time_to_accepted_outcome_s"] = float(payload["time_to_accepted_outcome_s"])
+    details = payload.pop("details_json", {}) or {}
+    if isinstance(details, str):
+        try:
+            details = json.loads(details)
+        except json.JSONDecodeError:
+            details = {}
+    payload["details"] = details if isinstance(details, dict) else {}
+    return payload
+
+
+def _quality_trend_summary_to_dict(row: dict[str, Any]) -> dict[str, Any]:
+    run_count = int(row["run_count"] or 0)
+    accepted_count = int(row["accepted_count"] or 0)
+    first_pass_count = int(row["first_pass_accepted_count"] or 0)
+    false_accept_denominator = int(row["false_accept_denominator"] or 0)
+    false_accept_count = int(row["false_accept_count"] or 0)
+    return {
+        "task_class": row["task_class"],
+        "gate": row["gate"],
+        "run_count": run_count,
+        "accepted_count": accepted_count,
+        "acceptance_rate": accepted_count / run_count if run_count else 0.0,
+        "first_pass_accepted_count": first_pass_count,
+        "first_pass_acceptance_rate": first_pass_count / run_count if run_count else 0.0,
+        "avg_revision_rounds": float(row["avg_revision_rounds"] or 0.0),
+        "avg_time_to_accepted_outcome_s": (
+            float(row["avg_time_to_accepted_outcome_s"])
+            if row["avg_time_to_accepted_outcome_s"] is not None
+            else None
+        ),
+        "p11_audit_sample_size": int(row["p11_audit_sample_size"] or 0),
+        "false_accept_count": false_accept_count,
+        "false_accept_denominator": false_accept_denominator,
+        "false_accept_rate": (
+            false_accept_count / false_accept_denominator
+            if false_accept_denominator
+            else 0.0
+        ),
+    }
 
 
 class PostgresState:
@@ -408,6 +485,7 @@ class PostgresState:
                    'dual_agent_dynamic_workflow_receipt_validation',
                    'dual_agent_dynamic_workflow_manifest',
                    'dual_agent_dynamic_workflow_synthesis',
+                   'dual_agent_runtime_evidence',
                    'dual_agent_reviewer_unavailable_recovery',
                    'dual_agent_workflow_job',
                    'dual_agent_workflow_terminal_outcome',
@@ -506,6 +584,146 @@ class PostgresState:
             (int(limit),),
         ).fetchall()
         return [dict(row) for row in rows]
+
+    # --- quality trend metrics ---
+    def upsert_quality_trend_row(
+        self,
+        *,
+        run_id: str,
+        task_id: str,
+        task_class: str,
+        gate: str,
+        accepted: bool,
+        first_pass_accepted: bool,
+        revision_rounds: int,
+        time_to_accepted_outcome_s: float | None,
+        details: dict[str, Any] | None = None,
+        computed_at: int | None = None,
+    ) -> dict[str, Any]:
+        now = int(time.time()) if computed_at is None else int(computed_at)
+        with self._write_lock:
+            with self._conn.transaction():
+                row = self._conn.execute(
+                    """INSERT INTO supervisor_quality_trends(
+                         run_id, task_id, task_class, gate, accepted,
+                         first_pass_accepted, revision_rounds,
+                         time_to_accepted_outcome_s, details_json, computed_at)
+                       VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                       ON CONFLICT(run_id, gate) DO UPDATE SET
+                         task_id=EXCLUDED.task_id,
+                         task_class=EXCLUDED.task_class,
+                         accepted=EXCLUDED.accepted,
+                         first_pass_accepted=EXCLUDED.first_pass_accepted,
+                         revision_rounds=EXCLUDED.revision_rounds,
+                         time_to_accepted_outcome_s=EXCLUDED.time_to_accepted_outcome_s,
+                         details_json=EXCLUDED.details_json,
+                         computed_at=EXCLUDED.computed_at
+                       RETURNING *""",
+                    (
+                        run_id,
+                        task_id,
+                        str(task_class or "unclassified"),
+                        gate,
+                        bool(accepted),
+                        bool(first_pass_accepted),
+                        int(revision_rounds),
+                        time_to_accepted_outcome_s,
+                        self._Jsonb(redact(details or {})),
+                        now,
+                    ),
+                ).fetchone()
+                if row is None:
+                    raise RuntimeError("quality trend row was not persisted")
+                return _quality_trend_row_to_dict(dict(row))
+
+    def update_quality_trend_audit(
+        self,
+        *,
+        run_id: str,
+        gate: str,
+        sample_size: int,
+        false_accept_count: int,
+        false_accept_denominator: int,
+        audit_details: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        denominator = max(0, int(false_accept_denominator))
+        false_count = max(0, int(false_accept_count))
+        rate = false_count / denominator if denominator else 0.0
+        with self._write_lock:
+            with self._conn.transaction():
+                existing = self._conn.execute(
+                    """SELECT details_json
+                       FROM supervisor_quality_trends
+                       WHERE run_id=%s AND gate=%s""",
+                    (run_id, gate),
+                ).fetchone()
+                if existing is None:
+                    return None
+                details = _as_payload(existing["details_json"])
+                details["p11_audit"] = redact(audit_details or {})
+                row = self._conn.execute(
+                    """UPDATE supervisor_quality_trends
+                          SET p11_audit_sample_size=%s,
+                              false_accept_count=%s,
+                              false_accept_denominator=%s,
+                              false_accept_rate=%s,
+                              details_json=%s,
+                              computed_at=%s
+                        WHERE run_id=%s AND gate=%s
+                        RETURNING *""",
+                    (
+                        int(sample_size),
+                        false_count,
+                        denominator,
+                        rate,
+                        self._Jsonb(details),
+                        int(time.time()),
+                        run_id,
+                        gate,
+                    ),
+                ).fetchone()
+                return _quality_trend_row_to_dict(dict(row)) if row is not None else None
+
+    def query_quality_trends(
+        self,
+        *,
+        task_class: str | None = None,
+        gate: str | None = None,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if task_class:
+            clauses.append("task_class=%s")
+            params.append(task_class)
+        if gate:
+            clauses.append("gate=%s")
+            params.append(gate)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = self._conn.execute(
+            f"""SELECT
+                    task_class,
+                    gate,
+                    COUNT(*) AS run_count,
+                    SUM(CASE WHEN accepted THEN 1 ELSE 0 END) AS accepted_count,
+                    SUM(CASE WHEN first_pass_accepted THEN 1 ELSE 0 END) AS first_pass_accepted_count,
+                    AVG(revision_rounds) AS avg_revision_rounds,
+                    AVG(time_to_accepted_outcome_s) AS avg_time_to_accepted_outcome_s,
+                    SUM(p11_audit_sample_size) AS p11_audit_sample_size,
+                    SUM(false_accept_count) AS false_accept_count,
+                    SUM(false_accept_denominator) AS false_accept_denominator
+                  FROM supervisor_quality_trends
+                  {where}
+                  GROUP BY task_class, gate
+                  ORDER BY task_class ASC, gate ASC""",
+            tuple(params),
+        ).fetchall()
+        return [_quality_trend_summary_to_dict(dict(row)) for row in rows]
+
+    def count_quality_trend_rows(self) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS count FROM supervisor_quality_trends"
+        ).fetchone()
+        return int(row["count"] if row is not None else 0)
 
     def get_event(self, *, run_id: str, event_id: int) -> dict[str, Any] | None:
         row = self._conn.execute(

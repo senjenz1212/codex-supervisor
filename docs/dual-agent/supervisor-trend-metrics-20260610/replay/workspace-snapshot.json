@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "bb1c89a6ae9b192784d7ebb334d15a498d358687f2b17751ebc5472736248719",
+  "git": {
+    "diff_bytes": 34359,
+    "diff_sha256": "8d1ed4bf88a9dd9f1828d309ff5f034b45e518199cab7c6a2062aea4ec96a493",
+    "diff_stat": "mcp_tools/codex_supervisor_stdio.py |  25 ++++\n supervisor/postgres_state.py        | 218 +++++++++++++++++++++++++++++++++++\n supervisor/schema_migrations.py     |  32 ++++++\n supervisor/state.py                 | 224 ++++++++++++++++++++++++++++++++++++\n tests/test_postgres_ledger_lane.py  |  12 ++\n tests/test_schema_migrations.py     |  95 ++++++++-------\n 6 files changed, 566 insertions(+), 40 deletions(-)",
+    "head": "985a748",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "985a748",
+    "status_short": "M mcp_tools/codex_supervisor_stdio.py\n M supervisor/postgres_state.py\n M supervisor/schema_migrations.py\n M supervisor/state.py\n M tests/test_postgres_ledger_lane.py\n M tests/test_schema_migrations.py\n?? .scratch/cocreate-checkpoint-files-only-dual-agent-prompt.md\n?? .scratch/cocreate-ckpt-tdd-review-corrective-input.md\n?? .scratch/cocreate-global-purge-dual-agent-prompt.md\n?? docs/dual-agent/supervisor-flow-autoresearch-run-20260609/\n?? docs/dual-agent/supervisor-trend-metrics-20260610/\n?? docs/supervisor-improvement-audit-20260609.md\n?? docs/supervisor-improvement-completion-prompts-20260610.md\n?? docs/supervisor-improvement-prompts-coverage-20260609.md\n?? docs/supervisor-improvement-prompts-finish-20260610.md\n?? migrations/versions/20260610_0002_supervisor_quality_trends.py\n?? scripts/run_supervisor_trend_metrics.py\n?? supervisor/quality_trends.py\n?? tests/test_quality_trends.py"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "29da40a963cd6d6ff90f9d3582aaeacecb4b01c7daed7981a504fe650f7d7c9b",
+    "implementation_plan": "836286a333f0e34b5b6d2b84d91e61911714c49409e10afb2cdeaf18e0d20680",
+    "issues": "a5407f0df144dcb587c5b7fe4c1e19264820b94b335ad17670cd23e4707b9e1e",
+    "prd": "6e74c9748fe1ac98e2d2ecd748fa92e0341f97bce111ffb8076e4915fd99a207",
+    "tdd_plan": "350009b7c844c75a4ea95b5c8d21cdcad04e9eb3c7893ccb20707db301de4115"
+  },
+  "status": "captured"
+}

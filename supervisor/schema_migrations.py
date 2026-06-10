@@ -208,6 +208,33 @@ def _migration_supervisor_lessons(conn: sqlite3.Connection) -> None:
     )
 
 
+def _migration_supervisor_quality_trends(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS supervisor_quality_trends (
+             id                             INTEGER PRIMARY KEY AUTOINCREMENT,
+             run_id                         TEXT NOT NULL,
+             task_id                        TEXT NOT NULL,
+             task_class                     TEXT NOT NULL,
+             gate                           TEXT NOT NULL,
+             accepted                       INTEGER NOT NULL,
+             first_pass_accepted            INTEGER NOT NULL,
+             revision_rounds                INTEGER NOT NULL,
+             time_to_accepted_outcome_s     REAL,
+             p11_audit_sample_size          INTEGER NOT NULL DEFAULT 0,
+             false_accept_count             INTEGER NOT NULL DEFAULT 0,
+             false_accept_denominator       INTEGER NOT NULL DEFAULT 0,
+             false_accept_rate              REAL NOT NULL DEFAULT 0.0,
+             details_json                   TEXT NOT NULL DEFAULT '{}',
+             computed_at                    INTEGER NOT NULL,
+             UNIQUE(run_id, gate)
+           )"""
+    )
+    conn.execute(
+        """CREATE INDEX IF NOT EXISTS idx_supervisor_quality_trends_task_gate
+           ON supervisor_quality_trends(task_class, gate, computed_at)"""
+    )
+
+
 def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
     row = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
@@ -268,5 +295,10 @@ MIGRATIONS: tuple[SchemaMigration, ...] = (
         7,
         "supervisor_lessons",
         _migration_supervisor_lessons,
+    ),
+    SchemaMigration(
+        8,
+        "supervisor_quality_trends",
+        _migration_supervisor_quality_trends,
     ),
 )

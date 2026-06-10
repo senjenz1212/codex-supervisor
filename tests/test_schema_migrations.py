@@ -8,6 +8,18 @@ from supervisor.schema_migrations import applied_migrations, run_forward_migrati
 from supervisor.state import State
 
 
+EXPECTED_MIGRATIONS = [
+    {"version": 1, "name": "actions.resume_requested_at"},
+    {"version": 2, "name": "dual_agent_workflow_jobs.idempotency_token"},
+    {"version": 3, "name": "dual_agent_workflow_jobs.terminal_outcome"},
+    {"version": 4, "name": "dual_agent_workflow_jobs.recovery_points"},
+    {"version": 5, "name": "dual_agent_workflow_jobs.recovery_claims"},
+    {"version": 6, "name": "dual_agent_workflow_jobs.dispatcher_leases"},
+    {"version": 7, "name": "supervisor_lessons"},
+    {"version": 8, "name": "supervisor_quality_trends"},
+]
+
+
 def test_forward_migration_adds_resume_requested_at_to_old_actions_table(tmp_path):
     db_path = tmp_path / "state.db"
     conn = sqlite3.connect(db_path)
@@ -29,15 +41,7 @@ def test_forward_migration_adds_resume_requested_at_to_old_actions_table(tmp_pat
 
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(actions)").fetchall()}
     assert "resume_requested_at" in columns
-    assert applied_migrations(conn) == [
-        {"version": 1, "name": "actions.resume_requested_at"},
-        {"version": 2, "name": "dual_agent_workflow_jobs.idempotency_token"},
-        {"version": 3, "name": "dual_agent_workflow_jobs.terminal_outcome"},
-        {"version": 4, "name": "dual_agent_workflow_jobs.recovery_points"},
-        {"version": 5, "name": "dual_agent_workflow_jobs.recovery_claims"},
-        {"version": 6, "name": "dual_agent_workflow_jobs.dispatcher_leases"},
-        {"version": 7, "name": "supervisor_lessons"},
-    ]
+    assert applied_migrations(conn) == EXPECTED_MIGRATIONS
 
 
 def test_forward_migrations_are_idempotent(tmp_path):
@@ -48,15 +52,7 @@ def test_forward_migrations_are_idempotent(tmp_path):
     run_forward_migrations(conn)
     run_forward_migrations(conn)
 
-    assert applied_migrations(conn) == [
-        {"version": 1, "name": "actions.resume_requested_at"},
-        {"version": 2, "name": "dual_agent_workflow_jobs.idempotency_token"},
-        {"version": 3, "name": "dual_agent_workflow_jobs.terminal_outcome"},
-        {"version": 4, "name": "dual_agent_workflow_jobs.recovery_points"},
-        {"version": 5, "name": "dual_agent_workflow_jobs.recovery_claims"},
-        {"version": 6, "name": "dual_agent_workflow_jobs.dispatcher_leases"},
-        {"version": 7, "name": "supervisor_lessons"},
-    ]
+    assert applied_migrations(conn) == EXPECTED_MIGRATIONS
 
 
 def test_forward_migration_name_mismatch_fails_closed(tmp_path):
@@ -114,15 +110,7 @@ def test_state_constructor_applies_forward_migration_to_old_db(tmp_path):
         for row in state._conn.execute("PRAGMA table_info(actions)").fetchall()
     }
     assert "resume_requested_at" in columns
-    assert applied_migrations(state._conn) == [
-        {"version": 1, "name": "actions.resume_requested_at"},
-        {"version": 2, "name": "dual_agent_workflow_jobs.idempotency_token"},
-        {"version": 3, "name": "dual_agent_workflow_jobs.terminal_outcome"},
-        {"version": 4, "name": "dual_agent_workflow_jobs.recovery_points"},
-        {"version": 5, "name": "dual_agent_workflow_jobs.recovery_claims"},
-        {"version": 6, "name": "dual_agent_workflow_jobs.dispatcher_leases"},
-        {"version": 7, "name": "supervisor_lessons"},
-    ]
+    assert applied_migrations(state._conn) == EXPECTED_MIGRATIONS
 
 
 def test_forward_migration_adds_workflow_job_idempotency(tmp_path):
@@ -211,8 +199,8 @@ def test_forward_migration_adds_workflow_job_dispatcher_leases(tmp_path):
     }
     assert "idx_dual_agent_workflow_jobs_dispatchable" in indexes
     assert applied_migrations(conn)[-1] == {
-        "version": 7,
-        "name": "supervisor_lessons",
+        "version": 8,
+        "name": "supervisor_quality_trends",
     }
     conn.execute(
         """INSERT INTO dual_agent_workflow_jobs(
@@ -266,9 +254,44 @@ def test_forward_migration_adds_supervisor_lessons(tmp_path):
         for row in conn.execute("PRAGMA index_list(supervisor_lessons)").fetchall()
     }
     assert "idx_supervisor_lessons_task_gate" in indexes
+    assert applied_migrations(conn)[-2] == {"version": 7, "name": "supervisor_lessons"}
+    assert applied_migrations(conn)[-1] == {"version": 8, "name": "supervisor_quality_trends"}
+
+
+def test_forward_migration_adds_supervisor_quality_trends(tmp_path):
+    conn = sqlite3.connect(tmp_path / "state.db")
+    conn.row_factory = sqlite3.Row
+
+    run_forward_migrations(conn)
+
+    columns = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(supervisor_quality_trends)").fetchall()
+    }
+    assert {
+        "run_id",
+        "task_id",
+        "task_class",
+        "gate",
+        "accepted",
+        "first_pass_accepted",
+        "revision_rounds",
+        "time_to_accepted_outcome_s",
+        "p11_audit_sample_size",
+        "false_accept_count",
+        "false_accept_denominator",
+        "false_accept_rate",
+        "details_json",
+        "computed_at",
+    } <= columns
+    indexes = {
+        row["name"]
+        for row in conn.execute("PRAGMA index_list(supervisor_quality_trends)").fetchall()
+    }
+    assert "idx_supervisor_quality_trends_task_gate" in indexes
     assert applied_migrations(conn)[-1] == {
-        "version": 7,
-        "name": "supervisor_lessons",
+        "version": 8,
+        "name": "supervisor_quality_trends",
     }
 
 
@@ -340,15 +363,7 @@ def test_forward_migration_adds_workflow_job_terminal_outcome_fields(tmp_path):
         for row in conn.execute("PRAGMA table_info(dual_agent_workflow_jobs)").fetchall()
     }
     assert {"terminal_status", "terminal_outcome_json", "terminal_outcome_recorded_at"} <= columns
-    assert applied_migrations(conn) == [
-        {"version": 1, "name": "actions.resume_requested_at"},
-        {"version": 2, "name": "dual_agent_workflow_jobs.idempotency_token"},
-        {"version": 3, "name": "dual_agent_workflow_jobs.terminal_outcome"},
-        {"version": 4, "name": "dual_agent_workflow_jobs.recovery_points"},
-        {"version": 5, "name": "dual_agent_workflow_jobs.recovery_claims"},
-        {"version": 6, "name": "dual_agent_workflow_jobs.dispatcher_leases"},
-        {"version": 7, "name": "supervisor_lessons"},
-    ]
+    assert applied_migrations(conn) == EXPECTED_MIGRATIONS
 
 
 def test_forward_migration_adds_workflow_job_recovery_points(tmp_path):
