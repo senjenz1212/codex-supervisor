@@ -126,6 +126,10 @@ def _live_attempt(**overrides) -> dict:
     return base
 
 
+def _workflow_job_rows(state: State) -> list:
+    return list(state._conn.execute("SELECT * FROM dual_agent_workflow_jobs ORDER BY created_at, job_id"))
+
+
 def test_autoresearch_orchestrator_emits_experiment_and_attempt_events(tmp_path):
     state = State(str(tmp_path / "state.db"))
 
@@ -139,7 +143,12 @@ def test_autoresearch_orchestrator_emits_experiment_and_attempt_events(tmp_path)
     )
 
     events = state.read_events_since(run_id="run-autoresearch", after_event_id=0, limit=20)
-    kinds = [event["kind"] for event in events]
+    kinds = [
+        event["kind"]
+        for event in events
+        if event["kind"] != "autoresearch_evaluator_job_phase"
+        and str(event["kind"]).startswith("autoresearch_")
+    ]
     assert kinds == [
         "autoresearch_experiment_started",
         "autoresearch_attempt_started",
@@ -151,13 +160,55 @@ def test_autoresearch_orchestrator_emits_experiment_and_attempt_events(tmp_path)
         "autoresearch_validation_completed",
         "autoresearch_report_emitted",
     ]
-    assert events[2]["payload"]["attempt_id"] == "attempt-reviewer-rubric-001"
-    validation = events[7]["payload"]
+    submitted = next(event for event in events if event["kind"] == "autoresearch_attempt_execution_job_submitted")
+    assert submitted["payload"]["attempt_id"] == "attempt-reviewer-rubric-001"
+    validation = next(event for event in events if event["kind"] == "autoresearch_validation_completed")["payload"]
     assert validation["validation_status"] == "accepted"
     assert validation["metric_source"] == "evaluator_execution"
     assert validation["default_change_allowed"] is False
     assert report["default_change_allowed"] is False
     assert (tmp_path / "out" / "report.json").exists()
+
+
+def test_autoresearch_live_evaluator_executes_through_durable_job_row(tmp_path):
+    evaluator_ref, evaluator_hash = _write_evaluator(
+        tmp_path,
+        """
+from __future__ import annotations
+import argparse, json
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--attempt-worktree", required=True)
+parser.add_argument("--trial-index", required=True, type=int)
+parser.add_argument("--metric-name", required=True)
+parser.add_argument("--attempt-json", required=True)
+args = parser.parse_args()
+print(json.dumps({"metric_value": 0.75 + (args.trial_index * 0.01), "cost_usd": 0.001}))
+""".lstrip(),
+    )
+    fixture = _write_fixture(
+        tmp_path,
+        experiment=_live_experiment(evaluator_ref=evaluator_ref, evaluator_hash=evaluator_hash, k_trials=2),
+        attempts=[_live_attempt()],
+    )
+    state = State(str(tmp_path / "state.db"))
+
+    report = run_autoresearch_fixture(
+        fixture_path=fixture,
+        state=state,
+        run_id="durable-evaluator-run",
+        repo_root=tmp_path,
+        output_dir=tmp_path / "out",
+        execution_mode="live",
+    )
+
+    rows = _workflow_job_rows(state)
+    assert len(rows) == 1
+    assert rows[0]["recovery_point"] == "terminal"
+    assert rows[0]["terminal_status"] == "completed"
+    assert rows[0]["idempotency_token"] == "autoresearch:durable-evaluator-run:live-exp-1:live-attempt-1"
+    assert "autoresearch_evaluator" in rows[0]["request_payload_json"]
+    assert report["records"][0]["validation_status"] == "accepted"
 
 
 def test_autoresearch_validation_rejects_immutable_path_mutation():
@@ -379,6 +430,263 @@ print(json.dumps({"metric_value": 0.80 + (args.trial_index * 0.02), "cost_usd": 
     assert record["evaluator_run_ref"]
     assert record["evaluator_run_hash"]
     assert (tmp_path / "out" / "evaluator-runs" / "live-attempt-1.json").exists()
+
+
+def test_autoresearch_durable_evaluator_resumes_after_midrun_crash(tmp_path):
+    repo = tmp_path / "repo"
+    evaluator_ref, evaluator_hash = _write_evaluator(
+        repo,
+        """
+from __future__ import annotations
+import argparse, json, os, sys
+from pathlib import Path
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--attempt-worktree", required=True)
+parser.add_argument("--trial-index", required=True, type=int)
+parser.add_argument("--metric-name", required=True)
+parser.add_argument("--attempt-json", required=True)
+args = parser.parse_args()
+
+counter = Path(os.environ["AUTORESEARCH_PROGRESS_PATH"]).with_suffix(f".trial-{args.trial_index}.count")
+count = int(counter.read_text(encoding="utf-8")) if counter.exists() else 0
+counter.parent.mkdir(parents=True, exist_ok=True)
+counter.write_text(str(count + 1), encoding="utf-8")
+
+sentinel = Path(os.environ["AUTORESEARCH_PROGRESS_PATH"]).with_suffix(".sentinel")
+if args.trial_index == 1 and not sentinel.exists():
+    sentinel.write_text("crashed-once", encoding="utf-8")
+    print("simulated crash", file=sys.stderr)
+    raise SystemExit(7)
+
+print(json.dumps({"metric_value": 0.70 + (args.trial_index * 0.05), "cost_usd": 0.001}))
+""".lstrip(),
+    )
+    fixture = _write_fixture(
+        tmp_path,
+        experiment=_live_experiment(evaluator_ref=evaluator_ref, evaluator_hash=evaluator_hash, k_trials=3),
+        attempts=[_live_attempt()],
+    )
+    state = State(str(tmp_path / "state.db"))
+
+    first = run_autoresearch_fixture(
+        fixture_path=fixture,
+        state=state,
+        run_id="resume-run",
+        repo_root=repo,
+        output_dir=tmp_path / "out",
+        execution_mode="live",
+    )
+    assert first["records"][0]["validation_status"] == "rejected"
+
+    second = run_autoresearch_fixture(
+        fixture_path=fixture,
+        state=state,
+        run_id="resume-run",
+        repo_root=repo,
+        output_dir=tmp_path / "out",
+        execution_mode="live",
+    )
+
+    assert second["records"][0]["validation_status"] == "accepted"
+    assert second["records"][0]["metric_trials"] == [0.7, 0.75, 0.8]
+    assert (tmp_path / "out" / "evaluator-runs" / "live-attempt-1.progress.trial-0.count").read_text(
+        encoding="utf-8"
+    ) == "1"
+    assert (tmp_path / "out" / "evaluator-runs" / "live-attempt-1.progress.trial-1.count").read_text(
+        encoding="utf-8"
+    ) == "2"
+
+
+def test_autoresearch_live_evaluator_budget_overrun_is_flagged_and_rejected(tmp_path):
+    evaluator_ref, evaluator_hash = _write_evaluator(
+        tmp_path,
+        """
+from __future__ import annotations
+import argparse, json
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--attempt-worktree", required=True)
+parser.add_argument("--trial-index", required=True, type=int)
+parser.add_argument("--metric-name", required=True)
+parser.add_argument("--attempt-json", required=True)
+parser.parse_args()
+print(json.dumps({"metric_value": 0.9, "cost_usd": 0.2}))
+""".lstrip(),
+    )
+    fixture = _write_fixture(
+        tmp_path,
+        experiment=_live_experiment(
+            evaluator_ref=evaluator_ref,
+            evaluator_hash=evaluator_hash,
+            k_trials=3,
+            budget_usd=0.25,
+        ),
+        attempts=[_live_attempt()],
+    )
+    state = State(str(tmp_path / "state.db"))
+
+    report = run_autoresearch_fixture(
+        fixture_path=fixture,
+        state=state,
+        run_id="budget-run",
+        repo_root=tmp_path,
+        output_dir=tmp_path / "out",
+        execution_mode="live",
+    )
+
+    record = report["records"][0]
+    assert record["validation_status"] == "rejected"
+    assert "budget_exceeded" in record["gaming_flags"]
+
+
+def test_autoresearch_live_evaluator_timeout_is_flagged_and_rejected(tmp_path):
+    evaluator_ref, evaluator_hash = _write_evaluator(
+        tmp_path,
+        """
+from __future__ import annotations
+import argparse, json, time
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--attempt-worktree", required=True)
+parser.add_argument("--trial-index", required=True, type=int)
+parser.add_argument("--metric-name", required=True)
+parser.add_argument("--attempt-json", required=True)
+parser.parse_args()
+time.sleep(0.2)
+print(json.dumps({"metric_value": 0.9}))
+""".lstrip(),
+    )
+    fixture = _write_fixture(
+        tmp_path,
+        experiment=_live_experiment(
+            evaluator_ref=evaluator_ref,
+            evaluator_hash=evaluator_hash,
+            k_trials=1,
+            timeout_s=0.05,
+        ),
+        attempts=[_live_attempt()],
+    )
+    state = State(str(tmp_path / "state.db"))
+
+    report = run_autoresearch_fixture(
+        fixture_path=fixture,
+        state=state,
+        run_id="timeout-run",
+        repo_root=tmp_path,
+        output_dir=tmp_path / "out",
+        execution_mode="live",
+    )
+
+    record = report["records"][0]
+    assert record["validation_status"] == "rejected"
+    assert "timeout" in record["gaming_flags"]
+
+
+def test_autoresearch_live_evaluator_partial_progress_timeout_is_terminal(tmp_path):
+    evaluator_ref, evaluator_hash = _write_evaluator(
+        tmp_path,
+        """
+from __future__ import annotations
+import argparse, json, os, time
+from pathlib import Path
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--attempt-worktree", required=True)
+parser.add_argument("--trial-index", required=True, type=int)
+parser.add_argument("--metric-name", required=True)
+parser.add_argument("--attempt-json", required=True)
+args = parser.parse_args()
+
+counter = Path(os.environ["AUTORESEARCH_PROGRESS_PATH"]).with_suffix(f".trial-{args.trial_index}.count")
+count = int(counter.read_text(encoding="utf-8")) if counter.exists() else 0
+counter.parent.mkdir(parents=True, exist_ok=True)
+counter.write_text(str(count + 1), encoding="utf-8")
+
+if args.trial_index == 1:
+    time.sleep(1.0)
+print(json.dumps({"metric_value": 0.7 + (args.trial_index * 0.05)}))
+""".lstrip(),
+    )
+    fixture = _write_fixture(
+        tmp_path,
+        experiment=_live_experiment(
+            evaluator_ref=evaluator_ref,
+            evaluator_hash=evaluator_hash,
+            k_trials=3,
+            timeout_s=0.5,
+        ),
+        attempts=[_live_attempt()],
+    )
+    state = State(str(tmp_path / "state.db"))
+
+    first = run_autoresearch_fixture(
+        fixture_path=fixture,
+        state=state,
+        run_id="partial-timeout-run",
+        repo_root=tmp_path,
+        output_dir=tmp_path / "out",
+        execution_mode="live",
+    )
+    second = run_autoresearch_fixture(
+        fixture_path=fixture,
+        state=state,
+        run_id="partial-timeout-run",
+        repo_root=tmp_path,
+        output_dir=tmp_path / "out",
+        execution_mode="live",
+    )
+
+    rows = _workflow_job_rows(state)
+    assert len(rows) == 1
+    assert rows[0]["recovery_point"] == "terminal"
+    assert rows[0]["terminal_status"] == "failed"
+    assert first["records"][0]["validation_status"] == "rejected"
+    assert second["records"][0]["validation_status"] == "rejected"
+    assert "timeout" in first["records"][0]["gaming_flags"]
+    assert "timeout" in second["records"][0]["gaming_flags"]
+    assert (tmp_path / "out" / "evaluator-runs" / "live-attempt-1.progress.trial-0.count").read_text(
+        encoding="utf-8"
+    ) == "1"
+    assert (tmp_path / "out" / "evaluator-runs" / "live-attempt-1.progress.trial-1.count").read_text(
+        encoding="utf-8"
+    ) == "1"
+
+
+def test_autoresearch_default_replay_corpus_evaluator_produces_pass_rate(tmp_path):
+    fixture = _write_fixture(
+        tmp_path,
+        experiment=_live_experiment(
+            evaluator_ref="",
+            evaluator_hash="",
+            metric_name="",
+            k_trials=2,
+            mutable_paths=["workspace"],
+            immutable_paths=["locked"],
+        ),
+        attempts=[_live_attempt()],
+    )
+    state = State(str(tmp_path / "state.db"))
+
+    report = run_autoresearch_fixture(
+        fixture_path=fixture,
+        state=state,
+        run_id="default-replay-corpus-run",
+        repo_root=Path.cwd(),
+        output_dir=tmp_path / "out",
+        execution_mode="live",
+    )
+
+    record = report["records"][0]
+    assert report["experiment"]["evaluator_ref"].endswith(
+        "supervisor/autoresearch/evaluators/replay_corpus.py"
+    )
+    assert report["experiment"]["evaluator_hash"]
+    assert record["metric_name"] == "pass_rate"
+    assert record["metric_source"] == "evaluator_execution"
+    assert len(record["metric_trials"]) == 2
+    assert all(0.0 <= value <= 1.0 for value in record["metric_trials"])
+    assert record["metric_iqr"] is not None
 
 
 def test_autoresearch_live_evaluator_hash_mismatch_blocks_execution(tmp_path):

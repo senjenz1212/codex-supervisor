@@ -1,0 +1,57 @@
+[
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-to-prd-durable-evaluator-replay-corpus-20260610",
+    "skill": "to-prd",
+    "stage": "to_prd",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/durable-evaluator-replay-corpus-20260610/source/prd.md"
+    ],
+    "artifact_sha256": "d1442495e09bff93cae4743504f83e7b4020206cfcb0ca75b4c3d1f7e43ba884"
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-prd-grill-durable-evaluator-replay-corpus-20260610",
+    "skill": "grill-with-docs",
+    "stage": "prd_grill",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/durable-evaluator-replay-corpus-20260610/source/grill-findings.md"
+    ],
+    "artifact_sha256": "4cd3d6b56ec072bbf2e09c8bc3868ee668de4ed1599feda834d1d0081eafd618"
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-to-issues-durable-evaluator-replay-corpus-20260610",
+    "skill": "to-issues",
+    "stage": "to_issues",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/durable-evaluator-replay-corpus-20260610/source/issues.md"
+    ],
+    "artifact_sha256": "fb70c09074a004e9099d1903f7a53a784ec28b1e518df530fd78fb3870df100e"
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-tdd-durable-evaluator-replay-corpus-20260610",
+    "skill": "tdd",
+    "stage": "tdd",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/durable-evaluator-replay-corpus-20260610/source/tdd.md"
+    ],
+    "artifact_sha256": "f77ca8db76ff0b30b00caf850b7bfc33913f6c3484888957c92478fa94d01a84"
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-tdd-grill-durable-evaluator-replay-corpus-20260610",
+    "skill": "grill-with-docs",
+    "stage": "tdd_grill",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/durable-evaluator-replay-corpus-20260610/source/grill-findings-tdd.md"
+    ],
+    "artifact_sha256": "cb36cbaf6f1006f6d192d800933a020900a9822611cdac53b6c523b9115e89a7"
+  }
+]

@@ -78,6 +78,10 @@ def validate_attempt(
         errors.extend(attempt.execution_errors)
         if any("outside mutable surface" in error for error in attempt.execution_errors):
             gaming_flags.append("outside_mutable_surface")
+        if any("budget_exceeded" in error for error in attempt.execution_errors):
+            gaming_flags.append("budget_exceeded")
+        if any("timeout" in error.lower() or "timed out" in error.lower() for error in attempt.execution_errors):
+            gaming_flags.append("timeout")
 
     hash_errors = _artifact_hash_errors(attempt.artifact_hashes, repo_root=repo_root_path)
     if hash_errors:

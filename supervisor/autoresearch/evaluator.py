@@ -27,6 +27,8 @@ class EvaluatorExecutionResult:
     execution_errors: tuple[str, ...]
     cost_usd: float
     wall_clock_s: float
+    job_id: str = ""
+    resumed_from_trial_count: int = 0
 
 
 class EvaluatorContractError(RuntimeError):
@@ -48,10 +50,19 @@ def run_evaluator_trials(
     _verify_evaluator_hash(evaluator_path, experiment.evaluator_hash, evaluator_rel=evaluator_rel)
 
     started = time.monotonic()
-    trial_records: list[dict[str, Any]] = []
-    metric_trials: list[float] = []
+    artifact_dir = output_dir_path / "evaluator-runs"
+    progress_path = artifact_dir / f"{attempt.attempt_id}.progress.json"
+    progress = _load_progress(
+        progress_path,
+        experiment=experiment,
+        attempt=attempt,
+        evaluator_rel=evaluator_rel,
+    )
+    trial_records: list[dict[str, Any]] = list(progress["trial_records"])
+    metric_trials: list[float] = [float(record["metric_value"]) for record in trial_records]
     execution_errors: list[str] = []
-    cost_usd = 0.0
+    cost_usd = float(progress["cost_usd"])
+    resumed_from_trial_count = len(metric_trials)
 
     with tempfile.TemporaryDirectory(prefix="autoresearch-attempt-") as temp_dir:
         temp_path = Path(temp_dir)
@@ -75,12 +86,13 @@ def run_evaluator_trials(
         source_before_bytes = _snapshot_file_bytes(
             repo_root_path,
             exclude_dirs=_SOURCE_SNAPSHOT_EXCLUDED_DIRS,
+            exclude_roots=(output_dir_path,),
         )
         source_before = _hash_bytes_snapshot(source_before_bytes)
         source_changed_paths: list[str] = []
 
         try:
-            for trial_index in range(max(0, experiment.k_trials)):
+            for trial_index in range(len(metric_trials), max(0, experiment.k_trials)):
                 trial_started = time.monotonic()
                 command = [
                     *_evaluator_command(executable_evaluator),
@@ -103,8 +115,10 @@ def run_evaluator_trials(
                     check=False,
                     env=_evaluator_environment(
                         base_env=os.environ,
+                        repo_root=repo_root_path,
                         worktree=worktree,
                         temp_path=temp_path,
+                        progress_path=progress_path,
                         trial_index=trial_index,
                         metric_name=experiment.metric_name,
                         attempt_json=attempt_json,
@@ -126,12 +140,30 @@ def run_evaluator_trials(
                     "stderr_sha256": sha256(completed.stderr.encode("utf-8")).hexdigest(),
                     "duration_s": round(time.monotonic() - trial_started, 6),
                 })
+                _write_progress(
+                    progress_path,
+                    experiment=experiment,
+                    attempt=attempt,
+                    evaluator_rel=evaluator_rel,
+                    trial_records=trial_records,
+                    cost_usd=cost_usd,
+                )
+                if experiment.budget_usd > 0 and cost_usd > experiment.budget_usd:
+                    execution_errors.append(
+                        "budget_exceeded: "
+                        f"cost_usd={round(cost_usd, 6)} budget_usd={experiment.budget_usd}"
+                    )
+                    break
         except (EvaluatorContractError, subprocess.TimeoutExpired) as exc:
-            execution_errors.append(str(exc))
+            message = str(exc)
+            if isinstance(exc, subprocess.TimeoutExpired):
+                message = f"timeout: {message}"
+            execution_errors.append(message)
         finally:
             source_after = _hash_bytes_snapshot(_snapshot_file_bytes(
                 repo_root_path,
                 exclude_dirs=_SOURCE_SNAPSHOT_EXCLUDED_DIRS,
+                exclude_roots=(output_dir_path,),
             ))
             source_changed_paths = _changed_paths(source_before, source_after)
             if source_changed_paths:
@@ -180,8 +212,9 @@ def run_evaluator_trials(
         "cost_usd": round(cost_usd, 6),
         "wall_clock_s": round(time.monotonic() - started, 6),
         "attempt_worktree_ref": "isolated:temporary",
+        "progress_ref": progress_path.as_posix(),
+        "resumed_from_trial_count": resumed_from_trial_count,
     }
-    artifact_dir = output_dir_path / "evaluator-runs"
     artifact_dir.mkdir(parents=True, exist_ok=True)
     artifact_path = artifact_dir / f"{attempt.attempt_id}.json"
     artifact_path.write_text(
@@ -200,6 +233,7 @@ def run_evaluator_trials(
         execution_errors=tuple(execution_errors),
         cost_usd=round(cost_usd, 6),
         wall_clock_s=round(time.monotonic() - started, 6),
+        resumed_from_trial_count=resumed_from_trial_count,
     )
 
 
@@ -257,8 +291,10 @@ _SOURCE_SNAPSHOT_EXCLUDED_DIRS = {
 def _evaluator_environment(
     *,
     base_env: Mapping[str, str],
+    repo_root: Path,
     worktree: Path,
     temp_path: Path,
+    progress_path: Path,
     trial_index: int,
     metric_name: str,
     attempt_json: Path,
@@ -274,6 +310,8 @@ def _evaluator_environment(
     tmp.mkdir(parents=True, exist_ok=True)
     env.update({
         "AUTORESEARCH_ATTEMPT_WORKTREE": str(worktree),
+        "AUTORESEARCH_SOURCE_ROOT": str(repo_root),
+        "AUTORESEARCH_PROGRESS_PATH": str(progress_path),
         "AUTORESEARCH_TRIAL_INDEX": str(trial_index),
         "AUTORESEARCH_METRIC_NAME": metric_name,
         "AUTORESEARCH_ATTEMPT_JSON": str(attempt_json),
@@ -283,8 +321,81 @@ def _evaluator_environment(
         "TEMP": str(tmp),
         "TMP": str(tmp),
         "TMPDIR": str(tmp),
+        "PYTHONPATH": str(repo_root),
     })
     return env
+
+
+def _load_progress(
+    progress_path: Path,
+    *,
+    experiment: AutoresearchExperiment,
+    attempt: AutoresearchAttempt,
+    evaluator_rel: str,
+) -> dict[str, Any]:
+    if not progress_path.exists():
+        return {"trial_records": [], "cost_usd": 0.0}
+    try:
+        payload = json.loads(progress_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"trial_records": [], "cost_usd": 0.0}
+    if not isinstance(payload, dict):
+        return {"trial_records": [], "cost_usd": 0.0}
+    if payload.get("experiment_id") != experiment.experiment_id:
+        return {"trial_records": [], "cost_usd": 0.0}
+    if payload.get("attempt_id") != attempt.attempt_id:
+        return {"trial_records": [], "cost_usd": 0.0}
+    if payload.get("evaluator_ref") != evaluator_rel:
+        return {"trial_records": [], "cost_usd": 0.0}
+    if payload.get("evaluator_hash") != experiment.evaluator_hash:
+        return {"trial_records": [], "cost_usd": 0.0}
+    raw_records = payload.get("trial_records")
+    if not isinstance(raw_records, list):
+        raw_records = []
+    records = [
+        record for record in raw_records
+        if isinstance(record, dict)
+        and isinstance(record.get("trial_index"), int)
+        and "metric_value" in record
+    ]
+    records = sorted(records, key=lambda record: int(record["trial_index"]))
+    contiguous: list[dict[str, Any]] = []
+    for expected_index, record in enumerate(records):
+        if int(record["trial_index"]) != expected_index:
+            break
+        contiguous.append(record)
+    return {
+        "trial_records": contiguous,
+        "cost_usd": float(payload.get("cost_usd") or 0.0),
+    }
+
+
+def _write_progress(
+    progress_path: Path,
+    *,
+    experiment: AutoresearchExperiment,
+    attempt: AutoresearchAttempt,
+    evaluator_rel: str,
+    trial_records: list[dict[str, Any]],
+    cost_usd: float,
+) -> None:
+    progress_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schema_version": "supervisor-autoresearch-evaluator-progress/v1",
+        "experiment_id": experiment.experiment_id,
+        "attempt_id": attempt.attempt_id,
+        "evaluator_ref": evaluator_rel,
+        "evaluator_hash": experiment.evaluator_hash,
+        "metric_name": experiment.metric_name,
+        "k_trials": experiment.k_trials,
+        "trial_records": trial_records,
+        "completed_trial_count": len(trial_records),
+        "cost_usd": round(float(cost_usd), 6),
+    }
+    progress_path.write_text(
+        json.dumps(payload, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
 
 def _parse_trial_payload(stdout: str) -> dict[str, Any]:
@@ -341,18 +452,35 @@ def _snapshot_files(root: Path, *, exclude_dirs: set[str] | None = None) -> dict
     return _hash_bytes_snapshot(_snapshot_file_bytes(root, exclude_dirs=exclude_dirs))
 
 
-def _snapshot_file_bytes(root: Path, *, exclude_dirs: set[str] | None = None) -> dict[str, bytes]:
-    snapshot: dict[str, str] = {}
+def _snapshot_file_bytes(
+    root: Path,
+    *,
+    exclude_dirs: set[str] | None = None,
+    exclude_roots: tuple[Path, ...] = (),
+) -> dict[str, bytes]:
+    snapshot: dict[str, bytes] = {}
     if not root.exists():
         return snapshot
     excluded = exclude_dirs or set()
+    resolved_exclude_roots = tuple(path.resolve(strict=False) for path in exclude_roots)
     for path in sorted(root.rglob("*")):
         if excluded and any(part in excluded for part in path.relative_to(root).parts[:-1]):
+            continue
+        resolved_path = path.resolve(strict=False)
+        if any(_is_relative_to(resolved_path, excluded_root) for excluded_root in resolved_exclude_roots):
             continue
         if path.is_file():
             rel = path.relative_to(root).as_posix()
             snapshot[rel] = path.read_bytes()
     return snapshot
+
+
+def _is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
 
 
 def _hash_bytes_snapshot(snapshot: Mapping[str, bytes]) -> dict[str, str]:

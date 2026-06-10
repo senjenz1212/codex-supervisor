@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "fdd082ed3d3bb9c67406f05538be11d69ee3e375ae656ccd63a99dd4f304c8d1",
+  "git": {
+    "diff_bytes": 26556,
+    "diff_sha256": "bf267dedc506df01658a3ca0cff9981e21bb2380c91fdb557d13fbdd0b8ba025",
+    "diff_stat": "supervisor/autoresearch/evaluator.py    | 144 ++++++++++++++-\n supervisor/autoresearch/orchestrator.py |  17 +-\n supervisor/autoresearch/validation.py   |   4 +\n tests/test_autoresearch.py              | 314 +++++++++++++++++++++++++++++++-\n 4 files changed, 463 insertions(+), 16 deletions(-)",
+    "head": "bed0f68",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "bed0f68",
+    "status_short": "M supervisor/autoresearch/evaluator.py\n M supervisor/autoresearch/orchestrator.py\n M supervisor/autoresearch/validation.py\n M tests/test_autoresearch.py\n?? .scratch/cocreate-checkpoint-files-only-dual-agent-prompt.md\n?? .scratch/cocreate-ckpt-tdd-review-corrective-input.md\n?? .scratch/cocreate-global-purge-dual-agent-prompt.md\n?? docs/dual-agent/durable-evaluator-replay-corpus-20260610/\n?? docs/dual-agent/live-cursor-sdk-probe-20260610-135900/\n?? docs/dual-agent/live-cursor-sdk-probe-20260610-140228/\n?? docs/dual-agent/supervisor-flow-autoresearch-run-20260609/\n?? docs/supervisor-improvement-audit-20260609.md\n?? docs/supervisor-improvement-completion-prompts-20260610.md\n?? docs/supervisor-improvement-prompts-coverage-20260609.md\n?? docs/supervisor-improvement-prompts-finish-20260610.md\n?? supervisor/autoresearch/durable_jobs.py\n?? supervisor/autoresearch/evaluators/"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "cb36cbaf6f1006f6d192d800933a020900a9822611cdac53b6c523b9115e89a7",
+    "implementation_plan": "e6ebad8450ef3bd3e0bcd90f896447e682bf43a8ffccfca0c9a959641039e450",
+    "issues": "fb70c09074a004e9099d1903f7a53a784ec28b1e518df530fd78fb3870df100e",
+    "prd": "d1442495e09bff93cae4743504f83e7b4020206cfcb0ca75b4c3d1f7e43ba884",
+    "tdd_plan": "f77ca8db76ff0b30b00caf850b7bfc33913f6c3484888957c92478fa94d01a84"
+  },
+  "status": "captured"
+}

@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 import json
-import subprocess
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Protocol
 
-from .evaluator import EvaluatorContractError, run_evaluator_trials
+from .durable_jobs import resolve_evaluator_defaults, run_durable_evaluator_trials
+from .evaluator import EvaluatorContractError
 from .report import build_autoresearch_report
 from .schema import AutoresearchAttempt, AutoresearchExperiment, sha256_json
 from .validation import validate_attempt
@@ -47,7 +47,10 @@ def run_autoresearch_fixture(
 ) -> dict[str, Any]:
     """Run a deterministic fixture and write ledger-backed evidence events."""
     fixture = _load_fixture(fixture_path)
-    experiment = AutoresearchExperiment.from_mapping(fixture["experiment"])
+    experiment = resolve_evaluator_defaults(
+        AutoresearchExperiment.from_mapping(fixture["experiment"]),
+        repo_root=repo_root,
+    )
     if execution_mode is not None:
         experiment = replace(experiment, execution_mode=execution_mode)
     attempts = [
@@ -106,7 +109,9 @@ def run_autoresearch_fixture(
                 },
             )
             try:
-                execution = run_evaluator_trials(
+                execution = run_durable_evaluator_trials(
+                    state=state,
+                    run_id=run_id,
                     experiment=experiment,
                     attempt=attempt,
                     repo_root=repo_root,
@@ -133,11 +138,13 @@ def run_autoresearch_fixture(
                     {
                         **attempt.to_payload(),
                         "status": "completed",
+                        "job_id": execution.job_id,
+                        "resumed_from_trial_count": execution.resumed_from_trial_count,
                         "budget_usd": experiment.budget_usd,
                         "timeout_s": experiment.timeout_s,
                     },
                 )
-            except (EvaluatorContractError, TimeoutError, subprocess.TimeoutExpired) as exc:  # type: ignore[name-defined]
+            except (EvaluatorContractError, TimeoutError) as exc:  # type: ignore[name-defined]
                 attempt = replace(
                     attempt,
                     execution_errors=(str(exc),),
