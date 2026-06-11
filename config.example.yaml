@@ -81,6 +81,15 @@ durable_execution:
   temporal_spike_enabled: false
   temporal_task_queue: codex-supervisor-spike
 
+autoresearch:
+  # AutoResearch drafts are inert until an operator explicitly activates them.
+  signal_recurrence_threshold: 3
+  max_open_experiment_drafts: 20
+  max_runnable_experiments_per_week: 2
+  evaluator_budget_usd: 0.25
+  evaluator_timeout_s: 60
+  evaluator_k_trials: 3
+
 no_mistakes:
   # Optional external post-outcome validator. The default is off so local/dev
   # workflows do not require the no-mistakes binary.

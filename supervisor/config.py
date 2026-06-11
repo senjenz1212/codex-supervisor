@@ -152,6 +152,15 @@ class DurableExecutionCfg(BaseModel):
     temporal_task_queue: str = "codex-supervisor-spike"
 
 
+class AutoResearchCfg(BaseModel):
+    signal_recurrence_threshold: int = 3
+    max_open_experiment_drafts: int = 20
+    max_runnable_experiments_per_week: int = 2
+    evaluator_budget_usd: float = 0.25
+    evaluator_timeout_s: float = 60.0
+    evaluator_k_trials: int = 3
+
+
 class NoMistakesCfg(BaseModel):
     policy: Literal["off", "advisory", "required", "shipping"] = "off"
     binary: str = "no-mistakes"
@@ -227,6 +236,7 @@ class Config(BaseModel):
     supervisor: SupervisorCfg
     agentic_lead: AgenticLeadCfg = Field(default_factory=AgenticLeadCfg)
     durable_execution: DurableExecutionCfg = Field(default_factory=DurableExecutionCfg)
+    autoresearch: AutoResearchCfg = Field(default_factory=AutoResearchCfg)
     no_mistakes: NoMistakesCfg = Field(default_factory=NoMistakesCfg)
     modes: ModesCfg = Field(default_factory=ModesCfg)
     models: ModelsCfg

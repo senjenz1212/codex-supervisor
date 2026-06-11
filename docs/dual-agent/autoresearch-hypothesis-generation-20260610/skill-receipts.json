@@ -1,0 +1,57 @@
+[
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-to-prd-autoresearch-hypothesis-generation-20260610",
+    "skill": "to-prd",
+    "stage": "to_prd",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/autoresearch-hypothesis-generation-20260610/source/prd.md"
+    ],
+    "artifact_sha256": "311cf90027f119bb809d07e23b0ad11eb291e6f8439537c44e120e62b41cd0b2"
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-prd-grill-autoresearch-hypothesis-generation-20260610",
+    "skill": "grill-with-docs",
+    "stage": "prd_grill",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/autoresearch-hypothesis-generation-20260610/source/grill-findings.md"
+    ],
+    "artifact_sha256": "92955cf60376a8c567cf8b6a26926bce65f4e909ef9a562f75065998a0cd95d8"
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-to-issues-autoresearch-hypothesis-generation-20260610",
+    "skill": "to-issues",
+    "stage": "to_issues",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/autoresearch-hypothesis-generation-20260610/source/issues.md"
+    ],
+    "artifact_sha256": "4c9b78e5db15cf52a84da11019b3f10e259ace2285571a447838be75a5152af6"
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-tdd-autoresearch-hypothesis-generation-20260610",
+    "skill": "tdd",
+    "stage": "tdd",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/autoresearch-hypothesis-generation-20260610/source/tdd.md"
+    ],
+    "artifact_sha256": "c7c558e293e90c5f007ce1f6c4a8638344ec5d8ea5cc2a6b3e3ab855cdc0c62d"
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-tdd-grill-autoresearch-hypothesis-generation-20260610",
+    "skill": "grill-with-docs",
+    "stage": "tdd_grill",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/autoresearch-hypothesis-generation-20260610/source/grill-findings-tdd.md"
+    ],
+    "artifact_sha256": "49ab4ce9dd7eb0dd53700a2e3c27c7af962bed78f916245c99bf44128a7a6bed"
+  }
+]

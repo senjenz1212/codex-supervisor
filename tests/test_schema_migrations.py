@@ -17,6 +17,7 @@ EXPECTED_MIGRATIONS = [
     {"version": 6, "name": "dual_agent_workflow_jobs.dispatcher_leases"},
     {"version": 7, "name": "supervisor_lessons"},
     {"version": 8, "name": "supervisor_quality_trends"},
+    {"version": 9, "name": "supervisor_autoresearch_experiments"},
 ]
 
 
@@ -199,8 +200,8 @@ def test_forward_migration_adds_workflow_job_dispatcher_leases(tmp_path):
     }
     assert "idx_dual_agent_workflow_jobs_dispatchable" in indexes
     assert applied_migrations(conn)[-1] == {
-        "version": 8,
-        "name": "supervisor_quality_trends",
+        "version": 9,
+        "name": "supervisor_autoresearch_experiments",
     }
     conn.execute(
         """INSERT INTO dual_agent_workflow_jobs(
@@ -254,8 +255,8 @@ def test_forward_migration_adds_supervisor_lessons(tmp_path):
         for row in conn.execute("PRAGMA index_list(supervisor_lessons)").fetchall()
     }
     assert "idx_supervisor_lessons_task_gate" in indexes
-    assert applied_migrations(conn)[-2] == {"version": 7, "name": "supervisor_lessons"}
-    assert applied_migrations(conn)[-1] == {"version": 8, "name": "supervisor_quality_trends"}
+    assert applied_migrations(conn)[-3] == {"version": 7, "name": "supervisor_lessons"}
+    assert applied_migrations(conn)[-2] == {"version": 8, "name": "supervisor_quality_trends"}
 
 
 def test_forward_migration_adds_supervisor_quality_trends(tmp_path):
@@ -289,9 +290,48 @@ def test_forward_migration_adds_supervisor_quality_trends(tmp_path):
         for row in conn.execute("PRAGMA index_list(supervisor_quality_trends)").fetchall()
     }
     assert "idx_supervisor_quality_trends_task_gate" in indexes
-    assert applied_migrations(conn)[-1] == {
+    assert applied_migrations(conn)[-2] == {
         "version": 8,
         "name": "supervisor_quality_trends",
+    }
+
+
+def test_forward_migration_adds_autoresearch_experiment_queue(tmp_path):
+    conn = sqlite3.connect(tmp_path / "state.db")
+    conn.row_factory = sqlite3.Row
+
+    run_forward_migrations(conn)
+
+    columns = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(supervisor_autoresearch_experiments)").fetchall()
+    }
+    assert {
+        "experiment_id",
+        "signal_key",
+        "status",
+        "task_class",
+        "gate",
+        "taxonomy_code",
+        "experiment_json",
+        "attempt_json",
+        "provenance_json",
+        "report_only_reason",
+        "proposal_pointer_json",
+        "last_run_id",
+        "last_run_started_at",
+        "activated_at",
+        "activated_by",
+        "activation_channel",
+    } <= columns
+    indexes = {
+        row["name"]
+        for row in conn.execute("PRAGMA index_list(supervisor_autoresearch_experiments)").fetchall()
+    }
+    assert "idx_supervisor_autoresearch_experiments_status" in indexes
+    assert applied_migrations(conn)[-1] == {
+        "version": 9,
+        "name": "supervisor_autoresearch_experiments",
     }
 
 

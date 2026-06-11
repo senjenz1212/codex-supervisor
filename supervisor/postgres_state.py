@@ -189,6 +189,31 @@ CREATE TABLE IF NOT EXISTS supervisor_quality_trends (
 );
 CREATE INDEX IF NOT EXISTS idx_supervisor_quality_trends_task_gate
   ON supervisor_quality_trends(task_class, gate, computed_at);
+
+CREATE TABLE IF NOT EXISTS supervisor_autoresearch_experiments (
+  experiment_id TEXT PRIMARY KEY,
+  signal_key TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL,
+  task_class TEXT NOT NULL,
+  gate TEXT NOT NULL,
+  taxonomy_code TEXT NOT NULL,
+  experiment_json JSONB NOT NULL,
+  attempt_json JSONB NOT NULL,
+  provenance_json JSONB NOT NULL,
+  report_only_reason TEXT NOT NULL DEFAULT '',
+  proposal_pointer_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  report_ref TEXT NOT NULL DEFAULT '',
+  report_sha256 TEXT NOT NULL DEFAULT '',
+  last_run_id TEXT NOT NULL DEFAULT '',
+  last_run_started_at BIGINT,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  activated_at BIGINT,
+  activated_by TEXT,
+  activation_channel TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_supervisor_autoresearch_experiments_status
+  ON supervisor_autoresearch_experiments(status, updated_at);
 """
 
 
@@ -289,6 +314,18 @@ def _quality_trend_summary_to_dict(row: dict[str, Any]) -> dict[str, Any]:
             else 0.0
         ),
     }
+
+
+def _autoresearch_experiment_row_to_dict(row: dict[str, Any]) -> dict[str, Any]:
+    payload = dict(row)
+    payload["experiment"] = _as_payload(payload.pop("experiment_json", {}))
+    payload["attempt"] = _as_payload(payload.pop("attempt_json", {}))
+    payload["provenance"] = _as_payload(payload.pop("provenance_json", {}))
+    payload["proposal_pointer"] = _as_payload(payload.pop("proposal_pointer_json", {}))
+    for key in ("created_at", "updated_at", "activated_at", "last_run_started_at"):
+        if payload.get(key) is not None:
+            payload[key] = int(payload[key])
+    return payload
 
 
 class PostgresState:
@@ -724,6 +761,221 @@ class PostgresState:
             "SELECT COUNT(*) AS count FROM supervisor_quality_trends"
         ).fetchone()
         return int(row["count"] if row is not None else 0)
+
+    # --- AutoResearch experiment queue ---
+    def upsert_autoresearch_experiment_draft(
+        self,
+        *,
+        experiment_id: str,
+        signal_key: str,
+        status: str,
+        task_class: str,
+        gate: str,
+        taxonomy_code: str,
+        experiment: dict[str, Any],
+        attempt: dict[str, Any],
+        provenance: dict[str, Any],
+        report_only_reason: str = "",
+        proposal_pointer: dict[str, Any] | None = None,
+        created_at: int | None = None,
+    ) -> tuple[dict[str, Any], bool]:
+        now = int(time.time()) if created_at is None else int(created_at)
+        with self._write_lock:
+            with self._conn.transaction():
+                row = self._conn.execute(
+                    """INSERT INTO supervisor_autoresearch_experiments(
+                         experiment_id, signal_key, status, task_class, gate,
+                         taxonomy_code, experiment_json, attempt_json, provenance_json,
+                         report_only_reason, proposal_pointer_json, created_at, updated_at)
+                       VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                       ON CONFLICT(signal_key) DO NOTHING
+                       RETURNING *""",
+                    (
+                        experiment_id,
+                        signal_key,
+                        status,
+                        task_class,
+                        gate,
+                        taxonomy_code,
+                        self._Jsonb(redact(experiment)),
+                        self._Jsonb(redact(attempt)),
+                        self._Jsonb(redact(provenance)),
+                        report_only_reason,
+                        self._Jsonb(redact(proposal_pointer or {})),
+                        now,
+                        now,
+                    ),
+                ).fetchone()
+                created = row is not None
+                if row is None:
+                    row = self._conn.execute(
+                        """SELECT * FROM supervisor_autoresearch_experiments
+                           WHERE signal_key=%s""",
+                        (signal_key,),
+                    ).fetchone()
+                if row is None:
+                    raise RuntimeError("AutoResearch experiment draft was not persisted")
+                return _autoresearch_experiment_row_to_dict(dict(row)), created
+
+    def get_autoresearch_experiment(self, *, experiment_id: str) -> dict[str, Any] | None:
+        row = self._conn.execute(
+            """SELECT * FROM supervisor_autoresearch_experiments
+               WHERE experiment_id=%s""",
+            (experiment_id,),
+        ).fetchone()
+        return _autoresearch_experiment_row_to_dict(dict(row)) if row is not None else None
+
+    def list_autoresearch_experiment_queue(
+        self,
+        *,
+        status: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        params: list[Any] = []
+        where = ""
+        if status:
+            where = "WHERE status=%s"
+            params.append(status)
+        params.append(int(limit))
+        rows = self._conn.execute(
+            f"""SELECT * FROM supervisor_autoresearch_experiments
+                {where}
+                ORDER BY created_at ASC, experiment_id ASC
+                LIMIT %s""",
+            tuple(params),
+        ).fetchall()
+        return [_autoresearch_experiment_row_to_dict(dict(row)) for row in rows]
+
+    def activate_autoresearch_experiment(
+        self,
+        *,
+        experiment_id: str,
+        operator: str,
+        approval_channel: str,
+        activated_at: int | None = None,
+    ) -> dict[str, Any]:
+        now = int(time.time()) if activated_at is None else int(activated_at)
+        with self._write_lock:
+            with self._conn.transaction():
+                row = self._conn.execute(
+                    """SELECT * FROM supervisor_autoresearch_experiments
+                       WHERE experiment_id=%s""",
+                    (experiment_id,),
+                ).fetchone()
+                if row is None:
+                    raise RuntimeError(f"AutoResearch experiment not found: {experiment_id}")
+                if row["status"] == "draft":
+                    row = self._conn.execute(
+                        """UPDATE supervisor_autoresearch_experiments
+                              SET status='runnable',
+                                  activated_at=%s,
+                                  activated_by=%s,
+                                  activation_channel=%s,
+                                  updated_at=%s
+                            WHERE experiment_id=%s
+                            RETURNING *""",
+                        (now, operator, approval_channel, now, experiment_id),
+                    ).fetchone()
+                return _autoresearch_experiment_row_to_dict(dict(row))
+
+    def mark_autoresearch_experiment_run_started(
+        self,
+        *,
+        experiment_id: str,
+        run_id: str,
+        started_at: int | None = None,
+    ) -> dict[str, Any]:
+        now = int(time.time()) if started_at is None else int(started_at)
+        with self._write_lock:
+            with self._conn.transaction():
+                row = self._conn.execute(
+                    """UPDATE supervisor_autoresearch_experiments
+                          SET status='running',
+                              last_run_id=%s,
+                              last_run_started_at=%s,
+                              updated_at=%s
+                        WHERE experiment_id=%s AND status='runnable'
+                        RETURNING *""",
+                    (run_id, now, now, experiment_id),
+                ).fetchone()
+                if row is None:
+                    row = self._conn.execute(
+                        """SELECT * FROM supervisor_autoresearch_experiments
+                           WHERE experiment_id=%s""",
+                        (experiment_id,),
+                    ).fetchone()
+                if row is None:
+                    raise RuntimeError(f"AutoResearch experiment not found: {experiment_id}")
+                return _autoresearch_experiment_row_to_dict(dict(row))
+
+    def complete_autoresearch_experiment_run(
+        self,
+        *,
+        experiment_id: str,
+        status: str,
+        report_ref: str = "",
+        report_sha256: str = "",
+        completed_at: int | None = None,
+    ) -> dict[str, Any]:
+        now = int(time.time()) if completed_at is None else int(completed_at)
+        with self._write_lock:
+            with self._conn.transaction():
+                row = self._conn.execute(
+                    """UPDATE supervisor_autoresearch_experiments
+                          SET status=%s,
+                              report_ref=%s,
+                              report_sha256=%s,
+                              updated_at=%s
+                        WHERE experiment_id=%s
+                        RETURNING *""",
+                    (status, report_ref, report_sha256, now, experiment_id),
+                ).fetchone()
+                if row is None:
+                    raise RuntimeError(f"AutoResearch experiment not found: {experiment_id}")
+                return _autoresearch_experiment_row_to_dict(dict(row))
+
+    def count_autoresearch_experiments_started_since(self, *, started_since: int) -> int:
+        row = self._conn.execute(
+            """SELECT COUNT(*) AS count
+                 FROM supervisor_autoresearch_experiments
+                WHERE last_run_started_at IS NOT NULL
+                  AND last_run_started_at >= %s""",
+            (int(started_since),),
+        ).fetchone()
+        return int(row["count"] if row is not None else 0)
+
+    def list_autoresearch_signal_events(self, *, limit: int = 10000) -> list[dict[str, Any]]:
+        rows = self._conn.execute(
+            """SELECT event_id, run_id, ts, source, kind, payload_json
+                 FROM events
+                WHERE kind IN (
+                    'dual_agent_gate_result',
+                    'dual_agent_planning_validation',
+                    'dual_agent_dynamic_workflow_receipt_validation',
+                    'dual_agent_runtime_evidence',
+                    'independent_reviewer_review',
+                    'tri_agent_cursor_review',
+                    'dual_agent_probe_cohort',
+                    'supervisor_probe_cohort',
+                    'probe_cohort_summary'
+                  )
+                   OR source='drift'
+                   OR kind LIKE '%%probe_cohort%%'
+                ORDER BY event_id ASC
+                LIMIT %s""",
+            (int(limit),),
+        ).fetchall()
+        return [
+            {
+                "event_id": int(row["event_id"]),
+                "run_id": row["run_id"],
+                "ts": int(row["ts"]),
+                "source": row["source"],
+                "kind": row["kind"],
+                "payload": _as_payload(row["payload_json"]),
+            }
+            for row in rows
+        ]
 
     def get_event(self, *, run_id: str, event_id: int) -> dict[str, Any] | None:
         row = self._conn.execute(

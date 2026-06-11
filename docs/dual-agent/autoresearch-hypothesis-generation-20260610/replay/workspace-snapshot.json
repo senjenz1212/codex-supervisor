@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "c9e69902b6bf23c32380abe949ce2696dcebde4c120297680d11e6326d0b510d",
+  "git": {
+    "diff_bytes": 34035,
+    "diff_sha256": "fa83aedfa53063c66fa45940528e9202ce3dd276654ff3271d74f01759d1eeb8",
+    "diff_stat": "config.example.yaml                 |   9 ++\n supervisor/autoresearch/__init__.py |  10 ++\n supervisor/config.py                |  10 ++\n supervisor/postgres_state.py        | 252 ++++++++++++++++++++++++++++++++++\n supervisor/schema_migrations.py     |  36 +++++\n supervisor/state.py                 | 267 ++++++++++++++++++++++++++++++++++++\n tests/test_postgres_ledger_lane.py  |  11 ++\n tests/test_schema_migrations.py     |  50 ++++++-\n 8 files changed, 640 insertions(+), 5 deletions(-)",
+    "head": "7f5f6c1",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "7f5f6c1",
+    "status_short": "M config.example.yaml\n M supervisor/autoresearch/__init__.py\n M supervisor/config.py\n M supervisor/postgres_state.py\n M supervisor/schema_migrations.py\n M supervisor/state.py\n M tests/test_postgres_ledger_lane.py\n M tests/test_schema_migrations.py\n?? .scratch/cocreate-checkpoint-files-only-dual-agent-prompt.md\n?? .scratch/cocreate-ckpt-tdd-review-corrective-input.md\n?? .scratch/cocreate-global-purge-dual-agent-prompt.md\n?? docs/dual-agent/autoresearch-hypothesis-generation-20260610/\n?? docs/dual-agent/live-cursor-sdk-probe-20260610-135900/\n?? docs/dual-agent/live-cursor-sdk-probe-20260610-140228/\n?? docs/dual-agent/supervisor-flow-autoresearch-run-20260609/\n?? docs/supervisor-auto-evolution-loop-program-20260610.md\n?? docs/supervisor-auto-improve-gap-analysis-20260610.md\n?? docs/supervisor-autoevolution-readiness-20260610.md\n?? docs/supervisor-improvement-audit-20260609.md\n?? docs/supervisor-improvement-completion-prompts-20260610.md\n?? docs/supervisor-improvement-prompts-coverage-20260609.md\n?? docs/supervisor-improvement-prompts-finish-20260610.md\n?? migrations/versions/20260610_0003_autoresearch_experiment_queue.py\n?? supervisor/autoresearch/generator.py\n?? tests/test_autoresearch_generator.py"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "49ab4ce9dd7eb0dd53700a2e3c27c7af962bed78f916245c99bf44128a7a6bed",
+    "implementation_plan": "2de7e986eecc04b57852e5eb50c71e3f772d47f02084427f4c25fcb3f7712caa",
+    "issues": "4c9b78e5db15cf52a84da11019b3f10e259ace2285571a447838be75a5152af6",
+    "prd": "311cf90027f119bb809d07e23b0ad11eb291e6f8439537c44e120e62b41cd0b2",
+    "tdd_plan": "c7c558e293e90c5f007ce1f6c4a8638344ec5d8ea5cc2a6b3e3ab855cdc0c62d"
+  },
+  "status": "captured"
+}

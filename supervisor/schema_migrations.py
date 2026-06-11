@@ -235,6 +235,37 @@ def _migration_supervisor_quality_trends(conn: sqlite3.Connection) -> None:
     )
 
 
+def _migration_autoresearch_experiment_queue(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS supervisor_autoresearch_experiments (
+             experiment_id        TEXT PRIMARY KEY,
+             signal_key           TEXT NOT NULL UNIQUE,
+             status               TEXT NOT NULL,
+             task_class           TEXT NOT NULL,
+             gate                 TEXT NOT NULL,
+             taxonomy_code        TEXT NOT NULL,
+             experiment_json      TEXT NOT NULL,
+             attempt_json         TEXT NOT NULL,
+             provenance_json      TEXT NOT NULL,
+             report_only_reason   TEXT NOT NULL DEFAULT '',
+             proposal_pointer_json TEXT NOT NULL DEFAULT '{}',
+             report_ref           TEXT NOT NULL DEFAULT '',
+             report_sha256        TEXT NOT NULL DEFAULT '',
+             last_run_id          TEXT NOT NULL DEFAULT '',
+             last_run_started_at  INTEGER,
+             created_at           INTEGER NOT NULL,
+             updated_at           INTEGER NOT NULL,
+             activated_at         INTEGER,
+             activated_by         TEXT,
+             activation_channel   TEXT
+           )"""
+    )
+    conn.execute(
+        """CREATE INDEX IF NOT EXISTS idx_supervisor_autoresearch_experiments_status
+           ON supervisor_autoresearch_experiments(status, updated_at)"""
+    )
+
+
 def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
     row = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
@@ -300,5 +331,10 @@ MIGRATIONS: tuple[SchemaMigration, ...] = (
         8,
         "supervisor_quality_trends",
         _migration_supervisor_quality_trends,
+    ),
+    SchemaMigration(
+        9,
+        "supervisor_autoresearch_experiments",
+        _migration_autoresearch_experiment_queue,
     ),
 )

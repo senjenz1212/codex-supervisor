@@ -80,6 +80,9 @@ def test_alembic_migration_and_make_target_exist():
     trends_migration = Path("migrations/versions/20260610_0002_supervisor_quality_trends.py").read_text(
         encoding="utf-8"
     )
+    queue_migration = Path("migrations/versions/20260610_0003_autoresearch_experiment_queue.py").read_text(
+        encoding="utf-8"
+    )
     makefile = Path("Makefile").read_text(encoding="utf-8")
     config_example = Path("config.example.yaml").read_text(encoding="utf-8")
 
@@ -96,9 +99,14 @@ def test_alembic_migration_and_make_target_exist():
     assert 'down_revision = "20260610_0001"' in trends_migration
     assert "supervisor_quality_trends" in trends_migration
     assert "idx_supervisor_quality_trends_task_gate" in trends_migration
+    assert 'revision = "20260610_0003"' in queue_migration
+    assert 'down_revision = "20260610_0002"' in queue_migration
+    assert "supervisor_autoresearch_experiments" in queue_migration
+    assert "idx_supervisor_autoresearch_experiments_status" in queue_migration
     assert "uv run --extra postgres alembic -c alembic.ini upgrade head" in makefile
     assert "PgBouncer" in config_example
     assert "state_db: ~/.codex-supervisor/state.db" in config_example
+    assert "max_runnable_experiments_per_week: 2" in config_example
 
 
 def test_postgres_inline_schema_and_alembic_migration_stay_structurally_equivalent():
@@ -126,7 +134,10 @@ def test_postgres_inline_schema_and_alembic_migration_stay_structurally_equivale
         "idx_supervisor_lessons_task_gate",
         "supervisor_quality_trends",
         "idx_supervisor_quality_trends_task_gate",
+        "supervisor_autoresearch_experiments",
+        "idx_supervisor_autoresearch_experiments_status",
         "UNIQUE(run_id, gate)",
+        "signal_key TEXT NOT NULL UNIQUE",
     ):
         assert required_snippet in POSTGRES_SCHEMA_SQL
         assert required_snippet in migration
