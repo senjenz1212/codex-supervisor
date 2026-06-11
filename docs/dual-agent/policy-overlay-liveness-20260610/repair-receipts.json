@@ -83,5 +83,26 @@
       "TDD grill findings resolved",
       "tests preserve public-boundary and no-auto-apply invariants"
     ]
+  },
+  {
+    "kind": "implementation_plan",
+    "receipt_id": "implementation-plan-policy-overlay-liveness-20260610",
+    "status": "present",
+    "path": "docs/dual-agent/policy-overlay-liveness-20260610/source/implementation-plan.md",
+    "sha256": "c466a71fc83ae32faa35af10e5465d673ebb1ea7523e7a44c077a091caefb6ca",
+    "claims": [
+      "implementation-plan artifact digest matches current on-disk source artifact"
+    ]
+  },
+  {
+    "kind": "test",
+    "receipt_id": "phase-b-focused-pytest-20260611",
+    "status": "passed",
+    "command": ".venv/bin/python -m pytest tests/test_runtime_evidence.py tests/test_policy_overlay.py tests/test_quality_trends.py tests/test_supervisor_lessons.py tests/test_autoresearch_policy_evolution.py -q",
+    "summary": "51 passed in 1.60s",
+    "source": "operator_runtime",
+    "claims": [
+      "focused Phase B and dependency regression tests passed on the current checkout, including the mixed rollback pointer regression"
+    ]
   }
 ]

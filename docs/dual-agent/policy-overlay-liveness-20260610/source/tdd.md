@@ -24,6 +24,14 @@ Red: A crafted rollback pointer can restore a non-overlay prompt/config path aft
 
 Green: Rollback rejects any `target_path` except `.supervisor/policy-overlay.yaml`, emits no rollback event, and leaves the non-overlay file unchanged.
 
+## test_policy_rollback_validates_all_targets_before_writing
+
+Maps to: Slice B1, P2.
+
+Red: A mixed rollback pointer with a valid overlay target followed by a non-overlay target writes the overlay file before rejecting the later forbidden target.
+
+Green: Rollback prevalidates every target and backup before any write, rejects the mixed pointer, emits no rollback event, and leaves both the overlay and non-overlay file unchanged.
+
 ## test_quality_trends_rows_include_policy_overlay_hash_and_proposal_id
 
 Maps to: Slice B2, P3.

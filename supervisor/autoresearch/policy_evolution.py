@@ -242,7 +242,7 @@ def rollback_policy_proposal(
     files = rollback_pointer.get("files") if isinstance(rollback_pointer.get("files"), list) else []
     if not files:
         raise PolicyEvolutionError("rollback pointer has no files")
-    restored: list[dict[str, Any]] = []
+    prepared_restores: list[dict[str, Any]] = []
     for item in files:
         if not isinstance(item, Mapping):
             raise PolicyEvolutionError("rollback file entry must be an object")
@@ -260,7 +260,18 @@ def rollback_policy_proposal(
                 f"rollback backup hash mismatch for {backup_rel}: "
                 f"expected {expected_hash}, observed {observed_hash}"
             )
+        prepared_restores.append({
+            "target_rel": target_rel,
+            "backup_bytes": backup_bytes,
+            "expected_hash": expected_hash,
+        })
+
+    restored: list[dict[str, Any]] = []
+    for prepared in prepared_restores:
+        target_rel = str(prepared["target_rel"])
         target_path = repo_root_path / target_rel
+        backup_bytes = bytes(prepared["backup_bytes"])
+        expected_hash = str(prepared["expected_hash"])
         target_path.parent.mkdir(parents=True, exist_ok=True)
         target_path.write_bytes(backup_bytes)
         restored.append({

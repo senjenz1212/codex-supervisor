@@ -1,6 +1,6 @@
 # Dual-Agent Artifacts: policy-overlay-liveness-20260610
 
-- run_id: `8ebdbc89-0185-4962-be6f-b0f593887670`
+- run_id: `5d105f7a-f117-4ce6-a3fb-e3fe7aaa11f5`
 - task_id: `policy-overlay-liveness-20260610`
 - source: supervisor SQLite event ledger
 
@@ -31,10 +31,10 @@
 ## Gates
 
 - `execution`: 9 event(s)
-- `implementation_plan`: 67 event(s)
-- `issues_review`: 15 event(s)
-- `outcome_review`: 29 event(s)
-- `prd_review`: 15 event(s)
-- `tdd_review`: 62 event(s)
-- `unknown`: 35 event(s)
-- `workflow_start`: 5 event(s)
+- `implementation_plan`: 12 event(s)
+- `issues_review`: 8 event(s)
+- `outcome_review`: 13 event(s)
+- `prd_review`: 8 event(s)
+- `tdd_review`: 49 event(s)
+- `unknown`: 4 event(s)
+- `workflow_start`: 1 event(s)

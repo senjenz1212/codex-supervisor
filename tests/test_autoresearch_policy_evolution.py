@@ -410,6 +410,55 @@ def test_policy_rollback_rejects_non_overlay_target_pointer(tmp_path):
     assert state.read_events_since("policy-run", after_event_id=0, limit=10) == []
 
 
+def test_policy_rollback_validates_all_targets_before_writing(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    overlay = _write(tmp_path, ".supervisor/policy-overlay.yaml", BASE_OVERLAY)
+    prompt = _write(tmp_path, "prompts/execution.md", "current prompt\n")
+    overlay_backup = _write(
+        tmp_path,
+        ".handoff/policy-rollbacks/ARP-live/policy-overlay.before",
+        AFTER_OVERLAY,
+    )
+    prompt_backup = _write(
+        tmp_path,
+        ".handoff/policy-rollbacks/ARP-live/execution.before",
+        "before prompt\n",
+    )
+    pointer = {
+        "schema_version": "supervisor-autoresearch-policy-rollback/v1",
+        "proposal_id": "ARP-live",
+        "files": [
+            {
+                "target_path": ".supervisor/policy-overlay.yaml",
+                "backup_ref": ".handoff/policy-rollbacks/ARP-live/policy-overlay.before",
+                "before_hash": _sha(overlay_backup),
+                "after_hash": _sha(overlay),
+            },
+            {
+                "target_path": "prompts/execution.md",
+                "backup_ref": ".handoff/policy-rollbacks/ARP-live/execution.before",
+                "before_hash": _sha(prompt_backup),
+                "after_hash": _sha(prompt),
+            },
+        ],
+    }
+
+    with pytest.raises(PolicyEvolutionError, match="may only target"):
+        rollback_policy_proposal(
+            pointer,
+            state=state,
+            run_id="policy-run",
+            repo_root=tmp_path,
+            approver="sam.zhang",
+            approval_channel="codex_desktop",
+            reason="crafted mixed pointer",
+        )
+
+    assert overlay.read_text(encoding="utf-8") == BASE_OVERLAY
+    assert prompt.read_text(encoding="utf-8") == "current prompt\n"
+    assert state.read_events_since("policy-run", after_event_id=0, limit=10) == []
+
+
 def test_denied_policy_proposal_records_denial_and_applies_nothing(tmp_path):
     state = State(str(tmp_path / "state.db"))
     target = _write(tmp_path, ".supervisor/policy-overlay.yaml", BASE_OVERLAY)
