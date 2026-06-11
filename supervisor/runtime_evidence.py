@@ -463,6 +463,8 @@ def _prepare_validation_copy(cwd: Path) -> dict[str, Any]:
             "__pycache__",
             "node_modules",
         }
+        if Path(_directory).name == ".cortex":
+            ignored.add("runtime_workspaces")
         return {name for name in names if name in ignored}
 
     shutil.copytree(cwd, validation_cwd, ignore=ignore)

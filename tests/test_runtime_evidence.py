@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from supervisor.runtime_evidence import _run_declared_tests, _test_commands
+from supervisor.runtime_evidence import _prepare_validation_copy, _run_declared_tests, _test_commands
 
 
 def _write_test(path: Path, source: str) -> None:
@@ -119,6 +119,27 @@ def test_declared_make_test_stays_allowlisted_argv_command(tmp_path: Path) -> No
     assert receipt["status"] == "passed"
     assert captured["argv"] == ["make", "test"]
     assert captured["shell"] is False
+
+
+def test_validation_copy_ignores_cortex_runtime_workspaces(tmp_path: Path) -> None:
+    _write_test(tmp_path / "src" / "app.py", "VALUE = 1\n")
+    _write_test(tmp_path / ".cortex" / "settings.json", "{}\n")
+    _write_test(
+        tmp_path / ".cortex" / "runtime_workspaces" / "run-1" / ".codex" / "tmp" / "apply_patch",
+        "transient\n",
+    )
+
+    workspace = _prepare_validation_copy(tmp_path)
+    validation_cwd = Path(workspace["validation_cwd"])
+
+    try:
+        assert (validation_cwd / "src" / "app.py").exists()
+        assert (validation_cwd / ".cortex" / "settings.json").exists()
+        assert not (validation_cwd / ".cortex" / "runtime_workspaces").exists()
+    finally:
+        import shutil
+
+        shutil.rmtree(workspace["temp_parent"], ignore_errors=True)
 
 
 def test_declared_python_c_command_is_rejected_not_executed(tmp_path: Path) -> None:
