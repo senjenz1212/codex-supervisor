@@ -89,7 +89,15 @@ def collect_runtime_evidence(
     if not baseline_ok:
         failures.append("runtime_baseline_unavailable")
 
-    diff_result = _current_changed_files(cwd_path, runner=runner)
+    diff_result = _current_changed_files(
+        cwd_path,
+        baseline_head=baseline_head if baseline_ok else None,
+        runner=runner,
+    )
+    committed_changed_files = diff_result.get("committed_changed_files", [])
+    if not changed_files and committed_changed_files:
+        changed_files = _text_list(committed_changed_files)
+        outcome_payload["changed_files"] = changed_files
     actual_changed_files = diff_result["changed_files"]
     missing_from_diff = sorted(set(changed_files) - set(actual_changed_files))
     if diff_result["status"] != "passed":
@@ -113,6 +121,10 @@ def collect_runtime_evidence(
             "actual_changed_files": actual_changed_files,
             "missing_from_diff": missing_from_diff,
             "extra_actual_files": sorted(set(actual_changed_files) - set(changed_files)),
+            "worktree_changed_files": diff_result.get("worktree_changed_files", []),
+            "committed_changed_files": committed_changed_files,
+            "derived_changed_files_from_runtime": bool(committed_changed_files)
+            and _text_list(outcome_payload.get("changed_files")) == committed_changed_files,
             "name_status": diff_result.get("name_status", []),
             "reason": diff_result.get("reason"),
         },
@@ -216,7 +228,12 @@ def _receipt(
     return mark_supervisor_runtime_receipt(payload)
 
 
-def _current_changed_files(cwd: Path, *, runner: Runner) -> dict[str, Any]:
+def _current_changed_files(
+    cwd: Path,
+    *,
+    baseline_head: str | None = None,
+    runner: Runner,
+) -> dict[str, Any]:
     status = _run_git(cwd, ["status", "--porcelain=v1", "-uall"], runner=runner)
     if status.returncode != 0:
         return {
@@ -229,22 +246,77 @@ def _current_changed_files(cwd: Path, *, runner: Runner) -> dict[str, Any]:
     entries: list[dict[str, str]] = []
     files: list[str] = []
     for line in status.stdout.splitlines():
-        if not line.strip():
+        parsed = _parse_git_name_status_line(line, status_width=2)
+        if parsed is None:
             continue
-        code = line[:2]
-        path_text = line[3:].strip() if len(line) > 3 else line.strip()
-        if " -> " in path_text:
-            path_text = path_text.split(" -> ", 1)[1].strip()
-        if not path_text:
-            continue
-        entries.append({"status": code.strip() or "changed", "path": path_text})
+        code, path_text = parsed
+        entries.append({"status": code, "path": path_text, "source": "worktree"})
         files.append(path_text)
+
+    committed_entries: list[dict[str, str]] = []
+    committed_files: list[str] = []
+    if baseline_head:
+        head = _run_git(cwd, ["rev-parse", "HEAD"], runner=runner)
+        if head.returncode == 0 and head.stdout.strip() and head.stdout.strip() != baseline_head:
+            committed = _run_git(
+                cwd,
+                ["diff", "--name-status", "--find-renames", baseline_head, "HEAD"],
+                runner=runner,
+            )
+            if committed.returncode == 0:
+                for line in committed.stdout.splitlines():
+                    parsed = _parse_git_name_status_line(line, status_width=None)
+                    if parsed is None:
+                        continue
+                    code, path_text = parsed
+                    committed_entries.append({
+                        "status": code,
+                        "path": path_text,
+                        "source": "committed_since_baseline",
+                    })
+                    committed_files.append(path_text)
+            else:
+                return {
+                    "status": "failed",
+                    "reason": "git_committed_diff_unavailable",
+                    "changed_files": [],
+                    "worktree_changed_files": sorted(dict.fromkeys(files)),
+                    "committed_changed_files": [],
+                    "name_status": entries,
+                    "stderr": _tail(committed.stderr),
+                }
+
+    entries.extend(committed_entries)
+    files.extend(committed_files)
     return {
         "status": "passed",
-        "reason": "git_status_captured",
+        "reason": "git_status_and_committed_diff_captured" if committed_entries else "git_status_captured",
         "changed_files": sorted(dict.fromkeys(files)),
+        "worktree_changed_files": sorted(dict.fromkeys(
+            entry["path"] for entry in entries if entry.get("source") == "worktree"
+        )),
+        "committed_changed_files": sorted(dict.fromkeys(committed_files)),
         "name_status": entries,
     }
+
+
+def _parse_git_name_status_line(line: str, *, status_width: int | None) -> tuple[str, str] | None:
+    if not line.strip():
+        return None
+    if status_width is None:
+        parts = line.split("\t")
+        if len(parts) < 2:
+            return None
+        code = parts[0].strip() or "changed"
+        path_text = parts[-1].strip()
+    else:
+        code = line[:status_width].strip() or "changed"
+        path_text = line[status_width + 1:].strip() if len(line) > status_width + 1 else line.strip()
+    if " -> " in path_text:
+        path_text = path_text.split(" -> ", 1)[1].strip()
+    if not path_text:
+        return None
+    return code, path_text
 
 
 def _deliverable_checks(cwd: Path, changed_files: list[str]) -> list[dict[str, Any]]:
@@ -385,10 +457,21 @@ def _runtime_test_command_argv(command: str, validation_cwd: Path) -> dict[str, 
                 "reason": "python_module_pytest",
                 "argv": [_runtime_python(validation_cwd), "-m", "pytest", *parts[3:]],
             }
+        if len(parts) >= 3 and parts[1] == "-m" and parts[2] == "cortex.vela_eval.runner":
+            return {
+                "status": "allowed",
+                "reason": "python_module_vela_eval_runner",
+                "argv": [_runtime_python(validation_cwd), "-m", "cortex.vela_eval.runner", *parts[3:]],
+            }
         return {"status": "rejected", "reason": "python_non_pytest_module", "argv": []}
     if executable == "make":
         targets = parts[1:]
-        if len(targets) == 1 and targets[0] in {"test", "tests", "pytest"}:
+        if len(targets) == 1 and targets[0] in {
+            "test",
+            "tests",
+            "pytest",
+            "smoke-vela2-surface-truth",
+        }:
             return {"status": "allowed", "reason": "make_test_target", "argv": ["make", targets[0]]}
         return {"status": "rejected", "reason": "make_target_not_allowlisted", "argv": []}
     return {"status": "rejected", "reason": "command_not_allowlisted", "argv": []}

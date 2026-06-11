@@ -5,7 +5,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-from supervisor.runtime_evidence import _prepare_validation_copy, _run_declared_tests, _test_commands
+from supervisor.runtime_evidence import (
+    _prepare_validation_copy,
+    _run_declared_tests,
+    _test_commands,
+    collect_runtime_evidence,
+)
 
 
 def _write_test(path: Path, source: str) -> None:
@@ -140,6 +145,102 @@ def test_validation_copy_ignores_cortex_runtime_workspaces(tmp_path: Path) -> No
         import shutil
 
         shutil.rmtree(workspace["temp_parent"], ignore_errors=True)
+
+
+def test_runtime_evidence_derives_changed_files_from_committed_diff(tmp_path: Path) -> None:
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=tmp_path, check=True)
+    _write_test(tmp_path / "src" / "app.py", "VALUE = 1\n")
+    subprocess.run(["git", "add", "src/app.py"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-m", "baseline"], cwd=tmp_path, check=True, capture_output=True, text=True)
+    baseline_head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    _write_test(tmp_path / "src" / "app.py", "VALUE = 2\n")
+    subprocess.run(["git", "add", "src/app.py"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-m", "implementation"], cwd=tmp_path, check=True, capture_output=True, text=True)
+    outcome: dict[str, object] = {
+        "changed_files": [],
+        "claims": ["implemented"],
+        "decisions": ["accept"],
+        "summary": "Implemented and committed.",
+    }
+
+    result = collect_runtime_evidence(
+        cwd=tmp_path,
+        task_id="committed-work",
+        run_id="run-1",
+        gate="execution",
+        round_index=1,
+        baseline={"status": "passed", "head": baseline_head, "reason": "git_head_captured"},
+        outcome_payload=outcome,
+        runner=subprocess.run,
+    )
+
+    assert result.probe.ok
+    assert outcome["changed_files"] == ["src/app.py"]
+    diff_receipt = next(
+        receipt for receipt in result.receipts
+        if receipt["receipt_id"] == "runtime-git-diff-execution-1"
+    )
+    assert diff_receipt["committed_changed_files"] == ["src/app.py"]
+    assert diff_receipt["derived_changed_files_from_runtime"] is True
+
+
+def test_declared_vela_eval_runner_command_is_allowlisted(tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_runner(argv, **kwargs):
+        captured["argv"] = list(argv)
+        captured["shell"] = kwargs["shell"]
+        return subprocess.CompletedProcess(argv, 0, stdout="suite ok\n", stderr="")
+
+    receipt = _run_declared_tests(
+        tmp_path,
+        gate="execution",
+        round_index=1,
+        test_commands=["python -m cortex.vela_eval.runner tests/fixtures/vela_eval/smoke"],
+        timeout_s=30,
+        runner=fake_runner,
+    )
+
+    assert receipt is not None
+    assert receipt["status"] == "passed"
+    assert captured["argv"][1:] == [
+        "-m",
+        "cortex.vela_eval.runner",
+        "tests/fixtures/vela_eval/smoke",
+    ]
+    assert captured["shell"] is False
+
+
+def test_declared_vela_surface_truth_make_target_is_allowlisted(tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_runner(argv, **kwargs):
+        captured["argv"] = list(argv)
+        captured["shell"] = kwargs["shell"]
+        return subprocess.CompletedProcess(argv, 0, stdout="ok\n", stderr="")
+
+    receipt = _run_declared_tests(
+        tmp_path,
+        gate="execution",
+        round_index=1,
+        test_commands=["make smoke-vela2-surface-truth"],
+        timeout_s=30,
+        runner=fake_runner,
+    )
+
+    assert receipt is not None
+    assert receipt["status"] == "passed"
+    assert captured["argv"] == ["make", "smoke-vela2-surface-truth"]
+    assert captured["shell"] is False
 
 
 def test_declared_python_c_command_is_rejected_not_executed(tmp_path: Path) -> None:
