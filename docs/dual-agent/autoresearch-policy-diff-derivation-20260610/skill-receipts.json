@@ -1,0 +1,87 @@
+[
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-to-prd-autoresearch-policy-diff-derivation-20260610",
+    "skill": "to-prd",
+    "stage": "to_prd",
+    "status": "passed",
+    "artifacts": [
+      {
+        "path": "docs/dual-agent/autoresearch-policy-diff-derivation-20260610/source/prd.md",
+        "sha256": "924fbafffe9245b2bad9c412625aa6a7480dcedb45ac93c3930ef6b7fed1b1fc"
+      }
+    ],
+    "claims": [
+      "PRD promise contracts P1-P4 produced",
+      "draft-only and overlay-only boundaries recorded"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-prd-grill-autoresearch-policy-diff-derivation-20260610",
+    "skill": "grill-with-docs",
+    "stage": "prd_grill",
+    "status": "passed",
+    "artifacts": [
+      {
+        "path": "docs/dual-agent/autoresearch-policy-diff-derivation-20260610/source/grill-findings.md",
+        "sha256": "ea28c97c9db79e454a0a96b614d98126b0d244656e8598658e1555e29fd6fb4e"
+      }
+    ],
+    "claims": [
+      "PRD grill findings resolved",
+      "positive-delta and overlay-only constraints preserved"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-to-issues-autoresearch-policy-diff-derivation-20260610",
+    "skill": "to-issues",
+    "stage": "to_issues",
+    "status": "passed",
+    "artifacts": [
+      {
+        "path": "docs/dual-agent/autoresearch-policy-diff-derivation-20260610/source/issues.md",
+        "sha256": "2d6ea136137375157217d7706a92a70196e3586af6ef44b823c7466544d30c21"
+      }
+    ],
+    "claims": [
+      "implementation slices map to PRD promises",
+      "acceptance criteria cover derived proposal creation and rejection paths"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-tdd-autoresearch-policy-diff-derivation-20260610",
+    "skill": "tdd",
+    "stage": "tdd",
+    "status": "passed",
+    "artifacts": [
+      {
+        "path": "docs/dual-agent/autoresearch-policy-diff-derivation-20260610/source/tdd.md",
+        "sha256": "fb5a58cae888fa287e20e686b63b931815d98b605a309e6c11b5043116700a6a"
+      }
+    ],
+    "claims": [
+      "public-boundary RED/GREEN tests named",
+      "tests map to P1-P4 and reject non-overlay derivation"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-tdd-grill-autoresearch-policy-diff-derivation-20260610",
+    "skill": "grill-with-docs",
+    "stage": "tdd_grill",
+    "status": "passed",
+    "artifacts": [
+      {
+        "path": "docs/dual-agent/autoresearch-policy-diff-derivation-20260610/source/grill-findings-tdd.md",
+        "sha256": "507e97e134cf21f30f6b558414c577accb527f32180fb29a7efe8eb53feb0674"
+      }
+    ],
+    "claims": [
+      "TDD grill findings resolved",
+      "tests preserve public-boundary and draft-only invariants"
+    ]
+  }
+]

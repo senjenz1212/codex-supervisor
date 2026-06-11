@@ -93,6 +93,31 @@ def validate_attempt(
         gaming_flags.append("evaluator_hash_mismatch")
         errors.extend(evaluator_errors)
 
+    policy_candidate_changes = _normalise_policy_candidate_changes(
+        attempt.policy_candidate_changes,
+        repo_root=repo_root_path,
+    )
+    policy_overlay_candidate_ref = _normalise_path(
+        attempt.policy_overlay_candidate_ref,
+        repo_root=repo_root_path,
+    )
+    policy_candidate_refs = [
+        ref for ref in (
+            *policy_candidate_changes.values(),
+            policy_overlay_candidate_ref,
+        )
+        if ref
+    ]
+    missing_policy_candidates = [
+        ref for ref in policy_candidate_refs if ref not in changed_files
+    ]
+    if missing_policy_candidates:
+        gaming_flags.append("policy_candidate_missing_changed_file")
+        errors.append(
+            "policy candidate refs must be listed in changed_files: "
+            + ", ".join(missing_policy_candidates)
+        )
+
     metrics = summarize_metric_trials(attempt.metric_trials)
     if metrics["trial_count"] == 0:
         gaming_flags.append("missing_metric_trials")
@@ -102,6 +127,7 @@ def validate_attempt(
         errors.append("metric trials require evaluator_execution provenance")
     if len(attempt.metric_trials) > 1 and len(set(float(value) for value in attempt.metric_trials)) == 1:
         gaming_flags.append("zero_variance_trials")
+    metric_before, metric_after, metric_delta = _metric_delta_fields(attempt, metrics)
 
     status = "accepted" if not errors else "rejected"
     recommendation = (
@@ -121,6 +147,11 @@ def validate_attempt(
         metric_source=attempt.metric_source,
         evaluator_run_ref=attempt.evaluator_run_ref,
         evaluator_run_hash=attempt.evaluator_run_hash,
+        metric_before=metric_before,
+        metric_after=metric_after,
+        metric_delta=metric_delta,
+        policy_overlay_candidate_ref=policy_overlay_candidate_ref,
+        policy_candidate_changes=policy_candidate_changes,
         metric_median=metrics["metric_median"],  # type: ignore[arg-type]
         metric_iqr=metrics["metric_iqr"],  # type: ignore[arg-type]
         quality_unstable_across_trials=bool(metrics["quality_unstable_across_trials"]),
@@ -184,6 +215,42 @@ def _evaluator_hash_errors(experiment: AutoresearchExperiment, *, repo_root: Pat
     if observed != experiment.evaluator_hash:
         return [f"evaluator hash mismatch for {normalized_path}"]
     return []
+
+
+def _metric_delta_fields(
+    attempt: AutoresearchAttempt,
+    metrics: dict[str, float | int | bool | list[float] | None],
+) -> tuple[float | None, float | None, float | None]:
+    before = attempt.metric_before
+    after = attempt.metric_after
+    if after is None and before is not None:
+        median = metrics.get("metric_median")
+        if median is not None:
+            after = float(median)
+    delta = attempt.metric_delta
+    if delta is None and before is not None and after is not None:
+        delta = float(after) - float(before)
+    if before is None and delta is not None and after is not None:
+        before = float(after) - float(delta)
+    if after is None and delta is not None and before is not None:
+        after = float(before) + float(delta)
+    return (
+        round(float(before), 6) if before is not None else None,
+        round(float(after), 6) if after is not None else None,
+        round(float(delta), 6) if delta is not None else None,
+    )
+
+
+def _normalise_policy_candidate_changes(
+    values: dict[str, str],
+    *,
+    repo_root: Path,
+) -> dict[str, str]:
+    return {
+        _normalise_path(str(target), repo_root=repo_root): _normalise_path(str(candidate), repo_root=repo_root)
+        for target, candidate in sorted(values.items())
+        if str(target).strip() and str(candidate).strip()
+    }
 
 
 def _normalise_patterns(values: tuple[str, ...], *, repo_root: Path) -> tuple[str, ...]:

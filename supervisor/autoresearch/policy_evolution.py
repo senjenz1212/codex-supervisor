@@ -14,6 +14,7 @@ POLICY_PROPOSAL_SCHEMA_VERSION = "supervisor-autoresearch-policy-proposal/v1"
 POLICY_APPROVAL_SCHEMA_VERSION = "supervisor-autoresearch-policy-approval/v1"
 POLICY_DENIAL_SCHEMA_VERSION = "supervisor-autoresearch-policy-denial/v1"
 POLICY_ROLLBACK_SCHEMA_VERSION = "supervisor-autoresearch-policy-rollback/v1"
+POLICY_DERIVATION_SCHEMA_VERSION = "supervisor-autoresearch-policy-derivation/v1"
 
 
 class EventWriter(Protocol):
@@ -59,6 +60,72 @@ def create_policy_evolution_proposals(
             candidate_changes=changes,
             affected_gates=tuple(str(gate) for gate in affected_gates),
         )
+        proposals.append(proposal)
+        if state is not None and run_id:
+            state.write_event(
+                run_id=run_id,
+                source="autoresearch",
+                kind="autoresearch_policy_proposal_created",
+                payload=proposal,
+            )
+    return proposals
+
+
+def derive_policy_evolution_proposals_from_report(
+    report: Mapping[str, Any],
+    *,
+    repo_root: str | Path,
+    affected_gates: tuple[str, ...] | list[str],
+    state: EventWriter | None = None,
+    run_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """Draft overlay proposals directly from accepted AutoResearch report records.
+
+    This is the policy-evolution public boundary for the auto loop: it derives
+    the overlay candidate from report evidence instead of accepting a
+    caller-authored `candidate_changes` mapping.
+    """
+    repo_root_path = Path(repo_root).expanduser().resolve()
+    gates = tuple(str(gate) for gate in affected_gates)
+    records = report.get("records") if isinstance(report.get("records"), list) else []
+    proposals: list[dict[str, Any]] = []
+    for record in records:
+        if not isinstance(record, Mapping) or not _record_is_applyable(record):
+            continue
+        try:
+            metric_delta = _positive_metric_delta(record)
+            candidate_ref = _derive_overlay_candidate_ref(record, repo_root=repo_root_path)
+            proposal = _build_policy_proposal(
+                report=report,
+                record=record,
+                repo_root=repo_root_path,
+                candidate_changes=((POLICY_OVERLAY_PATH, candidate_ref),),
+                affected_gates=gates,
+            )
+        except PolicyEvolutionError as exc:
+            _write_derivation_skipped(
+                state=state,
+                run_id=run_id,
+                report=report,
+                record=record,
+                reason=str(exc),
+            )
+            continue
+        proposal["status"] = "draft"
+        proposal["source"] = "autoresearch_deriver"
+        proposal["derivation"] = {
+            "schema_version": POLICY_DERIVATION_SCHEMA_VERSION,
+            "report_ref": str(report.get("report_ref") or report.get("evaluator_run_ref") or ""),
+            "report_sha256": str(report.get("report_sha256") or ""),
+            "experiment_id": str(record.get("experiment_id") or report.get("experiment_id") or ""),
+            "attempt_id": str(record.get("attempt_id") or ""),
+            "candidate_ref": candidate_ref,
+            "affected_gates": list(gates),
+            **metric_delta,
+        }
+        proposal["proposal_sha256"] = sha256_json({
+            key: value for key, value in proposal.items() if key != "proposal_sha256"
+        })
         proposals.append(proposal)
         if state is not None and run_id:
             state.write_event(
@@ -409,6 +476,123 @@ def _evaluator_evidence(record: Mapping[str, Any]) -> dict[str, Any]:
         "cost_usd": float(record.get("cost_usd") or 0.0),
         "wall_clock_s": float(record.get("wall_clock_s") or 0.0),
     }
+
+
+def _positive_metric_delta(record: Mapping[str, Any]) -> dict[str, float]:
+    before = _optional_float(
+        record.get("metric_before", record.get("baseline_metric", record.get("metric_baseline")))
+    )
+    after = _optional_float(record.get("metric_after", record.get("candidate_metric", record.get("metric_median"))))
+    explicit_delta = _optional_float(record.get("metric_delta"))
+    if explicit_delta is None:
+        if before is None or after is None:
+            raise PolicyEvolutionError("positive metric delta is required for policy derivation")
+        delta = after - before
+    else:
+        delta = explicit_delta
+        if before is not None and after is not None and round(after - before, 6) != round(delta, 6):
+            raise PolicyEvolutionError("metric delta must match metric before/after values")
+        if after is None and before is not None:
+            after = before + delta
+        if before is None and after is not None:
+            before = after - delta
+    if before is None or after is None:
+        raise PolicyEvolutionError("metric before/after values are required for policy derivation")
+    if delta <= 0:
+        raise PolicyEvolutionError("positive metric delta is required for policy derivation")
+    return {
+        "metric_before": round(float(before), 6),
+        "metric_after": round(float(after), 6),
+        "metric_delta": round(float(delta), 6),
+    }
+
+
+def _derive_overlay_candidate_ref(record: Mapping[str, Any], *, repo_root: Path) -> str:
+    report_changes = record.get("policy_candidate_changes")
+    if report_changes is None:
+        report_changes = record.get("candidate_changes")
+    if isinstance(report_changes, Mapping) and report_changes:
+        if len(report_changes) != 1:
+            raise PolicyEvolutionError("derived policy change must contain exactly one target")
+        [(target, candidate)] = list(report_changes.items())
+        target_rel = _normalise_relative_path(str(target), repo_root=repo_root)
+        _require_policy_overlay_target(target_rel, repo_root=repo_root)
+        candidate_rel = _normalise_relative_path(str(candidate), repo_root=repo_root)
+        _require_policy_overlay_candidate_ref(candidate_rel)
+        return candidate_rel
+
+    candidate_ref = (
+        record.get("policy_overlay_candidate_ref")
+        or record.get("candidate_overlay_ref")
+        or _candidate_artifact_ref(record)
+        or _candidate_from_changed_files(record, repo_root=repo_root)
+    )
+    candidate_rel = _normalise_relative_path(str(candidate_ref), repo_root=repo_root)
+    _require_policy_overlay_candidate_ref(candidate_rel)
+    return candidate_rel
+
+
+def _candidate_artifact_ref(record: Mapping[str, Any]) -> str:
+    artifacts = record.get("candidate_artifacts")
+    if isinstance(artifacts, Mapping):
+        value = artifacts.get(POLICY_OVERLAY_PATH)
+        if value:
+            return str(value)
+    return ""
+
+
+def _candidate_from_changed_files(record: Mapping[str, Any], *, repo_root: Path) -> str:
+    candidates: list[str] = []
+    for raw in record.get("changed_files", ()):
+        rel = _normalise_relative_path(str(raw), repo_root=repo_root)
+        if rel == POLICY_OVERLAY_PATH:
+            raise PolicyEvolutionError("policy derivation requires a candidate artifact, not the live overlay path")
+        if Path(rel).name in {"policy-overlay.yaml", "policy-overlay.yml"}:
+            candidates.append(rel)
+    if len(candidates) != 1:
+        raise PolicyEvolutionError("exactly one policy overlay candidate artifact is required")
+    return candidates[0]
+
+
+def _require_policy_overlay_candidate_ref(candidate_rel: str) -> None:
+    if candidate_rel == POLICY_OVERLAY_PATH:
+        raise PolicyEvolutionError("policy derivation requires a candidate artifact, not the live overlay path")
+    if Path(candidate_rel).name not in {"policy-overlay.yaml", "policy-overlay.yml"}:
+        raise PolicyEvolutionError(
+            f"derived policy candidate must be a policy-overlay.yaml artifact: {candidate_rel}"
+        )
+
+
+def _optional_float(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    return float(value)
+
+
+def _write_derivation_skipped(
+    *,
+    state: EventWriter | None,
+    run_id: str | None,
+    report: Mapping[str, Any],
+    record: Mapping[str, Any],
+    reason: str,
+) -> None:
+    if state is None or not run_id:
+        return
+    state.write_event(
+        run_id=run_id,
+        source="autoresearch",
+        kind="autoresearch_policy_proposal_derivation_skipped",
+        payload={
+            "schema_version": POLICY_DERIVATION_SCHEMA_VERSION,
+            "status": "skipped",
+            "reason": reason,
+            "report_sha256": str(report.get("report_sha256") or ""),
+            "experiment_id": str(record.get("experiment_id") or report.get("experiment_id") or ""),
+            "attempt_id": str(record.get("attempt_id") or ""),
+            **_authority_invariants(operator_approved=False),
+        },
+    )
 
 
 def _proposal_changes(proposal: Mapping[str, Any]) -> list[Mapping[str, Any]]:

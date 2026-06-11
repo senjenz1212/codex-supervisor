@@ -997,6 +997,57 @@ def test_autoresearch_report_is_report_only():
     assert report["recommendation"]["operator_review_required"] is True
 
 
+def test_autoresearch_report_carries_policy_derivation_fields(tmp_path):
+    _write_fixture_evaluator(tmp_path)
+    candidate = tmp_path / "candidates" / "policy-overlay.yaml"
+    candidate.parent.mkdir(parents=True)
+    candidate.write_text("policy overlay candidate\n", encoding="utf-8")
+    experiment = AutoresearchExperiment(
+        experiment_id="exp-policy",
+        task_id="task-policy",
+        hypothesis="Try a policy overlay candidate.",
+        baseline_ref="baseline:current",
+        mutable_paths=("candidates",),
+        immutable_paths=(),
+        evaluator_ref=str(LOCKED_EVALUATOR),
+        evaluator_hash=_sha256(tmp_path / LOCKED_EVALUATOR),
+        metric_name="score",
+        k_trials=3,
+    )
+    attempt = _attempt(
+        experiment_id="exp-policy",
+        task_id="task-policy",
+        attempt_id="attempt-policy",
+        changed_files=("candidates/policy-overlay.yaml",),
+        metric_trials=(0.74, 0.8, 0.86),
+        metric_before=0.7,
+        policy_candidate_changes={
+            ".supervisor/policy-overlay.yaml": "candidates/policy-overlay.yaml",
+        },
+        artifact_hashes={"candidates/policy-overlay.yaml": _sha256(candidate)},
+        evidence_refs=(
+            "evaluator_run:evaluator-runs/attempt-1.json",
+            "artifact:candidates/policy-overlay.yaml",
+        ),
+    )
+
+    validation = validate_attempt(
+        experiment=experiment,
+        attempt=attempt,
+        repo_root=tmp_path,
+    )
+    report = build_autoresearch_report([validation])
+    record = report["records"][0]
+
+    assert record["validation_status"] == "accepted"
+    assert record["metric_before"] == 0.7
+    assert record["metric_after"] == 0.8
+    assert record["metric_delta"] == 0.1
+    assert record["policy_candidate_changes"] == {
+        ".supervisor/policy-overlay.yaml": "candidates/policy-overlay.yaml",
+    }
+
+
 def test_autoresearch_fixture_runner_blocks_live_calls_by_default(tmp_path):
     result = subprocess.run(
         [

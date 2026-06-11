@@ -96,6 +96,7 @@ from supervisor.no_mistakes import (
 from supervisor.autoresearch.policy_evolution import (
     approve_policy_proposal,
     create_policy_evolution_proposals,
+    derive_policy_evolution_proposals_from_report,
     deny_policy_proposal,
     rollback_policy_proposal,
 )
@@ -2309,23 +2310,35 @@ class CodexSupervisorMcpAPI:
         *,
         report_path: str,
         repo_root: str,
-        candidate_changes: dict[str, str],
         affected_gates: list[str],
+        candidate_changes: dict[str, str] | None = None,
         run_id: str | None = None,
     ) -> dict[str, Any]:
         """Create operator-reviewable policy proposals from an accepted AutoResearch report."""
         repo_root_path = Path(repo_root).expanduser().resolve()
         report = _read_json_mapping(_resolve_repo_path(repo_root_path, report_path))
-        proposals = create_policy_evolution_proposals(
-            report,
-            repo_root=repo_root_path,
-            candidate_changes=candidate_changes,
-            affected_gates=affected_gates,
-            state=self.state,
-            run_id=run_id,
-        )
+        if candidate_changes is not None:
+            proposals = create_policy_evolution_proposals(
+                report,
+                repo_root=repo_root_path,
+                candidate_changes=candidate_changes,
+                affected_gates=affected_gates,
+                state=self.state,
+                run_id=run_id,
+            )
+            mode = "explicit_candidate_changes"
+        else:
+            proposals = derive_policy_evolution_proposals_from_report(
+                report,
+                repo_root=repo_root_path,
+                affected_gates=affected_gates,
+                state=self.state,
+                run_id=run_id,
+            )
+            mode = "report_derived"
         return redact({
             "status": "ok",
+            "mode": mode,
             "proposal_count": len(proposals),
             "proposals": proposals,
         })
@@ -4024,15 +4037,15 @@ def build_codex_supervisor_mcp_server(
     def create_autoresearch_policy_proposals(
         report_path: str,
         repo_root: str,
-        candidate_changes: dict[str, str],
         affected_gates: list[str],
+        candidate_changes: dict[str, str] | None = None,
         run_id: str | None = None,
     ) -> dict[str, Any]:
         return tool_api.create_autoresearch_policy_proposals(
             report_path=report_path,
             repo_root=repo_root,
-            candidate_changes=candidate_changes,
             affected_gates=affected_gates,
+            candidate_changes=candidate_changes,
             run_id=run_id,
         )
 

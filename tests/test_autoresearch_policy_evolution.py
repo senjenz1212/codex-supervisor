@@ -10,8 +10,12 @@ from supervisor.autoresearch.policy_evolution import (
     approve_policy_proposal,
     create_policy_evolution_proposals,
     deny_policy_proposal,
+    derive_policy_evolution_proposals_from_report,
     rollback_policy_proposal,
 )
+from supervisor.autoresearch.report import build_autoresearch_report
+from supervisor.autoresearch.schema import AutoresearchAttempt, AutoresearchExperiment
+from supervisor.autoresearch.validation import validate_attempt
 from supervisor.state import State
 
 
@@ -82,6 +86,19 @@ def _report(*records: dict) -> dict:
     }
 
 
+def _derived_record(**overrides) -> dict:
+    record = _record(
+        attempt_id="attempt-derived-1",
+        changed_files=["candidates/policy-overlay.yaml"],
+        policy_overlay_candidate_ref="candidates/policy-overlay.yaml",
+        metric_before=0.62,
+        metric_after=0.74,
+        metric_delta=0.12,
+    )
+    record.update(overrides)
+    return record
+
+
 def _proposal_fixture(root: Path) -> tuple[State, Path, Path, dict]:
     state = State(str(root / "state.db"))
     target = _write(root, ".supervisor/policy-overlay.yaml", BASE_OVERLAY)
@@ -93,6 +110,350 @@ def _proposal_fixture(root: Path) -> tuple[State, Path, Path, dict]:
         affected_gates=("outcome_review",),
     )
     return state, target, candidate, proposal
+
+
+def test_accepted_report_derives_overlay_policy_proposal_without_candidate_changes_input(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    target = _write(tmp_path, ".supervisor/policy-overlay.yaml", BASE_OVERLAY)
+    candidate = _write(tmp_path, "candidates/policy-overlay.yaml", AFTER_OVERLAY)
+    report = _report(_derived_record())
+    report["report_ref"] = "docs/dual-agent/autoresearch/report.json"
+
+    proposals = derive_policy_evolution_proposals_from_report(
+        report,
+        repo_root=tmp_path,
+        affected_gates=("outcome_review",),
+        state=state,
+        run_id="policy-run",
+    )
+
+    assert target.read_text(encoding="utf-8") == BASE_OVERLAY
+    assert len(proposals) == 1
+    proposal = proposals[0]
+    assert proposal["status"] == "draft"
+    assert proposal["source"] == "autoresearch_deriver"
+    assert proposal["requires_operator_approval"] is True
+    assert proposal["default_change_allowed"] is False
+    assert proposal["automatic_policy_mutation"] is False
+    assert proposal["gate_advanced"] is False
+    assert proposal["derivation"]["report_ref"] == "docs/dual-agent/autoresearch/report.json"
+    assert proposal["derivation"]["report_sha256"] == report["report_sha256"]
+    assert proposal["derivation"]["attempt_id"] == "attempt-derived-1"
+    assert proposal["derivation"]["candidate_ref"] == "candidates/policy-overlay.yaml"
+    assert proposal["derivation"]["affected_gates"] == ["outcome_review"]
+    assert proposal["derivation"]["metric_before"] == 0.62
+    assert proposal["derivation"]["metric_after"] == 0.74
+    assert proposal["derivation"]["metric_delta"] == 0.12
+    assert proposal["evaluator_evidence"]["metric_trials"] == [0.74, 0.82, 0.86]
+    assert proposal["evaluator_evidence"]["evaluator_run_ref"] == (
+        "docs/dual-agent/run/evaluator-runs/attempt-policy-1.json"
+    )
+    assert proposal["evaluator_evidence"]["evaluator_run_hash"] == "evaluator-run-hash"
+    [change] = proposal["changes"]
+    assert change["target_path"] == ".supervisor/policy-overlay.yaml"
+    assert change["candidate_ref"] == "candidates/policy-overlay.yaml"
+    assert change["before_hash"] == _sha(target)
+    assert change["after_hash"] == _sha(candidate)
+    assert "--- a/.supervisor/policy-overlay.yaml" in change["diff"]
+    assert "+++ b/.supervisor/policy-overlay.yaml" in change["diff"]
+
+    events = state.read_events_since("policy-run", after_event_id=0, limit=10)
+    assert [event["kind"] for event in events] == ["autoresearch_policy_proposal_created"]
+    assert events[0]["payload"]["proposal_id"] == proposal["proposal_id"]
+
+
+def test_validation_report_pipeline_derives_policy_proposal_without_operator_authored_changes(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    target = _write(tmp_path, ".supervisor/policy-overlay.yaml", BASE_OVERLAY)
+    candidate = _write(tmp_path, "candidates/policy-overlay.yaml", AFTER_OVERLAY)
+    evaluator = _write(tmp_path, "evaluators/policy.py", "print('score')\n")
+    experiment = AutoresearchExperiment(
+        experiment_id="exp-policy-real",
+        task_id="task-policy-real",
+        hypothesis="Try a policy overlay candidate.",
+        baseline_ref="baseline:current",
+        mutable_paths=("candidates",),
+        immutable_paths=(),
+        evaluator_ref="evaluators/policy.py",
+        evaluator_hash=_sha(evaluator),
+        metric_name="reviewer_evidence_score",
+        k_trials=3,
+    )
+    attempt = AutoresearchAttempt(
+        attempt_id="attempt-policy-real",
+        experiment_id=experiment.experiment_id,
+        task_id=experiment.task_id,
+        worker_id="worker-policy",
+        hypothesis="Add runtime evidence guidance.",
+        changed_files=("candidates/policy-overlay.yaml",),
+        metric_trials=(0.72, 0.78, 0.81),
+        metric_before=0.62,
+        policy_candidate_changes={
+            ".supervisor/policy-overlay.yaml": "candidates/policy-overlay.yaml",
+        },
+        metric_source="evaluator_execution",
+        evaluator_run_ref="evaluator-runs/attempt-policy-real.json",
+        evaluator_run_hash="run-hash",
+        artifact_hashes={"candidates/policy-overlay.yaml": _sha(candidate)},
+        evidence_refs=(
+            "evaluator_run:evaluator-runs/attempt-policy-real.json",
+            "artifact:candidates/policy-overlay.yaml",
+        ),
+    )
+    validation = validate_attempt(
+        experiment=experiment,
+        attempt=attempt,
+        repo_root=tmp_path,
+    )
+    report = build_autoresearch_report([validation])
+    report["report_ref"] = "docs/dual-agent/autoresearch/report.json"
+
+    [proposal] = derive_policy_evolution_proposals_from_report(
+        report,
+        repo_root=tmp_path,
+        affected_gates=("outcome_review",),
+        state=state,
+        run_id="policy-run",
+    )
+
+    record = report["records"][0]
+    assert record["validation_status"] == "accepted"
+    assert record["metric_before"] == 0.62
+    assert record["metric_after"] == 0.78
+    assert record["metric_delta"] == 0.16
+    assert record["policy_candidate_changes"] == {
+        ".supervisor/policy-overlay.yaml": "candidates/policy-overlay.yaml",
+    }
+    assert proposal["source"] == "autoresearch_deriver"
+    assert proposal["status"] == "draft"
+    assert proposal["derivation"]["candidate_ref"] == "candidates/policy-overlay.yaml"
+    assert proposal["derivation"]["metric_delta"] == 0.16
+    assert target.read_text(encoding="utf-8") == BASE_OVERLAY
+
+
+def test_validation_report_derives_from_direct_policy_overlay_candidate_ref(tmp_path):
+    _write(tmp_path, ".supervisor/policy-overlay.yaml", BASE_OVERLAY)
+    candidate = _write(tmp_path, "candidates/policy-overlay.yaml", AFTER_OVERLAY)
+    evaluator = _write(tmp_path, "evaluators/policy.py", "print('score')\n")
+    experiment = AutoresearchExperiment(
+        experiment_id="exp-policy-direct",
+        task_id="task-policy-direct",
+        hypothesis="Try a directly referenced policy overlay candidate.",
+        baseline_ref="baseline:current",
+        mutable_paths=("candidates",),
+        immutable_paths=(),
+        evaluator_ref="evaluators/policy.py",
+        evaluator_hash=_sha(evaluator),
+        metric_name="reviewer_evidence_score",
+        k_trials=3,
+    )
+    attempt = AutoresearchAttempt(
+        attempt_id="attempt-policy-direct",
+        experiment_id=experiment.experiment_id,
+        task_id=experiment.task_id,
+        worker_id="worker-policy",
+        hypothesis="Add runtime evidence guidance.",
+        changed_files=("candidates/policy-overlay.yaml",),
+        metric_trials=(0.72, 0.78, 0.81),
+        metric_before=0.62,
+        policy_overlay_candidate_ref="candidates/policy-overlay.yaml",
+        metric_source="evaluator_execution",
+        evaluator_run_ref="evaluator-runs/attempt-policy-direct.json",
+        evaluator_run_hash="run-hash",
+        artifact_hashes={"candidates/policy-overlay.yaml": _sha(candidate)},
+        evidence_refs=(
+            "evaluator_run:evaluator-runs/attempt-policy-direct.json",
+            "artifact:candidates/policy-overlay.yaml",
+        ),
+    )
+    report = build_autoresearch_report([
+        validate_attempt(experiment=experiment, attempt=attempt, repo_root=tmp_path)
+    ])
+
+    [proposal] = derive_policy_evolution_proposals_from_report(
+        report,
+        repo_root=tmp_path,
+        affected_gates=("outcome_review",),
+    )
+
+    record = report["records"][0]
+    assert record["policy_candidate_changes"] == {}
+    assert record["policy_overlay_candidate_ref"] == "candidates/policy-overlay.yaml"
+    assert proposal["derivation"]["candidate_ref"] == "candidates/policy-overlay.yaml"
+    assert proposal["status"] == "draft"
+
+
+def test_deriver_skips_gaming_flagged_and_non_positive_metric_reports(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    _write(tmp_path, ".supervisor/policy-overlay.yaml", BASE_OVERLAY)
+    _write(tmp_path, "candidates/policy-overlay.yaml", AFTER_OVERLAY)
+
+    proposals = derive_policy_evolution_proposals_from_report(
+        _report(
+            _derived_record(attempt_id="gaming", gaming_flags=["zero_variance_trials"]),
+            _derived_record(attempt_id="zero-delta", metric_before=0.74, metric_after=0.74, metric_delta=0.0),
+            _derived_record(attempt_id="negative-delta", metric_before=0.8, metric_after=0.7, metric_delta=-0.1),
+        ),
+        repo_root=tmp_path,
+        affected_gates=("outcome_review",),
+        state=state,
+        run_id="policy-run",
+    )
+
+    assert proposals == []
+    events = state.read_events_since("policy-run", after_event_id=0, limit=10)
+    assert [event["kind"] for event in events] == [
+        "autoresearch_policy_proposal_derivation_skipped",
+        "autoresearch_policy_proposal_derivation_skipped",
+    ]
+    assert all(event["payload"]["automatic_policy_mutation"] is False for event in events)
+
+
+def test_deriver_rejects_inconsistent_explicit_metric_delta(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    _write(tmp_path, ".supervisor/policy-overlay.yaml", BASE_OVERLAY)
+    _write(tmp_path, "candidates/policy-overlay.yaml", AFTER_OVERLAY)
+
+    proposals = derive_policy_evolution_proposals_from_report(
+        _report(_derived_record(
+            attempt_id="contradictory-delta",
+            metric_before=0.7,
+            metric_after=0.6,
+            metric_delta=0.2,
+        )),
+        repo_root=tmp_path,
+        affected_gates=("outcome_review",),
+        state=state,
+        run_id="policy-run",
+    )
+
+    assert proposals == []
+    events = state.read_events_since("policy-run", after_event_id=0, limit=10)
+    assert [event["kind"] for event in events] == ["autoresearch_policy_proposal_derivation_skipped"]
+    assert "metric delta must match" in events[0]["payload"]["reason"]
+
+
+def test_deriver_skips_rejected_and_non_evaluator_backed_records_at_public_boundary(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    overlay = _write(tmp_path, ".supervisor/policy-overlay.yaml", BASE_OVERLAY)
+    _write(tmp_path, "candidates/policy-overlay.yaml", AFTER_OVERLAY)
+
+    proposals = derive_policy_evolution_proposals_from_report(
+        _report(
+            _derived_record(attempt_id="rejected", validation_status="rejected"),
+            _derived_record(attempt_id="fixture-metric", metric_source="fixture"),
+            _derived_record(attempt_id="missing-run-ref", evaluator_run_ref=""),
+            _derived_record(attempt_id="missing-run-hash", evaluator_run_hash=""),
+        ),
+        repo_root=tmp_path,
+        affected_gates=("outcome_review",),
+        state=state,
+        run_id="policy-run",
+    )
+
+    assert proposals == []
+    assert overlay.read_text(encoding="utf-8") == BASE_OVERLAY
+    assert state.read_events_since("policy-run", after_event_id=0, limit=10) == []
+
+
+def test_deriver_rejects_missing_candidate_artifact_with_skip_event(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    overlay = _write(tmp_path, ".supervisor/policy-overlay.yaml", BASE_OVERLAY)
+
+    proposals = derive_policy_evolution_proposals_from_report(
+        _report(_derived_record(
+            attempt_id="missing-candidate",
+            changed_files=["candidates/outcome-review.md"],
+            policy_overlay_candidate_ref="",
+            candidate_overlay_ref="",
+            candidate_artifacts={},
+        )),
+        repo_root=tmp_path,
+        affected_gates=("outcome_review",),
+        state=state,
+        run_id="policy-run",
+    )
+
+    assert proposals == []
+    assert overlay.read_text(encoding="utf-8") == BASE_OVERLAY
+    events = state.read_events_since("policy-run", after_event_id=0, limit=10)
+    assert [event["kind"] for event in events] == ["autoresearch_policy_proposal_derivation_skipped"]
+    assert "exactly one policy overlay candidate artifact is required" in events[0]["payload"]["reason"]
+    assert events[0]["payload"]["gate_advanced"] is False
+
+
+def test_deriver_rejects_direct_non_overlay_candidate_ref_at_derivation(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    overlay = _write(tmp_path, ".supervisor/policy-overlay.yaml", BASE_OVERLAY)
+    prompt_candidate = _write(tmp_path, "candidates/execution.md", "new execution prompt\n")
+
+    proposals = derive_policy_evolution_proposals_from_report(
+        _report(_derived_record(
+            attempt_id="direct-non-overlay-candidate",
+            changed_files=["candidates/execution.md"],
+            policy_overlay_candidate_ref="candidates/execution.md",
+        )),
+        repo_root=tmp_path,
+        affected_gates=("execution",),
+        state=state,
+        run_id="policy-run",
+    )
+
+    assert proposals == []
+    assert overlay.read_text(encoding="utf-8") == BASE_OVERLAY
+    assert prompt_candidate.read_text(encoding="utf-8") == "new execution prompt\n"
+    events = state.read_events_since("policy-run", after_event_id=0, limit=10)
+    assert [event["kind"] for event in events] == ["autoresearch_policy_proposal_derivation_skipped"]
+    assert "derived policy candidate must be a policy-overlay.yaml artifact" in events[0]["payload"]["reason"]
+    assert events[0]["payload"]["gate_advanced"] is False
+
+
+def test_deriver_rejects_non_overlay_candidate_at_derivation(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    overlay = _write(tmp_path, ".supervisor/policy-overlay.yaml", BASE_OVERLAY)
+    prompt = _write(tmp_path, "prompts/execution.md", "old prompt\n")
+    _write(tmp_path, "candidates/execution.md", "new prompt\n")
+
+    proposals = derive_policy_evolution_proposals_from_report(
+        _report(_derived_record(
+            policy_candidate_changes={"prompts/execution.md": "candidates/execution.md"},
+            changed_files=["candidates/execution.md"],
+        )),
+        repo_root=tmp_path,
+        affected_gates=("execution",),
+        state=state,
+        run_id="policy-run",
+    )
+
+    assert proposals == []
+    assert overlay.read_text(encoding="utf-8") == BASE_OVERLAY
+    assert prompt.read_text(encoding="utf-8") == "old prompt\n"
+    events = state.read_events_since("policy-run", after_event_id=0, limit=10)
+    assert [event["kind"] for event in events] == ["autoresearch_policy_proposal_derivation_skipped"]
+    assert "may only target" in events[0]["payload"]["reason"]
+    assert events[0]["payload"]["gate_advanced"] is False
+
+
+def test_derived_proposal_still_requires_operator_approval(tmp_path):
+    _write(tmp_path, ".supervisor/policy-overlay.yaml", BASE_OVERLAY)
+    _write(tmp_path, "candidates/policy-overlay.yaml", AFTER_OVERLAY)
+
+    [proposal] = derive_policy_evolution_proposals_from_report(
+        _report(_derived_record()),
+        repo_root=tmp_path,
+        affected_gates=("outcome_review",),
+    )
+
+    assert proposal["status"] == "draft"
+    assert proposal["requires_operator_approval"] is True
+    assert proposal["operator_approved"] is False
+    assert proposal["default_change_allowed"] is False
+    assert proposal["automatic_policy_mutation"] is False
+    assert proposal["gate_advanced"] is False
+    assert proposal["gate_authority"] == "unchanged"
+    assert proposal["reviewer_panel_authority"] == "unchanged"
+    assert proposal["typed_outcome_authority"] == "unchanged"
+    assert (tmp_path / ".supervisor/policy-overlay.yaml").read_text(encoding="utf-8") == BASE_OVERLAY
 
 
 def test_accepted_autoresearch_attempt_creates_policy_proposal_without_mutation(tmp_path):

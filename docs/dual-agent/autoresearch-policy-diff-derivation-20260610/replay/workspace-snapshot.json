@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "b29a388797b25e858e5e279cc229d09ab473e03bf407c128e626303eaff8be47",
+  "git": {
+    "diff_bytes": 46985,
+    "diff_sha256": "83f509bd35a702624dcbc15c4ce216ab71e5a05fd625a937cfbdd62e85846f6d",
+    "diff_stat": "mcp_tools/codex_supervisor_stdio.py         |  35 ++-\n supervisor/autoresearch/orchestrator.py     |   1 +\n supervisor/autoresearch/policy_evolution.py | 184 ++++++++++++++\n supervisor/autoresearch/schema.py           |  41 ++++\n supervisor/autoresearch/validation.py       |  67 ++++++\n tests/test_autoresearch.py                  |  51 ++++\n tests/test_autoresearch_policy_evolution.py | 361 ++++++++++++++++++++++++++++\n tests/test_codex_supervisor_mcp_stdio.py    | 129 ++++++++++\n 8 files changed, 858 insertions(+), 11 deletions(-)",
+    "head": "4ac4b06",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "4ac4b06",
+    "status_short": "M mcp_tools/codex_supervisor_stdio.py\n M supervisor/autoresearch/orchestrator.py\n M supervisor/autoresearch/policy_evolution.py\n M supervisor/autoresearch/schema.py\n M supervisor/autoresearch/validation.py\n M tests/test_autoresearch.py\n M tests/test_autoresearch_policy_evolution.py\n M tests/test_codex_supervisor_mcp_stdio.py\n?? .codex-supervisor/\n?? .scratch/autoresearch-policy-diff-derivation-20260610/\n?? .scratch/axi-cli-detached-dispatcher-20260610/\n?? .scratch/cocreate-checkpoint-files-only-dual-agent-prompt.md\n?? .scratch/cocreate-ckpt-tdd-review-corrective-input.md\n?? .scratch/cocreate-global-purge-dual-agent-prompt.md\n?? .scratch/policy-overlay-liveness-20260610-repair/\n?? docs/dual-agent/autoresearch-policy-diff-derivation-20260610/\n?? docs/dual-agent/live-cursor-sdk-probe-20260610-135900/\n?? docs/dual-agent/live-cursor-sdk-probe-20260610-140228/\n?? docs/dual-agent/supervisor-flow-autoresearch-run-20260609/\n?? docs/supervisor-auto-evolution-loop-program-20260610.md\n?? docs/supervisor-auto-improve-gap-analysis-20260610.md\n?? docs/supervisor-autoevolution-readiness-20260610.md\n?? docs/supervisor-axi-vs-mcp-analysis-20260610.md\n?? docs/supervisor-improvement-audit-20260609.md\n?? docs/supervisor-improvement-completion-prompts-20260610.md\n?? docs/supervisor-improvement-prompts-coverage-20260609.md\n?? docs/supervisor-improvement-prompts-finish-20260610.md"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "507e97e134cf21f30f6b558414c577accb527f32180fb29a7efe8eb53feb0674",
+    "implementation_plan": "67360c17e7edb0be2fac68e564d89a124d4f2780b27e4e3fe81b0af8c7322422",
+    "issues": "fcd1f6cc583c8e94bfb8016dab956b6826256f1fa8a04ec93df0039f3d169f5a",
+    "prd": "ef605126cdb3503009e5cc1b035c50452bee71c8f70f3754eec5ad6c2c4c9918",
+    "tdd_plan": "5797fa07d9778d1d2c9d2aed51e7a4d9300ca1c03b012aa197ffa639d64b164d"
+  },
+  "status": "captured"
+}

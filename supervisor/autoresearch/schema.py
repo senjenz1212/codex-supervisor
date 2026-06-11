@@ -87,6 +87,11 @@ class AutoresearchAttempt:
     changed_files: tuple[str, ...]
     metric_trials: tuple[float, ...]
     parent_attempt_id: str | None = None
+    metric_before: float | None = None
+    metric_after: float | None = None
+    metric_delta: float | None = None
+    policy_overlay_candidate_ref: str = ""
+    policy_candidate_changes: dict[str, str] = field(default_factory=dict)
     metric_source: str = "fixture"
     evaluator_run_ref: str = ""
     evaluator_run_hash: str = ""
@@ -114,6 +119,16 @@ class AutoresearchAttempt:
                 if raw.get("parent_attempt_id") not in {None, ""}
                 else None
             ),
+            metric_before=_optional_float(raw.get("metric_before", raw.get("baseline_metric"))),
+            metric_after=_optional_float(raw.get("metric_after", raw.get("candidate_metric"))),
+            metric_delta=_optional_float(raw.get("metric_delta")),
+            policy_overlay_candidate_ref=str(raw.get("policy_overlay_candidate_ref") or raw.get("candidate_overlay_ref") or ""),
+            policy_candidate_changes={
+                str(key): str(value)
+                for key, value in dict(
+                    raw.get("policy_candidate_changes") or raw.get("candidate_changes") or {}
+                ).items()
+            },
             metric_source=str(raw.get("metric_source") or "fixture"),
             evaluator_run_ref=str(raw.get("evaluator_run_ref") or ""),
             evaluator_run_hash=str(raw.get("evaluator_run_hash") or ""),
@@ -136,6 +151,11 @@ class AutoresearchAttempt:
             "worker_id": self.worker_id,
             "hypothesis": self.hypothesis,
             "parent_attempt_id": self.parent_attempt_id,
+            "metric_before": self.metric_before,
+            "metric_after": self.metric_after,
+            "metric_delta": self.metric_delta,
+            "policy_overlay_candidate_ref": self.policy_overlay_candidate_ref,
+            "policy_candidate_changes": dict(sorted(self.policy_candidate_changes.items())),
             "metric_source": self.metric_source,
             "evaluator_run_ref": self.evaluator_run_ref,
             "evaluator_run_hash": self.evaluator_run_hash,
@@ -164,6 +184,11 @@ class AutoresearchValidationReport:
     metric_source: str
     evaluator_run_ref: str
     evaluator_run_hash: str
+    metric_before: float | None
+    metric_after: float | None
+    metric_delta: float | None
+    policy_overlay_candidate_ref: str
+    policy_candidate_changes: dict[str, str]
     metric_median: float | None
     metric_iqr: float | None
     quality_unstable_across_trials: bool
@@ -192,6 +217,11 @@ class AutoresearchValidationReport:
             "metric_source": self.metric_source,
             "evaluator_run_ref": self.evaluator_run_ref,
             "evaluator_run_hash": self.evaluator_run_hash,
+            "metric_before": self.metric_before,
+            "metric_after": self.metric_after,
+            "metric_delta": self.metric_delta,
+            "policy_overlay_candidate_ref": self.policy_overlay_candidate_ref,
+            "policy_candidate_changes": dict(sorted(self.policy_candidate_changes.items())),
             "metric_median": self.metric_median,
             "metric_iqr": self.metric_iqr,
             "quality_unstable_across_trials": self.quality_unstable_across_trials,
@@ -226,6 +256,11 @@ class AutoresearchValidationReport:
             "metric_source": self.metric_source,
             "evaluator_run_ref": self.evaluator_run_ref,
             "evaluator_run_hash": self.evaluator_run_hash,
+            "metric_before": self.metric_before,
+            "metric_after": self.metric_after,
+            "metric_delta": self.metric_delta,
+            "policy_overlay_candidate_ref": self.policy_overlay_candidate_ref,
+            "policy_candidate_changes": dict(sorted(self.policy_candidate_changes.items())),
             "metric_median": self.metric_median,
             "metric_iqr": self.metric_iqr,
             "quality_unstable_across_trials": self.quality_unstable_across_trials,
@@ -242,3 +277,9 @@ class AutoresearchValidationReport:
             "gate_advanced": bool(self.gate_advanced),
         }
         return payload
+
+
+def _optional_float(value: Any) -> float | None:
+    if value in {None, ""}:
+        return None
+    return float(value)

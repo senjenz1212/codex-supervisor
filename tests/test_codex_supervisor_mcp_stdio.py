@@ -460,6 +460,135 @@ async def test_autoresearch_policy_evolution_tools_apply_only_after_operator_app
 
 
 @pytest.mark.asyncio
+async def test_autoresearch_policy_proposal_tool_derives_from_report_without_candidate_changes(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
+
+    state = State(str(tmp_path / "state.db"))
+    server = build_codex_supervisor_mcp_server(
+        _cfg(tmp_path),
+        state,
+        mcp_cls=_FakeMCP,
+    )
+    target = tmp_path / ".supervisor" / "policy-overlay.yaml"
+    candidate = tmp_path / "candidates" / "policy-overlay.yaml"
+    target.parent.mkdir(parents=True)
+    candidate.parent.mkdir(parents=True)
+    target.write_text("before prompt\n", encoding="utf-8")
+    candidate.write_text("after prompt\n", encoding="utf-8")
+    report_path = tmp_path / "autoresearch-report.json"
+    report_path.write_text(json.dumps({
+        "schema_version": "supervisor-autoresearch-summary/v1",
+        "report_sha256": "report-sha",
+        "records": [{
+            "experiment_id": "exp-policy-1",
+            "task_id": "task-policy-1",
+            "attempt_id": "attempt-policy-1",
+            "validation_status": "accepted",
+            "recommendation": "candidate needs operator approval",
+            "metric_name": "reviewer_evidence_score",
+            "metric_trials": [0.74, 0.82, 0.86],
+            "metric_median": 0.82,
+            "metric_iqr": 0.12,
+            "metric_before": 0.7,
+            "metric_after": 0.82,
+            "metric_delta": 0.12,
+            "quality_unstable_across_trials": True,
+            "metric_source": "evaluator_execution",
+            "evaluator_run_ref": "docs/dual-agent/run/evaluator-runs/attempt-policy-1.json",
+            "evaluator_run_hash": "evaluator-run-hash",
+            "changed_files": ["candidates/policy-overlay.yaml"],
+            "policy_candidate_changes": {
+                ".supervisor/policy-overlay.yaml": "candidates/policy-overlay.yaml",
+            },
+            "gaming_flags": [],
+            "validation_errors": [],
+            "cost_usd": 0.19,
+            "wall_clock_s": 12.5,
+            "default_change_allowed": False,
+            "policy_mutated": False,
+            "gate_advanced": False,
+        }],
+    }), encoding="utf-8")
+
+    created = await _maybe_await(server.tools["create_autoresearch_policy_proposals"](
+        report_path=str(report_path),
+        repo_root=str(tmp_path),
+        affected_gates=["outcome_review"],
+        run_id="policy-run",
+    ))
+
+    assert created["mode"] == "report_derived"
+    assert created["proposal_count"] == 1
+    proposal = created["proposals"][0]
+    assert proposal["source"] == "autoresearch_deriver"
+    assert proposal["status"] == "draft"
+    assert proposal["derivation"]["metric_delta"] == 0.12
+    assert target.read_text(encoding="utf-8") == "before prompt\n"
+
+
+@pytest.mark.asyncio
+async def test_autoresearch_policy_proposal_tool_empty_candidate_changes_stays_explicit(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
+
+    state = State(str(tmp_path / "state.db"))
+    server = build_codex_supervisor_mcp_server(
+        _cfg(tmp_path),
+        state,
+        mcp_cls=_FakeMCP,
+    )
+    target = tmp_path / ".supervisor" / "policy-overlay.yaml"
+    candidate = tmp_path / "candidates" / "policy-overlay.yaml"
+    target.parent.mkdir(parents=True)
+    candidate.parent.mkdir(parents=True)
+    target.write_text("before prompt\n", encoding="utf-8")
+    candidate.write_text("after prompt\n", encoding="utf-8")
+    report_path = tmp_path / "autoresearch-report.json"
+    report_path.write_text(json.dumps({
+        "schema_version": "supervisor-autoresearch-summary/v1",
+        "report_sha256": "report-sha",
+        "records": [{
+            "experiment_id": "exp-policy-1",
+            "task_id": "task-policy-1",
+            "attempt_id": "attempt-policy-1",
+            "validation_status": "accepted",
+            "recommendation": "candidate needs operator approval",
+            "metric_name": "reviewer_evidence_score",
+            "metric_trials": [0.74, 0.82, 0.86],
+            "metric_median": 0.82,
+            "metric_iqr": 0.12,
+            "metric_before": 0.7,
+            "metric_after": 0.82,
+            "metric_delta": 0.12,
+            "metric_source": "evaluator_execution",
+            "evaluator_run_ref": "docs/dual-agent/run/evaluator-runs/attempt-policy-1.json",
+            "evaluator_run_hash": "evaluator-run-hash",
+            "changed_files": ["candidates/policy-overlay.yaml"],
+            "policy_candidate_changes": {
+                ".supervisor/policy-overlay.yaml": "candidates/policy-overlay.yaml",
+            },
+            "gaming_flags": [],
+            "validation_errors": [],
+            "default_change_allowed": False,
+            "policy_mutated": False,
+            "gate_advanced": False,
+        }],
+    }), encoding="utf-8")
+
+    created = await _maybe_await(server.tools["create_autoresearch_policy_proposals"](
+        report_path=str(report_path),
+        repo_root=str(tmp_path),
+        affected_gates=["outcome_review"],
+        candidate_changes={},
+        run_id="policy-run",
+    ))
+
+    assert created["mode"] == "explicit_candidate_changes"
+    assert created["proposal_count"] == 0
+    assert state.read_events_since("policy-run", after_event_id=0, limit=10) == []
+    assert target.read_text(encoding="utf-8") == "before prompt\n"
+
+
+@pytest.mark.asyncio
 async def test_start_dual_agent_gate_blocks_lead_reported_revision(tmp_path):
     from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
     from supervisor.dual_agent_runner import build_lead_replay_stdout
