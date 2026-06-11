@@ -643,3 +643,79 @@ def test_verify_planning_artifact_boundaries_detects_worker_spec_rewrite(tmp_pat
     assert not result.ok
     assert result.reason == "planning_artifact_checksum_changed"
     assert result.details["paths"] == ["docs/prd.md"]
+
+
+def test_execution_gate_drops_broken_opus_pin_and_keeps_extra_body(tmp_path, monkeypatch):
+    # r-2026-06-10: claude-opus-4-8 pin breaks headless bypassPermissions for
+    # write tools (event 660691). Execution leads must not inherit the pin —
+    # even a stale value from the parent environment is popped.
+    monkeypatch.delenv("CODEX_SUPERVISOR_EXECUTION_OPUS_MODEL", raising=False)
+    monkeypatch.setenv("ANTHROPIC_DEFAULT_OPUS_MODEL", CLAUDE_OPUS_UNDERLYING_MODEL)
+    calls: list[dict[str, object]] = []
+    stdout = json.dumps({"result": _outcome_block()})
+
+    def fake_runner(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append({"argv": argv, **kwargs})
+        return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
+
+    request = LeadInvocationRequest(
+        task_id="slice0-lead",
+        gate="execution",
+        instruction="Implement the slice and run targeted tests.",
+        cwd=tmp_path,
+    )
+
+    result = invoke_claude_lead(request, runner=fake_runner)
+
+    assert result.probe.ok
+    argv = calls[0]["argv"]
+    assert argv[argv.index("--permission-mode") + 1] == "bypassPermissions"
+    env = calls[0]["env"]
+    assert "ANTHROPIC_DEFAULT_OPUS_MODEL" not in env
+    assert env["CLAUDE_CODE_EXTRA_BODY"] == json.dumps(CLAUDE_OPUS_ULTIMATE_EXTRA_BODY)
+
+
+def test_execution_gate_honors_explicit_execution_model_override(tmp_path, monkeypatch):
+    # Operators may pin execution to a verified-good model (run the direct
+    # write canary against any new pin before trusting it).
+    monkeypatch.setenv("CODEX_SUPERVISOR_EXECUTION_OPUS_MODEL", "claude-opus-4-6")
+    calls: list[dict[str, object]] = []
+    stdout = json.dumps({"result": _outcome_block()})
+
+    def fake_runner(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append({"argv": argv, **kwargs})
+        return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
+
+    request = LeadInvocationRequest(
+        task_id="slice0-lead",
+        gate="execution",
+        instruction="Implement the slice and run targeted tests.",
+        cwd=tmp_path,
+    )
+
+    invoke_claude_lead(request, runner=fake_runner)
+
+    assert calls[0]["env"]["ANTHROPIC_DEFAULT_OPUS_MODEL"] == "claude-opus-4-6"
+
+
+def test_planning_gate_honors_planning_model_override(tmp_path, monkeypatch):
+    # Higher-reasoning planning/review gates may route to a stronger model
+    # (e.g. claude-fable-5) without touching the execution lane.
+    monkeypatch.setenv("CODEX_SUPERVISOR_PLANNING_OPUS_MODEL", "claude-fable-5")
+    calls: list[dict[str, object]] = []
+    stdout = json.dumps({"result": _outcome_block()})
+
+    def fake_runner(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append({"argv": argv, **kwargs})
+        return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
+
+    request = LeadInvocationRequest(
+        task_id="slice0-lead",
+        gate="prd_review",
+        instruction="Review the PRD artifacts.",
+        cwd=tmp_path,
+    )
+
+    invoke_claude_lead(request, runner=fake_runner)
+
+    assert calls[0]["env"]["ANTHROPIC_DEFAULT_OPUS_MODEL"] == "claude-fable-5"

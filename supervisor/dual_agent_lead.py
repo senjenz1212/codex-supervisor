@@ -533,7 +533,26 @@ def invoke_claude_lead(
     env = dict(os.environ)
     env.update(request.explicit_env)
     if requested_model is not None and _uses_adaptive_opus_effort(requested_model):
-        env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = CLAUDE_OPUS_UNDERLYING_MODEL
+        # r-2026-06-10 (write-canary evidence matrix; through-stack event
+        # 660691): the pinned claude-opus-4-8 underlying route breaks headless
+        # bypassPermissions — Edit/Write/Bash fall into the interactive prompt
+        # flow and auto-deny ("you haven't granted it yet"). Direct A/B
+        # canaries: the default opus route writes fine, with or without the
+        # extra body; ANTHROPIC_DEFAULT_OPUS_MODEL=claude-opus-4-8 denies
+        # either way. Execution gates must write, so by default they drop the
+        # pin and use the CLI's default opus route (we POP any inherited pin —
+        # the parent daemon/shell or secrets.env may carry a stale value);
+        # read-only planning/review gates keep a pin for quality. Both pins
+        # are operator-overridable via env (verify any new pin with the
+        # direct write canary BEFORE trusting it — that is how 4-8 was
+        # caught): CODEX_SUPERVISOR_EXECUTION_OPUS_MODEL (empty = default
+        # route) and CODEX_SUPERVISOR_PLANNING_OPUS_MODEL (default
+        # claude-opus-4-8; e.g. claude-fable-5 for higher-reasoning gates).
+        pin = _underlying_opus_model_for_gate(request.gate)
+        if pin is None:
+            env.pop("ANTHROPIC_DEFAULT_OPUS_MODEL", None)
+        else:
+            env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = pin
         env["CLAUDE_CODE_EXTRA_BODY"] = json.dumps(CLAUDE_OPUS_ULTIMATE_EXTRA_BODY)
     try:
         proc = runner(
@@ -663,6 +682,21 @@ def _uses_adaptive_opus_effort(model: str) -> bool:
         or model == CLAUDE_OPUS_UNDERLYING_MODEL
         or model.startswith(f"{CLAUDE_OPUS_UNDERLYING_MODEL}-")
     )
+
+
+def _underlying_opus_model_for_gate(gate: str) -> str | None:
+    """Resolve the ANTHROPIC_DEFAULT_OPUS_MODEL pin for one gate.
+
+    Execution gates default to None (no pin: the CLI's default opus route is
+    the only one verified to honor headless bypassPermissions, 2026-06-10).
+    Planning/review gates default to CLAUDE_OPUS_UNDERLYING_MODEL. Operators
+    may override either via env; an empty override means "no pin".
+    """
+    if gate == "execution":
+        override = os.environ.get("CODEX_SUPERVISOR_EXECUTION_OPUS_MODEL", "").strip()
+        return override or None
+    override = os.environ.get("CODEX_SUPERVISOR_PLANNING_OPUS_MODEL", "").strip()
+    return override or CLAUDE_OPUS_UNDERLYING_MODEL
 
 
 def _extract_claude_json_payload(
