@@ -30,6 +30,7 @@ postgres = ["alembic>=1.13", "psycopg[binary]>=3.2", "sqlalchemy>=2.0"]
 codex-supervisor-mcp = "mcp_tools.codex_supervisor_stdio:main"
 codex-supervisor-workflow = "mcp_tools.codex_supervisor_workflow_cli:main"
 codex-supervisor-workflow-dispatcher = "supervisor.workflow_job_dispatcher:main"
+codex-supervisor-axi = "mcp_tools.codex_supervisor_axi:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

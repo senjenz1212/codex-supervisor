@@ -1,0 +1,47 @@
+[
+  {
+    "receipt_id": "to_prd-axi-cli-detached-dispatcher-20260610",
+    "kind": "skill_run",
+    "skill": "prd-to-tdd",
+    "stage": "to_prd",
+    "status": "passed",
+    "artifact_path": "docs/dual-agent/axi-cli-detached-dispatcher-20260610/prd.md",
+    "claims": ["PRD promise contracts P1-P6 created from the user request and current poll/dispatcher code."]
+  },
+  {
+    "receipt_id": "prd_grill-axi-cli-detached-dispatcher-20260610",
+    "kind": "skill_run",
+    "skill": "grill-with-docs",
+    "stage": "prd_grill",
+    "status": "passed",
+    "artifact_path": "docs/dual-agent/axi-cli-detached-dispatcher-20260610/grill-findings.md",
+    "claims": ["PRD grill findings G1-G6 resolved into issue and TDD constraints."]
+  },
+  {
+    "receipt_id": "to_issues-axi-cli-detached-dispatcher-20260610",
+    "kind": "skill_run",
+    "skill": "to-issues",
+    "stage": "to_issues",
+    "status": "passed",
+    "artifact_path": "docs/dual-agent/axi-cli-detached-dispatcher-20260610/issues.md",
+    "claims": ["Issue slices AXI-1 through AXI-5 map all PRD promises to public boundaries."]
+  },
+  {
+    "receipt_id": "tdd-axi-cli-detached-dispatcher-20260610",
+    "kind": "skill_run",
+    "skill": "tdd",
+    "stage": "tdd",
+    "status": "passed",
+    "artifact_path": "docs/dual-agent/axi-cli-detached-dispatcher-20260610/tdd.md",
+    "claims": ["TDD plan names public-boundary RED/GREEN tests before helper-only tests."]
+  },
+  {
+    "receipt_id": "tdd_grill-axi-cli-detached-dispatcher-20260610",
+    "kind": "skill_run",
+    "skill": "grill-with-docs",
+    "stage": "tdd_grill",
+    "status": "passed",
+    "artifact_path": "docs/dual-agent/axi-cli-detached-dispatcher-20260610/grill-findings-tdd.md",
+    "claims": ["TDD grill findings T1-T6 require non-vacuous boundary tests and deterministic dispatcher fixtures."]
+  }
+]

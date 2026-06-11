@@ -93,6 +93,10 @@ async def _maybe_await(value):
     return value
 
 
+def _run_dual_agent_workflow_direct(server, **kwargs):
+    return server._codex_supervisor_tool_api.run_dual_agent_workflow(**kwargs)
+
+
 def _cfg(tmp_path: Path) -> Config:
     return Config(**{
         "target": {
@@ -744,7 +748,7 @@ async def test_execution_gate_blocks_accept_without_deliverable_changes(tmp_path
         test_status="unknown",
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -773,7 +777,7 @@ async def test_execution_gate_accepts_code_change_with_supervisor_runtime_diff_r
         test_status="unknown",
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -810,7 +814,7 @@ async def test_execution_gate_blocks_accept_with_only_incidental_workflow_files(
         test_status="unknown",
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -841,7 +845,7 @@ async def test_execution_gate_blocks_docs_only_change_without_explicit_report_sc
         test_status="unknown",
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -878,7 +882,7 @@ async def test_execution_gate_allows_explicit_report_only_artifact_with_receipt(
         test_status="not_run",
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -914,7 +918,7 @@ async def test_execution_gate_allows_vela_style_report_only_artifact_with_receip
         test_status="passed",
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -952,7 +956,7 @@ async def test_execution_gate_blocks_vela_style_report_receipt_without_changed_f
         test_status="passed",
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -992,7 +996,7 @@ async def test_outcome_review_blocks_deliverable_failure_even_when_claims_verify
         },
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -1032,7 +1036,7 @@ async def test_execution_gate_rejects_fabricated_runtime_receipts_for_missing_fi
     )
     _init_runtime_git_repo(tmp_path)
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -1223,7 +1227,7 @@ async def test_outcome_review_requires_supervisor_rerun_for_tests_passed_claim(t
     _init_runtime_git_repo(tmp_path)
     _write_runtime_file(tmp_path, source_path, "VALUE = 1\n")
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -1278,7 +1282,7 @@ async def test_agent_supplied_tests_passed_receipt_without_supervisor_rerun_fail
     _init_runtime_git_repo(tmp_path)
     _write_runtime_file(tmp_path, source_path, "VALUE = 1\n")
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -1328,7 +1332,7 @@ async def test_execution_gate_accepts_supervisor_runtime_native_receipts(tmp_pat
         "    assert VALUE == 42\n",
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -1383,7 +1387,7 @@ async def test_runtime_receipts_replace_same_id_forged_caller_receipts(tmp_path)
         "    assert VALUE == 42\n",
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -1441,7 +1445,7 @@ async def test_read_gate_transcript_includes_runtime_evidence_events(tmp_path):
     _init_runtime_git_repo(tmp_path)
     _write_runtime_file(tmp_path, source_path, "VALUE = 2\n")
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -1485,7 +1489,7 @@ async def test_runtime_evidence_is_exported_before_cursor_review(tmp_path):
     _init_runtime_git_repo(tmp_path)
     _write_runtime_file(tmp_path, source_path, "VALUE = 3\n")
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -1996,7 +2000,7 @@ async def test_workflow_invokes_cursor_sdk_reviewer_after_claude_accept_by_defau
 
     server, _state = _server(tmp_path, cursor_runner=fake_cursor_runner)
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -2031,7 +2035,7 @@ async def test_workflow_passes_reviewer_infra_retry_policy_to_cursor_request(tmp
 
     server, _state = _server(tmp_path, cursor_runner=fake_cursor_runner)
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -2061,7 +2065,7 @@ async def test_cursor_sdk_output_mode_routes_legacy_model_to_reviewer_request(tm
 
     server, _state = _server(tmp_path, cursor_runner=fake_cursor_runner)
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -2102,7 +2106,7 @@ async def test_explicit_litellm_reviewer_is_not_labeled_as_cursor_runtime(tmp_pa
 
     server, _state = _server(tmp_path, cursor_runner=fake_cursor_runner)
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -2131,7 +2135,7 @@ async def test_run_dual_agent_workflow_happy_path_owns_full_lifecycle(tmp_path):
     server, state = _server(tmp_path, notifier=notifier)
     _write_good_workflow_source_artifacts(tmp_path)
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -2191,7 +2195,7 @@ async def test_run_dual_agent_workflow_records_advisory_no_mistakes_after_outcom
         no_mistakes_runner=fake_no_mistakes_runner,
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -2241,7 +2245,7 @@ async def test_required_no_mistakes_unavailable_blocks_without_rewriting_gate_ac
         no_mistakes_runner=missing_no_mistakes_runner,
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -2319,8 +2323,9 @@ async def test_workflow_cli_payload_runs_same_supervisor_api(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_submit_dual_agent_workflow_job_reserves_then_poll_spawns_worker(monkeypatch, tmp_path):
+async def test_submit_dual_agent_workflow_job_reserves_and_poll_is_read_only(monkeypatch, tmp_path):
     import mcp_tools.codex_supervisor_stdio as stdio
+    from supervisor.workflow_job_dispatcher import WorkflowJobDispatcher
 
     server, state = _server(tmp_path)
     popen_calls: list[dict] = []
@@ -2336,8 +2341,11 @@ async def test_submit_dual_agent_workflow_job_reserves_then_poll_spawns_worker(m
             phase_at_spawn.append(row["recovery_point"] if row else "missing")
             popen_calls.append({"argv": list(argv), "kwargs": kwargs})
 
-    monkeypatch.setattr(stdio.subprocess, "Popen", FakePopen)
-    monkeypatch.setattr(stdio, "_pid_alive", lambda pid: True)
+    class ForbiddenDispatcher:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("poll must not construct a dispatcher")
+
+    monkeypatch.setattr(stdio, "WorkflowJobDispatcher", ForbiddenDispatcher, raising=False)
 
     result = await _maybe_await(server.tools["submit_dual_agent_workflow_job"](
         cwd=str(tmp_path),
@@ -2365,8 +2373,22 @@ async def test_submit_dual_agent_workflow_job_reserves_then_poll_spawns_worker(m
 
     poll = await _maybe_await(server.tools["poll_dual_agent_workflow_job"](job_id=result["job_id"]))
 
-    assert poll["status"] == "running"
-    assert poll["recovery_point"] == "spawned"
+    assert poll["status"] == "submitted"
+    assert poll["recovery_point"] == "reserved"
+    assert phase_at_spawn == []
+    assert popen_calls == []
+    assert not Path(result["request_path"]).exists()
+
+    dispatcher = WorkflowJobDispatcher(
+        state,
+        dispatcher_id="dispatcher-test",
+        popen=FakePopen,
+        pid_alive=lambda pid: True,
+    )
+    dispatch = dispatcher.run_once(job_id=result["job_id"])
+
+    assert dispatch["status"] == "spawned"
+    assert dispatch["job_id"] == result["job_id"]
     assert phase_at_spawn == ["request_written"]
     assert popen_calls
     assert popen_calls[0]["argv"][1:3] == ["-m", "mcp_tools.codex_supervisor_workflow_cli"]
@@ -2388,6 +2410,42 @@ async def test_submit_dual_agent_workflow_job_reserves_then_poll_spawns_worker(m
         task_id="workflow-1",
     ))
     assert transcript["workflow_jobs"][-1]["status"] == "running"
+
+
+@pytest.mark.asyncio
+async def test_public_run_dual_agent_workflow_mcp_tool_is_non_blocking_submit_shim(tmp_path):
+    server, state = _server(tmp_path)
+
+    async def forbidden_sync_runner(**kwargs):
+        raise AssertionError("public MCP run_dual_agent_workflow must not execute gates")
+
+    server._codex_supervisor_tool_api.run_dual_agent_workflow = forbidden_sync_runner
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Legacy MCP callers should reserve only.",
+        tool_receipts=_tool_receipts(),
+        config_path=str(tmp_path / "config.yaml"),
+        client_token="legacy-run-token",
+    ))
+
+    assert result["status"] == "submitted"
+    assert result["recovery_point"] == "reserved"
+    assert result["compatibility_tool"] == "run_dual_agent_workflow"
+    assert result["execution_model"] == "detached_dispatcher_only"
+    assert result["poll_tool"] == "poll_dual_agent_workflow_job"
+    assert result["catch_up_tool"] == "catch_up_dual_agent_workflow"
+    assert result["help"][1] == "Run `catch_up_dual_agent_workflow(run_id='workflow-run')` for the event tail."
+    assert not Path(result["request_path"]).exists()
+
+    job = state.get_dual_agent_workflow_job(job_id=result["job_id"])
+    assert job is not None
+    assert job["status"] == "submitted"
+    assert job["pid"] is None
+    assert job["recovery_point"] == "reserved"
+    assert state.get_dual_agent_workflow(run_id="workflow-run", task_id="workflow-1") is None
 
 
 @pytest.mark.asyncio
@@ -2442,21 +2500,8 @@ async def test_submit_dual_agent_workflow_job_sanitizes_forged_runtime_receipts(
 
 
 @pytest.mark.asyncio
-async def test_poll_dual_agent_workflow_job_restarts_from_request_written(monkeypatch, tmp_path):
-    import mcp_tools.codex_supervisor_stdio as stdio
-
+async def test_poll_dual_agent_workflow_job_reports_request_written_without_spawning(tmp_path):
     server, state = _server(tmp_path)
-    popen_calls: list[list[str]] = []
-
-    class FakePopen:
-        pid = 43210
-
-        def __init__(self, argv, **kwargs):
-            popen_calls.append(list(argv))
-
-    monkeypatch.setattr(stdio.subprocess, "Popen", FakePopen)
-    monkeypatch.setattr(stdio, "_pid_alive", lambda pid: True)
-    monkeypatch.setattr(stdio, "_pid_alive", lambda pid: True)
     payload = {
         "cwd": str(tmp_path),
         "task_id": "workflow-1",
@@ -2486,35 +2531,17 @@ async def test_poll_dual_agent_workflow_job_restarts_from_request_written(monkey
 
     poll = await _maybe_await(server.tools["poll_dual_agent_workflow_job"](job_id="job-request-written"))
 
-    assert poll["status"] == "running"
-    assert poll["recovery_point"] == "spawned"
-    assert len(popen_calls) == 1
+    assert poll["status"] == "submitted"
+    assert poll["recovery_point"] == "request_written"
+    assert poll["pid"] is None
     job = state.get_dual_agent_workflow_job(job_id="job-request-written")
-    assert job["pid"] == 43210
-    assert job["recovery_point"] == "spawned"
+    assert job["pid"] is None
+    assert job["recovery_point"] == "request_written"
 
 
 @pytest.mark.asyncio
-async def test_poll_dual_agent_workflow_job_concurrent_request_written_spawns_once(
-    monkeypatch,
-    tmp_path,
-):
-    import mcp_tools.codex_supervisor_stdio as stdio
-
+async def test_poll_dual_agent_workflow_job_concurrent_request_written_is_read_only(tmp_path):
     server, state = _server(tmp_path)
-    popen_calls: list[list[str]] = []
-    popen_lock = threading.Lock()
-
-    class FakePopen:
-        def __init__(self, argv, **kwargs):
-            with popen_lock:
-                popen_calls.append(list(argv))
-                self.pid = 43210 + len(popen_calls)
-            time.sleep(0.05)
-
-    monkeypatch.setattr(stdio.subprocess, "Popen", FakePopen)
-    monkeypatch.setattr(stdio, "_pid_alive", lambda pid: True)
-
     payload = {
         "cwd": str(tmp_path),
         "task_id": "workflow-1",
@@ -2555,33 +2582,20 @@ async def test_poll_dual_agent_workflow_job_concurrent_request_written_spawns_on
 
     results = await asyncio.gather(*(poll_once() for _ in range(8)))
 
-    assert len(popen_calls) == 1
-    assert any(result["status"] == "running" for result in results)
+    assert all(result["status"] == "submitted" for result in results)
+    assert all(result["recovery_point"] == "request_written" for result in results)
     job = state.get_dual_agent_workflow_job(job_id="job-request-written-race")
-    assert job["pid"] == 43211
-    assert job["recovery_point"] == "spawned"
+    assert job["pid"] is None
+    assert job["recovery_point"] == "request_written"
     assert job["recovery_claim_token"] is None
     assert job["recovery_claimed_at"] is None
 
 
 @pytest.mark.asyncio
 async def test_poll_dual_agent_workflow_job_recovers_stale_recovery_claim(
-    monkeypatch,
     tmp_path,
 ):
-    import mcp_tools.codex_supervisor_stdio as stdio
-
     server, state = _server(tmp_path)
-    popen_calls: list[list[str]] = []
-
-    class FakePopen:
-        pid = 43210
-
-        def __init__(self, argv, **kwargs):
-            popen_calls.append(list(argv))
-
-    monkeypatch.setattr(stdio.subprocess, "Popen", FakePopen)
-    monkeypatch.setattr(stdio, "_pid_alive", lambda pid: True)
 
     payload = {
         "cwd": str(tmp_path),
@@ -2621,32 +2635,19 @@ async def test_poll_dual_agent_workflow_job_recovers_stale_recovery_claim(
         job_id="job-stale-claim",
     ))
 
-    assert poll["status"] == "running"
-    assert poll["recovery_point"] == "spawned"
-    assert len(popen_calls) == 1
+    assert poll["status"] == "submitted"
+    assert poll["recovery_point"] == "request_written"
     job = state.get_dual_agent_workflow_job(job_id="job-stale-claim")
-    assert job["recovery_claim_token"] is None
-    assert job["recovery_claimed_at"] is None
+    assert job["pid"] is None
+    assert job["recovery_claim_token"] == "dead-poller"
+    assert job["recovery_claimed_at"] == 0
 
 
 @pytest.mark.asyncio
 async def test_poll_dual_agent_workflow_job_stale_spawn_claim_fails_without_respawn(
-    monkeypatch,
     tmp_path,
 ):
-    import mcp_tools.codex_supervisor_stdio as stdio
-
     server, state = _server(tmp_path)
-    popen_calls: list[list[str]] = []
-
-    class FakePopen:
-        pid = 43210
-
-        def __init__(self, argv, **kwargs):
-            popen_calls.append(list(argv))
-
-    monkeypatch.setattr(stdio.subprocess, "Popen", FakePopen)
-    monkeypatch.setattr(stdio, "_pid_alive", lambda pid: True)
 
     payload = {
         "cwd": str(tmp_path),
@@ -2689,16 +2690,15 @@ async def test_poll_dual_agent_workflow_job_stale_spawn_claim_fails_without_resp
         job_id="job-stale-spawn-claim",
     ))
 
-    assert poll["status"] == "parked"
+    assert poll["status"] == "submitted"
     assert poll["recovery_point"] == "request_written"
-    assert poll["error"] == "stale_spawn_claim_without_persisted_pid"
-    assert popen_calls == []
+    assert poll["error"] is None
     job = state.get_dual_agent_workflow_job(job_id="job-stale-spawn-claim")
-    assert job["status"] == "parked"
-    assert job["parked_reason"] == "stale_spawn_claim_without_persisted_pid"
+    assert job["status"] == "submitted"
+    assert job["parked_reason"] is None
     assert job["recovery_point"] == "request_written"
-    assert job["recovery_claim_token"] is None
-    assert job["recovery_claimed_at"] is None
+    assert job["recovery_claim_token"] == "spawn:dead-poller"
+    assert job["recovery_claimed_at"] == 0
 
 
 @pytest.mark.asyncio
@@ -2706,31 +2706,7 @@ async def test_poll_dual_agent_workflow_job_kills_worker_when_spawn_persist_fail
     monkeypatch,
     tmp_path,
 ):
-    import mcp_tools.codex_supervisor_stdio as stdio
-
     server, state = _server(tmp_path)
-    popen_instances = []
-
-    class FakePopen:
-        pid = 43210
-
-        def __init__(self, argv, **kwargs):
-            self.argv = list(argv)
-            self.terminated = False
-            self.killed = False
-            popen_instances.append(self)
-
-        def terminate(self):
-            self.terminated = True
-
-        def wait(self, timeout=None):
-            return 0
-
-        def kill(self):
-            self.killed = True
-
-    monkeypatch.setattr(stdio.subprocess, "Popen", FakePopen)
-    monkeypatch.setattr(stdio, "_pid_alive", lambda pid: True)
 
     original_upsert = state.upsert_dual_agent_workflow_job
 
@@ -2755,36 +2731,24 @@ async def test_poll_dual_agent_workflow_job_kills_worker_when_spawn_persist_fail
         job_id=submit["job_id"],
     ))
 
-    assert poll["status"] == "parked"
-    assert poll["recovery_point"] == "request_written"
-    assert "failed_to_persist_spawned_worker: persist denied" == poll["error"]
-    assert len(popen_instances) == 1
-    assert popen_instances[0].terminated is True
-    assert popen_instances[0].killed is False
-    assert second_poll["status"] == "parked"
-    assert len(popen_instances) == 1
+    assert poll["status"] == "submitted"
+    assert poll["recovery_point"] == "reserved"
+    assert poll["error"] is None
+    assert second_poll["status"] == "submitted"
     job = state.get_dual_agent_workflow_job(job_id=submit["job_id"])
-    assert job["status"] == "parked"
-    assert job["recovery_point"] == "request_written"
-    assert job["parked_reason"] == "failed_to_persist_spawned_worker: persist denied"
+    assert job["status"] == "submitted"
+    assert job["recovery_point"] == "reserved"
+    assert job["parked_reason"] is None
     assert job["pid"] is None
     assert job["recovery_claim_token"] is None
     assert job["recovery_claimed_at"] is None
+    monkeypatch.setattr(state, "upsert_dual_agent_workflow_job", original_upsert)
 
 
 @pytest.mark.asyncio
-async def test_poll_dual_agent_workflow_job_schedules_retry_when_spawn_fails(
-    monkeypatch,
-    tmp_path,
-):
-    import mcp_tools.codex_supervisor_stdio as stdio
-
+async def test_poll_dual_agent_workflow_job_does_not_schedule_spawn_retry(tmp_path):
     server, state = _server(tmp_path)
 
-    def fail_popen(*args, **kwargs):
-        raise OSError("spawn denied")
-
-    monkeypatch.setattr(stdio.subprocess, "Popen", fail_popen)
     submit = await _maybe_await(server.tools["submit_dual_agent_workflow_job"](
         cwd=str(tmp_path),
         task_id="workflow-1",
@@ -2797,47 +2761,30 @@ async def test_poll_dual_agent_workflow_job_schedules_retry_when_spawn_fails(
     poll = await _maybe_await(server.tools["poll_dual_agent_workflow_job"](job_id=submit["job_id"]))
 
     assert poll["status"] == "submitted"
-    assert poll["recovery_point"] == "request_written"
-    assert poll["error"] == "spawn denied"
+    assert poll["recovery_point"] == "reserved"
+    assert poll["error"] is None
     job = state.get_dual_agent_workflow_job(job_id=submit["job_id"])
     assert job["status"] == "submitted"
-    assert job["recovery_point"] == "request_written"
-    assert job["dispatch_attempts"] == 1
-    assert job["next_dispatch_at"] is not None
+    assert job["recovery_point"] == "reserved"
+    assert job["dispatch_attempts"] == 0
+    assert job["next_dispatch_at"] is None
     assert job["terminal_outcome_json"] is None
 
 
 @pytest.mark.asyncio
-async def test_poll_dual_agent_workflow_job_uses_dispatcher_bridge(
+async def test_poll_dual_agent_workflow_job_never_uses_dispatcher_bridge(
     monkeypatch,
     tmp_path,
 ):
     import mcp_tools.codex_supervisor_stdio as stdio
 
     server, state = _server(tmp_path)
-    calls: list[tuple[str, str | None]] = []
 
     class FakeDispatcher:
         def __init__(self, state_arg, **kwargs):
-            self.state = state_arg
-            calls.append(("init", kwargs["dispatcher_id"]))
+            raise AssertionError("poll must not construct a dispatcher")
 
-        def reap_stale_leases(self):
-            calls.append(("reap", None))
-            return {"reclaimed": [], "failed": [], "completed": []}
-
-        def run_once(self, *, job_id=None):
-            calls.append(("run_once", job_id))
-            self.state.update_dual_agent_workflow_job(
-                job_id=job_id,
-                status="running",
-                pid=54321,
-                recovery_point="spawned",
-            )
-            return {"status": "spawned", "job_id": job_id}
-
-    monkeypatch.setattr(stdio, "WorkflowJobDispatcher", FakeDispatcher)
-    monkeypatch.setattr(stdio, "_pid_alive", lambda pid: True)
+    monkeypatch.setattr(stdio, "WorkflowJobDispatcher", FakeDispatcher, raising=False)
     submit = await _maybe_await(server.tools["submit_dual_agent_workflow_job"](
         cwd=str(tmp_path),
         task_id="workflow-1",
@@ -2849,11 +2796,11 @@ async def test_poll_dual_agent_workflow_job_uses_dispatcher_bridge(
 
     poll = await _maybe_await(server.tools["poll_dual_agent_workflow_job"](job_id=submit["job_id"]))
 
-    assert poll["status"] == "running"
-    assert poll["recovery_point"] == "spawned"
-    assert ("reap", None) in calls
-    assert ("run_once", submit["job_id"]) in calls
-    assert calls[0][0] == "init"
+    assert poll["status"] == "submitted"
+    assert poll["recovery_point"] == "reserved"
+    job = state.get_dual_agent_workflow_job(job_id=submit["job_id"])
+    assert job["pid"] is None
+    assert job["recovery_point"] == "reserved"
 
 
 def _reserve_dispatcher_test_job(
@@ -3422,6 +3369,49 @@ def test_dispatcher_cli_once_runs_reaper_and_dispatch(monkeypatch, capsys, tmp_p
     assert constructed["lease_ttl_s"] == 7
 
 
+def test_dispatcher_cli_once_can_target_job_id(monkeypatch, capsys, tmp_path):
+    import supervisor.workflow_job_dispatcher as dispatcher_module
+
+    constructed: dict[str, object] = {}
+
+    class FakeSupervisor:
+        state_db = str(tmp_path / "state.db")
+
+    class FakeConfig:
+        supervisor = FakeSupervisor()
+
+    class FakeState:
+        def __init__(self, db_path):
+            constructed["state_db"] = db_path
+
+    class FakeDispatcher:
+        def __init__(self, state, **kwargs):
+            constructed["state_type"] = type(state).__name__
+            constructed.update(kwargs)
+
+        def reap_stale_leases(self):
+            return {"reclaimed": [], "failed": [], "completed": []}
+
+        def run_once(self, *, job_id=None):
+            return {"status": "spawned", "job_id": job_id}
+
+    monkeypatch.setattr(dispatcher_module.Config, "load", lambda path: FakeConfig())
+    monkeypatch.setattr(dispatcher_module, "State", FakeState)
+    monkeypatch.setattr(dispatcher_module, "WorkflowJobDispatcher", FakeDispatcher)
+
+    exit_code = dispatcher_module.main([
+        "--config",
+        str(tmp_path / "config.yaml"),
+        "--once",
+        "--job-id",
+        "job-target",
+    ])
+
+    output = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert output["dispatch"] == {"status": "spawned", "job_id": "job-target"}
+
+
 def test_dispatcher_cli_without_once_runs_long_lived_loop(monkeypatch, capsys, tmp_path):
     import supervisor.workflow_job_dispatcher as dispatcher_module
 
@@ -3472,21 +3462,10 @@ def test_dispatcher_cli_without_once_runs_long_lived_loop(monkeypatch, capsys, t
 
 
 @pytest.mark.asyncio
-async def test_submit_workflow_job_payload_round_trips_agentic_policy_fields(monkeypatch, tmp_path):
-    import mcp_tools.codex_supervisor_stdio as stdio
+async def test_submit_workflow_job_payload_round_trips_agentic_policy_fields(tmp_path):
     from mcp_tools.codex_supervisor_workflow_cli import workflow_kwargs_from_payload
 
-    server, _state = _server(tmp_path)
-
-    class FakePopen:
-        pid = 43210
-
-        def __init__(self, argv, **kwargs):
-            pass
-
-    monkeypatch.setattr(stdio.subprocess, "Popen", FakePopen)
-    monkeypatch.setattr(stdio, "_pid_alive", lambda pid: True)
-    monkeypatch.setattr(stdio, "_pid_alive", lambda pid: True)
+    server, state = _server(tmp_path)
 
     result = await _maybe_await(server.tools["submit_dual_agent_workflow_job"](
         cwd=str(tmp_path),
@@ -3502,39 +3481,27 @@ async def test_submit_workflow_job_payload_round_trips_agentic_policy_fields(mon
         required_evidence_grade="runtime_native",
         config_path=str(tmp_path / "config.yaml"),
     ))
-    poll = await _maybe_await(server.tools["poll_dual_agent_workflow_job"](job_id=result["job_id"]))
 
-    request = json.loads(Path(result["request_path"]).read_text(encoding="utf-8"))
+    job = state.get_dual_agent_workflow_job(job_id=result["job_id"])
+    request = json.loads(job["request_payload_json"])
     kwargs = workflow_kwargs_from_payload(request)
 
     assert result["status"] == "submitted"
-    assert poll["status"] == "running"
     assert kwargs["agentic_lead_policy"] == "required"
     assert kwargs["min_subagents"] == 2
     assert kwargs["required_roles"] == ["codebase_audit", "independent_reviewer"]
     assert kwargs["solo_exception_for_artifact_only_gates"] is True
     assert kwargs["required_evidence_grade"] == "runtime_native"
-    assert poll["job_id"] == result["job_id"]
+    assert job["recovery_point"] == "reserved"
 
 
 @pytest.mark.asyncio
 async def test_submit_workflow_job_payload_round_trips_reviewer_infra_retry_policy(
-    monkeypatch,
     tmp_path,
 ):
-    import mcp_tools.codex_supervisor_stdio as stdio
     from mcp_tools.codex_supervisor_workflow_cli import workflow_kwargs_from_payload
 
-    server, _state = _server(tmp_path)
-
-    class FakePopen:
-        pid = 43210
-
-        def __init__(self, argv, **kwargs):
-            pass
-
-    monkeypatch.setattr(stdio.subprocess, "Popen", FakePopen)
-    monkeypatch.setattr(stdio, "_pid_alive", lambda pid: True)
+    server, state = _server(tmp_path)
 
     result = await _maybe_await(server.tools["submit_dual_agent_workflow_job"](
         cwd=str(tmp_path),
@@ -3547,13 +3514,12 @@ async def test_submit_workflow_job_payload_round_trips_reviewer_infra_retry_poli
         reviewer_infra_retry_backoff_s=0.25,
         config_path=str(tmp_path / "config.yaml"),
     ))
-    poll = await _maybe_await(server.tools["poll_dual_agent_workflow_job"](job_id=result["job_id"]))
 
-    request = json.loads(Path(result["request_path"]).read_text(encoding="utf-8"))
+    job = state.get_dual_agent_workflow_job(job_id=result["job_id"])
+    request = json.loads(job["request_payload_json"])
     kwargs = workflow_kwargs_from_payload(request)
 
     assert result["status"] == "submitted"
-    assert poll["status"] == "running"
     assert request["reviewer_infra_retry_limit"] == 4
     assert request["reviewer_infra_retry_backoff_s"] == 0.25
     assert kwargs["reviewer_infra_retry_limit"] == 4
@@ -3561,20 +3527,8 @@ async def test_submit_workflow_job_payload_round_trips_reviewer_infra_retry_poli
 
 
 @pytest.mark.asyncio
-async def test_submit_dual_agent_workflow_job_dedupes_same_client_token(monkeypatch, tmp_path):
-    import mcp_tools.codex_supervisor_stdio as stdio
-
+async def test_submit_dual_agent_workflow_job_dedupes_same_client_token(tmp_path):
     server, state = _server(tmp_path)
-    popen_calls: list[list[str]] = []
-
-    class FakePopen:
-        pid = 43210
-
-        def __init__(self, argv, **kwargs):
-            popen_calls.append(list(argv))
-
-    monkeypatch.setattr(stdio.subprocess, "Popen", FakePopen)
-    monkeypatch.setattr(stdio, "_pid_alive", lambda pid: True)
 
     kwargs = {
         "cwd": str(tmp_path),
@@ -3593,10 +3547,9 @@ async def test_submit_dual_agent_workflow_job_dedupes_same_client_token(monkeypa
     assert second["job_id"] == first["job_id"]
     assert second["status"] == "submitted"
     assert second["reattached"] is True
-    assert len(popen_calls) == 0
     poll = await _maybe_await(server.tools["poll_dual_agent_workflow_job"](job_id=first["job_id"]))
-    assert poll["status"] == "running"
-    assert len(popen_calls) == 1
+    assert poll["status"] == "submitted"
+    assert poll["recovery_point"] == "reserved"
     rows = state._conn.execute("SELECT COUNT(*) FROM dual_agent_workflow_jobs").fetchone()
     assert rows[0] == 1
 
@@ -3944,6 +3897,93 @@ async def test_resumable_transport_drop_reconnect_catches_up_and_polls_terminal_
     assert poll["result"] == terminal_outcome
 
 
+@pytest.mark.asyncio
+async def test_dispatcher_restart_completes_dead_worker_result_and_catch_up_reports_terminal(
+    tmp_path,
+):
+    from supervisor.workflow_job_dispatcher import WorkflowJobDispatcher
+
+    server, state = _server(tmp_path)
+
+    class FakePopen:
+        pid = 43210
+
+        def __init__(self, argv, **kwargs):
+            pass
+
+    submit = await _maybe_await(server.tools["submit_dual_agent_workflow_job"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Recover after dispatcher death while worker result is durable.",
+        tool_receipts=_tool_receipts(),
+        config_path=str(tmp_path / "config.yaml"),
+        client_token="dispatcher-restart-token",
+    ))
+    last_seen_event_id = state.latest_event_id("workflow-run")
+
+    first_dispatcher = WorkflowJobDispatcher(
+        state,
+        dispatcher_id="dispatcher-before-kill",
+        popen=FakePopen,
+        pid_alive=lambda pid: True,
+        now=lambda: 1000,
+        lease_ttl_s=1,
+    )
+    dispatch = first_dispatcher.run_once(job_id=submit["job_id"])
+
+    assert dispatch["status"] == "spawned"
+    assert dispatch["pid"] == 43210
+
+    terminal_outcome = {
+        "status": "accepted",
+        "run_id": "workflow-run",
+        "task_id": "workflow-1",
+        "steps": [{"gate": "outcome_review", "status": "accepted"}],
+    }
+    Path(submit["result_path"]).write_text(
+        json.dumps(terminal_outcome),
+        encoding="utf-8",
+    )
+
+    mid_poll = await _maybe_await(server.tools["poll_dual_agent_workflow_job"](
+        job_id=submit["job_id"],
+    ))
+    assert mid_poll["status"] == "running"
+    assert mid_poll["recovery_point"] == "spawned"
+    assert mid_poll["leased_by"] == "worker:43210"
+    assert mid_poll["result"] is None
+
+    restarted_dispatcher = WorkflowJobDispatcher(
+        state,
+        dispatcher_id="dispatcher-after-restart",
+        pid_alive=lambda pid: False,
+        now=lambda: 1002,
+    )
+    reap = restarted_dispatcher.reap_stale_leases()
+
+    assert reap["completed"] == [submit["job_id"]]
+
+    final_poll = await _maybe_await(server.tools["poll_dual_agent_workflow_job"](
+        job_id=submit["job_id"],
+    ))
+    catch_up = await _maybe_await(server.tools["catch_up_dual_agent_workflow"](
+        run_id="workflow-run",
+        last_event_id=last_seen_event_id,
+        limit=20,
+    ))
+
+    assert final_poll["status"] == "accepted"
+    assert final_poll["recovery_point"] == "terminal"
+    assert final_poll["result"] == terminal_outcome
+    assert any(
+        event["kind"] == "dual_agent_workflow_terminal_outcome"
+        and event["payload"]["job_id"] == submit["job_id"]
+        and event["payload"]["status"] == "accepted"
+        for event in catch_up["events"]
+    )
+
+
 def test_reconnect_protocol_doc_is_present():
     protocol = Path(
         "docs/dual-agent/durable-substrate-s5-resumable-transport-20260531/"
@@ -3960,7 +4000,9 @@ def test_reconnect_protocol_doc_is_present():
 
 
 @pytest.mark.asyncio
-async def test_poll_dual_agent_workflow_job_reads_durable_result_after_transport_loss(tmp_path):
+async def test_poll_dual_agent_workflow_job_leaves_result_file_recovery_to_dispatcher(tmp_path):
+    from supervisor.workflow_job_dispatcher import WorkflowJobDispatcher
+
     server, state = _server(tmp_path)
     job_dir = tmp_path / ".handoff" / "workflow-jobs" / "job-1"
     job_dir.mkdir(parents=True)
@@ -3989,9 +4031,25 @@ async def test_poll_dual_agent_workflow_job_reads_durable_result_after_transport
         result_path=str(result_path),
         log_path=str(log_path),
     )
+    state.update_dual_agent_workflow_job(
+        job_id="job-1",
+        leased_by="worker:dead",
+        lease_expires_at=0,
+        heartbeat_at=0,
+    )
 
     result = await _maybe_await(server.tools["poll_dual_agent_workflow_job"](job_id="job-1"))
 
+    assert result["status"] == "running"
+    assert result["recovery_point"] == "spawned"
+    assert result["result"] is None
+    assert state.get_dual_agent_workflow_job(job_id="job-1")["terminal_outcome_json"] is None
+
+    dispatcher = WorkflowJobDispatcher(state, dispatcher_id="dispatcher-test", pid_alive=lambda pid: False)
+    reap = dispatcher.reap_stale_leases()
+
+    assert reap["completed"] == ["job-1"]
+    result = await _maybe_await(server.tools["poll_dual_agent_workflow_job"](job_id="job-1"))
     assert result["status"] == "accepted"
     assert result["recovery_point"] == "terminal"
     assert result["result"]["steps"] == [{"gate": "outcome_review", "status": "accepted"}]
@@ -4097,7 +4155,7 @@ def test_workflow_cli_records_terminal_outcome_in_ledger(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_poll_dual_agent_workflow_job_ledger_wins_over_result_file_cache(tmp_path):
+async def test_poll_dual_agent_workflow_job_ignores_result_file_cache_when_ledger_is_terminal(tmp_path):
     server, state = _server(tmp_path)
     job_dir = tmp_path / ".handoff" / "workflow-jobs" / "job-mismatch"
     request_path = job_dir / "request.json"
@@ -4134,8 +4192,7 @@ async def test_poll_dual_agent_workflow_job_ledger_wins_over_result_file_cache(t
         for event in state.read_events_since("workflow-run", after_event_id=0, limit=20)
         if event["kind"] == "dual_agent_workflow_terminal_discrepancy"
     ]
-    assert discrepancy_events
-    assert discrepancy_events[-1]["payload"]["job_id"] == "job-mismatch"
+    assert discrepancy_events == []
 
 
 @pytest.mark.asyncio
@@ -4268,7 +4325,7 @@ def test_complete_dual_agent_workflow_job_redacts_terminal_outcome_at_rest(tmp_p
 async def test_run_dual_agent_workflow_records_trivial_route_and_skips_planning_gates(tmp_path):
     server, state = _server(tmp_path, claims=["tests passed", "implemented"])
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -4309,7 +4366,7 @@ async def test_run_dual_agent_workflow_small_route_requires_only_prd_skill_recei
         or receipt.get("stage") in {"to_prd", "prd_grill"}
     ]
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -4389,7 +4446,7 @@ async def test_run_dual_agent_workflow_passes_budget_to_each_lead_gate(tmp_path)
         cursor_runner=_accepting_cursor_runner,
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -4440,7 +4497,7 @@ async def test_run_dual_agent_workflow_can_pass_dynamic_workflow_preview_policy(
         cursor_runner=_accepting_cursor_runner,
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -4492,7 +4549,7 @@ async def test_run_dual_agent_workflow_blocks_dynamic_preview_with_forged_replay
         cursor_runner=_accepting_cursor_runner,
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -4515,7 +4572,7 @@ async def test_run_dual_agent_workflow_blocks_dynamic_preview_with_forged_replay
 async def test_run_dual_agent_workflow_generates_dynamic_manifest_and_auto_receipts(tmp_path):
     server, state = _server(tmp_path)
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -4584,7 +4641,7 @@ async def test_agentic_required_blocks_solo_execution_before_lead(tmp_path):
         cursor_runner=_accepting_cursor_runner,
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -4651,7 +4708,7 @@ async def test_run_dual_agent_workflow_required_policy_still_blocks_without_exec
         cursor_runner=_accepting_cursor_runner,
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -4750,7 +4807,7 @@ async def test_run_dual_agent_workflow_required_policy_spawns_agentic_workers_an
         cursor_runner=_accepting_cursor_runner,
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -4857,7 +4914,7 @@ async def test_run_dual_agent_workflow_hydrates_durable_agentic_worker_receipts_
         cursor_runner=_accepting_cursor_runner,
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -4933,7 +4990,7 @@ async def test_run_dual_agent_workflow_allowed_policy_runs_producer_without_bloc
         cursor_runner=_accepting_cursor_runner,
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -5001,7 +5058,7 @@ async def test_dynamic_reviewer_synthesis_blocks_on_critical_disagreement(tmp_pa
         cursor_runner=_accepting_cursor_runner,
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -5026,7 +5083,7 @@ async def test_dynamic_reviewer_synthesis_blocks_on_critical_disagreement(tmp_pa
 async def test_run_dual_agent_workflow_blocks_dynamic_preview_without_p13_receipts(tmp_path):
     server, state = _server(tmp_path)
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -5050,7 +5107,7 @@ async def test_run_dual_agent_workflow_blocks_dynamic_preview_without_p13_receip
 async def test_read_gate_transcript_includes_dynamic_workflow_receipt_validation(tmp_path):
     server, _state = _server(tmp_path)
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -5099,7 +5156,7 @@ async def test_run_dual_agent_workflow_blocks_auto_seeded_planning_stubs(tmp_pat
         cursor_runner=_accepting_cursor_runner,
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -5119,7 +5176,7 @@ async def test_run_dual_agent_workflow_blocks_auto_seeded_planning_stubs(tmp_pat
 async def test_run_dual_agent_workflow_requires_prd_tdd_skill_receipts(tmp_path):
     server, state = _server(tmp_path)
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -5139,7 +5196,7 @@ async def test_run_dual_agent_workflow_requires_prd_tdd_skill_receipts(tmp_path)
 async def test_run_dual_agent_workflow_records_skill_receipt_validation(tmp_path):
     server, state = _server(tmp_path)
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -5169,7 +5226,7 @@ async def test_run_dual_agent_workflow_runs_cursor_review_by_default(tmp_path):
 
     server, state = _server(tmp_path, cursor_runner=fake_cursor_runner)
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -5238,7 +5295,7 @@ async def test_workflow_exposes_independent_reviewer_results_and_dual_writes_eve
 
     server, state = _server(tmp_path, cursor_runner=fake_cursor_runner)
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -5574,7 +5631,7 @@ async def test_run_dual_agent_workflow_rigorous_cursor_profile_reviews_quality_g
 
     server, state = _server(tmp_path, cursor_runner=fake_cursor_runner)
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -5619,7 +5676,7 @@ async def test_run_dual_agent_workflow_vague_route_forces_cursor_review(tmp_path
     screenshot = tmp_path / "result.png"
     screenshot.write_bytes(_tiny_png())
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -5652,7 +5709,7 @@ async def test_run_dual_agent_workflow_with_cursor_review_blocks_on_cursor_rejec
 
     server, state = _server(tmp_path, cursor_runner=fake_cursor_runner)
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -5684,7 +5741,7 @@ async def test_run_dual_agent_workflow_panel_blocks_important_reviewer_revise(tm
 
     server, state = _server(tmp_path, cursor_runner=fake_cursor_runner)
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -5721,7 +5778,7 @@ async def test_second_reviewer_important_revise_blocks(tmp_path):
         codex_runner=_revising_codex_reviewer_runner,
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -5758,7 +5815,7 @@ async def test_run_dual_agent_workflow_split_panel_triggers_adjudication(tmp_pat
         codex_runner=_revising_codex_reviewer_with_evidence_runner,
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -5806,7 +5863,7 @@ async def test_real_reviewer_revise_still_hard_blocks_with_adjudication(tmp_path
         codex_runner=_revising_codex_reviewer_with_evidence_runner,
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -5841,7 +5898,7 @@ async def test_run_dual_agent_workflow_accept_with_strong_objection_escalates(tm
         codex_runner=_accepting_codex_reviewer_with_objection_runner,
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -5943,7 +6000,7 @@ async def test_independent_reviewer_adjudication_event_and_transcript_export(tmp
         codex_runner=_revising_codex_reviewer_with_evidence_runner,
     )
 
-    await _maybe_await(server.tools["run_dual_agent_workflow"](
+    await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -5981,7 +6038,7 @@ async def test_independent_reviewer_adjudication_event_and_transcript_export(tmp
 async def test_run_dual_agent_workflow_panel_missing_verdict_does_not_accept(tmp_path):
     server, state = _server(tmp_path, cursor_runner=_cursor_missing_verdict_runner)
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -6017,7 +6074,7 @@ async def test_second_reviewer_outage_proceeds_only_degraded(tmp_path):
         codex_runner=_unavailable_codex_reviewer_runner,
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -6058,7 +6115,7 @@ async def test_run_dual_agent_workflow_panel_high_confidence_accept_advances_by_
 
     server, state = _server(tmp_path, cursor_runner=fake_cursor_runner)
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -6093,7 +6150,7 @@ async def test_run_dual_agent_workflow_panel_low_confidence_accept_escalates_whe
 
     server, state = _server(tmp_path, cursor_runner=fake_cursor_runner)
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -6130,7 +6187,7 @@ async def test_run_dual_agent_workflow_calibrated_correlated_accept_escalates(tm
     calibration_path = _write_reviewer_panel_calibration(tmp_path, correlated=True)
     server, state = _server(tmp_path, cursor_runner=_accepting_cursor_runner)
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -6172,7 +6229,7 @@ async def test_run_dual_agent_workflow_calibrated_independent_accept_advances(tm
     calibration_path = _write_reviewer_panel_calibration(tmp_path, correlated=False)
     server, _state = _server(tmp_path, cursor_runner=_accepting_cursor_runner)
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -6198,7 +6255,7 @@ async def test_run_dual_agent_workflow_missing_calibration_falls_back_to_conserv
     missing_calibration = tmp_path / "docs" / "dual-agent" / "missing-calibration.json"
     server, _state = _server(tmp_path, cursor_runner=_accepting_cursor_runner)
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -6226,7 +6283,7 @@ async def test_run_dual_agent_workflow_calibrated_real_revise_still_blocks(tmp_p
         codex_runner=_revising_codex_reviewer_runner,
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -6249,7 +6306,7 @@ async def test_run_dual_agent_workflow_calibrated_real_revise_still_blocks(tmp_p
 async def test_panel_decision_is_exported_on_new_and_legacy_reviewer_events(tmp_path):
     server, state = _server(tmp_path, cursor_runner=_accepting_cursor_runner)
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -6285,7 +6342,7 @@ async def test_run_dual_agent_workflow_records_cursor_contract_failure_as_recove
 ):
     server, state = _server(tmp_path, cursor_runner=_cursor_contract_unmet_runner)
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -6349,7 +6406,7 @@ async def test_run_dual_agent_workflow_records_cursor_contract_failure_as_recove
 async def test_reviewer_access_denied_blocks_without_degraded_recovery(tmp_path):
     server, state = _server(tmp_path, cursor_runner=_cursor_access_denied_runner)
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -6402,7 +6459,7 @@ async def test_reviewer_unavailable_block_policy_stays_blocked_for_high_stakes(t
         notifier=notifier,
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -6437,7 +6494,7 @@ async def test_reviewer_unavailable_block_policy_stays_blocked_for_high_stakes(t
 async def test_reviewer_unavailable_proceed_degraded_advances_with_degraded_receipt(tmp_path):
     server, state = _server(tmp_path, cursor_runner=_cursor_contract_unmet_runner)
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -6499,7 +6556,7 @@ async def test_exhausted_cursor_infra_retry_proceeds_degraded_without_counting_c
 ):
     server, state = _server(tmp_path, cursor_runner=_cursor_exhausted_infra_runner)
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -6550,7 +6607,7 @@ async def test_reviewer_unavailable_default_escalates_and_resume_continue_advanc
         notifier=notifier,
     )
 
-    first = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    first = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -6576,7 +6633,7 @@ async def test_reviewer_unavailable_default_escalates_and_resume_continue_advanc
     assert action is not None
     state.mark_action_resume_requested(action["id"], payload_update={"answer": "Continue"})
 
-    second = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    second = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -6605,7 +6662,7 @@ async def test_reviewer_unavailable_proceed_degraded_escalates_for_agentic_requi
         notifier=notifier,
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -6635,7 +6692,7 @@ async def test_reviewer_unavailable_runtime_native_escalates(tmp_path):
         notifier=notifier,
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -6687,7 +6744,7 @@ async def test_run_dual_agent_workflow_review_packet_blocker_forces_next_round(t
 
     monkeypatch.setattr(stdio, "codex_review_packet", blocking_review_packet)
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -6722,7 +6779,7 @@ async def test_run_dual_agent_workflow_enforces_v5_without_prompt_following(tmp_
     notifier = _Notifier()
     server, state = _server(tmp_path, decision="revise", notifier=notifier)
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -6785,7 +6842,7 @@ async def test_run_dual_agent_workflow_retries_malformed_outcome_once(tmp_path):
         cursor_runner=_accepting_cursor_runner,
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -6822,7 +6879,7 @@ async def test_run_dual_agent_workflow_blocks_on_claude_failure_and_requests_inp
         notifier=notifier,
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -6876,7 +6933,7 @@ async def test_run_dual_agent_workflow_can_rerun_after_corrective_input(tmp_path
         cursor_runner=_accepting_cursor_runner,
     )
 
-    first = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    first = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -6887,7 +6944,7 @@ async def test_run_dual_agent_workflow_can_rerun_after_corrective_input(tmp_path
     assert first["status"] == "blocked"
 
     decision = "accept"
-    second = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    second = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -6973,7 +7030,7 @@ async def test_run_dual_agent_workflow_resumes_after_transport_loss_from_pending
         cursor_runner=_accepting_cursor_runner,
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -7005,7 +7062,7 @@ async def test_run_dual_agent_workflow_resumes_after_transport_loss_from_pending
 async def test_run_dual_agent_workflow_blocks_user_facing_without_visual_evidence(tmp_path):
     server, state = _server(tmp_path)
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -7028,7 +7085,7 @@ async def test_run_dual_agent_workflow_blocks_user_facing_without_visual_evidenc
 async def test_run_dual_agent_workflow_auto_requires_visual_evidence_for_vela_live_surfaces(tmp_path):
     server, state = _server(tmp_path)
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -7059,7 +7116,7 @@ async def test_run_dual_agent_workflow_auto_visual_policy_accepts_computer_use_e
     screenshot = tmp_path / "vela-slack-final-state.png"
     screenshot.write_bytes(_tiny_png())
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -7092,7 +7149,7 @@ async def test_run_dual_agent_workflow_auto_visual_policy_accepts_computer_use_e
 async def test_run_dual_agent_workflow_verifies_final_claims(tmp_path):
     server, state = _server(tmp_path, claims=["pushed"])
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -7118,7 +7175,7 @@ async def test_run_dual_agent_workflow_accepts_claims_with_supervisor_runtime_te
         if receipt.get("receipt_id") != "pytest-focused"
     ]
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -7144,7 +7201,7 @@ async def test_run_dual_agent_workflow_ignores_unrelated_agent_receipts_when_run
     for receipt in unrelated_receipts:
         receipt["claims"] = ["unrelated cleanup"]
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -7165,7 +7222,7 @@ async def test_run_dual_agent_workflow_accepts_when_supervisor_diff_covers_agent
         if receipt.get("receipt_id") == "git-diff":
             receipt.pop("changed_files", None)
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -7186,7 +7243,7 @@ async def test_run_dual_agent_workflow_accepts_when_supervisor_diff_covers_parti
         if receipt.get("receipt_id") == "git-diff":
             receipt["changed_files"] = ["supervisor/dual_agent_workflow.py"]
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -7207,7 +7264,7 @@ async def test_run_dual_agent_workflow_accepts_when_supervisor_diff_covers_vague
         if receipt.get("receipt_id") == "git-diff":
             receipt["claims"] = ["implemented previous task"]
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -7224,7 +7281,7 @@ async def test_run_dual_agent_workflow_accepts_when_supervisor_diff_covers_vague
 async def test_run_dual_agent_workflow_accepts_receipt_backed_claims(tmp_path):
     server, _state = _server(tmp_path, claims=["tests passed", "implemented", "pushed"])
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
@@ -7241,7 +7298,7 @@ async def test_run_dual_agent_workflow_accepts_receipt_backed_claims(tmp_path):
 @pytest.mark.asyncio
 async def test_workflow_resume_prompt_tool_is_state_derived(tmp_path):
     server, _state = _server(tmp_path, decision="revise")
-    await _maybe_await(server.tools["run_dual_agent_workflow"](
+    await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",

@@ -124,6 +124,10 @@ async def _maybe_await(value):
     return value
 
 
+def _run_dual_agent_workflow_direct(server, **kwargs):
+    return server._codex_supervisor_tool_api.run_dual_agent_workflow(**kwargs)
+
+
 def _init_runtime_git_repo(path: Path) -> None:
     subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True, text=True)
     subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=path, check=True)
@@ -756,7 +760,7 @@ async def test_read_gate_transcript_includes_skill_receipt_validation(tmp_path):
         runner=fake_runner,
     )
 
-    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",

@@ -436,6 +436,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--lease-ttl-s", type=int, default=60)
     parser.add_argument("--interval-s", type=float, default=1.0)
     parser.add_argument("--once", action="store_true", help="Run one reap+dispatch tick and exit.")
+    parser.add_argument("--job-id", help="With --once, claim a specific workflow job instead of the oldest.")
     args = parser.parse_args(argv)
 
     cfg = Config.load(args.config)
@@ -449,7 +450,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.once:
         result = {
             "reaper": dispatcher.reap_stale_leases(),
-            "dispatch": dispatcher.run_once(),
+            "dispatch": dispatcher.run_once(job_id=args.job_id) if args.job_id else dispatcher.run_once(),
         }
         print(json.dumps(result, indent=2, sort_keys=True))
         return 0

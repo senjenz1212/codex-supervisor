@@ -2033,6 +2033,46 @@ class State:
             (job_id,),
         ).fetchone()
 
+    def list_dual_agent_workflow_jobs(
+        self,
+        *,
+        status: str | None = None,
+        active_only: bool = False,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if status:
+            clauses.append("status=?")
+            params.append(str(status))
+        if active_only:
+            clauses.append(
+                """status NOT IN ('parked', 'accepted', 'blocked',
+                                  'cancelled', 'completed', 'denied', 'failed')"""
+            )
+            clauses.append("terminal_outcome_json IS NULL")
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = self._conn.execute(
+            f"""SELECT *
+                FROM dual_agent_workflow_jobs
+                {where}
+                ORDER BY updated_at DESC, created_at DESC, job_id ASC
+                LIMIT ?""",
+            (*params, max(1, int(limit))),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_active_dual_agent_workflow_steps(self, *, limit: int = 20) -> list[dict[str, Any]]:
+        rows = self._conn.execute(
+            """SELECT *
+               FROM dual_agent_workflow_steps
+               WHERE status NOT IN ('accepted', 'blocked', 'denied', 'failed', 'cancelled')
+               ORDER BY updated_at DESC, created_at DESC, id ASC
+               LIMIT ?""",
+            (max(1, int(limit)),),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
     # --- verdicts ---
     def write_verdict(self, *, run_id: str, phase: str, layer: str | None,
                       model: str, output: dict, latency_ms: int,
