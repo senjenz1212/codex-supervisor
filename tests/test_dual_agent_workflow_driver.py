@@ -269,6 +269,18 @@ def _dynamic_subagent_result_receipts(
     severity: str = "none",
 ) -> list[dict]:
     refs = _write_dynamic_replay_files(tmp_path)
+    worker_dir = tmp_path / ".handoff" / "workflow-jobs" / "workflow-1" / "audit-1"
+    worker_dir.mkdir(parents=True)
+    transcript = worker_dir / "transcript.jsonl"
+    output = worker_dir / "output.json"
+    transcript.write_text('{"event":"review","decision":"accept"}\n', encoding="utf-8")
+    output.write_text('{"decision":"accept","changed_files":[]}\n', encoding="utf-8")
+    refs.update({
+        "transcript_ref": str(transcript.relative_to(tmp_path)),
+        "transcript_sha256": _hash_file(transcript),
+        "output_ref": str(output.relative_to(tmp_path)),
+        "output_sha256": _hash_file(output),
+    })
     return [{
         "receipt_id": "subagent-audit-1",
         "kind": "dynamic_subagent_result",
@@ -462,6 +474,7 @@ def _materialize_runtime_evidence_fixture(
 ) -> None:
     if not (root / ".git").exists():
         _init_runtime_git_repo(root)
+    _ensure_runtime_validation_venv(root)
 
     file_set: set[str] = set(
         changed_files
@@ -482,6 +495,30 @@ def _materialize_runtime_evidence_fixture(
     for item in test_items:
         if _runtime_test_item_is_path(item):
             _write_runtime_file(root, item, _runtime_fixture_content(item))
+
+
+def _ensure_runtime_validation_venv(root: Path) -> None:
+    """Expose a deterministic pytest-capable interpreter to runtime evidence fixtures."""
+    target = root / ".venv"
+    if target.exists() or target.is_symlink():
+        return
+
+    candidates: list[Path] = []
+    executable = Path(sys.executable).resolve()
+    if executable.parent.name == "bin" and executable.parent.parent.name == ".venv":
+        candidates.append(executable.parent.parent)
+    candidates.append(Path(__file__).resolve().parents[1] / ".venv")
+
+    source = next((candidate for candidate in candidates if candidate.exists()), None)
+    if source is None:
+        return
+
+    target.symlink_to(source, target_is_directory=True)
+    exclude = root / ".git" / "info" / "exclude"
+    if exclude.exists():
+        existing = exclude.read_text(encoding="utf-8")
+        if ".venv\n" not in existing:
+            exclude.write_text(f"{existing.rstrip()}\n.venv\n", encoding="utf-8")
 
 
 def _runtime_test_item_is_path(value: str) -> bool:

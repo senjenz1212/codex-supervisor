@@ -16,9 +16,9 @@ import time
 import uuid
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
-from supervisor.config import Config
+from supervisor.config import Config, PLANNING_RUBRIC_MIN_THRESHOLD
 from supervisor.agent_mailbox import (
     AgentMailboxMessage,
     codex_confidence_report,
@@ -270,6 +270,8 @@ class CodexSupervisorMcpAPI:
         policy_overlay_block_sha256: str = "",
         policy_overlay_hash: str = "",
         policy_proposal_id: str = "",
+        planning_rubric_threshold: float | None = None,
+        planning_rubric_unavailable_policy: str | None = None,
         sanitize_tool_receipts: bool = True,
     ) -> dict[str, Any]:
         execution_layer_mode = _canonical_execution_layer_mode(execution_layer_mode)
@@ -362,6 +364,8 @@ class CodexSupervisorMcpAPI:
             policy_overlay_block_sha256=policy_overlay_block_sha256,
             policy_overlay_hash=policy_overlay_hash,
             policy_proposal_id=policy_proposal_id,
+            planning_rubric_threshold=planning_rubric_threshold,
+            planning_rubric_unavailable_policy=planning_rubric_unavailable_policy,
         )
         notifier = self._notifier()
         with timed_tool_call(
@@ -448,6 +452,8 @@ class CodexSupervisorMcpAPI:
         required_artifacts: list[str] | None = None,
         required_prerequisite_gates: list[str] | None = None,
         required_planning_kinds: list[str] | None = None,
+        planning_rubric_threshold: float | None = None,
+        planning_rubric_unavailable_policy: str | None = None,
     ) -> dict[str, Any]:
         execution_layer_mode = _canonical_execution_layer_mode(execution_layer_mode)
         dynamic_workflow_task_class = _canonical_dynamic_workflow_task_class(dynamic_workflow_task_class)
@@ -3597,6 +3603,12 @@ class CodexSupervisorMcpAPI:
             "run_id": run_id,
             "gate": gate,
             "instruction": instruction,
+            "planning_rubric_threshold": _planning_rubric_threshold_for_gate(
+                self.cfg,
+                policy_overlay.rubric_thresholds,
+                gate=gate,
+            ),
+            "planning_rubric_unavailable_policy": self.cfg.planning_rubric.unavailable_policy,
             "injected_lesson_block": str(injection["block"]),
             "injected_lesson_block_sha256": str(injection["block_sha256"]),
             "injected_lesson_ids": list(injection["lesson_ids"]),
@@ -3633,6 +3645,8 @@ class CodexSupervisorMcpAPI:
         policy_overlay_block_sha256: str = "",
         policy_overlay_hash: str = "",
         policy_proposal_id: str = "",
+        planning_rubric_threshold: float | None = None,
+        planning_rubric_unavailable_policy: str | None = None,
     ) -> DualAgentGateSpec:
         return DualAgentGateSpec(
             task_id=task_id,
@@ -3667,6 +3681,14 @@ class CodexSupervisorMcpAPI:
             policy_overlay_block_sha256=policy_overlay_block_sha256,
             policy_overlay_hash=policy_overlay_hash,
             policy_proposal_id=policy_proposal_id,
+            planning_rubric_threshold=(
+                _clamp_planning_rubric_threshold(planning_rubric_threshold)
+                if planning_rubric_threshold is not None
+                else float(self.cfg.planning_rubric.threshold)
+            ),
+            planning_rubric_unavailable_policy=(
+                str(planning_rubric_unavailable_policy or self.cfg.planning_rubric.unavailable_policy)
+            ),
             planning_artifacts=tuple(
                 artifact
                 for artifact in (
@@ -3868,6 +3890,8 @@ def build_codex_supervisor_mcp_server(
         required_artifacts: list[str] | None = None,
         required_prerequisite_gates: list[str] | None = None,
         required_planning_kinds: list[str] | None = None,
+        planning_rubric_threshold: float | None = None,
+        planning_rubric_unavailable_policy: str | None = None,
     ) -> dict[str, Any]:
         return await tool_api.start_dual_agent_gate(
             task_id=task_id,
@@ -3897,6 +3921,8 @@ def build_codex_supervisor_mcp_server(
             required_artifacts=required_artifacts,
             required_prerequisite_gates=required_prerequisite_gates,
             required_planning_kinds=required_planning_kinds,
+            planning_rubric_threshold=planning_rubric_threshold,
+            planning_rubric_unavailable_policy=planning_rubric_unavailable_policy,
         )
 
     @mcp.tool()
@@ -5288,6 +5314,30 @@ def _workflow_agentic_policy_route(policy: dict[str, Any]) -> dict[str, Any]:
         "solo_exception_for_artifact_only_gates": policy["solo_exception_for_artifact_only_gates"],
         "required_evidence_grade": policy["required_evidence_grade"],
     }
+
+
+def _planning_rubric_threshold_for_gate(
+    cfg: Config,
+    rubric_thresholds: Mapping[str, Any] | None,
+    *,
+    gate: str,
+) -> float:
+    default = float(cfg.planning_rubric.threshold)
+    thresholds = rubric_thresholds or {}
+    if not isinstance(thresholds, Mapping):
+        return default
+    for key in (gate, "all", "*", "default"):
+        if key in thresholds:
+            try:
+                value = float(thresholds[key])
+            except (TypeError, ValueError):
+                return default
+            return _clamp_planning_rubric_threshold(value)
+    return default
+
+
+def _clamp_planning_rubric_threshold(value: Any) -> float:
+    return max(PLANNING_RUBRIC_MIN_THRESHOLD, min(1.0, float(value)))
 
 
 def _requires_p13_receipt_validation(

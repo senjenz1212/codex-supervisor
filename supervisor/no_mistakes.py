@@ -296,11 +296,12 @@ def run_no_mistakes_validation(
         tuple(validation_preflight["changed_files"]) != tuple(postflight["changed_files"])
         or validation_preflight["head"] != postflight["head"]
     )
+    passing_outcome = not outcome or _normalise_action(outcome) in PASSING_OUTCOMES
     if changed:
         verdict: NoMistakesVerdict = "changed_requires_rerun"
         status: NoMistakesStatus = "blocked"
         reason = "no_mistakes_changed_worktree_requires_rerun"
-    elif findings or gate:
+    elif findings:
         verdict = "advisory_blocked" if cfg.policy == "advisory" else "required_blocked"
         status = "blocked"
         reason = f"no_mistakes_gate_{gate}" if gate else "no_mistakes_findings"
@@ -308,14 +309,14 @@ def run_no_mistakes_validation(
         verdict = "advisory_blocked" if cfg.policy == "advisory" else "required_blocked"
         status = "failed"
         reason = "no_mistakes_failed"
-    elif not outcome or _normalise_action(outcome) in PASSING_OUTCOMES:
+    elif passing_outcome:
         verdict = "accepted"
         status = "accepted"
         reason = "no_mistakes_checks_passed"
     else:
         verdict = "advisory_blocked" if cfg.policy == "advisory" else "required_blocked"
         status = "blocked"
-        reason = f"no_mistakes_outcome_{outcome}"
+        reason = f"no_mistakes_gate_{gate}" if gate else f"no_mistakes_outcome_{outcome}"
 
     result = _result(
         request,
@@ -354,6 +355,24 @@ def parse_no_mistakes_output(stdout: str) -> tuple[list[NoMistakesFinding], str,
     findings: list[NoMistakesFinding] = []
     outcome = ""
     gate = ""
+    stripped = stdout.strip()
+    if _looks_like_structured_no_mistakes(stripped):
+        parsed = _structured_no_mistakes_payload(stripped)
+        if parsed is None:
+            return (
+                [
+                    NoMistakesFinding(
+                        finding_id="no-mistakes-malformed-json",
+                        severity="error",
+                        description="no-mistakes structured JSON contract could not be parsed",
+                        action="ask-user",
+                        raw=_tail(stripped),
+                    )
+                ],
+                "",
+                "no_mistakes_structured_contract",
+            )
+        return parsed
     for raw_line in stdout.splitlines():
         line = raw_line.strip()
         if not line:
@@ -364,8 +383,22 @@ def parse_no_mistakes_output(stdout: str) -> tuple[list[NoMistakesFinding], str,
         if line.startswith("gate:"):
             gate = line.split(":", 1)[1].strip()
             continue
-        if line.startswith("{") and "findings" in line:
-            findings.extend(_findings_from_json_line(line))
+        if _looks_like_structured_no_mistakes(line):
+            parsed = _structured_no_mistakes_payload(line)
+            if parsed is None:
+                findings.append(NoMistakesFinding(
+                    finding_id="no-mistakes-malformed-json",
+                    severity="error",
+                    description="no-mistakes structured JSON contract could not be parsed",
+                    action="ask-user",
+                    raw=_tail(line),
+                ))
+                gate = gate or "no_mistakes_structured_contract"
+                continue
+            structured_findings, structured_outcome, structured_gate = parsed
+            findings.extend(structured_findings)
+            outcome = outcome or structured_outcome
+            gate = gate or structured_gate
             continue
         parsed = _finding_from_csvish_line(line)
         if parsed is not None:
@@ -493,17 +526,86 @@ def _run_git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _findings_from_json_line(line: str) -> list[NoMistakesFinding]:
+def _looks_like_structured_no_mistakes(text: str) -> bool:
+    if not text.startswith("{"):
+        return False
+    markers = ("schema_version", "no_mistakes", "no-mistakes", "findings", "outcome", "gate")
+    return any(marker in text for marker in markers)
+
+
+def _structured_no_mistakes_payload(text: str) -> tuple[list[NoMistakesFinding], str, str] | None:
     try:
-        payload = json.loads(line)
+        payload = json.loads(text)
     except json.JSONDecodeError:
-        return []
-    raw_findings = payload.get("findings") if isinstance(payload, dict) else None
+        return None
+    if not isinstance(payload, dict):
+        return None
+    schema = str(payload.get("schema_version") or "")
+    if schema and not schema.startswith(("no-mistakes", "no_mistakes")):
+        return None
+    outcome = str(payload.get("outcome") or payload.get("verdict") or "")
+    gate = str(payload.get("gate") or "")
+    findings = _findings_from_json_payload(payload)
+    if not outcome and _structured_contract_is_incomplete(payload, findings):
+        return (
+            [
+                NoMistakesFinding(
+                    finding_id="no-mistakes-incomplete-contract",
+                    severity="error",
+                    description=(
+                        "no-mistakes structured JSON must include an outcome/verdict "
+                        "or substantive findings"
+                    ),
+                    action="ask-user",
+                    raw=json.dumps(payload, sort_keys=True),
+                )
+            ],
+            "",
+            gate or "no_mistakes_structured_contract",
+        )
+    return (
+        findings,
+        outcome,
+        gate,
+    )
+
+
+def _structured_contract_is_incomplete(
+    payload: dict[str, Any],
+    findings: list[NoMistakesFinding],
+) -> bool:
+    if "findings" not in payload:
+        return True
+    raw_findings = payload.get("findings")
     if not isinstance(raw_findings, list):
+        return False
+    return not findings
+
+
+def _findings_from_json_payload(payload: dict[str, Any]) -> list[NoMistakesFinding]:
+    raw_findings = payload.get("findings")
+    if raw_findings is None:
         return []
+    if not isinstance(raw_findings, list):
+        return [
+            NoMistakesFinding(
+                finding_id="no-mistakes-invalid-findings",
+                severity="error",
+                description="no-mistakes structured JSON findings must be an array",
+                action="ask-user",
+                raw=json.dumps(payload, sort_keys=True),
+            )
+        ]
     findings: list[NoMistakesFinding] = []
     for index, item in enumerate(raw_findings, start=1):
         if not isinstance(item, dict):
+            findings.append(NoMistakesFinding(
+                finding_id=f"finding-{index}",
+                severity="error",
+                description="no-mistakes structured JSON finding must be an object",
+                action="ask-user",
+                raw=json.dumps(item, sort_keys=True),
+            ))
             continue
         findings.append(NoMistakesFinding(
             finding_id=str(item.get("id") or item.get("finding_id") or f"finding-{index}"),

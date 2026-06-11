@@ -119,6 +119,8 @@ class DualAgentGateSpec:
     policy_overlay_block_sha256: str = ""
     policy_overlay_hash: str = ""
     policy_proposal_id: str = ""
+    planning_rubric_threshold: float = 0.6
+    planning_rubric_unavailable_policy: str = "block"
 
 
 @dataclass(frozen=True)
@@ -207,12 +209,16 @@ def run_dual_agent_gate(
                 "gate": spec.gate,
                 "artifact_count": len(spec.planning_artifacts),
                 "required_kinds": sorted(_required_planning_kinds(spec)),
+                "planning_rubric_threshold": spec.planning_rubric_threshold,
+                "planning_rubric_unavailable_policy": spec.planning_rubric_unavailable_policy,
             },
         ) as planning_tool_call:
             planning_result = validate_planning_artifacts(
                 spec.planning_artifacts,
                 required_kinds=_required_planning_kinds(spec),
                 gate=spec.gate,
+                rubric_threshold=spec.planning_rubric_threshold,
+                rubric_unavailable_policy=spec.planning_rubric_unavailable_policy,  # type: ignore[arg-type]
             )
         planning_probe = planning_validation_probe(planning_result, task_id=spec.task_id)
         planning_event_id: int | None = None

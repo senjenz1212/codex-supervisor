@@ -423,6 +423,49 @@ def test_gate_runner_records_direct_interaction_persona_addresses_and_tool_calls
     assert response["trace_envelope"]["tool_calls"][4]["parent_tool_call_id"] == parent_id
 
 
+def test_dual_agent_runner_records_planning_rubric_config_in_validation_event(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    planning_artifacts = _write_good_planning_artifacts(tmp_path)
+    stdout = build_lead_replay_stdout(
+        "Lead reviewed packet.\n" + _outcome_block(decision="accept plan"),
+        model="claude-opus-4-7",
+    )
+
+    def fake_runner(argv, **kwargs):
+        return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
+
+    result = run_dual_agent_gate(
+        DualAgentGateSpec(
+            task_id="gate-rubric-config",
+            run_id="run-rubric-config",
+            gate="execution",
+            instruction="Review implementation.",
+            cwd=tmp_path,
+            planning_artifacts=planning_artifacts,
+            expected_specialists=("Planner",),
+            expected_decisions=("accept plan",),
+            expected_objections=(),
+            planning_rubric_threshold=0.55,
+            planning_rubric_unavailable_policy="proceed_degraded",
+        ),
+        runner=fake_runner,
+        state=state,
+    )
+
+    planning_event = next(
+        json.loads(row["payload_json"])
+        for row in state.read_dual_agent_gate_events("run-rubric-config")
+        if row["kind"] == "dual_agent_planning_validation"
+    )
+    tool_args = planning_event["trace_envelope"]["tool_calls"][0]["args"]
+
+    assert result.status == "accepted"
+    assert planning_event["rubric"]["threshold"] == 0.55
+    assert planning_event["rubric"]["policy"] == "block"
+    assert tool_args["planning_rubric_threshold"] == 0.55
+    assert tool_args["planning_rubric_unavailable_policy"] == "proceed_degraded"
+
+
 def test_gate_runner_blocks_when_lead_critical_review_requests_revision(tmp_path):
     state = State(str(tmp_path / "state.db"))
     planning_artifacts = _write_good_planning_artifacts(tmp_path)

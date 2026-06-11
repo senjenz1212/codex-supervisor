@@ -46,6 +46,22 @@ def test_agentic_lead_defaults_to_allowed_with_three_subagents():
     assert cfg.agentic_lead.min_subagents == 3
 
 
+def test_planning_rubric_threshold_cannot_be_configured_to_zero(tmp_path):
+    from supervisor.config import Config, PLANNING_RUBRIC_MIN_THRESHOLD
+
+    p = tmp_path / "planning-rubric-floor.yaml"
+    p.write_text(
+        FIXTURE.read_text()
+        + "\nplanning_rubric:\n"
+          "  threshold: 0.0\n",
+        encoding="utf-8",
+    )
+
+    cfg = Config.load(str(p))
+
+    assert cfg.planning_rubric.threshold == PLANNING_RUBRIC_MIN_THRESHOLD
+
+
 def test_legacy_codex_config_still_selects_codex(tmp_path):
     """Back-compat: an older config that has `codex:` and no `target:` still loads
     and selects the Codex adapter."""

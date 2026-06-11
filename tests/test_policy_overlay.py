@@ -3,8 +3,11 @@ from __future__ import annotations
 from hashlib import sha256
 from pathlib import Path
 
-from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
-from supervisor.config import Config
+from mcp_tools.codex_supervisor_stdio import (
+    CodexSupervisorMcpAPI,
+    _planning_rubric_threshold_for_gate,
+)
+from supervisor.config import Config, PLANNING_RUBRIC_MIN_THRESHOLD
 from supervisor.policy_overlay import (
     draft_policy_regression_rollback_if_needed,
     load_policy_overlay,
@@ -89,6 +92,50 @@ def test_policy_overlay_loader_hashes_absent_overlay_for_replay(tmp_path):
     assert overlay.exists is False
     assert overlay.content_hash == sha256(b"").hexdigest()
     assert overlay.to_event_payload(gate="execution")["block_sha256"] == sha256(b"").hexdigest()
+
+
+def test_policy_overlay_rubric_threshold_cannot_disable_planning_floor(tmp_path):
+    cfg = _cfg(tmp_path)
+
+    threshold = _planning_rubric_threshold_for_gate(
+        cfg,
+        {"execution": 0.0},
+        gate="execution",
+    )
+
+    assert threshold == PLANNING_RUBRIC_MIN_THRESHOLD
+
+
+def test_explicit_gate_rubric_threshold_cannot_disable_planning_floor(tmp_path):
+    api = CodexSupervisorMcpAPI(_cfg(tmp_path), State(str(tmp_path / "state.db")))
+
+    spec = api._gate_spec(
+        task_id="floor-task",
+        run_id="floor-run",
+        gate="execution",
+        instruction="Review implementation.",
+        cwd=str(tmp_path),
+        expected_specialists=[],
+        expected_decisions=[],
+        expected_objections=[],
+        quality="best",
+        model=None,
+        budget_usd=1.0,
+        timeout_s=30,
+        execution_layer_mode="lead_direct",
+        dynamic_workflow_task_class=None,
+        agentic_policy={
+            "agentic_lead_policy": "off",
+            "min_subagents": 0,
+            "required_roles": [],
+            "solo_exception_for_artifact_only_gates": False,
+            "required_evidence_grade": "self_reported",
+        },
+        planning_artifacts=[],
+        planning_rubric_threshold=0.0,
+    )
+
+    assert spec.planning_rubric_threshold == PLANNING_RUBRIC_MIN_THRESHOLD
 
 
 def test_policy_regression_drafts_one_rollback_and_does_not_apply(tmp_path):

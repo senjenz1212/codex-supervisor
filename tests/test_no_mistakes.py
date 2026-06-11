@@ -177,6 +177,211 @@ def test_no_mistakes_adapter_parses_outcome_and_gate_findings(tmp_path):
     assert blocked.findings[0].action == "auto-fix"
 
 
+def test_no_mistakes_adapter_parses_structured_json_contract(tmp_path):
+    from supervisor.no_mistakes import (
+        NoMistakesConfig,
+        NoMistakesValidationRequest,
+        run_no_mistakes_validation,
+    )
+
+    def structured_runner(argv, **kwargs):
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=(
+                '{"schema_version":"no-mistakes-report/v1",'
+                '"outcome":"blocked",'
+                '"gate":"review",'
+                '"findings":[{"id":"json-1","severity":"error",'
+                '"path":"supervisor/no_mistakes.py","line":12,'
+                '"message":"structured finding","action":"ask-user"}]}\n'
+            ),
+            stderr="",
+        )
+
+    result = run_no_mistakes_validation(
+        NoMistakesValidationRequest(
+            cwd=tmp_path,
+            task_id="task-1",
+            run_id="run-structured",
+            intent="Validate.",
+            config=NoMistakesConfig(policy="required", require_clean_committed_branch=False),
+        ),
+        runner=structured_runner,
+    )
+
+    assert result.verdict == "required_blocked"
+    assert result.reason == "no_mistakes_gate_review"
+    assert result.findings[0].finding_id == "json-1"
+    assert result.findings[0].file == "supervisor/no_mistakes.py"
+    assert result.findings[0].line == 12
+
+
+def test_no_mistakes_structured_checks_passed_with_gate_accepts(tmp_path):
+    from supervisor.no_mistakes import (
+        NoMistakesConfig,
+        NoMistakesValidationRequest,
+        run_no_mistakes_validation,
+    )
+
+    def structured_runner(argv, **kwargs):
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=(
+                '{"schema_version":"no-mistakes-report/v1",'
+                '"outcome":"checks_passed",'
+                '"gate":"review",'
+                '"findings":[]}\n'
+            ),
+            stderr="",
+        )
+
+    result = run_no_mistakes_validation(
+        NoMistakesValidationRequest(
+            cwd=tmp_path,
+            task_id="task-1",
+            run_id="run-structured-pass",
+            intent="Validate.",
+            config=NoMistakesConfig(policy="required", require_clean_committed_branch=False),
+        ),
+        runner=structured_runner,
+    )
+
+    assert result.verdict == "accepted"
+    assert result.status == "accepted"
+    assert result.reason == "no_mistakes_checks_passed"
+    assert result.findings == ()
+
+
+def test_no_mistakes_required_blocks_malformed_structured_json(tmp_path):
+    from supervisor.no_mistakes import (
+        NoMistakesConfig,
+        NoMistakesValidationRequest,
+        run_no_mistakes_validation,
+    )
+
+    def malformed_runner(argv, **kwargs):
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout='{"schema_version":"no-mistakes-report/v1","findings":[}\n',
+            stderr="",
+        )
+
+    result = run_no_mistakes_validation(
+        NoMistakesValidationRequest(
+            cwd=tmp_path,
+            task_id="task-1",
+            run_id="run-malformed",
+            intent="Validate.",
+            config=NoMistakesConfig(policy="required", require_clean_committed_branch=False),
+        ),
+        runner=malformed_runner,
+    )
+
+    assert result.verdict == "required_blocked"
+    assert result.status == "blocked"
+    assert result.reason == "no_mistakes_gate_no_mistakes_structured_contract"
+    assert result.findings[0].finding_id == "no-mistakes-malformed-json"
+
+
+def test_no_mistakes_advisory_records_malformed_structured_json_as_secondary_evidence(tmp_path):
+    from supervisor.no_mistakes import (
+        NoMistakesConfig,
+        NoMistakesValidationRequest,
+        run_no_mistakes_validation,
+    )
+
+    def malformed_runner(argv, **kwargs):
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout='{"schema_version":"no-mistakes-report/v1","outcome":\n',
+            stderr="",
+        )
+
+    result = run_no_mistakes_validation(
+        NoMistakesValidationRequest(
+            cwd=tmp_path,
+            task_id="task-1",
+            run_id="run-advisory-malformed",
+            intent="Validate.",
+            config=NoMistakesConfig(policy="advisory", require_clean_committed_branch=False),
+        ),
+        runner=malformed_runner,
+    )
+
+    assert result.verdict == "advisory_blocked"
+    assert result.reason == "no_mistakes_gate_no_mistakes_structured_contract"
+    assert result.to_receipt()["kind"] == "no_mistakes_validation_receipt"
+    assert result.findings[0].severity == "error"
+
+
+def test_no_mistakes_required_blocks_incomplete_structured_json_contract(tmp_path):
+    from supervisor.no_mistakes import (
+        NoMistakesConfig,
+        NoMistakesValidationRequest,
+        run_no_mistakes_validation,
+    )
+
+    def incomplete_runner(argv, **kwargs):
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout='{"schema_version":"no-mistakes-report/v1"}\n',
+            stderr="",
+        )
+
+    result = run_no_mistakes_validation(
+        NoMistakesValidationRequest(
+            cwd=tmp_path,
+            task_id="task-1",
+            run_id="run-incomplete",
+            intent="Validate.",
+            config=NoMistakesConfig(policy="required", require_clean_committed_branch=False),
+        ),
+        runner=incomplete_runner,
+    )
+
+    assert result.verdict == "required_blocked"
+    assert result.status == "blocked"
+    assert result.reason == "no_mistakes_gate_no_mistakes_structured_contract"
+    assert result.findings[0].finding_id == "no-mistakes-incomplete-contract"
+
+
+def test_no_mistakes_advisory_records_incomplete_structured_json_contract(tmp_path):
+    from supervisor.no_mistakes import (
+        NoMistakesConfig,
+        NoMistakesValidationRequest,
+        run_no_mistakes_validation,
+    )
+
+    def incomplete_runner(argv, **kwargs):
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout='{"schema_version":"no-mistakes-report/v1","findings":[]}\n',
+            stderr="",
+        )
+
+    result = run_no_mistakes_validation(
+        NoMistakesValidationRequest(
+            cwd=tmp_path,
+            task_id="task-1",
+            run_id="run-advisory-incomplete",
+            intent="Validate.",
+            config=NoMistakesConfig(policy="advisory", require_clean_committed_branch=False),
+        ),
+        runner=incomplete_runner,
+    )
+
+    assert result.verdict == "advisory_blocked"
+    assert result.reason == "no_mistakes_gate_no_mistakes_structured_contract"
+    assert result.findings[0].finding_id == "no-mistakes-incomplete-contract"
+    assert result.to_receipt()["status"] == "blocked"
+
+
 def test_no_mistakes_changes_require_supervisor_rerun(tmp_path):
     from supervisor.no_mistakes import (
         NoMistakesConfig,

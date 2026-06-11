@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "fcab96487d7c79433dac527e1b69d25e7647b81a537b6dd951dc5e75fb71e6d9",
+  "git": {
+    "diff_bytes": 59847,
+    "diff_sha256": "15869b815fad54b25191610ad0b82a94136303d6556e0ebc6c327d4302cb5658",
+    "diff_stat": "mcp_tools/codex_supervisor_stdio.py      |  54 +++++++-\n supervisor/config.py                     |  14 ++-\n supervisor/dual_agent_runner.py          |   6 +\n supervisor/dynamic_workflow_receipts.py  |  65 +++++++++-\n supervisor/no_mistakes.py                | 120 ++++++++++++++++--\n supervisor/planning_validator.py         | 168 ++++++++++++++++++++++++-\n tests/test_dual_agent_runner.py          |  43 +++++++\n tests/test_dual_agent_workflow_driver.py |  37 ++++++\n tests/test_dynamic_workflow_receipts.py  | 121 +++++++++++++++++-\n tests/test_no_mistakes.py                | 205 +++++++++++++++++++++++++++++++\n tests/test_planning_validator.py         | 187 +++++++++++++++++++++++++++-\n tests/test_policy_overlay.py             |  51 +++++++-\n tests/test_target_config_load.py         |  16 +++\n 13 files changed, 1064 insertions(+), 23 deletions(-)",
+    "head": "52925e7",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "52925e7",
+    "status_short": "M mcp_tools/codex_supervisor_stdio.py\n M supervisor/config.py\n M supervisor/dual_agent_runner.py\n M supervisor/dynamic_workflow_receipts.py\n M supervisor/no_mistakes.py\n M supervisor/planning_validator.py\n M tests/test_dual_agent_runner.py\n M tests/test_dual_agent_workflow_driver.py\n M tests/test_dynamic_workflow_receipts.py\n M tests/test_no_mistakes.py\n M tests/test_planning_validator.py\n M tests/test_policy_overlay.py\n M tests/test_target_config_load.py\n?? .codex-supervisor/\n?? .scratch/autoresearch-policy-diff-derivation-20260610/\n?? .scratch/axi-cli-detached-dispatcher-20260610/\n?? .scratch/cocreate-checkpoint-files-only-dual-agent-prompt.md\n?? .scratch/cocreate-ckpt-tdd-review-corrective-input.md\n?? .scratch/cocreate-global-purge-dual-agent-prompt.md\n?? .scratch/defense-in-depth-hardening-20260610/\n?? .scratch/policy-overlay-liveness-20260610-repair/\n?? docs/axi-principles-evidence-review-20260611.md\n?? docs/dual-agent/defense-in-depth-hardening-20260610/\n?? docs/dual-agent/live-cursor-sdk-probe-20260610-135900/\n?? docs/dual-agent/live-cursor-sdk-probe-20260610-140228/\n?? docs/dual-agent/supervisor-flow-autoresearch-run-20260609/\n?? docs/supervisor-auto-evolution-loop-program-20260610.md\n?? docs/supervisor-auto-improve-gap-analysis-20260610.md\n?? docs/supervisor-autoevolution-readiness-20260610.md\n?? docs/supervisor-axi-vs-mcp-analysis-20260610.md\n?? docs/supervisor-improvement-audit-20260609.md\n?? docs/supervisor-improvement-completion-prompts-20260610.md\n?? docs/supervisor-improvement-prompts-coverage-20260609.md\n?? docs/supervisor-improvement-prompts-finish-20260610.md"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "d087ef3f4d4275f28a5926abe5ffd3e35fb150a9d49f9e465ba60c3766ee40df",
+    "implementation_plan": "3e10e1eacbe59e725331711b365d4e93181543ce0e05eda3ec25a221fb9ea63c",
+    "issues": "18915eb5390dbba8577f3389fd8825af1bd79a233205e9dcbcaa658773ff4efb",
+    "prd": "a1515ab8502728a2412886d9ca3d9eb731cab615c0ce6d14c823daa1f6e4bed7",
+    "tdd_plan": "38cfc76cc7ec929874a848c84a9e988a422757cfde4f8a155b83b2b41ab9a7d4"
+  },
+  "status": "captured"
+}

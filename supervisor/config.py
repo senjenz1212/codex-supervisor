@@ -10,10 +10,11 @@ import re
 from pathlib import Path
 from typing import Any, Literal
 import yaml
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 _ENV_RE = re.compile(r"\$\{([A-Z0-9_]+)\}")
+PLANNING_RUBRIC_MIN_THRESHOLD = 0.2
 
 
 def _expand_env(obj: Any) -> Any:
@@ -146,6 +147,16 @@ class AgenticLeadCfg(BaseModel):
     required_evidence_grade: Literal["self_reported", "lead_captured", "runtime_native"] = "self_reported"
 
 
+class PlanningRubricCfg(BaseModel):
+    threshold: float = 0.6
+    unavailable_policy: Literal["block", "proceed_degraded"] = "block"
+
+    @field_validator("threshold")
+    @classmethod
+    def _clamp_threshold(cls, value: float) -> float:
+        return max(PLANNING_RUBRIC_MIN_THRESHOLD, min(1.0, float(value)))
+
+
 class DurableExecutionCfg(BaseModel):
     engine: Literal["hand_rolled", "temporal_spike"] = "hand_rolled"
     temporal_spike_enabled: bool = False
@@ -241,6 +252,7 @@ class Config(BaseModel):
     orchestrator: OrchestratorCfg
     supervisor: SupervisorCfg
     agentic_lead: AgenticLeadCfg = Field(default_factory=AgenticLeadCfg)
+    planning_rubric: PlanningRubricCfg = Field(default_factory=PlanningRubricCfg)
     durable_execution: DurableExecutionCfg = Field(default_factory=DurableExecutionCfg)
     autoresearch: AutoResearchCfg = Field(default_factory=AutoResearchCfg)
     no_mistakes: NoMistakesCfg = Field(default_factory=NoMistakesCfg)

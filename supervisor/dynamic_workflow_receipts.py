@@ -140,6 +140,13 @@ def verify_dynamic_workflow_receipts(
         "agentic_policy": agentic_policy,
     }
     if missing:
+        if _invalid_contains_hash_mismatch(invalid):
+            return ProbeResult(
+                DYNAMIC_WORKFLOW_RECEIPT_PROBE_ID,
+                "red",
+                "dynamic_workflow_receipt_hash_mismatch",
+                {**details, "missing_gates": missing, "invalid_gates": invalid},
+            )
         return ProbeResult(
             DYNAMIC_WORKFLOW_RECEIPT_PROBE_ID,
             "red",
@@ -147,6 +154,13 @@ def verify_dynamic_workflow_receipts(
             {**details, "missing_gates": missing, "invalid_gates": invalid},
         )
     if invalid:
+        if _invalid_contains_hash_mismatch(invalid):
+            return ProbeResult(
+                DYNAMIC_WORKFLOW_RECEIPT_PROBE_ID,
+                "red",
+                "dynamic_workflow_receipt_hash_mismatch",
+                {**details, "invalid_gates": invalid},
+            )
         return ProbeResult(
             DYNAMIC_WORKFLOW_RECEIPT_PROBE_ID,
             "red",
@@ -174,6 +188,14 @@ def _dynamic_receipts(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
             continue
         result.append(dict(receipt))
     return result
+
+
+def _invalid_contains_hash_mismatch(invalid: dict[str, list[str]]) -> bool:
+    return any(
+        "sha256_mismatch" in problem or "output_hash_mismatch" in problem
+        for problems in invalid.values()
+        for problem in problems
+    )
 
 
 def _evaluate_agentic_lead_policy(
@@ -205,6 +227,9 @@ def _evaluate_agentic_lead_policy(
     blocking: list[dict[str, Any]] = []
     lead_solo = _lead_solo_execution(receipts)
     enforce = policy_name == "required"
+    fanout_floor = _fanout_required_evidence_grade(gate, subagents)
+    effective_required_grade = _max_evidence_grade(required_grade, fanout_floor)
+    enforce_grade = enforce or bool(fanout_floor)
     solo_exception_applies = bool(
         solo_exception_for_artifact_only_gates
         and _norm(gate) in _ARTIFACT_ONLY_GATES
@@ -251,12 +276,17 @@ def _evaluate_agentic_lead_policy(
                 "task_id": subagent["task_id"],
                 "fields": missing_runtime,
             })
-        if enforce and _EVIDENCE_GRADE_RANK[subagent["evidence_grade"]] < _EVIDENCE_GRADE_RANK[required_grade]:
+        if enforce_grade and _EVIDENCE_GRADE_RANK[subagent["evidence_grade"]] < _EVIDENCE_GRADE_RANK[effective_required_grade]:
             blocking.append({
-                "reason": "required_evidence_grade_not_met",
+                "reason": (
+                    "fanout_evidence_grade_not_met"
+                    if effective_required_grade != required_grade
+                    else "required_evidence_grade_not_met"
+                ),
                 "task_id": subagent["task_id"],
                 "observed": subagent["evidence_grade"],
-                "required": required_grade,
+                "required": effective_required_grade,
+                "configured_required": required_grade,
             })
         if enforce and _is_independent_reviewer(subagent) and _reviewer_blocks(subagent):
             blocking.append({
@@ -276,18 +306,42 @@ def _evaluate_agentic_lead_policy(
     return {
         "schema_version": "agentic-lead-policy/v1",
         "policy": policy_name,
-        "status": "blocked" if blocking else "accepted" if policy_name != "off" else "not_applicable",
+        "status": (
+            "blocked" if blocking
+            else "accepted" if policy_name != "off" or fanout_floor
+            else "not_applicable"
+        ),
         "min_subagents": max(0, int(min_subagents)),
         "required_roles": required_role_keys,
         "solo_exception_for_artifact_only_gates": bool(solo_exception_for_artifact_only_gates),
         "solo_exception_applies": solo_exception_applies,
         "gate": _norm(gate),
         "required_evidence_grade": required_grade,
+        "effective_required_evidence_grade": effective_required_grade,
+        "evidence_grade_floor_source": (
+            "fanout_default" if fanout_floor and effective_required_grade != required_grade
+            else "configured"
+        ),
         "achieved_evidence_grade": achieved,
         "lead_solo_execution": lead_solo,
         "subagents": subagents,
         "blocking_findings": blocking,
     }
+
+
+def _fanout_required_evidence_grade(gate: str | None, subagents: list[dict[str, Any]]) -> str | None:
+    if not subagents:
+        return None
+    if _norm(gate) in {"execution", "outcome_review"}:
+        return "runtime_native"
+    return "lead_captured"
+
+
+def _max_evidence_grade(left: str, right: str | None) -> str:
+    candidates = [left]
+    if right:
+        candidates.append(right)
+    return max(candidates, key=lambda item: _EVIDENCE_GRADE_RANK.get(item, 0))
 
 
 def _agentic_subagents(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -298,6 +352,9 @@ def _agentic_subagents(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
         kind = _norm(receipt.get("kind") or receipt.get("type"))
         if kind in _DYNAMIC_SUBAGENT_RESULT_KINDS:
             subagents.append(dict(receipt))
+            continue
+        if kind in _DYNAMIC_RECEIPT_KINDS:
+            continue
         for subagent in receipt.get("subagents") or []:
             if isinstance(subagent, dict):
                 subagents.append({**subagent, "parent_receipt_id": receipt.get("receipt_id") or receipt.get("id")})

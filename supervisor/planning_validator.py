@@ -4,13 +4,15 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable, Literal
 
+from .config import PLANNING_RUBRIC_MIN_THRESHOLD
 from .dual_agent import ProbeResult
 from .dual_agent_lead import PlanningArtifact, compute_file_sha256
 
 
-PLANNING_VALIDATOR_VERSION = "1.0.0"
+PLANNING_VALIDATOR_VERSION = "1.1.0"
+PlanningRubricUnavailablePolicy = Literal["block", "proceed_degraded"]
 
 REQUIRED_PLANNING_ARTIFACTS_BY_GATE: dict[str, tuple[str, ...]] = {
     "prd_review": ("prd",),
@@ -104,11 +106,37 @@ class ArtifactValidation:
 
 
 @dataclass(frozen=True)
+class PlanningRubricResult:
+    score: float
+    threshold: float
+    status: str
+    policy: str
+    reasons: tuple[str, ...]
+    unavailable: bool = False
+
+    @property
+    def ok(self) -> bool:
+        return self.status in {"accepted", "proceed_degraded"}
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": "planning-semantic-rubric/v1",
+            "score": round(float(self.score), 6),
+            "threshold": round(float(self.threshold), 6),
+            "status": self.status,
+            "policy": self.policy,
+            "reasons": list(self.reasons),
+            "unavailable": bool(self.unavailable),
+        }
+
+
+@dataclass(frozen=True)
 class PlanningValidationResult:
     gate: str | None
     validator_version: str
     artifacts: tuple[ArtifactValidation, ...]
     checks: dict[str, PlanningCheck]
+    rubric: PlanningRubricResult | None = None
 
     @property
     def ok(self) -> bool:
@@ -137,6 +165,7 @@ class PlanningValidationResult:
                 for check_id, check in sorted(self.checks.items())
             },
             "verdict": self.verdict,
+            "rubric": self.rubric.to_dict() if self.rubric is not None else None,
             "artifacts": [
                 {
                     "kind": artifact.kind,
@@ -158,6 +187,9 @@ def validate_planning_artifacts(
     *,
     required_kinds: Iterable[str] = (),
     gate: str | None = None,
+    rubric_threshold: float = 0.6,
+    rubric_unavailable_policy: PlanningRubricUnavailablePolicy = "block",
+    rubric_runner: Callable[[dict[str, str], tuple[str, ...], float], PlanningRubricResult | None] | None = None,
 ) -> PlanningValidationResult:
     required = tuple(_normalise_kind(kind) for kind in required_kinds)
     by_kind: dict[str, PlanningArtifact] = {}
@@ -207,11 +239,21 @@ def validate_planning_artifacts(
         for check in plan_checks:
             checks[check.check_id] = check
 
+    rubric = _run_planning_rubric(
+        texts,
+        required=required,
+        threshold=rubric_threshold,
+        unavailable_policy=rubric_unavailable_policy,
+        rubric_runner=rubric_runner,
+    )
+    checks["RUBRIC-001"] = _rubric_check(rubric)
+
     return PlanningValidationResult(
         gate=gate,
         validator_version=PLANNING_VALIDATOR_VERSION,
         artifacts=tuple(artifact_results),
         checks=checks,
+        rubric=rubric,
     )
 
 
@@ -379,6 +421,128 @@ def _validate_plan_traceability(texts: dict[str, str]) -> list[PlanningCheck]:
     if missing_tests:
         message.append("missing TDD tests: " + ", ".join(missing_tests))
     return [_check("PLAN-004", ok, "; ".join(message), details=details)]
+
+
+def _run_planning_rubric(
+    texts: dict[str, str],
+    *,
+    required: tuple[str, ...],
+    threshold: float,
+    unavailable_policy: PlanningRubricUnavailablePolicy,
+    rubric_runner: Callable[[dict[str, str], tuple[str, ...], float], PlanningRubricResult | None] | None,
+) -> PlanningRubricResult:
+    threshold = _clamp_threshold(threshold)
+    policy = unavailable_policy if unavailable_policy in {"block", "proceed_degraded"} else "block"
+    runner = rubric_runner or _deterministic_planning_rubric
+    try:
+        rubric = runner(dict(texts), required, threshold)
+    except Exception as exc:
+        return _unavailable_rubric(threshold, policy, f"rubric_exception:{type(exc).__name__}")
+    if rubric is None:
+        return _unavailable_rubric(threshold, policy, "rubric_unavailable")
+    return rubric
+
+
+def _deterministic_planning_rubric(
+    texts: dict[str, str],
+    required: tuple[str, ...],
+    threshold: float,
+) -> PlanningRubricResult:
+    if not required:
+        return PlanningRubricResult(
+            score=1.0,
+            threshold=threshold,
+            status="accepted",
+            policy="block",
+            reasons=("not_applicable:no_required_artifacts",),
+        )
+    combined = "\n\n".join(texts.get(kind, "") for kind in required)
+    promises = set(_prd_promise_ids(texts.get("prd", "")))
+    tests = set(_tdd_test_names(texts.get("tdd_plan", "")))
+    sections_score = _ratio(
+        sum(1 for kind in required if len(_words(texts.get(kind, ""))) >= 35),
+        max(1, len(required)),
+    )
+    promise_score = min(1.0, len(promises) / 3.0)
+    test_score = min(1.0, len(tests) / 4.0)
+    boundary_score = min(1.0, len(set(re.findall(
+        r"\b(?:validate|verify|run|parse|collect|submit|poll)_[A-Za-z0-9_]+\b",
+        combined,
+    ))) / 3.0)
+    red_green_score = 1.0 if "red:" in combined.lower() and "green:" in combined.lower() else 0.0
+    trace_body = _first_section(_sections(texts.get("implementation_plan", "")), ("traceability",))
+    trace_score = 1.0 if promises and tests and promises <= set(re.findall(r"\bP\d+\b", trace_body)) else 0.0
+    unique_tokens = _unique_token_count(_strip_headings(combined))
+    total_tokens = max(1, len(_words(_strip_headings(combined))))
+    density_score = min(1.0, unique_tokens / max(80.0, total_tokens * 0.35))
+    components = [sections_score, density_score]
+    if "prd" in required:
+        components.append(promise_score)
+    if "tdd_plan" in required:
+        components.extend([test_score, red_green_score])
+    if "implementation_plan" in required:
+        components.extend([boundary_score, trace_score])
+    score = sum(components) / max(1, len(components))
+    reasons = [
+        f"sections={sections_score:.2f}",
+        f"promises={len(promises)}",
+        f"tests={len(tests)}",
+        f"boundary_score={boundary_score:.2f}",
+        f"red_green={red_green_score:.2f}",
+        f"trace={trace_score:.2f}",
+        f"unique_tokens={unique_tokens}",
+    ]
+    return PlanningRubricResult(
+        score=score,
+        threshold=threshold,
+        status="accepted" if score >= threshold else "blocked",
+        policy="block",
+        reasons=tuple(reasons),
+    )
+
+
+def _unavailable_rubric(
+    threshold: float,
+    policy: PlanningRubricUnavailablePolicy,
+    reason: str,
+) -> PlanningRubricResult:
+    status = "proceed_degraded" if policy == "proceed_degraded" else "unavailable_blocked"
+    return PlanningRubricResult(
+        score=0.0,
+        threshold=threshold,
+        status=status,
+        policy=policy,
+        reasons=(reason,),
+        unavailable=True,
+    )
+
+
+def _rubric_check(rubric: PlanningRubricResult) -> PlanningCheck:
+    if rubric.ok:
+        return _pass("RUBRIC-001", "planning semantic rubric accepted")
+    if rubric.unavailable:
+        return _fail(
+            "RUBRIC-001",
+            "planning semantic rubric unavailable",
+            details=rubric.to_dict(),
+        )
+    return _fail(
+        "RUBRIC-001",
+        f"planning semantic rubric score {rubric.score:.3f} below threshold {rubric.threshold:.3f}",
+        details=rubric.to_dict(),
+    )
+
+
+def _clamp_threshold(value: float) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return 0.6
+    return max(PLANNING_RUBRIC_MIN_THRESHOLD, min(1.0, number))
+
+
+def _ratio(numerator: int, denominator: int) -> float:
+    return float(numerator) / float(denominator or 1)
 
 
 def _aggregate_distinct_content(texts: dict[str, str], required: tuple[str, ...]) -> PlanningCheck:
