@@ -11,7 +11,7 @@ from typing import Any
 from .redaction import redact
 from .state import TERMINAL_WORKFLOW_JOB_STATUSES, canonical_terminal_outcome_json
 from .trace_envelope import stamp_trace_envelope
-from .lessons import canonical_lesson_id
+from .lessons import canonical_lesson_id, canonical_lesson_key
 
 
 POSTGRES_LOCK_ORDER = "priority ASC, created_at ASC, id ASC"
@@ -164,6 +164,11 @@ CREATE TABLE IF NOT EXISTS supervisor_lessons (
   root_cause TEXT NOT NULL,
   remediation TEXT NOT NULL,
   source_run_id TEXT NOT NULL,
+  normalized_key TEXT NOT NULL DEFAULT '',
+  observed_count INTEGER NOT NULL DEFAULT 1,
+  injection_count INTEGER NOT NULL DEFAULT 0,
+  recurrence_count INTEGER NOT NULL DEFAULT 0,
+  retired_at BIGINT,
   created_at BIGINT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_supervisor_lessons_task_gate
@@ -183,6 +188,8 @@ CREATE TABLE IF NOT EXISTS supervisor_quality_trends (
   false_accept_count INTEGER NOT NULL DEFAULT 0,
   false_accept_denominator INTEGER NOT NULL DEFAULT 0,
   false_accept_rate DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+  policy_overlay_hash TEXT NOT NULL DEFAULT '',
+  policy_proposal_id TEXT NOT NULL DEFAULT '',
   details_json JSONB NOT NULL DEFAULT '{}'::jsonb,
   computed_at BIGINT NOT NULL,
   UNIQUE(run_id, gate)
@@ -294,6 +301,8 @@ def _quality_trend_summary_to_dict(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "task_class": row["task_class"],
         "gate": row["gate"],
+        "policy_overlay_hashes": _split_group_concat(row.get("policy_overlay_hashes")),
+        "policy_proposal_ids": _split_group_concat(row.get("policy_proposal_ids")),
         "run_count": run_count,
         "accepted_count": accepted_count,
         "acceptance_rate": accepted_count / run_count if run_count else 0.0,
@@ -314,6 +323,10 @@ def _quality_trend_summary_to_dict(row: dict[str, Any]) -> dict[str, Any]:
             else 0.0
         ),
     }
+
+
+def _split_group_concat(value: Any) -> list[str]:
+    return sorted({item for item in str(value or "").split(",") if item})
 
 
 def _autoresearch_experiment_row_to_dict(row: dict[str, Any]) -> dict[str, Any]:
@@ -534,6 +547,7 @@ class PostgresState:
                    'receipt_provenance_downgraded',
                    'supervisor_lesson_injection',
                    'supervisor_lesson_recorded',
+                   'supervisor_policy_overlay_snapshot',
                    'tri_agent_cursor_review'
                  )
                ORDER BY event_id ASC""",
@@ -567,13 +581,20 @@ class PostgresState:
             remediation=remediation,
             source_run_id=source_run_id,
         )
+        normalized_key = canonical_lesson_key(
+            task_class=task_class,
+            gate=gate,
+            taxonomy_code=taxonomy_code,
+            root_cause=root_cause,
+            remediation=remediation,
+        )
         with self._write_lock:
             with self._conn.transaction():
                 row = self._conn.execute(
                     """INSERT INTO supervisor_lessons(
                          lesson_id, task_class, gate, taxonomy_code, root_cause,
-                         remediation, source_run_id, created_at)
-                       VALUES(%s, %s, %s, %s, %s, %s, %s, %s)
+                         remediation, source_run_id, normalized_key, created_at)
+                       VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s)
                        ON CONFLICT(lesson_id) DO NOTHING
                        RETURNING *""",
                     (
@@ -584,13 +605,17 @@ class PostgresState:
                         str(root_cause or "unknown failure"),
                         str(remediation or "Verify this known failure mode before claiming completion."),
                         str(source_run_id),
+                        normalized_key,
                         now,
                     ),
                 ).fetchone()
                 created = row is not None
                 if row is None:
                     row = self._conn.execute(
-                        "SELECT * FROM supervisor_lessons WHERE lesson_id=%s",
+                        """UPDATE supervisor_lessons
+                              SET observed_count=observed_count + 1
+                            WHERE lesson_id=%s
+                            RETURNING *""",
                         (lesson_id,),
                     ).fetchone()
                 if row is None:
@@ -606,7 +631,7 @@ class PostgresState:
     ) -> list[dict[str, Any]]:
         rows = self._conn.execute(
             """SELECT * FROM supervisor_lessons
-               WHERE task_class=%s AND gate=%s
+               WHERE task_class=%s AND gate=%s AND retired_at IS NULL
                ORDER BY created_at DESC, lesson_id ASC
                LIMIT %s""",
             (str(task_class or "general"), str(gate or "unknown"), int(limit)),
@@ -622,6 +647,48 @@ class PostgresState:
         ).fetchall()
         return [dict(row) for row in rows]
 
+    def record_supervisor_lesson_injection_feedback(
+        self,
+        *,
+        lesson_ids: list[str] | tuple[str, ...],
+        recurring_taxonomy_codes: list[str] | tuple[str, ...] = (),
+        retire_after: int = 3,
+        observed_at: int | None = None,
+    ) -> None:
+        now = int(time.time()) if observed_at is None else int(observed_at)
+        recurring = {str(code) for code in recurring_taxonomy_codes}
+        with self._write_lock:
+            with self._conn.transaction():
+                for lesson_id in lesson_ids:
+                    row = self._conn.execute(
+                        "SELECT taxonomy_code FROM supervisor_lessons WHERE lesson_id=%s",
+                        (str(lesson_id),),
+                    ).fetchone()
+                    if row is None:
+                        continue
+                    recurs = str(row["taxonomy_code"]) in recurring
+                    self._conn.execute(
+                        """UPDATE supervisor_lessons
+                              SET injection_count=injection_count + 1,
+                                  recurrence_count=recurrence_count + %s,
+                                  retired_at=CASE
+                                    WHEN retired_at IS NULL
+                                     AND injection_count + 1 >= %s
+                                     AND recurrence_count + %s >= %s
+                                    THEN %s
+                                    ELSE retired_at
+                                  END
+                            WHERE lesson_id=%s""",
+                        (
+                            1 if recurs else 0,
+                            int(retire_after),
+                            1 if recurs else 0,
+                            int(retire_after),
+                            now,
+                            str(lesson_id),
+                        ),
+                    )
+
     # --- quality trend metrics ---
     def upsert_quality_trend_row(
         self,
@@ -634,6 +701,8 @@ class PostgresState:
         first_pass_accepted: bool,
         revision_rounds: int,
         time_to_accepted_outcome_s: float | None,
+        policy_overlay_hash: str = "",
+        policy_proposal_id: str = "",
         details: dict[str, Any] | None = None,
         computed_at: int | None = None,
     ) -> dict[str, Any]:
@@ -644,8 +713,9 @@ class PostgresState:
                     """INSERT INTO supervisor_quality_trends(
                          run_id, task_id, task_class, gate, accepted,
                          first_pass_accepted, revision_rounds,
-                         time_to_accepted_outcome_s, details_json, computed_at)
-                       VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                         time_to_accepted_outcome_s, policy_overlay_hash,
+                         policy_proposal_id, details_json, computed_at)
+                       VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                        ON CONFLICT(run_id, gate) DO UPDATE SET
                          task_id=EXCLUDED.task_id,
                          task_class=EXCLUDED.task_class,
@@ -653,6 +723,8 @@ class PostgresState:
                          first_pass_accepted=EXCLUDED.first_pass_accepted,
                          revision_rounds=EXCLUDED.revision_rounds,
                          time_to_accepted_outcome_s=EXCLUDED.time_to_accepted_outcome_s,
+                         policy_overlay_hash=EXCLUDED.policy_overlay_hash,
+                         policy_proposal_id=EXCLUDED.policy_proposal_id,
                          details_json=EXCLUDED.details_json,
                          computed_at=EXCLUDED.computed_at
                        RETURNING *""",
@@ -665,6 +737,8 @@ class PostgresState:
                         bool(first_pass_accepted),
                         int(revision_rounds),
                         time_to_accepted_outcome_s,
+                        str(policy_overlay_hash or ""),
+                        str(policy_proposal_id or ""),
                         self._Jsonb(redact(details or {})),
                         now,
                     ),
@@ -740,6 +814,8 @@ class PostgresState:
             f"""SELECT
                     task_class,
                     gate,
+                    STRING_AGG(DISTINCT NULLIF(policy_overlay_hash, ''), ',') AS policy_overlay_hashes,
+                    STRING_AGG(DISTINCT NULLIF(policy_proposal_id, ''), ',') AS policy_proposal_ids,
                     COUNT(*) AS run_count,
                     SUM(CASE WHEN accepted THEN 1 ELSE 0 END) AS accepted_count,
                     SUM(CASE WHEN first_pass_accepted THEN 1 ELSE 0 END) AS first_pass_accepted_count,
@@ -761,6 +837,29 @@ class PostgresState:
             "SELECT COUNT(*) AS count FROM supervisor_quality_trends"
         ).fetchone()
         return int(row["count"] if row is not None else 0)
+
+    def list_quality_trend_rows(
+        self,
+        *,
+        task_class: str | None = None,
+        gate: str | None = None,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if task_class:
+            clauses.append("task_class=%s")
+            params.append(task_class)
+        if gate:
+            clauses.append("gate=%s")
+            params.append(gate)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = self._conn.execute(
+            f"""SELECT * FROM supervisor_quality_trends
+                {where}
+                ORDER BY computed_at ASC, run_id ASC, gate ASC""",
+            tuple(params),
+        ).fetchall()
+        return [_quality_trend_row_to_dict(dict(row)) for row in rows]
 
     # --- AutoResearch experiment queue ---
     def upsert_autoresearch_experiment_draft(
@@ -976,6 +1075,36 @@ class PostgresState:
             }
             for row in rows
         ]
+
+    def list_policy_proposal_approval_events(
+        self,
+        *,
+        proposal_id: str | None = None,
+        limit: int = 10000,
+    ) -> list[dict[str, Any]]:
+        rows = self._conn.execute(
+            """SELECT event_id, run_id, ts, source, kind, payload_json
+                 FROM events
+                WHERE kind='autoresearch_policy_proposal_approved'
+                ORDER BY global_id ASC
+                LIMIT %s""",
+            (int(limit),),
+        ).fetchall()
+        events: list[dict[str, Any]] = []
+        expected = str(proposal_id or "").strip()
+        for row in rows:
+            payload = _as_payload(row["payload_json"])
+            if expected and str(payload.get("proposal_id") or "") != expected:
+                continue
+            events.append({
+                "event_id": int(row["event_id"]),
+                "run_id": row["run_id"],
+                "ts": int(row["ts"]),
+                "source": row["source"],
+                "kind": row["kind"],
+                "payload": payload,
+            })
+        return events
 
     def get_event(self, *, run_id: str, event_id: int) -> dict[str, Any] | None:
         row = self._conn.execute(

@@ -8,6 +8,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from .policy_overlay import draft_policy_regression_rollbacks_for_trend_rows
 from .runtime_evidence import RuntimeEvidenceResult, capture_runtime_baseline, collect_runtime_evidence
 
 ACCEPTED_STATUSES = {"accepted", "accept"}
@@ -30,6 +31,7 @@ def record_quality_trends_for_run(
     route = _latest_payload(events, "dual_agent_workflow_route")
     resolved_task_id = _resolve_task_id(events, explicit=task_id, route=route)
     resolved_task_class = _resolve_task_class(route, explicit=task_class)
+    overlays_by_gate = _overlay_snapshots_by_gate(events)
     now = int(time.time()) if computed_at is None else int(computed_at)
 
     by_gate: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -84,9 +86,12 @@ def record_quality_trends_for_run(
             time_to_accepted_outcome_s=(
                 float(time_to_accept_s) if time_to_accept_s is not None else None
             ),
+            policy_overlay_hash=str(overlays_by_gate.get(gate, {}).get("policy_overlay_hash") or ""),
+            policy_proposal_id=str(overlays_by_gate.get(gate, {}).get("policy_proposal_id") or ""),
             details={
                 "source": "ledger_events",
                 "metric_semantics": "observational_only",
+                "policy_overlay": overlays_by_gate.get(gate, {}),
                 "gate_result_event_ids": [event["event_id"] for event in gate_events],
                 "first_gate_result_event_id": first_event["event_id"],
                 "accepted_gate_result_event_id": (
@@ -203,6 +208,75 @@ def query_quality_trends(
     return state.query_quality_trends(task_class=task_class, gate=gate)
 
 
+def run_weekly_p11_audit_if_due(
+    state: Any,
+    *,
+    run_id: str,
+    task_id: str | None = None,
+    task_class: str | None = None,
+    now: int | None = None,
+    cadence_s: int = 7 * 24 * 60 * 60,
+    policy_regression_kwargs: dict[str, Any] | None = None,
+    **audit_kwargs: Any,
+) -> dict[str, Any]:
+    """Run the sampled P11 audit at most once per cadence window."""
+    timestamp = int(time.time()) if now is None else int(now)
+    window_start = timestamp - max(1, int(cadence_s))
+    existing = [
+        event for event in state.read_events_since(run_id, after_event_id=0, limit=10_000)
+        if event["kind"] == "supervisor_p11_audit_scheduled"
+        and int(event["payload"].get("scheduled_at") or 0) >= window_start
+    ]
+    if existing:
+        return {
+            "status": "not_due",
+            "last_event_id": existing[-1]["event_id"],
+            "observational_only": True,
+            "gate_authority": "unchanged",
+        }
+    audit = run_sampled_p11_false_accept_audit(
+        state,
+        run_id=run_id,
+        task_id=task_id,
+        task_class=task_class,
+        **audit_kwargs,
+    )
+    try:
+        audit = {
+            **audit,
+            "policy_regression_rollbacks": draft_policy_regression_rollbacks_for_trend_rows(
+                state,
+                run_id=run_id,
+                trend_rows=list(audit.get("updated_trend_rows") or []),
+                **(policy_regression_kwargs or {}),
+            ),
+        }
+    except Exception as exc:
+        audit = {
+            **audit,
+            "policy_regression_rollbacks": [{
+                "status": "failed",
+                "reason": type(exc).__name__,
+                "message": str(exc),
+                "observational_only": True,
+                "gate_authority": "unchanged",
+            }],
+        }
+    event_id = state.write_event(
+        run_id=run_id,
+        source="supervisor",
+        kind="supervisor_p11_audit_scheduled",
+        payload={
+            "schema_version": "supervisor-p11-audit-schedule/v1",
+            "scheduled_at": timestamp,
+            "audit": audit,
+            "observational_only": True,
+            "gate_authority": "unchanged",
+        },
+    )
+    return {**audit, "status": "audited", "schedule_event_id": event_id}
+
+
 def _decode_events(rows: list[Any]) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
     for row in rows:
@@ -225,6 +299,24 @@ def _latest_payload(events: list[dict[str, Any]], kind: str) -> dict[str, Any]:
         if event["kind"] == kind:
             return event["payload"]
     return {}
+
+
+def _overlay_snapshots_by_gate(events: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    snapshots: dict[str, dict[str, Any]] = {}
+    for event in events:
+        if event["kind"] != "supervisor_policy_overlay_snapshot":
+            continue
+        payload = event["payload"]
+        gate = str(payload.get("gate") or "unknown")
+        snapshots[gate] = {
+            "schema_version": payload.get("schema_version"),
+            "overlay_hash": str(payload.get("overlay_hash") or payload.get("policy_overlay_hash") or ""),
+            "policy_overlay_hash": str(payload.get("policy_overlay_hash") or payload.get("overlay_hash") or ""),
+            "proposal_id": str(payload.get("proposal_id") or payload.get("policy_proposal_id") or ""),
+            "policy_proposal_id": str(payload.get("policy_proposal_id") or payload.get("proposal_id") or ""),
+            "block_sha256": str(payload.get("block_sha256") or ""),
+        }
+    return snapshots
 
 
 def _resolve_task_id(

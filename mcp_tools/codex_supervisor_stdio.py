@@ -83,6 +83,11 @@ from supervisor.lessons import (
     record_lessons_for_run,
 )
 from supervisor.quality_trends import record_quality_trends_for_run
+from supervisor.policy_overlay import (
+    apply_policy_overlay_to_instruction,
+    draft_policy_regression_rollbacks_for_trend_rows,
+    load_policy_overlay,
+)
 from supervisor.no_mistakes import (
     NoMistakesConfig,
     NoMistakesValidationRequest,
@@ -263,6 +268,10 @@ class CodexSupervisorMcpAPI:
         injected_lesson_block: str = "",
         injected_lesson_block_sha256: str = "",
         injected_lesson_ids: list[str] | tuple[str, ...] | None = None,
+        policy_overlay_block: str = "",
+        policy_overlay_block_sha256: str = "",
+        policy_overlay_hash: str = "",
+        policy_proposal_id: str = "",
         sanitize_tool_receipts: bool = True,
     ) -> dict[str, Any]:
         execution_layer_mode = _canonical_execution_layer_mode(execution_layer_mode)
@@ -351,6 +360,10 @@ class CodexSupervisorMcpAPI:
             injected_lesson_block=injected_lesson_block,
             injected_lesson_block_sha256=injected_lesson_block_sha256,
             injected_lesson_ids=tuple(str(item) for item in (injected_lesson_ids or ())),
+            policy_overlay_block=policy_overlay_block,
+            policy_overlay_block_sha256=policy_overlay_block_sha256,
+            policy_overlay_hash=policy_overlay_hash,
+            policy_proposal_id=policy_proposal_id,
         )
         notifier = self._notifier()
         with timed_tool_call(
@@ -1198,6 +1211,7 @@ class CodexSupervisorMcpAPI:
                         intent=intent,
                         corrective_context=corrective_context,
                         lesson_task_class=str(workflow_route["lesson_task_class"]),
+                        cwd=cwd,
                         lesson_snapshot=workflow_route.get("lesson_snapshot")
                         if isinstance(workflow_route.get("lesson_snapshot"), dict)
                         else None,
@@ -3744,6 +3758,30 @@ class CodexSupervisorMcpAPI:
                 "observational_only": True,
                 "gate_authority": "unchanged",
             }
+            autoresearch_cfg = getattr(self.cfg, "autoresearch", None)
+            quality_trends["policy_regression_rollbacks"] = (
+                draft_policy_regression_rollbacks_for_trend_rows(
+                    self.state,
+                    run_id=run_id,
+                    trend_rows=trend_rows,
+                    min_runs=int(getattr(autoresearch_cfg, "policy_regression_min_runs", 3)),
+                    first_pass_drop_threshold=float(getattr(
+                        autoresearch_cfg,
+                        "policy_regression_first_pass_drop_threshold",
+                        0.05,
+                    )),
+                    false_accept_increase_threshold=float(getattr(
+                        autoresearch_cfg,
+                        "policy_regression_false_accept_increase_threshold",
+                        0.01,
+                    )),
+                    time_to_accept_increase_ratio=float(getattr(
+                        autoresearch_cfg,
+                        "policy_regression_time_to_accept_increase_ratio",
+                        0.25,
+                    )),
+                )
+            )
         except Exception as exc:
             quality_trends = {
                 "recorded_count": 0,
@@ -3802,6 +3840,7 @@ class CodexSupervisorMcpAPI:
         intent: str,
         corrective_context: str,
         lesson_task_class: str,
+        cwd: str | Path = ".",
         lesson_snapshot: dict[str, Any] | None = None,
         round_index: int,
     ) -> dict[str, Any]:
@@ -3809,6 +3848,19 @@ class CodexSupervisorMcpAPI:
             gate=gate,
             intent=intent,
             corrective_context=corrective_context,
+        )
+        policy_overlay = load_policy_overlay(cwd)
+        overlay_payload = policy_overlay.to_event_payload(gate=gate)
+        self.state.write_event(
+            run_id=run_id,
+            source="supervisor",
+            kind="supervisor_policy_overlay_snapshot",
+            payload={
+                **overlay_payload,
+                "task_id": task_id,
+                "round_index": int(round_index),
+                "task_class": lesson_task_class,
+            },
         )
         snapshot_gates = (
             lesson_snapshot.get("gates")
@@ -3829,10 +3881,15 @@ class CodexSupervisorMcpAPI:
             lessons = self.state.query_supervisor_lessons(
                 task_class=lesson_task_class,
                 gate=gate,
-                limit=5,
+                limit=policy_overlay.lesson_limit,
             )
             injection = build_lesson_injection(lessons)
-        instruction = append_lesson_block(base_instruction, injection)
+        instruction = apply_policy_overlay_to_instruction(
+            base_instruction,
+            overlay=policy_overlay,
+            gate=gate,
+        )
+        instruction = append_lesson_block(instruction, injection)
         if injection["lesson_count"]:
             self.state.write_event(
                 run_id=run_id,
@@ -3860,6 +3917,10 @@ class CodexSupervisorMcpAPI:
             "injected_lesson_block": str(injection["block"]),
             "injected_lesson_block_sha256": str(injection["block_sha256"]),
             "injected_lesson_ids": list(injection["lesson_ids"]),
+            "policy_overlay_block": str(overlay_payload["block"]),
+            "policy_overlay_block_sha256": str(overlay_payload["block_sha256"]),
+            "policy_overlay_hash": str(policy_overlay.content_hash),
+            "policy_proposal_id": str(policy_overlay.proposal_id),
         }
 
     def _gate_spec(
@@ -3885,6 +3946,10 @@ class CodexSupervisorMcpAPI:
         injected_lesson_block: str = "",
         injected_lesson_block_sha256: str = "",
         injected_lesson_ids: tuple[str, ...] = (),
+        policy_overlay_block: str = "",
+        policy_overlay_block_sha256: str = "",
+        policy_overlay_hash: str = "",
+        policy_proposal_id: str = "",
     ) -> DualAgentGateSpec:
         return DualAgentGateSpec(
             task_id=task_id,
@@ -3915,6 +3980,10 @@ class CodexSupervisorMcpAPI:
             injected_lesson_block=injected_lesson_block,
             injected_lesson_block_sha256=injected_lesson_block_sha256,
             injected_lesson_ids=injected_lesson_ids,
+            policy_overlay_block=policy_overlay_block,
+            policy_overlay_block_sha256=policy_overlay_block_sha256,
+            policy_overlay_hash=policy_overlay_hash,
+            policy_proposal_id=policy_proposal_id,
             planning_artifacts=tuple(
                 artifact
                 for artifact in (

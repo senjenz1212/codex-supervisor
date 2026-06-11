@@ -169,6 +169,7 @@ def test_autoresearch_signal_generator_reads_reviewer_probe_and_lesson_signals(t
     assert by_code[("review_task", "outcome_review", "reviewer_disagreement")]["provenance"]["event_ids"]
     assert by_code[("probe_task", "execution", "probe_cohort_flipping")]["provenance"]["event_ids"]
     assert by_code[("lesson_task", "tdd_review", "FM-1.1")]["provenance"]["lesson_ids"]
+    assert by_code[("lesson_task", "tdd_review", "FM-1.1")]["provenance"]["signal_count"] == 3
 
 
 def test_autoresearch_draft_cannot_run_until_operator_marks_runnable(tmp_path):

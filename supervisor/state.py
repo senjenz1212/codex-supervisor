@@ -24,6 +24,7 @@ from .redaction import redact
 from .schema_migrations import run_forward_migrations
 from .trace_envelope import stamp_trace_envelope
 from .lessons import canonical_lesson_id
+from .lessons import canonical_lesson_key
 
 
 # Built-in baseline. Always merged into the stored never_touch_patterns
@@ -277,6 +278,11 @@ CREATE TABLE IF NOT EXISTS supervisor_lessons (
   root_cause    TEXT NOT NULL,
   remediation   TEXT NOT NULL,
   source_run_id TEXT NOT NULL,
+  normalized_key TEXT NOT NULL DEFAULT '',
+  observed_count INTEGER NOT NULL DEFAULT 1,
+  injection_count INTEGER NOT NULL DEFAULT 0,
+  recurrence_count INTEGER NOT NULL DEFAULT 0,
+  retired_at INTEGER,
   created_at    INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_supervisor_lessons_task_gate
@@ -296,6 +302,8 @@ CREATE TABLE IF NOT EXISTS supervisor_quality_trends (
   false_accept_count             INTEGER NOT NULL DEFAULT 0,
   false_accept_denominator       INTEGER NOT NULL DEFAULT 0,
   false_accept_rate              REAL NOT NULL DEFAULT 0.0,
+  policy_overlay_hash            TEXT NOT NULL DEFAULT '',
+  policy_proposal_id             TEXT NOT NULL DEFAULT '',
   details_json                   TEXT NOT NULL DEFAULT '{}',
   computed_at                    INTEGER NOT NULL,
   UNIQUE(run_id, gate)
@@ -379,6 +387,8 @@ def _quality_trend_summary_to_dict(row: sqlite3.Row) -> dict[str, Any]:
     return {
         "task_class": row["task_class"],
         "gate": row["gate"],
+        "policy_overlay_hashes": _split_group_concat(row["policy_overlay_hashes"]),
+        "policy_proposal_ids": _split_group_concat(row["policy_proposal_ids"]),
         "run_count": run_count,
         "accepted_count": accepted_count,
         "acceptance_rate": (accepted_count / run_count) if run_count else 0.0,
@@ -409,6 +419,10 @@ def _json_payload(value: Any) -> dict[str, Any]:
     except json.JSONDecodeError:
         loaded = {}
     return loaded if isinstance(loaded, dict) else {}
+
+
+def _split_group_concat(value: Any) -> list[str]:
+    return sorted({item for item in str(value or "").split(",") if item})
 
 
 def _autoresearch_experiment_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
@@ -692,6 +706,7 @@ class State:
                    'receipt_provenance_downgraded',
                    'supervisor_lesson_injection',
                    'supervisor_lesson_recorded',
+                   'supervisor_policy_overlay_snapshot',
                    'tri_agent_cursor_review'
                  )
                ORDER BY event_id ASC""",
@@ -719,12 +734,19 @@ class State:
             remediation=remediation,
             source_run_id=source_run_id,
         )
+        normalized_key = canonical_lesson_key(
+            task_class=task_class,
+            gate=gate,
+            taxonomy_code=taxonomy_code,
+            root_cause=root_cause,
+            remediation=remediation,
+        )
         with self._write_lock:
             cur = self._conn.execute(
                 """INSERT OR IGNORE INTO supervisor_lessons(
                      lesson_id, task_class, gate, taxonomy_code, root_cause,
-                     remediation, source_run_id, created_at)
-                   VALUES(?, ?, ?, ?, ?, ?, ?, ?)""",
+                     remediation, source_run_id, normalized_key, created_at)
+                   VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     lesson_id,
                     str(task_class or "general"),
@@ -733,10 +755,18 @@ class State:
                     str(root_cause or "unknown failure"),
                     str(remediation or "Verify this known failure mode before claiming completion."),
                     str(source_run_id),
+                    normalized_key,
                     now,
                 ),
             )
             created = cur.rowcount > 0
+            if not created:
+                self._conn.execute(
+                    """UPDATE supervisor_lessons
+                          SET observed_count=observed_count + 1
+                        WHERE lesson_id=?""",
+                    (lesson_id,),
+                )
             row = self._conn.execute(
                 "SELECT * FROM supervisor_lessons WHERE lesson_id=?",
                 (lesson_id,),
@@ -757,7 +787,7 @@ class State:
             dict(row)
             for row in self._conn.execute(
                 """SELECT * FROM supervisor_lessons
-                   WHERE task_class=? AND gate=?
+                   WHERE task_class=? AND gate=? AND retired_at IS NULL
                    ORDER BY created_at DESC, lesson_id ASC
                    LIMIT ?""",
                 (str(task_class or "general"), str(gate or "unknown"), int(limit)),
@@ -775,6 +805,48 @@ class State:
             ).fetchall()
         ]
 
+    def record_supervisor_lesson_injection_feedback(
+        self,
+        *,
+        lesson_ids: list[str] | tuple[str, ...],
+        recurring_taxonomy_codes: list[str] | tuple[str, ...] = (),
+        retire_after: int = 3,
+        observed_at: int | None = None,
+    ) -> None:
+        now = int(time.time()) if observed_at is None else int(observed_at)
+        recurring = {str(code) for code in recurring_taxonomy_codes}
+        with self._write_lock:
+            for lesson_id in lesson_ids:
+                row = self._conn.execute(
+                    "SELECT taxonomy_code FROM supervisor_lessons WHERE lesson_id=?",
+                    (str(lesson_id),),
+                ).fetchone()
+                if row is None:
+                    continue
+                recurs = str(row["taxonomy_code"]) in recurring
+                self._conn.execute(
+                    """UPDATE supervisor_lessons
+                          SET injection_count=injection_count + 1,
+                              recurrence_count=recurrence_count + ?,
+                              retired_at=CASE
+                                WHEN retired_at IS NULL
+                                 AND injection_count + 1 >= ?
+                                 AND recurrence_count + ? >= ?
+                                THEN ?
+                                ELSE retired_at
+                              END
+                        WHERE lesson_id=?""",
+                    (
+                        1 if recurs else 0,
+                        int(retire_after),
+                        1 if recurs else 0,
+                        int(retire_after),
+                        now,
+                        str(lesson_id),
+                    ),
+                )
+            self._conn.commit()
+
     # --- quality trend metrics ---
     def upsert_quality_trend_row(
         self,
@@ -787,6 +859,8 @@ class State:
         first_pass_accepted: bool,
         revision_rounds: int,
         time_to_accepted_outcome_s: float | None,
+        policy_overlay_hash: str = "",
+        policy_proposal_id: str = "",
         details: dict[str, Any] | None = None,
         computed_at: int | None = None,
     ) -> dict[str, Any]:
@@ -797,8 +871,9 @@ class State:
                 """INSERT INTO supervisor_quality_trends(
                      run_id, task_id, task_class, gate, accepted,
                      first_pass_accepted, revision_rounds,
-                     time_to_accepted_outcome_s, details_json, computed_at)
-                   VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     time_to_accepted_outcome_s, policy_overlay_hash,
+                     policy_proposal_id, details_json, computed_at)
+                   VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(run_id, gate) DO UPDATE SET
                      task_id=excluded.task_id,
                      task_class=excluded.task_class,
@@ -806,6 +881,8 @@ class State:
                      first_pass_accepted=excluded.first_pass_accepted,
                      revision_rounds=excluded.revision_rounds,
                      time_to_accepted_outcome_s=excluded.time_to_accepted_outcome_s,
+                     policy_overlay_hash=excluded.policy_overlay_hash,
+                     policy_proposal_id=excluded.policy_proposal_id,
                      details_json=excluded.details_json,
                      computed_at=excluded.computed_at""",
                 (
@@ -817,6 +894,8 @@ class State:
                     1 if first_pass_accepted else 0,
                     int(revision_rounds),
                     time_to_accepted_outcome_s,
+                    str(policy_overlay_hash or ""),
+                    str(policy_proposal_id or ""),
                     details_json,
                     now,
                 ),
@@ -901,6 +980,8 @@ class State:
             f"""SELECT
                     task_class,
                     gate,
+                    GROUP_CONCAT(DISTINCT NULLIF(policy_overlay_hash, '')) AS policy_overlay_hashes,
+                    GROUP_CONCAT(DISTINCT NULLIF(policy_proposal_id, '')) AS policy_proposal_ids,
                     COUNT(*) AS run_count,
                     SUM(accepted) AS accepted_count,
                     SUM(first_pass_accepted) AS first_pass_accepted_count,
@@ -922,6 +1003,29 @@ class State:
             "SELECT COUNT(*) AS count FROM supervisor_quality_trends"
         ).fetchone()
         return int(row["count"] if row is not None else 0)
+
+    def list_quality_trend_rows(
+        self,
+        *,
+        task_class: str | None = None,
+        gate: str | None = None,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if task_class:
+            clauses.append("task_class=?")
+            params.append(task_class)
+        if gate:
+            clauses.append("gate=?")
+            params.append(gate)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = self._conn.execute(
+            f"""SELECT * FROM supervisor_quality_trends
+                {where}
+                ORDER BY computed_at ASC, run_id ASC, gate ASC""",
+            tuple(params),
+        ).fetchall()
+        return [_quality_trend_row_to_dict(row) for row in rows]
 
     # --- AutoResearch experiment queue ---
     def upsert_autoresearch_experiment_draft(
@@ -1142,6 +1246,36 @@ class State:
             }
             for row in rows
         ]
+
+    def list_policy_proposal_approval_events(
+        self,
+        *,
+        proposal_id: str | None = None,
+        limit: int = 10000,
+    ) -> list[dict[str, Any]]:
+        rows = self._conn.execute(
+            """SELECT event_id, run_id, ts, source, kind, payload_json
+                 FROM events
+                WHERE kind='autoresearch_policy_proposal_approved'
+                ORDER BY event_id ASC
+                LIMIT ?""",
+            (int(limit),),
+        ).fetchall()
+        events: list[dict[str, Any]] = []
+        expected = str(proposal_id or "").strip()
+        for row in rows:
+            payload = json.loads(row["payload_json"])
+            if expected and str(payload.get("proposal_id") or "") != expected:
+                continue
+            events.append({
+                "event_id": int(row["event_id"]),
+                "run_id": row["run_id"],
+                "ts": int(row["ts"]),
+                "source": row["source"],
+                "kind": row["kind"],
+                "payload": payload,
+            })
+        return events
 
     def get_event(self, *, run_id: str, event_id: int) -> sqlite3.Row | None:
         return self._conn.execute(

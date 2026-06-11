@@ -18,6 +18,7 @@ EXPECTED_MIGRATIONS = [
     {"version": 7, "name": "supervisor_lessons"},
     {"version": 8, "name": "supervisor_quality_trends"},
     {"version": 9, "name": "supervisor_autoresearch_experiments"},
+    {"version": 10, "name": "supervisor_quality_trends.policy_overlay_columns"},
 ]
 
 
@@ -200,8 +201,8 @@ def test_forward_migration_adds_workflow_job_dispatcher_leases(tmp_path):
     }
     assert "idx_dual_agent_workflow_jobs_dispatchable" in indexes
     assert applied_migrations(conn)[-1] == {
-        "version": 9,
-        "name": "supervisor_autoresearch_experiments",
+        "version": 10,
+        "name": "supervisor_quality_trends.policy_overlay_columns",
     }
     conn.execute(
         """INSERT INTO dual_agent_workflow_jobs(
@@ -255,8 +256,8 @@ def test_forward_migration_adds_supervisor_lessons(tmp_path):
         for row in conn.execute("PRAGMA index_list(supervisor_lessons)").fetchall()
     }
     assert "idx_supervisor_lessons_task_gate" in indexes
-    assert applied_migrations(conn)[-3] == {"version": 7, "name": "supervisor_lessons"}
-    assert applied_migrations(conn)[-2] == {"version": 8, "name": "supervisor_quality_trends"}
+    assert applied_migrations(conn)[-4] == {"version": 7, "name": "supervisor_lessons"}
+    assert applied_migrations(conn)[-3] == {"version": 8, "name": "supervisor_quality_trends"}
 
 
 def test_forward_migration_adds_supervisor_quality_trends(tmp_path):
@@ -290,7 +291,7 @@ def test_forward_migration_adds_supervisor_quality_trends(tmp_path):
         for row in conn.execute("PRAGMA index_list(supervisor_quality_trends)").fetchall()
     }
     assert "idx_supervisor_quality_trends_task_gate" in indexes
-    assert applied_migrations(conn)[-2] == {
+    assert applied_migrations(conn)[-3] == {
         "version": 8,
         "name": "supervisor_quality_trends",
     }
@@ -329,9 +330,37 @@ def test_forward_migration_adds_autoresearch_experiment_queue(tmp_path):
         for row in conn.execute("PRAGMA index_list(supervisor_autoresearch_experiments)").fetchall()
     }
     assert "idx_supervisor_autoresearch_experiments_status" in indexes
-    assert applied_migrations(conn)[-1] == {
+    assert applied_migrations(conn)[-2] == {
         "version": 9,
         "name": "supervisor_autoresearch_experiments",
+    }
+
+
+def test_forward_migration_adds_policy_overlay_and_lesson_hygiene_columns(tmp_path):
+    conn = sqlite3.connect(tmp_path / "state.db")
+    conn.row_factory = sqlite3.Row
+
+    run_forward_migrations(conn)
+
+    trend_columns = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(supervisor_quality_trends)").fetchall()
+    }
+    lesson_columns = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(supervisor_lessons)").fetchall()
+    }
+    assert {"policy_overlay_hash", "policy_proposal_id"} <= trend_columns
+    assert {
+        "normalized_key",
+        "observed_count",
+        "injection_count",
+        "recurrence_count",
+        "retired_at",
+    } <= lesson_columns
+    assert applied_migrations(conn)[-1] == {
+        "version": 10,
+        "name": "supervisor_quality_trends.policy_overlay_columns",
     }
 
 

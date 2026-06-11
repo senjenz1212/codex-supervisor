@@ -125,6 +125,10 @@ class LeadInvocationRequest:
     injected_lesson_block: str = ""
     injected_lesson_block_sha256: str = ""
     injected_lesson_ids: tuple[str, ...] = ()
+    policy_overlay_block: str = ""
+    policy_overlay_block_sha256: str = ""
+    policy_overlay_hash: str = ""
+    policy_proposal_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -215,6 +219,10 @@ class HandoffPacket(BaseModel):
     injected_lesson_block: str = ""
     injected_lesson_block_sha256: str = ""
     injected_lesson_ids: list[str] = Field(default_factory=list)
+    policy_overlay_block: str = ""
+    policy_overlay_block_sha256: str = ""
+    policy_overlay_hash: str = ""
+    policy_proposal_id: str = ""
 
     @field_validator("packet_schema_version")
     @classmethod
@@ -287,9 +295,13 @@ def build_lead_prompt(request: LeadInvocationRequest) -> str:
     lesson_block = ""
     if request.injected_lesson_block and request.injected_lesson_block not in request.instruction:
         lesson_block = "\n\n" + request.injected_lesson_block.strip()
+    policy_overlay_block = ""
+    if request.policy_overlay_block and request.policy_overlay_block not in request.instruction:
+        policy_overlay_block = "\n\n" + request.policy_overlay_block.strip()
     return (
         f"/lead Gate mode: {request.gate}. Task id: {request.task_id}.\n"
         f"{request.instruction.strip()}\n\n"
+        f"{policy_overlay_block}"
         f"{lesson_block}"
         f"{handoff}"
         f"{execution_layer}"
@@ -347,6 +359,10 @@ def build_handoff_packet(
         injected_lesson_block=request.injected_lesson_block,
         injected_lesson_block_sha256=request.injected_lesson_block_sha256,
         injected_lesson_ids=list(request.injected_lesson_ids),
+        policy_overlay_block=request.policy_overlay_block,
+        policy_overlay_block_sha256=request.policy_overlay_block_sha256,
+        policy_overlay_hash=request.policy_overlay_hash,
+        policy_proposal_id=request.policy_proposal_id,
     )
 
 

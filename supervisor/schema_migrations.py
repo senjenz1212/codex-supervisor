@@ -199,6 +199,11 @@ def _migration_supervisor_lessons(conn: sqlite3.Connection) -> None:
              root_cause    TEXT NOT NULL,
              remediation   TEXT NOT NULL,
              source_run_id TEXT NOT NULL,
+             normalized_key TEXT NOT NULL DEFAULT '',
+             observed_count INTEGER NOT NULL DEFAULT 1,
+             injection_count INTEGER NOT NULL DEFAULT 0,
+             recurrence_count INTEGER NOT NULL DEFAULT 0,
+             retired_at INTEGER,
              created_at    INTEGER NOT NULL
            )"""
     )
@@ -224,6 +229,8 @@ def _migration_supervisor_quality_trends(conn: sqlite3.Connection) -> None:
              false_accept_count             INTEGER NOT NULL DEFAULT 0,
              false_accept_denominator       INTEGER NOT NULL DEFAULT 0,
              false_accept_rate              REAL NOT NULL DEFAULT 0.0,
+             policy_overlay_hash            TEXT NOT NULL DEFAULT '',
+             policy_proposal_id             TEXT NOT NULL DEFAULT '',
              details_json                   TEXT NOT NULL DEFAULT '{}',
              computed_at                    INTEGER NOT NULL,
              UNIQUE(run_id, gate)
@@ -266,12 +273,44 @@ def _migration_autoresearch_experiment_queue(conn: sqlite3.Connection) -> None:
     )
 
 
+def _migration_policy_overlay_trend_columns(conn: sqlite3.Connection) -> None:
+    columns = _columns(conn, "supervisor_quality_trends")
+    if "policy_overlay_hash" not in columns:
+        conn.execute(
+            "ALTER TABLE supervisor_quality_trends ADD COLUMN policy_overlay_hash TEXT NOT NULL DEFAULT ''"
+        )
+    if "policy_proposal_id" not in columns:
+        conn.execute(
+            "ALTER TABLE supervisor_quality_trends ADD COLUMN policy_proposal_id TEXT NOT NULL DEFAULT ''"
+        )
+    lesson_columns = _columns(conn, "supervisor_lessons")
+    lesson_additions = {
+        "normalized_key": "TEXT NOT NULL DEFAULT ''",
+        "observed_count": "INTEGER NOT NULL DEFAULT 1",
+        "injection_count": "INTEGER NOT NULL DEFAULT 0",
+        "recurrence_count": "INTEGER NOT NULL DEFAULT 0",
+        "retired_at": "INTEGER",
+    }
+    for column, ddl in lesson_additions.items():
+        if column not in lesson_columns:
+            conn.execute(f"ALTER TABLE supervisor_lessons ADD COLUMN {column} {ddl}")
+
+
 def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
     row = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
         (name,),
     ).fetchone()
     return row is not None
+
+
+def _columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    if not _table_exists(conn, table):
+        return set()
+    return {
+        row["name"]
+        for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+    }
 
 
 def _sqlite_now_s(conn: sqlite3.Connection) -> int:
@@ -336,5 +375,10 @@ MIGRATIONS: tuple[SchemaMigration, ...] = (
         9,
         "supervisor_autoresearch_experiments",
         _migration_autoresearch_experiment_queue,
+    ),
+    SchemaMigration(
+        10,
+        "supervisor_quality_trends.policy_overlay_columns",
+        _migration_policy_overlay_trend_columns,
     ),
 )

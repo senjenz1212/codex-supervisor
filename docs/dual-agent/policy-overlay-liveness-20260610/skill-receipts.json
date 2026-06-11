@@ -1,0 +1,87 @@
+[
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-to-prd-policy-overlay-liveness-20260610",
+    "skill": "to-prd",
+    "stage": "to_prd",
+    "status": "passed",
+    "artifacts": [
+      {
+        "path": "docs/dual-agent/policy-overlay-liveness-20260610/source/prd.md",
+        "sha256": "248d6b5582c91f1f823a8f28aa0b09df9bbcb714040b98441dbfea7ea3799197"
+      }
+    ],
+    "claims": [
+      "PRD promise contracts P1-P5 produced",
+      "public boundaries and forbidden outcomes recorded"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-prd-grill-policy-overlay-liveness-20260610",
+    "skill": "grill-with-docs",
+    "stage": "prd_grill",
+    "status": "passed",
+    "artifacts": [
+      {
+        "path": "docs/dual-agent/policy-overlay-liveness-20260610/source/grill-findings.md",
+        "sha256": "1642a7ccd55ed7a2db6536305bb4b5eb6dc8467eb920dfe439e2f2caa42c6739"
+      }
+    ],
+    "claims": [
+      "PRD grill findings resolved",
+      "overlay scope and two-touchpoint constraints preserved"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-to-issues-policy-overlay-liveness-20260610",
+    "skill": "to-issues",
+    "stage": "to_issues",
+    "status": "passed",
+    "artifacts": [
+      {
+        "path": "docs/dual-agent/policy-overlay-liveness-20260610/source/issues.md",
+        "sha256": "a73bcae113960e176ae1012e0bf791b8002c248c61c544a809d3825e7dd3cfe1"
+      }
+    ],
+    "claims": [
+      "implementation slices map to P1-P5",
+      "acceptance criteria cover overlay, trends, rollback drafts, lessons, and audits"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-tdd-policy-overlay-liveness-20260610",
+    "skill": "tdd",
+    "stage": "tdd",
+    "status": "passed",
+    "artifacts": [
+      {
+        "path": "docs/dual-agent/policy-overlay-liveness-20260610/source/tdd.md",
+        "sha256": "8226a59291c7d2fad9fcd8153645f08c2a091665a124f921c9d8479c9bd8b786"
+      }
+    ],
+    "claims": [
+      "public-boundary RED/GREEN tests named",
+      "tests map to slices and PRD promises"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-tdd-grill-policy-overlay-liveness-20260610",
+    "skill": "grill-with-docs",
+    "stage": "tdd_grill",
+    "status": "passed",
+    "artifacts": [
+      {
+        "path": "docs/dual-agent/policy-overlay-liveness-20260610/source/grill-findings-tdd.md",
+        "sha256": "4105fd5974368a6f01d07a7baab35648a16ebcc8b3b43dacd0242c0e66399442"
+      }
+    ],
+    "claims": [
+      "TDD grill findings resolved",
+      "tests preserve public-boundary and no-auto-apply invariants"
+    ]
+  }
+]

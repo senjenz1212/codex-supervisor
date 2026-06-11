@@ -384,7 +384,11 @@ def _autoresearch_report_failure_reason(report: Mapping[str, Any]) -> str:
 
 def _read_signals(state: Any) -> list[_Signal]:
     signals = [_signal_from_event(event) for event in state.list_autoresearch_signal_events(limit=10_000)]
-    lesson_signals = [_signal_from_lesson(lesson) for lesson in state.list_supervisor_lessons(limit=10_000)]
+    lesson_signals: list[_Signal | None] = []
+    for lesson in state.list_supervisor_lessons(limit=10_000):
+        signal = _signal_from_lesson(lesson)
+        observed_count = max(1, int(lesson.get("observed_count") or 1))
+        lesson_signals.extend([signal] * observed_count)
     return [signal for signal in (*signals, *lesson_signals) if signal is not None]
 
 

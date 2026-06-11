@@ -62,13 +62,29 @@ def canonical_lesson_id(
     remediation: str,
     source_run_id: str,
 ) -> str:
+    return canonical_lesson_key(
+        task_class=task_class,
+        gate=gate,
+        taxonomy_code=taxonomy_code,
+        root_cause=root_cause,
+        remediation=remediation,
+    )
+
+
+def canonical_lesson_key(
+    *,
+    task_class: str,
+    gate: str,
+    taxonomy_code: str,
+    root_cause: str,
+    remediation: str,
+) -> str:
     body = _canonical_json({
         "task_class": _normalise_task_class(task_class),
         "gate": _normalise_gate(gate),
         "taxonomy_code": _text(taxonomy_code),
-        "root_cause": _text(root_cause),
-        "remediation": _text(remediation),
-        "source_run_id": _text(source_run_id),
+        "root_cause": _normalise_lesson_text(root_cause),
+        "remediation": _normalise_lesson_text(remediation),
     })
     return "lesson-" + sha256(body.encode("utf-8")).hexdigest()
 
@@ -407,6 +423,10 @@ def _normalise_gate(value: Any) -> str:
 
 def _text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _normalise_lesson_text(value: Any) -> str:
+    return " ".join(_text(value).lower().split())
 
 
 def _int(value: Any) -> int:

@@ -11,6 +11,7 @@ from supervisor.quality_trends import (
     query_quality_trends,
     record_quality_trends_for_run,
     run_sampled_p11_false_accept_audit,
+    run_weekly_p11_audit_if_due,
 )
 from supervisor.state import State
 
@@ -122,6 +123,8 @@ def test_quality_trends_record_run_computes_first_pass_revision_rounds_and_time_
     assert summary == [{
         "task_class": "source_change",
         "gate": "implementation_plan",
+        "policy_overlay_hashes": [],
+        "policy_proposal_ids": [],
         "run_count": 1,
         "accepted_count": 1,
         "acceptance_rate": 1.0,
@@ -134,6 +137,40 @@ def test_quality_trends_record_run_computes_first_pass_revision_rounds_and_time_
         "false_accept_denominator": 0,
         "false_accept_rate": 0.0,
     }]
+
+
+def test_quality_trends_rows_include_policy_overlay_hash_and_proposal_id(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    _write_event(
+        state,
+        kind="supervisor_policy_overlay_snapshot",
+        ts=105,
+        payload={
+            "gate": "execution",
+            "policy_overlay_hash": "overlay-sha",
+            "policy_proposal_id": "ARP-live",
+            "block_sha256": "block-sha",
+        },
+    )
+    _write_event(
+        state,
+        kind="dual_agent_gate_result",
+        ts=110,
+        payload=_gate_result(gate="execution", status="accepted", attempts=1),
+    )
+
+    [row] = record_quality_trends_for_run(
+        state,
+        run_id="trend-run",
+        task_class="source_change",
+    )
+
+    assert row["policy_overlay_hash"] == "overlay-sha"
+    assert row["policy_proposal_id"] == "ARP-live"
+    assert row["details"]["policy_overlay"]["block_sha256"] == "block-sha"
+    [summary] = query_quality_trends(state, task_class="source_change", gate="execution")
+    assert summary["policy_overlay_hashes"] == ["overlay-sha"]
+    assert summary["policy_proposal_ids"] == ["ARP-live"]
 
 
 def test_quality_trends_uses_final_gate_acceptance_after_reviewer_override(tmp_path):
@@ -277,6 +314,83 @@ def test_quality_trends_sampled_p11_audit_catches_false_accept(tmp_path):
     assert summary[0]["false_accept_count"] == 1
     assert summary[0]["false_accept_denominator"] == 1
     assert summary[0]["false_accept_rate"] == 1.0
+
+
+def test_weekly_p11_audit_scheduler_writes_due_audit_row(tmp_path):
+    _init_git_repo(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    state.upsert_dual_agent_workflow(
+        run_id="trend-run",
+        task_id="trend-task",
+        cwd=str(tmp_path),
+        intent="audit accepted deliverables",
+        current_gate="outcome_review",
+        status="accepted",
+        max_rounds_per_gate=2,
+        user_facing=False,
+    )
+    _write_event(
+        state,
+        kind="dual_agent_workflow_route",
+        ts=100,
+        payload={
+            "task_id": "trend-task",
+            "run_id": "trend-run",
+            "lesson_task_class": "source_change",
+            "cwd": str(tmp_path),
+        },
+    )
+    _write_event(
+        state,
+        kind="dual_agent_gate_result",
+        ts=110,
+        payload=_gate_result(
+            gate="outcome_review",
+            status="accepted",
+            attempts=1,
+            changed_files=["supervisor/missing.py"],
+        ),
+    )
+    before_events = state.read_events_since("trend-run", after_event_id=0, limit=100)
+    before_gate_result_count = sum(
+        1 for event in before_events if event["kind"] == "dual_agent_gate_result"
+    )
+
+    first = run_weekly_p11_audit_if_due(
+        state,
+        run_id="trend-run",
+        sample_size=1,
+        test_timeout_s=1,
+        now=10_000,
+    )
+    second = run_weekly_p11_audit_if_due(
+        state,
+        run_id="trend-run",
+        sample_size=1,
+        test_timeout_s=1,
+        now=10_001,
+    )
+
+    assert first["status"] == "audited"
+    assert first["false_accept_count"] == 1
+    assert first["gate_authority"] == "unchanged"
+    assert first["observational_only"] is True
+    assert second["status"] == "not_due"
+    assert second["gate_authority"] == "unchanged"
+    assert second["observational_only"] is True
+    events = state.read_events_since("trend-run", after_event_id=0, limit=100)
+    after_gate_result_count = sum(
+        1 for event in events if event["kind"] == "dual_agent_gate_result"
+    )
+    assert after_gate_result_count == before_gate_result_count
+    assert [event["kind"] for event in events].count("supervisor_p11_audit_scheduled") == 1
+    scheduled = [
+        event for event in events if event["kind"] == "supervisor_p11_audit_scheduled"
+    ][0]
+    assert scheduled["payload"]["gate_authority"] == "unchanged"
+    assert scheduled["payload"]["observational_only"] is True
+    [summary] = query_quality_trends(state, task_class="source_change", gate="outcome_review")
+    assert summary["false_accept_count"] == 1
 
 
 def test_quality_trends_query_filters_by_task_class_and_gate_without_writes(tmp_path):

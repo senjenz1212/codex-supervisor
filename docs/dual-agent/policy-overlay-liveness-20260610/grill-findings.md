@@ -1,0 +1,79 @@
+# Grill Findings
+
+These findings are derived from dual-agent gate objections in the ledger.
+Future duo-agent runs should also create this file through the `prd-to-tdd` skill's `grill-with-docs` gates before implementation.
+
+- event_id 658386 `prd_review`: gate blocked
+- event_id 658500 `prd_review`: NIT: P4 public boundary 'policy regression verification helper' is loosely named vs exact symbol draft_policy_regression_rollback_if_needed (policy_overlay.py:172)
+- event_id 658500 `prd_review`: P5 has no explicit retire() fn; lesson retirement is selection-time in build_lesson_injection - confirm at tdd/outcome
+- event_id 658501 `prd_review`: both agents accepted
+- event_id 658589 `issues_review`: gate blocked
+- event_id 658654 `issues_review`: NIT: source verification done inline (subagent dispatch failed) rather than independently
+- event_id 658654 `issues_review`: Residual: pytest not run at this gate; test_status unknown; evidence grade self_reported per handoff policy
+- event_id 658654 `issues_review`: NIT: issues.md AC wording uses boundary descriptions ('policy regression verification helper') rather than exact symbol draft_policy_regression_rollback_if_needed
+- event_id 658655 `issues_review`: both agents accepted
+- event_id 658808 `tdd_review`: independent_reviewer_non_accept: independent-reviewer-1
+- event_id 658840 `tdd_review`: GREEN-not-RED: implementation present, RED->GREEN not independently run, pytest denied -> test_status self_reported.
+- event_id 658840 `tdd_review`: P5 audit 'no gate-advancing writes' asserted by construction (single observational event kind) rather than via explicit dual_agent_gate_result-count-unchanged assertion; mitigated because run_weekly_p11_audit_if_due structurally emits only supervisor_p11_audit_scheduled with gate_authority=unchanged (quality_trends.py:242-253).
+- event_id 659046 `tdd_review`: independent_reviewer_non_accept: independent-reviewer-1
+- event_id 659052 `tdd_review`: GREEN-not-RED: implementation present, RED->GREEN not independently run, pytest denied -> test_status self_reported.
+- event_id 659052 `tdd_review`: P5 audit 'no gate-advancing writes' asserted by construction (single observational event kind) rather than via explicit dual_agent_gate_result-count-unchanged assertion; mitigated because run_weekly_p11_audit_if_due structurally emits only supervisor_p11_audit_scheduled with gate_authority=unchanged (quality_trends.py:242-253).
+- event_id 659067 `tdd_review`: pytest could not be executed by the lead (DENIED), so test_status is self_reported; the supervisor rerun harness remains the authoritative executor
+- event_id 659067 `tdd_review`: P11 audit test asserts no-gate-write only by-construction (no explicit assertion that gate outcomes/policy mutation flags are unmodified) - minor gap vs grill Finding 4 wording
+- event_id 659228 `tdd_review`: cursor_review_failed: Corrective round after independent-reviewer-1 non-accept left the same test suite; no new approval-path, gate-immutability, or pytest evidence; TDD P2 GREEN requires creation and approval rejection; named test covers create_policy_evolution_proposals only; Grill F4 marked resolved but test_weekly_p11_audit_scheduler_writes_due_audit_row never asserts unchanged dual_agent_gate_result count or gate_authority/observational_only on scheduler return; Grill F3 marked resolved but no named or generator test proves folded observed_count>1 multiplies AutoResearch recurrence signal; P2 no-event assertion queries policy-run but create call omits state and never writes events-vacuous side-effect check; No pytest green receipt: lead DENIED; independent attempt 2/6 import-error on Python 3.9, pytest unavailable on 3.11/3.13
+- event_id 659234 `tdd_review`: pytest could not be executed by the lead (DENIED), so test_status is self_reported; the supervisor rerun harness remains the authoritative executor
+- event_id 659234 `tdd_review`: P11 audit test asserts no-gate-write only by-construction (no explicit assertion that gate outcomes/policy mutation flags are unmodified) - minor gap vs grill Finding 4 wording
+- event_id 659252 `tdd_review`: test_weekly_p11_audit_scheduler_writes_due_audit_row (test_quality_trends.py:319-376) never asserts dual_agent_gate_result count unchanged nor observational_only/gate_authority on return; grill-findings-tdd.md:27-33 claims resolved without backing
+- event_id 659252 `tdd_review`: No named/generator test exercises a folded observed_count>1 lesson row driving the recurrence signal; test_autoresearch_generator.py:126-171 uses 3 distinct rows
+- event_id 659252 `tdd_review`: test_policy_evolution_rejects_non_overlay_apply_target (test_autoresearch_policy_evolution.py:355) no-event assertion is vacuous: create_policy_evolution_proposals is invoked without state; approval-target rejection half of tdd.md:17 is untested
+- event_id 659252 `tdd_review`: No pytest green receipt; RED->GREEN not independently verified
+- event_id 659253 `tdd_review`: agents have not both accepted yet; revise and continue
+- event_id 659255 `tdd_review`: test_weekly_p11_audit_scheduler_writes_due_audit_row (test_quality_trends.py:319-376) never asserts dual_agent_gate_result count unchanged nor observational_only/gate_authority on return; grill-findings-tdd.md:27-33 claims resolved without backing
+- event_id 659255 `tdd_review`: No named/generator test exercises a folded observed_count>1 lesson row driving the recurrence signal; test_autoresearch_generator.py:126-171 uses 3 distinct rows
+- event_id 659255 `tdd_review`: test_policy_evolution_rejects_non_overlay_apply_target (test_autoresearch_policy_evolution.py:355) no-event assertion is vacuous: create_policy_evolution_proposals is invoked without state; approval-target rejection half of tdd.md:17 is untested
+- event_id 659255 `tdd_review`: No pytest green receipt; RED->GREEN not independently verified
+- event_id 659426 `tdd_review`: both agents accepted
+- event_id 659451 `implementation_plan`: NIT non-blocking: plan Files list omits config.py, config.example.yaml, supervisor/lessons.py, supervisor/autoresearch/generator.py, tests/test_schema_migrations.py, tests/test_postgres_ledger_lane.py (test_codex_supervisor_mcp_stdio.py in Validation not Files); all trace to this task's P3/P4/P5
+- event_id 659451 `implementation_plan`: residual: pytest DENIED so RED->GREEN transition not independently observed; test_status self_reported
+- event_id 659451 `implementation_plan`: residual: planning-artifact sha256 not independently verified (shasum not run)
+- event_id 659596 `implementation_plan`: independent_reviewer_non_accept: independent-reviewer-1
+- event_id 659602 `implementation_plan`: NIT non-blocking: plan Files list omits config.py, config.example.yaml, supervisor/lessons.py, supervisor/autoresearch/generator.py, tests/test_schema_migrations.py, tests/test_postgres_ledger_lane.py (test_codex_supervisor_mcp_stdio.py in Validation not Files); all trace to this task's P3/P4/P5
+- event_id 659602 `implementation_plan`: residual: pytest DENIED so RED->GREEN transition not independently observed; test_status self_reported
+- event_id 659602 `implementation_plan`: residual: planning-artifact sha256 not independently verified (shasum not run)
+- event_id 659624 `implementation_plan`: Plan Files/Modules To Touch (lines 52-65) declares 14 files but 21 ta[REDACTED_API_KEY] files are touched; 7 undeclared: config.example.yaml, supervisor/config.py, supervisor/lessons.py, supervisor/autoresearch/generator.py, tests/test_codex_supervisor_mcp_stdio.py, tests/test_postgres_ledger_lane.py, tests/test_schema_migrations.py
+- event_id 659624 `implementation_plan`: Internal inconsistency: Validation (line 37) depends on tests/test_codex_supervisor_mcp_stdio.py which is absent from the Files/Modules manifest
+- event_id 659624 `implementation_plan`: Artifact sha256 unchanged from prior round that drew independent-reviewer-1 non-accept; re-accepting identical handoff would be FM-1.3 step repetition
+- event_id 659625 `implementation_plan`: agents have not both accepted yet; revise and continue
+- event_id 659627 `implementation_plan`: Plan Files/Modules To Touch (lines 52-65) declares 14 files but 21 ta[REDACTED_API_KEY] files are touched; 7 undeclared: config.example.yaml, supervisor/config.py, supervisor/lessons.py, supervisor/autoresearch/generator.py, tests/test_codex_supervisor_mcp_stdio.py, tests/test_postgres_ledger_lane.py, tests/test_schema_migrations.py
+- event_id 659627 `implementation_plan`: Internal inconsistency: Validation (line 37) depends on tests/test_codex_supervisor_mcp_stdio.py which is absent from the Files/Modules manifest
+- event_id 659627 `implementation_plan`: Artifact sha256 unchanged from prior round that drew independent-reviewer-1 non-accept; re-accepting identical handoff would be FM-1.3 step repetition
+- event_id 659637 `implementation_plan`: NIT: implementation plan Files/Modules list under-declares config.py, supervisor/autoresearch/generator.py, supervisor/lessons.py, config.example.yaml, tests/test_codex_supervisor_mcp_stdio.py, tests/test_postgres_ledger_lane.py, tests/test_schema_migrations.py; each traces to a declared promise (config thresholds=P4/P5, generator observed_count fan-out=P5, lessons canonical key=P5, dual-lane schema tests=P3/P5) with no cross-task contamination and no forbidden surface
+- event_id 659774 `implementation_plan`: independent_reviewer_non_accept: independent-reviewer-1
+- event_id 659780 `implementation_plan`: NIT: implementation plan Files/Modules list under-declares config.py, supervisor/autoresearch/generator.py, supervisor/lessons.py, config.example.yaml, tests/test_codex_supervisor_mcp_stdio.py, tests/test_postgres_ledger_lane.py, tests/test_schema_migrations.py; each traces to a declared promise (config thresholds=P4/P5, generator observed_count fan-out=P5, lessons canonical key=P5, dual-lane schema tests=P3/P5) with no cross-task contamination and no forbidden surface
+- event_id 659806 `implementation_plan`: implementation-plan.md Files/Modules To Touch (lines 52-65) omits supervisor/config.py, config.example.yaml, supervisor/lessons.py, supervisor/autoresearch/generator.py, tests/test_postgres_ledger_lane.py, tests/test_schema_migrations.py - all modified in the working tree.
+- event_id 659806 `implementation_plan`: Plan Traceability (line 79) claims P5 coverage, but P5's implementing modules (lessons.py near-duplicate fold, generator.py observed_count recurrence) are unlisted, making the ownership contract internally inconsistent.
+- event_id 659806 `implementation_plan`: FM-1.3/FM-2.4: prior round ACCEPTed this same defect as a NIT; independent-reviewer-1 rejected; a defensible re-review must change the verdict rather than repeat it.
+- event_id 659807 `implementation_plan`: agents have not both accepted yet; revise and continue
+- event_id 659809 `implementation_plan`: implementation-plan.md Files/Modules To Touch (lines 52-65) omits supervisor/config.py, config.example.yaml, supervisor/lessons.py, supervisor/autoresearch/generator.py, tests/test_postgres_ledger_lane.py, tests/test_schema_migrations.py - all modified in the working tree.
+- event_id 659809 `implementation_plan`: Plan Traceability (line 79) claims P5 coverage, but P5's implementing modules (lessons.py near-duplicate fold, generator.py observed_count recurrence) are unlisted, making the ownership contract internally inconsistent.
+- event_id 659809 `implementation_plan`: FM-1.3/FM-2.4: prior round ACCEPTed this same defect as a NIT; independent-reviewer-1 rejected; a defensible re-review must change the verdict rather than repeat it.
+- event_id 659847 `implementation_plan`: implementation-plan.md:52-65 declares 14 files but working tree modifies 7 undeclared in-scope files (config.py, config.example.yaml, lessons.py, autoresearch/generator.py, test_postgres_ledger_lane.py, test_schema_migrations.py, test_autoresearch_generator.py).
+- event_id 659847 `implementation_plan`: Steps 24-29 omit lessons.py fold/retire, generator.py recurrence, and config knobs; Traceability:79 claims P5 covered while its implementing modules are unlisted (internal inconsistency).
+- event_id 659847 `implementation_plan`: Handoff plan sha aedac5a2 is unchanged since round3 non-accept; cannot ACCEPT an unmodified handoff (FM-1.3).
+- event_id 659848 `implementation_plan`: max_rounds_per_gate exhausted without both agents accepting
+- event_id 659850 `implementation_plan`: implementation-plan.md:52-65 declares 14 files but working tree modifies 7 undeclared in-scope files (config.py, config.example.yaml, lessons.py, autoresearch/generator.py, test_postgres_ledger_lane.py, test_schema_migrations.py, test_autoresearch_generator.py).
+- event_id 659850 `implementation_plan`: Steps 24-29 omit lessons.py fold/retire, generator.py recurrence, and config knobs; Traceability:79 claims P5 covered while its implementing modules are unlisted (internal inconsistency).
+- event_id 659850 `implementation_plan`: Handoff plan sha aedac5a2 is unchanged since round3 non-accept; cannot ACCEPT an unmodified handoff (FM-1.3).
+- event_id 660102 `implementation_plan`: both agents accepted
+- event_id 660132 `execution`: both agents accepted
+- event_id 660152 `outcome_review`: pytest RED->GREEN transition not independently executed (Bash approval denied); test_status remains self_reported per handoff required_evidence_grade=self_reported
+- event_id 660152 `outcome_review`: Postgres-lane parity verified structurally by reading postgres_state.py mirrors, not against a live Postgres instance
+- event_id 660152 `outcome_review`: artifact sha256 not re-confirmed via shasum (command denied); planning-artifact content was read directly instead
+- event_id 660356 `outcome_review`: independent_reviewer_non_accept: independent-reviewer-1
+- event_id 660362 `outcome_review`: pytest RED->GREEN transition not independently executed (Bash approval denied); test_status remains self_reported per handoff required_evidence_grade=self_reported
+- event_id 660362 `outcome_review`: Postgres-lane parity verified structurally by reading postgres_state.py mirrors, not against a live Postgres instance
+- event_id 660362 `outcome_review`: artifact sha256 not re-confirmed via shasum (command denied); planning-artifact content was read directly instead
+- event_id 660608 `outcome_review`: gate blocked
+- event_id 660914 `outcome_review`: pytest not executed (DENIED by environment) so test_status is self_reported/unknown rather than verified green
+- event_id 660914 `outcome_review`: NIT: implementation plan prose locates lesson fold/retire in lessons.py but actual home is state.py/postgres_state.py (lessons.py still modified for injection wiring; behavior present)
+- event_id 660914 `outcome_review`: _validate_rollback_pointer_targets uses repo_root=Path.cwd() (policy_overlay.py:366); only affects absolute pointer paths, relative overlay-path equality check is robust

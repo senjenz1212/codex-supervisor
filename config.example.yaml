@@ -89,6 +89,12 @@ autoresearch:
   evaluator_budget_usd: 0.25
   evaluator_timeout_s: 60
   evaluator_k_trials: 3
+  policy_regression_min_runs: 3
+  policy_regression_first_pass_drop_threshold: 0.05
+  policy_regression_false_accept_increase_threshold: 0.01
+  policy_regression_time_to_accept_increase_ratio: 0.25
+  lesson_retire_after_no_benefit_injections: 3
+  p11_audit_cadence_s: 604800
 
 no_mistakes:
   # Optional external post-outcome validator. The default is off so local/dev

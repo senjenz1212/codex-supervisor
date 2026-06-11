@@ -115,6 +115,10 @@ class DualAgentGateSpec:
     injected_lesson_block: str = ""
     injected_lesson_block_sha256: str = ""
     injected_lesson_ids: tuple[str, ...] = ()
+    policy_overlay_block: str = ""
+    policy_overlay_block_sha256: str = ""
+    policy_overlay_hash: str = ""
+    policy_proposal_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -1198,6 +1202,10 @@ def _lead_request(
         injected_lesson_block=spec.injected_lesson_block,
         injected_lesson_block_sha256=spec.injected_lesson_block_sha256,
         injected_lesson_ids=spec.injected_lesson_ids,
+        policy_overlay_block=spec.policy_overlay_block,
+        policy_overlay_block_sha256=spec.policy_overlay_block_sha256,
+        policy_overlay_hash=spec.policy_overlay_hash,
+        policy_proposal_id=spec.policy_proposal_id,
     )
 
 

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Mapping, Protocol
 
 from .schema import sha256_json
+from ..policy_overlay import POLICY_OVERLAY_PATH, PolicyOverlayError, normalise_overlay_target
 
 
 POLICY_PROPOSAL_SCHEMA_VERSION = "supervisor-autoresearch-policy-proposal/v1"
@@ -91,6 +92,7 @@ def approve_policy_proposal(
     prepared_changes: list[dict[str, Any]] = []
     for change in changes:
         target_rel = _normalise_relative_path(str(change["target_path"]), repo_root=repo_root_path)
+        _require_policy_overlay_target(target_rel, repo_root=repo_root_path)
         candidate_rel = _normalise_relative_path(str(change["candidate_ref"]), repo_root=repo_root_path)
         target_path = repo_root_path / target_rel
         candidate_path = repo_root_path / candidate_rel
@@ -245,6 +247,7 @@ def rollback_policy_proposal(
         if not isinstance(item, Mapping):
             raise PolicyEvolutionError("rollback file entry must be an object")
         target_rel = _normalise_relative_path(str(item.get("target_path") or ""), repo_root=repo_root_path)
+        _require_policy_overlay_target(target_rel, repo_root=repo_root_path)
         backup_rel = _normalise_relative_path(str(item.get("backup_ref") or ""), repo_root=repo_root_path)
         expected_hash = str(item.get("before_hash") or "")
         backup_path = repo_root_path / backup_rel
@@ -299,6 +302,7 @@ def _build_policy_proposal(
     changes: list[dict[str, Any]] = []
     for target_path, candidate_ref in candidate_changes:
         target_rel = _normalise_relative_path(target_path, repo_root=repo_root)
+        _require_policy_overlay_target(target_rel, repo_root=repo_root)
         candidate_rel = _normalise_relative_path(candidate_ref, repo_root=repo_root)
         if candidate_rel not in changed_files:
             raise PolicyEvolutionError(
@@ -449,6 +453,8 @@ def _normalise_relative_path(value: str, *, repo_root: Path) -> str:
 
 
 def _artifact_kind(path: str) -> str:
+    if path == POLICY_OVERLAY_PATH:
+        return "policy_overlay"
     suffix = Path(path).suffix.lower()
     if suffix in {".json", ".toml", ".yaml", ".yml"} or "config" in path:
         return "config"
@@ -472,3 +478,10 @@ def _rollback_backup_ref(*, rollback_root_rel: str, proposal_id: str, target_pat
 
 def _sha256_bytes(value: bytes) -> str:
     return sha256(value).hexdigest()
+
+
+def _require_policy_overlay_target(path: str, *, repo_root: Path) -> None:
+    try:
+        normalise_overlay_target(path, repo_root=repo_root)
+    except PolicyOverlayError as exc:
+        raise PolicyEvolutionError(str(exc)) from exc

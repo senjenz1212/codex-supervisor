@@ -15,6 +15,20 @@ from supervisor.autoresearch.policy_evolution import (
 from supervisor.state import State
 
 
+BASE_OVERLAY = (
+    "schema_version: supervisor-policy-overlay/v1\n"
+    "active_proposal_id: base\n"
+    "instruction_guidance_blocks: {}\n"
+)
+AFTER_OVERLAY = (
+    "schema_version: supervisor-policy-overlay/v1\n"
+    "active_proposal_id: proposal-1\n"
+    "instruction_guidance_blocks:\n"
+    "  outcome_review:\n"
+    "    - Verify runtime-native evidence before accepting.\n"
+)
+
+
 def _write(root: Path, rel: str, text: str) -> Path:
     path = root / rel
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -70,12 +84,12 @@ def _report(*records: dict) -> dict:
 
 def _proposal_fixture(root: Path) -> tuple[State, Path, Path, dict]:
     state = State(str(root / "state.db"))
-    target = _write(root, "prompts/outcome-review.md", "before prompt\n")
-    candidate = _write(root, "candidates/outcome-review.md", "after prompt\n")
+    target = _write(root, ".supervisor/policy-overlay.yaml", BASE_OVERLAY)
+    candidate = _write(root, "candidates/outcome-review.md", AFTER_OVERLAY)
     [proposal] = create_policy_evolution_proposals(
         _report(_record()),
         repo_root=root,
-        candidate_changes={"prompts/outcome-review.md": "candidates/outcome-review.md"},
+        candidate_changes={".supervisor/policy-overlay.yaml": "candidates/outcome-review.md"},
         affected_gates=("outcome_review",),
     )
     return state, target, candidate, proposal
@@ -83,19 +97,19 @@ def _proposal_fixture(root: Path) -> tuple[State, Path, Path, dict]:
 
 def test_accepted_autoresearch_attempt_creates_policy_proposal_without_mutation(tmp_path):
     state = State(str(tmp_path / "state.db"))
-    target = _write(tmp_path, "prompts/outcome-review.md", "before prompt\n")
-    candidate = _write(tmp_path, "candidates/outcome-review.md", "after prompt\n")
+    target = _write(tmp_path, ".supervisor/policy-overlay.yaml", BASE_OVERLAY)
+    candidate = _write(tmp_path, "candidates/outcome-review.md", AFTER_OVERLAY)
 
     proposals = create_policy_evolution_proposals(
         _report(_record()),
         repo_root=tmp_path,
-        candidate_changes={"prompts/outcome-review.md": "candidates/outcome-review.md"},
+        candidate_changes={".supervisor/policy-overlay.yaml": "candidates/outcome-review.md"},
         affected_gates=("outcome_review",),
         state=state,
         run_id="policy-run",
     )
 
-    assert target.read_text(encoding="utf-8") == "before prompt\n"
+    assert target.read_text(encoding="utf-8") == BASE_OVERLAY
     assert len(proposals) == 1
     proposal = proposals[0]
     assert proposal["status"] == "proposed"
@@ -113,8 +127,8 @@ def test_accepted_autoresearch_attempt_creates_policy_proposal_without_mutation(
     [change] = proposal["changes"]
     assert change["before_hash"] == _sha(target)
     assert change["after_hash"] == _sha(candidate)
-    assert "--- a/prompts/outcome-review.md" in change["diff"]
-    assert "+++ b/prompts/outcome-review.md" in change["diff"]
+    assert "--- a/.supervisor/policy-overlay.yaml" in change["diff"]
+    assert "+++ b/.supervisor/policy-overlay.yaml" in change["diff"]
 
     events = state.read_events_since("policy-run", after_event_id=0, limit=10)
     assert [event["kind"] for event in events] == ["autoresearch_policy_proposal_created"]
@@ -122,8 +136,8 @@ def test_accepted_autoresearch_attempt_creates_policy_proposal_without_mutation(
 
 
 def test_rejected_or_gaming_flagged_attempt_creates_no_applyable_policy_proposal(tmp_path):
-    _write(tmp_path, "prompts/outcome-review.md", "before prompt\n")
-    _write(tmp_path, "candidates/outcome-review.md", "after prompt\n")
+    _write(tmp_path, ".supervisor/policy-overlay.yaml", BASE_OVERLAY)
+    _write(tmp_path, "candidates/outcome-review.md", AFTER_OVERLAY)
 
     proposals = create_policy_evolution_proposals(
         _report(
@@ -131,7 +145,7 @@ def test_rejected_or_gaming_flagged_attempt_creates_no_applyable_policy_proposal
             _record(attempt_id="attempt-policy-2", gaming_flags=["zero_variance_trials"]),
         ),
         repo_root=tmp_path,
-        candidate_changes={"prompts/outcome-review.md": "candidates/outcome-review.md"},
+        candidate_changes={".supervisor/policy-overlay.yaml": "candidates/outcome-review.md"},
         affected_gates=("outcome_review",),
     )
 
@@ -139,8 +153,8 @@ def test_rejected_or_gaming_flagged_attempt_creates_no_applyable_policy_proposal
 
 
 def test_non_evaluator_backed_or_mutating_attempt_creates_no_applyable_policy_proposal(tmp_path):
-    _write(tmp_path, "prompts/outcome-review.md", "before prompt\n")
-    _write(tmp_path, "candidates/outcome-review.md", "after prompt\n")
+    _write(tmp_path, ".supervisor/policy-overlay.yaml", BASE_OVERLAY)
+    _write(tmp_path, "candidates/outcome-review.md", AFTER_OVERLAY)
 
     proposals = create_policy_evolution_proposals(
         _report(
@@ -152,7 +166,7 @@ def test_non_evaluator_backed_or_mutating_attempt_creates_no_applyable_policy_pr
             _record(attempt_id="gate-advanced", gate_advanced=True),
         ),
         repo_root=tmp_path,
-        candidate_changes={"prompts/outcome-review.md": "candidates/outcome-review.md"},
+        candidate_changes={".supervisor/policy-overlay.yaml": "candidates/outcome-review.md"},
         affected_gates=("outcome_review",),
     )
 
@@ -161,12 +175,12 @@ def test_non_evaluator_backed_or_mutating_attempt_creates_no_applyable_policy_pr
 
 def test_approved_policy_proposal_applies_exact_recorded_candidate_and_records_hashes(tmp_path):
     state = State(str(tmp_path / "state.db"))
-    target = _write(tmp_path, "prompts/outcome-review.md", "before prompt\n")
-    candidate = _write(tmp_path, "candidates/outcome-review.md", "after prompt\n")
+    target = _write(tmp_path, ".supervisor/policy-overlay.yaml", BASE_OVERLAY)
+    candidate = _write(tmp_path, "candidates/outcome-review.md", AFTER_OVERLAY)
     [proposal] = create_policy_evolution_proposals(
         _report(_record()),
         repo_root=tmp_path,
-        candidate_changes={"prompts/outcome-review.md": "candidates/outcome-review.md"},
+        candidate_changes={".supervisor/policy-overlay.yaml": "candidates/outcome-review.md"},
         affected_gates=("outcome_review",),
     )
     before_hash = _sha(target)
@@ -230,7 +244,7 @@ def test_approval_and_denial_require_operator_identity_before_mutation_or_events
                 repo_root=tmp_path,
                 **kwargs,
             )
-        assert target.read_text(encoding="utf-8") == "before prompt\n"
+        assert target.read_text(encoding="utf-8") == BASE_OVERLAY
         assert state.read_events_since("policy-run", after_event_id=0, limit=10) == []
 
         with pytest.raises(PolicyEvolutionError):
@@ -241,7 +255,7 @@ def test_approval_and_denial_require_operator_identity_before_mutation_or_events
                 reason="no operator identity",
                 **kwargs,
             )
-        assert target.read_text(encoding="utf-8") == "before prompt\n"
+        assert target.read_text(encoding="utf-8") == BASE_OVERLAY
         assert state.read_events_since("policy-run", after_event_id=0, limit=10) == []
 
 
@@ -255,7 +269,7 @@ def test_rollback_requires_operator_identity_before_mutation_or_events(tmp_path)
         approver="sam.zhang",
         approval_channel="codex_desktop",
     )
-    assert target.read_text(encoding="utf-8") == "after prompt\n"
+    assert target.read_text(encoding="utf-8") == AFTER_OVERLAY
 
     for kwargs in (
         {"approver": "", "approval_channel": "codex_desktop"},
@@ -270,7 +284,7 @@ def test_rollback_requires_operator_identity_before_mutation_or_events(tmp_path)
                 reason="no operator identity",
                 **kwargs,
             )
-        assert target.read_text(encoding="utf-8") == "after prompt\n"
+        assert target.read_text(encoding="utf-8") == AFTER_OVERLAY
         events = state.read_events_since("policy-run", after_event_id=0, limit=10)
         assert [event["kind"] for event in events] == [
             "autoresearch_policy_proposal_approved",
@@ -291,7 +305,7 @@ def test_approval_rejects_tampered_candidate_after_hash(tmp_path):
             approval_channel="codex_desktop",
         )
 
-    assert target.read_text(encoding="utf-8") == "before prompt\n"
+    assert target.read_text(encoding="utf-8") == BASE_OVERLAY
     assert state.read_events_since("policy-run", after_event_id=0, limit=10) == []
 
 
@@ -320,66 +334,90 @@ def test_approval_rejects_post_write_hash_mismatch(tmp_path, monkeypatch):
             approval_channel="codex_desktop",
         )
 
-    assert target.read_text(encoding="utf-8") == "before prompt\n"
+    assert target.read_text(encoding="utf-8") == BASE_OVERLAY
     assert state.read_events_since("policy-run", after_event_id=0, limit=10) == []
 
 
-def test_approval_restores_prior_changes_when_later_apply_fails(tmp_path, monkeypatch):
+def test_policy_evolution_rejects_non_overlay_apply_target(tmp_path):
     state = State(str(tmp_path / "state.db"))
-    first_target = _write(tmp_path, "prompts/outcome-review.md", "first before\n")
-    second_target = _write(tmp_path, "prompts/execution.md", "second before\n")
-    _write(tmp_path, "candidates/outcome-review.md", "first after\n")
-    _write(tmp_path, "candidates/execution.md", "second after\n")
+    target = _write(tmp_path, "prompts/execution.md", "before\n")
+    _write(tmp_path, "candidates/execution.md", "after\n")
+    _write(tmp_path, ".supervisor/policy-overlay.yaml", BASE_OVERLAY)
+    _write(tmp_path, "candidates/outcome-review.md", AFTER_OVERLAY)
+
+    with pytest.raises(PolicyEvolutionError, match="may only target"):
+        create_policy_evolution_proposals(
+            _report(_record(changed_files=["candidates/execution.md"])),
+            repo_root=tmp_path,
+            candidate_changes={"prompts/execution.md": "candidates/execution.md"},
+            affected_gates=("execution",),
+        )
+
+    assert target.read_text(encoding="utf-8") == "before\n"
+
     [proposal] = create_policy_evolution_proposals(
-        _report(_record(changed_files=[
-            "candidates/outcome-review.md",
-            "candidates/execution.md",
-        ])),
+        _report(_record()),
         repo_root=tmp_path,
-        candidate_changes={
-            "prompts/outcome-review.md": "candidates/outcome-review.md",
-            "prompts/execution.md": "candidates/execution.md",
-        },
-        affected_gates=("execution", "outcome_review"),
+        candidate_changes={".supervisor/policy-overlay.yaml": "candidates/outcome-review.md"},
+        affected_gates=("execution",),
     )
-    first_before = first_target.read_text(encoding="utf-8")
-    second_before = second_target.read_text(encoding="utf-8")
-    original_write_bytes = Path.write_bytes
-    second_target_path = second_target.resolve()
-    corrupted_once = False
-
-    def corrupt_second_target_write(path: Path, data: bytes) -> int:
-        nonlocal corrupted_once
-        if path.resolve() == second_target_path and not corrupted_once:
-            corrupted_once = True
-            return original_write_bytes(path, b"corrupted second write\n")
-        return original_write_bytes(path, data)
-
-    monkeypatch.setattr(Path, "write_bytes", corrupt_second_target_write)
-
-    with pytest.raises(PolicyEvolutionError, match="applied artifact hash mismatch"):
+    tampered = {
+        **proposal,
+        "changes": [
+            {**proposal["changes"][0], "target_path": "prompts/execution.md"},
+        ],
+    }
+    with pytest.raises(PolicyEvolutionError, match="may only target"):
         approve_policy_proposal(
-            proposal,
+            tampered,
             state=state,
             run_id="policy-run",
             repo_root=tmp_path,
             approver="sam.zhang",
             approval_channel="codex_desktop",
         )
+    assert target.read_text(encoding="utf-8") == "before\n"
+    assert state.read_events_since("policy-run", after_event_id=0, limit=10) == []
 
-    assert first_target.read_text(encoding="utf-8") == first_before
-    assert second_target.read_text(encoding="utf-8") == second_before
+
+def test_policy_rollback_rejects_non_overlay_target_pointer(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    target = _write(tmp_path, "prompts/execution.md", "current prompt\n")
+    backup = _write(tmp_path, ".handoff/policy-rollbacks/ARP-live/execution.before", "before prompt\n")
+    pointer = {
+        "schema_version": "supervisor-autoresearch-policy-rollback/v1",
+        "proposal_id": "ARP-live",
+        "files": [{
+            "target_path": "prompts/execution.md",
+            "backup_ref": ".handoff/policy-rollbacks/ARP-live/execution.before",
+            "before_hash": _sha(backup),
+            "after_hash": "after",
+        }],
+    }
+
+    with pytest.raises(PolicyEvolutionError, match="may only target"):
+        rollback_policy_proposal(
+            pointer,
+            state=state,
+            run_id="policy-run",
+            repo_root=tmp_path,
+            approver="sam.zhang",
+            approval_channel="codex_desktop",
+            reason="crafted pointer",
+        )
+
+    assert target.read_text(encoding="utf-8") == "current prompt\n"
     assert state.read_events_since("policy-run", after_event_id=0, limit=10) == []
 
 
 def test_denied_policy_proposal_records_denial_and_applies_nothing(tmp_path):
     state = State(str(tmp_path / "state.db"))
-    target = _write(tmp_path, "prompts/outcome-review.md", "before prompt\n")
-    _write(tmp_path, "candidates/outcome-review.md", "after prompt\n")
+    target = _write(tmp_path, ".supervisor/policy-overlay.yaml", BASE_OVERLAY)
+    _write(tmp_path, "candidates/outcome-review.md", AFTER_OVERLAY)
     [proposal] = create_policy_evolution_proposals(
         _report(_record()),
         repo_root=tmp_path,
-        candidate_changes={"prompts/outcome-review.md": "candidates/outcome-review.md"},
+        candidate_changes={".supervisor/policy-overlay.yaml": "candidates/outcome-review.md"},
         affected_gates=("outcome_review",),
     )
 
@@ -392,7 +430,7 @@ def test_denied_policy_proposal_records_denial_and_applies_nothing(tmp_path):
         reason="needs stronger evaluator evidence",
     )
 
-    assert target.read_text(encoding="utf-8") == "before prompt\n"
+    assert target.read_text(encoding="utf-8") == BASE_OVERLAY
     assert denial["status"] == "denied"
     assert denial["reason"] == "needs stronger evaluator evidence"
     assert denial["default_change_allowed"] is False
@@ -403,12 +441,12 @@ def test_denied_policy_proposal_records_denial_and_applies_nothing(tmp_path):
 
 def test_policy_proposal_rollback_pointer_restores_previous_artifact(tmp_path):
     state = State(str(tmp_path / "state.db"))
-    target = _write(tmp_path, "prompts/outcome-review.md", "before prompt\n")
-    _write(tmp_path, "candidates/outcome-review.md", "after prompt\n")
+    target = _write(tmp_path, ".supervisor/policy-overlay.yaml", BASE_OVERLAY)
+    _write(tmp_path, "candidates/outcome-review.md", AFTER_OVERLAY)
     [proposal] = create_policy_evolution_proposals(
         _report(_record()),
         repo_root=tmp_path,
-        candidate_changes={"prompts/outcome-review.md": "candidates/outcome-review.md"},
+        candidate_changes={".supervisor/policy-overlay.yaml": "candidates/outcome-review.md"},
         affected_gates=("outcome_review",),
     )
     before_hash = _sha(target)
@@ -420,7 +458,7 @@ def test_policy_proposal_rollback_pointer_restores_previous_artifact(tmp_path):
         approver="sam.zhang",
         approval_channel="codex_desktop",
     )
-    assert target.read_text(encoding="utf-8") == "after prompt\n"
+    assert target.read_text(encoding="utf-8") == AFTER_OVERLAY
 
     rollback = rollback_policy_proposal(
         approval["rollback_pointer"],
@@ -432,7 +470,7 @@ def test_policy_proposal_rollback_pointer_restores_previous_artifact(tmp_path):
         reason="operator requested revert",
     )
 
-    assert target.read_text(encoding="utf-8") == "before prompt\n"
+    assert target.read_text(encoding="utf-8") == BASE_OVERLAY
     assert _sha(target) == before_hash
     assert rollback["restored"][0]["restored_hash"] == before_hash
     assert rollback["default_change_allowed"] is False

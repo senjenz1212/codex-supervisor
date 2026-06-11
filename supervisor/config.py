@@ -159,6 +159,12 @@ class AutoResearchCfg(BaseModel):
     evaluator_budget_usd: float = 0.25
     evaluator_timeout_s: float = 60.0
     evaluator_k_trials: int = 3
+    policy_regression_min_runs: int = 3
+    policy_regression_first_pass_drop_threshold: float = 0.05
+    policy_regression_false_accept_increase_threshold: float = 0.01
+    policy_regression_time_to_accept_increase_ratio: float = 0.25
+    lesson_retire_after_no_benefit_injections: int = 3
+    p11_audit_cadence_s: int = 604800
 
 
 class NoMistakesCfg(BaseModel):

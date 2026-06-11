@@ -82,6 +82,51 @@ def test_failed_run_writes_supervisor_lesson_record(tmp_path):
     assert [event["kind"] for event in events].count("supervisor_lesson_recorded") == 1
 
 
+def test_near_duplicate_lessons_fold_and_no_benefit_lesson_retires(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    first, created_first = state.record_supervisor_lesson(
+        task_class="large",
+        gate="execution",
+        taxonomy_code="FM-3.2",
+        root_cause="No or incomplete verification",
+        remediation="Verify the claim with supervisor-generated receipts before reporting acceptance.",
+        source_run_id="run-1",
+        created_at=10,
+    )
+    second, created_second = state.record_supervisor_lesson(
+        task_class="large",
+        gate="execution",
+        taxonomy_code="FM-3.2",
+        root_cause=" no   or incomplete   verification ",
+        remediation="verify the claim with supervisor-generated receipts before reporting acceptance.",
+        source_run_id="run-2",
+        created_at=20,
+    )
+
+    assert created_first is True
+    assert created_second is False
+    assert first["lesson_id"] == second["lesson_id"]
+    assert len(state.list_supervisor_lessons()) == 1
+    assert state.list_supervisor_lessons()[0]["observed_count"] == 2
+
+    for _ in range(3):
+        state.record_supervisor_lesson_injection_feedback(
+            lesson_ids=[first["lesson_id"]],
+            recurring_taxonomy_codes=["FM-3.2"],
+            retire_after=3,
+            observed_at=100,
+        )
+
+    all_lessons = state.list_supervisor_lessons()
+    assert all_lessons[0]["retired_at"] == 100
+    assert all_lessons[0]["injection_count"] == 3
+    assert all_lessons[0]["recurrence_count"] == 3
+    assert state.query_supervisor_lessons(
+        task_class="large",
+        gate="execution",
+    ) == []
+
+
 def test_matching_future_gate_injects_lesson_and_records_hash(tmp_path):
     state = State(str(tmp_path / "state.db"))
     lesson, created = state.record_supervisor_lesson(

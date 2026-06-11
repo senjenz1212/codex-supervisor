@@ -354,8 +354,8 @@ async def test_autoresearch_policy_evolution_tools_apply_only_after_operator_app
         state,
         mcp_cls=_FakeMCP,
     )
-    target = tmp_path / "prompts" / "outcome-review.md"
-    candidate = tmp_path / "candidates" / "outcome-review.md"
+    target = tmp_path / ".supervisor" / "policy-overlay.yaml"
+    candidate = tmp_path / "candidates" / "policy-overlay.yaml"
     target.parent.mkdir(parents=True)
     candidate.parent.mkdir(parents=True)
     target.write_text("before prompt\n", encoding="utf-8")
@@ -377,7 +377,7 @@ async def test_autoresearch_policy_evolution_tools_apply_only_after_operator_app
             "metric_source": "evaluator_execution",
             "evaluator_run_ref": "docs/dual-agent/run/evaluator-runs/attempt-policy-1.json",
             "evaluator_run_hash": "evaluator-run-hash",
-            "changed_files": ["candidates/outcome-review.md"],
+                "changed_files": ["candidates/policy-overlay.yaml"],
             "gaming_flags": [],
             "validation_errors": [],
             "cost_usd": 0.19,
@@ -391,7 +391,7 @@ async def test_autoresearch_policy_evolution_tools_apply_only_after_operator_app
     created = await _maybe_await(server.tools["create_autoresearch_policy_proposals"](
         report_path=str(report_path),
         repo_root=str(tmp_path),
-        candidate_changes={"prompts/outcome-review.md": "candidates/outcome-review.md"},
+        candidate_changes={".supervisor/policy-overlay.yaml": "candidates/policy-overlay.yaml"},
         affected_gates=["outcome_review"],
         run_id="policy-run",
     ))
