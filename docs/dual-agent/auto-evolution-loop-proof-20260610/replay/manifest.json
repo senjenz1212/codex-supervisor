@@ -1,0 +1,1869 @@
+{
+  "event_ids": [
+    701008,
+    701009,
+    701010,
+    701011,
+    701025,
+    701027,
+    701028,
+    701029,
+    701030,
+    701031,
+    701032,
+    701033,
+    701037,
+    701101,
+    701102,
+    701103,
+    701104,
+    701117,
+    701119,
+    701120,
+    701121,
+    701122,
+    701293,
+    701294,
+    701295,
+    701296,
+    701299,
+    701300,
+    701301,
+    701302,
+    701534,
+    701535,
+    701536,
+    701537,
+    701540,
+    701541,
+    701542,
+    701543,
+    701671,
+    701672,
+    701673,
+    701956,
+    701957,
+    701958,
+    701959,
+    701964,
+    701965,
+    701966,
+    701967,
+    701968,
+    701969,
+    702056,
+    702057,
+    702058,
+    702059,
+    702060,
+    702061,
+    702062,
+    702063,
+    702064,
+    702159,
+    702160,
+    702161,
+    702162,
+    702163,
+    702164,
+    702165,
+    702166,
+    702167,
+    702282,
+    702283,
+    702284,
+    702493,
+    702494,
+    702495,
+    702496,
+    702497,
+    702502,
+    702503,
+    702504,
+    702505,
+    702506,
+    702507,
+    702560,
+    702561,
+    702562,
+    702563,
+    702564,
+    702568,
+    702618,
+    702619,
+    702620,
+    702621,
+    702623,
+    702625,
+    702626,
+    702627,
+    702628,
+    702839,
+    702840,
+    702841,
+    703161,
+    703162,
+    703163,
+    703164,
+    703165,
+    703170,
+    703171,
+    703172,
+    703173,
+    703174,
+    703175,
+    703237,
+    703238,
+    703239,
+    703443,
+    703444,
+    703445,
+    703446,
+    703447,
+    703452,
+    703453,
+    703454,
+    703455,
+    703456,
+    703457,
+    703488,
+    703489,
+    703490,
+    703720,
+    703721,
+    703722,
+    703723,
+    703728,
+    703731,
+    703732,
+    703733,
+    703734,
+    703818,
+    703819,
+    703820,
+    703980,
+    703981,
+    703982,
+    703983,
+    703988,
+    703991,
+    703992,
+    703993,
+    703994,
+    704025,
+    704026,
+    704033,
+    704034,
+    704035,
+    704039,
+    704040,
+    704041,
+    704042,
+    704043,
+    704047,
+    704182,
+    704186,
+    704187,
+    704188,
+    704190,
+    704192,
+    704193,
+    704194,
+    704195,
+    704280,
+    704281,
+    704282,
+    704283,
+    704412,
+    704413,
+    704414,
+    704415,
+    704416,
+    704421,
+    704422,
+    704423,
+    704424,
+    704425,
+    704426,
+    704511,
+    704512,
+    704513,
+    704514,
+    704515,
+    704516,
+    704517,
+    704518,
+    704519,
+    704520,
+    704577,
+    704578,
+    704579,
+    704580,
+    704581,
+    704582,
+    704583,
+    704584,
+    704585,
+    704586,
+    704631,
+    704632,
+    704647,
+    704648,
+    704824,
+    704825,
+    704826,
+    704827,
+    704828
+  ],
+  "event_kinds": [
+    "dual_agent_gate_result",
+    "dual_agent_gate_round",
+    "dual_agent_interaction_message",
+    "dual_agent_planning_validation",
+    "dual_agent_runtime_evidence",
+    "dual_agent_skill_receipt_validation",
+    "dual_agent_workflow_job",
+    "dual_agent_workflow_route",
+    "dual_agent_workflow_terminal_outcome",
+    "independent_reviewer_adjudication",
+    "independent_reviewer_review",
+    "supervisor_lesson_injection",
+    "supervisor_policy_overlay_snapshot",
+    "tri_agent_cursor_review"
+  ],
+  "events_count": 214,
+  "failure_summary": null,
+  "files": {
+    "index": "index.md",
+    "interactions": "interactions.md",
+    "mast_coverage_json": "replay/mast-coverage.json",
+    "mast_coverage_markdown": "mast-coverage.md",
+    "transcript_jsonl": "transcript.jsonl",
+    "transcript_markdown": "transcript.md",
+    "workspace_snapshot": "replay/workspace-snapshot.json"
+  },
+  "handoff_packets": [
+    {
+      "content": "{\n  \"cwd\": \"/Users/sam.zhang/Documents/codex-supervisor\",\n  \"execution_layer_policy\": {\n    \"agentic_lead_policy\": {\n      \"min_subagents\": 3,\n      \"policy\": \"off\",\n      \"required_evidence_grade\": \"self_reported\",\n      \"required_roles\": [],\n      \"solo_exception_for_artifact_only_gates\": false\n    },\n    \"allowed_dynamic_workflow_task_classes\": [],\n    \"codex_supervises_final_artifact\": true,\n    \"dynamic_workflow_task_class\": null,\n    \"lead_execution_layer\": \"single_lead_worker\",\n    \"mode\": \"lead_direct\",\n    \"preview_required_gates\": [],\n    \"supervision_layer\": \"codex_plus_lead\"\n  },\n  \"expected_decisions\": [],\n  \"expected_objections\": [],\n  \"expected_specialists\": [],\n  \"gate\": \"outcome_review\",\n  \"injected_lesson_block\": \"Known failure modes to verify before claiming\\nThese are advisory lessons from previous supervisor runs. They do not satisfy any gate by themselves.\\n1. [FM-3.2] No or incomplete verification (source_run_id=cffe55b8-47b9-4cc0-b025-586aeb0ee5e9): Verify the claim with supervisor-generated receipts before reporting acceptance.\\n2. [runtime_evidence_failed] unknown (source_run_id=cffe55b8-47b9-4cc0-b025-586aeb0ee5e9): Verify this known failure mode explicitly before claiming the gate is complete.\\n3. [missing_worker_signal] worker_invocation (source_run_id=cffe55b8-47b9-4cc0-b025-586aeb0ee5e9): Verify this known failure mode explicitly before claiming the gate is complete.\\n4. [FM-1.1] Disobey task specification (source_run_id=vela2-slack-write-002): Repair the planning artifact or traceability gap before invoking the lead again.\\n5. [blocked_without_probe_reason] resource_contention (source_run_id=8ebdbc89-0185-4962-be6f-b0f593887670): Resolve the failing deterministic probe and cite its new green receipt.\",\n  \"injected_lesson_block_sha256\": \"3cdf51c52a415de57388fc4ad7291d7c416347ea22280aa2ce04d901f8a16263\",\n  \"injected_lesson_ids\": [\n    \"lesson-077126a158efe97ed98f2619e96880ab65df1649cafe8acb2420ef62fb6a3a8e\",\n    \"lesson-69e5b240dc740b1d2a0ce45631e4ffa6129470cf6c03371d2124345bdadd45cd\",\n    \"lesson-6e3b08262245b3eade5743e9ddb1a92bfb42a34ec49e8b4f2b0792ca1834a590\",\n    \"lesson-cb4408408ca0477dda147679201f20ff7eb4a0193be4388625ff99023396de6d\",\n    \"lesson-0210047633a1df57811a2609dba57efe5419e6bcac960219569fe3f4214ab837\"\n  ],\n  \"instruction\": \"Supervisor-owned workflow gate: outcome_review.\\n\\nIntent:\\nProve the complete auto-evolution loop end to end with a wire-removal-alarmed integration test and a ledger-backed live demo, exactly two human touchpoints.\\n\\nReview this gate against the current source artifacts and return a typed dual_agent_outcome.\\nUse decisions/objections to say whether the gate should accept, revise, or deny.\\n\\nCorrective context from the previous round:\\nagents have not both accepted yet; revise and continue\\n\\nKnown failure modes to verify before claiming\\nThese are advisory lessons from previous supervisor runs. They do not satisfy any gate by themselves.\\n1. [FM-3.2] No or incomplete verification (source_run_id=cffe55b8-47b9-4cc0-b025-586aeb0ee5e9): Verify the claim with supervisor-generated receipts before reporting acceptance.\\n2. [runtime_evidence_failed] unknown (source_run_id=cffe55b8-47b9-4cc0-b025-586aeb0ee5e9): Verify this known failure mode explicitly before claiming the gate is complete.\\n3. [missing_worker_signal] worker_invocation (source_run_id=cffe55b8-47b9-4cc0-b025-586aeb0ee5e9): Verify this known failure mode explicitly before claiming the gate is complete.\\n4. [FM-1.1] Disobey task specification (source_run_id=vela2-slack-write-002): Repair the planning artifact or traceability gap before invoking the lead again.\\n5. [blocked_without_probe_reason] resource_contention (source_run_id=8ebdbc89-0185-4962-be6f-b0f593887670): Resolve the failing deterministic probe and cite its new green receipt.\",\n  \"lead_skill\": null,\n  \"outcome_validation_policy\": {\n    \"fidelity_failure\": \"abort_to_operator\",\n    \"malformed_outcome\": \"retry_once_with_corrective_packet\",\n    \"subprocess_failure\": \"abort_to_operator\",\n    \"timeout\": \"abort_to_operator\"\n  },\n  \"packet_schema_version\": \"dual-agent-handoff/v1\",\n  \"planning_artifacts\": [\n    {\n      \"kind\": \"prd\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/auto-evolution-loop-proof-20260610/source/prd.md\",\n      \"sha256\": \"4777c64e3ba29b5b27495fbf18fa903ae002af6811f627dc2e53648b1e4df2b4\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/auto-evolution-loop-proof-20260610/source/grill-findings.md\",\n      \"sha256\": \"be8bc2836a5ebd76374b780ff9370c914f8ee11a0ecd7f1b5b64f3a725359e24\"\n    },\n    {\n      \"kind\": \"issues\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/auto-evolution-loop-proof-20260610/source/issues.md\",\n      \"sha256\": \"bdb1bef6645d64722880230e659d8c66b1b780e625effb0314e0347a55fce3a6\"\n    },\n    {\n      \"kind\": \"tdd_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/auto-evolution-loop-proof-20260610/source/tdd.md\",\n      \"sha256\": \"44cf599b53ec91687e416cb769adae80abdbb43ecc7b53df8b4792ef792dbbb4\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/auto-evolution-loop-proof-20260610/source/grill-findings-tdd.md\",\n      \"sha256\": \"120a5eac8df71f8cb04586262148361f99cc7a37d7311ad61cdbb817a6c2cbad\"\n    },\n    {\n      \"kind\": \"implementation_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/auto-evolution-loop-proof-20260610/source/implementation-plan.md\",\n      \"sha256\": \"120a5eac8df71f8cb04586262148361f99cc7a37d7311ad61cdbb817a6c2cbad\"\n    },\n    {\n      \"kind\": \"prd\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/auto-evolution-loop-proof-20260610/prd.md\",\n      \"sha256\": \"fbffffd8184195b0ea2afba7b303dbd94e1559800bb5ba50ac87a3a4f428e5c6\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/auto-evolution-loop-proof-20260610/grill-findings.md\",\n      \"sha256\": \"f3718eccbad6e3a10c566e8235fc85f2a4dc08e225e03e7d9179aad51b41ec9c\"\n    },\n    {\n      \"kind\": \"issues\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/auto-evolution-loop-proof-20260610/issues.md\",\n      \"sha256\": \"27bf788f0411f462661969bffab23c02951542b40f28813e078aef1057b1e18d\"\n    },\n    {\n      \"kind\": \"tdd_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/auto-evolution-loop-proof-20260610/tdd.md\",\n      \"sha256\": \"25d7e4ae974315c1eb03f23e3f041e48e0bd4264b6e00abd66613f80f1dc4257\"\n    },\n    {\n      \"kind\": \"implementation_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/auto-evolution-loop-proof-20260610/grill-findings-tdd.md\",\n      \"sha256\": \"120a5eac8df71f8cb04586262148361f99cc7a37d7311ad61cdbb817a6c2cbad\"\n    }\n  ],\n  \"policy_overlay_block\": \"\",\n  \"policy_overlay_block_sha256\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\n  \"policy_overlay_hash\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\n  \"policy_proposal_id\": \"\",\n  \"suggested_skills\": [\n    \"/lead\"\n  ],\n  \"task_id\": \"auto-evolution-loop-proof-20260610\"\n}\n",
+      "event_ids": [
+        701031,
+        701294,
+        701535,
+        701672,
+        701965,
+        702057,
+        702060,
+        702160,
+        702163,
+        702283,
+        702503,
+        702561,
+        702564,
+        702840,
+        703171,
+        703238,
+        703453,
+        703489,
+        703819,
+        704026,
+        704281,
+        704422,
+        704512,
+        704516,
+        704578,
+        704582,
+        704632
+      ],
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json",
+      "sha256": "6ac8786cb188848672f461dcb4e9646548c8464aa03fb92fe2e94915aa7120c4",
+      "status": "captured"
+    }
+  ],
+  "mast_coverage": [
+    {
+      "deterministic_probe": "blocked payload reason `disobey_task_spec` or planning artifact failure",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.1",
+      "mast_mode": "Disobey task specification",
+      "sources": [
+        {
+          "event_id": 701031,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 701031,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        },
+        {
+          "event_id": 704041,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 704041,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        }
+      ],
+      "status": "observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `role_violation_covenant`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload -> classify_failure",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.2",
+      "mast_mode": "Disobey role specification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "same gate and handoff packet observed twice",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "detect_sequence_failures",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "sources": [
+        {
+          "details": {
+            "signature": [
+              "prd_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+            ]
+          },
+          "event_ids": [
+            701031,
+            701294
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "tdd_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+            ]
+          },
+          "event_ids": [
+            701672,
+            701965
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "tdd_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+            ]
+          },
+          "event_ids": [
+            701672,
+            702057
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "tdd_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+            ]
+          },
+          "event_ids": [
+            701672,
+            702060
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "tdd_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+            ]
+          },
+          "event_ids": [
+            701672,
+            702160
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "tdd_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+            ]
+          },
+          "event_ids": [
+            701672,
+            702163
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "tdd_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+            ]
+          },
+          "event_ids": [
+            701672,
+            702283
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "tdd_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+            ]
+          },
+          "event_ids": [
+            701672,
+            702503
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "tdd_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+            ]
+          },
+          "event_ids": [
+            701672,
+            702561
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "tdd_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+            ]
+          },
+          "event_ids": [
+            701672,
+            702564
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "tdd_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+            ]
+          },
+          "event_ids": [
+            701672,
+            702840
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "tdd_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+            ]
+          },
+          "event_ids": [
+            701672,
+            703171
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "tdd_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+            ]
+          },
+          "event_ids": [
+            701672,
+            703238
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "tdd_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+            ]
+          },
+          "event_ids": [
+            701672,
+            703453
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "tdd_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+            ]
+          },
+          "event_ids": [
+            701672,
+            703489
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+            ]
+          },
+          "event_ids": [
+            704281,
+            704422
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+            ]
+          },
+          "event_ids": [
+            704281,
+            704512
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+            ]
+          },
+          "event_ids": [
+            704281,
+            704516
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+            ]
+          },
+          "event_ids": [
+            704281,
+            704578
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+            ]
+          },
+          "event_ids": [
+            704281,
+            704582
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+            ]
+          },
+          "event_ids": [
+            704281,
+            704632
+          ],
+          "source": "sequence"
+        }
+      ],
+      "status": "observed_in_run",
+      "trigger_surface": "sequence"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `lost_conversation_history`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.4",
+      "mast_mode": "Loss of conversation history",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `agents_not_converged_max_rounds`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.5",
+      "mast_mode": "Unaware of termination conditions",
+      "sources": [
+        {
+          "event_id": 701965,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 701965,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        },
+        {
+          "event_id": 702060,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 702060,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        },
+        {
+          "event_id": 702163,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 702163,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        },
+        {
+          "event_id": 702503,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 702503,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        },
+        {
+          "event_id": 702564,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 702564,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        },
+        {
+          "event_id": 703171,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 703171,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        },
+        {
+          "event_id": 703453,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 703453,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        }
+      ],
+      "status": "observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `conversation_reset`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.1",
+      "mast_mode": "Conversation reset",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `ambiguous_input_no_clarification`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.2",
+      "mast_mode": "Fail to ask for clarification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `scope_violation_off_scope`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.3",
+      "mast_mode": "Task derailment",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "Cursor or reviewer disagreement probe fails",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.4",
+      "mast_mode": "Information withholding",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "Claude response does not address a prior Codex objection",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "detect_sequence_failures",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "sources": [
+        {
+          "details": {
+            "objection": "gate blocked"
+          },
+          "event_ids": [
+            701032,
+            701293
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "cursor_review_failed: Primary loop tests fail independently: asyncio.run(runner.tick_once) at :261 destroys event loop before second axi.main approve at :301 (RuntimeError); 6/7 wire-removal cases use _maybe_break(True,...) tautologies at :193,:214,:231,:276,:299,:373; only T2 :251-266 removes a real wire; Finalization uses private CodexSupervisorMcpAPI._workflow_result :196 not public MCP/AXI boundary despite grill Finding T3; issues.md Slice E2 requires monkeypatching one trigger; implementation simulates stage breaks instead"
+          },
+          "event_ids": [
+            701959,
+            702056
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "agents have not both accepted yet; revise and continue"
+          },
+          "event_ids": [
+            702058,
+            702159
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "agents have not both accepted yet; revise and continue"
+          },
+          "event_ids": [
+            702161,
+            702282
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "cursor_review_failed: Primary loop tests fail independently: asyncio.run(run_dual_agent_workflow) at test_auto_evolution_loop.py:285 closes the event loop; subsequent axi.main at :349 constructs State(asyncio.Lock at state.py:460) and raises RuntimeError. 9/11 tests red; only demo-artifact tests pass."
+          },
+          "event_ids": [
+            702497,
+            702560
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "max_rounds_per_gate exhausted without both agents accepting"
+          },
+          "event_ids": [
+            702562,
+            702839
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "cursor_review_failed: Full pytest suite 8 failed / 3 passed on Python 3.9.6 (tests/test_auto_evolution_loop.py); failures at State.__init__ state.py:460 after prior test asyncio.run, not at wire-alarm stages; Claude claim _lock is dead ignores construction-time asyncio.Lock() binding on Python 3.9; No verified green full-suite run on supported Python >=3.10 (pyproject.toml requires-python)"
+          },
+          "event_ids": [
+            703165,
+            703237
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "independent_reviewer_non_accept: independent-reviewer-1"
+          },
+          "event_ids": [
+            703447,
+            703488
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "required_artifacts_missing"
+          },
+          "event_ids": [
+            704042,
+            704280
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "independent_reviewer_blocking_objection: independent-reviewer-1"
+          },
+          "event_ids": [
+            704416,
+            704511
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "agents have not both accepted yet; revise and continue"
+          },
+          "event_ids": [
+            704514,
+            704577
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "agents have not both accepted yet; revise and continue"
+          },
+          "event_ids": [
+            704580,
+            704631
+          ],
+          "source": "sequence"
+        }
+      ],
+      "status": "observed_in_run",
+      "trigger_surface": "sequence"
+    },
+    {
+      "deterministic_probe": "outcome fidelity or message protocol failure",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.6",
+      "mast_mode": "Reasoning-action mismatch",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "accepted gate is missing a required probe",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload + detect_sequence_failures",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.1",
+      "mast_mode": "Premature termination",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload+sequence"
+    },
+    {
+      "deterministic_probe": "claim verification or evidence receipt probe fails",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.2",
+      "mast_mode": "No or incomplete verification",
+      "sources": [
+        {
+          "event_id": 704282,
+          "event_kind": "dual_agent_runtime_evidence",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 704282,
+          "event_kind": "dual_agent_runtime_evidence",
+          "source": "payload"
+        },
+        {
+          "event_id": 704513,
+          "event_kind": "dual_agent_runtime_evidence",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 704513,
+          "event_kind": "dual_agent_runtime_evidence",
+          "source": "payload"
+        },
+        {
+          "event_id": 704579,
+          "event_kind": "dual_agent_runtime_evidence",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 704579,
+          "event_kind": "dual_agent_runtime_evidence",
+          "source": "payload"
+        }
+      ],
+      "status": "observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "Cursor rejects after the gate was accepted",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "detect_sequence_failures",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.3",
+      "mast_mode": "Incorrect verification",
+      "sources": [
+        {
+          "details": {
+            "accepted_gate_event_id": 701672
+          },
+          "event_ids": [
+            701672,
+            701957
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "accepted_gate_event_id": 701672
+          },
+          "event_ids": [
+            701672,
+            701958
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "accepted_gate_event_id": 702283
+          },
+          "event_ids": [
+            702283,
+            702495
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "accepted_gate_event_id": 702283
+          },
+          "event_ids": [
+            702283,
+            702496
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "accepted_gate_event_id": 702840
+          },
+          "event_ids": [
+            702840,
+            703163
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "accepted_gate_event_id": 702840
+          },
+          "event_ids": [
+            702840,
+            703164
+          ],
+          "source": "sequence"
+        }
+      ],
+      "status": "observed_in_run",
+      "trigger_surface": "sequence"
+    }
+  ],
+  "run_id": "0c69f249-b6df-4d95-9eb7-e43f139e8c36",
+  "schema_version": "dual-agent-replay-manifest/v1",
+  "schema_versions": {
+    "agent_interaction": "dual-agent-interaction/v1",
+    "failure_taxonomy": "dual-agent-failure-taxonomy/v1",
+    "replay_manifest": "dual-agent-replay-manifest/v1",
+    "trace_envelope": "dual-agent-trace-envelope/v1"
+  },
+  "sequence_failures": [
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "gate blocked"
+      },
+      "event_ids": [
+        701032,
+        701293
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "prd_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+        ]
+      },
+      "event_ids": [
+        701031,
+        701294
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "task_verification",
+      "code": "false_green_incorrect_verification",
+      "details": {
+        "accepted_gate_event_id": 701672
+      },
+      "event_ids": [
+        701672,
+        701957
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.3",
+      "mast_mode": "Incorrect verification",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "incorrect_verification"
+    },
+    {
+      "category": "task_verification",
+      "code": "false_green_incorrect_verification",
+      "details": {
+        "accepted_gate_event_id": 701672
+      },
+      "event_ids": [
+        701672,
+        701958
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.3",
+      "mast_mode": "Incorrect verification",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "incorrect_verification"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "tdd_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+        ]
+      },
+      "event_ids": [
+        701672,
+        701965
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "cursor_review_failed: Primary loop tests fail independently: asyncio.run(runner.tick_once) at :261 destroys event loop before second axi.main approve at :301 (RuntimeError); 6/7 wire-removal cases use _maybe_break(True,...) tautologies at :193,:214,:231,:276,:299,:373; only T2 :251-266 removes a real wire; Finalization uses private CodexSupervisorMcpAPI._workflow_result :196 not public MCP/AXI boundary despite grill Finding T3; issues.md Slice E2 requires monkeypatching one trigger; implementation simulates stage breaks instead"
+      },
+      "event_ids": [
+        701959,
+        702056
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "tdd_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+        ]
+      },
+      "event_ids": [
+        701672,
+        702057
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "tdd_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+        ]
+      },
+      "event_ids": [
+        701672,
+        702060
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "agents have not both accepted yet; revise and continue"
+      },
+      "event_ids": [
+        702058,
+        702159
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "tdd_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+        ]
+      },
+      "event_ids": [
+        701672,
+        702160
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "tdd_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+        ]
+      },
+      "event_ids": [
+        701672,
+        702163
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "agents have not both accepted yet; revise and continue"
+      },
+      "event_ids": [
+        702161,
+        702282
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "tdd_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+        ]
+      },
+      "event_ids": [
+        701672,
+        702283
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "task_verification",
+      "code": "false_green_incorrect_verification",
+      "details": {
+        "accepted_gate_event_id": 702283
+      },
+      "event_ids": [
+        702283,
+        702495
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.3",
+      "mast_mode": "Incorrect verification",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "incorrect_verification"
+    },
+    {
+      "category": "task_verification",
+      "code": "false_green_incorrect_verification",
+      "details": {
+        "accepted_gate_event_id": 702283
+      },
+      "event_ids": [
+        702283,
+        702496
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.3",
+      "mast_mode": "Incorrect verification",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "incorrect_verification"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "tdd_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+        ]
+      },
+      "event_ids": [
+        701672,
+        702503
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "cursor_review_failed: Primary loop tests fail independently: asyncio.run(run_dual_agent_workflow) at test_auto_evolution_loop.py:285 closes the event loop; subsequent axi.main at :349 constructs State(asyncio.Lock at state.py:460) and raises RuntimeError. 9/11 tests red; only demo-artifact tests pass."
+      },
+      "event_ids": [
+        702497,
+        702560
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "tdd_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+        ]
+      },
+      "event_ids": [
+        701672,
+        702561
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "tdd_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+        ]
+      },
+      "event_ids": [
+        701672,
+        702564
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "max_rounds_per_gate exhausted without both agents accepting"
+      },
+      "event_ids": [
+        702562,
+        702839
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "tdd_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+        ]
+      },
+      "event_ids": [
+        701672,
+        702840
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "task_verification",
+      "code": "false_green_incorrect_verification",
+      "details": {
+        "accepted_gate_event_id": 702840
+      },
+      "event_ids": [
+        702840,
+        703163
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.3",
+      "mast_mode": "Incorrect verification",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "incorrect_verification"
+    },
+    {
+      "category": "task_verification",
+      "code": "false_green_incorrect_verification",
+      "details": {
+        "accepted_gate_event_id": 702840
+      },
+      "event_ids": [
+        702840,
+        703164
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.3",
+      "mast_mode": "Incorrect verification",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "incorrect_verification"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "tdd_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+        ]
+      },
+      "event_ids": [
+        701672,
+        703171
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "cursor_review_failed: Full pytest suite 8 failed / 3 passed on Python 3.9.6 (tests/test_auto_evolution_loop.py); failures at State.__init__ state.py:460 after prior test asyncio.run, not at wire-alarm stages; Claude claim _lock is dead ignores construction-time asyncio.Lock() binding on Python 3.9; No verified green full-suite run on supported Python >=3.10 (pyproject.toml requires-python)"
+      },
+      "event_ids": [
+        703165,
+        703237
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "tdd_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+        ]
+      },
+      "event_ids": [
+        701672,
+        703238
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "tdd_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+        ]
+      },
+      "event_ids": [
+        701672,
+        703453
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "independent_reviewer_non_accept: independent-reviewer-1"
+      },
+      "event_ids": [
+        703447,
+        703488
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "tdd_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+        ]
+      },
+      "event_ids": [
+        701672,
+        703489
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "required_artifacts_missing"
+      },
+      "event_ids": [
+        704042,
+        704280
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+        ]
+      },
+      "event_ids": [
+        704281,
+        704422
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "independent_reviewer_blocking_objection: independent-reviewer-1"
+      },
+      "event_ids": [
+        704416,
+        704511
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+        ]
+      },
+      "event_ids": [
+        704281,
+        704512
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+        ]
+      },
+      "event_ids": [
+        704281,
+        704516
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "agents have not both accepted yet; revise and continue"
+      },
+      "event_ids": [
+        704514,
+        704577
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+        ]
+      },
+      "event_ids": [
+        704281,
+        704578
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+        ]
+      },
+      "event_ids": [
+        704281,
+        704582
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "agents have not both accepted yet; revise and continue"
+      },
+      "event_ids": [
+        704580,
+        704631
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-proof-20260610.json"
+        ]
+      },
+      "event_ids": [
+        704281,
+        704632
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    }
+  ],
+  "state": {
+    "events_count_at_capture": 214,
+    "first_event_id": 701008,
+    "last_event_id": 704828,
+    "transcript_jsonl_sha256": "87fc682f8325be4b94b171398c596692e843d8df161047caaf31dc385de226df"
+  },
+  "task_id": "auto-evolution-loop-proof-20260610",
+  "tool_call_totals": {
+    "total_cost_usd": 223.430859,
+    "total_duration_ms": 9818844,
+    "total_duration_us": 9818898438,
+    "total_tokens_in": 49184898,
+    "total_tokens_out": 427394,
+    "unique_tool_calls": 253
+  },
+  "workspace_snapshot": {
+    "file_tree_sha256": "e6866c3f4b00f4af736e3b17ff50554ea825a2811f094d1a8fcc7cba01f6c838",
+    "git": {
+      "diff_bytes": 5843,
+      "diff_sha256": "60c2a24305c9dd758d55319d6f4b0d5ac891bcfcd3526f52b405b3bcf553a914",
+      "diff_stat": "mcp_tools/codex_supervisor_axi.py        | 6 ++++++\n mcp_tools/codex_supervisor_stdio.py      | 6 ++++++\n supervisor/autoresearch/generator.py     | 1 +\n tests/test_codex_supervisor_axi.py       | 3 +++\n tests/test_dual_agent_workflow_driver.py | 3 +++\n 5 files changed, 19 insertions(+)",
+      "head": "4790b7e",
+      "head_label": "handoff_cwd_head",
+      "head_ref": "HEAD",
+      "head_sha": "4790b7e",
+      "status_short": "M mcp_tools/codex_supervisor_axi.py\n M mcp_tools/codex_supervisor_stdio.py\n M supervisor/autoresearch/generator.py\n M tests/test_codex_supervisor_axi.py\n M tests/test_dual_agent_workflow_driver.py\n?? .scratch/auto-evolution-loop-proof-20260610/\n?? .scratch/auto-evolution-loop-wiring-20260611/\n?? .scratch/autoresearch-policy-diff-derivation-20260610/\n?? .scratch/axi-cli-detached-dispatcher-20260610/\n?? .scratch/cocreate-checkpoint-files-only-dual-agent-prompt.md\n?? .scratch/cocreate-ckpt-tdd-review-corrective-input.md\n?? .scratch/cocreate-global-purge-dual-agent-prompt.md\n?? .scratch/defense-in-depth-hardening-20260610/\n?? .scratch/policy-overlay-liveness-20260610-repair/\n?? docs/LOOP.md\n?? docs/axi-principles-evidence-review-20260611.md\n?? docs/dual-agent/auto-evolution-loop-proof-20260610/\n?? docs/dual-agent/live-cursor-sdk-probe-20260610-135900/\n?? docs/dual-agent/live-cursor-sdk-probe-20260610-140228/\n?? docs/dual-agent/supervisor-flow-autoresearch-run-20260609/\n?? docs/supervisor-auto-evolution-loop-program-20260610.md\n?? docs/supervisor-auto-improve-gap-analysis-20260610.md\n?? docs/supervisor-autoevolution-readiness-20260610.md\n?? docs/supervisor-axi-vs-mcp-analysis-20260610.md\n?? docs/supervisor-improvement-audit-20260609.md\n?? docs/supervisor-improvement-completion-prompts-20260610.md\n?? docs/supervisor-improvement-prompts-coverage-20260609.md\n?? docs/supervisor-improvement-prompts-finish-20260610.md\n?? tests/test_auto_evolution_loop.py"
+    },
+    "root": "/Users/sam.zhang/Documents/codex-supervisor",
+    "root_source": "handoff_cwd",
+    "source_artifact_hashes": {
+      "grill_findings": "cc26f455a0f5177a899ab8ee2bb6e1e93f87b753a78bcf70b95da72b7df3bf21",
+      "implementation_plan": "120a5eac8df71f8cb04586262148361f99cc7a37d7311ad61cdbb817a6c2cbad",
+      "issues": "27bf788f0411f462661969bffab23c02951542b40f28813e078aef1057b1e18d",
+      "prd": "fbffffd8184195b0ea2afba7b303dbd94e1559800bb5ba50ac87a3a4f428e5c6",
+      "tdd_plan": "25d7e4ae974315c1eb03f23e3f041e48e0bd4264b6e00abd66613f80f1dc4257"
+    },
+    "status": "captured"
+  }
+}

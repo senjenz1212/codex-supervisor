@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "e6866c3f4b00f4af736e3b17ff50554ea825a2811f094d1a8fcc7cba01f6c838",
+  "git": {
+    "diff_bytes": 5843,
+    "diff_sha256": "60c2a24305c9dd758d55319d6f4b0d5ac891bcfcd3526f52b405b3bcf553a914",
+    "diff_stat": "mcp_tools/codex_supervisor_axi.py        | 6 ++++++\n mcp_tools/codex_supervisor_stdio.py      | 6 ++++++\n supervisor/autoresearch/generator.py     | 1 +\n tests/test_codex_supervisor_axi.py       | 3 +++\n tests/test_dual_agent_workflow_driver.py | 3 +++\n 5 files changed, 19 insertions(+)",
+    "head": "4790b7e",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "4790b7e",
+    "status_short": "M mcp_tools/codex_supervisor_axi.py\n M mcp_tools/codex_supervisor_stdio.py\n M supervisor/autoresearch/generator.py\n M tests/test_codex_supervisor_axi.py\n M tests/test_dual_agent_workflow_driver.py\n?? .scratch/auto-evolution-loop-proof-20260610/\n?? .scratch/auto-evolution-loop-wiring-20260611/\n?? .scratch/autoresearch-policy-diff-derivation-20260610/\n?? .scratch/axi-cli-detached-dispatcher-20260610/\n?? .scratch/cocreate-checkpoint-files-only-dual-agent-prompt.md\n?? .scratch/cocreate-ckpt-tdd-review-corrective-input.md\n?? .scratch/cocreate-global-purge-dual-agent-prompt.md\n?? .scratch/defense-in-depth-hardening-20260610/\n?? .scratch/policy-overlay-liveness-20260610-repair/\n?? docs/LOOP.md\n?? docs/axi-principles-evidence-review-20260611.md\n?? docs/dual-agent/auto-evolution-loop-proof-20260610/\n?? docs/dual-agent/live-cursor-sdk-probe-20260610-135900/\n?? docs/dual-agent/live-cursor-sdk-probe-20260610-140228/\n?? docs/dual-agent/supervisor-flow-autoresearch-run-20260609/\n?? docs/supervisor-auto-evolution-loop-program-20260610.md\n?? docs/supervisor-auto-improve-gap-analysis-20260610.md\n?? docs/supervisor-autoevolution-readiness-20260610.md\n?? docs/supervisor-axi-vs-mcp-analysis-20260610.md\n?? docs/supervisor-improvement-audit-20260609.md\n?? docs/supervisor-improvement-completion-prompts-20260610.md\n?? docs/supervisor-improvement-prompts-coverage-20260609.md\n?? docs/supervisor-improvement-prompts-finish-20260610.md\n?? tests/test_auto_evolution_loop.py"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "cc26f455a0f5177a899ab8ee2bb6e1e93f87b753a78bcf70b95da72b7df3bf21",
+    "implementation_plan": "120a5eac8df71f8cb04586262148361f99cc7a37d7311ad61cdbb817a6c2cbad",
+    "issues": "27bf788f0411f462661969bffab23c02951542b40f28813e078aef1057b1e18d",
+    "prd": "fbffffd8184195b0ea2afba7b303dbd94e1559800bb5ba50ac87a3a4f428e5c6",
+    "tdd_plan": "25d7e4ae974315c1eb03f23e3f041e48e0bd4264b6e00abd66613f80f1dc4257"
+  },
+  "status": "captured"
+}
