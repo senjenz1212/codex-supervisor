@@ -1027,6 +1027,24 @@ class State:
         ).fetchall()
         return [_quality_trend_row_to_dict(row) for row in rows]
 
+    def list_p11_audit_candidate_run_ids(self, *, limit: int = 50) -> list[str]:
+        rows = self._conn.execute(
+            """SELECT DISTINCT run_id
+                 FROM events
+                WHERE kind='dual_agent_gate_result'
+                  AND (
+                    json_extract(payload_json, '$.gate') IN ('execution', 'outcome_review')
+                  )
+                  AND (
+                    lower(COALESCE(json_extract(payload_json, '$.status'), '')) IN ('accepted', 'accept')
+                    OR lower(COALESCE(json_extract(payload_json, '$.outcome.decision'), '')) IN ('accepted', 'accept')
+                  )
+                ORDER BY event_id DESC
+                LIMIT ?""",
+            (int(limit),),
+        ).fetchall()
+        return [str(row["run_id"]) for row in rows]
+
     # --- AutoResearch experiment queue ---
     def upsert_autoresearch_experiment_draft(
         self,

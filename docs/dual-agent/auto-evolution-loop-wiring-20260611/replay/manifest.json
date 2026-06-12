@@ -1,0 +1,505 @@
+{
+  "event_ids": [
+    698564,
+    698571,
+    698572,
+    698573,
+    698575,
+    698576,
+    698578,
+    698599,
+    698675,
+    698676,
+    698677,
+    698678,
+    698680,
+    698692,
+    698693,
+    698694,
+    698695,
+    698696,
+    698697,
+    698698,
+    698702,
+    698841,
+    698842,
+    698843,
+    698844,
+    698846,
+    698848,
+    698849,
+    698850,
+    698851,
+    698852,
+    698853,
+    698854,
+    698858,
+    698971,
+    698972,
+    698973,
+    698974,
+    698976,
+    698978,
+    698979,
+    698980,
+    698981,
+    699088,
+    699089,
+    699091,
+    699092,
+    699095,
+    699096,
+    699097,
+    699098,
+    699158,
+    699159,
+    699160,
+    699161,
+    699164,
+    699165,
+    699166,
+    699167,
+    699242,
+    699243,
+    699244,
+    699506,
+    699507,
+    699508,
+    699509,
+    699514,
+    699517,
+    699518,
+    699519,
+    699520,
+    699580,
+    699581,
+    699582,
+    699904,
+    699905,
+    699906,
+    699907,
+    699912,
+    699915,
+    699916,
+    699917,
+    699918,
+    700153,
+    700154,
+    700159,
+    700160,
+    700161,
+    700169,
+    700170,
+    700171,
+    700172,
+    700220,
+    700221,
+    700223,
+    700224,
+    700370,
+    700371,
+    700372,
+    700373,
+    700378
+  ],
+  "event_kinds": [
+    "dual_agent_gate_result",
+    "dual_agent_gate_round",
+    "dual_agent_interaction_message",
+    "dual_agent_planning_validation",
+    "dual_agent_runtime_evidence",
+    "dual_agent_skill_receipt_validation",
+    "dual_agent_workflow_job",
+    "dual_agent_workflow_route",
+    "dual_agent_workflow_terminal_outcome",
+    "independent_reviewer_review",
+    "supervisor_lesson_injection",
+    "supervisor_lesson_recorded",
+    "supervisor_policy_overlay_snapshot",
+    "tri_agent_cursor_review"
+  ],
+  "events_count": 101,
+  "failure_summary": null,
+  "files": {
+    "index": "index.md",
+    "interactions": "interactions.md",
+    "mast_coverage_json": "replay/mast-coverage.json",
+    "mast_coverage_markdown": "mast-coverage.md",
+    "transcript_jsonl": "transcript.jsonl",
+    "transcript_markdown": "transcript.md",
+    "workspace_snapshot": "replay/workspace-snapshot.json"
+  },
+  "handoff_packets": [
+    {
+      "content": "{\n  \"cwd\": \"/Users/sam.zhang/Documents/codex-supervisor\",\n  \"execution_layer_policy\": {\n    \"agentic_lead_policy\": {\n      \"min_subagents\": 3,\n      \"policy\": \"off\",\n      \"required_evidence_grade\": \"self_reported\",\n      \"required_roles\": [],\n      \"solo_exception_for_artifact_only_gates\": false\n    },\n    \"allowed_dynamic_workflow_task_classes\": [],\n    \"codex_supervises_final_artifact\": true,\n    \"dynamic_workflow_task_class\": null,\n    \"lead_execution_layer\": \"single_lead_worker\",\n    \"mode\": \"lead_direct\",\n    \"preview_required_gates\": [],\n    \"supervision_layer\": \"codex_plus_lead\"\n  },\n  \"expected_decisions\": [],\n  \"expected_objections\": [],\n  \"expected_specialists\": [],\n  \"gate\": \"outcome_review\",\n  \"injected_lesson_block\": \"Known failure modes to verify before claiming\\nThese are advisory lessons from previous supervisor runs. They do not satisfy any gate by themselves.\\n1. [FM-3.2] No or incomplete verification (source_run_id=cffe55b8-47b9-4cc0-b025-586aeb0ee5e9): Verify the claim with supervisor-generated receipts before reporting acceptance.\\n2. [runtime_evidence_failed] unknown (source_run_id=cffe55b8-47b9-4cc0-b025-586aeb0ee5e9): Verify this known failure mode explicitly before claiming the gate is complete.\\n3. [missing_worker_signal] worker_invocation (source_run_id=cffe55b8-47b9-4cc0-b025-586aeb0ee5e9): Verify this known failure mode explicitly before claiming the gate is complete.\\n4. [FM-1.1] Disobey task specification (source_run_id=vela2-slack-write-002): Repair the planning artifact or traceability gap before invoking the lead again.\\n5. [blocked_without_probe_reason] resource_contention (source_run_id=8ebdbc89-0185-4962-be6f-b0f593887670): Resolve the failing deterministic probe and cite its new green receipt.\",\n  \"injected_lesson_block_sha256\": \"3cdf51c52a415de57388fc4ad7291d7c416347ea22280aa2ce04d901f8a16263\",\n  \"injected_lesson_ids\": [\n    \"lesson-077126a158efe97ed98f2619e96880ab65df1649cafe8acb2420ef62fb6a3a8e\",\n    \"lesson-69e5b240dc740b1d2a0ce45631e4ffa6129470cf6c03371d2124345bdadd45cd\",\n    \"lesson-6e3b08262245b3eade5743e9ddb1a92bfb42a34ec49e8b4f2b0792ca1834a590\",\n    \"lesson-cb4408408ca0477dda147679201f20ff7eb4a0193be4388625ff99023396de6d\",\n    \"lesson-0210047633a1df57811a2609dba57efe5419e6bcac960219569fe3f4214ab837\"\n  ],\n  \"instruction\": \"Supervisor-owned workflow gate: outcome_review.\\n\\nIntent:\\nWire the verified auto-evolution mechanisms: finalization triggers, daemon cadences, derive-on-acceptance, and operator verbs \\u2014 autonomy still stops at draft.\\n\\nReview this gate against the current source artifacts and return a typed dual_agent_outcome.\\nUse decisions/objections to say whether the gate should accept, revise, or deny.\\n\\nKnown failure modes to verify before claiming\\nThese are advisory lessons from previous supervisor runs. They do not satisfy any gate by themselves.\\n1. [FM-3.2] No or incomplete verification (source_run_id=cffe55b8-47b9-4cc0-b025-586aeb0ee5e9): Verify the claim with supervisor-generated receipts before reporting acceptance.\\n2. [runtime_evidence_failed] unknown (source_run_id=cffe55b8-47b9-4cc0-b025-586aeb0ee5e9): Verify this known failure mode explicitly before claiming the gate is complete.\\n3. [missing_worker_signal] worker_invocation (source_run_id=cffe55b8-47b9-4cc0-b025-586aeb0ee5e9): Verify this known failure mode explicitly before claiming the gate is complete.\\n4. [FM-1.1] Disobey task specification (source_run_id=vela2-slack-write-002): Repair the planning artifact or traceability gap before invoking the lead again.\\n5. [blocked_without_probe_reason] resource_contention (source_run_id=8ebdbc89-0185-4962-be6f-b0f593887670): Resolve the failing deterministic probe and cite its new green receipt.\",\n  \"lead_skill\": null,\n  \"outcome_validation_policy\": {\n    \"fidelity_failure\": \"abort_to_operator\",\n    \"malformed_outcome\": \"retry_once_with_corrective_packet\",\n    \"subprocess_failure\": \"abort_to_operator\",\n    \"timeout\": \"abort_to_operator\"\n  },\n  \"packet_schema_version\": \"dual-agent-handoff/v1\",\n  \"planning_artifacts\": [\n    {\n      \"kind\": \"prd\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/auto-evolution-loop-wiring-20260611/source/prd.md\",\n      \"sha256\": \"d75c188cf9995d426d1e3f9c0b1594dabf1d889bb41de664f0b1cd6e713615ad\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/auto-evolution-loop-wiring-20260611/source/grill-findings.md\",\n      \"sha256\": \"549fd2224d36354b53a253bbe9a771ec7fd937808f7511607b1fa018ef5b4f4c\"\n    },\n    {\n      \"kind\": \"issues\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/auto-evolution-loop-wiring-20260611/source/issues.md\",\n      \"sha256\": \"93acc85c2a9ff42f2caee4774f339c697b9c55359c008674d1022a4a434a6047\"\n    },\n    {\n      \"kind\": \"tdd_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/auto-evolution-loop-wiring-20260611/source/tdd.md\",\n      \"sha256\": \"ea9b47754293194b86b69912153eab51566b9568f91ada73e32647b0320d1982\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/auto-evolution-loop-wiring-20260611/source/grill-findings-tdd.md\",\n      \"sha256\": \"6c6400324e70b5ce3e91d550feacca9c96d639b81ddf151c8ec1f258e0424831\"\n    },\n    {\n      \"kind\": \"implementation_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/auto-evolution-loop-wiring-20260611/source/implementation-plan.md\",\n      \"sha256\": \"237cc12915ff7e8f4b20d82c7602925cb18f017a5a5194240d1ad409b0211ee3\"\n    },\n    {\n      \"kind\": \"prd\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/auto-evolution-loop-wiring-20260611/source/prd.md\",\n      \"sha256\": \"d75c188cf9995d426d1e3f9c0b1594dabf1d889bb41de664f0b1cd6e713615ad\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/auto-evolution-loop-wiring-20260611/source/grill-findings.md\",\n      \"sha256\": \"549fd2224d36354b53a253bbe9a771ec7fd937808f7511607b1fa018ef5b4f4c\"\n    },\n    {\n      \"kind\": \"issues\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/auto-evolution-loop-wiring-20260611/source/issues.md\",\n      \"sha256\": \"93acc85c2a9ff42f2caee4774f339c697b9c55359c008674d1022a4a434a6047\"\n    },\n    {\n      \"kind\": \"tdd_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/auto-evolution-loop-wiring-20260611/source/tdd.md\",\n      \"sha256\": \"ea9b47754293194b86b69912153eab51566b9568f91ada73e32647b0320d1982\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/auto-evolution-loop-wiring-20260611/source/grill-findings-tdd.md\",\n      \"sha256\": \"6c6400324e70b5ce3e91d550feacca9c96d639b81ddf151c8ec1f258e0424831\"\n    },\n    {\n      \"kind\": \"implementation_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/auto-evolution-loop-wiring-20260611/source/implementation-plan.md\",\n      \"sha256\": \"237cc12915ff7e8f4b20d82c7602925cb18f017a5a5194240d1ad409b0211ee3\"\n    }\n  ],\n  \"policy_overlay_block\": \"\",\n  \"policy_overlay_block_sha256\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\n  \"policy_overlay_hash\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\n  \"policy_proposal_id\": \"\",\n  \"suggested_skills\": [\n    \"/lead\"\n  ],\n  \"task_id\": \"auto-evolution-loop-wiring-20260611\"\n}\n",
+      "event_ids": [
+        698696,
+        698852,
+        699089,
+        699159,
+        699243,
+        699581,
+        700154,
+        700221
+      ],
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-wiring-20260611.json",
+      "sha256": "98b0ea3fc6c1b202df0c22f7b9a0d9a49ddecea53a8ba157f020d71e537543b4",
+      "status": "captured"
+    }
+  ],
+  "mast_coverage": [
+    {
+      "deterministic_probe": "blocked payload reason `disobey_task_spec` or planning artifact failure",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.1",
+      "mast_mode": "Disobey task specification",
+      "sources": [
+        {
+          "event_id": 698696,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 698696,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        },
+        {
+          "event_id": 698852,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 698852,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        }
+      ],
+      "status": "observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `role_violation_covenant`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload -> classify_failure",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.2",
+      "mast_mode": "Disobey role specification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "same gate and handoff packet observed twice",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "detect_sequence_failures",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "sources": [
+        {
+          "details": {
+            "signature": [
+              "prd_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-wiring-20260611.json"
+            ]
+          },
+          "event_ids": [
+            698696,
+            698852
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "prd_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-wiring-20260611.json"
+            ]
+          },
+          "event_ids": [
+            698696,
+            699089
+          ],
+          "source": "sequence"
+        }
+      ],
+      "status": "observed_in_run",
+      "trigger_surface": "sequence"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `lost_conversation_history`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.4",
+      "mast_mode": "Loss of conversation history",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `agents_not_converged_max_rounds`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.5",
+      "mast_mode": "Unaware of termination conditions",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `conversation_reset`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.1",
+      "mast_mode": "Conversation reset",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `ambiguous_input_no_clarification`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.2",
+      "mast_mode": "Fail to ask for clarification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `scope_violation_off_scope`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.3",
+      "mast_mode": "Task derailment",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "Cursor or reviewer disagreement probe fails",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.4",
+      "mast_mode": "Information withholding",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "Claude response does not address a prior Codex objection",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "detect_sequence_failures",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "sources": [
+        {
+          "details": {
+            "objection": "gate blocked"
+          },
+          "event_ids": [
+            698697,
+            699088
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "gate blocked"
+          },
+          "event_ids": [
+            698853,
+            699088
+          ],
+          "source": "sequence"
+        }
+      ],
+      "status": "observed_in_run",
+      "trigger_surface": "sequence"
+    },
+    {
+      "deterministic_probe": "outcome fidelity or message protocol failure",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.6",
+      "mast_mode": "Reasoning-action mismatch",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "accepted gate is missing a required probe",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload + detect_sequence_failures",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.1",
+      "mast_mode": "Premature termination",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload+sequence"
+    },
+    {
+      "deterministic_probe": "claim verification or evidence receipt probe fails",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.2",
+      "mast_mode": "No or incomplete verification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "Cursor rejects after the gate was accepted",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "detect_sequence_failures",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.3",
+      "mast_mode": "Incorrect verification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "sequence"
+    }
+  ],
+  "run_id": "6754bb5c-96d8-45ca-b17c-2a9abb48b6a6",
+  "schema_version": "dual-agent-replay-manifest/v1",
+  "schema_versions": {
+    "agent_interaction": "dual-agent-interaction/v1",
+    "failure_taxonomy": "dual-agent-failure-taxonomy/v1",
+    "replay_manifest": "dual-agent-replay-manifest/v1",
+    "trace_envelope": "dual-agent-trace-envelope/v1"
+  },
+  "sequence_failures": [
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "prd_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-wiring-20260611.json"
+        ]
+      },
+      "event_ids": [
+        698696,
+        698852
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "gate blocked"
+      },
+      "event_ids": [
+        698697,
+        699088
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "gate blocked"
+      },
+      "event_ids": [
+        698853,
+        699088
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "prd_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/auto-evolution-loop-wiring-20260611.json"
+        ]
+      },
+      "event_ids": [
+        698696,
+        699089
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    }
+  ],
+  "state": {
+    "events_count_at_capture": 101,
+    "first_event_id": 698564,
+    "last_event_id": 700378,
+    "transcript_jsonl_sha256": "ea6a838f0f8ea04592ad9d30d0f702468439b05da69af19ec9dd2db107c9f49e"
+  },
+  "task_id": "auto-evolution-loop-wiring-20260611",
+  "tool_call_totals": {
+    "total_cost_usd": 66.363963,
+    "total_duration_ms": 3588013,
+    "total_duration_us": 3588033124,
+    "total_tokens_in": 20709770,
+    "total_tokens_out": 146408,
+    "unique_tool_calls": 101
+  },
+  "workspace_snapshot": {
+    "file_tree_sha256": "40f5c950cb3e0f11103cd0c5684ee5a88be5ce89bb0495e8c001d753073794eb",
+    "git": {
+      "diff_bytes": 45934,
+      "diff_sha256": "5795bcfb1aee4b11673081fdf04ba0be830018db64212a618f06a4bdfcb27792",
+      "diff_stat": "config.example.yaml                         |   1 +\n daemon.py                                   |  20 ++++\n mcp_tools/codex_supervisor_axi.py           | 104 +++++++++++++++-\n mcp_tools/codex_supervisor_stdio.py         | 179 ++++++++++++++++++++++++++++\n supervisor/autoresearch/orchestrator.py     |  39 ++++++\n supervisor/autoresearch/policy_evolution.py |  19 +++\n supervisor/config.py                        |   1 +\n supervisor/postgres_state.py                |  17 +++\n supervisor/state.py                         |  18 +++\n supervisor/workflow_job_dispatcher.py       |  50 ++++++++\n tests/test_autoresearch_generator.py        |  76 ++++++++++++\n tests/test_autoresearch_policy_evolution.py |  64 ++++++++++\n tests/test_codex_supervisor_axi.py          | 150 +++++++++++++++++++++++\n tests/test_supervisor_lessons.py            |  68 +++++++++++\n 14 files changed, 805 insertions(+), 1 deletion(-)",
+      "head": "02a3eee",
+      "head_label": "handoff_cwd_head",
+      "head_ref": "HEAD",
+      "head_sha": "02a3eee",
+      "status_short": "M config.example.yaml\n M daemon.py\n M mcp_tools/codex_supervisor_axi.py\n M mcp_tools/codex_supervisor_stdio.py\n M supervisor/autoresearch/orchestrator.py\n M supervisor/autoresearch/policy_evolution.py\n M supervisor/config.py\n M supervisor/postgres_state.py\n M supervisor/state.py\n M supervisor/workflow_job_dispatcher.py\n M tests/test_autoresearch_generator.py\n M tests/test_autoresearch_policy_evolution.py\n M tests/test_codex_supervisor_axi.py\n M tests/test_supervisor_lessons.py\n?? .codex-supervisor/\n?? .scratch/auto-evolution-loop-wiring-20260611/\n?? .scratch/autoresearch-policy-diff-derivation-20260610/\n?? .scratch/axi-cli-detached-dispatcher-20260610/\n?? .scratch/cocreate-checkpoint-files-only-dual-agent-prompt.md\n?? .scratch/cocreate-ckpt-tdd-review-corrective-input.md\n?? .scratch/cocreate-global-purge-dual-agent-prompt.md\n?? .scratch/defense-in-depth-hardening-20260610/\n?? .scratch/policy-overlay-liveness-20260610-repair/\n?? docs/axi-principles-evidence-review-20260611.md\n?? docs/dual-agent/auto-evolution-loop-wiring-20260611/\n?? docs/dual-agent/live-cursor-sdk-probe-20260610-135900/\n?? docs/dual-agent/live-cursor-sdk-probe-20260610-140228/\n?? docs/dual-agent/supervisor-flow-autoresearch-run-20260609/\n?? docs/supervisor-auto-evolution-loop-program-20260610.md\n?? docs/supervisor-auto-improve-gap-analysis-20260610.md\n?? docs/supervisor-autoevolution-readiness-20260610.md\n?? docs/supervisor-axi-vs-mcp-analysis-20260610.md\n?? docs/supervisor-improvement-audit-20260609.md\n?? docs/supervisor-improvement-completion-prompts-20260610.md\n?? docs/supervisor-improvement-prompts-coverage-20260609.md\n?? docs/supervisor-improvement-prompts-finish-20260610.md\n?? supervisor/autoresearch/daemon_tasks.py\n?? tests/test_autoresearch_daemon_tasks.py\n?? tests/test_request_path_non_execution_guard.py\n?? tests/test_workflow_job_dispatcher_env.py"
+    },
+    "root": "/Users/sam.zhang/Documents/codex-supervisor",
+    "root_source": "handoff_cwd",
+    "source_artifact_hashes": {
+      "grill_findings": "6c6400324e70b5ce3e91d550feacca9c96d639b81ddf151c8ec1f258e0424831",
+      "implementation_plan": "237cc12915ff7e8f4b20d82c7602925cb18f017a5a5194240d1ad409b0211ee3",
+      "issues": "93acc85c2a9ff42f2caee4774f339c697b9c55359c008674d1022a4a434a6047",
+      "prd": "d75c188cf9995d426d1e3f9c0b1594dabf1d889bb41de664f0b1cd6e713615ad",
+      "tdd_plan": "ea9b47754293194b86b69912153eab51566b9568f91ada73e32647b0320d1982"
+    },
+    "status": "captured"
+  }
+}

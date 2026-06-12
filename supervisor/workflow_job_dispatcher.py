@@ -428,6 +428,37 @@ class WorkflowJobLeaseHeartbeat:
                 return
 
 
+def load_dispatcher_env(
+    *,
+    secrets_path: Path,
+    codex_config_path: Path,
+    skip_secrets: bool = False,
+    skip_codex_mcp_env: bool = False,
+) -> dict[str, str]:
+    """Load the same env layers the shell workflow CLI loads.
+
+    r-2026-06-11: launchd starts this dispatcher with a near-empty
+    environment, and every worker it spawns inherits it — a claude execution
+    lead then hangs silently with no credentials (vela2 task B: zero stdout
+    for the full 5400s timeout). The shell CLI loads secrets + codex MCP env
+    before running workflows (codex_supervisor_workflow_cli.py:209-211); the
+    detached dispatcher must do the same or workers see two different worlds
+    depending on which lane launched them. Lazy import avoids the module
+    cycle (the CLI imports this module at top level).
+    """
+    from mcp_tools.codex_supervisor_workflow_cli import (
+        load_codex_mcp_env,
+        load_secrets_env,
+    )
+
+    loaded: dict[str, str] = {}
+    if not skip_codex_mcp_env:
+        loaded.update(load_codex_mcp_env(codex_config_path.expanduser()))
+    if not skip_secrets:
+        loaded.update(load_secrets_env(secrets_path.expanduser()))
+    return loaded
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the single-writer workflow-job dispatcher.")
     parser.add_argument("--config", default=str(Path.home() / ".codex-supervisor" / "config.yaml"))
@@ -437,7 +468,26 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--interval-s", type=float, default=1.0)
     parser.add_argument("--once", action="store_true", help="Run one reap+dispatch tick and exit.")
     parser.add_argument("--job-id", help="With --once, claim a specific workflow job instead of the oldest.")
+    parser.add_argument(
+        "--secrets",
+        default=str(Path.home() / ".codex-supervisor" / "secrets.env"),
+        help="Dotenv-style secrets file loaded before dispatching (mirrors the shell CLI).",
+    )
+    parser.add_argument("--no-secrets", action="store_true", help="Do not load the secrets file.")
+    parser.add_argument(
+        "--codex-config",
+        default=str(Path.home() / ".codex" / "config.toml"),
+        help="Codex config whose [mcp_servers.codex_supervisor.env] section is loaded.",
+    )
+    parser.add_argument("--no-codex-mcp-env", action="store_true", help="Do not load codex MCP env.")
     args = parser.parse_args(argv)
+
+    load_dispatcher_env(
+        secrets_path=Path(args.secrets),
+        codex_config_path=Path(args.codex_config),
+        skip_secrets=args.no_secrets,
+        skip_codex_mcp_env=args.no_codex_mcp_env,
+    )
 
     cfg = Config.load(args.config)
     state = State(cfg.supervisor.state_db)

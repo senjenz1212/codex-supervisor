@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "40f5c950cb3e0f11103cd0c5684ee5a88be5ce89bb0495e8c001d753073794eb",
+  "git": {
+    "diff_bytes": 45934,
+    "diff_sha256": "5795bcfb1aee4b11673081fdf04ba0be830018db64212a618f06a4bdfcb27792",
+    "diff_stat": "config.example.yaml                         |   1 +\n daemon.py                                   |  20 ++++\n mcp_tools/codex_supervisor_axi.py           | 104 +++++++++++++++-\n mcp_tools/codex_supervisor_stdio.py         | 179 ++++++++++++++++++++++++++++\n supervisor/autoresearch/orchestrator.py     |  39 ++++++\n supervisor/autoresearch/policy_evolution.py |  19 +++\n supervisor/config.py                        |   1 +\n supervisor/postgres_state.py                |  17 +++\n supervisor/state.py                         |  18 +++\n supervisor/workflow_job_dispatcher.py       |  50 ++++++++\n tests/test_autoresearch_generator.py        |  76 ++++++++++++\n tests/test_autoresearch_policy_evolution.py |  64 ++++++++++\n tests/test_codex_supervisor_axi.py          | 150 +++++++++++++++++++++++\n tests/test_supervisor_lessons.py            |  68 +++++++++++\n 14 files changed, 805 insertions(+), 1 deletion(-)",
+    "head": "02a3eee",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "02a3eee",
+    "status_short": "M config.example.yaml\n M daemon.py\n M mcp_tools/codex_supervisor_axi.py\n M mcp_tools/codex_supervisor_stdio.py\n M supervisor/autoresearch/orchestrator.py\n M supervisor/autoresearch/policy_evolution.py\n M supervisor/config.py\n M supervisor/postgres_state.py\n M supervisor/state.py\n M supervisor/workflow_job_dispatcher.py\n M tests/test_autoresearch_generator.py\n M tests/test_autoresearch_policy_evolution.py\n M tests/test_codex_supervisor_axi.py\n M tests/test_supervisor_lessons.py\n?? .codex-supervisor/\n?? .scratch/auto-evolution-loop-wiring-20260611/\n?? .scratch/autoresearch-policy-diff-derivation-20260610/\n?? .scratch/axi-cli-detached-dispatcher-20260610/\n?? .scratch/cocreate-checkpoint-files-only-dual-agent-prompt.md\n?? .scratch/cocreate-ckpt-tdd-review-corrective-input.md\n?? .scratch/cocreate-global-purge-dual-agent-prompt.md\n?? .scratch/defense-in-depth-hardening-20260610/\n?? .scratch/policy-overlay-liveness-20260610-repair/\n?? docs/axi-principles-evidence-review-20260611.md\n?? docs/dual-agent/auto-evolution-loop-wiring-20260611/\n?? docs/dual-agent/live-cursor-sdk-probe-20260610-135900/\n?? docs/dual-agent/live-cursor-sdk-probe-20260610-140228/\n?? docs/dual-agent/supervisor-flow-autoresearch-run-20260609/\n?? docs/supervisor-auto-evolution-loop-program-20260610.md\n?? docs/supervisor-auto-improve-gap-analysis-20260610.md\n?? docs/supervisor-autoevolution-readiness-20260610.md\n?? docs/supervisor-axi-vs-mcp-analysis-20260610.md\n?? docs/supervisor-improvement-audit-20260609.md\n?? docs/supervisor-improvement-completion-prompts-20260610.md\n?? docs/supervisor-improvement-prompts-coverage-20260609.md\n?? docs/supervisor-improvement-prompts-finish-20260610.md\n?? supervisor/autoresearch/daemon_tasks.py\n?? tests/test_autoresearch_daemon_tasks.py\n?? tests/test_request_path_non_execution_guard.py\n?? tests/test_workflow_job_dispatcher_env.py"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "6c6400324e70b5ce3e91d550feacca9c96d639b81ddf151c8ec1f258e0424831",
+    "implementation_plan": "237cc12915ff7e8f4b20d82c7602925cb18f017a5a5194240d1ad409b0211ee3",
+    "issues": "93acc85c2a9ff42f2caee4774f339c697b9c55359c008674d1022a4a434a6047",
+    "prd": "d75c188cf9995d426d1e3f9c0b1594dabf1d889bb41de664f0b1cd6e713615ad",
+    "tdd_plan": "ea9b47754293194b86b69912153eab51566b9568f91ada73e32647b0320d1982"
+  },
+  "status": "captured"
+}

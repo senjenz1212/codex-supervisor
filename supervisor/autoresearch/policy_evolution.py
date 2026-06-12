@@ -137,6 +137,25 @@ def derive_policy_evolution_proposals_from_report(
     return proposals
 
 
+def report_contains_derivable_policy_record(
+    report: Mapping[str, Any],
+    *,
+    repo_root: str | Path,
+) -> bool:
+    repo_root_path = Path(repo_root).expanduser().resolve()
+    records = report.get("records") if isinstance(report.get("records"), list) else []
+    for record in records:
+        if not isinstance(record, Mapping) or not _record_is_applyable(record):
+            continue
+        try:
+            _positive_metric_delta(record)
+            _derive_overlay_candidate_ref(record, repo_root=repo_root_path)
+        except PolicyEvolutionError:
+            continue
+        return True
+    return False
+
+
 def approve_policy_proposal(
     proposal: Mapping[str, Any],
     *,

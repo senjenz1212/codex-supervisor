@@ -10,6 +10,7 @@ from supervisor.autoresearch.generator import (
     run_runnable_autoresearch_experiments,
 )
 from supervisor.config import Config
+from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
 from supervisor.state import State
 
 
@@ -51,6 +52,28 @@ def _queue_rows(state: State) -> list[dict]:
 def _workflow_job_count(state: State) -> int:
     row = state._conn.execute("SELECT COUNT(*) AS count FROM dual_agent_workflow_jobs").fetchone()
     return int(row["count"])
+
+
+def _cfg(tmp_path: Path) -> Config:
+    return Config(**{
+        "target": {
+            "kind": "codex",
+            "codex": {
+                "sessions_root": str(tmp_path / "sessions"),
+                "cli_command": "codex",
+            },
+        },
+        "orchestrator": {"run_registry_dir": str(tmp_path / "runs")},
+        "supervisor": {"state_db": str(tmp_path / "state.db")},
+        "models": {
+            "realtime_critique_model": "claude-haiku-4-5",
+            "drift_l3_model": "claude-haiku-4-5",
+            "drift_l4_model": "claude-sonnet-4-6",
+            "post_run_eval_model": "claude-sonnet-4-6",
+            "embedding_model": "text-embedding-3-small",
+        },
+        "telegram": {"bot_token": "fake", "chat_id": "42"},
+    })
 
 
 def test_autoresearch_generator_config_loads_budget_guards_from_supervisor_config(tmp_path):
@@ -121,6 +144,59 @@ def test_autoresearch_signal_generator_drafts_one_experiment_for_repeated_taxono
     assert draft["experiment"]["k_trials"] == 2
     assert draft["experiment"]["mutable_paths"] == ["supervisor/autoresearch/orchestrator.py"]
     assert len(_queue_rows(state)) == 1
+
+
+def test_workflow_finalization_generates_autoresearch_draft_from_recurring_failures(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    api = CodexSupervisorMcpAPI(_cfg(tmp_path), state)
+    repo_root = Path.cwd()
+    event_ids = [
+        _write_taxonomy_failure(state, run_id=f"finalized-signal-{index}")
+        for index in range(3)
+    ]
+
+    result = api._workflow_result(
+        run_id="finalized-run",
+        task_id="task-finalized",
+        status="accepted",
+        current_gate="outcome_review",
+        steps=[],
+        final_gate_result=None,
+        cwd=str(repo_root),
+        screenshots=[],
+        visual_evidence_policy={},
+        workflow_route={"lesson_task_class": "source_change", "task_complexity": "large"},
+        mandatory_artifacts={"status": "not_checked"},
+    )
+
+    assert result["autoresearch_drafts"]["drafted_count"] == 1
+    [draft] = _queue_rows(state)
+    assert draft["status"] == "draft"
+    assert set(event_ids) <= set(draft["provenance"]["event_ids"])
+
+
+def test_workflow_finalization_below_threshold_generates_no_draft(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    api = CodexSupervisorMcpAPI(_cfg(tmp_path), state)
+    for index in range(2):
+        _write_taxonomy_failure(state, run_id=f"below-finalized-signal-{index}")
+
+    result = api._workflow_result(
+        run_id="below-finalized-run",
+        task_id="task-finalized",
+        status="accepted",
+        current_gate="outcome_review",
+        steps=[],
+        final_gate_result=None,
+        cwd=str(Path.cwd()),
+        screenshots=[],
+        visual_evidence_policy={},
+        workflow_route={"lesson_task_class": "source_change", "task_complexity": "large"},
+        mandatory_artifacts={"status": "not_checked"},
+    )
+
+    assert result["autoresearch_drafts"]["drafted_count"] == 0
+    assert _queue_rows(state) == []
 
 
 def test_autoresearch_signal_generator_reads_reviewer_probe_and_lesson_signals(tmp_path):

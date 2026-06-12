@@ -8,6 +8,10 @@ from typing import Any, Protocol
 
 from .durable_jobs import resolve_evaluator_defaults, run_durable_evaluator_trials
 from .evaluator import EvaluatorContractError
+from .policy_evolution import (
+    derive_policy_evolution_proposals_from_report,
+    report_contains_derivable_policy_record,
+)
 from .report import build_autoresearch_report
 from .schema import AutoresearchAttempt, AutoresearchExperiment, sha256_json
 from .validation import validate_attempt
@@ -191,6 +195,8 @@ def run_autoresearch_fixture(
     report["event_kinds"] = emitted_event_kinds
     report["supported_event_kinds"] = list(AUTORESEARCH_EVENT_KINDS)
     report["event_ids"] = event_ids
+    if output_dir is not None:
+        report["report_ref"] = (Path(output_dir) / "report.json").as_posix()
     report["report_sha256"] = sha256_json(_without_report_sha(report))
     report_event_id = _write_event(
         state,
@@ -208,6 +214,23 @@ def run_autoresearch_fixture(
     report["event_ids"].append(report_event_id)
     report["event_kinds"].append("autoresearch_report_emitted")
     report["report_sha256"] = sha256_json(_without_report_sha(report))
+    derived = []
+    if report_contains_derivable_policy_record(report, repo_root=repo_root):
+        derived = derive_policy_evolution_proposals_from_report(
+            report,
+            repo_root=repo_root,
+            affected_gates=_affected_gates(report),
+            state=state,
+            run_id=run_id,
+        )
+    report["derived_policy_proposals"] = [
+        {
+            "proposal_id": proposal.get("proposal_id"),
+            "status": proposal.get("status"),
+            "source": proposal.get("source"),
+        }
+        for proposal in derived
+    ]
     if output_dir is not None:
         _export_report(report, Path(output_dir))
     return report
@@ -248,7 +271,23 @@ def _without_report_sha(report: dict[str, Any]) -> dict[str, Any]:
     clone = dict(report)
     clone.pop("report_sha256", None)
     clone.pop("event_ids", None)
+    clone.pop("derived_policy_proposals", None)
     return clone
+
+
+def _affected_gates(report: dict[str, Any]) -> tuple[str, ...]:
+    gates: set[str] = set()
+    for record in report.get("records") or []:
+        if not isinstance(record, dict):
+            continue
+        for key in ("affected_gates", "gates"):
+            raw = record.get(key)
+            if isinstance(raw, (list, tuple)):
+                gates.update(str(item) for item in raw if str(item).strip())
+        gate = str(record.get("gate") or "").strip()
+        if gate:
+            gates.add(gate)
+    return tuple(sorted(gates or {"outcome_review"}))
 
 
 def _execution_output_dir(

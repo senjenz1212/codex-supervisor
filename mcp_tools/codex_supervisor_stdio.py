@@ -100,6 +100,11 @@ from supervisor.autoresearch.policy_evolution import (
     deny_policy_proposal,
     rollback_policy_proposal,
 )
+from supervisor.autoresearch.generator import (
+    AutoResearchGeneratorConfig,
+    activate_autoresearch_experiment,
+    generate_autoresearch_experiment_drafts,
+)
 from supervisor.dual_agent_runner import (
     DualAgentGateResult,
     DualAgentGateSpec,
@@ -2349,6 +2354,60 @@ class CodexSupervisorMcpAPI:
             "proposals": proposals,
         })
 
+    def list_autoresearch_experiments(
+        self,
+        *,
+        status: str | None = None,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        rows = self.state.list_autoresearch_experiment_queue(status=status, limit=limit)
+        return redact({
+            "status": "ok",
+            "count": len(rows),
+            "experiments": rows,
+            "default_change_allowed": False,
+            "gate_authority": "unchanged",
+        })
+
+    def generate_autoresearch_experiments(
+        self,
+        *,
+        repo_root: str,
+    ) -> dict[str, Any]:
+        drafts = generate_autoresearch_experiment_drafts(
+            state=self.state,
+            repo_root=Path(repo_root).expanduser().resolve(),
+            config=AutoResearchGeneratorConfig.from_config(self.cfg),
+        )
+        return redact({
+            "status": "ok",
+            "drafted_count": len(drafts),
+            "experiments": drafts,
+            "default_change_allowed": False,
+            "gate_authority": "unchanged",
+        })
+
+    def activate_autoresearch_experiment(
+        self,
+        *,
+        experiment_id: str,
+        operator: str,
+        approval_channel: str,
+    ) -> dict[str, Any]:
+        row = activate_autoresearch_experiment(
+            state=self.state,
+            experiment_id=experiment_id,
+            operator=operator,
+            approval_channel=approval_channel,
+        )
+        return redact({
+            "status": "ok",
+            "experiment": row,
+            "default_change_allowed": False,
+            "automatic_policy_mutation": False,
+            "gate_advanced": False,
+        })
+
     def approve_autoresearch_policy_proposal(
         self,
         *,
@@ -3427,6 +3486,7 @@ class CodexSupervisorMcpAPI:
                 kind="dual_agent_gate_result",
                 payload=final_gate_result,
             )
+        lesson_feedback = self._record_lesson_feedback_for_run(run_id=run_id)
         lesson_records = record_lessons_for_run(
             self.state,
             run_id=run_id,
@@ -3480,6 +3540,29 @@ class CodexSupervisorMcpAPI:
                 "reason": type(exc).__name__,
                 "message": str(exc),
             }
+        autoresearch_drafts: dict[str, Any]
+        try:
+            drafts = generate_autoresearch_experiment_drafts(
+                state=self.state,
+                repo_root=cwd,
+                config=AutoResearchGeneratorConfig.from_config(self.cfg),
+            )
+            autoresearch_drafts = {
+                "drafted_count": len(drafts),
+                "experiment_ids": [str(item.get("experiment_id")) for item in drafts],
+                "statuses": [str(item.get("status")) for item in drafts],
+                "default_change_allowed": False,
+                "gate_authority": "unchanged",
+            }
+        except Exception as exc:
+            autoresearch_drafts = {
+                "drafted_count": 0,
+                "status": "failed",
+                "reason": type(exc).__name__,
+                "message": str(exc),
+                "default_change_allowed": False,
+                "gate_authority": "unchanged",
+            }
         artifact_export = self.export_gate_artifacts(
             run_id=run_id,
             task_id=task_id,
@@ -3506,9 +3589,11 @@ class CodexSupervisorMcpAPI:
                 "recorded_count": len([item for item in lesson_records if item.get("created")]),
                 "observed_count": len(lesson_records),
                 "lesson_ids": [str(item.get("lesson_id")) for item in lesson_records],
+                "feedback": lesson_feedback,
                 "advisory_only": True,
             },
             "quality_trends": quality_trends,
+            "autoresearch_drafts": autoresearch_drafts,
             "no_mistakes_validation": (
                 {
                     **no_mistakes_validation.to_event_payload(),
@@ -3519,6 +3604,54 @@ class CodexSupervisorMcpAPI:
             ),
             "resume": workflow_resume_prompt(self.state, run_id=run_id, task_id=task_id),
         })
+
+    def _record_lesson_feedback_for_run(self, *, run_id: str) -> dict[str, Any]:
+        events = self.state.read_events_since(run_id, after_event_id=0, limit=10_000)
+        lesson_ids: list[str] = []
+        for event in events:
+            if event["kind"] != "supervisor_lesson_injection":
+                continue
+            payload = event["payload"]
+            if isinstance(payload, dict):
+                lesson_ids.extend(str(item) for item in payload.get("lesson_ids") or [] if str(item))
+        unique_lesson_ids = sorted(set(lesson_ids))
+        taxonomy_codes = sorted(_failure_taxonomy_codes_from_events(events))
+        if not unique_lesson_ids:
+            return {
+                "lesson_ids": [],
+                "recurring_taxonomy_codes": taxonomy_codes,
+                "updated": False,
+                "advisory_only": True,
+                "gate_authority": "unchanged",
+            }
+        autoresearch_cfg = getattr(self.cfg, "autoresearch", None)
+        retire_after = int(getattr(autoresearch_cfg, "lesson_retire_after_no_benefit_injections", 3))
+        self.state.record_supervisor_lesson_injection_feedback(
+            lesson_ids=unique_lesson_ids,
+            recurring_taxonomy_codes=taxonomy_codes,
+            retire_after=retire_after,
+        )
+        event_id = self.state.write_event(
+            run_id=run_id,
+            source="supervisor",
+            kind="supervisor_lesson_feedback_recorded",
+            payload={
+                "schema_version": "supervisor-lesson-feedback/v1",
+                "lesson_ids": unique_lesson_ids,
+                "recurring_taxonomy_codes": taxonomy_codes,
+                "retire_after": retire_after,
+                "advisory_only": True,
+                "gate_authority": "unchanged",
+            },
+        )
+        return {
+            "lesson_ids": unique_lesson_ids,
+            "recurring_taxonomy_codes": taxonomy_codes,
+            "updated": True,
+            "event_id": event_id,
+            "advisory_only": True,
+            "gate_authority": "unchanged",
+        }
 
     def _workflow_gate_start_kwargs(
         self,
@@ -4076,6 +4209,31 @@ def build_codex_supervisor_mcp_server(
         )
 
     @mcp.tool()
+    def list_autoresearch_experiments(
+        status: str | None = None,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        return tool_api.list_autoresearch_experiments(status=status, limit=limit)
+
+    @mcp.tool()
+    def generate_autoresearch_experiments(
+        repo_root: str,
+    ) -> dict[str, Any]:
+        return tool_api.generate_autoresearch_experiments(repo_root=repo_root)
+
+    @mcp.tool()
+    def activate_autoresearch_experiment(
+        experiment_id: str,
+        operator: str,
+        approval_channel: str,
+    ) -> dict[str, Any]:
+        return tool_api.activate_autoresearch_experiment(
+            experiment_id=experiment_id,
+            operator=operator,
+            approval_channel=approval_channel,
+        )
+
+    @mcp.tool()
     def approve_autoresearch_policy_proposal(
         repo_root: str,
         run_id: str,
@@ -4597,6 +4755,27 @@ def _workflow_lesson_snapshot(
         "advisory_only": True,
         "gate_authority": "unchanged",
     }
+
+
+def _failure_taxonomy_codes_from_events(events: list[dict[str, Any]]) -> set[str]:
+    codes: set[str] = set()
+    for event in events:
+        payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+        candidates: list[Any] = []
+        if isinstance(payload.get("failure_taxonomy"), dict):
+            candidates.append(payload["failure_taxonomy"])
+        trace = payload.get("trace_envelope") if isinstance(payload.get("trace_envelope"), dict) else {}
+        if isinstance(trace.get("failure_taxonomy"), dict):
+            candidates.append(trace["failure_taxonomy"])
+        for taxonomy in candidates:
+            code = (
+                taxonomy.get("mast_code")
+                or taxonomy.get("code")
+                or taxonomy.get("taxonomy_code")
+            )
+            if str(code or "").strip():
+                codes.add(str(code).strip())
+    return codes
 
 
 def _cursor_review_instruction(

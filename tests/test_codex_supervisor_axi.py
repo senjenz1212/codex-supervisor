@@ -2,9 +2,14 @@ from __future__ import annotations
 
 import json
 import tomllib
+from hashlib import sha256
 from pathlib import Path
 
 from mcp_tools import codex_supervisor_axi as axi
+from supervisor.autoresearch.generator import (
+    AutoResearchGeneratorConfig,
+    generate_autoresearch_experiment_drafts,
+)
 from supervisor.state import State
 from supervisor.workflow_job_dispatcher import WorkflowJobDispatcher
 
@@ -190,6 +195,151 @@ def test_axi_catch_up_and_operator_decision_emit_ledger_events(capsys, tmp_path)
     catch_up = json.loads(capsys.readouterr().out)
     assert catch_up["count"] == 1
     assert catch_up["events"][0]["kind"] == "supervisor_axi_operator_decision"
+
+
+def test_axi_experiments_activate_transitions_draft_to_runnable(capsys, tmp_path):
+    config = _config_path(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    for index in range(3):
+        state.write_event(
+            run_id=f"signal-{index}",
+            source="dual_agent",
+            kind="dual_agent_gate_result",
+            payload={
+                "task_id": "task",
+                "task_class": "source_change",
+                "lesson_task_class": "source_change",
+                "gate": "execution",
+                "status": "blocked",
+                "implicated_paths": ["supervisor/autoresearch/orchestrator.py"],
+                "trace_envelope": {
+                    "failure_taxonomy": {"mast_code": "FM-3.2"},
+                },
+            },
+        )
+    [draft] = generate_autoresearch_experiment_drafts(
+        state=state,
+        repo_root=Path.cwd(),
+        config=AutoResearchGeneratorConfig(recurrence_threshold=3),
+    )
+
+    assert axi.main([
+        "--config",
+        str(config),
+        "--json",
+        "experiments",
+        "activate",
+        draft["experiment_id"],
+        "--operator",
+        "operator@example.com",
+    ]) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["experiment"]["status"] == "runnable"
+    assert payload["automatic_policy_mutation"] is False
+    [row] = state.list_autoresearch_experiment_queue()
+    assert row["status"] == "runnable"
+
+
+def test_axi_policy_approve_proposal_applies_hashes_and_rollback_pointer(capsys, tmp_path):
+    config = _config_path(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    target = tmp_path / ".supervisor" / "policy-overlay.yaml"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("schema_version: supervisor-policy-overlay/v1\ninstruction_guidance_blocks: {}\n", encoding="utf-8")
+    candidate = tmp_path / "candidates" / "policy-overlay.yaml"
+    candidate.parent.mkdir(parents=True, exist_ok=True)
+    candidate.write_text(
+        "schema_version: supervisor-policy-overlay/v1\n"
+        "active_proposal_id: ARP-cli\n"
+        "instruction_guidance_blocks:\n"
+        "  execution:\n"
+        "    - Verify runtime receipts.\n",
+        encoding="utf-8",
+    )
+    proposal = {
+        "schema_version": "supervisor-autoresearch-policy-proposal/v1",
+        "proposal_id": "ARP-cli",
+        "status": "draft",
+        "changes": [{
+            "target_path": ".supervisor/policy-overlay.yaml",
+            "candidate_ref": "candidates/policy-overlay.yaml",
+            "before_hash": sha256(target.read_bytes()).hexdigest(),
+            "after_hash": sha256(candidate.read_bytes()).hexdigest(),
+        }],
+        "requires_operator_approval": True,
+        "default_change_allowed": False,
+        "automatic_policy_mutation": False,
+        "gate_advanced": False,
+    }
+    state.write_event(
+        run_id="policy-run",
+        source="autoresearch",
+        kind="autoresearch_policy_proposal_created",
+        payload=proposal,
+    )
+
+    assert axi.main([
+        "--config",
+        str(config),
+        "--json",
+        "approve",
+        "--run-id",
+        "policy-run",
+        "--proposal-id",
+        "ARP-cli",
+        "--repo-root",
+        str(tmp_path),
+        "--approver",
+        "operator@example.com",
+    ]) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    approval = payload["approval"]
+    assert approval["before_hash"] == proposal["changes"][0]["before_hash"]
+    assert approval["after_hash"] == proposal["changes"][0]["after_hash"]
+    assert approval["rollback_pointer"]["files"][0]["target_path"] == ".supervisor/policy-overlay.yaml"
+    assert target.read_text(encoding="utf-8") == candidate.read_text(encoding="utf-8")
+
+
+def test_axi_policy_deny_proposal_records_denial_without_apply(capsys, tmp_path):
+    config = _config_path(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    target = tmp_path / ".supervisor" / "policy-overlay.yaml"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("schema_version: supervisor-policy-overlay/v1\ninstruction_guidance_blocks: {}\n", encoding="utf-8")
+    proposal = {
+        "schema_version": "supervisor-autoresearch-policy-proposal/v1",
+        "proposal_id": "ARP-deny",
+        "status": "draft",
+        "changes": [],
+        "default_change_allowed": False,
+    }
+    state.write_event(
+        run_id="policy-run",
+        source="autoresearch",
+        kind="autoresearch_policy_proposal_created",
+        payload=proposal,
+    )
+
+    assert axi.main([
+        "--config",
+        str(config),
+        "--json",
+        "deny",
+        "--run-id",
+        "policy-run",
+        "--proposal-id",
+        "ARP-deny",
+        "--reason",
+        "not enough evidence",
+    ]) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["denial"]["status"] == "denied"
+    assert target.read_text(encoding="utf-8") == (
+        "schema_version: supervisor-policy-overlay/v1\ninstruction_guidance_blocks: {}\n"
+    )
 
 
 def test_axi_fields_lessons_and_trends_are_read_only_observational(capsys, tmp_path):

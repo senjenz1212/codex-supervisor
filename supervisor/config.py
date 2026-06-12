@@ -167,6 +167,7 @@ class AutoResearchCfg(BaseModel):
     signal_recurrence_threshold: int = 3
     max_open_experiment_drafts: int = 20
     max_runnable_experiments_per_week: int = 2
+    runner_interval_s: int = 3600
     evaluator_budget_usd: float = 0.25
     evaluator_timeout_s: float = 60.0
     evaluator_k_trials: int = 3

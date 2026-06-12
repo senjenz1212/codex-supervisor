@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 from hashlib import sha256
 from pathlib import Path
 
 import pytest
 
+from supervisor.autoresearch.orchestrator import run_autoresearch_fixture
 from supervisor.autoresearch.policy_evolution import (
     PolicyEvolutionError,
     approve_policy_proposal,
@@ -229,6 +231,68 @@ def test_validation_report_pipeline_derives_policy_proposal_without_operator_aut
     assert proposal["derivation"]["candidate_ref"] == "candidates/policy-overlay.yaml"
     assert proposal["derivation"]["metric_delta"] == 0.16
     assert target.read_text(encoding="utf-8") == BASE_OVERLAY
+
+
+def test_autoresearch_report_acceptance_auto_derives_overlay_proposal(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    _write(tmp_path, ".supervisor/policy-overlay.yaml", BASE_OVERLAY)
+    candidate = _write(tmp_path, "candidates/policy-overlay.yaml", AFTER_OVERLAY)
+    evaluator = _write(tmp_path, "evaluators/policy.py", "print('score')\n")
+    fixture = {
+        "experiment": AutoresearchExperiment(
+            experiment_id="exp-auto-derive",
+            task_id="task-auto-derive",
+            hypothesis="Try an overlay candidate.",
+            baseline_ref="baseline:current",
+            mutable_paths=("candidates",),
+            immutable_paths=(),
+            evaluator_ref="evaluators/policy.py",
+            evaluator_hash=_sha(evaluator),
+            metric_name="reviewer_evidence_score",
+            k_trials=3,
+        ).to_payload(),
+        "attempts": [
+            AutoresearchAttempt(
+                attempt_id="attempt-auto-derive",
+                experiment_id="exp-auto-derive",
+                task_id="task-auto-derive",
+                worker_id="worker-policy",
+                hypothesis="Add runtime evidence guidance.",
+                changed_files=("candidates/policy-overlay.yaml",),
+                metric_trials=(0.72, 0.78, 0.81),
+                metric_before=0.62,
+                policy_overlay_candidate_ref="candidates/policy-overlay.yaml",
+                metric_source="evaluator_execution",
+                evaluator_run_ref="evaluator-runs/attempt-auto-derive.json",
+                evaluator_run_hash="run-hash",
+                artifact_hashes={"candidates/policy-overlay.yaml": _sha(candidate)},
+                evidence_refs=(
+                    "evaluator_run:evaluator-runs/attempt-auto-derive.json",
+                    "artifact:candidates/policy-overlay.yaml",
+                ),
+            ).to_payload()
+        ],
+    }
+    fixture_path = tmp_path / "fixture.json"
+    fixture_path.write_text(json.dumps(fixture, sort_keys=True), encoding="utf-8")
+
+    report = run_autoresearch_fixture(
+        fixture_path=fixture_path,
+        state=state,
+        run_id="autoresearch-run",
+        repo_root=tmp_path,
+        output_dir=tmp_path / "out",
+    )
+
+    assert report["records"][0]["validation_status"] == "accepted"
+    assert report["derived_policy_proposals"][0]["status"] == "draft"
+    events = state.read_events_since("autoresearch-run", after_event_id=0, limit=50)
+    kinds = [event["kind"] for event in events]
+    assert kinds.count("autoresearch_report_emitted") == 1
+    assert kinds.count("autoresearch_policy_proposal_created") == 1
+    proposal = [event for event in events if event["kind"] == "autoresearch_policy_proposal_created"][0]
+    assert proposal["payload"]["source"] == "autoresearch_deriver"
+    assert proposal["payload"]["automatic_policy_mutation"] is False
 
 
 def test_validation_report_derives_from_direct_policy_overlay_candidate_ref(tmp_path):

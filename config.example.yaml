@@ -86,6 +86,7 @@ autoresearch:
   signal_recurrence_threshold: 3
   max_open_experiment_drafts: 20
   max_runnable_experiments_per_week: 2
+  runner_interval_s: 3600
   evaluator_budget_usd: 0.25
   evaluator_timeout_s: 60
   evaluator_k_trials: 3

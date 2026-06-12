@@ -14,6 +14,10 @@ from pathlib import Path
 from typing import Any
 
 from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
+from supervisor.autoresearch.policy_evolution import (
+    approve_policy_proposal,
+    deny_policy_proposal,
+)
 from supervisor.config import Config
 from supervisor.redaction import redact
 from supervisor.state import State
@@ -25,6 +29,7 @@ DEFAULT_EVENT_FIELDS = ("event_id", "kind", "ts", "payload")
 DEFAULT_GATE_FIELDS = ("gate", "status", "attempt_count", "task_id")
 DEFAULT_TREND_FIELDS = ("task_class", "gate", "run_count", "first_pass_acceptance_rate")
 DEFAULT_LESSON_FIELDS = ("task_class", "gate", "taxonomy_code", "root_cause")
+DEFAULT_EXPERIMENT_FIELDS = ("experiment_id", "status", "task_class", "gate")
 
 
 class AxiUsageError(ValueError):
@@ -131,10 +136,17 @@ def _format_toon(payload: dict[str, Any], *, fields: tuple[str, ...] | None = No
             fields=fields or DEFAULT_TREND_FIELDS,
             empty="none",
         ))
+    if "experiments" in payload:
+        lines.extend(_format_collection(
+            "experiments",
+            list(payload.get("experiments") or []),
+            fields=fields or DEFAULT_EXPERIMENT_FIELDS,
+            empty="none",
+        ))
     scalar_keys = {
         key: value
         for key, value in payload.items()
-        if key not in {"jobs", "gates", "events", "lessons", "trends", "help"}
+        if key not in {"jobs", "gates", "events", "lessons", "trends", "experiments", "help"}
     }
     if scalar_keys:
         lines.extend(_format_scalar(scalar_keys, fields=fields))
@@ -248,6 +260,42 @@ def _gates(args: argparse.Namespace, _cfg: Config, state: State) -> dict[str, An
 
 
 def _operator_decision(args: argparse.Namespace, _cfg: Config, state: State, *, decision: str) -> dict[str, Any]:
+    proposal_id = str(getattr(args, "proposal_id", "") or "").strip()
+    if proposal_id:
+        proposal = _proposal_from_run_events(state, run_id=args.run_id, proposal_id=proposal_id)
+        repo_root = Path(getattr(args, "repo_root", os.getcwd()) or os.getcwd()).expanduser().resolve()
+        approver = str(getattr(args, "approver", "") or "").strip() or "codex-supervisor-axi"
+        if decision == "approve":
+            approval = approve_policy_proposal(
+                proposal,
+                state=state,
+                run_id=args.run_id,
+                repo_root=repo_root,
+                approver=approver,
+                approval_channel="cli",
+            )
+            return {
+                "status": "ok",
+                "decision": "approve",
+                "proposal_id": proposal_id,
+                "approval": approval,
+                "help": [f"Run `codex-supervisor-axi catch-up {args.run_id}` to inspect the approval event."],
+            }
+        denial = deny_policy_proposal(
+            proposal,
+            state=state,
+            run_id=args.run_id,
+            approver=approver,
+            approval_channel="cli",
+            reason=args.reason,
+        )
+        return {
+            "status": "ok",
+            "decision": "deny",
+            "proposal_id": proposal_id,
+            "denial": denial,
+            "help": [f"Run `codex-supervisor-axi catch-up {args.run_id}` to inspect the denial event."],
+        }
     event_id = state.write_event(
         run_id=args.run_id,
         source="operator",
@@ -266,6 +314,40 @@ def _operator_decision(args: argparse.Namespace, _cfg: Config, state: State, *, 
         "run_id": args.run_id,
         "help": [f"Run `codex-supervisor-axi catch-up {args.run_id} --last-event-id {event_id - 1}`."],
     }
+
+
+def _experiments(args: argparse.Namespace, cfg: Config, state: State) -> dict[str, Any]:
+    api = _api(cfg, state)
+    if args.experiments_command == "list":
+        payload = api.list_autoresearch_experiments(status=args.status, limit=args.limit)
+        payload["help"] = ["Run `codex-supervisor-axi experiments generate --repo-root <path>` to draft new experiments."]
+        return payload
+    if args.experiments_command == "generate":
+        payload = api.generate_autoresearch_experiments(repo_root=args.repo_root)
+        payload["help"] = ["Run `codex-supervisor-axi experiments activate <experiment_id>` for an operator activation."]
+        return payload
+    if args.experiments_command == "activate":
+        payload = api.activate_autoresearch_experiment(
+            experiment_id=args.experiment_id,
+            operator=args.operator,
+            approval_channel="cli",
+        )
+        payload["help"] = ["The daemon runner will execute runnable experiments on cadence."]
+        return payload
+    raise AxiUsageError("experiments requires one of: list, generate, activate")
+
+
+def _proposal_from_run_events(state: State, *, run_id: str, proposal_id: str) -> dict[str, Any]:
+    for event in reversed(state.read_events_since(run_id, after_event_id=0, limit=10_000)):
+        if event["kind"] not in {
+            "autoresearch_policy_proposal_created",
+            "autoresearch_policy_rollback_proposal_drafted",
+        }:
+            continue
+        payload = event["payload"]
+        if isinstance(payload, dict) and str(payload.get("proposal_id") or "") == proposal_id:
+            return payload
+    raise AxiUsageError(f"policy proposal not found in run {run_id}: {proposal_id}")
 
 
 def _lessons(args: argparse.Namespace, _cfg: Config, state: State) -> dict[str, Any]:
@@ -331,6 +413,9 @@ def _build_parser() -> argparse.ArgumentParser:
         decision.add_argument("--subject", default="operator_decision")
         decision.add_argument("--reason", default="")
         decision.add_argument("--approval-channel", default="cli")
+        decision.add_argument("--proposal-id")
+        decision.add_argument("--repo-root", default=os.getcwd())
+        decision.add_argument("--approver", default="codex-supervisor-axi")
 
     lessons = subparsers.add_parser("lessons")
     lessons.add_argument("--limit", type=int, default=20)
@@ -338,6 +423,21 @@ def _build_parser() -> argparse.ArgumentParser:
     trends = subparsers.add_parser("trends")
     trends.add_argument("--task-class")
     trends.add_argument("--gate")
+
+    experiments = subparsers.add_parser("experiments")
+    experiment_subparsers = experiments.add_subparsers(
+        dest="experiments_command",
+        parser_class=AxiArgumentParser,
+        required=True,
+    )
+    experiments_list = experiment_subparsers.add_parser("list")
+    experiments_list.add_argument("--status")
+    experiments_list.add_argument("--limit", type=int, default=50)
+    experiments_generate = experiment_subparsers.add_parser("generate")
+    experiments_generate.add_argument("--repo-root", default=os.getcwd())
+    experiments_activate = experiment_subparsers.add_parser("activate")
+    experiments_activate.add_argument("experiment_id")
+    experiments_activate.add_argument("--operator", default="codex-supervisor-axi")
     return parser
 
 
@@ -366,6 +466,8 @@ def main(argv: list[str] | None = None) -> int:
             payload = _lessons(args, cfg, state)
         elif args.command == "trends":
             payload = _trends(args, cfg, state)
+        elif args.command == "experiments":
+            payload = _experiments(args, cfg, state)
         else:
             raise ValueError(f"unknown command: {args.command}")
         _emit(payload, json_output=args.json_output, fields=fields)

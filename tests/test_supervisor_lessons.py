@@ -127,6 +127,74 @@ def test_near_duplicate_lessons_fold_and_no_benefit_lesson_retires(tmp_path):
     ) == []
 
 
+def test_workflow_finalization_records_lesson_feedback_and_retires_recurring_lesson(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    lesson, _created = state.record_supervisor_lesson(
+        task_class="large",
+        gate="execution",
+        taxonomy_code="FM-3.2",
+        root_cause="No or incomplete verification",
+        remediation="Verify runtime receipts before claiming success.",
+        source_run_id="source-run",
+        created_at=10,
+    )
+    api = CodexSupervisorMcpAPI(_cfg(tmp_path), state)
+    api._workflow_gate_start_kwargs(
+        run_id="feedback-run",
+        task_id="task-feedback",
+        gate="execution",
+        intent="Implement the feature.",
+        corrective_context="",
+        lesson_task_class="large",
+        round_index=1,
+    )
+    state.write_event(
+        run_id="feedback-run",
+        source="dual_agent",
+        kind="dual_agent_gate_result",
+        payload={
+            "task_id": "task-feedback",
+            "gate": "execution",
+            "status": "blocked",
+            "trace_envelope": {
+                "failure_taxonomy": {
+                    "mast_code": "FM-3.2",
+                    "mast_mode": "No or incomplete verification",
+                },
+            },
+        },
+    )
+
+    for _ in range(3):
+        api._workflow_result(
+            run_id="feedback-run",
+            task_id="task-feedback",
+            status="blocked",
+            current_gate="execution",
+            steps=[],
+            final_gate_result=None,
+            cwd=str(tmp_path),
+            screenshots=[],
+            visual_evidence_policy={},
+            workflow_route={"lesson_task_class": "large", "task_complexity": "large"},
+            mandatory_artifacts={"status": "not_checked"},
+        )
+
+    row = next(
+        item
+        for item in state.list_supervisor_lessons(limit=20)
+        if item["lesson_id"] == lesson["lesson_id"]
+    )
+    assert row["lesson_id"] == lesson["lesson_id"]
+    assert row["injection_count"] == 3
+    assert row["recurrence_count"] == 3
+    assert row["retired_at"] is not None
+    active_lessons = state.query_supervisor_lessons(task_class="large", gate="execution")
+    assert lesson["lesson_id"] not in {item["lesson_id"] for item in active_lessons}
+    events = state.read_events_since("feedback-run", after_event_id=0, limit=50)
+    assert [event["kind"] for event in events].count("supervisor_lesson_feedback_recorded") == 3
+
+
 def test_matching_future_gate_injects_lesson_and_records_hash(tmp_path):
     state = State(str(tmp_path / "state.db"))
     lesson, created = state.record_supervisor_lesson(

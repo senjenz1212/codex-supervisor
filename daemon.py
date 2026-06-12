@@ -7,6 +7,7 @@ Subsystems (all run as concurrent asyncio tasks where supported by target):
   - TelegramPoller   — long-polls getUpdates; routes button callbacks
   - HookServer       — FastAPI on :9001 for synchronous target hooks
   - AgentInvoker     — consumes the decisions queue, runs Agent SDK sessions
+  - AutoResearch     — runs activated experiments and due P11 audits
 """
 from __future__ import annotations
 import asyncio
@@ -29,6 +30,7 @@ from supervisor.hook_server import build_app, serve
 from supervisor.runtime_health import run_fatal_subsystem, run_restartable_subsystem
 from supervisor.target.factory import build_target_adapter
 from supervisor.telegram import TelegramNotifier, TelegramPoller, telegram_enabled
+from supervisor.autoresearch.daemon_tasks import AutoResearchRunnerTask, WeeklyP11AuditTask
 
 
 def _setup_logging(cfg: Config) -> None:
@@ -156,6 +158,8 @@ async def main() -> int:
         )
 
     drift_detector = DriftDetector(cfg, state, anthropic, oai)
+    autoresearch_runner = AutoResearchRunnerTask(cfg, state, repo_root=HERE)
+    weekly_p11_audit = WeeklyP11AuditTask(cfg, state)
 
     process_monitor = None
     if target_kind == "codex":
@@ -190,6 +194,22 @@ async def main() -> int:
                 state=state,
             ),
             name="hook_server",
+        ),
+        asyncio.create_task(
+            run_restartable_subsystem(
+                "autoresearch_runner",
+                autoresearch_runner.run,
+                state=state,
+            ),
+            name="autoresearch_runner",
+        ),
+        asyncio.create_task(
+            run_restartable_subsystem(
+                "weekly_p11_audit",
+                weekly_p11_audit.run,
+                state=state,
+            ),
+            name="weekly_p11_audit",
         ),
     ]
     if telegram_poller is not None:
