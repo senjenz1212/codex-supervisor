@@ -1,0 +1,9 @@
+--- a/.supervisor/policy-overlay.yaml
++++ b/.supervisor/policy-overlay.yaml
+@@ -1,2 +1,5 @@
+ schema_version: supervisor-policy-overlay/v1
+-instruction_guidance_blocks: {}
++active_proposal_id: phase-e-candidate
++instruction_guidance_blocks:
++  execution:
++    - Verify the Phase E runtime evidence chain before accepting.

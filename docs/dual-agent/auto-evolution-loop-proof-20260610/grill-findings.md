@@ -1,0 +1,59 @@
+# Grill Findings
+
+These findings are derived from dual-agent gate objections in the ledger.
+Future duo-agent runs should also create this file through the `prd-to-tdd` skill's `grill-with-docs` gates before implementation.
+
+- event_id 701032 `prd_review`: gate blocked
+- event_id 701294 `prd_review`: Intent demands a wire-removal-alarmed test, but test_auto_evolution_loop.py:193/214/276/373/231/299 hardcode StageBreak via _maybe_break(True,...) for T1,T7,T3,T4,T5x2; only T2 (:251-266) removes a real wire (no-op runner -> executed_count!=1). PRD P7 wording (name the stage, no vague end-state) is literally satisfied so the PRD contract is sound, but tdd/outcome_review must verify alarms are real-removal not tautology.
+- event_id 701295 `prd_review`: both agents accepted
+- event_id 701535 `issues_review`: MEDIUM (downstream, non-blocking for issues_review): E2 promises wire-removal alarms naming T1-T5,T7, but 6/7 cases (T1:193,T7:214,T5-act:231,T3:276,T5-approve:299,T4:373) hardcode _maybe_break(True,...) which is tautological; only T2:251-258 (no-op runner -> executed_count!=1) removes a real wire. The slice AC wording is satisfied and forbids silent success/vague failure, so the issues contract is sound; verifying alarms are real-removal not tautology must occur at tdd/outcome.
+- event_id 701535 `issues_review`: LOW: source/implementation-plan.md shares sha256 120a5eac with source/grill-findings-tdd.md (content-identical); harmless for issues_review but worth noting for plan-review provenance.
+- event_id 701536 `issues_review`: both agents accepted
+- event_id 701672 `tdd_review`: 6 of 7 wire-removal cases (tests/test_auto_evolution_loop.py:193 T1, :214 T7, :231 T5-activation, :276 T3, :299 T5-approval, :373 T4) use hardcoded _maybe_break(True,...) tautologies; only T2 (:251-266) removes a real wire via runner=lambda **_: [] then alarms on executed_count != 1. Does not violate PRD P7 (names the stage) but a silent rewire of T1/T3/T4/T5/T7 could still pass. Route to outcome_review.
+- event_id 701959 `tdd_review`: cursor_review_failed: Primary loop tests fail independently: asyncio.run(runner.tick_once) at :261 destroys event loop before second axi.main approve at :301 (RuntimeError); 6/7 wire-removal cases use _maybe_break(True,...) tautologies at :193,:214,:231,:276,:299,:373; only T2 :251-266 removes a real wire; Finalization uses private CodexSupervisorMcpAPI._workflow_result :196 not public MCP/AXI boundary despite grill Finding T3; issues.md Slice E2 requires monkeypatching one trigger; implementation simulates stage breaks instead
+- event_id 701965 `tdd_review`: 6 of 7 wire-removal cases (tests/test_auto_evolution_loop.py:193 T1, :214 T7, :231 T5-activation, :276 T3, :299 T5-approval, :373 T4) use hardcoded _maybe_break(True,...) tautologies; only T2 (:251-266) removes a real wire via runner=lambda **_: [] then alarms on executed_count != 1. Does not violate PRD P7 (names the stage) but a silent rewire of T1/T3/T4/T5/T7 could still pass. Route to outcome_review.
+- event_id 702057 `tdd_review`: FM-1.3 step repetition: tests/test_auto_evolution_loop.py is byte-identical to the failed round; every flagged line matches the corrective context
+- event_id 702057 `tdd_review`: 6/7 wire-removal cases are _maybe_break(True,...) simulations (:193,:214,:231,:276,:299,:373); only T2 (:251-266) removes a real wire - gate intent of a wire-removal-alarmed test is unmet
+- event_id 702057 `tdd_review`: asyncio.run(runner.tick_once) at :261 destroys the event loop before axi.main approve at :301 (RuntimeError); cursor confirmed 2/5 loop tests fail isolated
+- event_id 702057 `tdd_review`: Finalization uses private api._workflow_result at :196, not the public MCP/AXI boundary (contradicts grill Finding T3)
+- event_id 702057 `tdd_review`: Two-touchpoint termination check asserts len(touchpoints)==2 on a hand-built list at :458 rather than scanning the ledger (FM-1.5)
+- event_id 702058 `tdd_review`: agents have not both accepted yet; revise and continue
+- event_id 702060 `tdd_review`: FM-1.3 step repetition: tests/test_auto_evolution_loop.py is byte-identical to the failed round; every flagged line matches the corrective context
+- event_id 702060 `tdd_review`: 6/7 wire-removal cases are _maybe_break(True,...) simulations (:193,:214,:231,:276,:299,:373); only T2 (:251-266) removes a real wire - gate intent of a wire-removal-alarmed test is unmet
+- event_id 702060 `tdd_review`: asyncio.run(runner.tick_once) at :261 destroys the event loop before axi.main approve at :301 (RuntimeError); cursor confirmed 2/5 loop tests fail isolated
+- event_id 702060 `tdd_review`: Finalization uses private api._workflow_result at :196, not the public MCP/AXI boundary (contradicts grill Finding T3)
+- event_id 702060 `tdd_review`: Two-touchpoint termination check asserts len(touchpoints)==2 on a hand-built list at :458 rather than scanning the ledger (FM-1.5)
+- event_id 702160 `tdd_review`: 6/7 wire-removal cases (test_auto_evolution_loop.py:193,214,231,276,299,373) inject hardcoded _maybe_break(True,...) instead of disabling a real seam; they pass even if the production wire is removed, so the wire-removal-alarm deliverable is substantially unmet (only T2:251-266 is real).
+- event_id 702160 `tdd_review`: For the six simulated cases the stage name a real break would surface differs from the asserted expected_stage (e.g. real T3 break -> StageBreak('autoresearch_policy_proposal_created') not 'derive_on_acceptance'), so grill finding T2 'name the broken arrow' is illusory.
+- event_id 702160 `tdd_review`: test_status cannot be certified green: pytest is permission-denied; prior round logged reported tests as 'failed' (tdd.md:1169-1171). Worker must run the suite and confirm pass.
+- event_id 702161 `tdd_review`: agents have not both accepted yet; revise and continue
+- event_id 702163 `tdd_review`: 6/7 wire-removal cases (test_auto_evolution_loop.py:193,214,231,276,299,373) inject hardcoded _maybe_break(True,...) instead of disabling a real seam; they pass even if the production wire is removed, so the wire-removal-alarm deliverable is substantially unmet (only T2:251-266 is real).
+- event_id 702163 `tdd_review`: For the six simulated cases the stage name a real break would surface differs from the asserted expected_stage (e.g. real T3 break -> StageBreak('autoresearch_policy_proposal_created') not 'derive_on_acceptance'), so grill finding T2 'name the broken arrow' is illusory.
+- event_id 702163 `tdd_review`: test_status cannot be certified green: pytest is permission-denied; prior round logged reported tests as 'failed' (tdd.md:1169-1171). Worker must run the suite and confirm pass.
+- event_id 702497 `tdd_review`: cursor_review_failed: Primary loop tests fail independently: asyncio.run(run_dual_agent_workflow) at test_auto_evolution_loop.py:285 closes the event loop; subsequent axi.main at :349 constructs State(asyncio.Lock at state.py:460) and raises RuntimeError. 9/11 tests red; only demo-artifact tests pass.
+- event_id 702561 `tdd_review`: Core proof tests are red per independent cursor run (9/11); cannot certify a GREEN tdd gate.
+- event_id 702561 `tdd_review`: _run_loop shares one State(:305)/api(:306) across three asyncio.run() loops (:289,:384,:502); State.asyncio.Lock()(state.py:460) and asyncio.Queue()(state.py:462) bind to the first loop and raise RuntimeError when awaited (state.py:2599-2603) under later loops.
+- event_id 702561 `tdd_review`: FM-1.5: two-operator-touchpoint termination assertion (:578 len==2) is among the failing tests, so the termination guarantee is unproven by any passing test.
+- event_id 702561 `tdd_review`: FM-1.3: re-accepting on the same un-run/self_reported basis as the prior ACCEPT would be step repetition; the new independent red evidence requires a changed decision.
+- event_id 702562 `tdd_review`: max_rounds_per_gate exhausted without both agents accepting
+- event_id 702564 `tdd_review`: Core proof tests are red per independent cursor run (9/11); cannot certify a GREEN tdd gate.
+- event_id 702564 `tdd_review`: _run_loop shares one State(:305)/api(:306) across three asyncio.run() loops (:289,:384,:502); State.asyncio.Lock()(state.py:460) and asyncio.Queue()(state.py:462) bind to the first loop and raise RuntimeError when awaited (state.py:2599-2603) under later loops.
+- event_id 702564 `tdd_review`: FM-1.5: two-operator-touchpoint termination assertion (:578 len==2) is among the failing tests, so the termination guarantee is unproven by any passing test.
+- event_id 702564 `tdd_review`: FM-1.3: re-accepting on the same un-run/self_reported basis as the prior ACCEPT would be step repetition; the new independent red evidence requires a changed decision.
+- event_id 703165 `tdd_review`: cursor_review_failed: Full pytest suite 8 failed / 3 passed on Python 3.9.6 (tests/test_auto_evolution_loop.py); failures at State.__init__ state.py:460 after prior test asyncio.run, not at wire-alarm stages; Claude claim _lock is dead ignores construction-time asyncio.Lock() binding on Python 3.9; No verified green full-suite run on supported Python >=3.10 (pyproject.toml requires-python)
+- event_id 703238 `tdd_review`: No verified green full-suite run on supported Python >=3.10 was captured by this review (pytest execution requires approval, denied). The negative evidence is disproven but a positive green run on .venv (3.12.13) is still uncaptured; operator must run on .venv not system python3 (3.9.6) before the next gate.
+- event_id 703238 `tdd_review`: Prior cursor_review_failed is methodologically invalid: it executed on Python 3.9.6 while pyproject.toml:9 requires>=3.10; all 8 failures were the pre-3.10 asyncio.Lock() loop-binding hazard at state.py:460, which cannot occur on 3.10+.
+- event_id 703447 `tdd_review`: independent_reviewer_non_accept: independent-reviewer-1
+- event_id 703453 `tdd_review`: No verified green full-suite run on supported Python >=3.10 was captured by this review (pytest execution requires approval, denied). The negative evidence is disproven but a positive green run on .venv (3.12.13) is still uncaptured; operator must run on .venv not system python3 (3.9.6) before the next gate.
+- event_id 703453 `tdd_review`: Prior cursor_review_failed is methodologically invalid: it executed on Python 3.9.6 while pyproject.toml:9 requires>=3.10; all 8 failures were the pre-3.10 asyncio.Lock() loop-binding hazard at state.py:460, which cannot occur on 3.10+.
+- event_id 703723 `tdd_review`: both agents accepted
+- event_id 703819 `implementation_plan`: source/implementation-plan.md is byte-identical to grill-findings-tdd.md (sha 120a5eac) - a merged doc thin on ordered build waves; severity low since traceability is complete and tests are the deliverable
+- event_id 703819 `implementation_plan`: demo-overlay.diff under-declared in Files-To-Touch list (NIT)
+- event_id 703819 `implementation_plan`: E4 docs/LOOP.md covered only via doc-generated consistency test (acceptable)
+- event_id 703983 `implementation_plan`: both agents accepted
+- event_id 704034 `execution`: both agents accepted
+- event_id 704042 `outcome_review`: required_artifacts_missing
+- event_id 704416 `outcome_review`: independent_reviewer_blocking_objection: independent-reviewer-1
+- event_id 704514 `outcome_review`: agents have not both accepted yet; revise and continue
+- event_id 704580 `outcome_review`: agents have not both accepted yet; revise and continue
+- event_id 704827 `outcome_review`: both agents accepted

@@ -85,6 +85,8 @@ def test_axi_submit_status_share_idempotency_and_sanitize_receipts(capsys, tmp_p
         "workflow-run",
         "--intent",
         "Run through AXI.",
+        "--visual-evidence-policy",
+        "not_required",
         "--client-token",
         "stable-token",
         "--tool-receipts-json",
@@ -102,6 +104,7 @@ def test_axi_submit_status_share_idempotency_and_sanitize_receipts(capsys, tmp_p
     rows = state.list_dual_agent_workflow_jobs(active_only=True)
     assert len(rows) == 1
     request = json.loads(rows[0]["request_payload_json"])
+    assert request["visual_evidence_policy"] == "not_required"
     receipt = request["tool_receipts"][0]
     assert receipt["source"] == "caller_claimed_supervisor"
     assert receipt["evidence_grade"] == "self_reported"

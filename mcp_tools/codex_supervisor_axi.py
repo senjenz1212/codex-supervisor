@@ -198,6 +198,7 @@ def _submit(args: argparse.Namespace, cfg: Config, state: State) -> dict[str, An
         cursor_review_profile=args.cursor_review_profile,
         reviewer_output_mode=args.reviewer_output_mode,
         reviewer_unavailable_policy=args.reviewer_unavailable_policy,
+        visual_evidence_policy=args.visual_evidence_policy,
         planning_artifacts=planning_artifacts,
         tool_receipts=tool_receipts,
         config_path=args.config,
@@ -390,6 +391,11 @@ def _build_parser() -> argparse.ArgumentParser:
     submit.add_argument("--cursor-review-profile", default="rigorous")
     submit.add_argument("--reviewer-output-mode", default="cursor_sdk")
     submit.add_argument("--reviewer-unavailable-policy", default="block")
+    submit.add_argument(
+        "--visual-evidence-policy",
+        choices=("auto", "required", "not_required"),
+        default="auto",
+    )
     submit.add_argument("--tool-receipts-json")
     submit.add_argument("--planning-artifacts-json")
 

@@ -1,0 +1,66 @@
+{
+  "affected_gates": [
+    "outcome_review"
+  ],
+  "attempt_id": "autoexp-7c483b2015548a0b-attempt-1",
+  "automatic_policy_mutation": false,
+  "changes": [
+    {
+      "after_hash": "bd27d04477e0bdc6628802a68a395a9fdb86dd74a6bc31564fa935fe99eb7a16",
+      "artifact_kind": "policy_overlay",
+      "before_hash": "3873dcb319f4070c65b4c9dbc31987f276869941ac785f5843d194bec5ecae4c",
+      "candidate_ref": "candidates/policy-overlay.yaml",
+      "diff": "--- a/.supervisor/policy-overlay.yaml\n+++ b/.supervisor/policy-overlay.yaml\n@@ -1,2 +1,5 @@\n schema_version: supervisor-policy-overlay/v1\n-instruction_guidance_blocks: {}\n+active_proposal_id: phase-e-candidate\n+instruction_guidance_blocks:\n+  execution:\n+    - Verify the Phase E runtime evidence chain before accepting.\n",
+      "target_path": ".supervisor/policy-overlay.yaml"
+    }
+  ],
+  "default_change_allowed": false,
+  "derivation": {
+    "affected_gates": [
+      "outcome_review"
+    ],
+    "attempt_id": "autoexp-7c483b2015548a0b-attempt-1",
+    "candidate_ref": "candidates/policy-overlay.yaml",
+    "experiment_id": "autoexp-7c483b2015548a0b",
+    "metric_after": 0.75,
+    "metric_before": 0.0,
+    "metric_delta": 0.75,
+    "report_ref": "/private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/phase-e-demo-z_tirkw9/autoruns/autoexp-7c483b2015548a0b/report.json",
+    "report_sha256": "cffb126c6c5ecdf878d38c2ecf75989e6f70876906140168a59e768daaf86879",
+    "schema_version": "supervisor-autoresearch-policy-derivation/v1"
+  },
+  "evaluator_evidence": {
+    "cost_usd": 0.0,
+    "evaluator_run_hash": "ef6f30f22ae1b4501d8bb66f03b155b3898b5ec3738923e7ec5bde8d25913728",
+    "evaluator_run_ref": "/private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/phase-e-demo-z_tirkw9/autoruns/autoexp-7c483b2015548a0b/evaluator-runs/autoexp-7c483b2015548a0b-attempt-1.json",
+    "gaming_flags": [],
+    "k_trials": 3,
+    "metric_iqr": 0.1,
+    "metric_median": 0.75,
+    "metric_name": "pass_rate",
+    "metric_source": "evaluator_execution",
+    "metric_trials": [
+      0.7,
+      0.75,
+      0.8
+    ],
+    "quality_unstable_across_trials": true,
+    "recommendation": "validated as report-only candidate; operator review required",
+    "validation_errors": [],
+    "validation_status": "accepted",
+    "wall_clock_s": 0.14258
+  },
+  "experiment_id": "autoexp-7c483b2015548a0b",
+  "gate_advanced": false,
+  "gate_authority": "unchanged",
+  "operator_approved": false,
+  "proposal_id": "ARP-a32595eaf5c1f694",
+  "proposal_sha256": "05c5701c3077920245f3b3bcac7114ad53d49c4f0d444ef419d19f955a4f369f",
+  "requires_operator_approval": true,
+  "reviewer_panel_authority": "unchanged",
+  "schema_version": "supervisor-autoresearch-policy-proposal/v1",
+  "source": "autoresearch_deriver",
+  "status": "draft",
+  "task_id": "autoresearch:phase_e_policy_overlay:execution:FM-PHASE-E",
+  "typed_outcome_authority": "unchanged"
+}

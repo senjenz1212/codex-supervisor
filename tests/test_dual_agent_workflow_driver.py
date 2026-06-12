@@ -2389,6 +2389,7 @@ async def test_submit_dual_agent_workflow_job_reserves_and_poll_is_read_only(mon
         task_id="workflow-1",
         run_id="workflow-run",
         intent="Run long workflow out of band.",
+        visual_evidence_policy="not_required",
         max_rounds_per_gate=1,
         execution_layer_mode="dynamic-workflow-preview",
         dynamic_workflow_task_class="codebase-audit",
@@ -2407,6 +2408,8 @@ async def test_submit_dual_agent_workflow_job_reserves_and_poll_is_read_only(mon
     assert job["status"] == "submitted"
     assert job["pid"] is None
     assert job["recovery_point"] == "reserved"
+    request_payload = json.loads(job["request_payload_json"])
+    assert request_payload["visual_evidence_policy"] == "not_required"
 
     poll = await _maybe_await(server.tools["poll_dual_agent_workflow_job"](job_id=result["job_id"]))
 

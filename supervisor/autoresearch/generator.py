@@ -474,6 +474,7 @@ def _attempt_for_experiment(
         hypothesis=experiment.hypothesis,
         changed_files=changed_files,
         metric_trials=(),
+        metric_before=0.0,
         metric_source="pending",
         status="pending",
     )

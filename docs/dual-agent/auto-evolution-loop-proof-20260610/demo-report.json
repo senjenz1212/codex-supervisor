@@ -1,0 +1,158 @@
+{
+  "default_change_allowed": false,
+  "derived_policy_proposals": [
+    {
+      "proposal_id": "ARP-a32595eaf5c1f694",
+      "source": "autoresearch_deriver",
+      "status": "draft"
+    }
+  ],
+  "event_ids": [
+    8,
+    9,
+    10,
+    11,
+    15,
+    16,
+    17,
+    18,
+    19
+  ],
+  "event_kinds": [
+    "autoresearch_experiment_started",
+    "autoresearch_attempt_started",
+    "autoresearch_attempt_execution_job_submitted",
+    "autoresearch_attempt_execution_job_started",
+    "autoresearch_attempt_execution_job_completed",
+    "autoresearch_attempt_completed",
+    "autoresearch_validation_started",
+    "autoresearch_validation_completed",
+    "autoresearch_report_emitted"
+  ],
+  "experiment": {
+    "baseline_ref": "ledger-signal:signal-1e5158c530aa580aa23c9753",
+    "budget_usd": 1.0,
+    "evaluator_hash": "ddbc344f1eaf73a1f8a7c6cdeb312057837428bf1293157226ddb7836dbd62fb",
+    "evaluator_ref": "supervisor/autoresearch/evaluators/replay_corpus.py",
+    "execution_mode": "live",
+    "experiment_id": "autoexp-7c483b2015548a0b",
+    "hypothesis": "Investigate whether a targeted change to candidates/policy-overlay.yaml reduces recurring FM-PHASE-E failures at execution for phase_e_policy_overlay tasks.",
+    "immutable_paths": [
+      "supervisor/state.py",
+      "supervisor/postgres_state.py",
+      "supervisor/config.py",
+      "supervisor/dual_agent_workflow.py",
+      "supervisor/dual_agent_runner.py",
+      "supervisor/reviewer_registry.py",
+      "supervisor/dynamic_workflow_receipts.py",
+      "supervisor/autoresearch/validation.py",
+      "supervisor/autoresearch/report.py",
+      "tests/fixtures/agentic_eval/",
+      "tests/fixtures/autoresearch/locked/",
+      "config.example.yaml"
+    ],
+    "k_trials": 3,
+    "max_attempts": 1,
+    "metric_name": "pass_rate",
+    "mutable_paths": [
+      "candidates/policy-overlay.yaml"
+    ],
+    "schema_version": "supervisor-autoresearch/v1",
+    "task_id": "autoresearch:phase_e_policy_overlay:execution:FM-PHASE-E",
+    "timeout_s": 5.0
+  },
+  "recommendation": {
+    "decision": "candidate_evidence_ready",
+    "operator_review_required": true,
+    "reason": "all_attempts_validated_report_only"
+  },
+  "records": [
+    {
+      "artifact_hashes": {},
+      "attempt_id": "autoexp-7c483b2015548a0b-attempt-1",
+      "changed_files": [
+        "candidates/policy-overlay.yaml"
+      ],
+      "cost_usd": 0.0,
+      "default_change_allowed": false,
+      "evaluator_run_hash": "ef6f30f22ae1b4501d8bb66f03b155b3898b5ec3738923e7ec5bde8d25913728",
+      "evaluator_run_ref": "/private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/phase-e-demo-z_tirkw9/autoruns/autoexp-7c483b2015548a0b/evaluator-runs/autoexp-7c483b2015548a0b-attempt-1.json",
+      "experiment_id": "autoexp-7c483b2015548a0b",
+      "gaming_flags": [],
+      "gate_advanced": false,
+      "immutable_paths": [
+        "supervisor/state.py",
+        "supervisor/postgres_state.py",
+        "supervisor/config.py",
+        "supervisor/dual_agent_workflow.py",
+        "supervisor/dual_agent_runner.py",
+        "supervisor/reviewer_registry.py",
+        "supervisor/dynamic_workflow_receipts.py",
+        "supervisor/autoresearch/validation.py",
+        "supervisor/autoresearch/report.py",
+        "tests/fixtures/agentic_eval",
+        "tests/fixtures/autoresearch/locked",
+        "config.example.yaml"
+      ],
+      "metric_after": 0.75,
+      "metric_before": 0.0,
+      "metric_delta": 0.75,
+      "metric_iqr": 0.1,
+      "metric_median": 0.75,
+      "metric_name": "pass_rate",
+      "metric_source": "evaluator_execution",
+      "metric_trials": [
+        0.7,
+        0.75,
+        0.8
+      ],
+      "mutable_paths": [
+        "candidates/policy-overlay.yaml"
+      ],
+      "policy_candidate_changes": {},
+      "policy_mutated": false,
+      "policy_overlay_candidate_ref": "",
+      "quality_unstable_across_trials": true,
+      "recommendation": "validated as report-only candidate; operator review required",
+      "report_sha256": "fce0d2648cc994d1da8123e1c9593e925a794470e74a4fae9a031146d72e58ab",
+      "schema_version": "supervisor-autoresearch-report/v1",
+      "task_id": "autoresearch:phase_e_policy_overlay:execution:FM-PHASE-E",
+      "validation_errors": [],
+      "validation_status": "accepted",
+      "wall_clock_s": 0.14258
+    }
+  ],
+  "report_only": {
+    "config_mutated": false,
+    "default_change_allowed": false,
+    "operator_review_required": true,
+    "policy_mutated": false
+  },
+  "report_ref": "/private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/phase-e-demo-z_tirkw9/autoruns/autoexp-7c483b2015548a0b/report.json",
+  "report_sha256": "cffb126c6c5ecdf878d38c2ecf75989e6f70876906140168a59e768daaf86879",
+  "schema_version": "supervisor-autoresearch-summary/v1",
+  "summary": {
+    "accepted_attempt_count": 1,
+    "attempt_count": 1,
+    "gaming_flag_count": 0,
+    "rejected_attempt_count": 0,
+    "report_only": true
+  },
+  "supported_event_kinds": [
+    "autoresearch_experiment_started",
+    "autoresearch_attempt_started",
+    "autoresearch_attempt_execution_job_submitted",
+    "autoresearch_attempt_execution_job_started",
+    "autoresearch_attempt_execution_job_completed",
+    "autoresearch_attempt_execution_job_failed",
+    "autoresearch_attempt_completed",
+    "autoresearch_validation_started",
+    "autoresearch_validation_completed",
+    "autoresearch_policy_proposal_derivation_skipped",
+    "autoresearch_policy_proposal_created",
+    "autoresearch_policy_proposal_approved",
+    "autoresearch_policy_proposal_denied",
+    "autoresearch_policy_proposal_rolled_back",
+    "autoresearch_report_emitted"
+  ]
+}

@@ -1,0 +1,942 @@
+{
+  "artifacts": [
+    {
+      "path": "docs/dual-agent/auto-evolution-loop-proof-20260610/demo-report.json",
+      "sha256": "e5d5fc2378253032d7222352243366fa43bc7010b1ce4a1b4a1628c21dccc334"
+    },
+    {
+      "path": "docs/dual-agent/auto-evolution-loop-proof-20260610/demo-proposal.json",
+      "sha256": "d3690492b7cd1a6df3ee13d8d7c59a5119562147772746a62359ce6765c25d38"
+    },
+    {
+      "path": "docs/dual-agent/auto-evolution-loop-proof-20260610/demo-trends.json",
+      "sha256": "c5bd485bd6be9232171ab59f27fc00d260cc2f90de8df9ac4b3bcace248f2ac3"
+    },
+    {
+      "path": "docs/dual-agent/auto-evolution-loop-proof-20260610/demo-overlay.diff",
+      "sha256": "a5a8c4cb02f380f11ec5c227cbdff5d6c51f3dae2bb4df14492ee77a33df0b7c"
+    },
+    {
+      "path": "docs/LOOP.md",
+      "sha256": "cf757660e7de8380a12ce250ffdaaeae272cd087024e024154557a90af979e06"
+    }
+  ],
+  "default_change_allowed": false,
+  "event_chain": [
+    {
+      "event_id": 1,
+      "kind": "dual_agent_gate_result",
+      "label": "seeded recurring failure 1",
+      "run_id": "phase-e-signal-0"
+    },
+    {
+      "event_id": 2,
+      "kind": "dual_agent_gate_result",
+      "label": "seeded recurring failure 2",
+      "run_id": "phase-e-signal-1"
+    },
+    {
+      "event_id": 3,
+      "kind": "dual_agent_gate_result",
+      "label": "seeded recurring failure 3",
+      "run_id": "phase-e-signal-2"
+    },
+    {
+      "event_id": 6,
+      "kind": "autoresearch_experiment_drafted",
+      "label": "drafted experiment",
+      "run_id": "phase-e-signal-0"
+    },
+    {
+      "event_id": 7,
+      "kind": "autoresearch_experiment_activation_recorded",
+      "label": "operator activated experiment",
+      "run_id": "phase-e-signal-0"
+    },
+    {
+      "event_id": 19,
+      "kind": "autoresearch_report_emitted",
+      "label": "accepted autoresearch report",
+      "run_id": "autoresearch-daemon-1781000000-autoexp-7c483b2015548a0b"
+    },
+    {
+      "event_id": 20,
+      "kind": "autoresearch_policy_proposal_created",
+      "label": "derived policy proposal",
+      "run_id": "autoresearch-daemon-1781000000-autoexp-7c483b2015548a0b"
+    },
+    {
+      "event_id": 23,
+      "kind": "autoresearch_policy_proposal_approved",
+      "label": "operator approved proposal",
+      "run_id": "autoresearch-daemon-1781000000-autoexp-7c483b2015548a0b"
+    },
+    {
+      "event_id": 25,
+      "kind": "supervisor_p11_audit_scheduled",
+      "label": "weekly P11 audit scheduled",
+      "run_id": "phase-e-audit-empty"
+    },
+    {
+      "event_id": 26,
+      "kind": "policy_regression_detected",
+      "label": "policy regression detected",
+      "run_id": "phase-e-regression"
+    },
+    {
+      "event_id": 27,
+      "kind": "autoresearch_policy_rollback_proposal_drafted",
+      "label": "rollback proposal drafted",
+      "run_id": "phase-e-regression"
+    }
+  ],
+  "events": [
+    {
+      "event_id": 1,
+      "kind": "dual_agent_gate_result",
+      "payload": {
+        "gate": "execution",
+        "implicated_paths": [
+          "candidates/policy-overlay.yaml"
+        ],
+        "lesson_task_class": "phase_e_policy_overlay",
+        "status": "blocked",
+        "task_class": "phase_e_policy_overlay",
+        "task_id": "ta[REDACTED_API_KEY]",
+        "trace_envelope": {
+          "failure_taxonomy": {
+            "mast_code": "FM-PHASE-E",
+            "schema_version": "dual-agent-failure-taxonomy/v1"
+          }
+        }
+      },
+      "run_id": "phase-e-signal-0",
+      "source": "dual_agent",
+      "ts": 1781238509
+    },
+    {
+      "event_id": 6,
+      "kind": "autoresearch_experiment_drafted",
+      "payload": {
+        "default_change_allowed": false,
+        "experiment_id": "autoexp-7c483b2015548a0b",
+        "gate": "execution",
+        "gate_authority": "unchanged",
+        "proposal_pointer": {},
+        "provenance": {
+          "event_ids": [
+            1,
+            2,
+            3
+          ],
+          "implicated_paths": [
+            "candidates/policy-overlay.yaml"
+          ],
+          "lesson_ids": [],
+          "schema_version": "supervisor-autoresearch-experiment-draft/v1",
+          "signal_count": 3,
+          "signal_key": "signal-1e5158c530aa580aa23c9753",
+          "signal_kinds": [
+            "failure_taxonomy"
+          ],
+          "source_run_ids": [
+            "phase-e-signal-0",
+            "phase-e-signal-1",
+            "phase-e-signal-2"
+          ]
+        },
+        "requires_operator_activation": true,
+        "schema_version": "supervisor-autoresearch-experiment-draft/v1",
+        "signal_key": "signal-1e5158c530aa580aa23c9753",
+        "status": "draft",
+        "task_class": "phase_e_policy_overlay",
+        "taxonomy_code": "FM-PHASE-E"
+      },
+      "run_id": "phase-e-signal-0",
+      "source": "autoresearch",
+      "ts": 1781238509
+    },
+    {
+      "event_id": 7,
+      "kind": "autoresearch_experiment_activation_recorded",
+      "payload": {
+        "activated_at": 1781238509,
+        "approval_channel": "cli",
+        "automatic_policy_mutation": false,
+        "default_change_allowed": false,
+        "experiment_id": "autoexp-7c483b2015548a0b",
+        "gate_advanced": false,
+        "operator": "operator@example.com",
+        "schema_version": "supervisor-autoresearch-experiment-activation/v1",
+        "status": "runnable"
+      },
+      "run_id": "phase-e-signal-0",
+      "source": "autoresearch",
+      "ts": 1781238509
+    },
+    {
+      "event_id": 2,
+      "kind": "dual_agent_gate_result",
+      "payload": {
+        "gate": "execution",
+        "implicated_paths": [
+          "candidates/policy-overlay.yaml"
+        ],
+        "lesson_task_class": "phase_e_policy_overlay",
+        "status": "blocked",
+        "task_class": "phase_e_policy_overlay",
+        "task_id": "ta[REDACTED_API_KEY]",
+        "trace_envelope": {
+          "failure_taxonomy": {
+            "mast_code": "FM-PHASE-E",
+            "schema_version": "dual-agent-failure-taxonomy/v1"
+          }
+        }
+      },
+      "run_id": "phase-e-signal-1",
+      "source": "dual_agent",
+      "ts": 1781238509
+    },
+    {
+      "event_id": 3,
+      "kind": "dual_agent_gate_result",
+      "payload": {
+        "gate": "execution",
+        "implicated_paths": [
+          "candidates/policy-overlay.yaml"
+        ],
+        "lesson_task_class": "phase_e_policy_overlay",
+        "status": "blocked",
+        "task_class": "phase_e_policy_overlay",
+        "task_id": "ta[REDACTED_API_KEY]",
+        "trace_envelope": {
+          "failure_taxonomy": {
+            "mast_code": "FM-PHASE-E",
+            "schema_version": "dual-agent-failure-taxonomy/v1"
+          }
+        }
+      },
+      "run_id": "phase-e-signal-2",
+      "source": "dual_agent",
+      "ts": 1781238509
+    },
+    {
+      "event_id": 4,
+      "kind": "supervisor_lesson_injection",
+      "payload": {
+        "gate": "execution",
+        "lesson_ids": [
+          "lesson-phase-e"
+        ]
+      },
+      "run_id": "phase-e-finalization",
+      "source": "supervisor",
+      "ts": 1781238509
+    },
+    {
+      "event_id": 5,
+      "kind": "supervisor_lesson_feedback_recorded",
+      "payload": {
+        "advisory_only": true,
+        "gate_authority": "unchanged",
+        "lesson_ids": [
+          "lesson-phase-e"
+        ],
+        "recurring_taxonomy_codes": [],
+        "retire_after": 3,
+        "schema_version": "supervisor-lesson-feedback/v1"
+      },
+      "run_id": "phase-e-finalization",
+      "source": "supervisor",
+      "ts": 1781238509
+    },
+    {
+      "event_id": 8,
+      "kind": "autoresearch_experiment_started",
+      "payload": {
+        "baseline_ref": "ledger-signal:signal-1e5158c530aa580aa23c9753",
+        "budget_usd": 1.0,
+        "evaluator_hash": "ddbc344f1eaf73a1f8a7c6cdeb312057837428bf1293157226ddb7836dbd62fb",
+        "evaluator_ref": "supervisor/autoresearch/evaluators/replay_corpus.py",
+        "execution_mode": "live",
+        "experiment_id": "autoexp-7c483b2015548a0b",
+        "hypothesis": "Investigate whether a targeted change to candidates/policy-overlay.yaml reduces recurring FM-PHASE-E failures at execution for phase_e_policy_overlay tasks.",
+        "immutable_paths": [
+          "supervisor/state.py",
+          "supervisor/postgres_state.py",
+          "supervisor/config.py",
+          "supervisor/dual_agent_workflow.py",
+          "supervisor/dual_agent_runner.py",
+          "supervisor/reviewer_registry.py",
+          "supervisor/dynamic_workflow_receipts.py",
+          "supervisor/autoresearch/validation.py",
+          "supervisor/autoresearch/report.py",
+          "tests/fixtures/agentic_eval/",
+          "tests/fixtures/autoresearch/locked/",
+          "config.example.yaml"
+        ],
+        "k_trials": 3,
+        "max_attempts": 1,
+        "metric_name": "pass_rate",
+        "mutable_paths": [
+          "candidates/policy-overlay.yaml"
+        ],
+        "schema_version": "supervisor-autoresearch/v1",
+        "status": "started",
+        "task_id": "autoresearch:phase_e_policy_overlay:execution:FM-PHASE-E",
+        "timeout_s": 5.0
+      },
+      "run_id": "autoresearch-daemon-1781000000-autoexp-7c483b2015548a0b",
+      "source": "autoresearch",
+      "ts": 1781238509
+    },
+    {
+      "event_id": 9,
+      "kind": "autoresearch_attempt_started",
+      "payload": {
+        "artifact_hashes": {},
+        "attempt_id": "autoexp-7c483b2015548a0b-attempt-1",
+        "attempt_worktree_ref": "",
+        "changed_files": [
+          "candidates/policy-overlay.yaml"
+        ],
+        "cost_usd": 0.0,
+        "evaluator_run_hash": "",
+        "evaluator_run_ref": "",
+        "evidence_refs": [],
+        "execution_errors": [],
+        "experiment_id": "autoexp-7c483b2015548a0b",
+        "hypothesis": "Investigate whether a targeted change to candidates/policy-overlay.yaml reduces recurring FM-PHASE-E failures at execution for phase_e_policy_overlay tasks.",
+        "metric_after": null,
+        "metric_before": 0.0,
+        "metric_delta": null,
+        "metric_source": "pending",
+        "metric_trials": [],
+        "parent_attempt_id": null,
+        "patch_ref": "",
+        "policy_candidate_changes": {},
+        "policy_overlay_candidate_ref": "",
+        "schema_version": "supervisor-autoresearch/v1",
+        "status": "started",
+        "task_id": "autoresearch:phase_e_policy_overlay:execution:FM-PHASE-E",
+        "wall_clock_s": 0.0,
+        "worker_id": "autoresearch-auto-runner"
+      },
+      "run_id": "autoresearch-daemon-1781000000-autoexp-7c483b2015548a0b",
+      "source": "autoresearch",
+      "ts": 1781238509
+    },
+    {
+      "event_id": 10,
+      "kind": "autoresearch_attempt_execution_job_submitted",
+      "payload": {
+        "attempt_id": "autoexp-7c483b2015548a0b-attempt-1",
+        "budget_usd": 1.0,
+        "experiment_id": "autoexp-7c483b2015548a0b",
+        "schema_version": "supervisor-autoresearch/v1",
+        "status": "submitted",
+        "task_id": "autoresearch:phase_e_policy_overlay:execution:FM-PHASE-E",
+        "timeout_s": 5.0
+      },
+      "run_id": "autoresearch-daemon-1781000000-autoexp-7c483b2015548a0b",
+      "source": "autoresearch",
+      "ts": 1781238509
+    },
+    {
+      "event_id": 11,
+      "kind": "autoresearch_attempt_execution_job_started",
+      "payload": {
+        "attempt_id": "autoexp-7c483b2015548a0b-attempt-1",
+        "budget_usd": 1.0,
+        "experiment_id": "autoexp-7c483b2015548a0b",
+        "schema_version": "supervisor-autoresearch/v1",
+        "status": "started",
+        "task_id": "autoresearch:phase_e_policy_overlay:execution:FM-PHASE-E",
+        "timeout_s": 5.0
+      },
+      "run_id": "autoresearch-daemon-1781000000-autoexp-7c483b2015548a0b",
+      "source": "autoresearch",
+      "ts": 1781238509
+    },
+    {
+      "event_id": 12,
+      "kind": "autoresearch_evaluator_job_phase",
+      "payload": {
+        "attempt_id": "autoexp-7c483b2015548a0b-attempt-1",
+        "error": null,
+        "job_id": "autoresearch-87a402c59dc875a5a97ff05a",
+        "pid": null,
+        "recovery_point": "request_written",
+        "schema_version": "supervisor-autoresearch/v1",
+        "status": "submitted"
+      },
+      "run_id": "autoresearch-daemon-1781000000-autoexp-7c483b2015548a0b",
+      "source": "autoresearch",
+      "ts": 1781238509
+    },
+    {
+      "event_id": 13,
+      "kind": "autoresearch_evaluator_job_phase",
+      "payload": {
+        "attempt_id": "autoexp-7c483b2015548a0b-attempt-1",
+        "error": null,
+        "job_id": "autoresearch-87a402c59dc875a5a97ff05a",
+        "pid": 82947,
+        "recovery_point": "spawned",
+        "schema_version": "supervisor-autoresearch/v1",
+        "status": "running"
+      },
+      "run_id": "autoresearch-daemon-1781000000-autoexp-7c483b2015548a0b",
+      "source": "autoresearch",
+      "ts": 1781238509
+    },
+    {
+      "event_id": 14,
+      "kind": "dual_agent_workflow_terminal_outcome",
+      "payload": {
+        "job_id": "autoresearch-87a402c59dc875a5a97ff05a",
+        "result_path": "/private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/phase-e-demo-z_tirkw9/autoruns/autoexp-7c483b2015548a0b/evaluator-jobs/autoexp-7c483b2015548a0b-attempt-1/result.json",
+        "status": "completed",
+        "task_id": "autoresearch:autoresearch:phase_e_policy_overlay:execution:FM-PHASE-E",
+        "terminal_status": "completed",
+        "trace_envelope": {
+          "artifacts": [],
+          "claims": [],
+          "event_kind": "dual_agent_workflow_terminal_outcome",
+          "failure_taxonomy": null,
+          "gate": "",
+          "policy_verdict": "observed",
+          "receipts": [],
+          "run_id": "autoresearch-daemon-1781000000-autoexp-7c483b2015548a0b",
+          "schema_version": "dual-agent-trace-envelope/v1",
+          "source": "dual_agent",
+          "task_id": "autoresearch:autoresearch:phase_e_policy_overlay:execution:FM-PHASE-E",
+          "tool_calls": []
+        },
+        "transport_recovery": "detached_cli_worker"
+      },
+      "run_id": "autoresearch-daemon-1781000000-autoexp-7c483b2015548a0b",
+      "source": "dual_agent",
+      "ts": 1781238509
+    },
+    {
+      "event_id": 15,
+      "kind": "autoresearch_attempt_execution_job_completed",
+      "payload": {
+        "artifact_hashes": {},
+        "attempt_id": "autoexp-7c483b2015548a0b-attempt-1",
+        "attempt_worktree_ref": "isolated:temporary",
+        "budget_usd": 1.0,
+        "changed_files": [
+          "candidates/policy-overlay.yaml"
+        ],
+        "cost_usd": 0.0,
+        "evaluator_run_hash": "ef6f30f22ae1b4501d8bb66f03b155b3898b5ec3738923e7ec5bde8d25913728",
+        "evaluator_run_ref": "/private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/phase-e-demo-z_tirkw9/autoruns/autoexp-7c483b2015548a0b/evaluator-runs/autoexp-7c483b2015548a0b-attempt-1.json",
+        "evidence_refs": [
+          "evaluator_run:/private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/phase-e-demo-z_tirkw9/autoruns/autoexp-7c483b2015548a0b/evaluator-runs/autoexp-7c483b2015548a0b-attempt-1.json"
+        ],
+        "execution_errors": [],
+        "experiment_id": "autoexp-7c483b2015548a0b",
+        "hypothesis": "Investigate whether a targeted change to candidates/policy-overlay.yaml reduces recurring FM-PHASE-E failures at execution for phase_e_policy_overlay tasks.",
+        "job_id": "autoresearch-87a402c59dc875a5a97ff05a",
+        "metric_after": null,
+        "metric_before": 0.0,
+        "metric_delta": null,
+        "metric_source": "evaluator_execution",
+        "metric_trials": [
+          0.7,
+          0.75,
+          0.8
+        ],
+        "parent_attempt_id": null,
+        "patch_ref": "",
+        "policy_candidate_changes": {},
+        "policy_overlay_candidate_ref": "",
+        "resumed_from_trial_count": 0,
+        "schema_version": "supervisor-autoresearch/v1",
+        "status": "completed",
+        "task_id": "autoresearch:phase_e_policy_overlay:execution:FM-PHASE-E",
+        "timeout_s": 5.0,
+        "wall_clock_s": 0.14258,
+        "worker_id": "autoresearch-auto-runner"
+      },
+      "run_id": "autoresearch-daemon-1781000000-autoexp-7c483b2015548a0b",
+      "source": "autoresearch",
+      "ts": 1781238509
+    },
+    {
+      "event_id": 16,
+      "kind": "autoresearch_attempt_completed",
+      "payload": {
+        "artifact_hashes": {},
+        "attempt_id": "autoexp-7c483b2015548a0b-attempt-1",
+        "attempt_worktree_ref": "isolated:temporary",
+        "changed_files": [
+          "candidates/policy-overlay.yaml"
+        ],
+        "cost_usd": 0.0,
+        "evaluator_run_hash": "ef6f30f22ae1b4501d8bb66f03b155b3898b5ec3738923e7ec5bde8d25913728",
+        "evaluator_run_ref": "/private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/phase-e-demo-z_tirkw9/autoruns/autoexp-7c483b2015548a0b/evaluator-runs/autoexp-7c483b2015548a0b-attempt-1.json",
+        "evidence_refs": [
+          "evaluator_run:/private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/phase-e-demo-z_tirkw9/autoruns/autoexp-7c483b2015548a0b/evaluator-runs/autoexp-7c483b2015548a0b-attempt-1.json"
+        ],
+        "execution_errors": [],
+        "experiment_id": "autoexp-7c483b2015548a0b",
+        "hypothesis": "Investigate whether a targeted change to candidates/policy-overlay.yaml reduces recurring FM-PHASE-E failures at execution for phase_e_policy_overlay tasks.",
+        "metric_after": null,
+        "metric_before": 0.0,
+        "metric_delta": null,
+        "metric_source": "evaluator_execution",
+        "metric_trials": [
+          0.7,
+          0.75,
+          0.8
+        ],
+        "parent_attempt_id": null,
+        "patch_ref": "",
+        "policy_candidate_changes": {},
+        "policy_overlay_candidate_ref": "",
+        "schema_version": "supervisor-autoresearch/v1",
+        "status": "completed",
+        "task_id": "autoresearch:phase_e_policy_overlay:execution:FM-PHASE-E",
+        "wall_clock_s": 0.14258,
+        "worker_id": "autoresearch-auto-runner"
+      },
+      "run_id": "autoresearch-daemon-1781000000-autoexp-7c483b2015548a0b",
+      "source": "autoresearch",
+      "ts": 1781238509
+    },
+    {
+      "event_id": 17,
+      "kind": "autoresearch_validation_started",
+      "payload": {
+        "attempt_id": "autoexp-7c483b2015548a0b-attempt-1",
+        "experiment_id": "autoexp-7c483b2015548a0b",
+        "schema_version": "supervisor-autoresearch/v1",
+        "status": "started",
+        "task_id": "autoresearch:phase_e_policy_overlay:execution:FM-PHASE-E"
+      },
+      "run_id": "autoresearch-daemon-1781000000-autoexp-7c483b2015548a0b",
+      "source": "autoresearch",
+      "ts": 1781238509
+    },
+    {
+      "event_id": 18,
+      "kind": "autoresearch_validation_completed",
+      "payload": {
+        "artifact_hashes": {},
+        "attempt_id": "autoexp-7c483b2015548a0b-attempt-1",
+        "changed_files": [
+          "candidates/policy-overlay.yaml"
+        ],
+        "cost_usd": 0.0,
+        "default_change_allowed": false,
+        "evaluator_run_hash": "ef6f30f22ae1b4501d8bb66f03b155b3898b5ec3738923e7ec5bde8d25913728",
+        "evaluator_run_ref": "/private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/phase-e-demo-z_tirkw9/autoruns/autoexp-7c483b2015548a0b/evaluator-runs/autoexp-7c483b2015548a0b-attempt-1.json",
+        "experiment_id": "autoexp-7c483b2015548a0b",
+        "gaming_flags": [],
+        "gate_advanced": false,
+        "immutable_paths": [
+          "supervisor/state.py",
+          "supervisor/postgres_state.py",
+          "supervisor/config.py",
+          "supervisor/dual_agent_workflow.py",
+          "supervisor/dual_agent_runner.py",
+          "supervisor/reviewer_registry.py",
+          "supervisor/dynamic_workflow_receipts.py",
+          "supervisor/autoresearch/validation.py",
+          "supervisor/autoresearch/report.py",
+          "tests/fixtures/agentic_eval",
+          "tests/fixtures/autoresearch/locked",
+          "config.example.yaml"
+        ],
+        "metric_after": 0.75,
+        "metric_before": 0.0,
+        "metric_delta": 0.75,
+        "metric_iqr": 0.1,
+        "metric_median": 0.75,
+        "metric_name": "pass_rate",
+        "metric_source": "evaluator_execution",
+        "metric_trials": [
+          0.7,
+          0.75,
+          0.8
+        ],
+        "mutable_paths": [
+          "candidates/policy-overlay.yaml"
+        ],
+        "policy_candidate_changes": {},
+        "policy_mutated": false,
+        "policy_overlay_candidate_ref": "",
+        "quality_unstable_across_trials": true,
+        "recommendation": "validated as report-only candidate; operator review required",
+        "report_sha256": "fce0d2648cc994d1da8123e1c9593e925a794470e74a4fae9a031146d72e58ab",
+        "schema_version": "supervisor-autoresearch-report/v1",
+        "task_id": "autoresearch:phase_e_policy_overlay:execution:FM-PHASE-E",
+        "validation_errors": [],
+        "validation_status": "accepted",
+        "wall_clock_s": 0.14258
+      },
+      "run_id": "autoresearch-daemon-1781000000-autoexp-7c483b2015548a0b",
+      "source": "autoresearch",
+      "ts": 1781238509
+    },
+    {
+      "event_id": 19,
+      "kind": "autoresearch_report_emitted",
+      "payload": {
+        "attempt_count": 1,
+        "default_change_allowed": false,
+        "experiment_id": "autoexp-7c483b2015548a0b",
+        "report_sha256": "4b3275aa47bf87e9d297697b60799a85b46b3bae4618dacb249d8d2f21ebb4af",
+        "schema_version": "supervisor-autoresearch/v1",
+        "task_id": "autoresearch:phase_e_policy_overlay:execution:FM-PHASE-E"
+      },
+      "run_id": "autoresearch-daemon-1781000000-autoexp-7c483b2015548a0b",
+      "source": "autoresearch",
+      "ts": 1781238509
+    },
+    {
+      "event_id": 20,
+      "kind": "autoresearch_policy_proposal_created",
+      "payload": {
+        "affected_gates": [
+          "outcome_review"
+        ],
+        "attempt_id": "autoexp-7c483b2015548a0b-attempt-1",
+        "automatic_policy_mutation": false,
+        "changes": [
+          {
+            "after_hash": "bd27d04477e0bdc6628802a68a395a9fdb86dd74a6bc31564fa935fe99eb7a16",
+            "artifact_kind": "policy_overlay",
+            "before_hash": "3873dcb319f4070c65b4c9dbc31987f276869941ac785f5843d194bec5ecae4c",
+            "candidate_ref": "candidates/policy-overlay.yaml",
+            "diff": "--- a/.supervisor/policy-overlay.yaml\n+++ b/.supervisor/policy-overlay.yaml\n@@ -1,2 +1,5 @@\n schema_version: supervisor-policy-overlay/v1\n-instruction_guidance_blocks: {}\n+active_proposal_id: phase-e-candidate\n+instruction_guidance_blocks:\n+  execution:\n+    - Verify the Phase E runtime evidence chain before accepting.\n",
+            "target_path": ".supervisor/policy-overlay.yaml"
+          }
+        ],
+        "default_change_allowed": false,
+        "derivation": {
+          "affected_gates": [
+            "outcome_review"
+          ],
+          "attempt_id": "autoexp-7c483b2015548a0b-attempt-1",
+          "candidate_ref": "candidates/policy-overlay.yaml",
+          "experiment_id": "autoexp-7c483b2015548a0b",
+          "metric_after": 0.75,
+          "metric_before": 0.0,
+          "metric_delta": 0.75,
+          "report_ref": "/private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/phase-e-demo-z_tirkw9/autoruns/autoexp-7c483b2015548a0b/report.json",
+          "report_sha256": "cffb126c6c5ecdf878d38c2ecf75989e6f70876906140168a59e768daaf86879",
+          "schema_version": "supervisor-autoresearch-policy-derivation/v1"
+        },
+        "evaluator_evidence": {
+          "cost_usd": 0.0,
+          "evaluator_run_hash": "ef6f30f22ae1b4501d8bb66f03b155b3898b5ec3738923e7ec5bde8d25913728",
+          "evaluator_run_ref": "/private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/phase-e-demo-z_tirkw9/autoruns/autoexp-7c483b2015548a0b/evaluator-runs/autoexp-7c483b2015548a0b-attempt-1.json",
+          "gaming_flags": [],
+          "k_trials": 3,
+          "metric_iqr": 0.1,
+          "metric_median": 0.75,
+          "metric_name": "pass_rate",
+          "metric_source": "evaluator_execution",
+          "metric_trials": [
+            0.7,
+            0.75,
+            0.8
+          ],
+          "quality_unstable_across_trials": true,
+          "recommendation": "validated as report-only candidate; operator review required",
+          "validation_errors": [],
+          "validation_status": "accepted",
+          "wall_clock_s": 0.14258
+        },
+        "experiment_id": "autoexp-7c483b2015548a0b",
+        "gate_advanced": false,
+        "gate_authority": "unchanged",
+        "operator_approved": false,
+        "proposal_id": "ARP-a32595eaf5c1f694",
+        "proposal_sha256": "05c5701c3077920245f3b3bcac7114ad53d49c4f0d444ef419d19f955a4f369f",
+        "requires_operator_approval": true,
+        "reviewer_panel_authority": "unchanged",
+        "schema_version": "supervisor-autoresearch-policy-proposal/v1",
+        "source": "autoresearch_deriver",
+        "status": "draft",
+        "task_id": "autoresearch:phase_e_policy_overlay:execution:FM-PHASE-E",
+        "typed_outcome_authority": "unchanged"
+      },
+      "run_id": "autoresearch-daemon-1781000000-autoexp-7c483b2015548a0b",
+      "source": "autoresearch",
+      "ts": 1781238509
+    },
+    {
+      "event_id": 21,
+      "kind": "autoresearch_experiment_auto_run_completed",
+      "payload": {
+        "automatic_policy_mutation": false,
+        "default_change_allowed": false,
+        "experiment_id": "autoexp-7c483b2015548a0b",
+        "gate_advanced": false,
+        "report_ref": "/private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/phase-e-demo-z_tirkw9/autoruns/autoexp-7c483b2015548a0b/report.json",
+        "report_sha256": "e5d5fc2378253032d7222352243366fa43bc7010b1ce4a1b4a1628c21dccc334",
+        "schema_version": "supervisor-autoresearch-auto-runner/v1",
+        "status": "completed"
+      },
+      "run_id": "autoresearch-daemon-1781000000-autoexp-7c483b2015548a0b",
+      "source": "autoresearch",
+      "ts": 1781238509
+    },
+    {
+      "event_id": 23,
+      "kind": "autoresearch_policy_proposal_approved",
+      "payload": {
+        "after_hash": "bd27d04477e0bdc6628802a68a395a9fdb86dd74a6bc31564fa935fe99eb7a16",
+        "approval_channel": "cli",
+        "approver": "operator@example.com",
+        "automatic_policy_mutation": false,
+        "before_hash": "3873dcb319f4070c65b4c9dbc31987f276869941ac785f5843d194bec5ecae4c",
+        "changes": [
+          {
+            "after_hash": "bd27d04477e0bdc6628802a68a395a9fdb86dd74a6bc31564fa935fe99eb7a16",
+            "before_hash": "3873dcb319f4070c65b4c9dbc31987f276869941ac785f5843d194bec5ecae4c",
+            "candidate_ref": "candidates/policy-overlay.yaml",
+            "target_path": ".supervisor/policy-overlay.yaml"
+          }
+        ],
+        "default_change_allowed": false,
+        "event_sha256": "49a5d8f42f2231eba00660e796ed2a61871e6564aa49c0b5f6136ca0866edc01",
+        "gate_advanced": false,
+        "gate_authority": "unchanged",
+        "operator_approved": true,
+        "proposal_id": "ARP-a32595eaf5c1f694",
+        "requires_operator_approval": false,
+        "reviewer_panel_authority": "unchanged",
+        "rollback_pointer": {
+          "files": [
+            {
+              "after_hash": "bd27d04477e0bdc6628802a68a395a9fdb86dd74a6bc31564fa935fe99eb7a16",
+              "backup_ref": ".handoff/policy-rollbacks/ARP-a32595eaf5c1f694/.supervisor__policy-overlay.yaml.before",
+              "before_hash": "3873dcb319f4070c65b4c9dbc31987f276869941ac785f5843d194bec5ecae4c",
+              "target_path": ".supervisor/policy-overlay.yaml"
+            }
+          ],
+          "proposal_id": "ARP-a32595eaf5c1f694",
+          "schema_version": "supervisor-autoresearch-policy-rollback/v1"
+        },
+        "schema_version": "supervisor-autoresearch-policy-approval/v1",
+        "status": "approved_applied",
+        "typed_outcome_authority": "unchanged"
+      },
+      "run_id": "autoresearch-daemon-1781000000-autoexp-7c483b2015548a0b",
+      "source": "autoresearch",
+      "ts": 1781238509
+    },
+    {
+      "event_id": 22,
+      "kind": "supervisor_policy_overlay_snapshot",
+      "payload": {
+        "automatic_policy_mutation": false,
+        "block": "",
+        "block_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "default_change_allowed": false,
+        "exists": true,
+        "gate": "execution",
+        "gate_authority": "unchanged",
+        "lesson_limit": 5,
+        "overlay_hash": "3873dcb319f4070c65b4c9dbc31987f276869941ac785f5843d194bec5ecae4c",
+        "overlay_path": ".supervisor/policy-overlay.yaml",
+        "policy_overlay_hash": "3873dcb319f4070c65b4c9dbc31987f276869941ac785f5843d194bec5ecae4c",
+        "policy_proposal_id": "",
+        "proposal_id": "",
+        "round_index": 1,
+        "schema_version": "supervisor-policy-overlay-snapshot/v1",
+        "task_class": "phase_e_policy_overlay",
+        "task_id": "phase-e-task",
+        "whitelisted_keys": [
+          "active_proposal_id",
+          "instruction_guidance_blocks",
+          "lesson_limit",
+          "rubric_thresholds",
+          "schema_version"
+        ]
+      },
+      "run_id": "phase-e-before-overlay",
+      "source": "supervisor",
+      "ts": 1781238509
+    },
+    {
+      "event_id": 24,
+      "kind": "supervisor_policy_overlay_snapshot",
+      "payload": {
+        "automatic_policy_mutation": false,
+        "block": "Supervisor policy overlay guidance\nThis operator-approved overlay is advisory and cannot satisfy a gate by itself.\n1. Verify the Phase E runtime evidence chain before accepting.",
+        "block_sha256": "d959916c2f7663acee086bb05985036d3cc41fe18696d9aeb92fa69a952fd9b9",
+        "default_change_allowed": false,
+        "exists": true,
+        "gate": "execution",
+        "gate_authority": "unchanged",
+        "lesson_limit": 5,
+        "overlay_hash": "bd27d04477e0bdc6628802a68a395a9fdb86dd74a6bc31564fa935fe99eb7a16",
+        "overlay_path": ".supervisor/policy-overlay.yaml",
+        "policy_overlay_hash": "bd27d04477e0bdc6628802a68a395a9fdb86dd74a6bc31564fa935fe99eb7a16",
+        "policy_proposal_id": "phase-e-candidate",
+        "proposal_id": "phase-e-candidate",
+        "round_index": 1,
+        "schema_version": "supervisor-policy-overlay-snapshot/v1",
+        "task_class": "phase_e_policy_overlay",
+        "task_id": "phase-e-task",
+        "whitelisted_keys": [
+          "active_proposal_id",
+          "instruction_guidance_blocks",
+          "lesson_limit",
+          "rubric_thresholds",
+          "schema_version"
+        ]
+      },
+      "run_id": "phase-e-after-overlay",
+      "source": "supervisor",
+      "ts": 1781238509
+    },
+    {
+      "event_id": 25,
+      "kind": "supervisor_p11_audit_scheduled",
+      "payload": {
+        "audit": {
+          "audited": [],
+          "cwd": "/Users/sam.zhang/Documents/codex-supervisor",
+          "false_accept_count": 0,
+          "false_accept_denominator": 0,
+          "false_accept_rate": 0.0,
+          "gate_authority": "unchanged",
+          "observational_only": true,
+          "policy_regression_rollbacks": [],
+          "run_id": "phase-e-audit-empty",
+          "sample_size": 0,
+          "task_id": "unknown-task",
+          "trend_rows_recorded": [],
+          "updated_trend_rows": []
+        },
+        "gate_authority": "unchanged",
+        "observational_only": true,
+        "scheduled_at": 1781001500,
+        "schema_version": "supervisor-p11-audit-schedule/v1"
+      },
+      "run_id": "phase-e-audit-empty",
+      "source": "supervisor",
+      "ts": 1781238509
+    },
+    {
+      "event_id": 26,
+      "kind": "policy_regression_detected",
+      "payload": {
+        "comparison": {
+          "after_avg_time_to_accept_s": 20.0,
+          "after_count": 3,
+          "after_false_accept_rate": 0.0,
+          "after_first_pass_rate": 0.0,
+          "before_avg_time_to_accept_s": 10.0,
+          "before_count": 3,
+          "before_false_accept_rate": 0.0,
+          "before_first_pass_rate": 1.0,
+          "false_accept_rate_delta": 0.0,
+          "first_pass_rate_delta": -1.0,
+          "time_to_accept_delta_s": 10.0
+        },
+        "detected_at": 1781001600,
+        "gate": "execution",
+        "gate_authority": "unchanged",
+        "observational_only": true,
+        "proposal_id": "ARP-a32595eaf5c1f694",
+        "reasons": [
+          "first_pass_rate_regressed",
+          "time_to_accept_regressed"
+        ],
+        "schema_version": "supervisor-policy-regression/v1",
+        "task_class": "phase_e_policy_overlay"
+      },
+      "run_id": "phase-e-regression",
+      "source": "supervisor",
+      "ts": 1781238509
+    },
+    {
+      "event_id": 27,
+      "kind": "autoresearch_policy_rollback_proposal_drafted",
+      "payload": {
+        "automatic_policy_mutation": false,
+        "comparison": {
+          "after_avg_time_to_accept_s": 20.0,
+          "after_count": 3,
+          "after_false_accept_rate": 0.0,
+          "after_first_pass_rate": 0.0,
+          "before_avg_time_to_accept_s": 10.0,
+          "before_count": 3,
+          "before_false_accept_rate": 0.0,
+          "before_first_pass_rate": 1.0,
+          "false_accept_rate_delta": 0.0,
+          "first_pass_rate_delta": -1.0,
+          "time_to_accept_delta_s": 10.0
+        },
+        "default_change_allowed": false,
+        "detected_event_id": 26,
+        "gate_advanced": false,
+        "gate_authority": "unchanged",
+        "operator_approved": false,
+        "proposal_id": "ARP-a32595eaf5c1f694",
+        "reason": "policy_regression_detected",
+        "requires_operator_approval": true,
+        "rollback_pointer": {
+          "files": [
+            {
+              "after_hash": "bd27d04477e0bdc6628802a68a395a9fdb86dd74a6bc31564fa935fe99eb7a16",
+              "backup_ref": ".handoff/policy-rollbacks/ARP-a32595eaf5c1f694/.supervisor__policy-overlay.yaml.before",
+              "before_hash": "3873dcb319f4070c65b4c9dbc31987f276869941ac785f5843d194bec5ecae4c",
+              "target_path": ".supervisor/policy-overlay.yaml"
+            }
+          ],
+          "proposal_id": "ARP-a32595eaf5c1f694",
+          "schema_version": "supervisor-autoresearch-policy-rollback/v1"
+        },
+        "schema_version": "supervisor-policy-rollback-draft/v1",
+        "status": "draft"
+      },
+      "run_id": "phase-e-regression",
+      "source": "autoresearch",
+      "ts": 1781238509
+    }
+  ],
+  "gate_advanced": false,
+  "generated_from": "tests/test_auto_evolution_loop.py::_run_loop",
+  "human_touchpoint_event_ids": [
+    7,
+    23
+  ],
+  "operator_touchpoints": [
+    {
+      "event_id": 7,
+      "verb": "codex-supervisor-axi experiments activate <experiment_id>"
+    },
+    {
+      "event_id": 23,
+      "verb": "codex-supervisor-axi approve --proposal-id <proposal_id>"
+    }
+  ],
+  "overlay_after_hash": "bd27d04477e0bdc6628802a68a395a9fdb86dd74a6bc31564fa935fe99eb7a16",
+  "overlay_before_hash": "3873dcb319f4070c65b4c9dbc31987f276869941ac785f5843d194bec5ecae4c",
+  "policy_mutated": false,
+  "proposal_id": "ARP-a32595eaf5c1f694",
+  "report_sha256": "cffb126c6c5ecdf878d38c2ecf75989e6f70876906140168a59e768daaf86879",
+  "schema_version": "supervisor-auto-evolution-loop-proof/v1",
+  "task_id": "auto-evolution-loop-proof-20260610",
+  "trend_policy_overlay_hash": "bd27d04477e0bdc6628802a68a395a9fdb86dd74a6bc31564fa935fe99eb7a16",
+  "trend_policy_proposal_id": "ARP-a32595eaf5c1f694",
+  "wire_removal_cases": [
+    "T1_finalization_drafts_experiment",
+    "T2_daemon_runner_executes_runnable",
+    "T3_derive_on_acceptance",
+    "T4_weekly_audit_task",
+    "T5_operator_activation_cli",
+    "T5_operator_approval_cli",
+    "T7_lesson_feedback_recorded"
+  ]
+}
