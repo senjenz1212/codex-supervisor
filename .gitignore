@@ -12,6 +12,7 @@ venv/
 
 # Local scratch/runtime state
 pytest-cache-files-*/
+.codex-supervisor/
 .scratch/gui-probes/
 .handoff/
 *.db
