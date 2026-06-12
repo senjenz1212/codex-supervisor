@@ -195,6 +195,38 @@ def derive_lessons_from_events(
     return [lessons[key] for key in sorted(lessons)]
 
 
+OPS_LESSON_TASK_CLASS = "supervisor_ops"
+OPS_LESSON_GATE = "pre_flight"
+OPS_LESSON_TAXONOMY_CODE = "OPS-1.0"
+OPS_LESSON_ROOT_CAUSE = "pre_flight_hygiene_drift"
+OPS_LESSON_REMEDIATION = (
+    "Run codex-supervisor-axi doctor before submitting work; "
+    "resolve any degraded daemon, stale lease, or overdue audit hint before proceeding."
+)
+OPS_LESSON_SOURCE_RUN_ID = "supervisor-ops-backfill"
+
+
+def backfill_operational_lessons(state: Any) -> list[dict[str, Any]]:
+    """Idempotently record the canonical supervisor_ops/pre_flight lesson.
+
+    Returns the recorded lesson rows. Re-running yields the same lesson_id and
+    leaves created=False for repeat calls. Advisory-only; lesson injection
+    cannot advance or block a gate.
+    """
+
+    row, created = state.record_supervisor_lesson(
+        task_class=OPS_LESSON_TASK_CLASS,
+        gate=OPS_LESSON_GATE,
+        taxonomy_code=OPS_LESSON_TAXONOMY_CODE,
+        root_cause=OPS_LESSON_ROOT_CAUSE,
+        remediation=OPS_LESSON_REMEDIATION,
+        source_run_id=OPS_LESSON_SOURCE_RUN_ID,
+    )
+    lesson = dict(row)
+    lesson["created"] = bool(created)
+    return [lesson]
+
+
 def record_lessons_for_run(
     state: Any,
     *,

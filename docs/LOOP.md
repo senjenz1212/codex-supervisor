@@ -14,6 +14,14 @@ This document is generated from the Phase E proof manifest at `docs/dual-agent/a
 8. The weekly audit cadence `p11_audit_cadence_s` records observational P11 audit events.
 9. Regression windows draft rollback proposals; rollback still requires operator approval.
 
+## Closeout Measurement
+
+- Transport incidents are observational ledger metrics. AXI submit reattach, AXI catch-up, non-terminal poll, poll failure, and dispatcher lease-reap recoveries are counted into quality-trend details; no metric advances or blocks a gate.
+- `codex-supervisor-axi trends` remains TOON-lite by default and exposes the same metrics with `--json` for exact fields. The default output format should only change after the replay corpus shows one format wins both poll-loop turns and emitted bytes.
+- `visual_evidence_policy=not_required` with non-empty visual/screenshot matches writes `visual_evidence_override_asserted`; sampled P11 audit includes `visual_evidence_override_count` in trend details.
+- `codex-supervisor-axi doctor` is read-only. It reports daemon liveness, dispatcher stale leases, AutoResearch runner ticks, weekly P11 audit ticks, draft/runnable experiment counts, pending proposal counts, and help commands for degraded states.
+- `codex-supervisor-axi lessons --backfill-ops` idempotently records the operational pre-flight lesson for committing orthogonal fixes with their tests immediately.
+
 ## Proof
 
 - Proposal id: `ARP-a32595eaf5c1f694`

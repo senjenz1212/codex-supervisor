@@ -9,6 +9,10 @@ from supervisor.config import Config
 from supervisor.dual_agent_lead import LeadInvocationRequest, build_handoff_packet
 from supervisor.lessons import (
     LESSON_BLOCK_HEADER,
+    OPS_LESSON_GATE,
+    OPS_LESSON_TASK_CLASS,
+    OPS_LESSON_TAXONOMY_CODE,
+    backfill_operational_lessons,
     build_lesson_injection,
     record_lessons_for_run,
 )
@@ -425,3 +429,42 @@ def test_drift_probe_cohort_failure_produces_lesson(tmp_path):
     assert recorded[0]["gate"] == "outcome_review"
     assert recorded[0]["taxonomy_code"] == "drift_probe_cohort_failure"
     assert "deterministic probe" in recorded[0]["remediation"]
+
+
+def test_ops_lesson_backfill_is_selectable_idempotent_and_injectable(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+
+    first = backfill_operational_lessons(state)
+    second = backfill_operational_lessons(state)
+
+    assert len(first) == 1
+    assert first[0]["created"] is True
+    assert first[0]["task_class"] == OPS_LESSON_TASK_CLASS
+    assert first[0]["gate"] == OPS_LESSON_GATE
+    assert first[0]["taxonomy_code"] == OPS_LESSON_TAXONOMY_CODE
+
+    assert len(second) == 1
+    assert second[0]["created"] is False
+    assert second[0]["lesson_id"] == first[0]["lesson_id"]
+
+    matching = state.query_supervisor_lessons(
+        task_class=OPS_LESSON_TASK_CLASS,
+        gate=OPS_LESSON_GATE,
+    )
+    assert len(matching) == 1
+    assert matching[0]["lesson_id"] == first[0]["lesson_id"]
+
+    non_matching = state.query_supervisor_lessons(
+        task_class="other_class",
+        gate="other_gate",
+    )
+    assert non_matching == []
+
+    injection = build_lesson_injection(matching)
+    assert injection["lesson_count"] == 1
+    assert matching[0]["lesson_id"] in injection["lesson_ids"]
+    assert OPS_LESSON_TAXONOMY_CODE in injection["block"]
+
+    empty_injection = build_lesson_injection(non_matching)
+    assert empty_injection["lesson_count"] == 0
+    assert empty_injection["block"] == ""

@@ -9,6 +9,7 @@ from typing import Any, Callable
 
 from .generator import run_runnable_autoresearch_experiments
 from ..quality_trends import run_weekly_p11_audit_if_due
+from ..runtime_health import record_subsystem_health
 
 log = logging.getLogger(__name__)
 
@@ -48,6 +49,13 @@ class AutoResearchRunnerTask:
             run_id_prefix=f"autoresearch-daemon-{timestamp}",
             max_runnable_per_week=cap,
             now=timestamp,
+        )
+        record_subsystem_health(
+            self.state,
+            subsystem="autoresearch_runner",
+            status="healthy",
+            reason="tick_completed",
+            details={"executed_count": len(results), "ticked_at": timestamp},
         )
         return {
             "status": "ok",
@@ -92,6 +100,13 @@ class WeeklyP11AuditTask:
                 now=timestamp,
                 cadence_s=cadence,
             ))
+        record_subsystem_health(
+            self.state,
+            subsystem="weekly_p11_audit",
+            status="healthy",
+            reason="tick_completed",
+            details={"audited_run_count": len(results), "ticked_at": timestamp},
+        )
         return {
             "status": "ok",
             "audited_run_count": len(results),

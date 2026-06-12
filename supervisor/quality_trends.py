@@ -13,6 +13,47 @@ from .runtime_evidence import RuntimeEvidenceResult, capture_runtime_baseline, c
 
 ACCEPTED_STATUSES = {"accepted", "accept"}
 AUDIT_GATES = ("execution", "outcome_review")
+AXI_CUTOVER_TS = 1781049600
+
+
+def record_transport_incident(
+    state: Any,
+    *,
+    run_id: str,
+    incident_type: str,
+    interface: str,
+    task_id: str | None = None,
+    job_id: str | None = None,
+    client_token: str | None = None,
+    details: dict[str, Any] | None = None,
+) -> int:
+    """Write an observational transport incident event.
+
+    These events are metrics only. They do not advance or block gates.
+    """
+    import hashlib
+
+    token_hash = (
+        hashlib.sha256(str(client_token).encode("utf-8")).hexdigest()
+        if client_token else ""
+    )
+    return state.write_event(
+        run_id=run_id,
+        source="supervisor",
+        kind="transport_incident_observed",
+        payload={
+            "schema_version": "supervisor-transport-incident/v1",
+            "incident_type": str(incident_type),
+            "interface": str(interface),
+            "task_id": str(task_id or ""),
+            "job_id": str(job_id or ""),
+            "run_id": str(run_id),
+            "client_token_hash": token_hash,
+            "details": details or {},
+            "observational_only": True,
+            "gate_authority": "unchanged",
+        },
+    )
 
 
 def record_quality_trends_for_run(
@@ -24,7 +65,7 @@ def record_quality_trends_for_run(
     computed_at: int | None = None,
 ) -> list[dict[str, Any]]:
     """Compute and persist per-gate trend rows from existing ledger events."""
-    events = _decode_events(state.read_dual_agent_gate_events(run_id))
+    events = _decode_events(state.read_events_since(run_id, after_event_id=0, limit=10_000))
     if not events:
         return []
 
@@ -32,6 +73,9 @@ def record_quality_trends_for_run(
     resolved_task_id = _resolve_task_id(events, explicit=task_id, route=route)
     resolved_task_class = _resolve_task_class(route, explicit=task_class)
     overlays_by_gate = _overlay_snapshots_by_gate(events)
+    transport_metrics = _transport_incident_metrics(events)
+    format_metrics = _format_ab_metrics(events)
+    visual_override_count = _visual_override_count(events)
     now = int(time.time()) if computed_at is None else int(computed_at)
 
     by_gate: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -91,6 +135,9 @@ def record_quality_trends_for_run(
             details={
                 "source": "ledger_events",
                 "metric_semantics": "observational_only",
+                "transport_incidents": transport_metrics,
+                "format_ab": format_metrics,
+                "visual_evidence_override_count": visual_override_count,
                 "policy_overlay": overlays_by_gate.get(gate, {}),
                 "gate_result_event_ids": [event["event_id"] for event in gate_events],
                 "first_gate_result_event_id": first_event["event_id"],
@@ -205,7 +252,32 @@ def query_quality_trends(
     gate: str | None = None,
 ) -> list[dict[str, Any]]:
     """Read-only trend query wrapper."""
-    return state.query_quality_trends(task_class=task_class, gate=gate)
+    summaries = state.query_quality_trends(task_class=task_class, gate=gate)
+    rows = state.list_quality_trend_rows(task_class=task_class, gate=gate)
+    by_key: dict[tuple[str, str], dict[str, int]] = defaultdict(lambda: {
+        "transport_incident_count": 0,
+        "visual_evidence_override_count": 0,
+        "format_toon_turns": 0,
+        "format_json_turns": 0,
+        "format_toon_bytes": 0,
+        "format_json_bytes": 0,
+    })
+    for row in rows:
+        key = (str(row["task_class"]), str(row["gate"]))
+        details = row.get("details") if isinstance(row.get("details"), dict) else {}
+        incidents = details.get("transport_incidents") if isinstance(details.get("transport_incidents"), dict) else {}
+        by_key[key]["transport_incident_count"] += int(incidents.get("total_count") or 0)
+        by_key[key]["visual_evidence_override_count"] += int(details.get("visual_evidence_override_count") or 0)
+        fmt = details.get("format_ab") if isinstance(details.get("format_ab"), dict) else {}
+        for format_name, prefix in (("toon", "format_toon"), ("json", "format_json")):
+            item = fmt.get(format_name) if isinstance(fmt.get(format_name), dict) else {}
+            by_key[key][f"{prefix}_turns"] += int(item.get("turns") or 0)
+            by_key[key][f"{prefix}_bytes"] += int(item.get("bytes") or 0)
+    enriched: list[dict[str, Any]] = []
+    for summary in summaries:
+        key = (str(summary["task_class"]), str(summary["gate"]))
+        enriched.append({**summary, **by_key[key]})
+    return enriched
 
 
 def run_weekly_p11_audit_if_due(
@@ -280,11 +352,14 @@ def run_weekly_p11_audit_if_due(
 def _decode_events(rows: list[Any]) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
     for row in rows:
-        payload_json = row["payload_json"] if isinstance(row, dict) else row["payload_json"]
-        try:
-            payload = json.loads(payload_json)
-        except (TypeError, json.JSONDecodeError):
-            payload = {}
+        if isinstance(row, dict) and "payload" in row:
+            payload = row.get("payload")
+        else:
+            payload_json = row["payload_json"] if isinstance(row, dict) else row["payload_json"]
+            try:
+                payload = json.loads(payload_json)
+            except (TypeError, json.JSONDecodeError):
+                payload = {}
         events.append({
             "event_id": int(row["event_id"]),
             "ts": int(row["ts"]),
@@ -436,3 +511,60 @@ def _audit_item(event: dict[str, Any], result: RuntimeEvidenceResult) -> dict[st
         "declared_changed_files": list(details.get("declared_changed_files") or []),
         "actual_changed_files": list(details.get("actual_changed_files") or []),
     }
+
+
+def _transport_incident_metrics(events: list[dict[str, Any]]) -> dict[str, Any]:
+    by_type: dict[str, int] = defaultdict(int)
+    by_interface: dict[str, int] = defaultdict(int)
+    era_counts: dict[str, int] = defaultdict(int)
+    for event in events:
+        if event["kind"] == "transport_incident_observed":
+            payload = event["payload"]
+            incident_type = str(payload.get("incident_type") or "unknown")
+            interface = str(payload.get("interface") or "unknown")
+            by_type[incident_type] += 1
+            by_interface[interface] += 1
+            era_counts[_transport_era(event)] += 1
+        elif event["kind"] == "dual_agent_workflow_job":
+            payload = event["payload"]
+            error = str(payload.get("error") or payload.get("reason") or "")
+            if error == "worker_lease_stale_or_dead":
+                by_type["dispatcher_lease_reap"] += 1
+                by_interface[str(payload.get("interface") or "dispatcher")] += 1
+                era_counts[_transport_era(event)] += 1
+    total = sum(by_type.values())
+    return {
+        "total_count": total,
+        "by_type": dict(sorted(by_type.items())),
+        "by_interface": dict(sorted(by_interface.items())),
+        "by_era": dict(sorted(era_counts.items())),
+    }
+
+
+def _format_ab_metrics(events: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+    totals: dict[str, dict[str, int]] = defaultdict(lambda: {"turns": 0, "bytes": 0, "poll_loops": 0})
+    for event in events:
+        if event["kind"] != "supervisor_axi_format_metric":
+            continue
+        payload = event["payload"]
+        fmt = str(payload.get("format") or "").lower()
+        if fmt not in {"toon", "json"}:
+            continue
+        totals[fmt]["turns"] += int(payload.get("turns") or 0)
+        totals[fmt]["bytes"] += int(payload.get("bytes") or payload.get("bytes_per_poll_loop") or 0)
+        totals[fmt]["poll_loops"] += int(payload.get("poll_loops") or 1)
+    return {key: dict(value) for key, value in sorted(totals.items())}
+
+
+def _visual_override_count(events: list[dict[str, Any]]) -> int:
+    return sum(1 for event in events if event["kind"] == "visual_evidence_override_asserted")
+
+
+def _transport_era(event: dict[str, Any]) -> str:
+    payload = event["payload"]
+    interface = str(payload.get("interface") or "").lower()
+    if interface in {"axi", "cli"}:
+        return "axi"
+    if interface == "mcp":
+        return "mcp"
+    return "axi" if int(event["ts"]) >= AXI_CUTOVER_TS else "mcp"

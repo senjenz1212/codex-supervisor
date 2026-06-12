@@ -136,7 +136,119 @@ def test_quality_trends_record_run_computes_first_pass_revision_rounds_and_time_
         "false_accept_count": 0,
         "false_accept_denominator": 0,
         "false_accept_rate": 0.0,
+        "transport_incident_count": 0,
+        "visual_evidence_override_count": 0,
+        "format_toon_turns": 0,
+        "format_json_turns": 0,
+        "format_toon_bytes": 0,
+        "format_json_bytes": 0,
     }]
+
+
+def test_transport_incident_metrics_compute_from_seeded_ledger_and_backfill_idempotent(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    _write_event(
+        state,
+        kind="dual_agent_workflow_route",
+        ts=100,
+        payload={"task_id": "trend-task", "lesson_task_class": "source_change"},
+    )
+    _write_event(
+        state,
+        kind="transport_incident_observed",
+        ts=110,
+        payload={"incident_type": "same_client_token_reattach", "interface": "mcp"},
+    )
+    _write_event(
+        state,
+        kind="transport_incident_observed",
+        ts=120,
+        payload={"incident_type": "catch_up_invoked", "interface": "axi"},
+    )
+    _write_event(
+        state,
+        kind="transport_incident_observed",
+        ts=130,
+        payload={"incident_type": "poll_failure", "interface": "axi"},
+    )
+    _write_event(
+        state,
+        kind="dual_agent_workflow_job",
+        ts=140,
+        payload={"error": "worker_lease_stale_or_dead", "interface": "dispatcher"},
+    )
+    _write_event(
+        state,
+        kind="dual_agent_gate_result",
+        ts=150,
+        payload=_gate_result(gate="execution", status="accepted", attempts=1),
+    )
+
+    first = record_quality_trends_for_run(state, run_id="trend-run")
+    second = record_quality_trends_for_run(state, run_id="trend-run")
+
+    assert len(first) == len(second) == 1
+    details = second[0]["details"]["transport_incidents"]
+    assert details["total_count"] == 4
+    assert details["by_type"]["same_client_token_reattach"] == 1
+    assert details["by_type"]["catch_up_invoked"] == 1
+    assert details["by_type"]["poll_failure"] == 1
+    assert details["by_type"]["dispatcher_lease_reap"] == 1
+    assert state.count_quality_trend_rows() == 1
+
+
+def test_axi_trends_surfaces_transport_incident_and_era_rates_read_only(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    state.upsert_quality_trend_row(
+        run_id="trend-run",
+        task_id="trend-task",
+        task_class="source_change",
+        gate="execution",
+        accepted=True,
+        first_pass_accepted=True,
+        revision_rounds=0,
+        time_to_accepted_outcome_s=1.0,
+        details={
+            "transport_incidents": {"total_count": 2, "by_era": {"mcp": 1, "axi": 1}},
+            "format_ab": {"toon": {"turns": 2, "bytes": 100}, "json": {"turns": 3, "bytes": 150}},
+        },
+    )
+    before_rows = state.count_quality_trend_rows()
+    rows = query_quality_trends(state, task_class="source_change", gate="execution")
+    assert rows[0]["transport_incident_count"] == 2
+    assert rows[0]["format_toon_turns"] == 2
+    assert rows[0]["format_json_bytes"] == 150
+    assert state.count_quality_trend_rows() == before_rows
+
+
+def test_format_ab_instrumentation_persists_toon_and_json_poll_loop_metrics(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    _write_event(
+        state,
+        kind="supervisor_axi_format_metric",
+        ts=100,
+        payload={"format": "toon", "turns": 2, "bytes": 120, "poll_loops": 1},
+    )
+    _write_event(
+        state,
+        kind="supervisor_axi_format_metric",
+        ts=101,
+        payload={"format": "json", "turns": 3, "bytes": 240, "poll_loops": 1},
+    )
+    _write_event(
+        state,
+        kind="dual_agent_gate_result",
+        ts=110,
+        payload=_gate_result(gate="execution", status="accepted", attempts=1),
+    )
+
+    [row] = record_quality_trends_for_run(state, run_id="trend-run", task_class="source_change")
+
+    assert row["details"]["format_ab"]["toon"]["turns"] == 2
+    assert row["details"]["format_ab"]["json"]["bytes"] == 240
+    [summary] = query_quality_trends(state, task_class="source_change", gate="execution")
+    assert summary["format_toon_turns"] == 2
+    assert summary["format_json_bytes"] == 240
 
 
 def test_quality_trends_rows_include_policy_overlay_hash_and_proposal_id(tmp_path):
@@ -314,6 +426,45 @@ def test_quality_trends_sampled_p11_audit_catches_false_accept(tmp_path):
     assert summary[0]["false_accept_count"] == 1
     assert summary[0]["false_accept_denominator"] == 1
     assert summary[0]["false_accept_rate"] == 1.0
+
+
+def test_sampled_p11_audit_counts_visual_override_usage(tmp_path):
+    _init_git_repo(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    state.upsert_dual_agent_workflow(
+        run_id="trend-run",
+        task_id="trend-task",
+        cwd=str(tmp_path),
+        intent="audit visual override",
+        current_gate="outcome_review",
+        status="accepted",
+        max_rounds_per_gate=2,
+        user_facing=False,
+    )
+    _write_event(
+        state,
+        kind="dual_agent_workflow_route",
+        ts=100,
+        payload={"task_id": "trend-task", "lesson_task_class": "source_change", "cwd": str(tmp_path)},
+    )
+    _write_event(
+        state,
+        kind="visual_evidence_override_asserted",
+        ts=105,
+        payload={"matched_terms": ["visual"], "artifact_matches": []},
+    )
+    _write_event(
+        state,
+        kind="dual_agent_gate_result",
+        ts=110,
+        payload=_gate_result(gate="outcome_review", status="accepted", attempts=1),
+    )
+
+    audit = run_sampled_p11_false_accept_audit(state, run_id="trend-run", sample_size=1, test_timeout_s=1)
+
+    assert audit["updated_trend_rows"][0]["details"]["visual_evidence_override_count"] == 1
+    [summary] = query_quality_trends(state, task_class="source_change", gate="outcome_review")
+    assert summary["visual_evidence_override_count"] == 1
 
 
 def test_weekly_p11_audit_scheduler_writes_due_audit_row(tmp_path):

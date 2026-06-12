@@ -80,7 +80,7 @@ from supervisor.lessons import (
     build_lesson_injection,
     record_lessons_for_run,
 )
-from supervisor.quality_trends import record_quality_trends_for_run
+from supervisor.quality_trends import record_quality_trends_for_run, record_transport_incident
 from supervisor.policy_overlay import (
     apply_policy_overlay_to_instruction,
     draft_policy_regression_rollbacks_for_trend_rows,
@@ -673,6 +673,24 @@ class CodexSupervisorMcpAPI:
             planning_artifacts=gate_artifacts,
             operator_policy=visual_evidence_policy,
         )
+        if (
+            str(visual_policy.get("operator_policy") or "") == "not_required"
+            and visual_policy.get("matched_terms")
+        ):
+            self.state.write_event(
+                run_id=run_id,
+                source="supervisor",
+                kind="visual_evidence_override_asserted",
+                payload={
+                    "schema_version": "supervisor-visual-evidence-override/v1",
+                    "task_id": task_id,
+                    "operator_policy": "not_required",
+                    "matched_terms": list(visual_policy.get("matched_terms") or []),
+                    "artifact_matches": list(visual_policy.get("artifact_matches") or []),
+                    "observational_only": True,
+                    "gate_authority": "unchanged",
+                },
+            )
         effective_user_facing = bool(visual_policy["required"])
         workflow_route = select_workflow_route(
             intent=intent,
@@ -2593,6 +2611,31 @@ class CodexSupervisorMcpAPI:
         )
         cwd_path = Path(cwd).expanduser().resolve()
         receipt_payloads = _normalise_receipt_payloads(tool_receipts or [])
+        submit_visual_policy = workflow_visual_evidence_policy(
+            intent=intent,
+            task_id=task_id,
+            user_facing=user_facing,
+            planning_artifacts=planning_artifacts or [],
+            operator_policy=visual_evidence_policy,
+        )
+        if (
+            str(submit_visual_policy.get("operator_policy") or "") == "not_required"
+            and submit_visual_policy.get("matched_terms")
+        ):
+            self.state.write_event(
+                run_id=run_id,
+                source="supervisor",
+                kind="visual_evidence_override_asserted",
+                payload={
+                    "schema_version": "supervisor-visual-evidence-override/v1",
+                    "task_id": task_id,
+                    "operator_policy": "not_required",
+                    "matched_terms": list(submit_visual_policy.get("matched_terms") or []),
+                    "artifact_matches": list(submit_visual_policy.get("artifact_matches") or []),
+                    "observational_only": True,
+                    "gate_authority": "unchanged",
+                },
+            )
         payload = {
             "cwd": str(cwd_path),
             "task_id": task_id,
@@ -2683,6 +2726,16 @@ class CodexSupervisorMcpAPI:
             )
             return self._workflow_job_response(reserved_job)
         if not created:
+            record_transport_incident(
+                self.state,
+                run_id=run_id,
+                task_id=task_id,
+                job_id=reserved_job["job_id"],
+                client_token=client_token,
+                incident_type="same_client_token_reattach",
+                interface="mcp",
+                details={"status": reserved_job["status"], "recovery_point": reserved_job["recovery_point"]},
+            )
             return self._workflow_job_response(reserved_job, reattached=True)
 
         raise RuntimeError("unreachable workflow job reservation state")
@@ -2728,6 +2781,14 @@ class CodexSupervisorMcpAPI:
     def poll_dual_agent_workflow_job(self, *, job_id: str) -> dict[str, Any]:
         row = self.state.get_dual_agent_workflow_job(job_id=job_id)
         if row is None:
+            record_transport_incident(
+                self.state,
+                run_id="supervisor_transport_incidents",
+                job_id=job_id,
+                incident_type="poll_failure",
+                interface="mcp",
+                details={"reason": "missing_job"},
+            )
             return {"job_id": job_id, "status": "missing"}
         result: dict[str, Any] | None = None
         status = str(row["terminal_status"] or row["status"])
@@ -2770,6 +2831,16 @@ class CodexSupervisorMcpAPI:
             "result": result,
             "resume": workflow_resume_prompt(self.state, run_id=row["run_id"], task_id=row["task_id"]),
         }
+        if status not in {"accepted", "blocked", "failed", "completed", "terminal"}:
+            record_transport_incident(
+                self.state,
+                run_id=row["run_id"],
+                task_id=row["task_id"],
+                job_id=job_id,
+                incident_type="non_terminal_poll",
+                interface="mcp",
+                details={"status": status, "recovery_point": row["recovery_point"]},
+            )
         return redact(payload)
 
     def catch_up_dual_agent_workflow(

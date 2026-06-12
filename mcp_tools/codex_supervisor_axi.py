@@ -10,6 +10,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +20,10 @@ from supervisor.autoresearch.policy_evolution import (
     deny_policy_proposal,
 )
 from supervisor.config import Config
+from supervisor.lessons import backfill_operational_lessons
+from supervisor.quality_trends import query_quality_trends, record_transport_incident
 from supervisor.redaction import redact
+from supervisor.runtime_health import SUPERVISOR_RUNTIME_RUN_ID
 from supervisor.state import State
 
 
@@ -208,6 +212,17 @@ def _submit(args: argparse.Namespace, cfg: Config, state: State) -> dict[str, An
         f"Run `codex-supervisor-axi poll {result['job_id']}`.",
         "If the transport closes, rerun submit with the same --client-token or run catch-up.",
     ]
+    if result.get("reattached"):
+        record_transport_incident(
+            state,
+            run_id=args.run_id,
+            task_id=args.task_id,
+            job_id=str(result.get("job_id") or ""),
+            client_token=args.client_token,
+            incident_type="same_client_token_reattach",
+            interface="axi",
+            details={"status": result.get("status"), "recovery_point": result.get("recovery_point")},
+        )
     return result
 
 
@@ -225,6 +240,17 @@ def _catch_up(args: argparse.Namespace, cfg: Config, state: State) -> dict[str, 
         run_id=args.run_id,
         last_event_id=args.last_event_id,
         limit=args.limit,
+    )
+    record_transport_incident(
+        state,
+        run_id=args.run_id,
+        incident_type="catch_up_invoked",
+        interface="axi",
+        details={
+            "last_event_id": args.last_event_id,
+            "limit": args.limit,
+            "returned_count": result.get("count"),
+        },
     )
     result["help"] = [
         f"Run `codex-supervisor-axi catch-up {args.run_id} --last-event-id {result['next_event_id']}`.",
@@ -352,9 +378,23 @@ def _proposal_from_run_events(state: State, *, run_id: str, proposal_id: str) ->
 
 
 def _lessons(args: argparse.Namespace, _cfg: Config, state: State) -> dict[str, Any]:
+    backfilled: list[dict[str, Any]] = []
+    if getattr(args, "backfill_ops", False):
+        backfilled = backfill_operational_lessons(state)
+    task_class = getattr(args, "task_class", None)
+    gate = getattr(args, "gate", None)
+    if task_class or gate:
+        lessons = state.query_supervisor_lessons(
+            task_class=task_class or "",
+            gate=gate or "",
+            limit=args.limit,
+        )
+    else:
+        lessons = state.list_supervisor_lessons(limit=args.limit)
     return {
         "status": "ok",
-        "lessons": state.list_supervisor_lessons(limit=args.limit),
+        "backfilled": backfilled,
+        "lessons": lessons,
         "help": ["Use --fields task_class,gate,taxonomy_code,remediation for more detail."],
     }
 
@@ -362,8 +402,63 @@ def _lessons(args: argparse.Namespace, _cfg: Config, state: State) -> dict[str, 
 def _trends(args: argparse.Namespace, _cfg: Config, state: State) -> dict[str, Any]:
     return {
         "status": "ok",
-        "trends": state.query_quality_trends(task_class=args.task_class, gate=args.gate),
+        "trends": query_quality_trends(state, task_class=args.task_class, gate=args.gate),
         "help": ["Use --json for exact metric fields."],
+    }
+
+
+def _doctor(_args: argparse.Namespace, _cfg: Config, state: State) -> dict[str, Any]:
+    now = int(time.time())
+    runtime_events = state.read_events_since(SUPERVISOR_RUNTIME_RUN_ID, after_event_id=0, limit=10_000)
+    latest_health: dict[str, dict[str, Any]] = {}
+    for event in runtime_events:
+        if event["kind"] != "supervisor_subsystem_health":
+            continue
+        payload = event["payload"] if isinstance(event["payload"], dict) else {}
+        subsystem = str(payload.get("subsystem") or "")
+        if subsystem:
+            latest_health[subsystem] = payload
+
+    leases = [dict(row) for row in state.list_dual_agent_workflow_job_leases()]
+    stale_leases = [
+        row for row in leases
+        if row.get("lease_expires_at") is None or int(row.get("lease_expires_at") or 0) <= now
+    ]
+    experiments = state.list_autoresearch_experiment_queue(limit=10_000)
+    drafts = [row for row in experiments if str(row.get("status") or "") == "draft"]
+    runnable = [row for row in experiments if str(row.get("status") or "") == "runnable"]
+    pending_proposals = [
+        event for event in state.read_events_since("policy_evolution", after_event_id=0, limit=10_000)
+        if event["kind"] in {"autoresearch_policy_proposal_created", "autoresearch_policy_rollback_proposal_drafted"}
+        and str((event["payload"] or {}).get("status") or "draft") in {"draft", "pending"}
+    ]
+
+    daemon_seen = bool(latest_health)
+    runner_seen = "autoresearch_runner" in latest_health
+    audit_seen = "weekly_p11_audit" in latest_health
+    healthy = daemon_seen and not stale_leases and runner_seen and audit_seen
+    help_lines = [
+        "Run `launchctl kickstart -k gui/$(id -u)/com.sam.codex-supervisor` if daemon_alive=false.",
+        "Run `codex-supervisor-workflow-dispatcher --config ~/.codex-supervisor/config.yaml` if dispatcher leases are stale.",
+        "Check daemon logs at /tmp/codex-supervisor.err if AutoResearch or weekly P11 ticks are overdue.",
+    ]
+    return {
+        "status": "ok",
+        "doctor_status": "healthy" if healthy else "degraded",
+        "daemon_alive": daemon_seen,
+        "dispatcher": {
+            "active_lease_count": len(leases),
+            "stale_lease_count": len(stale_leases),
+            "stale_job_ids": [str(row.get("job_id")) for row in stale_leases],
+        },
+        "autoresearch_runner": latest_health.get("autoresearch_runner", {"status": "missing"}),
+        "weekly_p11_audit": latest_health.get("weekly_p11_audit", {"status": "missing"}),
+        "open_draft_count": len(drafts),
+        "runnable_count": len(runnable),
+        "pending_proposal_count": len(pending_proposals),
+        "observational_only": True,
+        "gate_authority": "unchanged",
+        "help": help_lines,
     }
 
 
@@ -425,10 +520,15 @@ def _build_parser() -> argparse.ArgumentParser:
 
     lessons = subparsers.add_parser("lessons")
     lessons.add_argument("--limit", type=int, default=20)
+    lessons.add_argument("--task-class")
+    lessons.add_argument("--gate")
+    lessons.add_argument("--backfill-ops", action="store_true")
 
     trends = subparsers.add_parser("trends")
     trends.add_argument("--task-class")
     trends.add_argument("--gate")
+
+    subparsers.add_parser("doctor")
 
     experiments = subparsers.add_parser("experiments")
     experiment_subparsers = experiments.add_subparsers(
@@ -472,10 +572,13 @@ def main(argv: list[str] | None = None) -> int:
             payload = _lessons(args, cfg, state)
         elif args.command == "trends":
             payload = _trends(args, cfg, state)
+        elif args.command == "doctor":
+            payload = _doctor(args, cfg, state)
         elif args.command == "experiments":
             payload = _experiments(args, cfg, state)
         else:
             raise ValueError(f"unknown command: {args.command}")
+        _record_axi_format_metric_if_needed(state, args=args, payload=payload, json_output=args.json_output, fields=fields)
         _emit(payload, json_output=args.json_output, fields=fields)
         return 0
     except Exception as e:
@@ -494,6 +597,39 @@ def main(argv: list[str] | None = None) -> int:
         }
         _emit(payload, json_output=json_output, fields=fields)
         return 1
+
+
+def _record_axi_format_metric_if_needed(
+    state: State,
+    *,
+    args: argparse.Namespace,
+    payload: dict[str, Any],
+    json_output: bool,
+    fields: tuple[str, ...] | None,
+) -> None:
+    if getattr(args, "command", None) not in {"poll", "status"}:
+        return
+    run_id = str(payload.get("run_id") or "")
+    if not run_id:
+        return
+    rendered = (
+        json.dumps(redact(payload), indent=2, sort_keys=True) + "\n"
+        if json_output else _format_toon(redact(payload), fields=fields)
+    )
+    state.write_event(
+        run_id=run_id,
+        source="supervisor",
+        kind="supervisor_axi_format_metric",
+        payload={
+            "schema_version": "supervisor-axi-format-metric/v1",
+            "format": "json" if json_output else "toon",
+            "turns": 1,
+            "bytes": len(rendered.encode("utf-8")),
+            "poll_loops": 1,
+            "observational_only": True,
+            "gate_authority": "unchanged",
+        },
+    )
 
 
 if __name__ == "__main__":

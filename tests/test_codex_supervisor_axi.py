@@ -401,6 +401,143 @@ def test_axi_fields_lessons_and_trends_are_read_only_observational(capsys, tmp_p
     assert after_events == before_events
 
 
+def test_transport_incident_events_are_written_from_public_axi_and_mcp_boundaries(capsys, tmp_path):
+    config = _config_path(tmp_path)
+    submit_args = [
+        "--config",
+        str(config),
+        "--json",
+        "submit",
+        "--cwd",
+        str(tmp_path),
+        "--task-id",
+        "workflow-1",
+        "--run-id",
+        "workflow-run",
+        "--intent",
+        "measure transport incidents",
+        "--client-token",
+        "transport-token",
+    ]
+
+    assert axi.main(submit_args) == 0
+    first = json.loads(capsys.readouterr().out)
+    assert axi.main(submit_args) == 0
+    _second = json.loads(capsys.readouterr().out)
+    assert axi.main(["--config", str(config), "--json", "poll", first["job_id"]]) == 0
+    _poll = json.loads(capsys.readouterr().out)
+    assert axi.main(["--config", str(config), "--json", "catch-up", "workflow-run"]) == 0
+    _catch_up = json.loads(capsys.readouterr().out)
+
+    state = State(str(tmp_path / "state.db"))
+    events = state.read_events_since("workflow-run", after_event_id=0, limit=100)
+    incidents = [
+        event["payload"]["incident_type"]
+        for event in events
+        if event["kind"] == "transport_incident_observed"
+    ]
+    assert "same_client_token_reattach" in incidents
+    assert "non_terminal_poll" in incidents
+    assert "catch_up_invoked" in incidents
+
+
+def test_axi_doctor_reports_health_and_degraded_help_without_writes(capsys, tmp_path):
+    config = _config_path(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    before_events = state._conn.execute("SELECT COUNT(*) AS count FROM events").fetchone()["count"]
+
+    assert axi.main(["--config", str(config), "--json", "doctor"]) == 0
+    degraded = json.loads(capsys.readouterr().out)
+
+    assert degraded["doctor_status"] == "degraded"
+    assert degraded["daemon_alive"] is False
+    assert degraded["open_draft_count"] == 0
+    assert degraded["runnable_count"] == 0
+    assert degraded["pending_proposal_count"] == 0
+    assert any("launchctl kickstart" in line for line in degraded["help"])
+    after_events = state._conn.execute("SELECT COUNT(*) AS count FROM events").fetchone()["count"]
+    assert after_events == before_events
+
+    state.write_event(
+        run_id="supervisor_runtime",
+        source="supervisor_runtime",
+        kind="supervisor_subsystem_health",
+        payload={"subsystem": "autoresearch_runner", "status": "healthy", "reason": "tick_completed"},
+    )
+    state.write_event(
+        run_id="supervisor_runtime",
+        source="supervisor_runtime",
+        kind="supervisor_subsystem_health",
+        payload={"subsystem": "weekly_p11_audit", "status": "healthy", "reason": "tick_completed"},
+    )
+
+    assert axi.main(["--config", str(config), "--json", "doctor"]) == 0
+    healthy = json.loads(capsys.readouterr().out)
+    assert healthy["doctor_status"] == "healthy"
+    assert healthy["dispatcher"]["stale_lease_count"] == 0
+
+
+def test_visual_evidence_not_required_with_matched_terms_writes_override_event(capsys, tmp_path):
+    config = _config_path(tmp_path)
+
+    assert axi.main([
+        "--config",
+        str(config),
+        "--json",
+        "submit",
+        "--cwd",
+        str(tmp_path),
+        "--task-id",
+        "workflow-visual",
+        "--run-id",
+        "workflow-visual-run",
+        "--intent",
+        "Backend-only task mentioning visual screenshot evidence.",
+        "--visual-evidence-policy",
+        "not_required",
+        "--client-token",
+        "visual-token",
+    ]) == 0
+    _submit = json.loads(capsys.readouterr().out)
+
+    state = State(str(tmp_path / "state.db"))
+    events = state.read_events_since("workflow-visual-run", after_event_id=0, limit=100)
+    overrides = [event for event in events if event["kind"] == "visual_evidence_override_asserted"]
+    assert len(overrides) == 1
+    assert {"screenshot", "visual"} <= set(overrides[0]["payload"]["matched_terms"])
+
+    assert axi.main([
+        "--config",
+        str(config),
+        "--json",
+        "submit",
+        "--cwd",
+        str(tmp_path),
+        "--task-id",
+        "workflow-no-visual",
+        "--run-id",
+        "workflow-no-visual-run",
+        "--intent",
+        "Pure backend metrics task.",
+        "--visual-evidence-policy",
+        "not_required",
+        "--client-token",
+        "no-visual-token",
+    ]) == 0
+    _submit = json.loads(capsys.readouterr().out)
+    events = state.read_events_since("workflow-no-visual-run", after_event_id=0, limit=100)
+    assert [event for event in events if event["kind"] == "visual_evidence_override_asserted"] == []
+
+
+def test_supervisor_launchd_plist_covers_daemon_and_dispatcher():
+    script = Path("scripts/run-daemon.sh").read_text(encoding="utf-8")
+    plist = Path("com.sam.codex-supervisor.plist").read_text(encoding="utf-8")
+
+    assert "daemon.py" in script
+    assert "codex-supervisor-workflow-dispatcher" in script
+    assert "scripts/run-daemon.sh" in plist
+
+
 def test_axi_structured_errors_stdout_exit_one(capsys, tmp_path):
     config = _config_path(tmp_path)
 
