@@ -220,8 +220,21 @@ def workflow_visual_evidence_policy(
     task_id: str,
     user_facing: bool,
     planning_artifacts: list[dict[str, Any]],
+    operator_policy: str = "auto",
 ) -> dict[str, Any]:
-    """Decide whether outcome review must include Browser/Computer Use evidence."""
+    """Decide whether outcome review must include Browser/Computer Use evidence.
+
+    r-2026-06-11 (wall seven, vela2-pending-write-dispatch-table outcome
+    block): the auto term-scan fires on backend-only tasks whose planning
+    bundles inevitably contain words like "slack" or "calendar" — there was
+    no way for the operator to assert "no live-surface claim is made here".
+    operator_policy is the tri-state override: "auto" (default, unchanged
+    behavior), "required" (force visual evidence), "not_required" (operator
+    asserts backend-only; matched terms are still reported so the outcome
+    reviewer can audit and object to the assertion).
+    """
+    if operator_policy not in ("auto", "required", "not_required"):
+        operator_policy = "auto"
     matched_terms = set(_matched_visual_terms(intent))
     artifact_matches: list[dict[str, str]] = []
     for artifact in planning_artifacts:
@@ -243,10 +256,27 @@ def workflow_visual_evidence_policy(
             "terms": ", ".join(terms),
         })
 
+    if operator_policy == "required":
+        return {
+            "required": True,
+            "source": "explicit_operator_required",
+            "operator_policy": operator_policy,
+            "matched_terms": sorted(matched_terms),
+            "artifact_matches": artifact_matches,
+        }
+    if operator_policy == "not_required":
+        return {
+            "required": False,
+            "source": "explicit_operator_not_required",
+            "operator_policy": operator_policy,
+            "matched_terms": sorted(matched_terms),
+            "artifact_matches": artifact_matches,
+        }
     if user_facing:
         return {
             "required": True,
             "source": "explicit_user_facing",
+            "operator_policy": operator_policy,
             "matched_terms": sorted(matched_terms),
             "artifact_matches": artifact_matches,
         }
@@ -254,12 +284,14 @@ def workflow_visual_evidence_policy(
         return {
             "required": True,
             "source": "auto_live_surface",
+            "operator_policy": operator_policy,
             "matched_terms": sorted(matched_terms),
             "artifact_matches": artifact_matches,
         }
     return {
         "required": False,
         "source": "not_user_facing",
+        "operator_policy": operator_policy,
         "matched_terms": [],
         "artifact_matches": [],
     }

@@ -7358,3 +7358,46 @@ async def test_workflow_resume_prompt_tool_is_state_derived(tmp_path):
     assert prompt["blocker"]["gate"] == "prd_review"
     assert prompt["artifact_output_dir"].endswith("docs/dual-agent/workflow-1")
     assert "read_gate_transcript" in prompt["prompt"]
+
+
+def test_visual_evidence_operator_not_required_overrides_term_scan(tmp_path):
+    # r-2026-06-11 wall seven: backend-only bundles inevitably contain terms
+    # like "slack"; the operator must be able to assert no live-surface claim.
+    artifact = tmp_path / "prd.md"
+    artifact.write_text("Slack dispatch table, calendar adapter, end-to-end tests.")
+    policy = workflow_visual_evidence_policy(
+        intent="Backend pending-write dispatch table for slack and calendar.",
+        task_id="vela2-pending-write-dispatch-table",
+        user_facing=False,
+        planning_artifacts=[{"kind": "prd", "path": str(artifact)}],
+        operator_policy="not_required",
+    )
+    assert policy["required"] is False
+    assert policy["source"] == "explicit_operator_not_required"
+    # Matched terms stay visible so the outcome reviewer can audit the claim.
+    assert "slack" in policy["matched_terms"]
+
+
+def test_visual_evidence_operator_required_forces_evidence_without_terms():
+    policy = workflow_visual_evidence_policy(
+        intent="Plain backend refactor with no surface words.",
+        task_id="vela2-anything",
+        user_facing=False,
+        planning_artifacts=[],
+        operator_policy="required",
+    )
+    assert policy["required"] is True
+    assert policy["source"] == "explicit_operator_required"
+
+
+def test_visual_evidence_auto_default_behavior_is_unchanged(tmp_path):
+    artifact = tmp_path / "prd.md"
+    artifact.write_text("This bundle mentions slack explicitly.")
+    policy = workflow_visual_evidence_policy(
+        intent="Backend work.",
+        task_id="vela2-anything",
+        user_facing=False,
+        planning_artifacts=[{"kind": "prd", "path": str(artifact)}],
+    )
+    assert policy["required"] is True
+    assert policy["source"] == "auto_live_surface"

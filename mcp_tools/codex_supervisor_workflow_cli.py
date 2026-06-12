@@ -28,6 +28,7 @@ WORKFLOW_KEYS = {
     "run_id",
     "intent",
     "user_facing",
+    "visual_evidence_policy",
     "max_rounds_per_gate",
     "quality",
     "budget_usd",

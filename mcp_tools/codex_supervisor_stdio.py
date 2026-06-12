@@ -560,6 +560,7 @@ class CodexSupervisorMcpAPI:
         run_id: str,
         intent: str,
         user_facing: bool = False,
+        visual_evidence_policy: str = "auto",
         max_rounds_per_gate: int = 5,
         quality: str = "best",
         budget_usd: float = 100.0,
@@ -670,6 +671,7 @@ class CodexSupervisorMcpAPI:
             task_id=task_id,
             user_facing=user_facing,
             planning_artifacts=gate_artifacts,
+            operator_policy=visual_evidence_policy,
         )
         effective_user_facing = bool(visual_policy["required"])
         workflow_route = select_workflow_route(
