@@ -4534,14 +4534,23 @@ def _workflow_gate_instruction(
     intent: str,
     corrective_context: str,
 ) -> str:
+    if gate == "execution":
+        gate_action_lines = [
+            "Implement this gate against the accepted source artifacts and return a typed dual_agent_outcome.",
+            "Edit the worktree as needed; use decisions/objections to report whether execution is complete, blocked, or failed.",
+        ]
+    else:
+        gate_action_lines = [
+            "Review this gate against the current source artifacts and return a typed dual_agent_outcome.",
+            "Use decisions/objections to say whether the gate should accept, revise, or deny.",
+        ]
     lines = [
         f"Supervisor-owned workflow gate: {gate}.",
         "",
         "Intent:",
         intent.strip(),
         "",
-        "Review this gate against the current source artifacts and return a typed dual_agent_outcome.",
-        "Use decisions/objections to say whether the gate should accept, revise, or deny.",
+        *gate_action_lines,
     ]
     if corrective_context:
         lines.extend([
