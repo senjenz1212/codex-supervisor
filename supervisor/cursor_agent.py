@@ -29,7 +29,7 @@ CursorFailureClassification = Literal[
     "reviewer_access_denied",
 ]
 ReviewerOutputMode = Literal["litellm_structured", "cursor_sdk"]
-DEFAULT_STRUCTURED_REVIEWER_MODEL = "claude-fable-5"
+DEFAULT_STRUCTURED_REVIEWER_MODEL = "claude-opus-4-6"
 DEFAULT_STRUCTURED_REVIEWER_MAX_TOKENS = 4096
 
 

@@ -63,7 +63,7 @@ supervisor:
   stall_threshold_s: 90
   nudge_cooldown_s: 300
   reviewer_unavailable_policy: escalate
-  reviewer_model: claude-fable-5
+  reviewer_model: claude-opus-4-6
   reviewer_output_mode: litellm_structured
   reviewer_max_tokens: 4096
   # Permissive by default: clean reviewer accepts still advance until eval data
