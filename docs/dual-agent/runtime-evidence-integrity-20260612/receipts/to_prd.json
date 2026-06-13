@@ -1,0 +1,10 @@
+{
+  "receipt_id": "skill_run:runtime-evidence-integrity-20260612:to_prd",
+  "kind": "skill_run",
+  "skill": "prd-to-tdd",
+  "stage": "to_prd",
+  "status": "passed",
+  "artifact": "docs/dual-agent/runtime-evidence-integrity-20260612/source/prd.md",
+  "sha256": "9631cf5c53ff437a2419eedbc7a4acb7872fb9274b61127baf0fee618e37a8aa",
+  "notes": "Created PRD promise contracts for baseline anchoring, TDD execution coverage, era trends, poll failure boundaries, Postgres parity, format metrics, and advisory lesson non-authority."
+}

@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "241f37f4274c49eb1cc62c08b310746e136271d87ed585b38e4b668c124d82d6",
+  "git": {
+    "diff_bytes": 99912,
+    "diff_sha256": "e8f832ab86e890701d989dee29ab0ea2d807e87d4a5868723b39d86e5f74c038",
+    "diff_stat": "docs/LOOP.md                                       |   1 +\n .../demo-manifest.json                             |   2 +-\n mcp_tools/codex_supervisor_axi.py                  |   4 +-\n mcp_tools/codex_supervisor_stdio.py                | 166 ++++++-\n supervisor/lessons.py                              |   5 +\n supervisor/quality_trends.py                       |  81 +++-\n supervisor/runtime_evidence.py                     | 518 ++++++++++++++++++++-\n tests/test_codex_supervisor_axi.py                 | 135 +++++-\n tests/test_codex_supervisor_mcp_stdio.py           |  76 ++-\n tests/test_dual_agent_workflow_driver.py           | 389 +++++++++++++++-\n tests/test_postgres_ledger_lane.py                 |  78 ++++\n tests/test_quality_trends.py                       |  59 ++-\n tests/test_runtime_evidence.py                     | 344 ++++++++++++++\n tests/test_supervisor_lessons.py                   |  18 +\n tests/test_workflow_gate_instruction.py            |  71 ++-\n 15 files changed, 1893 insertions(+), 54 deletions(-)",
+    "head": "e2be3c7",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "e2be3c7",
+    "status_short": "M docs/LOOP.md\n M docs/dual-agent/auto-evolution-loop-proof-20260610/demo-manifest.json\n M mcp_tools/codex_supervisor_axi.py\n M mcp_tools/codex_supervisor_stdio.py\n M supervisor/lessons.py\n M supervisor/quality_trends.py\n M supervisor/runtime_evidence.py\n M tests/test_codex_supervisor_axi.py\n M tests/test_codex_supervisor_mcp_stdio.py\n M tests/test_dual_agent_workflow_driver.py\n M tests/test_postgres_ledger_lane.py\n M tests/test_quality_trends.py\n M tests/test_runtime_evidence.py\n M tests/test_supervisor_lessons.py\n M tests/test_workflow_gate_instruction.py\n?? .scratch/auto-evolution-loop-proof-20260610/\n?? .scratch/auto-evolution-loop-wiring-20260611/\n?? .scratch/autoresearch-policy-diff-derivation-20260610/\n?? .scratch/axi-cli-detached-dispatcher-20260610/\n?? .scratch/cocreate-8236-resume-conflict-merge-prompt.md\n?? .scratch/cocreate-checkpoint-files-only-dual-agent-prompt.md\n?? .scratch/cocreate-ckpt-tdd-review-corrective-input.md\n?? .scratch/cocreate-global-purge-dual-agent-prompt.md\n?? .scratch/cocreate-untitled-scene-checkpoint-parity-prompt.md\n?? .scratch/defense-in-depth-hardening-20260610/\n?? .scratch/loop-closeout-measurement-20260611/\n?? .scratch/policy-overlay-liveness-20260610-repair/\n?? .scratch/runtime-evidence-integrity-amended-run-id.txt\n?? .scratch/runtime-evidence-integrity-clean-run.txt\n?? docs/axi-principles-evidence-review-20260611.md\n?? docs/dual-agent/live-cursor-sdk-probe-20260610-135900/\n?? docs/dual-agent/live-cursor-sdk-probe-20260610-140228/\n?? docs/dual-agent/loop-closeout-measurement-20260611/\n?? docs/dual-agent/runtime-evidence-integrity-20260612/\n?? docs/dual-agent/supervisor-flow-autoresearch-run-20260609/\n?? docs/eevee-lessons-for-supervisor-20260612.md\n?? docs/supervisor-auto-evolution-loop-program-20260610.md\n?? docs/supervisor-auto-improve-gap-analysis-20260610.md\n?? docs/supervisor-autoevolution-readiness-20260610.md\n?? docs/supervisor-axi-vs-mcp-analysis-20260610.md\n?? docs/supervisor-improvement-audit-20260609.md\n?? docs/supervisor-improvement-completion-prompts-20260610.md\n?? docs/supervisor-improvement-prompts-coverage-20260609.md\n?? docs/supervisor-improvement-prompts-finish-20260610.md"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "c8a2fb5bae07f6ec2feb2ab2aa0561d63b446a2bd294ad424d6d8fc02439687a",
+    "implementation_plan": "c0f88fd08003c3680e0a414315b2340e5fa7db2c8282c6fabc32ca9b1c59acb8",
+    "issues": "2917fa51091fc95586b16c709674f10fb80e9ef1a171ddf6b16a09309ff50533",
+    "prd": "9631cf5c53ff437a2419eedbc7a4acb7872fb9274b61127baf0fee618e37a8aa",
+    "tdd_plan": "fe8b9c7372ff795c9e5efbb262dbecfaca686b146667361db06610b49cb63c97"
+  },
+  "status": "captured"
+}

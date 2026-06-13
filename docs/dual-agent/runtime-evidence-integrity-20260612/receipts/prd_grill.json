@@ -1,0 +1,10 @@
+{
+  "receipt_id": "skill_run:runtime-evidence-integrity-20260612:prd_grill",
+  "kind": "skill_run",
+  "skill": "prd-to-tdd",
+  "stage": "prd_grill",
+  "status": "passed",
+  "artifact": "docs/dual-agent/runtime-evidence-integrity-20260612/source/grill-findings.md",
+  "sha256": "94f840a3b74861fdc6af0b652794ff67161eff662cf150e33445582894bd9c9d",
+  "notes": "Resolved PRD grill findings around public-boundary coverage and operator-visible trend output."
+}

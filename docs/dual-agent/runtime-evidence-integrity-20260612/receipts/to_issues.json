@@ -1,0 +1,10 @@
+{
+  "receipt_id": "skill_run:runtime-evidence-integrity-20260612:to_issues",
+  "kind": "skill_run",
+  "skill": "prd-to-tdd",
+  "stage": "to_issues",
+  "status": "passed",
+  "artifact": "docs/dual-agent/runtime-evidence-integrity-20260612/source/issues.md",
+  "sha256": "2917fa51091fc95586b16c709674f10fb80e9ef1a171ddf6b16a09309ff50533",
+  "notes": "Sliced PRD promises into five independently testable implementation issues with first public-boundary RED tests."
+}

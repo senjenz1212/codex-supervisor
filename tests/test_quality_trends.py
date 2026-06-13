@@ -137,6 +137,14 @@ def test_quality_trends_record_run_computes_first_pass_revision_rounds_and_time_
         "false_accept_denominator": 0,
         "false_accept_rate": 0.0,
         "transport_incident_count": 0,
+        "transport_incident_by_era": {},
+        "transport_run_count_by_era": {"mcp": 1},
+        "transport_incident_mcp_count": 0,
+        "transport_incident_axi_count": 0,
+        "transport_incident_mcp_rate": 0.0,
+        "transport_incident_axi_rate": 0.0,
+        "transport_incident_mcp_share": 0.0,
+        "transport_incident_axi_share": 0.0,
         "visual_evidence_override_count": 0,
         "format_toon_turns": 0,
         "format_json_turns": 0,
@@ -200,7 +208,7 @@ def test_transport_incident_metrics_compute_from_seeded_ledger_and_backfill_idem
 def test_axi_trends_surfaces_transport_incident_and_era_rates_read_only(tmp_path):
     state = State(str(tmp_path / "state.db"))
     state.upsert_quality_trend_row(
-        run_id="trend-run",
+        run_id="trend-run-mcp",
         task_id="trend-task",
         task_class="source_change",
         gate="execution",
@@ -209,16 +217,61 @@ def test_axi_trends_surfaces_transport_incident_and_era_rates_read_only(tmp_path
         revision_rounds=0,
         time_to_accepted_outcome_s=1.0,
         details={
-            "transport_incidents": {"total_count": 2, "by_era": {"mcp": 1, "axi": 1}},
+            "transport_incidents": {"total_count": 1, "by_era": {"mcp": 1}, "run_era": "mcp"},
             "format_ab": {"toon": {"turns": 2, "bytes": 100}, "json": {"turns": 3, "bytes": 150}},
+        },
+    )
+    state.upsert_quality_trend_row(
+        run_id="trend-run-axi",
+        task_id="trend-task",
+        task_class="source_change",
+        gate="execution",
+        accepted=True,
+        first_pass_accepted=True,
+        revision_rounds=0,
+        time_to_accepted_outcome_s=1.0,
+        details={
+            "transport_incidents": {"total_count": 3, "by_era": {"axi": 3}, "run_era": "axi"},
         },
     )
     before_rows = state.count_quality_trend_rows()
     rows = query_quality_trends(state, task_class="source_change", gate="execution")
-    assert rows[0]["transport_incident_count"] == 2
+    assert rows[0]["transport_incident_count"] == 4
+    assert rows[0]["transport_incident_by_era"] == {"axi": 3, "mcp": 1}
+    assert rows[0]["transport_incident_mcp_count"] == 1
+    assert rows[0]["transport_incident_axi_count"] == 3
+    assert rows[0]["transport_run_count_by_era"] == {"axi": 1, "mcp": 1}
+    assert rows[0]["transport_incident_mcp_rate"] == 1.0
+    assert rows[0]["transport_incident_axi_rate"] == 3.0
+    assert rows[0]["transport_incident_mcp_share"] == 0.25
+    assert rows[0]["transport_incident_axi_share"] == 0.75
     assert rows[0]["format_toon_turns"] == 2
     assert rows[0]["format_json_bytes"] == 150
     assert state.count_quality_trend_rows() == before_rows
+
+
+def test_axi_trends_uses_legacy_incident_eras_as_denominators(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    state.upsert_quality_trend_row(
+        run_id="legacy-trend-run",
+        task_id="trend-task",
+        task_class="source_change",
+        gate="execution",
+        accepted=True,
+        first_pass_accepted=True,
+        revision_rounds=0,
+        time_to_accepted_outcome_s=1.0,
+        details={
+            "transport_incidents": {"total_count": 4, "by_era": {"mcp": 1, "axi": 3}},
+        },
+    )
+
+    rows = query_quality_trends(state, task_class="source_change", gate="execution")
+
+    assert rows[0]["transport_incident_by_era"] == {"axi": 3, "mcp": 1}
+    assert rows[0]["transport_run_count_by_era"] == {"axi": 1, "mcp": 1}
+    assert rows[0]["transport_incident_mcp_rate"] == 1.0
+    assert rows[0]["transport_incident_axi_rate"] == 3.0
 
 
 def test_format_ab_instrumentation_persists_toon_and_json_poll_loop_metrics(tmp_path):

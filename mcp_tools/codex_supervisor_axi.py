@@ -31,7 +31,7 @@ DEFAULT_CONFIG = str(Path.home() / ".codex-supervisor" / "config.yaml")
 DEFAULT_JOB_FIELDS = ("job_id", "status", "recovery_point", "task_id")
 DEFAULT_EVENT_FIELDS = ("event_id", "kind", "ts", "payload")
 DEFAULT_GATE_FIELDS = ("gate", "status", "attempt_count", "task_id")
-DEFAULT_TREND_FIELDS = ("task_class", "gate", "run_count", "first_pass_acceptance_rate")
+DEFAULT_TREND_FIELDS = ("task_class", "gate", "transport_incident_by_era", "transport_run_count_by_era")
 DEFAULT_LESSON_FIELDS = ("task_class", "gate", "taxonomy_code", "root_cause")
 DEFAULT_EXPERIMENT_FIELDS = ("experiment_id", "status", "task_class", "gate")
 
@@ -227,7 +227,7 @@ def _submit(args: argparse.Namespace, cfg: Config, state: State) -> dict[str, An
 
 
 def _poll(args: argparse.Namespace, cfg: Config, state: State) -> dict[str, Any]:
-    result = _api(cfg, state).poll_dual_agent_workflow_job(job_id=args.job_id)
+    result = _api(cfg, state).poll_dual_agent_workflow_job(job_id=args.job_id, interface="axi")
     result["help"] = [
         f"Run `codex-supervisor-axi catch-up {result.get('run_id', '<run_id>')}` for the event tail.",
         "Ensure `codex-supervisor-workflow-dispatcher` is running if the job stays reserved.",

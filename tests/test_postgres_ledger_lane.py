@@ -17,6 +17,7 @@ from supervisor.postgres_state import (
     PostgresState,
 )
 from supervisor.dual_agent_workflow import workflow_resume_prompt
+from supervisor.quality_trends import query_quality_trends, record_quality_trends_for_run, record_transport_incident
 from supervisor.state import State, is_postgres_state_dsn
 
 
@@ -368,6 +369,83 @@ def test_postgres_supervisor_lesson_record_query_and_list(postgres_state):
     assert postgres_state.query_supervisor_lessons(task_class="large", gate="execution") == [lesson]
     assert postgres_state.query_supervisor_lessons(task_class="small", gate="execution") == []
     assert postgres_state.list_supervisor_lessons() == [lesson]
+
+
+def test_postgres_trends_details_and_incident_aggregation_match_sqlite(postgres_state):
+    row = postgres_state.upsert_quality_trend_row(
+        run_id="trend-row-run",
+        task_id="trend-task",
+        task_class="source_change",
+        gate="execution",
+        accepted=True,
+        first_pass_accepted=True,
+        revision_rounds=0,
+        time_to_accepted_outcome_s=3.0,
+        details={
+            "transport_incidents": {
+                "total_count": 2,
+                "by_era": {"mcp": 1, "axi": 1},
+            },
+            "format_ab": {
+                "toon": {"turns": 1, "bytes": 80},
+                "json": {"turns": 2, "bytes": 200},
+            },
+        },
+    )
+    [stored] = postgres_state.list_quality_trend_rows(
+        task_class="source_change",
+        gate="execution",
+    )
+    [summary] = query_quality_trends(
+        postgres_state,
+        task_class="source_change",
+        gate="execution",
+    )
+
+    assert row["details"]["transport_incidents"]["by_era"] == {"mcp": 1, "axi": 1}
+    assert stored["details"]["format_ab"]["json"]["bytes"] == 200
+    assert summary["transport_incident_by_era"] == {"axi": 1, "mcp": 1}
+    assert summary["transport_incident_axi_rate"] == 0.5
+    assert summary["format_toon_turns"] == 1
+
+    postgres_state.write_event(
+        run_id="incident-run",
+        source="test",
+        kind="dual_agent_workflow_route",
+        payload={"task_id": "trend-task", "lesson_task_class": "source_change"},
+    )
+    record_transport_incident(
+        postgres_state,
+        run_id="incident-run",
+        task_id="trend-task",
+        incident_type="poll_failure",
+        interface="axi",
+    )
+    postgres_state.write_event(
+        run_id="incident-run",
+        source="test",
+        kind="dual_agent_gate_result",
+        payload={
+            "task_id": "trend-task",
+            "gate": "outcome_review",
+            "status": "accepted",
+            "supervisor_final_status": "accepted",
+            "claude_gate_status": "accepted",
+            "attempts": 1,
+            "outcome": {"decision": "accept", "changed_files": [], "tests": []},
+        },
+    )
+
+    events = postgres_state.read_events_since("incident-run", after_event_id=0, limit=10)
+    assert any(
+        event["kind"] == "transport_incident_observed"
+        and event["payload"]["incident_type"] == "poll_failure"
+        for event in events
+    )
+    [aggregated] = record_quality_trends_for_run(postgres_state, run_id="incident-run")
+    assert aggregated["details"]["transport_incidents"]["total_count"] == 1
+    assert aggregated["details"]["transport_incidents"]["by_type"]["poll_failure"] == 1
+    assert aggregated["details"]["transport_incidents"]["by_era"]["axi"] == 1
 
 
 def test_postgres_multi_writer_double_submit_creates_one_job(postgres_state, tmp_path):

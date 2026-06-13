@@ -420,7 +420,11 @@ def _server(
     from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
     from supervisor.dual_agent_runner import build_lead_replay_stdout
 
-    _write_good_workflow_source_artifacts(tmp_path)
+    _write_good_workflow_source_artifacts(
+        tmp_path,
+        tests=tests,
+        gate_outcomes=gate_outcomes,
+    )
     state = State(str(tmp_path / "state.db"))
 
     def fake_runner(argv, **kwargs):
@@ -529,12 +533,30 @@ def _runtime_test_item_is_path(value: str) -> bool:
 def _runtime_fixture_content(relative: str) -> str:
     path = str(relative)
     if path.endswith(".py") and "/test" in path:
-        return "def test_runtime_fixture_materialized():\n    assert True\n"
+        return "\n\n".join(
+            f"def {name}():\n    assert True"
+            for name in _runtime_fixture_test_names(path)
+        ) + "\n"
     if path.endswith(".py"):
         return "RUNTIME_FIXTURE = True\n"
     if path.endswith(".json"):
         return "{}\n"
     return "runtime fixture artifact\n"
+
+
+def _runtime_fixture_test_name(relative: str) -> str:
+    return _runtime_fixture_test_names(relative)[0]
+
+
+def _runtime_fixture_test_names(relative: str) -> list[str]:
+    stem = Path(str(relative)).stem
+    if stem.startswith("test_") and re.match(r"^test_[A-Za-z_][A-Za-z0-9_]*$", stem):
+        safe = stem[len("test_"):]
+    else:
+        safe = re.sub(r"[^A-Za-z0-9_]+", "_", stem).strip("_") or "runtime_fixture"
+    if safe and safe[0].isdigit():
+        safe = f"case_{safe}"
+    return [f"test_{safe}", f"test_{safe}_extra"]
 
 
 def _gate_from_argv(argv) -> str:
@@ -543,7 +565,13 @@ def _gate_from_argv(argv) -> str:
     return match.group(1) if match else ""
 
 
-def _write_good_workflow_source_artifacts(tmp_path: Path, task_id: str = "workflow-1") -> None:
+def _write_good_workflow_source_artifacts(
+    tmp_path: Path,
+    task_id: str = "workflow-1",
+    *,
+    tests: list[str] | None = None,
+    gate_outcomes: dict[str, dict] | None = None,
+) -> None:
     source_dir = tmp_path / "docs" / "dual-agent" / task_id / "source"
     source_dir.mkdir(parents=True, exist_ok=True)
     mapping = {
@@ -554,13 +582,119 @@ def _write_good_workflow_source_artifacts(tmp_path: Path, task_id: str = "workfl
         "tdd_grill_findings": "grill-findings-tdd.md",
         "implementation_plan": "implementation-plan.md",
     }
+    execution_test_items = _workflow_execution_test_items(tests=tests, gate_outcomes=gate_outcomes)
     for key, filename in mapping.items():
         kind = "grill_findings" if key == "tdd_grill_findings" else key
         target = source_dir / filename
-        target.write_text(
-            (FIXTURE_ROOT / kind / "good.md").read_text(encoding="utf-8"),
-            encoding="utf-8",
+        if key == "tdd_plan":
+            target.write_text(
+                _workflow_source_tdd_fixture_text(execution_test_items),
+                encoding="utf-8",
+            )
+        elif key == "implementation_plan":
+            target.write_text(
+                _workflow_source_implementation_plan_fixture_text(execution_test_items),
+                encoding="utf-8",
+            )
+        else:
+            target.write_text(
+                (FIXTURE_ROOT / kind / "good.md").read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+
+
+def _workflow_execution_test_items(
+    *,
+    tests: list[str] | None,
+    gate_outcomes: dict[str, dict] | None,
+) -> list[str]:
+    if gate_outcomes and "execution" in gate_outcomes and "tests" in gate_outcomes["execution"]:
+        return [str(item) for item in (gate_outcomes["execution"].get("tests") or [])]
+    if tests is None:
+        return ["tests/test_runtime_evidence_fixture.py"]
+    return [str(item) for item in tests]
+
+
+def _workflow_source_tdd_fixture_text(test_items: list[str]) -> str:
+    test_names = _tdd_fixture_test_names(test_items)
+    if not test_names:
+        test_cases = "No runtime test cases declared for this fixture route."
+    else:
+        test_cases = "\n\n".join(
+            "\n".join([
+                f"### {name}",
+                "Maps to: ISS-1, P1",
+                "RED: Runtime evidence must execute this named test.",
+                "GREEN: The supervisor records the runtime-native test receipt.",
+            ])
+            for name in test_names
         )
+    return "\n".join([
+        "# Good TDD Fixture",
+        "",
+        "## Public Boundary",
+        "",
+        "Use `collect_runtime_evidence` through `run_dual_agent_workflow`.",
+        "",
+        "## Test Cases",
+        "",
+        test_cases,
+        "",
+        "## RED/GREEN Plan",
+        "",
+        "RED: Missing runtime execution for a named TDD test blocks the gate.",
+        "GREEN: Executed runtime-native test receipts satisfy the floor.",
+        "",
+    ])
+
+
+def _workflow_source_implementation_plan_fixture_text(test_items: list[str]) -> str:
+    test_names = _tdd_fixture_test_names(test_items)
+    if test_names:
+        traceability = "\n".join(f"- P1 -> {name}" for name in test_names)
+    else:
+        traceability = "- P1 -> no runtime test cases declared for this fixture route"
+    return "\n".join([
+        "# Good Implementation Plan Fixture",
+        "",
+        "## Files / Modules To Touch",
+        "",
+        "- `supervisor/runtime_evidence.py`",
+        "- `mcp_tools/codex_supervisor_stdio.py`",
+        "- `tests/test_dual_agent_workflow_driver.py`",
+        "",
+        "## Risks",
+        "",
+        "- Runtime evidence can miss generated source TDD artifacts.",
+        "- Runtime evidence can over-credit partial pytest execution.",
+        "- Fixture routes can accidentally claim tests that were not run.",
+        "",
+        "## Traceability",
+        "",
+        traceability,
+        "",
+        "## Steps",
+        "",
+        "1. Validate generated planning artifacts before invoking the lead.",
+        "2. Run the declared tests through supervisor runtime evidence.",
+        "3. Compare runtime-native receipts to the declared TDD names.",
+        "",
+    ])
+
+
+def _tdd_fixture_test_names(test_items: list[str]) -> list[str]:
+    names: list[str] = []
+    for item in test_items:
+        explicit = re.findall(r"::(test_[A-Za-z_][A-Za-z0-9_]*)", item)
+        if explicit:
+            names.extend(explicit)
+            continue
+        for token in str(item).split():
+            cleaned = token.split("::", 1)[0].split(":", 1)[0]
+            if cleaned.endswith(".py"):
+                names.extend(_runtime_fixture_test_names(cleaned))
+                break
+    return list(dict.fromkeys(names))
 
 
 def _init_runtime_git_repo(path: Path) -> None:
@@ -581,6 +715,167 @@ def _write_runtime_file(root: Path, relative: str, text: str) -> None:
     path = root / relative
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
+
+
+def test_runtime_baseline_execution_round_one_persists_marker(tmp_path, monkeypatch):
+    import mcp_tools.codex_supervisor_stdio as stdio
+    from supervisor.dual_agent_artifacts import default_dual_agent_artifact_dir
+
+    monkeypatch.setattr(
+        stdio,
+        "capture_runtime_baseline",
+        lambda cwd: {
+            "status": "passed",
+            "head": "execution-head-1",
+            "captured_at": 123,
+            "reason": "git_head_captured",
+        },
+    )
+
+    baseline = stdio._runtime_baseline_for_gate(
+        str(tmp_path),
+        task_id="workflow-1",
+        gate="execution",
+        round_index=1,
+    )
+
+    marker = default_dual_agent_artifact_dir(tmp_path, "workflow-1") / "runtime-baseline-execution.json"
+    assert baseline["head"] == "execution-head-1"
+    assert json.loads(marker.read_text(encoding="utf-8"))["head"] == "execution-head-1"
+
+
+def test_runtime_baseline_execution_later_rounds_do_not_overwrite_marker(tmp_path, monkeypatch):
+    import mcp_tools.codex_supervisor_stdio as stdio
+    from supervisor.dual_agent_artifacts import default_dual_agent_artifact_dir
+
+    marker = default_dual_agent_artifact_dir(tmp_path, "workflow-1") / "runtime-baseline-execution.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(
+        json.dumps({"head": "execution-head-1", "captured_at": 111, "task_id": "workflow-1"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        stdio,
+        "capture_runtime_baseline",
+        lambda cwd: {
+            "status": "passed",
+            "head": "execution-head-2",
+            "captured_at": 222,
+            "reason": "git_head_captured",
+        },
+    )
+
+    baseline = stdio._runtime_baseline_for_gate(
+        str(tmp_path),
+        task_id="workflow-1",
+        gate="execution",
+        round_index=2,
+    )
+
+    assert baseline["head"] == "execution-head-2"
+    assert json.loads(marker.read_text(encoding="utf-8"))["head"] == "execution-head-1"
+
+
+def test_runtime_baseline_outcome_review_reuses_persisted_marker_across_api_instance(tmp_path, monkeypatch):
+    import mcp_tools.codex_supervisor_stdio as stdio
+    from supervisor.dual_agent_artifacts import default_dual_agent_artifact_dir
+
+    marker = default_dual_agent_artifact_dir(tmp_path, "workflow-1") / "runtime-baseline-execution.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(
+        json.dumps({"head": "execution-head-1", "captured_at": 111, "task_id": "workflow-1"}),
+        encoding="utf-8",
+    )
+
+    def capture_should_not_run(cwd):
+        raise AssertionError("outcome_review should read the persisted execution marker")
+
+    monkeypatch.setattr(stdio, "capture_runtime_baseline", capture_should_not_run)
+
+    baseline = stdio._runtime_baseline_for_gate(
+        str(tmp_path),
+        task_id="workflow-1",
+        gate="outcome_review",
+        round_index=1,
+    )
+
+    assert baseline == {
+        "status": "passed",
+        "head": "execution-head-1",
+        "captured_at": 111,
+        "reason": "persisted_execution_baseline",
+    }
+
+
+def test_runtime_baseline_outcome_review_missing_marker_falls_back_fresh(tmp_path, monkeypatch):
+    import mcp_tools.codex_supervisor_stdio as stdio
+
+    monkeypatch.setattr(
+        stdio,
+        "capture_runtime_baseline",
+        lambda cwd: {
+            "status": "passed",
+            "head": "fresh-outcome-head",
+            "captured_at": 333,
+            "reason": "git_head_captured",
+        },
+    )
+
+    baseline = stdio._runtime_baseline_for_gate(
+        str(tmp_path),
+        task_id="workflow-1",
+        gate="outcome_review",
+        round_index=1,
+    )
+
+    assert baseline["head"] == "fresh-outcome-head"
+    assert baseline["reason"] == "fresh_fallback_no_persisted_execution_baseline"
+
+
+def test_runtime_baseline_marker_write_failure_visible_as_outcome_fallback(tmp_path, monkeypatch):
+    import mcp_tools.codex_supervisor_stdio as stdio
+    from supervisor.dual_agent_artifacts import default_dual_agent_artifact_dir
+    from supervisor.runtime_evidence import collect_runtime_evidence
+
+    (tmp_path / "README.md").write_text("baseline\n", encoding="utf-8")
+    _init_runtime_git_repo(tmp_path)
+    original_write_text = Path.write_text
+
+    def write_text_with_marker_failure(self, *args, **kwargs):
+        if self.name == "runtime-baseline-execution.json":
+            raise OSError("simulated marker write failure")
+        return original_write_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", write_text_with_marker_failure)
+
+    execution_baseline = stdio._runtime_baseline_for_gate(
+        str(tmp_path),
+        task_id="workflow-1",
+        gate="execution",
+        round_index=1,
+    )
+    marker = default_dual_agent_artifact_dir(tmp_path, "workflow-1") / "runtime-baseline-execution.json"
+    outcome_baseline = stdio._runtime_baseline_for_gate(
+        str(tmp_path),
+        task_id="workflow-1",
+        gate="outcome_review",
+        round_index=1,
+    )
+    evidence = collect_runtime_evidence(
+        cwd=tmp_path,
+        task_id="workflow-1",
+        run_id="workflow-run",
+        gate="outcome_review",
+        round_index=1,
+        baseline=outcome_baseline,
+        outcome_payload={"changed_files": [], "claims": [], "decisions": []},
+    )
+    baseline_receipt = next(receipt for receipt in evidence.receipts if receipt["kind"] == "runtime_baseline")
+
+    assert execution_baseline["status"] == "passed"
+    assert not marker.exists()
+    assert outcome_baseline["reason"] == "fresh_fallback_no_persisted_execution_baseline"
+    assert baseline_receipt["reason"] == "fresh_fallback_no_persisted_execution_baseline"
 
 
 def _write_reviewer_panel_calibration(
@@ -835,6 +1130,88 @@ async def test_execution_gate_accepts_code_change_with_supervisor_runtime_diff_r
         and receipt["status"] == "present"
         for receipt in runtime_receipts
     )
+
+
+@pytest.mark.asyncio
+async def test_execution_gate_uses_generated_source_tdd_for_runtime_coverage(tmp_path):
+    test_file = "tests/test_generated_tdd_floor.py"
+    filtered_command = f"python -m pytest {test_file} -q -k test_generated_tdd_runs"
+    server, _state = _server(
+        tmp_path,
+        claims=["implemented", "tests passed"],
+        changed_files=["supervisor/dual_agent_workflow.py"],
+        tests=[filtered_command],
+        test_status="passed",
+    )
+    source_tdd = tmp_path / "docs" / "dual-agent" / "workflow-1" / "source" / "tdd.md"
+    source_tdd.write_text(
+        "\n".join([
+            "# Runtime Floor TDD",
+            "",
+            "## Public Boundary",
+            "Use the generated workflow source TDD artifact.",
+            "",
+            "## Test Cases",
+            "",
+            "### test_generated_tdd_runs",
+            "RED: The generated source TDD names this test.",
+            "GREEN: The supervisor validates it was actually executed.",
+            "",
+            "### test_generated_tdd_missing",
+            "RED: A filtered pytest command must not count this test as executed.",
+            "GREEN: The supervisor reports tdd_tests_not_executed.",
+            "",
+        ]),
+        encoding="utf-8",
+    )
+    _write_runtime_file(
+        tmp_path,
+        test_file,
+        "\n".join([
+            "def test_generated_tdd_runs():",
+            "    assert True",
+            "",
+            "def test_generated_tdd_missing():",
+            "    assert True",
+            "",
+        ]),
+    )
+
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Implement the accepted code change.",
+        max_rounds_per_gate=1,
+        task_complexity="trivial",
+        cursor_review=False,
+        tool_receipts=[],
+    ))
+
+    assert result["status"] == "blocked"
+    assert result["current_gate"] == "execution"
+    runtime_probe = result["final_gate_result"]["runtime_evidence"]["probe"]
+    assert runtime_probe["status"] == "red"
+    assert "tdd_tests_not_executed" in runtime_probe["details"]["failures"]
+    coverage_receipt = next(
+        receipt
+        for receipt in result["final_gate_result"]["runtime_evidence"]["receipts"]
+        if receipt["kind"] == "runtime_tdd_test_coverage"
+    )
+    assert coverage_receipt["tdd_artifacts"] == [{
+        "kind": "tdd_plan",
+        "path": str(source_tdd),
+    }]
+    assert coverage_receipt["declared_test_names"] == [
+        "test_generated_tdd_runs",
+        "test_generated_tdd_missing",
+    ]
+    assert coverage_receipt["executed_nodeids"] == [
+        f"{test_file}::test_generated_tdd_runs"
+    ]
+    assert set(coverage_receipt["missing_nodeids"]) == {
+        f"{test_file}::test_generated_tdd_missing",
+    }
 
 
 @pytest.mark.asyncio

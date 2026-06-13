@@ -358,6 +358,24 @@ def test_injection_hash_is_stable_and_handoff_reconstructs_block(tmp_path):
     assert sha256(packet.injected_lesson_block.encode("utf-8")).hexdigest() == first["block_sha256"]
 
 
+def test_lesson_injection_says_lessons_are_not_standalone_gate_decisions() -> None:
+    lesson = {
+        "lesson_id": "lesson-step-repeat",
+        "task_class": "large",
+        "gate": "issues_review",
+        "taxonomy_code": "FM-1.3",
+        "root_cause": "Step repetition",
+        "remediation": "Change the plan or evidence before retrying; do not repeat the same handoff.",
+        "source_run_id": "source-run",
+        "created_at": 20,
+    }
+
+    injection = build_lesson_injection([lesson])
+
+    assert "do not block, revise, deny, or accept solely because a lesson exists" in injection["block"]
+    assert "current evidence proves the same handoff, artifacts, and source state" in injection["block"]
+
+
 def test_reviewer_disagreement_and_sequence_failures_produce_lessons(tmp_path):
     state = State(str(tmp_path / "state.db"))
     handoff_payload = {

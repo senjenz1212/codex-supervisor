@@ -93,6 +93,7 @@ from supervisor.no_mistakes import (
     build_no_mistakes_command,
     run_no_mistakes_validation,
 )
+from supervisor.planning_validator import _tdd_test_names
 from supervisor.autoresearch.policy_evolution import (
     approve_policy_proposal,
     create_policy_evolution_proposals,
@@ -216,6 +217,59 @@ def _rollback_pointer_payload(
     if rollback_pointer_path:
         return _read_json_mapping(_resolve_repo_path(repo_root, rollback_pointer_path))
     raise ValueError("rollback_pointer or rollback_pointer_path is required")
+
+
+def _runtime_baseline_for_gate(
+    cwd: str,
+    *,
+    task_id: str,
+    gate: str,
+    round_index: int,
+) -> dict[str, Any]:
+    """Pre-execution-anchored runtime baseline (wall eight, r-2026-06-12).
+
+    Execution gates capture a fresh head each round and persist the round-1
+    head to the task artifact dir; outcome_review gates reuse the persisted
+    pre-execution head so committed execution work is visible in the diff —
+    including when a parked task resumes at outcome_review in a new process.
+    Fallback to a fresh capture is journaled through the baseline reason.
+    """
+    marker = default_dual_agent_artifact_dir(cwd, task_id) / "runtime-baseline-execution.json"
+    if gate == "execution":
+        baseline = capture_runtime_baseline(cwd)
+        if round_index == 1 and baseline.get("status") == "passed":
+            try:
+                marker.parent.mkdir(parents=True, exist_ok=True)
+                marker.write_text(
+                    json.dumps(
+                        {
+                            "head": baseline.get("head"),
+                            "captured_at": baseline.get("captured_at"),
+                            "task_id": task_id,
+                        },
+                        indent=2,
+                        sort_keys=True,
+                    ),
+                    encoding="utf-8",
+                )
+            except OSError:
+                pass  # persistence is best-effort; execution itself is unaffected
+        return baseline
+    try:
+        persisted = json.loads(marker.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        persisted = None
+    if isinstance(persisted, dict) and persisted.get("head"):
+        return {
+            "status": "passed",
+            "head": str(persisted["head"]),
+            "captured_at": persisted.get("captured_at"),
+            "reason": "persisted_execution_baseline",
+        }
+    fallback = capture_runtime_baseline(cwd)
+    if fallback.get("status") == "passed":
+        fallback["reason"] = "fresh_fallback_no_persisted_execution_baseline"
+    return fallback
 
 
 class CodexSupervisorMcpAPI:
@@ -1227,8 +1281,24 @@ class CodexSupervisorMcpAPI:
             gate_rounds: list[GateRound] = []
             for round_index in range(1, max_rounds + 1):
                 attempts = round_index
+                # r-2026-06-12 (wall eight, B event 701068 / D event 708767):
+                # capturing a fresh baseline per round means outcome_review
+                # baselines AFTER the execution commit, so the declared
+                # changed_files can never appear in the diff and
+                # runtime_changed_files_missing_from_diff is structural.
+                # Execution captures fresh per round (its rounds re-anchor
+                # honestly) and PERSISTS the round-1 head to the artifact dir;
+                # outcome_review REUSES that persisted pre-execution head —
+                # including across process restarts, which is how parked
+                # tasks resume — and only falls back to a fresh capture
+                # (journaled via reason) when no persisted baseline exists.
                 runtime_baseline = (
-                    capture_runtime_baseline(cwd)
+                    _runtime_baseline_for_gate(
+                        cwd,
+                        task_id=task_id,
+                        gate=str(gate),
+                        round_index=round_index,
+                    )
                     if gate in {"execution", "outcome_review"}
                     else None
                 )
@@ -1241,6 +1311,7 @@ class CodexSupervisorMcpAPI:
                         corrective_context=corrective_context,
                         lesson_task_class=str(workflow_route["lesson_task_class"]),
                         cwd=cwd,
+                        planning_artifacts=gate_artifacts,
                         lesson_snapshot=workflow_route.get("lesson_snapshot")
                         if isinstance(workflow_route.get("lesson_snapshot"), dict)
                         else None,
@@ -1303,6 +1374,7 @@ class CodexSupervisorMcpAPI:
                         outcome_payload=payload.get("outcome")
                         if isinstance(payload.get("outcome"), dict)
                         else {},
+                        planning_artifacts=gate_artifacts,
                         test_timeout_s=min(timeout_s, 120),
                     )
                     current_runtime_receipt_ids = _trusted_runtime_receipt_ids(
@@ -1730,6 +1802,8 @@ class CodexSupervisorMcpAPI:
                     )
                     else _workflow_round_objection(
                         payload=payload,
+                        runtime_probe=asdict(runtime_probe) if runtime_probe is not None else None,
+                        deliverable_probe=asdict(deliverable_probe) if deliverable_probe is not None else None,
                         claim_probe=claim_payload,
                         cursor_review=cursor_payload,
                         round_index=round_index,
@@ -2778,7 +2852,7 @@ class CodexSupervisorMcpAPI:
             payload["result"] = result
         return redact(payload)
 
-    def poll_dual_agent_workflow_job(self, *, job_id: str) -> dict[str, Any]:
+    def poll_dual_agent_workflow_job(self, *, job_id: str, interface: str = "mcp") -> dict[str, Any]:
         row = self.state.get_dual_agent_workflow_job(job_id=job_id)
         if row is None:
             record_transport_incident(
@@ -2786,7 +2860,7 @@ class CodexSupervisorMcpAPI:
                 run_id="supervisor_transport_incidents",
                 job_id=job_id,
                 incident_type="poll_failure",
-                interface="mcp",
+                interface=interface,
                 details={"reason": "missing_job"},
             )
             return {"job_id": job_id, "status": "missing"}
@@ -2838,7 +2912,7 @@ class CodexSupervisorMcpAPI:
                 task_id=row["task_id"],
                 job_id=job_id,
                 incident_type="non_terminal_poll",
-                interface="mcp",
+                interface=interface,
                 details={"status": status, "recovery_point": row["recovery_point"]},
             )
         return redact(payload)
@@ -3738,6 +3812,7 @@ class CodexSupervisorMcpAPI:
         corrective_context: str,
         lesson_task_class: str,
         cwd: str | Path = ".",
+        planning_artifacts: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None = None,
         lesson_snapshot: dict[str, Any] | None = None,
         round_index: int,
     ) -> dict[str, Any]:
@@ -3745,6 +3820,7 @@ class CodexSupervisorMcpAPI:
             gate=gate,
             intent=intent,
             corrective_context=corrective_context,
+            tdd_test_names=_workflow_tdd_test_names(cwd, planning_artifacts or ()),
         )
         policy_overlay = load_policy_overlay(cwd)
         overlay_payload = policy_overlay.to_event_payload(gate=gate)
@@ -4770,6 +4846,7 @@ def _workflow_gate_instruction(
     gate: str,
     intent: str,
     corrective_context: str,
+    tdd_test_names: list[str] | tuple[str, ...] = (),
 ) -> str:
     if gate == "execution":
         gate_action_lines = [
@@ -4795,7 +4872,49 @@ def _workflow_gate_instruction(
             "Corrective context from the previous round:",
             corrective_context.strip(),
         ])
+    if gate in {"execution", "outcome_review"} and tdd_test_names:
+        lines.extend([
+            "",
+            "Runtime TDD test contract:",
+            (
+                "The supervisor runtime floor will verify that every TDD-named test below "
+                "appears in supervisor-generated runtime evidence. Include tests/commands "
+                "covering all of them in outcome.tests. Explicitly skipped tests must carry "
+                "a recorded pytest skip reason; silently absent tests block the gate."
+            ),
+            (
+                "Use only canonical gate decisions (`accept`, `revise`, or `deny`). Do not "
+                "return `accept_with_residual`; if test execution needs verification, declare "
+                "the exact pytest commands/nodeids and let the supervisor runtime floor rerun them."
+            ),
+            *[f"- {name}" for name in tdd_test_names],
+        ])
     return "\n".join(lines)
+
+
+def _workflow_tdd_test_names(
+    cwd: str | Path,
+    planning_artifacts: list[dict[str, Any]] | tuple[dict[str, Any], ...],
+) -> list[str]:
+    cwd_path = Path(cwd).expanduser().resolve()
+    names: list[str] = []
+    for artifact in planning_artifacts:
+        kind = str(artifact.get("kind") or "").strip().lower().replace("-", "_")
+        path_text = str(artifact.get("path") or "").strip()
+        if not path_text:
+            continue
+        if kind not in {"tdd", "tdd_plan", "test_plan"}:
+            file_name = Path(path_text).name.lower()
+            if kind or "tdd" not in file_name or "grill" in file_name:
+                continue
+        path = Path(path_text).expanduser()
+        if not path.is_absolute():
+            path = cwd_path / path
+        try:
+            names.extend(_tdd_test_names(path.read_text(encoding="utf-8")))
+        except (OSError, UnicodeError):
+            continue
+    return list(dict.fromkeys(names))
 
 
 def _lesson_task_class(
@@ -4884,6 +5003,8 @@ def _cursor_review_instruction(
 def _workflow_round_objection(
     *,
     payload: dict[str, Any],
+    runtime_probe: dict[str, Any] | None,
+    deliverable_probe: dict[str, Any] | None,
     claim_probe: dict[str, Any] | None,
     cursor_review: dict[str, Any] | None,
     round_index: int,
@@ -4892,6 +5013,10 @@ def _workflow_round_objection(
     if payload.get("status") == "blocked" and not _payload_blocked_for_lead_revision(payload):
         escalation = payload.get("escalation") if isinstance(payload.get("escalation"), dict) else {}
         return str(escalation.get("reason") or "gate blocked")
+    if runtime_probe is not None and runtime_probe.get("status") != "green":
+        return _probe_failure_objection("runtime_evidence_failed", runtime_probe)
+    if deliverable_probe is not None and deliverable_probe.get("status") != "green":
+        return _probe_failure_objection("deliverable_evidence_failed", deliverable_probe)
     if claim_probe is not None and claim_probe.get("status") != "green":
         return str(claim_probe.get("reason") or "claim verification failed")
     if cursor_review is not None:
@@ -4986,6 +5111,39 @@ def _workflow_round_objection(
     if round_index >= max_rounds:
         return "max_rounds_per_gate exhausted without both agents accepting"
     return "agents have not both accepted yet; revise and continue"
+
+
+def _probe_failure_objection(prefix: str, probe: dict[str, Any]) -> str:
+    details = probe.get("details") if isinstance(probe.get("details"), dict) else {}
+    parts = [prefix]
+    reason = str(probe.get("reason") or "").strip()
+    if reason:
+        parts.append(reason)
+    failures = details.get("failures") if isinstance(details.get("failures"), list) else []
+    failure_text = ", ".join(str(item) for item in failures if str(item).strip())
+    if failure_text:
+        parts.append(f"failures={failure_text}")
+    coverage = details.get("tdd_test_coverage") if isinstance(details.get("tdd_test_coverage"), dict) else {}
+    missing = coverage.get("missing_nodeids") if isinstance(coverage.get("missing_nodeids"), list) else []
+    if missing:
+        preview = ", ".join(str(item) for item in missing[:10])
+        suffix = f" (+{len(missing) - 10} more)" if len(missing) > 10 else ""
+        parts.append(f"missing_nodeids[{len(missing)}]={preview}{suffix}")
+    unresolved = coverage.get("unresolved_names") if isinstance(coverage.get("unresolved_names"), list) else []
+    if unresolved:
+        preview = ", ".join(str(item) for item in unresolved[:10])
+        suffix = f" (+{len(unresolved) - 10} more)" if len(unresolved) > 10 else ""
+        parts.append(f"unresolved_tdd_names[{len(unresolved)}]={preview}{suffix}")
+    skipped_without_reason = (
+        coverage.get("skipped_without_reason_nodeids")
+        if isinstance(coverage.get("skipped_without_reason_nodeids"), list)
+        else []
+    )
+    if skipped_without_reason:
+        preview = ", ".join(str(item) for item in skipped_without_reason[:10])
+        suffix = f" (+{len(skipped_without_reason) - 10} more)" if len(skipped_without_reason) > 10 else ""
+        parts.append(f"skipped_without_reason[{len(skipped_without_reason)}]={preview}{suffix}")
+    return ": ".join(parts)
 
 
 def _payload_blocked_for_lead_revision(payload: dict[str, Any]) -> bool:

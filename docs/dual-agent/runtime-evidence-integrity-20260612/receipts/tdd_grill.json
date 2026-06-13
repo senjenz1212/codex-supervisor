@@ -1,0 +1,10 @@
+{
+  "receipt_id": "skill_run:runtime-evidence-integrity-20260612:tdd_grill",
+  "kind": "skill_run",
+  "skill": "prd-to-tdd",
+  "stage": "tdd_grill",
+  "status": "passed",
+  "artifact": "docs/dual-agent/runtime-evidence-integrity-20260612/source/grill-findings-tdd.md",
+  "sha256": "c8a2fb5bae07f6ec2feb2ab2aa0561d63b446a2bd294ad424d6d8fc02439687a",
+  "notes": "Verified the TDD plan preserves PRD promises and includes unresolved-name, TOON output, public-boundary poll coverage, and advisory lesson non-authority."
+}

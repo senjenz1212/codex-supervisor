@@ -1,0 +1,52 @@
+[
+  {
+    "artifact": "docs/dual-agent/runtime-evidence-integrity-20260612/source/prd.md",
+    "kind": "skill_run",
+    "notes": "Created PRD promise contracts for baseline anchoring, TDD execution coverage, era trends, poll failure boundaries, Postgres parity, format metrics, and advisory lesson non-authority.",
+    "receipt_id": "skill_run:runtime-evidence-integrity-20260612:to_prd",
+    "sha256": "9631cf5c53ff437a2419eedbc7a4acb7872fb9274b61127baf0fee618e37a8aa",
+    "skill": "prd-to-tdd",
+    "stage": "to_prd",
+    "status": "passed"
+  },
+  {
+    "artifact": "docs/dual-agent/runtime-evidence-integrity-20260612/source/grill-findings.md",
+    "kind": "skill_run",
+    "notes": "Resolved PRD grill findings around public-boundary coverage and operator-visible trend output.",
+    "receipt_id": "skill_run:runtime-evidence-integrity-20260612:prd_grill",
+    "sha256": "94f840a3b74861fdc6af0b652794ff67161eff662cf150e33445582894bd9c9d",
+    "skill": "prd-to-tdd",
+    "stage": "prd_grill",
+    "status": "passed"
+  },
+  {
+    "artifact": "docs/dual-agent/runtime-evidence-integrity-20260612/source/issues.md",
+    "kind": "skill_run",
+    "notes": "Sliced PRD promises into five independently testable implementation issues with first public-boundary RED tests.",
+    "receipt_id": "skill_run:runtime-evidence-integrity-20260612:to_issues",
+    "sha256": "2917fa51091fc95586b16c709674f10fb80e9ef1a171ddf6b16a09309ff50533",
+    "skill": "prd-to-tdd",
+    "stage": "to_issues",
+    "status": "passed"
+  },
+  {
+    "artifact": "docs/dual-agent/runtime-evidence-integrity-20260612/source/tdd.md",
+    "kind": "skill_run",
+    "notes": "Named each new test required by the slice so the introduced TDD execution floor can verify this slice's own test coverage, including advisory lesson non-authority.",
+    "receipt_id": "skill_run:runtime-evidence-integrity-20260612:tdd",
+    "sha256": "fe8b9c7372ff795c9e5efbb262dbecfaca686b146667361db06610b49cb63c97",
+    "skill": "prd-to-tdd",
+    "stage": "tdd",
+    "status": "passed"
+  },
+  {
+    "artifact": "docs/dual-agent/runtime-evidence-integrity-20260612/source/grill-findings-tdd.md",
+    "kind": "skill_run",
+    "notes": "Verified the TDD plan preserves PRD promises and includes unresolved-name, TOON output, public-boundary poll coverage, and advisory lesson non-authority.",
+    "receipt_id": "skill_run:runtime-evidence-integrity-20260612:tdd_grill",
+    "sha256": "c8a2fb5bae07f6ec2feb2ab2aa0561d63b446a2bd294ad424d6d8fc02439687a",
+    "skill": "prd-to-tdd",
+    "stage": "tdd_grill",
+    "status": "passed"
+  }
+]

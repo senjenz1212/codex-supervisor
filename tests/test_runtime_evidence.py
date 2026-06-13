@@ -18,6 +18,22 @@ def _write_test(path: Path, source: str) -> None:
     path.write_text(source, encoding="utf-8")
 
 
+def _init_git_repo(path: Path) -> str:
+    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=path, check=True)
+    _write_test(path / "README.md", "baseline\n")
+    subprocess.run(["git", "add", "README.md"], cwd=path, check=True)
+    subprocess.run(["git", "commit", "-m", "baseline"], cwd=path, check=True, capture_output=True, text=True)
+    return subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
 def test_bare_pytest_test_name_resolves_to_unique_nodeid(tmp_path: Path) -> None:
     _write_test(
         tmp_path / "tests" / "test_runtime_target.py",
@@ -343,3 +359,331 @@ def test_runtime_test_environment_unavailable_is_red(tmp_path: Path) -> None:
     assert receipt is not None
     assert receipt["status"] == "failed"
     assert receipt["results"][0]["reason"] == "runtime_test_environment_unavailable"
+
+
+def test_runtime_evidence_fails_when_tdd_named_tests_are_not_executed(tmp_path: Path) -> None:
+    baseline_head = _init_git_repo(tmp_path)
+    _write_test(
+        tmp_path / "tests" / "test_tdd_floor.py",
+        "def test_tdd_floor_executed():\n"
+        "    assert True\n\n"
+        "def test_tdd_floor_missing():\n"
+        "    assert True\n",
+    )
+    tdd = tmp_path / "docs" / "dual-agent" / "task" / "source" / "tdd.md"
+    _write_test(
+        tdd,
+        "## Test Cases\n\n"
+        "### test_tdd_floor_executed\n\n"
+        "Maps to: P1\nRED: fail\nGREEN: pass\n\n"
+        "### test_tdd_floor_missing\n\n"
+        "Maps to: P1\nRED: fail\nGREEN: pass\n",
+    )
+
+    result = collect_runtime_evidence(
+        cwd=tmp_path,
+        task_id="task",
+        run_id="run",
+        gate="execution",
+        round_index=1,
+        baseline={"status": "passed", "head": baseline_head, "reason": "git_head_captured"},
+        outcome_payload={
+            "tests": ["test_tdd_floor_executed"],
+            "claims": ["tests passed"],
+            "decisions": ["accept"],
+        },
+        planning_artifacts=[{"kind": "tdd_plan", "path": str(tdd)}],
+        runner=subprocess.run,
+    )
+
+    assert result.probe.status == "red"
+    assert "tdd_tests_not_executed" in result.probe.details["failures"]
+    coverage = result.probe.details["tdd_test_coverage"]
+    assert coverage["missing_nodeids"] == [
+        "tests/test_tdd_floor.py::test_tdd_floor_missing"
+    ]
+
+
+def test_runtime_evidence_does_not_count_pytest_filtered_out_tdd_names(tmp_path: Path) -> None:
+    baseline_head = _init_git_repo(tmp_path)
+    _write_test(
+        tmp_path / "tests" / "test_tdd_floor.py",
+        "def test_tdd_floor_one():\n"
+        "    assert True\n\n"
+        "def test_tdd_floor_two():\n"
+        "    assert True\n",
+    )
+    tdd = tmp_path / "docs" / "dual-agent" / "task" / "source" / "tdd.md"
+    _write_test(
+        tdd,
+        "## Test Cases\n\n"
+        "### test_tdd_floor_one\n\n"
+        "Maps to: P1\nRED: fail\nGREEN: pass\n\n"
+        "### test_tdd_floor_two\n\n"
+        "Maps to: P1\nRED: fail\nGREEN: pass\n",
+    )
+
+    result = collect_runtime_evidence(
+        cwd=tmp_path,
+        task_id="task",
+        run_id="run",
+        gate="execution",
+        round_index=1,
+        baseline={"status": "passed", "head": baseline_head, "reason": "git_head_captured"},
+        outcome_payload={
+            "tests": ["python -m pytest tests/test_tdd_floor.py -k test_tdd_floor_one -q"],
+            "claims": ["tests passed"],
+            "decisions": ["accept"],
+        },
+        planning_artifacts=[{"kind": "tdd_plan", "path": str(tdd)}],
+        runner=subprocess.run,
+    )
+
+    assert result.probe.status == "red"
+    assert "tdd_tests_not_executed" in result.probe.details["failures"]
+    coverage = result.probe.details["tdd_test_coverage"]
+    assert coverage["executed_nodeids"] == [
+        "tests/test_tdd_floor.py::test_tdd_floor_one"
+    ]
+    assert coverage["missing_nodeids"] == [
+        "tests/test_tdd_floor.py::test_tdd_floor_two",
+    ]
+
+
+def test_runtime_evidence_does_not_count_skipped_pytest_tdd_names(tmp_path: Path) -> None:
+    baseline_head = _init_git_repo(tmp_path)
+    _write_test(
+        tmp_path / "tests" / "test_tdd_floor.py",
+        "import pytest\n\n"
+        "def test_tdd_floor_executed():\n"
+        "    assert True\n\n"
+        "@pytest.mark.skip(reason='postgres unavailable')\n"
+        "def test_tdd_floor_skipped():\n"
+        "    assert True\n",
+    )
+    tdd = tmp_path / "docs" / "dual-agent" / "task" / "source" / "tdd.md"
+    _write_test(
+        tdd,
+        "## Test Cases\n\n"
+        "### test_tdd_floor_executed\n\n"
+        "Maps to: P1\nRED: fail\nGREEN: pass\n\n"
+        "### test_tdd_floor_skipped\n\n"
+        "Maps to: P1\nRED: fail\nGREEN: pass\n",
+    )
+
+    result = collect_runtime_evidence(
+        cwd=tmp_path,
+        task_id="task",
+        run_id="run",
+        gate="outcome_review",
+        round_index=1,
+        baseline={"status": "passed", "head": baseline_head, "reason": "git_head_captured"},
+        outcome_payload={
+            "tests": ["tests/test_tdd_floor.py"],
+            "claims": ["tests passed"],
+            "decisions": ["accept"],
+        },
+        planning_artifacts=[{"kind": "tdd_plan", "path": str(tdd)}],
+        runner=subprocess.run,
+    )
+
+    assert result.probe.status == "green"
+    assert "tdd_tests_not_executed" not in result.probe.details.get("failures", [])
+    coverage = result.probe.details["tdd_test_coverage"]
+    assert coverage["executed_nodeids"] == [
+        "tests/test_tdd_floor.py::test_tdd_floor_executed"
+    ]
+    assert coverage["missing_nodeids"] == []
+    assert coverage["skipped_nodeids"] == [
+        "tests/test_tdd_floor.py::test_tdd_floor_skipped"
+    ]
+    assert coverage["skipped_nodeid_reasons"] == {
+        "tests/test_tdd_floor.py::test_tdd_floor_skipped": "postgres unavailable"
+    }
+    test_receipt = next(receipt for receipt in result.receipts if receipt["kind"] == "test")
+    assert test_receipt["skipped_pytest_targets"] == [
+        "tests/test_tdd_floor.py::test_tdd_floor_skipped"
+    ]
+    assert test_receipt["skipped_pytest_target_reasons"] == {
+        "tests/test_tdd_floor.py::test_tdd_floor_skipped": "postgres unavailable"
+    }
+
+
+def test_runtime_evidence_does_not_count_explicit_skipped_nodeid_as_executed(tmp_path: Path) -> None:
+    baseline_head = _init_git_repo(tmp_path)
+    _write_test(
+        tmp_path / "tests" / "test_tdd_floor.py",
+        "import pytest\n\n"
+        "@pytest.mark.skip(reason='postgres unavailable')\n"
+        "def test_tdd_floor_skipped():\n"
+        "    assert True\n",
+    )
+    tdd = tmp_path / "docs" / "dual-agent" / "task" / "source" / "tdd.md"
+    _write_test(
+        tdd,
+        "## Test Cases\n\n"
+        "### test_tdd_floor_skipped\n\n"
+        "Maps to: P1\nRED: fail\nGREEN: pass\n",
+    )
+
+    result = collect_runtime_evidence(
+        cwd=tmp_path,
+        task_id="task",
+        run_id="run",
+        gate="outcome_review",
+        round_index=1,
+        baseline={"status": "passed", "head": baseline_head, "reason": "git_head_captured"},
+        outcome_payload={
+            "tests": ["tests/test_tdd_floor.py::test_tdd_floor_skipped"],
+            "claims": ["tests passed"],
+            "decisions": ["accept"],
+        },
+        planning_artifacts=[{"kind": "tdd_plan", "path": str(tdd)}],
+        runner=subprocess.run,
+    )
+
+    assert result.probe.status == "green"
+    assert "tdd_tests_not_executed" not in result.probe.details.get("failures", [])
+    coverage = result.probe.details["tdd_test_coverage"]
+    assert coverage["executed_nodeids"] == []
+    assert coverage["missing_nodeids"] == []
+    assert coverage["skipped_nodeids"] == [
+        "tests/test_tdd_floor.py::test_tdd_floor_skipped"
+    ]
+    assert coverage["skipped_nodeid_reasons"] == {
+        "tests/test_tdd_floor.py::test_tdd_floor_skipped": "postgres unavailable"
+    }
+    test_receipt = next(receipt for receipt in result.receipts if receipt["kind"] == "test")
+    assert test_receipt["executed_pytest_targets"] == []
+    assert test_receipt["skipped_pytest_targets"] == [
+        "tests/test_tdd_floor.py::test_tdd_floor_skipped"
+    ]
+    assert test_receipt["skipped_pytest_target_reasons"] == {
+        "tests/test_tdd_floor.py::test_tdd_floor_skipped": "postgres unavailable"
+    }
+
+
+def test_runtime_evidence_fails_when_skipped_tdd_name_lacks_reason(tmp_path: Path) -> None:
+    baseline_head = _init_git_repo(tmp_path)
+    _write_test(
+        tmp_path / "tests" / "test_tdd_floor.py",
+        "import pytest\n\n"
+        "@pytest.mark.skip\n"
+        "def test_tdd_floor_skipped_without_reason():\n"
+        "    assert True\n",
+    )
+    tdd = tmp_path / "docs" / "dual-agent" / "task" / "source" / "tdd.md"
+    _write_test(
+        tdd,
+        "## Test Cases\n\n"
+        "### test_tdd_floor_skipped_without_reason\n\n"
+        "Maps to: P1\nRED: fail\nGREEN: pass\n",
+    )
+
+    result = collect_runtime_evidence(
+        cwd=tmp_path,
+        task_id="task",
+        run_id="run",
+        gate="outcome_review",
+        round_index=1,
+        baseline={"status": "passed", "head": baseline_head, "reason": "git_head_captured"},
+        outcome_payload={
+            "tests": ["tests/test_tdd_floor.py::test_tdd_floor_skipped_without_reason"],
+            "claims": ["tests passed"],
+            "decisions": ["accept"],
+        },
+        planning_artifacts=[{"kind": "tdd_plan", "path": str(tdd)}],
+        runner=subprocess.run,
+    )
+
+    assert result.probe.status == "red"
+    assert "tdd_tests_not_executed" in result.probe.details["failures"]
+    assert "tdd_tests_skipped_without_reason" in result.probe.details["failures"]
+    coverage = result.probe.details["tdd_test_coverage"]
+    assert coverage["executed_nodeids"] == []
+    assert coverage["missing_nodeids"] == [
+        "tests/test_tdd_floor.py::test_tdd_floor_skipped_without_reason"
+    ]
+    assert coverage["skipped_without_reason_nodeids"] == [
+        "tests/test_tdd_floor.py::test_tdd_floor_skipped_without_reason"
+    ]
+
+
+def test_runtime_evidence_accepts_when_all_tdd_named_tests_execute(tmp_path: Path) -> None:
+    baseline_head = _init_git_repo(tmp_path)
+    _write_test(
+        tmp_path / "tests" / "test_tdd_floor.py",
+        "def test_tdd_floor_one():\n"
+        "    assert True\n\n"
+        "def test_tdd_floor_two():\n"
+        "    assert True\n",
+    )
+    tdd = tmp_path / "docs" / "dual-agent" / "task" / "source" / "tdd.md"
+    _write_test(
+        tdd,
+        "## Test Cases\n\n"
+        "### test_tdd_floor_one\n\n"
+        "Maps to: P1\nRED: fail\nGREEN: pass\n\n"
+        "### test_tdd_floor_two\n\n"
+        "Maps to: P1\nRED: fail\nGREEN: pass\n",
+    )
+
+    result = collect_runtime_evidence(
+        cwd=tmp_path,
+        task_id="task",
+        run_id="run",
+        gate="outcome_review",
+        round_index=1,
+        baseline={"status": "passed", "head": baseline_head, "reason": "git_head_captured"},
+        outcome_payload={
+            "tests": ["tests/test_tdd_floor.py"],
+            "claims": ["tests passed"],
+            "decisions": ["accept"],
+        },
+        planning_artifacts=[{"kind": "tdd_plan", "path": str(tdd)}],
+        runner=subprocess.run,
+    )
+
+    assert result.probe.status == "green"
+    coverage = result.probe.details["tdd_test_coverage"]
+    assert coverage["status"] == "passed"
+    assert coverage["missing_nodeids"] == []
+
+
+def test_runtime_evidence_fails_when_tdd_test_name_is_unresolved(tmp_path: Path) -> None:
+    baseline_head = _init_git_repo(tmp_path)
+    _write_test(
+        tmp_path / "tests" / "test_tdd_floor.py",
+        "def test_tdd_floor_present():\n"
+        "    assert True\n",
+    )
+    tdd = tmp_path / "docs" / "dual-agent" / "task" / "source" / "tdd.md"
+    _write_test(
+        tdd,
+        "## Test Cases\n\n"
+        "### test_tdd_floor_present\n\n"
+        "Maps to: P1\nRED: fail\nGREEN: pass\n\n"
+        "### test_tdd_floor_typo\n\n"
+        "Maps to: P1\nRED: fail\nGREEN: pass\n",
+    )
+
+    result = collect_runtime_evidence(
+        cwd=tmp_path,
+        task_id="task",
+        run_id="run",
+        gate="execution",
+        round_index=1,
+        baseline={"status": "passed", "head": baseline_head, "reason": "git_head_captured"},
+        outcome_payload={
+            "tests": ["tests/test_tdd_floor.py"],
+            "claims": ["tests passed"],
+            "decisions": ["accept"],
+        },
+        planning_artifacts=[{"kind": "tdd_plan", "path": str(tdd)}],
+        runner=subprocess.run,
+    )
+
+    assert result.probe.status == "red"
+    assert "tdd_test_names_unresolved" in result.probe.details["failures"]
+    coverage = result.probe.details["tdd_test_coverage"]
+    assert coverage["unresolved_names"] == ["test_tdd_floor_typo"]

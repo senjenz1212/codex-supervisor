@@ -1,0 +1,10 @@
+{
+  "receipt_id": "skill_run:runtime-evidence-integrity-20260612:tdd",
+  "kind": "skill_run",
+  "skill": "prd-to-tdd",
+  "stage": "tdd",
+  "status": "passed",
+  "artifact": "docs/dual-agent/runtime-evidence-integrity-20260612/source/tdd.md",
+  "sha256": "fe8b9c7372ff795c9e5efbb262dbecfaca686b146667361db06610b49cb63c97",
+  "notes": "Named each new test required by the slice so the introduced TDD execution floor can verify this slice's own test coverage, including advisory lesson non-authority."
+}

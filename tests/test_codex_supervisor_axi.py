@@ -6,10 +6,12 @@ from hashlib import sha256
 from pathlib import Path
 
 from mcp_tools import codex_supervisor_axi as axi
+from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
 from supervisor.autoresearch.generator import (
     AutoResearchGeneratorConfig,
     generate_autoresearch_experiment_drafts,
 )
+from supervisor.config import Config
 from supervisor.state import State
 from supervisor.workflow_job_dispatcher import WorkflowJobDispatcher
 
@@ -358,7 +360,7 @@ def test_axi_fields_lessons_and_trends_are_read_only_observational(capsys, tmp_p
         created_at=123,
     )
     state.upsert_quality_trend_row(
-        run_id="trend-run",
+        run_id="trend-run-mcp",
         task_id="workflow-1",
         task_class="source_change",
         gate="execution",
@@ -401,7 +403,81 @@ def test_axi_fields_lessons_and_trends_are_read_only_observational(capsys, tmp_p
     assert after_events == before_events
 
 
-def test_transport_incident_events_are_written_from_public_axi_and_mcp_boundaries(capsys, tmp_path):
+def test_axi_trends_surfaces_by_era_in_json_and_toon(capsys, tmp_path):
+    config = _config_path(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    state.upsert_quality_trend_row(
+        run_id="trend-run",
+        task_id="workflow-1",
+        task_class="source_change",
+        gate="execution",
+        accepted=True,
+        first_pass_accepted=True,
+        revision_rounds=0,
+        time_to_accepted_outcome_s=12.0,
+        details={
+            "transport_incidents": {
+                "total_count": 1,
+                "by_era": {"mcp": 1},
+                "run_era": "mcp",
+            }
+        },
+    )
+    state.upsert_quality_trend_row(
+        run_id="trend-run-axi",
+        task_id="workflow-2",
+        task_class="source_change",
+        gate="execution",
+        accepted=True,
+        first_pass_accepted=True,
+        revision_rounds=0,
+        time_to_accepted_outcome_s=12.0,
+        details={
+            "transport_incidents": {
+                "total_count": 3,
+                "by_era": {"axi": 3},
+                "run_era": "axi",
+            }
+        },
+    )
+
+    assert axi.main([
+        "--config",
+        str(config),
+        "--json",
+        "trends",
+        "--task-class",
+        "source_change",
+        "--gate",
+        "execution",
+    ]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    row = payload["trends"][0]
+    assert row["transport_incident_by_era"] == {"axi": 3, "mcp": 1}
+    assert row["transport_incident_axi_count"] == 3
+    assert row["transport_incident_mcp_count"] == 1
+    assert row["transport_run_count_by_era"] == {"axi": 1, "mcp": 1}
+    assert row["transport_incident_axi_rate"] == 3.0
+    assert row["transport_incident_mcp_rate"] == 1.0
+    assert row["transport_incident_axi_share"] == 0.75
+    assert row["transport_incident_mcp_share"] == 0.25
+
+    assert axi.main([
+        "--config",
+        str(config),
+        "trends",
+        "--task-class",
+        "source_change",
+        "--gate",
+        "execution",
+    ]) == 0
+    toon = capsys.readouterr().out
+    assert "trends[1]" in toon
+    assert "transport_incident_by_era={\"axi\":3,\"mcp\":1}" in toon
+    assert "transport_run_count_by_era={\"axi\":1,\"mcp\":1}" in toon
+
+
+def test_transport_incident_events_are_written_from_public_axi_and_mcp_poll_failure_boundaries(capsys, tmp_path):
     config = _config_path(tmp_path)
     submit_args = [
         "--config",
@@ -428,8 +504,16 @@ def test_transport_incident_events_are_written_from_public_axi_and_mcp_boundarie
     _poll = json.loads(capsys.readouterr().out)
     assert axi.main(["--config", str(config), "--json", "catch-up", "workflow-run"]) == 0
     _catch_up = json.loads(capsys.readouterr().out)
+    assert axi.main(["--config", str(config), "--json", "poll", "missing-axi-job"]) == 0
+    missing_axi = json.loads(capsys.readouterr().out)
+    assert missing_axi["status"] == "missing"
 
     state = State(str(tmp_path / "state.db"))
+    mcp_missing = CodexSupervisorMcpAPI(Config.load(config), state).poll_dual_agent_workflow_job(
+        job_id="missing-mcp-job"
+    )
+    assert mcp_missing["status"] == "missing"
+
     events = state.read_events_since("workflow-run", after_event_id=0, limit=100)
     incidents = [
         event["payload"]["incident_type"]
@@ -439,6 +523,53 @@ def test_transport_incident_events_are_written_from_public_axi_and_mcp_boundarie
     assert "same_client_token_reattach" in incidents
     assert "non_terminal_poll" in incidents
     assert "catch_up_invoked" in incidents
+    boundary_events = state.read_events_since(
+        "supervisor_transport_incidents",
+        after_event_id=0,
+        limit=100,
+    )
+    poll_failures = [
+        event["payload"]
+        for event in boundary_events
+        if event["kind"] == "transport_incident_observed"
+        and event["payload"]["incident_type"] == "poll_failure"
+    ]
+    assert {payload["interface"] for payload in poll_failures} >= {"axi", "mcp"}
+
+
+def test_axi_toon_poll_records_format_metric(capsys, tmp_path):
+    config = _config_path(tmp_path)
+    assert axi.main([
+        "--config",
+        str(config),
+        "--json",
+        "submit",
+        "--cwd",
+        str(tmp_path),
+        "--task-id",
+        "workflow-1",
+        "--run-id",
+        "workflow-run",
+        "--intent",
+        "measure default poll format",
+        "--client-token",
+        "format-token",
+    ]) == 0
+    submitted = json.loads(capsys.readouterr().out)
+
+    assert axi.main(["--config", str(config), "poll", submitted["job_id"]]) == 0
+    toon = capsys.readouterr().out
+
+    state = State(str(tmp_path / "state.db"))
+    metrics = [
+        event["payload"]
+        for event in state.read_events_since("workflow-run", after_event_id=0, limit=100)
+        if event["kind"] == "supervisor_axi_format_metric"
+    ]
+    assert metrics
+    assert metrics[-1]["format"] == "toon"
+    assert metrics[-1]["turns"] == 1
+    assert metrics[-1]["bytes"] == len(toon.encode("utf-8"))
 
 
 def test_axi_doctor_reports_health_and_degraded_help_without_writes(capsys, tmp_path):

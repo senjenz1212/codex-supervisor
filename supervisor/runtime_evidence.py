@@ -10,11 +10,13 @@ import subprocess
 import sys
 import tempfile
 import time
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
 from .dual_agent import ProbeResult
+from .planning_validator import _tdd_test_names
 from .receipt_provenance import mark_supervisor_runtime_receipt
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
@@ -62,6 +64,7 @@ def collect_runtime_evidence(
     round_index: int,
     baseline: dict[str, Any],
     outcome_payload: dict[str, Any],
+    planning_artifacts: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None = None,
     test_timeout_s: int = 120,
     runner: Runner = subprocess.run,
 ) -> RuntimeEvidenceResult:
@@ -170,6 +173,17 @@ def collect_runtime_evidence(
             extra={"reason": "runtime_test_command_missing"},
         ))
 
+    tdd_coverage = _tdd_test_coverage_receipt(
+        cwd_path,
+        gate=gate,
+        round_index=round_index,
+        planning_artifacts=planning_artifacts or (),
+        test_receipt=test_receipt,
+    )
+    if tdd_coverage is not None:
+        receipts.append(tdd_coverage)
+        failures.extend(str(item) for item in tdd_coverage.get("failures", []))
+
     details = {
         "gate": gate,
         "round_index": round_index,
@@ -177,6 +191,7 @@ def collect_runtime_evidence(
         "declared_changed_files": changed_files,
         "actual_changed_files": actual_changed_files,
         "test_commands": test_commands,
+        "tdd_test_coverage": tdd_coverage,
         "receipts": receipts,
     }
     probe = (
@@ -366,9 +381,19 @@ def _run_declared_tests(
                     "rejection_reason": command_plan["reason"],
                 })
                 continue
+            junit_path = (
+                _junit_report_path(validation_cwd, len(results))
+                if _argv_invokes_pytest(command_plan["argv"]) else
+                None
+            )
+            run_argv = (
+                _pytest_argv_with_junitxml(command_plan["argv"], junit_path)
+                if junit_path is not None else
+                command_plan["argv"]
+            )
             try:
                 completed = runner(
-                    command_plan["argv"],
+                    run_argv,
                     cwd=str(validation_cwd),
                     shell=False,
                     capture_output=True,
@@ -382,13 +407,20 @@ def _run_declared_tests(
                     if completed.returncode != 0 and _pytest_environment_unavailable(completed)
                     else None
                 )
+                pytest_case_statuses = (
+                    _pytest_nodeids_from_junit(cwd, junit_path)
+                    if junit_path is not None else
+                    {}
+                )
                 results.append({
                     "command": command,
-                    "argv": command_plan["argv"],
+                    "argv": run_argv,
+                    **({"original_argv": command_plan["argv"]} if run_argv != command_plan["argv"] else {}),
                     "returncode": completed.returncode,
                     "status": "passed" if completed.returncode == 0 else "failed",
                     "duration_ms": duration_ms,
                     **({"reason": reason} if reason else {}),
+                    **pytest_case_statuses,
                     "stdout_tail": _tail(completed.stdout),
                     "stderr_tail": _tail(completed.stderr),
                 })
@@ -417,6 +449,9 @@ def _run_declared_tests(
         shutil.rmtree(workspace["temp_parent"], ignore_errors=True)
 
     passed = all(result["status"] == "passed" for result in results)
+    executed_pytest_targets = _executed_pytest_nodeids_from_results(cwd, results)
+    skipped_pytest_targets = _pytest_nodeids_by_status_from_results(results, "skipped")
+    skipped_pytest_target_reasons = _pytest_skipped_nodeid_reasons_from_results(results)
     return _receipt(
         receipt_id=f"runtime-tests-{gate}-{round_index}",
         kind="test",
@@ -427,10 +462,449 @@ def _run_declared_tests(
         extra={
             "commands": test_commands,
             "results": results,
+            "executed_pytest_targets": executed_pytest_targets,
+            "passed_pytest_targets": executed_pytest_targets,
+            "skipped_pytest_targets": skipped_pytest_targets,
+            "skipped_pytest_target_reasons": skipped_pytest_target_reasons,
             "isolated_worktree": True,
             "isolation_strategy": "copytree_current_worktree",
         },
     )
+
+
+def _tdd_test_coverage_receipt(
+    cwd: Path,
+    *,
+    gate: str,
+    round_index: int,
+    planning_artifacts: list[dict[str, Any]] | tuple[dict[str, Any], ...],
+    test_receipt: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if gate not in {"execution", "outcome_review"}:
+        return None
+    declared = _declared_tdd_test_names(planning_artifacts)
+    if not declared:
+        return None
+
+    index = _pytest_target_index(cwd)
+    resolved: dict[str, list[str]] = {}
+    unresolved: list[str] = []
+    ambiguous: dict[str, list[str]] = {}
+    for name in declared["test_names"]:
+        candidates = _resolve_tdd_test_name(name, cwd, index)
+        if not candidates:
+            unresolved.append(name)
+        elif len(candidates) > 1:
+            ambiguous[name] = candidates
+        else:
+            resolved[name] = candidates
+
+    expected_nodeids = sorted({nodeid for values in resolved.values() for nodeid in values})
+    executed_nodeids = _executed_pytest_nodeids(cwd, test_receipt)
+    skipped_nodeids = _skipped_pytest_nodeids(test_receipt, expected_nodeids)
+    skipped_nodeid_reasons = _skipped_pytest_nodeid_reasons(test_receipt, expected_nodeids)
+    skipped_with_reason = sorted(skipped_nodeid_reasons)
+    skipped_without_reason_nodeids = sorted(set(skipped_nodeids) - set(skipped_with_reason))
+    covered_nodeids = sorted(set(executed_nodeids) | set(skipped_with_reason))
+    missing_nodeids = sorted(set(expected_nodeids) - set(covered_nodeids))
+    failures: list[str] = []
+    if unresolved or ambiguous:
+        failures.append("tdd_test_names_unresolved")
+    if missing_nodeids:
+        failures.append("tdd_tests_not_executed")
+    if skipped_without_reason_nodeids:
+        failures.append("tdd_tests_skipped_without_reason")
+
+    return _receipt(
+        receipt_id=f"runtime-tdd-coverage-{gate}-{round_index}",
+        kind="runtime_tdd_test_coverage",
+        status="passed" if not failures else "failed",
+        gate=gate,
+        changed_files=[],
+        claims=[],
+        extra={
+            "tdd_artifacts": declared["artifacts"],
+            "declared_test_names": declared["test_names"],
+            "resolved_nodeids": expected_nodeids,
+            "executed_nodeids": executed_nodeids,
+            "covered_nodeids": covered_nodeids,
+            "skipped_nodeids": skipped_nodeids,
+            "skipped_nodeid_reasons": skipped_nodeid_reasons,
+            "skipped_without_reason_nodeids": skipped_without_reason_nodeids,
+            "missing_nodeids": missing_nodeids,
+            "unresolved_names": unresolved,
+            "ambiguous_names": ambiguous,
+            "failures": failures,
+        },
+    )
+
+
+def _declared_tdd_test_names(
+    planning_artifacts: list[dict[str, Any]] | tuple[dict[str, Any], ...],
+) -> dict[str, Any] | None:
+    names: list[str] = []
+    artifacts: list[dict[str, str]] = []
+    for artifact in planning_artifacts:
+        if not _is_tdd_planning_artifact(artifact):
+            continue
+        path_value = artifact.get("path")
+        if not path_value:
+            continue
+        path = Path(str(path_value)).expanduser()
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            continue
+        extracted = _tdd_test_names(text)
+        if not extracted:
+            continue
+        artifacts.append({
+            "kind": str(artifact.get("kind") or ""),
+            "path": str(path),
+        })
+        names.extend(extracted)
+    unique_names = list(dict.fromkeys(names))
+    if not unique_names:
+        return None
+    return {
+        "artifacts": artifacts,
+        "test_names": unique_names,
+    }
+
+
+def _is_tdd_planning_artifact(artifact: dict[str, Any]) -> bool:
+    kind = str(artifact.get("kind") or "").strip().lower().replace("-", "_")
+    if kind in {"tdd", "tdd_plan", "test_plan"}:
+        return True
+    if kind:
+        return False
+    path = str(artifact.get("path") or "").lower()
+    name = Path(path).name
+    return "tdd" in name and "grill" not in name
+
+
+def _resolve_tdd_test_name(
+    name: str,
+    cwd: Path,
+    index: dict[str, list[str]],
+) -> list[str]:
+    text = str(name or "").strip()
+    if not text or not text.startswith("test_") and "::test_" not in text:
+        return []
+    normalised = _normalise_pytest_target_token(text, cwd)
+    if normalised != text and "::" in normalised:
+        return [normalised]
+    if text in index:
+        return list(index[text])
+    if "::" in text:
+        all_nodeids = _all_pytest_nodeids(index)
+        return sorted(nodeid for nodeid in all_nodeids if nodeid == text or nodeid.endswith(f"::{text}"))
+    return []
+
+
+def _executed_pytest_nodeids(cwd: Path, test_receipt: dict[str, Any] | None) -> list[str]:
+    if not isinstance(test_receipt, dict):
+        return []
+    passed = test_receipt.get("passed_pytest_targets")
+    if isinstance(passed, list):
+        return sorted({str(item) for item in passed if str(item).strip()})
+    recorded = test_receipt.get("executed_pytest_targets")
+    if isinstance(recorded, list):
+        return sorted({str(item) for item in recorded if str(item).strip()})
+    results = test_receipt.get("results")
+    return _executed_pytest_nodeids_from_results(cwd, results if isinstance(results, list) else [])
+
+
+def _skipped_pytest_nodeids(test_receipt: dict[str, Any] | None, expected_nodeids: list[str]) -> list[str]:
+    if not isinstance(test_receipt, dict):
+        return []
+    skipped = test_receipt.get("skipped_pytest_targets")
+    if not isinstance(skipped, list):
+        return []
+    expected = set(expected_nodeids)
+    return sorted({str(item) for item in skipped if str(item).strip() and str(item) in expected})
+
+
+def _skipped_pytest_nodeid_reasons(
+    test_receipt: dict[str, Any] | None,
+    expected_nodeids: list[str],
+) -> dict[str, str]:
+    if not isinstance(test_receipt, dict):
+        return {}
+    raw = test_receipt.get("skipped_pytest_target_reasons")
+    if not isinstance(raw, dict):
+        return {}
+    expected = set(expected_nodeids)
+    reasons: dict[str, str] = {}
+    for nodeid, reason in raw.items():
+        nodeid_text = str(nodeid or "").strip()
+        reason_text = _normalise_skip_reason(reason)
+        if nodeid_text and nodeid_text in expected and reason_text:
+            reasons[nodeid_text] = reason_text
+    return dict(sorted(reasons.items()))
+
+
+def _executed_pytest_nodeids_from_results(cwd: Path, results: list[dict[str, Any]]) -> list[str]:
+    index = _pytest_target_index(cwd)
+    all_nodeids = _all_pytest_nodeids(index)
+    executed: set[str] = set()
+    for result in results:
+        junit_passed = result.get("pytest_nodeids_passed")
+        if _result_has_pytest_junit_status(result):
+            if isinstance(junit_passed, list):
+                executed.update(str(item) for item in junit_passed if str(item).strip())
+            continue
+        if isinstance(junit_passed, list):
+            executed.update(str(item) for item in junit_passed if str(item).strip())
+            continue
+        if result.get("returncode") is None:
+            continue
+        if result.get("reason") == "runtime_test_environment_unavailable":
+            continue
+        argv = [str(item) for item in (result.get("argv") or [])]
+        has_selection_filter = _pytest_uses_selection_filter(argv)
+        if _argv_invokes_make_test(argv):
+            executed.update(all_nodeids)
+            continue
+        targets = _pytest_targets_from_argv(argv)
+        if targets is None:
+            continue
+        if not targets:
+            if has_selection_filter:
+                continue
+            executed.update(all_nodeids)
+            continue
+        for target in targets:
+            if has_selection_filter and not _pytest_target_is_explicit_nodeid(cwd, target):
+                continue
+            executed.update(_expand_pytest_target(cwd, target, index, all_nodeids))
+    return sorted(executed)
+
+
+def _result_has_pytest_junit_status(result: dict[str, Any]) -> bool:
+    return any(
+        key in result
+        for key in ("pytest_nodeids_passed", "pytest_nodeids_skipped", "pytest_nodeids_failed")
+    )
+
+
+def _pytest_nodeids_by_status_from_results(results: list[dict[str, Any]], status: str) -> list[str]:
+    key = f"pytest_nodeids_{status}"
+    nodeids: set[str] = set()
+    for result in results:
+        values = result.get(key)
+        if isinstance(values, list):
+            nodeids.update(str(item) for item in values if str(item).strip())
+    return sorted(nodeids)
+
+
+def _pytest_skipped_nodeid_reasons_from_results(results: list[dict[str, Any]]) -> dict[str, str]:
+    reasons: dict[str, str] = {}
+    for result in results:
+        raw = result.get("pytest_nodeids_skipped_reasons")
+        if not isinstance(raw, dict):
+            continue
+        for nodeid, reason in raw.items():
+            nodeid_text = str(nodeid or "").strip()
+            reason_text = _normalise_skip_reason(reason)
+            if nodeid_text and reason_text:
+                reasons[nodeid_text] = reason_text
+    return dict(sorted(reasons.items()))
+
+
+def _all_pytest_nodeids(index: dict[str, list[str]]) -> list[str]:
+    return sorted({nodeid for values in index.values() for nodeid in values})
+
+
+def _argv_invokes_make_test(argv: list[str]) -> bool:
+    return len(argv) == 2 and Path(argv[0]).name == "make" and argv[1] in {
+        "test",
+        "tests",
+        "pytest",
+    }
+
+
+def _argv_invokes_pytest(argv: list[str]) -> bool:
+    return _pytest_targets_from_argv(argv) is not None
+
+
+def _junit_report_path(validation_cwd: Path, index: int) -> Path:
+    return validation_cwd / ".runtime-evidence" / f"pytest-{index}.xml"
+
+
+def _pytest_argv_with_junitxml(argv: list[str], junit_path: Path) -> list[str]:
+    junit_path.parent.mkdir(parents=True, exist_ok=True)
+    return [*argv, f"--junitxml={junit_path}"]
+
+
+def _pytest_nodeids_from_junit(cwd: Path, junit_path: Path) -> dict[str, Any]:
+    if not junit_path.exists():
+        return {}
+    try:
+        root = ET.parse(junit_path).getroot()
+    except (ET.ParseError, OSError):
+        return {}
+    index = _pytest_target_index(cwd)
+    by_status: dict[str, set[str]] = {"passed": set(), "skipped": set(), "failed": set()}
+    skipped_reasons: dict[str, str] = {}
+    for testcase in root.iter("testcase"):
+        classname = str(testcase.attrib.get("classname") or "")
+        name = str(testcase.attrib.get("name") or "")
+        nodeids = _nodeids_from_junit_case(cwd, index, classname, name)
+        if not nodeids:
+            continue
+        status = "passed"
+        skipped = testcase.find("skipped")
+        if skipped is not None:
+            status = "skipped"
+            reason = _normalise_skip_reason(
+                skipped.attrib.get("message")
+                or skipped.attrib.get("type")
+                or skipped.text
+            )
+            if reason:
+                for nodeid in nodeids:
+                    skipped_reasons[nodeid] = reason
+        elif testcase.find("failure") is not None or testcase.find("error") is not None:
+            status = "failed"
+        by_status[status].update(nodeids)
+    payload = {
+        f"pytest_nodeids_{status}": sorted(values)
+        for status, values in by_status.items()
+        if values
+    }
+    if skipped_reasons:
+        payload["pytest_nodeids_skipped_reasons"] = dict(sorted(skipped_reasons.items()))
+    return payload
+
+
+def _normalise_skip_reason(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if text.lower() == "unconditional skip":
+        return ""
+    return text
+
+
+def _nodeids_from_junit_case(
+    cwd: Path,
+    index: dict[str, list[str]],
+    classname: str,
+    name: str,
+) -> set[str]:
+    if not name:
+        return set()
+    base_name = _strip_pytest_params(name)
+    params = name[len(base_name):]
+    module_path, class_parts = _junit_classname_parts(cwd, classname)
+    candidate_keys = [base_name]
+    if class_parts:
+        candidate_keys.insert(0, f"{'::'.join(class_parts)}::{base_name}")
+
+    candidates: set[str] = set()
+    for key in candidate_keys:
+        for candidate in index.get(key, []):
+            if module_path and not candidate.startswith(f"{module_path}::"):
+                continue
+            candidates.add(candidate)
+    if not candidates and module_path:
+        suffix = f"::{base_name}"
+        candidates.update(
+            candidate
+            for values in index.values()
+            for candidate in values
+            if candidate.startswith(f"{module_path}::") and candidate.endswith(suffix)
+        )
+
+    nodeids: set[str] = set()
+    for candidate in candidates:
+        nodeids.add(candidate)
+        if params:
+            nodeids.add(f"{candidate}{params}")
+    return nodeids
+
+
+def _junit_classname_parts(cwd: Path, classname: str) -> tuple[str | None, list[str]]:
+    parts = [part for part in classname.split(".") if part]
+    for end in range(len(parts), 0, -1):
+        module_path = "/".join(parts[:end]) + ".py"
+        if (cwd / module_path).is_file():
+            return module_path, parts[end:]
+    return None, parts[:-1]
+
+
+def _pytest_targets_from_argv(argv: list[str]) -> list[str] | None:
+    start: int | None = None
+    if len(argv) >= 3 and argv[1] == "-m" and argv[2] == "pytest":
+        start = 3
+    elif argv and Path(argv[0]).name == "pytest":
+        start = 1
+    if start is None:
+        return None
+
+    targets: list[str] = []
+    skip_next = False
+    for token in argv[start:]:
+        if skip_next:
+            skip_next = False
+            continue
+        if token == "--":
+            continue
+        if token in _PYTEST_OPTIONS_WITH_VALUES:
+            skip_next = True
+            continue
+        if any(token.startswith(f"{option}=") for option in _PYTEST_OPTIONS_WITH_VALUES if option.startswith("--")):
+            continue
+        if token.startswith("-"):
+            continue
+        targets.append(token)
+    return targets
+
+
+def _pytest_uses_selection_filter(argv: list[str]) -> bool:
+    start: int | None = None
+    if len(argv) >= 3 and argv[1] == "-m" and argv[2] == "pytest":
+        start = 3
+    elif argv and Path(argv[0]).name == "pytest":
+        start = 1
+    if start is None:
+        return False
+
+    for token in argv[start:]:
+        if token in {"-k", "-m"}:
+            return True
+        if (token.startswith("-k") or token.startswith("-m")) and len(token) > 2:
+            return True
+    return False
+
+
+def _pytest_target_is_explicit_nodeid(cwd: Path, target: str) -> bool:
+    normalised = _normalise_pytest_target_token(target, cwd)
+    base = _strip_pytest_params(
+        _PYTEST_NODEID_LINE_SUFFIX_RE.sub(lambda match: match.group("target"), normalised)
+    )
+    return "::" in base
+
+
+def _expand_pytest_target(
+    cwd: Path,
+    target: str,
+    index: dict[str, list[str]],
+    all_nodeids: list[str],
+) -> set[str]:
+    normalised = _normalise_pytest_target_token(target, cwd)
+    base = _strip_pytest_params(_PYTEST_NODEID_LINE_SUFFIX_RE.sub(lambda match: match.group("target"), normalised))
+    if base in all_nodeids:
+        return {base}
+    if base in index:
+        return set(index[base])
+    if "::" in base:
+        return {nodeid for nodeid in all_nodeids if nodeid == base or nodeid.startswith(f"{base}::")}
+    path = base.replace("\\", "/")
+    if path.endswith(".py"):
+        return {nodeid for nodeid in all_nodeids if nodeid.startswith(f"{path}::")}
+    return set()
 
 
 def _runtime_test_command_argv(command: str, validation_cwd: Path) -> dict[str, Any]:
@@ -588,6 +1062,23 @@ def _normalise_python_command(text: str, cwd: Path) -> str:
 
 
 _PYTEST_NODEID_LINE_SUFFIX_RE = re.compile(r"(?P<target>\S+\.py::\S+):(?P<line>\d+)(?=\s|$)")
+_PYTEST_OPTIONS_WITH_VALUES = {
+    "-c",
+    "-k",
+    "-m",
+    "-o",
+    "--basetemp",
+    "--cache-clear",
+    "--color",
+    "--confcutdir",
+    "--cov",
+    "--cov-report",
+    "--junit-xml",
+    "--junitxml",
+    "--maxfail",
+    "--rootdir",
+    "--tb",
+}
 
 
 def _normalise_pytest_targets(text: str, cwd: Path) -> str:
@@ -604,30 +1095,13 @@ def _normalise_pytest_targets(text: str, cwd: Path) -> str:
 
     normalised: list[str] = []
     skip_next = False
-    options_with_values = {
-        "-c",
-        "-k",
-        "-m",
-        "-o",
-        "--basetemp",
-        "--cache-clear",
-        "--color",
-        "--confcutdir",
-        "--cov",
-        "--cov-report",
-        "--junit-xml",
-        "--junitxml",
-        "--maxfail",
-        "--rootdir",
-        "--tb",
-    }
     for part in parts:
         if skip_next:
             normalised.append(part)
             skip_next = False
             continue
         normalised.append(_normalise_pytest_target_token(part, cwd))
-        if part in options_with_values:
+        if part in _PYTEST_OPTIONS_WITH_VALUES:
             skip_next = True
     return shlex.join(normalised)
 
@@ -680,6 +1154,10 @@ def _normalise_pytest_target_token(target: str, cwd: Path) -> str:
     if len(matches) != 1:
         return target
     return f"{matches[0]}{params}"
+
+
+def _strip_pytest_params(target: str) -> str:
+    return re.sub(r"\[[^\]]+\]$", "", target)
 
 
 def _pytest_target_index(cwd: Path) -> dict[str, list[str]]:

@@ -89,6 +89,9 @@ def _outcome_block(
     task_id: str = "gate-1",
     decision: str = "accept plan",
     critical_review: dict | None = None,
+    *,
+    tests: list[str] | None = None,
+    test_status: str = "unknown",
 ) -> str:
     payload = {
         "task_id": task_id,
@@ -97,8 +100,8 @@ def _outcome_block(
         "decisions": [decision],
         "objections": [],
         "changed_files": ["supervisor/dual_agent.py"],
-        "tests": [],
-        "test_status": "unknown",
+        "tests": tests if tests is not None else [],
+        "test_status": test_status,
         "confidence": 0.94,
     }
     if critical_review is not None:
@@ -858,27 +861,90 @@ async def test_read_gate_transcript_includes_skill_receipt_validation(tmp_path):
     from supervisor.dual_agent_runner import build_lead_replay_stdout
 
     state = State(str(tmp_path / "state.db"))
+    test_command = "python -m pytest tests/test_skill_receipt_fixture.py -q"
     source_dir = tmp_path / "docs" / "dual-agent" / "workflow-1" / "source"
     source_dir.mkdir(parents=True, exist_ok=True)
     for kind, filename in {
         "prd": "prd.md",
         "grill_findings": "grill-findings.md",
         "issues": "issues.md",
-        "tdd_plan": "tdd.md",
-        "implementation_plan": "implementation-plan.md",
     }.items():
         (source_dir / filename).write_text(
             (FIXTURE_ROOT / kind / "good.md").read_text(encoding="utf-8"),
             encoding="utf-8",
         )
+    (source_dir / "tdd.md").write_text(
+        "\n".join([
+            "# Skill Receipt TDD",
+            "",
+            "## Public Boundary",
+            "Use `run_dual_agent_workflow` with skill receipts.",
+            "",
+            "## Test Cases",
+            "",
+            "### test_skill_receipt_fixture",
+            "Maps to: ISS-1, P1",
+            "RED: The named test must be supervisor-executed.",
+            "GREEN: Runtime evidence records the pytest result.",
+            "",
+            "### test_skill_receipt_fixture_extra",
+            "Maps to: ISS-1, P1",
+            "RED: The second named test must also be supervisor-executed.",
+            "GREEN: Runtime evidence records the pytest result.",
+            "",
+            "## RED/GREEN Plan",
+            "RED: Missing runtime execution blocks the gate.",
+            "GREEN: The skill receipt transcript remains visible after runtime checks pass.",
+            "",
+        ]),
+        encoding="utf-8",
+    )
+    (source_dir / "implementation-plan.md").write_text(
+        "\n".join([
+            "# Skill Receipt Implementation Plan",
+            "",
+            "## Files / Modules To Touch",
+            "- `supervisor/dual_agent.py`",
+            "- `tests/test_skill_receipt_fixture.py`",
+            "",
+            "## Risks",
+            "- Skill receipt validation can be hidden from transcripts.",
+            "- Runtime evidence can miss a named TDD test.",
+            "",
+            "## Traceability",
+            "- P1 -> test_skill_receipt_fixture",
+            "- P1 -> test_skill_receipt_fixture_extra",
+            "",
+            "## Steps",
+            "1. Run the supervisor workflow.",
+            "2. Validate skill receipts.",
+            "3. Preserve validation in the transcript.",
+            "",
+        ]),
+        encoding="utf-8",
+    )
     _init_runtime_git_repo(tmp_path)
     _write_runtime_file(tmp_path, "supervisor/dual_agent.py", "RUNTIME_FIXTURE = True\n")
+    _write_runtime_file(
+        tmp_path,
+        "tests/test_skill_receipt_fixture.py",
+        "\n".join([
+            "def test_skill_receipt_fixture():",
+            "    assert True",
+            "",
+            "def test_skill_receipt_fixture_extra():",
+            "    assert True",
+            "",
+        ]),
+    )
 
     def fake_runner(argv, **kwargs):
         return subprocess.CompletedProcess(
             argv,
             0,
-            stdout=build_lead_replay_stdout(_outcome_block("workflow-1")),
+            stdout=build_lead_replay_stdout(
+                _outcome_block("workflow-1", tests=[test_command], test_status="passed")
+            ),
             stderr="",
         )
 

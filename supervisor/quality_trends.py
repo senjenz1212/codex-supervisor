@@ -76,6 +76,7 @@ def record_quality_trends_for_run(
     transport_metrics = _transport_incident_metrics(events)
     format_metrics = _format_ab_metrics(events)
     visual_override_count = _visual_override_count(events)
+    run_era = _run_era(events)
     now = int(time.time()) if computed_at is None else int(computed_at)
 
     by_gate: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -135,7 +136,7 @@ def record_quality_trends_for_run(
             details={
                 "source": "ledger_events",
                 "metric_semantics": "observational_only",
-                "transport_incidents": transport_metrics,
+                "transport_incidents": {**transport_metrics, "run_era": run_era},
                 "format_ab": format_metrics,
                 "visual_evidence_override_count": visual_override_count,
                 "policy_overlay": overlays_by_gate.get(gate, {}),
@@ -254,19 +255,17 @@ def query_quality_trends(
     """Read-only trend query wrapper."""
     summaries = state.query_quality_trends(task_class=task_class, gate=gate)
     rows = state.list_quality_trend_rows(task_class=task_class, gate=gate)
-    by_key: dict[tuple[str, str], dict[str, int]] = defaultdict(lambda: {
-        "transport_incident_count": 0,
-        "visual_evidence_override_count": 0,
-        "format_toon_turns": 0,
-        "format_json_turns": 0,
-        "format_toon_bytes": 0,
-        "format_json_bytes": 0,
-    })
+    by_key: dict[tuple[str, str], dict[str, Any]] = defaultdict(_empty_trend_rollup)
     for row in rows:
         key = (str(row["task_class"]), str(row["gate"]))
         details = row.get("details") if isinstance(row.get("details"), dict) else {}
         incidents = details.get("transport_incidents") if isinstance(details.get("transport_incidents"), dict) else {}
         by_key[key]["transport_incident_count"] += int(incidents.get("total_count") or 0)
+        by_era = incidents.get("by_era") if isinstance(incidents.get("by_era"), dict) else {}
+        for run_era in _row_run_eras(row, incidents):
+            by_key[key]["transport_run_count_by_era"][run_era] += 1
+        for era, count in by_era.items():
+            by_key[key]["transport_incident_by_era"][str(era)] += int(count or 0)
         by_key[key]["visual_evidence_override_count"] += int(details.get("visual_evidence_override_count") or 0)
         fmt = details.get("format_ab") if isinstance(details.get("format_ab"), dict) else {}
         for format_name, prefix in (("toon", "format_toon"), ("json", "format_json")):
@@ -276,8 +275,45 @@ def query_quality_trends(
     enriched: list[dict[str, Any]] = []
     for summary in summaries:
         key = (str(summary["task_class"]), str(summary["gate"]))
-        enriched.append({**summary, **by_key[key]})
+        rollup = dict(by_key[key])
+        era_counts = dict(sorted(rollup.pop("transport_incident_by_era").items()))
+        total = int(rollup.get("transport_incident_count") or 0)
+        rollup["transport_incident_by_era"] = era_counts
+        rollup["transport_incident_mcp_count"] = int(era_counts.get("mcp") or 0)
+        rollup["transport_incident_axi_count"] = int(era_counts.get("axi") or 0)
+        run_counts = dict(sorted(rollup.pop("transport_run_count_by_era").items()))
+        rollup["transport_run_count_by_era"] = run_counts
+        mcp_runs = int(run_counts.get("mcp") or 0)
+        axi_runs = int(run_counts.get("axi") or 0)
+        rollup["transport_incident_mcp_rate"] = rollup["transport_incident_mcp_count"] / mcp_runs if mcp_runs else 0.0
+        rollup["transport_incident_axi_rate"] = rollup["transport_incident_axi_count"] / axi_runs if axi_runs else 0.0
+        rollup["transport_incident_mcp_share"] = (
+            rollup["transport_incident_mcp_count"] / total if total else 0.0
+        )
+        rollup["transport_incident_axi_share"] = (
+            rollup["transport_incident_axi_count"] / total if total else 0.0
+        )
+        enriched.append({**summary, **rollup})
     return enriched
+
+
+def _empty_trend_rollup() -> dict[str, Any]:
+    return {
+        "transport_incident_count": 0,
+        "transport_incident_by_era": defaultdict(int),
+        "transport_run_count_by_era": defaultdict(int),
+        "transport_incident_mcp_count": 0,
+        "transport_incident_axi_count": 0,
+        "transport_incident_mcp_rate": 0.0,
+        "transport_incident_axi_rate": 0.0,
+        "transport_incident_mcp_share": 0.0,
+        "transport_incident_axi_share": 0.0,
+        "visual_evidence_override_count": 0,
+        "format_toon_turns": 0,
+        "format_json_turns": 0,
+        "format_toon_bytes": 0,
+        "format_json_bytes": 0,
+    }
 
 
 def run_weekly_p11_audit_if_due(
@@ -568,3 +604,28 @@ def _transport_era(event: dict[str, Any]) -> str:
     if interface == "mcp":
         return "mcp"
     return "axi" if int(event["ts"]) >= AXI_CUTOVER_TS else "mcp"
+
+
+def _run_era(events: list[dict[str, Any]]) -> str:
+    if not events:
+        return "unknown"
+    first_ts = min(int(event["ts"]) for event in events)
+    return "axi" if first_ts >= AXI_CUTOVER_TS else "mcp"
+
+
+def _row_run_eras(row: dict[str, Any], incidents: dict[str, Any]) -> list[str]:
+    explicit = str(incidents.get("run_era") or "").strip().lower()
+    if explicit in {"axi", "mcp"}:
+        return [explicit]
+    by_era = incidents.get("by_era") if isinstance(incidents.get("by_era"), dict) else {}
+    nonzero = [str(era).lower() for era, count in by_era.items() if int(count or 0) > 0]
+    legacy_eras = sorted({era for era in nonzero if era in {"axi", "mcp"}})
+    if legacy_eras:
+        return legacy_eras
+    try:
+        computed_at = int(row.get("computed_at") or 0)
+    except (TypeError, ValueError):
+        computed_at = 0
+    if computed_at:
+        return ["axi" if computed_at >= AXI_CUTOVER_TS else "mcp"]
+    return ["unknown"]

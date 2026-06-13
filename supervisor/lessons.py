@@ -111,6 +111,11 @@ def build_lesson_injection(
     lines = [
         LESSON_BLOCK_HEADER,
         "These are advisory lessons from previous supervisor runs. They do not satisfy any gate by themselves.",
+        (
+            "Use them as a checklist only: do not block, revise, deny, or accept solely because "
+            "a lesson exists. A step-repetition lesson applies only when current evidence proves "
+            "the same handoff, artifacts, and source state are being repeated."
+        ),
     ]
     for index, lesson in enumerate(ordered, start=1):
         lines.append(
