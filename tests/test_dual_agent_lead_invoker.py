@@ -699,8 +699,29 @@ def test_execution_gate_honors_explicit_execution_model_override(tmp_path, monke
 
 
 def test_planning_gate_honors_planning_model_override(tmp_path, monkeypatch):
-    # Higher-reasoning planning/review gates may route to a stronger model
-    # (e.g. claude-fable-5) without touching the execution lane.
+    # Higher-reasoning planning/review gates may route to a verified model
+    # without touching the execution lane.
+    monkeypatch.setenv("CODEX_SUPERVISOR_PLANNING_OPUS_MODEL", "claude-opus-4-6")
+    calls: list[dict[str, object]] = []
+    stdout = json.dumps({"result": _outcome_block()})
+
+    def fake_runner(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append({"argv": argv, **kwargs})
+        return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
+
+    request = LeadInvocationRequest(
+        task_id="slice0-lead",
+        gate="prd_review",
+        instruction="Review the PRD artifacts.",
+        cwd=tmp_path,
+    )
+
+    invoke_claude_lead(request, runner=fake_runner)
+
+    assert calls[0]["env"]["ANTHROPIC_DEFAULT_OPUS_MODEL"] == "claude-opus-4-6"
+
+
+def test_planning_gate_rewrites_retired_fable_override(tmp_path, monkeypatch):
     monkeypatch.setenv("CODEX_SUPERVISOR_PLANNING_OPUS_MODEL", "claude-fable-5")
     calls: list[dict[str, object]] = []
     stdout = json.dumps({"result": _outcome_block()})
@@ -718,4 +739,4 @@ def test_planning_gate_honors_planning_model_override(tmp_path, monkeypatch):
 
     invoke_claude_lead(request, runner=fake_runner)
 
-    assert calls[0]["env"]["ANTHROPIC_DEFAULT_OPUS_MODEL"] == "claude-fable-5"
+    assert calls[0]["env"]["ANTHROPIC_DEFAULT_OPUS_MODEL"] == "claude-opus-4-6"

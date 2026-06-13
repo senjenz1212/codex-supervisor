@@ -25,6 +25,8 @@ from .agent_mailbox import critical_review_prompt
 HANDOFF_PACKET_SCHEMA_VERSION = "dual-agent-handoff/v1"
 CLAUDE_OPUS_ULTIMATE_MODEL = "opus"
 CLAUDE_OPUS_UNDERLYING_MODEL = "claude-opus-4-8"
+CLAUDE_OPUS_LEGACY_FABLE_MODEL = "claude-fable-5"
+CLAUDE_OPUS_SAFE_OVERRIDE_MODEL = "claude-opus-4-6"
 CLAUDE_BALANCED_MODEL = "sonnet"
 CLAUDE_CHEAP_MODEL = "haiku"
 CLAUDE_OPUS_ULTIMATE_EXTRA_BODY = {
@@ -547,7 +549,7 @@ def invoke_claude_lead(
         # direct write canary BEFORE trusting it — that is how 4-8 was
         # caught): CODEX_SUPERVISOR_EXECUTION_OPUS_MODEL (empty = default
         # route) and CODEX_SUPERVISOR_PLANNING_OPUS_MODEL (default
-        # claude-opus-4-8; e.g. claude-fable-5 for higher-reasoning gates).
+        # claude-opus-4-8; e.g. claude-opus-4-6 after live canary).
         pin = _underlying_opus_model_for_gate(request.gate)
         if pin is None:
             env.pop("ANTHROPIC_DEFAULT_OPUS_MODEL", None)
@@ -694,9 +696,15 @@ def _underlying_opus_model_for_gate(gate: str) -> str | None:
     """
     if gate == "execution":
         override = os.environ.get("CODEX_SUPERVISOR_EXECUTION_OPUS_MODEL", "").strip()
-        return override or None
+        return _canonical_underlying_opus_pin(override) or None
     override = os.environ.get("CODEX_SUPERVISOR_PLANNING_OPUS_MODEL", "").strip()
-    return override or CLAUDE_OPUS_UNDERLYING_MODEL
+    return _canonical_underlying_opus_pin(override) or CLAUDE_OPUS_UNDERLYING_MODEL
+
+
+def _canonical_underlying_opus_pin(value: str) -> str:
+    if value == CLAUDE_OPUS_LEGACY_FABLE_MODEL:
+        return CLAUDE_OPUS_SAFE_OVERRIDE_MODEL
+    return value
 
 
 def _extract_claude_json_payload(
