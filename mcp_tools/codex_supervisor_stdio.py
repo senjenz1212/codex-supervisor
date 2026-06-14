@@ -7,10 +7,14 @@ server through its external MCP configuration and receives ordinary MCP tools.
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import hashlib
+import importlib.util
 import json
 import logging
+import os
 import re
+import shutil
 import subprocess
 import time
 import uuid
@@ -75,6 +79,41 @@ from supervisor.runtime_evidence import capture_runtime_baseline, collect_runtim
 from supervisor.receipt_provenance import (
     provenance_downgrade_event_payload,
     sanitize_receipt_provenance,
+)
+from supervisor.review_packets import (
+    ChangedFile,
+    PlanningRef,
+    ReceiptRef,
+    build_review_packet,
+    context_validation_payload,
+    reviewer_context_receipt_from_payload,
+    review_context_incomplete_reason,
+    review_packet_event_kind,
+    validate_reviewer_context_receipt,
+    validate_review_packet,
+)
+from supervisor.worker_dispatch_ledger import (
+    CROSS_VENDOR_REVIEW_SELECTED,
+    DEGRADED_REVIEW_UNAVAILABLE,
+    EVIDENCE_ATTEMPT_RECORDED,
+    WORKER_BLOCKED,
+    WORKER_CANCELLED,
+    WORKER_COMPLETED,
+    WORKER_DISPATCHED,
+    WORKER_FAILED,
+    WORKER_ROSTER_CHECKED,
+    WORKER_SESSION_CREATED,
+    EvidenceAttempt,
+    RosterEntry,
+    RosterPreflight,
+    WorkerDispatch,
+    build_cross_vendor_payload,
+    build_dispatch_payload,
+    build_evidence_attempt_payload,
+    build_roster_payload,
+    compute_attempt_id,
+    provider_family_for,
+    select_cross_vendor_reviewer,
 )
 from supervisor.lessons import (
     append_lesson_block,
@@ -1371,6 +1410,12 @@ class CodexSupervisorMcpAPI:
                 independent_reviewer_results: list[dict[str, Any]] = []
                 independent_reviewer_adjudication: dict[str, Any] | None = None
                 current_runtime_receipt_ids: set[str] = set()
+                runtime_evidence_result = None
+                supervisor_review_packet = None
+                supervisor_review_packet_payload: dict[str, Any] | None = None
+                review_packet_failures: list[Any] = []
+                review_context_complete = True
+                review_context_failures: list[dict[str, Any]] = []
                 if payload.get("status") == "accepted" and gate in {"execution", "outcome_review"}:
                     runtime_evidence_result = collect_runtime_evidence(
                         cwd=cwd,
@@ -1448,6 +1493,133 @@ class CodexSupervisorMcpAPI:
                         runner=self.cursor_runner,
                         codex_runner=self.codex_runner,
                     )
+                    roster = _reviewer_roster_preflight(
+                        task_id=task_id,
+                        run_id=run_id,
+                        gate=str(gate),
+                        reviewers=independent_reviewers,
+                        cfg=self.cfg,
+                        cursor_runner=self.cursor_runner,
+                        codex_runner=self.codex_runner,
+                    )
+                    available_reviewer_ids = set(roster.available_worker_ids())
+                    available_reviewers = [
+                        reviewer
+                        for reviewer in independent_reviewers
+                        if reviewer.spec.reviewer_id in available_reviewer_ids
+                    ]
+                    self.state.write_event(
+                        run_id=run_id,
+                        source="dual_agent",
+                        kind=WORKER_ROSTER_CHECKED,
+                        payload={
+                            "schema_version": "supervisor-worker-roster/v1",
+                            **build_roster_payload(roster),
+                        },
+                    )
+                    review_branch = _git_branch(cwd)
+                    for unavailable_entry in (
+                        entry for entry in roster.entries if not entry.available
+                    ):
+                        cancelled = WorkerDispatch(
+                            task_id=task_id,
+                            run_id=run_id,
+                            gate=str(gate),
+                            worker_id=unavailable_entry.worker_id,
+                            reviewer_id=unavailable_entry.worker_id,
+                            purpose=unavailable_entry.purpose,
+                            provider_family=unavailable_entry.provider_family,
+                            runtime=unavailable_entry.runtime,
+                            model=unavailable_entry.model,
+                            status="cancelled",
+                            started_at=_utc_now_iso(),
+                            completed_at=_utc_now_iso(),
+                            worktree_ref=str(Path(cwd).expanduser()),
+                            branch=review_branch,
+                            reason=(
+                                unavailable_entry.failure_reason
+                                or unavailable_entry.boot_status
+                                or "reviewer_unavailable"
+                            ),
+                            extra={
+                                "boot_status": unavailable_entry.boot_status,
+                                "availability": "unavailable",
+                            },
+                        )
+                        self.state.write_event(
+                            run_id=run_id,
+                            source="dual_agent",
+                            kind=WORKER_CANCELLED,
+                            payload={
+                                "schema_version": "supervisor-worker-dispatch/v1",
+                                **build_dispatch_payload(cancelled),
+                            },
+                        )
+                    cross_vendor_selection = select_cross_vendor_reviewer(
+                        implementation_provider_family="anthropic",
+                        roster=roster,
+                        policy=(
+                            "block"
+                            if reviewer_policy == "block"
+                            else "degraded"
+                        ),
+                        task_id=task_id,
+                        run_id=run_id,
+                        gate=str(gate),
+                    )
+                    cross_vendor_kind = (
+                        CROSS_VENDOR_REVIEW_SELECTED
+                        if cross_vendor_selection.selection_status == "selected"
+                        else DEGRADED_REVIEW_UNAVAILABLE
+                    )
+                    self.state.write_event(
+                        run_id=run_id,
+                        source="dual_agent",
+                        kind=cross_vendor_kind,
+                        payload={
+                            "schema_version": "supervisor-cross-vendor-review/v1",
+                            **build_cross_vendor_payload(cross_vendor_selection),
+                        },
+                    )
+                    if cross_vendor_selection.selection_status == "block":
+                        payload["cross_vendor_review"] = build_cross_vendor_payload(
+                            cross_vendor_selection
+                        )
+                    supervisor_review_packet, supervisor_review_packet_payload, review_packet_failures = (
+                        _build_supervisor_review_packet(
+                            task_id=task_id,
+                            run_id=run_id,
+                            gate=str(gate),
+                            round_index=round_index,
+                            cwd=cwd,
+                            gate_artifacts=gate_artifacts,
+                            runtime_baseline=runtime_baseline,
+                            receipt_payloads=receipt_payloads,
+                            trusted_runtime_receipt_ids=current_runtime_receipt_ids,
+                            reviewer_ids=[
+                                reviewer.spec.reviewer_id
+                                for reviewer in available_reviewers
+                            ],
+                            policy_overlay_hash=str(
+                                workflow_route.get("policy_overlay_hash") or ""
+                            ),
+                            lesson_hashes=[
+                                str(item.get("lesson_id") or item.get("hash"))
+                                for item in (
+                                    workflow_route.get("lesson_snapshot", {}).get("lessons", [])
+                                    if isinstance(workflow_route.get("lesson_snapshot"), dict)
+                                    else []
+                                )
+                                if isinstance(item, dict)
+                            ],
+                        )
+                    )
+                    self.state.write_event(
+                        run_id=run_id,
+                        source="dual_agent",
+                        kind=review_packet_event_kind(),
+                        payload=supervisor_review_packet_payload,
+                    )
                     review_request_event_id = self._write_interaction_message(
                         run_id=run_id,
                         message=AgentMailboxMessage(
@@ -1478,10 +1650,13 @@ class CodexSupervisorMcpAPI:
                                 evidence_refs=cursor_evidence_refs,
                                 would_change_if=cursor_would_change_if,
                             ),
+                            review_packet=supervisor_review_packet_payload,
                             artifacts=planning_artifact_refs(gate_artifacts),
                             metadata={
                                 "claude_outcome": payload.get("outcome"),
                                 "review_policy": "Cursor reviews only after Claude gate acceptance.",
+                                "supervisor_review_packet": supervisor_review_packet_payload,
+                                "cross_vendor_review": build_cross_vendor_payload(cross_vendor_selection),
                             },
                         ),
                     )
@@ -1498,8 +1673,8 @@ class CodexSupervisorMcpAPI:
                             "reviewer_infra_retry_limit": reviewer_infra_retry_limit_value,
                             "reviewer_infra_retry_backoff_s": reviewer_infra_retry_backoff_s_value,
                             "timeout_s": timeout_s,
-                            "reviewer_count": len(independent_reviewers),
-                            "reviewer_ids": [reviewer.spec.reviewer_id for reviewer in independent_reviewers],
+                            "reviewer_count": len(available_reviewers),
+                            "reviewer_ids": [reviewer.spec.reviewer_id for reviewer in available_reviewers],
                             "planning_artifact_count": len(gate_artifacts),
                             "receipt_count": len(receipt_payloads),
                         },
@@ -1536,12 +1711,138 @@ class CodexSupervisorMcpAPI:
                             openai_base_url=self.cfg.models.openai_base_url,
                             timeout_s=timeout_s,
                             tool_receipts=tuple(receipt_payloads),
+                            review_packet=supervisor_review_packet_payload,
                         )
-                        for independent_reviewer in independent_reviewers:
-                            review_results.append((
-                                independent_reviewer.spec,
-                                independent_reviewer.review(reviewer_request),
-                            ))
+                        for independent_reviewer in available_reviewers:
+                            spec = independent_reviewer.spec
+                            reviewer_started_at = _utc_now_iso()
+                            base_dispatch = WorkerDispatch(
+                                task_id=task_id,
+                                run_id=run_id,
+                                gate=str(gate),
+                                worker_id=spec.reviewer_id,
+                                reviewer_id=spec.reviewer_id,
+                                purpose="review",
+                                provider_family=spec.provider_family,
+                                runtime=spec.runtime,
+                                model=spec.model or "",
+                                status="session_created",
+                                started_at=reviewer_started_at,
+                                worktree_ref=str(Path(cwd).expanduser()),
+                                branch=review_branch,
+                            )
+                            self.state.write_event(
+                                run_id=run_id,
+                                source="dual_agent",
+                                kind=WORKER_SESSION_CREATED,
+                                payload={
+                                    "schema_version": "supervisor-worker-dispatch/v1",
+                                    **build_dispatch_payload(base_dispatch),
+                                },
+                            )
+                            dispatched = WorkerDispatch(
+                                **{
+                                    **base_dispatch.__dict__,
+                                    "status": "dispatched",
+                                }
+                            )
+                            self.state.write_event(
+                                run_id=run_id,
+                                source="dual_agent",
+                                kind=WORKER_DISPATCHED,
+                                payload={
+                                    "schema_version": "supervisor-worker-dispatch/v1",
+                                    **build_dispatch_payload(dispatched),
+                                },
+                            )
+                            reviewer_started = time.monotonic()
+                            result = independent_reviewer.review(reviewer_request)
+                            receipt_id = f"reviewer-{spec.reviewer_id}-{gate}-{round_index}"
+                            attempt = EvidenceAttempt(
+                                attempt_id=compute_attempt_id(
+                                    task_id=task_id,
+                                    run_id=run_id,
+                                    gate=str(gate),
+                                    worker_id=spec.reviewer_id,
+                                    purpose="review",
+                                    finding_kind="independent_reviewer_result",
+                                    receipt_ids=[receipt_id],
+                                ),
+                                task_id=task_id,
+                                run_id=run_id,
+                                gate=str(gate),
+                                worker_id=spec.reviewer_id,
+                                purpose="review",
+                                finding_kind="independent_reviewer_result",
+                                receipt_ids=[receipt_id],
+                                output_hash=hashlib.sha256(
+                                    (
+                                        result.outcome.model_dump_json()
+                                        if result.outcome is not None
+                                        else ""
+                                    ).encode("utf-8")
+                                ).hexdigest()
+                                if result.outcome is not None
+                                else None,
+                                transcript_hash=hashlib.sha256(
+                                    (result.transcript or "").encode("utf-8")
+                                ).hexdigest(),
+                                finding_summary=(
+                                    result.outcome.summary
+                                    if result.outcome is not None
+                                    else result.probe.reason
+                                ),
+                            )
+                            self.state.write_event(
+                                run_id=run_id,
+                                source="dual_agent",
+                                kind=EVIDENCE_ATTEMPT_RECORDED,
+                                payload={
+                                    "schema_version": "supervisor-evidence-attempt-link/v1",
+                                    **build_evidence_attempt_payload(attempt),
+                                },
+                            )
+                            terminal_status = _review_worker_terminal_status(result)
+                            completed = WorkerDispatch(
+                                task_id=task_id,
+                                run_id=run_id,
+                                gate=str(gate),
+                                worker_id=spec.reviewer_id,
+                                reviewer_id=spec.reviewer_id,
+                                purpose="review",
+                                provider_family=spec.provider_family,
+                                runtime=result.reviewer_runtime or spec.runtime,
+                                model=result.model or spec.model or "",
+                                status=terminal_status,
+                                started_at=reviewer_started_at,
+                                completed_at=_utc_now_iso(),
+                                wall_clock_s=round(time.monotonic() - reviewer_started, 3),
+                                duration_ms=result.duration_ms,
+                                evidence_attempt_id=attempt.attempt_id,
+                                receipt_ids=[receipt_id],
+                                worktree_ref=str(Path(cwd).expanduser()),
+                                branch=review_branch,
+                                transcript_hash=attempt.transcript_hash,
+                                output_hash=attempt.output_hash,
+                                session_id=result.agent_id,
+                                conversation_id=result.run_id,
+                                reason=_review_worker_terminal_reason(result, terminal_status),
+                                extra={
+                                    "decision": _review_worker_decision(result),
+                                    "failure_classification": result.failure_classification,
+                                    "recoverable": result.recoverable,
+                                },
+                            )
+                            self.state.write_event(
+                                run_id=run_id,
+                                source="dual_agent",
+                                kind=_review_worker_event_kind(terminal_status),
+                                payload={
+                                    "schema_version": "supervisor-worker-dispatch/v1",
+                                    **build_dispatch_payload(completed),
+                                },
+                            )
+                            review_results.append((spec, result))
                     cursor_result = review_results[0][1] if review_results else None
                     if cursor_result is not None:
                         cursor_tool_call.update(_cursor_tool_call_fields(cursor_result))
@@ -1570,10 +1871,66 @@ class CodexSupervisorMcpAPI:
                         gate=str(gate),
                         round_index=round_index,
                     )
+                    if supervisor_review_packet is not None:
+                        for spec, result in review_results:
+                            if result.outcome is None:
+                                continue
+                            outcome_payload = result.outcome.model_dump()
+                            context_receipt = reviewer_context_receipt_from_payload(
+                                reviewer_id=spec.reviewer_id,
+                                payload=outcome_payload,
+                            )
+                            if context_receipt is None:
+                                context_receipt = reviewer_context_receipt_from_payload(
+                                    reviewer_id=spec.reviewer_id,
+                                    payload={
+                                        "reviewer_context_receipt": {
+                                            "reviewer_id": spec.reviewer_id,
+                                            "files_reviewed": [],
+                                            "criteria_checked": [],
+                                            "receipts_considered": [],
+                                            "missing_context": [
+                                                "reviewer_context_receipt_missing"
+                                            ],
+                                        }
+                                    },
+                                )
+                            if context_receipt is None:
+                                continue
+                            context_validation = validate_reviewer_context_receipt(
+                                supervisor_review_packet,
+                                context_receipt,
+                            )
+                            context_payload = context_validation_payload(
+                                packet=supervisor_review_packet,
+                                reviewer_id=spec.reviewer_id,
+                                receipt=context_receipt,
+                                validation=context_validation,
+                            )
+                            self.state.write_event(
+                                run_id=run_id,
+                                source="dual_agent",
+                                kind="supervisor_review_context_validation",
+                                payload=context_payload,
+                            )
+                            if not context_validation.complete:
+                                review_context_complete = False
+                                review_context_failures.append(context_payload)
                     cursor_payload = _cursor_result_payload(cursor_result) if cursor_result is not None else None
                     if cursor_payload is None:
                         cursor_payload = {"schema_version": "independent-reviewer-result/v1", "accepted": False}
                     cursor_payload["independent_reviewer_results"] = independent_reviewer_results
+                    if supervisor_review_packet_payload is not None:
+                        cursor_payload["supervisor_review_packet"] = supervisor_review_packet_payload
+                    cursor_payload["cross_vendor_review"] = build_cross_vendor_payload(
+                        cross_vendor_selection
+                    )
+                    if review_context_failures:
+                        cursor_payload["review_context_validation"] = {
+                            "status": "failed",
+                            "reason": review_context_incomplete_reason(),
+                            "failures": review_context_failures,
+                        }
                     payload["cursor_review"] = cursor_payload
                     payload["independent_reviewer"] = cursor_payload
                     payload["independent_reviewer_results"] = independent_reviewer_results
@@ -1786,6 +2143,12 @@ class CodexSupervisorMcpAPI:
                         and (runtime_probe is None or runtime_probe.ok)
                         and (deliverable_probe is None or deliverable_probe.ok)
                         and (claim_probe is None or claim_probe.ok)
+                        and not review_packet_failures
+                        and review_context_complete
+                        and not (
+                            isinstance(payload.get("cross_vendor_review"), dict)
+                            and payload["cross_vendor_review"].get("selection_status") == "block"
+                        )
                         and cursor_decision == "accept"
                     )
                     else "deny"
@@ -3135,6 +3498,18 @@ class CodexSupervisorMcpAPI:
                    'dual_agent_interaction_message',
                    'independent_reviewer_adjudication',
                    'independent_reviewer_review',
+                   'supervisor_cross_vendor_review_selected',
+                   'supervisor_degraded_review_unavailable',
+                   'supervisor_evidence_attempt_recorded',
+                   'supervisor_review_context_validation',
+                   'supervisor_review_packet_created',
+                   'supervisor_worker_blocked',
+                   'supervisor_worker_cancelled',
+                   'supervisor_worker_completed',
+                   'supervisor_worker_dispatched',
+                   'supervisor_worker_failed',
+                   'supervisor_worker_roster_checked',
+                   'supervisor_worker_session_created',
                    'tri_agent_cursor_review'
                  )
                ORDER BY event_id ASC""",
@@ -3156,6 +3531,12 @@ class CodexSupervisorMcpAPI:
         cursor_reviews: list[dict[str, Any]] = []
         independent_reviewer_reviews: list[dict[str, Any]] = []
         independent_reviewer_adjudications: list[dict[str, Any]] = []
+        supervisor_review_packets: list[dict[str, Any]] = []
+        supervisor_review_context_validations: list[dict[str, Any]] = []
+        worker_roster_checks: list[dict[str, Any]] = []
+        worker_dispatch_events: list[dict[str, Any]] = []
+        evidence_attempts: list[dict[str, Any]] = []
+        cross_vendor_reviews: list[dict[str, Any]] = []
         latest_result: dict[str, Any] | None = None
         latest_result_event_id: int | None = None
         for row in rows:
@@ -3280,6 +3661,54 @@ class CodexSupervisorMcpAPI:
                     "independent_reviewer_results": payload.get("independent_reviewer_results")
                     or _independent_reviewer_results_from_payload(payload),
                 }))
+            elif row["kind"] == "supervisor_review_packet_created":
+                supervisor_review_packets.append(redact({
+                    "event_id": row["event_id"],
+                    "occurred_at": row["ts"],
+                    **payload,
+                }))
+            elif row["kind"] == "supervisor_review_context_validation":
+                supervisor_review_context_validations.append(redact({
+                    "event_id": row["event_id"],
+                    "occurred_at": row["ts"],
+                    **payload,
+                }))
+            elif row["kind"] == "supervisor_worker_roster_checked":
+                worker_roster_checks.append(redact({
+                    "event_id": row["event_id"],
+                    "occurred_at": row["ts"],
+                    **payload,
+                }))
+            elif row["kind"] in {
+                "supervisor_worker_session_created",
+                "supervisor_worker_dispatched",
+                "supervisor_worker_completed",
+                "supervisor_worker_failed",
+                "supervisor_worker_blocked",
+                "supervisor_worker_cancelled",
+            }:
+                worker_dispatch_events.append(redact({
+                    "event_id": row["event_id"],
+                    "occurred_at": row["ts"],
+                    "event_kind": row["kind"],
+                    **payload,
+                }))
+            elif row["kind"] == "supervisor_evidence_attempt_recorded":
+                evidence_attempts.append(redact({
+                    "event_id": row["event_id"],
+                    "occurred_at": row["ts"],
+                    **payload,
+                }))
+            elif row["kind"] in {
+                "supervisor_cross_vendor_review_selected",
+                "supervisor_degraded_review_unavailable",
+            }:
+                cross_vendor_reviews.append(redact({
+                    "event_id": row["event_id"],
+                    "occurred_at": row["ts"],
+                    "event_kind": row["kind"],
+                    **payload,
+                }))
             elif row["kind"] == "dual_agent_gate_result":
                 latest_result = redact(payload)
                 latest_result_event_id = int(row["event_id"])
@@ -3295,6 +3724,12 @@ class CodexSupervisorMcpAPI:
             and not cursor_reviews
             and not independent_reviewer_reviews
             and not independent_reviewer_adjudications
+            and not supervisor_review_packets
+            and not supervisor_review_context_validations
+            and not worker_roster_checks
+            and not worker_dispatch_events
+            and not evidence_attempts
+            and not cross_vendor_reviews
             and latest_result is None
         ):
             return {
@@ -3317,6 +3752,12 @@ class CodexSupervisorMcpAPI:
                 "cursor_reviews": [],
                 "independent_reviewer_reviews": [],
                 "independent_reviewer_adjudications": [],
+                "supervisor_review_packets": [],
+                "supervisor_review_context_validations": [],
+                "worker_roster_checks": [],
+                "worker_dispatch_events": [],
+                "evidence_attempts": [],
+                "cross_vendor_reviews": [],
                 "result": None,
                 "handoff_packet_path": None,
             }
@@ -3340,6 +3781,12 @@ class CodexSupervisorMcpAPI:
             "cursor_reviews": cursor_reviews,
             "independent_reviewer_reviews": independent_reviewer_reviews,
             "independent_reviewer_adjudications": independent_reviewer_adjudications,
+            "supervisor_review_packets": supervisor_review_packets,
+            "supervisor_review_context_validations": supervisor_review_context_validations,
+            "worker_roster_checks": worker_roster_checks,
+            "worker_dispatch_events": worker_dispatch_events,
+            "evidence_attempts": evidence_attempts,
+            "cross_vendor_reviews": cross_vendor_reviews,
             "result_event_id": latest_result_event_id,
             "result": latest_result,
             "handoff_packet_path": (
@@ -5118,6 +5565,20 @@ def _workflow_round_objection(
     if claim_probe is not None and claim_probe.get("status") != "green":
         return str(claim_probe.get("reason") or "claim verification failed")
     if cursor_review is not None:
+        packet = cursor_review.get("supervisor_review_packet")
+        if isinstance(packet, dict):
+            validation = packet.get("validation") if isinstance(packet.get("validation"), dict) else {}
+            if validation.get("status") == "failed":
+                failures = validation.get("failures") if isinstance(validation.get("failures"), list) else []
+                reasons = ", ".join(
+                    str(item.get("reason") or "")
+                    for item in failures
+                    if isinstance(item, dict) and str(item.get("reason") or "").strip()
+                )
+                return f"review_packet_incomplete: {reasons or 'packet validation failed'}"
+        context_validation = cursor_review.get("review_context_validation")
+        if isinstance(context_validation, dict) and context_validation.get("status") == "failed":
+            return f"{review_context_incomplete_reason()}: reviewer did not cover the supervisor review packet"
         panel_decision = cursor_review.get("independent_reviewer_panel_decision")
         if isinstance(panel_decision, dict) and panel_decision.get("decision") != "accept":
             reason = str(panel_decision.get("reason") or "independent_reviewer_panel_not_accepted")
@@ -5671,6 +6132,426 @@ def _reviewer_panel_calibration_path_config(
     if not candidate.is_absolute():
         candidate = Path(cwd).expanduser() / candidate
     return str(candidate)
+
+
+def _artifact_planning_refs(
+    artifacts: list[dict[str, Any]] | tuple[dict[str, Any], ...],
+    *,
+    cwd: str | Path,
+) -> list[PlanningRef]:
+    root = Path(cwd).expanduser()
+    refs: list[PlanningRef] = []
+    for artifact in artifacts:
+        if not isinstance(artifact, dict):
+            continue
+        path_text = str(artifact.get("path") or "").strip()
+        if not path_text:
+            continue
+        path = Path(path_text).expanduser()
+        if not path.is_absolute():
+            path = root / path
+        sha = str(artifact.get("sha256") or "").strip()
+        if not sha and path.exists() and path.is_file():
+            sha = hashlib.sha256(path.read_bytes()).hexdigest()
+        refs.append(
+            PlanningRef(
+                kind=str(artifact.get("kind") or artifact.get("artifact_kind") or "artifact"),
+                path=path_text,
+                sha256=sha,
+            )
+        )
+    return refs
+
+
+def _tdd_names_from_artifacts(
+    artifacts: list[dict[str, Any]] | tuple[dict[str, Any], ...],
+    *,
+    cwd: str | Path,
+) -> list[str]:
+    root = Path(cwd).expanduser()
+    names: list[str] = []
+    for artifact in artifacts:
+        if not isinstance(artifact, dict):
+            continue
+        kind = str(artifact.get("kind") or artifact.get("artifact_kind") or "").lower()
+        path_text = str(artifact.get("path") or "").strip()
+        if "tdd" not in kind and not path_text.endswith("tdd.md"):
+            continue
+        path = Path(path_text).expanduser()
+        if not path.is_absolute():
+            path = root / path
+        if not path.exists() or not path.is_file():
+            continue
+        for name in _tdd_test_names(path.read_text(encoding="utf-8", errors="replace")):
+            if name not in names:
+                names.append(name)
+    return names
+
+
+def _changed_files_from_runtime_receipts(
+    receipts: list[dict[str, Any]] | tuple[dict[str, Any], ...],
+    *,
+    cwd: str | Path,
+    trusted_runtime_receipt_ids: set[str] | None = None,
+) -> list[ChangedFile]:
+    root = Path(cwd).expanduser()
+    trusted = set(trusted_runtime_receipt_ids or set())
+    declared_paths: set[str] = set()
+    for receipt in receipts:
+        if not _is_review_packet_runtime_diff_receipt(
+            receipt,
+            trusted_runtime_receipt_ids=trusted,
+        ):
+            continue
+        for path_text in receipt.get("declared_changed_files") or []:
+            text = str(path_text or "").strip()
+            if text:
+                declared_paths.add(text)
+
+    by_path: dict[str, ChangedFile] = {}
+    for receipt in receipts:
+        if not _is_review_packet_runtime_diff_receipt(
+            receipt,
+            trusted_runtime_receipt_ids=trusted,
+        ):
+            continue
+        name_status = receipt.get("name_status")
+        if isinstance(name_status, list):
+            for entry in name_status:
+                if not isinstance(entry, dict):
+                    continue
+                path_text = str(entry.get("path") or "").strip()
+                if not _is_review_packet_changed_file_path(
+                    path_text,
+                    declared_paths=declared_paths,
+                ):
+                    continue
+                by_path[path_text] = ChangedFile(
+                    path=path_text,
+                    status=str(entry.get("status") or "changed"),
+                    sha256=_sha256_relative_file(root, path_text),
+                )
+            continue
+        for path_text in receipt.get("actual_changed_files") or receipt.get("changed_files") or []:
+            text = str(path_text or "").strip()
+            if (
+                text
+                and text not in by_path
+                and _is_review_packet_changed_file_path(
+                    text,
+                    declared_paths=declared_paths,
+                )
+            ):
+                by_path[text] = ChangedFile(
+                    path=text,
+                    status="changed",
+                    sha256=_sha256_relative_file(root, text),
+                )
+    return [by_path[key] for key in sorted(by_path)]
+
+
+def _is_review_packet_runtime_diff_receipt(
+    receipt: Any,
+    *,
+    trusted_runtime_receipt_ids: set[str],
+) -> bool:
+    if not isinstance(receipt, dict) or receipt.get("kind") != "git_diff":
+        return False
+    receipt_id = str(receipt.get("receipt_id") or receipt.get("id") or "").strip()
+    if trusted_runtime_receipt_ids:
+        return receipt_id in trusted_runtime_receipt_ids
+    return (
+        receipt.get("_supervisor_runtime_evidence") is True
+        and receipt.get("source") == "supervisor"
+        and receipt.get("supervisor_runtime_origin") == "collect_runtime_evidence"
+    )
+
+
+def _is_review_packet_changed_file_path(
+    path_text: str,
+    *,
+    declared_paths: set[str],
+) -> bool:
+    path = str(path_text or "").strip()
+    if not path or _is_benign_review_packet_path(path):
+        return False
+    if path.startswith("docs/"):
+        return path in declared_paths
+    return True
+
+
+def _is_benign_review_packet_path(path_text: str) -> bool:
+    path = str(path_text or "").strip()
+    if not path:
+        return True
+    if path.startswith((".scratch/", ".handoff/", "reviews/", ".cortex/runtime_workspaces/")):
+        return True
+    if path == "state.db" or path.endswith((".db-shm", ".db-wal")):
+        return True
+    if path.startswith("docs/dual-agent/"):
+        return True
+    if path.startswith("docs/supervisor-") and path.endswith(".md"):
+        return True
+    return False
+
+
+def _sha256_relative_file(root: Path, relative: str) -> str | None:
+    path = root / relative
+    if not path.exists() or not path.is_file():
+        return None
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _runtime_receipt_refs(
+    receipts: list[dict[str, Any]] | tuple[dict[str, Any], ...],
+    *,
+    trusted_runtime_receipt_ids: set[str],
+) -> list[ReceiptRef]:
+    refs: list[ReceiptRef] = []
+    trusted = set(trusted_runtime_receipt_ids)
+    for receipt in receipts:
+        if not isinstance(receipt, dict):
+            continue
+        receipt_id = str(receipt.get("receipt_id") or receipt.get("id") or "").strip()
+        if not receipt_id or receipt_id not in trusted:
+            continue
+        refs.append(ReceiptRef(receipt_id=receipt_id, kind=str(receipt.get("kind") or "receipt")))
+    return refs
+
+
+def _git_head(cwd: str | Path) -> str | None:
+    completed = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=str(Path(cwd).expanduser()),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return completed.stdout.strip() if completed.returncode == 0 else None
+
+
+def _git_branch(cwd: str | Path) -> str | None:
+    completed = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=str(Path(cwd).expanduser()),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    branch = completed.stdout.strip()
+    if completed.returncode != 0 or not branch:
+        return None
+    return branch
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _review_worker_terminal_status(result: CursorInvocationResult) -> str:
+    if str(result.status or "").strip().lower() == "cancelled":
+        return "cancelled"
+    if not result.probe.ok:
+        return "failed"
+    if not cursor_accepts(result):
+        return "blocked"
+    return "completed"
+
+
+def _review_worker_event_kind(status: str) -> str:
+    if status == "completed":
+        return WORKER_COMPLETED
+    if status == "failed":
+        return WORKER_FAILED
+    if status == "blocked":
+        return WORKER_BLOCKED
+    if status == "cancelled":
+        return WORKER_CANCELLED
+    raise ValueError(f"unknown review worker status: {status!r}")
+
+
+def _review_worker_decision(result: CursorInvocationResult) -> str:
+    if result.outcome is not None:
+        for decision in result.outcome.decisions:
+            if decision in {"accept", "revise", "deny"}:
+                return decision
+    return "accept" if cursor_accepts(result) else "revise"
+
+
+def _review_worker_terminal_reason(
+    result: CursorInvocationResult,
+    status: str,
+) -> str | None:
+    if status == "completed":
+        return None
+    if status == "blocked":
+        return "reviewer_non_accept"
+    if status == "cancelled":
+        return result.probe.reason or "reviewer_cancelled"
+    return str(result.failure_classification or result.probe.reason or "reviewer_failed")
+
+
+def _build_supervisor_review_packet(
+    *,
+    task_id: str,
+    run_id: str,
+    gate: str,
+    round_index: int,
+    cwd: str | Path,
+    gate_artifacts: list[dict[str, Any]] | tuple[dict[str, Any], ...],
+    runtime_baseline: dict[str, Any] | None,
+    receipt_payloads: list[dict[str, Any]],
+    trusted_runtime_receipt_ids: set[str],
+    reviewer_ids: list[str],
+    policy_overlay_hash: str = "",
+    lesson_hashes: list[str] | None = None,
+):
+    runtime_refs = _runtime_receipt_refs(
+        receipt_payloads,
+        trusted_runtime_receipt_ids=trusted_runtime_receipt_ids,
+    )
+    changed_files = _changed_files_from_runtime_receipts(
+        receipt_payloads,
+        cwd=cwd,
+        trusted_runtime_receipt_ids=trusted_runtime_receipt_ids,
+    )
+    tdd_names = _tdd_names_from_artifacts(gate_artifacts, cwd=cwd)
+    diff_refs = [
+        ref.receipt_id
+        for ref in runtime_refs
+        if ref.kind == "git_diff"
+    ]
+    packet = build_review_packet(
+        task_id=task_id,
+        run_id=run_id,
+        gate=gate,
+        packet_id=f"review-packet-{gate}-{round_index}",
+        base_head=str((runtime_baseline or {}).get("head") or _git_head(cwd) or ""),
+        candidate_head=_git_head(cwd),
+        patch_hash=hashlib.sha256(
+            json.dumps(
+                [cf.__dict__ for cf in changed_files],
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            ).encode("utf-8")
+        ).hexdigest() if changed_files else None,
+        planning_refs=_artifact_planning_refs(gate_artifacts, cwd=cwd),
+        acceptance_items=tdd_names,
+        diff_refs=diff_refs,
+        name_status_refs=[f"{ref}:name_status" for ref in diff_refs],
+        changed_files=changed_files,
+        runtime_receipt_ids=runtime_refs,
+        declared_tests=tdd_names,
+        executed_test_receipt_ids=[
+            ref for ref in runtime_refs if ref.kind in {"test", "tdd_test_coverage"}
+        ],
+        policy_overlay_hash=policy_overlay_hash,
+        lesson_hashes=lesson_hashes or [],
+        reviewer_ids=reviewer_ids,
+    )
+    failures = validate_review_packet(
+        packet,
+        expected_changed_files=[cf.path for cf in changed_files],
+        expected_acceptance_items=tdd_names,
+        expected_declared_tests=tdd_names,
+        supervisor_runtime_receipt_ids=trusted_runtime_receipt_ids,
+    )
+    payload = {
+        "schema_version": "supervisor-review-packet/v1",
+        **packet.to_event_payload(),
+        "validation": {
+            "status": "passed" if not failures else "failed",
+            "failures": [
+                {"reason": failure.reason, "detail": failure.detail}
+                for failure in failures
+            ],
+        },
+    }
+    return packet, payload, failures
+
+
+def _reviewer_roster_preflight(
+    *,
+    task_id: str,
+    run_id: str,
+    gate: str,
+    reviewers: list[Any],
+    cfg: Config,
+    cursor_runner: CursorRunner,
+    codex_runner: Runner,
+) -> RosterPreflight:
+    entries: list[RosterEntry] = []
+    for reviewer in reviewers:
+        spec = reviewer.spec
+        available, boot_status, failure_reason = _reviewer_boot_status(
+            reviewer=reviewer,
+            cfg=cfg,
+            cursor_runner=cursor_runner,
+            codex_runner=codex_runner,
+        )
+        entries.append(
+            RosterEntry(
+                worker_id=spec.reviewer_id,
+                purpose="reviewer",
+                provider_family=spec.provider_family,
+                runtime=spec.runtime,
+                model=spec.model or "",
+                available=available,
+                boot_status=boot_status,
+                failure_reason=failure_reason,
+            )
+        )
+    return RosterPreflight(
+        task_id=task_id,
+        run_id=run_id,
+        gate=gate,
+        entries=entries,
+    )
+
+
+def _reviewer_boot_status(
+    *,
+    reviewer: Any,
+    cfg: Config,
+    cursor_runner: CursorRunner,
+    codex_runner: Runner,
+) -> tuple[bool, str, str | None]:
+    spec = reviewer.spec
+    runtime = str(spec.runtime or "").lower()
+    if runtime == "codex_cli":
+        command = str(getattr(reviewer, "command", "") or "codex")
+        if _uses_real_subprocess_runner(codex_runner):
+            if shutil.which(command) is None:
+                return False, "command_not_found", f"{command} command not found"
+            return True, "command_available", None
+        return True, "configured_test_runner", None
+
+    if runtime == "cursor_sdk":
+        if cursor_runner is invoke_cursor_agent:
+            if importlib.util.find_spec("cursor_sdk") is None:
+                return False, "module_not_found", "cursor_sdk module not importable"
+            return True, "sdk_importable", None
+        return True, "configured_test_runner", None
+
+    if runtime == "litellm_structured":
+        if cursor_runner is invoke_cursor_agent:
+            if importlib.util.find_spec("openai") is None:
+                return False, "module_not_found", "openai module not importable"
+            api_key = cfg.models.openai_api_key or os.environ.get("OPENAI_API_KEY")
+            if not api_key:
+                return False, "missing_api_key", "OPENAI_API_KEY unavailable"
+            return True, "api_configured", None
+        return True, "configured_test_runner", None
+
+    return True, "configured", None
+
+
+def _uses_real_subprocess_runner(runner: Runner) -> bool:
+    return (
+        getattr(runner, "__module__", "") == "subprocess"
+        and getattr(runner, "__name__", "") == "run"
+    )
 
 
 def _no_mistakes_config(

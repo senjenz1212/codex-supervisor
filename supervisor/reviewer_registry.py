@@ -1131,6 +1131,11 @@ def _codex_cli_reviewer_prompt(
         f"{json.dumps(receipt, sort_keys=True, default=str)[:2000]}"
         for receipt in request.tool_receipts
     ]
+    review_packet = (
+        json.dumps(request.review_packet, sort_keys=True, indent=2, default=str)
+        if request.review_packet
+        else "null"
+    )
     return "\n".join([
         f"Independent reviewer gate: {request.gate}.",
         f"Task id: {request.task_id}.",
@@ -1147,6 +1152,20 @@ def _codex_cli_reviewer_prompt(
         "",
         "Evidence receipts:",
         "\n".join(receipt_lines) if receipt_lines else "- none",
+        "",
+        "Supervisor review packet JSON:",
+        review_packet,
+        "",
+        "Reviewer context receipt requirement:",
+        (
+            "Return critical_review.reviewer_context_receipt with files_reviewed, "
+            "criteria_checked, receipts_considered, assumptions, and missing_context. "
+            "For traceability, copy exact values from the supervisor packet: "
+            "files_reviewed must include changed_files[].path values you inspected; "
+            "criteria_checked must include acceptance_items[] strings; "
+            "receipts_considered must include runtime_receipt_ids[].receipt_id values. "
+            "Put any omitted packet item in missing_context."
+        ),
         "",
         "Claude outcome JSON:",
         json.dumps(request.claude_outcome or {}, sort_keys=True, default=str),

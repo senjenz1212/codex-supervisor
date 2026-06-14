@@ -2006,6 +2006,7 @@ def _cursor_review_result(
     confidence: float = 0.91,
     strongest_objection: str | None = None,
     evidence_ref: str | None = None,
+    review_packet: dict | None = None,
 ) -> CursorInvocationResult:
     objection = (
         strongest_objection
@@ -2037,6 +2038,10 @@ def _cursor_review_result(
             "decision": decision,
             "severity": severity or ("none" if decision == "accept" else "important"),
             "evidence_refs": [evidence_ref] if evidence_ref else [],
+            "reviewer_context_receipt": _reviewer_context_receipt_from_packet(
+                "independent-reviewer-0",
+                review_packet,
+            ),
         },
     )
     return CursorInvocationResult(
@@ -2063,6 +2068,7 @@ def _codex_reviewer_jsonl(
     include_command: bool = True,
     strongest_objection: str | None = None,
     evidence_ref: str | None = None,
+    review_packet: dict | None = None,
 ) -> str:
     objection = (
         strongest_objection
@@ -2091,6 +2097,10 @@ def _codex_reviewer_jsonl(
             "decision": decision,
             "severity": severity or ("none" if decision == "accept" else "important"),
             "evidence_refs": [evidence_ref] if evidence_ref else [],
+            "reviewer_context_receipt": _reviewer_context_receipt_from_packet(
+                "independent-reviewer-1",
+                review_packet,
+            ),
         },
     )
     events = [
@@ -2148,6 +2158,9 @@ def _codex_reviewer_session_jsonl(
             "what_would_change_my_mind": "New contradictory evidence.",
             "decision": decision,
             "severity": severity or ("none" if decision == "accept" else "important"),
+            "reviewer_context_receipt": _reviewer_context_receipt_fixture(
+                "independent-reviewer-1"
+            ),
         },
     )
     return "\n".join([
@@ -2204,20 +2217,27 @@ def _task_id_from_codex_argv(argv) -> str:
 
 def _accepting_codex_reviewer_runner(argv, **kwargs):
     task_id = _task_id_from_codex_argv(argv)
+    review_packet = _review_packet_from_codex_prompt(argv)
     return subprocess.CompletedProcess(
         argv,
         0,
-        stdout=_codex_reviewer_jsonl(task_id),
+        stdout=_codex_reviewer_jsonl(task_id, review_packet=review_packet),
         stderr="",
     )
 
 
 def _revising_codex_reviewer_runner(argv, **kwargs):
     task_id = _task_id_from_codex_argv(argv)
+    review_packet = _review_packet_from_codex_prompt(argv)
     return subprocess.CompletedProcess(
         argv,
         0,
-        stdout=_codex_reviewer_jsonl(task_id, decision="revise", severity="important"),
+        stdout=_codex_reviewer_jsonl(
+            task_id,
+            decision="revise",
+            severity="important",
+            review_packet=review_packet,
+        ),
         stderr="",
     )
 
@@ -2237,6 +2257,7 @@ def _revising_codex_reviewer_with_evidence_runner(argv, **kwargs):
             severity="important",
             strongest_objection="cited receipt contradicts the accept path",
             evidence_ref=str(evidence.relative_to(cwd)),
+            review_packet=_review_packet_from_codex_prompt(argv),
         ),
         stderr="",
     )
@@ -2295,8 +2316,82 @@ def _cursor_missing_verdict_runner(request) -> CursorInvocationResult:
     )
 
 
+def _reviewer_context_receipt_fixture(reviewer_id: str) -> dict:
+    return {
+        "reviewer_id": reviewer_id,
+        "files_reviewed": [
+            "supervisor/dual_agent_workflow.py",
+            "tests/test_dual_agent_workflow_driver.py",
+            "tests/test_runtime_evidence_fixture.py",
+        ],
+        "criteria_checked": [
+            "test_runtime_evidence_fixture",
+            "test_runtime_evidence_fixture_extra",
+        ],
+        "receipts_considered": [
+            "runtime-baseline-outcome_review-1",
+            "runtime-git-diff-outcome_review-1",
+            "runtime-deliverables-outcome_review-1",
+            "runtime-tests-outcome_review-1",
+            "runtime-tdd-coverage-outcome_review-1",
+        ],
+        "assumptions": [],
+        "missing_context": [],
+    }
+
+
+def _reviewer_context_receipt_from_packet(
+    reviewer_id: str,
+    review_packet: dict | None,
+) -> dict:
+    if not isinstance(review_packet, dict):
+        return _reviewer_context_receipt_fixture(reviewer_id)
+    return {
+        "reviewer_id": reviewer_id,
+        "files_reviewed": [
+            str(item.get("path"))
+            for item in review_packet.get("changed_files") or []
+            if isinstance(item, dict) and str(item.get("path") or "").strip()
+        ],
+        "criteria_checked": [
+            str(item)
+            for item in review_packet.get("acceptance_items") or []
+            if str(item).strip()
+        ],
+        "receipts_considered": [
+            str(item.get("receipt_id"))
+            for item in review_packet.get("runtime_receipt_ids") or []
+            if isinstance(item, dict) and str(item.get("receipt_id") or "").strip()
+        ],
+        "assumptions": [],
+        "missing_context": [],
+    }
+
+
+def _review_packet_from_codex_prompt(argv) -> dict | None:
+    prompt = str(argv[-1]) if argv else ""
+    match = re.search(
+        r"Supervisor review packet JSON:\n(?P<payload>.*?)\n\nReviewer context receipt requirement:",
+        prompt,
+        re.DOTALL,
+    )
+    if not match:
+        return None
+    text = match.group("payload").strip()
+    if not text or text == "null":
+        return None
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
 def _accepting_cursor_runner(request) -> CursorInvocationResult:
-    return _cursor_review_result(request.task_id)
+    return _cursor_review_result(
+        request.task_id,
+        review_packet=getattr(request, "review_packet", None),
+    )
 
 
 def _cursor_contract_unmet_runner(request) -> CursorInvocationResult:
@@ -2495,7 +2590,10 @@ async def test_workflow_passes_reviewer_infra_retry_policy_to_cursor_request(tmp
 
     def fake_cursor_runner(request):
         requests.append(request)
-        return _cursor_review_result(request.task_id)
+        return _cursor_review_result(
+            request.task_id,
+            review_packet=getattr(request, "review_packet", None),
+        )
 
     server, _state = _server(tmp_path, cursor_runner=fake_cursor_runner)
 
@@ -2525,7 +2623,10 @@ async def test_cursor_sdk_output_mode_routes_legacy_model_to_reviewer_request(tm
 
     def fake_cursor_runner(request):
         requests.append(request)
-        return _cursor_review_result(request.task_id)
+        return _cursor_review_result(
+            request.task_id,
+            review_packet=getattr(request, "review_packet", None),
+        )
 
     server, _state = _server(tmp_path, cursor_runner=fake_cursor_runner)
 
@@ -5689,7 +5790,10 @@ async def test_run_dual_agent_workflow_runs_cursor_review_by_default(tmp_path):
 
     def fake_cursor_runner(request):
         cursor_calls.append(request)
-        return _cursor_review_result(request.task_id)
+        return _cursor_review_result(
+            request.task_id,
+            review_packet=getattr(request, "review_packet", None),
+        )
 
     server, state = _server(tmp_path, cursor_runner=fake_cursor_runner)
 
@@ -5739,6 +5843,293 @@ async def test_run_dual_agent_workflow_runs_cursor_review_by_default(tmp_path):
     assert review_request["critical_review"]["schema_version"] == "critical-review/v1"
     assert review_response["critical_review"]["schema_version"] == "critical-review/v1"
     assert gate_decision["critical_review"]["schema_version"] == "critical-review/v1"
+
+
+@pytest.mark.asyncio
+async def test_run_dual_agent_workflow_emits_review_packet_roster_and_worker_events(tmp_path):
+    cursor_calls = []
+
+    def fake_cursor_runner(request):
+        cursor_calls.append(request)
+        return _cursor_review_result(
+            request.task_id,
+            review_packet=getattr(request, "review_packet", None),
+        )
+
+    server, state = _server(tmp_path, cursor_runner=fake_cursor_runner)
+
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Emit supervisor review packet and reviewer dispatch evidence.",
+        max_rounds_per_gate=1,
+        cursor_review=True,
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert result["status"] == "accepted"
+    assert cursor_calls
+    assert cursor_calls[0].review_packet is not None
+    assert cursor_calls[0].review_packet["schema_version"] == "supervisor-review-packet/v1"
+    assert cursor_calls[0].review_packet["implementer_transcript_ref"] is None
+
+    events = [
+        (row["kind"], json.loads(row["payload_json"]))
+        for row in state.read_dual_agent_gate_events("workflow-run")
+    ]
+    kinds = [kind for kind, _payload in events]
+    assert "supervisor_worker_roster_checked" in kinds
+    assert "supervisor_cross_vendor_review_selected" in kinds
+    assert "supervisor_review_packet_created" in kinds
+    assert "supervisor_review_context_validation" in kinds
+    assert "supervisor_worker_session_created" in kinds
+    assert "supervisor_worker_dispatched" in kinds
+    assert "supervisor_worker_completed" in kinds
+    assert "supervisor_evidence_attempt_recorded" in kinds
+
+    packet = next(payload for kind, payload in events if kind == "supervisor_review_packet_created")
+    assert packet["packet_sha256"]
+    assert {item["path"] for item in packet["changed_files"]} == {
+        "supervisor/dual_agent_workflow.py",
+        "tests/test_runtime_evidence_fixture.py",
+        "tests/test_dual_agent_workflow_driver.py",
+    }
+    assert packet["runtime_receipt_ids"]
+    roster = next(payload for kind, payload in events if kind == "supervisor_worker_roster_checked")
+    assert roster["available_worker_ids"] == [
+        "independent-reviewer-0",
+        "independent-reviewer-1",
+    ]
+    cross_vendor = next(
+        payload for kind, payload in events if kind == "supervisor_cross_vendor_review_selected"
+    )
+    assert cross_vendor["implementation_provider_family"] == "anthropic"
+    assert cross_vendor["selected_provider_family"] != "anthropic"
+
+    transcript = await _maybe_await(server.tools["read_gate_transcript"](
+        run_id="workflow-run",
+        task_id="workflow-1",
+    ))
+    assert transcript["supervisor_review_packets"]
+    assert transcript["worker_roster_checks"]
+    assert transcript["worker_dispatch_events"]
+    assert transcript["evidence_attempts"]
+    assert transcript["cross_vendor_reviews"]
+
+
+def test_review_packet_changed_files_use_actual_name_status_not_declared_claim(tmp_path):
+    import mcp_tools.codex_supervisor_stdio as stdio
+
+    claimed = tmp_path / "supervisor" / "claimed.py"
+    hidden = tmp_path / "supervisor" / "hidden.py"
+    forged = tmp_path / "supervisor" / "forged.py"
+    scratch = tmp_path / ".scratch" / "noise.txt"
+    generated_doc = tmp_path / "docs" / "dual-agent" / "workflow-1" / "index.md"
+    unrelated_doc = tmp_path / "docs" / "eevee-lessons-for-supervisor-20260612.md"
+    declared_doc = tmp_path / "docs" / "declared-report.md"
+    for path, text in (
+        (claimed, "CLAIMED = True\n"),
+        (hidden, "HIDDEN = True\n"),
+        (forged, "FORGED = True\n"),
+        (scratch, "scratch\n"),
+        (generated_doc, "generated\n"),
+        (unrelated_doc, "unrelated docs from another task\n"),
+        (declared_doc, "declared report deliverable\n"),
+    ):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    receipt = mark_supervisor_runtime_receipt({
+        "receipt_id": "runtime-git-diff-outcome_review-1",
+        "kind": "git_diff",
+        "status": "present",
+        "declared_changed_files": [
+            "docs/declared-report.md",
+            "supervisor/claimed.py",
+        ],
+        "actual_changed_files": [
+            ".scratch/noise.txt",
+            "docs/dual-agent/workflow-1/index.md",
+            "docs/eevee-lessons-for-supervisor-20260612.md",
+            "docs/declared-report.md",
+            "supervisor/claimed.py",
+            "supervisor/hidden.py",
+        ],
+        "name_status": [
+            {"status": "??", "path": ".scratch/noise.txt", "source": "worktree"},
+            {"status": "??", "path": "docs/dual-agent/workflow-1/index.md", "source": "worktree"},
+            {"status": "??", "path": "docs/eevee-lessons-for-supervisor-20260612.md", "source": "worktree"},
+            {"status": "A", "path": "docs/declared-report.md", "source": "worktree"},
+            {"status": "M", "path": "supervisor/claimed.py", "source": "worktree"},
+            {"status": "M", "path": "supervisor/hidden.py", "source": "worktree"},
+        ],
+    })
+    caller_forged_receipt = {
+        "receipt_id": "caller-git-diff",
+        "kind": "git_diff",
+        "status": "present",
+        "changed_files": ["supervisor/forged.py"],
+    }
+
+    changed = stdio._changed_files_from_runtime_receipts(
+        [caller_forged_receipt, receipt],
+        cwd=tmp_path,
+        trusted_runtime_receipt_ids={"runtime-git-diff-outcome_review-1"},
+    )
+
+    assert [item.path for item in changed] == [
+        "docs/declared-report.md",
+        "supervisor/claimed.py",
+        "supervisor/hidden.py",
+    ]
+    assert {item.path: item.status for item in changed} == {
+        "docs/declared-report.md": "A",
+        "supervisor/claimed.py": "M",
+        "supervisor/hidden.py": "M",
+    }
+    assert {item.path: item.sha256 for item in changed} == {
+        "docs/declared-report.md": sha256(b"declared report deliverable\n").hexdigest(),
+        "supervisor/claimed.py": sha256(b"CLAIMED = True\n").hexdigest(),
+        "supervisor/hidden.py": sha256(b"HIDDEN = True\n").hexdigest(),
+    }
+
+
+@pytest.mark.asyncio
+async def test_roster_preflight_filters_missing_codex_cli_before_dispatch(tmp_path, monkeypatch):
+    import mcp_tools.codex_supervisor_stdio as stdio
+
+    cursor_calls = []
+
+    def fake_cursor_runner(request):
+        cursor_calls.append(request)
+        return _cursor_review_result(
+            request.task_id,
+            review_packet=getattr(request, "review_packet", None),
+        )
+
+    def missing_codex(command):
+        if command == "codex":
+            return None
+        return f"/usr/bin/{command}"
+
+    monkeypatch.setattr(stdio.shutil, "which", missing_codex)
+    server, state = _server(
+        tmp_path,
+        cursor_runner=fake_cursor_runner,
+        codex_runner=subprocess.run,
+    )
+
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Unavailable reviewers must be filtered before dispatch.",
+        max_rounds_per_gate=1,
+        cursor_review=True,
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert result["status"] == "accepted"
+    assert len(cursor_calls) == 1
+    events = [
+        (row["kind"], json.loads(row["payload_json"]))
+        for row in state.read_dual_agent_gate_events("workflow-run")
+    ]
+    roster = next(payload for kind, payload in events if kind == "supervisor_worker_roster_checked")
+    assert roster["available_worker_ids"] == ["independent-reviewer-0"]
+    assert roster["unavailable_worker_ids"] == ["independent-reviewer-1"]
+    assert roster["boot_failed_worker_ids"] == ["independent-reviewer-1"]
+    assert roster["unavailable"][0]["boot_status"] == "command_not_found"
+
+    dispatched_worker_ids = [
+        payload["worker_id"]
+        for kind, payload in events
+        if kind in {
+            "supervisor_worker_session_created",
+            "supervisor_worker_dispatched",
+            "supervisor_worker_completed",
+            "supervisor_worker_failed",
+        }
+    ]
+    assert dispatched_worker_ids
+    assert set(dispatched_worker_ids) == {"independent-reviewer-0"}
+    cancelled = [
+        payload
+        for kind, payload in events
+        if kind == "supervisor_worker_cancelled"
+    ]
+    assert len(cancelled) == 1
+    assert cancelled[0]["worker_id"] == "independent-reviewer-1"
+    assert cancelled[0]["status"] == "cancelled"
+    assert cancelled[0]["reason"] == "codex command not found"
+    assert cancelled[0]["purpose"] == "reviewer"
+    assert cancelled[0]["provider_family"] == "openai"
+    assert cancelled[0]["runtime"] == "codex_cli"
+    assert cancelled[0]["model"] == "gpt-5.5"
+    assert cancelled[0]["worktree_ref"] == str(tmp_path)
+    assert cancelled[0]["extra"]["boot_status"] == "command_not_found"
+    cross_vendor = next(
+        payload for kind, payload in events if kind == "supervisor_cross_vendor_review_selected"
+    )
+    assert cross_vendor["selected_reviewer_id"] == "independent-reviewer-0"
+
+
+@pytest.mark.asyncio
+async def test_reviewer_context_receipt_missing_changed_file_blocks_gate(tmp_path):
+    def incomplete_context_runner(request):
+        receipt = _reviewer_context_receipt_fixture("independent-reviewer-0")
+        receipt["files_reviewed"] = ["supervisor/dual_agent_workflow.py"]
+        result = _cursor_review_result(request.task_id)
+        assert result.outcome is not None
+        critical = dict(result.outcome.critical_review or {})
+        critical["reviewer_context_receipt"] = receipt
+        outcome = result.outcome.model_copy(update={"critical_review": critical})
+        return CursorInvocationResult(
+            probe=result.probe,
+            outcome=outcome,
+            transcript=f"<dual_agent_outcome>{outcome.model_dump_json()}</dual_agent_outcome>",
+            agent_id=result.agent_id,
+            run_id=result.run_id,
+            status=result.status,
+            model=result.model,
+            reviewer_runtime=result.reviewer_runtime,
+            reviewer_output_mode=result.reviewer_output_mode,
+            duration_ms=result.duration_ms,
+            reviewer_assurance=result.reviewer_assurance,
+        )
+
+    server, state = _server(tmp_path, cursor_runner=incomplete_context_runner)
+
+    result = await _maybe_await(_run_dual_agent_workflow_direct(server,
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Incomplete reviewer context must block.",
+        max_rounds_per_gate=1,
+        cursor_review=True,
+        tool_receipts=_tool_receipts(),
+    ))
+
+    assert result["status"] == "blocked"
+    assert result["current_gate"] == "outcome_review"
+    rounds = [
+        json.loads(row["payload_json"])["round"]
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "dual_agent_gate_round"
+    ]
+    assert rounds[-1]["codex_decision"] == "revise"
+    assert rounds[-1]["objection"].startswith("review_context_incomplete")
+    validations = [
+        json.loads(row["payload_json"])
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"] == "supervisor_review_context_validation"
+    ]
+    assert any(
+        validation["complete"] is False
+        and "tests/test_dual_agent_workflow_driver.py" in validation["missing_changed_files"]
+        for validation in validations
+    )
 
 
 @pytest.mark.asyncio
@@ -6094,7 +6485,10 @@ async def test_run_dual_agent_workflow_rigorous_cursor_profile_reviews_quality_g
 
     def fake_cursor_runner(request):
         cursor_calls.append(request)
-        return _cursor_review_result(request.task_id)
+        return _cursor_review_result(
+            request.task_id,
+            review_packet=getattr(request, "review_packet", None),
+        )
 
     server, state = _server(tmp_path, cursor_runner=fake_cursor_runner)
 
@@ -6137,7 +6531,10 @@ async def test_run_dual_agent_workflow_vague_route_forces_cursor_review(tmp_path
 
     def fake_cursor_runner(request):
         cursor_calls.append(request)
-        return _cursor_review_result(request.task_id)
+        return _cursor_review_result(
+            request.task_id,
+            review_packet=getattr(request, "review_packet", None),
+        )
 
     server, _state = _server(tmp_path, cursor_runner=fake_cursor_runner)
     screenshot = tmp_path / "result.png"
@@ -6235,6 +6632,32 @@ async def test_run_dual_agent_workflow_panel_blocks_important_reviewer_revise(tm
         payload["independent_reviewer_panel_decision"]["decision"] == "revise"
         for _kind, payload in reviewer_events
     )
+    worker_events = [
+        (row["kind"], json.loads(row["payload_json"]))
+        for row in state.read_dual_agent_gate_events("workflow-run")
+        if row["kind"].startswith("supervisor_worker_")
+    ]
+    blocked = [
+        payload
+        for kind, payload in worker_events
+        if kind == "supervisor_worker_blocked"
+    ]
+    assert blocked
+    assert blocked[0]["worker_id"] == "independent-reviewer-0"
+    assert blocked[0]["status"] == "blocked"
+    assert blocked[0]["reason"] == "reviewer_non_accept"
+    assert blocked[0]["purpose"] == "review"
+    assert blocked[0]["provider_family"] == "cursor"
+    assert blocked[0]["runtime"] == "cursor_sdk"
+    assert blocked[0]["model"] == "composer-2.5"
+    assert blocked[0]["worktree_ref"] == str(tmp_path)
+    assert blocked[0]["evidence_attempt_id"]
+    assert blocked[0]["receipt_ids"]
+    assert blocked[0]["output_hash"]
+    assert blocked[0]["transcript_hash"]
+    assert blocked[0]["session_id"] == "agent-test"
+    assert blocked[0]["conversation_id"] == "run-cursor"
+    assert blocked[0]["extra"]["decision"] == "revise"
 
 
 @pytest.mark.asyncio
@@ -7831,3 +8254,39 @@ def test_visual_evidence_auto_default_behavior_is_unchanged(tmp_path):
     )
     assert policy["required"] is True
     assert policy["source"] == "auto_live_surface"
+
+
+def test_cursor_sdk_rigorous_review_still_runs_on_configured_gates():
+    route_gates = ("prd_review", "tdd_review", "implementation_plan", "outcome_review")
+    rigorous = cursor_review_gates_for_workflow(
+        route_gates=route_gates,
+        task_complexity="medium",
+        cursor_review=True,
+        cursor_review_profile="rigorous",
+    )
+    assert rigorous == ("tdd_review", "implementation_plan", "outcome_review")
+
+    vague = cursor_review_gates_for_workflow(
+        route_gates=route_gates,
+        task_complexity="vague",
+        cursor_review=True,
+        cursor_review_profile=None,
+    )
+    # Vague intents still trigger cursor review at outcome_review at minimum.
+    assert "outcome_review" in vague
+
+
+def test_claude_gate_verdict_remains_required():
+    import mcp_tools.codex_supervisor_stdio as stdio
+
+    source = inspect.getsource(stdio)
+    # The Claude gate verdict is surfaced as claude_gate_status and must remain
+    # a recorded field across the supervisor stdio surface. Silent removal of
+    # any of these emission sites would erase the verdict requirement.
+    occurrences = source.count("claude_gate_status")
+    assert occurrences >= 4, (
+        f"claude_gate_status must remain emitted in supervisor stdio "
+        f"(found {occurrences} references)"
+    )
+    assert '"claude_gate_status": "not_invoked"' in source
+    assert '"claude_gate_status": result.status' in source

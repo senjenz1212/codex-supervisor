@@ -53,6 +53,7 @@ class CursorInvocationRequest:
     api_key: str | None = None
     mode: str = "plan"
     tool_receipts: tuple[dict[str, Any], ...] = ()
+    review_packet: dict[str, Any] | None = None
     expected_specialists: tuple[str, ...] = ("Cursor Reviewer",)
     expected_decisions: tuple[str, ...] = ()
     expected_objections: tuple[str, ...] = ()
@@ -131,6 +132,11 @@ def build_cursor_prompt(request: CursorInvocationRequest, *, compact: bool = Fal
         for receipt in request.tool_receipts
     ]
     receipts = "\n".join(receipt_lines) if receipt_lines else "- none"
+    review_packet = (
+        json.dumps(request.review_packet, sort_keys=True, indent=2, default=str)
+        if request.review_packet
+        else "null"
+    )
     claude_outcome = request.claude_outcome or {}
     claude_outcome_text = _claude_outcome_prompt_payload(
         claude_outcome,
@@ -152,6 +158,20 @@ def build_cursor_prompt(request: CursorInvocationRequest, *, compact: bool = Fal
         "",
         "Evidence receipts:",
         receipts,
+        "",
+        "Supervisor review packet JSON:",
+        review_packet,
+        "",
+        "Reviewer context receipt requirement:",
+        (
+            "Return critical_review.reviewer_context_receipt with files_reviewed, "
+            "criteria_checked, receipts_considered, assumptions, and missing_context. "
+            "For traceability, copy exact values from the supervisor packet: "
+            "files_reviewed must include changed_files[].path values you inspected; "
+            "criteria_checked must include acceptance_items[] strings; "
+            "receipts_considered must include runtime_receipt_ids[].receipt_id values. "
+            "Put any omitted packet item in missing_context."
+        ),
         "",
         "Claude outcome JSON:",
         claude_outcome_text,
@@ -742,6 +762,26 @@ def _run_litellm_structured(request: CursorInvocationRequest) -> tuple[str, dict
 
 
 def _structured_outcome_json_schema() -> dict[str, Any]:
+    reviewer_context_receipt_schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "reviewer_id": {"type": "string"},
+            "files_reviewed": {"type": "array", "items": {"type": "string"}},
+            "criteria_checked": {"type": "array", "items": {"type": "string"}},
+            "receipts_considered": {"type": "array", "items": {"type": "string"}},
+            "assumptions": {"type": "array", "items": {"type": "string"}},
+            "missing_context": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": [
+            "reviewer_id",
+            "files_reviewed",
+            "criteria_checked",
+            "receipts_considered",
+            "assumptions",
+            "missing_context",
+        ],
+    }
     critical_review_schema = {
         "type": "object",
         "additionalProperties": False,
@@ -753,6 +793,7 @@ def _structured_outcome_json_schema() -> dict[str, Any]:
             "what_would_change_my_mind": {"type": "string"},
             "decision": {"type": "string", "enum": ["accept", "revise", "deny"]},
             "severity": {"type": "string"},
+            "reviewer_context_receipt": reviewer_context_receipt_schema,
         },
         "required": [
             "strongest_objection",
@@ -762,6 +803,7 @@ def _structured_outcome_json_schema() -> dict[str, Any]:
             "what_would_change_my_mind",
             "decision",
             "severity",
+            "reviewer_context_receipt",
         ],
     }
     specialist_schema = {
@@ -1011,7 +1053,9 @@ def _outcome_block_contract() -> str:
         "confidence_criteria array, claims array, and critical_review object. "
         "critical_review must include strongest_objection string, missing_evidence array, "
         "contradictions_checked array, assumptions_to_verify array, "
-        "what_would_change_my_mind string, decision string, and severity string. "
+        "what_would_change_my_mind string, decision string, severity string, "
+        "and reviewer_context_receipt object with files_reviewed, criteria_checked, "
+        "receipts_considered, assumptions, and missing_context arrays. "
         "Every specialist object must include a string name and a string decision."
     )
 

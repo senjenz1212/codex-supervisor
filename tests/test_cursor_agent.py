@@ -48,6 +48,8 @@ def test_build_cursor_prompt_is_review_only_and_uses_typed_outcome_contract(tmp_
     assert "Claude outcome JSON" in prompt
     assert "Evidence receipts" in prompt
     assert "pytest-focused" in prompt
+    assert "criteria_checked must include acceptance_items[] strings" in prompt
+    assert "receipts_considered must include runtime_receipt_ids[].receipt_id values" in prompt
 
 
 def test_build_cursor_prompt_compacts_large_runtime_receipt_file_lists(tmp_path: Path):
@@ -76,6 +78,23 @@ def test_build_cursor_prompt_compacts_large_runtime_receipt_file_lists(tmp_path:
     assert "changed_files_omitted_count" in prompt
     assert "generated/file-19.txt" in prompt
     assert "generated/file-20.txt" not in prompt
+
+
+def test_structured_reviewer_schema_allows_context_receipt():
+    schema = cursor_agent._structured_outcome_json_schema()
+    critical = schema["properties"]["critical_review"]
+    receipt = critical["properties"]["reviewer_context_receipt"]
+
+    assert "reviewer_context_receipt" in critical["required"]
+    assert receipt["additionalProperties"] is False
+    assert receipt["required"] == [
+        "reviewer_id",
+        "files_reviewed",
+        "criteria_checked",
+        "receipts_considered",
+        "assumptions",
+        "missing_context",
+    ]
 
 
 def test_cursor_accepts_requires_green_probe_and_accept_decision():
