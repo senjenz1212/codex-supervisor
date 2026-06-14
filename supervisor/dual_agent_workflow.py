@@ -475,10 +475,16 @@ def verify_gate_deliverable_evidence(
         screenshots=[],
         trusted_runtime_receipt_ids=trusted_runtime_receipt_ids,
     )
+    explicit_docs_report = _explicit_docs_report_task(
+        intent=intent,
+        outcome=outcome,
+        receipts=receipts,
+    )
     changed_files = [str(path).strip() for path in outcome.changed_files if str(path).strip()]
     deliverable_files = [
         path for path in changed_files
         if _is_deliverable_changed_file(path, task_id=task_id)
+        or (explicit_docs_report and _is_task_outcome_review_path(path, task_id=task_id))
     ]
     doc_report_files = [
         path for path in deliverable_files
@@ -488,12 +494,6 @@ def verify_gate_deliverable_evidence(
         path for path in deliverable_files
         if path not in doc_report_files
     ]
-    explicit_docs_report = _explicit_docs_report_task(
-        intent=intent,
-        outcome=outcome,
-        receipts=receipts,
-    )
-
     failures: list[str] = []
     if not changed_files:
         failures.append("accepted_gate_without_changed_files")
@@ -888,6 +888,11 @@ def _is_docs_or_report_path(path: str) -> bool:
     return suffix in {".json", ".jsonl", ".yaml", ".yml"} and any(
         marker in name for marker in ("report", "adr", "decision", "plan")
     )
+
+
+def _is_task_outcome_review_path(path: str, *, task_id: str) -> bool:
+    value = _normalise_changed_path(path)
+    return value == f"docs/dual-agent/{task_id}/outcome-review.md"
 
 
 def _explicit_docs_report_task(

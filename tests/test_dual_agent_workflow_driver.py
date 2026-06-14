@@ -1557,6 +1557,56 @@ def test_verify_helpers_do_not_trust_stamped_runtime_native_receipts():
     assert "accepted_gate_without_supervisor_runtime_diff_receipt" in deliverable_probe.details["failures"]
 
 
+def test_explicit_report_task_can_use_task_outcome_review_as_deliverable():
+    report_path = "docs/dual-agent/workflow-1/outcome-review.md"
+    runtime_receipts = [
+        mark_supervisor_runtime_receipt({
+            "receipt_id": "runtime-git-diff-execution-1",
+            "kind": "git_diff",
+            "status": "present",
+            "source": "supervisor",
+            "evidence_grade": "runtime_native",
+            "changed_files": [report_path],
+            "claims": ["implemented"],
+        }),
+        mark_supervisor_runtime_receipt({
+            "receipt_id": "runtime-deliverables-execution-1",
+            "kind": "runtime_deliverable_check",
+            "status": "passed",
+            "source": "supervisor",
+            "evidence_grade": "runtime_native",
+            "changed_files": [report_path],
+        }),
+    ]
+    outcome_payload = {
+        "task_id": "workflow-1",
+        "summary": "Wrote the eval report artifact.",
+        "specialists": [{"name": "Lead", "decision": "accept"}],
+        "decisions": ["accept"],
+        "objections": [],
+        "changed_files": [report_path],
+        "tests": [],
+        "test_status": "unknown",
+        "claims": ["eval report artifact updated"],
+    }
+
+    deliverable_probe = verify_gate_deliverable_evidence(
+        gate="execution",
+        task_id="workflow-1",
+        intent="Produce an eval report artifact in outcome-review.md.",
+        outcome_payload=outcome_payload,
+        tool_receipts=runtime_receipts,
+        trusted_runtime_receipt_ids={
+            "runtime-git-diff-execution-1",
+            "runtime-deliverables-execution-1",
+        },
+    )
+
+    assert deliverable_probe.status == "green"
+    assert deliverable_probe.details["deliverable_files"] == [report_path]
+    assert deliverable_probe.details["doc_report_files"] == [report_path]
+
+
 def test_verify_helpers_do_not_trust_stale_runtime_receipts_from_other_gate():
     stale_runtime_receipts = [
         mark_supervisor_runtime_receipt({

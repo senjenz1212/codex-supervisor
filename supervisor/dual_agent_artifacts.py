@@ -79,7 +79,10 @@ def export_dual_agent_run_artifacts(
     files[4].write_text(_grill_markdown(events), encoding="utf-8")
     files[5].write_text(_issues_markdown(events), encoding="utf-8")
     files[6].write_text(_screenshots_markdown(screenshot_files), encoding="utf-8")
-    files[7].write_text(_gate_markdown("Outcome Review Gate", by_gate.get("outcome_review", ())), encoding="utf-8")
+    outcome_review_events = by_gate.get("outcome_review", ())
+    outcome_review_markdown = _gate_markdown("Outcome Review Gate", outcome_review_events)
+    if outcome_review_events or not _preserve_worker_authored_outcome_review(files[7]):
+        files[7].write_text(outcome_review_markdown, encoding="utf-8")
     files[8].write_text(_interactions_markdown(run_id, task_id, events), encoding="utf-8")
     files[9].write_text(_transcript_markdown(run_id, task_id, events), encoding="utf-8")
     files[10].write_text(transcript_jsonl, encoding="utf-8")
@@ -116,6 +119,20 @@ def export_dual_agent_run_artifacts(
             *_source_artifact_files(out_dir),
         ),
     )
+
+
+def _preserve_worker_authored_outcome_review(path: Path) -> bool:
+    if not path.exists():
+        return False
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    stripped = text.strip()
+    if not stripped:
+        return False
+    placeholder = "# Outcome Review Gate\n\nNo events recorded for this gate."
+    return stripped != placeholder
 
 
 def default_dual_agent_artifact_dir(cwd: str | Path, task_id: str) -> Path:

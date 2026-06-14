@@ -527,8 +527,15 @@ def test_report_only_execution_gate_command_includes_narrow_allowed_tools(tmp_pa
     assert "Bash(git diff*)" in allowed
     assert "Bash(*.venv/bin/python -m pytest*)" in allowed
     assert "Bash(python -m pytest*)" in allowed
+    assert "Bash(*.venv/bin/python -m cortex.vela_eval.runner*)" in allowed
+    assert "Bash(python -m cortex.vela_eval.runner*)" in allowed
+    assert "Bash(curl http://127.0.0.1:5173*)" in allowed
+    assert "Bash(curl http://localhost:5173*)" in allowed
     assert "Bash(rm *)" not in allowed
     assert "Bash(*)" not in allowed
+    assert "Bash(curl *)" not in allowed
+    assert "Bash(curl *127.0.0.1:5173*)" not in allowed
+    assert "Bash(curl -X POST http://127.0.0.1:5173*)" not in allowed
 
 
 def test_normal_execution_gate_command_does_not_get_report_only_allowed_tools(tmp_path):

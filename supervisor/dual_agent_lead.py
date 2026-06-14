@@ -46,6 +46,11 @@ REPORT_ONLY_EXECUTION_ALLOWED_TOOLS: tuple[str, ...] = (
     "Bash(*.venv/bin/python -m pytest*)",
     "Bash(python -m pytest*)",
     "Bash(python3 -m pytest*)",
+    "Bash(*.venv/bin/python -m cortex.vela_eval.runner*)",
+    "Bash(python -m cortex.vela_eval.runner*)",
+    "Bash(python3 -m cortex.vela_eval.runner*)",
+    "Bash(curl http://127.0.0.1:5173*)",
+    "Bash(curl http://localhost:5173*)",
 )
 REPORT_ONLY_EXECUTION_PERMISSION_MODE = "dontAsk"
 
