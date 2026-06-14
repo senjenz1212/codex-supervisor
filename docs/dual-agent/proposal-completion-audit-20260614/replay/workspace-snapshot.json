@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "d35f2f92ae9b29b54b3aeb2c1c944c0f137cea39e5c0d9939a9330c3a6b5bdc3",
+  "git": {
+    "diff_bytes": 0,
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "diff_stat": "",
+    "head": "20d5a43",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "20d5a43",
+    "status_short": "?? .scratch/auto-evolution-loop-proof-20260610/\n?? .scratch/auto-evolution-loop-wiring-20260611/\n?? .scratch/autoresearch-auto-runs/\n?? .scratch/autoresearch-policy-diff-derivation-20260610/\n?? .scratch/axi-cli-detached-dispatcher-20260610/\n?? .scratch/cocreate-8236-resume-conflict-merge-prompt.md\n?? .scratch/cocreate-checkpoint-files-only-dual-agent-prompt.md\n?? .scratch/cocreate-ckpt-tdd-review-corrective-input.md\n?? .scratch/cocreate-global-purge-dual-agent-prompt.md\n?? .scratch/cocreate-untitled-scene-checkpoint-parity-prompt.md\n?? .scratch/defense-in-depth-hardening-20260610/\n?? .scratch/loop-closeout-measurement-20260611/\n?? .scratch/policy-overlay-liveness-20260610-repair/\n?? .scratch/proposal-completion-audit-20260614/\n?? .scratch/runtime-evidence-integrity-amended-run-id.txt\n?? .scratch/runtime-evidence-integrity-clean-run.txt\n?? docs/axi-principles-evidence-review-20260611.md\n?? docs/dual-agent/live-cursor-sdk-probe-20260610-135900/\n?? docs/dual-agent/live-cursor-sdk-probe-20260610-140228/\n?? docs/dual-agent/loop-closeout-measurement-20260611/\n?? docs/dual-agent/proposal-completion-audit-20260614/\n?? docs/dual-agent/supervisor-flow-autoresearch-run-20260609/\n?? docs/eevee-lessons-for-supervisor-20260612.md\n?? docs/supervisor-auto-evolution-loop-program-20260610.md\n?? docs/supervisor-auto-improve-gap-analysis-20260610.md\n?? docs/supervisor-autoevolution-readiness-20260610.md\n?? docs/supervisor-axi-vs-mcp-analysis-20260610.md\n?? docs/supervisor-improvement-audit-20260609.md\n?? docs/supervisor-improvement-completion-prompts-20260610.md\n?? docs/supervisor-improvement-prompts-coverage-20260609.md\n?? docs/supervisor-improvement-prompts-finish-20260610.md\n?? tests/test_proposal_completion_audit_20260614.py"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "cdfbabc7a637d208f4359d7953aabeb88513e13fab8c72becc867dc7591fb041",
+    "implementation_plan": "0426b81fa8d4444ba9ba871d2e36dab3450750b3b5bd4de927296e987e93a818",
+    "issues": "e8f3e1e9d98aee017f0d51b13a9f41dfd84fcd3ffb4afc12fc5af118e85c80b2",
+    "prd": "8635d9d9bbc2c7c919da3c1d01167bb1b000fc28a2e76066641d3562946516e5",
+    "tdd_plan": "3a0ed6b67a945cf2313df99a4728dec24dd08f3a66e008c6b00b098b1ef7b52a"
+  },
+  "status": "captured"
+}
