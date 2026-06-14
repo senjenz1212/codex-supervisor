@@ -2475,11 +2475,11 @@ async def test_workflow_invokes_cursor_sdk_reviewer_after_claude_accept_by_defau
     ))
 
     assert result["status"] == "accepted"
-    assert result["workflow_route"]["reviewer_model"] == "composer-2.5"
+    assert result["workflow_route"]["reviewer_model"] == "default"
     assert result["workflow_route"]["reviewer_output_mode"] == "cursor_sdk"
     assert result["workflow_route"]["reviewer_max_tokens"] == 4096
     assert requests
-    assert all(request.reviewer_model == "composer-2.5" for request in requests)
+    assert all(request.reviewer_model == "default" for request in requests)
     assert all(request.reviewer_output_mode == "cursor_sdk" for request in requests)
     assert all(request.claude_outcome is not None for request in requests)
     cursor_payload = result["final_gate_result"]["cursor_review"]

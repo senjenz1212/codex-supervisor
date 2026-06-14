@@ -32,6 +32,7 @@ from supervisor.cursor_agent import (
     CursorInvocationRequest,
     CursorInvocationResult,
     CursorRunner,
+    DEFAULT_CURSOR_SDK_MODEL,
     DEFAULT_STRUCTURED_REVIEWER_MODEL,
     cursor_accepts,
     invoke_cursor_agent,
@@ -5602,7 +5603,7 @@ def _reviewer_model_config(
     reviewer_output_mode: str,
 ) -> str:
     if reviewer_output_mode == "cursor_sdk":
-        requested = reviewer_model or cursor_model or "composer-2.5"
+        requested = reviewer_model or cursor_model or DEFAULT_CURSOR_SDK_MODEL
         return str(requested)
     requested = reviewer_model or getattr(cfg.supervisor, "reviewer_model", "") or cursor_model
     return str(requested or DEFAULT_STRUCTURED_REVIEWER_MODEL)

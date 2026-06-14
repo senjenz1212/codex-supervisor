@@ -121,14 +121,14 @@ def test_cursor_accepts_requires_green_probe_and_accept_decision():
     ))
 
 
-def test_select_cursor_model_defaults_to_documented_composer_model():
-    assert select_cursor_model(quality="best") == "composer-2.5"
-    assert select_cursor_model(quality="cheap") == "composer-2.5"
+def test_select_cursor_model_defaults_to_catalog_auto_route():
+    assert select_cursor_model(quality="best") == "default"
+    assert select_cursor_model(quality="cheap") == "default"
     assert select_cursor_model(quality="best", explicit_model="custom") == "custom"
 
 
 def test_select_reviewer_defaults_to_cursor_sdk_primary():
-    assert select_reviewer_model(quality="best", reviewer_output_mode="cursor_sdk") == "composer-2.5"
+    assert select_reviewer_model(quality="best", reviewer_output_mode="cursor_sdk") == "default"
     assert CursorInvocationRequest(
         task_id="tri-agent",
         gate="tdd_review",
@@ -698,6 +698,54 @@ def test_cursor_sdk_contract_retry_does_not_consume_infra_retry_budget(
     assert result.probe.ok
     assert result.retry_reasons == ("missing dual_agent_outcome block",)
     assert "infrastructure_retries" not in (result.diagnostics or {})
+
+
+def test_cursor_sdk_terminal_empty_error_classifies_as_infrastructure_unavailable(
+    tmp_path: Path,
+    monkeypatch,
+):
+    monkeypatch.setenv("OPENAI_API_KEY", "ambient-key-must-not-trigger-fallback")
+    calls: list[CursorInvocationRequest] = []
+
+    def terminal_empty_error(request: CursorInvocationRequest):
+        calls.append(request)
+        return "", {
+            "agent_id": "agent-cursor",
+            "run_id": "run-cursor",
+            "status": "error",
+            "model": "composer-2.5",
+            "reviewer_runtime": "cursor_sdk",
+            "reviewer_output_mode": "cursor_sdk",
+            "duration_ms": 1111,
+            "prompt_chars": 2048,
+            "prompt_sha256": "d" * 64,
+        }
+
+    monkeypatch.setattr(cursor_agent, "_run_cursor_sdk", terminal_empty_error)
+
+    result = invoke_cursor_agent(CursorInvocationRequest(
+        task_id="tri-agent",
+        gate="outcome_review",
+        instruction="Review the outcome.",
+        cwd=tmp_path,
+        reviewer_infra_retry_limit=5,
+        reviewer_infra_retry_backoff_s=0,
+        contract_retry_limit=3,
+    ))
+
+    assert len(calls) == 1
+    assert result.probe.reason == "reviewer_infrastructure_unavailable"
+    assert result.probe.details["original_reason"] == "cursor_sdk_terminal_empty_result"
+    assert result.probe.details["status"] == "error"
+    assert result.probe.details["run_id"] == "run-cursor"
+    assert result.failure_classification == "reviewer_infrastructure_unavailable"
+    assert result.recoverable is True
+    assert result.attempts == 1
+    assert result.retry_reasons == ()
+    assert result.diagnostics["fallback"] == {
+        "attempted": False,
+        "reason": "missing_openai_api_key",
+    }
 
 
 def test_cursor_sdk_missing_module_does_not_consume_infra_retry_budget(

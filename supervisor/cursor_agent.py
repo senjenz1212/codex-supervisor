@@ -31,6 +31,7 @@ CursorFailureClassification = Literal[
 ReviewerOutputMode = Literal["litellm_structured", "cursor_sdk"]
 DEFAULT_STRUCTURED_REVIEWER_MODEL = "claude-opus-4-6"
 DEFAULT_STRUCTURED_REVIEWER_MAX_TOKENS = 4096
+DEFAULT_CURSOR_SDK_MODEL = "default"
 
 
 @dataclass(frozen=True)
@@ -97,9 +98,11 @@ def select_cursor_model(
 ) -> str:
     if explicit_model:
         return explicit_model
-    # Cursor's current documented SDK examples use composer-2.5 for both local
-    # and cloud agents. Keep one default until model discovery is wired.
-    return "composer-2.5"
+    # Cursor's SDK catalog exposes an Auto route named "default". Live probes
+    # on 2026-06-14 showed explicit model ids can terminally error with empty
+    # output while this route remains healthy, so keep the supervisor default
+    # on the catalog-backed Auto lane unless an operator pins a model.
+    return DEFAULT_CURSOR_SDK_MODEL
 
 
 def select_reviewer_model(
@@ -244,6 +247,19 @@ def invoke_cursor_agent(
             f"[cursor attempt {attempt}/{max_attempts}]\n{transcript}"
         )
         last_metadata = metadata
+        terminal_failure = _cursor_terminal_empty_result_failure(
+            transcript=transcript,
+            metadata=metadata,
+            attempts=attempt,
+            retry_reasons=tuple(retry_reasons),
+            reviewer_output_mode=attempt_request.reviewer_output_mode,
+        )
+        if terminal_failure is not None:
+            return _fallback_or_primary_failure(
+                terminal_failure,
+                request,
+                status_runner=status_runner,
+            )
         probe, outcome = evaluate_outcome_fidelity(
             transcript,
             expected_specialists=request.expected_specialists,
@@ -919,6 +935,36 @@ def _cursor_infrastructure_result(
         reviewer_runtime=reviewer_output_mode,
         reviewer_assurance="unavailable",
         diagnostics=diagnostics,
+    )
+
+
+def _cursor_terminal_empty_result_failure(
+    *,
+    transcript: str,
+    metadata: dict[str, Any],
+    attempts: int,
+    retry_reasons: tuple[str, ...],
+    reviewer_output_mode: str | None,
+) -> CursorInvocationResult | None:
+    runtime = str(metadata.get("reviewer_runtime") or metadata.get("reviewer_output_mode") or "")
+    status = str(metadata.get("status") or "").strip().lower()
+    if runtime != "cursor_sdk" or status not in {"error", "cancelled", "expired"}:
+        return None
+    if transcript.strip():
+        return None
+    details = {
+        "status": status,
+        "run_id": metadata.get("run_id"),
+        "agent_id": metadata.get("agent_id"),
+        "model": metadata.get("model"),
+        "duration_ms": metadata.get("duration_ms"),
+    }
+    return _cursor_infrastructure_result(
+        reason="cursor_sdk_terminal_empty_result",
+        attempts=attempts,
+        retry_reasons=retry_reasons,
+        details={key: value for key, value in details.items() if value not in (None, "")},
+        reviewer_output_mode=reviewer_output_mode,
     )
 
 
