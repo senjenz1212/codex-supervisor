@@ -105,6 +105,7 @@ from supervisor.autoresearch.generator import (
     AutoResearchGeneratorConfig,
     activate_autoresearch_experiment,
     generate_autoresearch_experiment_drafts,
+    park_autoresearch_experiment,
 )
 from supervisor.dual_agent_runner import (
     DualAgentGateResult,
@@ -329,6 +330,9 @@ class CodexSupervisorMcpAPI:
         policy_overlay_block_sha256: str = "",
         policy_overlay_hash: str = "",
         policy_proposal_id: str = "",
+        policy_overlay_task_class: str = "",
+        policy_overlay_frozen: bool = False,
+        policy_overlay_task_class_hash: str = "",
         planning_rubric_threshold: float | None = None,
         planning_rubric_unavailable_policy: str | None = None,
         sanitize_tool_receipts: bool = True,
@@ -423,6 +427,9 @@ class CodexSupervisorMcpAPI:
             policy_overlay_block_sha256=policy_overlay_block_sha256,
             policy_overlay_hash=policy_overlay_hash,
             policy_proposal_id=policy_proposal_id,
+            policy_overlay_task_class=policy_overlay_task_class,
+            policy_overlay_frozen=policy_overlay_frozen,
+            policy_overlay_task_class_hash=policy_overlay_task_class_hash,
             planning_rubric_threshold=planning_rubric_threshold,
             planning_rubric_unavailable_policy=planning_rubric_unavailable_policy,
         )
@@ -2502,6 +2509,29 @@ class CodexSupervisorMcpAPI:
             "gate_advanced": False,
         })
 
+    def park_autoresearch_experiment(
+        self,
+        *,
+        experiment_id: str,
+        operator: str,
+        approval_channel: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        row = park_autoresearch_experiment(
+            state=self.state,
+            experiment_id=experiment_id,
+            operator=operator,
+            approval_channel=approval_channel,
+            reason=reason,
+        )
+        return redact({
+            "status": "ok",
+            "experiment": row,
+            "default_change_allowed": False,
+            "automatic_policy_mutation": False,
+            "gate_advanced": False,
+        })
+
     def approve_autoresearch_policy_proposal(
         self,
         *,
@@ -3773,6 +3803,15 @@ class CodexSupervisorMcpAPI:
                 "advisory_only": True,
                 "gate_authority": "unchanged",
             }
+        if not _lesson_feedback_has_gate_verdict(events):
+            return {
+                "lesson_ids": unique_lesson_ids,
+                "recurring_taxonomy_codes": taxonomy_codes,
+                "updated": False,
+                "reason": "unattributable_no_gate_verdict",
+                "advisory_only": True,
+                "gate_authority": "unchanged",
+            }
         autoresearch_cfg = getattr(self.cfg, "autoresearch", None)
         retire_after = int(getattr(autoresearch_cfg, "lesson_retire_after_no_benefit_injections", 3))
         self.state.record_supervisor_lesson_injection_feedback(
@@ -3823,7 +3862,7 @@ class CodexSupervisorMcpAPI:
             tdd_test_names=_workflow_tdd_test_names(cwd, planning_artifacts or ()),
         )
         policy_overlay = load_policy_overlay(cwd)
-        overlay_payload = policy_overlay.to_event_payload(gate=gate)
+        overlay_payload = policy_overlay.to_event_payload(gate=gate, task_class=lesson_task_class)
         self.state.write_event(
             run_id=run_id,
             source="supervisor",
@@ -3861,6 +3900,7 @@ class CodexSupervisorMcpAPI:
             base_instruction,
             overlay=policy_overlay,
             gate=gate,
+            task_class=lesson_task_class,
         )
         instruction = append_lesson_block(instruction, injection)
         if injection["lesson_count"]:
@@ -3900,6 +3940,9 @@ class CodexSupervisorMcpAPI:
             "policy_overlay_block_sha256": str(overlay_payload["block_sha256"]),
             "policy_overlay_hash": str(policy_overlay.content_hash),
             "policy_proposal_id": str(policy_overlay.proposal_id),
+            "policy_overlay_task_class": str(overlay_payload.get("task_class") or ""),
+            "policy_overlay_frozen": bool(overlay_payload.get("overlay_frozen")),
+            "policy_overlay_task_class_hash": str(overlay_payload.get("task_class_overlay_hash") or ""),
         }
 
     def _gate_spec(
@@ -3929,6 +3972,9 @@ class CodexSupervisorMcpAPI:
         policy_overlay_block_sha256: str = "",
         policy_overlay_hash: str = "",
         policy_proposal_id: str = "",
+        policy_overlay_task_class: str = "",
+        policy_overlay_frozen: bool = False,
+        policy_overlay_task_class_hash: str = "",
         planning_rubric_threshold: float | None = None,
         planning_rubric_unavailable_policy: str | None = None,
     ) -> DualAgentGateSpec:
@@ -3965,6 +4011,9 @@ class CodexSupervisorMcpAPI:
             policy_overlay_block_sha256=policy_overlay_block_sha256,
             policy_overlay_hash=policy_overlay_hash,
             policy_proposal_id=policy_proposal_id,
+            policy_overlay_task_class=policy_overlay_task_class,
+            policy_overlay_frozen=policy_overlay_frozen,
+            policy_overlay_task_class_hash=policy_overlay_task_class_hash,
             planning_rubric_threshold=(
                 _clamp_planning_rubric_threshold(planning_rubric_threshold)
                 if planning_rubric_threshold is not None
@@ -4174,6 +4223,9 @@ def build_codex_supervisor_mcp_server(
         required_artifacts: list[str] | None = None,
         required_prerequisite_gates: list[str] | None = None,
         required_planning_kinds: list[str] | None = None,
+        policy_overlay_task_class: str = "",
+        policy_overlay_frozen: bool = False,
+        policy_overlay_task_class_hash: str = "",
         planning_rubric_threshold: float | None = None,
         planning_rubric_unavailable_policy: str | None = None,
     ) -> dict[str, Any]:
@@ -4205,6 +4257,9 @@ def build_codex_supervisor_mcp_server(
             required_artifacts=required_artifacts,
             required_prerequisite_gates=required_prerequisite_gates,
             required_planning_kinds=required_planning_kinds,
+            policy_overlay_task_class=policy_overlay_task_class,
+            policy_overlay_frozen=policy_overlay_frozen,
+            policy_overlay_task_class_hash=policy_overlay_task_class_hash,
             planning_rubric_threshold=planning_rubric_threshold,
             planning_rubric_unavailable_policy=planning_rubric_unavailable_policy,
         )
@@ -4382,6 +4437,20 @@ def build_codex_supervisor_mcp_server(
             experiment_id=experiment_id,
             operator=operator,
             approval_channel=approval_channel,
+        )
+
+    @mcp.tool()
+    def park_autoresearch_experiment(
+        experiment_id: str,
+        operator: str,
+        approval_channel: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        return tool_api.park_autoresearch_experiment(
+            experiment_id=experiment_id,
+            operator=operator,
+            approval_channel=approval_channel,
+            reason=reason,
         )
 
     @mcp.tool()
@@ -4974,6 +5043,34 @@ def _failure_taxonomy_codes_from_events(events: list[dict[str, Any]]) -> set[str
             if str(code or "").strip():
                 codes.add(str(code).strip())
     return codes
+
+
+def _lesson_feedback_has_gate_verdict(events: list[dict[str, Any]]) -> bool:
+    verdict_statuses = {
+        "accept",
+        "accepted",
+        "block",
+        "blocked",
+        "deny",
+        "denied",
+        "fail",
+        "failed",
+        "revise",
+        "revision_required",
+    }
+    for event in events:
+        if event.get("kind") != "dual_agent_gate_result":
+            continue
+        payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+        for key in ("supervisor_final_status", "status", "claude_gate_status", "codex_decision"):
+            status = str(payload.get(key) or "").strip().lower()
+            if status in verdict_statuses:
+                return True
+        outcome = payload.get("outcome") if isinstance(payload.get("outcome"), dict) else {}
+        decision = str(outcome.get("decision") or "").strip().lower()
+        if decision in verdict_statuses:
+            return True
+    return False
 
 
 def _cursor_review_instruction(

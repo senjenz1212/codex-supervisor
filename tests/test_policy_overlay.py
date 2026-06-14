@@ -11,6 +11,7 @@ from supervisor.config import Config, PLANNING_RUBRIC_MIN_THRESHOLD
 from supervisor.policy_overlay import (
     draft_policy_regression_rollback_if_needed,
     load_policy_overlay,
+    schedule_empty_floor_rebaseline_if_due,
 )
 from supervisor.state import State
 
@@ -84,6 +85,96 @@ def test_applied_overlay_changes_next_gate_instruction_and_records_hash(tmp_path
     ]
     assert event["payload"]["policy_overlay_hash"] == overlay_hash
     assert event["payload"]["policy_proposal_id"] == "ARP-live"
+
+
+def test_task_class_overlay_applies_only_to_matching_task_class(tmp_path):
+    path = tmp_path / ".supervisor" / "policy-overlay.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "schema_version: supervisor-policy-overlay/v1\n"
+        "instruction_guidance_blocks:\n"
+        "  all:\n"
+        "    - Global runtime evidence rule.\n"
+        "task_class_overlays:\n"
+        "  source_change:\n"
+        "    instruction_guidance_blocks:\n"
+        "      execution:\n"
+        "        - Source-change-only runtime evidence rule.\n",
+        encoding="utf-8",
+    )
+    state = State(str(tmp_path / "state.db"))
+    api = CodexSupervisorMcpAPI(_cfg(tmp_path), state)
+
+    matching = api._workflow_gate_start_kwargs(
+        run_id="matching-run",
+        task_id="task-1",
+        gate="execution",
+        intent="Implement the feature.",
+        corrective_context="",
+        lesson_task_class="source_change",
+        cwd=tmp_path,
+        round_index=1,
+    )
+    non_matching = api._workflow_gate_start_kwargs(
+        run_id="other-run",
+        task_id="task-2",
+        gate="execution",
+        intent="Implement the feature.",
+        corrective_context="",
+        lesson_task_class="docs_only",
+        cwd=tmp_path,
+        round_index=1,
+    )
+
+    assert "Global runtime evidence rule." in matching["instruction"]
+    assert "Source-change-only runtime evidence rule." in matching["instruction"]
+    assert "Global runtime evidence rule." in non_matching["instruction"]
+    assert "Source-change-only runtime evidence rule." not in non_matching["instruction"]
+    assert matching["policy_overlay_task_class"] == "source_change"
+    assert matching["policy_overlay_frozen"] is False
+
+
+def test_task_class_freeze_suppresses_overlay_guidance_without_blocking_gate(tmp_path):
+    path = tmp_path / ".supervisor" / "policy-overlay.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "schema_version: supervisor-policy-overlay/v1\n"
+        "instruction_guidance_blocks:\n"
+        "  all:\n"
+        "    - Global runtime evidence rule.\n"
+        "frozen_task_classes:\n"
+        "  - source_change\n"
+        "task_class_overlays:\n"
+        "  source_change:\n"
+        "    instruction_guidance_blocks:\n"
+        "      execution:\n"
+        "        - Source-change-only runtime evidence rule.\n",
+        encoding="utf-8",
+    )
+    state = State(str(tmp_path / "state.db"))
+    api = CodexSupervisorMcpAPI(_cfg(tmp_path), state)
+
+    kwargs = api._workflow_gate_start_kwargs(
+        run_id="frozen-run",
+        task_id="task-1",
+        gate="execution",
+        intent="Implement the feature.",
+        corrective_context="",
+        lesson_task_class="source_change",
+        cwd=tmp_path,
+        round_index=1,
+    )
+
+    assert "Global runtime evidence rule." not in kwargs["instruction"]
+    assert "Source-change-only runtime evidence rule." not in kwargs["instruction"]
+    assert kwargs["policy_overlay_frozen"] is True
+    assert kwargs["policy_overlay_block"] == ""
+    [event] = [
+        item for item in state.read_events_since("frozen-run", after_event_id=0, limit=20)
+        if item["kind"] == "supervisor_policy_overlay_snapshot"
+    ]
+    assert event["payload"]["overlay_frozen"] is True
+    assert event["payload"]["gate_authority"] == "unchanged"
 
 
 def test_policy_overlay_loader_hashes_absent_overlay_for_replay(tmp_path):
@@ -312,3 +403,46 @@ def test_workflow_result_drafts_policy_regression_rollback_from_recorded_trends(
     events = state.read_events_since("live-run", after_event_id=0, limit=50)
     assert [event["kind"] for event in events].count("policy_regression_detected") == 1
     assert [event["kind"] for event in events].count("autoresearch_policy_rollback_proposal_drafted") == 1
+
+
+def test_empty_floor_rebaseline_due_event_is_observational(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    state.write_event(
+        run_id="policy-approval-run",
+        source="autoresearch",
+        kind="autoresearch_policy_proposal_approved",
+        payload={
+            "proposal_id": "ARP-live",
+            "after_hash": "overlay-sha",
+            "automatic_policy_mutation": False,
+            "gate_authority": "unchanged",
+        },
+    )
+
+    first = schedule_empty_floor_rebaseline_if_due(
+        state,
+        run_id="rebaseline-run",
+        proposal_id="ARP-live",
+        overlay_hash="overlay-sha",
+        task_class="source_change",
+        gate="execution",
+        now=1_781_000_000,
+    )
+    second = schedule_empty_floor_rebaseline_if_due(
+        state,
+        run_id="rebaseline-run",
+        proposal_id="ARP-live",
+        overlay_hash="overlay-sha",
+        task_class="source_change",
+        gate="execution",
+        now=1_781_000_100,
+    )
+
+    assert first["status"] == "scheduled"
+    assert second["status"] == "not_due"
+    events = state.read_events_since("rebaseline-run", after_event_id=0, limit=20)
+    [event] = [item for item in events if item["kind"] == "policy_empty_floor_rebaseline_due"]
+    assert event["payload"]["proposal_id"] == "ARP-live"
+    assert event["payload"]["observational_only"] is True
+    assert event["payload"]["automatic_policy_mutation"] is False
+    assert event["payload"]["gate_authority"] == "unchanged"

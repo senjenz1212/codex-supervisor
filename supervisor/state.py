@@ -1164,6 +1164,39 @@ class State:
                 raise RuntimeError(f"AutoResearch experiment not found: {experiment_id}")
             return _autoresearch_experiment_row_to_dict(updated)
 
+    def park_autoresearch_experiment(
+        self,
+        *,
+        experiment_id: str,
+        parked_at: int | None = None,
+    ) -> dict[str, Any]:
+        now = int(time.time()) if parked_at is None else int(parked_at)
+        with self._write_lock:
+            row = self._conn.execute(
+                """SELECT * FROM supervisor_autoresearch_experiments
+                   WHERE experiment_id=?""",
+                (experiment_id,),
+            ).fetchone()
+            if row is None:
+                raise RuntimeError(f"AutoResearch experiment not found: {experiment_id}")
+            if row["status"] in {"draft", "runnable"}:
+                self._conn.execute(
+                    """UPDATE supervisor_autoresearch_experiments
+                          SET status='parked',
+                              updated_at=?
+                        WHERE experiment_id=?""",
+                    (now, experiment_id),
+                )
+            updated = self._conn.execute(
+                """SELECT * FROM supervisor_autoresearch_experiments
+                   WHERE experiment_id=?""",
+                (experiment_id,),
+            ).fetchone()
+            self._conn.commit()
+            if updated is None:
+                raise RuntimeError(f"AutoResearch experiment not found: {experiment_id}")
+            return _autoresearch_experiment_row_to_dict(updated)
+
     def mark_autoresearch_experiment_run_started(
         self,
         *,

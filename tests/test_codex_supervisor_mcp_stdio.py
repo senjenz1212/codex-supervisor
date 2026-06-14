@@ -495,6 +495,13 @@ async def test_autoresearch_policy_proposal_tool_derives_from_report_without_can
             "metric_before": 0.7,
             "metric_after": 0.82,
             "metric_delta": 0.12,
+            "empty_floor_comparison": {
+                "metric_source": "evaluator_execution",
+                "empty_floor_metric": 0.7,
+                "candidate_metric": 0.82,
+                "metric_delta": 0.12,
+                "k_trials": 3,
+            },
             "quality_unstable_across_trials": True,
             "metric_source": "evaluator_execution",
             "evaluator_run_ref": "docs/dual-agent/run/evaluator-runs/attempt-policy-1.json",

@@ -7,6 +7,7 @@ from supervisor.autoresearch.generator import (
     AutoResearchGeneratorConfig,
     activate_autoresearch_experiment,
     generate_autoresearch_experiment_drafts,
+    park_autoresearch_experiment,
     run_runnable_autoresearch_experiments,
 )
 from supervisor.config import Config
@@ -291,6 +292,42 @@ def test_autoresearch_draft_cannot_run_until_operator_marks_runnable(tmp_path):
     [row] = _queue_rows(state)
     assert row["status"] == "completed"
     assert row["last_run_id"].startswith("autorun-")
+
+
+def test_parked_autoresearch_experiment_cannot_be_activated_or_run(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    for index in range(3):
+        _write_taxonomy_failure(state, run_id=f"run-{index}")
+    [draft] = generate_autoresearch_experiment_drafts(
+        state=state,
+        repo_root=Path.cwd(),
+        config=AutoResearchGeneratorConfig(recurrence_threshold=3, default_k_trials=1),
+    )
+
+    parked = park_autoresearch_experiment(
+        state=state,
+        experiment_id=draft["experiment_id"],
+        operator="operator@example.com",
+        approval_channel="test",
+        reason="not worth current budget",
+    )
+    activation = activate_autoresearch_experiment(
+        state=state,
+        experiment_id=draft["experiment_id"],
+        operator="operator@example.com",
+        approval_channel="test",
+    )
+    ran = run_runnable_autoresearch_experiments(
+        state=state,
+        repo_root=Path.cwd(),
+        output_root=tmp_path / "out",
+        run_id_prefix="autorun",
+    )
+
+    assert parked["status"] == "parked"
+    assert activation["status"] == "parked"
+    assert ran == []
+    assert _workflow_job_count(state) == 0
 
 
 def test_autoresearch_auto_runner_fails_rejected_evaluator_report(monkeypatch, tmp_path):

@@ -150,6 +150,19 @@ def test_quality_trends_record_run_computes_first_pass_revision_rounds_and_time_
         "format_json_turns": 0,
         "format_toon_bytes": 0,
         "format_json_bytes": 0,
+        "false_accept_pre_floor_count": 0,
+        "false_accept_pre_floor_denominator": 0,
+        "false_accept_pre_floor_rate": 0.0,
+        "false_accept_post_floor_count": 0,
+        "false_accept_post_floor_denominator": 0,
+        "false_accept_post_floor_rate": 0.0,
+        "false_accept_unknown_floor_count": 0,
+        "false_accept_unknown_floor_denominator": 0,
+        "false_accept_unknown_floor_rate": 0.0,
+        "transport_decision_status": "insufficient_data",
+        "transport_decision_reason": "need at least 5 mcp and 5 axi runs",
+        "format_decision_status": "insufficient_data",
+        "format_decision_reason": "need at least 5 toon and 5 json samples",
     }]
 
 
@@ -247,7 +260,63 @@ def test_axi_trends_surfaces_transport_incident_and_era_rates_read_only(tmp_path
     assert rows[0]["transport_incident_axi_share"] == 0.75
     assert rows[0]["format_toon_turns"] == 2
     assert rows[0]["format_json_bytes"] == 150
+    assert rows[0]["transport_decision_status"] == "insufficient_data"
+    assert rows[0]["format_decision_status"] == "insufficient_data"
     assert state.count_quality_trend_rows() == before_rows
+
+
+def test_trends_reports_d1_d2_insufficient_data(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    for index in range(3):
+        state.upsert_quality_trend_row(
+            run_id=f"trend-run-{index}",
+            task_id="trend-task",
+            task_class="source_change",
+            gate="execution",
+            accepted=True,
+            first_pass_accepted=True,
+            revision_rounds=0,
+            time_to_accepted_outcome_s=1.0,
+            details={
+                "transport_incidents": {"total_count": 1, "by_era": {"axi": 1}, "run_era": "axi"},
+                "format_ab": {"json": {"turns": 1, "bytes": 200}},
+            },
+        )
+
+    [row] = query_quality_trends(state, task_class="source_change", gate="execution")
+
+    assert row["transport_decision_status"] == "insufficient_data"
+    assert row["transport_decision_reason"] == "need at least 5 mcp and 5 axi runs"
+    assert row["format_decision_status"] == "insufficient_data"
+    assert row["format_decision_reason"] == "need at least 5 toon and 5 json samples"
+
+
+def test_trends_puts_unitemized_false_accept_audit_rows_in_unknown_floor_bucket(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    state.upsert_quality_trend_row(
+        run_id="legacy-audit-run",
+        task_id="trend-task",
+        task_class="source_change",
+        gate="outcome_review",
+        accepted=True,
+        first_pass_accepted=True,
+        revision_rounds=0,
+        time_to_accepted_outcome_s=1.0,
+    )
+    state.update_quality_trend_audit(
+        run_id="legacy-audit-run",
+        gate="outcome_review",
+        sample_size=2,
+        false_accept_count=1,
+        false_accept_denominator=2,
+        audit_details={"source": "legacy_without_items"},
+    )
+
+    [row] = query_quality_trends(state, task_class="source_change", gate="outcome_review")
+
+    assert row["false_accept_unknown_floor_count"] == 1
+    assert row["false_accept_unknown_floor_denominator"] == 2
+    assert row["false_accept_unknown_floor_rate"] == 0.5
 
 
 def test_axi_trends_uses_legacy_incident_eras_as_denominators(tmp_path):
@@ -479,6 +548,87 @@ def test_quality_trends_sampled_p11_audit_catches_false_accept(tmp_path):
     assert summary[0]["false_accept_count"] == 1
     assert summary[0]["false_accept_denominator"] == 1
     assert summary[0]["false_accept_rate"] == 1.0
+    assert summary[0]["false_accept_pre_floor_count"] == 1
+    assert summary[0]["false_accept_pre_floor_denominator"] == 1
+    assert summary[0]["false_accept_post_floor_denominator"] == 0
+
+
+def test_quality_trends_segments_false_accept_audit_by_runtime_floor_presence(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    for run_id, runtime_floor_present in (("pre-floor-run", False), ("post-floor-run", True)):
+        repo = tmp_path / run_id
+        repo.mkdir()
+        _init_git_repo(repo)
+        state.upsert_dual_agent_workflow(
+            run_id=run_id,
+            task_id="trend-task",
+            cwd=str(repo),
+            intent="audit accepted deliverables",
+            current_gate="outcome_review",
+            status="accepted",
+            max_rounds_per_gate=2,
+            user_facing=False,
+        )
+        _write_event(
+            state,
+            run_id=run_id,
+            kind="dual_agent_workflow_route",
+            ts=100,
+            payload={
+                "task_id": "trend-task",
+                "run_id": run_id,
+                "lesson_task_class": "source_change",
+                "cwd": str(repo),
+            },
+        )
+        if runtime_floor_present:
+            _write_event(
+                state,
+                run_id=run_id,
+                kind="dual_agent_runtime_evidence",
+                ts=105,
+                payload={
+                    "gate": "outcome_review",
+                    "round_index": 1,
+                    "receipts": [{
+                        "receipt_id": "runtime-git-diff-outcome_review-1",
+                        "source": "supervisor",
+                        "evidence_grade": "runtime_native",
+                    }],
+                },
+            )
+        _write_event(
+            state,
+            run_id=run_id,
+            kind="dual_agent_gate_result",
+            ts=110,
+            payload=_gate_result(
+                gate="outcome_review",
+                status="accepted",
+                attempts=1,
+                changed_files=["supervisor/missing.py"],
+            ),
+        )
+        audit = run_sampled_p11_false_accept_audit(
+            state,
+            run_id=run_id,
+            sample_size=1,
+            test_timeout_s=1,
+        )
+        assert audit["audited"][0]["floor_segment"] == (
+            "post_floor" if runtime_floor_present else "pre_floor"
+        )
+
+    [summary] = query_quality_trends(state, task_class="source_change", gate="outcome_review")
+
+    assert summary["false_accept_count"] == 2
+    assert summary["false_accept_denominator"] == 2
+    assert summary["false_accept_pre_floor_count"] == 1
+    assert summary["false_accept_pre_floor_denominator"] == 1
+    assert summary["false_accept_pre_floor_rate"] == 1.0
+    assert summary["false_accept_post_floor_count"] == 1
+    assert summary["false_accept_post_floor_denominator"] == 1
+    assert summary["false_accept_post_floor_rate"] == 1.0
 
 
 def test_sampled_p11_audit_counts_visual_override_usage(tmp_path):

@@ -57,6 +57,13 @@ def _record(**overrides) -> dict:
         "metric_trials": [0.74, 0.82, 0.86],
         "metric_median": 0.82,
         "metric_iqr": 0.12,
+        "empty_floor_comparison": {
+            "metric_source": "evaluator_execution",
+            "empty_floor_metric": 0.62,
+            "candidate_metric": 0.82,
+            "metric_delta": 0.20,
+            "k_trials": 3,
+        },
         "quality_unstable_across_trials": True,
         "metric_source": "evaluator_execution",
         "evaluator_run_ref": "docs/dual-agent/run/evaluator-runs/attempt-policy-1.json",
@@ -162,6 +169,29 @@ def test_accepted_report_derives_overlay_policy_proposal_without_candidate_chang
     events = state.read_events_since("policy-run", after_event_id=0, limit=10)
     assert [event["kind"] for event in events] == ["autoresearch_policy_proposal_created"]
     assert events[0]["payload"]["proposal_id"] == proposal["proposal_id"]
+
+
+def test_policy_proposal_without_empty_floor_is_non_applyable(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    _write(tmp_path, ".supervisor/policy-overlay.yaml", BASE_OVERLAY)
+    _write(tmp_path, "candidates/policy-overlay.yaml", AFTER_OVERLAY)
+
+    proposals = derive_policy_evolution_proposals_from_report(
+        _report(_derived_record(empty_floor_comparison=None)),
+        repo_root=tmp_path,
+        affected_gates=("outcome_review",),
+        state=state,
+        run_id="policy-run",
+    )
+
+    assert proposals == []
+    events = state.read_events_since("policy-run", after_event_id=0, limit=10)
+    [event] = [
+        item for item in events
+        if item["kind"] == "autoresearch_policy_proposal_derivation_skipped"
+    ]
+    assert event["payload"]["reason"] == "empty-floor comparison is required for policy derivation"
+    assert event["payload"]["automatic_policy_mutation"] is False
 
 
 def test_validation_report_pipeline_derives_policy_proposal_without_operator_authored_changes(tmp_path):

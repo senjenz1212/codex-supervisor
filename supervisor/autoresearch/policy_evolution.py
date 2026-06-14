@@ -93,6 +93,7 @@ def derive_policy_evolution_proposals_from_report(
         if not isinstance(record, Mapping) or not _record_is_applyable(record):
             continue
         try:
+            empty_floor = _empty_floor_win(record)
             metric_delta = _positive_metric_delta(record)
             candidate_ref = _derive_overlay_candidate_ref(record, repo_root=repo_root_path)
             proposal = _build_policy_proposal(
@@ -121,6 +122,7 @@ def derive_policy_evolution_proposals_from_report(
             "attempt_id": str(record.get("attempt_id") or ""),
             "candidate_ref": candidate_ref,
             "affected_gates": list(gates),
+            "empty_floor_comparison": empty_floor,
             **metric_delta,
         }
         proposal["proposal_sha256"] = sha256_json({
@@ -148,6 +150,7 @@ def report_contains_derivable_policy_record(
         if not isinstance(record, Mapping) or not _record_is_applyable(record):
             continue
         try:
+            _empty_floor_win(record)
             _positive_metric_delta(record)
             _derive_overlay_candidate_ref(record, repo_root=repo_root_path)
         except PolicyEvolutionError:
@@ -486,6 +489,7 @@ def _evaluator_evidence(record: Mapping[str, Any]) -> dict[str, Any]:
         "k_trials": len(trials),
         "metric_median": record.get("metric_median"),
         "metric_iqr": record.get("metric_iqr"),
+        "empty_floor_comparison": _empty_floor_evidence_payload(record),
         "quality_unstable_across_trials": bool(record.get("quality_unstable_across_trials")),
         "metric_source": str(record.get("metric_source") or ""),
         "evaluator_run_ref": str(record.get("evaluator_run_ref") or ""),
@@ -524,6 +528,41 @@ def _positive_metric_delta(record: Mapping[str, Any]) -> dict[str, float]:
         "metric_after": round(float(after), 6),
         "metric_delta": round(float(delta), 6),
     }
+
+
+def _empty_floor_win(record: Mapping[str, Any]) -> dict[str, float | int | str]:
+    comparison = record.get("empty_floor_comparison")
+    if not isinstance(comparison, Mapping):
+        raise PolicyEvolutionError("empty-floor comparison is required for policy derivation")
+    source = str(comparison.get("metric_source") or "")
+    if source != "evaluator_execution":
+        raise PolicyEvolutionError("empty-floor comparison must come from evaluator_execution")
+    empty_metric = _optional_float(
+        comparison.get("empty_floor_metric", comparison.get("baseline_metric"))
+    )
+    candidate_metric = _optional_float(
+        comparison.get("candidate_metric", comparison.get("metric_after", record.get("metric_after")))
+    )
+    explicit_delta = _optional_float(comparison.get("metric_delta"))
+    if empty_metric is None or candidate_metric is None:
+        raise PolicyEvolutionError("empty-floor comparison requires empty and candidate metrics")
+    delta = candidate_metric - empty_metric if explicit_delta is None else explicit_delta
+    if round(candidate_metric - empty_metric, 6) != round(delta, 6):
+        raise PolicyEvolutionError("empty-floor metric delta must match empty/candidate values")
+    if delta <= 0:
+        raise PolicyEvolutionError("policy candidate must beat empty-floor metric")
+    return {
+        "metric_source": source,
+        "empty_floor_metric": round(float(empty_metric), 6),
+        "candidate_metric": round(float(candidate_metric), 6),
+        "metric_delta": round(float(delta), 6),
+        "k_trials": int(comparison.get("k_trials") or len(record.get("metric_trials") or [])),
+    }
+
+
+def _empty_floor_evidence_payload(record: Mapping[str, Any]) -> dict[str, Any]:
+    comparison = record.get("empty_floor_comparison")
+    return dict(comparison) if isinstance(comparison, Mapping) else {}
 
 
 def _derive_overlay_candidate_ref(record: Mapping[str, Any], *, repo_root: Path) -> str:

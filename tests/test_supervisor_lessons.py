@@ -199,6 +199,55 @@ def test_workflow_finalization_records_lesson_feedback_and_retires_recurring_les
     assert [event["kind"] for event in events].count("supervisor_lesson_feedback_recorded") == 3
 
 
+def test_lesson_feedback_skips_unattributable_run_without_gate_verdict(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    lesson, _created = state.record_supervisor_lesson(
+        task_class="large",
+        gate="execution",
+        taxonomy_code="FM-3.2",
+        root_cause="No or incomplete verification",
+        remediation="Verify runtime receipts before claiming success.",
+        source_run_id="source-run",
+        created_at=10,
+    )
+    api = CodexSupervisorMcpAPI(_cfg(tmp_path), state)
+    api._workflow_gate_start_kwargs(
+        run_id="unattributable-run",
+        task_id="task-feedback",
+        gate="execution",
+        intent="Implement the feature.",
+        corrective_context="",
+        lesson_task_class="large",
+        round_index=1,
+    )
+
+    result = api._workflow_result(
+        run_id="unattributable-run",
+        task_id="task-feedback",
+        status="failed",
+        current_gate="execution",
+        steps=[],
+        final_gate_result=None,
+        cwd=str(tmp_path),
+        screenshots=[],
+        visual_evidence_policy={},
+        workflow_route={"lesson_task_class": "large", "task_complexity": "large"},
+        mandatory_artifacts={"status": "not_checked"},
+    )
+
+    row = next(
+        item
+        for item in state.list_supervisor_lessons(limit=20)
+        if item["lesson_id"] == lesson["lesson_id"]
+    )
+    assert result["lessons"]["feedback"]["updated"] is False
+    assert result["lessons"]["feedback"]["reason"] == "unattributable_no_gate_verdict"
+    assert row["injection_count"] == 0
+    assert row["recurrence_count"] == 0
+    events = state.read_events_since("unattributable-run", after_event_id=0, limit=50)
+    assert "supervisor_lesson_feedback_recorded" not in [event["kind"] for event in events]
+
+
 def test_matching_future_gate_injects_lesson_and_records_hash(tmp_path):
     state = State(str(tmp_path / "state.db"))
     lesson, created = state.record_supervisor_lesson(

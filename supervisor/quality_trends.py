@@ -204,7 +204,11 @@ def run_sampled_p11_false_accept_audit(
             test_timeout_s=test_timeout_s,
             runner=runner,
         )
-        item = _audit_item(event, result)
+        item = _audit_item(
+            event,
+            result,
+            runtime_floor_present=_runtime_floor_present_for_gate_event(events, event),
+        )
         audited.append(item)
         by_gate[gate].append(item)
 
@@ -272,6 +276,7 @@ def query_quality_trends(
             item = fmt.get(format_name) if isinstance(fmt.get(format_name), dict) else {}
             by_key[key][f"{prefix}_turns"] += int(item.get("turns") or 0)
             by_key[key][f"{prefix}_bytes"] += int(item.get("bytes") or 0)
+        _accumulate_false_accept_segments(state, row=row, details=details, rollup=by_key[key])
     enriched: list[dict[str, Any]] = []
     for summary in summaries:
         key = (str(summary["task_class"]), str(summary["gate"]))
@@ -293,6 +298,8 @@ def query_quality_trends(
         rollup["transport_incident_axi_share"] = (
             rollup["transport_incident_axi_count"] / total if total else 0.0
         )
+        _finalize_false_accept_segments(rollup)
+        rollup.update(_decision_statuses(rollup))
         enriched.append({**summary, **rollup})
     return enriched
 
@@ -313,6 +320,101 @@ def _empty_trend_rollup() -> dict[str, Any]:
         "format_json_turns": 0,
         "format_toon_bytes": 0,
         "format_json_bytes": 0,
+        "false_accept_pre_floor_count": 0,
+        "false_accept_pre_floor_denominator": 0,
+        "false_accept_pre_floor_rate": 0.0,
+        "false_accept_post_floor_count": 0,
+        "false_accept_post_floor_denominator": 0,
+        "false_accept_post_floor_rate": 0.0,
+        "false_accept_unknown_floor_count": 0,
+        "false_accept_unknown_floor_denominator": 0,
+        "false_accept_unknown_floor_rate": 0.0,
+    }
+
+
+def _accumulate_false_accept_segments(
+    state: Any,
+    *,
+    row: dict[str, Any],
+    details: dict[str, Any],
+    rollup: dict[str, Any],
+) -> None:
+    audit = details.get("p11_audit") if isinstance(details.get("p11_audit"), dict) else {}
+    items = audit.get("items") if isinstance(audit.get("items"), list) else []
+    row_denominator = int(row.get("false_accept_denominator") or 0)
+    row_false_accepts = int(row.get("false_accept_count") or 0)
+    if not items:
+        if row_denominator:
+            rollup["false_accept_unknown_floor_denominator"] += row_denominator
+            rollup["false_accept_unknown_floor_count"] += row_false_accepts
+        return
+    events: list[dict[str, Any]] | None = None
+    events_by_id: dict[int, dict[str, Any]] = {}
+    item_denominator = 0
+    item_false_accepts = 0
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        item_denominator += 1
+        item_false_accepts += 1 if bool(item.get("false_accept")) else 0
+        segment = _audit_item_floor_segment(item)
+        if segment == "unknown_floor" and item.get("event_id") is not None:
+            if events is None:
+                events = _decode_events(state.read_dual_agent_gate_events(str(row["run_id"])))
+                events_by_id = {int(event["event_id"]): event for event in events}
+            event = events_by_id.get(int(item.get("event_id") or 0))
+            if event is not None:
+                segment = (
+                    "post_floor"
+                    if _runtime_floor_present_for_gate_event(events or [], event)
+                    else "pre_floor"
+                )
+        rollup[f"false_accept_{segment}_denominator"] += 1
+        if bool(item.get("false_accept")):
+            rollup[f"false_accept_{segment}_count"] += 1
+    if row_denominator > item_denominator:
+        rollup["false_accept_unknown_floor_denominator"] += row_denominator - item_denominator
+        rollup["false_accept_unknown_floor_count"] += max(0, row_false_accepts - item_false_accepts)
+
+
+def _audit_item_floor_segment(item: dict[str, Any]) -> str:
+    explicit = str(item.get("floor_segment") or "").strip()
+    if explicit in {"pre_floor", "post_floor", "unknown_floor"}:
+        return explicit
+    if "runtime_floor_present" in item:
+        return "post_floor" if bool(item.get("runtime_floor_present")) else "pre_floor"
+    return "unknown_floor"
+
+
+def _finalize_false_accept_segments(rollup: dict[str, Any]) -> None:
+    for segment in ("pre_floor", "post_floor", "unknown_floor"):
+        denominator = int(rollup.get(f"false_accept_{segment}_denominator") or 0)
+        count = int(rollup.get(f"false_accept_{segment}_count") or 0)
+        rollup[f"false_accept_{segment}_rate"] = count / denominator if denominator else 0.0
+
+
+def _decision_statuses(rollup: dict[str, Any]) -> dict[str, str]:
+    mcp_runs = int((rollup.get("transport_run_count_by_era") or {}).get("mcp") or 0)
+    axi_runs = int((rollup.get("transport_run_count_by_era") or {}).get("axi") or 0)
+    toon_turns = int(rollup.get("format_toon_turns") or 0)
+    json_turns = int(rollup.get("format_json_turns") or 0)
+    min_transport = 5
+    min_format = 5
+    transport_status = "ready"
+    transport_reason = "sufficient mcp and axi run denominators"
+    if mcp_runs < min_transport or axi_runs < min_transport:
+        transport_status = "insufficient_data"
+        transport_reason = f"need at least {min_transport} mcp and {min_transport} axi runs"
+    format_status = "ready"
+    format_reason = "sufficient toon and json samples"
+    if toon_turns < min_format or json_turns < min_format:
+        format_status = "insufficient_data"
+        format_reason = f"need at least {min_format} toon and {min_format} json samples"
+    return {
+        "transport_decision_status": transport_status,
+        "transport_decision_reason": transport_reason,
+        "format_decision_status": format_status,
+        "format_decision_reason": format_reason,
     }
 
 
@@ -532,7 +634,12 @@ def _runtime_baseline_for_gate(
     return None
 
 
-def _audit_item(event: dict[str, Any], result: RuntimeEvidenceResult) -> dict[str, Any]:
+def _audit_item(
+    event: dict[str, Any],
+    result: RuntimeEvidenceResult,
+    *,
+    runtime_floor_present: bool,
+) -> dict[str, Any]:
     probe = result.probe
     false_accept = probe.status != "green"
     details = probe.details if isinstance(probe.details, dict) else {}
@@ -540,6 +647,8 @@ def _audit_item(event: dict[str, Any], result: RuntimeEvidenceResult) -> dict[st
         "event_id": event["event_id"],
         "gate": str(event["payload"].get("gate") or "unknown"),
         "false_accept": false_accept,
+        "runtime_floor_present": runtime_floor_present,
+        "floor_segment": "post_floor" if runtime_floor_present else "pre_floor",
         "probe_id": probe.probe_id,
         "probe_status": probe.status,
         "probe_reason": probe.reason,
@@ -547,6 +656,47 @@ def _audit_item(event: dict[str, Any], result: RuntimeEvidenceResult) -> dict[st
         "declared_changed_files": list(details.get("declared_changed_files") or []),
         "actual_changed_files": list(details.get("actual_changed_files") or []),
     }
+
+
+def _runtime_floor_present_for_gate_event(
+    events: list[dict[str, Any]],
+    gate_event: dict[str, Any],
+) -> bool:
+    gate_event_id = int(gate_event.get("event_id") or 0)
+    payload = gate_event.get("payload") if isinstance(gate_event.get("payload"), dict) else {}
+    gate = str(payload.get("gate") or "")
+    round_index = _attempts(payload) or _int_or_zero(payload.get("round_index"))
+    for event in reversed(events):
+        if int(event.get("event_id") or 0) >= gate_event_id:
+            continue
+        if event.get("kind") != "dual_agent_runtime_evidence":
+            continue
+        runtime_payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+        if str(runtime_payload.get("gate") or "") != gate:
+            continue
+        runtime_round = _int_or_zero(runtime_payload.get("round_index"))
+        if round_index and runtime_round and runtime_round != round_index:
+            continue
+        receipts = runtime_payload.get("receipts") if isinstance(runtime_payload.get("receipts"), list) else []
+        if any(_is_runtime_native_supervisor_receipt(receipt) for receipt in receipts):
+            return True
+    return False
+
+
+def _is_runtime_native_supervisor_receipt(receipt: Any) -> bool:
+    if not isinstance(receipt, dict):
+        return False
+    return (
+        str(receipt.get("source") or "") == "supervisor"
+        and str(receipt.get("evidence_grade") or "") == "runtime_native"
+    )
+
+
+def _int_or_zero(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _transport_incident_metrics(events: list[dict[str, Any]]) -> dict[str, Any]:

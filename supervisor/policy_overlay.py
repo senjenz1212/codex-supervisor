@@ -21,6 +21,13 @@ ALLOWED_OVERLAY_KEYS = frozenset({
     "schema_version",
     "active_proposal_id",
     "instruction_guidance_blocks",
+    "task_class_overlays",
+    "frozen_task_classes",
+    "lesson_limit",
+    "rubric_thresholds",
+})
+ALLOWED_TASK_CLASS_OVERLAY_KEYS = frozenset({
+    "instruction_guidance_blocks",
     "lesson_limit",
     "rubric_thresholds",
 })
@@ -38,20 +45,36 @@ class PolicyOverlaySnapshot:
     proposal_id: str
     lesson_limit: int
     guidance_blocks: Mapping[str, Any]
+    task_class_overlays: Mapping[str, Any]
+    frozen_task_classes: tuple[str, ...]
     rubric_thresholds: Mapping[str, Any]
     raw: Mapping[str, Any]
 
-    def instruction_block(self, *, gate: str) -> str:
-        return render_policy_overlay_block(self.raw, gate=gate)
+    def instruction_block(self, *, gate: str, task_class: str | None = None) -> str:
+        return render_policy_overlay_block(self.raw, gate=gate, task_class=task_class)
 
-    def block_hash(self, *, gate: str) -> str:
-        return sha256(self.instruction_block(gate=gate).encode("utf-8")).hexdigest()
+    def block_hash(self, *, gate: str, task_class: str | None = None) -> str:
+        return sha256(self.instruction_block(gate=gate, task_class=task_class).encode("utf-8")).hexdigest()
 
-    def to_event_payload(self, *, gate: str) -> dict[str, Any]:
-        block = self.instruction_block(gate=gate)
+    def is_frozen(self, *, task_class: str | None = None) -> bool:
+        normalized = _normalise_task_class(task_class)
+        return bool(normalized and normalized in self.frozen_task_classes)
+
+    def task_class_overlay_hash(self, *, task_class: str | None = None) -> str:
+        normalized = _normalise_task_class(task_class)
+        slot = self.task_class_overlays.get(normalized) if normalized else None
+        if not isinstance(slot, Mapping):
+            return sha256(b"").hexdigest()
+        return sha256(yaml.safe_dump(dict(slot), sort_keys=True).encode("utf-8")).hexdigest()
+
+    def to_event_payload(self, *, gate: str, task_class: str | None = None) -> dict[str, Any]:
+        normalized_task_class = _normalise_task_class(task_class)
+        frozen = self.is_frozen(task_class=normalized_task_class)
+        block = "" if frozen else self.instruction_block(gate=gate, task_class=normalized_task_class)
         return {
             "schema_version": POLICY_OVERLAY_SNAPSHOT_SCHEMA_VERSION,
             "gate": gate,
+            "task_class": normalized_task_class,
             "overlay_path": self.path,
             "exists": self.exists,
             "overlay_hash": self.content_hash,
@@ -61,6 +84,9 @@ class PolicyOverlaySnapshot:
             "lesson_limit": self.lesson_limit,
             "block": block,
             "block_sha256": sha256(block.encode("utf-8")).hexdigest(),
+            "overlay_frozen": frozen,
+            "frozen_task_classes": list(self.frozen_task_classes),
+            "task_class_overlay_hash": self.task_class_overlay_hash(task_class=normalized_task_class),
             "whitelisted_keys": sorted(ALLOWED_OVERLAY_KEYS),
             "default_change_allowed": False,
             "automatic_policy_mutation": False,
@@ -105,6 +131,8 @@ def load_policy_overlay(repo_root: str | Path) -> PolicyOverlaySnapshot:
             proposal_id="",
             lesson_limit=5,
             guidance_blocks={},
+            task_class_overlays={},
+            frozen_task_classes=(),
             rubric_thresholds={},
             raw={},
         )
@@ -123,6 +151,11 @@ def load_policy_overlay(repo_root: str | Path) -> PolicyOverlaySnapshot:
     rubric = loaded.get("rubric_thresholds") or {}
     if not isinstance(rubric, dict):
         raise PolicyOverlayError("rubric_thresholds must be a mapping")
+    task_class_overlays = loaded.get("task_class_overlays") or {}
+    if not isinstance(task_class_overlays, dict):
+        raise PolicyOverlayError("task_class_overlays must be a mapping")
+    _validate_task_class_overlays(task_class_overlays)
+    frozen_task_classes = _normalise_frozen_task_classes(loaded.get("frozen_task_classes") or ())
     return PolicyOverlaySnapshot(
         path=POLICY_OVERLAY_PATH,
         exists=True,
@@ -130,6 +163,8 @@ def load_policy_overlay(repo_root: str | Path) -> PolicyOverlaySnapshot:
         proposal_id=str(loaded.get("active_proposal_id") or ""),
         lesson_limit=_bounded_int(loaded.get("lesson_limit"), default=5, minimum=0, maximum=20),
         guidance_blocks=guidance,
+        task_class_overlays=task_class_overlays,
+        frozen_task_classes=frozen_task_classes,
         rubric_thresholds=rubric,
         raw=loaded,
     )
@@ -140,24 +175,31 @@ def apply_policy_overlay_to_instruction(
     *,
     overlay: PolicyOverlaySnapshot,
     gate: str,
+    task_class: str | None = None,
 ) -> str:
-    block = overlay.instruction_block(gate=gate)
+    if overlay.is_frozen(task_class=task_class):
+        return instruction
+    block = overlay.instruction_block(gate=gate, task_class=task_class)
     if not block or block in instruction:
         return instruction
     return instruction.rstrip() + "\n\n" + block
 
 
-def render_policy_overlay_block(overlay: Mapping[str, Any], *, gate: str) -> str:
+def render_policy_overlay_block(
+    overlay: Mapping[str, Any],
+    *,
+    gate: str,
+    task_class: str | None = None,
+) -> str:
     guidance = overlay.get("instruction_guidance_blocks")
-    if not isinstance(guidance, Mapping):
-        return ""
     entries: list[str] = []
-    for key in ("all", gate):
-        value = guidance.get(key)
-        if isinstance(value, str) and value.strip():
-            entries.append(value.strip())
-        elif isinstance(value, (list, tuple)):
-            entries.extend(str(item).strip() for item in value if str(item).strip())
+    if isinstance(guidance, Mapping):
+        entries.extend(_guidance_entries(guidance, gate=gate))
+    task_class_slot = _task_class_slot(overlay, task_class=task_class)
+    if isinstance(task_class_slot, Mapping):
+        scoped = task_class_slot.get("instruction_guidance_blocks")
+        if isinstance(scoped, Mapping):
+            entries.extend(_guidance_entries(scoped, gate=gate))
     if not entries:
         return ""
     lines = [
@@ -167,6 +209,26 @@ def render_policy_overlay_block(overlay: Mapping[str, Any], *, gate: str) -> str
     for index, entry in enumerate(entries, start=1):
         lines.append(f"{index}. {entry}")
     return "\n".join(lines)
+
+
+def _guidance_entries(guidance: Mapping[str, Any], *, gate: str) -> list[str]:
+    entries: list[str] = []
+    for key in ("all", gate):
+        value = guidance.get(key)
+        if isinstance(value, str) and value.strip():
+            entries.append(value.strip())
+        elif isinstance(value, (list, tuple)):
+            entries.extend(str(item).strip() for item in value if str(item).strip())
+    return entries
+
+
+def _task_class_slot(overlay: Mapping[str, Any], *, task_class: str | None = None) -> Mapping[str, Any] | None:
+    normalized = _normalise_task_class(task_class)
+    slots = overlay.get("task_class_overlays")
+    if not normalized or not isinstance(slots, Mapping):
+        return None
+    slot = slots.get(normalized)
+    return slot if isinstance(slot, Mapping) else None
 
 
 def draft_policy_regression_rollback_if_needed(
@@ -343,6 +405,72 @@ def draft_policy_regression_rollbacks_for_trend_rows(
     return results
 
 
+def schedule_empty_floor_rebaseline_if_due(
+    state: Any,
+    *,
+    run_id: str,
+    proposal_id: str,
+    overlay_hash: str,
+    task_class: str,
+    gate: str,
+    cadence_s: int = 604800,
+    now: int | None = None,
+) -> dict[str, Any]:
+    """Emit an observational request to re-baseline a live overlay against empty."""
+    timestamp = int(time.time()) if now is None else int(now)
+    proposal = str(proposal_id or "").strip()
+    overlay = str(overlay_hash or "").strip()
+    task = _normalise_task_class(task_class)
+    gate_name = str(gate or "").strip() or "unknown"
+    existing = [
+        event for event in state.read_events_since(run_id, after_event_id=0, limit=10_000)
+        if event["kind"] == "policy_empty_floor_rebaseline_due"
+        and str(event["payload"].get("proposal_id") or "") == proposal
+        and str(event["payload"].get("task_class") or "") == task
+        and str(event["payload"].get("gate") or "") == gate_name
+    ]
+    if existing:
+        latest = max(int(event.get("ts") or 0) for event in existing)
+        if timestamp - latest < max(1, int(cadence_s)):
+            return {
+                "status": "not_due",
+                "proposal_id": proposal,
+                "overlay_hash": overlay,
+                "task_class": task,
+                "gate": gate_name,
+                "observational_only": True,
+                "gate_authority": "unchanged",
+            }
+    event_id = state.write_event(
+        run_id=run_id,
+        source="supervisor",
+        kind="policy_empty_floor_rebaseline_due",
+        payload={
+            "schema_version": "supervisor-policy-empty-floor-rebaseline/v1",
+            "proposal_id": proposal,
+            "overlay_hash": overlay,
+            "task_class": task,
+            "gate": gate_name,
+            "scheduled_at": timestamp,
+            "observational_only": True,
+            "default_change_allowed": False,
+            "automatic_policy_mutation": False,
+            "gate_advanced": False,
+            "gate_authority": "unchanged",
+        },
+    )
+    return {
+        "status": "scheduled",
+        "event_id": event_id,
+        "proposal_id": proposal,
+        "overlay_hash": overlay,
+        "task_class": task,
+        "gate": gate_name,
+        "observational_only": True,
+        "gate_authority": "unchanged",
+    }
+
+
 def _latest_rollback_pointer_for_proposal(state: Any, *, proposal_id: str) -> dict[str, Any] | None:
     list_approvals = getattr(state, "list_policy_proposal_approval_events", None)
     if list_approvals is None:
@@ -413,6 +541,45 @@ def _avg_time(rows: list[Mapping[str, Any]]) -> float | None:
         if row.get("time_to_accepted_outcome_s") is not None
     ]
     return (sum(values) / len(values)) if values else None
+
+
+def _validate_task_class_overlays(task_class_overlays: Mapping[str, Any]) -> None:
+    for task_class, slot in task_class_overlays.items():
+        normalized = _normalise_task_class(task_class)
+        if not normalized:
+            raise PolicyOverlayError("task_class_overlays keys must be non-empty")
+        if not isinstance(slot, Mapping):
+            raise PolicyOverlayError(f"task_class overlay must be a mapping: {task_class}")
+        unknown = sorted(set(str(key) for key in slot) - ALLOWED_TASK_CLASS_OVERLAY_KEYS)
+        if unknown:
+            raise PolicyOverlayError(
+                f"task_class overlay {task_class} contains non-whitelisted keys: {unknown}"
+            )
+        guidance = slot.get("instruction_guidance_blocks") or {}
+        if not isinstance(guidance, Mapping):
+            raise PolicyOverlayError(
+                f"task_class overlay {task_class} instruction_guidance_blocks must be a mapping"
+            )
+        rubric = slot.get("rubric_thresholds") or {}
+        if not isinstance(rubric, Mapping):
+            raise PolicyOverlayError(
+                f"task_class overlay {task_class} rubric_thresholds must be a mapping"
+            )
+
+
+def _normalise_frozen_task_classes(value: Any) -> tuple[str, ...]:
+    if isinstance(value, str):
+        raw_values = [value]
+    elif isinstance(value, (list, tuple, set)):
+        raw_values = list(value)
+    else:
+        raise PolicyOverlayError("frozen_task_classes must be a list")
+    normalized = sorted({item for item in (_normalise_task_class(raw) for raw in raw_values) if item})
+    return tuple(normalized)
+
+
+def _normalise_task_class(value: Any) -> str:
+    return str(value or "").strip().replace("-", "_")
 
 
 def _bounded_int(value: Any, *, default: int, minimum: int, maximum: int) -> int:

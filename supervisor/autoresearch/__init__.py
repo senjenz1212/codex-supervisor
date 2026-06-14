@@ -5,6 +5,7 @@ from .generator import (
     AutoResearchGeneratorConfig,
     activate_autoresearch_experiment,
     generate_autoresearch_experiment_drafts,
+    park_autoresearch_experiment,
     run_runnable_autoresearch_experiments,
 )
 from .schema import (
@@ -26,6 +27,7 @@ __all__ = [
     "activate_autoresearch_experiment",
     "build_autoresearch_report",
     "generate_autoresearch_experiment_drafts",
+    "park_autoresearch_experiment",
     "run_autoresearch_fixture",
     "run_runnable_autoresearch_experiments",
     "validate_attempt",

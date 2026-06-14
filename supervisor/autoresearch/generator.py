@@ -219,6 +219,42 @@ def activate_autoresearch_experiment(
     return row
 
 
+def park_autoresearch_experiment(
+    *,
+    state: Any,
+    experiment_id: str,
+    operator: str,
+    approval_channel: str,
+    reason: str,
+    now: int | None = None,
+) -> dict[str, Any]:
+    """Operator transition from draft/runnable to parked without running it."""
+    parked_at = int(time.time()) if now is None else int(now)
+    row = state.park_autoresearch_experiment(
+        experiment_id=experiment_id,
+        parked_at=parked_at,
+    )
+    _write_event(
+        state,
+        run_id="autoresearch_experiments",
+        kind="autoresearch_experiment_parked",
+        payload={
+            "schema_version": "supervisor-autoresearch-experiment-park/v1",
+            "experiment_id": experiment_id,
+            "status": row["status"],
+            "operator": operator,
+            "approval_channel": approval_channel,
+            "reason": str(reason or "").strip(),
+            "parked_at": parked_at,
+            "default_change_allowed": False,
+            "automatic_policy_mutation": False,
+            "gate_advanced": False,
+            "gate_authority": "unchanged",
+        },
+    )
+    return row
+
+
 def run_runnable_autoresearch_experiments(
     *,
     state: Any,

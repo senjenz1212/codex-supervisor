@@ -165,12 +165,16 @@ def run_evaluator_trials(
                 exclude_dirs=_SOURCE_SNAPSHOT_EXCLUDED_DIRS,
                 exclude_roots=(output_dir_path,),
             ))
-            source_changed_paths = _changed_paths(source_before, source_after)
-            if source_changed_paths:
+            all_source_changed_paths = _changed_paths(source_before, source_after)
+            source_changed_paths = [
+                path for path in all_source_changed_paths
+                if not _is_ignorable_source_checkout_mutation(path)
+            ]
+            if all_source_changed_paths:
                 _restore_snapshot(
                     root=repo_root_path,
                     before=source_before_bytes,
-                    changed_paths=source_changed_paths,
+                    changed_paths=all_source_changed_paths,
                 )
 
         after = _snapshot_files(worktree)
@@ -286,6 +290,10 @@ _SOURCE_SNAPSHOT_EXCLUDED_DIRS = {
     "__pycache__",
     "node_modules",
 }
+
+_IGNORABLE_SOURCE_MUTATION_PREFIXES = (
+    ".git/objects/",
+)
 
 
 def _evaluator_environment(
@@ -517,6 +525,10 @@ def _remove_empty_parents(path: Path, *, stop_at: Path) -> None:
 def _changed_paths(before: dict[str, str], after: dict[str, str]) -> list[str]:
     paths = sorted(set(before) | set(after))
     return [path for path in paths if before.get(path) != after.get(path)]
+
+
+def _is_ignorable_source_checkout_mutation(path: str) -> bool:
+    return any(path.startswith(prefix) for prefix in _IGNORABLE_SOURCE_MUTATION_PREFIXES)
 
 
 def _normalise_path(value: str, *, repo_root: Path | None = None) -> str:

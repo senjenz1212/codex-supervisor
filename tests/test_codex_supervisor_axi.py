@@ -246,6 +246,56 @@ def test_axi_experiments_activate_transitions_draft_to_runnable(capsys, tmp_path
     assert row["status"] == "runnable"
 
 
+def test_axi_experiments_park_drains_draft_with_audit_event(capsys, tmp_path):
+    config = _config_path(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    for index in range(3):
+        state.write_event(
+            run_id=f"signal-{index}",
+            source="dual_agent",
+            kind="dual_agent_gate_result",
+            payload={
+                "task_id": "task",
+                "task_class": "source_change",
+                "lesson_task_class": "source_change",
+                "gate": "execution",
+                "status": "blocked",
+                "implicated_paths": ["supervisor/autoresearch/orchestrator.py"],
+                "trace_envelope": {
+                    "failure_taxonomy": {"mast_code": "FM-3.2"},
+                },
+            },
+        )
+    [draft] = generate_autoresearch_experiment_drafts(
+        state=state,
+        repo_root=Path.cwd(),
+        config=AutoResearchGeneratorConfig(recurrence_threshold=3),
+    )
+
+    assert axi.main([
+        "--config",
+        str(config),
+        "--json",
+        "experiments",
+        "park",
+        draft["experiment_id"],
+        "--operator",
+        "operator@example.com",
+        "--reason",
+        "superseded by higher-priority live cycle",
+    ]) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["experiment"]["status"] == "parked"
+    assert payload["automatic_policy_mutation"] is False
+    [row] = state.list_autoresearch_experiment_queue()
+    assert row["status"] == "parked"
+    events = state.read_events_since("autoresearch_experiments", after_event_id=0, limit=10)
+    [event] = [item for item in events if item["kind"] == "autoresearch_experiment_parked"]
+    assert event["payload"]["experiment_id"] == draft["experiment_id"]
+    assert event["payload"]["reason"] == "superseded by higher-priority live cycle"
+
+
 def test_axi_policy_approve_proposal_applies_hashes_and_rollback_pointer(capsys, tmp_path):
     config = _config_path(tmp_path)
     state = State(str(tmp_path / "state.db"))

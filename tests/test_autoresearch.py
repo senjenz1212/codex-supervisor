@@ -721,6 +721,49 @@ print('{{"metric_value": 1.0}}')
     assert not marker.exists()
 
 
+def test_autoresearch_live_evaluator_ignores_restored_git_object_bookkeeping(tmp_path):
+    git_object = tmp_path / ".git" / "objects" / "aa" / "autoresearch-bookkeeping"
+    evaluator_ref, evaluator_hash = _write_evaluator(
+        tmp_path,
+        f"""
+from __future__ import annotations
+import argparse, json
+from pathlib import Path
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--attempt-worktree", required=True)
+parser.add_argument("--trial-index", required=True, type=int)
+parser.add_argument("--metric-name", required=True)
+parser.add_argument("--attempt-json", required=True)
+parser.parse_args()
+
+Path({str(git_object)!r}).parent.mkdir(parents=True, exist_ok=True)
+Path({str(git_object)!r}).write_text("object bookkeeping\\n", encoding="utf-8")
+print(json.dumps({{"metric_value": 0.9}}))
+""".lstrip(),
+    )
+    fixture = _write_fixture(
+        tmp_path,
+        experiment=_live_experiment(evaluator_ref=evaluator_ref, evaluator_hash=evaluator_hash, k_trials=1),
+        attempts=[_live_attempt(metric_trials=[])],
+    )
+    state = State(str(tmp_path / "state.db"))
+
+    report = run_autoresearch_fixture(
+        fixture_path=fixture,
+        state=state,
+        run_id="git-object-bookkeeping-run",
+        repo_root=tmp_path,
+        output_dir=tmp_path / "out",
+        execution_mode="live",
+    )
+
+    record = report["records"][0]
+    assert record["validation_status"] == "accepted"
+    assert "outside_mutable_surface" not in record["gaming_flags"]
+    assert not git_object.exists()
+
+
 def test_autoresearch_live_evaluator_blocks_mutable_path_escape(tmp_path):
     evaluator_ref, evaluator_hash = _write_evaluator(
         tmp_path,

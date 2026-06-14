@@ -119,6 +119,9 @@ class DualAgentGateSpec:
     policy_overlay_block_sha256: str = ""
     policy_overlay_hash: str = ""
     policy_proposal_id: str = ""
+    policy_overlay_task_class: str = ""
+    policy_overlay_frozen: bool = False
+    policy_overlay_task_class_hash: str = ""
     planning_rubric_threshold: float = 0.6
     planning_rubric_unavailable_policy: str = "block"
 

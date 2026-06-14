@@ -361,7 +361,16 @@ def _experiments(args: argparse.Namespace, cfg: Config, state: State) -> dict[st
         )
         payload["help"] = ["The daemon runner will execute runnable experiments on cadence."]
         return payload
-    raise AxiUsageError("experiments requires one of: list, generate, activate")
+    if args.experiments_command == "park":
+        payload = api.park_autoresearch_experiment(
+            experiment_id=args.experiment_id,
+            operator=args.operator,
+            approval_channel="cli",
+            reason=args.reason,
+        )
+        payload["help"] = ["Parked experiments are inert; generate again when draft capacity is available."]
+        return payload
+    raise AxiUsageError("experiments requires one of: list, generate, activate, park")
 
 
 def _proposal_from_run_events(state: State, *, run_id: str, proposal_id: str) -> dict[str, Any]:
@@ -544,6 +553,10 @@ def _build_parser() -> argparse.ArgumentParser:
     experiments_activate = experiment_subparsers.add_parser("activate")
     experiments_activate.add_argument("experiment_id")
     experiments_activate.add_argument("--operator", default="codex-supervisor-axi")
+    experiments_park = experiment_subparsers.add_parser("park")
+    experiments_park.add_argument("experiment_id")
+    experiments_park.add_argument("--operator", default="codex-supervisor-axi")
+    experiments_park.add_argument("--reason", default="")
     return parser
 
 

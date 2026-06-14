@@ -220,6 +220,7 @@ class AutoresearchValidationReport:
             "metric_before": self.metric_before,
             "metric_after": self.metric_after,
             "metric_delta": self.metric_delta,
+            "empty_floor_comparison": self.empty_floor_comparison(),
             "policy_overlay_candidate_ref": self.policy_overlay_candidate_ref,
             "policy_candidate_changes": dict(sorted(self.policy_candidate_changes.items())),
             "metric_median": self.metric_median,
@@ -259,6 +260,7 @@ class AutoresearchValidationReport:
             "metric_before": self.metric_before,
             "metric_after": self.metric_after,
             "metric_delta": self.metric_delta,
+            "empty_floor_comparison": self.empty_floor_comparison(),
             "policy_overlay_candidate_ref": self.policy_overlay_candidate_ref,
             "policy_candidate_changes": dict(sorted(self.policy_candidate_changes.items())),
             "metric_median": self.metric_median,
@@ -277,6 +279,17 @@ class AutoresearchValidationReport:
             "gate_advanced": bool(self.gate_advanced),
         }
         return payload
+
+    def empty_floor_comparison(self) -> dict[str, Any] | None:
+        if self.metric_before is None or self.metric_after is None or self.metric_delta is None:
+            return None
+        return {
+            "metric_source": self.metric_source,
+            "empty_floor_metric": self.metric_before,
+            "candidate_metric": self.metric_after,
+            "metric_delta": self.metric_delta,
+            "k_trials": len(self.metric_trials),
+        }
 
 
 def _optional_float(value: Any) -> float | None:

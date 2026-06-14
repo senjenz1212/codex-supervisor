@@ -994,6 +994,35 @@ class PostgresState:
                     ).fetchone()
                 return _autoresearch_experiment_row_to_dict(dict(row))
 
+    def park_autoresearch_experiment(
+        self,
+        *,
+        experiment_id: str,
+        parked_at: int | None = None,
+    ) -> dict[str, Any]:
+        now = int(time.time()) if parked_at is None else int(parked_at)
+        with self._write_lock:
+            with self._conn.transaction():
+                row = self._conn.execute(
+                    """SELECT * FROM supervisor_autoresearch_experiments
+                       WHERE experiment_id=%s""",
+                    (experiment_id,),
+                ).fetchone()
+                if row is None:
+                    raise RuntimeError(f"AutoResearch experiment not found: {experiment_id}")
+                if row["status"] in {"draft", "runnable"}:
+                    row = self._conn.execute(
+                        """UPDATE supervisor_autoresearch_experiments
+                              SET status='parked',
+                                  updated_at=%s
+                            WHERE experiment_id=%s
+                            RETURNING *""",
+                        (now, experiment_id),
+                    ).fetchone()
+                if row is None:
+                    raise RuntimeError(f"AutoResearch experiment not found: {experiment_id}")
+                return _autoresearch_experiment_row_to_dict(dict(row))
+
     def mark_autoresearch_experiment_run_started(
         self,
         *,
