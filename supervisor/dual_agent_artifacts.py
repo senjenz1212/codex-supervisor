@@ -81,7 +81,7 @@ def export_dual_agent_run_artifacts(
     files[6].write_text(_screenshots_markdown(screenshot_files), encoding="utf-8")
     outcome_review_events = by_gate.get("outcome_review", ())
     outcome_review_markdown = _gate_markdown("Outcome Review Gate", outcome_review_events)
-    if outcome_review_events or not _preserve_worker_authored_outcome_review(files[7]):
+    if not _preserve_worker_authored_outcome_review(files[7]):
         files[7].write_text(outcome_review_markdown, encoding="utf-8")
     files[8].write_text(_interactions_markdown(run_id, task_id, events), encoding="utf-8")
     files[9].write_text(_transcript_markdown(run_id, task_id, events), encoding="utf-8")

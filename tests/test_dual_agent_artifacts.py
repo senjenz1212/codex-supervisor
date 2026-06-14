@@ -228,6 +228,37 @@ def test_export_dual_agent_run_artifacts_preserves_worker_authored_outcome_revie
     assert report.read_text(encoding="utf-8") == "# Production Confidence\n\nWorker-authored report.\n"
 
 
+def test_export_dual_agent_run_artifacts_preserves_worker_authored_outcome_review_after_review_gate(tmp_path):
+    state = _state(tmp_path)
+    _insert_event(
+        state,
+        kind="dual_agent_gate_result",
+        payload=_result_payload(
+            gate="outcome_review",
+            summary="Outcome gate log should stay in transcript.",
+            decisions=["accept"],
+        ),
+        ts=1001,
+    )
+    output_dir = tmp_path / "docs" / "dual-agent" / "task-1"
+    output_dir.mkdir(parents=True)
+    report = output_dir / "outcome-review.md"
+    report.write_text("# Production Confidence\n\nWorker-authored report.\n", encoding="utf-8")
+
+    result = export_dual_agent_run_artifacts(
+        state,
+        run_id="run-1",
+        task_id="task-1",
+        output_dir=output_dir,
+    )
+
+    assert result.status == "ok"
+    assert report.read_text(encoding="utf-8") == "# Production Confidence\n\nWorker-authored report.\n"
+    assert "Outcome gate log should stay in transcript." in (
+        result.output_dir / "transcript.md"
+    ).read_text(encoding="utf-8")
+
+
 def test_export_dual_agent_run_artifacts_renders_interaction_receipts(tmp_path):
     state = _state(tmp_path)
     _insert_event(
