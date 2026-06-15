@@ -572,7 +572,7 @@ def test_transport_incident_events_are_written_from_public_axi_and_mcp_poll_fail
     ]
     assert "same_client_token_reattach" in incidents
     assert "non_terminal_poll" in incidents
-    assert "catch_up_invoked" in incidents
+    assert "catch_up_invoked" not in incidents
     boundary_events = state.read_events_since(
         "supervisor_transport_incidents",
         after_event_id=0,
@@ -585,6 +585,19 @@ def test_transport_incident_events_are_written_from_public_axi_and_mcp_poll_fail
         and event["payload"]["incident_type"] == "poll_failure"
     ]
     assert {payload["interface"] for payload in poll_failures} >= {"axi", "mcp"}
+    catch_up_metrics = [
+        event["payload"]
+        for event in boundary_events
+        if event["kind"] == "transport_incident_observed"
+        and event["payload"]["incident_type"] == "catch_up_invoked"
+    ]
+    assert any(
+        payload["interface"] == "axi"
+        and payload["details"].get("workflow_run_id") == "workflow-run"
+        and payload["observational_only"] is True
+        and payload["gate_authority"] == "unchanged"
+        for payload in catch_up_metrics
+    )
 
 
 def test_axi_toon_poll_records_format_metric(capsys, tmp_path):
@@ -737,3 +750,206 @@ def test_axi_console_script_is_registered():
     assert data["project"]["scripts"]["codex-supervisor-axi"] == (
         "mcp_tools.codex_supervisor_axi:main"
     )
+
+
+def _common_submit_kwargs(tmp_path: Path) -> dict[str, object]:
+    return {
+        "cwd": str(tmp_path),
+        "task_id": "shared-token-task",
+        "run_id": "shared-token-run",
+        "intent": "Cross-surface client-token reattach proof.",
+        "visual_evidence_policy": "not_required",
+    }
+
+
+def test_axi_then_mcp_same_client_token_reattaches_to_one_job(capsys, tmp_path):
+    config = _config_path(tmp_path)
+    submit_args = [
+        "--config",
+        str(config),
+        "--json",
+        "submit",
+        "--cwd",
+        str(tmp_path),
+        "--task-id",
+        "shared-token-task",
+        "--run-id",
+        "shared-token-run",
+        "--intent",
+        "Cross-surface client-token reattach proof.",
+        "--visual-evidence-policy",
+        "not_required",
+        "--client-token",
+        "cross-surface-token",
+    ]
+
+    assert axi.main(submit_args) == 0
+    axi_first = json.loads(capsys.readouterr().out)
+
+    state = State(str(tmp_path / "state.db"))
+    cfg = Config.load(config)
+    mcp_second = CodexSupervisorMcpAPI(cfg, state).submit_dual_agent_workflow_job(
+        **_common_submit_kwargs(tmp_path),
+        client_token="cross-surface-token",
+        config_path=str(config),
+    )
+
+    assert mcp_second["job_id"] == axi_first["job_id"]
+    assert mcp_second["reattached"] is True
+    rows = state.list_dual_agent_workflow_jobs(active_only=True)
+    assert len(rows) == 1
+
+
+def test_mcp_then_axi_same_client_token_reattaches_to_one_job(capsys, tmp_path):
+    config = _config_path(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    cfg = Config.load(config)
+    mcp_first = CodexSupervisorMcpAPI(cfg, state).submit_dual_agent_workflow_job(
+        **_common_submit_kwargs(tmp_path),
+        client_token="reverse-token",
+        config_path=str(config),
+    )
+
+    submit_args = [
+        "--config",
+        str(config),
+        "--json",
+        "submit",
+        "--cwd",
+        str(tmp_path),
+        "--task-id",
+        "shared-token-task",
+        "--run-id",
+        "shared-token-run",
+        "--intent",
+        "Cross-surface client-token reattach proof.",
+        "--visual-evidence-policy",
+        "not_required",
+        "--client-token",
+        "reverse-token",
+    ]
+    assert axi.main(submit_args) == 0
+    axi_second = json.loads(capsys.readouterr().out)
+
+    assert axi_second["job_id"] == mcp_first["job_id"]
+    assert axi_second["reattached"] is True
+    rows = state.list_dual_agent_workflow_jobs(active_only=True)
+    assert len(rows) == 1
+
+
+def test_axi_and_mcp_catch_up_return_equivalent_event_tail(capsys, tmp_path):
+    config = _config_path(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    cfg = Config.load(config)
+    run_id = "catch-up-equiv-run"
+    first_event_id = state.write_event(
+        run_id=run_id,
+        source="supervisor",
+        kind="dual_agent_workflow_route",
+        payload={"task_id": "catch-up-equiv-task", "task_class": "source_change"},
+    )
+    second_event_id = state.write_event(
+        run_id=run_id,
+        source="supervisor",
+        kind="dual_agent_gate_status",
+        payload={"gate": "execution", "status": "submitted"},
+    )
+
+    cursor = first_event_id - 1
+    mcp_tail = CodexSupervisorMcpAPI(cfg, state).catch_up_dual_agent_workflow(
+        run_id=run_id,
+        last_event_id=cursor,
+        limit=100,
+    )
+    boundary_before = state.read_events_since(
+        "supervisor_transport_incidents", after_event_id=0, limit=100
+    )
+    workflow_after_mcp = state.read_events_since(run_id, after_event_id=0, limit=100)
+    mcp_run_count = len(workflow_after_mcp)
+
+    assert axi.main(
+        ["--config", str(config), "--json", "catch-up", run_id, "--last-event-id", str(cursor)]
+    ) == 0
+    axi_tail = json.loads(capsys.readouterr().out)
+
+    workflow_after_axi = state.read_events_since(run_id, after_event_id=0, limit=100)
+    assert len(workflow_after_axi) == mcp_run_count
+
+    mcp_ids = [event["event_id"] for event in mcp_tail["events"]]
+    axi_ids = [event["event_id"] for event in axi_tail["events"]]
+    mcp_kinds = [event["kind"] for event in mcp_tail["events"]]
+    axi_kinds = [event["kind"] for event in axi_tail["events"]]
+    assert axi_ids == mcp_ids == [first_event_id, second_event_id]
+    assert axi_kinds == mcp_kinds
+    assert axi_tail["count"] == mcp_tail["count"] == 2
+    assert axi_tail["next_event_id"] == mcp_tail["next_event_id"]
+
+    boundary_after = state.read_events_since(
+        "supervisor_transport_incidents", after_event_id=0, limit=100
+    )
+    new_boundary = [
+        event for event in boundary_after if event not in boundary_before
+    ]
+    catch_up_metrics = [
+        event for event in new_boundary
+        if event["kind"] == "transport_incident_observed"
+        and event["payload"]["incident_type"] == "catch_up_invoked"
+    ]
+    assert catch_up_metrics, "AXI catch-up should record an observational metric"
+    for event in catch_up_metrics:
+        assert event["payload"]["observational_only"] is True
+        assert event["payload"]["gate_authority"] == "unchanged"
+    assert all(event["event_id"] not in axi_ids for event in catch_up_metrics)
+
+
+def test_axi_submit_and_poll_help_use_json_recovery_commands(capsys, tmp_path):
+    config = _config_path(tmp_path)
+    submit_args = [
+        "--config",
+        str(config),
+        "--json",
+        "submit",
+        "--cwd",
+        str(tmp_path),
+        "--task-id",
+        "json-help-task",
+        "--run-id",
+        "json-help-run",
+        "--intent",
+        "Confirm AXI JSON recovery help.",
+        "--client-token",
+        "json-help-token",
+    ]
+    assert axi.main(submit_args) == 0
+    submit = json.loads(capsys.readouterr().out)
+    submit_help = " ".join(submit.get("help", []))
+    assert f"codex-supervisor-axi --json poll {submit['job_id']}" in submit_help
+
+    assert axi.main(["--config", str(config), "--json", "poll", submit["job_id"]]) == 0
+    poll = json.loads(capsys.readouterr().out)
+    poll_help = " ".join(poll.get("help", []))
+    run_id = poll.get("run_id", "<run_id>")
+    assert f"codex-supervisor-axi --json catch-up {run_id}" in poll_help
+
+
+def test_rigorous_flow_docs_use_axi_json_default_and_keep_mcp_compatibility():
+    detached = Path("docs/supervisor-axi-detached-dispatcher.md").read_text(encoding="utf-8")
+    new_chat = Path("docs/how-to/dual-agent-from-new-chat.md").read_text(encoding="utf-8")
+    skill = Path("skills/dual-agent-gate.md").read_text(encoding="utf-8")
+    loop = Path("docs/LOOP.md").read_text(encoding="utf-8")
+    public_boundaries = Path("docs/testing/public-boundaries.md").read_text(encoding="utf-8")
+
+    for blob in (detached, new_chat, skill, loop, public_boundaries):
+        assert "codex-supervisor-axi --json submit" in blob
+        assert "codex-supervisor-axi --json poll" in blob
+        assert "codex-supervisor-axi --json catch-up" in blob
+
+    assert "run_dual_agent_workflow" in new_chat, (
+        "MCP compatibility language must remain so legacy callers still see a route"
+    )
+    assert "run_dual_agent_workflow" in skill
+    assert "MCP remains a compatibility" in loop
+    assert "must not execute workflow phases inline" in public_boundaries
+
+    for blob in (detached, new_chat, skill, loop, public_boundaries):
+        assert "TOON improves agent performance" not in blob

@@ -1,0 +1,38 @@
+[
+  {
+    "kind": "prd",
+    "mutable_by_worker": false,
+    "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/axi-default-mcp-shim-20260615/source/prd.md",
+    "sha256": "2ee4139fc76581e4f437a9739cd449ebda54430352fabcea340fce0872073c63"
+  },
+  {
+    "kind": "issues",
+    "mutable_by_worker": false,
+    "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/axi-default-mcp-shim-20260615/source/issues.md",
+    "sha256": "ccae65878494fd54625c81096a71a56391dfde1c34b87138a40feb06d585bed5"
+  },
+  {
+    "kind": "tdd_plan",
+    "mutable_by_worker": false,
+    "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/axi-default-mcp-shim-20260615/source/tdd.md",
+    "sha256": "9b313106b2a970822a79f6b7150afedc7b75c8b30c80fc6f6afac446d2ef38bd"
+  },
+  {
+    "kind": "grill_findings",
+    "mutable_by_worker": false,
+    "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/axi-default-mcp-shim-20260615/source/grill-findings.md",
+    "sha256": "0297a54a956d372a8a49c58c6c8e114663c91d1ec9fbe5ba8fc344d5591cb788"
+  },
+  {
+    "kind": "grill_findings_tdd",
+    "mutable_by_worker": false,
+    "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/axi-default-mcp-shim-20260615/source/grill-findings-tdd.md",
+    "sha256": "87ad3844959fbb1795f297b2e35ba3874a517e4431deae3f6a34637465f8f7d7"
+  },
+  {
+    "kind": "implementation_plan",
+    "mutable_by_worker": false,
+    "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/axi-default-mcp-shim-20260615/source/implementation-plan.md",
+    "sha256": "ebd833a868f8f578d7e093b6a2e9b1de84efd328505aff519e4f8b2ae2a6a4df"
+  }
+]

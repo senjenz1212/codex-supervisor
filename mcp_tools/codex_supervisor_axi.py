@@ -179,8 +179,9 @@ def _home(state: State) -> dict[str, Any]:
         "jobs": jobs,
         "gates": gates,
         "help": [
-            "Run `codex-supervisor-axi submit --task-id <id> --run-id <id> --intent <text>`.",
-            "Run `codex-supervisor-axi poll <job_id>` for a durable job status.",
+            "Run `codex-supervisor-axi --json submit --task-id <id> --run-id <id> --intent <text>`.",
+            "Run `codex-supervisor-axi --json poll <job_id>` for a durable job status.",
+            "Run `codex-supervisor-axi --json catch-up <run_id>` for the event tail.",
             "Start the detached dispatcher with `codex-supervisor-workflow-dispatcher`.",
         ],
     }
@@ -209,7 +210,8 @@ def _submit(args: argparse.Namespace, cfg: Config, state: State) -> dict[str, An
         client_token=args.client_token,
     )
     result["help"] = [
-        f"Run `codex-supervisor-axi poll {result['job_id']}`.",
+        f"Run `codex-supervisor-axi --json poll {result['job_id']}`.",
+        f"Run `codex-supervisor-axi --json catch-up {args.run_id}` for the event tail.",
         "If the transport closes, rerun submit with the same --client-token or run catch-up.",
     ]
     if result.get("reattached"):
@@ -229,7 +231,7 @@ def _submit(args: argparse.Namespace, cfg: Config, state: State) -> dict[str, An
 def _poll(args: argparse.Namespace, cfg: Config, state: State) -> dict[str, Any]:
     result = _api(cfg, state).poll_dual_agent_workflow_job(job_id=args.job_id, interface="axi")
     result["help"] = [
-        f"Run `codex-supervisor-axi catch-up {result.get('run_id', '<run_id>')}` for the event tail.",
+        f"Run `codex-supervisor-axi --json catch-up {result.get('run_id', '<run_id>')}` for the event tail.",
         "Ensure `codex-supervisor-workflow-dispatcher` is running if the job stays reserved.",
     ]
     return result
@@ -243,17 +245,18 @@ def _catch_up(args: argparse.Namespace, cfg: Config, state: State) -> dict[str, 
     )
     record_transport_incident(
         state,
-        run_id=args.run_id,
+        run_id="supervisor_transport_incidents",
         incident_type="catch_up_invoked",
         interface="axi",
         details={
+            "workflow_run_id": args.run_id,
             "last_event_id": args.last_event_id,
             "limit": args.limit,
             "returned_count": result.get("count"),
         },
     )
     result["help"] = [
-        f"Run `codex-supervisor-axi catch-up {args.run_id} --last-event-id {result['next_event_id']}`.",
+        f"Run `codex-supervisor-axi --json catch-up {args.run_id} --last-event-id {result['next_event_id']}`.",
     ]
     return result
 
@@ -282,7 +285,7 @@ def _gates(args: argparse.Namespace, _cfg: Config, state: State) -> dict[str, An
         "status": "ok",
         "run_id": args.run_id,
         "gates": rows,
-        "help": ["Run `codex-supervisor-axi status <job_id>` for the durable job state."],
+        "help": ["Run `codex-supervisor-axi --json status <job_id>` for the durable job state."],
     }
 
 
@@ -306,7 +309,7 @@ def _operator_decision(args: argparse.Namespace, _cfg: Config, state: State, *, 
                 "decision": "approve",
                 "proposal_id": proposal_id,
                 "approval": approval,
-                "help": [f"Run `codex-supervisor-axi catch-up {args.run_id}` to inspect the approval event."],
+                "help": [f"Run `codex-supervisor-axi --json catch-up {args.run_id}` to inspect the approval event."],
             }
         denial = deny_policy_proposal(
             proposal,
@@ -321,7 +324,7 @@ def _operator_decision(args: argparse.Namespace, _cfg: Config, state: State, *, 
             "decision": "deny",
             "proposal_id": proposal_id,
             "denial": denial,
-            "help": [f"Run `codex-supervisor-axi catch-up {args.run_id}` to inspect the denial event."],
+            "help": [f"Run `codex-supervisor-axi --json catch-up {args.run_id}` to inspect the denial event."],
         }
     event_id = state.write_event(
         run_id=args.run_id,
@@ -339,7 +342,7 @@ def _operator_decision(args: argparse.Namespace, _cfg: Config, state: State, *, 
         "decision": decision,
         "event_id": event_id,
         "run_id": args.run_id,
-        "help": [f"Run `codex-supervisor-axi catch-up {args.run_id} --last-event-id {event_id - 1}`."],
+        "help": [f"Run `codex-supervisor-axi --json catch-up {args.run_id} --last-event-id {event_id - 1}`."],
     }
 
 

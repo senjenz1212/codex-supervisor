@@ -1,0 +1,67 @@
+[
+  {
+    "artifact_ref": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/axi-default-mcp-shim-20260615/source/prd.md",
+    "artifact_sha256": "2ee4139fc76581e4f437a9739cd449ebda54430352fabcea340fce0872073c63",
+    "claims": [
+      "PRD-to-TDD stage executed and amended source artifact validated"
+    ],
+    "created_at": 1781503566,
+    "kind": "skill_run",
+    "receipt_id": "axi-default-mcp-shim-20260615-to_prd-source-r2",
+    "skill": "to-prd",
+    "stage": "to_prd",
+    "status": "passed"
+  },
+  {
+    "artifact_ref": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/axi-default-mcp-shim-20260615/source/grill-findings.md",
+    "artifact_sha256": "0297a54a956d372a8a49c58c6c8e114663c91d1ec9fbe5ba8fc344d5591cb788",
+    "claims": [
+      "PRD-to-TDD stage executed and amended source artifact validated"
+    ],
+    "created_at": 1781503566,
+    "kind": "skill_run",
+    "receipt_id": "axi-default-mcp-shim-20260615-prd_grill-source-r2",
+    "skill": "grill-with-docs",
+    "stage": "prd_grill",
+    "status": "passed"
+  },
+  {
+    "artifact_ref": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/axi-default-mcp-shim-20260615/source/issues.md",
+    "artifact_sha256": "ccae65878494fd54625c81096a71a56391dfde1c34b87138a40feb06d585bed5",
+    "claims": [
+      "PRD-to-TDD stage executed and amended source artifact validated"
+    ],
+    "created_at": 1781503566,
+    "kind": "skill_run",
+    "receipt_id": "axi-default-mcp-shim-20260615-to_issues-source-r2",
+    "skill": "to-issues",
+    "stage": "to_issues",
+    "status": "passed"
+  },
+  {
+    "artifact_ref": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/axi-default-mcp-shim-20260615/source/tdd.md",
+    "artifact_sha256": "9b313106b2a970822a79f6b7150afedc7b75c8b30c80fc6f6afac446d2ef38bd",
+    "claims": [
+      "PRD-to-TDD stage executed and amended source artifact validated"
+    ],
+    "created_at": 1781503566,
+    "kind": "skill_run",
+    "receipt_id": "axi-default-mcp-shim-20260615-tdd-source-r2",
+    "skill": "tdd",
+    "stage": "tdd",
+    "status": "passed"
+  },
+  {
+    "artifact_ref": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/axi-default-mcp-shim-20260615/source/grill-findings-tdd.md",
+    "artifact_sha256": "87ad3844959fbb1795f297b2e35ba3874a517e4431deae3f6a34637465f8f7d7",
+    "claims": [
+      "PRD-to-TDD stage executed and amended source artifact validated"
+    ],
+    "created_at": 1781503566,
+    "kind": "skill_run",
+    "receipt_id": "axi-default-mcp-shim-20260615-tdd_grill-source-r2",
+    "skill": "grill-with-docs",
+    "stage": "tdd_grill",
+    "status": "passed"
+  }
+]

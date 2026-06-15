@@ -22,11 +22,23 @@ Claude Code as the implementer.
 Codex owns PRD, TDD, and review gates. Claude Code owns implementation through
 `/lead`. Both agents participate at major decision points.
 
-Prefer `run_dual_agent_workflow` when the user wants the whole implementation
-process. It makes the supervisor own the lifecycle order, max-round cap,
-artifact generation, final artifact export, and final claim checks. Use the
-lower-level gate tools only when manually repairing, inspecting, or testing a
-single gate.
+Prefer the AXI JSON CLI as the default automation surface for whole-workflow
+orchestration. AXI and MCP share the same durable ledger core and the same
+`client_token` reattach idempotency, so either surface can reach the same job
+when the operator wants to resume.
+
+```bash
+codex-supervisor-axi --json submit --task-id <id> --run-id <id> --intent <text> --client-token <stable>
+codex-supervisor-axi --json poll <job_id>
+codex-supervisor-axi --json catch-up <run_id>
+```
+
+`run_dual_agent_workflow` remains available as a non-blocking MCP compatibility
+shim and is preferred when the user wants to drive the workflow from inside the
+chat with native MCP tools. Both surfaces let the supervisor own the lifecycle
+order, max-round cap, artifact generation, final artifact export, and final
+claim checks. Use the lower-level gate tools only when manually repairing,
+inspecting, or testing a single gate.
 
 Set `cursor_review=true` only when the user explicitly wants tri-agent review.
 In that mode Cursor is an independent reviewer/challenger. Claude Code remains

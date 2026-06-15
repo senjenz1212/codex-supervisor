@@ -165,44 +165,37 @@ Browser/Computer Use provenance, and a passed visual validation status.
 
 ## Reliable Transport Paths
 
-Use MCP as the primary path because it keeps the workflow inside the chat:
+Use AXI JSON as the default automation surface. AXI and MCP share the same
+durable ledger core and idempotent `client_token` reattach, so either surface
+can reach the same job.
+
+```bash
+codex-supervisor-axi --json submit \
+  --cwd "<ABSOLUTE_TARGET_WORKTREE>" \
+  --task-id "<TASK_ID>" \
+  --run-id "<RUN_ID>" \
+  --intent "<WHAT THE WORKFLOW SHOULD REVIEW>" \
+  --cursor-review --cursor-review-profile rigorous \
+  --client-token "<STABLE_TOKEN>"
+
+codex-supervisor-axi --json poll <job_id>
+codex-supervisor-axi --json catch-up "<RUN_ID>" --last-event-id <event_id>
+```
+
+MCP remains available as a compatibility shim over the same submit, poll, and
+catch-up core. It is non-blocking and never executes gates synchronously:
 
 ```text
 mcp__codex_supervisor__run_dual_agent_workflow
+mcp__codex_supervisor__poll_dual_agent_workflow_job
+mcp__codex_supervisor__catch_up_dual_agent_workflow
 ```
 
-If MCP returns `Transport closed`, do not treat that as a supervisor verdict.
-Run the same supervisor-owned workflow through the fallback CLI from
-`/Users/sam.zhang/Documents/codex-supervisor`:
+If the transport closes mid-call, do not treat that as a supervisor verdict.
+Rerun the AXI submit with the same `--client-token` to reattach to the same
+durable job, then resume polling and catching up through AXI JSON.
 
-```bash
-cat > /tmp/dual-agent-request.json <<'JSON'
-{
-  "cwd": "<ABSOLUTE_TARGET_WORKTREE>",
-  "run_id": "<RUN_ID>",
-  "task_id": "<TASK_ID>",
-  "intent": "<WHAT THE WORKFLOW SHOULD REVIEW>",
-  "cursor_review": true,
-  "cursor_review_profile": "rigorous",
-  "task_complexity": "vague",
-  "tool_receipts": []
-}
-JSON
-
-uv run codex-supervisor-workflow \
-  --config ~/.codex-supervisor/config.yaml \
-  --request /tmp/dual-agent-request.json \
-  --output "<ABSOLUTE_TARGET_WORKTREE>/docs/dual-agent/<TASK_ID>/workflow-result.json"
-```
-
-This fallback loads the `codex_supervisor` MCP env block from
-`~/.codex/config.toml` plus `~/.codex-supervisor/secrets.env` by default, uses
-the same `CodexSupervisorMcpAPI.run_dual_agent_workflow` boundary as MCP, writes
-to the same SQLite ledger, and exports the same `docs/dual-agent/<TASK_ID>/`
-artifacts. It is a transport fallback, not a weaker review mode. If you need
-shell failure for automation, add `--fail-on-blocked`.
-
-If neither MCP nor the fallback CLI can run, the chat can only review exported
+If neither AXI nor the MCP compatibility tools can run, the chat can only review exported
 artifacts:
 
 - `docs/dual-agent/<TASK_ID>/interactions.md`
@@ -219,10 +212,12 @@ it as a live dual-agent run.
 
 - Tool unavailable: re-run `codex mcp get codex_supervisor`; if missing,
   register the MCP server again.
-- `Transport closed`: first retry once; if it repeats, use
-  `uv run codex-supervisor-workflow` and record the fallback result path in the
-  final report. If the MCP server code or registration changed during the same
-  Desktop session, restart Codex Desktop before trusting another MCP retry.
+- `Transport closed`: do not treat the dropped call as a verdict. Run
+  `codex-supervisor-axi --json catch-up "<RUN_ID>"` or rerun
+  `codex-supervisor-axi --json submit ... --client-token "<STABLE_TOKEN>"` to
+  reattach to the durable job. If MCP server code or registration changed
+  during the same Desktop session, restart Codex Desktop before trusting
+  another MCP retry.
 - `gate_prerequisites_missing`: inspect `interactions.md` and run the missing
   earlier gate instead of skipping forward.
 - `required_artifacts_missing`: create or pass the missing planning artifacts.

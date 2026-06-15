@@ -5052,6 +5052,8 @@ def build_codex_supervisor_mcp_server(
         payload["help"] = [
             f"Run `poll_dual_agent_workflow_job(job_id={payload['job_id']!r})` for job state.",
             f"Run `catch_up_dual_agent_workflow(run_id={run_id!r})` for the event tail.",
+            f"Prefer AXI: `codex-supervisor-axi --json poll {payload['job_id']}`.",
+            f"Prefer AXI: `codex-supervisor-axi --json catch-up {run_id}`.",
         ]
         return payload
 

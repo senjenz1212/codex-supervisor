@@ -3017,6 +3017,35 @@ async def test_public_run_dual_agent_workflow_mcp_tool_is_non_blocking_submit_sh
 
 
 @pytest.mark.asyncio
+async def test_mcp_compatibility_run_workflow_help_prefers_axi_json_recovery(tmp_path):
+    server, state = _server(tmp_path)
+
+    async def forbidden_sync_runner(**kwargs):
+        raise AssertionError("public MCP run_dual_agent_workflow must not execute gates")
+
+    server._codex_supervisor_tool_api.run_dual_agent_workflow = forbidden_sync_runner
+
+    result = await _maybe_await(server.tools["run_dual_agent_workflow"](
+        cwd=str(tmp_path),
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Legacy MCP callers should see AXI JSON recovery hints.",
+        tool_receipts=_tool_receipts(),
+        config_path=str(tmp_path / "config.yaml"),
+        client_token="axi-recovery-hint-token",
+    ))
+
+    assert result["status"] == "submitted"
+    assert result["execution_model"] == "detached_dispatcher_only"
+    assert not Path(result["request_path"]).exists()
+    assert state.get_dual_agent_workflow(run_id="workflow-run", task_id="workflow-1") is None
+
+    help_blob = "\n".join(result["help"])
+    assert f"codex-supervisor-axi --json poll {result['job_id']}" in help_blob
+    assert "codex-supervisor-axi --json catch-up workflow-run" in help_blob
+
+
+@pytest.mark.asyncio
 async def test_submit_dual_agent_workflow_job_sanitizes_forged_runtime_receipts(tmp_path):
     server, state = _server(tmp_path)
 

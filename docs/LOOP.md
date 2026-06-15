@@ -2,6 +2,15 @@
 
 This document is generated from the Phase E proof manifest at `docs/dual-agent/auto-evolution-loop-proof-20260610/demo-manifest.json`. It describes the live loop as implemented and demonstrated, not a future design.
 
+## Orchestration Boundary
+
+AXI JSON is the default operator and automation surface for supervised
+workflow orchestration: `codex-supervisor-axi --json submit`,
+`codex-supervisor-axi --json poll`, and
+`codex-supervisor-axi --json catch-up`. MCP remains a compatibility/native-tool
+adapter over the same durable ledger core. Neither surface owns phase
+execution; the detached dispatcher and workflow worker remain the runtime.
+
 ## Loop
 
 1. Recurring supervisor failure signals are recorded in the ledger.

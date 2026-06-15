@@ -38,12 +38,18 @@ Agent-facing calls must stay non-blocking:
 - The dispatcher claims `reserved` or `request_written` jobs, writes requests,
   spawns workers, heartbeats leases, and reaps stale leases.
 
-Useful operator commands:
+Useful operator commands (JSON is the default automation surface; TOON-lite
+remains the human-readable default when `--json` is omitted):
 
 ```bash
 codex-supervisor-axi
-codex-supervisor-axi submit --task-id <task> --run-id <run> --intent "<intent>" --client-token <stable-token>
-codex-supervisor-axi poll <job_id>
-codex-supervisor-axi catch-up <run_id> --last-event-id <event_id>
-codex-supervisor-axi trends --task-class source_change --gate outcome_review
+codex-supervisor-axi --json submit --task-id <task> --run-id <run> --intent "<intent>" --client-token <stable-token>
+codex-supervisor-axi --json poll <job_id>
+codex-supervisor-axi --json catch-up <run_id> --last-event-id <event_id>
+codex-supervisor-axi --json trends --task-class source_change --gate outcome_review
 ```
+
+MCP `run_dual_agent_workflow`, `poll_dual_agent_workflow_job`, and
+`catch_up_dual_agent_workflow` remain available as a compatibility shim over
+the same durable ledger core. They are non-blocking and equivalent to the AXI
+JSON commands above.

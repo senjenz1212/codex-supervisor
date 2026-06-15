@@ -257,7 +257,12 @@ Tests must verify the server exposes the dual-agent gate tools Codex needs:
 `catch_up_dual_agent_workflow`, and `start_codex_session`. The MCP boundary must
 persist gate results and round decisions to the supervisor event ledger so
 later tools can read outcomes and reconstruct the dialogue without relying on
-chat memory. `start_codex_session` must default to the strongest configured
+chat memory. MCP is a compatibility/native-tool adapter for Codex chat, not the
+default long-running orchestration surface. Whole-workflow automation should
+prefer AXI JSON (`codex-supervisor-axi --json submit`,
+`codex-supervisor-axi --json poll`, and
+`codex-supervisor-axi --json catch-up`) over the same durable ledger core; MCP
+submit, poll, and catch-up paths must remain non-blocking shims and must not execute workflow phases inline. `start_codex_session` must default to the strongest configured
 Codex model and high reasoning (`gpt-5.5` with
 `reasoning_effort="xhigh"`) unless the caller explicitly overrides it. In the
 Codex Desktop initiated no-Telegram scope, a blocked gate
@@ -267,12 +272,15 @@ Dynamic workflow preview must remain an execution layer under Codex plus Claude
 Code supervision: `run_dual_agent_workflow` must write
 `dual_agent_dynamic_workflow_receipt_validation` and block with P13 unless
 machine-readable receipts cover the preview gates.
-Long workflows should use `submit_dual_agent_workflow_job` when operator
-transport reliability matters; submit must return a durable job id quickly, and
-poll must recover the result from recorded request/result/log refs.
+Long workflows should use AXI JSON by default when operator transport
+reliability matters; MCP `submit_dual_agent_workflow_job` remains available for
+compatibility and must return a durable job id quickly. Poll must recover the
+result from recorded request/result/log refs without writing request files or
+spawning workers.
 Reconnect-capable clients should persist their last delivered event id and use
-`catch_up_dual_agent_workflow` to replay missed ledger events after a transport
-drop before resuming poll.
+AXI JSON catch-up, or MCP `catch_up_dual_agent_workflow` when staying inside
+the native tool path, to replay missed ledger events after a transport drop
+before resuming poll.
 
 ## agentic_worker_execution
 
