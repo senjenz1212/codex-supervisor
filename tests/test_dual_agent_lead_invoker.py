@@ -8,6 +8,7 @@ import pytest
 
 from supervisor.dual_agent_lead import (
     HANDOFF_PACKET_SCHEMA_VERSION,
+    CLAUDE_OPUS_SAFE_OVERRIDE_EXTRA_BODY,
     CLAUDE_OPUS_ULTIMATE_EXTRA_BODY,
     CLAUDE_OPUS_UNDERLYING_MODEL,
     LeadInvocationRequest,
@@ -702,7 +703,9 @@ def test_execution_gate_honors_explicit_execution_model_override(tmp_path, monke
 
     invoke_claude_lead(request, runner=fake_runner)
 
-    assert calls[0]["env"]["ANTHROPIC_DEFAULT_OPUS_MODEL"] == "claude-opus-4-6"
+    env = calls[0]["env"]
+    assert env["ANTHROPIC_DEFAULT_OPUS_MODEL"] == "claude-opus-4-6"
+    assert env["CLAUDE_CODE_EXTRA_BODY"] == json.dumps(CLAUDE_OPUS_SAFE_OVERRIDE_EXTRA_BODY)
 
 
 def test_planning_gate_honors_planning_model_override(tmp_path, monkeypatch):
@@ -725,7 +728,9 @@ def test_planning_gate_honors_planning_model_override(tmp_path, monkeypatch):
 
     invoke_claude_lead(request, runner=fake_runner)
 
-    assert calls[0]["env"]["ANTHROPIC_DEFAULT_OPUS_MODEL"] == "claude-opus-4-6"
+    env = calls[0]["env"]
+    assert env["ANTHROPIC_DEFAULT_OPUS_MODEL"] == "claude-opus-4-6"
+    assert env["CLAUDE_CODE_EXTRA_BODY"] == json.dumps(CLAUDE_OPUS_SAFE_OVERRIDE_EXTRA_BODY)
 
 
 def test_planning_gate_rewrites_retired_fable_override(tmp_path, monkeypatch):
@@ -746,4 +751,6 @@ def test_planning_gate_rewrites_retired_fable_override(tmp_path, monkeypatch):
 
     invoke_claude_lead(request, runner=fake_runner)
 
-    assert calls[0]["env"]["ANTHROPIC_DEFAULT_OPUS_MODEL"] == "claude-opus-4-6"
+    env = calls[0]["env"]
+    assert env["ANTHROPIC_DEFAULT_OPUS_MODEL"] == "claude-opus-4-6"
+    assert env["CLAUDE_CODE_EXTRA_BODY"] == json.dumps(CLAUDE_OPUS_SAFE_OVERRIDE_EXTRA_BODY)

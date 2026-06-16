@@ -33,6 +33,10 @@ CLAUDE_OPUS_ULTIMATE_EXTRA_BODY = {
     "thinking": {"type": "adaptive"},
     "output_config": {"effort": "xhigh"},
 }
+CLAUDE_OPUS_SAFE_OVERRIDE_EXTRA_BODY = {
+    "thinking": {"type": "adaptive"},
+    "output_config": {"effort": "max"},
+}
 REPORT_ONLY_EXECUTION_ALLOWED_TOOLS: tuple[str, ...] = (
     "Read",
     "Grep",
@@ -560,7 +564,7 @@ def invoke_claude_lead(
             env.pop("ANTHROPIC_DEFAULT_OPUS_MODEL", None)
         else:
             env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = pin
-        env["CLAUDE_CODE_EXTRA_BODY"] = json.dumps(CLAUDE_OPUS_ULTIMATE_EXTRA_BODY)
+        env["CLAUDE_CODE_EXTRA_BODY"] = json.dumps(_opus_extra_body_for_pin(pin))
     try:
         proc = runner(
             command,
@@ -620,7 +624,11 @@ def invoke_claude_lead(
                 "P2",
                 "red",
                 "lead_invocation_failed",
-                {"returncode": proc.returncode},
+                {
+                    "returncode": proc.returncode,
+                    "stdout_tail": stdout[-2000:],
+                    "stderr_tail": stderr[-2000:],
+                },
             ),
             outcome=None,
             command=command,
@@ -710,6 +718,13 @@ def _canonical_underlying_opus_pin(value: str) -> str:
     if value == CLAUDE_OPUS_LEGACY_FABLE_MODEL:
         return CLAUDE_OPUS_SAFE_OVERRIDE_MODEL
     return value
+
+
+def _opus_extra_body_for_pin(pin: str | None) -> dict[str, Any]:
+    """Return a Claude extra body compatible with the selected Opus route."""
+    if pin and pin.startswith(CLAUDE_OPUS_SAFE_OVERRIDE_MODEL):
+        return CLAUDE_OPUS_SAFE_OVERRIDE_EXTRA_BODY
+    return CLAUDE_OPUS_ULTIMATE_EXTRA_BODY
 
 
 def _extract_claude_json_payload(
