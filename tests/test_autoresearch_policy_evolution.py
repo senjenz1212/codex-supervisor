@@ -13,6 +13,7 @@ from supervisor.autoresearch.policy_evolution import (
     create_policy_evolution_proposals,
     deny_policy_proposal,
     derive_policy_evolution_proposals_from_report,
+    report_contains_derivable_policy_record,
     rollback_policy_proposal,
 )
 from supervisor.autoresearch.report import build_autoresearch_report
@@ -46,6 +47,78 @@ def _sha(path: Path) -> str:
     return sha256(path.read_bytes()).hexdigest()
 
 
+def _quality_controls(**overrides) -> dict:
+    base = {
+        "source": "supervisor_control_execution",
+        "evidence_grade": "runtime_native",
+        "supervisor_runtime_origin": "run_evaluator_quality_controls",
+        "candidate_affects_evaluated_path": True,
+        "determinism": {
+            "source": "repeated_execution",
+            "evidence_grade": "runtime_native",
+            "supervisor_runtime_origin": "run_evaluator_quality_controls",
+            "output_hashes": ["deterministic-output", "deterministic-output"],
+        },
+        "controls": {
+            "noop": {
+                "source": "supervisor_control_execution",
+                "evidence_grade": "runtime_native",
+                "supervisor_runtime_origin": "run_evaluator_quality_controls",
+                "metric_source": "evaluator_execution",
+                "metric_delta": 0.0,
+                "candidate_ref": "evaluator-quality/noop.json",
+                "candidate_hash": "noop-hash",
+                "control_run_ref": "evaluator-quality/noop-run.json",
+                "control_run_hash": "noop-run-hash",
+                "verdict": "no_improvement",
+            },
+            "harmful": {
+                "source": "supervisor_control_execution",
+                "evidence_grade": "runtime_native",
+                "supervisor_runtime_origin": "run_evaluator_quality_controls",
+                "metric_source": "evaluator_execution",
+                "metric_delta": -0.1,
+                "candidate_ref": "evaluator-quality/harmful.json",
+                "candidate_hash": "harmful-hash",
+                "control_run_ref": "evaluator-quality/harmful-run.json",
+                "control_run_hash": "harmful-run-hash",
+                "verdict": "regressed",
+            },
+            "known_good": {
+                "source": "supervisor_control_execution",
+                "evidence_grade": "runtime_native",
+                "supervisor_runtime_origin": "run_evaluator_quality_controls",
+                "metric_source": "evaluator_execution",
+                "metric_delta": 0.2,
+                "candidate_ref": "evaluator-quality/known-good.json",
+                "candidate_hash": "known-good-hash",
+                "control_run_ref": "evaluator-quality/known-good-run.json",
+                "control_run_hash": "known-good-run-hash",
+                "verdict": "improved",
+            },
+        },
+    }
+    base.update(overrides)
+    if base.get("source") == "supervisor_control_execution":
+        determinism = base.get("determinism")
+        if isinstance(determinism, dict):
+            determinism.setdefault("evidence_grade", "runtime_native")
+            determinism.setdefault("supervisor_runtime_origin", "run_evaluator_quality_controls")
+        controls = base.get("controls")
+        if isinstance(controls, dict):
+            for kind, control in controls.items():
+                if not isinstance(control, dict):
+                    continue
+                control.setdefault("source", "supervisor_control_execution")
+                control.setdefault("evidence_grade", "runtime_native")
+                control.setdefault("supervisor_runtime_origin", "run_evaluator_quality_controls")
+                control.setdefault("candidate_ref", f"evaluator-quality/{kind}.json")
+                control.setdefault("candidate_hash", f"{kind}-hash")
+                control.setdefault("control_run_ref", f"evaluator-quality/{kind}-run.json")
+                control.setdefault("control_run_hash", f"{kind}-run-hash")
+    return base
+
+
 def _record(**overrides) -> dict:
     record = {
         "experiment_id": "exp-policy-1",
@@ -69,6 +142,7 @@ def _record(**overrides) -> dict:
         "evaluator_run_ref": "docs/dual-agent/run/evaluator-runs/attempt-policy-1.json",
         "evaluator_run_hash": "evaluator-run-hash",
         "changed_files": ["candidates/outcome-review.md"],
+        "evaluator_quality": _quality_controls(),
         "gaming_flags": [],
         "validation_errors": [],
         "cost_usd": 0.19,
@@ -194,6 +268,126 @@ def test_policy_proposal_without_empty_floor_is_non_applyable(tmp_path):
     assert event["payload"]["automatic_policy_mutation"] is False
 
 
+def test_autoresearch_noop_control_blocks_policy_proposal(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    _write(tmp_path, ".supervisor/policy-overlay.yaml", BASE_OVERLAY)
+    _write(tmp_path, "candidates/policy-overlay.yaml", AFTER_OVERLAY)
+    report = _report(
+        _derived_record(
+            evaluator_quality=_quality_controls(
+                controls={
+                    **_quality_controls()["controls"],
+                    "noop": {
+                        "metric_source": "evaluator_execution",
+                        "metric_delta": 0.08,
+                        "verdict": "improved",
+                    },
+                }
+            )
+        )
+    )
+
+    proposals = derive_policy_evolution_proposals_from_report(
+        report,
+        repo_root=tmp_path,
+        affected_gates=("outcome_review",),
+        state=state,
+        run_id="policy-run",
+    )
+
+    assert proposals == []
+    events = state.read_events_since("policy-run", after_event_id=0, limit=10)
+    [event] = [item for item in events if item["kind"] == "autoresearch_policy_proposal_derivation_skipped"]
+    assert event["payload"]["reason"] == "noop control must not improve"
+
+
+def test_autoresearch_harmful_control_blocks_policy_proposal(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    _write(tmp_path, ".supervisor/policy-overlay.yaml", BASE_OVERLAY)
+    _write(tmp_path, "candidates/policy-overlay.yaml", AFTER_OVERLAY)
+    report = _report(
+        _derived_record(
+            evaluator_quality=_quality_controls(
+                controls={
+                    **_quality_controls()["controls"],
+                    "harmful": {
+                        "metric_source": "evaluator_execution",
+                        "metric_delta": 0.04,
+                        "verdict": "improved",
+                    },
+                }
+            )
+        )
+    )
+
+    proposals = derive_policy_evolution_proposals_from_report(
+        report,
+        repo_root=tmp_path,
+        affected_gates=("outcome_review",),
+        state=state,
+        run_id="policy-run",
+    )
+
+    assert proposals == []
+    events = state.read_events_since("policy-run", after_event_id=0, limit=10)
+    [event] = [item for item in events if item["kind"] == "autoresearch_policy_proposal_derivation_skipped"]
+    assert event["payload"]["reason"] == "harmful control must regress or fail"
+
+
+def test_caller_supplied_quality_metadata_cannot_derive_policy_proposal(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    _write(tmp_path, ".supervisor/policy-overlay.yaml", BASE_OVERLAY)
+    _write(tmp_path, "candidates/policy-overlay.yaml", AFTER_OVERLAY)
+    report = _report(
+        _derived_record(
+            evaluator_quality=_quality_controls(
+                source="caller_supplied_metadata",
+                evidence_grade="self_reported",
+                supervisor_runtime_origin="",
+            )
+        )
+    )
+
+    proposals = derive_policy_evolution_proposals_from_report(
+        report,
+        repo_root=tmp_path,
+        affected_gates=("outcome_review",),
+        state=state,
+        run_id="policy-run",
+    )
+
+    assert proposals == []
+    assert report_contains_derivable_policy_record(report, repo_root=tmp_path) is False
+    events = state.read_events_since("policy-run", after_event_id=0, limit=10)
+    [event] = [item for item in events if item["kind"] == "autoresearch_policy_proposal_derivation_skipped"]
+    assert event["payload"]["reason"] == (
+        "evaluator-quality controls must be supervisor-generated runtime-native evidence"
+    )
+
+
+def test_autoresearch_known_good_control_allows_candidate_sensitive_derivation(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    target = _write(tmp_path, ".supervisor/policy-overlay.yaml", BASE_OVERLAY)
+    candidate = _write(tmp_path, "candidates/policy-overlay.yaml", AFTER_OVERLAY)
+    report = _report(_derived_record(evaluator_quality=_quality_controls()))
+
+    proposals = derive_policy_evolution_proposals_from_report(
+        report,
+        repo_root=tmp_path,
+        affected_gates=("outcome_review",),
+        state=state,
+        run_id="policy-run",
+    )
+
+    assert target.read_text(encoding="utf-8") == BASE_OVERLAY
+    [proposal] = proposals
+    assert proposal["status"] == "draft"
+    assert proposal["source"] == "autoresearch_deriver"
+    assert proposal["evaluator_evidence"]["evaluator_quality"]["verdict"] == "accepted"
+    assert proposal["changes"][0]["candidate_ref"] == "candidates/policy-overlay.yaml"
+    assert proposal["changes"][0]["after_hash"] == _sha(candidate)
+
+
 def test_validation_report_pipeline_derives_policy_proposal_without_operator_authored_changes(tmp_path):
     state = State(str(tmp_path / "state.db"))
     target = _write(tmp_path, ".supervisor/policy-overlay.yaml", BASE_OVERLAY)
@@ -223,6 +417,7 @@ def test_validation_report_pipeline_derives_policy_proposal_without_operator_aut
         policy_candidate_changes={
             ".supervisor/policy-overlay.yaml": "candidates/policy-overlay.yaml",
         },
+        evaluator_quality=_quality_controls(),
         metric_source="evaluator_execution",
         evaluator_run_ref="evaluator-runs/attempt-policy-real.json",
         evaluator_run_hash="run-hash",
@@ -300,6 +495,7 @@ def test_autoresearch_report_acceptance_auto_derives_overlay_proposal(tmp_path):
                     "evaluator_run:evaluator-runs/attempt-auto-derive.json",
                     "artifact:candidates/policy-overlay.yaml",
                 ),
+                evaluator_quality=_quality_controls(),
             ).to_payload()
         ],
     }
@@ -359,6 +555,7 @@ def test_validation_report_derives_from_direct_policy_overlay_candidate_ref(tmp_
             "evaluator_run:evaluator-runs/attempt-policy-direct.json",
             "artifact:candidates/policy-overlay.yaml",
         ),
+        evaluator_quality=_quality_controls(),
     )
     report = build_autoresearch_report([
         validate_attempt(experiment=experiment, attempt=attempt, repo_root=tmp_path)

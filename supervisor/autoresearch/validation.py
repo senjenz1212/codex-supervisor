@@ -3,9 +3,15 @@ from __future__ import annotations
 
 from hashlib import sha256
 from pathlib import Path
+from typing import Any, Mapping
 
 from .report import summarize_metric_trials
-from .schema import AutoresearchAttempt, AutoresearchExperiment, AutoresearchValidationReport
+from .schema import (
+    AutoresearchAttempt,
+    AutoresearchExperiment,
+    AutoresearchValidationReport,
+    stable_json_dumps,
+)
 
 
 DEFAULT_IMMUTABLE_PATHS: tuple[str, ...] = (
@@ -101,13 +107,14 @@ def validate_attempt(
         attempt.policy_overlay_candidate_ref,
         repo_root=repo_root_path,
     )
-    policy_candidate_refs = [
+    policy_candidate_refs = list(dict.fromkeys(
         ref for ref in (
             *policy_candidate_changes.values(),
             policy_overlay_candidate_ref,
+            *_policy_overlay_candidates_from_changed_files(changed_files),
         )
         if ref
-    ]
+    ))
     missing_policy_candidates = [
         ref for ref in policy_candidate_refs if ref not in changed_files
     ]
@@ -117,6 +124,12 @@ def validate_attempt(
             "policy candidate refs must be listed in changed_files: "
             + ", ".join(missing_policy_candidates)
         )
+    evaluator_quality, quality_flags, quality_errors = _evaluator_quality_findings(
+        attempt,
+        policy_candidate_refs=tuple(policy_candidate_refs),
+    )
+    gaming_flags.extend(quality_flags)
+    errors.extend(quality_errors)
 
     metrics = summarize_metric_trials(attempt.metric_trials)
     if metrics["trial_count"] == 0:
@@ -159,6 +172,7 @@ def validate_attempt(
         mutable_paths=mutable_paths,
         immutable_paths=immutable_paths,
         artifact_hashes=dict(attempt.artifact_hashes),
+        evaluator_quality=evaluator_quality,
         gaming_flags=tuple(sorted(set(gaming_flags))),
         validation_errors=tuple(errors),
         cost_usd=attempt.cost_usd,
@@ -241,6 +255,130 @@ def _metric_delta_fields(
     )
 
 
+def _evaluator_quality_findings(
+    attempt: AutoresearchAttempt,
+    *,
+    policy_candidate_refs: tuple[str, ...],
+) -> tuple[dict[str, Any], list[str], list[str]]:
+    """Validate controls that make a candidate metric policy-derivable."""
+    raw = dict(attempt.evaluator_quality or {})
+    required = bool(policy_candidate_refs)
+    flags: list[str] = []
+    errors: list[str] = []
+    if not required and not raw:
+        return {
+            "required": False,
+            "verdict": "not_required",
+            "control_refs": [],
+        }, flags, errors
+
+    controls = raw.get("controls")
+    controls_map = controls if isinstance(controls, Mapping) else {}
+    normalized_controls = {
+        str(key): dict(value)
+        for key, value in controls_map.items()
+        if isinstance(value, Mapping)
+    }
+    determinism = _normalise_determinism_evidence(raw.get("determinism"))
+    supervisor_generated = _quality_is_supervisor_generated(raw)
+    if required and not supervisor_generated:
+        flags.append("evaluator_quality_not_supervisor_generated")
+        errors.append("evaluator-quality controls must be supervisor-generated runtime-native evidence")
+    if required and raw.get("candidate_affects_evaluated_path") is not True:
+        flags.append("candidate_not_evaluated")
+        errors.append("candidate artifact must affect the evaluated path")
+
+    determinism_hashes = tuple(str(value) for value in determinism.get("output_hashes") or ())
+    if determinism.get("source") != "repeated_execution" or len(determinism_hashes) < 2:
+        flags.append("determinism_unverified")
+        errors.append("determinism requires repeated evaluator execution output hashes")
+    elif len(set(determinism_hashes)) != 1:
+        flags.append("determinism_hash_mismatch")
+        errors.append("determinism repeated output hashes must match")
+    else:
+        determinism["verified"] = True
+
+    required_controls = ("noop", "harmful", "known_good")
+    for kind in required_controls:
+        control = normalized_controls.get(kind)
+        if control is None:
+            flags.append(f"missing_{kind}_control")
+            errors.append(f"{kind} control is required")
+            continue
+        if not _quality_is_supervisor_generated(control):
+            flags.append(f"{kind}_control_not_supervisor_generated")
+            errors.append(f"{kind} control must be supervisor-generated runtime-native evidence")
+            continue
+        if str(control.get("metric_source") or "") != "evaluator_execution":
+            flags.append(f"{kind}_control_not_evaluator_backed")
+            errors.append(f"{kind} control must come from evaluator_execution")
+            continue
+        delta = _quality_metric_delta(control)
+        if delta is None:
+            flags.append(f"{kind}_control_missing_delta")
+            errors.append(f"{kind} control requires a metric delta")
+            continue
+        control["metric_delta"] = round(delta, 6)
+        if kind == "noop" and delta > 0:
+            flags.append("noop_control_improved")
+            errors.append("noop control must not improve")
+        elif kind == "harmful" and delta > 0:
+            flags.append("harmful_control_improved")
+            errors.append("harmful control must regress or fail")
+        elif kind == "known_good" and delta <= 0:
+            flags.append("known_good_control_no_improvement")
+            errors.append("known-good control must improve")
+
+    quality = {
+        "required": required,
+        "source": str(raw.get("source") or "caller_supplied_metadata"),
+        "evidence_grade": str(raw.get("evidence_grade") or "self_reported"),
+        "supervisor_runtime_origin": str(raw.get("supervisor_runtime_origin") or ""),
+        "candidate_affects_evaluated_path": bool(raw.get("candidate_affects_evaluated_path")),
+        "determinism": determinism,
+        "controls": normalized_controls,
+        "control_refs": [kind for kind in required_controls if kind in normalized_controls],
+        "verdict": "accepted" if not errors else "rejected",
+    }
+    for key in ("quality_manifest_ref", "quality_manifest_hash", "validation_errors"):
+        if key in raw:
+            quality[key] = raw[key]
+    return quality, flags, errors
+
+
+def _normalise_determinism_evidence(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, Mapping):
+        return {}
+    determinism = dict(raw)
+    repeated_outputs = determinism.get("repeated_outputs")
+    if isinstance(repeated_outputs, list) and len(repeated_outputs) >= 2:
+        determinism["output_hashes"] = [
+            sha256(stable_json_dumps(value).encode("utf-8")).hexdigest()
+            for value in repeated_outputs
+        ]
+        determinism.setdefault("source", "repeated_execution")
+    return determinism
+
+
+def _quality_is_supervisor_generated(raw: Mapping[str, Any]) -> bool:
+    return (
+        str(raw.get("source") or "") == "supervisor_control_execution"
+        and str(raw.get("evidence_grade") or "") == "runtime_native"
+        and str(raw.get("supervisor_runtime_origin") or "") == "run_evaluator_quality_controls"
+    )
+
+
+def _quality_metric_delta(control: Mapping[str, Any]) -> float | None:
+    explicit = control.get("metric_delta")
+    if explicit not in {None, ""}:
+        return float(explicit)
+    before = control.get("metric_before", control.get("baseline_metric", control.get("empty_floor_metric")))
+    after = control.get("metric_after", control.get("candidate_metric"))
+    if before in {None, ""} or after in {None, ""}:
+        return None
+    return float(after) - float(before)
+
+
 def _normalise_policy_candidate_changes(
     values: dict[str, str],
     *,
@@ -251,6 +389,13 @@ def _normalise_policy_candidate_changes(
         for target, candidate in sorted(values.items())
         if str(target).strip() and str(candidate).strip()
     }
+
+
+def _policy_overlay_candidates_from_changed_files(changed_files: tuple[str, ...]) -> tuple[str, ...]:
+    return tuple(
+        path for path in changed_files
+        if Path(path).name in {"policy-overlay.yaml", "policy-overlay.yml"}
+    )
 
 
 def _normalise_patterns(values: tuple[str, ...], *, repo_root: Path) -> tuple[str, ...]:

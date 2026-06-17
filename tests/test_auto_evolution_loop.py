@@ -154,7 +154,18 @@ def _prepare_repo(root: Path) -> None:
         "parser.add_argument('--metric-name', required=True)\n"
         "parser.add_argument('--attempt-json')\n"
         "args = parser.parse_args()\n"
-        "value = 0.70 + (args.trial_index * 0.05)\n"
+        "attempt = json.loads(open(args.attempt_json, encoding='utf-8').read())\n"
+        "control = attempt.get('evaluator_quality_control') or {}\n"
+        "if control.get('kind') == 'noop':\n"
+        "    value = 0.0\n"
+        "elif control.get('kind') == 'harmful':\n"
+        "    value = -0.1\n"
+        "elif control.get('kind') == 'known_good':\n"
+        "    value = 0.2\n"
+        "elif control.get('kind') == 'determinism':\n"
+        "    value = 0.75\n"
+        "else:\n"
+        "    value = 0.70 + (args.trial_index * 0.05)\n"
         "print(json.dumps({'metric_name': args.metric_name, 'metric_value': value, 'cost_usd': 0.0}))\n",
         encoding="utf-8",
     )

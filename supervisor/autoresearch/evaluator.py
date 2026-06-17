@@ -8,12 +8,12 @@ import subprocess
 import sys
 import tempfile
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, Mapping
 
-from .schema import AutoresearchAttempt, AutoresearchExperiment
+from .schema import AutoresearchAttempt, AutoresearchExperiment, stable_json_dumps
 
 
 @dataclass(frozen=True)
@@ -27,6 +27,7 @@ class EvaluatorExecutionResult:
     execution_errors: tuple[str, ...]
     cost_usd: float
     wall_clock_s: float
+    evaluator_quality: dict[str, Any] = field(default_factory=dict)
     job_id: str = ""
     resumed_from_trial_count: int = 0
 
@@ -63,6 +64,7 @@ def run_evaluator_trials(
     execution_errors: list[str] = []
     cost_usd = float(progress["cost_usd"])
     resumed_from_trial_count = len(metric_trials)
+    evaluator_quality: dict[str, Any] = {}
 
     with tempfile.TemporaryDirectory(prefix="autoresearch-attempt-") as temp_dir:
         temp_path = Path(temp_dir)
@@ -199,6 +201,17 @@ def run_evaluator_trials(
             )
         if execution_errors and not metric_trials:
             raise EvaluatorContractError("; ".join(execution_errors))
+        if not execution_errors:
+            evaluator_quality = _run_evaluator_quality_controls(
+                experiment=experiment,
+                attempt=attempt,
+                repo_root=repo_root_path,
+                output_dir=output_dir_path,
+                worktree=worktree,
+                temp_path=temp_path,
+                executable_evaluator=executable_evaluator,
+                progress_path=progress_path,
+            )
 
     run_artifact = {
         "schema_version": "supervisor-autoresearch-evaluator-run/v1",
@@ -215,6 +228,7 @@ def run_evaluator_trials(
         "timeout_s": experiment.timeout_s,
         "cost_usd": round(cost_usd, 6),
         "wall_clock_s": round(time.monotonic() - started, 6),
+        "evaluator_quality": evaluator_quality,
         "attempt_worktree_ref": "isolated:temporary",
         "progress_ref": progress_path.as_posix(),
         "resumed_from_trial_count": resumed_from_trial_count,
@@ -237,6 +251,7 @@ def run_evaluator_trials(
         execution_errors=tuple(execution_errors),
         cost_usd=round(cost_usd, 6),
         wall_clock_s=round(time.monotonic() - started, 6),
+        evaluator_quality=evaluator_quality,
         resumed_from_trial_count=resumed_from_trial_count,
     )
 
@@ -306,6 +321,7 @@ def _evaluator_environment(
     trial_index: int,
     metric_name: str,
     attempt_json: Path,
+    control_kind: str = "",
 ) -> dict[str, str]:
     env = {
         key: value
@@ -331,7 +347,398 @@ def _evaluator_environment(
         "TMPDIR": str(tmp),
         "PYTHONPATH": str(repo_root),
     })
+    if control_kind:
+        env["AUTORESEARCH_CONTROL_KIND"] = control_kind
     return env
+
+
+def _run_evaluator_quality_controls(
+    *,
+    experiment: AutoresearchExperiment,
+    attempt: AutoresearchAttempt,
+    repo_root: Path,
+    output_dir: Path,
+    worktree: Path,
+    temp_path: Path,
+    executable_evaluator: Path,
+    progress_path: Path,
+) -> dict[str, Any]:
+    policy_candidate_refs = _policy_candidate_refs(attempt, repo_root=repo_root)
+    if not policy_candidate_refs:
+        return {}
+
+    started = time.monotonic()
+    quality_dir = output_dir / "evaluator-quality" / attempt.attempt_id
+    quality_dir.mkdir(parents=True, exist_ok=True)
+    controls: dict[str, dict[str, Any]] = {}
+    errors: list[str] = []
+
+    for control_kind in ("noop", "harmful", "known_good"):
+        try:
+            controls[control_kind] = _run_single_quality_control(
+                control_kind=control_kind,
+                experiment=experiment,
+                attempt=attempt,
+                repo_root=repo_root,
+                worktree=worktree,
+                temp_path=temp_path,
+                executable_evaluator=executable_evaluator,
+                progress_path=progress_path,
+                quality_dir=quality_dir,
+                primary_candidate_ref=policy_candidate_refs[0],
+            )
+        except (EvaluatorContractError, subprocess.TimeoutExpired) as exc:
+            message = f"{control_kind} control failed: {exc}"
+            errors.append(message)
+            controls[control_kind] = _failed_quality_control(
+                control_kind=control_kind,
+                quality_dir=quality_dir,
+                primary_candidate_ref=policy_candidate_refs[0],
+                error=message,
+            )
+
+    determinism = _run_determinism_quality_check(
+        experiment=experiment,
+        attempt=attempt,
+        repo_root=repo_root,
+        worktree=worktree,
+        temp_path=temp_path,
+        executable_evaluator=executable_evaluator,
+        progress_path=progress_path,
+        quality_dir=quality_dir,
+        primary_candidate_ref=policy_candidate_refs[0],
+    )
+    if determinism.get("verdict") != "passed":
+        errors.append("determinism control failed")
+
+    manifest = {
+        "schema_version": "supervisor-autoresearch-evaluator-quality/v1",
+        "source": "supervisor_control_execution",
+        "evidence_grade": "runtime_native",
+        "supervisor_runtime_origin": "run_evaluator_quality_controls",
+        "experiment_id": experiment.experiment_id,
+        "attempt_id": attempt.attempt_id,
+        "candidate_affects_evaluated_path": True,
+        "policy_candidate_refs": policy_candidate_refs,
+        "determinism": determinism,
+        "controls": controls,
+        "control_refs": [kind for kind in ("noop", "harmful", "known_good") if kind in controls],
+        "validation_errors": errors,
+        "wall_clock_s": round(time.monotonic() - started, 6),
+    }
+    manifest["verdict"] = "accepted" if not errors else "rejected"
+    manifest_path = quality_dir / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    manifest["quality_manifest_ref"] = manifest_path.as_posix()
+    manifest["quality_manifest_hash"] = sha256(manifest_path.read_bytes()).hexdigest()
+    manifest_path.write_text(json.dumps(manifest, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    return manifest
+
+
+def _run_single_quality_control(
+    *,
+    control_kind: str,
+    experiment: AutoresearchExperiment,
+    attempt: AutoresearchAttempt,
+    repo_root: Path,
+    worktree: Path,
+    temp_path: Path,
+    executable_evaluator: Path,
+    progress_path: Path,
+    quality_dir: Path,
+    primary_candidate_ref: str,
+) -> dict[str, Any]:
+    control_candidate = _write_control_candidate(
+        quality_dir=quality_dir,
+        attempt=attempt,
+        control_kind=control_kind,
+        primary_candidate_ref=primary_candidate_ref,
+    )
+    attempt_json = _write_control_attempt_json(
+        quality_dir=quality_dir,
+        attempt=attempt,
+        control_kind=control_kind,
+        control_candidate=control_candidate,
+    )
+    trial_payload, stdout_hash, stderr_hash, duration_s = _execute_evaluator_control(
+        control_kind=control_kind,
+        experiment=experiment,
+        repo_root=repo_root,
+        worktree=worktree,
+        temp_path=temp_path,
+        executable_evaluator=executable_evaluator,
+        progress_path=progress_path,
+        attempt_json=attempt_json,
+    )
+    metric_after = round(_metric_value(trial_payload, metric_name=experiment.metric_name), 12)
+    metric_before = _control_metric_before(trial_payload, attempt=attempt)
+    metric_delta = _control_metric_delta(trial_payload, before=metric_before, after=metric_after)
+    record = {
+        "schema_version": "supervisor-autoresearch-evaluator-quality-control/v1",
+        "source": "supervisor_control_execution",
+        "evidence_grade": "runtime_native",
+        "supervisor_runtime_origin": "run_evaluator_quality_controls",
+        "control_kind": control_kind,
+        "candidate_ref": control_candidate["candidate_ref"],
+        "candidate_hash": control_candidate["candidate_hash"],
+        "metric_source": "evaluator_execution",
+        "metric_before": metric_before,
+        "metric_after": metric_after,
+        "metric_delta": metric_delta,
+        "verdict": _control_verdict(control_kind, metric_delta),
+        "stdout_sha256": stdout_hash,
+        "stderr_sha256": stderr_hash,
+        "duration_s": duration_s,
+    }
+    record_path = quality_dir / f"{control_kind}.json"
+    record_path.write_text(json.dumps(record, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    record["control_run_ref"] = record_path.as_posix()
+    record["control_run_hash"] = sha256(record_path.read_bytes()).hexdigest()
+    record["evaluator_run_ref"] = record["control_run_ref"]
+    record["evaluator_run_hash"] = record["control_run_hash"]
+    record_path.write_text(json.dumps(record, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    return record
+
+
+def _run_determinism_quality_check(
+    *,
+    experiment: AutoresearchExperiment,
+    attempt: AutoresearchAttempt,
+    repo_root: Path,
+    worktree: Path,
+    temp_path: Path,
+    executable_evaluator: Path,
+    progress_path: Path,
+    quality_dir: Path,
+    primary_candidate_ref: str,
+) -> dict[str, Any]:
+    control_candidate = _write_control_candidate(
+        quality_dir=quality_dir,
+        attempt=attempt,
+        control_kind="determinism",
+        primary_candidate_ref=primary_candidate_ref,
+    )
+    attempt_json = _write_control_attempt_json(
+        quality_dir=quality_dir,
+        attempt=attempt,
+        control_kind="determinism",
+        control_candidate=control_candidate,
+    )
+    output_hashes: list[str] = []
+    records: list[dict[str, Any]] = []
+    for index in range(2):
+        try:
+            trial_payload, stdout_hash, stderr_hash, duration_s = _execute_evaluator_control(
+                control_kind="determinism",
+                experiment=experiment,
+                repo_root=repo_root,
+                worktree=worktree,
+                temp_path=temp_path,
+                executable_evaluator=executable_evaluator,
+                progress_path=progress_path,
+                attempt_json=attempt_json,
+            )
+        except (EvaluatorContractError, subprocess.TimeoutExpired) as exc:
+            records.append({"run_index": index, "error": str(exc)})
+            output_hashes.append(f"error:{index}:{sha256(str(exc).encode('utf-8')).hexdigest()}")
+            continue
+        normalized_hash = sha256(stable_json_dumps(trial_payload).encode("utf-8")).hexdigest()
+        output_hashes.append(normalized_hash)
+        records.append({
+            "run_index": index,
+            "output_hash": normalized_hash,
+            "stdout_sha256": stdout_hash,
+            "stderr_sha256": stderr_hash,
+            "duration_s": duration_s,
+        })
+    payload = {
+        "schema_version": "supervisor-autoresearch-evaluator-determinism/v1",
+        "source": "repeated_execution",
+        "evidence_grade": "runtime_native",
+        "supervisor_runtime_origin": "run_evaluator_quality_controls",
+        "candidate_ref": control_candidate["candidate_ref"],
+        "candidate_hash": control_candidate["candidate_hash"],
+        "output_hashes": output_hashes,
+        "records": records,
+        "verified": len(output_hashes) >= 2 and len(set(output_hashes)) == 1,
+    }
+    payload["verdict"] = "passed" if payload["verified"] else "failed"
+    path = quality_dir / "determinism.json"
+    path.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    payload["control_run_ref"] = path.as_posix()
+    payload["control_run_hash"] = sha256(path.read_bytes()).hexdigest()
+    path.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    return payload
+
+
+def _execute_evaluator_control(
+    *,
+    control_kind: str,
+    experiment: AutoresearchExperiment,
+    repo_root: Path,
+    worktree: Path,
+    temp_path: Path,
+    executable_evaluator: Path,
+    progress_path: Path,
+    attempt_json: Path,
+) -> tuple[dict[str, Any], str, str, float]:
+    started = time.monotonic()
+    command = [
+        *_evaluator_command(executable_evaluator),
+        "--attempt-worktree",
+        str(worktree),
+        "--trial-index",
+        "0",
+        "--metric-name",
+        experiment.metric_name,
+        "--attempt-json",
+        str(attempt_json),
+    ]
+    completed = subprocess.run(
+        command,
+        cwd=worktree,
+        input="",
+        capture_output=True,
+        text=True,
+        timeout=max(0.001, float(experiment.timeout_s)),
+        check=False,
+        env=_evaluator_environment(
+            base_env=os.environ,
+            repo_root=repo_root,
+            worktree=worktree,
+            temp_path=temp_path,
+            progress_path=progress_path,
+            trial_index=0,
+            metric_name=experiment.metric_name,
+            attempt_json=attempt_json,
+            control_kind=control_kind,
+        ),
+    )
+    if completed.returncode != 0:
+        raise EvaluatorContractError(
+            f"evaluator {control_kind} control exited {completed.returncode}: "
+            f"{completed.stderr.strip() or completed.stdout.strip()}"
+        )
+    return (
+        _parse_trial_payload(completed.stdout),
+        sha256(completed.stdout.encode("utf-8")).hexdigest(),
+        sha256(completed.stderr.encode("utf-8")).hexdigest(),
+        round(time.monotonic() - started, 6),
+    )
+
+
+def _failed_quality_control(
+    *,
+    control_kind: str,
+    quality_dir: Path,
+    primary_candidate_ref: str,
+    error: str,
+) -> dict[str, Any]:
+    payload = {
+        "schema_version": "supervisor-autoresearch-evaluator-quality-control/v1",
+        "source": "supervisor_control_execution",
+        "evidence_grade": "runtime_native",
+        "supervisor_runtime_origin": "run_evaluator_quality_controls",
+        "control_kind": control_kind,
+        "candidate_ref": f"heldout-control:{control_kind}:{primary_candidate_ref}",
+        "candidate_hash": sha256(f"{control_kind}:{primary_candidate_ref}".encode("utf-8")).hexdigest(),
+        "metric_source": "evaluator_execution",
+        "metric_delta": None,
+        "verdict": "failed",
+        "error": error,
+    }
+    path = quality_dir / f"{control_kind}.json"
+    path.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    payload["control_run_ref"] = path.as_posix()
+    payload["control_run_hash"] = sha256(path.read_bytes()).hexdigest()
+    payload["evaluator_run_ref"] = payload["control_run_ref"]
+    payload["evaluator_run_hash"] = payload["control_run_hash"]
+    path.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    return payload
+
+
+def _write_control_candidate(
+    *,
+    quality_dir: Path,
+    attempt: AutoresearchAttempt,
+    control_kind: str,
+    primary_candidate_ref: str,
+) -> dict[str, str]:
+    payload = {
+        "schema_version": "supervisor-autoresearch-heldout-control-candidate/v1",
+        "attempt_id": attempt.attempt_id,
+        "control_kind": control_kind,
+        "primary_candidate_ref": primary_candidate_ref,
+    }
+    path = quality_dir / "candidates" / f"{control_kind}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    return {
+        "candidate_ref": path.as_posix(),
+        "candidate_hash": sha256(path.read_bytes()).hexdigest(),
+    }
+
+
+def _write_control_attempt_json(
+    *,
+    quality_dir: Path,
+    attempt: AutoresearchAttempt,
+    control_kind: str,
+    control_candidate: Mapping[str, str],
+) -> Path:
+    payload = attempt.to_payload()
+    payload["evaluator_quality_control"] = {
+        "kind": control_kind,
+        "candidate_ref": control_candidate["candidate_ref"],
+        "candidate_hash": control_candidate["candidate_hash"],
+        "baseline_metric": attempt.metric_before,
+    }
+    path = quality_dir / f"{control_kind}.attempt.json"
+    path.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def _policy_candidate_refs(attempt: AutoresearchAttempt, *, repo_root: Path) -> list[str]:
+    refs = [
+        _normalise_path(ref, repo_root=repo_root)
+        for ref in (*attempt.policy_candidate_changes.values(), attempt.policy_overlay_candidate_ref)
+        if str(ref).strip()
+    ]
+    refs.extend(
+        _normalise_path(ref, repo_root=repo_root)
+        for ref in attempt.changed_files
+        if Path(str(ref)).name in {"policy-overlay.yaml", "policy-overlay.yml"}
+    )
+    return list(dict.fromkeys(refs))
+
+
+def _control_metric_before(payload: Mapping[str, Any], *, attempt: AutoresearchAttempt) -> float | None:
+    for key in ("metric_before", "baseline_metric", "empty_floor_metric"):
+        if payload.get(key) not in {None, ""}:
+            return round(float(payload[key]), 6)
+    if attempt.metric_before is not None:
+        return round(float(attempt.metric_before), 6)
+    return None
+
+
+def _control_metric_delta(payload: Mapping[str, Any], *, before: float | None, after: float) -> float | None:
+    if payload.get("metric_delta") not in {None, ""}:
+        return round(float(payload["metric_delta"]), 6)
+    if before is None:
+        return None
+    return round(float(after) - float(before), 6)
+
+
+def _control_verdict(control_kind: str, metric_delta: float | None) -> str:
+    if metric_delta is None:
+        return "missing_delta"
+    if control_kind == "noop":
+        return "no_improvement" if metric_delta <= 0 else "unexpected_improvement"
+    if control_kind == "harmful":
+        return "regressed" if metric_delta <= 0 else "unexpected_improvement"
+    if control_kind == "known_good":
+        return "improved" if metric_delta > 0 else "no_improvement"
+    return "observed"
 
 
 def _load_progress(

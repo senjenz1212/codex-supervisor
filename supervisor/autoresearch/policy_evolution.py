@@ -90,7 +90,18 @@ def derive_policy_evolution_proposals_from_report(
     records = report.get("records") if isinstance(report.get("records"), list) else []
     proposals: list[dict[str, Any]] = []
     for record in records:
-        if not isinstance(record, Mapping) or not _record_is_applyable(record):
+        if not isinstance(record, Mapping):
+            continue
+        applyability_error = _record_applyability_error(record)
+        if applyability_error is not None:
+            if _should_record_applyability_skip(applyability_error):
+                _write_derivation_skipped(
+                    state=state,
+                    run_id=run_id,
+                    report=report,
+                    record=record,
+                    reason=applyability_error,
+                )
             continue
         try:
             empty_floor = _empty_floor_win(record)
@@ -147,7 +158,7 @@ def report_contains_derivable_policy_record(
     repo_root_path = Path(repo_root).expanduser().resolve()
     records = report.get("records") if isinstance(report.get("records"), list) else []
     for record in records:
-        if not isinstance(record, Mapping) or not _record_is_applyable(record):
+        if not isinstance(record, Mapping) or _record_applyability_error(record) is not None:
             continue
         try:
             _empty_floor_win(record)
@@ -467,16 +478,118 @@ def _build_policy_proposal(
 
 
 def _record_is_applyable(record: Mapping[str, Any]) -> bool:
+    return _record_applyability_error(record) is None
+
+
+def _should_record_applyability_skip(reason: str) -> bool:
+    return reason.startswith((
+        "candidate artifact",
+        "determinism ",
+        "evaluator-quality ",
+        "noop ",
+        "harmful ",
+        "known-good ",
+    ))
+
+
+def _record_applyability_error(record: Mapping[str, Any]) -> str | None:
+    if str(record.get("validation_status") or "") != "accepted":
+        return "accepted validation status is required for policy derivation"
+    gaming_flags = list(record.get("gaming_flags") or [])
+    if gaming_flags:
+        return "gaming flags present: " + ", ".join(str(flag) for flag in gaming_flags)
+    if str(record.get("metric_source") or "") != "evaluator_execution":
+        return "metric source must be evaluator_execution"
+    if not record.get("evaluator_run_ref"):
+        return "evaluator_run_ref is required for policy derivation"
+    if not record.get("evaluator_run_hash"):
+        return "evaluator_run_hash is required for policy derivation"
+    if record.get("default_change_allowed") is not False:
+        return "default_change_allowed must remain false"
+    if record.get("policy_mutated") is not False:
+        return "policy_mutated must remain false"
+    if record.get("gate_advanced") is not False:
+        return "gate_advanced must remain false"
+    return _record_quality_control_error(record)
+
+
+def _record_quality_control_error(record: Mapping[str, Any]) -> str | None:
+    quality = record.get("evaluator_quality")
+    if not isinstance(quality, Mapping):
+        return "evaluator-quality controls are required for policy derivation"
+    if not _quality_is_supervisor_generated(quality):
+        return "evaluator-quality controls must be supervisor-generated runtime-native evidence"
+    if quality.get("candidate_affects_evaluated_path") is not True:
+        return "candidate artifact must affect the evaluated path"
+    determinism = quality.get("determinism")
+    if not isinstance(determinism, Mapping):
+        return "determinism requires repeated evaluator execution output hashes"
+    if not (
+        str(determinism.get("evidence_grade") or "") == "runtime_native"
+        and str(determinism.get("supervisor_runtime_origin") or "") == "run_evaluator_quality_controls"
+    ):
+        return "determinism requires supervisor-generated runtime-native evidence"
+    output_hashes = tuple(str(value) for value in determinism.get("output_hashes") or ())
+    if determinism.get("source") != "repeated_execution" or len(output_hashes) < 2:
+        return "determinism requires repeated evaluator execution output hashes"
+    if len(set(output_hashes)) != 1:
+        return "determinism repeated output hashes must match"
+    controls = quality.get("controls")
+    if not isinstance(controls, Mapping):
+        return "evaluator-quality controls are required for policy derivation"
+    noop = controls.get("noop")
+    harmful = controls.get("harmful")
+    known_good = controls.get("known_good")
+    if not isinstance(noop, Mapping):
+        return "noop control is required"
+    if not _quality_is_supervisor_generated(noop):
+        return "noop control must be supervisor-generated runtime-native evidence"
+    if _control_delta(noop) is None:
+        return "noop control requires a metric delta"
+    if _control_delta(noop) > 0:  # type: ignore[operator]
+        return "noop control must not improve"
+    if not isinstance(harmful, Mapping):
+        return "harmful control is required"
+    if not _quality_is_supervisor_generated(harmful):
+        return "harmful control must be supervisor-generated runtime-native evidence"
+    if _control_delta(harmful) is None:
+        return "harmful control requires a metric delta"
+    if _control_delta(harmful) > 0:  # type: ignore[operator]
+        return "harmful control must regress or fail"
+    if not isinstance(known_good, Mapping):
+        return "known-good control is required"
+    if not _quality_is_supervisor_generated(known_good):
+        return "known-good control must be supervisor-generated runtime-native evidence"
+    if _control_delta(known_good) is None:
+        return "known-good control requires a metric delta"
+    if _control_delta(known_good) <= 0:  # type: ignore[operator]
+        return "known-good control must improve"
+    if str(noop.get("metric_source") or "") != "evaluator_execution":
+        return "noop control must come from evaluator_execution"
+    if str(harmful.get("metric_source") or "") != "evaluator_execution":
+        return "harmful control must come from evaluator_execution"
+    if str(known_good.get("metric_source") or "") != "evaluator_execution":
+        return "known-good control must come from evaluator_execution"
+    return None
+
+
+def _quality_is_supervisor_generated(value: Mapping[str, Any]) -> bool:
     return (
-        str(record.get("validation_status") or "") == "accepted"
-        and not list(record.get("gaming_flags") or [])
-        and str(record.get("metric_source") or "") == "evaluator_execution"
-        and bool(record.get("evaluator_run_ref"))
-        and bool(record.get("evaluator_run_hash"))
-        and record.get("default_change_allowed") is False
-        and record.get("policy_mutated") is False
-        and record.get("gate_advanced") is False
+        str(value.get("source") or "") == "supervisor_control_execution"
+        and str(value.get("evidence_grade") or "") == "runtime_native"
+        and str(value.get("supervisor_runtime_origin") or "") == "run_evaluator_quality_controls"
     )
+
+
+def _control_delta(control: Mapping[str, Any]) -> float | None:
+    explicit = _optional_float(control.get("metric_delta"))
+    if explicit is not None:
+        return explicit
+    before = _optional_float(control.get("metric_before", control.get("baseline_metric")))
+    after = _optional_float(control.get("metric_after", control.get("candidate_metric")))
+    if before is None or after is None:
+        return None
+    return after - before
 
 
 def _evaluator_evidence(record: Mapping[str, Any]) -> dict[str, Any]:
@@ -496,9 +609,26 @@ def _evaluator_evidence(record: Mapping[str, Any]) -> dict[str, Any]:
         "evaluator_run_hash": str(record.get("evaluator_run_hash") or ""),
         "gaming_flags": list(record.get("gaming_flags") or []),
         "validation_errors": list(record.get("validation_errors") or []),
+        "evaluator_quality": _record_quality_evidence(record),
         "cost_usd": float(record.get("cost_usd") or 0.0),
         "wall_clock_s": float(record.get("wall_clock_s") or 0.0),
     }
+
+
+def _record_quality_evidence(record: Mapping[str, Any]) -> dict[str, Any]:
+    quality = record.get("evaluator_quality")
+    payload = dict(quality) if isinstance(quality, Mapping) else {}
+    controls = payload.get("controls")
+    if isinstance(controls, Mapping):
+        payload.setdefault(
+            "control_refs",
+            [kind for kind in ("noop", "harmful", "known_good") if kind in controls],
+        )
+    payload.setdefault(
+        "verdict",
+        "accepted" if _record_quality_control_error(record) is None else "rejected",
+    )
+    return payload
 
 
 def _positive_metric_delta(record: Mapping[str, Any]) -> dict[str, float]:

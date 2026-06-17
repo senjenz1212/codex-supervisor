@@ -99,6 +99,7 @@ class AutoresearchAttempt:
     patch_ref: str = ""
     artifact_hashes: dict[str, str] = field(default_factory=dict)
     evidence_refs: tuple[str, ...] = field(default_factory=tuple)
+    evaluator_quality: dict[str, Any] = field(default_factory=dict)
     execution_errors: tuple[str, ...] = field(default_factory=tuple)
     cost_usd: float = 0.0
     wall_clock_s: float = 0.0
@@ -136,6 +137,7 @@ class AutoresearchAttempt:
             patch_ref=str(raw.get("patch_ref") or ""),
             artifact_hashes={str(key): str(value) for key, value in dict(raw.get("artifact_hashes") or {}).items()},
             evidence_refs=tuple(str(ref) for ref in raw.get("evidence_refs", ())),
+            evaluator_quality=dict(raw.get("evaluator_quality") or raw.get("evaluator_quality_controls") or {}),
             execution_errors=tuple(str(error) for error in raw.get("execution_errors", ())),
             cost_usd=float(raw.get("cost_usd") or 0.0),
             wall_clock_s=float(raw.get("wall_clock_s") or 0.0),
@@ -164,6 +166,7 @@ class AutoresearchAttempt:
             "changed_files": list(self.changed_files),
             "artifact_hashes": dict(sorted(self.artifact_hashes.items())),
             "evidence_refs": list(self.evidence_refs),
+            "evaluator_quality": self.evaluator_quality,
             "execution_errors": list(self.execution_errors),
             "metric_trials": list(self.metric_trials),
             "cost_usd": self.cost_usd,
@@ -196,6 +199,7 @@ class AutoresearchValidationReport:
     mutable_paths: tuple[str, ...]
     immutable_paths: tuple[str, ...]
     artifact_hashes: dict[str, str]
+    evaluator_quality: dict[str, Any] = field(default_factory=dict)
     gaming_flags: tuple[str, ...] = field(default_factory=tuple)
     validation_errors: tuple[str, ...] = field(default_factory=tuple)
     cost_usd: float = 0.0
@@ -230,6 +234,7 @@ class AutoresearchValidationReport:
             "mutable_paths": list(self.mutable_paths),
             "immutable_paths": list(self.immutable_paths),
             "artifact_hashes": dict(sorted(self.artifact_hashes.items())),
+            "evaluator_quality": self.evaluator_quality,
             "gaming_flags": list(self.gaming_flags),
             "validation_errors": list(self.validation_errors),
             "cost_usd": self.cost_usd,
@@ -270,6 +275,7 @@ class AutoresearchValidationReport:
             "mutable_paths": list(self.mutable_paths),
             "immutable_paths": list(self.immutable_paths),
             "artifact_hashes": dict(sorted(self.artifact_hashes.items())),
+            "evaluator_quality": self.evaluator_quality,
             "gaming_flags": list(self.gaming_flags),
             "validation_errors": list(self.validation_errors),
             "cost_usd": self.cost_usd,

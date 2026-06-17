@@ -30,6 +30,10 @@ AUTORESEARCH_EVENT_KINDS = (
     "autoresearch_attempt_execution_job_completed",
     "autoresearch_attempt_execution_job_failed",
     "autoresearch_attempt_completed",
+    "autoresearch_evaluator_quality_started",
+    "autoresearch_evaluator_quality_control_started",
+    "autoresearch_evaluator_quality_control_completed",
+    "autoresearch_evaluator_quality_completed",
     "autoresearch_validation_started",
     "autoresearch_validation_completed",
     "autoresearch_policy_proposal_derivation_skipped",
@@ -134,6 +138,7 @@ def run_autoresearch_fixture(
                     evaluator_run_hash=execution.evaluator_run_hash,
                     attempt_worktree_ref=execution.attempt_worktree_ref,
                     evidence_refs=execution.evidence_refs,
+                    evaluator_quality=execution.evaluator_quality or attempt.evaluator_quality,
                     execution_errors=execution.execution_errors,
                     cost_usd=round(attempt.cost_usd + execution.cost_usd, 6),
                     wall_clock_s=execution.wall_clock_s,
@@ -172,6 +177,21 @@ def run_autoresearch_fixture(
                 "status": attempt.status if attempt.status != "pending" else "completed",
             },
         )
+        if attempt.evaluator_quality:
+            emit(
+                "autoresearch_evaluator_quality_started",
+                {
+                    "schema_version": "supervisor-autoresearch/v1",
+                    "experiment_id": experiment.experiment_id,
+                    "task_id": experiment.task_id,
+                    "attempt_id": attempt.attempt_id,
+                    "status": "started",
+                    "control_refs": _quality_control_refs(attempt.evaluator_quality),
+                    "source": _quality_source(attempt.evaluator_quality),
+                    "evidence_grade": _quality_evidence_grade(attempt.evaluator_quality),
+                    "default_change_allowed": False,
+                },
+            )
         emit(
             "autoresearch_validation_started",
             {
@@ -188,6 +208,76 @@ def run_autoresearch_fixture(
             repo_root=repo_root,
         ))
         validation_payload = validation_reports[-1].to_payload()
+        if attempt.evaluator_quality:
+            evaluator_quality = validation_payload["evaluator_quality"]
+            for control_kind, control in _quality_controls(evaluator_quality):
+                emit(
+                    "autoresearch_evaluator_quality_control_started",
+                    {
+                        "schema_version": "supervisor-autoresearch/v1",
+                        "experiment_id": experiment.experiment_id,
+                        "task_id": experiment.task_id,
+                        "attempt_id": attempt.attempt_id,
+                        "control_kind": control_kind,
+                        "status": "started",
+                        "source": _quality_source(control),
+                        "evidence_grade": _quality_evidence_grade(control),
+                        "default_change_allowed": False,
+                    },
+                )
+                emit(
+                    "autoresearch_evaluator_quality_control_completed",
+                    {
+                        "schema_version": "supervisor-autoresearch/v1",
+                        "experiment_id": experiment.experiment_id,
+                        "task_id": experiment.task_id,
+                        "attempt_id": attempt.attempt_id,
+                        "control_kind": control_kind,
+                        "status": control.get("verdict") or evaluator_quality["verdict"],
+                        "control": control,
+                        "receipt": {
+                            "receipt_id": f"autoresearch-quality:{attempt.attempt_id}:{control_kind}",
+                            "source": _quality_source(control),
+                            "evidence_grade": _quality_evidence_grade(control),
+                            "control_kind": control_kind,
+                            "candidate_ref": control.get("candidate_ref"),
+                            "candidate_hash": control.get("candidate_hash"),
+                            "metric_delta": control.get("metric_delta"),
+                            "control_run_ref": control.get("control_run_ref"),
+                            "control_run_hash": control.get("control_run_hash"),
+                            "verdict": control.get("verdict"),
+                        },
+                        "default_change_allowed": False,
+                        "policy_mutated": False,
+                        "gate_advanced": False,
+                    },
+                )
+            emit(
+                "autoresearch_evaluator_quality_completed",
+                {
+                    "schema_version": "supervisor-autoresearch/v1",
+                    "experiment_id": experiment.experiment_id,
+                    "task_id": experiment.task_id,
+                    "attempt_id": attempt.attempt_id,
+                    "status": evaluator_quality["verdict"],
+                    "evaluator_quality": evaluator_quality,
+                    "gaming_flags": validation_payload["gaming_flags"],
+                    "validation_errors": validation_payload["validation_errors"],
+                    "receipt": {
+                        "receipt_id": f"autoresearch-quality:{attempt.attempt_id}",
+                        "source": _quality_source(evaluator_quality),
+                        "evidence_grade": _quality_evidence_grade(evaluator_quality),
+                        "supervisor_runtime_origin": evaluator_quality.get("supervisor_runtime_origin") or "",
+                        "control_refs": evaluator_quality["control_refs"],
+                        "quality_manifest_ref": evaluator_quality.get("quality_manifest_ref"),
+                        "quality_manifest_hash": evaluator_quality.get("quality_manifest_hash"),
+                        "verdict": evaluator_quality["verdict"],
+                    },
+                    "default_change_allowed": False,
+                    "policy_mutated": False,
+                    "gate_advanced": False,
+                },
+            )
         emit("autoresearch_validation_completed", validation_payload)
 
     report = build_autoresearch_report(validation_reports)
@@ -299,3 +389,38 @@ def _execution_output_dir(
     if output_dir is not None:
         return Path(output_dir)
     return Path(repo_root).expanduser().resolve() / ".scratch" / "autoresearch" / run_id
+
+
+def _quality_control_refs(evaluator_quality: dict[str, Any]) -> list[str]:
+    controls = evaluator_quality.get("controls")
+    if not isinstance(controls, dict):
+        return []
+    return [kind for kind in ("noop", "harmful", "known_good") if kind in controls]
+
+
+def _quality_controls(evaluator_quality: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    controls = evaluator_quality.get("controls")
+    if not isinstance(controls, dict):
+        return []
+    return [
+        (kind, dict(controls[kind]))
+        for kind in ("noop", "harmful", "known_good")
+        if isinstance(controls.get(kind), dict)
+    ]
+
+
+def _quality_source(evaluator_quality: dict[str, Any]) -> str:
+    source = str(evaluator_quality.get("source") or "")
+    if source == "supervisor_control_execution":
+        return source
+    return "caller_supplied_metadata"
+
+
+def _quality_evidence_grade(evaluator_quality: dict[str, Any]) -> str:
+    if (
+        str(evaluator_quality.get("source") or "") == "supervisor_control_execution"
+        and str(evaluator_quality.get("evidence_grade") or "") == "runtime_native"
+        and str(evaluator_quality.get("supervisor_runtime_origin") or "") == "run_evaluator_quality_controls"
+    ):
+        return "runtime_native"
+    return "self_reported"

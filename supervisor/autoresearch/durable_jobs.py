@@ -286,6 +286,7 @@ def _execution_payload(execution: EvaluatorExecutionResult) -> dict[str, Any]:
         "execution_errors": list(execution.execution_errors),
         "cost_usd": execution.cost_usd,
         "wall_clock_s": execution.wall_clock_s,
+        "evaluator_quality": execution.evaluator_quality,
         "job_id": execution.job_id,
         "resumed_from_trial_count": execution.resumed_from_trial_count,
     }
@@ -324,6 +325,7 @@ def _execution_from_terminal(*, row: Any, result_path: Path) -> EvaluatorExecuti
             execution_errors=tuple(str(error) for error in errors or []),
             cost_usd=0.0,
             wall_clock_s=0.0,
+            evaluator_quality={},
             job_id=str(payload.get("job_id") or ""),
         )
     return EvaluatorExecutionResult(
@@ -336,6 +338,7 @@ def _execution_from_terminal(*, row: Any, result_path: Path) -> EvaluatorExecuti
         execution_errors=tuple(str(error) for error in execution.get("execution_errors") or ()),
         cost_usd=float(execution.get("cost_usd") or 0.0),
         wall_clock_s=float(execution.get("wall_clock_s") or 0.0),
+        evaluator_quality=dict(execution.get("evaluator_quality") or {}),
         job_id=str(execution.get("job_id") or payload.get("job_id") or ""),
         resumed_from_trial_count=int(execution.get("resumed_from_trial_count") or 0),
     )

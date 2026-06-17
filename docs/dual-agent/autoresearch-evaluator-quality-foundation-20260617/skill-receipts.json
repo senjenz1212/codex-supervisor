@@ -1,0 +1,77 @@
+[
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-to-prd-autoresearch-evaluator-quality-foundation-20260617",
+    "skill": "to-prd",
+    "stage": "to_prd",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/autoresearch-evaluator-quality-foundation-20260617/source/prd.md"
+    ],
+    "claims": [
+      "prd-to-tdd skill executed",
+      "PRD promise contracts produced",
+      "candidate-sensitive evaluator quality floor specified"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-prd-grill-autoresearch-evaluator-quality-foundation-20260617",
+    "skill": "grill-with-docs",
+    "stage": "prd_grill",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/autoresearch-evaluator-quality-foundation-20260617/source/grill-findings.md"
+    ],
+    "claims": [
+      "prd-to-tdd skill executed",
+      "PRD grill findings resolved",
+      "corpus quality, determinism, and authority risks addressed"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-to-issues-autoresearch-evaluator-quality-foundation-20260617",
+    "skill": "to-issues",
+    "stage": "to_issues",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/autoresearch-evaluator-quality-foundation-20260617/source/issues.md"
+    ],
+    "claims": [
+      "prd-to-tdd skill executed",
+      "issue slices cover every PRD promise",
+      "public-boundary tests named"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-tdd-autoresearch-evaluator-quality-foundation-20260617",
+    "skill": "tdd",
+    "stage": "tdd",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/autoresearch-evaluator-quality-foundation-20260617/source/tdd.md"
+    ],
+    "claims": [
+      "prd-to-tdd skill executed",
+      "TDD plan starts at AutoResearch public boundaries",
+      "no-op, harmful, known-good, determinism, and report-only tests planned"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-tdd-grill-autoresearch-evaluator-quality-foundation-20260617",
+    "skill": "grill-with-docs",
+    "stage": "tdd_grill",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/autoresearch-evaluator-quality-foundation-20260617/source/grill-findings-tdd.md"
+    ],
+    "claims": [
+      "prd-to-tdd skill executed",
+      "TDD grill findings resolved",
+      "translation audit completed"
+    ]
+  }
+]

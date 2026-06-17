@@ -8,6 +8,10 @@ from hashlib import sha256
 from pathlib import Path
 
 from supervisor.autoresearch.orchestrator import run_autoresearch_fixture
+from supervisor.autoresearch.policy_evolution import (
+    derive_policy_evolution_proposals_from_report,
+    report_contains_derivable_policy_record,
+)
 from supervisor.autoresearch.report import build_autoresearch_report
 from supervisor.autoresearch.schema import AutoresearchAttempt, AutoresearchExperiment
 from supervisor.autoresearch.validation import validate_attempt
@@ -60,6 +64,81 @@ def _attempt(**overrides) -> AutoresearchAttempt:
     }
     base.update(overrides)
     return AutoresearchAttempt(**base)
+
+
+def _quality_controls(**overrides) -> dict:
+    base = {
+        "source": "supervisor_control_execution",
+        "evidence_grade": "runtime_native",
+        "supervisor_runtime_origin": "run_evaluator_quality_controls",
+        "candidate_affects_evaluated_path": True,
+        "determinism": {
+            "source": "repeated_execution",
+            "evidence_grade": "runtime_native",
+            "supervisor_runtime_origin": "run_evaluator_quality_controls",
+            "repeated_outputs": [
+                {"score": 0.84, "verdict": "pass"},
+                {"score": 0.84, "verdict": "pass"},
+            ],
+        },
+        "controls": {
+            "noop": {
+                "source": "supervisor_control_execution",
+                "evidence_grade": "runtime_native",
+                "supervisor_runtime_origin": "run_evaluator_quality_controls",
+                "metric_source": "evaluator_execution",
+                "metric_delta": 0.0,
+                "candidate_ref": "evaluator-quality/noop.json",
+                "candidate_hash": "noop-hash",
+                "control_run_ref": "evaluator-quality/noop-run.json",
+                "control_run_hash": "noop-run-hash",
+                "verdict": "no_improvement",
+            },
+            "harmful": {
+                "source": "supervisor_control_execution",
+                "evidence_grade": "runtime_native",
+                "supervisor_runtime_origin": "run_evaluator_quality_controls",
+                "metric_source": "evaluator_execution",
+                "metric_delta": -0.12,
+                "candidate_ref": "evaluator-quality/harmful.json",
+                "candidate_hash": "harmful-hash",
+                "control_run_ref": "evaluator-quality/harmful-run.json",
+                "control_run_hash": "harmful-run-hash",
+                "verdict": "regressed",
+            },
+            "known_good": {
+                "source": "supervisor_control_execution",
+                "evidence_grade": "runtime_native",
+                "supervisor_runtime_origin": "run_evaluator_quality_controls",
+                "metric_source": "evaluator_execution",
+                "metric_delta": 0.18,
+                "candidate_ref": "evaluator-quality/known-good.json",
+                "candidate_hash": "known-good-hash",
+                "control_run_ref": "evaluator-quality/known-good-run.json",
+                "control_run_hash": "known-good-run-hash",
+                "verdict": "improved",
+            },
+        },
+    }
+    base.update(overrides)
+    if base.get("source") == "supervisor_control_execution":
+        determinism = base.get("determinism")
+        if isinstance(determinism, dict):
+            determinism.setdefault("evidence_grade", "runtime_native")
+            determinism.setdefault("supervisor_runtime_origin", "run_evaluator_quality_controls")
+        controls = base.get("controls")
+        if isinstance(controls, dict):
+            for kind, control in controls.items():
+                if not isinstance(control, dict):
+                    continue
+                control.setdefault("source", "supervisor_control_execution")
+                control.setdefault("evidence_grade", "runtime_native")
+                control.setdefault("supervisor_runtime_origin", "run_evaluator_quality_controls")
+                control.setdefault("candidate_ref", f"evaluator-quality/{kind}.json")
+                control.setdefault("candidate_hash", f"{kind}-hash")
+                control.setdefault("control_run_ref", f"evaluator-quality/{kind}-run.json")
+                control.setdefault("control_run_hash", f"{kind}-run-hash")
+    return base
 
 
 def _write_fixture_evaluator(root: Path) -> None:
@@ -1067,6 +1146,7 @@ def test_autoresearch_report_carries_policy_derivation_fields(tmp_path):
         policy_candidate_changes={
             ".supervisor/policy-overlay.yaml": "candidates/policy-overlay.yaml",
         },
+        evaluator_quality=_quality_controls(),
         artifact_hashes={"candidates/policy-overlay.yaml": _sha256(candidate)},
         evidence_refs=(
             "evaluator_run:evaluator-runs/attempt-1.json",
@@ -1184,6 +1264,219 @@ def test_autoresearch_validator_cannot_advance_gates():
     assert payload["gate_advanced"] is False
     assert payload["validation_status"] == "accepted"
     assert "dual_agent_gate_result" not in json.dumps(payload)
+
+
+def test_autoresearch_saturated_zero_variance_replay_stays_non_applyable(tmp_path):
+    _write_fixture_evaluator(tmp_path)
+    experiment = AutoresearchExperiment(
+        experiment_id="exp-saturated",
+        task_id="task-saturated",
+        hypothesis="Try a saturated candidate.",
+        baseline_ref="baseline:current",
+        mutable_paths=("candidates",),
+        immutable_paths=(),
+        evaluator_ref=str(LOCKED_EVALUATOR),
+        evaluator_hash=_sha256(tmp_path / LOCKED_EVALUATOR),
+        metric_name="score",
+        k_trials=3,
+    )
+    attempt = _attempt(
+        experiment_id="exp-saturated",
+        task_id="task-saturated",
+        attempt_id="attempt-saturated",
+        changed_files=("candidates/policy-overlay.yaml",),
+        metric_trials=(1.0, 1.0, 1.0),
+        metric_before=0.8,
+        metric_after=1.0,
+        metric_delta=0.2,
+        policy_overlay_candidate_ref="candidates/policy-overlay.yaml",
+        policy_candidate_changes={".supervisor/policy-overlay.yaml": "candidates/policy-overlay.yaml"},
+        evaluator_quality=_quality_controls(),
+    )
+
+    validation = validate_attempt(experiment=experiment, attempt=attempt, repo_root=tmp_path)
+    payload = validation.to_payload()
+    report = build_autoresearch_report([validation])
+
+    assert "zero_variance_trials" in payload["gaming_flags"]
+    assert payload["validation_status"] == "accepted"
+    assert derive_policy_evolution_proposals_from_report(
+        report,
+        repo_root=tmp_path,
+        affected_gates=("outcome_review",),
+    ) == []
+    assert report_contains_derivable_policy_record(report, repo_root=tmp_path) is False
+
+
+def test_autoresearch_determinism_requires_repeated_output_hash_match():
+    report = validate_attempt(
+        experiment=_experiment(),
+        attempt=_attempt(
+            changed_files=("skills/reviewer-rubrics/evidence.md",),
+            policy_candidate_changes={".supervisor/policy-overlay.yaml": "skills/reviewer-rubrics/evidence.md"},
+            evaluator_quality=_quality_controls(
+                determinism={
+                    "source": "repeated_execution",
+                    "repeated_outputs": [
+                        {"score": 0.84, "verdict": "pass"},
+                        {"score": 0.82, "verdict": "pass"},
+                    ],
+                }
+            ),
+        ),
+    )
+
+    payload = report.to_payload()
+    assert payload["validation_status"] == "rejected"
+    assert "determinism_hash_mismatch" in payload["gaming_flags"]
+
+
+def test_autoresearch_self_declared_deterministic_metadata_is_not_authoritative():
+    report = validate_attempt(
+        experiment=_experiment(),
+        attempt=_attempt(
+            changed_files=("skills/reviewer-rubrics/evidence.md",),
+            policy_candidate_changes={".supervisor/policy-overlay.yaml": "skills/reviewer-rubrics/evidence.md"},
+            evaluator_quality=_quality_controls(determinism={"deterministic": True}),
+        ),
+    )
+
+    payload = report.to_payload()
+    assert payload["validation_status"] == "rejected"
+    assert "determinism_unverified" in payload["gaming_flags"]
+
+
+def test_autoresearch_caller_supplied_quality_metadata_is_not_authoritative():
+    metadata = _quality_controls(
+        source="caller_supplied_metadata",
+        evidence_grade="self_reported",
+        supervisor_runtime_origin="",
+    )
+    report = validate_attempt(
+        experiment=_experiment(),
+        attempt=_attempt(
+            changed_files=("skills/reviewer-rubrics/evidence.md",),
+            policy_candidate_changes={".supervisor/policy-overlay.yaml": "skills/reviewer-rubrics/evidence.md"},
+            evaluator_quality=metadata,
+        ),
+    )
+
+    payload = report.to_payload()
+    assert payload["validation_status"] == "rejected"
+    assert "evaluator_quality_not_supervisor_generated" in payload["gaming_flags"]
+
+
+def test_autoresearch_candidate_must_affect_evaluated_path():
+    report = validate_attempt(
+        experiment=_experiment(),
+        attempt=_attempt(
+            changed_files=("skills/reviewer-rubrics/evidence.md",),
+            policy_candidate_changes={".supervisor/policy-overlay.yaml": "skills/reviewer-rubrics/evidence.md"},
+            evaluator_quality=_quality_controls(candidate_affects_evaluated_path=False),
+        ),
+    )
+
+    payload = report.to_payload()
+    assert payload["validation_status"] == "rejected"
+    assert "candidate_not_evaluated" in payload["gaming_flags"]
+
+
+def test_autoresearch_evaluator_quality_events_and_receipts_are_emitted(tmp_path):
+    evaluator_ref, evaluator_hash = _write_evaluator(
+        tmp_path,
+        """
+from __future__ import annotations
+import argparse, json
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--attempt-worktree", required=True)
+parser.add_argument("--trial-index", required=True, type=int)
+parser.add_argument("--metric-name", required=True)
+parser.add_argument("--attempt-json", required=True)
+args = parser.parse_args()
+attempt = json.loads(open(args.attempt_json, encoding="utf-8").read())
+control = attempt.get("evaluator_quality_control") or {}
+if control.get("kind") == "noop":
+    value = 0.70
+elif control.get("kind") == "harmful":
+    value = 0.58
+elif control.get("kind") == "known_good":
+    value = 0.88
+elif control.get("kind") == "determinism":
+    value = 0.81
+else:
+    value = 0.81
+print(json.dumps({"metric_value": value}))
+""".lstrip(),
+    )
+    candidate = tmp_path / "workspace" / "policy-overlay.yaml"
+    candidate.parent.mkdir(parents=True)
+    candidate.write_text("policy overlay candidate\n", encoding="utf-8")
+    fixture = _write_fixture(
+        tmp_path,
+        experiment=_live_experiment(evaluator_ref=evaluator_ref, evaluator_hash=evaluator_hash),
+        attempts=[
+            _live_attempt(
+                changed_files=["workspace/policy-overlay.yaml"],
+                metric_before=0.70,
+                policy_candidate_changes={".supervisor/policy-overlay.yaml": "workspace/policy-overlay.yaml"},
+                artifact_hashes={"workspace/policy-overlay.yaml": _sha256(candidate)},
+                evidence_refs=["artifact:workspace/policy-overlay.yaml"],
+            )
+        ],
+    )
+    state = State(str(tmp_path / "state.db"))
+
+    report = run_autoresearch_fixture(
+        fixture_path=fixture,
+        state=state,
+        run_id="quality-events-run",
+        repo_root=tmp_path,
+        output_dir=tmp_path / "out",
+        execution_mode="live",
+    )
+
+    events = state.read_events_since(run_id="quality-events-run", after_event_id=0, limit=50)
+    kinds = [event["kind"] for event in events]
+    assert "autoresearch_evaluator_quality_started" in kinds
+    assert "autoresearch_evaluator_quality_completed" in kinds
+    completed = next(event for event in events if event["kind"] == "autoresearch_evaluator_quality_completed")
+    receipt = completed["payload"]["receipt"]
+    assert receipt["source"] == "supervisor_control_execution"
+    assert receipt["evidence_grade"] == "runtime_native"
+    assert receipt["quality_manifest_ref"]
+    assert receipt["quality_manifest_hash"]
+    assert receipt["control_refs"] == ["noop", "harmful", "known_good"]
+    quality = report["records"][0]["evaluator_quality"]
+    assert quality["source"] == "supervisor_control_execution"
+    assert quality["verdict"] == "accepted"
+    for control in quality["controls"].values():
+        assert control["candidate_ref"]
+        assert control["candidate_hash"]
+        assert control["metric_delta"] is not None
+        assert control["control_run_ref"]
+        assert control["control_run_hash"]
+
+
+def test_autoresearch_report_only_invariants_survive_quality_success():
+    validation = validate_attempt(
+        experiment=_experiment(),
+        attempt=_attempt(
+            policy_candidate_changes={
+                ".supervisor/policy-overlay.yaml": "skills/reviewer-rubrics/evidence.md",
+            },
+            evaluator_quality=_quality_controls(),
+        ),
+    )
+    report = build_autoresearch_report([validation])
+    record = report["records"][0]
+
+    assert record["validation_status"] == "accepted"
+    assert record["evaluator_quality"]["verdict"] == "accepted"
+    assert record["default_change_allowed"] is False
+    assert record["policy_mutated"] is False
+    assert record["gate_advanced"] is False
+    assert report["report_only"]["operator_review_required"] is True
 
 
 def test_autoresearch_cursor_reviewer_defaults_remain_compatible():
