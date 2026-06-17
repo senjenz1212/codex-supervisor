@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from supervisor.cursor_agent import CursorInvocationRequest
+from supervisor.reviewer_registry import _codex_cli_reviewer_prompt
 from supervisor.reviewer_registry import evaluate_reviewer_panel
 from supervisor.reviewer_registry import load_reviewer_panel_calibration
 from supervisor.reviewer_registry import ReviewerSpec
@@ -41,6 +43,28 @@ def _real_source(task_id: str, reviewer_id: str) -> dict:
         ],
         "output_sha256": "c" * 64,
     }
+
+
+def test_codex_cli_reviewer_prompt_does_not_make_sibling_cursor_receipt_blocking(tmp_path):
+    request = CursorInvocationRequest(
+        task_id="tri-agent",
+        gate="tdd_review",
+        instruction="Review the TDD plan.",
+        cwd=tmp_path,
+        claude_outcome={"summary": "Claude accepted."},
+        review_packet={
+            "schema_version": "supervisor-review-packet/v1",
+            "changed_files": [],
+            "acceptance_items": ["test_public_boundary"],
+            "runtime_receipt_ids": [],
+        },
+    )
+
+    prompt = _codex_cli_reviewer_prompt(request, reviewer_name="independent-reviewer-1")
+
+    assert "runtime_receipt_ids are implementation/runtime evidence" in prompt
+    assert "supervisor records and enforces the live Cursor/cursor_sdk receipt" in prompt
+    assert "do not reject solely because the packet cannot yet include a sibling Cursor receipt" in prompt
 
 
 def _calibration() -> dict:

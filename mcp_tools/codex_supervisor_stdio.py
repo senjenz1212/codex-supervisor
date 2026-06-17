@@ -5406,6 +5406,13 @@ def _workflow_gate_instruction(
                 "return `accept_with_residual`; if test execution needs verification, declare "
                 "the exact pytest commands/nodeids and let the supervisor runtime floor rerun them."
             ),
+            (
+                "If the Claude Bash/test tool is unavailable but the implementation diff is complete, "
+                "do not block solely on that local tooling outage. Return `accept` with "
+                "test_status=`unknown`, list the exact pytest commands/nodeids, and make no "
+                "tests-passed claim; the supervisor runtime floor is the authority and will block "
+                "the gate on failing or missing tests."
+            ),
             *[f"- {name}" for name in tdd_test_names],
         ])
     return "\n".join(lines)

@@ -50,6 +50,8 @@ def test_build_cursor_prompt_is_review_only_and_uses_typed_outcome_contract(tmp_
     assert "pytest-focused" in prompt
     assert "criteria_checked must include acceptance_items[] strings" in prompt
     assert "receipts_considered must include runtime_receipt_ids[].receipt_id values" in prompt
+    assert "runtime_receipt_ids are implementation/runtime evidence" in prompt
+    assert "do not reject solely because the packet cannot yet include a sibling Cursor receipt" in prompt
 
 
 def test_build_cursor_prompt_compacts_large_runtime_receipt_file_lists(tmp_path: Path):

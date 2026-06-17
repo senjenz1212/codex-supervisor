@@ -41,6 +41,8 @@ def test_execution_gate_instruction_includes_tdd_runtime_contract():
     assert "`accept`, `revise`, or `deny`" in instruction
     assert "Do not return `accept_with_residual`" in instruction
     assert "let the supervisor runtime floor rerun them" in instruction
+    assert "Return `accept` with test_status=`unknown`" in instruction
+    assert "make no tests-passed claim" in instruction
     assert "- test_required_one" in instruction
     assert "- test_required_two" in instruction
 

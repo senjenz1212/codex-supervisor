@@ -498,10 +498,40 @@ def test_execution_gate_prompt_requires_real_implementation_diff(tmp_path):
 
     assert "IMPLEMENTATION CONTRACT (execution gate)" in execution_prompt
     assert "You are the IMPLEMENTER, not a reviewer" in execution_prompt
+    assert "Keep execution context bounded" in execution_prompt
+    assert "do not read workflow transcript artifacts" in execution_prompt
+    assert "transcript.jsonl, transcript.md, interactions.md" in execution_prompt
+    assert "small file chunks under 200 lines" in execution_prompt
+    assert "rapid-refill breaker" in execution_prompt
     assert "For code tasks, you MUST produce a non-empty implementation diff" in execution_prompt
     assert "For explicit docs/report-only tasks, edit the requested docs/report artifacts" in execution_prompt
     assert "changed_files MUST list the files you actually changed" in execution_prompt
+    assert "return accept with test_status unknown" in execution_prompt
+    assert "The supervisor runtime floor will rerun those tests" in execution_prompt
     assert "IMPLEMENTATION CONTRACT (execution gate)" not in review_prompt
+    assert "Keep execution context bounded" not in review_prompt
+
+
+def test_execution_gate_prompt_compacts_large_instruction_when_handoff_exists(tmp_path):
+    packet = tmp_path / ".handoff" / "slice0-lead.json"
+    request = LeadInvocationRequest(
+        task_id="slice0-lead",
+        gate="execution",
+        instruction=(
+            "Implement the accepted issue. "
+            "UNIQUE_FULL_OPERATOR_CONTEXT_SHOULD_STAY_IN_HANDOFF "
+            * 20
+        ),
+        cwd=tmp_path,
+        handoff_packet_path=packet,
+    )
+
+    prompt = build_lead_prompt(request)
+
+    assert "Execution request: implement the accepted task described in the handoff packet" in prompt
+    assert "Use the compact handoff packet and its source planning artifact paths" in prompt
+    assert str(packet) in prompt
+    assert "UNIQUE_FULL_OPERATOR_CONTEXT_SHOULD_STAY_IN_HANDOFF" not in prompt
 
 
 def test_report_only_execution_gate_command_includes_narrow_allowed_tools(tmp_path):
@@ -572,6 +602,25 @@ def test_handoff_packet_carries_agentic_lead_policy(tmp_path):
     assert policy.min_subagents == 2
     assert policy.required_roles == ["codebase_audit", "independent_reviewer"]
     assert policy.required_evidence_grade == "runtime_native"
+
+
+def test_build_lead_prompt_keeps_agentic_receipts_supervisor_enforced(tmp_path):
+    request = LeadInvocationRequest(
+        task_id="slice0-lead",
+        gate="tdd_review",
+        instruction="Review the TDD plan.",
+        cwd=tmp_path,
+        agentic_lead_policy="allowed",
+        min_subagents=3,
+        solo_exception_for_artifact_only_gates=False,
+    )
+
+    prompt = build_lead_prompt(request)
+
+    assert "Codex enforces agentic_lead_policy/min_subagents" in prompt
+    assert "supervisor-owned dynamic_subagent_result receipts" in prompt
+    assert "Do not spawn internal Claude subagents or block solely" in prompt
+    assert "Codex will enforce external agentic receipt availability separately" in prompt
 
 
 def test_build_lead_prompt_references_handoff_packet_instead_of_raw_context(tmp_path):

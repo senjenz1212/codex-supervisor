@@ -281,6 +281,17 @@ def build_lead_prompt(request: LeadInvocationRequest) -> str:
             "Treat the handoff packet as the bounded context source. "
             "Do not rewrite planning artifacts unless explicitly instructed.\n"
         )
+    agentic_receipt_note = ""
+    if request.agentic_lead_policy in {"allowed", "required"}:
+        agentic_receipt_note = (
+            "\nAgentic worker receipt discipline: Codex enforces "
+            "agentic_lead_policy/min_subagents using supervisor-owned "
+            "dynamic_subagent_result receipts outside the Claude lead. Do not "
+            "spawn internal Claude subagents or block solely because the handoff "
+            "packet mentions min_subagents or solo_exception_for_artifact_only_gates. "
+            "Judge the gate artifacts and outcome; Codex will enforce external "
+            "agentic receipt availability separately.\n"
+        )
     execution_layer = ""
     if request.execution_layer_mode == "dynamic_workflow_preview":
         execution_layer = (
@@ -296,12 +307,22 @@ def build_lead_prompt(request: LeadInvocationRequest) -> str:
             "Edit real worktree files to satisfy the accepted PRD / issues / TDD / "
             "implementation-plan referenced in the handoff. Do NOT merely review, validate, or summarize "
             "this gate. Work RED-first: confirm the planned tests fail, then implement until they pass. "
+            "Keep execution context bounded: do not read workflow transcript artifacts such as "
+            "transcript.jsonl, transcript.md, interactions.md, replay snapshots, or agentic-worker "
+            "transcripts unless a specific line reference is required to resolve a blocker. Prefer the "
+            "handoff packet, source planning artifacts, rg, and small file chunks under 200 lines; large "
+            "tool outputs can trip the Claude Code rapid-refill breaker and do not count as product "
+            "evidence. "
             "For code tasks, you MUST produce a non-empty implementation diff in the task-relevant source "
             "and/or test files. For explicit docs/report-only tasks, edit the requested docs/report "
             "artifacts. Incidental docs-only or handoff-only changes do not count as execution. If you "
             "cannot edit the required deliverable files, STOP and report the blocker instead of returning "
-            "an accept. In the outcome, changed_files MUST list the files you actually changed and "
-            "test_status MUST reflect tests you actually ran.\n"
+            "an accept. In the outcome, changed_files MUST list the files you actually changed. "
+            "If you ran tests, test_status MUST reflect the tests you actually ran. If your Bash/test "
+            "tooling is unavailable but the implementation diff is complete, do not block solely on that "
+            "tooling outage: return accept with test_status unknown, list exact pytest commands/nodeids "
+            "in tests, and make no tests-passed claim. The supervisor runtime floor will rerun those "
+            "tests and block the gate if they fail or are missing.\n"
         )
     lesson_block = ""
     if request.injected_lesson_block and request.injected_lesson_block not in request.instruction:
@@ -309,12 +330,21 @@ def build_lead_prompt(request: LeadInvocationRequest) -> str:
     policy_overlay_block = ""
     if request.policy_overlay_block and request.policy_overlay_block not in request.instruction:
         policy_overlay_block = "\n\n" + request.policy_overlay_block.strip()
+    instruction_block = request.instruction.strip()
+    if request.gate == "execution" and request.handoff_packet_path is not None:
+        instruction_block = (
+            "Execution request: implement the accepted task described in the handoff packet. "
+            "Use the compact handoff packet and its source planning artifact paths as the "
+            "authoritative context; do not rely on this inline prompt to restate the full "
+            "operator request."
+        )
     return (
         f"/lead Gate mode: {request.gate}. Task id: {request.task_id}.\n"
-        f"{request.instruction.strip()}\n\n"
+        f"{instruction_block}\n\n"
         f"{policy_overlay_block}"
         f"{lesson_block}"
         f"{handoff}"
+        f"{agentic_receipt_note}"
         f"{execution_layer}"
         f"{implementation_contract}"
         f"{expected}\n\n"

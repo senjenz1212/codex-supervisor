@@ -170,7 +170,12 @@ def build_cursor_prompt(request: CursorInvocationRequest, *, compact: bool = Fal
             "files_reviewed must include changed_files[].path values you inspected; "
             "criteria_checked must include acceptance_items[] strings; "
             "receipts_considered must include runtime_receipt_ids[].receipt_id values. "
-            "Put any omitted packet item in missing_context."
+            "Put any omitted packet item in missing_context. "
+            "Important: runtime_receipt_ids are implementation/runtime evidence, not "
+            "sibling reviewer receipts. The supervisor records and enforces the live "
+            "Cursor/cursor_sdk receipt for this gate outside your review packet, so do "
+            "not reject solely because the packet cannot yet include a sibling Cursor "
+            "receipt; note that limitation in missing_context and judge the artifacts."
         ),
         "",
         "Claude outcome JSON:",
