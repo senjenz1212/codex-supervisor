@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "90670edc1a08c1a5f4ef97b8c5ef1906221918b7f8b5e3e49bd20b90f98f89cc",
+  "git": {
+    "diff_bytes": 0,
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "diff_stat": "",
+    "head": "84918206",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "84918206",
+    "status_short": "?? .scratch/auto-evolution-loop-current-demo-20260618/\n?? .scratch/comfy-cloud-prototype-visuals/\n?? .scratch/comfy-cloud-prototype-workflow-request.json\n?? .scratch/comfy-cloud-prototype-workflow-result.json\n?? .scratch/mergeability-debug/\n?? .scratch/mergeability-debug2/\n?? .scratch/mergeability-debug3/\n?? docs/dual-agent/auto-evolution-loop-current-demo-20260618/\n?? docs/dual-agent/comfy-cloud-polished-first-run-prototype-20260618/\n?? docs/dual-agent/comfy-cloud-polished-first-run-prototype-workflow-20260618/\n?? docs/dual-agent/mergeability-bench-evaluator-foundation-20260618/\n?? docs/product-strategy/\n?? docs/testing/comfy-cloud-guided-first-workflow-coverage-index.md\n?? supervisor/autoresearch/evaluators/mergeability_bench.py\n?? supervisor/mergeability_bench.py\n?? tests/fixtures/mergeability_bench/\n?? tests/test_mergeability_bench.py"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "95910af911ad2263843a5be0543d1d8e8439109f1c173161b593d0d0b91dcb4e",
+    "implementation_plan": "2cfcc10aa683fb0251be637158590e0678da4eb4e7915e2f3e777cf1ebe1099d",
+    "issues": "cfed97c050a7e6201b6568ff4c2e33e6ea0aad39d139d0312d6daca5fb44acd9",
+    "prd": "5171c6f2bbc3aa6f6b2464202c3d714484526734093d0bf7f89a43d560e39149",
+    "tdd_plan": "04466fe8e91b6d72917da0960c7ad64ccd8657ff51f8dca7c58be343e1baadee"
+  },
+  "status": "captured"
+}

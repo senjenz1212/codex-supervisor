@@ -1,0 +1,37 @@
+{
+  "schema_version": "supervisor-mergeability-task/v1",
+  "task_id": "calculator-addition",
+  "repo_fixture_ref": "repos/calculator_bug",
+  "prompt": "Fix the calculator add function so ordinary integer addition works and include a regression test that fails on the base implementation.",
+  "allowed_mutable_paths": [
+    "app/",
+    "tests/"
+  ],
+  "hidden_test_commands": [
+    ["python", "-m", "pytest", "hidden/test_behavior.py", "-q"]
+  ],
+  "reverse_test_commands": [
+    ["python", "-m", "pytest", "tests/test_calculator.py", "-q"]
+  ],
+  "lint_build_commands": [
+    ["python", "-m", "compileall", "app", "-q"]
+  ],
+  "scope_constraints": [
+    "Candidate changes must stay inside app/ or tests/."
+  ],
+  "blocker_criteria": [
+    "Hidden behavior tests pass on candidate worktree.",
+    "Candidate regression tests fail on the base fixture.",
+    "No hidden, evaluator, or metadata files are modified."
+  ],
+  "weighted_secondary_rubric": {
+    "minimal_diff": 0.4,
+    "test_clarity": 0.3,
+    "maintainability": 0.3
+  },
+  "protected_paths": [
+    "hidden/",
+    ".mergeability/",
+    "supervisor/autoresearch/evaluators/"
+  ]
+}

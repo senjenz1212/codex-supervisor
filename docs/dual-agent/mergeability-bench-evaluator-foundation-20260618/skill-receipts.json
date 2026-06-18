@@ -1,0 +1,67 @@
+[
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-to-prd-mergeability-bench-evaluator-foundation-20260618",
+    "skill": "to-prd",
+    "stage": "to_prd",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/mergeability-bench-evaluator-foundation-20260618/source/prd.md"
+    ],
+    "claims": [
+      "PRD authored with seven required sections and PRD promise contracts P1-P4"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-prd-grill-mergeability-bench-evaluator-foundation-20260618",
+    "skill": "grill-with-docs",
+    "stage": "prd_grill",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/mergeability-bench-evaluator-foundation-20260618/source/grill-findings.md"
+    ],
+    "claims": [
+      "PRD grill findings resolved before issue slicing"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-to-issues-mergeability-bench-evaluator-foundation-20260618",
+    "skill": "to-issues",
+    "stage": "to_issues",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/mergeability-bench-evaluator-foundation-20260618/source/issues.md"
+    ],
+    "claims": [
+      "Issues sliced into three public-boundary implementation slices mapped to PRD promises"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-tdd-mergeability-bench-evaluator-foundation-20260618",
+    "skill": "tdd",
+    "stage": "tdd",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/mergeability-bench-evaluator-foundation-20260618/source/tdd.md"
+    ],
+    "claims": [
+      "TDD plan names public-boundary RED tests for loader, grader, and evaluator integration"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-tdd-grill-mergeability-bench-evaluator-foundation-20260618",
+    "skill": "grill-with-docs",
+    "stage": "tdd_grill",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/mergeability-bench-evaluator-foundation-20260618/source/grill-findings-tdd.md"
+    ],
+    "claims": [
+      "TDD grill findings resolved before implementation"
+    ]
+  }
+]

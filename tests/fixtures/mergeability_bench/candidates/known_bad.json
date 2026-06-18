@@ -1,0 +1,19 @@
+{
+  "schema_version": "supervisor-mergeability-candidate/v1",
+  "candidate_id": "known-bad",
+  "task_id": "calculator-addition",
+  "changed_files": [
+    "app/calculator.py",
+    "tests/test_calculator.py"
+  ],
+  "files": {
+    "app/calculator.py": "def add(left: int, right: int) -> int:\n    return 42\n",
+    "tests/test_calculator.py": "from app.calculator import add\n\n\ndef test_add_returns_magic_number():\n    assert add(20, 22) == 42\n"
+  },
+  "provenance": {
+    "kind": "calibration_control"
+  },
+  "generator_metadata": {
+    "control": "known_bad"
+  }
+}

@@ -1,0 +1,32 @@
+[
+  {
+    "kind": "prd",
+    "path": "docs/dual-agent/mergeability-bench-evaluator-foundation-20260618/source/prd.md",
+    "mutable_by_worker": false
+  },
+  {
+    "kind": "grill_findings",
+    "path": "docs/dual-agent/mergeability-bench-evaluator-foundation-20260618/source/grill-findings.md",
+    "mutable_by_worker": false
+  },
+  {
+    "kind": "issues",
+    "path": "docs/dual-agent/mergeability-bench-evaluator-foundation-20260618/source/issues.md",
+    "mutable_by_worker": false
+  },
+  {
+    "kind": "tdd_plan",
+    "path": "docs/dual-agent/mergeability-bench-evaluator-foundation-20260618/source/tdd.md",
+    "mutable_by_worker": false
+  },
+  {
+    "kind": "grill_findings",
+    "path": "docs/dual-agent/mergeability-bench-evaluator-foundation-20260618/source/grill-findings-tdd.md",
+    "mutable_by_worker": false
+  },
+  {
+    "kind": "implementation_plan",
+    "path": "docs/dual-agent/mergeability-bench-evaluator-foundation-20260618/source/implementation-plan.md",
+    "mutable_by_worker": false
+  }
+]

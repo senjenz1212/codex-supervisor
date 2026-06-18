@@ -1,0 +1,13 @@
+{
+  "schema_version": "supervisor-mergeability-candidate/v1",
+  "candidate_id": "noop",
+  "task_id": "calculator-addition",
+  "changed_files": [],
+  "files": {},
+  "provenance": {
+    "kind": "calibration_control"
+  },
+  "generator_metadata": {
+    "control": "noop"
+  }
+}
