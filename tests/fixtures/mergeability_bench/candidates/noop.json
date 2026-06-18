@@ -8,6 +8,9 @@
     "kind": "calibration_control"
   },
   "generator_metadata": {
-    "control": "noop"
+    "baseline_accept": true,
+    "control": "noop",
+    "expected_outcome": "fail",
+    "visible_tests_passed": true
   }
 }

@@ -1,0 +1,24 @@
+{
+  "file_tree_sha256": "9f9bdf3e3a2aba5abd8bb487fd8ad261f13f1844035ee48b62d0a38137b382f0",
+  "git": {
+    "diff_bytes": 34750,
+    "diff_sha256": "34e29538bd833ed947b23f87268b95cfa414ddeb5344c132d5256d08d93e688b",
+    "diff_stat": "supervisor/mergeability_bench.py                   | 486 +++++++++++++++++++++\n .../mergeability_bench/candidates/known_bad.json   |   5 +-\n .../mergeability_bench/candidates/known_good.json  |   5 +-\n .../mergeability_bench/candidates/noop.json        |   5 +-\n tests/test_mergeability_bench.py                   | 214 ++++++++-\n 5 files changed, 710 insertions(+), 5 deletions(-)",
+    "head": "4c1581cc",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "4c1581cc",
+    "status_short": "M supervisor/mergeability_bench.py\n M tests/fixtures/mergeability_bench/candidates/known_bad.json\n M tests/fixtures/mergeability_bench/candidates/known_good.json\n M tests/fixtures/mergeability_bench/candidates/noop.json\n M tests/test_mergeability_bench.py\n?? .scratch/auto-evolution-loop-current-demo-20260618/\n?? .scratch/comfy-cloud-prototype-visuals/\n?? .scratch/comfy-cloud-prototype-workflow-request.json\n?? .scratch/comfy-cloud-prototype-workflow-result.json\n?? .scratch/mergeability-calibration-pilot-sample/\n?? .scratch/mergeability-debug/\n?? .scratch/mergeability-debug2/\n?? .scratch/mergeability-debug3/\n?? docs/dual-agent/auto-evolution-loop-current-demo-20260618/\n?? docs/dual-agent/comfy-cloud-polished-first-run-prototype-20260618/\n?? docs/dual-agent/comfy-cloud-polished-first-run-prototype-workflow-20260618/\n?? docs/dual-agent/mergeability-bench-calibration-pilot-20260618/\n?? docs/product-strategy/\n?? docs/testing/comfy-cloud-guided-first-workflow-coverage-index.md\n?? tests/fixtures/mergeability_bench/candidates/hidden_behavior_miss.json\n?? tests/fixtures/mergeability_bench/candidates/hidden_edit.json\n?? tests/fixtures/mergeability_bench/candidates/lint_build_failure.json\n?? tests/fixtures/mergeability_bench/candidates/missing_regression_test.json\n?? tests/fixtures/mergeability_bench/candidates/mutable_escape.json\n?? tests/fixtures/mergeability_bench/candidates/overbroad_diff.json\n?? tests/fixtures/mergeability_bench/candidates/secondary_rubric_only.json\n?? tests/fixtures/mergeability_bench/candidates/tautological_test.json\n?? tests/fixtures/mergeability_bench/candidates/wrong_test_path.json"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "73796b261d9674894a733133490f83783190dea61cc18ca5ee128d609e284e9e",
+    "implementation_plan": "cf4a0a6f9487fe3abe9cb0206147ae512e2441c73bd4679b50d54b5cef5ee5fa",
+    "issues": "1f245ebc7c81ba5c1f0c8cc708898eb8d7ea4bb422d9faac3e2e6955f507b9e9",
+    "other": "586653b5cdb419bea11a768a93ce050e764849bed614c9420525fede19596de1",
+    "prd": "52811b15c94833d6b9f8b0e731bd1d7eb4715768935b1eadb262c33c5da5d720",
+    "tdd_plan": "4810e3cdee1a5b13c35a7a89283d8576ec3b245d3e30f2266636f673d021ddfa"
+  },
+  "status": "captured"
+}

@@ -19,11 +19,14 @@ from supervisor.mergeability_bench import (
     MERGEABILITY_TASK_SCHEMA_VERSION,
     MergeabilityBenchError,
     MergeabilityCandidate,
+    build_mergeability_corpus_manifest,
     grade_mergeability_candidate,
     load_mergeability_candidate,
     load_mergeability_task,
     load_mergeability_tasks,
     result_receipt,
+    run_paired_acceptance_pilot,
+    validate_mergeability_corpus,
 )
 
 
@@ -41,6 +44,12 @@ def _candidate(name: str):
 
 def _sha256(path: Path) -> str:
     return sha256(path.read_bytes()).hexdigest()
+
+
+def _sha256_json(value: object) -> str:
+    return sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    ).hexdigest()
 
 
 def test_load_mergeability_tasks_reads_typed_fixture_contract():
@@ -190,6 +199,191 @@ def test_reverse_classical_rejects_candidate_without_submitted_tests():
     assert "reverse tests:no_candidate_tests_submitted" in result.failures
 
 
+def test_mergeability_corpus_manifest_requires_positive_and_negative_controls():
+    manifest = build_mergeability_corpus_manifest(
+        BENCH_ROOT,
+        candidate_paths=(BENCH_ROOT / "candidates" / "known_good.json",),
+    )
+
+    task = manifest["tasks"][0]
+    assert task["positive_controls"] == ["known-good"]
+    assert task["negative_controls"] == []
+    assert task["calibration_eligible"] is False
+    assert task["excluded_reason"] == "requires_positive_and_negative_controls"
+
+    try:
+        validate_mergeability_corpus(
+            BENCH_ROOT,
+            candidate_paths=(BENCH_ROOT / "candidates" / "known_good.json",),
+        )
+    except MergeabilityBenchError as exc:
+        assert "requires_positive_and_negative_controls" in str(exc)
+    else:  # pragma: no cover - defensive readability
+        raise AssertionError("positive-only corpus should not calibrate")
+
+
+def test_mergeability_calibration_rejects_broken_known_good_control(tmp_path):
+    broken = tmp_path / "broken_known_good.json"
+    broken.write_text(
+        json.dumps({
+            "schema_version": "supervisor-mergeability-candidate/v1",
+            "candidate_id": "broken-known-good",
+            "task_id": "calculator-addition",
+            "changed_files": ["app/calculator.py", "tests/test_calculator.py"],
+            "files": {
+                "app/calculator.py": "def add(left: int, right: int) -> int:\n    return 42\n",
+                "tests/test_calculator.py": (
+                    "from app.calculator import add\n\n\n"
+                    "def test_add_returns_magic_number():\n"
+                    "    assert add(20, 22) == 42\n"
+                ),
+            },
+            "generator_metadata": {
+                "control": "known_good",
+                "expected_outcome": "pass",
+                "baseline_accept": True,
+            },
+        }),
+        encoding="utf-8",
+    )
+
+    try:
+        validate_mergeability_corpus(
+            BENCH_ROOT,
+            candidate_paths=(BENCH_ROOT / "candidates" / "noop.json", broken),
+        )
+    except MergeabilityBenchError as exc:
+        assert "broken-known-good expected pass but observed fail" in str(exc)
+    else:  # pragma: no cover - defensive readability
+        raise AssertionError("broken known-good control should fail calibration")
+
+
+def test_mergeability_calibration_covers_seeded_failure_modes(tmp_path):
+    summary = validate_mergeability_corpus(BENCH_ROOT, output_dir=tmp_path)
+
+    assert summary["status"] == "accepted"
+    assert summary["candidate_count"] >= 12
+    assert summary["calibration_metric_applyable"] is True
+    assert summary["gaming_flags"] == []
+    by_kind = {row["control_kind"]: row for row in summary["results"]}
+    assert by_kind["noop"]["observed_outcome"] == "fail"
+    assert by_kind["known_bad"]["observed_outcome"] == "fail"
+    assert by_kind["known_good"]["observed_outcome"] == "pass"
+    assert by_kind["missing_regression_test"]["observed_outcome"] == "fail"
+    assert by_kind["tautological_test"]["observed_outcome"] == "fail"
+    assert by_kind["protected_path_escape"]["scope_status"] == "failed"
+    assert by_kind["scope_escape"]["scope_status"] == "failed"
+    assert by_kind["secondary_rubric_only"]["observed_outcome"] == "pass"
+    assert (tmp_path / "corpus_manifest.json").exists()
+    assert (tmp_path / "calibration_summary.json").exists()
+
+
+def test_saturated_all_one_results_are_non_applyable(tmp_path):
+    bad_but_passing = tmp_path / "bad_but_passing.json"
+    bad_but_passing.write_text(
+        json.dumps({
+            "schema_version": "supervisor-mergeability-candidate/v1",
+            "candidate_id": "bad-but-passing",
+            "task_id": "calculator-addition",
+            "changed_files": ["app/calculator.py", "tests/test_calculator.py"],
+            "files": {
+                "app/calculator.py": "def add(left: int, right: int) -> int:\n    return left + right\n",
+                "tests/test_calculator.py": (
+                    "from app.calculator import add\n\n\n"
+                    "def test_adds_positive_integers():\n"
+                    "    assert add(2, 3) == 5\n"
+                ),
+            },
+            "generator_metadata": {
+                "control": "known_bad",
+                "expected_outcome": "fail",
+                "baseline_accept": True,
+            },
+        }),
+        encoding="utf-8",
+    )
+
+    summary = validate_mergeability_corpus(
+        BENCH_ROOT,
+        strict=False,
+        candidate_paths=(BENCH_ROOT / "candidates" / "known_good.json", bad_but_passing),
+    )
+
+    assert "saturated_all_ones" in summary["gaming_flags"]
+    assert summary["calibration_metric_applyable"] is False
+    assert summary["status"] == "rejected"
+
+
+def test_paired_acceptance_pilot_reports_baseline_false_accept_and_supervisor_rejection(tmp_path):
+    report = run_paired_acceptance_pilot(BENCH_ROOT, output_dir=tmp_path)
+
+    assert report["schema_version"] == "supervisor-mergeability-paired-report/v1"
+    assert report["arms"]["baseline"]["false_accept_count"] >= 1
+    assert report["arms"]["baseline"]["false_accept_rate"] > 0.0
+    assert report["arms"]["supervisor"]["false_accept_count"] == 0
+    assert report["arms"]["supervisor"]["false_accept_rate"] == 0.0
+    false_accepts = [
+        row for row in report["per_task_results"]
+        if row["baseline_false_accept"] and not row["supervisor_false_accept"]
+    ]
+    assert false_accepts
+
+
+def test_paired_acceptance_pilot_computes_true_accept_and_false_reject_rates(tmp_path):
+    report = run_paired_acceptance_pilot(BENCH_ROOT, output_dir=tmp_path)
+
+    baseline = report["arms"]["baseline"]
+    supervisor = report["arms"]["supervisor"]
+    assert baseline["true_accept_denominator"] == supervisor["true_accept_denominator"]
+    assert baseline["true_accept_rate"] == 1.0
+    assert supervisor["true_accept_rate"] == 1.0
+    assert supervisor["false_reject_rate"] == 0.0
+    assert report["delta"]["supervisor_minus_baseline_false_accept_rate"] < 0.0
+
+
+def test_paired_acceptance_pilot_uses_identical_candidate_pool_for_both_arms(tmp_path):
+    report = run_paired_acceptance_pilot(BENCH_ROOT, output_dir=tmp_path)
+    manifest = build_mergeability_corpus_manifest(BENCH_ROOT)
+    task_hashes = {entry["task_id"]: entry["task_hash"] for entry in manifest["tasks"]}
+    candidate_hashes = {
+        (entry["task_id"], entry["candidate_id"]): entry["candidate_hash"]
+        for entry in manifest["candidates"]
+    }
+    expected_pool_hash = _sha256_json([
+        {
+            "task_id": row["task_id"],
+            "task_hash": task_hashes[row["task_id"]],
+            "candidate_id": row["candidate_id"],
+            "candidate_hash": candidate_hashes[(row["task_id"], row["candidate_id"])],
+        }
+        for row in report["per_task_results"]
+    ])
+
+    candidate_count = len(report["per_task_results"])
+    assert report["arms"]["baseline"]["candidate_count"] == candidate_count
+    assert report["arms"]["supervisor"]["candidate_count"] == candidate_count
+    assert report["candidate_pool_sha256"] == expected_pool_hash
+    assert report["disagreements"]
+
+
+def test_paired_acceptance_pilot_exports_replayable_artifacts(tmp_path):
+    report = run_paired_acceptance_pilot(BENCH_ROOT, output_dir=tmp_path)
+
+    assert (tmp_path / "corpus_manifest.json").exists()
+    assert (tmp_path / "calibration_summary.json").exists()
+    assert (tmp_path / "paired_acceptance_report.json").exists()
+    rows_path = tmp_path / "per_task_results.jsonl"
+    assert rows_path.exists()
+    rows = [json.loads(line) for line in rows_path.read_text(encoding="utf-8").splitlines()]
+    assert len(rows) == report["candidate_count"]
+    assert all(row["receipt"]["source"] == "supervisor" for row in rows)
+    assert all(row["receipt"]["evidence_grade"] == "runtime_native" for row in rows)
+    assert report["default_change_allowed"] is False
+    assert report["policy_mutated"] is False
+    assert report["gate_advanced"] is False
+    assert report["recommendation"]["applyable_policy_proposal"] is False
+
+
 def test_autoresearch_mergeability_evaluator_emits_computed_runtime_native_metric(tmp_path):
     attempt_json = tmp_path / "attempt.json"
     attempt_json.write_text(
@@ -234,7 +428,7 @@ def test_autoresearch_mergeability_evaluator_emits_computed_runtime_native_metri
     assert receipt["evidence_grade"] == "runtime_native"
 
 
-def test_autoresearch_mergeability_evaluator_works_with_live_trials(tmp_path):
+def _assert_autoresearch_mergeability_evaluator_works_with_live_trials(tmp_path):
     experiment = AutoresearchExperiment(
         experiment_id="mergeability-exp",
         task_id="calculator-addition",
@@ -287,7 +481,15 @@ def test_autoresearch_mergeability_evaluator_works_with_live_trials(tmp_path):
     assert quality["controls"]["known_good"]["metric_delta"] == 1.0
 
 
-def test_autoresearch_report_only_invariants_with_mergeability_evaluator(tmp_path):
+def test_autoresearch_mergeability_evaluator_works_with_live_trials(tmp_path):
+    _assert_autoresearch_mergeability_evaluator_works_with_live_trials(tmp_path)
+
+
+def test_existing_mergeability_evaluator_quality_checks_remain_green(tmp_path):
+    _assert_autoresearch_mergeability_evaluator_works_with_live_trials(tmp_path)
+
+
+def _assert_autoresearch_report_only_invariants_with_mergeability_evaluator(tmp_path):
     execution_ref = "evaluator-runs/mergeability-attempt.json"
     attempt = AutoresearchAttempt(
         attempt_id="mergeability-attempt",
@@ -334,3 +536,11 @@ def test_autoresearch_report_only_invariants_with_mergeability_evaluator(tmp_pat
         affected_gates=("outcome_review",),
     ) == []
     assert report_contains_derivable_policy_record(report, repo_root=tmp_path) is False
+
+
+def test_autoresearch_report_only_invariants_with_mergeability_evaluator(tmp_path):
+    _assert_autoresearch_report_only_invariants_with_mergeability_evaluator(tmp_path)
+
+
+def test_paired_acceptance_report_cannot_create_applyable_policy_claim(tmp_path):
+    _assert_autoresearch_report_only_invariants_with_mergeability_evaluator(tmp_path)

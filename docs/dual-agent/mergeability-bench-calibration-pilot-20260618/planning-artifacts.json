@@ -1,0 +1,32 @@
+[
+  {
+    "kind": "prd",
+    "path": "docs/dual-agent/mergeability-bench-calibration-pilot-20260618/source/prd.md",
+    "sha256": "52811b15c94833d6b9f8b0e731bd1d7eb4715768935b1eadb262c33c5da5d720"
+  },
+  {
+    "kind": "grill_findings",
+    "path": "docs/dual-agent/mergeability-bench-calibration-pilot-20260618/source/grill-findings.md",
+    "sha256": "73796b261d9674894a733133490f83783190dea61cc18ca5ee128d609e284e9e"
+  },
+  {
+    "kind": "issues",
+    "path": "docs/dual-agent/mergeability-bench-calibration-pilot-20260618/source/issues.md",
+    "sha256": "1f245ebc7c81ba5c1f0c8cc708898eb8d7ea4bb422d9faac3e2e6955f507b9e9"
+  },
+  {
+    "kind": "tdd_plan",
+    "path": "docs/dual-agent/mergeability-bench-calibration-pilot-20260618/source/tdd.md",
+    "sha256": "4810e3cdee1a5b13c35a7a89283d8576ec3b245d3e30f2266636f673d021ddfa"
+  },
+  {
+    "kind": "other",
+    "path": "docs/dual-agent/mergeability-bench-calibration-pilot-20260618/source/grill-findings-tdd.md",
+    "sha256": "586653b5cdb419bea11a768a93ce050e764849bed614c9420525fede19596de1"
+  },
+  {
+    "kind": "implementation_plan",
+    "path": "docs/dual-agent/mergeability-bench-calibration-pilot-20260618/source/implementation-plan.md",
+    "sha256": "cf4a0a6f9487fe3abe9cb0206147ae512e2441c73bd4679b50d54b5cef5ee5fa"
+  }
+]

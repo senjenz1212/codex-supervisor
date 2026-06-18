@@ -14,6 +14,9 @@
     "kind": "calibration_control"
   },
   "generator_metadata": {
-    "control": "known_bad"
+    "baseline_accept": true,
+    "control": "known_bad",
+    "expected_outcome": "fail",
+    "visible_tests_passed": true
   }
 }

@@ -1,0 +1,22 @@
+{
+  "schema_version": "supervisor-mergeability-candidate/v1",
+  "candidate_id": "tautological-test",
+  "task_id": "calculator-addition",
+  "changed_files": [
+    "app/calculator.py",
+    "tests/test_calculator.py"
+  ],
+  "files": {
+    "app/calculator.py": "def add(left: int, right: int) -> int:\n    return left + right\n",
+    "tests/test_calculator.py": "from app.calculator import add\n\n\ndef test_preserves_broken_base_behavior():\n    assert add(5, 3) == 2\n"
+  },
+  "provenance": {
+    "kind": "calibration_control"
+  },
+  "generator_metadata": {
+    "baseline_accept": true,
+    "control": "tautological_test",
+    "expected_outcome": "fail",
+    "visible_tests_passed": true
+  }
+}

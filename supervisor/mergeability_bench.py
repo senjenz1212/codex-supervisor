@@ -18,6 +18,32 @@ from typing import Any, Mapping
 MERGEABILITY_TASK_SCHEMA_VERSION = "supervisor-mergeability-task/v1"
 MERGEABILITY_CANDIDATE_SCHEMA_VERSION = "supervisor-mergeability-candidate/v1"
 MERGEABILITY_RESULT_SCHEMA_VERSION = "supervisor-mergeability-result/v1"
+MERGEABILITY_CORPUS_MANIFEST_SCHEMA_VERSION = "supervisor-mergeability-corpus-manifest/v1"
+MERGEABILITY_CALIBRATION_SCHEMA_VERSION = "supervisor-mergeability-calibration/v1"
+MERGEABILITY_PAIRED_REPORT_SCHEMA_VERSION = "supervisor-mergeability-paired-report/v1"
+
+NEGATIVE_CONTROL_KINDS = frozenset({
+    "noop",
+    "known_bad",
+    "hidden_behavior_miss",
+    "missing_regression_test",
+    "tautological_test",
+    "wrong_test_path",
+    "protected_path_escape",
+    "scope_escape",
+    "overbroad_diff",
+    "lint_build_failure",
+})
+POSITIVE_CONTROL_KINDS = frozenset({"known_good", "secondary_rubric_only"})
+REQUIRED_CALIBRATION_CONTROL_KINDS = frozenset({
+    "noop",
+    "known_bad",
+    "known_good",
+    "missing_regression_test",
+    "tautological_test",
+    "protected_path_escape",
+    "scope_escape",
+})
 
 
 class MergeabilityBenchError(RuntimeError):
@@ -253,6 +279,21 @@ def load_mergeability_candidate(path: str | Path) -> MergeabilityCandidate:
     )
 
 
+def load_mergeability_candidates(
+    root: str | Path,
+    *,
+    task_id: str | None = None,
+) -> tuple[MergeabilityCandidate, ...]:
+    root_path = Path(root).expanduser().resolve()
+    paths = sorted((root_path / "candidates").glob("*.json"))
+    candidates = tuple(load_mergeability_candidate(path) for path in paths)
+    if task_id is not None:
+        candidates = tuple(candidate for candidate in candidates if candidate.task_id == task_id)
+    if not candidates:
+        raise MergeabilityBenchError(f"no mergeability candidate fixtures found under {root_path}")
+    return candidates
+
+
 def grade_mergeability_candidate(
     task: MergeabilityTask,
     candidate: MergeabilityCandidate,
@@ -337,6 +378,332 @@ def grade_mergeability_candidate(
     return result
 
 
+def build_mergeability_corpus_manifest(
+    bench_root: str | Path,
+    *,
+    candidate_paths: tuple[str | Path, ...] = (),
+) -> dict[str, Any]:
+    bench_root_path = Path(bench_root).expanduser().resolve()
+    tasks = load_mergeability_tasks(bench_root_path)
+    candidates = (
+        tuple(load_mergeability_candidate(path) for path in candidate_paths)
+        if candidate_paths
+        else load_mergeability_candidates(bench_root_path)
+    )
+    candidates_by_task: dict[str, list[MergeabilityCandidate]] = {}
+    for candidate in candidates:
+        candidates_by_task.setdefault(candidate.task_id, []).append(candidate)
+
+    task_entries: list[dict[str, Any]] = []
+    included_task_ids: list[str] = []
+    for task in tasks:
+        task_candidates = sorted(
+            candidates_by_task.get(task.task_id, []),
+            key=lambda candidate: candidate.candidate_id,
+        )
+        positive = [
+            candidate.candidate_id
+            for candidate in task_candidates
+            if _candidate_expected_outcome(candidate) == "pass"
+        ]
+        negative = [
+            candidate.candidate_id
+            for candidate in task_candidates
+            if _candidate_expected_outcome(candidate) == "fail"
+        ]
+        calibration_eligible = bool(positive and negative)
+        if calibration_eligible:
+            included_task_ids.append(task.task_id)
+        task_entries.append({
+            "task_id": task.task_id,
+            "task_hash": task.task_hash,
+            "fixture_path": task.fixture_path,
+            "repo_fixture_ref": task.repo_fixture_ref,
+            "candidate_count": len(task_candidates),
+            "positive_controls": positive,
+            "negative_controls": negative,
+            "control_kinds": sorted({_candidate_control_kind(candidate) for candidate in task_candidates}),
+            "calibration_eligible": calibration_eligible,
+            "excluded_reason": "" if calibration_eligible else "requires_positive_and_negative_controls",
+        })
+
+    candidate_entries = [
+        {
+            "candidate_id": candidate.candidate_id,
+            "task_id": candidate.task_id,
+            "candidate_ref": candidate.candidate_ref,
+            "candidate_hash": candidate.candidate_hash,
+            "control_kind": _candidate_control_kind(candidate),
+            "expected_outcome": _candidate_expected_outcome(candidate),
+            "baseline_accept": _baseline_accepts(candidate),
+            "changed_files": list(candidate.changed_files),
+        }
+        for candidate in sorted(candidates, key=lambda item: (item.task_id, item.candidate_id))
+    ]
+    manifest = {
+        "schema_version": MERGEABILITY_CORPUS_MANIFEST_SCHEMA_VERSION,
+        "bench_root": bench_root_path.as_posix(),
+        "task_count": len(tasks),
+        "candidate_count": len(candidates),
+        "included_task_ids": included_task_ids,
+        "excluded_task_ids": [
+            entry["task_id"] for entry in task_entries if not entry["calibration_eligible"]
+        ],
+        "tasks": task_entries,
+        "candidates": candidate_entries,
+        "manifest_sha256": "",
+    }
+    manifest["manifest_sha256"] = _sha256_json({
+        key: value for key, value in manifest.items() if key != "manifest_sha256"
+    })
+    return manifest
+
+
+def validate_mergeability_corpus(
+    bench_root: str | Path,
+    *,
+    output_dir: str | Path | None = None,
+    strict: bool = True,
+    candidate_paths: tuple[str | Path, ...] = (),
+    timeout_s: float = 30.0,
+) -> dict[str, Any]:
+    bench_root_path = Path(bench_root).expanduser().resolve()
+    manifest = build_mergeability_corpus_manifest(bench_root_path, candidate_paths=candidate_paths)
+    tasks = {task.task_id: task for task in load_mergeability_tasks(bench_root_path)}
+    candidates = (
+        tuple(load_mergeability_candidate(path) for path in candidate_paths)
+        if candidate_paths
+        else load_mergeability_candidates(bench_root_path)
+    )
+    included_task_ids = set(manifest["included_task_ids"])
+    errors: list[str] = []
+    if manifest["excluded_task_ids"]:
+        errors.append(
+            "tasks excluded from aggregate reporting: "
+            + ", ".join(
+                f"{entry['task_id']}:{entry['excluded_reason']}"
+                for entry in manifest["tasks"]
+                if not entry["calibration_eligible"]
+            )
+        )
+
+    observed_control_kinds = {_candidate_control_kind(candidate) for candidate in candidates}
+    missing_control_kinds = sorted(REQUIRED_CALIBRATION_CONTROL_KINDS - observed_control_kinds)
+    if missing_control_kinds:
+        errors.append("missing required calibration controls: " + ", ".join(missing_control_kinds))
+
+    output_path = Path(output_dir).expanduser() if output_dir is not None else None
+    result_entries: list[dict[str, Any]] = []
+    receipt_entries: list[dict[str, Any]] = []
+    for candidate in sorted(candidates, key=lambda item: (item.task_id, item.candidate_id)):
+        task = tasks.get(candidate.task_id)
+        if task is None:
+            errors.append(f"candidate {candidate.candidate_id} targets missing task {candidate.task_id}")
+            continue
+        if candidate.task_id not in included_task_ids:
+            continue
+        result_output = output_path / "mergeability-results" if output_path is not None else None
+        result = grade_mergeability_candidate(
+            task,
+            candidate,
+            bench_root=bench_root_path,
+            output_dir=result_output,
+            timeout_s=timeout_s,
+        )
+        result_ref = (
+            (result_output / f"{result.task_id}-{result.candidate_id}.json").as_posix()
+            if result_output is not None else ""
+        )
+        receipt = result_receipt(result, result_ref=result_ref)
+        expected = _candidate_expected_outcome(candidate)
+        observed = "pass" if result.final_score >= 1.0 else "fail"
+        if observed != expected:
+            errors.append(
+                f"candidate {candidate.candidate_id} expected {expected} but observed {observed}"
+            )
+        result_entries.append({
+            "task_id": result.task_id,
+            "candidate_id": result.candidate_id,
+            "control_kind": _candidate_control_kind(candidate),
+            "expected_outcome": expected,
+            "observed_outcome": observed,
+            "final_score": result.final_score,
+            "blocker_status": result.blocker_status,
+            "hidden_test_status": result.hidden_test_status,
+            "reverse_test_status": result.reverse_test_status,
+            "scope_status": result.scope_status,
+            "lint_build_status": result.lint_build_status,
+            "failures": list(result.failures),
+            "receipt_id": receipt["receipt_id"],
+            "receipt": receipt,
+        })
+        receipt_entries.append(receipt)
+
+    calibration_flags = _calibration_non_applyable_flags(result_entries)
+    if "saturated_all_ones" in calibration_flags:
+        errors.append("all calibration results scored 1.0; corpus is non-discriminating")
+    if "no_passing_positive_control" in calibration_flags:
+        errors.append("corpus has no passing positive control")
+    if "no_failing_negative_control" in calibration_flags:
+        errors.append("corpus has no failing negative control")
+
+    summary = {
+        "schema_version": MERGEABILITY_CALIBRATION_SCHEMA_VERSION,
+        "status": "accepted" if not errors else "rejected",
+        "bench_root": bench_root_path.as_posix(),
+        "manifest_sha256": manifest["manifest_sha256"],
+        "task_count": manifest["task_count"],
+        "candidate_count": manifest["candidate_count"],
+        "included_task_ids": manifest["included_task_ids"],
+        "excluded_task_ids": manifest["excluded_task_ids"],
+        "required_control_kinds": sorted(REQUIRED_CALIBRATION_CONTROL_KINDS),
+        "observed_control_kinds": sorted(observed_control_kinds),
+        "results": result_entries,
+        "receipt_ids": [receipt["receipt_id"] for receipt in receipt_entries],
+        "gaming_flags": calibration_flags,
+        "calibration_metric_applyable": not bool(errors),
+        "default_change_allowed": False,
+        "policy_mutated": False,
+        "gate_advanced": False,
+        "errors": errors,
+    }
+    summary["summary_sha256"] = _sha256_json({
+        key: value for key, value in summary.items() if key != "summary_sha256"
+    })
+    if output_path is not None:
+        _export_calibration_artifacts(output_path, manifest=manifest, summary=summary)
+    if strict and errors:
+        raise MergeabilityBenchError("; ".join(errors))
+    return summary
+
+
+def run_paired_acceptance_pilot(
+    bench_root: str | Path,
+    *,
+    output_dir: str | Path | None = None,
+    candidate_paths: tuple[str | Path, ...] = (),
+    timeout_s: float = 30.0,
+) -> dict[str, Any]:
+    started = time.monotonic()
+    bench_root_path = Path(bench_root).expanduser().resolve()
+    output_path = Path(output_dir).expanduser() if output_dir is not None else None
+    manifest = build_mergeability_corpus_manifest(bench_root_path, candidate_paths=candidate_paths)
+    calibration = validate_mergeability_corpus(
+        bench_root_path,
+        output_dir=output_path,
+        strict=True,
+        candidate_paths=candidate_paths,
+        timeout_s=timeout_s,
+    )
+    candidates = {
+        candidate.candidate_id: candidate
+        for candidate in (
+            tuple(load_mergeability_candidate(path) for path in candidate_paths)
+            if candidate_paths else load_mergeability_candidates(bench_root_path)
+        )
+    }
+
+    rows: list[dict[str, Any]] = []
+    for result in calibration["results"]:
+        candidate = candidates[result["candidate_id"]]
+        oracle_accept = float(result["final_score"]) >= 1.0
+        baseline_accept = _baseline_accepts(candidate)
+        supervisor_accept = oracle_accept
+        row = {
+            "task_id": result["task_id"],
+            "candidate_id": result["candidate_id"],
+            "control_kind": result["control_kind"],
+            "expected_outcome": result["expected_outcome"],
+            "oracle_accept": oracle_accept,
+            "baseline_accept": baseline_accept,
+            "supervisor_accept": supervisor_accept,
+            "baseline_false_accept": baseline_accept and not oracle_accept,
+            "supervisor_false_accept": supervisor_accept and not oracle_accept,
+            "baseline_false_reject": (not baseline_accept) and oracle_accept,
+            "supervisor_false_reject": (not supervisor_accept) and oracle_accept,
+            "receipt_id": result["receipt_id"],
+            "receipt": result["receipt"],
+            "blocker_status": result["blocker_status"],
+            "failures": result["failures"],
+        }
+        rows.append(row)
+
+    baseline = _summarize_acceptance_arm(rows, arm="baseline")
+    supervisor = _summarize_acceptance_arm(rows, arm="supervisor")
+    task_hashes = {entry["task_id"]: entry["task_hash"] for entry in manifest["tasks"]}
+    candidate_hashes = {
+        (entry["task_id"], entry["candidate_id"]): entry["candidate_hash"]
+        for entry in manifest["candidates"]
+    }
+    disagreements = [
+        {
+            "task_id": row["task_id"],
+            "candidate_id": row["candidate_id"],
+            "control_kind": row["control_kind"],
+            "baseline_accept": row["baseline_accept"],
+            "supervisor_accept": row["supervisor_accept"],
+            "oracle_accept": row["oracle_accept"],
+            "reason": "acceptance_policy_disagreed",
+        }
+        for row in rows
+        if row["baseline_accept"] != row["supervisor_accept"]
+    ]
+    report = {
+        "schema_version": MERGEABILITY_PAIRED_REPORT_SCHEMA_VERSION,
+        "bench_root": bench_root_path.as_posix(),
+        "manifest_sha256": manifest["manifest_sha256"],
+        "calibration_summary_sha256": calibration["summary_sha256"],
+        "task_count": manifest["task_count"],
+        "included_task_ids": manifest["included_task_ids"],
+        "candidate_count": len(rows),
+        "candidate_pool_sha256": _sha256_json([
+            {
+                "task_id": row["task_id"],
+                "task_hash": task_hashes[row["task_id"]],
+                "candidate_id": row["candidate_id"],
+                "candidate_hash": candidate_hashes[(row["task_id"], row["candidate_id"])],
+            }
+            for row in rows
+        ]),
+        "arms": {
+            "baseline": baseline,
+            "supervisor": supervisor,
+        },
+        "delta": {
+            "supervisor_minus_baseline_false_accept_rate": round(
+                supervisor["false_accept_rate"] - baseline["false_accept_rate"], 6
+            ),
+            "supervisor_minus_baseline_true_accept_rate": round(
+                supervisor["true_accept_rate"] - baseline["true_accept_rate"], 6
+            ),
+        },
+        "disagreements": disagreements,
+        "per_task_results": rows,
+        "cost_usd": 0.0,
+        "wall_clock_s": round(time.monotonic() - started, 6),
+        "default_change_allowed": False,
+        "policy_mutated": False,
+        "gate_advanced": False,
+        "recommendation": {
+            "report_only": True,
+            "applyable_policy_proposal": False,
+            "next_step": "use this calibrated pilot before any powered live-generation experiment",
+        },
+    }
+    report["report_sha256"] = _sha256_json({
+        key: value for key, value in report.items() if key != "report_sha256"
+    })
+    if output_path is not None:
+        _export_paired_acceptance_artifacts(
+            output_path,
+            manifest=manifest,
+            calibration=calibration,
+            report=report,
+            rows=rows,
+        )
+    return report
+
+
 def result_receipt(result: MergeabilityResult, *, result_ref: str = "") -> dict[str, Any]:
     payload = result.to_payload()
     return {
@@ -392,6 +759,125 @@ def _build_result(
         artifact_hashes=artifact_hashes,
         failures=failures,
     )
+
+
+def _candidate_control_kind(candidate: MergeabilityCandidate) -> str:
+    metadata = candidate.generator_metadata
+    control = str(metadata.get("control") or metadata.get("control_kind") or "").strip()
+    if control:
+        return control
+    candidate_id = candidate.candidate_id.replace("-", "_")
+    if candidate_id in POSITIVE_CONTROL_KINDS | NEGATIVE_CONTROL_KINDS:
+        return candidate_id
+    return "candidate"
+
+
+def _candidate_expected_outcome(candidate: MergeabilityCandidate) -> str:
+    raw = str(candidate.generator_metadata.get("expected_outcome") or "").strip().lower()
+    if raw in {"pass", "passed", "accept", "accepted", "true_positive"}:
+        return "pass"
+    if raw in {"fail", "failed", "reject", "rejected", "false_positive"}:
+        return "fail"
+    control = _candidate_control_kind(candidate)
+    if control in POSITIVE_CONTROL_KINDS:
+        return "pass"
+    return "fail"
+
+
+def _baseline_accepts(candidate: MergeabilityCandidate) -> bool:
+    metadata = candidate.generator_metadata
+    provenance = candidate.provenance
+    explicit = metadata.get("baseline_accept", provenance.get("baseline_accept"))
+    if isinstance(explicit, bool):
+        return explicit
+    for key in ("declared_success", "visible_tests_passed", "self_reported_success"):
+        value = metadata.get(key, provenance.get(key))
+        if isinstance(value, bool) and value:
+            return True
+    return _candidate_expected_outcome(candidate) == "pass"
+
+
+def _calibration_non_applyable_flags(results: list[dict[str, Any]]) -> list[str]:
+    if not results:
+        return ["empty_calibration_results"]
+    flags: list[str] = []
+    if all(float(result.get("final_score") or 0.0) >= 1.0 for result in results):
+        flags.append("saturated_all_ones")
+    if not any(
+        result["expected_outcome"] == "pass" and result["observed_outcome"] == "pass"
+        for result in results
+    ):
+        flags.append("no_passing_positive_control")
+    if not any(
+        result["expected_outcome"] == "fail" and result["observed_outcome"] == "fail"
+        for result in results
+    ):
+        flags.append("no_failing_negative_control")
+    return flags
+
+
+def _summarize_acceptance_arm(rows: list[dict[str, Any]], *, arm: str) -> dict[str, Any]:
+    accept_key = f"{arm}_accept"
+    false_accept_denominator = sum(1 for row in rows if not row["oracle_accept"])
+    true_accept_denominator = sum(1 for row in rows if row["oracle_accept"])
+    false_accept_count = sum(1 for row in rows if row[accept_key] and not row["oracle_accept"])
+    true_accept_count = sum(1 for row in rows if row[accept_key] and row["oracle_accept"])
+    false_reject_count = sum(1 for row in rows if not row[accept_key] and row["oracle_accept"])
+    return {
+        "arm": arm,
+        "candidate_count": len(rows),
+        "accepted_count": sum(1 for row in rows if row[accept_key]),
+        "rejected_count": sum(1 for row in rows if not row[accept_key]),
+        "false_accept_count": false_accept_count,
+        "false_accept_denominator": false_accept_denominator,
+        "false_accept_rate": _rate(false_accept_count, false_accept_denominator),
+        "true_accept_count": true_accept_count,
+        "true_accept_denominator": true_accept_denominator,
+        "true_accept_rate": _rate(true_accept_count, true_accept_denominator),
+        "false_reject_count": false_reject_count,
+        "false_reject_denominator": true_accept_denominator,
+        "false_reject_rate": _rate(false_reject_count, true_accept_denominator),
+        "cost_usd": 0.0,
+    }
+
+
+def _rate(count: int, denominator: int) -> float:
+    return round(count / denominator, 6) if denominator else 0.0
+
+
+def _export_calibration_artifacts(
+    output_dir: Path,
+    *,
+    manifest: dict[str, Any],
+    summary: dict[str, Any],
+) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "corpus_manifest.json").write_text(
+        json.dumps(manifest, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    (output_dir / "calibration_summary.json").write_text(
+        json.dumps(summary, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _export_paired_acceptance_artifacts(
+    output_dir: Path,
+    *,
+    manifest: dict[str, Any],
+    calibration: dict[str, Any],
+    report: dict[str, Any],
+    rows: list[dict[str, Any]],
+) -> None:
+    _export_calibration_artifacts(output_dir, manifest=manifest, summary=calibration)
+    (output_dir / "paired_acceptance_report.json").write_text(
+        json.dumps(report, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    with (output_dir / "per_task_results.jsonl").open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, sort_keys=True) + "\n")
 
 
 def _write_result_artifact(result: MergeabilityResult, *, output_dir: Path) -> Path:

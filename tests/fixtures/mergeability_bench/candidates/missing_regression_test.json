@@ -1,0 +1,20 @@
+{
+  "schema_version": "supervisor-mergeability-candidate/v1",
+  "candidate_id": "missing-regression-test",
+  "task_id": "calculator-addition",
+  "changed_files": [
+    "app/calculator.py"
+  ],
+  "files": {
+    "app/calculator.py": "def add(left: int, right: int) -> int:\n    return left + right\n"
+  },
+  "provenance": {
+    "kind": "calibration_control"
+  },
+  "generator_metadata": {
+    "baseline_accept": true,
+    "control": "missing_regression_test",
+    "expected_outcome": "fail",
+    "visible_tests_passed": true
+  }
+}
