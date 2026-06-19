@@ -21,6 +21,16 @@ MERGEABILITY_RESULT_SCHEMA_VERSION = "supervisor-mergeability-result/v1"
 MERGEABILITY_CORPUS_MANIFEST_SCHEMA_VERSION = "supervisor-mergeability-corpus-manifest/v1"
 MERGEABILITY_CALIBRATION_SCHEMA_VERSION = "supervisor-mergeability-calibration/v1"
 MERGEABILITY_PAIRED_REPORT_SCHEMA_VERSION = "supervisor-mergeability-paired-report/v1"
+SUPERVISOR_REVIEW_INPUT_SCHEMA_VERSION = "supervisor-mergeability-candidate-review-input/v1"
+SUPERVISOR_REVIEW_RESULT_SCHEMA_VERSION = "supervisor-mergeability-candidate-review/v1"
+
+ORACLE_REVIEW_FORBIDDEN_KEYS = frozenset({
+    "expected_outcome",
+    "final_score",
+    "oracle_accept",
+    "hidden_test_commands",
+})
+ORACLE_REVIEW_FORBIDDEN_TEXT = ("hidden/test_behavior.py", ".mergeability/")
 
 NEGATIVE_CONTROL_KINDS = frozenset({
     "noop",
@@ -583,32 +593,43 @@ def run_paired_acceptance_pilot(
     output_dir: str | Path | None = None,
     candidate_paths: tuple[str | Path, ...] = (),
     timeout_s: float = 30.0,
+    strict_calibration: bool = True,
 ) -> dict[str, Any]:
     started = time.monotonic()
     bench_root_path = Path(bench_root).expanduser().resolve()
     output_path = Path(output_dir).expanduser() if output_dir is not None else None
     manifest = build_mergeability_corpus_manifest(bench_root_path, candidate_paths=candidate_paths)
+    tasks = {task.task_id: task for task in load_mergeability_tasks(bench_root_path)}
+    candidate_list = (
+        tuple(load_mergeability_candidate(path) for path in candidate_paths)
+        if candidate_paths else load_mergeability_candidates(bench_root_path)
+    )
+    public_reviews = {
+        candidate.candidate_id: review_mergeability_candidate_publicly(
+            tasks[candidate.task_id],
+            candidate,
+            bench_root=bench_root_path,
+            timeout_s=timeout_s,
+        )
+        for candidate in candidate_list
+        if candidate.task_id in tasks
+    }
     calibration = validate_mergeability_corpus(
         bench_root_path,
         output_dir=output_path,
-        strict=True,
+        strict=strict_calibration,
         candidate_paths=candidate_paths,
         timeout_s=timeout_s,
     )
-    candidates = {
-        candidate.candidate_id: candidate
-        for candidate in (
-            tuple(load_mergeability_candidate(path) for path in candidate_paths)
-            if candidate_paths else load_mergeability_candidates(bench_root_path)
-        )
-    }
+    candidates = {candidate.candidate_id: candidate for candidate in candidate_list}
 
     rows: list[dict[str, Any]] = []
     for result in calibration["results"]:
         candidate = candidates[result["candidate_id"]]
+        supervisor_review = public_reviews[result["candidate_id"]]
         oracle_accept = float(result["final_score"]) >= 1.0
         baseline_accept = _baseline_accepts(candidate)
-        supervisor_accept = oracle_accept
+        supervisor_accept = bool(supervisor_review["accept"])
         row = {
             "task_id": result["task_id"],
             "candidate_id": result["candidate_id"],
@@ -617,20 +638,25 @@ def run_paired_acceptance_pilot(
             "oracle_accept": oracle_accept,
             "baseline_accept": baseline_accept,
             "supervisor_accept": supervisor_accept,
-            "oracle_ceiling_accept": supervisor_accept,
+            "supervisor_candidate_review_accept": supervisor_accept,
+            "oracle_ceiling_accept": oracle_accept,
             "baseline_false_accept": baseline_accept and not oracle_accept,
             "supervisor_false_accept": supervisor_accept and not oracle_accept,
-            "oracle_ceiling_false_accept": supervisor_accept and not oracle_accept,
+            "supervisor_candidate_review_false_accept": supervisor_accept and not oracle_accept,
+            "oracle_ceiling_false_accept": oracle_accept and not oracle_accept,
             "baseline_false_reject": (not baseline_accept) and oracle_accept,
             "supervisor_false_reject": (not supervisor_accept) and oracle_accept,
-            "oracle_ceiling_false_reject": (not supervisor_accept) and oracle_accept,
+            "supervisor_candidate_review_false_reject": (not supervisor_accept) and oracle_accept,
+            "oracle_ceiling_false_reject": (not oracle_accept) and oracle_accept,
             "receipt_id": result["receipt_id"],
             "receipt": result["receipt"],
             "blocker_status": result["blocker_status"],
             "failures": result["failures"],
             "baseline_decision_source": "candidate_self_report",
             "oracle_ceiling_decision_source": "oracle_final_score",
-            "supervisor_decision_source": "oracle_final_score",
+            "supervisor_decision_source": "supervisor_candidate_review",
+            "supervisor_candidate_review_decision_source": "supervisor_candidate_review",
+            "supervisor_review": supervisor_review,
         }
         rows.append(row)
 
@@ -649,8 +675,16 @@ def run_paired_acceptance_pilot(
         oracle_coupled=True,
     )
     supervisor = dict(oracle_ceiling)
+    supervisor_candidate_review = _summarize_acceptance_arm(
+        rows,
+        arm="supervisor_candidate_review",
+        arm_role="supervisor_candidate_review",
+        decision_source="supervisor_candidate_review",
+        oracle_coupled=False,
+    )
+    supervisor = dict(supervisor_candidate_review)
     supervisor["arm"] = "supervisor"
-    supervisor["legacy_alias_of"] = "oracle_ceiling"
+    supervisor["legacy_alias_of"] = "supervisor_candidate_review"
     task_hashes = {entry["task_id"]: entry["task_hash"] for entry in manifest["tasks"]}
     candidate_hashes = {
         (entry["task_id"], entry["candidate_id"]): entry["candidate_hash"]
@@ -664,11 +698,34 @@ def run_paired_acceptance_pilot(
             "baseline_accept": row["baseline_accept"],
             "supervisor_accept": row["supervisor_accept"],
             "oracle_accept": row["oracle_accept"],
-            "reason": "acceptance_policy_disagreed",
+            "reason": "supervisor_candidate_review_disagreed_with_oracle",
         }
         for row in rows
-        if row["baseline_accept"] != row["supervisor_accept"]
+        if row["supervisor_accept"] != row["oracle_accept"]
     ]
+    positive_control_count = sum(
+        1 for entry in manifest["candidates"] if entry["expected_outcome"] == "pass"
+    )
+    negative_control_count = sum(
+        1 for entry in manifest["candidates"] if entry["expected_outcome"] == "fail"
+    )
+    oracle_agreement = {
+        "supervisor_candidate_review": _oracle_agreement(rows, arm="supervisor_candidate_review"),
+        "baseline": _oracle_agreement(rows, arm="baseline"),
+        "oracle_ceiling": _oracle_agreement(rows, arm="oracle_ceiling"),
+    }
+    gaming_flags = set(calibration["gaming_flags"])
+    gaming_flags.update(
+        flag
+        for row in rows
+        for flag in row["supervisor_review"].get("gaming_flags", [])
+    )
+    if _should_trip_perfect_agreement(rows, oracle_agreement["supervisor_candidate_review"]):
+        gaming_flags.add("perfect_oracle_agreement_tripwire")
+    matched_true_accept = _false_accept_at_matched_true_accept(
+        baseline=baseline,
+        supervisor=supervisor_candidate_review,
+    )
     report = {
         "schema_version": MERGEABILITY_PAIRED_REPORT_SCHEMA_VERSION,
         "bench_root": bench_root_path.as_posix(),
@@ -677,6 +734,8 @@ def run_paired_acceptance_pilot(
         "task_count": manifest["task_count"],
         "included_task_ids": manifest["included_task_ids"],
         "candidate_count": len(rows),
+        "positive_control_count": positive_control_count,
+        "negative_control_count": negative_control_count,
         "candidate_pool_sha256": _sha256_json([
             {
                 "task_id": row["task_id"],
@@ -688,6 +747,7 @@ def run_paired_acceptance_pilot(
         ]),
         "arms": {
             "baseline": baseline,
+            "supervisor_candidate_review": supervisor_candidate_review,
             "oracle_ceiling": oracle_ceiling,
             "supervisor": supervisor,
         },
@@ -699,23 +759,27 @@ def run_paired_acceptance_pilot(
                 oracle_ceiling["true_accept_rate"] - baseline["true_accept_rate"], 6
             ),
             "supervisor_minus_baseline_false_accept_rate": round(
-                supervisor["false_accept_rate"] - baseline["false_accept_rate"], 6
+                supervisor_candidate_review["false_accept_rate"] - baseline["false_accept_rate"], 6
             ),
             "supervisor_minus_baseline_true_accept_rate": round(
-                supervisor["true_accept_rate"] - baseline["true_accept_rate"], 6
+                supervisor_candidate_review["true_accept_rate"] - baseline["true_accept_rate"], 6
             ),
         },
+        "false_accept_at_matched_true_accept": matched_true_accept,
+        "matched_true_accept_status": matched_true_accept["status"],
+        "oracle_agreement": oracle_agreement,
         "disagreements": disagreements,
         "per_task_results": rows,
         "cost_usd": 0.0,
         "wall_clock_s": round(time.monotonic() - started, 6),
-        "report_label": "oracle_upper_bound",
+        "report_label": "calibration",
         "metric_applyable": False,
         "improvement_claim_allowed": False,
-        "gaming_flags": ["oracle_coupled_treatment_arm"],
+        "gaming_flags": sorted(gaming_flags),
         "validity_notes": [
-            "The treatment arm reuses the oracle final score as its acceptance decision, "
-            "so the report describes an oracle ceiling rather than independent supervisor evidence."
+            "Supervisor candidate review is recorded from public-only evidence before hidden oracle "
+            "grading is consulted for aggregate metrics.",
+            "This fixture-scale report is calibration evidence only, not proof of production improvement.",
         ],
         "default_change_allowed": False,
         "policy_mutated": False,
@@ -723,7 +787,7 @@ def run_paired_acceptance_pilot(
         "recommendation": {
             "report_only": True,
             "applyable_policy_proposal": False,
-            "next_step": "use this calibrated pilot before any powered live-generation experiment",
+            "next_step": "grow an oracle-isolated corpus before any powered live-generation experiment",
         },
     }
     report["report_sha256"] = _sha256_json({
@@ -738,6 +802,188 @@ def run_paired_acceptance_pilot(
             rows=rows,
         )
     return report
+
+
+def review_mergeability_candidate_publicly(
+    task: MergeabilityTask,
+    candidate: MergeabilityCandidate,
+    *,
+    bench_root: str | Path,
+    timeout_s: float = 30.0,
+) -> dict[str, Any]:
+    """Review a candidate from public task/candidate evidence only."""
+    if candidate.task_id != task.task_id:
+        raise MergeabilityBenchError(
+            f"candidate {candidate.candidate_id} targets {candidate.task_id}, expected {task.task_id}"
+        )
+    bench_root_path = Path(bench_root).expanduser().resolve()
+    fixture_root = (bench_root_path / task.repo_fixture_ref).resolve()
+    if not fixture_root.exists():
+        raise MergeabilityBenchError(f"repo fixture missing: {fixture_root}")
+
+    protected_candidate_paths = sorted(
+        path for path in set(candidate.changed_files) | set(candidate.files)
+        if _matches_prefix(_normalise_relpath(path), task.protected_paths)
+    )
+    public_files = {
+        path: content
+        for path, content in candidate.files.items()
+        if not _matches_prefix(_normalise_relpath(path), task.protected_paths)
+    }
+    public_changed_files = [
+        path for path in candidate.changed_files
+        if not _matches_prefix(_normalise_relpath(path), task.protected_paths)
+    ]
+    public_candidate = MergeabilityCandidate(
+        candidate_id=candidate.candidate_id,
+        task_id=candidate.task_id,
+        files=public_files,
+        changed_files=tuple(public_changed_files),
+        provenance={},
+        generator_metadata={},
+        candidate_ref=candidate.candidate_ref,
+        candidate_hash=candidate.candidate_hash,
+    )
+    public_input_payload = _supervisor_review_public_input(
+        task=task,
+        candidate=public_candidate,
+    )
+    public_input_violations = _public_input_oracle_refs(public_input_payload)
+    failures: list[str] = []
+    gaming_flags: list[str] = []
+    probe_results: list[dict[str, Any]] = []
+    command_results: list[CommandResult] = []
+    worktree_protected_refs: tuple[str, ...] = ()
+    worktree_hash = ""
+
+    if protected_candidate_paths or public_input_violations:
+        failures.append("oracle_isolation_violation")
+        gaming_flags.append("oracle_isolation_violation")
+        probe_results.append({
+            "probe_id": "oracle_isolation",
+            "status": "red",
+            "reason": "oracle_isolation_violation",
+        })
+
+    with tempfile.TemporaryDirectory(prefix="mergeability-public-review-") as temp_dir:
+        temp_root = Path(temp_dir)
+        candidate_worktree = temp_root / "candidate"
+        reverse_worktree = temp_root / "reverse"
+        _copy_public_fixture_tree(fixture_root, candidate_worktree, protected_paths=task.protected_paths)
+        _copy_public_fixture_tree(fixture_root, reverse_worktree, protected_paths=task.protected_paths)
+        worktree_protected_refs = _protected_refs_in_tree(
+            candidate_worktree,
+            protected_paths=task.protected_paths,
+        )
+        if worktree_protected_refs:
+            failures.append("oracle_isolation_violation")
+            gaming_flags.append("oracle_isolation_violation")
+            probe_results.append({
+                "probe_id": "oracle_isolation",
+                "status": "red",
+                "reason": "protected_material_in_public_worktree",
+            })
+
+        if "oracle_isolation_violation" not in failures:
+            _apply_candidate_files(candidate_worktree, public_candidate.files)
+            candidate_test_files = _candidate_test_files(public_candidate.files)
+            _apply_candidate_files(reverse_worktree, candidate_test_files)
+
+            scope_failures = _scope_failures(task, public_candidate)
+            failures.extend(scope_failures)
+            if scope_failures:
+                probe_results.append({
+                    "probe_id": "mutable_surface",
+                    "status": "red",
+                    "reason": "scope_failures",
+                    "failure_count": len(scope_failures),
+                })
+
+            if not candidate_test_files:
+                failures.append("public_review:no_candidate_tests_submitted")
+                probe_results.append({
+                    "probe_id": "candidate_tests",
+                    "status": "red",
+                    "reason": "no_candidate_tests_submitted",
+                })
+
+            candidate_precheck = _public_test_target_failures(
+                task.reverse_test_commands,
+                worktree=candidate_worktree,
+                label="candidate tests",
+            )
+            failures.extend(candidate_precheck)
+            candidate_results = [
+                _run_command(command, cwd=candidate_worktree, timeout_s=timeout_s, name="public_candidate_test")
+                for command in task.reverse_test_commands
+                if candidate_test_files and not candidate_precheck
+            ]
+            command_results.extend(candidate_results)
+
+            reverse_precheck = _reverse_test_precheck_failures(
+                task.reverse_test_commands,
+                reverse_worktree=reverse_worktree,
+                candidate_test_files=candidate_test_files,
+            )
+            failures.extend(reverse_precheck)
+            reverse_results = [
+                _run_command(
+                    command,
+                    cwd=reverse_worktree,
+                    timeout_s=timeout_s,
+                    name="public_reverse_test",
+                    expected_failure=True,
+                )
+                for command in task.reverse_test_commands
+                if candidate_test_files and not reverse_precheck
+            ]
+            command_results.extend(reverse_results)
+
+            lint_results = [
+                _run_command(command, cwd=candidate_worktree, timeout_s=timeout_s, name="public_lint_build")
+                for command in task.lint_build_commands
+            ]
+            command_results.extend(lint_results)
+
+            failures.extend(_command_failures("candidate tests", candidate_results, expect_pass=True))
+            failures.extend(_command_failures("reverse tests", reverse_results, expect_pass=False))
+            failures.extend(_command_failures("lint/build", lint_results, expect_pass=True))
+            _append_command_probe(probe_results, "candidate_tests", candidate_results, empty_ok=False)
+            _append_command_probe(probe_results, "reverse_tests", reverse_results, empty_ok=not bool(candidate_test_files))
+            _append_command_probe(probe_results, "lint_build", lint_results, empty_ok=True)
+
+        worktree_hash = _hash_tree(candidate_worktree)
+
+    clean_failures = sorted(set(failures))
+    accept = not clean_failures
+    if accept:
+        probe_results.append({
+            "probe_id": "supervisor_candidate_review",
+            "status": "green",
+            "reason": "public_review_passed",
+        })
+    return {
+        "schema_version": SUPERVISOR_REVIEW_RESULT_SCHEMA_VERSION,
+        "task_id": task.task_id,
+        "candidate_id": candidate.candidate_id,
+        "decision": "accept" if accept else "reject",
+        "accept": accept,
+        "reasons": clean_failures,
+        "probe_results": probe_results,
+        "command_results": [result.to_payload() for result in command_results],
+        "reviewer_packet_refs": [],
+        "evidence_refs": [
+            f"mergeability_task_public:{task.fixture_path}",
+            f"mergeability_candidate_public:{candidate.candidate_ref or candidate.candidate_id}",
+        ],
+        "candidate_review_worktree_hash": worktree_hash,
+        "public_input_hash": _sha256_json(public_input_payload),
+        "public_input_payload": public_input_payload,
+        "protected_paths_present_in_review_worktree": list(worktree_protected_refs),
+        "gaming_flags": sorted(set(gaming_flags)),
+        "decision_source": "supervisor_candidate_review",
+        "oracle_coupled": False,
+    }
 
 
 def result_receipt(result: MergeabilityResult, *, result_ref: str = "") -> dict[str, Any]:
@@ -884,6 +1130,189 @@ def _summarize_acceptance_arm(
         "false_reject_denominator": true_accept_denominator,
         "false_reject_rate": _rate(false_reject_count, true_accept_denominator),
         "cost_usd": 0.0,
+    }
+
+
+def _supervisor_review_public_input(
+    *,
+    task: MergeabilityTask,
+    candidate: MergeabilityCandidate,
+) -> dict[str, Any]:
+    candidate_test_files = _candidate_test_files(candidate.files)
+    return {
+        "schema_version": SUPERVISOR_REVIEW_INPUT_SCHEMA_VERSION,
+        "task_id": task.task_id,
+        "candidate_id": candidate.candidate_id,
+        "prompt": task.prompt,
+        "allowed_mutable_paths": list(task.allowed_mutable_paths),
+        "scope_constraints": list(task.scope_constraints),
+        "protected_path_policy_sha256": _sha256_json(list(task.protected_paths)),
+        "protected_path_policy_count": len(task.protected_paths),
+        "changed_files": list(candidate.changed_files),
+        "candidate_files": [
+            {"path": path, "content": content}
+            for path, content in sorted(candidate.files.items())
+        ],
+        "candidate_submitted_tests": [
+            {"path": path, "content": content}
+            for path, content in sorted(candidate_test_files.items())
+        ],
+        "visible_commands": {
+            "candidate_test_commands": [list(command) for command in task.reverse_test_commands],
+            "reverse_test_commands": [list(command) for command in task.reverse_test_commands],
+            "lint_build_commands": [list(command) for command in task.lint_build_commands],
+        },
+    }
+
+
+def _public_input_oracle_refs(value: Any, *, path: str = "") -> list[str]:
+    refs: list[str] = []
+    if isinstance(value, Mapping):
+        for key, nested in value.items():
+            key_text = str(key)
+            nested_path = f"{path}.{key_text}" if path else key_text
+            if key_text in ORACLE_REVIEW_FORBIDDEN_KEYS:
+                refs.append(nested_path)
+            refs.extend(_public_input_oracle_refs(nested, path=nested_path))
+    elif isinstance(value, list | tuple):
+        for index, nested in enumerate(value):
+            refs.extend(_public_input_oracle_refs(nested, path=f"{path}[{index}]"))
+    elif isinstance(value, str):
+        for marker in ORACLE_REVIEW_FORBIDDEN_TEXT:
+            if marker in value:
+                refs.append(path or marker)
+                break
+    return sorted(set(refs))
+
+
+def _copy_public_fixture_tree(
+    source_root: Path,
+    target_root: Path,
+    *,
+    protected_paths: tuple[str, ...],
+) -> None:
+    target_root.mkdir(parents=True, exist_ok=True)
+    for source in sorted(source_root.rglob("*")):
+        rel = _normalise_relpath(source.relative_to(source_root).as_posix())
+        if _matches_prefix(rel, protected_paths):
+            continue
+        target = target_root / rel
+        if source.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+        elif source.is_file():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+
+
+def _protected_refs_in_tree(root: Path, *, protected_paths: tuple[str, ...]) -> tuple[str, ...]:
+    refs = []
+    for path in root.rglob("*"):
+        rel = _normalise_relpath(path.relative_to(root).as_posix())
+        if _matches_prefix(rel, protected_paths):
+            refs.append(rel)
+    return tuple(sorted(refs))
+
+
+def _hash_tree(root: Path) -> str:
+    entries: list[dict[str, str]] = []
+    for path in sorted(item for item in root.rglob("*") if item.is_file()):
+        rel = _normalise_relpath(path.relative_to(root).as_posix())
+        entries.append({
+            "path": rel,
+            "sha256": sha256(path.read_bytes()).hexdigest(),
+        })
+    return _sha256_json(entries)
+
+
+def _public_test_target_failures(
+    commands: tuple[tuple[str, ...], ...],
+    *,
+    worktree: Path,
+    label: str,
+) -> list[str]:
+    failures: list[str] = []
+    for command in commands:
+        for target in _pytest_target_paths(command):
+            if not (worktree / target).exists():
+                failures.append(f"{label}:missing_candidate_test_target:{target}")
+    return sorted(set(failures))
+
+
+def _append_command_probe(
+    probes: list[dict[str, Any]],
+    probe_id: str,
+    results: list[CommandResult],
+    *,
+    empty_ok: bool,
+) -> None:
+    if not results:
+        probes.append({
+            "probe_id": probe_id,
+            "status": "green" if empty_ok else "red",
+            "reason": "not_required" if empty_ok else "not_executed",
+        })
+        return
+    failures = [result for result in results if result.status != "passed"]
+    probes.append({
+        "probe_id": probe_id,
+        "status": "red" if failures else "green",
+        "reason": "command_failed" if failures else "command_passed",
+        "command_count": len(results),
+    })
+
+
+def _oracle_agreement(rows: list[dict[str, Any]], *, arm: str) -> dict[str, Any]:
+    if arm == "baseline":
+        accept_key = "baseline_accept"
+    elif arm == "oracle_ceiling":
+        accept_key = "oracle_ceiling_accept"
+    else:
+        accept_key = "supervisor_candidate_review_accept"
+    agreement_count = sum(1 for row in rows if bool(row[accept_key]) == bool(row["oracle_accept"]))
+    return {
+        "agreement_count": agreement_count,
+        "candidate_count": len(rows),
+        "agreement_rate": _rate(agreement_count, len(rows)),
+    }
+
+
+def _should_trip_perfect_agreement(rows: list[dict[str, Any]], agreement: Mapping[str, Any]) -> bool:
+    if len(rows) < 2:
+        return False
+    has_positive = any(row["oracle_accept"] for row in rows)
+    has_negative = any(not row["oracle_accept"] for row in rows)
+    return bool(has_positive and has_negative and float(agreement.get("agreement_rate") or 0.0) >= 1.0)
+
+
+def _false_accept_at_matched_true_accept(
+    *,
+    baseline: Mapping[str, Any],
+    supervisor: Mapping[str, Any],
+) -> dict[str, Any]:
+    denominator = int(supervisor.get("true_accept_denominator") or 0)
+    if denominator < 2:
+        return {
+            "status": "insufficient_candidate_pool",
+            "reason": "requires_at_least_two_oracle_positive_candidates",
+        }
+    baseline_true = float(baseline.get("true_accept_rate") or 0.0)
+    supervisor_true = float(supervisor.get("true_accept_rate") or 0.0)
+    if baseline_true != supervisor_true:
+        return {
+            "status": "not_matched",
+            "baseline_true_accept_rate": baseline_true,
+            "supervisor_true_accept_rate": supervisor_true,
+        }
+    return {
+        "status": "computed",
+        "matched_true_accept_rate": supervisor_true,
+        "baseline_false_accept_rate": float(baseline.get("false_accept_rate") or 0.0),
+        "supervisor_false_accept_rate": float(supervisor.get("false_accept_rate") or 0.0),
+        "false_accept_delta": round(
+            float(supervisor.get("false_accept_rate") or 0.0)
+            - float(baseline.get("false_accept_rate") or 0.0),
+            6,
+        ),
     }
 
 
