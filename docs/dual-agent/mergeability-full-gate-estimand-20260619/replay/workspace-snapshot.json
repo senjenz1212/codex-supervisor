@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "e6acf8bfc554788899ea3f51fcfb9011b6c45d86ece0302c3fe40829c0c13c9e",
+  "git": {
+    "diff_bytes": 25980,
+    "diff_sha256": "06465c461f2cbd352dc5fe7612b91d90bf89acd8a563ad426d335255804781b1",
+    "diff_stat": "supervisor/mergeability_bench.py | 265 +++++++++++++++++++++++++++++++++++++--\n tests/test_mergeability_bench.py | 129 +++++++++++++++++++\n 2 files changed, 386 insertions(+), 8 deletions(-)",
+    "head": "7939856a",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "7939856a",
+    "status_short": "M supervisor/mergeability_bench.py\n M tests/test_mergeability_bench.py\n?? .scratch/auto-evolution-loop-current-demo-20260618/\n?? .scratch/comfy-cloud-prototype-visuals/\n?? .scratch/comfy-cloud-prototype-workflow-request.json\n?? .scratch/comfy-cloud-prototype-workflow-result.json\n?? .scratch/mergeability-calibration-pilot-sample/\n?? .scratch/mergeability-debug/\n?? .scratch/mergeability-debug2/\n?? .scratch/mergeability-debug3/\n?? .scratch/mergeability-independent-supervisor-arm-sample/\n?? docs/dual-agent/auto-evolution-loop-current-demo-20260618/\n?? docs/dual-agent/comfy-cloud-polished-first-run-prototype-20260618/\n?? docs/dual-agent/comfy-cloud-polished-first-run-prototype-workflow-20260618/\n?? docs/dual-agent/mergeability-full-gate-estimand-20260619/\n?? docs/dual-agent/mergeability-independent-supervisor-arm-20260619/\n?? docs/product-strategy/\n?? docs/testing/comfy-cloud-guided-first-workflow-coverage-index.md"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "dd6c24aa8fcd595589f4a2397fef5b14bace4d18c84cb8208f5b6fae715fa8f3",
+    "implementation_plan": "5e6e7001237aac14e104199fe173e57be5e3a87c78d93e4d97ec847cf9829150",
+    "issues": "22549b9a3f9dfc798c22b3c59974449bc216e7226c5a029778fa31d6b33bdcaf",
+    "prd": "9b345e6e872e24fbe236645e4ce8c5cf6371787bfe09fd55dade65edc96530ef",
+    "tdd_plan": "e04c7c4a9b6a97a5c70dbac2b98e1ef3769305260112affc785dea58f46beb65"
+  },
+  "status": "captured"
+}

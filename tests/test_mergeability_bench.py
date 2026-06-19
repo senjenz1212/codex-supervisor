@@ -52,6 +52,34 @@ def _sha256_json(value: object) -> str:
     ).hexdigest()
 
 
+def _accept_public_review_panel(packet):
+    return {
+        "decision": "accept" if packet["public_review"]["accept"] else "deny",
+        "available": True,
+        "reason": "deterministic_fixture_panel",
+        "reviewer_ids": ["fixture-reviewer"],
+        "accepted_reviewers": ["fixture-reviewer"] if packet["public_review"]["accept"] else [],
+    }
+
+
+def _unavailable_panel(_packet):
+    return {
+        "decision": "unavailable",
+        "available": False,
+        "reason": "fixture_panel_unavailable",
+        "missing_reviewers": ["fixture-reviewer"],
+    }
+
+
+def _deny_panel(_packet):
+    return {
+        "decision": "deny",
+        "available": True,
+        "reason": "deterministic_panel_denial",
+        "reviewer_ids": ["fixture-reviewer"],
+    }
+
+
 def test_load_mergeability_tasks_reads_typed_fixture_contract():
     tasks = load_mergeability_tasks(BENCH_ROOT)
 
@@ -342,6 +370,107 @@ def test_paired_pilot_records_independent_supervisor_candidate_review_arm(tmp_pa
         assert row["supervisor_review"]["decision_source"] == "supervisor_candidate_review"
         assert row["supervisor_review"]["oracle_coupled"] is False
         assert row["oracle_ceiling_decision_source"] == "oracle_final_score"
+
+
+def test_paired_report_records_full_gate_arm_with_panel_decision(tmp_path):
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        reviewer_panel=_accept_public_review_panel,
+    )
+
+    assert "supervisor_candidate_review" in report["arms"]
+    full_gate = report["arms"]["supervisor_full_gate"]
+    assert full_gate["arm_role"] == "supervisor_full_gate"
+    assert full_gate["decision_source"] == "supervisor_candidate_review+independent_reviewer_panel"
+    assert full_gate["oracle_coupled"] is False
+    assert full_gate["availability_status"] == "available"
+    assert full_gate["unavailable_count"] == 0
+    assert report["oracle_agreement"]["supervisor_full_gate"]["candidate_count"] == report["candidate_count"]
+
+    for row in report["per_task_results"]:
+        assert row["supervisor_full_gate_decision_source"] == "supervisor_full_gate"
+        review = row["supervisor_full_gate_review"]
+        assert review["schema_version"] == "supervisor-mergeability-full-gate-review/v1"
+        assert review["decision_source"] == "supervisor_candidate_review+independent_reviewer_panel"
+        assert review["panel_result"]["reason"] == "deterministic_fixture_panel"
+        assert review["reviewer_packet_refs"][0]["source"] == "supervisor"
+        assert review["reviewer_packet_refs"][0]["evidence_grade"] == "runtime_native"
+        assert row["supervisor_full_gate_accept"] == (
+            row["supervisor_candidate_review_accept"] and review["panel_decision"] == "accept"
+        )
+
+
+def test_full_gate_reviewer_packet_excludes_oracle_material(tmp_path):
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        reviewer_panel=_accept_public_review_panel,
+    )
+
+    for row in report["per_task_results"]:
+        review = row["supervisor_full_gate_review"]
+        assert review["reviewer_packet_sha256"]
+        encoded = json.dumps(review["reviewer_packet"], sort_keys=True)
+        assert "hidden/test_behavior.py" not in encoded
+        assert ".mergeability/" not in encoded
+        assert '"hidden_test_commands"' not in encoded
+        assert '"expected_outcome"' not in encoded
+        assert '"final_score"' not in encoded
+        assert '"oracle_accept"' not in encoded
+        assert not review["reviewer_packet"].get("oracle_isolation_violations")
+
+
+def test_full_gate_unavailable_reviewer_does_not_count_as_accept(tmp_path):
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        reviewer_panel=_unavailable_panel,
+    )
+
+    full_gate = report["arms"]["supervisor_full_gate"]
+    assert full_gate["availability_status"] == "unavailable"
+    assert full_gate["unavailable_count"] == report["candidate_count"]
+    assert full_gate["accepted_count"] == 0
+    assert "reviewer_panel_unavailable" in report["gaming_flags"]
+    assert any(row["supervisor_candidate_review_accept"] for row in report["per_task_results"])
+    for row in report["per_task_results"]:
+        assert row["supervisor_full_gate_unavailable"] is True
+        assert row["supervisor_full_gate_accept"] is False
+        assert row["supervisor_full_gate_review"]["unavailable_reason"] == "fixture_panel_unavailable"
+
+
+def test_panel_marginal_delta_is_reported_only_when_matched_true_accept_is_computable(tmp_path):
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        reviewer_panel=_deny_panel,
+    )
+
+    delta = report["panel_marginal_delta_at_matched_true_accept"]
+    assert delta["status"] == "not_matched"
+    assert delta["reason"] == "public_review_and_full_gate_true_accept_rates_differ"
+    assert delta["public_review_true_accept_rate"] != delta["supervisor_full_gate_true_accept_rate"]
+
+
+def test_full_gate_calibration_report_cannot_create_applyable_policy_claim(tmp_path):
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        reviewer_panel=_accept_public_review_panel,
+    )
+
+    assert report["report_label"] == "calibration"
+    assert report["metric_applyable"] is False
+    assert report["improvement_claim_allowed"] is False
+    assert report["default_change_allowed"] is False
+    assert report["policy_mutated"] is False
+    assert report["gate_advanced"] is False
+    assert derive_policy_evolution_proposals_from_report(
+        report,
+        repo_root=Path.cwd(),
+        affected_gates=("execution", "outcome_review"),
+    ) == []
 
 
 def test_supervisor_candidate_review_input_excludes_oracle_material(tmp_path):

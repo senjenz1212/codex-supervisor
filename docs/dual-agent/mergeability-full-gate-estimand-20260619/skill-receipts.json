@@ -1,0 +1,67 @@
+[
+  {
+    "receipt_id": "skill-to-prd-mergeability-full-gate-estimand-20260619",
+    "kind": "skill_run",
+    "skill": "to-prd",
+    "stage": "to_prd",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/mergeability-full-gate-estimand-20260619/source/prd.md"
+    ],
+    "claims": [
+      "PRD authored with promise contracts P1-P5 for measuring the full supervisor gate separately from the public-check arm"
+    ]
+  },
+  {
+    "receipt_id": "skill-prd-grill-mergeability-full-gate-estimand-20260619",
+    "kind": "skill_run",
+    "skill": "grill-with-docs",
+    "stage": "prd_grill",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/mergeability-full-gate-estimand-20260619/source/grill-findings.md"
+    ],
+    "claims": [
+      "PRD grill findings resolved arm mismatch, oracle-leak risk, and calibration overclaim risk"
+    ]
+  },
+  {
+    "receipt_id": "skill-to-issues-mergeability-full-gate-estimand-20260619",
+    "kind": "skill_run",
+    "skill": "to-issues",
+    "stage": "to_issues",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/mergeability-full-gate-estimand-20260619/source/issues.md"
+    ],
+    "claims": [
+      "Issues sliced into vertical report, reviewer-packet, and metric authority tracer bullets"
+    ]
+  },
+  {
+    "receipt_id": "skill-tdd-mergeability-full-gate-estimand-20260619",
+    "kind": "skill_run",
+    "skill": "tdd",
+    "stage": "tdd",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/mergeability-full-gate-estimand-20260619/source/tdd.md"
+    ],
+    "claims": [
+      "TDD plan starts with public-boundary tests through run_paired_acceptance_pilot and proceeds one RED to one GREEN"
+    ]
+  },
+  {
+    "receipt_id": "skill-tdd-grill-mergeability-full-gate-estimand-20260619",
+    "kind": "skill_run",
+    "skill": "grill-with-docs",
+    "stage": "tdd_grill",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/mergeability-full-gate-estimand-20260619/source/grill-findings-tdd.md"
+    ],
+    "claims": [
+      "TDD grill findings resolved public-boundary coverage, unavailable-reviewer semantics, and matched true-accept metric discipline"
+    ]
+  }
+]

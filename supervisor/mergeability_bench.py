@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass, field
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 
 MERGEABILITY_TASK_SCHEMA_VERSION = "supervisor-mergeability-task/v1"
@@ -23,6 +23,8 @@ MERGEABILITY_CALIBRATION_SCHEMA_VERSION = "supervisor-mergeability-calibration/v
 MERGEABILITY_PAIRED_REPORT_SCHEMA_VERSION = "supervisor-mergeability-paired-report/v1"
 SUPERVISOR_REVIEW_INPUT_SCHEMA_VERSION = "supervisor-mergeability-candidate-review-input/v1"
 SUPERVISOR_REVIEW_RESULT_SCHEMA_VERSION = "supervisor-mergeability-candidate-review/v1"
+SUPERVISOR_FULL_GATE_PACKET_SCHEMA_VERSION = "supervisor-mergeability-full-gate-review-packet/v1"
+SUPERVISOR_FULL_GATE_RESULT_SCHEMA_VERSION = "supervisor-mergeability-full-gate-review/v1"
 
 ORACLE_REVIEW_FORBIDDEN_KEYS = frozenset({
     "expected_outcome",
@@ -594,6 +596,7 @@ def run_paired_acceptance_pilot(
     candidate_paths: tuple[str | Path, ...] = (),
     timeout_s: float = 30.0,
     strict_calibration: bool = True,
+    reviewer_panel: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     started = time.monotonic()
     bench_root_path = Path(bench_root).expanduser().resolve()
@@ -627,9 +630,16 @@ def run_paired_acceptance_pilot(
     for result in calibration["results"]:
         candidate = candidates[result["candidate_id"]]
         supervisor_review = public_reviews[result["candidate_id"]]
+        full_gate_review = _review_mergeability_candidate_full_gate(
+            task=tasks[candidate.task_id],
+            candidate=candidate,
+            public_review=supervisor_review,
+            reviewer_panel=reviewer_panel,
+        )
         oracle_accept = float(result["final_score"]) >= 1.0
         baseline_accept = _baseline_accepts(candidate)
         supervisor_accept = bool(supervisor_review["accept"])
+        supervisor_full_gate_accept = bool(full_gate_review["accept"])
         row = {
             "task_id": result["task_id"],
             "candidate_id": result["candidate_id"],
@@ -639,14 +649,18 @@ def run_paired_acceptance_pilot(
             "baseline_accept": baseline_accept,
             "supervisor_accept": supervisor_accept,
             "supervisor_candidate_review_accept": supervisor_accept,
+            "supervisor_full_gate_accept": supervisor_full_gate_accept,
+            "supervisor_full_gate_unavailable": bool(full_gate_review["unavailable"]),
             "oracle_ceiling_accept": oracle_accept,
             "baseline_false_accept": baseline_accept and not oracle_accept,
             "supervisor_false_accept": supervisor_accept and not oracle_accept,
             "supervisor_candidate_review_false_accept": supervisor_accept and not oracle_accept,
+            "supervisor_full_gate_false_accept": supervisor_full_gate_accept and not oracle_accept,
             "oracle_ceiling_false_accept": oracle_accept and not oracle_accept,
             "baseline_false_reject": (not baseline_accept) and oracle_accept,
             "supervisor_false_reject": (not supervisor_accept) and oracle_accept,
             "supervisor_candidate_review_false_reject": (not supervisor_accept) and oracle_accept,
+            "supervisor_full_gate_false_reject": (not supervisor_full_gate_accept) and oracle_accept,
             "oracle_ceiling_false_reject": (not oracle_accept) and oracle_accept,
             "receipt_id": result["receipt_id"],
             "receipt": result["receipt"],
@@ -656,7 +670,9 @@ def run_paired_acceptance_pilot(
             "oracle_ceiling_decision_source": "oracle_final_score",
             "supervisor_decision_source": "supervisor_candidate_review",
             "supervisor_candidate_review_decision_source": "supervisor_candidate_review",
+            "supervisor_full_gate_decision_source": "supervisor_full_gate",
             "supervisor_review": supervisor_review,
+            "supervisor_full_gate_review": full_gate_review,
         }
         rows.append(row)
 
@@ -680,6 +696,13 @@ def run_paired_acceptance_pilot(
         arm="supervisor_candidate_review",
         arm_role="supervisor_candidate_review",
         decision_source="supervisor_candidate_review",
+        oracle_coupled=False,
+    )
+    supervisor_full_gate = _summarize_acceptance_arm(
+        rows,
+        arm="supervisor_full_gate",
+        arm_role="supervisor_full_gate",
+        decision_source="supervisor_candidate_review+independent_reviewer_panel",
         oracle_coupled=False,
     )
     supervisor = dict(supervisor_candidate_review)
@@ -711,6 +734,7 @@ def run_paired_acceptance_pilot(
     )
     oracle_agreement = {
         "supervisor_candidate_review": _oracle_agreement(rows, arm="supervisor_candidate_review"),
+        "supervisor_full_gate": _oracle_agreement(rows, arm="supervisor_full_gate"),
         "baseline": _oracle_agreement(rows, arm="baseline"),
         "oracle_ceiling": _oracle_agreement(rows, arm="oracle_ceiling"),
     }
@@ -720,11 +744,24 @@ def run_paired_acceptance_pilot(
         for row in rows
         for flag in row["supervisor_review"].get("gaming_flags", [])
     )
+    gaming_flags.update(
+        flag
+        for row in rows
+        for flag in row["supervisor_full_gate_review"].get("gaming_flags", [])
+    )
     if _should_trip_perfect_agreement(rows, oracle_agreement["supervisor_candidate_review"]):
         gaming_flags.add("perfect_oracle_agreement_tripwire")
     matched_true_accept = _false_accept_at_matched_true_accept(
         baseline=baseline,
         supervisor=supervisor_candidate_review,
+    )
+    full_gate_matched_true_accept = _false_accept_at_matched_true_accept(
+        baseline=baseline,
+        supervisor=supervisor_full_gate,
+    )
+    panel_marginal_delta = _panel_marginal_delta_at_matched_true_accept(
+        public_review=supervisor_candidate_review,
+        full_gate=supervisor_full_gate,
     )
     report = {
         "schema_version": MERGEABILITY_PAIRED_REPORT_SCHEMA_VERSION,
@@ -748,6 +785,7 @@ def run_paired_acceptance_pilot(
         "arms": {
             "baseline": baseline,
             "supervisor_candidate_review": supervisor_candidate_review,
+            "supervisor_full_gate": supervisor_full_gate,
             "oracle_ceiling": oracle_ceiling,
             "supervisor": supervisor,
         },
@@ -764,8 +802,16 @@ def run_paired_acceptance_pilot(
             "supervisor_minus_baseline_true_accept_rate": round(
                 supervisor_candidate_review["true_accept_rate"] - baseline["true_accept_rate"], 6
             ),
+            "supervisor_full_gate_minus_baseline_false_accept_rate": round(
+                supervisor_full_gate["false_accept_rate"] - baseline["false_accept_rate"], 6
+            ),
+            "supervisor_full_gate_minus_baseline_true_accept_rate": round(
+                supervisor_full_gate["true_accept_rate"] - baseline["true_accept_rate"], 6
+            ),
         },
         "false_accept_at_matched_true_accept": matched_true_accept,
+        "supervisor_full_gate_false_accept_at_matched_true_accept": full_gate_matched_true_accept,
+        "panel_marginal_delta_at_matched_true_accept": panel_marginal_delta,
         "matched_true_accept_status": matched_true_accept["status"],
         "oracle_agreement": oracle_agreement,
         "disagreements": disagreements,
@@ -779,6 +825,9 @@ def run_paired_acceptance_pilot(
         "validity_notes": [
             "Supervisor candidate review is recorded from public-only evidence before hidden oracle "
             "grading is consulted for aggregate metrics.",
+            "Supervisor full gate is recorded as the public candidate review plus an independent "
+            "reviewer-panel decision from a public-only packet; unavailable reviewers are not "
+            "imputed from the public-check arm.",
             "This fixture-scale report is calibration evidence only, not proof of production improvement.",
         ],
         "default_change_allowed": False,
@@ -986,6 +1035,156 @@ def review_mergeability_candidate_publicly(
     }
 
 
+def _review_mergeability_candidate_full_gate(
+    *,
+    task: MergeabilityTask,
+    candidate: MergeabilityCandidate,
+    public_review: Mapping[str, Any],
+    reviewer_panel: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None,
+) -> dict[str, Any]:
+    packet = _build_full_gate_reviewer_packet(
+        task=task,
+        candidate=candidate,
+        public_review=public_review,
+    )
+    leaks = _public_input_oracle_refs(packet)
+    panel_fn = reviewer_panel or _default_unavailable_reviewer_panel
+    raw_panel = panel_fn(packet) if not leaks else {
+        "decision": "unavailable",
+        "available": False,
+        "reason": "oracle_isolation_violation",
+        "blocking_findings": leaks,
+    }
+    panel = _normalise_reviewer_panel_result(raw_panel)
+    unavailable = bool(leaks) or not panel["available"]
+    panel_accept = bool(panel["available"] and panel["decision"] == "accept")
+    public_accept = bool(public_review.get("accept"))
+    accept = bool(public_accept and panel_accept and not unavailable)
+    gaming_flags = set(public_review.get("gaming_flags") or [])
+    if leaks:
+        gaming_flags.add("oracle_isolation_violation")
+    if unavailable:
+        gaming_flags.add("reviewer_panel_unavailable")
+    packet_ref = {
+        "packet_id": packet["packet_id"],
+        "packet_sha256": packet["packet_sha256"],
+        "source": "supervisor",
+        "evidence_grade": "runtime_native",
+    }
+    return {
+        "schema_version": SUPERVISOR_FULL_GATE_RESULT_SCHEMA_VERSION,
+        "task_id": task.task_id,
+        "candidate_id": candidate.candidate_id,
+        "decision": "accept" if accept else "reject",
+        "accept": accept,
+        "available": not unavailable,
+        "unavailable": unavailable,
+        "unavailable_reason": panel["reason"] if unavailable else "",
+        "public_review_accept": public_accept,
+        "panel_accept": panel_accept,
+        "panel_decision": panel["decision"],
+        "panel_result": panel,
+        "reviewer_packet": packet,
+        "reviewer_packet_refs": [packet_ref],
+        "reviewer_packet_sha256": packet["packet_sha256"],
+        "evidence_refs": [
+            f"mergeability_full_gate_packet:{packet['packet_id']}:{packet['packet_sha256']}",
+        ],
+        "gaming_flags": sorted(gaming_flags),
+        "decision_source": "supervisor_candidate_review+independent_reviewer_panel",
+        "oracle_coupled": False,
+    }
+
+
+def _build_full_gate_reviewer_packet(
+    *,
+    task: MergeabilityTask,
+    candidate: MergeabilityCandidate,
+    public_review: Mapping[str, Any],
+) -> dict[str, Any]:
+    public_files = {
+        path: content
+        for path, content in candidate.files.items()
+        if not _matches_prefix(_normalise_relpath(path), task.protected_paths)
+    }
+    public_changed_files = [
+        path for path in candidate.changed_files
+        if not _matches_prefix(_normalise_relpath(path), task.protected_paths)
+    ]
+    public_candidate = MergeabilityCandidate(
+        candidate_id=candidate.candidate_id,
+        task_id=candidate.task_id,
+        files=public_files,
+        changed_files=tuple(public_changed_files),
+        provenance={},
+        generator_metadata={},
+        candidate_ref=candidate.candidate_ref,
+        candidate_hash=candidate.candidate_hash,
+    )
+    public_input = _supervisor_review_public_input(task=task, candidate=public_candidate)
+    packet = {
+        "schema_version": SUPERVISOR_FULL_GATE_PACKET_SCHEMA_VERSION,
+        "packet_id": f"mergeability-full-gate:{task.task_id}:{candidate.candidate_id}",
+        "task_id": task.task_id,
+        "candidate_id": candidate.candidate_id,
+        "prompt": task.prompt,
+        "public_input_payload": public_input,
+        "public_review": {
+            "decision": str(public_review.get("decision") or ""),
+            "accept": bool(public_review.get("accept")),
+            "reasons": list(public_review.get("reasons") or []),
+            "probe_results": list(public_review.get("probe_results") or []),
+            "command_results": list(public_review.get("command_results") or []),
+            "evidence_refs": list(public_review.get("evidence_refs") or []),
+            "public_input_hash": str(public_review.get("public_input_hash") or ""),
+            "candidate_review_worktree_hash": str(public_review.get("candidate_review_worktree_hash") or ""),
+            "gaming_flags": list(public_review.get("gaming_flags") or []),
+            "decision_source": str(public_review.get("decision_source") or "supervisor_candidate_review"),
+        },
+        "review_instructions": {
+            "objective": "Independently review whether the public candidate evidence should pass the full supervisor gate.",
+            "oracle_isolation": "Do not use hidden tests, oracle labels, final scores, expected outcomes, or protected paths.",
+        },
+    }
+    leaks = _public_input_oracle_refs(packet)
+    if leaks:
+        packet["oracle_isolation_violations"] = leaks
+    packet["packet_sha256"] = _sha256_json({key: value for key, value in packet.items() if key != "packet_sha256"})
+    return packet
+
+
+def _normalise_reviewer_panel_result(raw: Mapping[str, Any]) -> dict[str, Any]:
+    decision = str(raw.get("decision") or raw.get("status") or "unavailable")
+    if decision == "approved":
+        decision = "accept"
+    if decision not in {"accept", "revise", "deny", "reject", "unavailable"}:
+        decision = "unavailable"
+    if decision == "reject":
+        decision = "deny"
+    available = bool(raw.get("available", decision != "unavailable"))
+    reason = str(raw.get("reason") or raw.get("unavailable_reason") or "")
+    if not available and not reason:
+        reason = "reviewer_panel_unavailable"
+    return {
+        "schema_version": "supervisor-mergeability-reviewer-panel-result/v1",
+        "decision": decision,
+        "available": available,
+        "reason": reason,
+        "reviewer_ids": list(raw.get("reviewer_ids") or []),
+        "accepted_reviewers": list(raw.get("accepted_reviewers") or []),
+        "blocking_findings": list(raw.get("blocking_findings") or []),
+        "missing_reviewers": list(raw.get("missing_reviewers") or []),
+    }
+
+
+def _default_unavailable_reviewer_panel(_packet: Mapping[str, Any]) -> Mapping[str, Any]:
+    return {
+        "decision": "unavailable",
+        "available": False,
+        "reason": "reviewer_panel_not_configured",
+    }
+
+
 def result_receipt(result: MergeabilityResult, *, result_ref: str = "") -> dict[str, Any]:
     payload = result.to_payload()
     return {
@@ -1107,17 +1306,22 @@ def _summarize_acceptance_arm(
     oracle_coupled: bool,
 ) -> dict[str, Any]:
     accept_key = f"{arm}_accept"
+    unavailable_key = f"{arm}_unavailable"
     false_accept_denominator = sum(1 for row in rows if not row["oracle_accept"])
     true_accept_denominator = sum(1 for row in rows if row["oracle_accept"])
     false_accept_count = sum(1 for row in rows if row[accept_key] and not row["oracle_accept"])
     true_accept_count = sum(1 for row in rows if row[accept_key] and row["oracle_accept"])
     false_reject_count = sum(1 for row in rows if not row[accept_key] and row["oracle_accept"])
+    unavailable_count = sum(1 for row in rows if bool(row.get(unavailable_key)))
     return {
         "arm": arm,
         "arm_role": arm_role,
         "decision_source": decision_source,
         "oracle_coupled": oracle_coupled,
         "candidate_count": len(rows),
+        "available_count": len(rows) - unavailable_count,
+        "unavailable_count": unavailable_count,
+        "availability_status": "unavailable" if rows and unavailable_count == len(rows) else "available",
         "accepted_count": sum(1 for row in rows if row[accept_key]),
         "rejected_count": sum(1 for row in rows if not row[accept_key]),
         "false_accept_count": false_accept_count,
@@ -1174,7 +1378,7 @@ def _public_input_oracle_refs(value: Any, *, path: str = "") -> list[str]:
             if key_text in ORACLE_REVIEW_FORBIDDEN_KEYS:
                 refs.append(nested_path)
             refs.extend(_public_input_oracle_refs(nested, path=nested_path))
-    elif isinstance(value, list | tuple):
+    elif isinstance(value, (list, tuple)):
         for index, nested in enumerate(value):
             refs.extend(_public_input_oracle_refs(nested, path=f"{path}[{index}]"))
     elif isinstance(value, str):
@@ -1262,18 +1466,23 @@ def _append_command_probe(
 
 
 def _oracle_agreement(rows: list[dict[str, Any]], *, arm: str) -> dict[str, Any]:
-    if arm == "baseline":
-        accept_key = "baseline_accept"
-    elif arm == "oracle_ceiling":
-        accept_key = "oracle_ceiling_accept"
-    else:
-        accept_key = "supervisor_candidate_review_accept"
+    accept_key = _accept_key_for_arm(arm)
     agreement_count = sum(1 for row in rows if bool(row[accept_key]) == bool(row["oracle_accept"]))
     return {
         "agreement_count": agreement_count,
         "candidate_count": len(rows),
         "agreement_rate": _rate(agreement_count, len(rows)),
     }
+
+
+def _accept_key_for_arm(arm: str) -> str:
+    if arm == "baseline":
+        return "baseline_accept"
+    if arm == "oracle_ceiling":
+        return "oracle_ceiling_accept"
+    if arm == "supervisor_full_gate":
+        return "supervisor_full_gate_accept"
+    return "supervisor_candidate_review_accept"
 
 
 def _should_trip_perfect_agreement(rows: list[dict[str, Any]], agreement: Mapping[str, Any]) -> bool:
@@ -1313,6 +1522,46 @@ def _false_accept_at_matched_true_accept(
             - float(baseline.get("false_accept_rate") or 0.0),
             6,
         ),
+    }
+
+
+def _panel_marginal_delta_at_matched_true_accept(
+    *,
+    public_review: Mapping[str, Any],
+    full_gate: Mapping[str, Any],
+) -> dict[str, Any]:
+    unavailable_count = int(full_gate.get("unavailable_count") or 0)
+    if unavailable_count:
+        return {
+            "status": "unavailable",
+            "reason": "reviewer_panel_unavailable",
+            "unavailable_count": unavailable_count,
+        }
+    denominator = int(full_gate.get("true_accept_denominator") or 0)
+    if denominator < 2:
+        return {
+            "status": "insufficient_candidate_pool",
+            "reason": "requires_at_least_two_oracle_positive_candidates",
+        }
+    public_true = float(public_review.get("true_accept_rate") or 0.0)
+    full_true = float(full_gate.get("true_accept_rate") or 0.0)
+    if public_true != full_true:
+        return {
+            "status": "not_matched",
+            "reason": "public_review_and_full_gate_true_accept_rates_differ",
+            "public_review_true_accept_rate": public_true,
+            "supervisor_full_gate_true_accept_rate": full_true,
+        }
+    return {
+        "status": "computed",
+        "false_accept_rate_delta": round(
+            float(full_gate.get("false_accept_rate") or 0.0)
+            - float(public_review.get("false_accept_rate") or 0.0),
+            6,
+        ),
+        "public_review_false_accept_rate": public_review.get("false_accept_rate"),
+        "supervisor_full_gate_false_accept_rate": full_gate.get("false_accept_rate"),
+        "matched_true_accept_rate": full_true,
     }
 
 

@@ -1,0 +1,38 @@
+[
+  {
+    "kind": "prd",
+    "mutable_by_worker": false,
+    "path": "docs/dual-agent/mergeability-full-gate-estimand-20260619/source/prd.md",
+    "sha256": "9b345e6e872e24fbe236645e4ce8c5cf6371787bfe09fd55dade65edc96530ef"
+  },
+  {
+    "kind": "grill_findings",
+    "mutable_by_worker": false,
+    "path": "docs/dual-agent/mergeability-full-gate-estimand-20260619/source/grill-findings.md",
+    "sha256": "f7088de9353766e412bb2efc00be8ee4aadeea1c0cee908eb776c8f1f4f4e73c"
+  },
+  {
+    "kind": "issues",
+    "mutable_by_worker": false,
+    "path": "docs/dual-agent/mergeability-full-gate-estimand-20260619/source/issues.md",
+    "sha256": "22549b9a3f9dfc798c22b3c59974449bc216e7226c5a029778fa31d6b33bdcaf"
+  },
+  {
+    "kind": "tdd_plan",
+    "mutable_by_worker": false,
+    "path": "docs/dual-agent/mergeability-full-gate-estimand-20260619/source/tdd.md",
+    "sha256": "e04c7c4a9b6a97a5c70dbac2b98e1ef3769305260112affc785dea58f46beb65"
+  },
+  {
+    "kind": "grill_findings",
+    "mutable_by_worker": false,
+    "path": "docs/dual-agent/mergeability-full-gate-estimand-20260619/source/grill-findings-tdd.md",
+    "sha256": "dd6c24aa8fcd595589f4a2397fef5b14bace4d18c84cb8208f5b6fae715fa8f3"
+  },
+  {
+    "kind": "implementation_plan",
+    "mutable_by_worker": false,
+    "path": "docs/dual-agent/mergeability-full-gate-estimand-20260619/source/implementation-plan.md",
+    "sha256": "5e6e7001237aac14e104199fe173e57be5e3a87c78d93e4d97ec847cf9829150"
+  }
+]
