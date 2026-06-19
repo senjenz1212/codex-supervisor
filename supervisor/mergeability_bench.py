@@ -617,19 +617,40 @@ def run_paired_acceptance_pilot(
             "oracle_accept": oracle_accept,
             "baseline_accept": baseline_accept,
             "supervisor_accept": supervisor_accept,
+            "oracle_ceiling_accept": supervisor_accept,
             "baseline_false_accept": baseline_accept and not oracle_accept,
             "supervisor_false_accept": supervisor_accept and not oracle_accept,
+            "oracle_ceiling_false_accept": supervisor_accept and not oracle_accept,
             "baseline_false_reject": (not baseline_accept) and oracle_accept,
             "supervisor_false_reject": (not supervisor_accept) and oracle_accept,
+            "oracle_ceiling_false_reject": (not supervisor_accept) and oracle_accept,
             "receipt_id": result["receipt_id"],
             "receipt": result["receipt"],
             "blocker_status": result["blocker_status"],
             "failures": result["failures"],
+            "baseline_decision_source": "candidate_self_report",
+            "oracle_ceiling_decision_source": "oracle_final_score",
+            "supervisor_decision_source": "oracle_final_score",
         }
         rows.append(row)
 
-    baseline = _summarize_acceptance_arm(rows, arm="baseline")
-    supervisor = _summarize_acceptance_arm(rows, arm="supervisor")
+    baseline = _summarize_acceptance_arm(
+        rows,
+        arm="baseline",
+        arm_role="baseline_self_report",
+        decision_source="candidate_self_report",
+        oracle_coupled=False,
+    )
+    oracle_ceiling = _summarize_acceptance_arm(
+        rows,
+        arm="oracle_ceiling",
+        arm_role="oracle_ceiling",
+        decision_source="oracle_final_score",
+        oracle_coupled=True,
+    )
+    supervisor = dict(oracle_ceiling)
+    supervisor["arm"] = "supervisor"
+    supervisor["legacy_alias_of"] = "oracle_ceiling"
     task_hashes = {entry["task_id"]: entry["task_hash"] for entry in manifest["tasks"]}
     candidate_hashes = {
         (entry["task_id"], entry["candidate_id"]): entry["candidate_hash"]
@@ -667,9 +688,16 @@ def run_paired_acceptance_pilot(
         ]),
         "arms": {
             "baseline": baseline,
+            "oracle_ceiling": oracle_ceiling,
             "supervisor": supervisor,
         },
         "delta": {
+            "oracle_ceiling_minus_baseline_false_accept_rate": round(
+                oracle_ceiling["false_accept_rate"] - baseline["false_accept_rate"], 6
+            ),
+            "oracle_ceiling_minus_baseline_true_accept_rate": round(
+                oracle_ceiling["true_accept_rate"] - baseline["true_accept_rate"], 6
+            ),
             "supervisor_minus_baseline_false_accept_rate": round(
                 supervisor["false_accept_rate"] - baseline["false_accept_rate"], 6
             ),
@@ -681,6 +709,14 @@ def run_paired_acceptance_pilot(
         "per_task_results": rows,
         "cost_usd": 0.0,
         "wall_clock_s": round(time.monotonic() - started, 6),
+        "report_label": "oracle_upper_bound",
+        "metric_applyable": False,
+        "improvement_claim_allowed": False,
+        "gaming_flags": ["oracle_coupled_treatment_arm"],
+        "validity_notes": [
+            "The treatment arm reuses the oracle final score as its acceptance decision, "
+            "so the report describes an oracle ceiling rather than independent supervisor evidence."
+        ],
         "default_change_allowed": False,
         "policy_mutated": False,
         "gate_advanced": False,
@@ -816,7 +852,14 @@ def _calibration_non_applyable_flags(results: list[dict[str, Any]]) -> list[str]
     return flags
 
 
-def _summarize_acceptance_arm(rows: list[dict[str, Any]], *, arm: str) -> dict[str, Any]:
+def _summarize_acceptance_arm(
+    rows: list[dict[str, Any]],
+    *,
+    arm: str,
+    arm_role: str,
+    decision_source: str,
+    oracle_coupled: bool,
+) -> dict[str, Any]:
     accept_key = f"{arm}_accept"
     false_accept_denominator = sum(1 for row in rows if not row["oracle_accept"])
     true_accept_denominator = sum(1 for row in rows if row["oracle_accept"])
@@ -825,6 +868,9 @@ def _summarize_acceptance_arm(rows: list[dict[str, Any]], *, arm: str) -> dict[s
     false_reject_count = sum(1 for row in rows if not row[accept_key] and row["oracle_accept"])
     return {
         "arm": arm,
+        "arm_role": arm_role,
+        "decision_source": decision_source,
+        "oracle_coupled": oracle_coupled,
         "candidate_count": len(rows),
         "accepted_count": sum(1 for row in rows if row[accept_key]),
         "rejected_count": sum(1 for row in rows if not row[accept_key]),

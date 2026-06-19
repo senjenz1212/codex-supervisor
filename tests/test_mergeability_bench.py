@@ -314,31 +314,51 @@ def test_saturated_all_one_results_are_non_applyable(tmp_path):
     assert summary["status"] == "rejected"
 
 
-def test_paired_acceptance_pilot_reports_baseline_false_accept_and_supervisor_rejection(tmp_path):
+def test_paired_acceptance_pilot_marks_oracle_coupled_treatment_non_applyable(tmp_path):
     report = run_paired_acceptance_pilot(BENCH_ROOT, output_dir=tmp_path)
 
     assert report["schema_version"] == "supervisor-mergeability-paired-report/v1"
-    assert report["arms"]["baseline"]["false_accept_count"] >= 1
-    assert report["arms"]["baseline"]["false_accept_rate"] > 0.0
-    assert report["arms"]["supervisor"]["false_accept_count"] == 0
-    assert report["arms"]["supervisor"]["false_accept_rate"] == 0.0
-    false_accepts = [
-        row for row in report["per_task_results"]
-        if row["baseline_false_accept"] and not row["supervisor_false_accept"]
-    ]
-    assert false_accepts
+    assert report["report_label"] == "oracle_upper_bound"
+    assert report["metric_applyable"] is False
+    assert report["improvement_claim_allowed"] is False
+    assert "oracle_coupled_treatment_arm" in report["gaming_flags"]
+
+    baseline = report["arms"]["baseline"]
+    oracle_ceiling = report["arms"]["oracle_ceiling"]
+    assert baseline["arm_role"] == "baseline_self_report"
+    assert baseline["decision_source"] == "candidate_self_report"
+    assert baseline["oracle_coupled"] is False
+    assert oracle_ceiling["arm_role"] == "oracle_ceiling"
+    assert oracle_ceiling["decision_source"] == "oracle_final_score"
+    assert oracle_ceiling["oracle_coupled"] is True
+
+    for row in report["per_task_results"]:
+        assert row["baseline_decision_source"] == "candidate_self_report"
+        assert row["oracle_ceiling_decision_source"] == "oracle_final_score"
 
 
-def test_paired_acceptance_pilot_computes_true_accept_and_false_reject_rates(tmp_path):
+def test_paired_acceptance_pilot_preserves_baseline_false_accept_visibility(tmp_path):
     report = run_paired_acceptance_pilot(BENCH_ROOT, output_dir=tmp_path)
 
     baseline = report["arms"]["baseline"]
-    supervisor = report["arms"]["supervisor"]
-    assert baseline["true_accept_denominator"] == supervisor["true_accept_denominator"]
-    assert baseline["true_accept_rate"] == 1.0
-    assert supervisor["true_accept_rate"] == 1.0
-    assert supervisor["false_reject_rate"] == 0.0
-    assert report["delta"]["supervisor_minus_baseline_false_accept_rate"] < 0.0
+    oracle_ceiling = report["arms"]["oracle_ceiling"]
+
+    assert baseline["false_accept_count"] >= 1
+    assert baseline["false_accept_rate"] > 0.0
+    assert oracle_ceiling["false_accept_count"] == 0
+    assert oracle_ceiling["false_accept_rate"] == 0.0
+    assert oracle_ceiling["true_accept_rate"] == 1.0
+    assert baseline["true_accept_denominator"] == oracle_ceiling["true_accept_denominator"]
+
+    visible_baseline_false_accepts = [
+        row for row in report["per_task_results"]
+        if row["baseline_false_accept"]
+    ]
+    assert visible_baseline_false_accepts
+
+    assert report["metric_applyable"] is False
+    assert report["improvement_claim_allowed"] is False
+    assert "oracle_coupled_treatment_arm" in report["gaming_flags"]
 
 
 def test_paired_acceptance_pilot_uses_identical_candidate_pool_for_both_arms(tmp_path):
@@ -366,18 +386,34 @@ def test_paired_acceptance_pilot_uses_identical_candidate_pool_for_both_arms(tmp
     assert report["disagreements"]
 
 
-def test_paired_acceptance_pilot_exports_replayable_artifacts(tmp_path):
+def test_paired_acceptance_pilot_exports_validity_metadata_with_replay_artifacts(tmp_path):
     report = run_paired_acceptance_pilot(BENCH_ROOT, output_dir=tmp_path)
 
     assert (tmp_path / "corpus_manifest.json").exists()
     assert (tmp_path / "calibration_summary.json").exists()
-    assert (tmp_path / "paired_acceptance_report.json").exists()
+    report_path = tmp_path / "paired_acceptance_report.json"
+    assert report_path.exists()
     rows_path = tmp_path / "per_task_results.jsonl"
     assert rows_path.exists()
+
+    exported_report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert exported_report["report_label"] == "oracle_upper_bound"
+    assert exported_report["metric_applyable"] is False
+    assert exported_report["improvement_claim_allowed"] is False
+    assert "oracle_coupled_treatment_arm" in exported_report["gaming_flags"]
+    assert exported_report["arms"]["oracle_ceiling"]["arm_role"] == "oracle_ceiling"
+    assert exported_report["arms"]["oracle_ceiling"]["decision_source"] == "oracle_final_score"
+    assert exported_report["arms"]["oracle_ceiling"]["oracle_coupled"] is True
+    assert exported_report["arms"]["baseline"]["oracle_coupled"] is False
+    assert exported_report["candidate_pool_sha256"] == report["candidate_pool_sha256"]
+
     rows = [json.loads(line) for line in rows_path.read_text(encoding="utf-8").splitlines()]
     assert len(rows) == report["candidate_count"]
     assert all(row["receipt"]["source"] == "supervisor" for row in rows)
     assert all(row["receipt"]["evidence_grade"] == "runtime_native" for row in rows)
+    assert all(row["baseline_decision_source"] == "candidate_self_report" for row in rows)
+    assert all(row["oracle_ceiling_decision_source"] == "oracle_final_score" for row in rows)
+
     assert report["default_change_allowed"] is False
     assert report["policy_mutated"] is False
     assert report["gate_advanced"] is False
@@ -544,3 +580,15 @@ def test_autoresearch_report_only_invariants_with_mergeability_evaluator(tmp_pat
 
 def test_paired_acceptance_report_cannot_create_applyable_policy_claim(tmp_path):
     _assert_autoresearch_report_only_invariants_with_mergeability_evaluator(tmp_path)
+
+
+def test_existing_autoresearch_report_only_invariants_remain_green(tmp_path):
+    _assert_autoresearch_report_only_invariants_with_mergeability_evaluator(tmp_path)
+
+    report = run_paired_acceptance_pilot(BENCH_ROOT, output_dir=tmp_path)
+    assert report["default_change_allowed"] is False
+    assert report["policy_mutated"] is False
+    assert report["gate_advanced"] is False
+    assert report["recommendation"]["applyable_policy_proposal"] is False
+    assert report["metric_applyable"] is False
+    assert report["improvement_claim_allowed"] is False

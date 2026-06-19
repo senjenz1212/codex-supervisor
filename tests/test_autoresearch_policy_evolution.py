@@ -1184,3 +1184,96 @@ def test_policy_proposal_rollback_pointer_restores_previous_artifact(tmp_path):
         "autoresearch_policy_proposal_approved",
         "autoresearch_policy_proposal_rolled_back",
     ]
+
+
+def test_paired_acceptance_report_oracle_coupling_blocks_policy_derivation(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    _write(tmp_path, ".supervisor/policy-overlay.yaml", BASE_OVERLAY)
+    _write(tmp_path, "candidates/policy-overlay.yaml", AFTER_OVERLAY)
+
+    baseline_record = _derived_record(attempt_id="well-formed-baseline")
+    baseline_proposals = derive_policy_evolution_proposals_from_report(
+        _report(baseline_record),
+        repo_root=tmp_path,
+        affected_gates=("outcome_review",),
+        state=state,
+        run_id="policy-run-baseline",
+    )
+    assert baseline_proposals, "well-formed record must still derive a policy proposal"
+    assert report_contains_derivable_policy_record(_report(baseline_record), repo_root=tmp_path) is True
+
+    top_level_oracle_report = _report(_derived_record(attempt_id="top-level-oracle-coupled"))
+    top_level_oracle_report["metric_applyable"] = False
+    top_level_oracle_report["improvement_claim_allowed"] = False
+    top_level_oracle_report["gaming_flags"] = ["oracle_coupled_treatment_arm"]
+    top_level_state = State(str(tmp_path / "state-top-level-oracle.db"))
+
+    assert derive_policy_evolution_proposals_from_report(
+        top_level_oracle_report,
+        repo_root=tmp_path,
+        affected_gates=("outcome_review",),
+        state=top_level_state,
+        run_id="policy-run-top-level-oracle",
+    ) == []
+    assert report_contains_derivable_policy_record(top_level_oracle_report, repo_root=tmp_path) is False
+    assert create_policy_evolution_proposals(
+        top_level_oracle_report,
+        repo_root=tmp_path,
+        candidate_changes={".supervisor/policy-overlay.yaml": "candidates/policy-overlay.yaml"},
+        affected_gates=("outcome_review",),
+    ) == []
+    [skip_event] = top_level_state.read_events_since(
+        "policy-run-top-level-oracle",
+        after_event_id=0,
+        limit=10,
+    )
+    assert skip_event["kind"] == "autoresearch_policy_proposal_derivation_skipped"
+    assert skip_event["payload"]["reason"] == (
+        "report metric_applyable must not be false for policy derivation"
+    )
+    assert skip_event["payload"]["automatic_policy_mutation"] is False
+
+    non_applyable_record = _derived_record(
+        attempt_id="oracle-coupled-non-applyable",
+        metric_applyable=False,
+    )
+    non_applyable_report = _report(non_applyable_record)
+    non_applyable_proposals = derive_policy_evolution_proposals_from_report(
+        non_applyable_report,
+        repo_root=tmp_path,
+        affected_gates=("outcome_review",),
+        state=State(str(tmp_path / "state-non-applyable.db")),
+        run_id="policy-run-non-applyable",
+    )
+    assert non_applyable_proposals == []
+    assert report_contains_derivable_policy_record(non_applyable_report, repo_root=tmp_path) is False
+
+    no_claim_record = _derived_record(
+        attempt_id="oracle-coupled-no-claim",
+        improvement_claim_allowed=False,
+    )
+    no_claim_report = _report(no_claim_record)
+    no_claim_proposals = derive_policy_evolution_proposals_from_report(
+        no_claim_report,
+        repo_root=tmp_path,
+        affected_gates=("outcome_review",),
+        state=State(str(tmp_path / "state-no-claim.db")),
+        run_id="policy-run-no-claim",
+    )
+    assert no_claim_proposals == []
+    assert report_contains_derivable_policy_record(no_claim_report, repo_root=tmp_path) is False
+
+    oracle_coupled_record = _derived_record(
+        attempt_id="oracle-coupled-gaming-flag",
+        gaming_flags=["oracle_coupled_treatment_arm"],
+    )
+    oracle_coupled_report = _report(oracle_coupled_record)
+    oracle_coupled_proposals = derive_policy_evolution_proposals_from_report(
+        oracle_coupled_report,
+        repo_root=tmp_path,
+        affected_gates=("outcome_review",),
+        state=State(str(tmp_path / "state-oracle-coupled.db")),
+        run_id="policy-run-oracle-coupled",
+    )
+    assert oracle_coupled_proposals == []
+    assert report_contains_derivable_policy_record(oracle_coupled_report, repo_root=tmp_path) is False

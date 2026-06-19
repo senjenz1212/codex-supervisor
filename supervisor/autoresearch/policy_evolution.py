@@ -48,6 +48,8 @@ def create_policy_evolution_proposals(
     )
     if not changes:
         return []
+    if _report_applyability_error(report) is not None:
+        return []
     proposals: list[dict[str, Any]] = []
     records = report.get("records") if isinstance(report.get("records"), list) else []
     for record in records:
@@ -88,6 +90,18 @@ def derive_policy_evolution_proposals_from_report(
     repo_root_path = Path(repo_root).expanduser().resolve()
     gates = tuple(str(gate) for gate in affected_gates)
     records = report.get("records") if isinstance(report.get("records"), list) else []
+    report_applyability_error = _report_applyability_error(report)
+    if report_applyability_error is not None:
+        for record in records:
+            if isinstance(record, Mapping):
+                _write_derivation_skipped(
+                    state=state,
+                    run_id=run_id,
+                    report=report,
+                    record=record,
+                    reason=report_applyability_error,
+                )
+        return []
     proposals: list[dict[str, Any]] = []
     for record in records:
         if not isinstance(record, Mapping):
@@ -156,6 +170,8 @@ def report_contains_derivable_policy_record(
     repo_root: str | Path,
 ) -> bool:
     repo_root_path = Path(repo_root).expanduser().resolve()
+    if _report_applyability_error(report) is not None:
+        return False
     records = report.get("records") if isinstance(report.get("records"), list) else []
     for record in records:
         if not isinstance(record, Mapping) or _record_applyability_error(record) is not None:
@@ -481,6 +497,17 @@ def _record_is_applyable(record: Mapping[str, Any]) -> bool:
     return _record_applyability_error(record) is None
 
 
+def _report_applyability_error(report: Mapping[str, Any]) -> str | None:
+    if report.get("metric_applyable") is False:
+        return "report metric_applyable must not be false for policy derivation"
+    if report.get("improvement_claim_allowed") is False:
+        return "report improvement_claim_allowed must not be false for policy derivation"
+    gaming_flags = list(report.get("gaming_flags") or [])
+    if gaming_flags:
+        return "report gaming flags present: " + ", ".join(str(flag) for flag in gaming_flags)
+    return None
+
+
 def _should_record_applyability_skip(reason: str) -> bool:
     return reason.startswith((
         "candidate artifact",
@@ -495,6 +522,10 @@ def _should_record_applyability_skip(reason: str) -> bool:
 def _record_applyability_error(record: Mapping[str, Any]) -> str | None:
     if str(record.get("validation_status") or "") != "accepted":
         return "accepted validation status is required for policy derivation"
+    if record.get("metric_applyable") is False:
+        return "metric_applyable must not be false for policy derivation"
+    if record.get("improvement_claim_allowed") is False:
+        return "improvement_claim_allowed must not be false for policy derivation"
     gaming_flags = list(record.get("gaming_flags") or [])
     if gaming_flags:
         return "gaming flags present: " + ", ".join(str(flag) for flag in gaming_flags)
