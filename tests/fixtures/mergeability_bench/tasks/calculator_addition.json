@@ -1,6 +1,8 @@
 {
   "schema_version": "supervisor-mergeability-task/v1",
   "task_id": "calculator-addition",
+  "split": "held_out",
+  "task_class": "arithmetic",
   "repo_fixture_ref": "repos/calculator_bug",
   "prompt": "Fix the calculator add function so ordinary integer addition works and include a regression test that fails on the base implementation.",
   "allowed_mutable_paths": [

@@ -1,0 +1,22 @@
+{
+  "schema_version": "supervisor-mergeability-candidate/v1",
+  "candidate_id": "partial-fix-regression",
+  "task_id": "calculator-addition",
+  "changed_files": [
+    "app/calculator.py",
+    "tests/test_calculator.py"
+  ],
+  "files": {
+    "app/calculator.py": "def add(left: int, right: int) -> int:\n    if left >= 0 and right >= 0:\n        return left + right\n    return 0\n",
+    "tests/test_calculator.py": "from app.calculator import add\n\n\ndef test_adds_positive_integers():\n    assert add(2, 3) == 5\n"
+  },
+  "provenance": {
+    "kind": "calibration_control"
+  },
+  "generator_metadata": {
+    "baseline_accept": true,
+    "control": "hidden_behavior_miss",
+    "expected_outcome": "fail",
+    "visible_tests_passed": true
+  }
+}

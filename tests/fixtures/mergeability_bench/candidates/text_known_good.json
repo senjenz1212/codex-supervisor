@@ -1,0 +1,22 @@
+{
+  "schema_version": "supervisor-mergeability-candidate/v1",
+  "candidate_id": "text-known-good",
+  "task_id": "text-normalization",
+  "changed_files": [
+    "app/text_ops.py",
+    "tests/test_text_ops.py"
+  ],
+  "files": {
+    "app/text_ops.py": "def normalize_title(text: str) -> str:\n    return \" \".join(text.strip().lower().split()).title()\n",
+    "tests/test_text_ops.py": "from app.text_ops import normalize_title\n\n\ndef test_collapses_whitespace_and_title_cases_words():\n    assert normalize_title(\"  hello   world \") == \"Hello World\"\n"
+  },
+  "provenance": {
+    "kind": "calibration_control"
+  },
+  "generator_metadata": {
+    "baseline_accept": true,
+    "control": "known_good",
+    "expected_outcome": "pass",
+    "visible_tests_passed": true
+  }
+}

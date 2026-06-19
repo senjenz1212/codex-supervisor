@@ -97,6 +97,8 @@ class MergeabilityTask:
     prompt: str
     allowed_mutable_paths: tuple[str, ...]
     hidden_test_commands: tuple[tuple[str, ...], ...]
+    split: str = "held_out"
+    task_class: str = ""
     reverse_test_commands: tuple[tuple[str, ...], ...] = ()
     lint_build_commands: tuple[tuple[str, ...], ...] = ()
     scope_constraints: tuple[str, ...] = ()
@@ -130,6 +132,8 @@ class MergeabilityTask:
             prompt=prompt,
             allowed_mutable_paths=allowed_mutable_paths,
             hidden_test_commands=hidden,
+            split=str(raw.get("split") or "held_out"),
+            task_class=str(raw.get("task_class") or task_id),
             reverse_test_commands=_commands(raw.get("reverse_test_commands", ()), "reverse_test_commands"),
             lint_build_commands=_commands(raw.get("lint_build_commands", ()), "lint_build_commands"),
             scope_constraints=_tuple_text(raw.get("scope_constraints", ())),
@@ -151,6 +155,8 @@ class MergeabilityTask:
             "prompt": self.prompt,
             "allowed_mutable_paths": list(self.allowed_mutable_paths),
             "hidden_test_commands": [list(command) for command in self.hidden_test_commands],
+            "split": self.split,
+            "task_class": self.task_class,
             "reverse_test_commands": [list(command) for command in self.reverse_test_commands],
             "lint_build_commands": [list(command) for command in self.lint_build_commands],
             "scope_constraints": list(self.scope_constraints),
@@ -405,10 +411,13 @@ def build_mergeability_corpus_manifest(
     candidates_by_task: dict[str, list[MergeabilityCandidate]] = {}
     for candidate in candidates:
         candidates_by_task.setdefault(candidate.task_id, []).append(candidate)
+    tasks_by_id = {task.task_id: task for task in tasks}
 
     task_entries: list[dict[str, Any]] = []
     included_task_ids: list[str] = []
     for task in tasks:
+        if candidate_paths and not candidates_by_task.get(task.task_id):
+            continue
         task_candidates = sorted(
             candidates_by_task.get(task.task_id, []),
             key=lambda candidate: candidate.candidate_id,
@@ -428,6 +437,8 @@ def build_mergeability_corpus_manifest(
             included_task_ids.append(task.task_id)
         task_entries.append({
             "task_id": task.task_id,
+            "task_class": task.task_class,
+            "split": task.split,
             "task_hash": task.task_hash,
             "fixture_path": task.fixture_path,
             "repo_fixture_ref": task.repo_fixture_ref,
@@ -443,6 +454,10 @@ def build_mergeability_corpus_manifest(
         {
             "candidate_id": candidate.candidate_id,
             "task_id": candidate.task_id,
+            "task_class": tasks_by_id[candidate.task_id].task_class
+            if candidate.task_id in tasks_by_id else candidate.task_id,
+            "split": tasks_by_id[candidate.task_id].split
+            if candidate.task_id in tasks_by_id else "held_out",
             "candidate_ref": candidate.candidate_ref,
             "candidate_hash": candidate.candidate_hash,
             "control_kind": _candidate_control_kind(candidate),
@@ -463,12 +478,78 @@ def build_mergeability_corpus_manifest(
         ],
         "tasks": task_entries,
         "candidates": candidate_entries,
+        "control_coverage_by_task_class": _control_coverage_by_task_class(task_entries, candidate_entries),
         "manifest_sha256": "",
     }
     manifest["manifest_sha256"] = _sha256_json({
         key: value for key, value in manifest.items() if key != "manifest_sha256"
     })
     return manifest
+
+
+def _control_coverage_by_task_class(
+    task_entries: list[dict[str, Any]],
+    candidate_entries: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    tasks_by_class: dict[str, list[dict[str, Any]]] = {}
+    for task in task_entries:
+        if task.get("split") != "held_out":
+            continue
+        tasks_by_class.setdefault(str(task["task_class"]), []).append(task)
+
+    candidates_by_class: dict[str, list[dict[str, Any]]] = {}
+    for candidate in candidate_entries:
+        if candidate.get("split") != "held_out":
+            continue
+        candidates_by_class.setdefault(str(candidate["task_class"]), []).append(candidate)
+
+    coverage: dict[str, dict[str, Any]] = {}
+    for task_class in sorted(tasks_by_class):
+        class_tasks = sorted(tasks_by_class[task_class], key=lambda item: str(item["task_id"]))
+        class_candidates = sorted(
+            candidates_by_class.get(task_class, []),
+            key=lambda item: (str(item["task_id"]), str(item["candidate_id"])),
+        )
+        positive = [
+            candidate for candidate in class_candidates
+            if candidate.get("expected_outcome") == "pass"
+        ]
+        negative = [
+            candidate for candidate in class_candidates
+            if candidate.get("expected_outcome") == "fail"
+        ]
+        missing = []
+        if not positive:
+            missing.append("positive_control")
+        if not negative:
+            missing.append("negative_control")
+        coverage[task_class] = {
+            "task_class": task_class,
+            "split": "held_out",
+            "task_count": len(class_tasks),
+            "task_ids": [str(task["task_id"]) for task in class_tasks],
+            "candidate_count": len(class_candidates),
+            "positive_control_count": len(positive),
+            "negative_control_count": len(negative),
+            "control_kinds": sorted({
+                str(candidate.get("control_kind") or "")
+                for candidate in class_candidates
+                if candidate.get("control_kind")
+            }),
+            "missing_control_kinds": missing,
+        }
+    return coverage
+
+
+def _heldout_coverage_from_manifest(manifest: Mapping[str, Any]) -> dict[str, Any]:
+    by_task_class = dict(manifest.get("control_coverage_by_task_class") or {})
+    return {
+        "split": "held_out",
+        "task_class_count": len(by_task_class),
+        "task_count": sum(int(entry.get("task_count") or 0) for entry in by_task_class.values()),
+        "candidate_count": sum(int(entry.get("candidate_count") or 0) for entry in by_task_class.values()),
+        "by_task_class": by_task_class,
+    }
 
 
 def validate_mergeability_corpus(
@@ -503,6 +584,14 @@ def validate_mergeability_corpus(
     missing_control_kinds = sorted(REQUIRED_CALIBRATION_CONTROL_KINDS - observed_control_kinds)
     if missing_control_kinds:
         errors.append("missing required calibration controls: " + ", ".join(missing_control_kinds))
+    control_coverage_by_task_class = dict(manifest.get("control_coverage_by_task_class") or {})
+    for task_class, coverage in sorted(control_coverage_by_task_class.items()):
+        missing_class_controls = list(coverage.get("missing_control_kinds") or [])
+        if missing_class_controls:
+            errors.append(
+                f"task_class {task_class} missing held-out controls: "
+                + ", ".join(missing_class_controls)
+            )
 
     output_path = Path(output_dir).expanduser() if output_dir is not None else None
     result_entries: list[dict[str, Any]] = []
@@ -570,6 +659,7 @@ def validate_mergeability_corpus(
         "excluded_task_ids": manifest["excluded_task_ids"],
         "required_control_kinds": sorted(REQUIRED_CALIBRATION_CONTROL_KINDS),
         "observed_control_kinds": sorted(observed_control_kinds),
+        "control_coverage_by_task_class": control_coverage_by_task_class,
         "results": result_entries,
         "receipt_ids": [receipt["receipt_id"] for receipt in receipt_entries],
         "gaming_flags": calibration_flags,
@@ -674,6 +764,7 @@ def run_paired_acceptance_pilot(
             "supervisor_review": supervisor_review,
             "supervisor_full_gate_review": full_gate_review,
         }
+        row["is_no_regression_failure"] = bool(baseline_accept and not oracle_accept)
         rows.append(row)
 
     baseline = _summarize_acceptance_arm(
@@ -732,6 +823,8 @@ def run_paired_acceptance_pilot(
     negative_control_count = sum(
         1 for entry in manifest["candidates"] if entry["expected_outcome"] == "fail"
     )
+    heldout_coverage = _heldout_coverage_from_manifest(manifest)
+    no_regression_findings = _no_regression_findings(rows, manifest)
     oracle_agreement = {
         "supervisor_candidate_review": _oracle_agreement(rows, arm="supervisor_candidate_review"),
         "supervisor_full_gate": _oracle_agreement(rows, arm="supervisor_full_gate"),
@@ -751,6 +844,8 @@ def run_paired_acceptance_pilot(
     )
     if _should_trip_perfect_agreement(rows, oracle_agreement["supervisor_candidate_review"]):
         gaming_flags.add("perfect_oracle_agreement_tripwire")
+    if no_regression_findings:
+        gaming_flags.add("no_regression_failure_detected")
     matched_true_accept = _false_accept_at_matched_true_accept(
         baseline=baseline,
         supervisor=supervisor_candidate_review,
@@ -773,6 +868,10 @@ def run_paired_acceptance_pilot(
         "candidate_count": len(rows),
         "positive_control_count": positive_control_count,
         "negative_control_count": negative_control_count,
+        "heldout_coverage": heldout_coverage,
+        "heldout_coverage_sha256": _sha256_json(heldout_coverage),
+        "no_regression_findings": no_regression_findings,
+        "no_regression_sha256": _sha256_json(no_regression_findings),
         "candidate_pool_sha256": _sha256_json([
             {
                 "task_id": row["task_id"],
@@ -1278,6 +1377,38 @@ def _baseline_accepts(candidate: MergeabilityCandidate) -> bool:
     return _candidate_expected_outcome(candidate) == "pass"
 
 
+def _no_regression_findings(
+    rows: list[dict[str, Any]],
+    manifest: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    candidate_meta = {
+        (entry["task_id"], entry["candidate_id"]): entry
+        for entry in manifest.get("candidates", [])
+    }
+    findings: list[dict[str, Any]] = []
+    for row in rows:
+        if not row.get("is_no_regression_failure"):
+            continue
+        meta = candidate_meta.get((row["task_id"], row["candidate_id"]), {})
+        findings.append({
+            "task_id": row["task_id"],
+            "task_class": meta.get("task_class", row["task_id"]),
+            "split": meta.get("split", "held_out"),
+            "candidate_id": row["candidate_id"],
+            "control_kind": row["control_kind"],
+            "baseline_accept": bool(row["baseline_accept"]),
+            "supervisor_candidate_review_accept": bool(row["supervisor_candidate_review_accept"]),
+            "supervisor_full_gate_accept": bool(row["supervisor_full_gate_accept"]),
+            "oracle_accept": bool(row["oracle_accept"]),
+            "reason": "baseline_or_public_path_accepted_candidate_that_failed_oracle",
+            "receipt_id": row["receipt_id"],
+        })
+    return sorted(
+        findings,
+        key=lambda item: (str(item["task_class"]), str(item["task_id"]), str(item["candidate_id"])),
+    )
+
+
 def _calibration_non_applyable_flags(results: list[dict[str, Any]]) -> list[str]:
     if not results:
         return ["empty_calibration_results"]
@@ -1597,6 +1728,14 @@ def _export_paired_acceptance_artifacts(
     _export_calibration_artifacts(output_dir, manifest=manifest, summary=calibration)
     (output_dir / "paired_acceptance_report.json").write_text(
         json.dumps(report, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    (output_dir / "heldout_coverage.json").write_text(
+        json.dumps(report.get("heldout_coverage", {}), sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    (output_dir / "no_regression_findings.json").write_text(
+        json.dumps(report.get("no_regression_findings", []), sort_keys=True, indent=2) + "\n",
         encoding="utf-8",
     )
     with (output_dir / "per_task_results.jsonl").open("w", encoding="utf-8") as handle:

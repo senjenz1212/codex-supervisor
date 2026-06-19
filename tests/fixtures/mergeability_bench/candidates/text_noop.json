@@ -1,0 +1,16 @@
+{
+  "schema_version": "supervisor-mergeability-candidate/v1",
+  "candidate_id": "text-noop",
+  "task_id": "text-normalization",
+  "changed_files": [],
+  "files": {},
+  "provenance": {
+    "kind": "calibration_control"
+  },
+  "generator_metadata": {
+    "baseline_accept": true,
+    "control": "noop",
+    "expected_outcome": "fail",
+    "visible_tests_passed": true
+  }
+}

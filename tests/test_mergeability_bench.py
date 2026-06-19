@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from hashlib import sha256
@@ -85,6 +86,8 @@ def test_load_mergeability_tasks_reads_typed_fixture_contract():
 
     task = tasks[0]
     assert task.task_id == "calculator-addition"
+    assert task.split == "held_out"
+    assert task.task_class == "arithmetic"
     assert task.repo_fixture_ref == "repos/calculator_bug"
     assert task.allowed_mutable_paths == ("app/", "tests/")
     assert task.hidden_test_commands == (("python", "-m", "pytest", "hidden/test_behavior.py", "-q"),)
@@ -807,4 +810,219 @@ def test_existing_autoresearch_report_only_invariants_remain_green(tmp_path):
     assert report["gate_advanced"] is False
     assert report["recommendation"]["applyable_policy_proposal"] is False
     assert report["metric_applyable"] is False
+
+
+def _build_regression_candidate_paths(tmp_path: Path) -> tuple[Path, ...]:
+    """Build a candidate pool containing a no-regression regression candidate.
+
+    Reuses the in-repo control set and adds ``partial_fix_regression`` which
+    fixes the visible test path but breaks the previously-passing negative
+    integer case.
+    """
+
+    candidate_dir = tmp_path / "candidates"
+    candidate_dir.mkdir()
+    sources = [
+        "known_good",
+        "noop",
+        "known_bad",
+        "missing_regression_test",
+        "tautological_test",
+        "hidden_edit",
+        "mutable_escape",
+        "partial_fix_regression",
+    ]
+    paths: list[Path] = []
+    for source in sources:
+        src = BENCH_ROOT / "candidates" / f"{source}.json"
+        dst = candidate_dir / f"{source}.json"
+        dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+        paths.append(dst)
+    return tuple(paths)
+
+
+def test_paired_report_records_heldout_task_class_coverage(tmp_path):
+    report = run_paired_acceptance_pilot(BENCH_ROOT, output_dir=tmp_path)
+
+    coverage = report["heldout_coverage"]
+    assert coverage["split"] == "held_out"
+    by_class = coverage["by_task_class"]
+    task_classes = set(by_class)
+    assert len(task_classes) >= 2, by_class
+    assert "arithmetic" in task_classes
+    assert "text_processing" in task_classes
+
+    for task_class, entry in by_class.items():
+        assert entry["task_class"] == task_class
+        assert entry["split"] == "held_out"
+        assert entry["task_count"] >= 1
+        assert entry["candidate_count"] >= 2
+        assert entry["positive_control_count"] >= 1
+        assert entry["negative_control_count"] >= 1
+
+    public_surfaces = {
+        "heldout_coverage": report["heldout_coverage"],
+        "supervisor_public_inputs": [
+            row["supervisor_review"]["public_input_payload"]
+            for row in report["per_task_results"]
+        ],
+        "full_gate_reviewer_packets": [
+            row["supervisor_full_gate_review"]["reviewer_packet"]
+            for row in report["per_task_results"]
+        ],
+    }
+    serialized = json.dumps(public_surfaces, sort_keys=True, default=str)
+    for forbidden in (
+        "expected_outcome",
+        "final_score",
+        "oracle_accept",
+        "hidden_test_commands",
+        "hidden/test_behavior.py",
+        ".mergeability/",
+    ):
+        assert forbidden not in serialized, forbidden
+
+
+def test_validate_mergeability_corpus_requires_controls_per_task_class(tmp_path):
+    bench_root = tmp_path / "bench"
+    (bench_root / "tasks").mkdir(parents=True)
+    (bench_root / "candidates").mkdir(parents=True)
+    repo_root = bench_root / "repos" / "calculator_bug"
+    repo_root.mkdir(parents=True)
+    shutil_src = BENCH_ROOT / "repos" / "calculator_bug"
+    for src in shutil_src.rglob("*"):
+        target = repo_root / src.relative_to(shutil_src)
+        if src.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(src.read_bytes())
+
+    base_task = json.loads(
+        (BENCH_ROOT / "tasks" / "calculator_addition.json").read_text(encoding="utf-8")
+    )
+    base_task["task_class"] = "arithmetic"
+    (bench_root / "tasks" / "calculator_addition.json").write_text(
+        json.dumps(base_task, sort_keys=True), encoding="utf-8"
+    )
+    secondary_task = dict(base_task)
+    secondary_task["task_id"] = "arith-positive-only"
+    secondary_task["task_class"] = "positive_only"
+    (bench_root / "tasks" / "positive_only.json").write_text(
+        json.dumps(secondary_task, sort_keys=True), encoding="utf-8"
+    )
+
+    for source_name in (
+        "known_good",
+        "noop",
+        "known_bad",
+        "missing_regression_test",
+        "tautological_test",
+        "hidden_edit",
+        "mutable_escape",
+    ):
+        payload = json.loads(
+            (BENCH_ROOT / "candidates" / f"{source_name}.json").read_text(encoding="utf-8")
+        )
+        (bench_root / "candidates" / f"{source_name}.json").write_text(
+            json.dumps(payload, sort_keys=True), encoding="utf-8"
+        )
+
+    second_class_good = json.loads(
+        (BENCH_ROOT / "candidates" / "known_good.json").read_text(encoding="utf-8")
+    )
+    second_class_good["candidate_id"] = "positive-only-known-good"
+    second_class_good["task_id"] = "arith-positive-only"
+    (bench_root / "candidates" / "positive_only_known_good.json").write_text(
+        json.dumps(second_class_good, sort_keys=True), encoding="utf-8"
+    )
+
+    summary = validate_mergeability_corpus(bench_root, strict=False)
+    errors = summary["errors"]
+    joined = " | ".join(errors)
+    assert "task_class" in joined.lower()
+    assert "positive_only" in joined
+    assert any("control" in error.lower() for error in errors)
+    by_class = summary["control_coverage_by_task_class"]
+    assert "positive_only" in by_class
+    positive_only_entry = by_class["positive_only"]
+    assert positive_only_entry["missing_control_kinds"]
+
+
+def test_paired_report_catches_no_regression_failure(tmp_path):
+    candidate_paths = _build_regression_candidate_paths(tmp_path)
+
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        candidate_paths=candidate_paths,
+        output_dir=tmp_path / "out",
+    )
+
+    findings = report["no_regression_findings"]
+    assert findings, "expected at least one no-regression failure to be surfaced"
+    regression_ids = {entry["candidate_id"] for entry in findings}
+    assert "partial-fix-regression" in regression_ids
+
+    regression_row = next(
+        row
+        for row in report["per_task_results"]
+        if row["candidate_id"] == "partial-fix-regression"
+    )
+    assert regression_row["is_no_regression_failure"] is True
+    assert regression_row["baseline_accept"] is True
+    assert regression_row["oracle_accept"] is False
+
+    flags = set(report["gaming_flags"])
+    assert "no_regression_failure_detected" in flags
+
+
+def test_heldout_no_regression_report_remains_non_applyable(tmp_path):
+    candidate_paths = _build_regression_candidate_paths(tmp_path)
+
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        candidate_paths=candidate_paths,
+        output_dir=tmp_path / "out",
+    )
+
+    assert report["no_regression_findings"], "fixture must exercise the no-regression path"
+    assert report["heldout_coverage"]["split"] == "held_out"
+    assert report["metric_applyable"] is False
+    assert report["improvement_claim_allowed"] is False
+    assert report["default_change_allowed"] is False
+    assert report["policy_mutated"] is False
+    assert report["gate_advanced"] is False
+    assert report["recommendation"]["applyable_policy_proposal"] is False
+
+    assert derive_policy_evolution_proposals_from_report(
+        report,
+        repo_root=tmp_path,
+        affected_gates=("outcome_review",),
+    ) == []
+    assert report_contains_derivable_policy_record(report, repo_root=tmp_path) is False
+
+
+def test_no_regression_and_heldout_artifacts_export_replayable_hashes(tmp_path):
+    candidate_paths = _build_regression_candidate_paths(tmp_path)
+    output_dir = tmp_path / "out"
+
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        candidate_paths=candidate_paths,
+        output_dir=output_dir,
+    )
+
+    expected_coverage_hash = _sha256_json(report["heldout_coverage"])
+    expected_no_regression_hash = _sha256_json(report["no_regression_findings"])
+    assert report["heldout_coverage_sha256"] == expected_coverage_hash
+    assert report["no_regression_sha256"] == expected_no_regression_hash
+
+    report_path = output_dir / "paired_acceptance_report.json"
+    assert report_path.exists()
+    exported_report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert exported_report["heldout_coverage_sha256"] == expected_coverage_hash
+    assert exported_report["no_regression_sha256"] == expected_no_regression_hash
+    assert exported_report["heldout_coverage"] == report["heldout_coverage"]
+    assert exported_report["no_regression_findings"] == report["no_regression_findings"]
+    assert exported_report["report_sha256"] == report["report_sha256"]
     assert report["improvement_claim_allowed"] is False

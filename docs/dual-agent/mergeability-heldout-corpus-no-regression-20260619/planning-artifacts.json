@@ -1,0 +1,38 @@
+[
+  {
+    "kind": "prd",
+    "mutable_by_worker": false,
+    "path": "docs/dual-agent/mergeability-heldout-corpus-no-regression-20260619/source/prd.md",
+    "sha256": "10705e359a1467f6e1dc51406bf73b4a5616944fa5df6654adc5958f6b6870ce"
+  },
+  {
+    "kind": "grill_findings",
+    "mutable_by_worker": false,
+    "path": "docs/dual-agent/mergeability-heldout-corpus-no-regression-20260619/source/grill-findings.md",
+    "sha256": "ee8888bbaada6fcf00b20fa6fe6903a6ddfa5b74303b95c05bdc9a7c0cafa05d"
+  },
+  {
+    "kind": "issues",
+    "mutable_by_worker": false,
+    "path": "docs/dual-agent/mergeability-heldout-corpus-no-regression-20260619/source/issues.md",
+    "sha256": "361a873c539b783f5c1869e018fbfca5e877a3bb3cc268b98428041a8da3a58a"
+  },
+  {
+    "kind": "tdd_plan",
+    "mutable_by_worker": false,
+    "path": "docs/dual-agent/mergeability-heldout-corpus-no-regression-20260619/source/tdd.md",
+    "sha256": "bb0b67c65cf38bf82143cae84e8bdffd6875b7587b14639531888ceace74760e"
+  },
+  {
+    "kind": "grill_findings",
+    "mutable_by_worker": false,
+    "path": "docs/dual-agent/mergeability-heldout-corpus-no-regression-20260619/source/grill-findings-tdd.md",
+    "sha256": "f45b28d83f3f1301f259693edf36b6abd9eee0a314b9e7c1fccca8676e077d31"
+  },
+  {
+    "kind": "implementation_plan",
+    "mutable_by_worker": false,
+    "path": "docs/dual-agent/mergeability-heldout-corpus-no-regression-20260619/source/implementation-plan.md",
+    "sha256": "c5c12da3036a41e1dc4f138b4333736ab8211c52b073c8d7a81bb1a5ead7ee07"
+  }
+]
