@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import shutil
@@ -47,6 +48,7 @@ NEGATIVE_CONTROL_KINDS = frozenset({
     "lint_build_failure",
 })
 POSITIVE_CONTROL_KINDS = frozenset({"known_good", "secondary_rubric_only"})
+PUBLIC_PASS_HIDDEN_FAIL_CONTROL_KINDS = frozenset({"hidden_behavior_miss"})
 REQUIRED_CALIBRATION_CONTROL_KINDS = frozenset({
     "noop",
     "known_bad",
@@ -56,6 +58,7 @@ REQUIRED_CALIBRATION_CONTROL_KINDS = frozenset({
     "protected_path_escape",
     "scope_escape",
 })
+_GRADE_RESULT_CACHE: dict[tuple[str, ...], "MergeabilityResult"] = {}
 
 
 class MergeabilityBenchError(RuntimeError):
@@ -328,6 +331,17 @@ def grade_mergeability_candidate(
     fixture_root = (bench_root_path / task.repo_fixture_ref).resolve()
     if not fixture_root.exists():
         raise MergeabilityBenchError(f"repo fixture missing: {fixture_root}")
+    cache_key = _grade_cache_key(
+        task=task,
+        candidate=candidate,
+        fixture_root=fixture_root,
+        timeout_s=timeout_s,
+    )
+    cached = _GRADE_RESULT_CACHE.get(cache_key)
+    if cached is not None:
+        if output_dir is not None:
+            _write_result_artifact(cached, output_dir=Path(output_dir).expanduser())
+        return cached
 
     failures = _scope_failures(task, candidate)
     command_results: list[CommandResult] = []
@@ -393,6 +407,7 @@ def grade_mergeability_candidate(
 
     if output_dir is not None:
         _write_result_artifact(result, output_dir=Path(output_dir).expanduser())
+    _GRADE_RESULT_CACHE[cache_key] = result
     return result
 
 
@@ -432,8 +447,19 @@ def build_mergeability_corpus_manifest(
             for candidate in task_candidates
             if _candidate_expected_outcome(candidate) == "fail"
         ]
-        calibration_eligible = bool(positive and negative)
-        if calibration_eligible:
+        false_accept_traps = [
+            candidate.candidate_id
+            for candidate in task_candidates
+            if _candidate_is_public_pass_hidden_fail_trap(candidate)
+        ]
+        missing_requirements = _heldout_task_missing_requirements(
+            positive=positive,
+            negative=negative,
+            false_accept_traps=false_accept_traps,
+        )
+        grade_eligible = bool(positive and negative)
+        calibration_eligible = not missing_requirements
+        if grade_eligible:
             included_task_ids.append(task.task_id)
         task_entries.append({
             "task_id": task.task_id,
@@ -445,9 +471,12 @@ def build_mergeability_corpus_manifest(
             "candidate_count": len(task_candidates),
             "positive_controls": positive,
             "negative_controls": negative,
+            "false_accept_traps": false_accept_traps,
             "control_kinds": sorted({_candidate_control_kind(candidate) for candidate in task_candidates}),
+            "grade_eligible": grade_eligible,
             "calibration_eligible": calibration_eligible,
-            "excluded_reason": "" if calibration_eligible else "requires_positive_and_negative_controls",
+            "missing_requirements": missing_requirements,
+            "excluded_reason": "" if calibration_eligible else "requires_" + "_and_".join(missing_requirements),
         })
 
     candidate_entries = [
@@ -463,6 +492,7 @@ def build_mergeability_corpus_manifest(
             "control_kind": _candidate_control_kind(candidate),
             "expected_outcome": _candidate_expected_outcome(candidate),
             "baseline_accept": _baseline_accepts(candidate),
+            "false_accept_trap": _candidate_is_public_pass_hidden_fail_trap(candidate),
             "changed_files": list(candidate.changed_files),
         }
         for candidate in sorted(candidates, key=lambda item: (item.task_id, item.candidate_id))
@@ -473,6 +503,11 @@ def build_mergeability_corpus_manifest(
         "task_count": len(tasks),
         "candidate_count": len(candidates),
         "included_task_ids": included_task_ids,
+        "split_policy": {
+            "selection_splits": ["calibration", "dev"],
+            "reporting_split": "held_out",
+            "heldout_excluded_from_variant_selection": True,
+        },
         "excluded_task_ids": [
             entry["task_id"] for entry in task_entries if not entry["calibration_eligible"]
         ],
@@ -518,11 +553,17 @@ def _control_coverage_by_task_class(
             candidate for candidate in class_candidates
             if candidate.get("expected_outcome") == "fail"
         ]
+        traps = [
+            candidate for candidate in class_candidates
+            if candidate.get("false_accept_trap")
+        ]
         missing = []
         if not positive:
             missing.append("positive_control")
         if not negative:
             missing.append("negative_control")
+        if not traps:
+            missing.append("public_pass_hidden_fail_trap")
         coverage[task_class] = {
             "task_class": task_class,
             "split": "held_out",
@@ -531,6 +572,7 @@ def _control_coverage_by_task_class(
             "candidate_count": len(class_candidates),
             "positive_control_count": len(positive),
             "negative_control_count": len(negative),
+            "false_accept_trap_count": len(traps),
             "control_kinds": sorted({
                 str(candidate.get("control_kind") or "")
                 for candidate in class_candidates
@@ -548,6 +590,7 @@ def _heldout_coverage_from_manifest(manifest: Mapping[str, Any]) -> dict[str, An
         "task_class_count": len(by_task_class),
         "task_count": sum(int(entry.get("task_count") or 0) for entry in by_task_class.values()),
         "candidate_count": sum(int(entry.get("candidate_count") or 0) for entry in by_task_class.values()),
+        "split_policy": dict(manifest.get("split_policy") or {}),
         "by_task_class": by_task_class,
     }
 
@@ -579,6 +622,15 @@ def validate_mergeability_corpus(
                 if not entry["calibration_eligible"]
             )
         )
+    for entry in manifest["tasks"]:
+        if entry.get("split") != "held_out":
+            continue
+        missing = list(entry.get("missing_requirements") or [])
+        if missing:
+            errors.append(
+                f"task {entry['task_id']} missing held-out controls: "
+                + ", ".join(missing)
+            )
 
     observed_control_kinds = {_candidate_control_kind(candidate) for candidate in candidates}
     missing_control_kinds = sorted(REQUIRED_CALIBRATION_CONTROL_KINDS - observed_control_kinds)
@@ -732,6 +784,8 @@ def run_paired_acceptance_pilot(
         supervisor_full_gate_accept = bool(full_gate_review["accept"])
         row = {
             "task_id": result["task_id"],
+            "task_class": tasks[candidate.task_id].task_class,
+            "split": tasks[candidate.task_id].split,
             "candidate_id": result["candidate_id"],
             "control_kind": result["control_kind"],
             "expected_outcome": result["expected_outcome"],
@@ -764,7 +818,12 @@ def run_paired_acceptance_pilot(
             "supervisor_review": supervisor_review,
             "supervisor_full_gate_review": full_gate_review,
         }
-        row["is_no_regression_failure"] = bool(baseline_accept and not oracle_accept)
+        row["is_no_regression_failure"] = bool(
+            baseline_accept
+            and oracle_accept
+            and not supervisor_full_gate_accept
+            and not bool(full_gate_review["unavailable"])
+        )
         rows.append(row)
 
     baseline = _summarize_acceptance_arm(
@@ -858,6 +917,16 @@ def run_paired_acceptance_pilot(
         public_review=supervisor_candidate_review,
         full_gate=supervisor_full_gate,
     )
+    metric_splits = _metric_splits(
+        rows,
+        arms={
+            "baseline": baseline,
+            "supervisor_candidate_review": supervisor_candidate_review,
+            "supervisor_full_gate": supervisor_full_gate,
+            "oracle_ceiling": oracle_ceiling,
+            "supervisor": supervisor,
+        },
+    )
     report = {
         "schema_version": MERGEABILITY_PAIRED_REPORT_SCHEMA_VERSION,
         "bench_root": bench_root_path.as_posix(),
@@ -870,6 +939,8 @@ def run_paired_acceptance_pilot(
         "negative_control_count": negative_control_count,
         "heldout_coverage": heldout_coverage,
         "heldout_coverage_sha256": _sha256_json(heldout_coverage),
+        "split_policy": manifest["split_policy"],
+        "metric_splits": metric_splits,
         "no_regression_findings": no_regression_findings,
         "no_regression_sha256": _sha256_json(no_regression_findings),
         "candidate_pool_sha256": _sha256_json([
@@ -918,6 +989,16 @@ def run_paired_acceptance_pilot(
         "cost_usd": 0.0,
         "wall_clock_s": round(time.monotonic() - started, 6),
         "report_label": "calibration",
+        "heldout_reporting": {
+            "primary_metric_split": "held_out",
+            "dev_metric_status": metric_splits["dev"]["status"],
+            "best_of_k_in_sample": {
+                "present": False,
+                "label_allowed_as_heldout_improvement": False,
+                "reason": "held_out_metrics_are_reported_separately_from_in_sample_or_peak_selection",
+            },
+            "heldout_improvement_claim_allowed": False,
+        },
         "metric_applyable": False,
         "improvement_claim_allowed": False,
         "gaming_flags": sorted(gaming_flags),
@@ -1364,6 +1445,34 @@ def _candidate_expected_outcome(candidate: MergeabilityCandidate) -> str:
     return "fail"
 
 
+def _candidate_is_public_pass_hidden_fail_trap(candidate: MergeabilityCandidate) -> bool:
+    return bool(
+        _candidate_expected_outcome(candidate) == "fail"
+        and _candidate_control_kind(candidate) in PUBLIC_PASS_HIDDEN_FAIL_CONTROL_KINDS
+        and _baseline_accepts(candidate)
+        and (
+            candidate.generator_metadata.get("visible_tests_passed") is True
+            or candidate.provenance.get("visible_tests_passed") is True
+        )
+    )
+
+
+def _heldout_task_missing_requirements(
+    *,
+    positive: list[str],
+    negative: list[str],
+    false_accept_traps: list[str],
+) -> list[str]:
+    missing: list[str] = []
+    if not positive:
+        missing.append("positive_control")
+    if not negative:
+        missing.append("negative_control")
+    if not false_accept_traps:
+        missing.append("public_pass_hidden_fail_trap")
+    return missing
+
+
 def _baseline_accepts(candidate: MergeabilityCandidate) -> bool:
     metadata = candidate.generator_metadata
     provenance = candidate.provenance
@@ -1400,7 +1509,8 @@ def _no_regression_findings(
             "supervisor_candidate_review_accept": bool(row["supervisor_candidate_review_accept"]),
             "supervisor_full_gate_accept": bool(row["supervisor_full_gate_accept"]),
             "oracle_accept": bool(row["oracle_accept"]),
-            "reason": "baseline_or_public_path_accepted_candidate_that_failed_oracle",
+            "reason": "prior_true_positive_accept_rejected_by_supervisor_full_gate",
+            "protected_scope": "baseline_accepted_oracle_positive_cases",
             "receipt_id": row["receipt_id"],
         })
     return sorted(
@@ -1456,15 +1566,79 @@ def _summarize_acceptance_arm(
         "accepted_count": sum(1 for row in rows if row[accept_key]),
         "rejected_count": sum(1 for row in rows if not row[accept_key]),
         "false_accept_count": false_accept_count,
+        "n_bad": false_accept_denominator,
         "false_accept_denominator": false_accept_denominator,
         "false_accept_rate": _rate(false_accept_count, false_accept_denominator),
+        "false_accept_confidence_interval": _wilson_interval(false_accept_count, false_accept_denominator),
         "true_accept_count": true_accept_count,
+        "n_good": true_accept_denominator,
         "true_accept_denominator": true_accept_denominator,
         "true_accept_rate": _rate(true_accept_count, true_accept_denominator),
+        "true_accept_confidence_interval": _wilson_interval(true_accept_count, true_accept_denominator),
         "false_reject_count": false_reject_count,
         "false_reject_denominator": true_accept_denominator,
         "false_reject_rate": _rate(false_reject_count, true_accept_denominator),
         "cost_usd": 0.0,
+    }
+
+
+def _metric_splits(
+    rows: list[dict[str, Any]],
+    *,
+    arms: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    heldout_rows = [row for row in rows if row.get("split") == "held_out"]
+    return {
+        "held_out": {
+            "status": "reported",
+            "row_count": len(heldout_rows),
+            "task_classes": sorted({str(row.get("task_class") or "") for row in heldout_rows}),
+            "arms": {
+                arm: {
+                    "false_accept_rate": payload.get("false_accept_rate"),
+                    "true_accept_rate": payload.get("true_accept_rate"),
+                    "n_bad": payload.get("n_bad"),
+                    "n_good": payload.get("n_good"),
+                }
+                for arm, payload in sorted(arms.items())
+            },
+        },
+        "dev": {
+            "status": "not_reported",
+            "reason": "mergeability calibration fixtures are not used for variant selection in this report",
+            "row_count": 0,
+        },
+    }
+
+
+def _wilson_interval(count: int, denominator: int) -> dict[str, Any]:
+    if denominator <= 0:
+        return {
+            "method": "wilson_score",
+            "confidence": 0.95,
+            "label": "approximate_binary_proportion_interval",
+            "count": count,
+            "denominator": denominator,
+            "lower": None,
+            "upper": None,
+        }
+    z = 1.959963984540054
+    p_hat = count / denominator
+    z2 = z * z
+    centre = (p_hat + z2 / (2 * denominator)) / (1 + z2 / denominator)
+    radius = (
+        z
+        * math.sqrt((p_hat * (1 - p_hat) + z2 / (4 * denominator)) / denominator)
+        / (1 + z2 / denominator)
+    )
+    return {
+        "method": "wilson_score",
+        "confidence": 0.95,
+        "label": "approximate_binary_proportion_interval",
+        "count": count,
+        "denominator": denominator,
+        "lower": round(max(0.0, centre - radius), 6),
+        "upper": round(min(1.0, centre + radius), 6),
     }
 
 
@@ -1557,6 +1731,24 @@ def _hash_tree(root: Path) -> str:
             "sha256": sha256(path.read_bytes()).hexdigest(),
         })
     return _sha256_json(entries)
+
+
+def _grade_cache_key(
+    *,
+    task: MergeabilityTask,
+    candidate: MergeabilityCandidate,
+    fixture_root: Path,
+    timeout_s: float,
+) -> tuple[str, ...]:
+    return (
+        task.task_id,
+        task.task_hash,
+        candidate.candidate_id,
+        candidate.candidate_hash or _sha256_json(candidate.to_payload()),
+        _hash_tree(fixture_root),
+        str(timeout_s),
+        sys.executable,
+    )
 
 
 def _public_test_target_failures(
@@ -1882,6 +2074,7 @@ def _command_env(cwd: Path) -> dict[str, str]:
     return {
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
         "PYTHONPATH": str(cwd),
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
         "PYTHONDONTWRITEBYTECODE": "1",
     }
 

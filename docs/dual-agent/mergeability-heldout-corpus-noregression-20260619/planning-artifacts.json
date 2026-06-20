@@ -1,0 +1,22 @@
+[
+  {
+    "kind": "prd",
+    "path": "docs/dual-agent/mergeability-heldout-corpus-noregression-20260619/prd.md"
+  },
+  {
+    "kind": "grill_findings",
+    "path": "docs/dual-agent/mergeability-heldout-corpus-noregression-20260619/grill-findings.md"
+  },
+  {
+    "kind": "issues",
+    "path": "docs/dual-agent/mergeability-heldout-corpus-noregression-20260619/issues.md"
+  },
+  {
+    "kind": "tdd_plan",
+    "path": "docs/dual-agent/mergeability-heldout-corpus-noregression-20260619/tdd.md"
+  },
+  {
+    "kind": "grill_findings",
+    "path": "docs/dual-agent/mergeability-heldout-corpus-noregression-20260619/grill-findings-tdd.md"
+  }
+]

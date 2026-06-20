@@ -1,0 +1,47 @@
+[
+  {
+    "receipt_id": "skill-to-prd-mergeability-heldout-corpus-noregression-20260619",
+    "kind": "skill_run",
+    "skill": "to-prd",
+    "stage": "to_prd",
+    "status": "passed",
+    "artifacts": ["docs/dual-agent/mergeability-heldout-corpus-noregression-20260619/prd.md"],
+    "claims": ["PRD authored with promise contracts P1-P7 for held-out corpus controls, true-positive no-regression, and honest reporting"]
+  },
+  {
+    "receipt_id": "skill-prd-grill-mergeability-heldout-corpus-noregression-20260619",
+    "kind": "skill_run",
+    "skill": "grill-with-docs",
+    "stage": "prd_grill",
+    "status": "passed",
+    "artifacts": ["docs/dual-agent/mergeability-heldout-corpus-noregression-20260619/grill-findings.md"],
+    "claims": ["PRD grill resolved false-accept protection, per-task control, interval, and peak-reporting risks"]
+  },
+  {
+    "receipt_id": "skill-to-issues-mergeability-heldout-corpus-noregression-20260619",
+    "kind": "skill_run",
+    "skill": "to-issues",
+    "stage": "to_issues",
+    "status": "passed",
+    "artifacts": ["docs/dual-agent/mergeability-heldout-corpus-noregression-20260619/issues.md"],
+    "claims": ["Issues sliced into validator and paired-report tracer bullets"]
+  },
+  {
+    "receipt_id": "skill-tdd-mergeability-heldout-corpus-noregression-20260619",
+    "kind": "skill_run",
+    "skill": "tdd",
+    "stage": "tdd",
+    "status": "passed",
+    "artifacts": ["docs/dual-agent/mergeability-heldout-corpus-noregression-20260619/tdd.md"],
+    "claims": ["TDD plan starts with public-boundary RED tests for corpus validation and paired reporting"]
+  },
+  {
+    "receipt_id": "skill-tdd-grill-mergeability-heldout-corpus-noregression-20260619",
+    "kind": "skill_run",
+    "skill": "grill-with-docs",
+    "stage": "tdd_grill",
+    "status": "passed",
+    "artifacts": ["docs/dual-agent/mergeability-heldout-corpus-noregression-20260619/grill-findings-tdd.md"],
+    "claims": ["TDD grill resolved helper-only, vacuous no-regression, reporting-honesty, and policy-authority risks"]
+  }
+]

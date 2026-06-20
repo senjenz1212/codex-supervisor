@@ -240,7 +240,7 @@ def test_mergeability_corpus_manifest_requires_positive_and_negative_controls():
     assert task["positive_controls"] == ["known-good"]
     assert task["negative_controls"] == []
     assert task["calibration_eligible"] is False
-    assert task["excluded_reason"] == "requires_positive_and_negative_controls"
+    assert task["excluded_reason"] == "requires_negative_control_and_public_pass_hidden_fail_trap"
 
     try:
         validate_mergeability_corpus(
@@ -248,7 +248,8 @@ def test_mergeability_corpus_manifest_requires_positive_and_negative_controls():
             candidate_paths=(BENCH_ROOT / "candidates" / "known_good.json",),
         )
     except MergeabilityBenchError as exc:
-        assert "requires_positive_and_negative_controls" in str(exc)
+        assert "negative_control" in str(exc)
+        assert "public_pass_hidden_fail_trap" in str(exc)
     else:  # pragma: no cover - defensive readability
         raise AssertionError("positive-only corpus should not calibrate")
 
@@ -574,6 +575,7 @@ def test_perfect_oracle_agreement_tripwire_blocks_improvement_claim(tmp_path):
         "known_bad": "known_bad",
         "missing_regression_test": "missing_regression_test",
         "tautological_test": "tautological_test",
+        "hidden_behavior_miss": "hidden_behavior_miss",
         "hidden_edit": "protected_path_escape",
         "mutable_escape": "scope_escape",
     }
@@ -581,14 +583,16 @@ def test_perfect_oracle_agreement_tripwire_blocks_improvement_claim(tmp_path):
     for source_name, control in source_candidates.items():
         payload = json.loads((BENCH_ROOT / "candidates" / f"{source_name}.json").read_text(encoding="utf-8"))
         if control in {
+            "noop",
             "known_bad",
+            "hidden_behavior_miss",
             "missing_regression_test",
             "tautological_test",
             "protected_path_escape",
             "scope_escape",
         }:
-            payload["changed_files"] = []
-            payload["files"] = {}
+            payload["changed_files"] = ["hidden/test_behavior.py"]
+            payload["files"] = {"hidden/test_behavior.py": "# protected path change\n"}
             payload["generator_metadata"]["expected_outcome"] = "fail"
         payload["generator_metadata"]["control"] = control
         target = candidate_dir / f"{source_name}.json"
@@ -813,12 +817,7 @@ def test_existing_autoresearch_report_only_invariants_remain_green(tmp_path):
 
 
 def _build_regression_candidate_paths(tmp_path: Path) -> tuple[Path, ...]:
-    """Build a candidate pool containing a no-regression regression candidate.
-
-    Reuses the in-repo control set and adds ``partial_fix_regression`` which
-    fixes the visible test path but breaks the previously-passing negative
-    integer case.
-    """
+    """Build a compact candidate pool with positives, negatives, and traps."""
 
     candidate_dir = tmp_path / "candidates"
     candidate_dir.mkdir()
@@ -841,6 +840,56 @@ def _build_regression_candidate_paths(tmp_path: Path) -> tuple[Path, ...]:
     return tuple(paths)
 
 
+def _bench_with_calculator_candidates(tmp_path: Path, candidate_names: tuple[str, ...]) -> Path:
+    bench_root = tmp_path / "bench"
+    (bench_root / "tasks").mkdir(parents=True)
+    (bench_root / "candidates").mkdir()
+    shutil.copytree(
+        BENCH_ROOT / "repos" / "calculator_bug",
+        bench_root / "repos" / "calculator_bug",
+    )
+    task_src = BENCH_ROOT / "tasks" / "calculator_addition.json"
+    (bench_root / "tasks" / "calculator_addition.json").write_text(
+        task_src.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    for candidate_name in candidate_names:
+        src = BENCH_ROOT / "candidates" / f"{candidate_name}.json"
+        (bench_root / "candidates" / f"{candidate_name}.json").write_text(
+            src.read_text(encoding="utf-8"), encoding="utf-8"
+        )
+    return bench_root
+
+
+def test_validate_mergeability_corpus_rejects_task_without_positive_control(tmp_path):
+    bench_root = _bench_with_calculator_candidates(tmp_path, ("known_bad",))
+
+    summary = validate_mergeability_corpus(bench_root, strict=False)
+
+    errors = " | ".join(summary["errors"])
+    assert "task calculator-addition missing held-out controls" in errors
+    assert "positive_control" in errors
+
+
+def test_validate_mergeability_corpus_rejects_task_without_negative_control(tmp_path):
+    bench_root = _bench_with_calculator_candidates(tmp_path, ("known_good",))
+
+    summary = validate_mergeability_corpus(bench_root, strict=False)
+
+    errors = " | ".join(summary["errors"])
+    assert "task calculator-addition missing held-out controls" in errors
+    assert "negative_control" in errors
+
+
+def test_validate_mergeability_corpus_rejects_task_without_false_accept_trap(tmp_path):
+    bench_root = _bench_with_calculator_candidates(tmp_path, ("known_good", "noop"))
+
+    summary = validate_mergeability_corpus(bench_root, strict=False)
+
+    errors = " | ".join(summary["errors"])
+    assert "task calculator-addition missing held-out controls" in errors
+    assert "public_pass_hidden_fail_trap" in errors
+
+
 def test_paired_report_records_heldout_task_class_coverage(tmp_path):
     report = run_paired_acceptance_pilot(BENCH_ROOT, output_dir=tmp_path)
 
@@ -859,6 +908,7 @@ def test_paired_report_records_heldout_task_class_coverage(tmp_path):
         assert entry["candidate_count"] >= 2
         assert entry["positive_control_count"] >= 1
         assert entry["negative_control_count"] >= 1
+        assert entry["false_accept_trap_count"] >= 1
 
     public_surfaces = {
         "heldout_coverage": report["heldout_coverage"],
@@ -881,6 +931,34 @@ def test_paired_report_records_heldout_task_class_coverage(tmp_path):
         ".mergeability/",
     ):
         assert forbidden not in serialized, forbidden
+
+
+def test_paired_report_separates_heldout_metrics_and_confidence_intervals(tmp_path):
+    report = run_paired_acceptance_pilot(BENCH_ROOT, output_dir=tmp_path)
+
+    assert report["split_policy"]["reporting_split"] == "held_out"
+    assert report["split_policy"]["heldout_excluded_from_variant_selection"] is True
+    metric_splits = report["metric_splits"]
+    assert metric_splits["held_out"]["status"] == "reported"
+    assert metric_splits["held_out"]["row_count"] == report["candidate_count"]
+    assert metric_splits["dev"]["status"] == "not_reported"
+
+    for arm_name in (
+        "baseline",
+        "supervisor_candidate_review",
+        "supervisor_full_gate",
+        "oracle_ceiling",
+    ):
+        arm = report["arms"][arm_name]
+        assert arm["n_bad"] == arm["false_accept_denominator"]
+        assert arm["n_good"] == arm["true_accept_denominator"]
+        false_accept_ci = arm["false_accept_confidence_interval"]
+        true_accept_ci = arm["true_accept_confidence_interval"]
+        assert false_accept_ci["method"] == "wilson_score"
+        assert true_accept_ci["method"] == "wilson_score"
+        assert false_accept_ci["label"] == "approximate_binary_proportion_interval"
+        assert false_accept_ci["denominator"] == arm["false_accept_denominator"]
+        assert true_accept_ci["denominator"] == arm["true_accept_denominator"]
 
 
 def test_validate_mergeability_corpus_requires_controls_per_task_class(tmp_path):
@@ -956,24 +1034,58 @@ def test_paired_report_catches_no_regression_failure(tmp_path):
         BENCH_ROOT,
         candidate_paths=candidate_paths,
         output_dir=tmp_path / "out",
+        reviewer_panel=_deny_panel,
     )
 
     findings = report["no_regression_findings"]
     assert findings, "expected at least one no-regression failure to be surfaced"
     regression_ids = {entry["candidate_id"] for entry in findings}
-    assert "partial-fix-regression" in regression_ids
+    assert "known-good" in regression_ids
+    assert "partial-fix-regression" not in regression_ids
 
     regression_row = next(
         row
         for row in report["per_task_results"]
-        if row["candidate_id"] == "partial-fix-regression"
+        if row["candidate_id"] == "known-good"
     )
     assert regression_row["is_no_regression_failure"] is True
     assert regression_row["baseline_accept"] is True
-    assert regression_row["oracle_accept"] is False
+    assert regression_row["oracle_accept"] is True
+
+    prior_false_accept_row = next(
+        row
+        for row in report["per_task_results"]
+        if row["candidate_id"] == "partial-fix-regression"
+    )
+    assert prior_false_accept_row["baseline_accept"] is True
+    assert prior_false_accept_row["oracle_accept"] is False
+    assert prior_false_accept_row["is_no_regression_failure"] is False
 
     flags = set(report["gaming_flags"])
     assert "no_regression_failure_detected" in flags
+
+
+def test_no_regression_blocks_prior_true_positive_rejects_not_false_accepts(tmp_path):
+    candidate_paths = _build_regression_candidate_paths(tmp_path)
+
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        candidate_paths=candidate_paths,
+        output_dir=tmp_path / "out",
+        reviewer_panel=_deny_panel,
+    )
+
+    findings_by_id = {
+        finding["candidate_id"]: finding
+        for finding in report["no_regression_findings"]
+    }
+    assert findings_by_id["known-good"]["reason"] == (
+        "prior_true_positive_accept_rejected_by_supervisor_full_gate"
+    )
+    assert findings_by_id["known-good"]["protected_scope"] == (
+        "baseline_accepted_oracle_positive_cases"
+    )
+    assert "partial-fix-regression" not in findings_by_id
 
 
 def test_heldout_no_regression_report_remains_non_applyable(tmp_path):
@@ -983,6 +1095,7 @@ def test_heldout_no_regression_report_remains_non_applyable(tmp_path):
         BENCH_ROOT,
         candidate_paths=candidate_paths,
         output_dir=tmp_path / "out",
+        reviewer_panel=_deny_panel,
     )
 
     assert report["no_regression_findings"], "fixture must exercise the no-regression path"
@@ -1000,6 +1113,17 @@ def test_heldout_no_regression_report_remains_non_applyable(tmp_path):
         affected_gates=("outcome_review",),
     ) == []
     assert report_contains_derivable_policy_record(report, repo_root=tmp_path) is False
+
+
+def test_best_of_k_peak_cannot_be_labeled_heldout_improvement(tmp_path):
+    report = run_paired_acceptance_pilot(BENCH_ROOT, output_dir=tmp_path)
+
+    guard = report["heldout_reporting"]["best_of_k_in_sample"]
+    assert guard["present"] is False
+    assert guard["label_allowed_as_heldout_improvement"] is False
+    assert report["heldout_reporting"]["heldout_improvement_claim_allowed"] is False
+    assert report["metric_applyable"] is False
+    assert report["improvement_claim_allowed"] is False
 
 
 def test_no_regression_and_heldout_artifacts_export_replayable_hashes(tmp_path):
