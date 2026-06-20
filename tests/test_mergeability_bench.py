@@ -28,6 +28,7 @@ from supervisor.mergeability_bench import (
     result_receipt,
     run_live_mergeability_candidate_generation,
     run_paired_acceptance_pilot,
+    run_powered_factorial_mergeability_evaluation,
     validate_mergeability_corpus,
 )
 
@@ -80,6 +81,52 @@ def _deny_panel(_packet):
         "reason": "deterministic_panel_denial",
         "reviewer_ids": ["fixture-reviewer"],
     }
+
+
+def _factorial_arm_decisions(*, unmatched_tar: bool = False) -> dict[str, dict[str, bool]]:
+    positives = {"known-good", "secondary-rubric-only", "text-known-good"}
+    public_traps = {"hidden-behavior-miss", "text-hidden-behavior-miss"}
+    candidate_ids = {
+        path.stem: load_mergeability_candidate(path).candidate_id
+        for path in BENCH_ROOT.glob("candidates/*.json")
+    }
+
+    def accepts(*extra: str) -> dict[str, bool]:
+        accepted = positives | set(extra)
+        return {
+            candidate_id: candidate_id in accepted
+            for candidate_id in candidate_ids.values()
+        }
+
+    same_model = accepts("hidden-behavior-miss", "text-hidden-behavior-miss")
+    if unmatched_tar:
+        same_model["known-good"] = False
+    return {
+        "single_agent_baseline": {candidate_id: True for candidate_id in candidate_ids.values()},
+        "same_model_multi_agent": same_model,
+        "hetero_multi_reviewer": accepts("hidden-behavior-miss"),
+        "runtime_evidence_floor": accepts("hidden-behavior-miss", "text-hidden-behavior-miss"),
+        "full_supervisor_stack": accepts(),
+    }
+
+
+def _factorial_reviewer_results() -> dict[str, list[dict]]:
+    decisions = _factorial_arm_decisions()["full_supervisor_stack"]
+    results: dict[str, list[dict]] = {}
+    for candidate_id, accept in decisions.items():
+        results[candidate_id] = [
+            {"reviewer_id": "claude-reviewer", "decision": "accept" if accept else "deny"},
+            {"reviewer_id": "cursor-reviewer", "decision": "accept" if accept else "deny"},
+            {
+                "reviewer_id": "codex-reviewer",
+                "decision": (
+                    "accept"
+                    if accept or candidate_id == "hidden-behavior-miss"
+                    else "deny"
+                ),
+            },
+        ]
+    return results
 
 
 class _FakeGenerator:
@@ -1488,3 +1535,221 @@ def test_live_generation_report_cannot_create_policy_proposal(tmp_path):
         repo_root=Path.cwd(),
         affected_gates=("execution", "outcome_review"),
     ) == []
+
+
+def test_powered_factorial_report_includes_all_labeled_arms(tmp_path):
+    report = run_powered_factorial_mergeability_evaluation(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        arm_decisions=_factorial_arm_decisions(),
+        reviewer_panel_results=_factorial_reviewer_results(),
+        powered_thresholds={"min_bad": 1, "min_good": 1},
+    )
+
+    assert report["schema_version"] == "supervisor-mergeability-powered-factorial-report/v1"
+    assert set(report["arms"]) == {
+        "single_agent_baseline",
+        "same_model_multi_agent",
+        "hetero_multi_reviewer",
+        "runtime_evidence_floor",
+        "full_supervisor_stack",
+        "oracle_ceiling",
+    }
+    assert report["arms"]["full_supervisor_stack"]["arm_role"] == "full_supervisor_stack"
+    assert report["arms"]["oracle_ceiling"]["oracle_coupled"] is True
+    assert report["report_label"] == "powered_factorial_evaluation"
+
+
+def test_powered_factorial_uses_same_candidate_pool_across_arms(tmp_path):
+    report = run_powered_factorial_mergeability_evaluation(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        arm_decisions=_factorial_arm_decisions(),
+        reviewer_panel_results=_factorial_reviewer_results(),
+    )
+
+    pool_hashes = report["candidate_pool_by_arm_sha256"]
+    assert len(set(pool_hashes.values())) == 1
+    assert report["same_candidate_pool"] is True
+
+    broken = _factorial_arm_decisions()
+    broken["same_model_multi_agent"].pop("known-good")
+    try:
+        run_powered_factorial_mergeability_evaluation(
+            BENCH_ROOT,
+            output_dir=tmp_path / "broken",
+            arm_decisions=broken,
+            reviewer_panel_results=_factorial_reviewer_results(),
+        )
+    except MergeabilityBenchError as exc:
+        assert "candidate pool mismatch" in str(exc)
+    else:  # pragma: no cover - defensive readability
+        raise AssertionError("factorial arms must share one candidate pool")
+
+
+def test_matched_tar_refuses_unmatched_comparisons(tmp_path):
+    report = run_powered_factorial_mergeability_evaluation(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        arm_decisions=_factorial_arm_decisions(unmatched_tar=True),
+        reviewer_panel_results=_factorial_reviewer_results(),
+    )
+
+    comparison = report["matched_true_accept"]["same_model_multi_agent"]
+    assert comparison["status"] == "not_matched"
+    assert comparison["baseline_true_accept_rate"] != comparison["supervisor_true_accept_rate"]
+
+
+def test_powered_factorial_records_far_tar_frr_confidence_and_discordance(tmp_path):
+    report = run_powered_factorial_mergeability_evaluation(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        arm_decisions=_factorial_arm_decisions(),
+        reviewer_panel_results=_factorial_reviewer_results(),
+    )
+
+    arm = report["arms"]["full_supervisor_stack"]
+    assert "false_accept_rate" in arm
+    assert "true_accept_rate" in arm
+    assert "false_reject_rate" in arm
+    assert arm["false_accept_confidence_interval"]["method"] == "wilson_score"
+    assert arm["true_accept_confidence_interval"]["method"] == "wilson_score"
+    discordance = report["paired_discordant_counts"]["full_supervisor_stack"]
+    assert discordance["candidate_count"] == report["candidate_count"]
+    assert discordance["left_accept_right_reject"] >= 1
+
+
+def test_oracle_ceiling_cannot_be_reported_as_supervisor_improvement(tmp_path):
+    report = run_powered_factorial_mergeability_evaluation(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        arm_decisions=_factorial_arm_decisions(),
+        reviewer_panel_results=_factorial_reviewer_results(),
+        powered_thresholds={"min_bad": 1, "min_good": 1},
+    )
+
+    oracle = report["arms"]["oracle_ceiling"]
+    assert oracle["oracle_coupled"] is True
+    assert oracle["improvement_claim_allowed"] is False
+    assert report["promotion_guardrails"]["oracle_ceiling_supervisor_claim_allowed"] is False
+
+
+def test_leave_one_reviewer_out_records_marginal_effects_and_correlation(tmp_path):
+    report = run_powered_factorial_mergeability_evaluation(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        arm_decisions=_factorial_arm_decisions(),
+        reviewer_panel_results=_factorial_reviewer_results(),
+    )
+
+    analysis = report["leave_one_reviewer_out"]
+    assert analysis["status"] == "computed"
+    assert {entry["reviewer_id"] for entry in analysis["reviewer_effects"]} == {
+        "claude-reviewer",
+        "cursor-reviewer",
+        "codex-reviewer",
+    }
+    assert analysis["reviewer_correlation"]["pairwise_agreement"]
+
+
+def test_reviewer_unavailable_blocks_full_stack_claim(tmp_path):
+    report = run_powered_factorial_mergeability_evaluation(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        arm_decisions={
+            key: value
+            for key, value in _factorial_arm_decisions().items()
+            if key != "full_supervisor_stack"
+        },
+        reviewer_panel_results=None,
+        powered_thresholds={"min_bad": 1, "min_good": 1},
+    )
+
+    assert report["arms"]["full_supervisor_stack"]["availability_status"] == "unavailable"
+    assert report["matched_true_accept"]["full_supervisor_stack"]["status"] == "unavailable"
+    assert report["metric_applyable"] is False
+    assert report["improvement_claim_allowed"] is False
+    assert report["recommendation"]["applyable_policy_proposal"] is False
+    assert derive_policy_evolution_proposals_from_report(
+        report,
+        repo_root=Path.cwd(),
+        affected_gates=("execution", "outcome_review"),
+    ) == []
+
+
+def test_gaming_flagged_factorial_run_creates_no_applyable_proposal(tmp_path):
+    report = run_powered_factorial_mergeability_evaluation(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        arm_decisions=_factorial_arm_decisions(),
+        reviewer_panel_results=_factorial_reviewer_results(),
+        powered_thresholds={"min_bad": 1, "min_good": 1},
+        gaming_flags=("synthetic_gaming_detected",),
+    )
+
+    assert "synthetic_gaming_detected" in report["gaming_flags"]
+    assert report["metric_applyable"] is False
+    assert derive_policy_evolution_proposals_from_report(
+        report,
+        repo_root=Path.cwd(),
+        affected_gates=("execution", "outcome_review"),
+    ) == []
+
+
+def test_powered_threshold_unmet_keeps_metric_non_applyable(tmp_path):
+    report = run_powered_factorial_mergeability_evaluation(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        arm_decisions=_factorial_arm_decisions(),
+        reviewer_panel_results=_factorial_reviewer_results(),
+        powered_thresholds={"min_bad": 999, "min_good": 999},
+    )
+
+    assert report["sample_size_sufficiency"]["status"] == "underpowered"
+    assert report["metric_applyable"] is False
+    assert report["improvement_claim_allowed"] is False
+
+
+def test_powered_threshold_met_may_allow_metric_but_never_mutates_policy(tmp_path):
+    report = run_powered_factorial_mergeability_evaluation(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        arm_decisions=_factorial_arm_decisions(),
+        reviewer_panel_results=_factorial_reviewer_results(),
+        powered_thresholds={"min_bad": 1, "min_good": 1},
+    )
+
+    assert report["sample_size_sufficiency"]["status"] == "sufficient"
+    assert report["metric_applyable"] is True
+    assert report["improvement_claim_allowed"] is False
+    assert report["default_change_allowed"] is False
+    assert report["policy_mutated"] is False
+    assert report["gate_advanced"] is False
+    assert report["recommendation"]["applyable_policy_proposal"] is False
+    assert derive_policy_evolution_proposals_from_report(
+        report,
+        repo_root=Path.cwd(),
+        affected_gates=("execution", "outcome_review"),
+    ) == []
+
+
+def test_powered_factorial_exports_replayable_artifacts_and_trend_row(tmp_path):
+    report = run_powered_factorial_mergeability_evaluation(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        arm_decisions=_factorial_arm_decisions(),
+        reviewer_panel_results=_factorial_reviewer_results(),
+        powered_thresholds={"min_bad": 1, "min_good": 1},
+    )
+
+    report_path = tmp_path / "powered_factorial_report.json"
+    rows_path = tmp_path / "powered_factorial_per_task_results.jsonl"
+    trends_path = tmp_path / "powered_factorial_trend_rows.json"
+    assert report_path.exists()
+    assert rows_path.exists()
+    assert trends_path.exists()
+    exported_report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert exported_report["report_sha256"] == report["report_sha256"]
+    trend_rows = json.loads(trends_path.read_text(encoding="utf-8"))
+    assert trend_rows == report["trend_rows"]
+    assert any(row["gate"] == "powered_factorial_eval" for row in trend_rows)

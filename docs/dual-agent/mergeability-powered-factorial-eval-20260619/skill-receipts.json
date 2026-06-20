@@ -1,0 +1,42 @@
+[
+  {
+    "receipt_id": "skill-to-prd-mergeability-powered-factorial-eval-20260619",
+    "kind": "skill_run",
+    "stage": "to_prd",
+    "skill": "to-prd",
+    "status": "passed",
+    "artifact": "docs/dual-agent/mergeability-powered-factorial-eval-20260619/source/prd.md"
+  },
+  {
+    "receipt_id": "skill-prd-grill-mergeability-powered-factorial-eval-20260619",
+    "kind": "skill_run",
+    "stage": "prd_grill",
+    "skill": "grill-with-docs",
+    "status": "passed",
+    "artifact": "docs/dual-agent/mergeability-powered-factorial-eval-20260619/source/grill-findings.md"
+  },
+  {
+    "receipt_id": "skill-to-issues-mergeability-powered-factorial-eval-20260619",
+    "kind": "skill_run",
+    "stage": "to_issues",
+    "skill": "to-issues",
+    "status": "passed",
+    "artifact": "docs/dual-agent/mergeability-powered-factorial-eval-20260619/source/issues.md"
+  },
+  {
+    "receipt_id": "skill-tdd-mergeability-powered-factorial-eval-20260619",
+    "kind": "skill_run",
+    "stage": "tdd",
+    "skill": "tdd",
+    "status": "passed",
+    "artifact": "docs/dual-agent/mergeability-powered-factorial-eval-20260619/source/tdd.md"
+  },
+  {
+    "receipt_id": "skill-tdd-grill-mergeability-powered-factorial-eval-20260619",
+    "kind": "skill_run",
+    "stage": "tdd_grill",
+    "skill": "grill-with-docs",
+    "status": "passed",
+    "artifact": "docs/dual-agent/mergeability-powered-factorial-eval-20260619/source/grill-findings-tdd.md"
+  }
+]
