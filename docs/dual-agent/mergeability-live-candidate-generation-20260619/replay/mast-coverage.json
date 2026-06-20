@@ -1,0 +1,354 @@
+[
+  {
+    "deterministic_probe": "blocked payload reason `disobey_task_spec` or planning artifact failure",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "failure_taxonomy_for_payload",
+    "mast_category": "Specification Issues",
+    "mast_code": "FM-1.1",
+    "mast_mode": "Disobey task specification",
+    "sources": [
+      {
+        "event_id": 821005,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 821005,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      }
+    ],
+    "status": "observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "blocked payload reason `role_violation_covenant`",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "failure_taxonomy_for_payload -> classify_failure",
+    "mast_category": "Specification Issues",
+    "mast_code": "FM-1.2",
+    "mast_mode": "Disobey role specification",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "same gate and handoff packet observed twice",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "detect_sequence_failures",
+    "mast_category": "Specification Issues",
+    "mast_code": "FM-1.3",
+    "mast_mode": "Step repetition",
+    "sources": [
+      {
+        "details": {
+          "signature": [
+            "prd_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/mergeability-live-candidate-generation-20260619.json"
+          ]
+        },
+        "event_ids": [
+          821005,
+          821210
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "execution",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/mergeability-live-candidate-generation-20260619.json"
+          ]
+        },
+        "event_ids": [
+          822054,
+          822265
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/mergeability-live-candidate-generation-20260619.json"
+          ]
+        },
+        "event_ids": [
+          822350,
+          822564
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/mergeability-live-candidate-generation-20260619.json"
+          ]
+        },
+        "event_ids": [
+          822350,
+          822580
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/mergeability-live-candidate-generation-20260619.json"
+          ]
+        },
+        "event_ids": [
+          822350,
+          823282
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/mergeability-live-candidate-generation-20260619.json"
+          ]
+        },
+        "event_ids": [
+          822350,
+          823371
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/mergeability-live-candidate-generation-20260619.json"
+          ]
+        },
+        "event_ids": [
+          822350,
+          823959
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/mergeability-live-candidate-generation-20260619.json"
+          ]
+        },
+        "event_ids": [
+          822350,
+          824052
+        ],
+        "source": "sequence"
+      }
+    ],
+    "status": "observed_in_run",
+    "trigger_surface": "sequence"
+  },
+  {
+    "deterministic_probe": "blocked payload reason `lost_conversation_history`",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "classify_failure",
+    "mast_category": "Specification Issues",
+    "mast_code": "FM-1.4",
+    "mast_mode": "Loss of conversation history",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "blocked payload reason `agents_not_converged_max_rounds`",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "classify_failure",
+    "mast_category": "Specification Issues",
+    "mast_code": "FM-1.5",
+    "mast_mode": "Unaware of termination conditions",
+    "sources": [
+      {
+        "event_id": 822564,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 822564,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 823282,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 823282,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 823959,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 823959,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      }
+    ],
+    "status": "observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "blocked payload reason `conversation_reset`",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "classify_failure",
+    "mast_category": "Inter-Agent Misalignment",
+    "mast_code": "FM-2.1",
+    "mast_mode": "Conversation reset",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "blocked payload reason `ambiguous_input_no_clarification`",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "classify_failure",
+    "mast_category": "Inter-Agent Misalignment",
+    "mast_code": "FM-2.2",
+    "mast_mode": "Fail to ask for clarification",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "blocked payload reason `scope_violation_off_scope`",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "classify_failure",
+    "mast_category": "Inter-Agent Misalignment",
+    "mast_code": "FM-2.3",
+    "mast_mode": "Task derailment",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "Cursor or reviewer disagreement probe fails",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "failure_taxonomy_for_payload",
+    "mast_category": "Inter-Agent Misalignment",
+    "mast_code": "FM-2.4",
+    "mast_mode": "Information withholding",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "Claude response does not address a prior Codex objection",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "detect_sequence_failures",
+    "mast_category": "Inter-Agent Misalignment",
+    "mast_code": "FM-2.5",
+    "mast_mode": "Ignored other agent input",
+    "sources": [
+      {
+        "details": {
+          "objection": "gate blocked"
+        },
+        "event_ids": [
+          821006,
+          821209
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "gate blocked"
+        },
+        "event_ids": [
+          822055,
+          822264
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "independent_reviewer_non_accept: independent-reviewer-1"
+        },
+        "event_ids": [
+          822558,
+          822579
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "independent_reviewer_non_accept: independent-reviewer-1"
+        },
+        "event_ids": [
+          823276,
+          823370
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "independent_reviewer_non_accept: independent-reviewer-1"
+        },
+        "event_ids": [
+          823957,
+          824051
+        ],
+        "source": "sequence"
+      }
+    ],
+    "status": "observed_in_run",
+    "trigger_surface": "sequence"
+  },
+  {
+    "deterministic_probe": "outcome fidelity or message protocol failure",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "failure_taxonomy_for_payload",
+    "mast_category": "Inter-Agent Misalignment",
+    "mast_code": "FM-2.6",
+    "mast_mode": "Reasoning-action mismatch",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "accepted gate is missing a required probe",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "failure_taxonomy_for_payload + detect_sequence_failures",
+    "mast_category": "Task Verification",
+    "mast_code": "FM-3.1",
+    "mast_mode": "Premature termination",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload+sequence"
+  },
+  {
+    "deterministic_probe": "claim verification or evidence receipt probe fails",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "failure_taxonomy_for_payload",
+    "mast_category": "Task Verification",
+    "mast_code": "FM-3.2",
+    "mast_mode": "No or incomplete verification",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "Cursor rejects after the gate was accepted",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "detect_sequence_failures",
+    "mast_category": "Task Verification",
+    "mast_code": "FM-3.3",
+    "mast_mode": "Incorrect verification",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "sequence"
+  }
+]

@@ -1,0 +1,82 @@
+[
+  {
+    "receipt_id": "skill-to-prd-mergeability-live-candidate-generation-20260619",
+    "kind": "skill_run",
+    "skill": "to-prd",
+    "stage": "to_prd",
+    "status": "passed",
+    "artifacts": [
+      {
+        "path": "docs/dual-agent/mergeability-live-candidate-generation-20260619/source/prd.md",
+        "sha256": "14456fc123152b814fa379b99f522fc0eee846b30c2afdda315096afcbf5abcd"
+      }
+    ],
+    "claims": [
+      "PRD authored with promise contracts P1-P7 for guarded live generation, budget-matched arms, oracle isolation, stable hashes, evaluated-path derivation, budget failure handling, and report-only policy boundaries."
+    ]
+  },
+  {
+    "receipt_id": "skill-prd-grill-mergeability-live-candidate-generation-20260619",
+    "kind": "skill_run",
+    "skill": "grill-with-docs",
+    "stage": "prd_grill",
+    "status": "passed",
+    "artifacts": [
+      {
+        "path": "docs/dual-agent/mergeability-live-candidate-generation-20260619/source/grill-findings.md",
+        "sha256": "5153627ddc63a3bf42eaac7fe84f6eba11f48b433739f9873334d07e210d4218"
+      }
+    ],
+    "claims": [
+      "PRD grill resolved accidental spend, budget matching, generator oracle isolation, evaluated-path derivation, and non-applyable policy risks."
+    ]
+  },
+  {
+    "receipt_id": "skill-to-issues-mergeability-live-candidate-generation-20260619",
+    "kind": "skill_run",
+    "skill": "to-issues",
+    "stage": "to_issues",
+    "status": "passed",
+    "artifacts": [
+      {
+        "path": "docs/dual-agent/mergeability-live-candidate-generation-20260619/source/issues.md",
+        "sha256": "adccd92d4f99d9031850a9ec711065123a33fe80dbe2a2a38444b87bc830f94e"
+      }
+    ],
+    "claims": [
+      "Issues sliced into guarded live report, public-only candidate artifact generation, evaluated-path derivation, and non-applyable policy-boundary tracer bullets."
+    ]
+  },
+  {
+    "receipt_id": "skill-tdd-mergeability-live-candidate-generation-20260619",
+    "kind": "skill_run",
+    "skill": "tdd",
+    "stage": "tdd",
+    "status": "passed",
+    "artifacts": [
+      {
+        "path": "docs/dual-agent/mergeability-live-candidate-generation-20260619/source/tdd.md",
+        "sha256": "dd1ba003e30f4f6c39acefab3a1bf05653526e9940bdfe9c6b2b5b88c60336a1"
+      }
+    ],
+    "claims": [
+      "TDD plan starts at the public live mergeability report interface and then covers generator isolation, stable candidate hashes, held-out oracle grading, evaluated-path true and false cases, budget overrun handling, and proposal blocking."
+    ]
+  },
+  {
+    "receipt_id": "skill-tdd-grill-mergeability-live-candidate-generation-20260619",
+    "kind": "skill_run",
+    "skill": "grill-with-docs",
+    "stage": "tdd_grill",
+    "status": "passed",
+    "artifacts": [
+      {
+        "path": "docs/dual-agent/mergeability-live-candidate-generation-20260619/source/grill-findings-tdd.md",
+        "sha256": "537603c6e391cb769817bd4ebf3e16968d50ee95e0d7b2b887866a2830d8b644"
+      }
+    ],
+    "claims": [
+      "TDD grill resolved report-boundary proof, external-provider fake scope, captured oracle-isolation assertions, hard budget overrun semantics, and evaluated-path two-sided coverage."
+    ]
+  }
+]

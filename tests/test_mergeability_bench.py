@@ -26,6 +26,7 @@ from supervisor.mergeability_bench import (
     load_mergeability_task,
     load_mergeability_tasks,
     result_receipt,
+    run_live_mergeability_candidate_generation,
     run_paired_acceptance_pilot,
     validate_mergeability_corpus,
 )
@@ -79,6 +80,41 @@ def _deny_panel(_packet):
         "reason": "deterministic_panel_denial",
         "reviewer_ids": ["fixture-reviewer"],
     }
+
+
+class _FakeGenerator:
+    def __init__(self, candidate_name: str, *, cost_usd: float = 0.0, wall_clock_s: float = 0.01):
+        self.candidate_name = candidate_name
+        self.cost_usd = cost_usd
+        self.wall_clock_s = wall_clock_s
+        self.calls: list[dict] = []
+
+    def __call__(self, generator_input):
+        self.calls.append(generator_input)
+        candidate = json.loads((BENCH_ROOT / "candidates" / f"{self.candidate_name}.json").read_text(encoding="utf-8"))
+        return {
+            "candidate": candidate,
+            "cost_usd": self.cost_usd,
+            "wall_clock_s": self.wall_clock_s,
+            "token_usage": {"input_tokens": 11, "output_tokens": 7},
+        }
+
+
+class _PublicWorktreeReadingGenerator(_FakeGenerator):
+    def __call__(self, generator_input):
+        public_ref = Path(generator_input["public_worktree_ref"])
+        assert public_ref.is_dir()
+        assert "return left - right" in (public_ref / "app/calculator.py").read_text(encoding="utf-8")
+        assert not (public_ref / "hidden/test_behavior.py").exists()
+        assert not (public_ref / ".mergeability").exists()
+        return super().__call__(generator_input)
+
+
+class _FailIfCalled:
+    calls = []
+
+    def __call__(self, _generator_input):  # pragma: no cover - failure path
+        raise AssertionError("generator must not be invoked")
 
 
 def test_load_mergeability_tasks_reads_typed_fixture_contract():
@@ -1150,3 +1186,305 @@ def test_no_regression_and_heldout_artifacts_export_replayable_hashes(tmp_path):
     assert exported_report["no_regression_findings"] == report["no_regression_findings"]
     assert exported_report["report_sha256"] == report["report_sha256"]
     assert report["improvement_claim_allowed"] is False
+
+
+def test_live_generation_requires_allow_live_before_generators_run(tmp_path):
+    baseline = _FailIfCalled()
+    supervisor = _FailIfCalled()
+
+    report = run_live_mergeability_candidate_generation(
+        BENCH_ROOT,
+        task_id="calculator-addition",
+        baseline_generator=baseline,
+        supervisor_generator=supervisor,
+        allow_live=False,
+        model="claude-sonnet",
+        provider="anthropic",
+        budget_usd=1.0,
+        timeout_s=30.0,
+        output_dir=tmp_path,
+    )
+
+    assert report["status"] == "unavailable"
+    assert report["unavailable_reason"] == "live_generation_disabled"
+    assert report["arms"]["baseline"]["status"] == "not_invoked"
+    assert report["arms"]["supervisor"]["status"] == "not_invoked"
+    assert report["candidate_artifacts"] == {}
+    assert report["metric_applyable"] is False
+    assert report["improvement_claim_allowed"] is False
+    assert report["default_change_allowed"] is False
+    assert report["policy_mutated"] is False
+    assert report["gate_advanced"] is False
+
+
+def test_live_generation_requires_budget_matched_arms(tmp_path):
+    baseline = _FailIfCalled()
+    supervisor = _FailIfCalled()
+
+    report = run_live_mergeability_candidate_generation(
+        BENCH_ROOT,
+        task_id="calculator-addition",
+        baseline_generator=baseline,
+        supervisor_generator=supervisor,
+        allow_live=True,
+        baseline_config={
+            "model": "claude-sonnet",
+            "provider": "anthropic",
+            "budget_usd": 1.0,
+            "timeout_s": 30.0,
+        },
+        supervisor_config={
+            "model": "claude-opus",
+            "provider": "anthropic",
+            "budget_usd": 2.0,
+            "timeout_s": 30.0,
+        },
+        output_dir=tmp_path,
+    )
+
+    assert report["status"] == "unavailable"
+    assert report["unavailable_reason"] == "arm_config_mismatch"
+    assert sorted(report["config_mismatches"]) == ["budget_usd", "model"]
+    assert report["arms"]["baseline"]["status"] == "not_invoked"
+    assert report["arms"]["supervisor"]["status"] == "not_invoked"
+
+
+def test_live_generation_excludes_hidden_oracle_material_from_generator_inputs(tmp_path):
+    baseline = _PublicWorktreeReadingGenerator("known_good")
+    supervisor = _PublicWorktreeReadingGenerator("known_bad")
+
+    report = run_live_mergeability_candidate_generation(
+        BENCH_ROOT,
+        task_id="calculator-addition",
+        baseline_generator=baseline,
+        supervisor_generator=supervisor,
+        allow_live=True,
+        model="claude-sonnet",
+        provider="anthropic",
+        budget_usd=1.0,
+        timeout_s=30.0,
+        output_dir=tmp_path,
+    )
+
+    assert report["status"] == "completed"
+    for generator in (baseline, supervisor):
+        assert len(generator.calls) == 1
+        encoded = json.dumps(generator.calls[0], sort_keys=True)
+        assert "hidden/test_behavior.py" not in encoded
+        assert ".mergeability/" not in encoded
+        assert '"hidden_test_commands"' not in encoded
+        assert '"expected_outcome"' not in encoded
+        assert '"final_score"' not in encoded
+        assert '"oracle_accept"' not in encoded
+        assert generator.calls[0]["public_worktree_ref"]
+        assert generator.calls[0]["public_worktree_hash"]
+        assert generator.calls[0]["visible_commands"]["reverse_test_commands"]
+
+
+def test_live_generation_records_stable_candidate_artifact_hashes(tmp_path):
+    report = run_live_mergeability_candidate_generation(
+        BENCH_ROOT,
+        task_id="calculator-addition",
+        baseline_generator=_FakeGenerator("known_good"),
+        supervisor_generator=_FakeGenerator("known_good"),
+        allow_live=True,
+        model="claude-sonnet",
+        provider="anthropic",
+        budget_usd=1.0,
+        timeout_s=30.0,
+        output_dir=tmp_path,
+    )
+
+    baseline = report["arms"]["baseline"]
+    supervisor = report["arms"]["supervisor"]
+    assert baseline["candidate_artifact_hash"]
+    assert supervisor["candidate_artifact_hash"]
+    assert baseline["candidate_artifact_hash"] == baseline["candidate_artifact_hash_recomputed"]
+    assert supervisor["candidate_artifact_hash"] == supervisor["candidate_artifact_hash_recomputed"]
+    assert baseline["prompt_hash"] == supervisor["prompt_hash"]
+    assert baseline["evaluator_hash"] == supervisor["evaluator_hash"]
+    assert baseline["wall_clock_s"] >= 0.0
+    assert baseline["cost_usd"] == 0.0
+    assert baseline["token_usage"] == {"input_tokens": 11, "output_tokens": 7}
+    assert report["candidate_artifacts"]["baseline"]["candidate_artifact_hash"] == baseline["candidate_artifact_hash"]
+    assert (tmp_path / "live_candidate_generation_report.json").exists()
+
+
+def test_live_generation_evaluates_both_arms_with_same_heldout_oracle(tmp_path):
+    report = run_live_mergeability_candidate_generation(
+        BENCH_ROOT,
+        task_id="calculator-addition",
+        baseline_generator=_FakeGenerator("known_good"),
+        supervisor_generator=_FakeGenerator("known_bad"),
+        allow_live=True,
+        model="claude-sonnet",
+        provider="anthropic",
+        budget_usd=1.0,
+        timeout_s=30.0,
+        output_dir=tmp_path,
+    )
+
+    baseline = report["arms"]["baseline"]
+    supervisor = report["arms"]["supervisor"]
+    assert baseline["evaluator_hash"] == supervisor["evaluator_hash"]
+    assert baseline["oracle_result"]["final_score"] == 1.0
+    assert baseline["accepted"] is True
+    assert supervisor["oracle_result"]["final_score"] == 0.0
+    assert supervisor["accepted"] is False
+    assert report["heldout_oracle"]["decision_source"] == "grade_mergeability_candidate"
+    assert report["metric_applyable"] is False
+
+
+def test_candidate_affects_evaluated_path_false_for_non_evaluated_change(tmp_path):
+    experiment = AutoresearchExperiment(
+        experiment_id="mergeability-exp",
+        task_id="calculator-addition",
+        hypothesis="Use the mergeability bench as a report-only evaluator.",
+        baseline_ref="baseline:current",
+        mutable_paths=("app/", "tests/"),
+        immutable_paths=("hidden/", "supervisor/autoresearch/evaluators/"),
+        evaluator_ref=EVALUATOR.as_posix(),
+        evaluator_hash=_sha256(EVALUATOR),
+        metric_name="mergeability_score",
+        k_trials=1,
+        timeout_s=20.0,
+        execution_mode="live",
+    )
+    attempt = AutoresearchAttempt(
+        attempt_id="mergeability-doc-only",
+        experiment_id=experiment.experiment_id,
+        task_id=experiment.task_id,
+        worker_id="worker-mergeability",
+        hypothesis="Documentation-only candidate should not count as evaluated behavior.",
+        changed_files=("docs/readme.md",),
+        metric_trials=(),
+        metric_before=0.0,
+        metric_source="evaluator_execution",
+        patch_ref=(BENCH_ROOT / "candidates/known_good.json").as_posix(),
+        policy_candidate_changes={
+            ".supervisor/policy-overlay.yaml": (BENCH_ROOT / "candidates/known_good.json").as_posix(),
+        },
+        artifact_hashes={},
+        evidence_refs=(),
+    )
+
+    execution = run_evaluator_trials(
+        experiment=experiment,
+        attempt=attempt,
+        repo_root=Path.cwd(),
+        output_dir=tmp_path,
+    )
+
+    assert execution.evaluator_quality["candidate_affects_evaluated_path"] is False
+    assert execution.evaluator_quality["evaluated_path_derivation"]["reason"] == "no_evaluated_path_delta"
+
+
+def test_candidate_affects_evaluated_path_true_for_evaluated_delta(tmp_path):
+    execution_dir = tmp_path / "execution"
+    _assert_autoresearch_mergeability_evaluator_works_with_live_trials(execution_dir)
+    manifest = json.loads(
+        (execution_dir / "evaluator-quality" / "mergeability-attempt" / "manifest.json").read_text(encoding="utf-8")
+    )
+
+    assert manifest["candidate_affects_evaluated_path"] is True
+    assert manifest["evaluated_path_derivation"]["reason"] == "changed_evaluated_path"
+    assert "app/calculator.py" in manifest["evaluated_path_derivation"]["matching_changed_files"]
+
+
+def test_candidate_affects_evaluated_path_true_for_metric_delta_without_path_match(tmp_path):
+    experiment = AutoresearchExperiment(
+        experiment_id="mergeability-exp",
+        task_id="calculator-addition",
+        hypothesis="Use the mergeability bench as a report-only evaluator.",
+        baseline_ref="baseline:current",
+        mutable_paths=("app/", "tests/"),
+        immutable_paths=("hidden/", "supervisor/autoresearch/evaluators/"),
+        evaluator_ref=EVALUATOR.as_posix(),
+        evaluator_hash=_sha256(EVALUATOR),
+        metric_name="mergeability_score",
+        k_trials=1,
+        timeout_s=20.0,
+        execution_mode="live",
+    )
+    attempt = AutoresearchAttempt(
+        attempt_id="mergeability-metric-delta-only",
+        experiment_id=experiment.experiment_id,
+        task_id=experiment.task_id,
+        worker_id="worker-mergeability",
+        hypothesis="Candidate-level metric deltas should count even when changed paths are coarse.",
+        changed_files=("docs/readme.md",),
+        metric_trials=(),
+        metric_before=0.0,
+        metric_after=1.0,
+        metric_delta=1.0,
+        metric_source="evaluator_execution",
+        patch_ref=(BENCH_ROOT / "candidates/known_good.json").as_posix(),
+        policy_candidate_changes={
+            ".supervisor/policy-overlay.yaml": (BENCH_ROOT / "candidates/known_good.json").as_posix(),
+        },
+        artifact_hashes={},
+        evidence_refs=(),
+    )
+
+    execution = run_evaluator_trials(
+        experiment=experiment,
+        attempt=attempt,
+        repo_root=Path.cwd(),
+        output_dir=tmp_path,
+    )
+
+    assert execution.evaluator_quality["candidate_affects_evaluated_path"] is True
+    derivation = execution.evaluator_quality["evaluated_path_derivation"]
+    assert derivation["reason"] == "candidate_metric_delta"
+    assert derivation["candidate_metric_delta"] == 1.0
+    assert derivation["matching_changed_files"] == []
+
+
+def test_live_generation_budget_overrun_is_unavailable_not_accepted(tmp_path):
+    report = run_live_mergeability_candidate_generation(
+        BENCH_ROOT,
+        task_id="calculator-addition",
+        baseline_generator=_FakeGenerator("known_good", cost_usd=1.5),
+        supervisor_generator=_FakeGenerator("known_good"),
+        allow_live=True,
+        model="claude-sonnet",
+        provider="anthropic",
+        budget_usd=1.0,
+        timeout_s=30.0,
+        output_dir=tmp_path,
+    )
+
+    assert report["status"] == "unavailable"
+    assert "budget_exceeded" in report["gaming_flags"]
+    assert report["arms"]["baseline"]["status"] == "unavailable"
+    assert report["arms"]["baseline"]["accepted"] is False
+    assert report["arms"]["baseline"]["unavailable_reason"] == "budget_exceeded"
+    assert report["metric_applyable"] is False
+    assert report["improvement_claim_allowed"] is False
+
+
+def test_live_generation_report_cannot_create_policy_proposal(tmp_path):
+    report = run_live_mergeability_candidate_generation(
+        BENCH_ROOT,
+        task_id="calculator-addition",
+        baseline_generator=_FakeGenerator("known_good"),
+        supervisor_generator=_FakeGenerator("known_good"),
+        allow_live=True,
+        model="claude-sonnet",
+        provider="anthropic",
+        budget_usd=1.0,
+        timeout_s=30.0,
+        output_dir=tmp_path,
+    )
+
+    assert report["report_label"] == "live_generation_calibration"
+    assert report["metric_applyable"] is False
+    assert report["improvement_claim_allowed"] is False
+    assert report["default_change_allowed"] is False
+    assert report["policy_mutated"] is False
+    assert report["gate_advanced"] is False
+    assert derive_policy_evolution_proposals_from_report(
+        report,
+        repo_root=Path.cwd(),
+        affected_gates=("execution", "outcome_review"),
+    ) == []

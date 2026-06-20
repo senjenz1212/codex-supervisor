@@ -26,6 +26,8 @@ SUPERVISOR_REVIEW_INPUT_SCHEMA_VERSION = "supervisor-mergeability-candidate-revi
 SUPERVISOR_REVIEW_RESULT_SCHEMA_VERSION = "supervisor-mergeability-candidate-review/v1"
 SUPERVISOR_FULL_GATE_PACKET_SCHEMA_VERSION = "supervisor-mergeability-full-gate-review-packet/v1"
 SUPERVISOR_FULL_GATE_RESULT_SCHEMA_VERSION = "supervisor-mergeability-full-gate-review/v1"
+MERGEABILITY_LIVE_GENERATION_REPORT_SCHEMA_VERSION = "supervisor-mergeability-live-generation-report/v1"
+MERGEABILITY_LIVE_GENERATOR_INPUT_SCHEMA_VERSION = "supervisor-mergeability-live-generator-input/v1"
 
 ORACLE_REVIEW_FORBIDDEN_KEYS = frozenset({
     "expected_outcome",
@@ -1031,6 +1033,525 @@ def run_paired_acceptance_pilot(
             rows=rows,
         )
     return report
+
+
+def run_live_mergeability_candidate_generation(
+    bench_root: str | Path,
+    *,
+    task_id: str,
+    baseline_generator: Callable[[Mapping[str, Any]], Mapping[str, Any] | MergeabilityCandidate],
+    supervisor_generator: Callable[[Mapping[str, Any]], Mapping[str, Any] | MergeabilityCandidate],
+    allow_live: bool,
+    model: str = "",
+    provider: str = "",
+    budget_usd: float = 0.0,
+    timeout_s: float = 30.0,
+    baseline_config: Mapping[str, Any] | None = None,
+    supervisor_config: Mapping[str, Any] | None = None,
+    output_dir: str | Path | None = None,
+) -> dict[str, Any]:
+    """Generate baseline and supervisor candidates through injected live adapters.
+
+    The function is intentionally report-only. The generator callables are the
+    external-provider seam; everything after generation uses the real
+    mergeability bench oracle.
+    """
+    started = time.monotonic()
+    bench_root_path = Path(bench_root).expanduser().resolve()
+    output_path = Path(output_dir).expanduser() if output_dir is not None else None
+    task = load_mergeability_task(bench_root_path, task_id)
+    default_config = {
+        "model": str(model),
+        "provider": str(provider),
+        "budget_usd": float(budget_usd),
+        "timeout_s": float(timeout_s),
+    }
+    baseline_cfg = _normalise_live_arm_config(baseline_config or default_config, default_config=default_config)
+    supervisor_cfg = _normalise_live_arm_config(supervisor_config or default_config, default_config=default_config)
+    evaluator_hash = _live_generation_evaluator_hash(task)
+
+    if not allow_live:
+        report = _live_generation_unavailable_report(
+            task=task,
+            bench_root_path=bench_root_path,
+            started=started,
+            reason="live_generation_disabled",
+            baseline_config=baseline_cfg,
+            supervisor_config=supervisor_cfg,
+            evaluator_hash=evaluator_hash,
+        )
+        _export_live_generation_report(output_path, report)
+        return report
+
+    mismatches = _live_arm_config_mismatches(baseline_cfg, supervisor_cfg)
+    if mismatches:
+        report = _live_generation_unavailable_report(
+            task=task,
+            bench_root_path=bench_root_path,
+            started=started,
+            reason="arm_config_mismatch",
+            baseline_config=baseline_cfg,
+            supervisor_config=supervisor_cfg,
+            evaluator_hash=evaluator_hash,
+            config_mismatches=mismatches,
+        )
+        _export_live_generation_report(output_path, report)
+        return report
+
+    live_workspace: tempfile.TemporaryDirectory[str] | None = None
+    if output_path is not None:
+        live_public_root = output_path / "live-public-worktrees"
+        live_public_root.mkdir(parents=True, exist_ok=True)
+    else:
+        live_workspace = tempfile.TemporaryDirectory(prefix="mergeability-live-public-")
+        live_public_root = Path(live_workspace.name)
+    try:
+        baseline_input = _build_live_generator_input(
+            bench_root_path=bench_root_path,
+            task=task,
+            config=baseline_cfg,
+            public_root=live_public_root / "baseline",
+        )
+        supervisor_input = _build_live_generator_input(
+            bench_root_path=bench_root_path,
+            task=task,
+            config=supervisor_cfg,
+            public_root=live_public_root / "supervisor",
+        )
+        input_leaks = sorted(set(
+            _public_input_oracle_refs(baseline_input)
+            + _public_input_oracle_refs(supervisor_input)
+        ))
+        if input_leaks:
+            report = _live_generation_unavailable_report(
+                task=task,
+                bench_root_path=bench_root_path,
+                started=started,
+                reason="oracle_isolation_violation",
+                baseline_config=baseline_cfg,
+                supervisor_config=supervisor_cfg,
+                evaluator_hash=evaluator_hash,
+                gaming_flags=("oracle_isolation_violation",),
+            )
+            report["oracle_isolation_violations"] = input_leaks
+            _export_live_generation_report(output_path, report)
+            return report
+
+        baseline = _run_live_generation_arm(
+            arm="baseline",
+            generator=baseline_generator,
+            generator_input=baseline_input,
+            config=baseline_cfg,
+            task=task,
+            bench_root_path=bench_root_path,
+            evaluator_hash=evaluator_hash,
+            output_path=output_path,
+        )
+        supervisor = _run_live_generation_arm(
+            arm="supervisor",
+            generator=supervisor_generator,
+            generator_input=supervisor_input,
+            config=supervisor_cfg,
+            task=task,
+            bench_root_path=bench_root_path,
+            evaluator_hash=evaluator_hash,
+            output_path=output_path,
+        )
+    finally:
+        if live_workspace is not None:
+            live_workspace.cleanup()
+    arms = {"baseline": baseline, "supervisor": supervisor}
+    gaming_flags = sorted({
+        flag
+        for arm in arms.values()
+        for flag in arm.get("gaming_flags", [])
+    })
+    unavailable = any(arm.get("status") == "unavailable" for arm in arms.values())
+    report = _live_generation_report_base(
+        task=task,
+        bench_root_path=bench_root_path,
+        started=started,
+        status="unavailable" if unavailable else "completed",
+        unavailable_reason="arm_unavailable" if unavailable else "",
+        arms=arms,
+        evaluator_hash=evaluator_hash,
+        gaming_flags=gaming_flags,
+    )
+    report["candidate_artifacts"] = {
+        arm: {
+            "candidate_id": str(payload.get("candidate_id") or ""),
+            "candidate_artifact_hash": str(payload.get("candidate_artifact_hash") or ""),
+            "candidate_artifact_ref": str(payload.get("candidate_artifact_ref") or ""),
+        }
+        for arm, payload in arms.items()
+        if payload.get("candidate_artifact_hash")
+    }
+    report["heldout_oracle"] = {
+        "decision_source": "grade_mergeability_candidate",
+        "task_id": task.task_id,
+        "evaluator_hash": evaluator_hash,
+        "same_evaluator_for_all_arms": len({arm["evaluator_hash"] for arm in arms.values()}) == 1,
+    }
+    report["total_cost_usd"] = round(sum(float(arm.get("cost_usd") or 0.0) for arm in arms.values()), 6)
+    report["report_sha256"] = _sha256_json({key: value for key, value in report.items() if key != "report_sha256"})
+    _export_live_generation_report(output_path, report)
+    return report
+
+
+def _normalise_live_arm_config(
+    config: Mapping[str, Any],
+    *,
+    default_config: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "model": str(config.get("model", default_config.get("model", "")) or ""),
+        "provider": str(config.get("provider", default_config.get("provider", "")) or ""),
+        "budget_usd": float(config.get("budget_usd", default_config.get("budget_usd", 0.0)) or 0.0),
+        "timeout_s": float(config.get("timeout_s", default_config.get("timeout_s", 30.0)) or 0.0),
+    }
+
+
+def _live_arm_config_mismatches(
+    baseline_config: Mapping[str, Any],
+    supervisor_config: Mapping[str, Any],
+) -> list[str]:
+    mismatches = []
+    for key in ("model", "provider", "budget_usd", "timeout_s"):
+        if baseline_config.get(key) != supervisor_config.get(key):
+            mismatches.append(key)
+    return mismatches
+
+
+def _live_generation_unavailable_report(
+    *,
+    task: MergeabilityTask,
+    bench_root_path: Path,
+    started: float,
+    reason: str,
+    baseline_config: Mapping[str, Any],
+    supervisor_config: Mapping[str, Any],
+    evaluator_hash: str,
+    config_mismatches: list[str] | None = None,
+    gaming_flags: tuple[str, ...] = (),
+) -> dict[str, Any]:
+    arms = {
+        "baseline": _not_invoked_live_arm("baseline", baseline_config, evaluator_hash=evaluator_hash),
+        "supervisor": _not_invoked_live_arm("supervisor", supervisor_config, evaluator_hash=evaluator_hash),
+    }
+    report = _live_generation_report_base(
+        task=task,
+        bench_root_path=bench_root_path,
+        started=started,
+        status="unavailable",
+        unavailable_reason=reason,
+        arms=arms,
+        evaluator_hash=evaluator_hash,
+        gaming_flags=gaming_flags,
+    )
+    report["candidate_artifacts"] = {}
+    report["config_mismatches"] = list(config_mismatches or [])
+    report["heldout_oracle"] = {
+        "decision_source": "grade_mergeability_candidate",
+        "task_id": task.task_id,
+        "evaluator_hash": evaluator_hash,
+        "same_evaluator_for_all_arms": True,
+    }
+    report["total_cost_usd"] = 0.0
+    report["report_sha256"] = _sha256_json({key: value for key, value in report.items() if key != "report_sha256"})
+    return report
+
+
+def _live_generation_report_base(
+    *,
+    task: MergeabilityTask,
+    bench_root_path: Path,
+    started: float,
+    status: str,
+    unavailable_reason: str,
+    arms: Mapping[str, Mapping[str, Any]],
+    evaluator_hash: str,
+    gaming_flags: tuple[str, ...] | list[str],
+) -> dict[str, Any]:
+    return {
+        "schema_version": MERGEABILITY_LIVE_GENERATION_REPORT_SCHEMA_VERSION,
+        "status": status,
+        "unavailable_reason": unavailable_reason,
+        "report_label": "live_generation_calibration",
+        "bench_root": bench_root_path.as_posix(),
+        "task_id": task.task_id,
+        "task_class": task.task_class,
+        "split": task.split,
+        "arms": {key: dict(value) for key, value in arms.items()},
+        "evaluator_hash": evaluator_hash,
+        "metric_applyable": False,
+        "improvement_claim_allowed": False,
+        "default_change_allowed": False,
+        "policy_mutated": False,
+        "gate_advanced": False,
+        "gaming_flags": sorted(set(gaming_flags)),
+        "validity_notes": [
+            "Live generation is disabled unless allow_live is explicitly true.",
+            "Baseline and supervisor arms are budget matched before generator invocation.",
+            "Generated candidates are graded by the same held-out bench oracle after generation.",
+            "This live report is calibration evidence only and cannot create policy proposals.",
+        ],
+        "recommendation": {
+            "report_only": True,
+            "applyable_policy_proposal": False,
+            "next_step": "collect powered live evidence before policy proposal derivation",
+        },
+        "wall_clock_s": round(time.monotonic() - started, 6),
+    }
+
+
+def _not_invoked_live_arm(
+    arm: str,
+    config: Mapping[str, Any],
+    *,
+    evaluator_hash: str,
+) -> dict[str, Any]:
+    return {
+        "arm": arm,
+        "status": "not_invoked",
+        "accepted": False,
+        "config": dict(config),
+        "model": str(config.get("model") or ""),
+        "provider": str(config.get("provider") or ""),
+        "budget_usd": float(config.get("budget_usd") or 0.0),
+        "timeout_s": float(config.get("timeout_s") or 0.0),
+        "evaluator_hash": evaluator_hash,
+        "cost_usd": 0.0,
+        "wall_clock_s": 0.0,
+        "token_usage": {},
+        "candidate_artifact_hash": "",
+        "candidate_artifact_ref": "",
+        "candidate_artifact_hash_recomputed": "",
+        "prompt_hash": "",
+        "generator_input_hash": "",
+        "oracle_result": {},
+        "gaming_flags": [],
+        "unavailable_reason": "not_invoked",
+    }
+
+
+def _build_live_generator_input(
+    *,
+    bench_root_path: Path,
+    task: MergeabilityTask,
+    config: Mapping[str, Any],
+    public_root: Path,
+) -> dict[str, Any]:
+    fixture_root = (bench_root_path / task.repo_fixture_ref).resolve()
+    if not fixture_root.exists():
+        raise MergeabilityBenchError(f"repo fixture missing: {fixture_root}")
+    if public_root.exists():
+        shutil.rmtree(public_root)
+    _copy_public_fixture_tree(fixture_root, public_root, protected_paths=task.protected_paths)
+    protected_refs = _protected_refs_in_tree(public_root, protected_paths=task.protected_paths)
+    if protected_refs:
+        raise MergeabilityBenchError(
+            "live public worktree contains protected refs: " + ", ".join(protected_refs)
+        )
+    public_worktree_hash = _hash_tree(public_root)
+    public_manifest = _public_worktree_manifest(public_root)
+    stable_payload = {
+        "schema_version": MERGEABILITY_LIVE_GENERATOR_INPUT_SCHEMA_VERSION,
+        "task_id": task.task_id,
+        "task_class": task.task_class,
+        "split": task.split,
+        "prompt": task.prompt,
+        "allowed_mutable_paths": list(task.allowed_mutable_paths),
+        "scope_constraints": list(task.scope_constraints),
+        "blocker_criteria": list(task.blocker_criteria),
+        "protected_path_policy_sha256": _sha256_json(list(task.protected_paths)),
+        "protected_path_policy_count": len(task.protected_paths),
+        "visible_commands": {
+            "reverse_test_commands": [list(command) for command in task.reverse_test_commands],
+            "lint_build_commands": [list(command) for command in task.lint_build_commands],
+        },
+        "public_worktree_hash": public_worktree_hash,
+        "public_worktree_manifest": public_manifest,
+        "generation_config": dict(config),
+    }
+    payload = {
+        **stable_payload,
+        "public_worktree_ref": public_root.as_posix(),
+    }
+    leaks = _public_input_oracle_refs(payload)
+    if leaks:
+        raise MergeabilityBenchError("live generator input contains oracle references: " + ", ".join(leaks))
+    payload["generator_input_hash"] = _sha256_json(stable_payload)
+    return payload
+
+
+def _public_worktree_manifest(root: Path) -> list[dict[str, str]]:
+    entries: list[dict[str, str]] = []
+    for path in sorted(item for item in root.rglob("*") if item.is_file()):
+        rel = _normalise_relpath(path.relative_to(root).as_posix())
+        entries.append({
+            "path": rel,
+            "sha256": sha256(path.read_bytes()).hexdigest(),
+        })
+    return entries
+
+
+def _run_live_generation_arm(
+    *,
+    arm: str,
+    generator: Callable[[Mapping[str, Any]], Mapping[str, Any] | MergeabilityCandidate],
+    generator_input: Mapping[str, Any],
+    config: Mapping[str, Any],
+    task: MergeabilityTask,
+    bench_root_path: Path,
+    evaluator_hash: str,
+    output_path: Path | None,
+) -> dict[str, Any]:
+    started = time.monotonic()
+    raw_result = generator(generator_input)
+    measured_wall_clock = time.monotonic() - started
+    candidate, generator_payload = _candidate_from_live_generator_result(raw_result)
+    candidate = MergeabilityCandidate(
+        candidate_id=candidate.candidate_id,
+        task_id=candidate.task_id,
+        files=candidate.files,
+        changed_files=candidate.changed_files,
+        provenance={
+            **candidate.provenance,
+            "live_generation_arm": arm,
+            "generator_input_hash": str(generator_input.get("generator_input_hash") or ""),
+        },
+        generator_metadata=candidate.generator_metadata,
+        candidate_ref=candidate.candidate_ref,
+        candidate_hash="",
+    )
+    candidate_hash = _sha256_json(_live_candidate_artifact_payload(candidate))
+    candidate = MergeabilityCandidate(
+        candidate_id=candidate.candidate_id,
+        task_id=candidate.task_id,
+        files=candidate.files,
+        changed_files=candidate.changed_files,
+        provenance=candidate.provenance,
+        generator_metadata=candidate.generator_metadata,
+        candidate_ref=candidate.candidate_ref,
+        candidate_hash=candidate_hash,
+    )
+    artifact_ref = _export_live_candidate(output_path, arm=arm, candidate=candidate)
+    cost_usd = float(generator_payload.get("cost_usd") or 0.0)
+    wall_clock_s = float(generator_payload.get("wall_clock_s") or measured_wall_clock)
+    token_usage = generator_payload.get("token_usage") if isinstance(generator_payload.get("token_usage"), Mapping) else {}
+    gaming_flags: list[str] = []
+    unavailable_reason = ""
+    if float(config.get("budget_usd") or 0.0) > 0 and cost_usd > float(config.get("budget_usd") or 0.0):
+        gaming_flags.append("budget_exceeded")
+        unavailable_reason = "budget_exceeded"
+    if float(config.get("timeout_s") or 0.0) > 0 and wall_clock_s > float(config.get("timeout_s") or 0.0):
+        gaming_flags.append("timeout")
+        unavailable_reason = unavailable_reason or "timeout"
+
+    oracle_result: dict[str, Any] = {}
+    accepted = False
+    status = "unavailable" if unavailable_reason else "completed"
+    if not unavailable_reason:
+        result = grade_mergeability_candidate(
+            task,
+            candidate,
+            bench_root=bench_root_path,
+            output_dir=(output_path / "live-generation-results" / arm) if output_path is not None else None,
+            timeout_s=float(config.get("timeout_s") or 30.0),
+        )
+        oracle_result = result.to_payload()
+        accepted = bool(result.final_score >= 1.0)
+    return {
+        "arm": arm,
+        "status": status,
+        "accepted": accepted,
+        "unavailable_reason": unavailable_reason,
+        "config": dict(config),
+        "model": str(config.get("model") or ""),
+        "provider": str(config.get("provider") or ""),
+        "budget_usd": float(config.get("budget_usd") or 0.0),
+        "timeout_s": float(config.get("timeout_s") or 0.0),
+        "cost_usd": round(cost_usd, 6),
+        "wall_clock_s": round(wall_clock_s, 6),
+        "token_usage": dict(token_usage),
+        "prompt_hash": _sha256_json({
+            "prompt": generator_input.get("prompt"),
+            "allowed_mutable_paths": generator_input.get("allowed_mutable_paths"),
+            "scope_constraints": generator_input.get("scope_constraints"),
+        }),
+        "generator_input_hash": str(generator_input.get("generator_input_hash") or ""),
+        "public_worktree_ref": str(generator_input.get("public_worktree_ref") or ""),
+        "public_worktree_hash": str(generator_input.get("public_worktree_hash") or ""),
+        "candidate_id": candidate.candidate_id,
+        "candidate_artifact_hash": candidate_hash,
+        "candidate_artifact_hash_recomputed": _sha256_json(_live_candidate_artifact_payload(candidate)),
+        "candidate_artifact_ref": artifact_ref,
+        "changed_files": list(candidate.changed_files),
+        "evaluator_hash": evaluator_hash,
+        "oracle_result": oracle_result,
+        "gaming_flags": sorted(set(gaming_flags)),
+    }
+
+
+def _candidate_from_live_generator_result(
+    raw_result: Mapping[str, Any] | MergeabilityCandidate,
+) -> tuple[MergeabilityCandidate, Mapping[str, Any]]:
+    if isinstance(raw_result, MergeabilityCandidate):
+        return raw_result, {}
+    if not isinstance(raw_result, Mapping):
+        raise MergeabilityBenchError("live generator must return a mapping or MergeabilityCandidate")
+    raw_candidate = raw_result.get("candidate", raw_result.get("candidate_payload"))
+    if isinstance(raw_candidate, MergeabilityCandidate):
+        return raw_candidate, raw_result
+    if isinstance(raw_candidate, Mapping):
+        return MergeabilityCandidate.from_mapping(raw_candidate), raw_result
+    if "schema_version" in raw_result:
+        return MergeabilityCandidate.from_mapping(raw_result), {}
+    raise MergeabilityBenchError("live generator result missing candidate payload")
+
+
+def _live_candidate_artifact_payload(candidate: MergeabilityCandidate) -> dict[str, Any]:
+    payload = candidate.to_payload()
+    payload["candidate_hash"] = ""
+    payload["candidate_ref"] = ""
+    return payload
+
+
+def _export_live_candidate(
+    output_path: Path | None,
+    *,
+    arm: str,
+    candidate: MergeabilityCandidate,
+) -> str:
+    if output_path is None:
+        return ""
+    candidate_dir = output_path / "live-candidates"
+    candidate_dir.mkdir(parents=True, exist_ok=True)
+    path = candidate_dir / f"{arm}.json"
+    path.write_text(json.dumps(candidate.to_payload(), sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    return path.as_posix()
+
+
+def _export_live_generation_report(output_path: Path | None, report: Mapping[str, Any]) -> None:
+    if output_path is None:
+        return
+    output_path.mkdir(parents=True, exist_ok=True)
+    (output_path / "live_candidate_generation_report.json").write_text(
+        json.dumps(report, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _live_generation_evaluator_hash(task: MergeabilityTask) -> str:
+    return _sha256_json({
+        "schema_version": "supervisor-mergeability-live-evaluator-hash/v1",
+        "decision_source": "grade_mergeability_candidate",
+        "task_id": task.task_id,
+        "task_hash": task.task_hash,
+        "oracle_command_count": len(task.hidden_test_commands),
+        "reverse_command_count": len(task.reverse_test_commands),
+        "lint_build_command_count": len(task.lint_build_commands),
+    })
 
 
 def review_mergeability_candidate_publicly(

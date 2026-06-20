@@ -410,6 +410,12 @@ def _run_evaluator_quality_controls(
     )
     if determinism.get("verdict") != "passed":
         errors.append("determinism control failed")
+    evaluated_path_derivation = _derive_candidate_affects_evaluated_path(
+        experiment=experiment,
+        attempt=attempt,
+        repo_root=repo_root,
+        controls=controls,
+    )
 
     manifest = {
         "schema_version": "supervisor-autoresearch-evaluator-quality/v1",
@@ -418,7 +424,8 @@ def _run_evaluator_quality_controls(
         "supervisor_runtime_origin": "run_evaluator_quality_controls",
         "experiment_id": experiment.experiment_id,
         "attempt_id": attempt.attempt_id,
-        "candidate_affects_evaluated_path": True,
+        "candidate_affects_evaluated_path": evaluated_path_derivation["candidate_affects_evaluated_path"],
+        "evaluated_path_derivation": evaluated_path_derivation,
         "policy_candidate_refs": policy_candidate_refs,
         "determinism": determinism,
         "controls": controls,
@@ -433,6 +440,63 @@ def _run_evaluator_quality_controls(
     manifest["quality_manifest_hash"] = sha256(manifest_path.read_bytes()).hexdigest()
     manifest_path.write_text(json.dumps(manifest, sort_keys=True, indent=2) + "\n", encoding="utf-8")
     return manifest
+
+
+def _derive_candidate_affects_evaluated_path(
+    *,
+    experiment: AutoresearchExperiment,
+    attempt: AutoresearchAttempt,
+    repo_root: Path,
+    controls: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    changed_files = tuple(
+        _normalise_path(path, repo_root=repo_root)
+        for path in attempt.changed_files
+        if str(path).strip()
+    )
+    evaluated_patterns = tuple(
+        _normalise_path(path, repo_root=repo_root)
+        for path in experiment.mutable_paths
+        if str(path).strip()
+    )
+    matching_changed_files = sorted(
+        path for path in changed_files if _matches_any(path, evaluated_patterns)
+    )
+    control_deltas = {
+        kind: control.get("metric_delta")
+        for kind, control in sorted(controls.items())
+        if isinstance(control, Mapping)
+    }
+    candidate_metric_delta = _candidate_metric_delta(attempt)
+    if matching_changed_files:
+        reason = "changed_evaluated_path"
+        affects = True
+    elif candidate_metric_delta is not None and abs(candidate_metric_delta) > 0.0:
+        reason = "candidate_metric_delta"
+        affects = True
+    else:
+        reason = "no_evaluated_path_delta"
+        affects = False
+    return {
+        "schema_version": "supervisor-autoresearch-evaluated-path-derivation/v1",
+        "candidate_affects_evaluated_path": affects,
+        "reason": reason,
+        "changed_files": list(changed_files),
+        "evaluated_path_patterns": list(evaluated_patterns),
+        "matching_changed_files": matching_changed_files,
+        "candidate_metric_before": attempt.metric_before,
+        "candidate_metric_after": attempt.metric_after,
+        "candidate_metric_delta": candidate_metric_delta,
+        "control_metric_deltas": control_deltas,
+    }
+
+
+def _candidate_metric_delta(attempt: AutoresearchAttempt) -> float | None:
+    if attempt.metric_delta is not None:
+        return round(float(attempt.metric_delta), 6)
+    if attempt.metric_before is None or attempt.metric_after is None:
+        return None
+    return round(float(attempt.metric_after) - float(attempt.metric_before), 6)
 
 
 def _run_single_quality_control(

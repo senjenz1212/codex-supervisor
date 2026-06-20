@@ -1,0 +1,26 @@
+[
+  {
+    "kind": "prd",
+    "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/mergeability-live-candidate-generation-20260619/source/prd.md"
+  },
+  {
+    "kind": "grill_findings",
+    "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/mergeability-live-candidate-generation-20260619/source/grill-findings.md"
+  },
+  {
+    "kind": "issues",
+    "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/mergeability-live-candidate-generation-20260619/source/issues.md"
+  },
+  {
+    "kind": "tdd_plan",
+    "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/mergeability-live-candidate-generation-20260619/source/tdd.md"
+  },
+  {
+    "kind": "grill_findings",
+    "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/mergeability-live-candidate-generation-20260619/source/grill-findings-tdd.md"
+  },
+  {
+    "kind": "implementation_plan",
+    "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/mergeability-live-candidate-generation-20260619/source/implementation-plan.md"
+  }
+]
