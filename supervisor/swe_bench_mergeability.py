@@ -12,16 +12,20 @@ policy proposals.
 from __future__ import annotations
 
 import json
+import time
 from hashlib import sha256
-from typing import Any, Mapping
+from pathlib import Path
+from typing import Any, Callable, Mapping, Sequence
 
 from .mergeability_bench import (
     ORACLE_REVIEW_FORBIDDEN_KEYS,
     ORACLE_REVIEW_FORBIDDEN_TEXT,
+    _copy_public_fixture_tree,
     _false_accept_at_matched_true_accept,
     _panel_marginal_delta_at_matched_true_accept,
     _public_input_oracle_refs,
     _rate,
+    _run_command,
     _summarize_acceptance_arm,
     _wilson_interval,
 )
@@ -563,3 +567,661 @@ def _split_instance_candidate_key(key: Any) -> tuple[str, str]:
         "candidate_artifacts key must be (instance_id, candidate_id) tuple or "
         "'instance_id/candidate_id' string"
     )
+
+
+# ---------------------------------------------------------------------------
+# Fixture-first executable runner
+# ---------------------------------------------------------------------------
+
+SWEBENCH_MERGEABILITY_FIXTURE_REPORT_SCHEMA_VERSION = (
+    "supervisor-swebench-mergeability-fixture-report/v1"
+)
+SWEBENCH_MERGEABILITY_REVIEWER_PACKET_SCHEMA_VERSION = (
+    "supervisor-swebench-mergeability-reviewer-packet/v1"
+)
+SWEBENCH_MERGEABILITY_FROZEN_DECISIONS_SCHEMA_VERSION = (
+    "supervisor-swebench-mergeability-frozen-decisions/v1"
+)
+
+REVIEWER_PANEL_UNAVAILABLE_REASON = "reviewer_panel_unavailable"
+PATCH_APPLY_FAILURE_REASON = "patch_apply_failure"
+
+_DEFAULT_PROTECTED_PATHS: tuple[str, ...] = (
+    "hidden/",
+    ".mergeability/",
+)
+
+
+class SwebenchMergeabilityFixtureRunnerError(SwebenchProBridgeError):
+    """Raised when fixture runner inputs or invariants are violated."""
+
+
+def _apply_patch_operations(
+    operations: Sequence[Mapping[str, Any]],
+    worktree: Path,
+) -> tuple[str, list[dict[str, Any]]]:
+    receipts: list[dict[str, Any]] = []
+    for op in operations:
+        if not isinstance(op, Mapping):
+            raise SwebenchMergeabilityFixtureRunnerError(
+                "candidate patch_operations entries must be mappings"
+            )
+        rel = str(op.get("path") or "")
+        mode = str(op.get("mode") or "create").lower()
+        if not rel or rel.startswith("/") or ".." in rel.split("/"):
+            receipts.append({
+                "path": rel,
+                "mode": mode,
+                "status": "failed",
+                "reason": "invalid_relpath",
+            })
+            continue
+        target = worktree / rel
+        try:
+            if mode == "modify":
+                if not target.exists():
+                    receipts.append({
+                        "path": rel,
+                        "mode": mode,
+                        "status": "failed",
+                        "reason": "modify_missing_target",
+                    })
+                    continue
+                target.write_text(str(op.get("content") or ""), encoding="utf-8")
+                receipts.append({"path": rel, "mode": mode, "status": "passed"})
+            elif mode == "create":
+                if target.exists():
+                    receipts.append({
+                        "path": rel,
+                        "mode": mode,
+                        "status": "failed",
+                        "reason": "create_existing_target",
+                    })
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(str(op.get("content") or ""), encoding="utf-8")
+                receipts.append({"path": rel, "mode": mode, "status": "passed"})
+            elif mode == "overwrite":
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(str(op.get("content") or ""), encoding="utf-8")
+                receipts.append({"path": rel, "mode": mode, "status": "passed"})
+            elif mode == "delete":
+                if not target.exists():
+                    receipts.append({
+                        "path": rel,
+                        "mode": mode,
+                        "status": "failed",
+                        "reason": "delete_missing_target",
+                    })
+                    continue
+                target.unlink()
+                receipts.append({"path": rel, "mode": mode, "status": "passed"})
+            else:
+                receipts.append({
+                    "path": rel,
+                    "mode": mode,
+                    "status": "failed",
+                    "reason": f"unknown_mode:{mode}",
+                })
+        except OSError as exc:
+            receipts.append({
+                "path": rel,
+                "mode": mode,
+                "status": "failed",
+                "reason": f"os_error:{exc.__class__.__name__}",
+            })
+    overall = "passed" if receipts and all(
+        r["status"] == "passed" for r in receipts
+    ) else "failed"
+    return overall, receipts
+
+
+def _command_receipt(result: Any) -> dict[str, Any]:
+    payload = result.to_payload()
+    return {
+        "name": payload["name"],
+        "argv": payload["argv"],
+        "status": payload["status"],
+        "returncode": payload["returncode"],
+        "stdout_sha256": payload["stdout_sha256"],
+        "stderr_sha256": payload["stderr_sha256"],
+        "expected_failure": payload["expected_failure"],
+    }
+
+
+def _build_reviewer_packet(
+    *,
+    instance: Mapping[str, Any],
+    candidate: Mapping[str, Any],
+    public_packet: Mapping[str, Any],
+    patch_apply_status: str,
+    patch_apply_receipts: Sequence[Mapping[str, Any]],
+    public_command_receipts: Sequence[Mapping[str, Any]],
+    protected_paths: tuple[str, ...],
+) -> dict[str, Any]:
+    diff_text = str(candidate.get("patch") or "")
+    diff_sha256 = sha256(diff_text.encode("utf-8")).hexdigest()
+    public_task = {
+        "instance_id": public_packet["instance_id"],
+        "repo": public_packet["repo"],
+        "base_commit": public_packet["base_commit"],
+        "problem_statement": public_packet["problem_statement"],
+        "public_checkout_ref": public_packet["public_checkout_ref"],
+        "public_checkout_sha256": public_packet["public_checkout_sha256"],
+    }
+    packet: dict[str, Any] = {
+        "schema_version": SWEBENCH_MERGEABILITY_REVIEWER_PACKET_SCHEMA_VERSION,
+        "public_task": public_task,
+        "candidate_id": public_packet["candidate_id"],
+        "candidate_artifact_hash": public_packet["candidate_artifact_hash"],
+        "diff_sha256": diff_sha256,
+        "patch_apply_status": patch_apply_status,
+        "patch_apply_receipts": [dict(receipt) for receipt in patch_apply_receipts],
+        "public_command_receipts": [dict(receipt) for receipt in public_command_receipts],
+        "path_policy": {
+            "protected_path_count": len(protected_paths),
+            "protected_paths_sha256": sha256(
+                json.dumps(
+                    sorted(protected_paths),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest(),
+        },
+        "s_probe_substrate": dict(public_packet["s_probe_substrate"]),
+    }
+    return packet
+
+
+def _classify_oracle_results(
+    results: Sequence[Any],
+) -> str:
+    if not results:
+        return "pass"
+    return "pass" if all(r.status == "passed" for r in results) else "fail"
+
+
+def _ensure_no_oracle_artifacts_yet(
+    *,
+    output_dir: Path,
+    worktree: Path,
+    protected_paths: tuple[str, ...],
+) -> list[str]:
+    refs: list[str] = []
+    oracle_outputs_path = output_dir / "oracle_outputs.json"
+    if oracle_outputs_path.exists():
+        refs.append(f"oracle_outputs.json:exists_before_freeze")
+    for protected in protected_paths:
+        candidate_dir = worktree / protected.rstrip("/")
+        if candidate_dir.exists():
+            refs.append(f"public_worktree:{protected}")
+    return refs
+
+
+def _run_oracle_phase(
+    *,
+    worktree: Path,
+    oracle_commands: Mapping[str, Sequence[Sequence[str]]],
+    timeout_s: float,
+) -> tuple[dict[str, str], list[dict[str, Any]]]:
+    receipts: list[dict[str, Any]] = []
+    fail_to_pass_cmds = list(oracle_commands.get("fail_to_pass", ()) or ())
+    pass_to_pass_cmds = list(oracle_commands.get("pass_to_pass", ()) or ())
+    fail_to_pass_results = []
+    for cmd in fail_to_pass_cmds:
+        result = _run_command(
+            tuple(str(part) for part in cmd),
+            cwd=worktree,
+            timeout_s=timeout_s,
+            name="oracle_fail_to_pass",
+        )
+        fail_to_pass_results.append(result)
+        receipts.append(_command_receipt(result))
+    pass_to_pass_results = []
+    for cmd in pass_to_pass_cmds:
+        result = _run_command(
+            tuple(str(part) for part in cmd),
+            cwd=worktree,
+            timeout_s=timeout_s,
+            name="oracle_pass_to_pass",
+        )
+        pass_to_pass_results.append(result)
+        receipts.append(_command_receipt(result))
+    outcome = {
+        "fail_to_pass_status": _classify_oracle_results(fail_to_pass_results),
+        "pass_to_pass_status": _classify_oracle_results(pass_to_pass_results),
+    }
+    return outcome, receipts
+
+
+def _normalise_protected_paths(value: Sequence[str] | None) -> tuple[str, ...]:
+    if not value:
+        base = list(_DEFAULT_PROTECTED_PATHS)
+    else:
+        base = [str(p) for p in value]
+    if "hidden/" not in base:
+        base.append("hidden/")
+    if ".mergeability/" not in base:
+        base.append(".mergeability/")
+    return tuple(sorted(set(base)))
+
+
+def _candidate_oracle_commands(
+    candidate: Mapping[str, Any],
+) -> dict[str, list[list[str]]]:
+    raw = candidate.get("oracle_commands") or {}
+    if not isinstance(raw, Mapping):
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "candidate.oracle_commands must be a mapping with "
+            "'fail_to_pass' and 'pass_to_pass' keys"
+        )
+    parsed: dict[str, list[list[str]]] = {"fail_to_pass": [], "pass_to_pass": []}
+    for key in ("fail_to_pass", "pass_to_pass"):
+        commands = raw.get(key) or ()
+        for cmd in commands:
+            parsed[key].append([str(part) for part in cmd])
+    return parsed
+
+
+def _strict_panel_decision(
+    raw: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if raw is None:
+        return {
+            "accept": False,
+            "unavailable": True,
+            "reason": REVIEWER_PANEL_UNAVAILABLE_REASON,
+            "reviewer_id": "",
+            "reviewer_notes": "",
+        }
+    if not isinstance(raw, Mapping):
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "reviewer_panel result must be a mapping with 'accept' and "
+            "'unavailable' keys"
+        )
+    unavailable = bool(raw.get("unavailable"))
+    accept = bool(raw.get("accept")) and not unavailable
+    return {
+        "accept": accept,
+        "unavailable": unavailable,
+        "reason": (
+            REVIEWER_PANEL_UNAVAILABLE_REASON
+            if unavailable
+            else str(raw.get("reason") or "")
+        ),
+        "reviewer_id": str(raw.get("reviewer_id") or ""),
+        "reviewer_notes": str(raw.get("reviewer_notes") or ""),
+    }
+
+
+def swebench_mergeability_fixture_runner(
+    *,
+    fixture_root: Path,
+    instance: Mapping[str, Any],
+    candidates: Sequence[Mapping[str, Any]],
+    s_probe_substrate: Mapping[str, Any],
+    public_commands: Sequence[Sequence[str]],
+    output_dir: Path,
+    reviewer_panel: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+    protected_paths: Sequence[str] | None = None,
+    timeout_s: float = 30.0,
+) -> dict[str, Any]:
+    """Run a fixture-first executable SWE-bench mergeability evaluation.
+
+    The runner copies only public fixture material into a fresh public
+    worktree per candidate, applies the candidate's ``patch_operations``,
+    executes the configured public probe commands, builds a public-only
+    reviewer packet, optionally calls ``reviewer_panel`` for an independent
+    S_full decision, freezes baseline / S_probe / S_full decisions to disk,
+    and only then runs the candidate's deterministic local oracle commands.
+    Frozen decisions and oracle outcomes are passed to
+    :func:`swebench_pro_mergeability_bridge_report` to produce a report-only
+    FAR/TAR report. All artifacts are written under ``output_dir``.
+    """
+    fixture_root = Path(fixture_root)
+    output_dir = Path(output_dir)
+    if not fixture_root.exists():
+        raise SwebenchMergeabilityFixtureRunnerError(
+            f"fixture_root does not exist: {fixture_root}"
+        )
+    output_dir.mkdir(parents=True, exist_ok=True)
+    if not candidates:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "candidates must be a non-empty sequence"
+        )
+
+    instance_id = str(instance.get("instance_id") or "")
+    if not instance_id:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "instance.instance_id is required"
+        )
+    protected_paths_tuple = _normalise_protected_paths(protected_paths)
+
+    substrate = _validate_s_probe_substrate(s_probe_substrate)
+
+    public_commands_list = [[str(part) for part in cmd] for cmd in public_commands]
+
+    candidate_artifacts: dict[tuple[str, str], dict[str, Any]] = {}
+    arm_decisions: dict[str, dict[tuple[str, str], dict[str, Any]]] = {
+        ARM_BASELINE: {},
+        ARM_S_PROBE: {},
+        ARM_S_FULL: {},
+    }
+    oracle_outcomes: dict[tuple[str, str], dict[str, str]] = {}
+
+    per_candidate_artifacts: list[dict[str, Any]] = []
+    reviewer_packets: list[dict[str, Any]] = []
+    reviewer_results: list[dict[str, Any]] = []
+    freeze_phase_records: list[dict[str, Any]] = []
+    oracle_phase_records: list[dict[str, Any]] = []
+    worktree_isolation_records: list[dict[str, Any]] = []
+
+    for candidate in candidates:
+        candidate_id = str(candidate.get("candidate_id") or "")
+        if not candidate_id:
+            raise SwebenchMergeabilityFixtureRunnerError(
+                "candidate.candidate_id is required"
+            )
+        key = (instance_id, candidate_id)
+        per_candidate_dir = output_dir / "candidates" / candidate_id
+        per_candidate_dir.mkdir(parents=True, exist_ok=True)
+        public_worktree = per_candidate_dir / "public_worktree"
+        public_worktree.mkdir(parents=True, exist_ok=True)
+
+        _copy_public_fixture_tree(
+            fixture_root,
+            public_worktree,
+            protected_paths=protected_paths_tuple,
+        )
+
+        protected_in_worktree: list[str] = []
+        for protected in protected_paths_tuple:
+            inside = public_worktree / protected.rstrip("/")
+            if inside.exists():
+                protected_in_worktree.append(protected)
+        if protected_in_worktree:
+            raise SwebenchMergeabilityFixtureRunnerError(
+                "public worktree contains protected paths: "
+                + ", ".join(protected_in_worktree)
+            )
+
+        patch_operations = list(candidate.get("patch_operations") or ())
+        patch_apply_status, patch_apply_receipts = _apply_patch_operations(
+            patch_operations, public_worktree
+        )
+
+        if patch_apply_status == "passed" and public_commands_list:
+            public_command_results = [
+                _run_command(
+                    tuple(cmd),
+                    cwd=public_worktree,
+                    timeout_s=timeout_s,
+                    name="public_probe",
+                )
+                for cmd in public_commands_list
+            ]
+            public_command_receipts = [
+                _command_receipt(result) for result in public_command_results
+            ]
+            public_command_status = (
+                "passed"
+                if all(r.status == "passed" for r in public_command_results)
+                else "failed"
+            )
+        elif patch_apply_status == "passed":
+            public_command_results = []
+            public_command_receipts = []
+            public_command_status = "passed"
+        else:
+            public_command_results = []
+            public_command_receipts = []
+            public_command_status = "not_executed"
+
+        if substrate["requires_patch_applies"] and patch_apply_status != "passed":
+            s_probe_decision = {
+                "accept": False,
+                "unavailable": False,
+                "reason": PATCH_APPLY_FAILURE_REASON,
+            }
+        elif public_command_status == "passed":
+            s_probe_decision = {
+                "accept": True,
+                "unavailable": False,
+                "reason": "public_probe_passed",
+            }
+        else:
+            s_probe_decision = {
+                "accept": False,
+                "unavailable": False,
+                "reason": "public_probe_failed",
+            }
+
+        public_packet = build_swe_bench_pro_public_packet(
+            instance=instance,
+            candidate=candidate,
+            s_probe_substrate=substrate,
+        )
+
+        reviewer_packet = _build_reviewer_packet(
+            instance=instance,
+            candidate=candidate,
+            public_packet=public_packet,
+            patch_apply_status=patch_apply_status,
+            patch_apply_receipts=patch_apply_receipts,
+            public_command_receipts=public_command_receipts,
+            protected_paths=protected_paths_tuple,
+        )
+        packet_leak_refs = _scan_for_swebench_pro_oracle_refs(reviewer_packet)
+        if packet_leak_refs:
+            raise SwebenchMergeabilityFixtureRunnerError(
+                "reviewer packet references forbidden oracle material: "
+                + ", ".join(packet_leak_refs)
+            )
+        reviewer_packet_path = per_candidate_dir / "reviewer_packet.json"
+        reviewer_packet_path.write_text(
+            json.dumps(reviewer_packet, sort_keys=True, indent=2),
+            encoding="utf-8",
+        )
+        reviewer_packet_sha256 = _sha256_json(reviewer_packet)
+        reviewer_packets.append({
+            "instance_id": instance_id,
+            "candidate_id": candidate_id,
+            "reviewer_packet_path": str(reviewer_packet_path),
+            "reviewer_packet_sha256": reviewer_packet_sha256,
+        })
+
+        if reviewer_panel is None:
+            panel_raw = None
+        else:
+            panel_raw = reviewer_panel(reviewer_packet)
+        panel_decision = _strict_panel_decision(panel_raw)
+        reviewer_results.append({
+            "instance_id": instance_id,
+            "candidate_id": candidate_id,
+            "reviewer_packet_sha256": reviewer_packet_sha256,
+            "accept": panel_decision["accept"],
+            "unavailable": panel_decision["unavailable"],
+            "reason": panel_decision["reason"],
+            "reviewer_id": panel_decision["reviewer_id"],
+            "reviewer_notes": panel_decision["reviewer_notes"],
+        })
+
+        if panel_decision["unavailable"]:
+            s_full_decision = {
+                "accept": False,
+                "unavailable": True,
+                "reason": REVIEWER_PANEL_UNAVAILABLE_REASON,
+            }
+        else:
+            # S_full requires BOTH S_probe accept AND panel accept; never imputed.
+            s_full_decision = {
+                "accept": bool(s_probe_decision["accept"] and panel_decision["accept"]),
+                "unavailable": False,
+                "reason": (
+                    "public_probe_and_independent_reviewer_accept"
+                    if s_probe_decision["accept"] and panel_decision["accept"]
+                    else "public_probe_or_independent_reviewer_reject"
+                ),
+            }
+
+        baseline_self_report = candidate.get("baseline_self_report")
+        if baseline_self_report is None:
+            baseline_self_report = True
+        baseline_decision = {
+            "accept": bool(baseline_self_report),
+            "unavailable": False,
+            "reason": "candidate_self_report",
+        }
+
+        candidate_artifacts[key] = {
+            "candidate_id": candidate_id,
+            "patch": str(candidate.get("patch") or ""),
+        }
+        arm_decisions[ARM_BASELINE][key] = {
+            "accept": baseline_decision["accept"],
+            "unavailable": baseline_decision["unavailable"],
+        }
+        arm_decisions[ARM_S_PROBE][key] = {
+            "accept": s_probe_decision["accept"],
+            "unavailable": s_probe_decision["unavailable"],
+        }
+        arm_decisions[ARM_S_FULL][key] = {
+            "accept": s_full_decision["accept"],
+            "unavailable": s_full_decision["unavailable"],
+        }
+        per_candidate_artifacts.append({
+            "instance_id": instance_id,
+            "candidate_id": candidate_id,
+            "patch_apply_status": patch_apply_status,
+            "patch_apply_receipts": patch_apply_receipts,
+            "public_command_status": public_command_status,
+            "public_command_receipts": public_command_receipts,
+            "baseline_decision": baseline_decision,
+            "s_probe_decision": s_probe_decision,
+            "s_full_decision": s_full_decision,
+            "public_packet_sha256": _sha256_json(public_packet),
+            "reviewer_packet_sha256": reviewer_packet_sha256,
+            "public_worktree": str(public_worktree),
+        })
+
+    # Decision-freeze phase: write frozen decisions BEFORE any oracle execution.
+    frozen_at = time.time()
+    frozen_decisions_payload: dict[str, Any] = {
+        "schema_version": SWEBENCH_MERGEABILITY_FROZEN_DECISIONS_SCHEMA_VERSION,
+        "instance_id": instance_id,
+        "frozen_at_epoch_s": frozen_at,
+        "rows": [
+            {
+                "instance_id": entry["instance_id"],
+                "candidate_id": entry["candidate_id"],
+                "public_packet_sha256": entry["public_packet_sha256"],
+                "reviewer_packet_sha256": entry["reviewer_packet_sha256"],
+                "baseline_accept": entry["baseline_decision"]["accept"],
+                "baseline_unavailable": entry["baseline_decision"]["unavailable"],
+                "s_probe_accept": entry["s_probe_decision"]["accept"],
+                "s_probe_unavailable": entry["s_probe_decision"]["unavailable"],
+                "s_probe_reason": entry["s_probe_decision"]["reason"],
+                "s_full_accept": entry["s_full_decision"]["accept"],
+                "s_full_unavailable": entry["s_full_decision"]["unavailable"],
+                "s_full_reason": entry["s_full_decision"]["reason"],
+            }
+            for entry in per_candidate_artifacts
+        ],
+    }
+    frozen_decisions_payload["frozen_decisions_sha256"] = _sha256_json(
+        frozen_decisions_payload["rows"]
+    )
+    frozen_decisions_path = output_dir / "frozen_decisions.json"
+    frozen_decisions_path.write_text(
+        json.dumps(frozen_decisions_payload, sort_keys=True, indent=2),
+        encoding="utf-8",
+    )
+    freeze_phase_records.append({
+        "frozen_decisions_path": str(frozen_decisions_path),
+        "frozen_decisions_sha256": frozen_decisions_payload[
+            "frozen_decisions_sha256"
+        ],
+        "frozen_at_epoch_s": frozen_at,
+    })
+
+    # Oracle phase: execute oracle commands AFTER freeze.
+    oracle_outputs_path = output_dir / "oracle_outputs.json"
+    if oracle_outputs_path.exists():
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "oracle outputs already exist before decision freeze; refusing to "
+            "overwrite to preserve freeze-before-oracle invariant"
+        )
+
+    oracle_phase_payload: dict[str, Any] = {
+        "instance_id": instance_id,
+        "rows": [],
+    }
+    for entry in per_candidate_artifacts:
+        candidate_id = entry["candidate_id"]
+        key = (instance_id, candidate_id)
+        candidate = next(c for c in candidates if str(c.get("candidate_id")) == candidate_id)
+        per_candidate_dir = output_dir / "candidates" / candidate_id
+        public_worktree = Path(entry["public_worktree"])
+        candidate_oracle = _candidate_oracle_commands(candidate)
+        outcome, receipts = _run_oracle_phase(
+            worktree=public_worktree,
+            oracle_commands=candidate_oracle,
+            timeout_s=timeout_s,
+        )
+        oracle_outcomes[key] = outcome
+        oracle_phase_payload["rows"].append({
+            "instance_id": instance_id,
+            "candidate_id": candidate_id,
+            "fail_to_pass_status": outcome["fail_to_pass_status"],
+            "pass_to_pass_status": outcome["pass_to_pass_status"],
+            "oracle_command_receipts": receipts,
+        })
+        oracle_phase_records.append({
+            "instance_id": instance_id,
+            "candidate_id": candidate_id,
+            "fail_to_pass_status": outcome["fail_to_pass_status"],
+            "pass_to_pass_status": outcome["pass_to_pass_status"],
+        })
+
+    oracle_outputs_path.write_text(
+        json.dumps(oracle_phase_payload, sort_keys=True, indent=2),
+        encoding="utf-8",
+    )
+
+    bridge_report = swebench_pro_mergeability_bridge_report(
+        instances=[instance],
+        candidate_artifacts=candidate_artifacts,
+        s_probe_substrate=substrate,
+        arm_decisions=arm_decisions,
+        oracle_outcomes=oracle_outcomes,
+    )
+
+    runner_report: dict[str, Any] = {
+        "schema_version": SWEBENCH_MERGEABILITY_FIXTURE_REPORT_SCHEMA_VERSION,
+        "instance_id": instance_id,
+        "frozen_decisions": frozen_decisions_payload,
+        "frozen_decisions_path": str(frozen_decisions_path),
+        "oracle_outputs_path": str(oracle_outputs_path),
+        "public_commands": public_commands_list,
+        "protected_paths": list(protected_paths_tuple),
+        "per_candidate_artifacts": per_candidate_artifacts,
+        "reviewer_packets": reviewer_packets,
+        "independent_reviewer_results": reviewer_results,
+        "freeze_phase_records": freeze_phase_records,
+        "oracle_phase_records": oracle_phase_records,
+        "worktree_isolation_records": worktree_isolation_records,
+        "bridge_report": bridge_report,
+    }
+    runner_report["report_sha256"] = _sha256_json({
+        key: value
+        for key, value in runner_report.items()
+        if key not in ("bridge_report", "report_sha256")
+    })
+
+    report_path = output_dir / "report.json"
+    report_path.write_text(
+        json.dumps(runner_report, sort_keys=True, indent=2, default=str),
+        encoding="utf-8",
+    )
+    runner_report["report_path"] = str(report_path)
+    return runner_report

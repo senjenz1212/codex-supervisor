@@ -1,0 +1,67 @@
+[
+  {
+    "receipt_id": "skill-to-prd-swebench-mergeability-executable-runner-20260620",
+    "kind": "skill_run",
+    "skill": "to-prd",
+    "stage": "to_prd",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/swebench-mergeability-executable-runner-20260620/prd.md"
+    ],
+    "claims": [
+      "PRD authored with promise contracts P1-P4 for a fixture-first executable SWE-bench mergeability runner"
+    ]
+  },
+  {
+    "receipt_id": "skill-prd-grill-swebench-mergeability-executable-runner-20260620",
+    "kind": "skill_run",
+    "skill": "grill-with-docs",
+    "stage": "prd_grill",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/swebench-mergeability-executable-runner-20260620/grill-findings.md"
+    ],
+    "claims": [
+      "PRD grill findings resolved producer execution, oracle isolation, reviewer unavailability, and report-only scope"
+    ]
+  },
+  {
+    "receipt_id": "skill-to-issues-swebench-mergeability-executable-runner-20260620",
+    "kind": "skill_run",
+    "skill": "to-issues",
+    "stage": "to_issues",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/swebench-mergeability-executable-runner-20260620/issues.md"
+    ],
+    "claims": [
+      "Issues sliced into vertical tracer bullets for runner execution, public isolation, reviewer semantics, and report-only regression"
+    ]
+  },
+  {
+    "receipt_id": "skill-tdd-swebench-mergeability-executable-runner-20260620",
+    "kind": "skill_run",
+    "skill": "tdd",
+    "stage": "tdd",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/swebench-mergeability-executable-runner-20260620/tdd.md"
+    ],
+    "claims": [
+      "TDD plan starts with a public-boundary runner RED test and follows one RED to one GREEN through freeze, reviewer, and report-only behaviors"
+    ]
+  },
+  {
+    "receipt_id": "skill-tdd-grill-swebench-mergeability-executable-runner-20260620",
+    "kind": "skill_run",
+    "skill": "grill-with-docs",
+    "stage": "tdd_grill",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/swebench-mergeability-executable-runner-20260620/grill-findings-tdd.md"
+    ],
+    "claims": [
+      "TDD grill findings resolved runner-boundary coverage, observable freeze ordering, reviewer unavailability, and report-only negative evidence"
+    ]
+  }
+]

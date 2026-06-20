@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "79f1a3ad3abf164a1a7976251e0c6cb5f6fabc34614ecef9a3f5bb26ebafc9a3",
+  "git": {
+    "diff_bytes": 46216,
+    "diff_sha256": "0001cc73016c8d1d3976c6dc4b01eb3fa8752b5b3b402a343d2af5adbecc1833",
+    "diff_stat": "supervisor/swe_bench_mergeability.py               | 664 ++++++++++++++++++++-\n .../swe_bench_mergeability_fixture/README.md       |  34 ++\n tests/test_swe_bench_pro_mergeability_bridge.py    | 391 ++++++++++++\n 3 files changed, 1088 insertions(+), 1 deletion(-)",
+    "head": "32824da1",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "32824da1",
+    "status_short": "M supervisor/swe_bench_mergeability.py\n A tests/fixtures/swe_bench_mergeability_fixture/README.md\n M tests/test_swe_bench_pro_mergeability_bridge.py\n?? .scratch/auto-evolution-loop-current-demo-20260618/\n?? .scratch/comfy-cloud-prototype-visuals/\n?? .scratch/comfy-cloud-prototype-workflow-request.json\n?? .scratch/comfy-cloud-prototype-workflow-result.json\n?? .scratch/mergeability-calibration-pilot-sample/\n?? .scratch/mergeability-debug/\n?? .scratch/mergeability-debug2/\n?? .scratch/mergeability-debug3/\n?? .scratch/mergeability-heldout-final-sample/\n?? .scratch/mergeability-independent-supervisor-arm-sample/\n?? .scratch/swebench-pro-mergeability-bridge-20260620/\n?? docs/dual-agent/auto-evolution-loop-current-demo-20260618/\n?? docs/dual-agent/comfy-cloud-polished-first-run-prototype-20260618/\n?? docs/dual-agent/comfy-cloud-polished-first-run-prototype-workflow-20260618/\n?? docs/dual-agent/mergeability-independent-supervisor-arm-20260619/\n?? docs/dual-agent/swebench-mergeability-executable-runner-20260620/\n?? docs/product-strategy/\n?? docs/testing/comfy-cloud-guided-first-workflow-coverage-index.md"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "99dcd2f7658601dd158f75d65140bec2ff6e7fe5b9e107392d62d3b4d201e6d4",
+    "implementation_plan": "9a44be8d0d4f203ddf66bfa9a41fad36273a295cce19afdf96bceb58f5dc7563",
+    "issues": "27bf788f0411f462661969bffab23c02951542b40f28813e078aef1057b1e18d",
+    "prd": "02e3aca4fc9375c3892a720cefe6b7bfa7bd488132544c1fafd153e054d17111",
+    "tdd_plan": "447efba25ba01db4ec6bb8977165689e3f09b1a8e053c827b42414bf0215f43d"
+  },
+  "status": "captured"
+}

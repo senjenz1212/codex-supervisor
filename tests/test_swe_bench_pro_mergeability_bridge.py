@@ -16,10 +16,15 @@ from supervisor.swe_bench_mergeability import (
     ARM_ORACLE_CEILING,
     ARM_S_FULL,
     ARM_S_PROBE,
+    PATCH_APPLY_FAILURE_REASON,
     PUBLIC_STATIC_PATCH_PROBE,
+    REVIEWER_PANEL_UNAVAILABLE_REASON,
+    SWEBENCH_MERGEABILITY_FIXTURE_REPORT_SCHEMA_VERSION,
     SWEBENCH_PRO_FORBIDDEN_KEYS,
+    SwebenchMergeabilityFixtureRunnerError,
     SwebenchProBridgeError,
     build_swe_bench_pro_public_packet,
+    swebench_mergeability_fixture_runner,
     swebench_pro_mergeability_bridge_report,
 )
 from supervisor.autoresearch.policy_evolution import (
@@ -564,3 +569,389 @@ def test_existing_mergeability_behavior_remains_green():
     ci = _wilson_interval(0, 0)
     assert ci["lower"] is None
     assert ci["upper"] is None
+
+
+# ---------------------------------------------------------------------------
+# Fixture-first executable runner
+# ---------------------------------------------------------------------------
+
+
+def _build_runner_fixture(tmp_path: Path) -> Path:
+    """Build a minimal local fixture with public + protected oracle files."""
+    root = tmp_path / "fixture"
+    root.mkdir()
+    (root / "parser.py").write_text(
+        "def parse(value):\n    return value\n",
+        encoding="utf-8",
+    )
+    (root / "src").mkdir()
+    (root / "src" / "lib.py").write_text(
+        "def lib():\n    return 1\n",
+        encoding="utf-8",
+    )
+    # Protected oracle paths that must never appear in the public worktree.
+    (root / "hidden").mkdir()
+    (root / "hidden" / "test_behavior.py").write_text(
+        "def test_hidden():\n    assert True\n",
+        encoding="utf-8",
+    )
+    (root / ".mergeability").mkdir()
+    (root / ".mergeability" / "oracle.json").write_text(
+        "{\"oracle_accept\": true}",
+        encoding="utf-8",
+    )
+    return root
+
+
+def _runner_substrate() -> dict:
+    return {
+        "kind": PUBLIC_STATIC_PATCH_PROBE,
+        "requires_patch_applies": True,
+        "public_lint_commands": [],
+        "public_build_commands": [],
+    }
+
+
+def _runner_instance(instance_id: str = "fixture_demo__repo-001") -> dict:
+    return {
+        "instance_id": instance_id,
+        "repo": "octocat/example",
+        "base_commit": "deadbeef" * 5,
+        "problem_statement": "Add type hints to parser",
+        "public_checkout_ref": "refs/heads/main",
+        "public_checkout_sha256": "b" * 64,
+    }
+
+
+def _runner_candidate(
+    candidate_id: str,
+    *,
+    patch_mode: str = "modify",
+    patch_target: str = "parser.py",
+    patch_content: str = (
+        "def parse(value: str) -> str:\n    return value\n"
+    ),
+    oracle_fail_to_pass_passes: bool = True,
+    oracle_pass_to_pass_passes: bool = True,
+    baseline_self_report: bool = True,
+) -> dict:
+    def _cmd_for(passes: bool) -> list[str]:
+        if passes:
+            return ["python", "-c", "print('ok')"]
+        return ["python", "-c", "import sys; sys.exit(1)"]
+
+    return {
+        "candidate_id": candidate_id,
+        "patch": (
+            f"diff --git a/{patch_target} b/{patch_target}\n"
+            f"--- a/{patch_target}\n"
+            f"+++ b/{patch_target}\n"
+        ),
+        "baseline_self_report": baseline_self_report,
+        "patch_operations": [
+            {"path": patch_target, "mode": patch_mode, "content": patch_content},
+        ],
+        "oracle_commands": {
+            "fail_to_pass": [_cmd_for(oracle_fail_to_pass_passes)],
+            "pass_to_pass": [_cmd_for(oracle_pass_to_pass_passes)],
+        },
+    }
+
+
+def test_fixture_runner_executes_public_probe_and_excludes_hidden_oracle(tmp_path):
+    fixture_root = _build_runner_fixture(tmp_path)
+    output_dir = tmp_path / "out"
+    instance = _runner_instance()
+    candidate = _runner_candidate("cand-1")
+    public_commands = [
+        ["python", "-c", "import pathlib; print(sorted(pathlib.Path('.').iterdir()))"],
+    ]
+
+    report = swebench_mergeability_fixture_runner(
+        fixture_root=fixture_root,
+        instance=instance,
+        candidates=[candidate],
+        s_probe_substrate=_runner_substrate(),
+        public_commands=public_commands,
+        output_dir=output_dir,
+    )
+
+    # Public command actually executed and produced receipts.
+    per_candidate = report["per_candidate_artifacts"]
+    assert len(per_candidate) == 1
+    receipts = per_candidate[0]["public_command_receipts"]
+    assert len(receipts) == 1
+    assert receipts[0]["status"] == "passed"
+    assert receipts[0]["returncode"] == 0
+    assert receipts[0]["stdout_sha256"]
+    assert receipts[0]["stderr_sha256"]
+    assert receipts[0]["argv"][-1].startswith("import pathlib")
+
+    # Public worktree must not contain any protected oracle paths.
+    public_worktree = Path(per_candidate[0]["public_worktree"])
+    assert (public_worktree / "parser.py").exists()
+    assert not (public_worktree / "hidden").exists()
+    assert not (public_worktree / ".mergeability").exists()
+    assert not (public_worktree / "hidden" / "test_behavior.py").exists()
+
+    # Reviewer packet exists, has no forbidden oracle material.
+    reviewer_packet_path = Path(report["reviewer_packets"][0]["reviewer_packet_path"])
+    packet_text = reviewer_packet_path.read_text(encoding="utf-8")
+    for forbidden in ("FAIL_TO_PASS", "PASS_TO_PASS", "test_patch", "oracle_accept"):
+        assert forbidden not in packet_text
+    # Schema version reflects the fixture runner.
+    assert report["schema_version"] == SWEBENCH_MERGEABILITY_FIXTURE_REPORT_SCHEMA_VERSION
+
+
+def test_fixture_runner_freezes_decisions_before_oracle_execution(tmp_path):
+    fixture_root = _build_runner_fixture(tmp_path)
+    output_dir = tmp_path / "out"
+    instance = _runner_instance("fixture_demo__repo-002")
+    candidate = _runner_candidate("cand-freeze")
+
+    report = swebench_mergeability_fixture_runner(
+        fixture_root=fixture_root,
+        instance=instance,
+        candidates=[candidate],
+        s_probe_substrate=_runner_substrate(),
+        public_commands=[],
+        output_dir=output_dir,
+    )
+
+    frozen_path = Path(report["frozen_decisions_path"])
+    oracle_path = Path(report["oracle_outputs_path"])
+    assert frozen_path.exists()
+    assert oracle_path.exists()
+    # Decision artifact must be on disk before oracle outputs.
+    assert frozen_path.stat().st_mtime_ns <= oracle_path.stat().st_mtime_ns
+    frozen_payload = report["frozen_decisions"]
+    assert isinstance(frozen_payload["frozen_at_epoch_s"], float)
+    assert len(frozen_payload["frozen_decisions_sha256"]) == 64
+    # Frozen rows must not include oracle outcomes.
+    for row in frozen_payload["rows"]:
+        assert "fail_to_pass_status" not in row
+        assert "pass_to_pass_status" not in row
+        assert "oracle_accept" not in row
+        assert len(row["public_packet_sha256"]) == 64
+    # Bridge report decision-phase rows do not include oracle outcomes either.
+    for decision_row in report["bridge_report"]["decision_phase_rows"]:
+        assert "oracle_accept" not in decision_row
+        assert "fail_to_pass_status" not in decision_row
+
+
+def test_fixture_runner_patch_apply_failure_is_recorded_not_crashed(tmp_path):
+    fixture_root = _build_runner_fixture(tmp_path)
+    output_dir = tmp_path / "out"
+    instance = _runner_instance("fixture_demo__repo-003")
+    # Modify a path that does not exist in the public worktree.
+    candidate = _runner_candidate(
+        "cand-bad-patch",
+        patch_mode="modify",
+        patch_target="missing/never_existed.py",
+        patch_content="raise SystemExit(0)\n",
+    )
+
+    report = swebench_mergeability_fixture_runner(
+        fixture_root=fixture_root,
+        instance=instance,
+        candidates=[candidate],
+        s_probe_substrate=_runner_substrate(),
+        public_commands=[["python", "-c", "print('would not run')"]],
+        output_dir=output_dir,
+    )
+
+    # Runner produced a report instead of crashing.
+    assert report["bridge_report"]["candidate_count"] == 1
+    per_candidate = report["per_candidate_artifacts"][0]
+    assert per_candidate["patch_apply_status"] == "failed"
+    receipts = per_candidate["patch_apply_receipts"]
+    assert receipts
+    assert receipts[0]["status"] == "failed"
+    assert receipts[0]["reason"] == "modify_missing_target"
+    # Public commands must not be executed when patch apply failed.
+    assert per_candidate["public_command_status"] == "not_executed"
+    assert per_candidate["public_command_receipts"] == []
+    # S_probe decision is a hard reject with patch_apply_failure reason.
+    assert per_candidate["s_probe_decision"]["accept"] is False
+    assert per_candidate["s_probe_decision"]["reason"] == PATCH_APPLY_FAILURE_REASON
+    # Bridge report rows reflect the rejection.
+    row = report["bridge_report"]["per_row_results"][0]
+    assert row["s_probe_accept"] is False
+    assert row["baseline_accept"] is True  # baseline still records self-report
+    # Frozen decisions also record the rejection.
+    frozen = report["frozen_decisions"]["rows"][0]
+    assert frozen["s_probe_accept"] is False
+    assert frozen["s_probe_reason"] == PATCH_APPLY_FAILURE_REASON
+    # Report-only invariants remain false.
+    assert report["bridge_report"]["metric_applyable"] is False
+    assert report["bridge_report"]["improvement_claim_allowed"] is False
+
+
+def test_fixture_runner_marks_full_gate_unavailable_without_panel(tmp_path):
+    fixture_root = _build_runner_fixture(tmp_path)
+    output_dir = tmp_path / "out"
+    instance = _runner_instance("fixture_demo__repo-004")
+    candidate = _runner_candidate("cand-no-panel")
+
+    report = swebench_mergeability_fixture_runner(
+        fixture_root=fixture_root,
+        instance=instance,
+        candidates=[candidate],
+        s_probe_substrate=_runner_substrate(),
+        public_commands=[],
+        output_dir=output_dir,
+        reviewer_panel=None,
+    )
+
+    per_candidate = report["per_candidate_artifacts"][0]
+    assert per_candidate["s_full_decision"]["unavailable"] is True
+    assert per_candidate["s_full_decision"]["accept"] is False
+    assert per_candidate["s_full_decision"]["reason"] == REVIEWER_PANEL_UNAVAILABLE_REASON
+
+    reviewer_results = report["independent_reviewer_results"]
+    assert len(reviewer_results) == 1
+    assert reviewer_results[0]["unavailable"] is True
+    assert reviewer_results[0]["accept"] is False
+    assert reviewer_results[0]["reason"] == REVIEWER_PANEL_UNAVAILABLE_REASON
+
+    row = report["bridge_report"]["per_row_results"][0]
+    assert row["s_full_unavailable"] is True
+    assert row["s_full_accept"] is False
+    # S_probe was accepted but is NOT copied into S_full.
+    assert row["s_probe_accept"] is True
+    full_arm = report["bridge_report"]["arms"][ARM_S_FULL]
+    assert full_arm["unavailable_count"] == 1
+    assert full_arm["accepted_count"] == 0
+    assert full_arm["availability_status"] == "unavailable"
+
+
+def test_fixture_runner_preserves_panel_disagreement_with_probe(tmp_path):
+    fixture_root = _build_runner_fixture(tmp_path)
+    output_dir = tmp_path / "out"
+    instance = _runner_instance("fixture_demo__repo-005")
+    # Two candidates: panel disagrees with first, agrees with second.
+    candidate_a = _runner_candidate("cand-disagree")
+    candidate_b = _runner_candidate(
+        "cand-agree",
+        patch_target="src/lib.py",
+        patch_content="def lib() -> int:\n    return 1\n",
+    )
+    call_log: list[str] = []
+
+    def panel(packet):
+        call_log.append(packet["candidate_id"])
+        if packet["candidate_id"] == "cand-disagree":
+            return {
+                "accept": False,
+                "unavailable": False,
+                "reason": "independent_reviewer_rejected",
+                "reviewer_id": "reviewer-1",
+                "reviewer_notes": "missing test coverage",
+            }
+        return {
+            "accept": True,
+            "unavailable": False,
+            "reason": "independent_reviewer_accepted",
+            "reviewer_id": "reviewer-1",
+        }
+
+    report = swebench_mergeability_fixture_runner(
+        fixture_root=fixture_root,
+        instance=instance,
+        candidates=[candidate_a, candidate_b],
+        s_probe_substrate=_runner_substrate(),
+        public_commands=[],
+        output_dir=output_dir,
+        reviewer_panel=panel,
+    )
+
+    assert call_log == ["cand-disagree", "cand-agree"]
+    rows = report["bridge_report"]["per_row_results"]
+    disagree_rows = [r for r in rows if r["candidate_id"] == "cand-disagree"]
+    agree_rows = [r for r in rows if r["candidate_id"] == "cand-agree"]
+    assert disagree_rows and agree_rows
+    # Disagreement is preserved in the per-row data.
+    assert disagree_rows[0]["s_probe_accept"] is True
+    assert disagree_rows[0]["s_full_accept"] is False
+    assert disagree_rows[0]["s_full_unavailable"] is False
+    assert disagree_rows[0]["s_full_disagrees_with_s_probe"] is True
+    assert agree_rows[0]["s_full_disagrees_with_s_probe"] is False
+    # Independent reviewer results record both outcomes with packet refs.
+    reviewer_results = {
+        r["candidate_id"]: r for r in report["independent_reviewer_results"]
+    }
+    assert reviewer_results["cand-disagree"]["accept"] is False
+    assert reviewer_results["cand-disagree"]["reviewer_id"] == "reviewer-1"
+    assert reviewer_results["cand-agree"]["accept"] is True
+    reviewer_packets = {
+        p["candidate_id"]: p for p in report["reviewer_packets"]
+    }
+    assert reviewer_packets["cand-disagree"]["reviewer_packet_sha256"]
+    assert reviewer_packets["cand-agree"]["reviewer_packet_sha256"]
+    # The panel marginal delta has a reportable status (computed / unavailable
+    # / not_matched / insufficient_candidate_pool).
+    panel_delta = report["bridge_report"]["panel_marginal_delta_at_matched_true_accept"]
+    assert panel_delta["status"] in {
+        "computed",
+        "not_matched",
+        "insufficient_candidate_pool",
+        "unavailable",
+    }
+
+
+def test_fixture_runner_report_only_invariants_and_no_policy_outputs(tmp_path):
+    fixture_root = _build_runner_fixture(tmp_path)
+    output_dir = tmp_path / "out"
+    instance = _runner_instance("fixture_demo__repo-006")
+    # Two candidates: one oracle-positive (n_good >= 1) and one oracle-negative
+    # (n_bad >= 1) so FAR/TAR denominators are both non-empty.
+    candidate_pos = _runner_candidate(
+        "cand-pos",
+        oracle_fail_to_pass_passes=True,
+        oracle_pass_to_pass_passes=True,
+    )
+    candidate_neg = _runner_candidate(
+        "cand-neg",
+        patch_target="src/lib.py",
+        patch_content="def lib() -> int:\n    return 1\n",
+        oracle_fail_to_pass_passes=False,
+        oracle_pass_to_pass_passes=True,
+    )
+
+    report = swebench_mergeability_fixture_runner(
+        fixture_root=fixture_root,
+        instance=instance,
+        candidates=[candidate_pos, candidate_neg],
+        s_probe_substrate=_runner_substrate(),
+        public_commands=[],
+        output_dir=output_dir,
+    )
+
+    bridge_report = report["bridge_report"]
+    s_probe_arm = bridge_report["arms"][ARM_S_PROBE]
+    # Non-empty denominators: one oracle-positive, one oracle-negative.
+    assert s_probe_arm["n_good"] >= 1
+    assert s_probe_arm["n_bad"] >= 1
+    # Report-only invariants are all false.
+    assert bridge_report["metric_applyable"] is False
+    assert bridge_report["improvement_claim_allowed"] is False
+    assert bridge_report["default_change_allowed"] is False
+    assert bridge_report["policy_mutated"] is False
+    assert bridge_report["gate_advanced"] is False
+    # Policy evolution must refuse to derive applyable proposals.
+    proposals = derive_policy_evolution_proposals_from_report(
+        bridge_report,
+        repo_root=Path("."),
+        affected_gates=("agentic_lead",),
+    )
+    assert proposals == []
+    # No policy proposal artifacts created under output_dir.
+    output_files = {p.name for p in Path(output_dir).rglob("*") if p.is_file()}
+    for forbidden_name in (
+        "policy_proposal.json",
+        "policy_mutation.json",
+        "applyable_proposal.json",
+    ):
+        assert forbidden_name not in output_files
+    # Schema version explicit on the runner report.
+    assert report["schema_version"] == SWEBENCH_MERGEABILITY_FIXTURE_REPORT_SCHEMA_VERSION

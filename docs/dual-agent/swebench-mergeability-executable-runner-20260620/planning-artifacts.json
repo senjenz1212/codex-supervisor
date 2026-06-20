@@ -1,0 +1,32 @@
+[
+  {
+    "kind": "prd",
+    "mutable_by_worker": false,
+    "path": "docs/dual-agent/swebench-mergeability-executable-runner-20260620/prd.md",
+    "sha256": "34ebac00fca2deaaba9314e9c7f8a79354966d48a66004adcc3b4b322acc1d9b"
+  },
+  {
+    "kind": "grill_findings",
+    "mutable_by_worker": false,
+    "path": "docs/dual-agent/swebench-mergeability-executable-runner-20260620/grill-findings.md",
+    "sha256": "dfe01137218882148d7bf387eaeb6199a3e12f08eb61af5dfb1e10090098a1e5"
+  },
+  {
+    "kind": "issues",
+    "mutable_by_worker": false,
+    "path": "docs/dual-agent/swebench-mergeability-executable-runner-20260620/issues.md",
+    "sha256": "7df65803763a625bb40b055fe020bc9d18efb3348924b8c9357860e2687c8b81"
+  },
+  {
+    "kind": "tdd_plan",
+    "mutable_by_worker": false,
+    "path": "docs/dual-agent/swebench-mergeability-executable-runner-20260620/tdd.md",
+    "sha256": "ceb92466eaa32632ccac2bbca90ad828341d7e76847b59ec094a81e6719e1260"
+  },
+  {
+    "kind": "grill_findings",
+    "mutable_by_worker": false,
+    "path": "docs/dual-agent/swebench-mergeability-executable-runner-20260620/grill-findings-tdd.md",
+    "sha256": "99dcd2f7658601dd158f75d65140bec2ff6e7fe5b9e107392d62d3b4d201e6d4"
+  }
+]
