@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "508db7356d1045ab684b3995b3c378a68b89bc825f42f4085cba39b1510cc748",
+  "git": {
+    "diff_bytes": 0,
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "diff_stat": "",
+    "head": "77baaa52",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "77baaa52",
+    "status_short": "?? .scratch/auto-evolution-loop-current-demo-20260618/\n?? .scratch/comfy-cloud-prototype-visuals/\n?? .scratch/comfy-cloud-prototype-workflow-request.json\n?? .scratch/comfy-cloud-prototype-workflow-result.json\n?? .scratch/mergeability-calibration-pilot-sample/\n?? .scratch/mergeability-debug/\n?? .scratch/mergeability-debug2/\n?? .scratch/mergeability-debug3/\n?? .scratch/mergeability-heldout-final-sample/\n?? .scratch/mergeability-independent-supervisor-arm-sample/\n?? .scratch/swebench-pro-mergeability-bridge-20260620/\n?? docs/dual-agent/auto-evolution-loop-current-demo-20260618/\n?? docs/dual-agent/comfy-cloud-polished-first-run-prototype-20260618/\n?? docs/dual-agent/comfy-cloud-polished-first-run-prototype-workflow-20260618/\n?? docs/dual-agent/mergeability-independent-supervisor-arm-20260619/\n?? docs/dual-agent/swebench-pro-mergeability-bridge-20260620/\n?? docs/product-strategy/\n?? docs/testing/comfy-cloud-guided-first-workflow-coverage-index.md\n?? supervisor/swe_bench_mergeability.py\n?? tests/test_swe_bench_pro_mergeability_bridge.py"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "7d15f8b713f87397f1c666979c3fe335a4b4aa7bfe84426e980d476d8592c608",
+    "implementation_plan": "de2481cc719eb2ab89efec3652bf8f9dd9773ba04f0a701e87fe3d61600bca41",
+    "issues": "8ad6795666af88a8cc6754f17830b3893070fcaa3f37b28f3bec021933cb9bf1",
+    "prd": "15d40e90754d7425a0c13c7b5ce819994c8ef3705b94df43860fce7456a499eb",
+    "tdd_plan": "30680706b9607375cd42f7a7f54319abbdbb8792db432d6064cb1a7125812482"
+  },
+  "status": "captured"
+}

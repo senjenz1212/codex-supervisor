@@ -1,0 +1,72 @@
+[
+  {
+    "receipt_id": "skill-to-prd-swebench-pro-mergeability-bridge-20260620",
+    "kind": "skill_run",
+    "skill": "to-prd",
+    "stage": "to_prd",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/swebench-pro-mergeability-bridge-20260620/source/prd.md"
+    ],
+    "claims": [
+      "Authored seven-section PRD with promise contracts P1-P7",
+      "Separated SWE-bench pass-at-k adapter from mergeability FAR/TAR bridge"
+    ]
+  },
+  {
+    "receipt_id": "skill-prd-grill-swebench-pro-mergeability-bridge-20260620",
+    "kind": "skill_run",
+    "skill": "grill-with-docs",
+    "stage": "prd_grill",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/swebench-pro-mergeability-bridge-20260620/source/grill-findings.md"
+    ],
+    "claims": [
+      "Resolved public-probe substrate ambiguity",
+      "Resolved report-only and oracle-timing risks"
+    ]
+  },
+  {
+    "receipt_id": "skill-to-issues-swebench-pro-mergeability-bridge-20260620",
+    "kind": "skill_run",
+    "skill": "to-issues",
+    "stage": "to_issues",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/swebench-pro-mergeability-bridge-20260620/source/issues.md"
+    ],
+    "claims": [
+      "Sliced work into vertical public-boundary issues",
+      "Mapped every issue to PRD promise contracts"
+    ]
+  },
+  {
+    "receipt_id": "skill-tdd-swebench-pro-mergeability-bridge-20260620",
+    "kind": "skill_run",
+    "skill": "tdd",
+    "stage": "tdd",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/swebench-pro-mergeability-bridge-20260620/source/tdd.md"
+    ],
+    "claims": [
+      "TDD starts with public bridge report boundary",
+      "Tests cover oracle exclusion, S_probe substrate, frozen decisions, S_full unavailability, PASS_TO_PASS regression, and non-regression of existing adapters"
+    ]
+  },
+  {
+    "receipt_id": "skill-tdd-grill-swebench-pro-mergeability-bridge-20260620",
+    "kind": "skill_run",
+    "skill": "grill-with-docs",
+    "stage": "tdd_grill",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/swebench-pro-mergeability-bridge-20260620/source/grill-findings-tdd.md"
+    ],
+    "claims": [
+      "Rejected helper-only starting point",
+      "Added direct tests for missing S_probe substrate and frozen decision timing"
+    ]
+  }
+]
