@@ -12,6 +12,7 @@ policy proposals.
 from __future__ import annotations
 
 import json
+import shutil
 import time
 from hashlib import sha256
 from pathlib import Path
@@ -583,6 +584,9 @@ SWEBENCH_MERGEABILITY_REPLAY_MANIFEST_SCHEMA_VERSION = (
 )
 SWEBENCH_MERGEABILITY_REPLAY_REPORT_SCHEMA_VERSION = (
     "supervisor-swebench-mergeability-replay-report/v1"
+)
+SWEBENCH_MERGEABILITY_LIVE_REPORT_SCHEMA_VERSION = (
+    "supervisor-swebench-mergeability-live-report/v1"
 )
 SWEBENCH_MERGEABILITY_REVIEWER_PACKET_SCHEMA_VERSION = (
     "supervisor-swebench-mergeability-reviewer-packet/v1"
@@ -1612,3 +1616,524 @@ def swebench_mergeability_replay_runner(
     )
     report["report_path"] = str(report_path)
     return report
+
+
+def swebench_mergeability_live_runner(
+    *,
+    manifest_path: str | Path,
+    output_dir: str | Path,
+    baseline_generator: Callable[[Mapping[str, Any]], Mapping[str, Any]],
+    supervisor_generator: Callable[[Mapping[str, Any]], Mapping[str, Any]],
+    allow_live: bool,
+    max_budget_usd: float,
+    model: str,
+    provider: str,
+    timeout_s: float = 30.0,
+    reviewer_panel: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+    reviewer_panel_mode: str = "custom",
+    configured_reviewer_panel_options: ConfiguredReviewerPanelOptions | None = None,
+) -> dict[str, Any]:
+    """Run budget-gated live generation, then delegate evaluation to replay."""
+    if not allow_live:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "refusing live SWE-bench mergeability run without allow_live=true"
+        )
+    budget = float(max_budget_usd or 0.0)
+    if budget <= 0:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "refusing live SWE-bench mergeability run without max_budget_usd > 0"
+        )
+    started = time.monotonic()
+    output_path = Path(output_dir).expanduser()
+    output_path.mkdir(parents=True, exist_ok=True)
+    source = _load_live_source_manifest(manifest_path)
+    arm_config = {
+        "model": str(model or ""),
+        "provider": str(provider or ""),
+        "budget_usd": budget,
+        "timeout_s": float(timeout_s),
+    }
+    live_arms = {
+        "baseline": _empty_live_generation_arm("baseline", arm_config),
+        "supervisor": _empty_live_generation_arm("supervisor", arm_config),
+    }
+    generated_instances: list[dict[str, Any]] = []
+    patch_dir = output_path / "generated-patches"
+    patch_dir.mkdir(parents=True, exist_ok=True)
+
+    for source_instance in source["instances"]:
+        replay_entry = {
+            **{
+                key: value
+                for key, value in source_instance["instance"].items()
+                if key in _PUBLIC_PACKET_ALLOWED_INSTANCE_KEYS
+                or key in SWEBENCH_PRO_HIDDEN_ORACLE_KEYS
+                or key == "hidden_test_commands"
+            },
+            "public_bundle": source_instance["public_bundle"],
+            "protected_paths": list(source_instance["protected_paths"]),
+            "s_probe_substrate": dict(source_instance["s_probe_substrate"]),
+            "public_commands": [list(cmd) for cmd in source_instance["public_commands"]],
+            "candidates": [],
+        }
+        instance_id = str(source_instance["instance"]["instance_id"])
+        for arm, generator in (
+            ("baseline", baseline_generator),
+            ("supervisor", supervisor_generator),
+        ):
+            generator_input = _build_swebench_live_generator_input(
+                source_instance=source_instance,
+                arm=arm,
+                config=arm_config,
+                public_root=output_path / "live-public-worktrees" / instance_id / arm,
+            )
+            generation_started = time.monotonic()
+            raw_result = generator(generator_input)
+            measured_wall_clock = time.monotonic() - generation_started
+            generation = _normalise_swebench_live_generation_result(
+                raw_result,
+                default_candidate_id=f"{arm}-{instance_id}",
+                measured_wall_clock_s=measured_wall_clock,
+            )
+            record = _live_generation_record(
+                arm=arm,
+                instance_id=instance_id,
+                config=arm_config,
+                generator_input=generator_input,
+                generation=generation,
+                patch_dir=patch_dir,
+            )
+            live_arms[arm]["candidates"].append(record)
+            live_arms[arm]["cost_usd"] = round(
+                float(live_arms[arm]["cost_usd"]) + float(record["cost_usd"]),
+                6,
+            )
+            live_arms[arm]["wall_clock_s"] = round(
+                float(live_arms[arm]["wall_clock_s"]) + float(record["wall_clock_s"]),
+                6,
+            )
+            if not live_arms[arm]["prompt_hash"]:
+                live_arms[arm]["prompt_hash"] = record["prompt_hash"]
+            if not live_arms[arm]["generator_input_hash"]:
+                live_arms[arm]["generator_input_hash"] = record["generator_input_hash"]
+            if not live_arms[arm]["token_usage"]:
+                live_arms[arm]["token_usage"] = dict(record["token_usage"])
+
+            if float(record["cost_usd"]) > budget:
+                live_arms[arm]["status"] = "unavailable"
+                live_arms[arm]["accepted"] = False
+                live_arms[arm]["unavailable_reason"] = "budget_exceeded"
+                report = _live_unavailable_report(
+                    source=source,
+                    output_path=output_path,
+                    started=started,
+                    reason="budget_exceeded",
+                    arms=live_arms,
+                    arm_config=arm_config,
+                    gaming_flags=("budget_exceeded",),
+                )
+                _write_live_report(output_path, report)
+                return report
+
+            candidate = {
+                "candidate_id": record["candidate_id"],
+                "model_patch_path": record["model_patch_path"],
+                "baseline_self_report": True,
+                "oracle_commands": source_instance["oracle_commands"],
+                "live_generation": {
+                    "arm": arm,
+                    "model": arm_config["model"],
+                    "provider": arm_config["provider"],
+                    "budget_usd": arm_config["budget_usd"],
+                    "cost_usd": record["cost_usd"],
+                    "wall_clock_s": record["wall_clock_s"],
+                    "token_usage": dict(record["token_usage"]),
+                    "prompt_hash": record["prompt_hash"],
+                    "candidate_artifact_hash": record["candidate_artifact_hash"],
+                },
+            }
+            replay_entry["candidates"].append(candidate)
+        generated_instances.append(replay_entry)
+
+    generated_manifest = {
+        "schema_version": SWEBENCH_MERGEABILITY_REPLAY_MANIFEST_SCHEMA_VERSION,
+        "instances": generated_instances,
+    }
+    generated_manifest_path = output_path / "generated_replay_manifest.json"
+    generated_manifest_path.write_text(
+        json.dumps(generated_manifest, sort_keys=True, indent=2),
+        encoding="utf-8",
+    )
+    replay_report = swebench_mergeability_replay_runner(
+        manifest_path=generated_manifest_path,
+        output_dir=output_path / "replay",
+        reviewer_panel=reviewer_panel,
+        reviewer_panel_mode=reviewer_panel_mode,
+        configured_reviewer_panel_options=configured_reviewer_panel_options,
+        timeout_s=timeout_s,
+    )
+    for arm in live_arms.values():
+        arm["status"] = "completed"
+        arm["accepted"] = False
+        arm["evaluated_by_replay"] = True
+    report: dict[str, Any] = {
+        "schema_version": SWEBENCH_MERGEABILITY_LIVE_REPORT_SCHEMA_VERSION,
+        "status": "completed",
+        "unavailable_reason": "",
+        "allow_live": True,
+        "live_generation_used": True,
+        "live_fetch_used": False,
+        "manifest_path": source["manifest_path"],
+        "manifest_sha256": source["manifest_sha256"],
+        "generated_replay_manifest_path": str(generated_manifest_path),
+        "generated_replay_manifest_sha256": sha256(
+            generated_manifest_path.read_bytes()
+        ).hexdigest(),
+        "instance_count": len(source["instances"]),
+        "candidate_count": sum(
+            len(entry["candidates"]) for entry in generated_instances
+        ),
+        "model": arm_config["model"],
+        "provider": arm_config["provider"],
+        "max_budget_usd": budget,
+        "timeout_s": float(timeout_s),
+        "live_generation_arms": live_arms,
+        "total_cost_usd": round(
+            sum(float(arm["cost_usd"]) for arm in live_arms.values()),
+            6,
+        ),
+        "replay_report": replay_report,
+        "bridge_report": replay_report["bridge_report"],
+        "metric_applyable": False,
+        "improvement_claim_allowed": False,
+        "default_change_allowed": False,
+        "policy_mutated": False,
+        "gate_advanced": False,
+        "gaming_flags": [],
+        "wall_clock_s": round(time.monotonic() - started, 6),
+    }
+    report["report_sha256"] = _sha256_json({
+        key: value for key, value in report.items() if key != "report_sha256"
+    })
+    _write_live_report(output_path, report)
+    return report
+
+
+def _load_live_source_manifest(manifest_path: str | Path) -> dict[str, Any]:
+    path = Path(manifest_path).expanduser().resolve()
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            f"could not read live manifest {path}: {exc}"
+        ) from exc
+    if not isinstance(raw, Mapping):
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "live manifest must be a JSON object"
+        )
+    entries = raw.get("instances")
+    if not isinstance(entries, Sequence) or isinstance(entries, (str, bytes)):
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "live manifest instances must be a non-empty list"
+        )
+    base_dir = path.parent
+    instances: list[dict[str, Any]] = []
+    for entry in entries:
+        if not isinstance(entry, Mapping):
+            raise SwebenchMergeabilityFixtureRunnerError(
+                "live manifest instance entries must be objects"
+            )
+        public_bundle = str(entry.get("public_bundle") or "")
+        if not public_bundle:
+            raise SwebenchMergeabilityFixtureRunnerError(
+                "live manifest instance.public_bundle is required"
+            )
+        bundle_path = (base_dir / public_bundle).resolve()
+        if not bundle_path.exists():
+            raise SwebenchMergeabilityFixtureRunnerError(
+                f"live public bundle does not exist: {bundle_path}"
+            )
+        instance = {
+            key: entry[key]
+            for key in _PUBLIC_PACKET_ALLOWED_INSTANCE_KEYS
+            if key in entry
+        }
+        for hidden_key in SWEBENCH_PRO_HIDDEN_ORACLE_KEYS:
+            if hidden_key in entry:
+                instance[hidden_key] = entry[hidden_key]
+        instance_id = str(instance.get("instance_id") or "")
+        if not instance_id:
+            raise SwebenchMergeabilityFixtureRunnerError(
+                "live manifest instance.instance_id is required"
+            )
+        substrate = _validate_s_probe_substrate(
+            entry.get("s_probe_substrate")
+            or {
+                "kind": PUBLIC_STATIC_PATCH_PROBE,
+                "requires_patch_applies": True,
+                "public_lint_commands": entry.get("public_lint_commands") or [],
+                "public_build_commands": entry.get("public_build_commands") or [],
+            }
+        )
+        public_commands = entry.get("public_commands")
+        if public_commands is None:
+            public_commands = (
+                list(substrate["public_lint_commands"])
+                + list(substrate["public_build_commands"])
+            )
+        oracle_commands = entry.get("oracle_commands")
+        if not isinstance(oracle_commands, Mapping):
+            raise SwebenchMergeabilityFixtureRunnerError(
+                "live manifest instance.oracle_commands is required"
+            )
+        instances.append({
+            "instance": instance,
+            "public_bundle": str(bundle_path),
+            "protected_paths": list(entry.get("protected_paths") or _DEFAULT_PROTECTED_PATHS),
+            "s_probe_substrate": substrate,
+            "public_commands": [
+                [str(part) for part in cmd] for cmd in (public_commands or [])
+            ],
+            "oracle_commands": _normalise_oracle_commands(oracle_commands),
+        })
+    if not instances:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "live manifest contains no instances"
+        )
+    return {
+        "schema_version": str(raw.get("schema_version") or ""),
+        "manifest_path": str(path),
+        "manifest_sha256": sha256(path.read_bytes()).hexdigest(),
+        "instances": instances,
+    }
+
+
+def _normalise_oracle_commands(
+    raw: Mapping[str, Any],
+) -> dict[str, list[list[str]]]:
+    parsed = {"fail_to_pass": [], "pass_to_pass": []}
+    for key in parsed:
+        for cmd in raw.get(key) or []:
+            parsed[key].append([str(part) for part in cmd])
+    return parsed
+
+
+def _build_swebench_live_generator_input(
+    *,
+    source_instance: Mapping[str, Any],
+    arm: str,
+    config: Mapping[str, Any],
+    public_root: Path,
+) -> dict[str, Any]:
+    public_bundle = Path(str(source_instance["public_bundle"]))
+    protected_paths = _normalise_protected_paths(source_instance.get("protected_paths"))
+    if public_root.exists():
+        shutil.rmtree(public_root)
+    _copy_public_fixture_tree(
+        public_bundle,
+        public_root,
+        protected_paths=protected_paths,
+    )
+    public_manifest = _public_tree_manifest(public_root)
+    instance = source_instance["instance"]
+    stable_prompt = {
+        "instance_id": instance["instance_id"],
+        "repo": instance.get("repo", ""),
+        "base_commit": instance.get("base_commit", ""),
+        "problem_statement": instance.get("problem_statement", ""),
+        "public_checkout_ref": instance.get("public_checkout_ref", ""),
+        "public_checkout_sha256": instance.get("public_checkout_sha256", ""),
+        "public_worktree_manifest": public_manifest,
+        "s_probe_substrate": dict(source_instance["s_probe_substrate"]),
+    }
+    generator_input = {
+        "schema_version": "supervisor-swebench-mergeability-live-generator-input/v1",
+        "arm": arm,
+        "instance_id": instance["instance_id"],
+        "repo": instance.get("repo", ""),
+        "base_commit": instance.get("base_commit", ""),
+        "problem_statement": instance.get("problem_statement", ""),
+        "public_checkout_ref": instance.get("public_checkout_ref", ""),
+        "public_checkout_sha256": instance.get("public_checkout_sha256", ""),
+        "public_worktree_ref": str(public_root),
+        "public_worktree_sha256": _sha256_json(public_manifest),
+        "public_worktree_manifest": public_manifest,
+        "s_probe_substrate": dict(source_instance["s_probe_substrate"]),
+        "protected_path_policy_count": len(protected_paths),
+        "protected_path_policy_sha256": _sha256_json(list(protected_paths)),
+        "generation_config": dict(config),
+        "prompt_hash": _sha256_json(stable_prompt),
+        "generator_input_hash": _sha256_json({
+            **stable_prompt,
+            "arm": arm,
+            "generation_config": dict(config),
+        }),
+    }
+    leaks = _scan_for_swebench_pro_oracle_refs(generator_input)
+    if leaks:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "live generator input references forbidden oracle material: "
+            + ", ".join(leaks)
+        )
+    return generator_input
+
+
+def _public_tree_manifest(root: Path) -> list[dict[str, str]]:
+    entries: list[dict[str, str]] = []
+    for path in sorted(item for item in root.rglob("*") if item.is_file()):
+        rel = path.relative_to(root).as_posix()
+        entries.append({
+            "path": rel,
+            "sha256": sha256(path.read_bytes()).hexdigest(),
+        })
+    return entries
+
+
+def _normalise_swebench_live_generation_result(
+    raw_result: Mapping[str, Any],
+    *,
+    default_candidate_id: str,
+    measured_wall_clock_s: float,
+) -> dict[str, Any]:
+    if not isinstance(raw_result, Mapping):
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "live generator must return a mapping"
+        )
+    candidate = raw_result.get("candidate")
+    payload = dict(candidate) if isinstance(candidate, Mapping) else dict(raw_result)
+    patch_text = str(payload.get("model_patch") or payload.get("patch") or "")
+    if not patch_text.strip():
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "live generator result must include model_patch or patch text"
+        )
+    token_usage = payload.get("token_usage")
+    if not isinstance(token_usage, Mapping):
+        token_usage = {}
+    return {
+        "candidate_id": str(payload.get("candidate_id") or default_candidate_id),
+        "model_patch": patch_text,
+        "cost_usd": float(payload.get("cost_usd") or 0.0),
+        "wall_clock_s": float(payload.get("wall_clock_s") or measured_wall_clock_s),
+        "token_usage": dict(token_usage),
+    }
+
+
+def _empty_live_generation_arm(
+    arm: str,
+    config: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "arm": arm,
+        "status": "not_invoked",
+        "accepted": False,
+        "unavailable_reason": "",
+        "model": str(config.get("model") or ""),
+        "provider": str(config.get("provider") or ""),
+        "budget_usd": float(config.get("budget_usd") or 0.0),
+        "timeout_s": float(config.get("timeout_s") or 0.0),
+        "cost_usd": 0.0,
+        "wall_clock_s": 0.0,
+        "token_usage": {},
+        "prompt_hash": "",
+        "generator_input_hash": "",
+        "candidates": [],
+    }
+
+
+def _live_generation_record(
+    *,
+    arm: str,
+    instance_id: str,
+    config: Mapping[str, Any],
+    generator_input: Mapping[str, Any],
+    generation: Mapping[str, Any],
+    patch_dir: Path,
+) -> dict[str, Any]:
+    candidate_id = str(generation["candidate_id"])
+    patch_text = str(generation["model_patch"])
+    patch_hash = sha256(patch_text.encode("utf-8")).hexdigest()
+    patch_path = patch_dir / f"{_safe_artifact_fragment(instance_id)}-{_safe_artifact_fragment(candidate_id)}.patch"
+    patch_path.write_text(patch_text, encoding="utf-8")
+    return {
+        "arm": arm,
+        "instance_id": instance_id,
+        "candidate_id": candidate_id,
+        "status": "completed",
+        "accepted": False,
+        "unavailable_reason": "",
+        "model": str(config.get("model") or ""),
+        "provider": str(config.get("provider") or ""),
+        "budget_usd": float(config.get("budget_usd") or 0.0),
+        "timeout_s": float(config.get("timeout_s") or 0.0),
+        "cost_usd": round(float(generation.get("cost_usd") or 0.0), 6),
+        "wall_clock_s": round(float(generation.get("wall_clock_s") or 0.0), 6),
+        "token_usage": dict(generation.get("token_usage") or {}),
+        "prompt_hash": str(generator_input.get("prompt_hash") or ""),
+        "generator_input_hash": str(generator_input.get("generator_input_hash") or ""),
+        "public_worktree_ref": str(generator_input.get("public_worktree_ref") or ""),
+        "public_worktree_sha256": str(generator_input.get("public_worktree_sha256") or ""),
+        "candidate_artifact_hash": patch_hash,
+        "model_patch_path": str(patch_path),
+    }
+
+
+def _safe_artifact_fragment(value: str) -> str:
+    safe = []
+    for char in str(value):
+        safe.append(char if char.isalnum() or char in {"-", "_"} else "_")
+    return "".join(safe).strip("_") or "artifact"
+
+
+def _live_unavailable_report(
+    *,
+    source: Mapping[str, Any],
+    output_path: Path,
+    started: float,
+    reason: str,
+    arms: Mapping[str, Mapping[str, Any]],
+    arm_config: Mapping[str, Any],
+    gaming_flags: Sequence[str] = (),
+) -> dict[str, Any]:
+    report: dict[str, Any] = {
+        "schema_version": SWEBENCH_MERGEABILITY_LIVE_REPORT_SCHEMA_VERSION,
+        "status": "unavailable",
+        "unavailable_reason": reason,
+        "allow_live": True,
+        "live_generation_used": True,
+        "live_fetch_used": False,
+        "manifest_path": str(source.get("manifest_path") or ""),
+        "manifest_sha256": str(source.get("manifest_sha256") or ""),
+        "instance_count": len(source.get("instances") or []),
+        "candidate_count": sum(
+            len(arm.get("candidates") or []) for arm in arms.values()
+        ),
+        "model": str(arm_config.get("model") or ""),
+        "provider": str(arm_config.get("provider") or ""),
+        "max_budget_usd": float(arm_config.get("budget_usd") or 0.0),
+        "timeout_s": float(arm_config.get("timeout_s") or 0.0),
+        "live_generation_arms": {key: dict(value) for key, value in arms.items()},
+        "total_cost_usd": round(
+            sum(float(arm.get("cost_usd") or 0.0) for arm in arms.values()),
+            6,
+        ),
+        "metric_applyable": False,
+        "improvement_claim_allowed": False,
+        "default_change_allowed": False,
+        "policy_mutated": False,
+        "gate_advanced": False,
+        "gaming_flags": sorted(set(gaming_flags)),
+        "wall_clock_s": round(time.monotonic() - started, 6),
+        "report_path": str(output_path / "live_report.json"),
+    }
+    report["report_sha256"] = _sha256_json({
+        key: value for key, value in report.items() if key != "report_sha256"
+    })
+    return report
+
+
+def _write_live_report(output_path: Path, report: Mapping[str, Any]) -> None:
+    output_path.mkdir(parents=True, exist_ok=True)
+    (output_path / "live_report.json").write_text(
+        json.dumps(dict(report), sort_keys=True, indent=2, default=str),
+        encoding="utf-8",
+    )

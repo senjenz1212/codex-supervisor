@@ -1,0 +1,41 @@
+{
+  "schema_version": "supervisor-skill-receipts/v1",
+  "task_id": "swebench-mergeability-live-budget-gated-20260621",
+  "receipts": [
+    {
+      "stage": "to_prd",
+      "skill": "to-prd",
+      "skill_path": "/Users/sam.zhang/.codex/skills/to-prd/SKILL.md",
+      "artifact": "docs/dual-agent/swebench-mergeability-live-budget-gated-20260621/prd.md",
+      "status": "pass"
+    },
+    {
+      "stage": "prd_grill",
+      "skill": "grill-with-docs",
+      "skill_path": "/Users/sam.zhang/.codex/skills/grill-with-docs/SKILL.md",
+      "artifact": "docs/dual-agent/swebench-mergeability-live-budget-gated-20260621/grill-findings.md",
+      "status": "pass"
+    },
+    {
+      "stage": "to_issues",
+      "skill": "to-issues",
+      "skill_path": "/Users/sam.zhang/.codex/skills/to-issues/SKILL.md",
+      "artifact": "docs/dual-agent/swebench-mergeability-live-budget-gated-20260621/issues.md",
+      "status": "pass"
+    },
+    {
+      "stage": "tdd",
+      "skill": "tdd",
+      "skill_path": "/Users/sam.zhang/.codex/skills/tdd/SKILL.md",
+      "artifact": "docs/dual-agent/swebench-mergeability-live-budget-gated-20260621/tdd.md",
+      "status": "pass"
+    },
+    {
+      "stage": "tdd_grill",
+      "skill": "grill-with-docs",
+      "skill_path": "/Users/sam.zhang/.codex/skills/grill-with-docs/SKILL.md",
+      "artifact": "docs/dual-agent/swebench-mergeability-live-budget-gated-20260621/grill-findings-tdd.md",
+      "status": "pass"
+    }
+  ]
+}

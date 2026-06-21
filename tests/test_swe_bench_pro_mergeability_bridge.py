@@ -28,6 +28,7 @@ from supervisor.swe_bench_mergeability import (
     SwebenchProBridgeError,
     build_swe_bench_pro_public_packet,
     swebench_mergeability_fixture_runner,
+    swebench_mergeability_live_runner,
     swebench_mergeability_replay_runner,
     swebench_pro_mergeability_bridge_report,
 )
@@ -1197,3 +1198,303 @@ def test_replay_cli_runs_manifest_without_live_fetch_or_panel(tmp_path):
     assert report["bridge_report"]["arms"][ARM_S_FULL]["availability_status"] == "unavailable"
     assert report["bridge_report"]["metric_applyable"] is False
     assert report["bridge_report"]["improvement_claim_allowed"] is False
+
+
+# ---------------------------------------------------------------------------
+# SWE-bench budget-gated live mergeability runner
+# ---------------------------------------------------------------------------
+
+
+def _write_live_manifest(tmp_path: Path) -> Path:
+    root = tmp_path / "live"
+    bundle = root / "bundles" / "demo"
+    bundle.mkdir(parents=True)
+    (bundle / "parser.py").write_text(
+        "def parse(value):\n    return value\n",
+        encoding="utf-8",
+    )
+    (bundle / "hidden").mkdir()
+    (bundle / "hidden" / "test_behavior.py").write_text(
+        "def test_hidden():\n    assert False\n",
+        encoding="utf-8",
+    )
+    (bundle / ".mergeability").mkdir()
+    (bundle / ".mergeability" / "oracle.json").write_text(
+        json.dumps({"oracle_accept": False}),
+        encoding="utf-8",
+    )
+    manifest = {
+        "schema_version": "supervisor-swebench-mergeability-live-source/v1",
+        "instances": [
+            {
+                "instance_id": "live_demo__repo-001",
+                "repo": "octocat/example",
+                "base_commit": "deadbeef" * 5,
+                "problem_statement": "Generate a patch that types the parser",
+                "public_checkout_ref": "refs/heads/main",
+                "public_checkout_sha256": "d" * 64,
+                "public_bundle": "bundles/demo",
+                "protected_paths": ["hidden/", ".mergeability/"],
+                "FAIL_TO_PASS": ["hidden/test_behavior.py::test_hidden"],
+                "PASS_TO_PASS": ["hidden/test_behavior.py::test_existing"],
+                "test_patch": "diff --git a/hidden/test_behavior.py...",
+                "public_commands": [],
+                "oracle_commands": {
+                    "fail_to_pass": [["python", "-c", "print('ftp ok')"]],
+                    "pass_to_pass": [["python", "-c", "print('ptp ok')"]],
+                },
+            }
+        ],
+    }
+    manifest_path = root / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    return manifest_path
+
+
+class _FailingLiveGenerator:
+    calls: list[dict]
+
+    def __init__(self) -> None:
+        self.calls = []
+
+    def __call__(self, generator_input):
+        self.calls.append(dict(generator_input))
+        raise AssertionError("live generator should not be called")
+
+
+class _FakeLiveGenerator:
+    def __init__(self, *, cost_usd: float = 0.25) -> None:
+        self.cost_usd = cost_usd
+        self.calls: list[dict] = []
+
+    def __call__(self, generator_input):
+        self.calls.append(dict(generator_input))
+        return {
+            "candidate_id": f"{generator_input['arm']}-generated",
+            "model_patch": _valid_model_patch(),
+            "cost_usd": self.cost_usd,
+            "wall_clock_s": 0.5,
+            "token_usage": {"input_tokens": 101, "output_tokens": 23},
+        }
+
+
+def test_live_runner_refuses_without_allow_live_before_generators_run(tmp_path):
+    baseline = _FailingLiveGenerator()
+    supervisor = _FailingLiveGenerator()
+
+    with pytest.raises(SwebenchMergeabilityFixtureRunnerError, match="allow_live"):
+        swebench_mergeability_live_runner(
+            manifest_path=_write_live_manifest(tmp_path),
+            output_dir=tmp_path / "out",
+            baseline_generator=baseline,
+            supervisor_generator=supervisor,
+            allow_live=False,
+            max_budget_usd=1.0,
+            model="claude-opus-4-8",
+            provider="anthropic",
+        )
+
+    assert baseline.calls == []
+    assert supervisor.calls == []
+
+
+def test_live_runner_refuses_without_budget_before_generators_run(tmp_path):
+    baseline = _FailingLiveGenerator()
+    supervisor = _FailingLiveGenerator()
+
+    with pytest.raises(SwebenchMergeabilityFixtureRunnerError, match="max_budget_usd"):
+        swebench_mergeability_live_runner(
+            manifest_path=_write_live_manifest(tmp_path),
+            output_dir=tmp_path / "out",
+            baseline_generator=baseline,
+            supervisor_generator=supervisor,
+            allow_live=True,
+            max_budget_usd=0.0,
+            model="claude-opus-4-8",
+            provider="anthropic",
+        )
+
+    assert baseline.calls == []
+    assert supervisor.calls == []
+
+
+def test_live_runner_generates_matched_arms_and_reuses_replay_report(tmp_path):
+    baseline = _FakeLiveGenerator()
+    supervisor = _FakeLiveGenerator()
+
+    report = swebench_mergeability_live_runner(
+        manifest_path=_write_live_manifest(tmp_path),
+        output_dir=tmp_path / "out",
+        baseline_generator=baseline,
+        supervisor_generator=supervisor,
+        allow_live=True,
+        max_budget_usd=1.0,
+        model="claude-opus-4-8",
+        provider="anthropic",
+        timeout_s=30.0,
+    )
+
+    assert report["schema_version"] == "supervisor-swebench-mergeability-live-report/v1"
+    assert report["status"] == "completed"
+    assert report["allow_live"] is True
+    assert report["max_budget_usd"] == 1.0
+    assert report["live_generation_used"] is True
+    assert report["live_fetch_used"] is False
+    assert Path(report["generated_replay_manifest_path"]).exists()
+    assert Path(report["replay_report"]["report_path"]).exists()
+    assert report["bridge_report"]["metric_applyable"] is False
+    assert report["bridge_report"]["improvement_claim_allowed"] is False
+    assert report["policy_mutated"] is False
+    assert report["improvement_claim_allowed"] is False
+
+    arms = report["live_generation_arms"]
+    assert set(arms) == {"baseline", "supervisor"}
+    assert arms["baseline"]["model"] == arms["supervisor"]["model"] == "claude-opus-4-8"
+    assert arms["baseline"]["provider"] == arms["supervisor"]["provider"] == "anthropic"
+    assert arms["baseline"]["budget_usd"] == arms["supervisor"]["budget_usd"] == 1.0
+    assert arms["baseline"]["accepted"] is False
+    assert arms["baseline"]["evaluated_by_replay"] is True
+    assert arms["baseline"]["prompt_hash"] == arms["supervisor"]["prompt_hash"]
+    assert arms["baseline"]["token_usage"] == {"input_tokens": 101, "output_tokens": 23}
+
+    for generator in (baseline, supervisor):
+        assert len(generator.calls) == 1
+        encoded = json.dumps(generator.calls[0], sort_keys=True)
+        for forbidden in ("FAIL_TO_PASS", "PASS_TO_PASS", "test_patch", "oracle_accept"):
+            assert forbidden not in encoded
+        public_worktree = Path(generator.calls[0]["public_worktree_ref"])
+        assert (public_worktree / "parser.py").exists()
+        assert not (public_worktree / "hidden").exists()
+        assert not (public_worktree / ".mergeability").exists()
+
+    frozen_path = Path(report["replay_report"]["instance_reports"][0]["frozen_decisions_path"])
+    oracle_path = Path(report["replay_report"]["instance_reports"][0]["oracle_outputs_path"])
+    assert frozen_path.stat().st_mtime_ns <= oracle_path.stat().st_mtime_ns
+
+
+def test_live_runner_budget_overrun_is_unavailable_not_accepted(tmp_path):
+    report = swebench_mergeability_live_runner(
+        manifest_path=_write_live_manifest(tmp_path),
+        output_dir=tmp_path / "out",
+        baseline_generator=_FakeLiveGenerator(cost_usd=1.5),
+        supervisor_generator=_FakeLiveGenerator(),
+        allow_live=True,
+        max_budget_usd=1.0,
+        model="claude-opus-4-8",
+        provider="anthropic",
+    )
+
+    assert report["status"] == "unavailable"
+    assert report["unavailable_reason"] == "budget_exceeded"
+    assert "budget_exceeded" in report["gaming_flags"]
+    assert report["live_generation_arms"]["baseline"]["status"] == "unavailable"
+    assert report["live_generation_arms"]["baseline"]["accepted"] is False
+    assert "replay_report" not in report
+    assert report["metric_applyable"] is False
+    assert report["improvement_claim_allowed"] is False
+    assert report["policy_mutated"] is False
+
+
+def test_live_cli_requires_allow_live_and_budget(tmp_path):
+    manifest_path = _write_live_manifest(tmp_path)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/run_swe_bench_mergeability_replay.py",
+            "--manifest",
+            str(manifest_path),
+            "--output-dir",
+            str(tmp_path / "cli-out"),
+            "--run-live",
+            "--max-budget-usd",
+            "1.0",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert result.returncode == 2
+    assert "without --allow-live" in result.stderr
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/run_swe_bench_mergeability_replay.py",
+            "--manifest",
+            str(manifest_path),
+            "--output-dir",
+            str(tmp_path / "cli-out"),
+            "--run-live",
+            "--allow-live",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert result.returncode == 2
+    assert "without --max-budget-usd > 0" in result.stderr
+
+
+def test_live_cli_approved_path_runs_command_generators(tmp_path):
+    manifest_path = _write_live_manifest(tmp_path)
+    generator = tmp_path / "fake_generator.py"
+    generator.write_text(
+        "import json, os\n"
+        "input_path = os.environ['SWEBENCH_MERGEABILITY_GENERATOR_INPUT']\n"
+        "output_path = os.environ['SWEBENCH_MERGEABILITY_GENERATOR_OUTPUT']\n"
+        "arm = os.environ['SWEBENCH_MERGEABILITY_GENERATOR_ARM']\n"
+        "payload = json.loads(open(input_path, encoding='utf-8').read())\n"
+        "assert 'FAIL_TO_PASS' not in json.dumps(payload)\n"
+        "patch = '''diff --git a/parser.py b/parser.py\\n"
+        "--- a/parser.py\\n"
+        "+++ b/parser.py\\n"
+        "@@ -1,2 +1,2 @@\\n"
+        "-def parse(value):\\n"
+        "+def parse(value: str) -> str:\\n"
+        "     return value\\n'''\n"
+        "json.dump({\n"
+        "  'candidate_id': arm + '-cli-generated',\n"
+        "  'model_patch': patch,\n"
+        "  'cost_usd': 0.2,\n"
+        "  'token_usage': {'input_tokens': 3, 'output_tokens': 2},\n"
+        "}, open(output_path, 'w', encoding='utf-8'))\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/run_swe_bench_mergeability_replay.py",
+            "--manifest",
+            str(manifest_path),
+            "--output-dir",
+            str(tmp_path / "cli-live-out"),
+            "--run-live",
+            "--allow-live",
+            "--max-budget-usd",
+            "1.0",
+            "--baseline-generator-command",
+            f"{sys.executable} {generator}",
+            "--supervisor-generator-command",
+            f"{sys.executable} {generator}",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    summary = json.loads(result.stdout)
+    assert summary["status"] == "reported"
+    assert summary["allow_live"] is True
+    assert summary["live_generation_used"] is True
+    report = json.loads(Path(summary["report"]).read_text(encoding="utf-8"))
+    assert report["status"] == "completed"
+    assert report["bridge_report"]["metric_applyable"] is False
+    assert report["live_generation_arms"]["baseline"]["cost_usd"] == 0.2
