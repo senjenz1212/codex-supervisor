@@ -1,0 +1,142 @@
+{
+  "agentic_lead_policy": "off",
+  "budget_usd": 100.0,
+  "cursor_model": null,
+  "cursor_review": true,
+  "cursor_review_gates": null,
+  "cursor_review_profile": "rigorous",
+  "cwd": "/Users/sam.zhang/Documents/codex-supervisor",
+  "dynamic_workflow_task_class": null,
+  "execution_layer_mode": "lead_direct",
+  "intent": "Review and accept the corrected real baseline replay implementation: powered mergeability evaluation must require explicit replay-complete produced single-agent baseline artifacts, fail closed when baseline evidence is absent, hash-mismatched, legacy-bool, or hash-matching-but-replay-incomplete, keep malformed rows out of reject accounting, label legacy metadata calibration honestly, and preserve report-only guardrails.",
+  "job_id": "workflow-3e645d0b7c6b",
+  "max_rounds_per_gate": 5,
+  "min_subagents": 3,
+  "no_mistakes_policy": "off",
+  "no_mistakes_skip_steps": [
+    "push",
+    "pr",
+    "ci"
+  ],
+  "no_mistakes_timeout_s": 900,
+  "planning_artifacts": [
+    {
+      "kind": "prd",
+      "path": "docs/dual-agent/mergeability-real-baseline-replay-20260621/source/prd.md",
+      "sha256": "daeffbd983e5e45cfe219e8d1d19aeb1a8a0dbe6c182e6bb15d9ba583a187908"
+    },
+    {
+      "kind": "grill_findings",
+      "path": "docs/dual-agent/mergeability-real-baseline-replay-20260621/source/grill-findings.md",
+      "sha256": "b5005f16e6c9426797167729987497f1ceb1d0bdc6d06c03a691dbf3ffc00e7d"
+    },
+    {
+      "kind": "issues",
+      "path": "docs/dual-agent/mergeability-real-baseline-replay-20260621/source/issues.md",
+      "sha256": "5edf90c3ee73e55673f632235436db80881c6f8a1937fe70b3765fc8da7d5c57"
+    },
+    {
+      "kind": "tdd_plan",
+      "path": "docs/dual-agent/mergeability-real-baseline-replay-20260621/source/tdd.md",
+      "sha256": "cca0c4c2d3dfb434b6f7a5aca78cad1847a400c0fe06130633f5b7592c357eb7"
+    },
+    {
+      "kind": "grill_findings",
+      "path": "docs/dual-agent/mergeability-real-baseline-replay-20260621/source/grill-findings-tdd.md",
+      "sha256": "7cf988e3ca56fb0da1b94f838808f2a0087a9eddad60586678dbd1c3a5dbb87a"
+    },
+    {
+      "kind": "implementation_plan",
+      "path": "docs/dual-agent/mergeability-real-baseline-replay-20260621/source/implementation-plan.md",
+      "sha256": "4488788d83f435ef73eeb14478c23a7f213136318c0340fc95b6c00860cc83b7"
+    }
+  ],
+  "quality": "best",
+  "require_skill_receipts": true,
+  "required_evidence_grade": "self_reported",
+  "required_roles": [],
+  "reviewer_infra_retry_backoff_s": 1.0,
+  "reviewer_infra_retry_limit": 2,
+  "reviewer_low_confidence_threshold": 0.0,
+  "reviewer_max_tokens": 4096,
+  "reviewer_model": "default",
+  "reviewer_output_mode": "cursor_sdk",
+  "reviewer_panel_calibration_path": null,
+  "reviewer_unavailable_policy": "block",
+  "run_id": "7348574d-d15d-42f4-8787-2e3f0687f6dd",
+  "screenshots": null,
+  "solo_exception_for_artifact_only_gates": false,
+  "task_complexity": null,
+  "task_id": "mergeability-real-baseline-replay-20260621",
+  "timeout_s": 900,
+  "tool_receipts": [
+    {
+      "artifacts": [
+        "docs/dual-agent/mergeability-real-baseline-replay-20260621/prd.md"
+      ],
+      "claims": [
+        "PRD authored with promise contracts P1-P4 for replayable produced baseline evidence"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-to-prd-mergeability-real-baseline-replay-20260621",
+      "skill": "to-prd",
+      "stage": "to_prd",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/mergeability-real-baseline-replay-20260621/grill-findings.md"
+      ],
+      "claims": [
+        "PRD grill resolved legacy calibration preservation, replay-only baseline scope, unavailable semantics, and hash validation"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-prd-grill-mergeability-real-baseline-replay-20260621",
+      "skill": "grill-with-docs",
+      "stage": "prd_grill",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/mergeability-real-baseline-replay-20260621/issues.md"
+      ],
+      "claims": [
+        "Issues sliced into vertical tracer bullets for produced baseline rows, fail-closed validation, and legacy labeling"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-to-issues-mergeability-real-baseline-replay-20260621",
+      "skill": "to-issues",
+      "stage": "to_issues",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/mergeability-real-baseline-replay-20260621/tdd.md"
+      ],
+      "claims": [
+        "TDD plan starts with powered factorial public-boundary tests before helper-only normalization tests"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-tdd-mergeability-real-baseline-replay-20260621",
+      "skill": "tdd",
+      "stage": "tdd",
+      "status": "passed"
+    },
+    {
+      "artifacts": [
+        "docs/dual-agent/mergeability-real-baseline-replay-20260621/grill-findings-tdd.md"
+      ],
+      "claims": [
+        "TDD grill resolved helper-only risk, ambiguous absent-baseline behavior, replay hash validation, and legacy compatibility"
+      ],
+      "kind": "skill_run",
+      "receipt_id": "skill-tdd-grill-mergeability-real-baseline-replay-20260621",
+      "skill": "grill-with-docs",
+      "stage": "tdd_grill",
+      "status": "passed"
+    }
+  ],
+  "user_facing": false,
+  "verified_claims": null,
+  "visual_evidence_policy": "auto"
+}

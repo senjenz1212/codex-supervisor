@@ -869,6 +869,7 @@ def run_paired_acceptance_pilot(
             "blocker_status": result["blocker_status"],
             "failures": result["failures"],
             "baseline_decision_source": "candidate_self_report",
+            "baseline_evidence_kind": "metadata_calibration",
             "oracle_ceiling_decision_source": "oracle_final_score",
             "supervisor_decision_source": "supervisor_candidate_review",
             "supervisor_candidate_review_decision_source": "supervisor_candidate_review",
@@ -905,6 +906,7 @@ def run_paired_acceptance_pilot(
         arm_role="baseline_self_report",
         decision_source="candidate_self_report",
         oracle_coupled=False,
+        evidence_kind="metadata_calibration",
     )
     oracle_ceiling = _summarize_acceptance_arm(
         rows,
@@ -1093,6 +1095,7 @@ def run_paired_acceptance_pilot(
         "metric_applyable": False,
         "improvement_claim_allowed": False,
         "gaming_flags": sorted(gaming_flags),
+        "baseline_evidence_kind": "metadata_calibration",
         "validity_notes": [
             "Supervisor candidate review is recorded from public-only evidence before hidden oracle "
             "grading is consulted for aggregate metrics.",
@@ -1100,6 +1103,8 @@ def run_paired_acceptance_pilot(
             "reviewer-panel decision from a public-only packet; unavailable reviewers are not "
             "imputed from the public-check arm.",
             "This fixture-scale report is calibration evidence only, not proof of production improvement.",
+            "Baseline arm is metadata calibration of fixture candidate self-reports, not a produced "
+            "single-agent baseline; do not treat it as replayable baseline evidence.",
         ],
         "default_change_allowed": False,
         "policy_mutated": False,
@@ -1187,11 +1192,19 @@ def run_powered_factorial_mergeability_evaluation(
             public_accept=bool(public_review["accept"]),
             reviewer_results=reviewer_results,
         )
+        baseline_per_arm = (arm_decisions or {}).get("single_agent_baseline") or {}
+        baseline_raw = baseline_per_arm.get(candidate.candidate_id) if baseline_per_arm else None
+        baseline_decision = _resolve_powered_baseline_decision(
+            raw=baseline_raw,
+            expected_candidate_artifact_hash=candidate_hashes[
+                (result["task_id"], result["candidate_id"])
+            ],
+        )
         defaults = {
             "single_agent_baseline": {
-                "accept": _baseline_accepts(candidate),
-                "unavailable": False,
-                "decision_source": "single_agent_candidate_generation",
+                "accept": baseline_decision["accept"],
+                "unavailable": baseline_decision["unavailable"],
+                "decision_source": baseline_decision["decision_source"],
             },
             "same_model_multi_agent": {
                 "accept": bool(public_review["accept"]),
@@ -1232,6 +1245,16 @@ def run_powered_factorial_mergeability_evaluation(
             "independent_reviewer_results": [_normalise_factorial_reviewer_result(item) for item in reviewer_results],
         }
         for arm in FACTORIAL_ARM_DEFINITIONS:
+            if arm == "single_agent_baseline":
+                row[f"{arm}_accept"] = bool(baseline_decision["accept"])
+                row[f"{arm}_unavailable"] = bool(baseline_decision["unavailable"])
+                row[f"{arm}_decision_source"] = baseline_decision["decision_source"]
+                row[f"{arm}_evidence_kind"] = baseline_decision["evidence_kind"]
+                row[f"{arm}_candidate_artifact_hash"] = baseline_decision["candidate_artifact_hash"]
+                row[f"{arm}_producer"] = dict(baseline_decision["producer"])
+                row[f"{arm}_prompt_sha256"] = baseline_decision["prompt_sha256"]
+                row[f"{arm}_unavailable_reason"] = baseline_decision["unavailable_reason"]
+                continue
             decision = _factorial_arm_decision(
                 arm_decisions=arm_decisions or {},
                 arm=arm,
@@ -1243,13 +1266,43 @@ def run_powered_factorial_mergeability_evaluation(
             row[f"{arm}_decision_source"] = decision["decision_source"]
         rows.append(row)
 
+    def _evidence_kind_for_arm(arm: str) -> str | None:
+        if arm != "single_agent_baseline":
+            return None
+        available = [row for row in rows if not bool(row.get("single_agent_baseline_unavailable"))]
+        if available:
+            kinds = {str(row.get("single_agent_baseline_evidence_kind") or "") for row in available}
+            kinds.discard("")
+            if len(kinds) == 1:
+                return next(iter(kinds))
+            if kinds:
+                return "mixed_produced_baseline"
+            return "produced_single_agent_baseline"
+        unavailable_kinds = {str(row.get("single_agent_baseline_evidence_kind") or "missing") for row in rows}
+        if len(unavailable_kinds) == 1:
+            return next(iter(unavailable_kinds))
+        return "unavailable_mixed"
+
+    def _decision_source_for_arm(arm: str, default: str) -> str:
+        if arm != "single_agent_baseline":
+            return default
+        available = [row for row in rows if not bool(row.get("single_agent_baseline_unavailable"))]
+        if not available:
+            return default
+        sources = {str(row.get("single_agent_baseline_decision_source") or "") for row in available}
+        sources.discard("")
+        if len(sources) == 1:
+            return next(iter(sources))
+        return default
+
     arms = {
         arm: _summarize_acceptance_arm(
             rows,
             arm=arm,
             arm_role=str(definition["arm_role"]),
-            decision_source=str(definition["decision_source"]),
+            decision_source=_decision_source_for_arm(arm, str(definition["decision_source"])),
             oracle_coupled=bool(definition["oracle_coupled"]),
+            evidence_kind=_evidence_kind_for_arm(arm),
         )
         for arm, definition in FACTORIAL_ARM_DEFINITIONS.items()
     }
@@ -1301,6 +1354,8 @@ def run_powered_factorial_mergeability_evaluation(
     all_gaming_flags.update(str(flag) for flag in gaming_flags)
     if arms["full_supervisor_stack"]["unavailable_count"]:
         all_gaming_flags.add("reviewer_panel_unavailable")
+    if arms["single_agent_baseline"]["unavailable_count"]:
+        all_gaming_flags.add("baseline_evidence_unavailable")
     powered = sample_size["status"] == "sufficient"
     full_stack_available = arms["full_supervisor_stack"]["unavailable_count"] == 0
     metric_applyable = bool(powered and full_stack_available and not all_gaming_flags)
@@ -2682,26 +2737,37 @@ def _summarize_acceptance_arm(
     arm_role: str,
     decision_source: str,
     oracle_coupled: bool,
+    evidence_kind: str | None = None,
 ) -> dict[str, Any]:
     accept_key = f"{arm}_accept"
     unavailable_key = f"{arm}_unavailable"
-    false_accept_denominator = sum(1 for row in rows if not row["oracle_accept"])
-    true_accept_denominator = sum(1 for row in rows if row["oracle_accept"])
-    false_accept_count = sum(1 for row in rows if row[accept_key] and not row["oracle_accept"])
-    true_accept_count = sum(1 for row in rows if row[accept_key] and row["oracle_accept"])
-    false_reject_count = sum(1 for row in rows if not row[accept_key] and row["oracle_accept"])
+    available_rows = [row for row in rows if not bool(row.get(unavailable_key))]
+    false_accept_denominator = sum(1 for row in available_rows if not row["oracle_accept"])
+    true_accept_denominator = sum(1 for row in available_rows if row["oracle_accept"])
+    false_accept_count = sum(
+        1 for row in available_rows if row[accept_key] and not row["oracle_accept"]
+    )
+    true_accept_count = sum(
+        1 for row in available_rows if row[accept_key] and row["oracle_accept"]
+    )
+    false_reject_count = sum(
+        1 for row in available_rows if not row[accept_key] and row["oracle_accept"]
+    )
+    true_reject_count = sum(
+        1 for row in available_rows if not row[accept_key] and not row["oracle_accept"]
+    )
     unavailable_count = sum(1 for row in rows if bool(row.get(unavailable_key)))
-    return {
+    summary = {
         "arm": arm,
         "arm_role": arm_role,
         "decision_source": decision_source,
         "oracle_coupled": oracle_coupled,
         "candidate_count": len(rows),
-        "available_count": len(rows) - unavailable_count,
+        "available_count": len(available_rows),
         "unavailable_count": unavailable_count,
         "availability_status": "unavailable" if rows and unavailable_count == len(rows) else "available",
-        "accepted_count": sum(1 for row in rows if row[accept_key]),
-        "rejected_count": sum(1 for row in rows if not row[accept_key]),
+        "accepted_count": sum(1 for row in available_rows if row[accept_key]),
+        "rejected_count": sum(1 for row in available_rows if not row[accept_key]),
         "false_accept_count": false_accept_count,
         "n_bad": false_accept_denominator,
         "false_accept_denominator": false_accept_denominator,
@@ -2715,8 +2781,12 @@ def _summarize_acceptance_arm(
         "false_reject_count": false_reject_count,
         "false_reject_denominator": true_accept_denominator,
         "false_reject_rate": _rate(false_reject_count, true_accept_denominator),
+        "true_reject_count": true_reject_count,
         "cost_usd": 0.0,
     }
+    if evidence_kind is not None:
+        summary["evidence_kind"] = evidence_kind
+    return summary
 
 
 def _validate_factorial_arm_pool(
@@ -2729,13 +2799,110 @@ def _validate_factorial_arm_pool(
         if arm not in FACTORIAL_ARM_DEFINITIONS:
             raise MergeabilityBenchError(f"unknown factorial arm: {arm}")
         actual = set(str(candidate_id) for candidate_id in decisions)
+        extra = sorted(actual - expected)
+        if arm == "single_agent_baseline":
+            if extra:
+                raise MergeabilityBenchError(
+                    "candidate pool mismatch for factorial arm "
+                    f"{arm}: missing=[] extra={extra}"
+                )
+            continue
         if actual != expected:
             missing = sorted(expected - actual)
-            extra = sorted(actual - expected)
             raise MergeabilityBenchError(
                 "candidate pool mismatch for factorial arm "
                 f"{arm}: missing={missing} extra={extra}"
             )
+
+
+def _resolve_powered_baseline_decision(
+    *,
+    raw: Any,
+    expected_candidate_artifact_hash: str,
+) -> dict[str, Any]:
+    """Normalise a powered ``single_agent_baseline`` arm row.
+
+    Missing, malformed, hash-mismatched, or explicitly unavailable rows mark
+    the baseline decision unavailable so the powered factorial measurement path
+    cannot silently inherit a metadata acceptance default.
+    """
+    unavailable_template = {
+        "accept": False,
+        "unavailable": True,
+        "decision_source": "produced_single_agent_baseline_unavailable",
+        "candidate_artifact_hash": "",
+        "producer": {},
+        "prompt_sha256": "",
+        "evidence_kind": "missing",
+        "unavailable_reason": "baseline_decisions_not_supplied",
+    }
+    if raw is None:
+        return dict(unavailable_template)
+    if isinstance(raw, Mapping):
+        explicit_unavailable = bool(raw.get("unavailable"))
+        supplied_hash = str(raw.get("candidate_artifact_hash") or "")
+        if explicit_unavailable:
+            decision = dict(unavailable_template)
+            decision["candidate_artifact_hash"] = supplied_hash
+            decision["unavailable_reason"] = str(
+                raw.get("unavailable_reason") or "baseline_producer_marked_unavailable"
+            )
+            decision["evidence_kind"] = "explicit_unavailable"
+            decision["producer"] = dict(raw.get("producer") or {})
+            decision["prompt_sha256"] = str(raw.get("prompt_sha256") or "")
+            return decision
+        if not supplied_hash:
+            decision = dict(unavailable_template)
+            decision["unavailable_reason"] = "malformed_baseline_row_missing_candidate_artifact_hash"
+            decision["evidence_kind"] = "malformed"
+            decision["producer"] = dict(raw.get("producer") or {})
+            decision["prompt_sha256"] = str(raw.get("prompt_sha256") or "")
+            return decision
+        if supplied_hash != expected_candidate_artifact_hash:
+            decision = dict(unavailable_template)
+            decision["candidate_artifact_hash"] = supplied_hash
+            decision["unavailable_reason"] = "candidate_artifact_hash_mismatch"
+            decision["evidence_kind"] = "hash_mismatch"
+            decision["producer"] = dict(raw.get("producer") or {})
+            decision["prompt_sha256"] = str(raw.get("prompt_sha256") or "")
+            return decision
+        missing_replay_fields: list[str] = []
+        if not isinstance(raw.get("accept"), bool):
+            missing_replay_fields.append("accept")
+        if not str(raw.get("decision_source") or "").strip():
+            missing_replay_fields.append("decision_source")
+        producer = raw.get("producer")
+        if not isinstance(producer, Mapping) or not producer:
+            missing_replay_fields.append("producer")
+        if not str(raw.get("prompt_sha256") or "").strip():
+            missing_replay_fields.append("prompt_sha256")
+        if missing_replay_fields:
+            decision = dict(unavailable_template)
+            decision["candidate_artifact_hash"] = supplied_hash
+            decision["unavailable_reason"] = (
+                "malformed_baseline_row_missing_replay_evidence:"
+                + ",".join(sorted(set(missing_replay_fields)))
+            )
+            decision["evidence_kind"] = "malformed"
+            decision["producer"] = dict(raw.get("producer") or {})
+            decision["prompt_sha256"] = str(raw.get("prompt_sha256") or "")
+            return decision
+        return {
+            "accept": bool(raw.get("accept")),
+            "unavailable": False,
+            "decision_source": str(
+                raw.get("decision_source") or "produced_single_agent_baseline"
+            ),
+            "candidate_artifact_hash": supplied_hash,
+            "producer": dict(raw.get("producer") or {}),
+            "prompt_sha256": str(raw.get("prompt_sha256") or ""),
+            "evidence_kind": "produced_single_agent_baseline",
+            "unavailable_reason": "",
+        }
+    decision = dict(unavailable_template)
+    decision["unavailable_reason"] = "legacy_bool_baseline_row_not_replayable"
+    decision["evidence_kind"] = "legacy_bool"
+    return decision
 
 
 def _factorial_arm_decision(

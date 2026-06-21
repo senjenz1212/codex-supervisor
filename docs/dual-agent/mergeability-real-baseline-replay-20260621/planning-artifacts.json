@@ -1,0 +1,32 @@
+[
+  {
+    "kind": "prd",
+    "path": "docs/dual-agent/mergeability-real-baseline-replay-20260621/source/prd.md",
+    "sha256": "daeffbd983e5e45cfe219e8d1d19aeb1a8a0dbe6c182e6bb15d9ba583a187908"
+  },
+  {
+    "kind": "grill_findings",
+    "path": "docs/dual-agent/mergeability-real-baseline-replay-20260621/source/grill-findings.md",
+    "sha256": "b5005f16e6c9426797167729987497f1ceb1d0bdc6d06c03a691dbf3ffc00e7d"
+  },
+  {
+    "kind": "issues",
+    "path": "docs/dual-agent/mergeability-real-baseline-replay-20260621/source/issues.md",
+    "sha256": "5edf90c3ee73e55673f632235436db80881c6f8a1937fe70b3765fc8da7d5c57"
+  },
+  {
+    "kind": "tdd_plan",
+    "path": "docs/dual-agent/mergeability-real-baseline-replay-20260621/source/tdd.md",
+    "sha256": "cca0c4c2d3dfb434b6f7a5aca78cad1847a400c0fe06130633f5b7592c357eb7"
+  },
+  {
+    "kind": "grill_findings",
+    "path": "docs/dual-agent/mergeability-real-baseline-replay-20260621/source/grill-findings-tdd.md",
+    "sha256": "7cf988e3ca56fb0da1b94f838808f2a0087a9eddad60586678dbd1c3a5dbb87a"
+  },
+  {
+    "kind": "implementation_plan",
+    "path": "docs/dual-agent/mergeability-real-baseline-replay-20260621/source/implementation-plan.md",
+    "sha256": "4488788d83f435ef73eeb14478c23a7f213136318c0340fc95b6c00860cc83b7"
+  }
+]

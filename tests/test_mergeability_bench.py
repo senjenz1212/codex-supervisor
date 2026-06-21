@@ -89,7 +89,7 @@ def _deny_panel(_packet):
     }
 
 
-def _factorial_arm_decisions(*, unmatched_tar: bool = False) -> dict[str, dict[str, bool]]:
+def _factorial_arm_decisions(*, unmatched_tar: bool = False) -> dict[str, dict[str, object]]:
     positives = {"known-good", "secondary-rubric-only", "text-known-good"}
     public_traps = {"hidden-behavior-miss", "text-hidden-behavior-miss"}
     candidate_ids = {
@@ -108,7 +108,9 @@ def _factorial_arm_decisions(*, unmatched_tar: bool = False) -> dict[str, dict[s
     if unmatched_tar:
         same_model["known-good"] = False
     return {
-        "single_agent_baseline": {candidate_id: True for candidate_id in candidate_ids.values()},
+        "single_agent_baseline": _produced_baseline_decisions(
+            accept_overrides={candidate_id: True for candidate_id in candidate_ids.values()},
+        ),
         "same_model_multi_agent": same_model,
         "hetero_multi_reviewer": accepts("hidden-behavior-miss"),
         "runtime_evidence_floor": accepts("hidden-behavior-miss", "text-hidden-behavior-miss"),
@@ -2033,3 +2035,261 @@ def test_powered_factorial_exports_replayable_artifacts_and_trend_row(tmp_path):
     trend_rows = json.loads(trends_path.read_text(encoding="utf-8"))
     assert trend_rows == report["trend_rows"]
     assert any(row["gate"] == "powered_factorial_eval" for row in trend_rows)
+
+
+def _produced_baseline_decisions(
+    *,
+    accept_overrides: dict[str, bool] | None = None,
+    hash_overrides: dict[str, str] | None = None,
+    candidate_filter: set[str] | None = None,
+) -> dict[str, dict[str, object]]:
+    """Build a replayable produced-baseline arm input for powered factorial tests."""
+    manifest = build_mergeability_corpus_manifest(BENCH_ROOT)
+    candidate_hashes = {
+        entry["candidate_id"]: entry["candidate_hash"]
+        for entry in manifest["candidates"]
+    }
+    positives = {"known-good", "secondary-rubric-only", "text-known-good"}
+    rows: dict[str, dict[str, object]] = {}
+    for candidate_id, real_hash in candidate_hashes.items():
+        if candidate_filter is not None and candidate_id not in candidate_filter:
+            continue
+        accept = (accept_overrides or {}).get(candidate_id, candidate_id in positives)
+        artifact_hash = (hash_overrides or {}).get(candidate_id, real_hash)
+        rows[candidate_id] = {
+            "accept": accept,
+            "candidate_artifact_hash": artifact_hash,
+            "decision_source": "produced_single_agent_baseline",
+            "producer": {
+                "agent": "single-agent-baseline-replay",
+                "model": "fixture-baseline-llm",
+                "provider": "fixture",
+                "budget_usd": 0.0,
+            },
+            "prompt_sha256": sha256(f"baseline:{candidate_id}".encode("utf-8")).hexdigest(),
+        }
+    return rows
+
+
+def _factorial_arm_decisions_without_baseline() -> dict[str, dict[str, bool]]:
+    decisions = _factorial_arm_decisions()
+    decisions.pop("single_agent_baseline", None)
+    return decisions
+
+
+def test_powered_factorial_requires_explicit_baseline_decisions(tmp_path):
+    report = run_powered_factorial_mergeability_evaluation(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        arm_decisions=_factorial_arm_decisions_without_baseline(),
+        reviewer_panel_results=_factorial_reviewer_results(),
+        powered_thresholds={"min_bad": 1, "min_good": 1},
+    )
+
+    baseline = report["arms"]["single_agent_baseline"]
+    assert baseline["accepted_count"] == 0
+    assert baseline["unavailable_count"] == report["candidate_count"]
+    assert baseline["availability_status"] == "unavailable"
+    assert "baseline_evidence_unavailable" in report["gaming_flags"]
+    for row in report["per_task_results"]:
+        assert row["single_agent_baseline_unavailable"] is True
+        assert row["single_agent_baseline_accept"] is False
+        assert row["single_agent_baseline_unavailable_reason"] == (
+            "baseline_decisions_not_supplied"
+        )
+        assert row["single_agent_baseline_evidence_kind"] == "missing"
+
+
+def test_powered_factorial_consumes_replayable_baseline_decisions(tmp_path):
+    baseline_decisions = _produced_baseline_decisions()
+    arm_decisions = _factorial_arm_decisions_without_baseline()
+    arm_decisions["single_agent_baseline"] = baseline_decisions
+    report = run_powered_factorial_mergeability_evaluation(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        arm_decisions=arm_decisions,
+        reviewer_panel_results=_factorial_reviewer_results(),
+        powered_thresholds={"min_bad": 1, "min_good": 1},
+    )
+
+    baseline = report["arms"]["single_agent_baseline"]
+    assert baseline["unavailable_count"] == 0
+    assert baseline["availability_status"] == "available"
+    assert baseline["decision_source"] == "produced_single_agent_baseline"
+    assert baseline["evidence_kind"] == "produced_single_agent_baseline"
+
+    by_candidate = {row["candidate_id"]: row for row in report["per_task_results"]}
+    for candidate_id, decision in baseline_decisions.items():
+        row = by_candidate[candidate_id]
+        assert row["single_agent_baseline_accept"] is bool(decision["accept"])
+        assert row["single_agent_baseline_unavailable"] is False
+        assert (
+            row["single_agent_baseline_decision_source"]
+            == "produced_single_agent_baseline"
+        )
+        assert (
+            row["single_agent_baseline_candidate_artifact_hash"]
+            == decision["candidate_artifact_hash"]
+        )
+        assert row["single_agent_baseline_candidate_artifact_hash"] == row["candidate_hash"]
+        producer = row["single_agent_baseline_producer"]
+        assert producer["agent"] == "single-agent-baseline-replay"
+        assert producer["model"] == "fixture-baseline-llm"
+        assert row["single_agent_baseline_prompt_sha256"] == decision["prompt_sha256"]
+        assert row["single_agent_baseline_evidence_kind"] == "produced_single_agent_baseline"
+
+    exported_rows_path = tmp_path / "powered_factorial_per_task_results.jsonl"
+    exported = [
+        json.loads(line)
+        for line in exported_rows_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    sample = exported[0]
+    assert "single_agent_baseline_producer" in sample
+    assert "single_agent_baseline_candidate_artifact_hash" in sample
+    assert "single_agent_baseline_prompt_sha256" in sample
+
+
+def test_powered_factorial_baseline_hash_mismatch_is_unavailable(tmp_path):
+    bogus_hash = sha256(b"not-the-real-candidate-bytes").hexdigest()
+    baseline_decisions = _produced_baseline_decisions(
+        hash_overrides={"known-good": bogus_hash},
+    )
+    arm_decisions = _factorial_arm_decisions_without_baseline()
+    arm_decisions["single_agent_baseline"] = baseline_decisions
+    report = run_powered_factorial_mergeability_evaluation(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        arm_decisions=arm_decisions,
+        reviewer_panel_results=_factorial_reviewer_results(),
+        powered_thresholds={"min_bad": 1, "min_good": 1},
+    )
+
+    by_candidate = {row["candidate_id"]: row for row in report["per_task_results"]}
+    bad_row = by_candidate["known-good"]
+    assert bad_row["single_agent_baseline_unavailable"] is True
+    assert bad_row["single_agent_baseline_accept"] is False
+    assert (
+        bad_row["single_agent_baseline_unavailable_reason"]
+        == "candidate_artifact_hash_mismatch"
+    )
+    assert bad_row["single_agent_baseline_evidence_kind"] == "hash_mismatch"
+    assert bad_row["single_agent_baseline_candidate_artifact_hash"] == bogus_hash
+    assert bad_row["candidate_hash"] != bogus_hash
+    assert "baseline_evidence_unavailable" in report["gaming_flags"]
+
+
+def test_powered_factorial_baseline_missing_replay_fields_is_unavailable(tmp_path):
+    manifest = build_mergeability_corpus_manifest(BENCH_ROOT)
+    baseline_decisions = {
+        entry["candidate_id"]: {
+            "candidate_artifact_hash": entry["candidate_hash"],
+        }
+        for entry in manifest["candidates"]
+    }
+    arm_decisions = _factorial_arm_decisions_without_baseline()
+    arm_decisions["single_agent_baseline"] = baseline_decisions
+    report = run_powered_factorial_mergeability_evaluation(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        arm_decisions=arm_decisions,
+        reviewer_panel_results=_factorial_reviewer_results(),
+        powered_thresholds={"min_bad": 1, "min_good": 1},
+    )
+
+    baseline = report["arms"]["single_agent_baseline"]
+    assert baseline["unavailable_count"] == report["candidate_count"]
+    assert baseline["accepted_count"] == 0
+    assert baseline["rejected_count"] == 0
+    assert baseline["false_reject_count"] == 0
+    assert baseline["true_reject_count"] == 0
+    assert "baseline_evidence_unavailable" in report["gaming_flags"]
+    for row in report["per_task_results"]:
+        assert row["single_agent_baseline_unavailable"] is True
+        assert row["single_agent_baseline_evidence_kind"] == "malformed"
+        assert row["single_agent_baseline_unavailable_reason"] == (
+            "malformed_baseline_row_missing_replay_evidence:"
+            "accept,decision_source,producer,prompt_sha256"
+        )
+
+
+def test_powered_factorial_unavailable_baseline_rows_do_not_count_as_rejects(tmp_path):
+    bogus_hash = sha256(b"divergent-bytes").hexdigest()
+    # All supplied rows are accept=True (positive-control candidates); the hash
+    # mismatch makes one row unavailable. Missing candidates from the filter
+    # are absent baseline rows. Any non-zero rejected_count would prove an
+    # unavailable row leaked into reject accounting.
+    decisions = _produced_baseline_decisions(
+        hash_overrides={"known-good": bogus_hash},
+        candidate_filter={
+            "known-good",
+            "secondary-rubric-only",
+            "text-known-good",
+        },
+    )
+    arm_decisions = _factorial_arm_decisions_without_baseline()
+    arm_decisions["single_agent_baseline"] = decisions
+    report = run_powered_factorial_mergeability_evaluation(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        arm_decisions=arm_decisions,
+        reviewer_panel_results=_factorial_reviewer_results(),
+        powered_thresholds={"min_bad": 1, "min_good": 1},
+    )
+
+    baseline = report["arms"]["single_agent_baseline"]
+    candidate_ids = {row["candidate_id"] for row in report["per_task_results"]}
+    expected_unavailable_count = len(candidate_ids - set(decisions)) + 1  # +1 for hash mismatch
+    assert baseline["unavailable_count"] == expected_unavailable_count
+    assert baseline["unavailable_count"] > 0
+    assert baseline["rejected_count"] == 0
+    assert baseline["false_reject_count"] == 0
+    assert baseline["true_reject_count"] == 0
+    assert baseline["false_reject_denominator"] == sum(
+        1
+        for row in report["per_task_results"]
+        if row["oracle_accept"] and not row["single_agent_baseline_unavailable"]
+    )
+
+
+def test_legacy_metadata_baseline_is_labeled_not_real_baseline(tmp_path):
+    report = run_paired_acceptance_pilot(BENCH_ROOT, output_dir=tmp_path)
+
+    baseline_arm = report["arms"]["baseline"]
+    assert baseline_arm["evidence_kind"] == "metadata_calibration"
+    assert baseline_arm["evidence_kind"] != "produced_single_agent_baseline"
+    assert report["baseline_evidence_kind"] == "metadata_calibration"
+    assert report["report_label"] == "calibration"
+    for row in report["per_task_results"]:
+        assert row["baseline_evidence_kind"] == "metadata_calibration"
+        assert row["baseline_evidence_kind"] != "produced_single_agent_baseline"
+
+
+def test_real_baseline_reports_remain_report_only(tmp_path):
+    baseline_decisions = _produced_baseline_decisions()
+    arm_decisions = _factorial_arm_decisions_without_baseline()
+    arm_decisions["single_agent_baseline"] = baseline_decisions
+    report = run_powered_factorial_mergeability_evaluation(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        arm_decisions=arm_decisions,
+        reviewer_panel_results=_factorial_reviewer_results(),
+        powered_thresholds={"min_bad": 1, "min_good": 1},
+    )
+
+    baseline = report["arms"]["single_agent_baseline"]
+    assert baseline["unavailable_count"] == 0
+    assert baseline["evidence_kind"] == "produced_single_agent_baseline"
+    assert report["improvement_claim_allowed"] is False
+    assert report["default_change_allowed"] is False
+    assert report["policy_mutated"] is False
+    assert report["gate_advanced"] is False
+    assert report["recommendation"]["report_only"] is True
+    assert report["recommendation"]["applyable_policy_proposal"] is False
+    assert report["promotion_guardrails"]["policy_mutation_allowed"] is False
+    assert report["promotion_guardrails"]["oracle_ceiling_supervisor_claim_allowed"] is False
+    assert derive_policy_evolution_proposals_from_report(
+        report,
+        repo_root=Path.cwd(),
+        affected_gates=("execution", "outcome_review"),
+    ) == []
