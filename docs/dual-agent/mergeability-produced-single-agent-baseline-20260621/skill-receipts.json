@@ -1,0 +1,42 @@
+{
+  "task_id": "mergeability-produced-single-agent-baseline-20260621",
+  "receipts": [
+    {
+      "stage": "to_prd",
+      "skill": "to-prd",
+      "artifact": "prd.md",
+      "status": "pass"
+    },
+    {
+      "stage": "codebase_design",
+      "skill": "codebase-design",
+      "artifact": "prd.md",
+      "status": "pass",
+      "seam": "run_paired_acceptance_pilot report boundary"
+    },
+    {
+      "stage": "prd_grill",
+      "skill": "grill-with-docs",
+      "artifact": "grill-findings.md",
+      "status": "pass"
+    },
+    {
+      "stage": "to_issues",
+      "skill": "to-issues",
+      "artifact": "issues.md",
+      "status": "pass"
+    },
+    {
+      "stage": "tdd",
+      "skill": "tdd",
+      "artifact": "tdd.md",
+      "status": "pass"
+    },
+    {
+      "stage": "tdd_grill",
+      "skill": "grill-with-docs",
+      "artifact": "grill-findings-tdd.md",
+      "status": "pass"
+    }
+  ]
+}

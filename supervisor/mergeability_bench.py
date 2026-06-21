@@ -77,6 +77,12 @@ FACTORIAL_ARM_DEFINITIONS = {
     },
 }
 
+PRODUCED_BASELINE_DECISION_SOURCES = frozenset({
+    "produced_single_agent_baseline",
+    "replayed_single_agent_baseline",
+    "single_agent_candidate_generation",
+})
+
 ORACLE_REVIEW_FORBIDDEN_KEYS = frozenset({
     "expected_outcome",
     "final_score",
@@ -791,6 +797,7 @@ def run_paired_acceptance_pilot(
     reviewer_panel: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
     reviewer_panel_mode: str = "custom",
     configured_reviewer_panel_options: ConfiguredReviewerPanelOptions | None = None,
+    single_agent_baseline_decisions: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     if reviewer_panel_mode not in {"custom", "configured"}:
         raise MergeabilityBenchError(
@@ -825,6 +832,11 @@ def run_paired_acceptance_pilot(
         timeout_s=timeout_s,
     )
     candidates = {candidate.candidate_id: candidate for candidate in candidate_list}
+    task_hashes = {entry["task_id"]: entry["task_hash"] for entry in manifest["tasks"]}
+    candidate_hashes = {
+        (entry["task_id"], entry["candidate_id"]): entry["candidate_hash"]
+        for entry in manifest["candidates"]
+    }
 
     rows: list[dict[str, Any]] = []
     for result in calibration["results"]:
@@ -837,29 +849,63 @@ def run_paired_acceptance_pilot(
             reviewer_panel=reviewer_panel,
         )
         oracle_accept = float(result["final_score"]) >= 1.0
-        baseline_accept = _baseline_accepts(candidate)
+        metadata_accept_all_baseline_accept = _baseline_accepts(candidate)
+        baseline_raw = (
+            single_agent_baseline_decisions.get(candidate.candidate_id)
+            if single_agent_baseline_decisions is not None
+            else None
+        )
+        single_agent_baseline_decision = _resolve_powered_baseline_decision(
+            raw=baseline_raw,
+            expected_candidate_artifact_hash=candidate_hashes[
+                (result["task_id"], result["candidate_id"])
+            ],
+            expected_candidate_id=candidate.candidate_id,
+        )
+        single_agent_baseline_available = not bool(single_agent_baseline_decision["unavailable"])
+        single_agent_baseline_accept = bool(single_agent_baseline_decision["accept"])
         supervisor_accept = bool(supervisor_review["accept"])
         supervisor_full_gate_accept = bool(full_gate_review["accept"])
         row = {
             "task_id": result["task_id"],
+            "task_hash": task_hashes[result["task_id"]],
             "task_class": tasks[candidate.task_id].task_class,
             "split": tasks[candidate.task_id].split,
             "candidate_id": result["candidate_id"],
+            "candidate_hash": candidate_hashes[(result["task_id"], result["candidate_id"])],
             "control_kind": result["control_kind"],
             "expected_outcome": result["expected_outcome"],
             "oracle_accept": oracle_accept,
-            "baseline_accept": baseline_accept,
+            "baseline_accept": metadata_accept_all_baseline_accept,
+            "metadata_accept_all_baseline_accept": metadata_accept_all_baseline_accept,
+            "metadata_accept_all_baseline_unavailable": False,
+            "single_agent_baseline_accept": single_agent_baseline_accept,
+            "single_agent_baseline_unavailable": not single_agent_baseline_available,
             "supervisor_accept": supervisor_accept,
             "supervisor_candidate_review_accept": supervisor_accept,
             "supervisor_full_gate_accept": supervisor_full_gate_accept,
             "supervisor_full_gate_unavailable": bool(full_gate_review["unavailable"]),
             "oracle_ceiling_accept": oracle_accept,
-            "baseline_false_accept": baseline_accept and not oracle_accept,
+            "baseline_false_accept": metadata_accept_all_baseline_accept and not oracle_accept,
+            "metadata_accept_all_baseline_false_accept": (
+                metadata_accept_all_baseline_accept and not oracle_accept
+            ),
+            "single_agent_baseline_false_accept": (
+                single_agent_baseline_available and single_agent_baseline_accept and not oracle_accept
+            ),
             "supervisor_false_accept": supervisor_accept and not oracle_accept,
             "supervisor_candidate_review_false_accept": supervisor_accept and not oracle_accept,
             "supervisor_full_gate_false_accept": supervisor_full_gate_accept and not oracle_accept,
             "oracle_ceiling_false_accept": oracle_accept and not oracle_accept,
-            "baseline_false_reject": (not baseline_accept) and oracle_accept,
+            "baseline_false_reject": (not metadata_accept_all_baseline_accept) and oracle_accept,
+            "metadata_accept_all_baseline_false_reject": (
+                (not metadata_accept_all_baseline_accept) and oracle_accept
+            ),
+            "single_agent_baseline_false_reject": (
+                single_agent_baseline_available
+                and (not single_agent_baseline_accept)
+                and oracle_accept
+            ),
             "supervisor_false_reject": (not supervisor_accept) and oracle_accept,
             "supervisor_candidate_review_false_reject": (not supervisor_accept) and oracle_accept,
             "supervisor_full_gate_false_reject": (not supervisor_full_gate_accept) and oracle_accept,
@@ -870,6 +916,19 @@ def run_paired_acceptance_pilot(
             "failures": result["failures"],
             "baseline_decision_source": "candidate_self_report",
             "baseline_evidence_kind": "metadata_calibration",
+            "metadata_accept_all_baseline_decision_source": "candidate_self_report",
+            "metadata_accept_all_baseline_evidence_kind": "metadata_calibration",
+            "single_agent_baseline_candidate_id": single_agent_baseline_decision["candidate_id"],
+            "single_agent_baseline_decision_source": single_agent_baseline_decision["decision_source"],
+            "single_agent_baseline_evidence_kind": single_agent_baseline_decision["evidence_kind"],
+            "single_agent_baseline_candidate_artifact_hash": (
+                single_agent_baseline_decision["candidate_artifact_hash"]
+            ),
+            "single_agent_baseline_producer": dict(single_agent_baseline_decision["producer"]),
+            "single_agent_baseline_prompt_sha256": single_agent_baseline_decision["prompt_sha256"],
+            "single_agent_baseline_unavailable_reason": (
+                single_agent_baseline_decision["unavailable_reason"]
+            ),
             "oracle_ceiling_decision_source": "oracle_final_score",
             "supervisor_decision_source": "supervisor_candidate_review",
             "supervisor_candidate_review_decision_source": "supervisor_candidate_review",
@@ -893,20 +952,51 @@ def run_paired_acceptance_pilot(
             ),
         }
         row["is_no_regression_failure"] = bool(
-            baseline_accept
+            metadata_accept_all_baseline_accept
             and oracle_accept
             and not supervisor_full_gate_accept
             and not bool(full_gate_review["unavailable"])
         )
         rows.append(row)
 
-    baseline = _summarize_acceptance_arm(
+    metadata_accept_all_baseline = _summarize_acceptance_arm(
         rows,
-        arm="baseline",
-        arm_role="baseline_self_report",
+        arm="metadata_accept_all_baseline",
+        arm_role="metadata_accept_all_baseline",
         decision_source="candidate_self_report",
         oracle_coupled=False,
         evidence_kind="metadata_calibration",
+    )
+    baseline = dict(metadata_accept_all_baseline)
+    baseline["arm"] = "baseline"
+    baseline["arm_role"] = "baseline_self_report"
+    baseline["legacy_alias_of"] = "metadata_accept_all_baseline"
+
+    def _single_agent_baseline_evidence_kind() -> str:
+        available = [row for row in rows if not bool(row.get("single_agent_baseline_unavailable"))]
+        source_rows = available if available else rows
+        kinds = {str(row.get("single_agent_baseline_evidence_kind") or "missing") for row in source_rows}
+        if len(kinds) == 1:
+            return next(iter(kinds))
+        return "mixed_produced_baseline"
+
+    def _single_agent_baseline_decision_source() -> str:
+        available = [row for row in rows if not bool(row.get("single_agent_baseline_unavailable"))]
+        if not available:
+            return "produced_single_agent_baseline_unavailable"
+        sources = {str(row.get("single_agent_baseline_decision_source") or "") for row in available}
+        sources.discard("")
+        if len(sources) == 1:
+            return next(iter(sources))
+        return "mixed_produced_single_agent_baseline"
+
+    single_agent_baseline = _summarize_acceptance_arm(
+        rows,
+        arm="single_agent_baseline",
+        arm_role="single_agent_baseline",
+        decision_source=_single_agent_baseline_decision_source(),
+        oracle_coupled=False,
+        evidence_kind=_single_agent_baseline_evidence_kind(),
     )
     oracle_ceiling = _summarize_acceptance_arm(
         rows,
@@ -933,11 +1023,6 @@ def run_paired_acceptance_pilot(
     supervisor = dict(supervisor_candidate_review)
     supervisor["arm"] = "supervisor"
     supervisor["legacy_alias_of"] = "supervisor_candidate_review"
-    task_hashes = {entry["task_id"]: entry["task_hash"] for entry in manifest["tasks"]}
-    candidate_hashes = {
-        (entry["task_id"], entry["candidate_id"]): entry["candidate_hash"]
-        for entry in manifest["candidates"]
-    }
     disagreements = [
         {
             "task_id": row["task_id"],
@@ -963,6 +1048,8 @@ def run_paired_acceptance_pilot(
         "supervisor_candidate_review": _oracle_agreement(rows, arm="supervisor_candidate_review"),
         "supervisor_full_gate": _oracle_agreement(rows, arm="supervisor_full_gate"),
         "baseline": _oracle_agreement(rows, arm="baseline"),
+        "metadata_accept_all_baseline": _oracle_agreement(rows, arm="metadata_accept_all_baseline"),
+        "single_agent_baseline": _oracle_agreement(rows, arm="single_agent_baseline"),
         "oracle_ceiling": _oracle_agreement(rows, arm="oracle_ceiling"),
     }
     gaming_flags = set(calibration["gaming_flags"])
@@ -980,8 +1067,14 @@ def run_paired_acceptance_pilot(
         gaming_flags.add("perfect_oracle_agreement_tripwire")
     if no_regression_findings:
         gaming_flags.add("no_regression_failure_detected")
+    if single_agent_baseline["unavailable_count"]:
+        gaming_flags.add("baseline_evidence_unavailable")
     matched_true_accept = _false_accept_at_matched_true_accept(
         baseline=baseline,
+        supervisor=supervisor_candidate_review,
+    )
+    single_agent_baseline_matched_true_accept = _false_accept_at_matched_true_accept(
+        baseline=single_agent_baseline,
         supervisor=supervisor_candidate_review,
     )
     full_gate_matched_true_accept = _false_accept_at_matched_true_accept(
@@ -996,6 +1089,8 @@ def run_paired_acceptance_pilot(
         rows,
         arms={
             "baseline": baseline,
+            "metadata_accept_all_baseline": metadata_accept_all_baseline,
+            "single_agent_baseline": single_agent_baseline,
             "supervisor_candidate_review": supervisor_candidate_review,
             "supervisor_full_gate": supervisor_full_gate,
             "oracle_ceiling": oracle_ceiling,
@@ -1029,6 +1124,8 @@ def run_paired_acceptance_pilot(
         ]),
         "arms": {
             "baseline": baseline,
+            "metadata_accept_all_baseline": metadata_accept_all_baseline,
+            "single_agent_baseline": single_agent_baseline,
             "supervisor_candidate_review": supervisor_candidate_review,
             "supervisor_full_gate": supervisor_full_gate,
             "oracle_ceiling": oracle_ceiling,
@@ -1055,6 +1152,9 @@ def run_paired_acceptance_pilot(
             ),
         },
         "false_accept_at_matched_true_accept": matched_true_accept,
+        "single_agent_baseline_false_accept_at_matched_true_accept": (
+            single_agent_baseline_matched_true_accept
+        ),
         "supervisor_full_gate_false_accept_at_matched_true_accept": full_gate_matched_true_accept,
         "panel_marginal_delta_at_matched_true_accept": panel_marginal_delta,
         "matched_true_accept_status": matched_true_accept["status"],
@@ -1105,6 +1205,8 @@ def run_paired_acceptance_pilot(
             "This fixture-scale report is calibration evidence only, not proof of production improvement.",
             "Baseline arm is metadata calibration of fixture candidate self-reports, not a produced "
             "single-agent baseline; do not treat it as replayable baseline evidence.",
+            "The single_agent_baseline arm is reported only from replayable produced-baseline "
+            "decision receipts; missing receipts are unavailable, not accept-all.",
         ],
         "default_change_allowed": False,
         "policy_mutated": False,
@@ -2819,6 +2921,7 @@ def _resolve_powered_baseline_decision(
     *,
     raw: Any,
     expected_candidate_artifact_hash: str,
+    expected_candidate_id: str | None = None,
 ) -> dict[str, Any]:
     """Normalise a powered ``single_agent_baseline`` arm row.
 
@@ -2830,6 +2933,7 @@ def _resolve_powered_baseline_decision(
         "accept": False,
         "unavailable": True,
         "decision_source": "produced_single_agent_baseline_unavailable",
+        "candidate_id": expected_candidate_id or "",
         "candidate_artifact_hash": "",
         "producer": {},
         "prompt_sha256": "",
@@ -2841,60 +2945,102 @@ def _resolve_powered_baseline_decision(
     if isinstance(raw, Mapping):
         explicit_unavailable = bool(raw.get("unavailable"))
         supplied_hash = str(raw.get("candidate_artifact_hash") or "")
+        supplied_candidate_id = str(raw.get("candidate_id") or "")
+        supplied_decision_source = str(raw.get("decision_source") or "").strip()
+        producer_raw = raw.get("producer")
+        producer = dict(producer_raw) if isinstance(producer_raw, Mapping) else {}
+        runner_label = str(
+            raw.get("runner_label")
+            or producer.get("runner_label")
+            or producer.get("runner")
+            or producer.get("agent")
+            or ""
+        ).strip()
+        model_label = str(raw.get("model") or producer.get("model") or "").strip()
+        if expected_candidate_id is not None and supplied_candidate_id:
+            if supplied_candidate_id != expected_candidate_id:
+                decision = dict(unavailable_template)
+                decision["candidate_id"] = supplied_candidate_id
+                decision["candidate_artifact_hash"] = supplied_hash
+                decision["unavailable_reason"] = "candidate_id_mismatch"
+                decision["evidence_kind"] = "candidate_id_mismatch"
+                decision["producer"] = producer
+                decision["prompt_sha256"] = str(raw.get("prompt_sha256") or "")
+                return decision
         if explicit_unavailable:
             decision = dict(unavailable_template)
+            decision["candidate_id"] = supplied_candidate_id or expected_candidate_id or ""
             decision["candidate_artifact_hash"] = supplied_hash
             decision["unavailable_reason"] = str(
                 raw.get("unavailable_reason") or "baseline_producer_marked_unavailable"
             )
             decision["evidence_kind"] = "explicit_unavailable"
-            decision["producer"] = dict(raw.get("producer") or {})
+            decision["producer"] = producer
             decision["prompt_sha256"] = str(raw.get("prompt_sha256") or "")
             return decision
         if not supplied_hash:
             decision = dict(unavailable_template)
+            decision["candidate_id"] = supplied_candidate_id or expected_candidate_id or ""
             decision["unavailable_reason"] = "malformed_baseline_row_missing_candidate_artifact_hash"
             decision["evidence_kind"] = "malformed"
-            decision["producer"] = dict(raw.get("producer") or {})
+            decision["producer"] = producer
             decision["prompt_sha256"] = str(raw.get("prompt_sha256") or "")
             return decision
         if supplied_hash != expected_candidate_artifact_hash:
             decision = dict(unavailable_template)
+            decision["candidate_id"] = supplied_candidate_id or expected_candidate_id or ""
             decision["candidate_artifact_hash"] = supplied_hash
             decision["unavailable_reason"] = "candidate_artifact_hash_mismatch"
             decision["evidence_kind"] = "hash_mismatch"
-            decision["producer"] = dict(raw.get("producer") or {})
+            decision["producer"] = producer
             decision["prompt_sha256"] = str(raw.get("prompt_sha256") or "")
             return decision
         missing_replay_fields: list[str] = []
+        if expected_candidate_id is not None and not supplied_candidate_id:
+            missing_replay_fields.append("candidate_id")
         if not isinstance(raw.get("accept"), bool):
             missing_replay_fields.append("accept")
-        if not str(raw.get("decision_source") or "").strip():
+        if not supplied_decision_source:
             missing_replay_fields.append("decision_source")
-        producer = raw.get("producer")
         if not isinstance(producer, Mapping) or not producer:
             missing_replay_fields.append("producer")
+        if expected_candidate_id is not None and not model_label:
+            missing_replay_fields.append("model")
+        if expected_candidate_id is not None and not runner_label:
+            missing_replay_fields.append("runner_label")
         if not str(raw.get("prompt_sha256") or "").strip():
             missing_replay_fields.append("prompt_sha256")
         if missing_replay_fields:
             decision = dict(unavailable_template)
+            decision["candidate_id"] = supplied_candidate_id or expected_candidate_id or ""
             decision["candidate_artifact_hash"] = supplied_hash
             decision["unavailable_reason"] = (
                 "malformed_baseline_row_missing_replay_evidence:"
                 + ",".join(sorted(set(missing_replay_fields)))
             )
             decision["evidence_kind"] = "malformed"
-            decision["producer"] = dict(raw.get("producer") or {})
+            decision["producer"] = producer
+            decision["prompt_sha256"] = str(raw.get("prompt_sha256") or "")
+            return decision
+        if supplied_decision_source not in PRODUCED_BASELINE_DECISION_SOURCES:
+            decision = dict(unavailable_template)
+            decision["candidate_id"] = supplied_candidate_id or expected_candidate_id or ""
+            decision["candidate_artifact_hash"] = supplied_hash
+            decision["unavailable_reason"] = (
+                "malformed_baseline_row_untrusted_decision_source:"
+                + supplied_decision_source
+            )
+            decision["evidence_kind"] = "malformed"
+            decision["producer"] = producer
             decision["prompt_sha256"] = str(raw.get("prompt_sha256") or "")
             return decision
         return {
             "accept": bool(raw.get("accept")),
             "unavailable": False,
-            "decision_source": str(
-                raw.get("decision_source") or "produced_single_agent_baseline"
-            ),
+            "decision_source": supplied_decision_source,
+            "candidate_id": supplied_candidate_id or expected_candidate_id or "",
             "candidate_artifact_hash": supplied_hash,
-            "producer": dict(raw.get("producer") or {}),
+            "producer": producer,
             "prompt_sha256": str(raw.get("prompt_sha256") or ""),
             "evidence_kind": "produced_single_agent_baseline",
             "unavailable_reason": "",
@@ -3402,6 +3548,20 @@ def _false_accept_at_matched_true_accept(
     baseline: Mapping[str, Any],
     supervisor: Mapping[str, Any],
 ) -> dict[str, Any]:
+    baseline_unavailable = int(baseline.get("unavailable_count") or 0)
+    if baseline_unavailable:
+        return {
+            "status": "unavailable",
+            "reason": "baseline_arm_unavailable",
+            "unavailable_count": baseline_unavailable,
+        }
+    supervisor_unavailable = int(supervisor.get("unavailable_count") or 0)
+    if supervisor_unavailable:
+        return {
+            "status": "unavailable",
+            "reason": "supervisor_arm_unavailable",
+            "unavailable_count": supervisor_unavailable,
+        }
     denominator = int(supervisor.get("true_accept_denominator") or 0)
     if denominator < 2:
         return {

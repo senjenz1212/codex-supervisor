@@ -467,6 +467,158 @@ def test_paired_pilot_records_independent_supervisor_candidate_review_arm(tmp_pa
         assert row["oracle_ceiling_decision_source"] == "oracle_final_score"
 
 
+def test_paired_pilot_missing_single_agent_baseline_decisions_unavailable(tmp_path):
+    report = run_paired_acceptance_pilot(BENCH_ROOT, output_dir=tmp_path)
+
+    metadata = report["arms"]["metadata_accept_all_baseline"]
+    legacy = report["arms"]["baseline"]
+    produced = report["arms"]["single_agent_baseline"]
+    assert legacy["legacy_alias_of"] == "metadata_accept_all_baseline"
+    assert metadata["evidence_kind"] == "metadata_calibration"
+    assert produced["arm_role"] == "single_agent_baseline"
+    assert produced["decision_source"] == "produced_single_agent_baseline_unavailable"
+    assert produced["evidence_kind"] == "missing"
+    assert produced["availability_status"] == "unavailable"
+    assert produced["unavailable_count"] == report["candidate_count"]
+    assert produced["accepted_count"] == 0
+    assert produced["rejected_count"] == 0
+    assert "baseline_evidence_unavailable" in report["gaming_flags"]
+
+    comparison = report["single_agent_baseline_false_accept_at_matched_true_accept"]
+    assert comparison["status"] == "unavailable"
+    assert comparison["reason"] == "baseline_arm_unavailable"
+
+    for row in report["per_task_results"]:
+        assert row["metadata_accept_all_baseline_accept"] is row["baseline_accept"]
+        assert row["metadata_accept_all_baseline_evidence_kind"] == "metadata_calibration"
+        assert row["single_agent_baseline_unavailable"] is True
+        assert row["single_agent_baseline_accept"] is False
+        assert row["single_agent_baseline_unavailable_reason"] == "baseline_decisions_not_supplied"
+        assert row["single_agent_baseline_evidence_kind"] == "missing"
+
+
+def test_paired_pilot_replayed_single_agent_baseline_decisions_populate_separate_far_tar(tmp_path):
+    baseline_decisions = _produced_baseline_decisions()
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        single_agent_baseline_decisions=baseline_decisions,
+    )
+
+    metadata = report["arms"]["metadata_accept_all_baseline"]
+    produced = report["arms"]["single_agent_baseline"]
+    assert metadata["evidence_kind"] == "metadata_calibration"
+    assert produced["availability_status"] == "available"
+    assert produced["unavailable_count"] == 0
+    assert produced["decision_source"] == "produced_single_agent_baseline"
+    assert produced["evidence_kind"] == "produced_single_agent_baseline"
+    assert produced["false_accept_rate"] != metadata["false_accept_rate"]
+    assert "baseline_evidence_unavailable" not in report["gaming_flags"]
+
+    by_candidate = {row["candidate_id"]: row for row in report["per_task_results"]}
+    for candidate_id, decision in baseline_decisions.items():
+        row = by_candidate[candidate_id]
+        assert row["single_agent_baseline_candidate_id"] == candidate_id
+        assert row["single_agent_baseline_accept"] is bool(decision["accept"])
+        assert row["single_agent_baseline_unavailable"] is False
+        assert row["single_agent_baseline_decision_source"] == "produced_single_agent_baseline"
+        assert (
+            row["single_agent_baseline_candidate_artifact_hash"]
+            == decision["candidate_artifact_hash"]
+        )
+        assert row["single_agent_baseline_candidate_artifact_hash"] == row["candidate_hash"]
+        assert row["single_agent_baseline_prompt_sha256"] == decision["prompt_sha256"]
+        assert row["single_agent_baseline_producer"]["model"] == "fixture-baseline-llm"
+        assert row["single_agent_baseline_producer"]["runner_label"] == "single-agent-baseline-replay"
+        assert row["single_agent_baseline_unavailable_reason"] == ""
+
+    exported_report = json.loads((tmp_path / "paired_acceptance_report.json").read_text(encoding="utf-8"))
+    assert exported_report["arms"]["single_agent_baseline"]["evidence_kind"] == (
+        "produced_single_agent_baseline"
+    )
+
+
+def test_paired_pilot_matched_tar_refuses_unavailable_single_agent_baseline(tmp_path):
+    report = run_paired_acceptance_pilot(BENCH_ROOT, output_dir=tmp_path)
+
+    produced = report["arms"]["single_agent_baseline"]
+    assert produced["availability_status"] == "unavailable"
+    assert report["single_agent_baseline_false_accept_at_matched_true_accept"] == {
+        "status": "unavailable",
+        "reason": "baseline_arm_unavailable",
+        "unavailable_count": report["candidate_count"],
+    }
+
+
+def test_paired_pilot_malformed_single_agent_baseline_receipt_is_unavailable(tmp_path):
+    baseline_decisions = _produced_baseline_decisions()
+    baseline_decisions["known-good"] = dict(baseline_decisions["known-good"])
+    baseline_decisions["known-good"].pop("candidate_id")
+
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        single_agent_baseline_decisions=baseline_decisions,
+    )
+
+    row = {
+        item["candidate_id"]: item
+        for item in report["per_task_results"]
+    }["known-good"]
+    assert row["single_agent_baseline_accept"] is False
+    assert row["single_agent_baseline_unavailable"] is True
+    assert row["single_agent_baseline_evidence_kind"] == "malformed"
+    assert row["single_agent_baseline_unavailable_reason"] == (
+        "malformed_baseline_row_missing_replay_evidence:candidate_id"
+    )
+    assert "baseline_evidence_unavailable" in report["gaming_flags"]
+
+
+def test_paired_pilot_self_report_baseline_receipt_is_not_produced_evidence(tmp_path):
+    baseline_decisions = _produced_baseline_decisions()
+    baseline_decisions["known-good"] = dict(baseline_decisions["known-good"])
+    baseline_decisions["known-good"]["decision_source"] = "candidate_self_report"
+
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        single_agent_baseline_decisions=baseline_decisions,
+    )
+
+    row = {
+        item["candidate_id"]: item
+        for item in report["per_task_results"]
+    }["known-good"]
+    assert row["single_agent_baseline_accept"] is False
+    assert row["single_agent_baseline_unavailable"] is True
+    assert row["single_agent_baseline_evidence_kind"] == "malformed"
+    assert row["single_agent_baseline_unavailable_reason"] == (
+        "malformed_baseline_row_untrusted_decision_source:candidate_self_report"
+    )
+    assert "baseline_evidence_unavailable" in report["gaming_flags"]
+
+
+def test_paired_pilot_baseline_only_calibration_creates_no_policy_proposal(tmp_path):
+    baseline_decisions = _produced_baseline_decisions()
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        single_agent_baseline_decisions=baseline_decisions,
+    )
+
+    assert report["report_label"] == "calibration"
+    assert report["metric_applyable"] is False
+    assert report["improvement_claim_allowed"] is False
+    assert report["default_change_allowed"] is False
+    assert report["policy_mutated"] is False
+    assert report["gate_advanced"] is False
+    assert derive_policy_evolution_proposals_from_report(
+        report,
+        repo_root=Path.cwd(),
+        affected_gates=("execution", "outcome_review"),
+    ) == []
+
+
 def test_paired_report_records_full_gate_arm_with_panel_decision(tmp_path):
     report = run_paired_acceptance_pilot(
         BENCH_ROOT,
@@ -2043,7 +2195,7 @@ def _produced_baseline_decisions(
     hash_overrides: dict[str, str] | None = None,
     candidate_filter: set[str] | None = None,
 ) -> dict[str, dict[str, object]]:
-    """Build a replayable produced-baseline arm input for powered factorial tests."""
+    """Build a replayable produced-baseline arm input for mergeability tests."""
     manifest = build_mergeability_corpus_manifest(BENCH_ROOT)
     candidate_hashes = {
         entry["candidate_id"]: entry["candidate_hash"]
@@ -2057,11 +2209,13 @@ def _produced_baseline_decisions(
         accept = (accept_overrides or {}).get(candidate_id, candidate_id in positives)
         artifact_hash = (hash_overrides or {}).get(candidate_id, real_hash)
         rows[candidate_id] = {
+            "candidate_id": candidate_id,
             "accept": accept,
             "candidate_artifact_hash": artifact_hash,
             "decision_source": "produced_single_agent_baseline",
             "producer": {
                 "agent": "single-agent-baseline-replay",
+                "runner_label": "single-agent-baseline-replay",
                 "model": "fixture-baseline-llm",
                 "provider": "fixture",
                 "budget_usd": 0.0,
