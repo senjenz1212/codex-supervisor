@@ -326,6 +326,13 @@ class Outcome(BaseModel):
                 normalised.append(text)
         return normalised
 
+    @field_validator("tests", mode="before")
+    @classmethod
+    def _coerce_optional_text_list(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        return cls._coerce_text_list(value)
+
     @field_validator("confidence")
     @classmethod
     def _confidence_range(cls, value: float | None) -> float | None:

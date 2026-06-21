@@ -277,6 +277,16 @@ def independent_reviewer_result_from_cursor_result(
         if isinstance(outcome_payload, dict)
         else None
     )
+    summary = (
+        str(outcome_payload.get("summary") or "")
+        if isinstance(outcome_payload, dict)
+        else ""
+    )
+    confidence_rationale = (
+        str(outcome_payload.get("confidence_rationale") or "")
+        if isinstance(outcome_payload, dict)
+        else ""
+    )
     runtime = result.reviewer_runtime or result.reviewer_output_mode or "unknown"
     model = result.model
     return {
@@ -290,6 +300,8 @@ def independent_reviewer_result_from_cursor_result(
         "decision": _decision_from_result(result),
         "severity": str(critical_review.get("severity") or ("none" if cursor_accepts(result) else "important")),
         "confidence": confidence,
+        "summary": summary,
+        "confidence_rationale": confidence_rationale,
         "runtime": runtime,
         "reviewer_runtime": result.reviewer_runtime,
         "reviewer_output_mode": result.reviewer_output_mode,

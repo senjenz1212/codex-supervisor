@@ -8,6 +8,8 @@ import sys
 from hashlib import sha256
 from pathlib import Path
 
+import pytest
+
 from supervisor.autoresearch.evaluator import run_evaluator_trials
 from supervisor.autoresearch.policy_evolution import (
     derive_policy_evolution_proposals_from_report,
@@ -31,6 +33,7 @@ from supervisor.mergeability_bench import (
     load_mergeability_task,
     load_mergeability_tasks,
     result_receipt,
+    run_fixture_panel_produced_baseline_measurement,
     run_live_mergeability_candidate_generation,
     run_paired_acceptance_pilot,
     run_powered_factorial_mergeability_evaluation,
@@ -640,7 +643,12 @@ def test_paired_report_records_full_gate_arm_with_panel_decision(tmp_path):
         review = row["supervisor_full_gate_review"]
         assert review["schema_version"] == "supervisor-mergeability-full-gate-review/v1"
         assert review["decision_source"] == "supervisor_candidate_review+independent_reviewer_panel"
-        assert review["panel_result"]["reason"] == "deterministic_fixture_panel"
+        expected_reason = (
+            "deterministic_fixture_panel"
+            if row["supervisor_candidate_review_accept"]
+            else "public_review_rejected"
+        )
+        assert review["panel_result"]["reason"] == expected_reason
         assert review["reviewer_packet_refs"][0]["source"] == "supervisor"
         assert review["reviewer_packet_refs"][0]["evidence_grade"] == "runtime_native"
         assert row["supervisor_full_gate_accept"] == (
@@ -668,6 +676,24 @@ def test_full_gate_reviewer_packet_excludes_oracle_material(tmp_path):
         assert not review["reviewer_packet"].get("oracle_isolation_violations")
 
 
+def test_full_gate_reviewer_packet_includes_context_receipt_fields(tmp_path):
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        reviewer_panel=_accept_public_review_panel,
+    )
+
+    for row in report["per_task_results"]:
+        packet = row["supervisor_full_gate_review"]["reviewer_packet"]
+        assert packet["acceptance_items"]
+        assert packet["runtime_receipt_ids"]
+        assert all(ref["receipt_id"] for ref in packet["runtime_receipt_ids"])
+        assert {
+            changed["path"]
+            for changed in packet["changed_files"]
+        } == set(packet["public_input_payload"]["changed_files"])
+
+
 def test_full_gate_unavailable_reviewer_does_not_count_as_accept(tmp_path):
     report = run_paired_acceptance_pilot(
         BENCH_ROOT,
@@ -676,15 +702,25 @@ def test_full_gate_unavailable_reviewer_does_not_count_as_accept(tmp_path):
     )
 
     full_gate = report["arms"]["supervisor_full_gate"]
-    assert full_gate["availability_status"] == "unavailable"
-    assert full_gate["unavailable_count"] == report["candidate_count"]
+    public_accept_count = sum(
+        1 for row in report["per_task_results"]
+        if row["supervisor_candidate_review_accept"]
+    )
+    assert full_gate["unavailable_count"] == public_accept_count
     assert full_gate["accepted_count"] == 0
     assert "reviewer_panel_unavailable" in report["gaming_flags"]
     assert any(row["supervisor_candidate_review_accept"] for row in report["per_task_results"])
     for row in report["per_task_results"]:
-        assert row["supervisor_full_gate_unavailable"] is True
         assert row["supervisor_full_gate_accept"] is False
-        assert row["supervisor_full_gate_review"]["unavailable_reason"] == "fixture_panel_unavailable"
+        if row["supervisor_candidate_review_accept"]:
+            assert row["supervisor_full_gate_unavailable"] is True
+            assert row["supervisor_full_gate_review"]["unavailable_reason"] == "fixture_panel_unavailable"
+        else:
+            assert row["supervisor_full_gate_unavailable"] is False
+            assert (
+                row["supervisor_full_gate_review"]["panel_result"]["reason"]
+                == "public_review_rejected"
+            )
 
 
 def test_panel_marginal_delta_is_reported_only_when_matched_true_accept_is_computable(tmp_path):
@@ -813,11 +849,22 @@ def test_run_paired_acceptance_pilot_uses_configured_panel_when_requested(tmp_pa
     # The configured roster was actually exercised.
     assert reviewer_a.calls, "reviewer_a should have been invoked"
     assert reviewer_b.calls, "reviewer_b should have been invoked"
+    public_accept_count = sum(
+        1 for row in report["per_task_results"]
+        if row["supervisor_candidate_review_accept"]
+    )
+    assert len(reviewer_a.calls) == public_accept_count
+    assert len(reviewer_b.calls) == public_accept_count
     assert all(isinstance(call, CursorInvocationRequest) for call in reviewer_a.calls)
 
     # Reviewer results were converted via the registry seam and recorded per row.
     for row in report["per_task_results"]:
         review = row["supervisor_full_gate_review"]
+        if not row["supervisor_candidate_review_accept"]:
+            assert review["panel_result"]["reason"] == "public_review_rejected"
+            assert review["reviewer_results"] == []
+            assert review["panel_decision"] == "revise"
+            continue
         reviewer_results = review["reviewer_results"]
         assert {item["reviewer_id"] for item in reviewer_results} == {
             "fake-reviewer-a",
@@ -868,16 +915,23 @@ def test_configured_panel_unavailable_does_not_count_as_accept(tmp_path):
     )
 
     full_gate = report["arms"]["supervisor_full_gate"]
-    assert full_gate["availability_status"] == "unavailable"
+    public_accept_count = sum(
+        1 for row in report["per_task_results"]
+        if row["supervisor_candidate_review_accept"]
+    )
     assert full_gate["accepted_count"] == 0
-    assert full_gate["unavailable_count"] == report["candidate_count"]
+    assert full_gate["unavailable_count"] == public_accept_count
     assert "reviewer_panel_unavailable" in report["gaming_flags"]
     for row in report["per_task_results"]:
         review = row["supervisor_full_gate_review"]
-        assert row["supervisor_full_gate_unavailable"] is True
         assert row["supervisor_full_gate_accept"] is False
-        assert review["unavailable_reason"] == "reviewer_panel_unavailable"
-        assert review["panel_result"]["available"] is False
+        if row["supervisor_candidate_review_accept"]:
+            assert row["supervisor_full_gate_unavailable"] is True
+            assert review["unavailable_reason"] == "reviewer_panel_unavailable"
+            assert review["panel_result"]["available"] is False
+        else:
+            assert row["supervisor_full_gate_unavailable"] is False
+            assert review["panel_result"]["reason"] == "public_review_rejected"
 
 
 def test_configured_panel_not_invoked_when_reviewer_packet_contains_oracle_material(
@@ -948,6 +1002,13 @@ def test_configured_panel_report_records_reviewer_results_and_packet_refs(tmp_pa
         assert row["supervisor_full_gate_reviewer_packet_refs"], row
         assert row["supervisor_full_gate_reviewer_packet_refs"][0]["source"] == "supervisor"
         assert row["supervisor_full_gate_reviewer_packet_sha256"]
+        if not row["supervisor_candidate_review_accept"]:
+            assert row["supervisor_full_gate_reviewer_results"] == []
+            assert (
+                row["supervisor_full_gate_reviewer_panel_decision"]["reason"]
+                == "public_review_rejected"
+            )
+            continue
         results = row["supervisor_full_gate_reviewer_results"]
         reviewer_ids = {item["reviewer_id"] for item in results}
         assert reviewer_ids == {"fake-reviewer-a", "fake-reviewer-b"}
@@ -987,6 +1048,145 @@ def test_configured_panel_calibration_remains_report_only(tmp_path):
     assert report["default_change_allowed"] is False
     assert report["policy_mutated"] is False
     assert report["gate_advanced"] is False
+    assert derive_policy_evolution_proposals_from_report(
+        report,
+        repo_root=Path.cwd(),
+        affected_gates=("execution", "outcome_review"),
+    ) == []
+
+
+def test_fixture_measurement_runner_writes_primary_single_agent_comparison(tmp_path):
+    reviewer_a, reviewer_b = _accepting_fake_reviewers()
+
+    report = run_fixture_panel_produced_baseline_measurement(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            reviewers=(reviewer_a, reviewer_b),
+        ),
+    )
+
+    exported = json.loads((tmp_path / "paired_acceptance_report.json").read_text(encoding="utf-8"))
+    assert exported["report_sha256"] == report["report_sha256"]
+    assert report["measurement_run"]["name"] == "fixture_panel_produced_baseline"
+    assert report["primary_comparison_name"] == "supervisor_vs_single_agent_baseline"
+
+    primary = report["comparisons"]["supervisor_vs_single_agent_baseline"]
+    assert primary["primary"] is True
+    assert primary["baseline_arm"] == "single_agent_baseline"
+    assert primary["supervisor_arm"] == "supervisor_candidate_review"
+    assert primary["full_gate_arm"] == "supervisor_full_gate"
+    assert primary["matched_true_accept"]["status"] in {"computed", "not_matched"}
+    assert primary["full_gate_matched_true_accept"]["status"] in {"computed", "not_matched"}
+
+    legacy = report["comparisons"]["legacy_metadata_accept_all_baseline"]
+    assert legacy["primary"] is False
+    assert legacy["baseline_arm"] == "metadata_accept_all_baseline"
+
+    assert report["arms"]["supervisor_full_gate"]["availability_status"] == "available"
+    assert report["arms"]["single_agent_baseline"]["availability_status"] == "available"
+    assert report["arms"]["single_agent_baseline"]["unavailable_count"] == 0
+    assert report["arms"]["single_agent_baseline"]["decision_source"] == "replayed_single_agent_baseline"
+
+
+def test_fixture_measurement_runner_records_panel_rationales_and_packet_refs(tmp_path):
+    reviewer_a = _RecordingFakeReviewer(
+        "fake-reviewer-a", result=_fake_cursor_result("accept")
+    )
+    reviewer_b = _RecordingFakeReviewer(
+        "fake-reviewer-b", result=_fake_cursor_result("accept")
+    )
+
+    report = run_fixture_panel_produced_baseline_measurement(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            reviewers=(reviewer_a, reviewer_b),
+        ),
+    )
+
+    exported_rows = [
+        json.loads(line)
+        for line in (tmp_path / "per_task_results.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert exported_rows
+    for row in report["per_task_results"]:
+        assert row["supervisor_full_gate_reviewer_packet_sha256"]
+        assert row["supervisor_full_gate_reviewer_packet_refs"][0]["source"] == "supervisor"
+        if not row["supervisor_accept"]:
+            assert (
+                row["supervisor_full_gate_reviewer_panel_decision"]["reason"]
+                == "public_review_rejected"
+            )
+            assert row["supervisor_full_gate_reviewer_results"] == []
+            assert row["supervisor_full_gate_reviewer_rationales"] == []
+            continue
+        assert row["supervisor_full_gate_reviewer_panel_decision"]["decision"] == "accept"
+        reviewer_ids = {
+            result["reviewer_id"]
+            for result in row["supervisor_full_gate_reviewer_results"]
+        }
+        assert reviewer_ids == {"fake-reviewer-a", "fake-reviewer-b"}
+        rationales = row["supervisor_full_gate_reviewer_rationales"]
+        assert {item["reviewer_id"] for item in rationales} == reviewer_ids
+        assert all(item["summary"] for item in rationales)
+
+    exported_by_candidate = {row["candidate_id"]: row for row in exported_rows}
+    sample_candidate_id = next(
+        row["candidate_id"]
+        for row in report["per_task_results"]
+        if row["supervisor_accept"]
+    )
+    sample = exported_by_candidate[sample_candidate_id]
+    assert sample["supervisor_full_gate_reviewer_rationales"]
+
+
+def test_fixture_measurement_runner_rejects_unavailable_configured_panel(tmp_path):
+    unavailable_a = _RecordingFakeReviewer(
+        "fake-reviewer-a",
+        result=_unavailable_cursor_result(
+            ReviewerSpec(reviewer_id="fake-reviewer-a", runtime="fake_runtime"),
+            reason="reviewer_infrastructure_down",
+        ),
+    )
+    unavailable_b = _RecordingFakeReviewer(
+        "fake-reviewer-b",
+        result=_unavailable_cursor_result(
+            ReviewerSpec(reviewer_id="fake-reviewer-b", runtime="fake_runtime"),
+            reason="reviewer_infrastructure_down",
+        ),
+    )
+
+    with pytest.raises(MergeabilityBenchError, match="panel marginal unavailable"):
+        run_fixture_panel_produced_baseline_measurement(
+            BENCH_ROOT,
+            output_dir=tmp_path,
+            configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+                reviewers=(unavailable_a, unavailable_b),
+            ),
+        )
+
+
+def test_fixture_measurement_runner_remains_report_only(tmp_path):
+    reviewer_a, reviewer_b = _accepting_fake_reviewers()
+
+    report = run_fixture_panel_produced_baseline_measurement(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            reviewers=(reviewer_a, reviewer_b),
+        ),
+    )
+
+    assert report["report_label"] == "calibration"
+    assert report["metric_applyable"] is False
+    assert report["improvement_claim_allowed"] is False
+    assert report["default_change_allowed"] is False
+    assert report["policy_mutated"] is False
+    assert report["gate_advanced"] is False
+    assert report["comparisons"]["supervisor_vs_single_agent_baseline"]["metric_applyable"] is False
+    assert report["comparisons"]["supervisor_vs_single_agent_baseline"]["improvement_claim_allowed"] is False
     assert derive_policy_evolution_proposals_from_report(
         report,
         repo_root=Path.cwd(),

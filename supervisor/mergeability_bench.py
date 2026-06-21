@@ -938,6 +938,9 @@ def run_paired_acceptance_pilot(
             "supervisor_full_gate_reviewer_results": list(
                 full_gate_review.get("reviewer_results") or []
             ),
+            "supervisor_full_gate_reviewer_rationales": list(
+                full_gate_review.get("reviewer_rationales") or []
+            ),
             "supervisor_full_gate_reviewer_packet_refs": list(
                 full_gate_review.get("reviewer_packet_refs") or []
             ),
@@ -1081,6 +1084,10 @@ def run_paired_acceptance_pilot(
         baseline=baseline,
         supervisor=supervisor_full_gate,
     )
+    full_gate_single_agent_baseline_matched_true_accept = _false_accept_at_matched_true_accept(
+        baseline=single_agent_baseline,
+        supervisor=supervisor_full_gate,
+    )
     panel_marginal_delta = _panel_marginal_delta_at_matched_true_accept(
         public_review=supervisor_candidate_review,
         full_gate=supervisor_full_gate,
@@ -1156,6 +1163,19 @@ def run_paired_acceptance_pilot(
             single_agent_baseline_matched_true_accept
         ),
         "supervisor_full_gate_false_accept_at_matched_true_accept": full_gate_matched_true_accept,
+        "supervisor_full_gate_vs_single_agent_baseline_false_accept_at_matched_true_accept": (
+            full_gate_single_agent_baseline_matched_true_accept
+        ),
+        "primary_comparison_name": "supervisor_vs_single_agent_baseline",
+        "primary_matched_true_accept_status": single_agent_baseline_matched_true_accept["status"],
+        "comparisons": _paired_acceptance_comparisons(
+            legacy_metadata_matched_true_accept=matched_true_accept,
+            single_agent_matched_true_accept=single_agent_baseline_matched_true_accept,
+            full_gate_metadata_matched_true_accept=full_gate_matched_true_accept,
+            full_gate_single_agent_matched_true_accept=full_gate_single_agent_baseline_matched_true_accept,
+            single_agent_baseline=single_agent_baseline,
+            metadata_accept_all_baseline=metadata_accept_all_baseline,
+        ),
         "panel_marginal_delta_at_matched_true_accept": panel_marginal_delta,
         "matched_true_accept_status": matched_true_accept["status"],
         "oracle_agreement": oracle_agreement,
@@ -1229,6 +1249,214 @@ def run_paired_acceptance_pilot(
             rows=rows,
         )
     return report
+
+
+def build_fixture_single_agent_baseline_decisions(
+    bench_root: str | Path,
+    *,
+    candidate_paths: tuple[str | Path, ...] = (),
+    producer_label: str = "fixture-generator-metadata-replay",
+    model: str = "fixture-baseline-replay",
+    provider: str = "fixture",
+) -> dict[str, dict[str, Any]]:
+    """Build replayable single-agent baseline receipts for fixture candidates.
+
+    The fixture corpus records the candidate producer's public self-acceptance in
+    `generator_metadata.baseline_accept`. This helper turns that field into the
+    same receipt shape consumed by the paired report without reading oracle
+    labels or hidden-test results.
+    """
+
+    bench_root_path = Path(bench_root).expanduser().resolve()
+    manifest = build_mergeability_corpus_manifest(
+        bench_root_path,
+        candidate_paths=candidate_paths,
+    )
+    candidates = {
+        candidate.candidate_id: candidate
+        for candidate in (
+            tuple(load_mergeability_candidate(path) for path in candidate_paths)
+            if candidate_paths else load_mergeability_candidates(bench_root_path)
+        )
+    }
+    candidate_hashes = {
+        entry["candidate_id"]: entry["candidate_hash"]
+        for entry in manifest["candidates"]
+    }
+    decisions: dict[str, dict[str, Any]] = {}
+    for candidate_id, candidate_hash in candidate_hashes.items():
+        candidate = candidates[candidate_id]
+        baseline_accept = candidate.generator_metadata.get("baseline_accept")
+        prompt_sha256 = sha256(
+            json.dumps(
+                {
+                    "candidate_hash": candidate_hash,
+                    "candidate_id": candidate_id,
+                    "decision_source": "replayed_single_agent_baseline",
+                    "producer_label": producer_label,
+                    "task_id": candidate.task_id,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        decision = {
+            "candidate_id": candidate_id,
+            "accept": bool(baseline_accept) if isinstance(baseline_accept, bool) else False,
+            "candidate_artifact_hash": candidate_hash,
+            "decision_source": "replayed_single_agent_baseline",
+            "producer": {
+                "agent": "single-agent-baseline-replay",
+                "runner_label": producer_label,
+                "model": model,
+                "provider": provider,
+                "budget_usd": 0.0,
+                "source": "fixture_generator_metadata",
+            },
+            "prompt_sha256": prompt_sha256,
+        }
+        if not isinstance(baseline_accept, bool):
+            decision["unavailable"] = True
+            decision["unavailable_reason"] = "fixture_baseline_accept_missing"
+        decisions[candidate_id] = decision
+    return decisions
+
+
+def run_fixture_panel_produced_baseline_measurement(
+    bench_root: str | Path,
+    *,
+    output_dir: str | Path,
+    candidate_paths: tuple[str | Path, ...] = (),
+    timeout_s: float = 30.0,
+    strict_calibration: bool = True,
+    configured_reviewer_panel_options: ConfiguredReviewerPanelOptions | None = None,
+) -> dict[str, Any]:
+    """Run the fixture calibration with configured panel and produced baseline receipts."""
+
+    output_path = Path(output_dir).expanduser()
+    baseline_decisions = build_fixture_single_agent_baseline_decisions(
+        bench_root,
+        candidate_paths=candidate_paths,
+    )
+    report = run_paired_acceptance_pilot(
+        bench_root,
+        output_dir=output_path,
+        candidate_paths=candidate_paths,
+        timeout_s=timeout_s,
+        strict_calibration=strict_calibration,
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=configured_reviewer_panel_options,
+        single_agent_baseline_decisions=baseline_decisions,
+    )
+    report["measurement_run"] = {
+        "schema_version": "supervisor-mergeability-fixture-measurement-run/v1",
+        "name": "fixture_panel_produced_baseline",
+        "reviewer_panel_mode": "configured",
+        "baseline_decision_source": "replayed_single_agent_baseline",
+        "baseline_receipt_count": len(baseline_decisions),
+        "output_dir": output_path.as_posix(),
+        "report_only": True,
+    }
+    _validate_fixture_panel_measurement_report(report)
+    report["report_sha256"] = _sha256_json({
+        key: value for key, value in report.items() if key != "report_sha256"
+    })
+    output_path.mkdir(parents=True, exist_ok=True)
+    (output_path / "paired_acceptance_report.json").write_text(
+        json.dumps(report, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return report
+
+
+def _paired_acceptance_comparisons(
+    *,
+    legacy_metadata_matched_true_accept: Mapping[str, Any],
+    single_agent_matched_true_accept: Mapping[str, Any],
+    full_gate_metadata_matched_true_accept: Mapping[str, Any],
+    full_gate_single_agent_matched_true_accept: Mapping[str, Any],
+    single_agent_baseline: Mapping[str, Any],
+    metadata_accept_all_baseline: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "supervisor_vs_single_agent_baseline": {
+            "name": "supervisor_vs_single_agent_baseline",
+            "primary": True,
+            "baseline_arm": "single_agent_baseline",
+            "supervisor_arm": "supervisor_candidate_review",
+            "full_gate_arm": "supervisor_full_gate",
+            "baseline_evidence_kind": single_agent_baseline.get("evidence_kind"),
+            "baseline_decision_source": single_agent_baseline.get("decision_source"),
+            "matched_true_accept": dict(single_agent_matched_true_accept),
+            "full_gate_matched_true_accept": dict(full_gate_single_agent_matched_true_accept),
+            "metric_applyable": False,
+            "improvement_claim_allowed": False,
+        },
+        "legacy_metadata_accept_all_baseline": {
+            "name": "legacy_metadata_accept_all_baseline",
+            "primary": False,
+            "baseline_arm": "metadata_accept_all_baseline",
+            "supervisor_arm": "supervisor_candidate_review",
+            "full_gate_arm": "supervisor_full_gate",
+            "baseline_evidence_kind": metadata_accept_all_baseline.get("evidence_kind"),
+            "baseline_decision_source": metadata_accept_all_baseline.get("decision_source"),
+            "matched_true_accept": dict(legacy_metadata_matched_true_accept),
+            "full_gate_matched_true_accept": dict(full_gate_metadata_matched_true_accept),
+            "metric_applyable": False,
+            "improvement_claim_allowed": False,
+        },
+    }
+
+
+def _validate_fixture_panel_measurement_report(report: Mapping[str, Any]) -> None:
+    arms = report.get("arms")
+    if not isinstance(arms, Mapping):
+        raise MergeabilityBenchError("fixture measurement report missing arms")
+    full_gate = arms.get("supervisor_full_gate")
+    if not isinstance(full_gate, Mapping) or full_gate.get("availability_status") != "available":
+        status = full_gate.get("availability_status") if isinstance(full_gate, Mapping) else "missing"
+        raise MergeabilityBenchError(f"fixture measurement full gate unavailable: {status}")
+    single_agent = arms.get("single_agent_baseline")
+    if not isinstance(single_agent, Mapping) or single_agent.get("availability_status") != "available":
+        status = single_agent.get("availability_status") if isinstance(single_agent, Mapping) else "missing"
+        raise MergeabilityBenchError(f"fixture measurement single-agent baseline unavailable: {status}")
+    panel_delta = report.get("panel_marginal_delta_at_matched_true_accept")
+    if not isinstance(panel_delta, Mapping) or panel_delta.get("status") not in {"computed", "not_matched"}:
+        status = panel_delta.get("status") if isinstance(panel_delta, Mapping) else "missing"
+        raise MergeabilityBenchError(f"fixture measurement panel marginal unavailable: {status}")
+    comparisons = report.get("comparisons")
+    if not isinstance(comparisons, Mapping):
+        raise MergeabilityBenchError("fixture measurement report missing comparisons")
+    primary = comparisons.get("supervisor_vs_single_agent_baseline")
+    if not isinstance(primary, Mapping) or primary.get("primary") is not True:
+        raise MergeabilityBenchError("fixture measurement primary comparison missing")
+    for row in report.get("per_task_results") or []:
+        if not isinstance(row, Mapping):
+            continue
+        if not row.get("supervisor_full_gate_reviewer_packet_sha256"):
+            raise MergeabilityBenchError(
+                f"fixture measurement missing reviewer packet hash: {row.get('candidate_id')}"
+            )
+        if not row.get("supervisor_accept"):
+            panel_result = (
+                row.get("supervisor_full_gate_review") or {}
+            ).get("panel_result")
+            panel_reason = str(
+                panel_result.get("reason") if isinstance(panel_result, Mapping) else ""
+            )
+            if panel_reason != "public_review_rejected":
+                raise MergeabilityBenchError(
+                    f"fixture measurement public reject did not short-circuit: {row.get('candidate_id')}"
+                )
+            continue
+        if not row.get("supervisor_full_gate_reviewer_results"):
+            raise MergeabilityBenchError(
+                f"fixture measurement missing reviewer results: {row.get('candidate_id')}"
+            )
+        if not row.get("supervisor_full_gate_reviewer_rationales"):
+            raise MergeabilityBenchError(
+                f"fixture measurement missing reviewer rationales: {row.get('candidate_id')}"
+            )
 
 
 def run_powered_factorial_mergeability_evaluation(
@@ -2235,17 +2463,23 @@ def _review_mergeability_candidate_full_gate(
         public_review=public_review,
     )
     leaks = _public_input_oracle_refs(packet)
+    public_accept = bool(public_review.get("accept"))
     panel_fn = reviewer_panel or _default_unavailable_reviewer_panel
-    raw_panel = panel_fn(packet) if not leaks else {
-        "decision": "unavailable",
-        "available": False,
-        "reason": "oracle_isolation_violation",
-        "blocking_findings": leaks,
-    }
+    if leaks:
+        raw_panel = {
+            "decision": "unavailable",
+            "available": False,
+            "reason": "oracle_isolation_violation",
+            "blocking_findings": leaks,
+        }
+    elif not public_accept:
+        raw_panel = _public_review_rejected_panel_result(public_review)
+    else:
+        raw_panel = panel_fn(packet)
     panel = _normalise_reviewer_panel_result(raw_panel)
+    reviewer_rationales = _reviewer_rationales_from_results(panel["reviewer_results"])
     unavailable = bool(leaks) or not panel["available"]
     panel_accept = bool(panel["available"] and panel["decision"] == "accept")
-    public_accept = bool(public_review.get("accept"))
     accept = bool(public_accept and panel_accept and not unavailable)
     gaming_flags = set(public_review.get("gaming_flags") or [])
     if leaks:
@@ -2275,6 +2509,7 @@ def _review_mergeability_candidate_full_gate(
         "panel_decision": panel["decision"],
         "panel_result": panel,
         "reviewer_results": list(panel.get("reviewer_results") or []),
+        "reviewer_rationales": reviewer_rationales,
         "reviewer_panel_decision": panel.get("panel_decision"),
         "available_reviewers": list(panel.get("available_reviewers") or []),
         "s_probe_vs_s_full_disagreement": s_probe_vs_s_full_disagreement,
@@ -2287,6 +2522,35 @@ def _review_mergeability_candidate_full_gate(
         "gaming_flags": sorted(gaming_flags),
         "decision_source": "supervisor_candidate_review+independent_reviewer_panel",
         "oracle_coupled": False,
+    }
+
+
+def _public_review_rejected_panel_result(public_review: Mapping[str, Any]) -> dict[str, Any]:
+    reasons = [str(item) for item in public_review.get("reasons") or []]
+    panel_decision = {
+        "schema_version": "independent-reviewer-panel-decision/v1",
+        "decision": "revise",
+        "reason": "public_review_rejected",
+        "aggregation_mode": "short_circuit",
+        "available_reviewers": [],
+        "accepted_reviewers": [],
+        "blocking_reviewers": [],
+        "non_accepting_reviewers": [],
+        "missing_reviewers": [],
+        "low_confidence_reviewers": [],
+        "reviewer_inputs": [],
+    }
+    return {
+        "decision": "revise",
+        "available": True,
+        "reason": "public_review_rejected",
+        "reviewer_ids": [],
+        "accepted_reviewers": [],
+        "missing_reviewers": [],
+        "blocking_findings": reasons,
+        "reviewer_results": [],
+        "panel_decision": panel_decision,
+        "available_reviewers": [],
     }
 
 
@@ -2316,12 +2580,27 @@ def _build_full_gate_reviewer_packet(
         candidate_hash=candidate.candidate_hash,
     )
     public_input = _supervisor_review_public_input(task=task, candidate=public_candidate)
+    runtime_receipt_ids = _public_review_runtime_receipt_refs(
+        task=task,
+        candidate=candidate,
+        public_review=public_review,
+    )
     packet = {
         "schema_version": SUPERVISOR_FULL_GATE_PACKET_SCHEMA_VERSION,
         "packet_id": f"mergeability-full-gate:{task.task_id}:{candidate.candidate_id}",
         "task_id": task.task_id,
         "candidate_id": candidate.candidate_id,
         "prompt": task.prompt,
+        "changed_files": [
+            {"path": path, "status": "modified"}
+            for path in public_changed_files
+        ],
+        "acceptance_items": _full_gate_public_acceptance_items(
+            task=task,
+            public_review=public_review,
+        ),
+        "runtime_receipt_ids": runtime_receipt_ids,
+        "public_evidence_refs": list(public_review.get("evidence_refs") or []),
         "public_input_payload": public_input,
         "public_review": {
             "decision": str(public_review.get("decision") or ""),
@@ -2345,6 +2624,62 @@ def _build_full_gate_reviewer_packet(
         packet["oracle_isolation_violations"] = leaks
     packet["packet_sha256"] = _sha256_json({key: value for key, value in packet.items() if key != "packet_sha256"})
     return packet
+
+
+def _full_gate_public_acceptance_items(
+    *,
+    task: MergeabilityTask,
+    public_review: Mapping[str, Any],
+) -> list[str]:
+    items = [
+        f"task_prompt: {task.prompt}",
+        "candidate_changes_stay_within_allowed_mutable_paths",
+        "reviewer_uses_only_public_packet_evidence",
+    ]
+    items.extend(f"scope_constraint: {constraint}" for constraint in task.scope_constraints)
+    items.extend(f"blocker_criterion: {criterion}" for criterion in task.blocker_criteria)
+    probe_results = public_review.get("probe_results")
+    if isinstance(probe_results, Sequence):
+        for probe in probe_results:
+            if not isinstance(probe, Mapping):
+                continue
+            probe_id = str(probe.get("probe_id") or "probe")
+            reason = str(probe.get("reason") or "")
+            items.append(f"public_probe:{probe_id}:{reason}")
+    return sorted(dict.fromkeys(item for item in items if item.strip()))
+
+
+def _public_review_runtime_receipt_refs(
+    *,
+    task: MergeabilityTask,
+    candidate: MergeabilityCandidate,
+    public_review: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    refs: list[dict[str, Any]] = []
+    command_results = public_review.get("command_results")
+    if isinstance(command_results, Sequence):
+        for index, result in enumerate(command_results):
+            if not isinstance(result, Mapping):
+                continue
+            name = str(result.get("name") or f"command_{index}")
+            refs.append({
+                "receipt_id": (
+                    f"mergeability-public-review:{task.task_id}:"
+                    f"{candidate.candidate_id}:{name}:{index}"
+                ),
+                "kind": "public_runtime_command",
+                "status": str(result.get("status") or "unknown"),
+                "source": "supervisor",
+                "evidence_grade": "runtime_native",
+            })
+    refs.append({
+        "receipt_id": f"mergeability-public-input:{task.task_id}:{candidate.candidate_id}",
+        "kind": "public_review_packet",
+        "status": str(public_review.get("decision") or "unknown"),
+        "source": "supervisor",
+        "evidence_grade": "runtime_native",
+    })
+    return refs
 
 
 def _normalise_reviewer_panel_result(raw: Mapping[str, Any]) -> dict[str, Any]:
@@ -2420,10 +2755,43 @@ def _reviewer_result_summary(raw: Any) -> dict[str, Any]:
         "lineage": list(raw.get("lineage") or []),
         "assurance_grade": str(raw.get("assurance_grade") or "self_reported"),
         "reviewer_assurance": raw.get("reviewer_assurance"),
+        "summary": str(raw.get("summary") or ""),
+        "confidence_rationale": str(raw.get("confidence_rationale") or ""),
+        "critical_review": dict(raw.get("critical_review") or {})
+        if isinstance(raw.get("critical_review"), Mapping) else {},
+        "tests": list(raw.get("tests") or []),
         "transcript_sha256": raw.get("transcript_sha256"),
         "output_sha256": raw.get("output_sha256"),
         "failure_classification": raw.get("failure_classification"),
     }
+
+
+def _reviewer_rationales_from_results(results: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    rationales: list[dict[str, Any]] = []
+    for result in results:
+        critical_review = (
+            dict(result.get("critical_review") or {})
+            if isinstance(result.get("critical_review"), Mapping)
+            else {}
+        )
+        strongest_objection = str(critical_review.get("strongest_objection") or "")
+        text = (
+            str(result.get("summary") or "").strip()
+            or str(result.get("confidence_rationale") or "").strip()
+            or strongest_objection.strip()
+            or str(critical_review.get("reason") or "").strip()
+            or str(result.get("decision") or "").strip()
+        )
+        rationales.append({
+            "reviewer_id": str(result.get("reviewer_id") or "unknown-reviewer"),
+            "decision": str(result.get("decision") or "unavailable"),
+            "severity": str(result.get("severity") or "unknown"),
+            "confidence": result.get("confidence"),
+            "summary": text,
+            "strongest_objection": strongest_objection,
+            "confidence_rationale": str(result.get("confidence_rationale") or ""),
+        })
+    return rationales
 
 
 def _reviewer_panel_decision_summary(raw: Mapping[str, Any]) -> dict[str, Any]:

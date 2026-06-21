@@ -320,3 +320,16 @@ boundary first, with live reviewers injected below that boundary, and prove
 that split panels or important/critical accept-shaped objections produce a
 bounded evidence packet without majority vote, calibrated weighting, unbounded
 file reads, or any weakening of real revise/deny hard blocks.
+
+## mergeability_fixture_measurement
+
+Run fixture-scale mergeability calibration through
+`run_fixture_panel_produced_baseline_measurement`. Tests must exercise the
+public runner before helper-only receipt builders, inject configured reviewer
+adapters below the runner seam for deterministic unit coverage, and prove the
+exported paired acceptance report records the primary
+`supervisor_vs_single_agent_baseline` comparison, reviewer packet hashes,
+reviewer rationales, unavailable-panel failure, and report-only authority flags.
+Rows already rejected by the public floor may short-circuit as available
+full-gate rejects with `public_review_rejected`; reviewer verdicts remain
+mandatory for every row that the public floor would otherwise accept.

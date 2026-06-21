@@ -1,0 +1,44 @@
+[
+  {
+    "baseline_accept": true,
+    "candidate_id": "known-good",
+    "control_kind": "known_good",
+    "oracle_accept": true,
+    "protected_scope": "baseline_accepted_oracle_positive_cases",
+    "reason": "prior_true_positive_accept_rejected_by_supervisor_full_gate",
+    "receipt_id": "mergeability:calculator-addition:known-good",
+    "split": "held_out",
+    "supervisor_candidate_review_accept": true,
+    "supervisor_full_gate_accept": false,
+    "task_class": "arithmetic",
+    "task_id": "calculator-addition"
+  },
+  {
+    "baseline_accept": true,
+    "candidate_id": "secondary-rubric-only",
+    "control_kind": "secondary_rubric_only",
+    "oracle_accept": true,
+    "protected_scope": "baseline_accepted_oracle_positive_cases",
+    "reason": "prior_true_positive_accept_rejected_by_supervisor_full_gate",
+    "receipt_id": "mergeability:calculator-addition:secondary-rubric-only",
+    "split": "held_out",
+    "supervisor_candidate_review_accept": true,
+    "supervisor_full_gate_accept": false,
+    "task_class": "arithmetic",
+    "task_id": "calculator-addition"
+  },
+  {
+    "baseline_accept": true,
+    "candidate_id": "text-known-good",
+    "control_kind": "known_good",
+    "oracle_accept": true,
+    "protected_scope": "baseline_accepted_oracle_positive_cases",
+    "reason": "prior_true_positive_accept_rejected_by_supervisor_full_gate",
+    "receipt_id": "mergeability:text-normalization:text-known-good",
+    "split": "held_out",
+    "supervisor_candidate_review_accept": true,
+    "supervisor_full_gate_accept": false,
+    "task_class": "text_processing",
+    "task_id": "text-normalization"
+  }
+]

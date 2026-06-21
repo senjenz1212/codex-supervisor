@@ -326,6 +326,41 @@ def test_p3_worker_outcome_adapter_normalizes_live_test_status_aliases():
     assert outcome.test_status == "passed"
 
 
+def test_p3_worker_outcome_adapter_coerces_object_shaped_tests():
+    payload = {
+        "task_id": "slice0",
+        "summary": "Codex reviewer returned structured runtime receipts.",
+        "specialists": [{"name": "independent-reviewer-1", "decision": "accept"}],
+        "decisions": ["accept"],
+        "objections": [],
+        "changed_files": ["app/calculator.py"],
+        "tests": [
+            {
+                "name": "public_candidate_test",
+                "status": "passed",
+                "receipt_id": "mergeability-public-review:calculator-addition:known-good:public_candidate_test:0",
+            },
+        ],
+        "test_status": "passed",
+        "confidence": 0.86,
+    }
+    transcript = f"<dual_agent_outcome>{json.dumps(payload)}</dual_agent_outcome>"
+
+    result, outcome = evaluate_outcome_fidelity(
+        transcript,
+        expected_specialists=("independent-reviewer-1",),
+        expected_decisions=("accept",),
+        expected_objections=(),
+    )
+
+    assert result.ok
+    assert outcome is not None
+    assert outcome.tests == [
+        "name: public_candidate_test status: passed "
+        "receipt_id: mergeability-public-review:calculator-addition:known-good:public_candidate_test:0"
+    ]
+
+
 def test_p4_outcome_adapter_coerces_object_shaped_decisions_and_preserves_semantics():
     # Regression: leads/reviewers sometimes emit `decisions`/`objections` as
     # objects (the richer dynamic_workflow shape) instead of list[str]. Before

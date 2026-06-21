@@ -1,0 +1,56 @@
+{
+  "schema_version": "supervisor-skill-receipts/v1",
+  "task_id": "mergeability-fixture-panel-produced-baseline-measurement-20260621",
+  "receipts": [
+    {
+      "receipt_id": "skill-to-prd-mergeability-fixture-panel-produced-baseline-measurement-20260621",
+      "stage": "to_prd",
+      "skill": "to-prd",
+      "skill_path": "/Users/sam.zhang/.codex/skills/to-prd/SKILL.md",
+      "status": "passed",
+      "artifacts": [
+        "docs/dual-agent/mergeability-fixture-panel-produced-baseline-measurement-20260621/prd.md"
+      ]
+    },
+    {
+      "receipt_id": "skill-prd-grill-mergeability-fixture-panel-produced-baseline-measurement-20260621",
+      "stage": "prd_grill",
+      "skill": "grill-with-docs",
+      "skill_path": "/Users/sam.zhang/.codex/skills/grill-with-docs/SKILL.md",
+      "status": "passed",
+      "artifacts": [
+        "docs/dual-agent/mergeability-fixture-panel-produced-baseline-measurement-20260621/grill-findings.md"
+      ]
+    },
+    {
+      "receipt_id": "skill-to-issues-mergeability-fixture-panel-produced-baseline-measurement-20260621",
+      "stage": "to_issues",
+      "skill": "to-issues",
+      "skill_path": "/Users/sam.zhang/.codex/skills/to-issues/SKILL.md",
+      "status": "passed",
+      "artifacts": [
+        "docs/dual-agent/mergeability-fixture-panel-produced-baseline-measurement-20260621/issues.md"
+      ]
+    },
+    {
+      "receipt_id": "skill-tdd-mergeability-fixture-panel-produced-baseline-measurement-20260621",
+      "stage": "tdd",
+      "skill": "tdd",
+      "skill_path": "/Users/sam.zhang/.codex/skills/tdd/SKILL.md",
+      "status": "passed",
+      "artifacts": [
+        "docs/dual-agent/mergeability-fixture-panel-produced-baseline-measurement-20260621/tdd.md"
+      ]
+    },
+    {
+      "receipt_id": "skill-tdd-grill-mergeability-fixture-panel-produced-baseline-measurement-20260621",
+      "stage": "tdd_grill",
+      "skill": "grill-with-docs",
+      "skill_path": "/Users/sam.zhang/.codex/skills/grill-with-docs/SKILL.md",
+      "status": "passed",
+      "artifacts": [
+        "docs/dual-agent/mergeability-fixture-panel-produced-baseline-measurement-20260621/grill-findings-tdd.md"
+      ]
+    }
+  ]
+}
