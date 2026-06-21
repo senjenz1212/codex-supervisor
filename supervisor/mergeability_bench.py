@@ -13,7 +13,21 @@ import time
 from dataclasses import dataclass, field
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Sequence
+
+from .cursor_agent import (
+    CursorInvocationRequest,
+    CursorInvocationResult,
+    invoke_cursor_agent,
+)
+from .dual_agent import ProbeResult
+from .reviewer_registry import (
+    ReviewerAdapter,
+    ReviewerSpec,
+    configured_reviewers,
+    evaluate_reviewer_panel,
+    independent_reviewer_results_from_review_results,
+)
 
 
 MERGEABILITY_TASK_SCHEMA_VERSION = "supervisor-mergeability-task/v1"
@@ -775,7 +789,15 @@ def run_paired_acceptance_pilot(
     timeout_s: float = 30.0,
     strict_calibration: bool = True,
     reviewer_panel: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+    reviewer_panel_mode: str = "custom",
+    configured_reviewer_panel_options: ConfiguredReviewerPanelOptions | None = None,
 ) -> dict[str, Any]:
+    if reviewer_panel_mode not in {"custom", "configured"}:
+        raise MergeabilityBenchError(
+            f"unknown reviewer_panel_mode: {reviewer_panel_mode!r}"
+        )
+    if reviewer_panel_mode == "configured" and reviewer_panel is None:
+        reviewer_panel = build_configured_reviewer_panel(configured_reviewer_panel_options)
     started = time.monotonic()
     bench_root_path = Path(bench_root).expanduser().resolve()
     output_path = Path(output_dir).expanduser() if output_dir is not None else None
@@ -853,6 +875,21 @@ def run_paired_acceptance_pilot(
             "supervisor_full_gate_decision_source": "supervisor_full_gate",
             "supervisor_review": supervisor_review,
             "supervisor_full_gate_review": full_gate_review,
+            "supervisor_full_gate_reviewer_results": list(
+                full_gate_review.get("reviewer_results") or []
+            ),
+            "supervisor_full_gate_reviewer_packet_refs": list(
+                full_gate_review.get("reviewer_packet_refs") or []
+            ),
+            "supervisor_full_gate_reviewer_packet_sha256": str(
+                full_gate_review.get("reviewer_packet_sha256") or ""
+            ),
+            "supervisor_full_gate_reviewer_panel_decision": (
+                full_gate_review.get("reviewer_panel_decision")
+            ),
+            "s_probe_vs_s_full_disagreement": bool(
+                full_gate_review.get("s_probe_vs_s_full_disagreement")
+            ),
         }
         row["is_no_regression_failure"] = bool(
             baseline_accept
@@ -1021,6 +1058,24 @@ def run_paired_acceptance_pilot(
         "matched_true_accept_status": matched_true_accept["status"],
         "oracle_agreement": oracle_agreement,
         "disagreements": disagreements,
+        "configured_reviewer_panel": {
+            "mode": reviewer_panel_mode,
+            "configured_panel_active": (
+                reviewer_panel_mode == "configured"
+                and configured_reviewer_panel_options is not None
+            ) or (
+                reviewer_panel_mode == "configured" and reviewer_panel is not None
+            ),
+            "s_probe_vs_s_full_disagreement_count": sum(
+                1 for row in rows if bool(row.get("s_probe_vs_s_full_disagreement"))
+            ),
+            "available_full_gate_count": sum(
+                1 for row in rows if not bool(row.get("supervisor_full_gate_unavailable"))
+            ),
+            "unavailable_full_gate_count": sum(
+                1 for row in rows if bool(row.get("supervisor_full_gate_unavailable"))
+            ),
+        },
         "per_task_results": rows,
         "cost_usd": 0.0,
         "wall_clock_s": round(time.monotonic() - started, 6),
@@ -2046,6 +2101,9 @@ def _review_mergeability_candidate_full_gate(
         "source": "supervisor",
         "evidence_grade": "runtime_native",
     }
+    s_probe_vs_s_full_disagreement = (
+        (not unavailable) and (public_accept != accept)
+    )
     return {
         "schema_version": SUPERVISOR_FULL_GATE_RESULT_SCHEMA_VERSION,
         "task_id": task.task_id,
@@ -2059,6 +2117,10 @@ def _review_mergeability_candidate_full_gate(
         "panel_accept": panel_accept,
         "panel_decision": panel["decision"],
         "panel_result": panel,
+        "reviewer_results": list(panel.get("reviewer_results") or []),
+        "reviewer_panel_decision": panel.get("panel_decision"),
+        "available_reviewers": list(panel.get("available_reviewers") or []),
+        "s_probe_vs_s_full_disagreement": s_probe_vs_s_full_disagreement,
         "reviewer_packet": packet,
         "reviewer_packet_refs": [packet_ref],
         "reviewer_packet_sha256": packet["packet_sha256"],
@@ -2140,6 +2202,27 @@ def _normalise_reviewer_panel_result(raw: Mapping[str, Any]) -> dict[str, Any]:
     reason = str(raw.get("reason") or raw.get("unavailable_reason") or "")
     if not available and not reason:
         reason = "reviewer_panel_unavailable"
+    reviewer_results_raw = raw.get("reviewer_results")
+    reviewer_result_summaries = (
+        [_reviewer_result_summary(item) for item in reviewer_results_raw]
+        if isinstance(reviewer_results_raw, (list, tuple))
+        else []
+    )
+    raw_panel_decision = raw.get("panel_decision")
+    panel_decision_summary = (
+        _reviewer_panel_decision_summary(raw_panel_decision)
+        if isinstance(raw_panel_decision, Mapping)
+        else None
+    )
+    available_reviewers_raw = raw.get("available_reviewers")
+    if isinstance(available_reviewers_raw, (list, tuple)):
+        available_reviewers = [str(item) for item in available_reviewers_raw]
+    else:
+        available_reviewers = [
+            summary["reviewer_id"]
+            for summary in reviewer_result_summaries
+            if summary["verdict_present"]
+        ]
     return {
         "schema_version": "supervisor-mergeability-reviewer-panel-result/v1",
         "decision": decision,
@@ -2149,6 +2232,57 @@ def _normalise_reviewer_panel_result(raw: Mapping[str, Any]) -> dict[str, Any]:
         "accepted_reviewers": list(raw.get("accepted_reviewers") or []),
         "blocking_findings": list(raw.get("blocking_findings") or []),
         "missing_reviewers": list(raw.get("missing_reviewers") or []),
+        "available_reviewers": available_reviewers,
+        "reviewer_results": reviewer_result_summaries,
+        "panel_decision": panel_decision_summary,
+    }
+
+
+def _reviewer_result_summary(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, Mapping):
+        return {
+            "reviewer_id": "unknown-reviewer",
+            "decision": "unavailable",
+            "verdict_present": False,
+            "severity": "unknown",
+            "runtime": "unknown",
+            "model": None,
+            "provider_family": "unknown",
+            "assurance_grade": "self_reported",
+        }
+    return {
+        "reviewer_id": str(raw.get("reviewer_id") or "unknown-reviewer"),
+        "decision": str(raw.get("decision") or "unavailable"),
+        "verdict_present": bool(raw.get("verdict_present")),
+        "accepted": bool(raw.get("accepted")),
+        "severity": str(raw.get("severity") or "unknown"),
+        "confidence": raw.get("confidence"),
+        "runtime": str(raw.get("runtime") or raw.get("reviewer_runtime") or "unknown"),
+        "model": raw.get("model"),
+        "provider_family": str(raw.get("provider_family") or "unknown"),
+        "lineage": list(raw.get("lineage") or []),
+        "assurance_grade": str(raw.get("assurance_grade") or "self_reported"),
+        "reviewer_assurance": raw.get("reviewer_assurance"),
+        "transcript_sha256": raw.get("transcript_sha256"),
+        "output_sha256": raw.get("output_sha256"),
+        "failure_classification": raw.get("failure_classification"),
+    }
+
+
+def _reviewer_panel_decision_summary(raw: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "schema_version": str(
+            raw.get("schema_version") or "independent-reviewer-panel-decision/v1"
+        ),
+        "decision": str(raw.get("decision") or "unavailable"),
+        "reason": str(raw.get("reason") or ""),
+        "aggregation_mode": str(raw.get("aggregation_mode") or "conservative"),
+        "available_reviewers": list(raw.get("available_reviewers") or []),
+        "accepted_reviewers": list(raw.get("accepted_reviewers") or []),
+        "blocking_reviewers": list(raw.get("blocking_reviewers") or []),
+        "non_accepting_reviewers": list(raw.get("non_accepting_reviewers") or []),
+        "missing_reviewers": list(raw.get("missing_reviewers") or []),
+        "low_confidence_reviewers": list(raw.get("low_confidence_reviewers") or []),
     }
 
 
@@ -2158,6 +2292,214 @@ def _default_unavailable_reviewer_panel(_packet: Mapping[str, Any]) -> Mapping[s
         "available": False,
         "reason": "reviewer_panel_not_configured",
     }
+
+
+SUPERVISOR_CONFIGURED_PANEL_GATE = "mergeability_full_gate"
+SUPERVISOR_CONFIGURED_PANEL_REVIEWER_MODE_DEFAULT = "cursor_sdk"
+
+
+@dataclass(frozen=True)
+class ConfiguredReviewerPanelOptions:
+    """Knobs for the configured mergeability reviewer panel.
+
+    Production callers set the reviewer roster knobs (output mode, model,
+    runner). Tests inject ``reviewers`` and/or ``reviewer_invoker`` to bypass
+    real reviewer infrastructure while still exercising the same registry
+    aggregation seams (`independent_reviewer_results_from_review_results` and
+    `evaluate_reviewer_panel`).
+    """
+
+    reviewer_output_mode: str = SUPERVISOR_CONFIGURED_PANEL_REVIEWER_MODE_DEFAULT
+    reviewer_model: str | None = None
+    codex_model: str = "gpt-5.5"
+    reviewers: Sequence[ReviewerAdapter] | None = None
+    runner: Callable[[CursorInvocationRequest], CursorInvocationResult] | None = None
+    codex_runner: Callable[..., Any] | None = None
+    reviewer_invoker: (
+        Callable[[ReviewerAdapter, CursorInvocationRequest], CursorInvocationResult] | None
+    ) = None
+    review_cwd: str | Path | None = None
+    review_timeout_s: int = 600
+    gate: str = SUPERVISOR_CONFIGURED_PANEL_GATE
+    round_index: int = 0
+    low_confidence_threshold: float = 0.0
+
+
+def build_configured_reviewer_panel(
+    options: ConfiguredReviewerPanelOptions | None = None,
+) -> Callable[[Mapping[str, Any]], Mapping[str, Any]]:
+    """Return a reviewer-panel callable backed by the configured reviewer roster.
+
+    The returned callable converts a full-gate reviewer packet into an
+    independent reviewer request, invokes every configured adapter (or the
+    injected test substitutes), and aggregates the verdicts through the
+    existing reviewer registry seam without leaking hidden oracle material.
+    """
+
+    opts = options or ConfiguredReviewerPanelOptions()
+
+    def _panel(packet: Mapping[str, Any]) -> Mapping[str, Any]:
+        try:
+            adapters = _resolve_configured_panel_adapters(opts)
+        except Exception as exc:  # pragma: no cover - registry errors surfaced
+            return {
+                "decision": "unavailable",
+                "available": False,
+                "reason": "reviewer_registry_unavailable",
+                "blocking_findings": [f"{type(exc).__name__}: {exc}"],
+                "reviewer_ids": [],
+                "reviewer_results": [],
+            }
+        if not adapters:
+            return {
+                "decision": "unavailable",
+                "available": False,
+                "reason": "configured_reviewer_panel_empty",
+                "reviewer_ids": [],
+                "reviewer_results": [],
+            }
+
+        request = _configured_panel_review_request(packet, options=opts)
+        task_id = str(packet.get("task_id") or "")
+        review_results: list[tuple[ReviewerSpec, CursorInvocationResult]] = []
+        per_adapter_errors: list[str] = []
+        for adapter in adapters:
+            try:
+                if opts.reviewer_invoker is not None:
+                    result = opts.reviewer_invoker(adapter, request)
+                else:
+                    result = adapter.review(request)
+            except Exception as exc:
+                per_adapter_errors.append(
+                    f"{adapter.spec.reviewer_id}:{type(exc).__name__}:{exc}"
+                )
+                result = _configured_panel_infrastructure_failure_result(
+                    spec=adapter.spec,
+                    reason="reviewer_invocation_failed",
+                    detail=str(exc),
+                )
+            if not isinstance(result, CursorInvocationResult):
+                per_adapter_errors.append(
+                    f"{adapter.spec.reviewer_id}:non_cursor_invocation_result"
+                )
+                result = _configured_panel_infrastructure_failure_result(
+                    spec=adapter.spec,
+                    reason="reviewer_invocation_returned_non_cursor_result",
+                    detail=type(result).__name__,
+                )
+            review_results.append((adapter.spec, result))
+
+        reviewer_results = independent_reviewer_results_from_review_results(
+            review_results,
+            task_id=task_id,
+            gate=opts.gate,
+            round_index=opts.round_index,
+        )
+        panel_decision = evaluate_reviewer_panel(
+            reviewer_results,
+            low_confidence_threshold=opts.low_confidence_threshold,
+        )
+        available_reviewers = list(panel_decision.get("available_reviewers") or [])
+        missing_reviewers = list(panel_decision.get("missing_reviewers") or [])
+        accepted_reviewers = list(panel_decision.get("accepted_reviewers") or [])
+        reviewer_ids = [adapter.spec.reviewer_id for adapter in adapters]
+
+        if not available_reviewers:
+            return {
+                "decision": "unavailable",
+                "available": False,
+                "reason": "reviewer_panel_unavailable",
+                "reviewer_ids": reviewer_ids,
+                "missing_reviewers": missing_reviewers,
+                "blocking_findings": per_adapter_errors,
+                "reviewer_results": reviewer_results,
+                "panel_decision": panel_decision,
+                "available_reviewers": available_reviewers,
+            }
+
+        decision = str(panel_decision.get("decision") or "unavailable")
+        if decision == "escalate":
+            decision = "revise"
+        return {
+            "decision": decision,
+            "available": True,
+            "reason": str(panel_decision.get("reason") or ""),
+            "reviewer_ids": reviewer_ids,
+            "accepted_reviewers": accepted_reviewers,
+            "missing_reviewers": missing_reviewers,
+            "blocking_findings": per_adapter_errors,
+            "reviewer_results": reviewer_results,
+            "panel_decision": panel_decision,
+            "available_reviewers": available_reviewers,
+        }
+
+    return _panel
+
+
+def _resolve_configured_panel_adapters(
+    options: ConfiguredReviewerPanelOptions,
+) -> list[ReviewerAdapter]:
+    if options.reviewers is not None:
+        return list(options.reviewers)
+    runner = options.runner if options.runner is not None else invoke_cursor_agent
+    codex_runner = options.codex_runner if options.codex_runner is not None else subprocess.run
+    return list(
+        configured_reviewers(
+            reviewer_output_mode=options.reviewer_output_mode,
+            reviewer_model=options.reviewer_model,
+            runner=runner,
+            codex_runner=codex_runner,
+            codex_model=options.codex_model,
+        )
+    )
+
+
+def _configured_panel_review_request(
+    packet: Mapping[str, Any],
+    *,
+    options: ConfiguredReviewerPanelOptions,
+) -> CursorInvocationRequest:
+    cwd = Path(options.review_cwd) if options.review_cwd is not None else Path.cwd()
+    instruction = (
+        "Independently review whether the mergeability candidate evidence should "
+        "pass the full supervisor gate. Use only the public reviewer packet and "
+        "do not rely on hidden tests, oracle labels, final scores, or protected "
+        "path content."
+    )
+    return CursorInvocationRequest(
+        task_id=str(packet.get("task_id") or "mergeability-full-gate"),
+        gate=options.gate,
+        instruction=instruction,
+        cwd=str(cwd),
+        review_packet=dict(packet),
+        timeout_s=options.review_timeout_s,
+        expected_specialists=("Independent Reviewer",),
+    )
+
+
+def _configured_panel_infrastructure_failure_result(
+    *,
+    spec: ReviewerSpec,
+    reason: str,
+    detail: str,
+) -> CursorInvocationResult:
+    return CursorInvocationResult(
+        probe=ProbeResult(
+            "INDEPENDENT_REVIEWER",
+            "red",
+            reason,
+            {"detail": detail},
+        ),
+        outcome=None,
+        transcript="",
+        model=spec.model,
+        reviewer_runtime=spec.runtime,
+        reviewer_output_mode=spec.runtime,
+        reviewer_assurance=spec.assurance_grade,
+        failure_classification="reviewer_infrastructure",
+        recoverable=False,
+        attempts=1,
+    )
 
 
 def result_receipt(result: MergeabilityResult, *, result_ref: str = "") -> dict[str, Any]:

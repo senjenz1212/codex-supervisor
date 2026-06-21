@@ -1,0 +1,32 @@
+[
+  {
+    "kind": "prd",
+    "path": "docs/dual-agent/mergeability-real-panel-wiring-20260621/source/prd.md",
+    "sha256": "95d2fd0aeee0c3142565dd0e9b3538e76839c47f75a7dc435940bec63778aea9"
+  },
+  {
+    "kind": "grill_findings",
+    "path": "docs/dual-agent/mergeability-real-panel-wiring-20260621/source/grill-findings.md",
+    "sha256": "84aa036b39dfa4a096f78c986969b063b4042543d89240dace722676b44f1376"
+  },
+  {
+    "kind": "issues",
+    "path": "docs/dual-agent/mergeability-real-panel-wiring-20260621/source/issues.md",
+    "sha256": "44e3e80fb1bdc536b5e17b65e85dfcd5d65b0fea87fc371ffbda863af71fe1e4"
+  },
+  {
+    "kind": "tdd_plan",
+    "path": "docs/dual-agent/mergeability-real-panel-wiring-20260621/source/tdd.md",
+    "sha256": "6356cc11927b3ebe3452364fcf601793e0ef7a7b7214a05d232f989b6d7059b8"
+  },
+  {
+    "kind": "grill_findings",
+    "path": "docs/dual-agent/mergeability-real-panel-wiring-20260621/source/grill-findings-tdd.md",
+    "sha256": "51ef579513ae5a60264ff99652faae309bc7b73109d6bdfdd6c0874544baae8b"
+  },
+  {
+    "kind": "implementation_plan",
+    "path": "docs/dual-agent/mergeability-real-panel-wiring-20260621/source/implementation-plan.md",
+    "sha256": "dd1a2fbcb87670940402988ee48bc7644019c53399560f15d1129d115ef28a0e"
+  }
+]

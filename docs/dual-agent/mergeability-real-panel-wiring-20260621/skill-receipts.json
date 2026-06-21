@@ -1,0 +1,67 @@
+[
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-to-prd-mergeability-real-panel-wiring-20260621",
+    "stage": "to_prd",
+    "skill": "to-prd",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/mergeability-real-panel-wiring-20260621/prd.md"
+    ],
+    "claims": [
+      "PRD authored with promise contracts P1-P4 for real reviewer-panel wiring in mergeability calibration"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-prd-grill-mergeability-real-panel-wiring-20260621",
+    "stage": "prd_grill",
+    "skill": "grill-with-docs",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/mergeability-real-panel-wiring-20260621/grill-findings.md"
+    ],
+    "claims": [
+      "PRD grill findings resolved report-only scope, adapter seam depth, oracle isolation, and unavailable reviewer semantics"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-to-issues-mergeability-real-panel-wiring-20260621",
+    "stage": "to_issues",
+    "skill": "to-issues",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/mergeability-real-panel-wiring-20260621/issues.md"
+    ],
+    "claims": [
+      "Issues sliced into vertical tracer bullets for real panel availability and fail-closed reviewer/oracle behavior"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-tdd-mergeability-real-panel-wiring-20260621",
+    "stage": "tdd",
+    "skill": "tdd",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/mergeability-real-panel-wiring-20260621/tdd.md"
+    ],
+    "claims": [
+      "TDD plan starts with public-boundary run_paired_acceptance_pilot tests and follows RED to GREEN behavior slices"
+    ]
+  },
+  {
+    "kind": "skill_run",
+    "receipt_id": "skill-tdd-grill-mergeability-real-panel-wiring-20260621",
+    "stage": "tdd_grill",
+    "skill": "grill-with-docs",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/mergeability-real-panel-wiring-20260621/grill-findings-tdd.md"
+    ],
+    "claims": [
+      "TDD grill findings resolved helper-only risk, S_probe/S_full disagreement, oracle leak blocking, and report-only guardrails"
+    ]
+  }
+]

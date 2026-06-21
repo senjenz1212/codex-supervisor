@@ -16,10 +16,15 @@ from supervisor.autoresearch.policy_evolution import (
 from supervisor.autoresearch.report import build_autoresearch_report
 from supervisor.autoresearch.schema import AutoresearchAttempt, AutoresearchExperiment
 from supervisor.autoresearch.validation import validate_attempt
+from supervisor import mergeability_bench as mergeability_bench_module
+from supervisor.cursor_agent import CursorInvocationRequest, CursorInvocationResult
+from supervisor.dual_agent import Outcome, ProbeResult, SpecialistRecord
 from supervisor.mergeability_bench import (
     MERGEABILITY_TASK_SCHEMA_VERSION,
+    ConfiguredReviewerPanelOptions,
     MergeabilityBenchError,
     MergeabilityCandidate,
+    build_configured_reviewer_panel,
     build_mergeability_corpus_manifest,
     grade_mergeability_candidate,
     load_mergeability_candidate,
@@ -31,6 +36,7 @@ from supervisor.mergeability_bench import (
     run_powered_factorial_mergeability_evaluation,
     validate_mergeability_corpus,
 )
+from supervisor.reviewer_registry import ReviewerSpec
 
 
 BENCH_ROOT = Path("tests/fixtures/mergeability_bench")
@@ -545,6 +551,280 @@ def test_full_gate_calibration_report_cannot_create_applyable_policy_claim(tmp_p
         BENCH_ROOT,
         output_dir=tmp_path,
         reviewer_panel=_accept_public_review_panel,
+    )
+
+    assert report["report_label"] == "calibration"
+    assert report["metric_applyable"] is False
+    assert report["improvement_claim_allowed"] is False
+    assert report["default_change_allowed"] is False
+    assert report["policy_mutated"] is False
+    assert report["gate_advanced"] is False
+    assert derive_policy_evolution_proposals_from_report(
+        report,
+        repo_root=Path.cwd(),
+        affected_gates=("execution", "outcome_review"),
+    ) == []
+
+
+def _fake_outcome(decision: str) -> Outcome:
+    severity = "none" if decision == "accept" else "important"
+    return Outcome(
+        task_id="mergeability-full-gate",
+        summary=f"fake reviewer outcome {decision}",
+        specialists=[
+            SpecialistRecord(name="Independent Reviewer", decision=decision, objection=None)
+        ],
+        decisions=[decision],
+        objections=[],
+        changed_files=[],
+        tests=[],
+        test_status="unknown",
+        confidence=0.9,
+        confidence_rationale="fixture",
+        confidence_criteria=[],
+        claims=[],
+        critical_review={"severity": severity},
+    )
+
+
+def _fake_cursor_result(decision: str, *, model: str = "fake-model") -> CursorInvocationResult:
+    return CursorInvocationResult(
+        probe=ProbeResult("INDEPENDENT_REVIEWER", "green", "fake_ok", {}),
+        outcome=_fake_outcome(decision),
+        transcript=f"fake reviewer transcript {decision}",
+        model=model,
+        reviewer_runtime="fake_runtime",
+        reviewer_output_mode="cursor_sdk",
+        reviewer_assurance="self_reported",
+    )
+
+
+def _unavailable_cursor_result(spec: ReviewerSpec, *, reason: str) -> CursorInvocationResult:
+    return CursorInvocationResult(
+        probe=ProbeResult("INDEPENDENT_REVIEWER", "red", reason, {}),
+        outcome=None,
+        transcript="",
+        model=spec.model,
+        reviewer_runtime=spec.runtime,
+        reviewer_output_mode="cursor_sdk",
+        reviewer_assurance=spec.assurance_grade,
+        failure_classification="reviewer_infrastructure",
+    )
+
+
+class _RecordingFakeReviewer:
+    def __init__(self, reviewer_id: str, *, result: CursorInvocationResult):
+        self.spec = ReviewerSpec(
+            reviewer_id=reviewer_id,
+            runtime="fake_runtime",
+            model="fake-model",
+            provider_family="fake",
+            lineage=("fake", reviewer_id),
+            tool_access="none",
+            assurance_grade="self_reported",
+        )
+        self._result = result
+        self.calls: list[CursorInvocationRequest] = []
+
+    def review(self, request: CursorInvocationRequest) -> CursorInvocationResult:
+        self.calls.append(request)
+        return self._result
+
+
+def _accepting_fake_reviewers() -> tuple[_RecordingFakeReviewer, _RecordingFakeReviewer]:
+    return (
+        _RecordingFakeReviewer("fake-reviewer-a", result=_fake_cursor_result("accept")),
+        _RecordingFakeReviewer("fake-reviewer-b", result=_fake_cursor_result("accept")),
+    )
+
+
+def test_run_paired_acceptance_pilot_uses_configured_panel_when_requested(tmp_path):
+    reviewer_a, reviewer_b = _accepting_fake_reviewers()
+
+    report_baseline = run_paired_acceptance_pilot(BENCH_ROOT, output_dir=tmp_path / "baseline")
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path / "configured",
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            reviewers=(reviewer_a, reviewer_b),
+        ),
+    )
+
+    assert report["configured_reviewer_panel"]["mode"] == "configured"
+    full_gate = report["arms"]["supervisor_full_gate"]
+    assert full_gate["availability_status"] == "available"
+    assert full_gate["unavailable_count"] == 0
+
+    # The configured roster was actually exercised.
+    assert reviewer_a.calls, "reviewer_a should have been invoked"
+    assert reviewer_b.calls, "reviewer_b should have been invoked"
+    assert all(isinstance(call, CursorInvocationRequest) for call in reviewer_a.calls)
+
+    # Reviewer results were converted via the registry seam and recorded per row.
+    for row in report["per_task_results"]:
+        review = row["supervisor_full_gate_review"]
+        reviewer_results = review["reviewer_results"]
+        assert {item["reviewer_id"] for item in reviewer_results} == {
+            "fake-reviewer-a",
+            "fake-reviewer-b",
+        }
+        assert all(item["verdict_present"] for item in reviewer_results)
+        assert review["panel_decision"] == "accept"
+        assert review["panel_result"]["decision"] == "accept"
+        assert review["panel_result"]["panel_decision"]["decision"] == "accept"
+
+    # S_probe arm (supervisor_candidate_review) is unchanged across the two runs.
+    baseline_probe = report_baseline["arms"]["supervisor_candidate_review"]
+    configured_probe = report["arms"]["supervisor_candidate_review"]
+    for key in (
+        "accepted_count",
+        "rejected_count",
+        "false_accept_count",
+        "true_accept_count",
+        "false_accept_rate",
+        "true_accept_rate",
+    ):
+        assert baseline_probe[key] == configured_probe[key], key
+
+
+def test_configured_panel_unavailable_does_not_count_as_accept(tmp_path):
+    unavailable_a = _RecordingFakeReviewer(
+        "fake-reviewer-a",
+        result=_unavailable_cursor_result(
+            ReviewerSpec(reviewer_id="fake-reviewer-a", runtime="fake_runtime"),
+            reason="reviewer_infrastructure_down",
+        ),
+    )
+    unavailable_b = _RecordingFakeReviewer(
+        "fake-reviewer-b",
+        result=_unavailable_cursor_result(
+            ReviewerSpec(reviewer_id="fake-reviewer-b", runtime="fake_runtime"),
+            reason="reviewer_infrastructure_down",
+        ),
+    )
+
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            reviewers=(unavailable_a, unavailable_b),
+        ),
+    )
+
+    full_gate = report["arms"]["supervisor_full_gate"]
+    assert full_gate["availability_status"] == "unavailable"
+    assert full_gate["accepted_count"] == 0
+    assert full_gate["unavailable_count"] == report["candidate_count"]
+    assert "reviewer_panel_unavailable" in report["gaming_flags"]
+    for row in report["per_task_results"]:
+        review = row["supervisor_full_gate_review"]
+        assert row["supervisor_full_gate_unavailable"] is True
+        assert row["supervisor_full_gate_accept"] is False
+        assert review["unavailable_reason"] == "reviewer_panel_unavailable"
+        assert review["panel_result"]["available"] is False
+
+
+def test_configured_panel_not_invoked_when_reviewer_packet_contains_oracle_material(
+    tmp_path, monkeypatch
+):
+    reviewer_a, reviewer_b = _accepting_fake_reviewers()
+
+    original_builder = mergeability_bench_module._build_full_gate_reviewer_packet
+
+    def _leaky_builder(**kwargs):
+        packet = original_builder(**kwargs)
+        # Inject a forbidden oracle marker so the leak detector fires before the panel runs.
+        packet["hidden_test_commands"] = ["python -m pytest hidden/test_behavior.py"]
+        return packet
+
+    monkeypatch.setattr(
+        mergeability_bench_module,
+        "_build_full_gate_reviewer_packet",
+        _leaky_builder,
+    )
+
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            reviewers=(reviewer_a, reviewer_b),
+        ),
+    )
+
+    # Reviewer adapters MUST NOT be called when the packet leaks oracle material.
+    assert reviewer_a.calls == [], "reviewer_a was invoked despite oracle leak"
+    assert reviewer_b.calls == [], "reviewer_b was invoked despite oracle leak"
+
+    full_gate = report["arms"]["supervisor_full_gate"]
+    assert full_gate["availability_status"] == "unavailable"
+    assert full_gate["accepted_count"] == 0
+    assert "oracle_isolation_violation" in report["gaming_flags"]
+    for row in report["per_task_results"]:
+        review = row["supervisor_full_gate_review"]
+        assert review["unavailable_reason"] == "oracle_isolation_violation"
+        assert row["supervisor_full_gate_accept"] is False
+        assert "oracle_isolation_violation" in review["gaming_flags"]
+
+
+def test_configured_panel_report_records_reviewer_results_and_packet_refs(tmp_path):
+    reviewer_a = _RecordingFakeReviewer(
+        "fake-reviewer-a", result=_fake_cursor_result("accept")
+    )
+    reviewer_b = _RecordingFakeReviewer(
+        "fake-reviewer-b", result=_fake_cursor_result("deny")
+    )
+
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            reviewers=(reviewer_a, reviewer_b),
+        ),
+    )
+
+    assert report["configured_reviewer_panel"]["mode"] == "configured"
+    assert report["configured_reviewer_panel"]["available_full_gate_count"] >= 1
+
+    for row in report["per_task_results"]:
+        # Row-level fields exposing replayable evidence.
+        assert row["supervisor_full_gate_reviewer_packet_refs"], row
+        assert row["supervisor_full_gate_reviewer_packet_refs"][0]["source"] == "supervisor"
+        assert row["supervisor_full_gate_reviewer_packet_sha256"]
+        results = row["supervisor_full_gate_reviewer_results"]
+        reviewer_ids = {item["reviewer_id"] for item in results}
+        assert reviewer_ids == {"fake-reviewer-a", "fake-reviewer-b"}
+        decision = row["supervisor_full_gate_reviewer_panel_decision"]
+        assert decision is not None
+        # Conservative aggregation: deny (or revise) wins when any reviewer non-accepts.
+        assert decision["decision"] in {"revise", "deny"}
+        review = row["supervisor_full_gate_review"]
+        assert review["panel_decision"] in {"revise", "deny"}
+        assert review["available_reviewers"] == ["fake-reviewer-a", "fake-reviewer-b"]
+        # No row should be silently collapsed into the S_probe arm output:
+        if row["supervisor_candidate_review_accept"]:
+            assert row["supervisor_full_gate_accept"] is False
+            assert row["s_probe_vs_s_full_disagreement"] is True
+
+    # S_probe vs S_full disagreement is recorded at report scope.
+    assert (
+        report["configured_reviewer_panel"]["s_probe_vs_s_full_disagreement_count"] >= 1
+    )
+
+
+def test_configured_panel_calibration_remains_report_only(tmp_path):
+    reviewer_a, reviewer_b = _accepting_fake_reviewers()
+
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            reviewers=(reviewer_a, reviewer_b),
+        ),
     )
 
     assert report["report_label"] == "calibration"
