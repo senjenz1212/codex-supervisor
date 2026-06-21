@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 from .mergeability_bench import (
+    ConfiguredReviewerPanelOptions,
     ORACLE_REVIEW_FORBIDDEN_KEYS,
     ORACLE_REVIEW_FORBIDDEN_TEXT,
     _copy_public_fixture_tree,
@@ -28,6 +29,7 @@ from .mergeability_bench import (
     _run_command,
     _summarize_acceptance_arm,
     _wilson_interval,
+    build_configured_reviewer_panel,
 )
 
 
@@ -576,6 +578,12 @@ def _split_instance_candidate_key(key: Any) -> tuple[str, str]:
 SWEBENCH_MERGEABILITY_FIXTURE_REPORT_SCHEMA_VERSION = (
     "supervisor-swebench-mergeability-fixture-report/v1"
 )
+SWEBENCH_MERGEABILITY_REPLAY_MANIFEST_SCHEMA_VERSION = (
+    "supervisor-swebench-mergeability-replay-manifest/v1"
+)
+SWEBENCH_MERGEABILITY_REPLAY_REPORT_SCHEMA_VERSION = (
+    "supervisor-swebench-mergeability-replay-report/v1"
+)
 SWEBENCH_MERGEABILITY_REVIEWER_PACKET_SCHEMA_VERSION = (
     "supervisor-swebench-mergeability-reviewer-packet/v1"
 )
@@ -585,6 +593,8 @@ SWEBENCH_MERGEABILITY_FROZEN_DECISIONS_SCHEMA_VERSION = (
 
 REVIEWER_PANEL_UNAVAILABLE_REASON = "reviewer_panel_unavailable"
 PATCH_APPLY_FAILURE_REASON = "patch_apply_failure"
+STATIC_LINT_ONLY_SUBSTRATE = "static_lint_only"
+PUBLIC_COMMANDS_SUBSTRATE = "public_commands"
 
 _DEFAULT_PROTECTED_PATHS: tuple[str, ...] = (
     "hidden/",
@@ -674,6 +684,82 @@ def _apply_patch_operations(
         r["status"] == "passed" for r in receipts
     ) else "failed"
     return overall, receipts
+
+
+def _candidate_patch_text(candidate: Mapping[str, Any]) -> str:
+    return str(candidate.get("model_patch") or candidate.get("patch") or "")
+
+
+def _apply_model_patch_text(
+    candidate: Mapping[str, Any],
+    worktree: Path,
+    *,
+    timeout_s: float,
+) -> tuple[str, list[dict[str, Any]]]:
+    patch_text = _candidate_patch_text(candidate)
+    patch_sha256 = sha256(patch_text.encode("utf-8")).hexdigest()
+    if not patch_text.strip():
+        return "failed", [{
+            "mode": "model_patch",
+            "status": "failed",
+            "reason": "empty_model_patch",
+            "patch_sha256": patch_sha256,
+        }]
+
+    patch_path = worktree.parent / "model.patch"
+    patch_path.write_text(patch_text, encoding="utf-8")
+    check_result = _run_command(
+        ("git", "apply", "--check", str(patch_path)),
+        cwd=worktree,
+        timeout_s=timeout_s,
+        name="model_patch_apply_check",
+    )
+    check_receipt = _command_receipt(check_result)
+    if check_result.status != "passed":
+        return "failed", [{
+            "mode": "model_patch",
+            "status": "failed",
+            "reason": "git_apply_check_failed",
+            "patch_sha256": patch_sha256,
+            "check": check_receipt,
+        }]
+
+    apply_result = _run_command(
+        ("git", "apply", str(patch_path)),
+        cwd=worktree,
+        timeout_s=timeout_s,
+        name="model_patch_apply",
+    )
+    apply_receipt = _command_receipt(apply_result)
+    if apply_result.status != "passed":
+        return "failed", [{
+            "mode": "model_patch",
+            "status": "failed",
+            "reason": "git_apply_failed",
+            "patch_sha256": patch_sha256,
+            "check": check_receipt,
+            "apply": apply_receipt,
+        }]
+    return "passed", [{
+        "mode": "model_patch",
+        "status": "passed",
+        "reason": "",
+        "patch_sha256": patch_sha256,
+        "check": check_receipt,
+        "apply": apply_receipt,
+    }]
+
+
+def _apply_candidate_patch(
+    candidate: Mapping[str, Any],
+    worktree: Path,
+    *,
+    timeout_s: float,
+) -> tuple[str, list[dict[str, Any]]]:
+    patch_operations = list(candidate.get("patch_operations") or ())
+    if patch_operations:
+        return _apply_patch_operations(patch_operations, worktree)
+    return _apply_model_patch_text(candidate, worktree, timeout_s=timeout_s)
 
 
 def _command_receipt(result: Any) -> dict[str, Any]:
@@ -839,6 +925,31 @@ def _strict_panel_decision(
             "reviewer_panel result must be a mapping with 'accept' and "
             "'unavailable' keys"
         )
+    if "decision" in raw or "available" in raw:
+        decision = str(raw.get("decision") or "").lower()
+        available = bool(raw.get("available"))
+        unavailable = (not available) or decision == "unavailable"
+        accept = bool(available and decision == "accept")
+        reviewer_ids = [str(item) for item in raw.get("reviewer_ids") or []]
+        available_reviewers = [
+            str(item) for item in raw.get("available_reviewers") or []
+        ]
+        reviewer_id = (
+            available_reviewers[0]
+            if available_reviewers
+            else (reviewer_ids[0] if reviewer_ids else "")
+        )
+        return {
+            "accept": accept,
+            "unavailable": unavailable,
+            "reason": (
+                REVIEWER_PANEL_UNAVAILABLE_REASON
+                if unavailable
+                else str(raw.get("reason") or "")
+            ),
+            "reviewer_id": reviewer_id,
+            "reviewer_notes": str(raw.get("reviewer_notes") or ""),
+        }
     unavailable = bool(raw.get("unavailable"))
     accept = bool(raw.get("accept")) and not unavailable
     return {
@@ -900,6 +1011,15 @@ def swebench_mergeability_fixture_runner(
     substrate = _validate_s_probe_substrate(s_probe_substrate)
 
     public_commands_list = [[str(part) for part in cmd] for cmd in public_commands]
+    s_probe_execution_substrate = {
+        "execution_label": (
+            PUBLIC_COMMANDS_SUBSTRATE
+            if public_commands_list
+            else STATIC_LINT_ONLY_SUBSTRATE
+        ),
+        "public_command_count": len(public_commands_list),
+        "hidden_oracle_excluded": True,
+    }
 
     candidate_artifacts: dict[tuple[str, str], dict[str, Any]] = {}
     arm_decisions: dict[str, dict[tuple[str, str], dict[str, Any]]] = {
@@ -945,9 +1065,10 @@ def swebench_mergeability_fixture_runner(
                 + ", ".join(protected_in_worktree)
             )
 
-        patch_operations = list(candidate.get("patch_operations") or ())
-        patch_apply_status, patch_apply_receipts = _apply_patch_operations(
-            patch_operations, public_worktree
+        patch_apply_status, patch_apply_receipts = _apply_candidate_patch(
+            candidate,
+            public_worktree,
+            timeout_s=timeout_s,
         )
 
         if patch_apply_status == "passed" and public_commands_list:
@@ -1096,6 +1217,7 @@ def swebench_mergeability_fixture_runner(
             "patch_apply_receipts": patch_apply_receipts,
             "public_command_status": public_command_status,
             "public_command_receipts": public_command_receipts,
+            "s_probe_execution_substrate": dict(s_probe_execution_substrate),
             "baseline_decision": baseline_decision,
             "s_probe_decision": s_probe_decision,
             "s_full_decision": s_full_decision,
@@ -1203,6 +1325,7 @@ def swebench_mergeability_fixture_runner(
         "frozen_decisions_path": str(frozen_decisions_path),
         "oracle_outputs_path": str(oracle_outputs_path),
         "public_commands": public_commands_list,
+        "s_probe_execution_substrate": s_probe_execution_substrate,
         "protected_paths": list(protected_paths_tuple),
         "per_candidate_artifacts": per_candidate_artifacts,
         "reviewer_packets": reviewer_packets,
@@ -1225,3 +1348,267 @@ def swebench_mergeability_fixture_runner(
     )
     runner_report["report_path"] = str(report_path)
     return runner_report
+
+
+def load_swebench_mergeability_replay_manifest(
+    manifest_path: str | Path,
+) -> dict[str, Any]:
+    path = Path(manifest_path).expanduser().resolve()
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            f"could not read replay manifest {path}: {exc}"
+        ) from exc
+    if not isinstance(raw, Mapping):
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "replay manifest must be a JSON object"
+        )
+    instances_raw = raw.get("instances")
+    if not isinstance(instances_raw, Sequence) or isinstance(instances_raw, (str, bytes)):
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "replay manifest instances must be a non-empty list"
+        )
+
+    base_dir = path.parent
+    instances: list[dict[str, Any]] = []
+    for raw_entry in instances_raw:
+        if not isinstance(raw_entry, Mapping):
+            raise SwebenchMergeabilityFixtureRunnerError(
+                "replay manifest instance entries must be objects"
+            )
+        public_bundle = str(raw_entry.get("public_bundle") or "")
+        if not public_bundle:
+            raise SwebenchMergeabilityFixtureRunnerError(
+                "replay manifest instance.public_bundle is required"
+            )
+        bundle_path = (base_dir / public_bundle).resolve()
+        if not bundle_path.exists():
+            raise SwebenchMergeabilityFixtureRunnerError(
+                f"replay public bundle does not exist: {bundle_path}"
+            )
+        instance = dict(raw_entry.get("instance") or {})
+        if not instance:
+            for key in _PUBLIC_PACKET_ALLOWED_INSTANCE_KEYS:
+                if key in raw_entry:
+                    instance[key] = raw_entry[key]
+            for hidden_key in SWEBENCH_PRO_HIDDEN_ORACLE_KEYS:
+                if hidden_key in raw_entry:
+                    instance[hidden_key] = raw_entry[hidden_key]
+            if "hidden_test_commands" in raw_entry:
+                instance["hidden_test_commands"] = raw_entry["hidden_test_commands"]
+
+        candidates_raw = raw_entry.get("candidates")
+        if not isinstance(candidates_raw, Sequence) or isinstance(candidates_raw, (str, bytes)):
+            raise SwebenchMergeabilityFixtureRunnerError(
+                "replay manifest instance.candidates must be a non-empty list"
+            )
+        candidates: list[dict[str, Any]] = []
+        for raw_candidate in candidates_raw:
+            if not isinstance(raw_candidate, Mapping):
+                raise SwebenchMergeabilityFixtureRunnerError(
+                    "replay manifest candidate entries must be objects"
+                )
+            candidate = dict(raw_candidate)
+            model_patch_path = (
+                candidate.get("model_patch_path")
+                or candidate.get("patch_path")
+                or candidate.get("patch_ref")
+            )
+            if model_patch_path:
+                patch_path = (base_dir / str(model_patch_path)).resolve()
+                try:
+                    candidate["model_patch"] = patch_path.read_text(encoding="utf-8")
+                except OSError as exc:
+                    raise SwebenchMergeabilityFixtureRunnerError(
+                        f"could not read model patch artifact {patch_path}: {exc}"
+                    ) from exc
+                candidate["model_patch_ref"] = str(patch_path)
+            if "patch" not in candidate and "model_patch" in candidate:
+                candidate["patch"] = candidate["model_patch"]
+            candidates.append(candidate)
+
+        raw_substrate = raw_entry.get("s_probe_substrate")
+        if raw_substrate is None:
+            raw_substrate = {
+                "kind": PUBLIC_STATIC_PATCH_PROBE,
+                "requires_patch_applies": True,
+                "public_lint_commands": raw_entry.get("public_lint_commands") or [],
+                "public_build_commands": raw_entry.get("public_build_commands") or [],
+            }
+        substrate = _validate_s_probe_substrate(raw_substrate)
+        public_commands = raw_entry.get("public_commands")
+        if public_commands is None:
+            public_commands = (
+                list(substrate["public_lint_commands"])
+                + list(substrate["public_build_commands"])
+            )
+
+        instances.append({
+            "instance": instance,
+            "public_bundle": str(bundle_path),
+            "protected_paths": list(raw_entry.get("protected_paths") or _DEFAULT_PROTECTED_PATHS),
+            "s_probe_substrate": substrate,
+            "public_commands": [
+                [str(part) for part in cmd] for cmd in (public_commands or [])
+            ],
+            "candidates": candidates,
+        })
+
+    if not instances:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "replay manifest contains no instances"
+        )
+    payload = {
+        "schema_version": str(
+            raw.get("schema_version") or SWEBENCH_MERGEABILITY_REPLAY_MANIFEST_SCHEMA_VERSION
+        ),
+        "manifest_path": str(path),
+        "manifest_sha256": sha256(path.read_bytes()).hexdigest(),
+        "instances": instances,
+    }
+    return payload
+
+
+def swebench_mergeability_replay_runner(
+    *,
+    manifest_path: str | Path,
+    output_dir: str | Path,
+    reviewer_panel: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+    reviewer_panel_mode: str = "custom",
+    configured_reviewer_panel_options: ConfiguredReviewerPanelOptions | None = None,
+    timeout_s: float = 30.0,
+) -> dict[str, Any]:
+    if reviewer_panel_mode not in {"custom", "configured"}:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            f"unknown reviewer_panel_mode: {reviewer_panel_mode!r}"
+        )
+    if reviewer_panel_mode == "configured" and reviewer_panel is None:
+        reviewer_panel = build_configured_reviewer_panel(
+            configured_reviewer_panel_options
+        )
+
+    manifest = load_swebench_mergeability_replay_manifest(manifest_path)
+    output_path = Path(output_dir).expanduser()
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    instance_reports: list[dict[str, Any]] = []
+    combined_instances: list[Mapping[str, Any]] = []
+    combined_candidate_artifacts: dict[tuple[str, str], dict[str, Any]] = {}
+    combined_arm_decisions: dict[str, dict[tuple[str, str], dict[str, Any]]] = {
+        ARM_BASELINE: {},
+        ARM_S_PROBE: {},
+        ARM_S_FULL: {},
+    }
+    combined_oracle_outcomes: dict[tuple[str, str], dict[str, str]] = {}
+    aggregate_public_command_count = 0
+
+    for item in manifest["instances"]:
+        instance = dict(item["instance"])
+        instance_id = str(instance.get("instance_id") or "")
+        if not instance_id:
+            raise SwebenchMergeabilityFixtureRunnerError(
+                "replay instance.instance_id is required"
+            )
+        instance_output_dir = output_path / "instances" / instance_id
+        instance_report = swebench_mergeability_fixture_runner(
+            fixture_root=Path(item["public_bundle"]),
+            instance=instance,
+            candidates=item["candidates"],
+            s_probe_substrate=item["s_probe_substrate"],
+            public_commands=item["public_commands"],
+            output_dir=instance_output_dir,
+            reviewer_panel=reviewer_panel,
+            protected_paths=item["protected_paths"],
+            timeout_s=timeout_s,
+        )
+        instance_reports.append(instance_report)
+        combined_instances.append(instance)
+        aggregate_public_command_count += int(
+            instance_report["s_probe_execution_substrate"]["public_command_count"]
+        )
+
+        candidates_by_id = {
+            str(candidate.get("candidate_id") or ""): candidate
+            for candidate in item["candidates"]
+        }
+        for frozen_row in instance_report["frozen_decisions"]["rows"]:
+            candidate_id = str(frozen_row["candidate_id"])
+            key = (instance_id, candidate_id)
+            candidate = candidates_by_id[candidate_id]
+            combined_candidate_artifacts[key] = {
+                "candidate_id": candidate_id,
+                "patch": _candidate_patch_text(candidate),
+            }
+            combined_arm_decisions[ARM_BASELINE][key] = {
+                "accept": bool(frozen_row["baseline_accept"]),
+                "unavailable": bool(frozen_row["baseline_unavailable"]),
+            }
+            combined_arm_decisions[ARM_S_PROBE][key] = {
+                "accept": bool(frozen_row["s_probe_accept"]),
+                "unavailable": bool(frozen_row["s_probe_unavailable"]),
+            }
+            combined_arm_decisions[ARM_S_FULL][key] = {
+                "accept": bool(frozen_row["s_full_accept"]),
+                "unavailable": bool(frozen_row["s_full_unavailable"]),
+            }
+        for oracle_row in json.loads(
+            Path(instance_report["oracle_outputs_path"]).read_text(encoding="utf-8")
+        )["rows"]:
+            key = (str(oracle_row["instance_id"]), str(oracle_row["candidate_id"]))
+            combined_oracle_outcomes[key] = {
+                "fail_to_pass_status": str(oracle_row["fail_to_pass_status"]),
+                "pass_to_pass_status": str(oracle_row["pass_to_pass_status"]),
+            }
+
+    combined_substrate = {
+        "kind": PUBLIC_STATIC_PATCH_PROBE,
+        "requires_patch_applies": True,
+        "public_lint_commands": [],
+        "public_build_commands": [],
+    }
+    bridge_report = swebench_pro_mergeability_bridge_report(
+        instances=list(combined_instances),
+        candidate_artifacts=combined_candidate_artifacts,
+        s_probe_substrate=combined_substrate,
+        arm_decisions=combined_arm_decisions,
+        oracle_outcomes=combined_oracle_outcomes,
+    )
+    s_probe_execution_substrate = {
+        "execution_label": (
+            PUBLIC_COMMANDS_SUBSTRATE
+            if aggregate_public_command_count
+            else STATIC_LINT_ONLY_SUBSTRATE
+        ),
+        "public_command_count": aggregate_public_command_count,
+        "hidden_oracle_excluded": True,
+    }
+    report: dict[str, Any] = {
+        "schema_version": SWEBENCH_MERGEABILITY_REPLAY_REPORT_SCHEMA_VERSION,
+        "manifest_path": manifest["manifest_path"],
+        "manifest_sha256": manifest["manifest_sha256"],
+        "instance_count": len(combined_instances),
+        "candidate_count": len(combined_candidate_artifacts),
+        "s_probe_execution_substrate": s_probe_execution_substrate,
+        "reviewer_panel_mode": reviewer_panel_mode,
+        "instance_reports": instance_reports,
+        "bridge_report": bridge_report,
+        "metric_applyable": False,
+        "improvement_claim_allowed": False,
+        "default_change_allowed": False,
+        "policy_mutated": False,
+        "gate_advanced": False,
+        "allow_live": False,
+        "live_fetch_used": False,
+        "live_generation_used": False,
+    }
+    report["report_sha256"] = _sha256_json({
+        key: value for key, value in report.items() if key != "report_sha256"
+    })
+    report_path = output_path / "report.json"
+    report_path.write_text(
+        json.dumps(report, sort_keys=True, indent=2, default=str),
+        encoding="utf-8",
+    )
+    report["report_path"] = str(report_path)
+    return report

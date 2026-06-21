@@ -1,6 +1,9 @@
 """Public-boundary tests for the SWE-bench Pro mergeability bridge."""
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -25,6 +28,7 @@ from supervisor.swe_bench_mergeability import (
     SwebenchProBridgeError,
     build_swe_bench_pro_public_packet,
     swebench_mergeability_fixture_runner,
+    swebench_mergeability_replay_runner,
     swebench_pro_mergeability_bridge_report,
 )
 from supervisor.autoresearch.policy_evolution import (
@@ -955,3 +959,241 @@ def test_fixture_runner_report_only_invariants_and_no_policy_outputs(tmp_path):
         assert forbidden_name not in output_files
     # Schema version explicit on the runner report.
     assert report["schema_version"] == SWEBENCH_MERGEABILITY_FIXTURE_REPORT_SCHEMA_VERSION
+
+
+# ---------------------------------------------------------------------------
+# SWE-bench real-instance replay runner
+# ---------------------------------------------------------------------------
+
+
+def _valid_model_patch() -> str:
+    return (
+        "diff --git a/parser.py b/parser.py\n"
+        "--- a/parser.py\n"
+        "+++ b/parser.py\n"
+        "@@ -1,2 +1,2 @@\n"
+        "-def parse(value):\n"
+        "+def parse(value: str) -> str:\n"
+        "     return value\n"
+    )
+
+
+def _invalid_model_patch() -> str:
+    return (
+        "diff --git a/parser.py b/parser.py\n"
+        "--- a/parser.py\n"
+        "+++ b/parser.py\n"
+        "@@ -1,2 +1,2 @@\n"
+        "-def parse(missing):\n"
+        "+def parse(value: str) -> str:\n"
+        "     return value\n"
+    )
+
+
+def _write_replay_manifest(
+    tmp_path: Path,
+    *,
+    candidates: list[dict] | None = None,
+    public_commands: list[list[str]] | None = None,
+) -> Path:
+    root = tmp_path / "replay"
+    bundle = root / "bundles" / "demo"
+    bundle.mkdir(parents=True)
+    (bundle / "parser.py").write_text(
+        "def parse(value):\n    return value\n",
+        encoding="utf-8",
+    )
+    (bundle / "hidden").mkdir()
+    (bundle / "hidden" / "test_behavior.py").write_text(
+        "def test_hidden():\n    assert parse('x') == 'x'\n",
+        encoding="utf-8",
+    )
+    (bundle / ".mergeability").mkdir()
+    (bundle / ".mergeability" / "oracle.json").write_text(
+        json.dumps({"oracle_accept": True}),
+        encoding="utf-8",
+    )
+    patches = root / "patches"
+    patches.mkdir()
+    default_candidates = [
+        {
+            "candidate_id": "real-good",
+            "model_patch_path": "patches/real-good.patch",
+            "baseline_self_report": True,
+            "oracle_commands": {
+                "fail_to_pass": [["python", "-c", "print('ftp ok')"]],
+                "pass_to_pass": [["python", "-c", "print('ptp ok')"]],
+            },
+        },
+        {
+            "candidate_id": "real-bad",
+            "model_patch_path": "patches/real-bad.patch",
+            "baseline_self_report": True,
+            "oracle_commands": {
+                "fail_to_pass": [["python", "-c", "import sys; sys.exit(1)"]],
+                "pass_to_pass": [["python", "-c", "print('ptp ok')"]],
+            },
+        },
+    ]
+    for candidate_id in ("real-good", "real-bad", "bad-patch"):
+        patch_text = _invalid_model_patch() if candidate_id == "bad-patch" else _valid_model_patch()
+        (patches / f"{candidate_id}.patch").write_text(patch_text, encoding="utf-8")
+
+    manifest = {
+        "schema_version": "supervisor-swebench-mergeability-replay-manifest/v1",
+        "instances": [
+            {
+                "instance_id": "real_demo__repo-001",
+                "repo": "octocat/example",
+                "base_commit": "deadbeef" * 5,
+                "problem_statement": "Type the parser without changing behavior",
+                "public_checkout_ref": "refs/heads/main",
+                "public_checkout_sha256": "c" * 64,
+                "public_bundle": "bundles/demo",
+                "protected_paths": ["hidden/", ".mergeability/"],
+                "FAIL_TO_PASS": ["hidden/test_behavior.py::test_hidden"],
+                "PASS_TO_PASS": ["hidden/test_behavior.py::test_existing"],
+                "test_patch": "diff --git a/hidden/test_behavior.py...",
+                "public_commands": public_commands if public_commands is not None else [],
+                "candidates": candidates if candidates is not None else default_candidates,
+            }
+        ],
+    }
+    manifest_path = root / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    return manifest_path
+
+
+def test_replay_runner_loads_manifest_applies_model_patch_and_keeps_oracle_hidden(tmp_path):
+    manifest_path = _write_replay_manifest(tmp_path)
+    output_dir = tmp_path / "out"
+
+    report = swebench_mergeability_replay_runner(
+        manifest_path=manifest_path,
+        output_dir=output_dir,
+    )
+
+    assert report["schema_version"] == "supervisor-swebench-mergeability-replay-report/v1"
+    assert report["instance_count"] == 1
+    assert report["candidate_count"] == 2
+    assert report["s_probe_execution_substrate"]["execution_label"] == "static_lint_only"
+    bridge_report = report["bridge_report"]
+    assert bridge_report["arms"][ARM_S_PROBE]["n_good"] == 1
+    assert bridge_report["arms"][ARM_S_PROBE]["n_bad"] == 1
+    assert bridge_report["metric_applyable"] is False
+    assert bridge_report["improvement_claim_allowed"] is False
+
+    per_candidate = report["instance_reports"][0]["per_candidate_artifacts"][0]
+    assert per_candidate["patch_apply_status"] == "passed"
+    assert per_candidate["patch_apply_receipts"][0]["mode"] == "model_patch"
+    public_worktree = Path(per_candidate["public_worktree"])
+    assert "def parse(value: str) -> str" in (public_worktree / "parser.py").read_text(encoding="utf-8")
+    assert not (public_worktree / "hidden").exists()
+    assert not (public_worktree / ".mergeability").exists()
+
+    public_packet_text = json.dumps(bridge_report["public_packets"], sort_keys=True)
+    for forbidden in ("FAIL_TO_PASS", "PASS_TO_PASS", "test_patch", "oracle_accept"):
+        assert forbidden not in public_packet_text
+    reviewer_packet_path = Path(report["instance_reports"][0]["reviewer_packets"][0]["reviewer_packet_path"])
+    reviewer_packet_text = reviewer_packet_path.read_text(encoding="utf-8")
+    for forbidden in ("FAIL_TO_PASS", "PASS_TO_PASS", "test_patch", "oracle_accept"):
+        assert forbidden not in reviewer_packet_text
+
+
+def test_replay_runner_records_deterministic_patch_apply_failure(tmp_path):
+    manifest_path = _write_replay_manifest(
+        tmp_path,
+        candidates=[
+            {
+                "candidate_id": "bad-patch",
+                "model_patch_path": "patches/bad-patch.patch",
+                "baseline_self_report": True,
+                "oracle_commands": {
+                    "fail_to_pass": [["python", "-c", "import sys; sys.exit(1)"]],
+                    "pass_to_pass": [["python", "-c", "print('ptp ok')"]],
+                },
+            }
+        ],
+    )
+
+    report = swebench_mergeability_replay_runner(
+        manifest_path=manifest_path,
+        output_dir=tmp_path / "out",
+    )
+
+    per_candidate = report["instance_reports"][0]["per_candidate_artifacts"][0]
+    assert per_candidate["patch_apply_status"] == "failed"
+    assert per_candidate["patch_apply_receipts"][0]["reason"] == "git_apply_check_failed"
+    assert per_candidate["s_probe_decision"]["accept"] is False
+    assert per_candidate["s_probe_decision"]["reason"] == PATCH_APPLY_FAILURE_REASON
+    frozen_path = Path(report["instance_reports"][0]["frozen_decisions_path"])
+    oracle_path = Path(report["instance_reports"][0]["oracle_outputs_path"])
+    assert frozen_path.stat().st_mtime_ns <= oracle_path.stat().st_mtime_ns
+    assert report["bridge_report"]["per_row_results"][0]["s_probe_accept"] is False
+
+
+def test_replay_runner_accepts_configured_style_panel_result(tmp_path):
+    manifest_path = _write_replay_manifest(tmp_path)
+    calls: list[str] = []
+
+    def configured_style_panel(packet):
+        calls.append(packet["candidate_id"])
+        return {
+            "decision": "accept",
+            "available": True,
+            "reason": "all_available_reviewers_accept",
+            "reviewer_ids": ["independent-reviewer-0"],
+            "available_reviewers": ["independent-reviewer-0"],
+            "reviewer_results": [
+                {
+                    "reviewer_id": "independent-reviewer-0",
+                    "verdict_present": True,
+                    "decision": "accept",
+                }
+            ],
+        }
+
+    report = swebench_mergeability_replay_runner(
+        manifest_path=manifest_path,
+        output_dir=tmp_path / "out",
+        reviewer_panel=configured_style_panel,
+    )
+
+    assert calls == ["real-good", "real-bad"]
+    rows = report["bridge_report"]["per_row_results"]
+    assert all(row["s_full_unavailable"] is False for row in rows)
+    assert all(row["s_full_accept"] is True for row in rows)
+    assert report["instance_reports"][0]["independent_reviewer_results"][0]["reviewer_id"] == (
+        "independent-reviewer-0"
+    )
+
+
+def test_replay_cli_runs_manifest_without_live_fetch_or_panel(tmp_path):
+    manifest_path = _write_replay_manifest(tmp_path)
+    output_dir = tmp_path / "cli-out"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/run_swe_bench_mergeability_replay.py",
+            "--manifest",
+            str(manifest_path),
+            "--output-dir",
+            str(output_dir),
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+
+    summary = json.loads(result.stdout)
+    assert summary["status"] == "reported"
+    assert summary["allow_live"] is False
+    report_path = Path(summary["report"])
+    assert report_path.exists()
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["bridge_report"]["arms"][ARM_S_FULL]["availability_status"] == "unavailable"
+    assert report["bridge_report"]["metric_applyable"] is False
+    assert report["bridge_report"]["improvement_claim_allowed"] is False

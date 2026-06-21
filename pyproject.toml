@@ -31,6 +31,7 @@ codex-supervisor-mcp = "mcp_tools.codex_supervisor_stdio:main"
 codex-supervisor-workflow = "mcp_tools.codex_supervisor_workflow_cli:main"
 codex-supervisor-workflow-dispatcher = "supervisor.workflow_job_dispatcher:main"
 codex-supervisor-axi = "mcp_tools.codex_supervisor_axi:main"
+codex-supervisor-swebench-mergeability-replay = "supervisor.swe_bench_mergeability_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
