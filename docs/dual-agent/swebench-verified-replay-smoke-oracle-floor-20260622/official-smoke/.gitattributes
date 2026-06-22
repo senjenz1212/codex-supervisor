@@ -1,0 +1,4 @@
+# Generated SWE-bench harness artifacts preserve exact oracle output.
+oracle-artifacts/** -diff
+replay-output/official-patches/** -diff
+replay-output/replay/instances/*/candidates/*/model.patch -diff

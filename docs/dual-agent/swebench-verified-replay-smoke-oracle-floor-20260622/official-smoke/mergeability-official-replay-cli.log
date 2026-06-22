@@ -1,0 +1,118 @@
+{
+  "allow_live": false,
+  "candidate_count": 1,
+  "far_tar_frr": {
+    "baseline": {
+      "false_accept_confidence_interval": {
+        "confidence": 0.95,
+        "count": 0,
+        "denominator": 0,
+        "label": "approximate_binary_proportion_interval",
+        "lower": null,
+        "method": "wilson_score",
+        "upper": null
+      },
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "n_bad": 0,
+      "n_good": 0,
+      "true_accept_confidence_interval": {
+        "confidence": 0.95,
+        "count": 0,
+        "denominator": 0,
+        "label": "approximate_binary_proportion_interval",
+        "lower": null,
+        "method": "wilson_score",
+        "upper": null
+      },
+      "true_accept_rate": 0.0
+    },
+    "oracle_ceiling": {
+      "false_accept_confidence_interval": {
+        "confidence": 0.95,
+        "count": 0,
+        "denominator": 0,
+        "label": "approximate_binary_proportion_interval",
+        "lower": null,
+        "method": "wilson_score",
+        "upper": null
+      },
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "n_bad": 0,
+      "n_good": 1,
+      "true_accept_confidence_interval": {
+        "confidence": 0.95,
+        "count": 1,
+        "denominator": 1,
+        "label": "approximate_binary_proportion_interval",
+        "lower": 0.206549,
+        "method": "wilson_score",
+        "upper": 1.0
+      },
+      "true_accept_rate": 1.0
+    },
+    "s_full": {
+      "false_accept_confidence_interval": {
+        "confidence": 0.95,
+        "count": 0,
+        "denominator": 0,
+        "label": "approximate_binary_proportion_interval",
+        "lower": null,
+        "method": "wilson_score",
+        "upper": null
+      },
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "n_bad": 0,
+      "n_good": 0,
+      "true_accept_confidence_interval": {
+        "confidence": 0.95,
+        "count": 0,
+        "denominator": 0,
+        "label": "approximate_binary_proportion_interval",
+        "lower": null,
+        "method": "wilson_score",
+        "upper": null
+      },
+      "true_accept_rate": 0.0
+    },
+    "s_probe": {
+      "false_accept_confidence_interval": {
+        "confidence": 0.95,
+        "count": 0,
+        "denominator": 0,
+        "label": "approximate_binary_proportion_interval",
+        "lower": null,
+        "method": "wilson_score",
+        "upper": null
+      },
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "n_bad": 0,
+      "n_good": 1,
+      "true_accept_confidence_interval": {
+        "confidence": 0.95,
+        "count": 1,
+        "denominator": 1,
+        "label": "approximate_binary_proportion_interval",
+        "lower": 0.206549,
+        "method": "wilson_score",
+        "upper": 1.0
+      },
+      "true_accept_rate": 1.0
+    }
+  },
+  "improvement_claim_allowed": false,
+  "instance_count": 1,
+  "live_generation_used": false,
+  "manifest": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/replay-output/official_replay_manifest.json",
+  "metric_applyable": false,
+  "metrics_suppressed": false,
+  "metrics_unavailable_reasons": [],
+  "report": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/replay-output/official_replay_report.json",
+  "report_sha256": "b54c7ad7273cc0cee7a503c6db877815dd7763a3efd5aecd10c30b76b822b63f",
+  "reviewer_panel_mode": "unavailable",
+  "s_probe_execution_substrate": null,
+  "status": "reported"
+}

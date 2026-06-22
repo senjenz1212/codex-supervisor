@@ -25,7 +25,7 @@ agent = ["claude-agent-sdk>=0.1.0"]
 cursor = ["cursor-sdk"]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.24"]
 postgres = ["alembic>=1.13", "psycopg[binary]>=3.2", "sqlalchemy>=2.0"]
-swebench = ["datasets>=2.20.0"]
+swebench = ["datasets>=2.20.0", "docker>=7.1.0", "swebench>=4.1.0"]
 
 [project.scripts]
 codex-supervisor-mcp = "mcp_tools.codex_supervisor_stdio:main"

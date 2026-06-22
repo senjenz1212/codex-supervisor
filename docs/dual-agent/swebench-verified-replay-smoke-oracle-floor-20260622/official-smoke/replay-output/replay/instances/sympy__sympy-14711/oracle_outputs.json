@@ -1,0 +1,71 @@
+{
+  "instance_id": "sympy__sympy-14711",
+  "rows": [
+    {
+      "candidate_id": "gold-official-smoke",
+      "fail_to_pass_status": "pass",
+      "instance_id": "sympy__sympy-14711",
+      "oracle_adapter_kind": "official_docker_or_equivalent",
+      "oracle_command_receipts": [
+        {
+          "name": "official_oracle_adapter",
+          "oracle_adapter_kind": "official_docker_or_equivalent",
+          "receipt": {
+            "artifact_paths": {
+              "final_report": "docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/oracle-artifacts/sympy__sympy-14711/gold-official-smoke/supervisor-replay.supervisor-official-replay-smoke-20260622-sympy__sympy-14711-gold-official-smoke.json",
+              "instance_report": "docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/oracle-artifacts/sympy__sympy-14711/gold-official-smoke/logs/run_evaluation/supervisor-official-replay-smoke-20260622-sympy__sympy-14711-gold-official-smoke/supervisor-replay/sympy__sympy-14711/report.json",
+              "predictions": "docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/oracle-artifacts/sympy__sympy-14711/gold-official-smoke/predictions.json",
+              "run_instance_log": "docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/oracle-artifacts/sympy__sympy-14711/gold-official-smoke/logs/run_evaluation/supervisor-official-replay-smoke-20260622-sympy__sympy-14711-gold-official-smoke/supervisor-replay/sympy__sympy-14711/run_instance.log",
+              "test_output": "docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/oracle-artifacts/sympy__sympy-14711/gold-official-smoke/logs/run_evaluation/supervisor-official-replay-smoke-20260622-sympy__sympy-14711-gold-official-smoke/supervisor-replay/sympy__sympy-14711/test_output.txt",
+              "work_dir": "docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/oracle-artifacts/sympy__sympy-14711/gold-official-smoke"
+            },
+            "command": [
+              "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python",
+              "-m",
+              "swebench.harness.run_evaluation",
+              "--dataset_name",
+              "SWE-bench/SWE-bench_Verified",
+              "--split",
+              "test",
+              "--instance_ids",
+              "sympy__sympy-14711",
+              "--predictions_path",
+              "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/oracle-artifacts/sympy__sympy-14711/gold-official-smoke/predictions.json",
+              "--max_workers",
+              "1",
+              "--timeout",
+              "600",
+              "--cache_level",
+              "instance",
+              "--clean",
+              "false",
+              "--run_id",
+              "supervisor-official-replay-smoke-20260622-sympy__sympy-14711-gold-official-smoke",
+              "--namespace",
+              "swebench"
+            ],
+            "evaluator_version": "swebench.harness.run_evaluation",
+            "fail_to_pass_status": "pass",
+            "frozen_decisions_path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/replay-output/replay/instances/sympy__sympy-14711/frozen_decisions.json",
+            "frozen_decisions_sha256": "827958e5bdf959c66cab18ba4c716aa9956b640ca08b4acd23b8d21dc37d6ca7",
+            "harness": {
+              "dataset": "SWE-bench/SWE-bench_Verified",
+              "name": "swebench.harness.run_evaluation",
+              "run_id": "supervisor-official-replay-smoke-20260622-sympy__sympy-14711-gold-official-smoke",
+              "split": "test"
+            },
+            "model_patch_sha256": "603fc55c24e66a70d67dac2cb8661fdb9be0c08333133151cfd7a72fbe9881eb",
+            "pass_to_pass_status": "pass",
+            "return_code": 0,
+            "stderr_sha256": "4dd43dbf867d10d9ba3863085bf36feee76b3fa7bd3b6620e78ab6fd7e872772",
+            "stderr_tail": "/huggingface.co/datasets/SWE-bench/SWE-bench_Verified/resolve/main/README.md \"HTTP/1.1 307 Temporary Redirect\"\n2026-06-22 03:27:11,551 - httpx - INFO - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/SWE-bench/SWE-bench_Verified/91aa3ed51b709be6457e12d00300a6a596d4c6a3/README.md \"HTTP/1.1 200 OK\"\n2026-06-22 03:27:11,664 - httpx - INFO - HTTP Request: HEAD https://huggingface.co/datasets/SWE-bench/SWE-bench_Verified/resolve/91aa3ed51b709be6457e12d00300a6a596d4c6a3/SWE-bench_Verified.py \"HTTP/1.1 404 Not Found\"\n2026-06-22 03:27:12,040 - httpx - INFO - HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/SWE-bench/SWE-bench_Verified/SWE-bench/SWE-bench_Verified.py \"HTTP/1.1 404 Not Found\"\n2026-06-22 03:27:12,164 - httpx - INFO - HTTP Request: GET https://huggingface.co/api/datasets/SWE-bench/SWE-bench_Verified/revision/91aa3ed51b709be6457e12d00300a6a596d4c6a3 \"HTTP/1.1 200 OK\"\n2026-06-22 03:27:12,270 - httpx - INFO - HTTP Request: HEAD https://huggingface.co/datasets/SWE-bench/SWE-bench_Verified/resolve/91aa3ed51b709be6457e12d00300a6a596d4c6a3/.huggingface.yaml \"HTTP/1.1 404 Not Found\"\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n2026-06-22 03:27:12,271 - huggingface_hub.utils._http - WARNING - Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n2026-06-22 03:27:12,508 - httpx - INFO - HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=SWE-bench/SWE-bench_Verified \"HTTP/1.1 200 OK\"\n2026-06-22 03:27:12,620 - httpx - INFO - HTTP Request: GET https://huggingface.co/api/datasets/SWE-bench/SWE-bench_Verified/tree/91aa3ed51b709be6457e12d00300a6a596d4c6a3/data?recursive=true&expand=false \"HTTP/1.1 200 OK\"\n2026-06-22 03:27:12,740 - httpx - INFO - HTTP Request: GET https://huggingface.co/api/datasets/SWE-bench/SWE-bench_Verified/tree/91aa3ed51b709be6457e12d00300a6a596d4c6a3?recursive=false&expand=false \"HTTP/1.1 200 OK\"\n2026-06-22 03:27:12,895 - httpx - INFO - HTTP Request: HEAD https://huggingface.co/datasets/SWE-bench/SWE-bench_Verified/resolve/91aa3ed51b709be6457e12d00300a6a596d4c6a3/dataset_infos.json \"HTTP/1.1 404 Not Found\"\n2026-06-22 03:27:13,054 - httpx - INFO - HTTP Request: HEAD https://huggingface.co/datasets/SWE-bench/SWE-bench_Verified/resolve/main/README.md \"HTTP/1.1 307 Temporary Redirect\"\n2026-06-22 03:27:13,087 - httpx - INFO - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/SWE-bench/SWE-bench_Verified/91aa3ed51b709be6457e12d00300a6a596d4c6a3/README.md \"HTTP/1.1 200 OK\"\n2026-06-22 03:27:13,191 - httpx - INFO - HTTP Request: HEAD https://huggingface.co/datasets/SWE-bench/SWE-bench_Verified/resolve/91aa3ed51b709be6457e12d00300a6a596d4c6a3/SWE-bench_Verified.py \"HTTP/1.1 404 Not Found\"\n2026-06-22 03:27:13,295 - httpx - INFO - HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/SWE-bench/SWE-bench_Verified/SWE-bench/SWE-bench_Verified.py \"HTTP/1.1 404 Not Found\"\n2026-06-22 03:27:13,430 - httpx - INFO - HTTP Request: HEAD https://huggingface.co/datasets/SWE-bench/SWE-bench_Verified/resolve/91aa3ed51b709be6457e12d00300a6a596d4c6a3/.huggingface.yaml \"HTTP/1.1 404 Not Found\"\n2026-06-22 03:27:13,577 - httpx - INFO - HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=SWE-bench/SWE-bench_Verified \"HTTP/1.1 200 OK\"\n2026-06-22 03:27:13,700 - httpx - INFO - HTTP Request: HEAD https://huggingface.co/datasets/SWE-bench/SWE-bench_Verified/resolve/91aa3ed51b709be6457e12d00300a6a596d4c6a3/dataset_infos.json \"HTTP/1.1 404 Not Found\"\n\nEvaluation:   0%|          | 0/1 [00:00<?, ?it/s, error=0, \u2713=0, \u2716=0]\nEvaluation:   0%|          | 0/1 [00:48<?, ?it/s, \u2713=1, \u2716=0, error=0]\nEvaluation: 100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 1/1 [00:48<00:00, 48.31s/it, \u2713=1, \u2716=0, error=0]\nEvaluation: 100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 1/1 [00:48<00:00, 48.31s/it, \u2713=1, \u2716=0, error=0]\n",
+            "stdout_sha256": "7ad33369afc9392151a1d4fe51f35e2cdae59386d181138f65931c6f84f61948",
+            "stdout_tail": "Found 1 existing instance images. Will reuse them.\nRunning 1 instances...\nAll instances run.\nCleaning cached images...\nRemoved 0 images.\nTotal instances: 1\nInstances submitted: 1\nInstances completed: 1\nInstances incomplete: 0\nInstances resolved: 1\nInstances unresolved: 0\nInstances with empty patches: 0\nInstances with errors: 0\nUnstopped containers: 0\nUnremoved images: 1\nReport written to supervisor-replay.supervisor-official-replay-smoke-20260622-sympy__sympy-14711-gold-official-smoke.json\n"
+          },
+          "status": "passed"
+        }
+      ],
+      "pass_to_pass_status": "pass"
+    }
+  ]
+}

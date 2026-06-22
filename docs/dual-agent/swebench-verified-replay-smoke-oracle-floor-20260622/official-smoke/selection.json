@@ -1,0 +1,14 @@
+{
+  "base_commit": "c6753448b5c34f95e250105d76709fe4d349ca1f",
+  "dataset": "SWE-bench/SWE-bench_Verified",
+  "fail_to_pass_count": 15,
+  "instance_ids": [
+    "sympy__sympy-14711"
+  ],
+  "pass_to_pass_count": 47,
+  "patch_sha256": "603fc55c24e66a70d67dac2cb8661fdb9be0c08333133151cfd7a72fbe9881eb",
+  "repo": "sympy/sympy",
+  "selection_rationale": "tiny official-harness plumbing smoke on a pulled sympy Verified image; gold patch is used only as known-resolved smoke input, not as a supervisor improvement result",
+  "split": "test",
+  "test_patch_sha256": "955dfb3e264f06cbee6285bcf20d1346b33d3826fc901ddd51a21e823b44bb3d"
+}

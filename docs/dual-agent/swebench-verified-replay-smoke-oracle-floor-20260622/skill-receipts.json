@@ -1,0 +1,37 @@
+[
+  {
+    "kind": "skill_run",
+    "stage": "to_prd",
+    "skill": "to-prd",
+    "status": "accepted",
+    "artifact": "docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/source/prd.md"
+  },
+  {
+    "kind": "skill_run",
+    "stage": "prd_grill",
+    "skill": "grill-with-docs",
+    "status": "accepted",
+    "artifact": "docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/source/grill-findings.md"
+  },
+  {
+    "kind": "skill_run",
+    "stage": "to_issues",
+    "skill": "to-issues",
+    "status": "accepted",
+    "artifact": "docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/source/issues.md"
+  },
+  {
+    "kind": "skill_run",
+    "stage": "tdd",
+    "skill": "tdd",
+    "status": "accepted",
+    "artifact": "docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/source/tdd.md"
+  },
+  {
+    "kind": "skill_run",
+    "stage": "tdd_grill",
+    "skill": "grill-with-docs",
+    "status": "accepted",
+    "artifact": "docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/source/grill-findings-tdd.md"
+  }
+]

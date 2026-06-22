@@ -1,0 +1,43 @@
+2026-06-22 03:29:23,417 - INFO - Creating container for sympy__sympy-14711...
+2026-06-22 03:29:23,461 - INFO - Container for sympy__sympy-14711 created: 99ef5b66d937ef1b6d2734dcb36b9ce6329e14dcd37a087cc478a8faf812f7e8
+2026-06-22 03:29:23,604 - INFO - Container for sympy__sympy-14711 started: 99ef5b66d937ef1b6d2734dcb36b9ce6329e14dcd37a087cc478a8faf812f7e8
+2026-06-22 03:29:23,605 - INFO - Intermediate patch for sympy__sympy-14711 written to logs/run_evaluation/supervisor-official-replay-smoke-20260622-sympy__sympy-14711-gold-official-smoke/supervisor-replay/sympy__sympy-14711/patch.diff, now applying to container...
+2026-06-22 03:29:23,759 - INFO - >>>>> Applied Patch:
+Checking patch sympy/physics/vector/vector.py...
+Applied patch sympy/physics/vector/vector.py cleanly.
+
+2026-06-22 03:29:24,829 - INFO - Git diff before:
+diff --git a/sympy/physics/vector/vector.py b/sympy/physics/vector/vector.py
+index a048ee57f..884911921 100644
+--- a/sympy/physics/vector/vector.py
++++ b/sympy/physics/vector/vector.py
+@@ -57,6 +57,8 @@ def __hash__(self):
+ 
+     def __add__(self, other):
+         """The add operator for Vector. """
++        if other == 0:
++            return self
+         other = _check_vector(other)
+         return Vector(self.args + other.args)
+2026-06-22 03:29:24,830 - INFO - Eval script for sympy__sympy-14711 written to logs/run_evaluation/supervisor-official-replay-smoke-20260622-sympy__sympy-14711-gold-official-smoke/supervisor-replay/sympy__sympy-14711/eval.sh; copying to container...
+2026-06-22 03:29:56,302 - INFO - Test runtime: 31.41 seconds
+2026-06-22 03:29:56,304 - INFO - Test output for sympy__sympy-14711 written to logs/run_evaluation/supervisor-official-replay-smoke-20260622-sympy__sympy-14711-gold-official-smoke/supervisor-replay/sympy__sympy-14711/test_output.txt
+2026-06-22 03:29:56,430 - INFO - Git diff after:
+diff --git a/sympy/physics/vector/vector.py b/sympy/physics/vector/vector.py
+index a048ee57f..884911921 100644
+--- a/sympy/physics/vector/vector.py
++++ b/sympy/physics/vector/vector.py
+@@ -57,6 +57,8 @@ def __hash__(self):
+ 
+     def __add__(self, other):
+         """The add operator for Vector. """
++        if other == 0:
++            return self
+         other = _check_vector(other)
+         return Vector(self.args + other.args)
+2026-06-22 03:29:56,430 - INFO - Grading answer for sympy__sympy-14711...
+2026-06-22 03:29:56,431 - INFO - report: {'sympy__sympy-14711': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_Vector'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_Vector_diffs', 'test_vector_var_in_dcm'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-14711: resolved: True
+2026-06-22 03:29:56,431 - INFO - Attempting to stop container sweb.eval.sympy__sympy-14711.supervisor-official-replay-smoke-20260622-sympy__sympy-14711-gold-official-smoke...
+2026-06-22 03:30:11,570 - INFO - Attempting to remove container sweb.eval.sympy__sympy-14711.supervisor-official-replay-smoke-20260622-sympy__sympy-14711-gold-official-smoke...
+2026-06-22 03:30:11,696 - INFO - Container sweb.eval.sympy__sympy-14711.supervisor-official-replay-smoke-20260622-sympy__sympy-14711-gold-official-smoke removed.

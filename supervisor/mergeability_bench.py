@@ -4079,6 +4079,8 @@ def _copy_public_fixture_tree(
     *,
     protected_paths: tuple[str, ...],
 ) -> None:
+    if target_root.exists():
+        shutil.rmtree(target_root)
     target_root.mkdir(parents=True, exist_ok=True)
     for source in sorted(source_root.rglob("*")):
         rel = _normalise_relpath(source.relative_to(source_root).as_posix())

@@ -1,0 +1,244 @@
+{
+  "artifacts": {
+    "cli_log": {
+      "bytes": 3577,
+      "path": "docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/mergeability-official-replay-cli.log",
+      "sha256": "e81b9da44b24c0099c63eaa6bb46f01e9425c73531e041a0942a53929d5380e4"
+    },
+    "combined_replay_report": {
+      "bytes": 44798,
+      "path": "docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/replay-output/replay/report.json",
+      "sha256": "c76d82d7a981813d70457b8b138b3c0ad6b80cab26de2e7c10032b4a5b0110c8"
+    },
+    "frozen_decisions": {
+      "bytes": 1532,
+      "path": "docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/replay-output/replay/instances/sympy__sympy-14711/frozen_decisions.json",
+      "sha256": "fc22d53361195997f89e66448ae5339187944fb8a50c82e4c98d546f5b24edca"
+    },
+    "instance_report": {
+      "bytes": 24382,
+      "path": "docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/replay-output/replay/instances/sympy__sympy-14711/report.json",
+      "sha256": "cce02cf3e9ae091bd88dbba05c5ec8c2a42348cfcb2d4b1ccf97f1a3839b8d77"
+    },
+    "official_harness_final_report": {
+      "bytes": 508,
+      "path": "docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/oracle-artifacts/sympy__sympy-14711/gold-official-smoke/supervisor-replay.supervisor-official-replay-smoke-20260622-sympy__sympy-14711-gold-official-smoke.json",
+      "sha256": "401a02f8a33b6d123c003b31f9b582994d0e3d595049a1ae409525600bad5878"
+    },
+    "official_harness_instance_report": {
+      "bytes": 782,
+      "path": "docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/oracle-artifacts/sympy__sympy-14711/gold-official-smoke/logs/run_evaluation/supervisor-official-replay-smoke-20260622-sympy__sympy-14711-gold-official-smoke/supervisor-replay/sympy__sympy-14711/report.json",
+      "sha256": "a151d1771606d0f2d55c0e51803184cbe7b34121a6e8c3a4c48cc0a3d9b7c6c8"
+    },
+    "official_harness_predictions": {
+      "bytes": 542,
+      "path": "docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/oracle-artifacts/sympy__sympy-14711/gold-official-smoke/predictions.json",
+      "sha256": "b13501ebc2608d984e8a705e0490cd5529a4888c61b3ccf70ac5e295679e0f2a"
+    },
+    "official_harness_run_instance_log": {
+      "bytes": 3362,
+      "path": "docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/oracle-artifacts/sympy__sympy-14711/gold-official-smoke/logs/run_evaluation/supervisor-official-replay-smoke-20260622-sympy__sympy-14711-gold-official-smoke/supervisor-replay/sympy__sympy-14711/run_instance.log",
+      "sha256": "fd2dc890e5e516e51c6036867bf19d371ea6905b8e477e7ca995ce7569c73d93"
+    },
+    "official_harness_test_output": {
+      "bytes": 15855,
+      "path": "docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/oracle-artifacts/sympy__sympy-14711/gold-official-smoke/logs/run_evaluation/supervisor-official-replay-smoke-20260622-sympy__sympy-14711-gold-official-smoke/supervisor-replay/sympy__sympy-14711/test_output.txt",
+      "sha256": "f7bab0dee34fa111c0f3cc174e1954650446bdc4cc93460512078218e3355b46"
+    },
+    "official_replay_manifest": {
+      "bytes": 4978,
+      "path": "docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/replay-output/official_replay_manifest.json",
+      "sha256": "c319cba6b9a35aa222a1f07ce84406ed04490ab0bcb15eb1388bb35b0c4a91ce"
+    },
+    "official_replay_report": {
+      "bytes": 65785,
+      "path": "docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/replay-output/official_replay_report.json",
+      "sha256": "b343cffc18a0c94471d27210adb7484e8dc39cca0f92f4fb297511c409ab94af"
+    },
+    "oracle_outputs": {
+      "bytes": 9102,
+      "path": "docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/replay-output/replay/instances/sympy__sympy-14711/oracle_outputs.json",
+      "sha256": "3b1ea6224e8f67ad25d43d79fe217190ae9808ec37fecb92972b203a1ffae38b"
+    },
+    "predictions_jsonl": {
+      "bytes": 1006,
+      "path": "docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/predictions.jsonl",
+      "sha256": "7453446c466178d8741d3d8658b062164c8406df8f58b5dcf3a1693f461c80e7"
+    },
+    "reviewer_packet": {
+      "bytes": 3616,
+      "path": "docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/replay-output/replay/instances/sympy__sympy-14711/candidates/gold-official-smoke/reviewer_packet.json",
+      "sha256": "7f1a2afba48e4fddeae0e1ce6c82c43fb554ec57d7f0b8d4b7a9398fa0981abf"
+    },
+    "selection": {
+      "bytes": 628,
+      "path": "docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/selection.json",
+      "sha256": "c134ffe70630ab8698ffa62c0f6deca80697a675fd0de6ccd204301b8258e260"
+    }
+  },
+  "bridge_far_tar": {
+    "baseline": {
+      "false_accept_confidence_interval": {
+        "confidence": 0.95,
+        "count": 0,
+        "denominator": 0,
+        "label": "approximate_binary_proportion_interval",
+        "lower": null,
+        "method": "wilson_score",
+        "upper": null
+      },
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "n_bad": 0,
+      "n_good": 0,
+      "true_accept_confidence_interval": {
+        "confidence": 0.95,
+        "count": 0,
+        "denominator": 0,
+        "label": "approximate_binary_proportion_interval",
+        "lower": null,
+        "method": "wilson_score",
+        "upper": null
+      },
+      "true_accept_rate": 0.0
+    },
+    "oracle_ceiling": {
+      "false_accept_confidence_interval": {
+        "confidence": 0.95,
+        "count": 0,
+        "denominator": 0,
+        "label": "approximate_binary_proportion_interval",
+        "lower": null,
+        "method": "wilson_score",
+        "upper": null
+      },
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "n_bad": 0,
+      "n_good": 1,
+      "true_accept_confidence_interval": {
+        "confidence": 0.95,
+        "count": 1,
+        "denominator": 1,
+        "label": "approximate_binary_proportion_interval",
+        "lower": 0.206549,
+        "method": "wilson_score",
+        "upper": 1.0
+      },
+      "true_accept_rate": 1.0
+    },
+    "s_full": {
+      "false_accept_confidence_interval": {
+        "confidence": 0.95,
+        "count": 0,
+        "denominator": 0,
+        "label": "approximate_binary_proportion_interval",
+        "lower": null,
+        "method": "wilson_score",
+        "upper": null
+      },
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "n_bad": 0,
+      "n_good": 0,
+      "true_accept_confidence_interval": {
+        "confidence": 0.95,
+        "count": 0,
+        "denominator": 0,
+        "label": "approximate_binary_proportion_interval",
+        "lower": null,
+        "method": "wilson_score",
+        "upper": null
+      },
+      "true_accept_rate": 0.0
+    },
+    "s_probe": {
+      "false_accept_confidence_interval": {
+        "confidence": 0.95,
+        "count": 0,
+        "denominator": 0,
+        "label": "approximate_binary_proportion_interval",
+        "lower": null,
+        "method": "wilson_score",
+        "upper": null
+      },
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "n_bad": 0,
+      "n_good": 1,
+      "true_accept_confidence_interval": {
+        "confidence": 0.95,
+        "count": 1,
+        "denominator": 1,
+        "label": "approximate_binary_proportion_interval",
+        "lower": 0.206549,
+        "method": "wilson_score",
+        "upper": 1.0
+      },
+      "true_accept_rate": 1.0
+    }
+  },
+  "candidate_count": 1,
+  "dataset": "SWE-bench/SWE-bench_Verified",
+  "dataset_split": "test",
+  "hidden_field_leak_check": {
+    "ok": true,
+    "refs": []
+  },
+  "human_mergeability_claim_allowed": false,
+  "improvement_claim_allowed": false,
+  "instance_count": 1,
+  "large_artifacts_ignored_from_git": [
+    "replay-output/official-public-bundles/",
+    "replay-output/replay/instances/*/candidates/*/public_worktree/"
+  ],
+  "metric_applyable": false,
+  "oracle_command": [
+    "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python",
+    "-m",
+    "swebench.harness.run_evaluation",
+    "--dataset_name",
+    "SWE-bench/SWE-bench_Verified",
+    "--split",
+    "test",
+    "--instance_ids",
+    "sympy__sympy-14711",
+    "--predictions_path",
+    "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/oracle-artifacts/sympy__sympy-14711/gold-official-smoke/predictions.json",
+    "--max_workers",
+    "1",
+    "--timeout",
+    "600",
+    "--cache_level",
+    "instance",
+    "--clean",
+    "false",
+    "--run_id",
+    "supervisor-official-replay-smoke-20260622-sympy__sympy-14711-gold-official-smoke",
+    "--namespace",
+    "swebench"
+  ],
+  "oracle_harness": {
+    "dataset": "SWE-bench/SWE-bench_Verified",
+    "name": "swebench.harness.run_evaluation",
+    "run_id": "supervisor-official-replay-smoke-20260622-sympy__sympy-14711-gold-official-smoke",
+    "split": "test"
+  },
+  "oracle_receipt_validation": {
+    "mismatches": [],
+    "required": true,
+    "validated": true
+  },
+  "oracle_return_code": 0,
+  "oracle_status": {
+    "fail_to_pass_status": "pass",
+    "pass_to_pass_status": "pass"
+  },
+  "plumbing_smoke_only": true,
+  "powered_improvement_claim_allowed": false,
+  "schema_version": "supervisor-swebench-verified-official-smoke-index/v1",
+  "selected_instance_ids": [
+    "sympy__sympy-14711"
+  ],
+  "status": "completed"
+}

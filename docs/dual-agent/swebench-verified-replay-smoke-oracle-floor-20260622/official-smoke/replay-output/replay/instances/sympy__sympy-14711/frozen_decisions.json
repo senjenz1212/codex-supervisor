@@ -1,0 +1,33 @@
+{
+  "frozen_at_epoch_s": 1782124030.1078742,
+  "frozen_decisions_sha256": "827958e5bdf959c66cab18ba4c716aa9956b640ca08b4acd23b8d21dc37d6ca7",
+  "instance_id": "sympy__sympy-14711",
+  "rows": [
+    {
+      "baseline_accept": false,
+      "baseline_candidate_artifact_hash": "603fc55c24e66a70d67dac2cb8661fdb9be0c08333133151cfd7a72fbe9881eb",
+      "baseline_candidate_id": "gold-official-smoke",
+      "baseline_decision_source": "produced_single_agent_baseline_unavailable",
+      "baseline_evidence_kind": "malformed",
+      "baseline_producer": {
+        "model": "gold",
+        "provider": "swebench",
+        "runner_label": "swebench-gold-smoke"
+      },
+      "baseline_prompt_sha256": "e4767d6b2a2a74a4b7ef986a9f1f89a8a65d7e7bf026dae881f92dbd7b3ad77c",
+      "baseline_unavailable": true,
+      "baseline_unavailable_reason": "malformed_baseline_row_untrusted_decision_source:swebench_verified_gold_patch_plumbing_smoke",
+      "candidate_id": "gold-official-smoke",
+      "instance_id": "sympy__sympy-14711",
+      "public_packet_sha256": "b6af640d20439cc0fafc35f4d9766646d1f70a75ccecd01f4228ce616b5b73e6",
+      "reviewer_packet_sha256": "66e4ff334ff3d59a1e2e0a83bfb78bd8879abe9df8b80c8459aad5b5934459e7",
+      "s_full_accept": false,
+      "s_full_reason": "reviewer_panel_unavailable",
+      "s_full_unavailable": true,
+      "s_probe_accept": true,
+      "s_probe_reason": "public_probe_passed",
+      "s_probe_unavailable": false
+    }
+  ],
+  "schema_version": "supervisor-swebench-mergeability-frozen-decisions/v1"
+}

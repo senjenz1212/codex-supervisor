@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from supervisor.config import AgenticLeadCfg
+from supervisor.mergeability_bench import _copy_public_fixture_tree
 from supervisor.swe_bench_eval import (
     build_swe_bench_report,
     load_swe_bench_pilot_sample,
@@ -35,6 +36,7 @@ from supervisor.swe_bench_mergeability import (
     swebench_mergeability_replay_runner,
     swebench_pro_mergeability_bridge_report,
 )
+from supervisor.swe_bench_official_oracle import run_official_harness_oracle
 from supervisor.autoresearch.policy_evolution import (
     derive_policy_evolution_proposals_from_report,
 )
@@ -1162,6 +1164,11 @@ def _write_replay_manifest(
         json.dumps({"oracle_accept": True}),
         encoding="utf-8",
     )
+    (bundle / ".git" / "objects" / "pack").mkdir(parents=True)
+    (bundle / ".git" / "objects" / "pack" / "pack-demo.idx").write_text(
+        "git internals should not be copied\n",
+        encoding="utf-8",
+    )
     patches = root / "patches"
     patches.mkdir()
     default_candidates = [
@@ -1245,6 +1252,7 @@ def test_replay_runner_loads_manifest_applies_model_patch_and_keeps_oracle_hidde
     assert "def parse(value: str) -> str" in (public_worktree / "parser.py").read_text(encoding="utf-8")
     assert not (public_worktree / "hidden").exists()
     assert not (public_worktree / ".mergeability").exists()
+    assert not (public_worktree / ".git").exists()
 
     public_packet_text = json.dumps(bridge_report["public_packets"], sort_keys=True)
     for forbidden in ("FAIL_TO_PASS", "PASS_TO_PASS", "test_patch", "oracle_accept"):
@@ -1253,6 +1261,25 @@ def test_replay_runner_loads_manifest_applies_model_patch_and_keeps_oracle_hidde
     reviewer_packet_text = reviewer_packet_path.read_text(encoding="utf-8")
     for forbidden in ("FAIL_TO_PASS", "PASS_TO_PASS", "test_patch", "oracle_accept"):
         assert forbidden not in reviewer_packet_text
+
+
+def test_public_fixture_copy_replaces_stale_target_and_excludes_git(tmp_path):
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    (source / ".git" / "objects").mkdir(parents=True)
+    (source / ".git" / "objects" / "pack.idx").write_text("git internals\n", encoding="utf-8")
+    (source / "parser.py").write_text("def parse(value):\n    return value\n", encoding="utf-8")
+    (target / ".git").mkdir(parents=True)
+    (target / ".git" / "stale").write_text("stale rerun state\n", encoding="utf-8")
+
+    _copy_public_fixture_tree(
+        source,
+        target,
+        protected_paths=("hidden/", ".mergeability/", ".git/"),
+    )
+
+    assert (target / "parser.py").exists()
+    assert not (target / ".git").exists()
 
 
 def test_replay_runner_records_deterministic_patch_apply_failure(tmp_path):
@@ -2711,3 +2738,337 @@ def test_official_equivalent_label_validation_failure_is_unavailable(tmp_path):
     assert report["default_change_allowed"] is False
     assert report["policy_mutated"] is False
     assert report["gate_advanced"] is False
+
+
+def _smoke_oracle_runner(context):
+    return {
+        "fail_to_pass_status": "pass",
+        "pass_to_pass_status": "pass",
+        "oracle_adapter_receipt": _official_adapter_receipt(context),
+    }
+
+
+def test_official_replay_smoke_writes_report_with_selected_instances(tmp_path):
+    """P1+P2: tiny replay writes manifest+report for the selected rows only."""
+    records = [
+        _official_record("official_demo__repo-A01"),
+        _official_record("official_demo__repo-B02"),
+        _official_record("official_demo__repo-C03"),
+    ]
+    predictions_path = _write_multi_official_predictions(
+        tmp_path,
+        ["official_demo__repo-A01", "official_demo__repo-B02"],
+    )
+    out_dir = tmp_path / "out"
+
+    report = swebench_mergeability_official_replay_runner(
+        dataset="fixture-official",
+        dataset_split="test",
+        predictions_path=predictions_path,
+        output_dir=out_dir,
+        dataset_loader=lambda **_kwargs: records,
+        repo_materializer=_official_materializer,
+        oracle_runner=_smoke_oracle_runner,
+        oracle_adapter_kind="official_docker_or_equivalent",
+        instance_ids=["official_demo__repo-A01", "official_demo__repo-B02"],
+    )
+
+    report_path = out_dir / "official_replay_report.json"
+    manifest_path = out_dir / "official_replay_manifest.json"
+    assert report_path.exists()
+    assert manifest_path.exists()
+    assert report["instance_count"] == 2
+    assert report["candidate_count"] >= 2
+    selection = report["selection_filter"]
+    assert selection["instance_ids_requested"] == [
+        "official_demo__repo-A01",
+        "official_demo__repo-B02",
+    ]
+    assert selection["selected_instance_ids"] == [
+        "official_demo__repo-A01",
+        "official_demo__repo-B02",
+    ]
+    persisted = json.loads(report_path.read_text(encoding="utf-8"))
+    assert persisted["instance_count"] == 2
+    assert persisted["selection_filter"]["selected_instance_ids"] == [
+        "official_demo__repo-A01",
+        "official_demo__repo-B02",
+    ]
+
+
+def test_official_replay_normalizes_json_encoded_test_lists(tmp_path):
+    """P2: real dataset JSON-string test lists are not persisted as char arrays."""
+    record = _official_record()
+    record["FAIL_TO_PASS"] = json.dumps(["tests/test_parser.py::test_hidden"])
+    record["PASS_TO_PASS"] = json.dumps(["tests/test_parser.py::test_existing"])
+    predictions_path = _write_official_predictions(tmp_path)
+
+    report = swebench_mergeability_official_replay_runner(
+        dataset="fixture-official",
+        dataset_split="test",
+        predictions_path=predictions_path,
+        output_dir=tmp_path / "out",
+        dataset_loader=lambda **_kwargs: [record],
+        repo_materializer=_official_materializer,
+        oracle_runner=_smoke_oracle_runner,
+        oracle_adapter_kind="official_docker_or_equivalent",
+        instance_ids=["official_demo__repo-001"],
+    )
+
+    manifest = json.loads(
+        Path(report["generated_replay_manifest_path"]).read_text(encoding="utf-8")
+    )
+    instance = manifest["instances"][0]
+    assert instance["FAIL_TO_PASS"] == ["tests/test_parser.py::test_hidden"]
+    assert instance["PASS_TO_PASS"] == ["tests/test_parser.py::test_existing"]
+    candidate = instance["candidates"][0]
+    assert candidate["FAIL_TO_PASS"] == ["tests/test_parser.py::test_hidden"]
+    assert candidate["PASS_TO_PASS"] == ["tests/test_parser.py::test_existing"]
+    assert "[" not in candidate["FAIL_TO_PASS"]
+
+
+def test_official_replay_smoke_records_frozen_before_oracle_receipts(tmp_path):
+    """P3: frozen decisions exist before any oracle call and receipts carry hashes."""
+    predictions_path = _write_official_predictions(tmp_path)
+    observed: list[dict] = []
+
+    def oracle(context):
+        observed.append({
+            "frozen_exists": Path(context["frozen_decisions_path"]).exists(),
+            "frozen_mtime_ns": Path(context["frozen_decisions_path"]).stat().st_mtime_ns,
+        })
+        return {
+            "fail_to_pass_status": "pass",
+            "pass_to_pass_status": "pass",
+            "oracle_adapter_receipt": _official_adapter_receipt(context),
+        }
+
+    report = swebench_mergeability_official_replay_runner(
+        dataset="fixture-official",
+        dataset_split="test",
+        predictions_path=predictions_path,
+        output_dir=tmp_path / "out",
+        dataset_loader=lambda **_kwargs: [_official_record()],
+        repo_materializer=_official_materializer,
+        oracle_runner=oracle,
+        oracle_adapter_kind="official_docker_or_equivalent",
+        instance_ids=["official_demo__repo-001"],
+    )
+
+    assert observed and observed[0]["frozen_exists"] is True
+    instance_report = report["replay_report"]["instance_reports"][0]
+    frozen_path = Path(instance_report["frozen_decisions_path"])
+    oracle_path = Path(instance_report["oracle_outputs_path"])
+    assert frozen_path.stat().st_mtime_ns <= oracle_path.stat().st_mtime_ns
+    oracle_payload = json.loads(oracle_path.read_text(encoding="utf-8"))
+    row = oracle_payload["rows"][0]
+    receipts = row.get("oracle_command_receipts") or []
+    assert receipts, "oracle_command_receipts must be non-empty"
+    adapter_receipt = next(
+        (r["receipt"] for r in receipts if r.get("name") == "official_oracle_adapter"),
+        None,
+    )
+    assert isinstance(adapter_receipt, dict)
+    assert adapter_receipt["stdout_sha256"]
+    assert adapter_receipt["stderr_sha256"]
+    assert adapter_receipt["command"]
+    assert report["oracle_receipt_validation"]["validated"] is True
+
+
+def test_official_replay_oracle_context_includes_model_patch_after_freeze(tmp_path):
+    """P3: official oracle adapters receive candidate patch text only after freeze."""
+    predictions_path = _write_official_predictions(tmp_path)
+    observed: dict[str, str] = {}
+
+    def oracle(context):
+        observed.update({
+            "model_patch": context["model_patch"],
+            "model_patch_sha256": context["model_patch_sha256"],
+            "model_patch_ref": context["model_patch_ref"],
+            "frozen_decisions_path": context["frozen_decisions_path"],
+        })
+        return {
+            "fail_to_pass_status": "pass",
+            "pass_to_pass_status": "pass",
+            "oracle_adapter_receipt": _official_adapter_receipt(context),
+        }
+
+    swebench_mergeability_official_replay_runner(
+        dataset="fixture-official",
+        dataset_split="test",
+        predictions_path=predictions_path,
+        output_dir=tmp_path / "out",
+        dataset_loader=lambda **_kwargs: [_official_record()],
+        repo_materializer=_official_materializer,
+        oracle_runner=oracle,
+        oracle_adapter_kind="official_docker_or_equivalent",
+        instance_ids=["official_demo__repo-001"],
+    )
+
+    assert observed["model_patch"] == _valid_model_patch()
+    assert observed["model_patch_sha256"] == sha256(
+        _valid_model_patch().encode("utf-8")
+    ).hexdigest()
+    assert observed["model_patch_ref"]
+    assert Path(observed["frozen_decisions_path"]).exists()
+
+
+def test_official_harness_oracle_adapter_invokes_swebench_and_parses_report(
+    tmp_path, monkeypatch
+):
+    """P3: production adapter invokes the SWE-bench harness and parses statuses."""
+    monkeypatch.setenv("SWEBENCH_OFFICIAL_ORACLE_ARTIFACT_DIR", str(tmp_path / "oracle"))
+    monkeypatch.setenv("SWEBENCH_OFFICIAL_ORACLE_RUN_ID_PREFIX", "test-oracle")
+    monkeypatch.setenv("SWEBENCH_OFFICIAL_ORACLE_DATASET", "SWE-bench/SWE-bench_Verified")
+    monkeypatch.setenv("SWEBENCH_OFFICIAL_ORACLE_SPLIT", "test")
+    calls: list[list[str]] = []
+
+    def fake_run(command, *, cwd, env, text, capture_output, check, timeout):
+        calls.append(list(command))
+        run_id = command[command.index("--run_id") + 1]
+        instance_id = command[command.index("--instance_ids") + 1]
+        report_dir = (
+            Path(cwd)
+            / "logs"
+            / "run_evaluation"
+            / run_id
+            / "supervisor-replay"
+            / instance_id
+        )
+        report_dir.mkdir(parents=True)
+        (report_dir / "report.json").write_text(
+            json.dumps({
+                instance_id: {
+                    "resolved": True,
+                    "tests_status": {
+                        "FAIL_TO_PASS": {"success": ["test_fixed"], "failure": []},
+                        "PASS_TO_PASS": {"success": ["test_existing"], "failure": []},
+                    },
+                }
+            }),
+            encoding="utf-8",
+        )
+        (Path(cwd) / f"supervisor-replay.{run_id}.json").write_text(
+            json.dumps({"resolved_ids": [instance_id]}),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(command, 0, "official stdout", "")
+
+    monkeypatch.setattr(
+        "supervisor.swe_bench_official_oracle.subprocess.run",
+        fake_run,
+    )
+
+    result = run_official_harness_oracle({
+        "instance_id": "sympy__sympy-14711",
+        "candidate_id": "gold-smoke",
+        "model_patch": _valid_model_patch(),
+        "model_patch_sha256": sha256(_valid_model_patch().encode("utf-8")).hexdigest(),
+        "frozen_decisions_path": str(tmp_path / "frozen_decisions.json"),
+        "frozen_decisions_sha256": "abc123",
+    })
+
+    assert calls
+    command = calls[0]
+    assert command[:3] == [sys.executable, "-m", "swebench.harness.run_evaluation"]
+    assert result["fail_to_pass_status"] == "pass"
+    assert result["pass_to_pass_status"] == "pass"
+    receipt = result["oracle_adapter_receipt"]
+    assert receipt["command"] == command
+    assert receipt["return_code"] == 0
+    assert receipt["harness"]["name"] == "swebench.harness.run_evaluation"
+    assert Path(receipt["artifact_paths"]["instance_report"]).exists()
+
+
+def test_verified_smoke_is_labeled_plumbing_only(tmp_path):
+    """P4: report carries plumbing_smoke_only and refuses powered/human claims."""
+    predictions_path = _write_official_predictions(tmp_path)
+    report = swebench_mergeability_official_replay_runner(
+        dataset="SWE-bench/SWE-bench_Verified",
+        dataset_split="test",
+        predictions_path=predictions_path,
+        output_dir=tmp_path / "out",
+        dataset_loader=lambda **_kwargs: [_official_record()],
+        repo_materializer=_official_materializer,
+        oracle_runner=_smoke_oracle_runner,
+        oracle_adapter_kind="official_docker_or_equivalent",
+        instance_ids=["official_demo__repo-001"],
+    )
+
+    assert report["plumbing_smoke_only"] is True
+    assert report["powered_improvement_claim_allowed"] is False
+    assert report["human_mergeability_claim_allowed"] is False
+    caveats = report["smoke_caveats"]
+    assert any("test_pass_proxy" in c for c in caveats)
+    assert any("contamination" in c for c in caveats)
+    persisted = json.loads(
+        (tmp_path / "out" / "official_replay_report.json").read_text(encoding="utf-8")
+    )
+    assert persisted["plumbing_smoke_only"] is True
+    assert persisted["powered_improvement_claim_allowed"] is False
+    assert persisted["human_mergeability_claim_allowed"] is False
+
+
+def test_full_panel_metric_unavailable_without_full_roster(tmp_path):
+    """P5: with no reviewer panel, S_full panel metric is unavailable, not imputed."""
+    predictions_path = _write_official_predictions(tmp_path)
+    report = swebench_mergeability_official_replay_runner(
+        dataset="fixture-official",
+        dataset_split="test",
+        predictions_path=predictions_path,
+        output_dir=tmp_path / "out",
+        dataset_loader=lambda **_kwargs: [_official_record()],
+        repo_materializer=_official_materializer,
+        oracle_runner=_smoke_oracle_runner,
+        oracle_adapter_kind="official_docker_or_equivalent",
+        instance_ids=["official_demo__repo-001"],
+        reviewer_panel=None,
+        reviewer_panel_mode="custom",
+    )
+
+    instance_report = report["replay_report"]["instance_reports"][0]
+    frozen_path = Path(instance_report["frozen_decisions_path"])
+    frozen_payload = json.loads(frozen_path.read_text(encoding="utf-8"))
+    rows = frozen_payload["rows"]
+    assert rows
+    for row in rows:
+        assert row["s_full_unavailable"] is True
+        assert row["s_full_accept"] is False
+        assert row["s_full_reason"] == REVIEWER_PANEL_UNAVAILABLE_REASON
+    bridge = report["bridge_report"]
+    per_row = bridge.get("per_row_results") or []
+    assert per_row
+    for entry in per_row:
+        assert entry.get("s_full_unavailable") is True
+        assert entry.get("s_full_accept") is False
+    assert report["metric_applyable"] is False
+    assert report["improvement_claim_allowed"] is False
+
+
+def test_official_replay_smoke_emits_no_policy_proposal(tmp_path):
+    """P6: policy-evolution derivation produces zero proposals from the smoke."""
+    predictions_path = _write_official_predictions(tmp_path)
+    report = swebench_mergeability_official_replay_runner(
+        dataset="fixture-official",
+        dataset_split="test",
+        predictions_path=predictions_path,
+        output_dir=tmp_path / "out",
+        dataset_loader=lambda **_kwargs: [_official_record()],
+        repo_materializer=_official_materializer,
+        oracle_runner=_smoke_oracle_runner,
+        oracle_adapter_kind="official_docker_or_equivalent",
+        instance_ids=["official_demo__repo-001"],
+    )
+
+    assert report["metric_applyable"] is False
+    assert report["improvement_claim_allowed"] is False
+    assert report["default_change_allowed"] is False
+    assert report["policy_mutated"] is False
+    assert report["gate_advanced"] is False
+
+    proposals = derive_policy_evolution_proposals_from_report(
+        report,
+        repo_root=tmp_path,
+        affected_gates=("mergeability",),
+    )
+    assert proposals == []

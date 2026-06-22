@@ -781,6 +781,7 @@ _OFFICIAL_RECORD_HIDDEN_KEYS: tuple[str, ...] = (
 _DEFAULT_PROTECTED_PATHS: tuple[str, ...] = (
     "hidden/",
     ".mergeability/",
+    ".git/",
 )
 
 
@@ -1085,10 +1086,9 @@ def _normalise_protected_paths(value: Sequence[str] | None) -> tuple[str, ...]:
         base = list(_DEFAULT_PROTECTED_PATHS)
     else:
         base = [str(p) for p in value]
-    if "hidden/" not in base:
-        base.append("hidden/")
-    if ".mergeability/" not in base:
-        base.append(".mergeability/")
+    for default_path in _DEFAULT_PROTECTED_PATHS:
+        if default_path not in base:
+            base.append(default_path)
     return tuple(sorted(set(base)))
 
 
@@ -1538,6 +1538,11 @@ def swebench_mergeability_fixture_runner(
                     or instance.get("patch")
                     or ""
                 ),
+                "model_patch": _candidate_patch_text(candidate),
+                "model_patch_ref": str(candidate.get("model_patch_ref") or ""),
+                "model_patch_sha256": sha256(
+                    _candidate_patch_text(candidate).encode("utf-8")
+                ).hexdigest(),
             }
             outcome, adapter_receipt = _normalise_oracle_adapter_outcome(
                 oracle_runner(adapter_context)
@@ -1751,7 +1756,7 @@ def swebench_mergeability_replay_runner(
         )
 
     manifest = load_swebench_mergeability_replay_manifest(manifest_path)
-    output_path = Path(output_dir).expanduser()
+    output_path = Path(output_dir).expanduser().resolve()
     output_path.mkdir(parents=True, exist_ok=True)
 
     instance_reports: list[dict[str, Any]] = []
@@ -1929,7 +1934,7 @@ def swebench_mergeability_official_replay_runner(
         )
     _validate_official_replay_oracle_adapter_kind(str(oracle_adapter_kind))
 
-    output_path = Path(output_dir).expanduser()
+    output_path = Path(output_dir).expanduser().resolve()
     output_path.mkdir(parents=True, exist_ok=True)
     loader = dataset_loader or _default_official_dataset_loader
     materializer = repo_materializer or _default_official_repo_materializer
@@ -2146,6 +2151,13 @@ def swebench_mergeability_official_replay_runner(
         "default_change_allowed": False,
         "policy_mutated": False,
         "gate_advanced": False,
+        "plumbing_smoke_only": True,
+        "powered_improvement_claim_allowed": False,
+        "human_mergeability_claim_allowed": False,
+        "smoke_caveats": [
+            "swebench_verified_is_test_pass_proxy_not_human_mergeability",
+            "swebench_verified_contamination_possible",
+        ],
         "wall_clock_s": round(time.monotonic() - started, 6),
     }
     report["report_sha256"] = _sha256_json({
@@ -2503,9 +2515,30 @@ def _official_hidden_oracle(record: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "patch": str(record.get("patch") or ""),
         "test_patch": str(record.get("test_patch") or ""),
-        "FAIL_TO_PASS": [str(item) for item in (record.get("FAIL_TO_PASS") or [])],
-        "PASS_TO_PASS": [str(item) for item in (record.get("PASS_TO_PASS") or [])],
+        "FAIL_TO_PASS": _official_test_list(record.get("FAIL_TO_PASS")),
+        "PASS_TO_PASS": _official_test_list(record.get("PASS_TO_PASS")),
     }
+
+
+def _official_test_list(raw: Any) -> list[str]:
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        text = raw.strip()
+        if not text:
+            return []
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            return [text]
+        if isinstance(parsed, str):
+            return [parsed]
+        if isinstance(parsed, Sequence) and not isinstance(parsed, (bytes, bytearray)):
+            return [str(item) for item in parsed]
+        return [str(parsed)]
+    if isinstance(raw, Sequence) and not isinstance(raw, (bytes, bytearray)):
+        return [str(item) for item in raw]
+    return [str(raw)]
 
 
 def _load_official_predictions(predictions_path: str | Path) -> dict[str, list[dict[str, Any]]]:
@@ -2583,7 +2616,7 @@ def _default_official_repo_materializer(
         raise SwebenchMergeabilityFixtureRunnerError(
             "official repo materializer requires repo and base_commit"
         )
-    output_path = Path(output_dir).expanduser()
+    output_path = Path(output_dir).expanduser().resolve()
     if output_path.exists():
         shutil.rmtree(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)

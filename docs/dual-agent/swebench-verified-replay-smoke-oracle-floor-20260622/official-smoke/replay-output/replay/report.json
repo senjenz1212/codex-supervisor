@@ -1,0 +1,1085 @@
+{
+  "allow_live": false,
+  "bridge_report": {
+    "arms": {
+      "baseline": {
+        "accepted_count": 0,
+        "arm": "baseline",
+        "arm_role": "single_agent_baseline",
+        "availability_status": "unavailable",
+        "available_count": 0,
+        "candidate_count": 1,
+        "cost_usd": 0.0,
+        "decision_source": "produced_single_agent_baseline_unavailable",
+        "evidence_kind": "malformed",
+        "false_accept_confidence_interval": {
+          "confidence": 0.95,
+          "count": 0,
+          "denominator": 0,
+          "label": "approximate_binary_proportion_interval",
+          "lower": null,
+          "method": "wilson_score",
+          "upper": null
+        },
+        "false_accept_count": 0,
+        "false_accept_denominator": 0,
+        "false_accept_rate": 0.0,
+        "false_reject_count": 0,
+        "false_reject_denominator": 0,
+        "false_reject_rate": 0.0,
+        "n_bad": 0,
+        "n_good": 0,
+        "oracle_coupled": false,
+        "rejected_count": 0,
+        "true_accept_confidence_interval": {
+          "confidence": 0.95,
+          "count": 0,
+          "denominator": 0,
+          "label": "approximate_binary_proportion_interval",
+          "lower": null,
+          "method": "wilson_score",
+          "upper": null
+        },
+        "true_accept_count": 0,
+        "true_accept_denominator": 0,
+        "true_accept_rate": 0.0,
+        "true_reject_count": 0,
+        "unavailable_count": 1
+      },
+      "oracle_ceiling": {
+        "accepted_count": 1,
+        "arm": "oracle_ceiling",
+        "arm_role": "oracle_ceiling",
+        "availability_status": "available",
+        "available_count": 1,
+        "candidate_count": 1,
+        "cost_usd": 0.0,
+        "decision_source": "swe_bench_pro_fail_to_pass_and_pass_to_pass_oracle",
+        "false_accept_confidence_interval": {
+          "confidence": 0.95,
+          "count": 0,
+          "denominator": 0,
+          "label": "approximate_binary_proportion_interval",
+          "lower": null,
+          "method": "wilson_score",
+          "upper": null
+        },
+        "false_accept_count": 0,
+        "false_accept_denominator": 0,
+        "false_accept_rate": 0.0,
+        "false_reject_count": 0,
+        "false_reject_denominator": 1,
+        "false_reject_rate": 0.0,
+        "n_bad": 0,
+        "n_good": 1,
+        "oracle_coupled": true,
+        "rejected_count": 0,
+        "true_accept_confidence_interval": {
+          "confidence": 0.95,
+          "count": 1,
+          "denominator": 1,
+          "label": "approximate_binary_proportion_interval",
+          "lower": 0.206549,
+          "method": "wilson_score",
+          "upper": 1.0
+        },
+        "true_accept_count": 1,
+        "true_accept_denominator": 1,
+        "true_accept_rate": 1.0,
+        "true_reject_count": 0,
+        "unavailable_count": 0
+      },
+      "s_full": {
+        "accepted_count": 0,
+        "arm": "s_full",
+        "arm_role": "s_full",
+        "availability_status": "unavailable",
+        "available_count": 0,
+        "candidate_count": 1,
+        "cost_usd": 0.0,
+        "decision_source": "public_static_patch_probe+independent_reviewer_panel",
+        "false_accept_confidence_interval": {
+          "confidence": 0.95,
+          "count": 0,
+          "denominator": 0,
+          "label": "approximate_binary_proportion_interval",
+          "lower": null,
+          "method": "wilson_score",
+          "upper": null
+        },
+        "false_accept_count": 0,
+        "false_accept_denominator": 0,
+        "false_accept_rate": 0.0,
+        "false_reject_count": 0,
+        "false_reject_denominator": 0,
+        "false_reject_rate": 0.0,
+        "n_bad": 0,
+        "n_good": 0,
+        "oracle_coupled": false,
+        "rejected_count": 0,
+        "true_accept_confidence_interval": {
+          "confidence": 0.95,
+          "count": 0,
+          "denominator": 0,
+          "label": "approximate_binary_proportion_interval",
+          "lower": null,
+          "method": "wilson_score",
+          "upper": null
+        },
+        "true_accept_count": 0,
+        "true_accept_denominator": 0,
+        "true_accept_rate": 0.0,
+        "true_reject_count": 0,
+        "unavailable_count": 1
+      },
+      "s_probe": {
+        "accepted_count": 1,
+        "arm": "s_probe",
+        "arm_role": "s_probe",
+        "availability_status": "available",
+        "available_count": 1,
+        "candidate_count": 1,
+        "cost_usd": 0.0,
+        "decision_source": "public_static_patch_probe",
+        "false_accept_confidence_interval": {
+          "confidence": 0.95,
+          "count": 0,
+          "denominator": 0,
+          "label": "approximate_binary_proportion_interval",
+          "lower": null,
+          "method": "wilson_score",
+          "upper": null
+        },
+        "false_accept_count": 0,
+        "false_accept_denominator": 0,
+        "false_accept_rate": 0.0,
+        "false_reject_count": 0,
+        "false_reject_denominator": 1,
+        "false_reject_rate": 0.0,
+        "n_bad": 0,
+        "n_good": 1,
+        "oracle_coupled": false,
+        "rejected_count": 0,
+        "true_accept_confidence_interval": {
+          "confidence": 0.95,
+          "count": 1,
+          "denominator": 1,
+          "label": "approximate_binary_proportion_interval",
+          "lower": 0.206549,
+          "method": "wilson_score",
+          "upper": 1.0
+        },
+        "true_accept_count": 1,
+        "true_accept_denominator": 1,
+        "true_accept_rate": 1.0,
+        "true_reject_count": 0,
+        "unavailable_count": 0
+      }
+    },
+    "candidate_count": 1,
+    "decision_phase_rows": [
+      {
+        "baseline_accept": false,
+        "baseline_candidate_artifact_hash": "603fc55c24e66a70d67dac2cb8661fdb9be0c08333133151cfd7a72fbe9881eb",
+        "baseline_candidate_id": "gold-official-smoke",
+        "baseline_decision_source": "produced_single_agent_baseline_unavailable",
+        "baseline_evidence_kind": "malformed",
+        "baseline_producer": {
+          "model": "gold",
+          "provider": "swebench",
+          "runner_label": "swebench-gold-smoke"
+        },
+        "baseline_prompt_sha256": "e4767d6b2a2a74a4b7ef986a9f1f89a8a65d7e7bf026dae881f92dbd7b3ad77c",
+        "baseline_unavailable": true,
+        "baseline_unavailable_reason": "malformed_baseline_row_untrusted_decision_source:swebench_verified_gold_patch_plumbing_smoke",
+        "candidate_id": "gold-official-smoke",
+        "decision_phase_sha256": "c765a307f84c61d385768f2e3ef9627b44d489896d9a0097d798be9873ed6bdf",
+        "instance_id": "sympy__sympy-14711",
+        "public_packet_sha256": "1a47d9f8facfc1ca568e31efbc981e4a56fb4774ddfb5d67d8a972362e633cb0",
+        "s_full_accept": false,
+        "s_full_unavailable": true,
+        "s_probe_accept": true,
+        "s_probe_unavailable": false
+      }
+    ],
+    "decision_phase_sha256": "de5c2a22f90ce5a8ba459db7bb443cc474c5d3dfb82412a8cc202a23ce108e71",
+    "default_change_allowed": false,
+    "false_accept_at_matched_true_accept": {
+      "s_full": {
+        "reason": "baseline_arm_unavailable",
+        "status": "unavailable",
+        "unavailable_count": 1
+      },
+      "s_probe": {
+        "reason": "baseline_arm_unavailable",
+        "status": "unavailable",
+        "unavailable_count": 1
+      }
+    },
+    "far_tar_frr": {
+      "baseline": {
+        "false_accept_confidence_interval": {
+          "confidence": 0.95,
+          "count": 0,
+          "denominator": 0,
+          "label": "approximate_binary_proportion_interval",
+          "lower": null,
+          "method": "wilson_score",
+          "upper": null
+        },
+        "false_accept_rate": 0.0,
+        "false_reject_rate": 0.0,
+        "n_bad": 0,
+        "n_good": 0,
+        "true_accept_confidence_interval": {
+          "confidence": 0.95,
+          "count": 0,
+          "denominator": 0,
+          "label": "approximate_binary_proportion_interval",
+          "lower": null,
+          "method": "wilson_score",
+          "upper": null
+        },
+        "true_accept_rate": 0.0
+      },
+      "oracle_ceiling": {
+        "false_accept_confidence_interval": {
+          "confidence": 0.95,
+          "count": 0,
+          "denominator": 0,
+          "label": "approximate_binary_proportion_interval",
+          "lower": null,
+          "method": "wilson_score",
+          "upper": null
+        },
+        "false_accept_rate": 0.0,
+        "false_reject_rate": 0.0,
+        "n_bad": 0,
+        "n_good": 1,
+        "true_accept_confidence_interval": {
+          "confidence": 0.95,
+          "count": 1,
+          "denominator": 1,
+          "label": "approximate_binary_proportion_interval",
+          "lower": 0.206549,
+          "method": "wilson_score",
+          "upper": 1.0
+        },
+        "true_accept_rate": 1.0
+      },
+      "s_full": {
+        "false_accept_confidence_interval": {
+          "confidence": 0.95,
+          "count": 0,
+          "denominator": 0,
+          "label": "approximate_binary_proportion_interval",
+          "lower": null,
+          "method": "wilson_score",
+          "upper": null
+        },
+        "false_accept_rate": 0.0,
+        "false_reject_rate": 0.0,
+        "n_bad": 0,
+        "n_good": 0,
+        "true_accept_confidence_interval": {
+          "confidence": 0.95,
+          "count": 0,
+          "denominator": 0,
+          "label": "approximate_binary_proportion_interval",
+          "lower": null,
+          "method": "wilson_score",
+          "upper": null
+        },
+        "true_accept_rate": 0.0
+      },
+      "s_probe": {
+        "false_accept_confidence_interval": {
+          "confidence": 0.95,
+          "count": 0,
+          "denominator": 0,
+          "label": "approximate_binary_proportion_interval",
+          "lower": null,
+          "method": "wilson_score",
+          "upper": null
+        },
+        "false_accept_rate": 0.0,
+        "false_reject_rate": 0.0,
+        "n_bad": 0,
+        "n_good": 1,
+        "true_accept_confidence_interval": {
+          "confidence": 0.95,
+          "count": 1,
+          "denominator": 1,
+          "label": "approximate_binary_proportion_interval",
+          "lower": 0.206549,
+          "method": "wilson_score",
+          "upper": 1.0
+        },
+        "true_accept_rate": 1.0
+      }
+    },
+    "gaming_flags": [],
+    "gate_advanced": false,
+    "improvement_claim_allowed": false,
+    "instance_count": 1,
+    "matched_true_accept_status": {
+      "s_full": "unavailable",
+      "s_probe": "unavailable"
+    },
+    "metric_applyable": false,
+    "no_regression_findings": [],
+    "no_regression_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "oracle_isolation": {
+      "forbidden_keys_scanned": [
+        "FAIL_TO_PASS",
+        "PASS_TO_PASS",
+        "expected_outcome",
+        "final_score",
+        "hidden_test_commands",
+        "oracle_accept",
+        "test_patch"
+      ],
+      "forbidden_text_markers_scanned": [
+        ".mergeability/",
+        "FAIL_TO_PASS",
+        "PASS_TO_PASS",
+        "hidden/test_behavior.py",
+        "test_patch"
+      ],
+      "ok": true,
+      "violations": []
+    },
+    "panel_marginal_delta_at_matched_true_accept": {
+      "full_roster_available_count": 0,
+      "reason": "no_full_roster_available_rows",
+      "status": "unavailable"
+    },
+    "per_row_results": [
+      {
+        "baseline_accept": false,
+        "baseline_candidate_artifact_hash": "603fc55c24e66a70d67dac2cb8661fdb9be0c08333133151cfd7a72fbe9881eb",
+        "baseline_candidate_id": "gold-official-smoke",
+        "baseline_decision_source": "produced_single_agent_baseline_unavailable",
+        "baseline_evidence_kind": "malformed",
+        "baseline_producer": {
+          "model": "gold",
+          "provider": "swebench",
+          "runner_label": "swebench-gold-smoke"
+        },
+        "baseline_prompt_sha256": "e4767d6b2a2a74a4b7ef986a9f1f89a8a65d7e7bf026dae881f92dbd7b3ad77c",
+        "baseline_unavailable": true,
+        "baseline_unavailable_reason": "malformed_baseline_row_untrusted_decision_source:swebench_verified_gold_patch_plumbing_smoke",
+        "candidate_id": "gold-official-smoke",
+        "decision_phase_sha256": "c765a307f84c61d385768f2e3ef9627b44d489896d9a0097d798be9873ed6bdf",
+        "fail_to_pass_status": "pass",
+        "instance_id": "sympy__sympy-14711",
+        "legacy_baseline_self_report": null,
+        "legacy_baseline_self_report_calibration_only": true,
+        "oracle_accept": true,
+        "oracle_ceiling_accept": true,
+        "oracle_ceiling_unavailable": false,
+        "oracle_isolation_ok": true,
+        "oracle_isolation_refs": [],
+        "pass_to_pass_regression": false,
+        "pass_to_pass_status": "pass",
+        "public_packet_sha256": "1a47d9f8facfc1ca568e31efbc981e4a56fb4774ddfb5d67d8a972362e633cb0",
+        "s_full_accept": false,
+        "s_full_disagrees_with_s_probe": false,
+        "s_full_unavailable": true,
+        "s_probe_accept": true,
+        "s_probe_unavailable": false
+      }
+    ],
+    "per_row_unavailable_arms": [
+      {
+        "baseline_unavailable": true,
+        "candidate_id": "gold-official-smoke",
+        "instance_id": "sympy__sympy-14711",
+        "s_full_unavailable": true,
+        "s_probe_unavailable": false
+      }
+    ],
+    "policy_mutated": false,
+    "public_packets": [
+      {
+        "base_commit": "c6753448b5c34f95e250105d76709fe4d349ca1f",
+        "candidate_artifact_hash": "603fc55c24e66a70d67dac2cb8661fdb9be0c08333133151cfd7a72fbe9881eb",
+        "candidate_id": "gold-official-smoke",
+        "instance_id": "sympy__sympy-14711",
+        "oracle_isolation_refs": [],
+        "problem_statement": "vector add 0 error\n```python\r\nfrom sympy.physics.vector import ReferenceFrame, Vector\r\nfrom sympy import symbols\r\nsum([N.x, (0 * N.x)])\r\n```\r\ngives\r\n```\r\n---------------------------------------------------------------------------\r\nTypeError                                 Traceback (most recent call last)\r\n<ipython-input-1-0b9155eecc0e> in <module>()\r\n      2 from sympy import symbols\r\n      3 N = ReferenceFrame('N')\r\n----> 4 sum([N.x, (0 * N.x)])\r\n\r\n/usr/local/lib/python3.6/site-packages/sympy/physics/vector/vector.py in __add__(self, other)\r\n     59         \"\"\"The add operator for Vector. \"\"\"\r\n     60         #if other == 0: return self\r\n---> 61         other = _check_vector(other)\r\n     62         return Vector(self.args + other.args)\r\n     63 \r\n\r\n/usr/local/lib/python3.6/site-packages/sympy/physics/vector/vector.py in _check_vector(other)\r\n    708 def _check_vector(other):\r\n    709     if not isinstance(other, Vector):\r\n--> 710         raise TypeError('A Vector must be supplied')\r\n    711     return other\r\n\r\nTypeError: A Vector must be supplied\r\n```\n",
+        "public_checkout_ref": "c6753448b5c34f95e250105d76709fe4d349ca1f",
+        "public_checkout_sha256": "",
+        "repo": "sympy/sympy",
+        "s_probe_substrate": {
+          "kind": "public_static_patch_probe",
+          "public_build_commands": [],
+          "public_lint_commands": [],
+          "requires_patch_applies": true
+        },
+        "schema_version": "supervisor-swebench-pro-public-packet/v1"
+      }
+    ],
+    "public_packets_sha256": "d67d5f46a232d6ff39560df52e69b827b3bd81ecd34ab307ea0da6b55a077ab4",
+    "recommendation": {
+      "applyable_policy_proposal": false,
+      "next_step": "grow oracle-isolated SWE-bench Pro mergeability corpus before any powered live experiment",
+      "report_only": true
+    },
+    "report_only": {
+      "config_mutated": false,
+      "default_change_allowed": false,
+      "policy_mutated": false
+    },
+    "report_sha256": "601a01eb2863761bbf6f9144bd793860035aa152c3754dba03c2aa626a3b7e76",
+    "s_probe_substrate": {
+      "kind": "public_static_patch_probe",
+      "public_build_commands": [],
+      "public_lint_commands": [],
+      "requires_patch_applies": true
+    },
+    "schema_version": "supervisor-swebench-pro-mergeability-bridge-report/v1",
+    "validity_notes": [
+      "S_probe substrate is public_static_patch_probe: patch applicability against a public checkout plus curated public lint/build commands.",
+      "This substrate is not equivalent to hidden FAIL_TO_PASS or PASS_TO_PASS execution and must not be reported as parity.",
+      "S_full decisions require both S_probe accept and an available reviewer-panel accept; unavailable reviewer-panel keeps S_full unavailable rather than imputing accept.",
+      "FAR, TAR, and FRR are computed from post-decision FAIL_TO_PASS and PASS_TO_PASS oracle labels; decision rows are frozen before oracle outcomes are read.",
+      "Oracle ceiling is oracle-coupled and never reportable as a supervisor improvement."
+    ]
+  },
+  "candidate_count": 1,
+  "default_change_allowed": false,
+  "gate_advanced": false,
+  "improvement_claim_allowed": false,
+  "instance_count": 1,
+  "instance_reports": [
+    {
+      "bridge_report": {
+        "arms": {
+          "baseline": {
+            "accepted_count": 0,
+            "arm": "baseline",
+            "arm_role": "single_agent_baseline",
+            "availability_status": "unavailable",
+            "available_count": 0,
+            "candidate_count": 1,
+            "cost_usd": 0.0,
+            "decision_source": "produced_single_agent_baseline_unavailable",
+            "evidence_kind": "malformed",
+            "false_accept_confidence_interval": {
+              "confidence": 0.95,
+              "count": 0,
+              "denominator": 0,
+              "label": "approximate_binary_proportion_interval",
+              "lower": null,
+              "method": "wilson_score",
+              "upper": null
+            },
+            "false_accept_count": 0,
+            "false_accept_denominator": 0,
+            "false_accept_rate": 0.0,
+            "false_reject_count": 0,
+            "false_reject_denominator": 0,
+            "false_reject_rate": 0.0,
+            "n_bad": 0,
+            "n_good": 0,
+            "oracle_coupled": false,
+            "rejected_count": 0,
+            "true_accept_confidence_interval": {
+              "confidence": 0.95,
+              "count": 0,
+              "denominator": 0,
+              "label": "approximate_binary_proportion_interval",
+              "lower": null,
+              "method": "wilson_score",
+              "upper": null
+            },
+            "true_accept_count": 0,
+            "true_accept_denominator": 0,
+            "true_accept_rate": 0.0,
+            "true_reject_count": 0,
+            "unavailable_count": 1
+          },
+          "oracle_ceiling": {
+            "accepted_count": 1,
+            "arm": "oracle_ceiling",
+            "arm_role": "oracle_ceiling",
+            "availability_status": "available",
+            "available_count": 1,
+            "candidate_count": 1,
+            "cost_usd": 0.0,
+            "decision_source": "swe_bench_pro_fail_to_pass_and_pass_to_pass_oracle",
+            "false_accept_confidence_interval": {
+              "confidence": 0.95,
+              "count": 0,
+              "denominator": 0,
+              "label": "approximate_binary_proportion_interval",
+              "lower": null,
+              "method": "wilson_score",
+              "upper": null
+            },
+            "false_accept_count": 0,
+            "false_accept_denominator": 0,
+            "false_accept_rate": 0.0,
+            "false_reject_count": 0,
+            "false_reject_denominator": 1,
+            "false_reject_rate": 0.0,
+            "n_bad": 0,
+            "n_good": 1,
+            "oracle_coupled": true,
+            "rejected_count": 0,
+            "true_accept_confidence_interval": {
+              "confidence": 0.95,
+              "count": 1,
+              "denominator": 1,
+              "label": "approximate_binary_proportion_interval",
+              "lower": 0.206549,
+              "method": "wilson_score",
+              "upper": 1.0
+            },
+            "true_accept_count": 1,
+            "true_accept_denominator": 1,
+            "true_accept_rate": 1.0,
+            "true_reject_count": 0,
+            "unavailable_count": 0
+          },
+          "s_full": {
+            "accepted_count": 0,
+            "arm": "s_full",
+            "arm_role": "s_full",
+            "availability_status": "unavailable",
+            "available_count": 0,
+            "candidate_count": 1,
+            "cost_usd": 0.0,
+            "decision_source": "public_static_patch_probe+independent_reviewer_panel",
+            "false_accept_confidence_interval": {
+              "confidence": 0.95,
+              "count": 0,
+              "denominator": 0,
+              "label": "approximate_binary_proportion_interval",
+              "lower": null,
+              "method": "wilson_score",
+              "upper": null
+            },
+            "false_accept_count": 0,
+            "false_accept_denominator": 0,
+            "false_accept_rate": 0.0,
+            "false_reject_count": 0,
+            "false_reject_denominator": 0,
+            "false_reject_rate": 0.0,
+            "n_bad": 0,
+            "n_good": 0,
+            "oracle_coupled": false,
+            "rejected_count": 0,
+            "true_accept_confidence_interval": {
+              "confidence": 0.95,
+              "count": 0,
+              "denominator": 0,
+              "label": "approximate_binary_proportion_interval",
+              "lower": null,
+              "method": "wilson_score",
+              "upper": null
+            },
+            "true_accept_count": 0,
+            "true_accept_denominator": 0,
+            "true_accept_rate": 0.0,
+            "true_reject_count": 0,
+            "unavailable_count": 1
+          },
+          "s_probe": {
+            "accepted_count": 1,
+            "arm": "s_probe",
+            "arm_role": "s_probe",
+            "availability_status": "available",
+            "available_count": 1,
+            "candidate_count": 1,
+            "cost_usd": 0.0,
+            "decision_source": "public_static_patch_probe",
+            "false_accept_confidence_interval": {
+              "confidence": 0.95,
+              "count": 0,
+              "denominator": 0,
+              "label": "approximate_binary_proportion_interval",
+              "lower": null,
+              "method": "wilson_score",
+              "upper": null
+            },
+            "false_accept_count": 0,
+            "false_accept_denominator": 0,
+            "false_accept_rate": 0.0,
+            "false_reject_count": 0,
+            "false_reject_denominator": 1,
+            "false_reject_rate": 0.0,
+            "n_bad": 0,
+            "n_good": 1,
+            "oracle_coupled": false,
+            "rejected_count": 0,
+            "true_accept_confidence_interval": {
+              "confidence": 0.95,
+              "count": 1,
+              "denominator": 1,
+              "label": "approximate_binary_proportion_interval",
+              "lower": 0.206549,
+              "method": "wilson_score",
+              "upper": 1.0
+            },
+            "true_accept_count": 1,
+            "true_accept_denominator": 1,
+            "true_accept_rate": 1.0,
+            "true_reject_count": 0,
+            "unavailable_count": 0
+          }
+        },
+        "candidate_count": 1,
+        "decision_phase_rows": [
+          {
+            "baseline_accept": false,
+            "baseline_candidate_artifact_hash": "603fc55c24e66a70d67dac2cb8661fdb9be0c08333133151cfd7a72fbe9881eb",
+            "baseline_candidate_id": "gold-official-smoke",
+            "baseline_decision_source": "produced_single_agent_baseline_unavailable",
+            "baseline_evidence_kind": "malformed",
+            "baseline_producer": {
+              "model": "gold",
+              "provider": "swebench",
+              "runner_label": "swebench-gold-smoke"
+            },
+            "baseline_prompt_sha256": "e4767d6b2a2a74a4b7ef986a9f1f89a8a65d7e7bf026dae881f92dbd7b3ad77c",
+            "baseline_unavailable": true,
+            "baseline_unavailable_reason": "malformed_baseline_row_untrusted_decision_source:swebench_verified_gold_patch_plumbing_smoke",
+            "candidate_id": "gold-official-smoke",
+            "decision_phase_sha256": "c765a307f84c61d385768f2e3ef9627b44d489896d9a0097d798be9873ed6bdf",
+            "instance_id": "sympy__sympy-14711",
+            "public_packet_sha256": "1a47d9f8facfc1ca568e31efbc981e4a56fb4774ddfb5d67d8a972362e633cb0",
+            "s_full_accept": false,
+            "s_full_unavailable": true,
+            "s_probe_accept": true,
+            "s_probe_unavailable": false
+          }
+        ],
+        "decision_phase_sha256": "de5c2a22f90ce5a8ba459db7bb443cc474c5d3dfb82412a8cc202a23ce108e71",
+        "default_change_allowed": false,
+        "false_accept_at_matched_true_accept": {
+          "s_full": {
+            "reason": "baseline_arm_unavailable",
+            "status": "unavailable",
+            "unavailable_count": 1
+          },
+          "s_probe": {
+            "reason": "baseline_arm_unavailable",
+            "status": "unavailable",
+            "unavailable_count": 1
+          }
+        },
+        "far_tar_frr": {
+          "baseline": {
+            "false_accept_confidence_interval": {
+              "confidence": 0.95,
+              "count": 0,
+              "denominator": 0,
+              "label": "approximate_binary_proportion_interval",
+              "lower": null,
+              "method": "wilson_score",
+              "upper": null
+            },
+            "false_accept_rate": 0.0,
+            "false_reject_rate": 0.0,
+            "n_bad": 0,
+            "n_good": 0,
+            "true_accept_confidence_interval": {
+              "confidence": 0.95,
+              "count": 0,
+              "denominator": 0,
+              "label": "approximate_binary_proportion_interval",
+              "lower": null,
+              "method": "wilson_score",
+              "upper": null
+            },
+            "true_accept_rate": 0.0
+          },
+          "oracle_ceiling": {
+            "false_accept_confidence_interval": {
+              "confidence": 0.95,
+              "count": 0,
+              "denominator": 0,
+              "label": "approximate_binary_proportion_interval",
+              "lower": null,
+              "method": "wilson_score",
+              "upper": null
+            },
+            "false_accept_rate": 0.0,
+            "false_reject_rate": 0.0,
+            "n_bad": 0,
+            "n_good": 1,
+            "true_accept_confidence_interval": {
+              "confidence": 0.95,
+              "count": 1,
+              "denominator": 1,
+              "label": "approximate_binary_proportion_interval",
+              "lower": 0.206549,
+              "method": "wilson_score",
+              "upper": 1.0
+            },
+            "true_accept_rate": 1.0
+          },
+          "s_full": {
+            "false_accept_confidence_interval": {
+              "confidence": 0.95,
+              "count": 0,
+              "denominator": 0,
+              "label": "approximate_binary_proportion_interval",
+              "lower": null,
+              "method": "wilson_score",
+              "upper": null
+            },
+            "false_accept_rate": 0.0,
+            "false_reject_rate": 0.0,
+            "n_bad": 0,
+            "n_good": 0,
+            "true_accept_confidence_interval": {
+              "confidence": 0.95,
+              "count": 0,
+              "denominator": 0,
+              "label": "approximate_binary_proportion_interval",
+              "lower": null,
+              "method": "wilson_score",
+              "upper": null
+            },
+            "true_accept_rate": 0.0
+          },
+          "s_probe": {
+            "false_accept_confidence_interval": {
+              "confidence": 0.95,
+              "count": 0,
+              "denominator": 0,
+              "label": "approximate_binary_proportion_interval",
+              "lower": null,
+              "method": "wilson_score",
+              "upper": null
+            },
+            "false_accept_rate": 0.0,
+            "false_reject_rate": 0.0,
+            "n_bad": 0,
+            "n_good": 1,
+            "true_accept_confidence_interval": {
+              "confidence": 0.95,
+              "count": 1,
+              "denominator": 1,
+              "label": "approximate_binary_proportion_interval",
+              "lower": 0.206549,
+              "method": "wilson_score",
+              "upper": 1.0
+            },
+            "true_accept_rate": 1.0
+          }
+        },
+        "gaming_flags": [],
+        "gate_advanced": false,
+        "improvement_claim_allowed": false,
+        "instance_count": 1,
+        "matched_true_accept_status": {
+          "s_full": "unavailable",
+          "s_probe": "unavailable"
+        },
+        "metric_applyable": false,
+        "no_regression_findings": [],
+        "no_regression_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "oracle_isolation": {
+          "forbidden_keys_scanned": [
+            "FAIL_TO_PASS",
+            "PASS_TO_PASS",
+            "expected_outcome",
+            "final_score",
+            "hidden_test_commands",
+            "oracle_accept",
+            "test_patch"
+          ],
+          "forbidden_text_markers_scanned": [
+            ".mergeability/",
+            "FAIL_TO_PASS",
+            "PASS_TO_PASS",
+            "hidden/test_behavior.py",
+            "test_patch"
+          ],
+          "ok": true,
+          "violations": []
+        },
+        "panel_marginal_delta_at_matched_true_accept": {
+          "full_roster_available_count": 0,
+          "reason": "no_full_roster_available_rows",
+          "status": "unavailable"
+        },
+        "per_row_results": [
+          {
+            "baseline_accept": false,
+            "baseline_candidate_artifact_hash": "603fc55c24e66a70d67dac2cb8661fdb9be0c08333133151cfd7a72fbe9881eb",
+            "baseline_candidate_id": "gold-official-smoke",
+            "baseline_decision_source": "produced_single_agent_baseline_unavailable",
+            "baseline_evidence_kind": "malformed",
+            "baseline_producer": {
+              "model": "gold",
+              "provider": "swebench",
+              "runner_label": "swebench-gold-smoke"
+            },
+            "baseline_prompt_sha256": "e4767d6b2a2a74a4b7ef986a9f1f89a8a65d7e7bf026dae881f92dbd7b3ad77c",
+            "baseline_unavailable": true,
+            "baseline_unavailable_reason": "malformed_baseline_row_untrusted_decision_source:swebench_verified_gold_patch_plumbing_smoke",
+            "candidate_id": "gold-official-smoke",
+            "decision_phase_sha256": "c765a307f84c61d385768f2e3ef9627b44d489896d9a0097d798be9873ed6bdf",
+            "fail_to_pass_status": "pass",
+            "instance_id": "sympy__sympy-14711",
+            "legacy_baseline_self_report": null,
+            "legacy_baseline_self_report_calibration_only": true,
+            "oracle_accept": true,
+            "oracle_ceiling_accept": true,
+            "oracle_ceiling_unavailable": false,
+            "oracle_isolation_ok": true,
+            "oracle_isolation_refs": [],
+            "pass_to_pass_regression": false,
+            "pass_to_pass_status": "pass",
+            "public_packet_sha256": "1a47d9f8facfc1ca568e31efbc981e4a56fb4774ddfb5d67d8a972362e633cb0",
+            "s_full_accept": false,
+            "s_full_disagrees_with_s_probe": false,
+            "s_full_unavailable": true,
+            "s_probe_accept": true,
+            "s_probe_unavailable": false
+          }
+        ],
+        "per_row_unavailable_arms": [
+          {
+            "baseline_unavailable": true,
+            "candidate_id": "gold-official-smoke",
+            "instance_id": "sympy__sympy-14711",
+            "s_full_unavailable": true,
+            "s_probe_unavailable": false
+          }
+        ],
+        "policy_mutated": false,
+        "public_packets": [
+          {
+            "base_commit": "c6753448b5c34f95e250105d76709fe4d349ca1f",
+            "candidate_artifact_hash": "603fc55c24e66a70d67dac2cb8661fdb9be0c08333133151cfd7a72fbe9881eb",
+            "candidate_id": "gold-official-smoke",
+            "instance_id": "sympy__sympy-14711",
+            "oracle_isolation_refs": [],
+            "problem_statement": "vector add 0 error\n```python\r\nfrom sympy.physics.vector import ReferenceFrame, Vector\r\nfrom sympy import symbols\r\nsum([N.x, (0 * N.x)])\r\n```\r\ngives\r\n```\r\n---------------------------------------------------------------------------\r\nTypeError                                 Traceback (most recent call last)\r\n<ipython-input-1-0b9155eecc0e> in <module>()\r\n      2 from sympy import symbols\r\n      3 N = ReferenceFrame('N')\r\n----> 4 sum([N.x, (0 * N.x)])\r\n\r\n/usr/local/lib/python3.6/site-packages/sympy/physics/vector/vector.py in __add__(self, other)\r\n     59         \"\"\"The add operator for Vector. \"\"\"\r\n     60         #if other == 0: return self\r\n---> 61         other = _check_vector(other)\r\n     62         return Vector(self.args + other.args)\r\n     63 \r\n\r\n/usr/local/lib/python3.6/site-packages/sympy/physics/vector/vector.py in _check_vector(other)\r\n    708 def _check_vector(other):\r\n    709     if not isinstance(other, Vector):\r\n--> 710         raise TypeError('A Vector must be supplied')\r\n    711     return other\r\n\r\nTypeError: A Vector must be supplied\r\n```\n",
+            "public_checkout_ref": "c6753448b5c34f95e250105d76709fe4d349ca1f",
+            "public_checkout_sha256": "",
+            "repo": "sympy/sympy",
+            "s_probe_substrate": {
+              "kind": "public_static_patch_probe",
+              "public_build_commands": [],
+              "public_lint_commands": [],
+              "requires_patch_applies": true
+            },
+            "schema_version": "supervisor-swebench-pro-public-packet/v1"
+          }
+        ],
+        "public_packets_sha256": "d67d5f46a232d6ff39560df52e69b827b3bd81ecd34ab307ea0da6b55a077ab4",
+        "recommendation": {
+          "applyable_policy_proposal": false,
+          "next_step": "grow oracle-isolated SWE-bench Pro mergeability corpus before any powered live experiment",
+          "report_only": true
+        },
+        "report_only": {
+          "config_mutated": false,
+          "default_change_allowed": false,
+          "policy_mutated": false
+        },
+        "report_sha256": "601a01eb2863761bbf6f9144bd793860035aa152c3754dba03c2aa626a3b7e76",
+        "s_probe_substrate": {
+          "kind": "public_static_patch_probe",
+          "public_build_commands": [],
+          "public_lint_commands": [],
+          "requires_patch_applies": true
+        },
+        "schema_version": "supervisor-swebench-pro-mergeability-bridge-report/v1",
+        "validity_notes": [
+          "S_probe substrate is public_static_patch_probe: patch applicability against a public checkout plus curated public lint/build commands.",
+          "This substrate is not equivalent to hidden FAIL_TO_PASS or PASS_TO_PASS execution and must not be reported as parity.",
+          "S_full decisions require both S_probe accept and an available reviewer-panel accept; unavailable reviewer-panel keeps S_full unavailable rather than imputing accept.",
+          "FAR, TAR, and FRR are computed from post-decision FAIL_TO_PASS and PASS_TO_PASS oracle labels; decision rows are frozen before oracle outcomes are read.",
+          "Oracle ceiling is oracle-coupled and never reportable as a supervisor improvement."
+        ]
+      },
+      "freeze_phase_records": [
+        {
+          "frozen_at_epoch_s": 1782124030.1078742,
+          "frozen_decisions_path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/replay-output/replay/instances/sympy__sympy-14711/frozen_decisions.json",
+          "frozen_decisions_sha256": "827958e5bdf959c66cab18ba4c716aa9956b640ca08b4acd23b8d21dc37d6ca7"
+        }
+      ],
+      "frozen_decisions": {
+        "frozen_at_epoch_s": 1782124030.1078742,
+        "frozen_decisions_sha256": "827958e5bdf959c66cab18ba4c716aa9956b640ca08b4acd23b8d21dc37d6ca7",
+        "instance_id": "sympy__sympy-14711",
+        "rows": [
+          {
+            "baseline_accept": false,
+            "baseline_candidate_artifact_hash": "603fc55c24e66a70d67dac2cb8661fdb9be0c08333133151cfd7a72fbe9881eb",
+            "baseline_candidate_id": "gold-official-smoke",
+            "baseline_decision_source": "produced_single_agent_baseline_unavailable",
+            "baseline_evidence_kind": "malformed",
+            "baseline_producer": {
+              "model": "gold",
+              "provider": "swebench",
+              "runner_label": "swebench-gold-smoke"
+            },
+            "baseline_prompt_sha256": "e4767d6b2a2a74a4b7ef986a9f1f89a8a65d7e7bf026dae881f92dbd7b3ad77c",
+            "baseline_unavailable": true,
+            "baseline_unavailable_reason": "malformed_baseline_row_untrusted_decision_source:swebench_verified_gold_patch_plumbing_smoke",
+            "candidate_id": "gold-official-smoke",
+            "instance_id": "sympy__sympy-14711",
+            "public_packet_sha256": "b6af640d20439cc0fafc35f4d9766646d1f70a75ccecd01f4228ce616b5b73e6",
+            "reviewer_packet_sha256": "66e4ff334ff3d59a1e2e0a83bfb78bd8879abe9df8b80c8459aad5b5934459e7",
+            "s_full_accept": false,
+            "s_full_reason": "reviewer_panel_unavailable",
+            "s_full_unavailable": true,
+            "s_probe_accept": true,
+            "s_probe_reason": "public_probe_passed",
+            "s_probe_unavailable": false
+          }
+        ],
+        "schema_version": "supervisor-swebench-mergeability-frozen-decisions/v1"
+      },
+      "frozen_decisions_path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/replay-output/replay/instances/sympy__sympy-14711/frozen_decisions.json",
+      "independent_reviewer_results": [
+        {
+          "accept": false,
+          "candidate_id": "gold-official-smoke",
+          "instance_id": "sympy__sympy-14711",
+          "reason": "reviewer_panel_unavailable",
+          "reviewer_id": "",
+          "reviewer_notes": "",
+          "reviewer_packet_sha256": "66e4ff334ff3d59a1e2e0a83bfb78bd8879abe9df8b80c8459aad5b5934459e7",
+          "unavailable": true
+        }
+      ],
+      "instance_id": "sympy__sympy-14711",
+      "oracle_adapter_kind": "official_docker_or_equivalent",
+      "oracle_outputs_path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/replay-output/replay/instances/sympy__sympy-14711/oracle_outputs.json",
+      "oracle_phase_records": [
+        {
+          "candidate_id": "gold-official-smoke",
+          "fail_to_pass_status": "pass",
+          "instance_id": "sympy__sympy-14711",
+          "pass_to_pass_status": "pass"
+        }
+      ],
+      "per_candidate_artifacts": [
+        {
+          "baseline_decision": {
+            "accept": false,
+            "candidate_artifact_hash": "603fc55c24e66a70d67dac2cb8661fdb9be0c08333133151cfd7a72fbe9881eb",
+            "candidate_id": "gold-official-smoke",
+            "decision_source": "produced_single_agent_baseline_unavailable",
+            "evidence_kind": "malformed",
+            "producer": {
+              "model": "gold",
+              "provider": "swebench",
+              "runner_label": "swebench-gold-smoke"
+            },
+            "prompt_sha256": "e4767d6b2a2a74a4b7ef986a9f1f89a8a65d7e7bf026dae881f92dbd7b3ad77c",
+            "unavailable": true,
+            "unavailable_reason": "malformed_baseline_row_untrusted_decision_source:swebench_verified_gold_patch_plumbing_smoke"
+          },
+          "candidate_id": "gold-official-smoke",
+          "instance_id": "sympy__sympy-14711",
+          "patch_apply_receipts": [
+            {
+              "apply": {
+                "argv": [
+                  "git",
+                  "apply",
+                  "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/replay-output/replay/instances/sympy__sympy-14711/candidates/gold-official-smoke/model.patch"
+                ],
+                "expected_failure": false,
+                "name": "model_patch_apply",
+                "returncode": 0,
+                "status": "passed",
+                "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              },
+              "check": {
+                "argv": [
+                  "git",
+                  "apply",
+                  "--check",
+                  "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/replay-output/replay/instances/sympy__sympy-14711/candidates/gold-official-smoke/model.patch"
+                ],
+                "expected_failure": false,
+                "name": "model_patch_apply_check",
+                "returncode": 0,
+                "status": "passed",
+                "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              },
+              "mode": "model_patch",
+              "patch_sha256": "603fc55c24e66a70d67dac2cb8661fdb9be0c08333133151cfd7a72fbe9881eb",
+              "reason": "",
+              "status": "passed"
+            }
+          ],
+          "patch_apply_status": "passed",
+          "public_command_receipts": [],
+          "public_command_status": "passed",
+          "public_packet_sha256": "b6af640d20439cc0fafc35f4d9766646d1f70a75ccecd01f4228ce616b5b73e6",
+          "public_worktree": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/replay-output/replay/instances/sympy__sympy-14711/candidates/gold-official-smoke/public_worktree",
+          "reviewer_packet_sha256": "66e4ff334ff3d59a1e2e0a83bfb78bd8879abe9df8b80c8459aad5b5934459e7",
+          "s_full_decision": {
+            "accept": false,
+            "reason": "reviewer_panel_unavailable",
+            "unavailable": true
+          },
+          "s_probe_decision": {
+            "accept": true,
+            "reason": "public_probe_passed",
+            "unavailable": false
+          },
+          "s_probe_execution_substrate": {
+            "execution_label": "static_lint_only",
+            "hidden_oracle_excluded": true,
+            "public_command_count": 0
+          }
+        }
+      ],
+      "protected_paths": [
+        ".git/",
+        ".mergeability/",
+        "hidden/"
+      ],
+      "public_commands": [],
+      "report_path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/replay-output/replay/instances/sympy__sympy-14711/report.json",
+      "report_sha256": "0e930e0d3e1f4c220449bbfdf52a57facfc1b86f627d92cf1f636e04fae40f2c",
+      "reviewer_packets": [
+        {
+          "candidate_id": "gold-official-smoke",
+          "instance_id": "sympy__sympy-14711",
+          "reviewer_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/replay-output/replay/instances/sympy__sympy-14711/candidates/gold-official-smoke/reviewer_packet.json",
+          "reviewer_packet_sha256": "66e4ff334ff3d59a1e2e0a83bfb78bd8879abe9df8b80c8459aad5b5934459e7"
+        }
+      ],
+      "s_probe_execution_substrate": {
+        "execution_label": "static_lint_only",
+        "hidden_oracle_excluded": true,
+        "public_command_count": 0
+      },
+      "schema_version": "supervisor-swebench-mergeability-fixture-report/v1",
+      "worktree_isolation_records": []
+    }
+  ],
+  "live_fetch_used": false,
+  "live_generation_used": false,
+  "manifest_path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/replay-output/official_replay_manifest.json",
+  "manifest_sha256": "c319cba6b9a35aa222a1f07ce84406ed04490ab0bcb15eb1388bb35b0c4a91ce",
+  "metric_applyable": false,
+  "oracle_adapter_kind": "official_docker_or_equivalent",
+  "policy_mutated": false,
+  "report_sha256": "58a05ff34fcd3c5a1400cb597e5cdec529beeb14c4ea4e38e5247cc670d8437b",
+  "reviewer_panel_mode": "custom",
+  "s_probe_execution_substrate": {
+    "execution_label": "static_lint_only",
+    "hidden_oracle_excluded": true,
+    "public_command_count": 0
+  },
+  "schema_version": "supervisor-swebench-mergeability-replay-report/v1"
+}

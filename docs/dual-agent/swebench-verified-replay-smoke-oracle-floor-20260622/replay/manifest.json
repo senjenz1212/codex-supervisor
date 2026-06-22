@@ -1,0 +1,2237 @@
+{
+  "event_ids": [
+    851832,
+    851852,
+    851853,
+    851854,
+    851856,
+    851857,
+    851859,
+    851931,
+    851936,
+    851937,
+    851938,
+    851940,
+    851942,
+    851943,
+    851944,
+    851945,
+    852130,
+    852131,
+    852132,
+    852133,
+    852136,
+    852137,
+    852138,
+    852139,
+    852140,
+    852141,
+    852142,
+    852146,
+    852228,
+    852235,
+    852236,
+    852237,
+    852239,
+    852241,
+    852242,
+    852243,
+    852244,
+    852295,
+    852296,
+    852297,
+    852298,
+    852301,
+    852302,
+    852303,
+    852304,
+    852320,
+    852321,
+    852322,
+    852323,
+    852324,
+    852325,
+    852326,
+    852327,
+    852349,
+    852350,
+    852351,
+    852352,
+    852456,
+    852457,
+    852458,
+    852459,
+    852460,
+    852461,
+    852462,
+    852463,
+    852468,
+    852471,
+    852472,
+    852473,
+    852474,
+    852486,
+    852487,
+    852488,
+    852489,
+    852490,
+    852491,
+    852492,
+    852493,
+    852503,
+    852504,
+    852505,
+    852506,
+    852610,
+    852611,
+    852612,
+    852613,
+    852614,
+    852615,
+    852616,
+    852617,
+    852622,
+    852625,
+    852626,
+    852627,
+    852628,
+    852656,
+    852657,
+    852659,
+    852660,
+    852661,
+    852664,
+    852665,
+    852666,
+    852667,
+    852680,
+    852681,
+    852682,
+    852683,
+    852684,
+    852685,
+    852686,
+    852687,
+    852688,
+    852701,
+    852702,
+    852703,
+    852704,
+    852819,
+    852820,
+    852821,
+    852822,
+    852823,
+    852824,
+    852825,
+    852826,
+    852827,
+    852832,
+    852833,
+    852834,
+    852835,
+    852836,
+    852837,
+    852918,
+    852919,
+    852940,
+    852941,
+    852942,
+    852943,
+    852944,
+    852945,
+    852946,
+    853038,
+    853039,
+    853040,
+    853041,
+    853153,
+    853154,
+    853155,
+    853156,
+    853157,
+    853158,
+    853159,
+    853160,
+    853161,
+    853166,
+    853167,
+    853168,
+    853169,
+    853170,
+    853171,
+    853188,
+    853189,
+    853190,
+    853191,
+    853192,
+    853193,
+    853194,
+    853195,
+    853196,
+    853214,
+    853215,
+    853216,
+    853217,
+    853397,
+    853398,
+    853399,
+    853400,
+    853401,
+    853402,
+    853403,
+    853404,
+    853405,
+    853410,
+    853411,
+    853412,
+    853413,
+    853414,
+    853415,
+    853426,
+    853427,
+    853428,
+    853429,
+    853430,
+    853431,
+    853432,
+    853433,
+    853434,
+    853473,
+    853474,
+    853475,
+    853476,
+    853690,
+    853691,
+    853692,
+    853693,
+    853697,
+    853699,
+    853700,
+    853701,
+    853702,
+    853703,
+    853704,
+    853705,
+    853706,
+    853753,
+    853754,
+    853755,
+    853756,
+    853757,
+    853758,
+    853759,
+    853760,
+    853761,
+    853770,
+    853771,
+    853772,
+    853773,
+    854002,
+    854042,
+    854043,
+    854044,
+    854046,
+    854048,
+    854049,
+    854050,
+    854051,
+    854070,
+    854071,
+    854072,
+    854073,
+    854083,
+    854084,
+    854085,
+    854086,
+    854087,
+    854090,
+    854091,
+    854095,
+    854178,
+    854182,
+    854191,
+    854192,
+    854201,
+    854202,
+    854203,
+    854204,
+    854205,
+    854206,
+    854303,
+    854304,
+    854305,
+    854306,
+    854307,
+    854308,
+    854309,
+    854310,
+    854311,
+    854384,
+    854385,
+    854386,
+    854387,
+    854561,
+    854562,
+    854563,
+    854564,
+    854565,
+    854566,
+    854567,
+    854568,
+    854569,
+    854574,
+    854575,
+    854576,
+    854577,
+    854578,
+    854579,
+    854676,
+    854689,
+    854690,
+    854691,
+    854692,
+    854693,
+    854695,
+    854697,
+    854698,
+    854735,
+    854736,
+    854746,
+    854750,
+    854751,
+    854752,
+    854754,
+    854756,
+    854757,
+    854760,
+    854761,
+    854869,
+    854870,
+    854872,
+    854873,
+    854874,
+    854875,
+    854876,
+    854877,
+    854878,
+    854879,
+    854924,
+    854925,
+    854926,
+    854927,
+    854928,
+    854929,
+    854930,
+    854931,
+    854932,
+    854994,
+    854995,
+    854996,
+    854997,
+    854998,
+    854999,
+    855000,
+    855001,
+    855002,
+    855027,
+    855028,
+    855029,
+    855030,
+    855031,
+    855032,
+    855033,
+    855034,
+    855035,
+    855090,
+    855091,
+    855092,
+    855093,
+    855267,
+    855268,
+    855269,
+    855270,
+    855271,
+    855272,
+    855273,
+    855278,
+    855279,
+    855280,
+    855281,
+    855282,
+    855283,
+    855306,
+    855307,
+    855308,
+    855314,
+    855315,
+    855316,
+    855325,
+    855369,
+    855405,
+    855406,
+    855407,
+    855409,
+    855411,
+    855412,
+    855413,
+    855414,
+    855443,
+    855444,
+    855445,
+    855449,
+    855450,
+    855451,
+    855452,
+    855453,
+    855454,
+    855455,
+    855456,
+    855457,
+    855458,
+    855637,
+    855638,
+    855639,
+    855640,
+    855641,
+    855642,
+    855643,
+    855644,
+    855649
+  ],
+  "event_kinds": [
+    "dual_agent_gate_result",
+    "dual_agent_gate_round",
+    "dual_agent_interaction_message",
+    "dual_agent_planning_validation",
+    "dual_agent_runtime_evidence",
+    "dual_agent_skill_receipt_validation",
+    "dual_agent_workflow_job",
+    "dual_agent_workflow_route",
+    "dual_agent_workflow_terminal_outcome",
+    "independent_reviewer_adjudication",
+    "independent_reviewer_review",
+    "supervisor_cross_vendor_review_selected",
+    "supervisor_evidence_attempt_recorded",
+    "supervisor_lesson_injection",
+    "supervisor_policy_overlay_snapshot",
+    "supervisor_review_context_validation",
+    "supervisor_review_packet_created",
+    "supervisor_worker_blocked",
+    "supervisor_worker_completed",
+    "supervisor_worker_dispatched",
+    "supervisor_worker_failed",
+    "supervisor_worker_roster_checked",
+    "supervisor_worker_session_created",
+    "tri_agent_cursor_review"
+  ],
+  "events_count": 398,
+  "failure_summary": null,
+  "files": {
+    "index": "index.md",
+    "interactions": "interactions.md",
+    "mast_coverage_json": "replay/mast-coverage.json",
+    "mast_coverage_markdown": "mast-coverage.md",
+    "transcript_jsonl": "transcript.jsonl",
+    "transcript_markdown": "transcript.md",
+    "workspace_snapshot": "replay/workspace-snapshot.json"
+  },
+  "handoff_packets": [
+    {
+      "content": "{\n  \"cwd\": \"/Users/sam.zhang/Documents/codex-supervisor\",\n  \"execution_layer_policy\": {\n    \"agentic_lead_policy\": {\n      \"min_subagents\": 3,\n      \"policy\": \"off\",\n      \"required_evidence_grade\": \"self_reported\",\n      \"required_roles\": [],\n      \"solo_exception_for_artifact_only_gates\": false\n    },\n    \"allowed_dynamic_workflow_task_classes\": [],\n    \"codex_supervises_final_artifact\": true,\n    \"dynamic_workflow_task_class\": null,\n    \"lead_execution_layer\": \"single_lead_worker\",\n    \"mode\": \"lead_direct\",\n    \"preview_required_gates\": [],\n    \"supervision_layer\": \"codex_plus_lead\"\n  },\n  \"expected_decisions\": [],\n  \"expected_objections\": [],\n  \"expected_specialists\": [],\n  \"gate\": \"outcome_review\",\n  \"injected_lesson_block\": \"Known failure modes to verify before claiming\\nThese are advisory lessons from previous supervisor runs. They do not satisfy any gate by themselves.\\nUse them as a checklist only: do not block, revise, deny, or accept solely because a lesson exists. A step-repetition lesson applies only when current evidence proves the same handoff, artifacts, and source state are being repeated.\\n1. [deliverable_evidence_failed] unknown (source_run_id=vela2-prod-confidence-001): Verify this known failure mode explicitly before claiming the gate is complete.\\n2. [missing_worker_signal] worker_invocation (source_run_id=cffe55b8-47b9-4cc0-b025-586aeb0ee5e9): Verify this known failure mode explicitly before claiming the gate is complete.\\n3. [FM-2.4] Information withholding (source_run_id=8ebdbc89-0185-4962-be6f-b0f593887670): Address independent reviewer objections with concrete evidence references.\\n4. [FM-1.3] Step repetition (source_run_id=8ebdbc89-0185-4962-be6f-b0f593887670): Change the plan or evidence before retrying; do not repeat the same handoff.\\n5. [FM-2.4] Information withholding (source_run_id=f89bc699-1b4e-4713-95b7-d1493a3acfd8): Address independent reviewer objections with concrete evidence references.\",\n  \"injected_lesson_block_sha256\": \"829d220b66bab5c228dc13757a33b6417eba638735b26fcdd3b6bfd95aa9e2c7\",\n  \"injected_lesson_ids\": [\n    \"lesson-59913963cdfc567d8fe610e82aee863ebb77307f753f7046210498c8c522c5e7\",\n    \"lesson-6e3b08262245b3eade5743e9ddb1a92bfb42a34ec49e8b4f2b0792ca1834a590\",\n    \"lesson-833931ec30fbdcacaef5c7df91fae73a71b7ac537110ccf9cab2ec2e80ec6a52\",\n    \"lesson-cd61385380aa0d71d9927ec5c8f719f315a9191aaf387fdc93862d0a6d71f1ef\",\n    \"lesson-715f39df8c3dc22bea09092f80685d87f086d8cdbbf58a0ec008ce0e27d1cb38\"\n  ],\n  \"instruction\": \"Supervisor-owned workflow gate: outcome_review.\\n\\nIntent:\\nRun a tiny real SWE-bench Verified report-only benchmark smoke artifact to produce official oracle and S_probe floor artifacts without claiming full-panel improvement. Corrective evidence: the docs/report deliverables are explicitly in scope for this report-only benchmark artifact; manifest hidden test lists are normalized; .git internals are excluded from committed public worktrees; the Docker-backed swebench.harness.run_evaluation smoke was rerun cleanly; reviewer-safe hashes live in source/outcome-evidence.md plus official-smoke/artifact-index.json; generated harness logs are tracked as compact evidence while large public bundles/worktrees remain ignored.\\n\\nReview this gate against the current source artifacts and return a typed dual_agent_outcome.\\nUse decisions/objections to say whether the gate should accept, revise, or deny.\\n\\nRuntime TDD test contract:\\nThe supervisor runtime floor will verify that every TDD-named test below appears in supervisor-generated runtime evidence. Include tests/commands covering all of them in outcome.tests. Explicitly skipped tests must carry a recorded pytest skip reason; silently absent tests block the gate.\\nUse only canonical gate decisions (`accept`, `revise`, or `deny`). Do not return `accept_with_residual`; if test execution needs verification, declare the exact pytest commands/nodeids and let the supervisor runtime floor rerun them.\\nIf the Claude Bash/test tool is unavailable but the implementation diff is complete, do not block solely on that local tooling outage. Return `accept` with test_status=`unknown`, list the exact pytest commands/nodeids, and make no tests-passed claim; the supervisor runtime floor is the authority and will block the gate on failing or missing tests.\\n- test_official_replay_smoke_writes_report_with_selected_instances\\n- test_official_replay_smoke_records_frozen_before_oracle_receipts\\n- test_verified_smoke_is_labeled_plumbing_only\\n- test_full_panel_metric_unavailable_without_full_roster\\n- test_official_replay_smoke_emits_no_policy_proposal\\n\\nKnown failure modes to verify before claiming\\nThese are advisory lessons from previous supervisor runs. They do not satisfy any gate by themselves.\\nUse them as a checklist only: do not block, revise, deny, or accept solely because a lesson exists. A step-repetition lesson applies only when current evidence proves the same handoff, artifacts, and source state are being repeated.\\n1. [deliverable_evidence_failed] unknown (source_run_id=vela2-prod-confidence-001): Verify this known failure mode explicitly before claiming the gate is complete.\\n2. [missing_worker_signal] worker_invocation (source_run_id=cffe55b8-47b9-4cc0-b025-586aeb0ee5e9): Verify this known failure mode explicitly before claiming the gate is complete.\\n3. [FM-2.4] Information withholding (source_run_id=8ebdbc89-0185-4962-be6f-b0f593887670): Address independent reviewer objections with concrete evidence references.\\n4. [FM-1.3] Step repetition (source_run_id=8ebdbc89-0185-4962-be6f-b0f593887670): Change the plan or evidence before retrying; do not repeat the same handoff.\\n5. [FM-2.4] Information withholding (source_run_id=f89bc699-1b4e-4713-95b7-d1493a3acfd8): Address independent reviewer objections with concrete evidence references.\",\n  \"lead_skill\": null,\n  \"outcome_validation_policy\": {\n    \"fidelity_failure\": \"abort_to_operator\",\n    \"malformed_outcome\": \"retry_once_with_corrective_packet\",\n    \"subprocess_failure\": \"abort_to_operator\",\n    \"timeout\": \"abort_to_operator\"\n  },\n  \"packet_schema_version\": \"dual-agent-handoff/v1\",\n  \"planning_artifacts\": [\n    {\n      \"kind\": \"prd\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/source/prd.md\",\n      \"sha256\": \"aaec203626cb9fc748e827460c6489867e82f2202e48f991f460ed567767f31b\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/source/grill-findings.md\",\n      \"sha256\": \"07205548f3e21a4ef40243ceb3900e4bb513d22bbe7353bfdd9c157c2ddb2902\"\n    },\n    {\n      \"kind\": \"issues\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/source/issues.md\",\n      \"sha256\": \"17bd2712eeb47d23857bf835eef38410d15a7d3853b1dda2770fe2dff2842967\"\n    },\n    {\n      \"kind\": \"tdd_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/source/tdd.md\",\n      \"sha256\": \"1fed1bbfe28af82dcd67e5fb2fc2d4b3a99a2c7a38218c285e075be071a3ac50\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/source/grill-findings-tdd.md\",\n      \"sha256\": \"676ac985da476293ce2ea55cb27e66c54a32ecc77edfa7ea4bbe5f7b6788fe0e\"\n    },\n    {\n      \"kind\": \"implementation_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/source/implementation-plan.md\",\n      \"sha256\": \"0db55fd2c5c7de5542efdfb5801776973304833b3d789ecbb57f2e602a728aa7\"\n    },\n    {\n      \"kind\": \"prd\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/source/prd.md\",\n      \"sha256\": \"aaec203626cb9fc748e827460c6489867e82f2202e48f991f460ed567767f31b\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/source/grill-findings.md\",\n      \"sha256\": \"07205548f3e21a4ef40243ceb3900e4bb513d22bbe7353bfdd9c157c2ddb2902\"\n    },\n    {\n      \"kind\": \"issues\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/source/issues.md\",\n      \"sha256\": \"17bd2712eeb47d23857bf835eef38410d15a7d3853b1dda2770fe2dff2842967\"\n    },\n    {\n      \"kind\": \"tdd_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/source/tdd.md\",\n      \"sha256\": \"1fed1bbfe28af82dcd67e5fb2fc2d4b3a99a2c7a38218c285e075be071a3ac50\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/source/grill-findings-tdd.md\",\n      \"sha256\": \"676ac985da476293ce2ea55cb27e66c54a32ecc77edfa7ea4bbe5f7b6788fe0e\"\n    },\n    {\n      \"kind\": \"implementation_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/source/implementation-plan.md\",\n      \"sha256\": \"0db55fd2c5c7de5542efdfb5801776973304833b3d789ecbb57f2e602a728aa7\"\n    },\n    {\n      \"kind\": \"other\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/source/outcome-evidence.md\",\n      \"sha256\": \"d8bb7e7060842fed05b01e47adb031d2e07a8ea6f9632dcb92285162f14cbb22\"\n    },\n    {\n      \"kind\": \"other\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/artifact-index.json\",\n      \"sha256\": \"b527d87f2d93e5aa11e6c6213b900290ed3761d0b8b63e64b6b877e72ecb7ae8\"\n    }\n  ],\n  \"policy_overlay_block\": \"\",\n  \"policy_overlay_block_sha256\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\n  \"policy_overlay_hash\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\n  \"policy_proposal_id\": \"\",\n  \"suggested_skills\": [\n    \"/lead\"\n  ],\n  \"task_id\": \"swebench-verified-replay-smoke-oracle-floor-20260622\"\n}\n",
+      "event_ids": [
+        852131,
+        852140,
+        852296,
+        852321,
+        852487,
+        852657,
+        852681,
+        852833,
+        852919,
+        853167,
+        853189,
+        853411,
+        853427,
+        853702,
+        853754,
+        854091,
+        854182,
+        854202,
+        854304,
+        854575,
+        854870,
+        854875,
+        854925,
+        854928,
+        854995,
+        854998,
+        855028,
+        855279,
+        855307,
+        855316,
+        855444
+      ],
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json",
+      "sha256": "736987496e40d2136d5ebadf648a02d0d015c9a078b644b411fd36bbc3143ced",
+      "status": "captured"
+    }
+  ],
+  "mast_coverage": [
+    {
+      "deterministic_probe": "blocked payload reason `disobey_task_spec` or planning artifact failure",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.1",
+      "mast_mode": "Disobey task specification",
+      "sources": [
+        {
+          "event_id": 852140,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 852140,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        }
+      ],
+      "status": "observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `role_violation_covenant`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload -> classify_failure",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.2",
+      "mast_mode": "Disobey role specification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "same gate and handoff packet observed twice",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "detect_sequence_failures",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "sources": [
+        {
+          "details": {
+            "signature": [
+              "issues_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+            ]
+          },
+          "event_ids": [
+            852140,
+            852296
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+            ]
+          },
+          "event_ids": [
+            852681,
+            852833
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+            ]
+          },
+          "event_ids": [
+            852681,
+            852919
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+            ]
+          },
+          "event_ids": [
+            852681,
+            853167
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+            ]
+          },
+          "event_ids": [
+            852681,
+            853189
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+            ]
+          },
+          "event_ids": [
+            852681,
+            853411
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+            ]
+          },
+          "event_ids": [
+            852681,
+            853427
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+            ]
+          },
+          "event_ids": [
+            852681,
+            853702
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+            ]
+          },
+          "event_ids": [
+            852681,
+            853754
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+            ]
+          },
+          "event_ids": [
+            852681,
+            854091
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+            ]
+          },
+          "event_ids": [
+            852681,
+            854182
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+            ]
+          },
+          "event_ids": [
+            852681,
+            854202
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+            ]
+          },
+          "event_ids": [
+            852681,
+            854304
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+            ]
+          },
+          "event_ids": [
+            852681,
+            854575
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+            ]
+          },
+          "event_ids": [
+            852681,
+            854870
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+            ]
+          },
+          "event_ids": [
+            852681,
+            854875
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+            ]
+          },
+          "event_ids": [
+            852681,
+            854925
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+            ]
+          },
+          "event_ids": [
+            852681,
+            854928
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+            ]
+          },
+          "event_ids": [
+            852681,
+            854995
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+            ]
+          },
+          "event_ids": [
+            852681,
+            854998
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+            ]
+          },
+          "event_ids": [
+            852681,
+            855028
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+            ]
+          },
+          "event_ids": [
+            852681,
+            855279
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+            ]
+          },
+          "event_ids": [
+            852681,
+            855307
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+            ]
+          },
+          "event_ids": [
+            852681,
+            855316
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+            ]
+          },
+          "event_ids": [
+            852681,
+            855444
+          ],
+          "source": "sequence"
+        }
+      ],
+      "status": "observed_in_run",
+      "trigger_surface": "sequence"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `lost_conversation_history`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.4",
+      "mast_mode": "Loss of conversation history",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `agents_not_converged_max_rounds`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.5",
+      "mast_mode": "Unaware of termination conditions",
+      "sources": [
+        {
+          "event_id": 852833,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 852833,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        },
+        {
+          "event_id": 853167,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 853167,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        },
+        {
+          "event_id": 853411,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 853411,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        },
+        {
+          "event_id": 853702,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 853702,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        },
+        {
+          "event_id": 854091,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 854091,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        },
+        {
+          "event_id": 854575,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 854575,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        },
+        {
+          "event_id": 854928,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 854928,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        },
+        {
+          "event_id": 854998,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 854998,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        },
+        {
+          "event_id": 855279,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 855279,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        }
+      ],
+      "status": "observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `conversation_reset`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.1",
+      "mast_mode": "Conversation reset",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `ambiguous_input_no_clarification`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.2",
+      "mast_mode": "Fail to ask for clarification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `scope_violation_off_scope`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.3",
+      "mast_mode": "Task derailment",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "Cursor or reviewer disagreement probe fails",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.4",
+      "mast_mode": "Information withholding",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "Claude response does not address a prior Codex objection",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "detect_sequence_failures",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "sources": [
+        {
+          "details": {
+            "objection": "gate blocked"
+          },
+          "event_ids": [
+            852141,
+            852295
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "independent_reviewer_non_accept: independent-reviewer-1"
+          },
+          "event_ids": [
+            852827,
+            852918
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "independent_reviewer_non_accept: independent-reviewer-1"
+          },
+          "event_ids": [
+            853161,
+            853188
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "independent_reviewer_non_accept: independent-reviewer-1"
+          },
+          "event_ids": [
+            853405,
+            853426
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "cursor_review_failed: cursor_modified_worktree"
+          },
+          "event_ids": [
+            853700,
+            853753
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "cursor_review_failed: Medium: No workspace official_replay_report.json from a real sympy__sympy-14711 Verified smoke integrating plumbing_smoke_only, oracle receipts, and bridge rows (issues Slice 1 AC / PRD P1 unmet as deliverable).; Low: swe_bench_official_oracle.py is untracked and not wired to CLI default; only monkeypatched unit test exercises it.; Low: docs/official-smoke/official_replay_manifest.json has corrupted FAIL_TO_PASS char-array serialization.; Low: Prior cursor_modified_worktree provenance concern persists for model_patch edits though current reviewer did not modify worktree."
+          },
+          "event_ids": [
+            854087,
+            854178
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "runtime_evidence_failed: runtime_evidence_failed: failures=runtime_changed_files_missing_from_diff, runtime_deliverable_not_file"
+          },
+          "event_ids": [
+            854192,
+            854303
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "independent_reviewer_non_accept: independent-reviewer-1"
+          },
+          "event_ids": [
+            854569,
+            854869
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "runtime_evidence_failed: runtime_evidence_failed: failures=runtime_changed_files_missing_from_diff, runtime_deliverable_missing"
+          },
+          "event_ids": [
+            854873,
+            854924
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "agents have not both accepted yet; revise and continue"
+          },
+          "event_ids": [
+            854926,
+            854994
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "agents have not both accepted yet; revise and continue"
+          },
+          "event_ids": [
+            854996,
+            855027
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "independent_reviewer_missing_verdict: independent-reviewer-0"
+          },
+          "event_ids": [
+            855273,
+            855306
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "deliverable_evidence_failed: deliverable_evidence_failed: failures=docs_report_deliverable_without_explicit_scope"
+          },
+          "event_ids": [
+            855314,
+            855443
+          ],
+          "source": "sequence"
+        }
+      ],
+      "status": "observed_in_run",
+      "trigger_surface": "sequence"
+    },
+    {
+      "deterministic_probe": "outcome fidelity or message protocol failure",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.6",
+      "mast_mode": "Reasoning-action mismatch",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "accepted gate is missing a required probe",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload + detect_sequence_failures",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.1",
+      "mast_mode": "Premature termination",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload+sequence"
+    },
+    {
+      "deterministic_probe": "claim verification or evidence receipt probe fails",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.2",
+      "mast_mode": "No or incomplete verification",
+      "sources": [
+        {
+          "event_id": 854191,
+          "event_kind": "dual_agent_runtime_evidence",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 854191,
+          "event_kind": "dual_agent_runtime_evidence",
+          "source": "payload"
+        },
+        {
+          "event_id": 854872,
+          "event_kind": "dual_agent_runtime_evidence",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 854872,
+          "event_kind": "dual_agent_runtime_evidence",
+          "source": "payload"
+        }
+      ],
+      "status": "observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "Cursor rejects after the gate was accepted",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "detect_sequence_failures",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.3",
+      "mast_mode": "Incorrect verification",
+      "sources": [
+        {
+          "details": {
+            "accepted_gate_event_id": 853427
+          },
+          "event_ids": [
+            853427,
+            853697
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "accepted_gate_event_id": 853427
+          },
+          "event_ids": [
+            853427,
+            853699
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "accepted_gate_event_id": 853754
+          },
+          "event_ids": [
+            853754,
+            854085
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "accepted_gate_event_id": 853754
+          },
+          "event_ids": [
+            853754,
+            854086
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "accepted_gate_event_id": 855028
+          },
+          "event_ids": [
+            855028,
+            855271
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "accepted_gate_event_id": 855028
+          },
+          "event_ids": [
+            855028,
+            855272
+          ],
+          "source": "sequence"
+        }
+      ],
+      "status": "observed_in_run",
+      "trigger_surface": "sequence"
+    }
+  ],
+  "run_id": "142b5d12-2e6d-42cf-b0c9-e0e73d20136d",
+  "schema_version": "dual-agent-replay-manifest/v1",
+  "schema_versions": {
+    "agent_interaction": "dual-agent-interaction/v1",
+    "failure_taxonomy": "dual-agent-failure-taxonomy/v1",
+    "replay_manifest": "dual-agent-replay-manifest/v1",
+    "trace_envelope": "dual-agent-trace-envelope/v1"
+  },
+  "sequence_failures": [
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "gate blocked"
+      },
+      "event_ids": [
+        852141,
+        852295
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "issues_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+        ]
+      },
+      "event_ids": [
+        852140,
+        852296
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+        ]
+      },
+      "event_ids": [
+        852681,
+        852833
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "independent_reviewer_non_accept: independent-reviewer-1"
+      },
+      "event_ids": [
+        852827,
+        852918
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+        ]
+      },
+      "event_ids": [
+        852681,
+        852919
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+        ]
+      },
+      "event_ids": [
+        852681,
+        853167
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "independent_reviewer_non_accept: independent-reviewer-1"
+      },
+      "event_ids": [
+        853161,
+        853188
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+        ]
+      },
+      "event_ids": [
+        852681,
+        853189
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+        ]
+      },
+      "event_ids": [
+        852681,
+        853411
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "independent_reviewer_non_accept: independent-reviewer-1"
+      },
+      "event_ids": [
+        853405,
+        853426
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+        ]
+      },
+      "event_ids": [
+        852681,
+        853427
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "task_verification",
+      "code": "false_green_incorrect_verification",
+      "details": {
+        "accepted_gate_event_id": 853427
+      },
+      "event_ids": [
+        853427,
+        853697
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.3",
+      "mast_mode": "Incorrect verification",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "incorrect_verification"
+    },
+    {
+      "category": "task_verification",
+      "code": "false_green_incorrect_verification",
+      "details": {
+        "accepted_gate_event_id": 853427
+      },
+      "event_ids": [
+        853427,
+        853699
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.3",
+      "mast_mode": "Incorrect verification",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "incorrect_verification"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+        ]
+      },
+      "event_ids": [
+        852681,
+        853702
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "cursor_review_failed: cursor_modified_worktree"
+      },
+      "event_ids": [
+        853700,
+        853753
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+        ]
+      },
+      "event_ids": [
+        852681,
+        853754
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "task_verification",
+      "code": "false_green_incorrect_verification",
+      "details": {
+        "accepted_gate_event_id": 853754
+      },
+      "event_ids": [
+        853754,
+        854085
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.3",
+      "mast_mode": "Incorrect verification",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "incorrect_verification"
+    },
+    {
+      "category": "task_verification",
+      "code": "false_green_incorrect_verification",
+      "details": {
+        "accepted_gate_event_id": 853754
+      },
+      "event_ids": [
+        853754,
+        854086
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.3",
+      "mast_mode": "Incorrect verification",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "incorrect_verification"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+        ]
+      },
+      "event_ids": [
+        852681,
+        854091
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "cursor_review_failed: Medium: No workspace official_replay_report.json from a real sympy__sympy-14711 Verified smoke integrating plumbing_smoke_only, oracle receipts, and bridge rows (issues Slice 1 AC / PRD P1 unmet as deliverable).; Low: swe_bench_official_oracle.py is untracked and not wired to CLI default; only monkeypatched unit test exercises it.; Low: docs/official-smoke/official_replay_manifest.json has corrupted FAIL_TO_PASS char-array serialization.; Low: Prior cursor_modified_worktree provenance concern persists for model_patch edits though current reviewer did not modify worktree."
+      },
+      "event_ids": [
+        854087,
+        854178
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+        ]
+      },
+      "event_ids": [
+        852681,
+        854182
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+        ]
+      },
+      "event_ids": [
+        852681,
+        854202
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "runtime_evidence_failed: runtime_evidence_failed: failures=runtime_changed_files_missing_from_diff, runtime_deliverable_not_file"
+      },
+      "event_ids": [
+        854192,
+        854303
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+        ]
+      },
+      "event_ids": [
+        852681,
+        854304
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+        ]
+      },
+      "event_ids": [
+        852681,
+        854575
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "independent_reviewer_non_accept: independent-reviewer-1"
+      },
+      "event_ids": [
+        854569,
+        854869
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+        ]
+      },
+      "event_ids": [
+        852681,
+        854870
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+        ]
+      },
+      "event_ids": [
+        852681,
+        854875
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "runtime_evidence_failed: runtime_evidence_failed: failures=runtime_changed_files_missing_from_diff, runtime_deliverable_missing"
+      },
+      "event_ids": [
+        854873,
+        854924
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+        ]
+      },
+      "event_ids": [
+        852681,
+        854925
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+        ]
+      },
+      "event_ids": [
+        852681,
+        854928
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "agents have not both accepted yet; revise and continue"
+      },
+      "event_ids": [
+        854926,
+        854994
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+        ]
+      },
+      "event_ids": [
+        852681,
+        854995
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+        ]
+      },
+      "event_ids": [
+        852681,
+        854998
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "agents have not both accepted yet; revise and continue"
+      },
+      "event_ids": [
+        854996,
+        855027
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+        ]
+      },
+      "event_ids": [
+        852681,
+        855028
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "task_verification",
+      "code": "false_green_incorrect_verification",
+      "details": {
+        "accepted_gate_event_id": 855028
+      },
+      "event_ids": [
+        855028,
+        855271
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.3",
+      "mast_mode": "Incorrect verification",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "incorrect_verification"
+    },
+    {
+      "category": "task_verification",
+      "code": "false_green_incorrect_verification",
+      "details": {
+        "accepted_gate_event_id": 855028
+      },
+      "event_ids": [
+        855028,
+        855272
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.3",
+      "mast_mode": "Incorrect verification",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "incorrect_verification"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+        ]
+      },
+      "event_ids": [
+        852681,
+        855279
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "independent_reviewer_missing_verdict: independent-reviewer-0"
+      },
+      "event_ids": [
+        855273,
+        855306
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+        ]
+      },
+      "event_ids": [
+        852681,
+        855307
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+        ]
+      },
+      "event_ids": [
+        852681,
+        855316
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "deliverable_evidence_failed: deliverable_evidence_failed: failures=docs_report_deliverable_without_explicit_scope"
+      },
+      "event_ids": [
+        855314,
+        855443
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+        ]
+      },
+      "event_ids": [
+        852681,
+        855444
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    }
+  ],
+  "state": {
+    "events_count_at_capture": 398,
+    "first_event_id": 851832,
+    "last_event_id": 855649,
+    "transcript_jsonl_sha256": "3d64e23038439faa755660484692661056e180561491477ff1624361a1193744"
+  },
+  "task_id": "swebench-verified-replay-smoke-oracle-floor-20260622",
+  "tool_call_totals": {
+    "total_cost_usd": 148.374827,
+    "total_duration_ms": 10470060,
+    "total_duration_us": 10470126651,
+    "total_tokens_in": 43436133,
+    "total_tokens_out": 484092,
+    "unique_tool_calls": 287
+  },
+  "workspace_snapshot": {
+    "file_tree_sha256": "c039d8de4ccf4a2c793ebdc7c6a9e6cd7ae10706f1f3373d9168bfca472ed5ea",
+    "git": {
+      "diff_bytes": 30388589,
+      "diff_sha256": "0b255569189339ec76f81785fa36712ab6bfb90901f72e976bc9e5afe1af9daa",
+      "diff_stat": ".../grill-findings.md                              |    2 +\n .../index.md                                       |    2 +-\n .../interactions.md                                | 1141 ++++++\n .../mast-coverage.md                               |    6 +-\n .../replay/manifest.json                           |  219 +-\n .../replay/mast-coverage.json                      |   61 +-\n .../replay/workspace-snapshot.json                 |   14 +-\n .../transcript.jsonl                               |   24 +\n .../transcript.md                                  | 1173 ++++++\n .../triage.md                                      |   28 +-\n .../index.md                                       |    4 +-\n .../interactions.md                                |  173 +\n .../replay/manifest.json                           |   47 +-\n .../replay/workspace-snapshot.json                 |   14 +-\n .../transcript.jsonl                               |    6 +\n .../transcript.md                                  |  173 +\n .../triage.md                                      |   16 +-\n .../grill-findings.md                              |   13 +\n .../index.md                                       |    6 +-\n .../interactions.md                                | 3844 +++++++++++++++++++\n .../mast-coverage.md                               |    8 +-\n .../replay/manifest.json                           |  625 ++-\n .../replay/mast-coverage.json                      |  194 +\n .../replay/workspace-snapshot.json                 |   10 +-\n .../transcript.jsonl                               |   78 +\n .../transcript.md                                  | 4024 ++++++++++++++++++++\n .../triage.md                                      |   28 +-\n 27 files changed, 11798 insertions(+), 135 deletions(-)",
+      "head": "9db7d66a",
+      "head_label": "handoff_cwd_head",
+      "head_ref": "HEAD",
+      "head_sha": "9db7d66a",
+      "status_short": "M docs/dual-agent/mergeability-panel-availability-quality-separation-20260622/grill-findings.md\n M docs/dual-agent/mergeability-panel-availability-quality-separation-20260622/index.md\n M docs/dual-agent/mergeability-panel-availability-quality-separation-20260622/interactions.md\n M docs/dual-agent/mergeability-panel-availability-quality-separation-20260622/mast-coverage.md\n M docs/dual-agent/mergeability-panel-availability-quality-separation-20260622/replay/manifest.json\n M docs/dual-agent/mergeability-panel-availability-quality-separation-20260622/replay/mast-coverage.json\n M docs/dual-agent/mergeability-panel-availability-quality-separation-20260622/replay/workspace-snapshot.json\n M docs/dual-agent/mergeability-panel-availability-quality-separation-20260622/transcript.jsonl\n M docs/dual-agent/mergeability-panel-availability-quality-separation-20260622/transcript.md\n M docs/dual-agent/mergeability-panel-availability-quality-separation-20260622/triage.md\n M docs/dual-agent/swebench-official-oracle-runner-filtered-smoke-20260622/index.md\n M docs/dual-agent/swebench-official-oracle-runner-filtered-smoke-20260622/interactions.md\n M docs/dual-agent/swebench-official-oracle-runner-filtered-smoke-20260622/replay/manifest.json\n M docs/dual-agent/swebench-official-oracle-runner-filtered-smoke-20260622/replay/workspace-snapshot.json\n M docs/dual-agent/swebench-official-oracle-runner-filtered-smoke-20260622/transcript.jsonl\n M docs/dual-agent/swebench-official-oracle-runner-filtered-smoke-20260622/transcript.md\n M docs/dual-agent/swebench-official-oracle-runner-filtered-smoke-20260622/triage.md\nAM docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/grill-findings.md\nAM docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/index.md\nAM docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/interactions.md\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/issues.md\nAM docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/mast-coverage.md\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/.gitattributes\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/.gitignore\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/README.md\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/artifact-index.json\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/docker-config/config.json\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/mergeability-official-replay-cli.log\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/oracle-artifacts/sympy__sympy-14711/gold-official-smoke/logs/run_evaluation/supervisor-official-replay-smoke-20260622-sympy__sympy-14711-gold-official-smoke/supervisor-replay/sympy__sympy-14711/eval.sh\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/oracle-artifacts/sympy__sympy-14711/gold-official-smoke/logs/run_evaluation/supervisor-official-replay-smoke-20260622-sympy__sympy-14711-gold-official-smoke/supervisor-replay/sympy__sympy-14711/patch.diff\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/oracle-artifacts/sympy__sympy-14711/gold-official-smoke/logs/run_evaluation/supervisor-official-replay-smoke-20260622-sympy__sympy-14711-gold-official-smoke/supervisor-replay/sympy__sympy-14711/report.json\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/oracle-artifacts/sympy__sympy-14711/gold-official-smoke/logs/run_evaluation/supervisor-official-replay-smoke-20260622-sympy__sympy-14711-gold-official-smoke/supervisor-replay/sympy__sympy-14711/run_instance.log\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/oracle-artifacts/sympy__sympy-14711/gold-official-smoke/logs/run_evaluation/supervisor-official-replay-smoke-20260622-sympy__sympy-14711-gold-official-smoke/supervisor-replay/sympy__sympy-14711/test_output.txt\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/oracle-artifacts/sympy__sympy-14711/gold-official-smoke/predictions.json\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/oracle-artifacts/sympy__sympy-14711/gold-official-smoke/supervisor-replay.supervisor-official-replay-smoke-20260622-sympy__sympy-14711-gold-official-smoke.json\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/predictions.jsonl\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/replay-output/official-patches/sympy__sympy-14711-gold-official-smoke.patch\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/replay-output/official_replay_manifest.json\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/replay-output/official_replay_report.json\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/replay-output/replay/instances/sympy__sympy-14711/candidates/gold-official-smoke/model.patch\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/replay-output/replay/instances/sympy__sympy-14711/candidates/gold-official-smoke/reviewer_packet.json\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/replay-output/replay/instances/sympy__sympy-14711/frozen_decisions.json\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/replay-output/replay/instances/sympy__sympy-14711/oracle_outputs.json\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/replay-output/replay/instances/sympy__sympy-14711/report.json\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/replay-output/replay/report.json\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/official-smoke/selection.json\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/outcome-review.md\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/prd.md\nAM docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/replay/manifest.json\nAM docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/replay/mast-coverage.json\nAM docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/replay/workspace-snapshot.json\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/runtime-baseline-execution.json\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/screenshots.md\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/skill-receipts.json\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/source/grill-findings-tdd.md\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/source/grill-findings.md\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/source/implementation-plan.md\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/source/issues.md\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/source/outcome-evidence.md\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/source/prd.md\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/source/tdd.md\nA  docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/tdd.md\nAM docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/transcript.jsonl\nAM docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/transcript.md\nAM docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/triage.md\nM  pyproject.toml\nM  supervisor/mergeability_bench.py\nM  supervisor/swe_bench_mergeability.py\nA  supervisor/swe_bench_official_oracle.py\nM  tests/test_swe_bench_pro_mergeability_bridge.py\n?? .scratch/auto-evolution-loop-current-demo-20260618/\n?? .scratch/comfy-cloud-prototype-visuals/\n?? .scratch/comfy-cloud-prototype-workflow-request.json\n?? .scratch/comfy-cloud-prototype-workflow-result.json\n?? .scratch/mergeability-calibration-pilot-sample/\n?? .scratch/mergeability-debug/\n?? .scratch/mergeability-debug2/\n?? .scratch/mergeability-debug3/\n?? .scratch/mergeability-heldout-final-sample/\n?? .scratch/mergeability-independent-supervisor-arm-sample/\n?? .scratch/swebench-pro-mergeability-bridge-20260620/\n?? .scratch/swebench-verified-replay-smoke-planning-artifacts.json\n?? docs/dual-agent/auto-evolution-loop-current-demo-20260618/\n?? docs/dual-agent/comfy-cloud-polished-first-run-prototype-20260618/\n?? docs/dual-agent/comfy-cloud-polished-first-run-prototype-workflow-20260618/\n?? docs/dual-agent/mergeability-independent-supervisor-arm-20260619/\n?? docs/product-strategy/\n?? docs/testing/comfy-cloud-guided-first-workflow-coverage-index.md"
+    },
+    "root": "/Users/sam.zhang/Documents/codex-supervisor",
+    "root_source": "handoff_cwd",
+    "source_artifact_hashes": {
+      "grill_findings": "676ac985da476293ce2ea55cb27e66c54a32ecc77edfa7ea4bbe5f7b6788fe0e",
+      "implementation_plan": "0db55fd2c5c7de5542efdfb5801776973304833b3d789ecbb57f2e602a728aa7",
+      "issues": "17bd2712eeb47d23857bf835eef38410d15a7d3853b1dda2770fe2dff2842967",
+      "other": "b527d87f2d93e5aa11e6c6213b900290ed3761d0b8b63e64b6b877e72ecb7ae8",
+      "prd": "aaec203626cb9fc748e827460c6489867e82f2202e48f991f460ed567767f31b",
+      "tdd_plan": "1fed1bbfe28af82dcd67e5fb2fc2d4b3a99a2c7a38218c285e075be071a3ac50"
+    },
+    "status": "captured"
+  }
+}

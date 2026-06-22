@@ -1,0 +1,52 @@
+# Grill Findings
+
+These findings are derived from dual-agent gate objections in the ledger.
+Future duo-agent runs should also create this file through the `prd-to-tdd` skill's `grill-with-docs` gates before implementation.
+
+- event_id 852131 `prd_review`: P1/P2/P3/P6 promises lean ALREADY-GREEN (runner, selection_filter, ordering, invariants pre-exist from slices 1cb8d034/3577bacf); downstream TDD must pin net-new behavior on real selected rows to avoid vacuous-green tests
+- event_id 852131 `prd_review`: Deliverable 'real official oracle' is under-specified: P1-P6 are all satisfiable with a fake adapter; the honesty clause (fail/mark-unavailable not label-only oracle) mitigates but does not pin the committed-artifact provenance - flag for outcome gate
+- event_id 852132 `prd_review`: both agents accepted
+- event_id 852141 `issues_review`: gate blocked
+- event_id 852296 `issues_review`: Low-severity: issues largely re-assert pre-wired plumbing (S1 P1/P2/P3 and S2 P5/P6 ALREADY-GREEN). Genuine net-new is narrow: S2-AC1 plumbing_smoke_only label + real-row smoke artifact + honesty clause. Vacuously-green S1 risk mitigated by TDD test3 pinning the label and the honesty deliverable.
+- event_id 852297 `issues_review`: both agents accepted
+- event_id 852321 `tdd_review`: low-severity: 4 of 5 tests (T1/T2/T4/T5) largely re-assert already-green replay path behavior; only T3 plumbing_smoke_only is unambiguously net-new RED. Mitigated by boundary-first design, negative honesty checks, and PRD Docker honesty clause.
+- event_id 852463 `tdd_review`: both agents accepted
+- event_id 852617 `implementation_plan`: both agents accepted
+- event_id 852660 `execution`: both agents accepted
+- event_id 852681 `outcome_review`: Low-severity: 4 of 5 tests re-assert pre-existing green behavior (selection_filter, frozen-before-oracle, panel-unavailability, invariants-False); only T3 pins net-new plumbing_smoke_only code. Mitigated because each test exercises the real runner boundary with real fixtures and asserts specific fields.
+- event_id 852827 `outcome_review`: independent_reviewer_non_accept: independent-reviewer-1
+- event_id 852833 `outcome_review`: Low-severity: 4 of 5 tests re-assert pre-existing green behavior (selection_filter, frozen-before-oracle, panel-unavailability, invariants-False); only T3 pins net-new plumbing_smoke_only code. Mitigated because each test exercises the real runner boundary with real fixtures and asserts specific fields.
+- event_id 852919 `outcome_review`: Low severity: only the 7-line plumbing-label src is net-new; 4 of 5 tests re-assert pre-existing green behavior (selection filter, frozen-before-oracle, panel-unavailable, invariants-False). Mitigated: each test drives the real runner with fixtures asserting specific fields and T3 couples directly to the net-new label.
+- event_id 853161 `outcome_review`: independent_reviewer_non_accept: independent-reviewer-1
+- event_id 853167 `outcome_review`: Low severity: only the 7-line plumbing-label src is net-new; 4 of 5 tests re-assert pre-existing green behavior (selection filter, frozen-before-oracle, panel-unavailable, invariants-False). Mitigated: each test drives the real runner with fixtures asserting specific fields and T3 couples directly to the net-new label.
+- event_id 853405 `outcome_review`: independent_reviewer_non_accept: independent-reviewer-1
+- event_id 853700 `outcome_review`: cursor_review_failed: cursor_modified_worktree
+- event_id 853754 `outcome_review`: Low severity: cursor modified the worktree during its review (the corrective trigger), so the artifact was reviewer-altered rather than purely worker-produced; mitigated because edits are legitimate plumbing completing the implementation, the 5 TDD tests are non-vacuous and reference real symbols, and the supervisor runtime floor reruns the nodeids as authority
+- event_id 854087 `outcome_review`: cursor_review_failed: Medium: No workspace official_replay_report.json from a real sympy__sympy-14711 Verified smoke integrating plumbing_smoke_only, oracle receipts, and bridge rows (issues Slice 1 AC / PRD P1 unmet as deliverable).; Low: swe_bench_official_oracle.py is untracked and not wired to CLI default; only monkeypatched unit test exercises it.; Low: docs/official-smoke/official_replay_manifest.json has corrupted FAIL_TO_PASS char-array serialization.; Low: Prior cursor_modified_worktree provenance concern persists for model_patch edits though current reviewer did not modify worktree.
+- event_id 854091 `outcome_review`: Low severity: cursor modified the worktree during its review (the corrective trigger), so the artifact was reviewer-altered rather than purely worker-produced; mitigated because edits are legitimate plumbing completing the implementation, the 5 TDD tests are non-vacuous and reference real symbols, and the supervisor runtime floor reruns the nodeids as authority
+- event_id 854192 `outcome_review`: runtime_evidence_failed: runtime_evidence_failed: failures=runtime_changed_files_missing_from_diff, runtime_deliverable_not_file
+- event_id 854304 `outcome_review`: Low severity: TDD tests use stubbed oracle runner not the live Docker harness; the real oracle is evidenced only by static artifact hashes (return_code=0, validated=true) rather than re-execution. Mitigated because plumbing_smoke_only=true and improvement/powered/human claims are False, which is exactly the smoke's intent.
+- event_id 854569 `outcome_review`: independent_reviewer_non_accept: independent-reviewer-1
+- event_id 854575 `outcome_review`: Low severity: TDD tests use stubbed oracle runner not the live Docker harness; the real oracle is evidenced only by static artifact hashes (return_code=0, validated=true) rather than re-execution. Mitigated because plumbing_smoke_only=true and improvement/powered/human claims are False, which is exactly the smoke's intent.
+- event_id 854870 `outcome_review`: Deliverable official-smoke/ is untracked (?? ./), so artifacts live only in the working tree; mitigated because handoff treats sha'd artifact-index.json + outcome-evidence.md as bounded evidence and prior rounds accepted gitignored-by-design artifacts
+- event_id 854870 `outcome_review`: shasum approval-blocked: verified byte-size and existence match against index, but did not recompute sha256 for each file
+- event_id 854873 `outcome_review`: runtime_evidence_failed: runtime_evidence_failed: failures=runtime_changed_files_missing_from_diff, runtime_deliverable_missing
+- event_id 854875 `outcome_review`: Deliverable official-smoke/ is untracked (?? ./), so artifacts live only in the working tree; mitigated because handoff treats sha'd artifact-index.json + outcome-evidence.md as bounded evidence and prior rounds accepted gitignored-by-design artifacts
+- event_id 854875 `outcome_review`: shasum approval-blocked: verified byte-size and existence match against index, but did not recompute sha256 for each file
+- event_id 854925 `outcome_review`: supervisor/swe_bench_official_oracle.py is untracked yet imported at module level by tests/test_swe_bench_pro_mergeability_bridge.py:39; it must be staged/committed.
+- event_id 854925 `outcome_review`: Deliverable artifacts (official-smoke/artifact-index.json, source/outcome-evidence.md, replay-output/*) are untracked and therefore not in the diff the runtime floor inspects.
+- event_id 854925 `outcome_review`: R8 declared untracked files as changed_files and still failed; merely listing them does not satisfy the floor - they must be in the tracked diff.
+- event_id 854926 `outcome_review`: agents have not both accepted yet; revise and continue
+- event_id 854928 `outcome_review`: supervisor/swe_bench_official_oracle.py is untracked yet imported at module level by tests/test_swe_bench_pro_mergeability_bridge.py:39; it must be staged/committed.
+- event_id 854928 `outcome_review`: Deliverable artifacts (official-smoke/artifact-index.json, source/outcome-evidence.md, replay-output/*) are untracked and therefore not in the diff the runtime floor inspects.
+- event_id 854928 `outcome_review`: R8 declared untracked files as changed_files and still failed; merely listing them does not satisfy the floor - they must be in the tracked diff.
+- event_id 854995 `outcome_review`: supervisor/swe_bench_official_oracle.py is git-untracked (?? in git ls-files); tests/test_swe_bench_pro_mergeability_bridge.py:39 imports run_official_harness_oracle from it at module level, so floor checkout = ImportError = all 5 TDD tests fail to collect
+- event_id 854995 `outcome_review`: Deliverable dir docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/ (official-smoke/artifact-index.json, source/outcome-evidence.md) is untracked and never enters git diff, reproducing runtime_changed_files_missing_from_diff + runtime_deliverable_missing
+- event_id 854995 `outcome_review`: R11 fix (git add the source module + stage compact receipts/index + outcome-evidence.md) was not applied; state is unchanged at HEAD 9db7d66a
+- event_id 854996 `outcome_review`: agents have not both accepted yet; revise and continue
+- event_id 854998 `outcome_review`: supervisor/swe_bench_official_oracle.py is git-untracked (?? in git ls-files); tests/test_swe_bench_pro_mergeability_bridge.py:39 imports run_official_harness_oracle from it at module level, so floor checkout = ImportError = all 5 TDD tests fail to collect
+- event_id 854998 `outcome_review`: Deliverable dir docs/dual-agent/swebench-verified-replay-smoke-oracle-floor-20260622/ (official-smoke/artifact-index.json, source/outcome-evidence.md) is untracked and never enters git diff, reproducing runtime_changed_files_missing_from_diff + runtime_deliverable_missing
+- event_id 854998 `outcome_review`: R11 fix (git add the source module + stage compact receipts/index + outcome-evidence.md) was not applied; state is unchanged at HEAD 9db7d66a
+- event_id 855273 `outcome_review`: independent_reviewer_missing_verdict: independent-reviewer-0
+- event_id 855314 `outcome_review`: deliverable_evidence_failed: deliverable_evidence_failed: failures=docs_report_deliverable_without_explicit_scope
+- event_id 855644 `outcome_review`: both agents accepted

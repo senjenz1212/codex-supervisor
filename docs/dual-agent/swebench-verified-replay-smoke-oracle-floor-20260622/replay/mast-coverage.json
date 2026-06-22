@@ -1,0 +1,797 @@
+[
+  {
+    "deterministic_probe": "blocked payload reason `disobey_task_spec` or planning artifact failure",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "failure_taxonomy_for_payload",
+    "mast_category": "Specification Issues",
+    "mast_code": "FM-1.1",
+    "mast_mode": "Disobey task specification",
+    "sources": [
+      {
+        "event_id": 852140,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 852140,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      }
+    ],
+    "status": "observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "blocked payload reason `role_violation_covenant`",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "failure_taxonomy_for_payload -> classify_failure",
+    "mast_category": "Specification Issues",
+    "mast_code": "FM-1.2",
+    "mast_mode": "Disobey role specification",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "same gate and handoff packet observed twice",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "detect_sequence_failures",
+    "mast_category": "Specification Issues",
+    "mast_code": "FM-1.3",
+    "mast_mode": "Step repetition",
+    "sources": [
+      {
+        "details": {
+          "signature": [
+            "issues_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+          ]
+        },
+        "event_ids": [
+          852140,
+          852296
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+          ]
+        },
+        "event_ids": [
+          852681,
+          852833
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+          ]
+        },
+        "event_ids": [
+          852681,
+          852919
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+          ]
+        },
+        "event_ids": [
+          852681,
+          853167
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+          ]
+        },
+        "event_ids": [
+          852681,
+          853189
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+          ]
+        },
+        "event_ids": [
+          852681,
+          853411
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+          ]
+        },
+        "event_ids": [
+          852681,
+          853427
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+          ]
+        },
+        "event_ids": [
+          852681,
+          853702
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+          ]
+        },
+        "event_ids": [
+          852681,
+          853754
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+          ]
+        },
+        "event_ids": [
+          852681,
+          854091
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+          ]
+        },
+        "event_ids": [
+          852681,
+          854182
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+          ]
+        },
+        "event_ids": [
+          852681,
+          854202
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+          ]
+        },
+        "event_ids": [
+          852681,
+          854304
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+          ]
+        },
+        "event_ids": [
+          852681,
+          854575
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+          ]
+        },
+        "event_ids": [
+          852681,
+          854870
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+          ]
+        },
+        "event_ids": [
+          852681,
+          854875
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+          ]
+        },
+        "event_ids": [
+          852681,
+          854925
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+          ]
+        },
+        "event_ids": [
+          852681,
+          854928
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+          ]
+        },
+        "event_ids": [
+          852681,
+          854995
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+          ]
+        },
+        "event_ids": [
+          852681,
+          854998
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+          ]
+        },
+        "event_ids": [
+          852681,
+          855028
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+          ]
+        },
+        "event_ids": [
+          852681,
+          855279
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+          ]
+        },
+        "event_ids": [
+          852681,
+          855307
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+          ]
+        },
+        "event_ids": [
+          852681,
+          855316
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/swebench-verified-replay-smoke-oracle-floor-20260622.json"
+          ]
+        },
+        "event_ids": [
+          852681,
+          855444
+        ],
+        "source": "sequence"
+      }
+    ],
+    "status": "observed_in_run",
+    "trigger_surface": "sequence"
+  },
+  {
+    "deterministic_probe": "blocked payload reason `lost_conversation_history`",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "classify_failure",
+    "mast_category": "Specification Issues",
+    "mast_code": "FM-1.4",
+    "mast_mode": "Loss of conversation history",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "blocked payload reason `agents_not_converged_max_rounds`",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "classify_failure",
+    "mast_category": "Specification Issues",
+    "mast_code": "FM-1.5",
+    "mast_mode": "Unaware of termination conditions",
+    "sources": [
+      {
+        "event_id": 852833,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 852833,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 853167,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 853167,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 853411,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 853411,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 853702,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 853702,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 854091,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 854091,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 854575,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 854575,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 854928,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 854928,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 854998,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 854998,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      },
+      {
+        "event_id": 855279,
+        "event_kind": "dual_agent_gate_result",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 855279,
+        "event_kind": "dual_agent_gate_result",
+        "source": "payload"
+      }
+    ],
+    "status": "observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "blocked payload reason `conversation_reset`",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "classify_failure",
+    "mast_category": "Inter-Agent Misalignment",
+    "mast_code": "FM-2.1",
+    "mast_mode": "Conversation reset",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "blocked payload reason `ambiguous_input_no_clarification`",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "classify_failure",
+    "mast_category": "Inter-Agent Misalignment",
+    "mast_code": "FM-2.2",
+    "mast_mode": "Fail to ask for clarification",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "blocked payload reason `scope_violation_off_scope`",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "classify_failure",
+    "mast_category": "Inter-Agent Misalignment",
+    "mast_code": "FM-2.3",
+    "mast_mode": "Task derailment",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "Cursor or reviewer disagreement probe fails",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "failure_taxonomy_for_payload",
+    "mast_category": "Inter-Agent Misalignment",
+    "mast_code": "FM-2.4",
+    "mast_mode": "Information withholding",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "Claude response does not address a prior Codex objection",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "detect_sequence_failures",
+    "mast_category": "Inter-Agent Misalignment",
+    "mast_code": "FM-2.5",
+    "mast_mode": "Ignored other agent input",
+    "sources": [
+      {
+        "details": {
+          "objection": "gate blocked"
+        },
+        "event_ids": [
+          852141,
+          852295
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "independent_reviewer_non_accept: independent-reviewer-1"
+        },
+        "event_ids": [
+          852827,
+          852918
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "independent_reviewer_non_accept: independent-reviewer-1"
+        },
+        "event_ids": [
+          853161,
+          853188
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "independent_reviewer_non_accept: independent-reviewer-1"
+        },
+        "event_ids": [
+          853405,
+          853426
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "cursor_review_failed: cursor_modified_worktree"
+        },
+        "event_ids": [
+          853700,
+          853753
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "cursor_review_failed: Medium: No workspace official_replay_report.json from a real sympy__sympy-14711 Verified smoke integrating plumbing_smoke_only, oracle receipts, and bridge rows (issues Slice 1 AC / PRD P1 unmet as deliverable).; Low: swe_bench_official_oracle.py is untracked and not wired to CLI default; only monkeypatched unit test exercises it.; Low: docs/official-smoke/official_replay_manifest.json has corrupted FAIL_TO_PASS char-array serialization.; Low: Prior cursor_modified_worktree provenance concern persists for model_patch edits though current reviewer did not modify worktree."
+        },
+        "event_ids": [
+          854087,
+          854178
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "runtime_evidence_failed: runtime_evidence_failed: failures=runtime_changed_files_missing_from_diff, runtime_deliverable_not_file"
+        },
+        "event_ids": [
+          854192,
+          854303
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "independent_reviewer_non_accept: independent-reviewer-1"
+        },
+        "event_ids": [
+          854569,
+          854869
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "runtime_evidence_failed: runtime_evidence_failed: failures=runtime_changed_files_missing_from_diff, runtime_deliverable_missing"
+        },
+        "event_ids": [
+          854873,
+          854924
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "agents have not both accepted yet; revise and continue"
+        },
+        "event_ids": [
+          854926,
+          854994
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "agents have not both accepted yet; revise and continue"
+        },
+        "event_ids": [
+          854996,
+          855027
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "independent_reviewer_missing_verdict: independent-reviewer-0"
+        },
+        "event_ids": [
+          855273,
+          855306
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "deliverable_evidence_failed: deliverable_evidence_failed: failures=docs_report_deliverable_without_explicit_scope"
+        },
+        "event_ids": [
+          855314,
+          855443
+        ],
+        "source": "sequence"
+      }
+    ],
+    "status": "observed_in_run",
+    "trigger_surface": "sequence"
+  },
+  {
+    "deterministic_probe": "outcome fidelity or message protocol failure",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "failure_taxonomy_for_payload",
+    "mast_category": "Inter-Agent Misalignment",
+    "mast_code": "FM-2.6",
+    "mast_mode": "Reasoning-action mismatch",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "accepted gate is missing a required probe",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "failure_taxonomy_for_payload + detect_sequence_failures",
+    "mast_category": "Task Verification",
+    "mast_code": "FM-3.1",
+    "mast_mode": "Premature termination",
+    "sources": [],
+    "status": "not_observed_in_run",
+    "trigger_surface": "payload+sequence"
+  },
+  {
+    "deterministic_probe": "claim verification or evidence receipt probe fails",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "failure_taxonomy_for_payload",
+    "mast_category": "Task Verification",
+    "mast_code": "FM-3.2",
+    "mast_mode": "No or incomplete verification",
+    "sources": [
+      {
+        "event_id": 854191,
+        "event_kind": "dual_agent_runtime_evidence",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 854191,
+        "event_kind": "dual_agent_runtime_evidence",
+        "source": "payload"
+      },
+      {
+        "event_id": 854872,
+        "event_kind": "dual_agent_runtime_evidence",
+        "source": "trace_envelope"
+      },
+      {
+        "event_id": 854872,
+        "event_kind": "dual_agent_runtime_evidence",
+        "source": "payload"
+      }
+    ],
+    "status": "observed_in_run",
+    "trigger_surface": "payload"
+  },
+  {
+    "deterministic_probe": "Cursor rejects after the gate was accepted",
+    "deterministic_status": "covered_by_deterministic_probe",
+    "entrypoint": "detect_sequence_failures",
+    "mast_category": "Task Verification",
+    "mast_code": "FM-3.3",
+    "mast_mode": "Incorrect verification",
+    "sources": [
+      {
+        "details": {
+          "accepted_gate_event_id": 853427
+        },
+        "event_ids": [
+          853427,
+          853697
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "accepted_gate_event_id": 853427
+        },
+        "event_ids": [
+          853427,
+          853699
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "accepted_gate_event_id": 853754
+        },
+        "event_ids": [
+          853754,
+          854085
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "accepted_gate_event_id": 853754
+        },
+        "event_ids": [
+          853754,
+          854086
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "accepted_gate_event_id": 855028
+        },
+        "event_ids": [
+          855028,
+          855271
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "accepted_gate_event_id": 855028
+        },
+        "event_ids": [
+          855028,
+          855272
+        ],
+        "source": "sequence"
+      }
+    ],
+    "status": "observed_in_run",
+    "trigger_surface": "sequence"
+  }
+]
