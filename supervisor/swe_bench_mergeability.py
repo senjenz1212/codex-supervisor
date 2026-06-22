@@ -3104,28 +3104,29 @@ def swebench_mergeability_official_live_runner(
                 "candidate_id": record_payload["candidate_id"],
                 "model_patch": generation["model_patch"],
             }
-            explicit_baseline_receipt = generation.get("single_agent_baseline_decision")
-            if not isinstance(explicit_baseline_receipt, Mapping):
-                explicit_baseline_receipt = generation.get("baseline_decision")
-            if isinstance(explicit_baseline_receipt, Mapping):
-                prediction["single_agent_baseline_decision"] = dict(
-                    explicit_baseline_receipt
-                )
-            elif arm == "baseline" and isinstance(generation.get("accept"), bool):
-                prediction["single_agent_baseline_decision"] = {
-                    "candidate_id": record_payload["candidate_id"],
-                    "accept": bool(generation["accept"]),
-                    "decision_source": "official_live_single_agent_generation",
-                    "candidate_artifact_hash": record_payload[
-                        "candidate_artifact_hash"
-                    ],
-                    "producer": {
-                        "model": arm_config["model"],
-                        "provider": arm_config["provider"],
-                        "runner_label": "swebench-official-live-baseline-generator",
-                    },
-                    "prompt_sha256": record_payload["prompt_hash"],
-                }
+            if arm == "baseline":
+                explicit_baseline_receipt = generation.get("single_agent_baseline_decision")
+                if not isinstance(explicit_baseline_receipt, Mapping):
+                    explicit_baseline_receipt = generation.get("baseline_decision")
+                if isinstance(explicit_baseline_receipt, Mapping):
+                    prediction["single_agent_baseline_decision"] = dict(
+                        explicit_baseline_receipt
+                    )
+                elif isinstance(generation.get("accept"), bool):
+                    prediction["single_agent_baseline_decision"] = {
+                        "candidate_id": record_payload["candidate_id"],
+                        "accept": bool(generation["accept"]),
+                        "decision_source": "single_agent_candidate_generation",
+                        "candidate_artifact_hash": record_payload[
+                            "candidate_artifact_hash"
+                        ],
+                        "producer": {
+                            "model": arm_config["model"],
+                            "provider": arm_config["provider"],
+                            "runner_label": "swebench-official-live-baseline-generator",
+                        },
+                        "prompt_sha256": record_payload["prompt_hash"],
+                    }
             predictions.append(prediction)
 
     predictions_path = output_path / "official_live_predictions.jsonl"
@@ -3445,26 +3446,27 @@ def swebench_mergeability_live_runner(
                     "candidate_artifact_hash": record["candidate_artifact_hash"],
                 },
             }
-            explicit_baseline_receipt = generation.get("single_agent_baseline_decision")
-            if not isinstance(explicit_baseline_receipt, Mapping):
-                explicit_baseline_receipt = generation.get("baseline_decision")
-            if isinstance(explicit_baseline_receipt, Mapping):
-                candidate["single_agent_baseline_decision"] = dict(
-                    explicit_baseline_receipt
-                )
-            elif arm == "baseline" and isinstance(generation.get("accept"), bool):
-                candidate["single_agent_baseline_decision"] = {
-                    "candidate_id": record["candidate_id"],
-                    "accept": bool(generation["accept"]),
-                    "decision_source": "single_agent_candidate_generation",
-                    "candidate_artifact_hash": record["candidate_artifact_hash"],
-                    "producer": {
-                        "model": arm_config["model"],
-                        "provider": arm_config["provider"],
-                        "runner_label": "swebench-live-baseline-generator",
-                    },
-                    "prompt_sha256": record["prompt_hash"],
-                }
+            if arm == "baseline":
+                explicit_baseline_receipt = generation.get("single_agent_baseline_decision")
+                if not isinstance(explicit_baseline_receipt, Mapping):
+                    explicit_baseline_receipt = generation.get("baseline_decision")
+                if isinstance(explicit_baseline_receipt, Mapping):
+                    candidate["single_agent_baseline_decision"] = dict(
+                        explicit_baseline_receipt
+                    )
+                elif isinstance(generation.get("accept"), bool):
+                    candidate["single_agent_baseline_decision"] = {
+                        "candidate_id": record["candidate_id"],
+                        "accept": bool(generation["accept"]),
+                        "decision_source": "single_agent_candidate_generation",
+                        "candidate_artifact_hash": record["candidate_artifact_hash"],
+                        "producer": {
+                            "model": arm_config["model"],
+                            "provider": arm_config["provider"],
+                            "runner_label": "swebench-live-baseline-generator",
+                        },
+                        "prompt_sha256": record["prompt_hash"],
+                    }
             replay_entry["candidates"].append(candidate)
         generated_instances.append(replay_entry)
 

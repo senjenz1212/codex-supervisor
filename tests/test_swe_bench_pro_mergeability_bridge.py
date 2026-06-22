@@ -1617,6 +1617,117 @@ def _official_materializer(*, record, output_dir):
     return bundle
 
 
+def test_official_replay_gold_smoke_without_produced_baseline_receipt_is_unavailable(tmp_path):
+    prediction = {
+        "instance_id": "official_demo__repo-001",
+        "candidate_id": "gold-smoke",
+        "model_patch": _valid_model_patch(),
+    }
+    predictions_path = tmp_path / "predictions.jsonl"
+    predictions_path.write_text(json.dumps(prediction) + "\n", encoding="utf-8")
+
+    report = swebench_mergeability_official_replay_runner(
+        dataset="fixture-official",
+        dataset_split="test",
+        predictions_path=predictions_path,
+        output_dir=tmp_path / "out",
+        dataset_loader=lambda **_kwargs: [_official_record()],
+        repo_materializer=_official_materializer,
+        oracle_runner=_smoke_oracle_runner,
+        oracle_adapter_kind="official_docker_or_equivalent",
+        instance_ids=["official_demo__repo-001"],
+    )
+
+    row = report["bridge_report"]["per_row_results"][0]
+    assert row["candidate_id"] == "gold-smoke"
+    assert row["baseline_accept"] is False
+    assert row["baseline_unavailable"] is True
+    assert row["baseline_evidence_kind"] == "missing"
+    assert row["baseline_unavailable_reason"] == "baseline_decisions_not_supplied"
+    baseline_arm = report["bridge_report"]["arms"][ARM_BASELINE]
+    assert baseline_arm["availability_status"] == "unavailable"
+    matched = report["bridge_report"]["false_accept_at_matched_true_accept"][ARM_S_PROBE]
+    assert matched == {
+        "status": "unavailable",
+        "reason": "baseline_arm_unavailable",
+        "unavailable_count": 1,
+    }
+    assert report["metric_applyable"] is False
+    assert report["improvement_claim_allowed"] is False
+
+
+def test_official_replay_produced_baseline_receipt_populates_baseline_arm(tmp_path):
+    predictions_path = _write_official_predictions(tmp_path)
+
+    report = swebench_mergeability_official_replay_runner(
+        dataset="fixture-official",
+        dataset_split="test",
+        predictions_path=predictions_path,
+        output_dir=tmp_path / "out",
+        dataset_loader=lambda **_kwargs: [_official_record()],
+        repo_materializer=_official_materializer,
+        oracle_runner=_smoke_oracle_runner,
+        oracle_adapter_kind="official_docker_or_equivalent",
+        instance_ids=["official_demo__repo-001"],
+    )
+
+    row = report["bridge_report"]["per_row_results"][0]
+    assert row["baseline_accept"] is True
+    assert row["baseline_unavailable"] is False
+    assert row["baseline_decision_source"] == "replayed_single_agent_baseline"
+    assert row["baseline_evidence_kind"] == "produced_single_agent_baseline"
+    assert row["baseline_candidate_id"] == "official-cand"
+    assert row["baseline_candidate_artifact_hash"] == sha256(
+        _valid_model_patch().encode("utf-8")
+    ).hexdigest()
+    baseline_arm = report["bridge_report"]["arms"][ARM_BASELINE]
+    assert baseline_arm["availability_status"] == "available"
+    assert baseline_arm["evidence_kind"] == "produced_single_agent_baseline"
+    assert baseline_arm["decision_source"] == "replayed_single_agent_baseline"
+
+
+def test_official_replay_hash_mismatched_baseline_receipt_is_unavailable(tmp_path):
+    decision = _produced_baseline_decision(
+        "official-cand",
+        patch=_valid_model_patch(),
+        accept=True,
+    )
+    bogus_hash = sha256(b"not-the-candidate-patch").hexdigest()
+    decision["candidate_artifact_hash"] = bogus_hash
+    prediction = {
+        "instance_id": "official_demo__repo-001",
+        "candidate_id": "official-cand",
+        "model_patch": _valid_model_patch(),
+        "single_agent_baseline_decision": decision,
+    }
+    predictions_path = tmp_path / "predictions.jsonl"
+    predictions_path.write_text(json.dumps(prediction) + "\n", encoding="utf-8")
+
+    report = swebench_mergeability_official_replay_runner(
+        dataset="fixture-official",
+        dataset_split="test",
+        predictions_path=predictions_path,
+        output_dir=tmp_path / "out",
+        dataset_loader=lambda **_kwargs: [_official_record()],
+        repo_materializer=_official_materializer,
+        oracle_runner=_smoke_oracle_runner,
+        oracle_adapter_kind="official_docker_or_equivalent",
+        instance_ids=["official_demo__repo-001"],
+    )
+
+    row = report["bridge_report"]["per_row_results"][0]
+    assert row["baseline_accept"] is False
+    assert row["baseline_unavailable"] is True
+    assert row["baseline_evidence_kind"] == "hash_mismatch"
+    assert row["baseline_candidate_artifact_hash"] == bogus_hash
+    assert row["baseline_unavailable_reason"] == "candidate_artifact_hash_mismatch"
+    baseline_arm = report["bridge_report"]["arms"][ARM_BASELINE]
+    assert baseline_arm["availability_status"] == "unavailable"
+    matched = report["bridge_report"]["false_accept_at_matched_true_accept"][ARM_S_PROBE]
+    assert matched["status"] == "unavailable"
+    assert matched["reason"] == "baseline_arm_unavailable"
+
+
 def test_official_replay_refuses_dataset_fetch_without_opt_in(tmp_path):
     calls: list[str] = []
 
@@ -1879,6 +1990,33 @@ class _FakeLiveGenerator:
         }
 
 
+class _AcceptingFakeLiveGenerator(_FakeLiveGenerator):
+    def __call__(self, generator_input):
+        result = super().__call__(generator_input)
+        result["accept"] = True
+        return result
+
+
+class _BaselineReceiptSmugglingLiveGenerator(_FakeLiveGenerator):
+    def __call__(self, generator_input):
+        result = super().__call__(generator_input)
+        result["single_agent_baseline_decision"] = {
+            "candidate_id": result["candidate_id"],
+            "accept": True,
+            "decision_source": "single_agent_candidate_generation",
+            "candidate_artifact_hash": sha256(
+                result["model_patch"].encode("utf-8")
+            ).hexdigest(),
+            "producer": {
+                "model": "supervisor-model",
+                "provider": "fixture",
+                "runner_label": "supervisor-generator-not-baseline",
+            },
+            "prompt_sha256": sha256(b"supervisor-prompt").hexdigest(),
+        }
+        return result
+
+
 def test_official_live_refuses_without_allow_live_before_generators_run(tmp_path):
     baseline = _FailingLiveGenerator()
     supervisor = _FailingLiveGenerator()
@@ -1940,7 +2078,7 @@ def test_official_live_refuses_without_budget_before_generators_run(tmp_path):
 
 
 def test_official_live_generates_matched_arms_and_reuses_official_replay(tmp_path):
-    baseline = _FakeLiveGenerator()
+    baseline = _AcceptingFakeLiveGenerator()
     supervisor = _FakeLiveGenerator()
 
     report = swebench_mergeability_official_live_runner(
@@ -1986,6 +2124,57 @@ def test_official_live_generates_matched_arms_and_reuses_official_replay(tmp_pat
     assert arms["baseline"]["candidate_artifact_hash"]
     assert arms["supervisor"]["candidate_artifact_hash"]
     assert report["evaluator_hash"] == report["official_replay_report"]["report_sha256"]
+
+    rows = {
+        row["candidate_id"]: row
+        for row in report["bridge_report"]["per_row_results"]
+    }
+    baseline_row = rows["baseline-generated"]
+    assert baseline_row["baseline_unavailable"] is False
+    assert baseline_row["baseline_accept"] is True
+    assert baseline_row["baseline_decision_source"] == "single_agent_candidate_generation"
+    assert baseline_row["baseline_evidence_kind"] == "produced_single_agent_baseline"
+    assert baseline_row["baseline_producer"]["runner_label"] == (
+        "swebench-official-live-baseline-generator"
+    )
+
+
+def test_official_live_ignores_supervisor_supplied_baseline_receipts(tmp_path):
+    report = swebench_mergeability_official_live_runner(
+        dataset="fixture-official",
+        dataset_split="test",
+        output_dir=tmp_path / "out",
+        baseline_generator=_AcceptingFakeLiveGenerator(),
+        supervisor_generator=_BaselineReceiptSmugglingLiveGenerator(),
+        allow_live=True,
+        max_budget_usd=1.0,
+        model="claude-opus-4-8",
+        provider="anthropic",
+        dataset_loader=lambda **_kwargs: [_official_record()],
+        repo_materializer=_official_materializer,
+        oracle_runner=lambda context: {
+            "fail_to_pass_status": "pass",
+            "pass_to_pass_status": "pass",
+            "oracle_adapter_receipt": _official_adapter_receipt(context),
+        },
+        oracle_adapter_kind="official_docker_or_equivalent",
+    )
+
+    rows = {
+        row["candidate_id"]: row
+        for row in report["bridge_report"]["per_row_results"]
+    }
+    baseline_row = rows["baseline-generated"]
+    assert baseline_row["baseline_unavailable"] is False
+    assert baseline_row["baseline_decision_source"] == "single_agent_candidate_generation"
+    supervisor_row = rows["supervisor-generated"]
+    assert supervisor_row["baseline_accept"] is False
+    assert supervisor_row["baseline_unavailable"] is True
+    assert supervisor_row["baseline_evidence_kind"] == "missing"
+    assert supervisor_row["baseline_unavailable_reason"] == (
+        "baseline_decisions_not_supplied"
+    )
+    assert supervisor_row["baseline_producer"] == {}
 
 
 def test_official_live_generator_inputs_exclude_hidden_oracle(tmp_path):
