@@ -1,0 +1,82 @@
+{
+  "artifact_hashes": {
+    "candidate": "cbb96ad99ec3d09a8f14d424c8e4c36d720bfd70ce848dc158162c73f0a7cbf5",
+    "task": "c905f3c113bf6336062ed5dc8a42454b9e19940e8ec6053e2ea8ea5d8c26fe9c"
+  },
+  "blocker_status": "passed",
+  "candidate_id": "diagnostic-calc-zero-and-mixed",
+  "command_results": [
+    {
+      "argv": [
+        "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python",
+        "-m",
+        "pytest",
+        "hidden/test_behavior.py",
+        "-q"
+      ],
+      "duration_s": 0.0,
+      "expected_failure": false,
+      "name": "hidden_test",
+      "returncode": 0,
+      "status": "passed",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_tail": "",
+      "stdout_sha256": "d930225b1855d5eb0ae19e687fa3634664c0bc06c2d4a4ccf9ac9fb8fd3fba4d",
+      "stdout_tail": "..                                                                       [100%]\n2 passed in <duration>s\n"
+    },
+    {
+      "argv": [
+        "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_calculator.py",
+        "-q"
+      ],
+      "duration_s": 0.0,
+      "expected_failure": true,
+      "name": "reverse_test",
+      "returncode": 1,
+      "status": "passed",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_tail": "",
+      "stdout_sha256": "3170a624f3d858650f35180ee2eaef9a809454bcc740ad372db423ed06f7ff6e",
+      "stdout_tail": "F                                                                        [100%]\n=================================== FAILURES ===================================\n________________________ test_adds_mixed_sign_integers _________________________\n\n    def test_adds_mixed_sign_integers():\n>       assert add(-3, 5) == 2\nE       assert -8 == 2\nE        +  where -8 = add(-3, 5)\n\ntests/test_calculator.py:5: AssertionError\n=========================== short test summary info ============================\nFAILED tests/test_calculator.py::test_adds_mixed_sign_integers - assert -8 == 2\n1 failed in <duration>s\n"
+    },
+    {
+      "argv": [
+        "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python",
+        "-m",
+        "compileall",
+        "app",
+        "-q"
+      ],
+      "duration_s": 0.0,
+      "expected_failure": false,
+      "name": "lint_build",
+      "returncode": 0,
+      "status": "passed",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_tail": "",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_tail": ""
+    }
+  ],
+  "evidence_refs": [
+    "mergeability_task:/Users/sam.zhang/Documents/codex-supervisor/tests/fixtures/mergeability_bench/tasks/calculator_addition.json",
+    "mergeability_candidate:/Users/sam.zhang/Documents/codex-supervisor/tests/fixtures/mergeability_bench/candidates/diagnostic_calc_zero_and_mixed.json"
+  ],
+  "failures": [],
+  "final_score": 1.0,
+  "hidden_test_status": "passed",
+  "lint_build_status": "passed",
+  "receipt_ids": [
+    "mergeability:calculator-addition:diagnostic-calc-zero-and-mixed"
+  ],
+  "result_sha256": "46866aaadb2d55ed1953fbb9fca93a05c61cf3d4cb4b1dcee8fa7a7e9b917853",
+  "reverse_test_status": "passed",
+  "schema_version": "supervisor-mergeability-result/v1",
+  "scope_status": "passed",
+  "secondary_report_only": true,
+  "task_id": "calculator-addition",
+  "weighted_secondary_score": null
+}

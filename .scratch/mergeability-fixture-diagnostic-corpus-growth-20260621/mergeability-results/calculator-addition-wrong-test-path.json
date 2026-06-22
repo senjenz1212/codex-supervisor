@@ -1,0 +1,66 @@
+{
+  "artifact_hashes": {
+    "candidate": "39b07e711a16be1da1f93f27f49688c6da6770542993f35728f7619b1e833056",
+    "task": "c905f3c113bf6336062ed5dc8a42454b9e19940e8ec6053e2ea8ea5d8c26fe9c"
+  },
+  "blocker_status": "failed",
+  "candidate_id": "wrong-test-path",
+  "command_results": [
+    {
+      "argv": [
+        "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python",
+        "-m",
+        "pytest",
+        "hidden/test_behavior.py",
+        "-q"
+      ],
+      "duration_s": 0.0,
+      "expected_failure": false,
+      "name": "hidden_test",
+      "returncode": 0,
+      "status": "passed",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_tail": "",
+      "stdout_sha256": "d930225b1855d5eb0ae19e687fa3634664c0bc06c2d4a4ccf9ac9fb8fd3fba4d",
+      "stdout_tail": "..                                                                       [100%]\n2 passed in <duration>s\n"
+    },
+    {
+      "argv": [
+        "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python",
+        "-m",
+        "compileall",
+        "app",
+        "-q"
+      ],
+      "duration_s": 0.0,
+      "expected_failure": false,
+      "name": "lint_build",
+      "returncode": 0,
+      "status": "passed",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_tail": "",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_tail": ""
+    }
+  ],
+  "evidence_refs": [
+    "mergeability_task:/Users/sam.zhang/Documents/codex-supervisor/tests/fixtures/mergeability_bench/tasks/calculator_addition.json",
+    "mergeability_candidate:/Users/sam.zhang/Documents/codex-supervisor/tests/fixtures/mergeability_bench/candidates/wrong_test_path.json"
+  ],
+  "failures": [
+    "reverse tests:missing_candidate_test_target:tests/test_calculator.py"
+  ],
+  "final_score": 0.0,
+  "hidden_test_status": "passed",
+  "lint_build_status": "passed",
+  "receipt_ids": [
+    "mergeability:calculator-addition:wrong-test-path"
+  ],
+  "result_sha256": "a1ecdd9be2d2128c6a5b7f465cbf245cd9d35def041161ea29f1725d29d9f04f",
+  "reverse_test_status": "failed",
+  "schema_version": "supervisor-mergeability-result/v1",
+  "scope_status": "passed",
+  "secondary_report_only": true,
+  "task_id": "calculator-addition",
+  "weighted_secondary_score": null
+}

@@ -1,0 +1,24 @@
+{
+  "schema_version": "supervisor-mergeability-candidate/v1",
+  "candidate_id": "diagnostic-calc-explicit-addition",
+  "task_id": "calculator-addition",
+  "changed_files": [
+    "app/calculator.py",
+    "tests/test_calculator.py"
+  ],
+  "files": {
+    "app/calculator.py": "def add(left: int, right: int) -> int:\n    return left + right\n",
+    "tests/test_calculator.py": "from app.calculator import add\n\n\ndef test_adds_negative_integers():\n    assert add(-4, -6) == -10\n"
+  },
+  "provenance": {
+    "kind": "diagnostic_positive_growth",
+    "source_slice": "Slice 1A",
+    "growth_reason": "S_full true-accept rate 0 vs S_probe 1; matched-TAR not matched on n_good=3"
+  },
+  "generator_metadata": {
+    "baseline_accept": true,
+    "control": "diagnostic_positive",
+    "expected_outcome": "pass",
+    "visible_tests_passed": true
+  }
+}

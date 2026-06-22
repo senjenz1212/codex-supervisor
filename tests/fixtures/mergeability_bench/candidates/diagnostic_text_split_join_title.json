@@ -1,0 +1,24 @@
+{
+  "schema_version": "supervisor-mergeability-candidate/v1",
+  "candidate_id": "diagnostic-text-split-join-title",
+  "task_id": "text-normalization",
+  "changed_files": [
+    "app/text_ops.py",
+    "tests/test_text_ops.py"
+  ],
+  "files": {
+    "app/text_ops.py": "def normalize_title(text: str) -> str:\n    words = text.split()\n    return \" \".join(word.capitalize() for word in words)\n",
+    "tests/test_text_ops.py": "from app.text_ops import normalize_title\n\n\ndef test_normalize_title_handles_api_style_words():\n    assert normalize_title(\"api client\") == \"Api Client\"\n"
+  },
+  "provenance": {
+    "kind": "diagnostic_positive_growth",
+    "source_slice": "Slice 1A",
+    "growth_reason": "S_full true-accept rate 0 vs S_probe 1; matched-TAR not matched on n_good=3"
+  },
+  "generator_metadata": {
+    "baseline_accept": true,
+    "control": "diagnostic_positive",
+    "expected_outcome": "pass",
+    "visible_tests_passed": true
+  }
+}

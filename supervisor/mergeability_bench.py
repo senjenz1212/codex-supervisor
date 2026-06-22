@@ -104,6 +104,19 @@ NEGATIVE_CONTROL_KINDS = frozenset({
     "lint_build_failure",
 })
 POSITIVE_CONTROL_KINDS = frozenset({"known_good", "secondary_rubric_only"})
+FIXTURE_DIAGNOSTIC_GROWTH_KIND = "diagnostic_positive_growth"
+FIXTURE_DIAGNOSTIC_GROWTH_SOURCE_SLICE = "Slice 1A"
+FIXTURE_DIAGNOSTIC_REPORT_SCHEMA_VERSION = "supervisor-mergeability-fixture-diagnostic-report/v1"
+SLICE_1A_S_PROBE_TRUE_ACCEPT_RATE = 1.0
+SLICE_1A_S_FULL_TRUE_ACCEPT_RATE = 0.0
+SLICE_1A_FULL_GATE_MATCHED_TAR_STATUS = "not_matched"
+SLICE_1A_POSITIVE_CONTROL_COUNT = 3
+FIXTURE_DIAGNOSTIC_GROWTH_RATIONALE_TEXT = (
+    "Slice 1A full-gate matched-TAR was not_matched because S_full true-accept "
+    "rate was 0 while S_probe true-accept rate was 1 on only 3 oracle-positive "
+    "candidates; grow diagnostic oracle-positive coverage so the panel "
+    "marginal becomes interpretable without claiming improvement."
+)
 PUBLIC_PASS_HIDDEN_FAIL_CONTROL_KINDS = frozenset({"hidden_behavior_miss"})
 REQUIRED_CALIBRATION_CONTROL_KINDS = frozenset({
     "noop",
@@ -570,6 +583,7 @@ def build_mergeability_corpus_manifest(
         "tasks": task_entries,
         "candidates": candidate_entries,
         "control_coverage_by_task_class": _control_coverage_by_task_class(task_entries, candidate_entries),
+        "fixture_growth_rationale": _build_fixture_growth_rationale(candidates),
         "manifest_sha256": "",
     }
     manifest["manifest_sha256"] = _sha256_json({
@@ -1237,6 +1251,13 @@ def run_paired_acceptance_pilot(
             "next_step": "grow an oracle-isolated corpus before any powered live-generation experiment",
         },
     }
+    report["fixture_diagnostic_report"] = _build_fixture_diagnostic_report_block(
+        candidates=candidate_list,
+        s_probe=supervisor_candidate_review,
+        s_full=supervisor_full_gate,
+        full_gate_matched_true_accept=full_gate_matched_true_accept,
+        fixture_growth_rationale=manifest.get("fixture_growth_rationale") or {},
+    )
     report["report_sha256"] = _sha256_json({
         key: value for key, value in report.items() if key != "report_sha256"
     })
@@ -1367,6 +1388,72 @@ def run_fixture_panel_produced_baseline_measurement(
         encoding="utf-8",
     )
     return report
+
+
+def _build_fixture_diagnostic_report_block(
+    *,
+    candidates: Sequence[MergeabilityCandidate],
+    s_probe: Mapping[str, Any],
+    s_full: Mapping[str, Any],
+    full_gate_matched_true_accept: Mapping[str, Any],
+    fixture_growth_rationale: Mapping[str, Any],
+) -> dict[str, Any]:
+    s_probe_tar = float(s_probe.get("true_accept_rate") or 0.0)
+    s_full_tar = float(s_full.get("true_accept_rate") or 0.0)
+    true_accept_loss = round(s_probe_tar - s_full_tar, 6)
+    matched_status = (
+        full_gate_matched_true_accept.get("status")
+        if isinstance(full_gate_matched_true_accept, Mapping)
+        else None
+    )
+    added_positive_ids = list(
+        _fixture_diagnostic_growth_added_candidate_ids(candidates)
+    )
+    block = {
+        "schema_version": FIXTURE_DIAGNOSTIC_REPORT_SCHEMA_VERSION,
+        "growth_rationale": dict(fixture_growth_rationale),
+        "added_positive_candidate_ids": added_positive_ids,
+        "added_positive_candidate_count": len(added_positive_ids),
+        "n_good": int(s_full.get("true_accept_denominator") or 0),
+        "n_bad": int(s_full.get("false_accept_denominator") or 0),
+        "s_probe_arm": s_probe.get("arm"),
+        "s_full_arm": s_full.get("arm"),
+        "s_probe_true_accept_count": int(s_probe.get("true_accept_count") or 0),
+        "s_full_true_accept_count": int(s_full.get("true_accept_count") or 0),
+        "s_probe_false_accept_count": int(s_probe.get("false_accept_count") or 0),
+        "s_full_false_accept_count": int(s_full.get("false_accept_count") or 0),
+        "s_probe_false_accepts": int(s_probe.get("false_accept_count") or 0),
+        "s_full_false_accepts": int(s_full.get("false_accept_count") or 0),
+        "s_probe_true_accept_rate": s_probe_tar,
+        "s_full_true_accept_rate": s_full_tar,
+        "s_probe_false_accept_rate": float(s_probe.get("false_accept_rate") or 0.0),
+        "s_full_false_accept_rate": float(s_full.get("false_accept_rate") or 0.0),
+        "true_accept_loss": true_accept_loss,
+        "tar_loss": true_accept_loss,
+        "matched_true_accept_status": matched_status,
+        "full_gate_matched_true_accept": dict(full_gate_matched_true_accept)
+        if isinstance(full_gate_matched_true_accept, Mapping) else {},
+        "s_probe_true_accept_confidence_interval": dict(
+            s_probe.get("true_accept_confidence_interval") or {}
+        ),
+        "s_full_true_accept_confidence_interval": dict(
+            s_full.get("true_accept_confidence_interval") or {}
+        ),
+        "s_probe_false_accept_confidence_interval": dict(
+            s_probe.get("false_accept_confidence_interval") or {}
+        ),
+        "s_full_false_accept_confidence_interval": dict(
+            s_full.get("false_accept_confidence_interval") or {}
+        ),
+        "report_only": True,
+        "metric_applyable": False,
+        "improvement_claim_allowed": False,
+        "policy_mutated": False,
+        "gate_advanced": False,
+        "default_change_allowed": False,
+        "best_of_k_in_sample_label_allowed_as_heldout_improvement": False,
+    }
+    return block
 
 
 def _paired_acceptance_comparisons(
@@ -3133,6 +3220,43 @@ def _heldout_task_missing_requirements(
     if not false_accept_traps:
         missing.append("public_pass_hidden_fail_trap")
     return missing
+
+
+def _is_fixture_diagnostic_growth_candidate(candidate: MergeabilityCandidate) -> bool:
+    provenance = candidate.provenance or {}
+    kind = str(provenance.get("kind") or "").strip()
+    source_slice = str(provenance.get("source_slice") or "").strip()
+    return (
+        kind == FIXTURE_DIAGNOSTIC_GROWTH_KIND
+        and source_slice == FIXTURE_DIAGNOSTIC_GROWTH_SOURCE_SLICE
+    )
+
+
+def _fixture_diagnostic_growth_added_candidate_ids(
+    candidates: Sequence[MergeabilityCandidate],
+) -> list[str]:
+    return sorted(
+        candidate.candidate_id
+        for candidate in candidates
+        if _is_fixture_diagnostic_growth_candidate(candidate)
+    )
+
+
+def _build_fixture_growth_rationale(
+    candidates: Sequence[MergeabilityCandidate],
+) -> dict[str, Any]:
+    added = _fixture_diagnostic_growth_added_candidate_ids(candidates)
+    return {
+        "source_slice": FIXTURE_DIAGNOSTIC_GROWTH_SOURCE_SLICE,
+        "rationale": FIXTURE_DIAGNOSTIC_GROWTH_RATIONALE_TEXT,
+        "slice1a_s_probe_true_accept_rate": SLICE_1A_S_PROBE_TRUE_ACCEPT_RATE,
+        "slice1a_s_full_true_accept_rate": SLICE_1A_S_FULL_TRUE_ACCEPT_RATE,
+        "slice1a_full_gate_matched_true_accept_status": SLICE_1A_FULL_GATE_MATCHED_TAR_STATUS,
+        "slice1a_positive_control_count": SLICE_1A_POSITIVE_CONTROL_COUNT,
+        "added_positive_candidate_ids": added,
+        "added_positive_candidate_count": len(added),
+        "growth_kind": FIXTURE_DIAGNOSTIC_GROWTH_KIND,
+    }
 
 
 def _baseline_accepts(candidate: MergeabilityCandidate) -> bool:

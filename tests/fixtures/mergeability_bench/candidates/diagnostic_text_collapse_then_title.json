@@ -1,0 +1,24 @@
+{
+  "schema_version": "supervisor-mergeability-candidate/v1",
+  "candidate_id": "diagnostic-text-collapse-then-title",
+  "task_id": "text-normalization",
+  "changed_files": [
+    "app/text_ops.py",
+    "tests/test_text_ops.py"
+  ],
+  "files": {
+    "app/text_ops.py": "def normalize_title(text: str) -> str:\n    collapsed = \" \".join(text.split())\n    return collapsed.title()\n",
+    "tests/test_text_ops.py": "from app.text_ops import normalize_title\n\n\ndef test_normalize_title_collapses_multiple_spaces():\n    assert normalize_title(\"foo   bar    baz\") == \"Foo Bar Baz\"\n"
+  },
+  "provenance": {
+    "kind": "diagnostic_positive_growth",
+    "source_slice": "Slice 1A",
+    "growth_reason": "S_full true-accept rate 0 vs S_probe 1; matched-TAR not matched on n_good=3"
+  },
+  "generator_metadata": {
+    "baseline_accept": true,
+    "control": "diagnostic_positive",
+    "expected_outcome": "pass",
+    "visible_tests_passed": true
+  }
+}

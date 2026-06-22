@@ -1,0 +1,82 @@
+{
+  "artifact_hashes": {
+    "candidate": "6c8b290431862339c041d095fe54c4638f6a2b47df833d3189a7417115329e55",
+    "task": "c905f3c113bf6336062ed5dc8a42454b9e19940e8ec6053e2ea8ea5d8c26fe9c"
+  },
+  "blocker_status": "passed",
+  "candidate_id": "diagnostic-calc-param-addition",
+  "command_results": [
+    {
+      "argv": [
+        "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python",
+        "-m",
+        "pytest",
+        "hidden/test_behavior.py",
+        "-q"
+      ],
+      "duration_s": 0.0,
+      "expected_failure": false,
+      "name": "hidden_test",
+      "returncode": 0,
+      "status": "passed",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_tail": "",
+      "stdout_sha256": "d930225b1855d5eb0ae19e687fa3634664c0bc06c2d4a4ccf9ac9fb8fd3fba4d",
+      "stdout_tail": "..                                                                       [100%]\n2 passed in <duration>s\n"
+    },
+    {
+      "argv": [
+        "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_calculator.py",
+        "-q"
+      ],
+      "duration_s": 0.0,
+      "expected_failure": true,
+      "name": "reverse_test",
+      "returncode": 1,
+      "status": "passed",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_tail": "",
+      "stdout_sha256": "7746f7afe51b2db9d6d672d86dda219b8bc7080fae126911d1b6aa9360da3724",
+      "stdout_tail": "cted = -10\n\n    @pytest.mark.parametrize(\n        \"left,right,expected\",\n        [\n            (2, 3, 5),\n            (-4, -6, -10),\n            (-1, 1, 0),\n        ],\n    )\n    def test_add_parametrized(left, right, expected):\n>       assert add(left, right) == expected\nE       assert 2 == -10\nE        +  where 2 = add(-4, -6)\n\ntests/test_calculator.py:15: AssertionError\n________________________ test_add_parametrized[-1-1-0] _________________________\n\nleft = -1, right = 1, expected = 0\n\n    @pytest.mark.parametrize(\n        \"left,right,expected\",\n        [\n            (2, 3, 5),\n            (-4, -6, -10),\n            (-1, 1, 0),\n        ],\n    )\n    def test_add_parametrized(left, right, expected):\n>       assert add(left, right) == expected\nE       assert -2 == 0\nE        +  where -2 = add(-1, 1)\n\ntests/test_calculator.py:15: AssertionError\n=========================== short test summary info ============================\nFAILED tests/test_calculator.py::test_add_parametrized[2-3-5] - assert -1 == 5\nFAILED tests/test_calculator.py::test_add_parametrized[-4--6--10] - assert 2 ...\nFAILED tests/test_calculator.py::test_add_parametrized[-1-1-0] - assert -2 == 0\n3 failed in <duration>s\n"
+    },
+    {
+      "argv": [
+        "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python",
+        "-m",
+        "compileall",
+        "app",
+        "-q"
+      ],
+      "duration_s": 0.0,
+      "expected_failure": false,
+      "name": "lint_build",
+      "returncode": 0,
+      "status": "passed",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_tail": "",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_tail": ""
+    }
+  ],
+  "evidence_refs": [
+    "mergeability_task:/Users/sam.zhang/Documents/codex-supervisor/tests/fixtures/mergeability_bench/tasks/calculator_addition.json",
+    "mergeability_candidate:/Users/sam.zhang/Documents/codex-supervisor/tests/fixtures/mergeability_bench/candidates/diagnostic_calc_param_addition.json"
+  ],
+  "failures": [],
+  "final_score": 1.0,
+  "hidden_test_status": "passed",
+  "lint_build_status": "passed",
+  "receipt_ids": [
+    "mergeability:calculator-addition:diagnostic-calc-param-addition"
+  ],
+  "result_sha256": "0ce6e5e90c88cb041d7dc7e175d764da865bb310b6863bb4563152a9628e6ef1",
+  "reverse_test_status": "passed",
+  "schema_version": "supervisor-mergeability-result/v1",
+  "scope_status": "passed",
+  "secondary_report_only": true,
+  "task_id": "calculator-addition",
+  "weighted_secondary_score": null
+}

@@ -1,0 +1,26 @@
+[
+  {
+    "kind": "prd",
+    "path": "docs/dual-agent/mergeability-fixture-diagnostic-corpus-growth-20260621/source/prd.md"
+  },
+  {
+    "kind": "grill_findings",
+    "path": "docs/dual-agent/mergeability-fixture-diagnostic-corpus-growth-20260621/source/grill-findings.md"
+  },
+  {
+    "kind": "issues",
+    "path": "docs/dual-agent/mergeability-fixture-diagnostic-corpus-growth-20260621/source/issues.md"
+  },
+  {
+    "kind": "tdd_plan",
+    "path": "docs/dual-agent/mergeability-fixture-diagnostic-corpus-growth-20260621/source/tdd.md"
+  },
+  {
+    "kind": "grill_findings",
+    "path": "docs/dual-agent/mergeability-fixture-diagnostic-corpus-growth-20260621/source/grill-findings-tdd.md"
+  },
+  {
+    "kind": "implementation_plan",
+    "path": "docs/dual-agent/mergeability-fixture-diagnostic-corpus-growth-20260621/source/implementation-plan.md"
+  }
+]

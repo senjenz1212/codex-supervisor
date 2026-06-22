@@ -1,0 +1,82 @@
+{
+  "artifact_hashes": {
+    "candidate": "ea481c14e859019c8004443d7e9d7bc7895bdc45b5417b2c74e919714c5e628f",
+    "task": "c905f3c113bf6336062ed5dc8a42454b9e19940e8ec6053e2ea8ea5d8c26fe9c"
+  },
+  "blocker_status": "passed",
+  "candidate_id": "secondary-rubric-only",
+  "command_results": [
+    {
+      "argv": [
+        "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python",
+        "-m",
+        "pytest",
+        "hidden/test_behavior.py",
+        "-q"
+      ],
+      "duration_s": 0.0,
+      "expected_failure": false,
+      "name": "hidden_test",
+      "returncode": 0,
+      "status": "passed",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_tail": "",
+      "stdout_sha256": "d930225b1855d5eb0ae19e687fa3634664c0bc06c2d4a4ccf9ac9fb8fd3fba4d",
+      "stdout_tail": "..                                                                       [100%]\n2 passed in <duration>s\n"
+    },
+    {
+      "argv": [
+        "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_calculator.py",
+        "-q"
+      ],
+      "duration_s": 0.0,
+      "expected_failure": true,
+      "name": "reverse_test",
+      "returncode": 1,
+      "status": "passed",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_tail": "",
+      "stdout_sha256": "a2286c19c73ae60e82c1012b8b3f2b3d8bf4f496fc8625c5958583b8cc1c28a5",
+      "stdout_tail": "F                                                                        [100%]\n=================================== FAILURES ===================================\n_________________________ test_adds_positive_integers __________________________\n\n    def test_adds_positive_integers():\n>       assert add(2, 3) == 5\nE       assert -1 == 5\nE        +  where -1 = add(2, 3)\n\ntests/test_calculator.py:5: AssertionError\n=========================== short test summary info ============================\nFAILED tests/test_calculator.py::test_adds_positive_integers - assert -1 == 5\n1 failed in <duration>s\n"
+    },
+    {
+      "argv": [
+        "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python",
+        "-m",
+        "compileall",
+        "app",
+        "-q"
+      ],
+      "duration_s": 0.0,
+      "expected_failure": false,
+      "name": "lint_build",
+      "returncode": 0,
+      "status": "passed",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_tail": "",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_tail": ""
+    }
+  ],
+  "evidence_refs": [
+    "mergeability_task:/Users/sam.zhang/Documents/codex-supervisor/tests/fixtures/mergeability_bench/tasks/calculator_addition.json",
+    "mergeability_candidate:/Users/sam.zhang/Documents/codex-supervisor/tests/fixtures/mergeability_bench/candidates/secondary_rubric_only.json"
+  ],
+  "failures": [],
+  "final_score": 1.0,
+  "hidden_test_status": "passed",
+  "lint_build_status": "passed",
+  "receipt_ids": [
+    "mergeability:calculator-addition:secondary-rubric-only"
+  ],
+  "result_sha256": "a48b43c4206a5eeb7c7ab45ea9adbe1e28f5bebd4e72521305102d09ed0aca1b",
+  "reverse_test_status": "passed",
+  "schema_version": "supervisor-mergeability-result/v1",
+  "scope_status": "passed",
+  "secondary_report_only": true,
+  "task_id": "calculator-addition",
+  "weighted_secondary_score": null
+}

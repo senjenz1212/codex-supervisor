@@ -1,0 +1,24 @@
+{
+  "schema_version": "supervisor-mergeability-candidate/v1",
+  "candidate_id": "diagnostic-calc-param-addition",
+  "task_id": "calculator-addition",
+  "changed_files": [
+    "app/calculator.py",
+    "tests/test_calculator.py"
+  ],
+  "files": {
+    "app/calculator.py": "def add(left: int, right: int) -> int:\n    total = left\n    total += right\n    return total\n",
+    "tests/test_calculator.py": "import pytest\n\nfrom app.calculator import add\n\n\n@pytest.mark.parametrize(\n    \"left,right,expected\",\n    [\n        (2, 3, 5),\n        (-4, -6, -10),\n        (-1, 1, 0),\n    ],\n)\ndef test_add_parametrized(left, right, expected):\n    assert add(left, right) == expected\n"
+  },
+  "provenance": {
+    "kind": "diagnostic_positive_growth",
+    "source_slice": "Slice 1A",
+    "growth_reason": "S_full true-accept rate 0 vs S_probe 1; matched-TAR not matched on n_good=3"
+  },
+  "generator_metadata": {
+    "baseline_accept": true,
+    "control": "diagnostic_positive",
+    "expected_outcome": "pass",
+    "visible_tests_passed": true
+  }
+}

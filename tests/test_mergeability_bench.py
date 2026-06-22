@@ -22,14 +22,19 @@ from supervisor import mergeability_bench as mergeability_bench_module
 from supervisor.cursor_agent import CursorInvocationRequest, CursorInvocationResult
 from supervisor.dual_agent import Outcome, ProbeResult, SpecialistRecord
 from supervisor.mergeability_bench import (
+    FIXTURE_DIAGNOSTIC_GROWTH_KIND,
+    FIXTURE_DIAGNOSTIC_GROWTH_SOURCE_SLICE,
     MERGEABILITY_TASK_SCHEMA_VERSION,
     ConfiguredReviewerPanelOptions,
     MergeabilityBenchError,
     MergeabilityCandidate,
+    _is_fixture_diagnostic_growth_candidate,
+    _public_input_oracle_refs,
     build_configured_reviewer_panel,
     build_mergeability_corpus_manifest,
     grade_mergeability_candidate,
     load_mergeability_candidate,
+    load_mergeability_candidates,
     load_mergeability_task,
     load_mergeability_tasks,
     result_receipt,
@@ -2642,6 +2647,200 @@ def test_real_baseline_reports_remain_report_only(tmp_path):
     assert report["recommendation"]["applyable_policy_proposal"] is False
     assert report["promotion_guardrails"]["policy_mutation_allowed"] is False
     assert report["promotion_guardrails"]["oracle_ceiling_supervisor_claim_allowed"] is False
+    assert derive_policy_evolution_proposals_from_report(
+        report,
+        repo_root=Path.cwd(),
+        affected_gates=("execution", "outcome_review"),
+    ) == []
+
+
+def test_fixture_diagnostic_corpus_growth_reports_slice1a_positive_denominator(tmp_path):
+    reviewer_a, reviewer_b = _accepting_fake_reviewers()
+    report = run_fixture_panel_produced_baseline_measurement(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            reviewers=(reviewer_a, reviewer_b),
+        ),
+    )
+
+    diag = report["fixture_diagnostic_report"]
+    rationale = diag["growth_rationale"]
+    assert rationale["source_slice"] == FIXTURE_DIAGNOSTIC_GROWTH_SOURCE_SLICE
+    assert rationale["slice1a_full_gate_matched_true_accept_status"] == "not_matched"
+    assert rationale["slice1a_positive_control_count"] == 3
+    assert rationale["slice1a_s_probe_true_accept_rate"] == 1.0
+    assert rationale["slice1a_s_full_true_accept_rate"] == 0.0
+    assert rationale["added_positive_candidate_count"] >= 1
+    assert rationale["growth_kind"] == FIXTURE_DIAGNOSTIC_GROWTH_KIND
+    assert rationale["rationale"]
+
+    assert diag["n_good"] > 3
+    assert diag["n_bad"] >= 1
+
+    assert diag["metric_applyable"] is False
+    assert diag["improvement_claim_allowed"] is False
+    assert report["metric_applyable"] is False
+    assert report["improvement_claim_allowed"] is False
+
+
+def test_fixture_diagnostic_corpus_growth_excludes_hidden_oracle_material(tmp_path):
+    candidates = load_mergeability_candidates(BENCH_ROOT)
+    diagnostic = [c for c in candidates if _is_fixture_diagnostic_growth_candidate(c)]
+    assert diagnostic, "no diagnostic growth candidates registered"
+
+    reviewer_a, reviewer_b = _accepting_fake_reviewers()
+    report = run_fixture_panel_produced_baseline_measurement(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            reviewers=(reviewer_a, reviewer_b),
+        ),
+    )
+
+    diagnostic_ids = {c.candidate_id for c in diagnostic}
+    diagnostic_rows = [
+        row for row in report["per_task_results"]
+        if row["candidate_id"] in diagnostic_ids
+    ]
+    assert diagnostic_rows, "diagnostic growth candidates absent from report"
+
+    forbidden_keys = ("expected_outcome", "final_score", "oracle_accept", "hidden_test_commands")
+    forbidden_text = ("hidden/test_behavior.py", ".mergeability/")
+    for row in diagnostic_rows:
+        review = row["supervisor_review"]
+        payload = review["public_input_payload"]
+        encoded = json.dumps(payload, sort_keys=True)
+        for marker in forbidden_text:
+            assert marker not in encoded, (row["candidate_id"], marker)
+        for key in forbidden_keys:
+            assert f'"{key}"' not in encoded, (row["candidate_id"], key)
+        assert _public_input_oracle_refs(payload) == [], row["candidate_id"]
+        assert not review["protected_paths_present_in_review_worktree"], row["candidate_id"]
+
+        packet_refs = row.get("supervisor_full_gate_reviewer_packet_refs") or []
+        refs_encoded = json.dumps(packet_refs, sort_keys=True)
+        for marker in forbidden_text:
+            assert marker not in refs_encoded, (row["candidate_id"], marker)
+
+
+def test_fixture_diagnostic_corpus_growth_preserves_controls_and_false_accept_traps():
+    manifest = build_mergeability_corpus_manifest(BENCH_ROOT)
+
+    for task_entry in manifest["tasks"]:
+        assert task_entry["positive_controls"], task_entry["task_id"]
+        assert task_entry["negative_controls"], task_entry["task_id"]
+        assert task_entry["false_accept_traps"], task_entry["task_id"]
+        assert task_entry["calibration_eligible"] is True, task_entry["task_id"]
+
+    rationale = manifest["fixture_growth_rationale"]
+    assert rationale["source_slice"] == FIXTURE_DIAGNOSTIC_GROWTH_SOURCE_SLICE
+    assert rationale["added_positive_candidate_count"] >= 1
+
+    added = set(rationale["added_positive_candidate_ids"])
+    assert added, "manifest reports no diagnostic growth candidates"
+    positive_across_tasks = {
+        candidate_id
+        for task_entry in manifest["tasks"]
+        for candidate_id in task_entry["positive_controls"]
+    }
+    assert added <= positive_across_tasks
+
+
+def test_fixture_diagnostic_report_exports_tar_loss_and_confidence_intervals(tmp_path):
+    reviewer_a, reviewer_b = _accepting_fake_reviewers()
+    report = run_fixture_panel_produced_baseline_measurement(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            reviewers=(reviewer_a, reviewer_b),
+        ),
+    )
+
+    diag = report["fixture_diagnostic_report"]
+    for key in (
+        "n_good",
+        "n_bad",
+        "s_probe_false_accepts",
+        "s_full_false_accepts",
+        "s_probe_false_accept_count",
+        "s_full_false_accept_count",
+        "s_probe_true_accept_rate",
+        "s_full_true_accept_rate",
+        "true_accept_loss",
+        "tar_loss",
+        "matched_true_accept_status",
+    ):
+        assert key in diag, key
+
+    for ci_key in (
+        "s_probe_true_accept_confidence_interval",
+        "s_full_true_accept_confidence_interval",
+        "s_probe_false_accept_confidence_interval",
+        "s_full_false_accept_confidence_interval",
+    ):
+        ci = diag[ci_key]
+        assert ci["method"] == "wilson_score", ci_key
+        assert ci["confidence"] == 0.95, ci_key
+        assert "lower" in ci and "upper" in ci, ci_key
+        assert "denominator" in ci and "count" in ci, ci_key
+
+    expected_loss = round(
+        float(diag["s_probe_true_accept_rate"]) - float(diag["s_full_true_accept_rate"]),
+        6,
+    )
+    assert diag["true_accept_loss"] == expected_loss
+    assert diag["tar_loss"] == expected_loss
+    assert diag["s_probe_false_accepts"] == diag["s_probe_false_accept_count"]
+    assert diag["s_full_false_accepts"] == diag["s_full_false_accept_count"]
+    assert diag["matched_true_accept_status"] in {
+        "computed", "not_matched", "insufficient_candidate_pool", "unavailable",
+    }
+
+    exported = json.loads((tmp_path / "paired_acceptance_report.json").read_text(encoding="utf-8"))
+    assert exported["fixture_diagnostic_report"]["true_accept_loss"] == expected_loss
+    assert exported["fixture_diagnostic_report"]["n_good"] == diag["n_good"]
+
+
+def test_fixture_diagnostic_report_stays_calibration_only(tmp_path):
+    reviewer_a, reviewer_b = _accepting_fake_reviewers()
+    report = run_fixture_panel_produced_baseline_measurement(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            reviewers=(reviewer_a, reviewer_b),
+        ),
+    )
+
+    diag = report["fixture_diagnostic_report"]
+    for flag in (
+        "metric_applyable",
+        "improvement_claim_allowed",
+        "policy_mutated",
+        "gate_advanced",
+        "default_change_allowed",
+        "best_of_k_in_sample_label_allowed_as_heldout_improvement",
+    ):
+        assert diag[flag] is False, flag
+    assert diag["report_only"] is True
+
+    for flag in (
+        "metric_applyable",
+        "improvement_claim_allowed",
+        "policy_mutated",
+        "gate_advanced",
+        "default_change_allowed",
+    ):
+        assert report[flag] is False, flag
+
+    assert report["recommendation"]["report_only"] is True
+    assert report["recommendation"]["applyable_policy_proposal"] is False
+
+    heldout = report["heldout_reporting"]
+    assert heldout["heldout_improvement_claim_allowed"] is False
+    assert heldout["best_of_k_in_sample"]["present"] is False
+    assert heldout["best_of_k_in_sample"]["label_allowed_as_heldout_improvement"] is False
+
     assert derive_policy_evolution_proposals_from_report(
         report,
         repo_root=Path.cwd(),

@@ -1,0 +1,84 @@
+{
+  "artifact_hashes": {
+    "candidate": "b36d27be2ca6371dc87be874c57887abd8c7356d3689aaf9e8ccb40120c6781f",
+    "task": "c905f3c113bf6336062ed5dc8a42454b9e19940e8ec6053e2ea8ea5d8c26fe9c"
+  },
+  "blocker_status": "failed",
+  "candidate_id": "partial-fix-regression",
+  "command_results": [
+    {
+      "argv": [
+        "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python",
+        "-m",
+        "pytest",
+        "hidden/test_behavior.py",
+        "-q"
+      ],
+      "duration_s": 0.0,
+      "expected_failure": false,
+      "name": "hidden_test",
+      "returncode": 1,
+      "status": "failed",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_tail": "",
+      "stdout_sha256": "de983bea1b7ad4b2d8ee7d794a9abc6678fbbdaa64f866c8833b7045e3adb06d",
+      "stdout_tail": ".F                                                                       [100%]\n=================================== FAILURES ===================================\n_________________________ test_adds_negative_integers __________________________\n\n    def test_adds_negative_integers():\n>       assert add(-4, -6) == -10\nE       assert 0 == -10\nE        +  where 0 = add(-4, -6)\n\nhidden/test_behavior.py:9: AssertionError\n=========================== short test summary info ============================\nFAILED hidden/test_behavior.py::test_adds_negative_integers - assert 0 == -10\n1 failed, 1 passed in <duration>s\n"
+    },
+    {
+      "argv": [
+        "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_calculator.py",
+        "-q"
+      ],
+      "duration_s": 0.0,
+      "expected_failure": true,
+      "name": "reverse_test",
+      "returncode": 1,
+      "status": "passed",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_tail": "",
+      "stdout_sha256": "a2286c19c73ae60e82c1012b8b3f2b3d8bf4f496fc8625c5958583b8cc1c28a5",
+      "stdout_tail": "F                                                                        [100%]\n=================================== FAILURES ===================================\n_________________________ test_adds_positive_integers __________________________\n\n    def test_adds_positive_integers():\n>       assert add(2, 3) == 5\nE       assert -1 == 5\nE        +  where -1 = add(2, 3)\n\ntests/test_calculator.py:5: AssertionError\n=========================== short test summary info ============================\nFAILED tests/test_calculator.py::test_adds_positive_integers - assert -1 == 5\n1 failed in <duration>s\n"
+    },
+    {
+      "argv": [
+        "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python",
+        "-m",
+        "compileall",
+        "app",
+        "-q"
+      ],
+      "duration_s": 0.0,
+      "expected_failure": false,
+      "name": "lint_build",
+      "returncode": 0,
+      "status": "passed",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_tail": "",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_tail": ""
+    }
+  ],
+  "evidence_refs": [
+    "mergeability_task:/Users/sam.zhang/Documents/codex-supervisor/tests/fixtures/mergeability_bench/tasks/calculator_addition.json",
+    "mergeability_candidate:/Users/sam.zhang/Documents/codex-supervisor/tests/fixtures/mergeability_bench/candidates/partial_fix_regression.json"
+  ],
+  "failures": [
+    "hidden tests:('/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python', '-m', 'pytest', 'hidden/test_behavior.py', '-q'):expected_pass:returncode_1"
+  ],
+  "final_score": 0.0,
+  "hidden_test_status": "failed",
+  "lint_build_status": "passed",
+  "receipt_ids": [
+    "mergeability:calculator-addition:partial-fix-regression"
+  ],
+  "result_sha256": "8a10d59443ce4280164772818c6efa5fdbf332dbef782ec248121f4eb79ef258",
+  "reverse_test_status": "passed",
+  "schema_version": "supervisor-mergeability-result/v1",
+  "scope_status": "passed",
+  "secondary_report_only": true,
+  "task_id": "calculator-addition",
+  "weighted_secondary_score": null
+}

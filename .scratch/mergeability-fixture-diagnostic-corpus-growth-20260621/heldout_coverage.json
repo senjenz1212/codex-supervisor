@@ -1,0 +1,63 @@
+{
+  "by_task_class": {
+    "arithmetic": {
+      "candidate_count": 16,
+      "control_kinds": [
+        "diagnostic_positive",
+        "hidden_behavior_miss",
+        "known_bad",
+        "known_good",
+        "lint_build_failure",
+        "missing_regression_test",
+        "noop",
+        "overbroad_diff",
+        "protected_path_escape",
+        "scope_escape",
+        "secondary_rubric_only",
+        "tautological_test",
+        "wrong_test_path"
+      ],
+      "false_accept_trap_count": 2,
+      "missing_control_kinds": [],
+      "negative_control_count": 11,
+      "positive_control_count": 5,
+      "split": "held_out",
+      "task_class": "arithmetic",
+      "task_count": 1,
+      "task_ids": [
+        "calculator-addition"
+      ]
+    },
+    "text_processing": {
+      "candidate_count": 5,
+      "control_kinds": [
+        "diagnostic_positive",
+        "hidden_behavior_miss",
+        "known_good",
+        "noop"
+      ],
+      "false_accept_trap_count": 1,
+      "missing_control_kinds": [],
+      "negative_control_count": 2,
+      "positive_control_count": 3,
+      "split": "held_out",
+      "task_class": "text_processing",
+      "task_count": 1,
+      "task_ids": [
+        "text-normalization"
+      ]
+    }
+  },
+  "candidate_count": 21,
+  "split": "held_out",
+  "split_policy": {
+    "heldout_excluded_from_variant_selection": true,
+    "reporting_split": "held_out",
+    "selection_splits": [
+      "calibration",
+      "dev"
+    ]
+  },
+  "task_class_count": 2,
+  "task_count": 2
+}

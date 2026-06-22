@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "3436137eb8173abdba8838f8ba05ed57a3578c21a210ca5dff6facafeda0af17",
+  "git": {
+    "diff_bytes": 16641,
+    "diff_sha256": "77df9a6310b4a45c0553a22d02c66909107e7f5137d19eb56c299da4f9f62b48",
+    "diff_stat": "supervisor/mergeability_bench.py | 124 ++++++++++++++++++++++++\n tests/test_mergeability_bench.py | 199 +++++++++++++++++++++++++++++++++++++++\n 2 files changed, 323 insertions(+)",
+    "head": "b7c9ba41",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "b7c9ba41",
+    "status_short": "M supervisor/mergeability_bench.py\n M tests/test_mergeability_bench.py\n?? .scratch/auto-evolution-loop-current-demo-20260618/\n?? .scratch/comfy-cloud-prototype-visuals/\n?? .scratch/comfy-cloud-prototype-workflow-request.json\n?? .scratch/comfy-cloud-prototype-workflow-result.json\n?? .scratch/mergeability-calibration-pilot-sample/\n?? .scratch/mergeability-debug/\n?? .scratch/mergeability-debug2/\n?? .scratch/mergeability-debug3/\n?? .scratch/mergeability-fixture-diagnostic-corpus-growth-20260621/\n?? .scratch/mergeability-heldout-final-sample/\n?? .scratch/mergeability-independent-supervisor-arm-sample/\n?? .scratch/swebench-pro-mergeability-bridge-20260620/\n?? docs/dual-agent/auto-evolution-loop-current-demo-20260618/\n?? docs/dual-agent/comfy-cloud-polished-first-run-prototype-20260618/\n?? docs/dual-agent/comfy-cloud-polished-first-run-prototype-workflow-20260618/\n?? docs/dual-agent/mergeability-fixture-diagnostic-corpus-growth-20260621/\n?? docs/dual-agent/mergeability-independent-supervisor-arm-20260619/\n?? docs/product-strategy/\n?? docs/testing/comfy-cloud-guided-first-workflow-coverage-index.md\n?? tests/fixtures/mergeability_bench/candidates/diagnostic_calc_explicit_addition.json\n?? tests/fixtures/mergeability_bench/candidates/diagnostic_calc_param_addition.json\n?? tests/fixtures/mergeability_bench/candidates/diagnostic_calc_zero_and_mixed.json\n?? tests/fixtures/mergeability_bench/candidates/diagnostic_text_collapse_then_title.json\n?? tests/fixtures/mergeability_bench/candidates/diagnostic_text_split_join_title.json"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "9c42e36582a94b3a633a4ac557072d78213f6da256f74c4b8d64b1cb6b491fca",
+    "implementation_plan": "8391fe8bd36bcb8b0898835b3a5a6dbf9e308e354680bd98a5f968380d58837b",
+    "issues": "8a373f5f9d4245f7a089790d2bca02ba8dd30ccc01d74a8fbae374319f28486d",
+    "prd": "500103ecce6721c0acc418e00c291ab2aae29f8e2f61cda1aa20d2c33f5af905",
+    "tdd_plan": "dbfebd12c43274fe71642fc26c9a3aa1fffcaa7452e2ed09fdec5acde1b01ab2"
+  },
+  "status": "captured"
+}

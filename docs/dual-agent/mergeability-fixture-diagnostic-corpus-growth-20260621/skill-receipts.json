@@ -1,0 +1,61 @@
+{
+  "schema_version": "supervisor-skill-receipts/v1",
+  "task_id": "mergeability-fixture-diagnostic-corpus-growth-20260621",
+  "receipts": [
+    {
+      "receipt_id": "skill-to-prd-mergeability-fixture-diagnostic-corpus-growth-20260621",
+      "stage": "to_prd",
+      "skill": "to-prd",
+      "skill_path": "/Users/sam.zhang/.codex/skills/to-prd/SKILL.md",
+      "status": "passed",
+      "artifacts": [
+        "docs/dual-agent/mergeability-fixture-diagnostic-corpus-growth-20260621/prd.md",
+        "docs/dual-agent/mergeability-fixture-diagnostic-corpus-growth-20260621/source/prd.md"
+      ]
+    },
+    {
+      "receipt_id": "skill-prd-grill-mergeability-fixture-diagnostic-corpus-growth-20260621",
+      "stage": "prd_grill",
+      "skill": "grill-with-docs",
+      "skill_path": "/Users/sam.zhang/.codex/skills/grill-with-docs/SKILL.md",
+      "status": "passed",
+      "artifacts": [
+        "docs/dual-agent/mergeability-fixture-diagnostic-corpus-growth-20260621/grill-findings.md",
+        "docs/dual-agent/mergeability-fixture-diagnostic-corpus-growth-20260621/source/grill-findings.md"
+      ]
+    },
+    {
+      "receipt_id": "skill-to-issues-mergeability-fixture-diagnostic-corpus-growth-20260621",
+      "stage": "to_issues",
+      "skill": "to-issues",
+      "skill_path": "/Users/sam.zhang/.codex/skills/to-issues/SKILL.md",
+      "status": "passed",
+      "artifacts": [
+        "docs/dual-agent/mergeability-fixture-diagnostic-corpus-growth-20260621/issues.md",
+        "docs/dual-agent/mergeability-fixture-diagnostic-corpus-growth-20260621/source/issues.md"
+      ]
+    },
+    {
+      "receipt_id": "skill-tdd-mergeability-fixture-diagnostic-corpus-growth-20260621",
+      "stage": "tdd",
+      "skill": "tdd",
+      "skill_path": "/Users/sam.zhang/.codex/skills/tdd/SKILL.md",
+      "status": "passed",
+      "artifacts": [
+        "docs/dual-agent/mergeability-fixture-diagnostic-corpus-growth-20260621/tdd.md",
+        "docs/dual-agent/mergeability-fixture-diagnostic-corpus-growth-20260621/source/tdd.md"
+      ]
+    },
+    {
+      "receipt_id": "skill-tdd-grill-mergeability-fixture-diagnostic-corpus-growth-20260621",
+      "stage": "tdd_grill",
+      "skill": "grill-with-docs",
+      "skill_path": "/Users/sam.zhang/.codex/skills/grill-with-docs/SKILL.md",
+      "status": "passed",
+      "artifacts": [
+        "docs/dual-agent/mergeability-fixture-diagnostic-corpus-growth-20260621/grill-findings-tdd.md",
+        "docs/dual-agent/mergeability-fixture-diagnostic-corpus-growth-20260621/source/grill-findings-tdd.md"
+      ]
+    }
+  ]
+}
