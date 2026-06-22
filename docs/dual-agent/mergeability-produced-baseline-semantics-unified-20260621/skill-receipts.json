@@ -1,0 +1,48 @@
+{
+  "schema_version": "supervisor-skill-receipts/v1",
+  "task_id": "mergeability-produced-baseline-semantics-unified-20260621",
+  "receipts": [
+    {
+      "stage": "to_prd",
+      "skill": "/Users/sam.zhang/.codex/skills/to-prd/SKILL.md",
+      "artifact": "docs/dual-agent/mergeability-produced-baseline-semantics-unified-20260621/prd.md",
+      "status": "passed",
+      "notes": "Synthesized the PRD from the accepted program and current code seams without interviewing the user."
+    },
+    {
+      "stage": "codebase_design",
+      "skill": "/Users/sam.zhang/.codex/skills/codebase-design/SKILL.md",
+      "artifact": "docs/dual-agent/mergeability-produced-baseline-semantics-unified-20260621/prd.md",
+      "status": "passed",
+      "notes": "Selected the SWE-bench mergeability runner and bridge report interface as the highest practical seam."
+    },
+    {
+      "stage": "prd_grill",
+      "skill": "/Users/sam.zhang/.codex/skills/grill-with-docs/SKILL.md",
+      "artifact": "docs/dual-agent/mergeability-produced-baseline-semantics-unified-20260621/grill-findings.md",
+      "status": "passed",
+      "notes": "Resolved findings about legacy self-report fallback, helper-only seams, and live receipt synthesis."
+    },
+    {
+      "stage": "to_issues",
+      "skill": "/Users/sam.zhang/.codex/skills/to-issues/SKILL.md",
+      "artifact": "docs/dual-agent/mergeability-produced-baseline-semantics-unified-20260621/issues.md",
+      "status": "passed",
+      "notes": "Created one tracer-bullet issue covering the full public measurement path."
+    },
+    {
+      "stage": "tdd",
+      "skill": "/Users/sam.zhang/.codex/skills/tdd/SKILL.md",
+      "artifact": "docs/dual-agent/mergeability-produced-baseline-semantics-unified-20260621/tdd.md",
+      "status": "passed",
+      "notes": "Planned one public-boundary RED to GREEN cycle at a time, starting at the runner."
+    },
+    {
+      "stage": "tdd_grill",
+      "skill": "/Users/sam.zhang/.codex/skills/grill-with-docs/SKILL.md",
+      "artifact": "docs/dual-agent/mergeability-produced-baseline-semantics-unified-20260621/grill-findings-tdd.md",
+      "status": "passed",
+      "notes": "Confirmed boundary-first tests, positive receipt coverage, and live honesty coverage."
+    }
+  ]
+}

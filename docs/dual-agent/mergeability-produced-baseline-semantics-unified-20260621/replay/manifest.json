@@ -1,0 +1,446 @@
+{
+  "event_ids": [
+    844675,
+    844677,
+    844679,
+    844680,
+    844681,
+    844682,
+    844706,
+    844707,
+    844708,
+    844709,
+    844712,
+    844713,
+    844714,
+    844715,
+    844716,
+    844717,
+    844718,
+    844797,
+    844799,
+    844801,
+    844802,
+    844803,
+    844804,
+    844819,
+    844820,
+    844821,
+    844822,
+    844825,
+    844826,
+    844827,
+    844828,
+    844836,
+    844837,
+    844838,
+    844839,
+    844840,
+    844841,
+    844842,
+    844843,
+    844845,
+    844846,
+    844847,
+    844848,
+    845030,
+    845031,
+    845032,
+    845033,
+    845034,
+    845035,
+    845036,
+    845037,
+    845042,
+    845045,
+    845046,
+    845047,
+    845048,
+    845055,
+    845056,
+    845057,
+    845058,
+    845059,
+    845060,
+    845061,
+    845062,
+    845064,
+    845065,
+    845066,
+    845067,
+    845289,
+    845290,
+    845291,
+    845292,
+    845293,
+    845294,
+    845295,
+    845296,
+    845301,
+    845304,
+    845305,
+    845306,
+    845307,
+    845371,
+    845372,
+    845383,
+    845384,
+    845385,
+    845388,
+    845389,
+    845390,
+    845391,
+    845428,
+    845429,
+    845438,
+    845439,
+    845440,
+    845441,
+    845442,
+    845443,
+    845444,
+    845457,
+    845458,
+    845459,
+    845460,
+    845598,
+    845599,
+    845600,
+    845601,
+    845606,
+    845607,
+    845608,
+    845609,
+    845610
+  ],
+  "event_kinds": [
+    "dual_agent_gate_result",
+    "dual_agent_gate_round",
+    "dual_agent_interaction_message",
+    "dual_agent_planning_validation",
+    "dual_agent_runtime_evidence",
+    "dual_agent_skill_receipt_validation",
+    "dual_agent_workflow_route",
+    "independent_reviewer_review",
+    "supervisor_cross_vendor_review_selected",
+    "supervisor_evidence_attempt_recorded",
+    "supervisor_lesson_injection",
+    "supervisor_policy_overlay_snapshot",
+    "supervisor_review_context_validation",
+    "supervisor_review_packet_created",
+    "supervisor_worker_completed",
+    "supervisor_worker_dispatched",
+    "supervisor_worker_roster_checked",
+    "supervisor_worker_session_created",
+    "tri_agent_cursor_review"
+  ],
+  "events_count": 112,
+  "failure_summary": null,
+  "files": {
+    "index": "index.md",
+    "interactions": "interactions.md",
+    "mast_coverage_json": "replay/mast-coverage.json",
+    "mast_coverage_markdown": "mast-coverage.md",
+    "transcript_jsonl": "transcript.jsonl",
+    "transcript_markdown": "transcript.md",
+    "workspace_snapshot": "replay/workspace-snapshot.json"
+  },
+  "handoff_packets": [
+    {
+      "content": "{\n  \"cwd\": \"/Users/sam.zhang/Documents/codex-supervisor\",\n  \"execution_layer_policy\": {\n    \"agentic_lead_policy\": {\n      \"min_subagents\": 3,\n      \"policy\": \"off\",\n      \"required_evidence_grade\": \"self_reported\",\n      \"required_roles\": [],\n      \"solo_exception_for_artifact_only_gates\": false\n    },\n    \"allowed_dynamic_workflow_task_classes\": [],\n    \"codex_supervises_final_artifact\": true,\n    \"dynamic_workflow_task_class\": null,\n    \"lead_execution_layer\": \"single_lead_worker\",\n    \"mode\": \"lead_direct\",\n    \"preview_required_gates\": [],\n    \"supervision_layer\": \"codex_plus_lead\"\n  },\n  \"expected_decisions\": [],\n  \"expected_objections\": [],\n  \"expected_specialists\": [],\n  \"gate\": \"outcome_review\",\n  \"injected_lesson_block\": \"Known failure modes to verify before claiming\\nThese are advisory lessons from previous supervisor runs. They do not satisfy any gate by themselves.\\nUse them as a checklist only: do not block, revise, deny, or accept solely because a lesson exists. A step-repetition lesson applies only when current evidence proves the same handoff, artifacts, and source state are being repeated.\\n1. [deliverable_evidence_failed] unknown (source_run_id=vela2-prod-confidence-001): Verify this known failure mode explicitly before claiming the gate is complete.\\n2. [missing_worker_signal] worker_invocation (source_run_id=cffe55b8-47b9-4cc0-b025-586aeb0ee5e9): Verify this known failure mode explicitly before claiming the gate is complete.\\n3. [FM-2.4] Information withholding (source_run_id=8ebdbc89-0185-4962-be6f-b0f593887670): Address independent reviewer objections with concrete evidence references.\\n4. [FM-1.3] Step repetition (source_run_id=8ebdbc89-0185-4962-be6f-b0f593887670): Change the plan or evidence before retrying; do not repeat the same handoff.\\n5. [FM-2.4] Information withholding (source_run_id=f89bc699-1b4e-4713-95b7-d1493a3acfd8): Address independent reviewer objections with concrete evidence references.\",\n  \"injected_lesson_block_sha256\": \"829d220b66bab5c228dc13757a33b6417eba638735b26fcdd3b6bfd95aa9e2c7\",\n  \"injected_lesson_ids\": [\n    \"lesson-59913963cdfc567d8fe610e82aee863ebb77307f753f7046210498c8c522c5e7\",\n    \"lesson-6e3b08262245b3eade5743e9ddb1a92bfb42a34ec49e8b4f2b0792ca1834a590\",\n    \"lesson-833931ec30fbdcacaef5c7df91fae73a71b7ac537110ccf9cab2ec2e80ec6a52\",\n    \"lesson-cd61385380aa0d71d9927ec5c8f719f315a9191aaf387fdc93862d0a6d71f1ef\",\n    \"lesson-715f39df8c3dc22bea09092f80685d87f086d8cdbbf58a0ec008ce0e27d1cb38\"\n  ],\n  \"instruction\": \"Supervisor-owned workflow gate: outcome_review.\\n\\nIntent:\\nValidate and gate the completed Slice 2 implementation: unify produced-baseline semantics across local and SWE-bench mergeability paths. The implementation is already in the worktree; do not broaden scope or create policy proposals. Verify that SWE-bench bridge/replay/live no longer synthesize baseline acceptance from missing, boolean, or self-report-only evidence; valid produced receipts remain available; report-only invariants remain false. For runtime evidence, use nodeid-scoped tests only, not whole long-running test files.\\n\\nReview this gate against the current source artifacts and return a typed dual_agent_outcome.\\nUse decisions/objections to say whether the gate should accept, revise, or deny.\\n\\nRuntime TDD test contract:\\nThe supervisor runtime floor will verify that every TDD-named test below appears in supervisor-generated runtime evidence. Include tests/commands covering all of them in outcome.tests. Explicitly skipped tests must carry a recorded pytest skip reason; silently absent tests block the gate.\\nUse only canonical gate decisions (`accept`, `revise`, or `deny`). Do not return `accept_with_residual`; if test execution needs verification, declare the exact pytest commands/nodeids and let the supervisor runtime floor rerun them.\\nIf the Claude Bash/test tool is unavailable but the implementation diff is complete, do not block solely on that local tooling outage. Return `accept` with test_status=`unknown`, list the exact pytest commands/nodeids, and make no tests-passed claim; the supervisor runtime floor is the authority and will block the gate on failing or missing tests.\\n- test_fixture_runner_missing_produced_baseline_receipt_is_unavailable\\n- test_fixture_runner_produced_baseline_receipt_populates_baseline_arm\\n- test_bridge_legacy_bool_baseline_row_is_unavailable\\n- test_live_runner_without_baseline_decision_receipts_does_not_synthesize_accept\\n\\nKnown failure modes to verify before claiming\\nThese are advisory lessons from previous supervisor runs. They do not satisfy any gate by themselves.\\nUse them as a checklist only: do not block, revise, deny, or accept solely because a lesson exists. A step-repetition lesson applies only when current evidence proves the same handoff, artifacts, and source state are being repeated.\\n1. [deliverable_evidence_failed] unknown (source_run_id=vela2-prod-confidence-001): Verify this known failure mode explicitly before claiming the gate is complete.\\n2. [missing_worker_signal] worker_invocation (source_run_id=cffe55b8-47b9-4cc0-b025-586aeb0ee5e9): Verify this known failure mode explicitly before claiming the gate is complete.\\n3. [FM-2.4] Information withholding (source_run_id=8ebdbc89-0185-4962-be6f-b0f593887670): Address independent reviewer objections with concrete evidence references.\\n4. [FM-1.3] Step repetition (source_run_id=8ebdbc89-0185-4962-be6f-b0f593887670): Change the plan or evidence before retrying; do not repeat the same handoff.\\n5. [FM-2.4] Information withholding (source_run_id=f89bc699-1b4e-4713-95b7-d1493a3acfd8): Address independent reviewer objections with concrete evidence references.\",\n  \"lead_skill\": null,\n  \"outcome_validation_policy\": {\n    \"fidelity_failure\": \"abort_to_operator\",\n    \"malformed_outcome\": \"retry_once_with_corrective_packet\",\n    \"subprocess_failure\": \"abort_to_operator\",\n    \"timeout\": \"abort_to_operator\"\n  },\n  \"packet_schema_version\": \"dual-agent-handoff/v1\",\n  \"planning_artifacts\": [\n    {\n      \"kind\": \"prd\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/mergeability-produced-baseline-semantics-unified-20260621/source/prd.md\",\n      \"sha256\": \"f33465858d9da2a518a4cb7be6e7e4a27a9251e46a550ec9f3b1227dc297b8ea\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/mergeability-produced-baseline-semantics-unified-20260621/source/grill-findings.md\",\n      \"sha256\": \"17c097a24b4552e4056dfac8d692550d8d513bd56695e69ef3439294d5ebc1b3\"\n    },\n    {\n      \"kind\": \"issues\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/mergeability-produced-baseline-semantics-unified-20260621/source/issues.md\",\n      \"sha256\": \"4dcc70915be85294a94bbd7d0f8939cd3e0bbf869b1272db34e7d13071bcf14b\"\n    },\n    {\n      \"kind\": \"tdd_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/mergeability-produced-baseline-semantics-unified-20260621/source/tdd.md\",\n      \"sha256\": \"c4f3844a464aa700adcf7e7792892e5157fefda74fd704909c589e16c8d9f0ff\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/mergeability-produced-baseline-semantics-unified-20260621/source/grill-findings-tdd.md\",\n      \"sha256\": \"1f2d19b74b69231d7c25cc46fa5f16ff8d8c48acc5aa991590a9e166a52b38fb\"\n    },\n    {\n      \"kind\": \"implementation_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/mergeability-produced-baseline-semantics-unified-20260621/source/implementation-plan.md\",\n      \"sha256\": \"9ce7f31c38480c7b7500a5b1a9d4698d00719218da0a2cd7afff26c373c08f1a\"\n    },\n    {\n      \"kind\": \"prd\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/mergeability-produced-baseline-semantics-unified-20260621/source/prd.md\",\n      \"sha256\": \"f33465858d9da2a518a4cb7be6e7e4a27a9251e46a550ec9f3b1227dc297b8ea\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/mergeability-produced-baseline-semantics-unified-20260621/source/grill-findings.md\",\n      \"sha256\": \"17c097a24b4552e4056dfac8d692550d8d513bd56695e69ef3439294d5ebc1b3\"\n    },\n    {\n      \"kind\": \"issues\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/mergeability-produced-baseline-semantics-unified-20260621/source/issues.md\",\n      \"sha256\": \"4dcc70915be85294a94bbd7d0f8939cd3e0bbf869b1272db34e7d13071bcf14b\"\n    },\n    {\n      \"kind\": \"tdd_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/mergeability-produced-baseline-semantics-unified-20260621/source/tdd.md\",\n      \"sha256\": \"c4f3844a464aa700adcf7e7792892e5157fefda74fd704909c589e16c8d9f0ff\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/mergeability-produced-baseline-semantics-unified-20260621/source/grill-findings-tdd.md\",\n      \"sha256\": \"1f2d19b74b69231d7c25cc46fa5f16ff8d8c48acc5aa991590a9e166a52b38fb\"\n    },\n    {\n      \"kind\": \"implementation_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/mergeability-produced-baseline-semantics-unified-20260621/source/implementation-plan.md\",\n      \"sha256\": \"9ce7f31c38480c7b7500a5b1a9d4698d00719218da0a2cd7afff26c373c08f1a\"\n    }\n  ],\n  \"policy_overlay_block\": \"\",\n  \"policy_overlay_block_sha256\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\n  \"policy_overlay_hash\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\n  \"policy_proposal_id\": \"\",\n  \"suggested_skills\": [\n    \"/lead\"\n  ],\n  \"task_id\": \"mergeability-produced-baseline-semantics-unified-20260621\"\n}\n",
+      "event_ids": [
+        844707,
+        844716,
+        844820,
+        844837,
+        845056,
+        845372,
+        845429
+      ],
+      "path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/mergeability-produced-baseline-semantics-unified-20260621.json",
+      "sha256": "b12cd23e9ba6cf2630d57559c30daa3c95adae1143f2a0641d4fa9a43844527c",
+      "status": "captured"
+    }
+  ],
+  "mast_coverage": [
+    {
+      "deterministic_probe": "blocked payload reason `disobey_task_spec` or planning artifact failure",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.1",
+      "mast_mode": "Disobey task specification",
+      "sources": [
+        {
+          "event_id": 844716,
+          "event_kind": "dual_agent_gate_result",
+          "source": "trace_envelope"
+        },
+        {
+          "event_id": 844716,
+          "event_kind": "dual_agent_gate_result",
+          "source": "payload"
+        }
+      ],
+      "status": "observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `role_violation_covenant`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload -> classify_failure",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.2",
+      "mast_mode": "Disobey role specification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "same gate and handoff packet observed twice",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "detect_sequence_failures",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "sources": [
+        {
+          "details": {
+            "signature": [
+              "issues_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/mergeability-produced-baseline-semantics-unified-20260621.json"
+            ]
+          },
+          "event_ids": [
+            844716,
+            844820
+          ],
+          "source": "sequence"
+        }
+      ],
+      "status": "observed_in_run",
+      "trigger_surface": "sequence"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `lost_conversation_history`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.4",
+      "mast_mode": "Loss of conversation history",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `agents_not_converged_max_rounds`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.5",
+      "mast_mode": "Unaware of termination conditions",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `conversation_reset`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.1",
+      "mast_mode": "Conversation reset",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `ambiguous_input_no_clarification`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.2",
+      "mast_mode": "Fail to ask for clarification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "blocked payload reason `scope_violation_off_scope`",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "classify_failure",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.3",
+      "mast_mode": "Task derailment",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "Cursor or reviewer disagreement probe fails",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.4",
+      "mast_mode": "Information withholding",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "Claude response does not address a prior Codex objection",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "detect_sequence_failures",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "sources": [
+        {
+          "details": {
+            "objection": "gate blocked"
+          },
+          "event_ids": [
+            844717,
+            844819
+          ],
+          "source": "sequence"
+        }
+      ],
+      "status": "observed_in_run",
+      "trigger_surface": "sequence"
+    },
+    {
+      "deterministic_probe": "outcome fidelity or message protocol failure",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.6",
+      "mast_mode": "Reasoning-action mismatch",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "accepted gate is missing a required probe",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload + detect_sequence_failures",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.1",
+      "mast_mode": "Premature termination",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload+sequence"
+    },
+    {
+      "deterministic_probe": "claim verification or evidence receipt probe fails",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "failure_taxonomy_for_payload",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.2",
+      "mast_mode": "No or incomplete verification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "payload"
+    },
+    {
+      "deterministic_probe": "Cursor rejects after the gate was accepted",
+      "deterministic_status": "covered_by_deterministic_probe",
+      "entrypoint": "detect_sequence_failures",
+      "mast_category": "Task Verification",
+      "mast_code": "FM-3.3",
+      "mast_mode": "Incorrect verification",
+      "sources": [],
+      "status": "not_observed_in_run",
+      "trigger_surface": "sequence"
+    }
+  ],
+  "run_id": "d9ae1e5c-a063-4460-a550-79c2eb11daeb",
+  "schema_version": "dual-agent-replay-manifest/v1",
+  "schema_versions": {
+    "agent_interaction": "dual-agent-interaction/v1",
+    "failure_taxonomy": "dual-agent-failure-taxonomy/v1",
+    "replay_manifest": "dual-agent-replay-manifest/v1",
+    "trace_envelope": "dual-agent-trace-envelope/v1"
+  },
+  "sequence_failures": [
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "gate blocked"
+      },
+      "event_ids": [
+        844717,
+        844819
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "issues_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/mergeability-produced-baseline-semantics-unified-20260621.json"
+        ]
+      },
+      "event_ids": [
+        844716,
+        844820
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
+    }
+  ],
+  "state": {
+    "events_count_at_capture": 112,
+    "first_event_id": 844675,
+    "last_event_id": 845610,
+    "transcript_jsonl_sha256": "f54759c40b2586d9dcde81ad96e65650659db4d91942aff29dc676e459c6bf54"
+  },
+  "task_id": "mergeability-produced-baseline-semantics-unified-20260621",
+  "tool_call_totals": {
+    "total_cost_usd": 43.247788,
+    "total_duration_ms": 2965145,
+    "total_duration_us": 2965164442,
+    "total_tokens_in": 12453152,
+    "total_tokens_out": 137210,
+    "unique_tool_calls": 97
+  },
+  "workspace_snapshot": {
+    "file_tree_sha256": "045693505e5582a4594bc1be7833be0cfafea68b287189cf96ead4ce65c70bb1",
+    "git": {
+      "diff_bytes": 29875,
+      "diff_sha256": "d083a7a6331b392453a6829570f8727183408f65ca9961e2346cb853aecfc7e1",
+      "diff_stat": "supervisor/swe_bench_mergeability.py            | 249 +++++++++++++++++++++---\n tests/test_swe_bench_pro_mergeability_bridge.py | 207 ++++++++++++++++++--\n 2 files changed, 417 insertions(+), 39 deletions(-)",
+      "head": "84bac900",
+      "head_label": "handoff_cwd_head",
+      "head_ref": "HEAD",
+      "head_sha": "84bac900",
+      "status_short": "M supervisor/swe_bench_mergeability.py\n M tests/test_swe_bench_pro_mergeability_bridge.py\n?? .scratch/auto-evolution-loop-current-demo-20260618/\n?? .scratch/comfy-cloud-prototype-visuals/\n?? .scratch/comfy-cloud-prototype-workflow-request.json\n?? .scratch/comfy-cloud-prototype-workflow-result.json\n?? .scratch/mergeability-calibration-pilot-sample/\n?? .scratch/mergeability-debug/\n?? .scratch/mergeability-debug2/\n?? .scratch/mergeability-debug3/\n?? .scratch/mergeability-heldout-final-sample/\n?? .scratch/mergeability-independent-supervisor-arm-sample/\n?? .scratch/swebench-pro-mergeability-bridge-20260620/\n?? docs/dual-agent/auto-evolution-loop-current-demo-20260618/\n?? docs/dual-agent/comfy-cloud-polished-first-run-prototype-20260618/\n?? docs/dual-agent/comfy-cloud-polished-first-run-prototype-workflow-20260618/\n?? docs/dual-agent/mergeability-independent-supervisor-arm-20260619/\n?? docs/dual-agent/mergeability-produced-baseline-semantics-unified-20260621/\n?? docs/product-strategy/\n?? docs/testing/comfy-cloud-guided-first-workflow-coverage-index.md"
+    },
+    "root": "/Users/sam.zhang/Documents/codex-supervisor",
+    "root_source": "handoff_cwd",
+    "source_artifact_hashes": {
+      "grill_findings": "1f2d19b74b69231d7c25cc46fa5f16ff8d8c48acc5aa991590a9e166a52b38fb",
+      "implementation_plan": "9ce7f31c38480c7b7500a5b1a9d4698d00719218da0a2cd7afff26c373c08f1a",
+      "issues": "4dcc70915be85294a94bbd7d0f8939cd3e0bbf869b1272db34e7d13071bcf14b",
+      "prd": "f33465858d9da2a518a4cb7be6e7e4a27a9251e46a550ec9f3b1227dc297b8ea",
+      "tdd_plan": "c4f3844a464aa700adcf7e7792892e5157fefda74fd704909c589e16c8d9f0ff"
+    },
+    "status": "captured"
+  }
+}

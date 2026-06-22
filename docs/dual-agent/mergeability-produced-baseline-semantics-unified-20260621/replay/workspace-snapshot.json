@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "045693505e5582a4594bc1be7833be0cfafea68b287189cf96ead4ce65c70bb1",
+  "git": {
+    "diff_bytes": 29875,
+    "diff_sha256": "d083a7a6331b392453a6829570f8727183408f65ca9961e2346cb853aecfc7e1",
+    "diff_stat": "supervisor/swe_bench_mergeability.py            | 249 +++++++++++++++++++++---\n tests/test_swe_bench_pro_mergeability_bridge.py | 207 ++++++++++++++++++--\n 2 files changed, 417 insertions(+), 39 deletions(-)",
+    "head": "84bac900",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "84bac900",
+    "status_short": "M supervisor/swe_bench_mergeability.py\n M tests/test_swe_bench_pro_mergeability_bridge.py\n?? .scratch/auto-evolution-loop-current-demo-20260618/\n?? .scratch/comfy-cloud-prototype-visuals/\n?? .scratch/comfy-cloud-prototype-workflow-request.json\n?? .scratch/comfy-cloud-prototype-workflow-result.json\n?? .scratch/mergeability-calibration-pilot-sample/\n?? .scratch/mergeability-debug/\n?? .scratch/mergeability-debug2/\n?? .scratch/mergeability-debug3/\n?? .scratch/mergeability-heldout-final-sample/\n?? .scratch/mergeability-independent-supervisor-arm-sample/\n?? .scratch/swebench-pro-mergeability-bridge-20260620/\n?? docs/dual-agent/auto-evolution-loop-current-demo-20260618/\n?? docs/dual-agent/comfy-cloud-polished-first-run-prototype-20260618/\n?? docs/dual-agent/comfy-cloud-polished-first-run-prototype-workflow-20260618/\n?? docs/dual-agent/mergeability-independent-supervisor-arm-20260619/\n?? docs/dual-agent/mergeability-produced-baseline-semantics-unified-20260621/\n?? docs/product-strategy/\n?? docs/testing/comfy-cloud-guided-first-workflow-coverage-index.md"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "1f2d19b74b69231d7c25cc46fa5f16ff8d8c48acc5aa991590a9e166a52b38fb",
+    "implementation_plan": "9ce7f31c38480c7b7500a5b1a9d4698d00719218da0a2cd7afff26c373c08f1a",
+    "issues": "4dcc70915be85294a94bbd7d0f8939cd3e0bbf869b1272db34e7d13071bcf14b",
+    "prd": "f33465858d9da2a518a4cb7be6e7e4a27a9251e46a550ec9f3b1227dc297b8ea",
+    "tdd_plan": "c4f3844a464aa700adcf7e7792892e5157fefda74fd704909c589e16c8d9f0ff"
+  },
+  "status": "captured"
+}

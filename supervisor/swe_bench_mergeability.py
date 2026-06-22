@@ -27,6 +27,7 @@ from .mergeability_bench import (
     _panel_marginal_delta_at_matched_true_accept,
     _public_input_oracle_refs,
     _rate,
+    _resolve_powered_baseline_decision,
     _run_command,
     _summarize_acceptance_arm,
     _wilson_interval,
@@ -60,6 +61,11 @@ ARM_S_PROBE = "s_probe"
 ARM_S_FULL = "s_full"
 ARM_ORACLE_CEILING = "oracle_ceiling"
 ARM_NAMES = (ARM_BASELINE, ARM_S_PROBE, ARM_S_FULL, ARM_ORACLE_CEILING)
+PRODUCED_BASELINE_RECEIPT_KEYS = (
+    "single_agent_baseline_decision",
+    "produced_baseline_decision",
+    "baseline_decision",
+)
 
 _PUBLIC_PACKET_ALLOWED_INSTANCE_KEYS = (
     "instance_id",
@@ -200,6 +206,20 @@ def build_swe_bench_pro_public_packet(
     return packet
 
 
+def _raw_decision_for(
+    arm_decisions: Mapping[str, Mapping[str, Any]],
+    *,
+    arm: str,
+    instance_id: str,
+    candidate_id: str,
+) -> Any:
+    per_arm = arm_decisions.get(arm) or {}
+    raw = per_arm.get((instance_id, candidate_id))
+    if raw is None:
+        raw = per_arm.get(f"{instance_id}/{candidate_id}")
+    return raw
+
+
 def _decision_for(
     arm_decisions: Mapping[str, Mapping[str, Any]],
     *,
@@ -207,10 +227,12 @@ def _decision_for(
     instance_id: str,
     candidate_id: str,
 ) -> dict[str, Any]:
-    per_arm = arm_decisions.get(arm) or {}
-    raw = per_arm.get((instance_id, candidate_id))
-    if raw is None:
-        raw = per_arm.get(f"{instance_id}/{candidate_id}")
+    raw = _raw_decision_for(
+        arm_decisions,
+        arm=arm,
+        instance_id=instance_id,
+        candidate_id=candidate_id,
+    )
     if raw is None:
         return {"accept": False, "unavailable": True}
     if isinstance(raw, Mapping):
@@ -220,6 +242,68 @@ def _decision_for(
     return {"accept": bool(raw), "unavailable": False}
 
 
+def _baseline_decision_for(
+    arm_decisions: Mapping[str, Mapping[str, Any]],
+    *,
+    instance_id: str,
+    candidate_id: str,
+    expected_candidate_artifact_hash: str,
+) -> dict[str, Any]:
+    raw = _raw_decision_for(
+        arm_decisions,
+        arm=ARM_BASELINE,
+        instance_id=instance_id,
+        candidate_id=candidate_id,
+    )
+    if (
+        isinstance(raw, Mapping)
+        and bool(raw.get("unavailable"))
+        and "evidence_kind" in raw
+        and "unavailable_reason" in raw
+        and "decision_source" in raw
+    ):
+        supplied_candidate_id = str(raw.get("candidate_id") or "")
+        if supplied_candidate_id and supplied_candidate_id != candidate_id:
+            return _resolve_powered_baseline_decision(
+                raw=raw,
+                expected_candidate_artifact_hash=expected_candidate_artifact_hash,
+                expected_candidate_id=candidate_id,
+            )
+        return {
+            "accept": False,
+            "unavailable": True,
+            "decision_source": str(
+                raw.get("decision_source")
+                or "produced_single_agent_baseline_unavailable"
+            ),
+            "candidate_id": str(raw.get("candidate_id") or candidate_id),
+            "candidate_artifact_hash": str(raw.get("candidate_artifact_hash") or ""),
+            "producer": (
+                dict(raw.get("producer"))
+                if isinstance(raw.get("producer"), Mapping)
+                else {}
+            ),
+            "prompt_sha256": str(raw.get("prompt_sha256") or ""),
+            "evidence_kind": str(raw.get("evidence_kind") or "missing"),
+            "unavailable_reason": str(
+                raw.get("unavailable_reason")
+                or "baseline_decisions_not_supplied"
+            ),
+        }
+    return _resolve_powered_baseline_decision(
+        raw=raw,
+        expected_candidate_artifact_hash=expected_candidate_artifact_hash,
+        expected_candidate_id=candidate_id,
+    )
+
+
+def _candidate_produced_baseline_receipt(candidate: Mapping[str, Any]) -> Any:
+    for key in PRODUCED_BASELINE_RECEIPT_KEYS:
+        if key in candidate:
+            return candidate.get(key)
+    return None
+
+
 def _frozen_decision_row(
     *,
     instance_id: str,
@@ -227,8 +311,11 @@ def _frozen_decision_row(
     public_packet: Mapping[str, Any],
     arm_decisions: Mapping[str, Mapping[str, Any]],
 ) -> dict[str, Any]:
-    baseline = _decision_for(
-        arm_decisions, arm=ARM_BASELINE, instance_id=instance_id, candidate_id=candidate_id
+    baseline = _baseline_decision_for(
+        arm_decisions,
+        instance_id=instance_id,
+        candidate_id=candidate_id,
+        expected_candidate_artifact_hash=str(public_packet["candidate_artifact_hash"]),
     )
     s_probe = _decision_for(
         arm_decisions, arm=ARM_S_PROBE, instance_id=instance_id, candidate_id=candidate_id
@@ -242,6 +329,13 @@ def _frozen_decision_row(
         "public_packet_sha256": _sha256_json(public_packet),
         "baseline_accept": baseline["accept"],
         "baseline_unavailable": baseline["unavailable"],
+        "baseline_decision_source": baseline["decision_source"],
+        "baseline_evidence_kind": baseline["evidence_kind"],
+        "baseline_candidate_id": baseline["candidate_id"],
+        "baseline_candidate_artifact_hash": baseline["candidate_artifact_hash"],
+        "baseline_producer": dict(baseline["producer"]),
+        "baseline_prompt_sha256": baseline["prompt_sha256"],
+        "baseline_unavailable_reason": baseline["unavailable_reason"],
         "s_probe_accept": s_probe["accept"],
         "s_probe_unavailable": s_probe["unavailable"],
         "s_full_accept": s_full["accept"],
@@ -386,6 +480,19 @@ def swebench_pro_mergeability_bridge_report(
                 "oracle_isolation_refs": leak_refs,
                 "baseline_accept": frozen["baseline_accept"],
                 "baseline_unavailable": frozen["baseline_unavailable"],
+                "baseline_decision_source": frozen["baseline_decision_source"],
+                "baseline_evidence_kind": frozen["baseline_evidence_kind"],
+                "baseline_candidate_id": frozen["baseline_candidate_id"],
+                "baseline_candidate_artifact_hash": frozen[
+                    "baseline_candidate_artifact_hash"
+                ],
+                "baseline_producer": dict(frozen["baseline_producer"]),
+                "baseline_prompt_sha256": frozen["baseline_prompt_sha256"],
+                "baseline_unavailable_reason": frozen["baseline_unavailable_reason"],
+                "legacy_baseline_self_report": candidate.get("baseline_self_report"),
+                "legacy_baseline_self_report_calibration_only": (
+                    "baseline_self_report" in candidate
+                ),
                 "s_probe_accept": frozen["s_probe_accept"],
                 "s_probe_unavailable": frozen["s_probe_unavailable"],
                 "s_full_accept": frozen["s_full_accept"],
@@ -406,6 +513,9 @@ def swebench_pro_mergeability_bridge_report(
                 for arm_name in (ARM_BASELINE, ARM_S_PROBE, ARM_S_FULL):
                     row[f"{arm_name}_accept"] = False
                     row[f"{arm_name}_unavailable"] = True
+                row["baseline_unavailable_reason"] = (
+                    "public_packet_contains_hidden_oracle_material"
+                )
                 oracle_isolation_violations.append({
                     "instance_id": instance_id,
                     "candidate_id": candidate_id,
@@ -423,16 +533,23 @@ def swebench_pro_mergeability_bridge_report(
                 "s_full_unavailable": row["s_full_unavailable"],
             })
 
-    arm_summaries = {
-        arm: _summarize_acceptance_arm(
+    arm_summaries: dict[str, dict[str, Any]] = {}
+    for arm in ARM_NAMES:
+        evidence_kind = None
+        decision_source = _arm_decision_source(arm)
+        arm_role = arm
+        if arm == ARM_BASELINE:
+            evidence_kind = _baseline_evidence_kind_for_rows(rows)
+            decision_source = _baseline_decision_source_for_rows(rows)
+            arm_role = "single_agent_baseline"
+        arm_summaries[arm] = _summarize_acceptance_arm(
             rows,
             arm=arm,
-            arm_role=arm,
-            decision_source=_arm_decision_source(arm),
+            arm_role=arm_role,
+            decision_source=decision_source,
             oracle_coupled=(arm == ARM_ORACLE_CEILING),
+            evidence_kind=evidence_kind,
         )
-        for arm in ARM_NAMES
-    }
 
     matched_true_accept = {
         arm: _false_accept_at_matched_true_accept(
@@ -548,9 +665,45 @@ def swebench_pro_mergeability_bridge_report(
     return report
 
 
+def _baseline_evidence_kind_for_rows(rows: Sequence[Mapping[str, Any]]) -> str:
+    available = [row for row in rows if not bool(row.get("baseline_unavailable"))]
+    if available:
+        kinds = {
+            str(row.get("baseline_evidence_kind") or "")
+            for row in available
+        }
+        kinds.discard("")
+        if len(kinds) == 1:
+            return next(iter(kinds))
+        if kinds:
+            return "mixed_produced_baseline"
+        return "produced_single_agent_baseline"
+    unavailable_kinds = {
+        str(row.get("baseline_evidence_kind") or "missing")
+        for row in rows
+    }
+    if len(unavailable_kinds) == 1:
+        return next(iter(unavailable_kinds))
+    return "unavailable_mixed"
+
+
+def _baseline_decision_source_for_rows(rows: Sequence[Mapping[str, Any]]) -> str:
+    available = [row for row in rows if not bool(row.get("baseline_unavailable"))]
+    if not available:
+        return "produced_single_agent_baseline_unavailable"
+    sources = {
+        str(row.get("baseline_decision_source") or "")
+        for row in available
+    }
+    sources.discard("")
+    if len(sources) == 1:
+        return next(iter(sources))
+    return "mixed_produced_single_agent_baseline"
+
+
 def _arm_decision_source(arm: str) -> str:
     if arm == ARM_BASELINE:
-        return "candidate_self_report"
+        return "produced_single_agent_baseline_unavailable"
     if arm == ARM_S_PROBE:
         return PUBLIC_STATIC_PATCH_PROBE
     if arm == ARM_S_FULL:
@@ -1189,23 +1342,20 @@ def swebench_mergeability_fixture_runner(
                 ),
             }
 
-        baseline_self_report = candidate.get("baseline_self_report")
-        if baseline_self_report is None:
-            baseline_self_report = True
-        baseline_decision = {
-            "accept": bool(baseline_self_report),
-            "unavailable": False,
-            "reason": "candidate_self_report",
-        }
+        baseline_decision = _resolve_powered_baseline_decision(
+            raw=_candidate_produced_baseline_receipt(candidate),
+            expected_candidate_artifact_hash=str(
+                public_packet["candidate_artifact_hash"]
+            ),
+            expected_candidate_id=candidate_id,
+        )
 
         candidate_artifacts[key] = {
             "candidate_id": candidate_id,
             "patch": str(candidate.get("patch") or ""),
+            "baseline_self_report": candidate.get("baseline_self_report"),
         }
-        arm_decisions[ARM_BASELINE][key] = {
-            "accept": baseline_decision["accept"],
-            "unavailable": baseline_decision["unavailable"],
-        }
+        arm_decisions[ARM_BASELINE][key] = dict(baseline_decision)
         arm_decisions[ARM_S_PROBE][key] = {
             "accept": s_probe_decision["accept"],
             "unavailable": s_probe_decision["unavailable"],
@@ -1244,6 +1394,23 @@ def swebench_mergeability_fixture_runner(
                 "reviewer_packet_sha256": entry["reviewer_packet_sha256"],
                 "baseline_accept": entry["baseline_decision"]["accept"],
                 "baseline_unavailable": entry["baseline_decision"]["unavailable"],
+                "baseline_decision_source": entry["baseline_decision"][
+                    "decision_source"
+                ],
+                "baseline_evidence_kind": entry["baseline_decision"][
+                    "evidence_kind"
+                ],
+                "baseline_candidate_id": entry["baseline_decision"][
+                    "candidate_id"
+                ],
+                "baseline_candidate_artifact_hash": entry["baseline_decision"][
+                    "candidate_artifact_hash"
+                ],
+                "baseline_producer": dict(entry["baseline_decision"]["producer"]),
+                "baseline_prompt_sha256": entry["baseline_decision"]["prompt_sha256"],
+                "baseline_unavailable_reason": entry["baseline_decision"][
+                    "unavailable_reason"
+                ],
                 "s_probe_accept": entry["s_probe_decision"]["accept"],
                 "s_probe_unavailable": entry["s_probe_decision"]["unavailable"],
                 "s_probe_reason": entry["s_probe_decision"]["reason"],
@@ -1543,10 +1710,22 @@ def swebench_mergeability_replay_runner(
             combined_candidate_artifacts[key] = {
                 "candidate_id": candidate_id,
                 "patch": _candidate_patch_text(candidate),
+                "baseline_self_report": candidate.get("baseline_self_report"),
             }
             combined_arm_decisions[ARM_BASELINE][key] = {
                 "accept": bool(frozen_row["baseline_accept"]),
                 "unavailable": bool(frozen_row["baseline_unavailable"]),
+                "decision_source": str(frozen_row["baseline_decision_source"]),
+                "evidence_kind": str(frozen_row["baseline_evidence_kind"]),
+                "candidate_id": str(frozen_row["baseline_candidate_id"]),
+                "candidate_artifact_hash": str(
+                    frozen_row["baseline_candidate_artifact_hash"]
+                ),
+                "producer": dict(frozen_row["baseline_producer"]),
+                "prompt_sha256": str(frozen_row["baseline_prompt_sha256"]),
+                "unavailable_reason": str(
+                    frozen_row["baseline_unavailable_reason"]
+                ),
             }
             combined_arm_decisions[ARM_S_PROBE][key] = {
                 "accept": bool(frozen_row["s_probe_accept"]),
@@ -1738,7 +1917,6 @@ def swebench_mergeability_live_runner(
             candidate = {
                 "candidate_id": record["candidate_id"],
                 "model_patch_path": record["model_patch_path"],
-                "baseline_self_report": True,
                 "oracle_commands": source_instance["oracle_commands"],
                 "live_generation": {
                     "arm": arm,
@@ -1752,6 +1930,26 @@ def swebench_mergeability_live_runner(
                     "candidate_artifact_hash": record["candidate_artifact_hash"],
                 },
             }
+            explicit_baseline_receipt = generation.get("single_agent_baseline_decision")
+            if not isinstance(explicit_baseline_receipt, Mapping):
+                explicit_baseline_receipt = generation.get("baseline_decision")
+            if isinstance(explicit_baseline_receipt, Mapping):
+                candidate["single_agent_baseline_decision"] = dict(
+                    explicit_baseline_receipt
+                )
+            elif arm == "baseline" and isinstance(generation.get("accept"), bool):
+                candidate["single_agent_baseline_decision"] = {
+                    "candidate_id": record["candidate_id"],
+                    "accept": bool(generation["accept"]),
+                    "decision_source": "single_agent_candidate_generation",
+                    "candidate_artifact_hash": record["candidate_artifact_hash"],
+                    "producer": {
+                        "model": arm_config["model"],
+                        "provider": arm_config["provider"],
+                        "runner_label": "swebench-live-baseline-generator",
+                    },
+                    "prompt_sha256": record["prompt_hash"],
+                }
             replay_entry["candidates"].append(candidate)
         generated_instances.append(replay_entry)
 
@@ -2015,6 +2213,9 @@ def _normalise_swebench_live_generation_result(
         "cost_usd": float(payload.get("cost_usd") or 0.0),
         "wall_clock_s": float(payload.get("wall_clock_s") or measured_wall_clock_s),
         "token_usage": dict(token_usage),
+        "accept": payload.get("accept"),
+        "single_agent_baseline_decision": payload.get("single_agent_baseline_decision"),
+        "baseline_decision": payload.get("baseline_decision"),
     }
 
 

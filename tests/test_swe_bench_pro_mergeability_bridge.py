@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from hashlib import sha256
 from pathlib import Path
 
 import pytest
@@ -40,6 +41,7 @@ from supervisor.autoresearch.policy_evolution import (
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "swe_bench_pro"
 SAMPLE = FIXTURE_ROOT / "pilot_sample.yaml"
 RESULTS = FIXTURE_ROOT / "pilot_results.json"
+DEFAULT_CANDIDATE_PATCH = "diff --git a/parser.py..."
 
 
 def _substrate() -> dict:
@@ -68,8 +70,29 @@ def _instance(instance_id: str, *, with_hidden: bool = True) -> dict:
     return record
 
 
-def _candidate(candidate_id: str, *, patch: str = "diff --git a/parser.py...") -> dict:
+def _candidate(candidate_id: str, *, patch: str = DEFAULT_CANDIDATE_PATCH) -> dict:
     return {"candidate_id": candidate_id, "patch": patch}
+
+
+def _produced_baseline_decision(
+    candidate_id: str,
+    *,
+    patch: str = DEFAULT_CANDIDATE_PATCH,
+    accept: bool = True,
+    decision_source: str = "replayed_single_agent_baseline",
+) -> dict:
+    return {
+        "candidate_id": candidate_id,
+        "accept": accept,
+        "decision_source": decision_source,
+        "candidate_artifact_hash": sha256(patch.encode("utf-8")).hexdigest(),
+        "producer": {
+            "model": "fixture-baseline-llm",
+            "provider": "fixture",
+            "runner_label": "swebench-single-agent-baseline-replay",
+        },
+        "prompt_sha256": sha256(f"prompt:{candidate_id}".encode("utf-8")).hexdigest(),
+    }
 
 
 def _arm_decisions(
@@ -84,7 +107,10 @@ def _arm_decisions(
 ) -> dict:
     return {
         ARM_BASELINE: {
-            (instance_id, candidate_id): {"accept": baseline, "unavailable": False},
+            (instance_id, candidate_id): _produced_baseline_decision(
+                candidate_id,
+                accept=baseline,
+            ),
         },
         ARM_S_PROBE: {
             (instance_id, candidate_id): {
@@ -340,9 +366,9 @@ def test_full_gate_can_disagree_with_s_probe_and_records_delta():
         candidate_id = f"cand-{i}"
         rows.append(_instance(instance_id))
         candidate_artifacts[(instance_id, candidate_id)] = _candidate(candidate_id)
-        arm_decisions[ARM_BASELINE][(instance_id, candidate_id)] = {
-            "accept": True, "unavailable": False,
-        }
+        arm_decisions[ARM_BASELINE][(instance_id, candidate_id)] = (
+            _produced_baseline_decision(candidate_id, accept=True)
+        )
         arm_decisions[ARM_S_PROBE][(instance_id, candidate_id)] = {
             "accept": s_probe, "unavailable": False,
         }
@@ -413,6 +439,48 @@ def test_pass_to_pass_regression_contributes_to_no_regression_status():
     assert len(report["no_regression_sha256"]) == 64
 
 
+def test_bridge_legacy_bool_baseline_row_is_unavailable():
+    instance = _instance("instance_demo__repo-legacy-baseline")
+    candidate = _candidate("cand-legacy-bool")
+    report = swebench_pro_mergeability_bridge_report(
+        instances=[instance],
+        candidate_artifacts={
+            ("instance_demo__repo-legacy-baseline", "cand-legacy-bool"): candidate
+        },
+        s_probe_substrate=_substrate(),
+        arm_decisions={
+            ARM_BASELINE: {
+                ("instance_demo__repo-legacy-baseline", "cand-legacy-bool"): True,
+            },
+            ARM_S_PROBE: {
+                ("instance_demo__repo-legacy-baseline", "cand-legacy-bool"): {
+                    "accept": True,
+                    "unavailable": False,
+                },
+            },
+            ARM_S_FULL: {
+                ("instance_demo__repo-legacy-baseline", "cand-legacy-bool"): {
+                    "accept": True,
+                    "unavailable": False,
+                },
+            },
+        },
+        oracle_outcomes={
+            ("instance_demo__repo-legacy-baseline", "cand-legacy-bool"): {
+                "fail_to_pass_status": "fail",
+                "pass_to_pass_status": "pass",
+            }
+        },
+    )
+
+    row = report["per_row_results"][0]
+    assert row["baseline_accept"] is False
+    assert row["baseline_unavailable"] is True
+    assert row["baseline_evidence_kind"] == "legacy_bool"
+    assert row["baseline_unavailable_reason"] == "legacy_bool_baseline_row_not_replayable"
+    assert report["arms"][ARM_BASELINE]["availability_status"] == "unavailable"
+
+
 # ---------------------------------------------------------------------------
 # Slice 3: Oracle ceiling is coupled and cannot drive improvement claim
 # ---------------------------------------------------------------------------
@@ -477,9 +545,9 @@ def test_far_tar_frr_denominators_use_post_decision_oracle_labels():
         candidate_id = f"cand-{suffix}"
         instances.append(_instance(instance_id))
         candidate_artifacts[(instance_id, candidate_id)] = _candidate(candidate_id)
-        arm_decisions[ARM_BASELINE][(instance_id, candidate_id)] = {
-            "accept": True, "unavailable": False,
-        }
+        arm_decisions[ARM_BASELINE][(instance_id, candidate_id)] = (
+            _produced_baseline_decision(candidate_id, accept=True)
+        )
         arm_decisions[ARM_S_PROBE][(instance_id, candidate_id)] = {
             "accept": s_probe_accept, "unavailable": False,
         }
@@ -639,19 +707,21 @@ def _runner_candidate(
     oracle_fail_to_pass_passes: bool = True,
     oracle_pass_to_pass_passes: bool = True,
     baseline_self_report: bool = True,
+    include_baseline_decision: bool = True,
 ) -> dict:
     def _cmd_for(passes: bool) -> list[str]:
         if passes:
             return ["python", "-c", "print('ok')"]
         return ["python", "-c", "import sys; sys.exit(1)"]
 
-    return {
+    patch_text = (
+        f"diff --git a/{patch_target} b/{patch_target}\n"
+        f"--- a/{patch_target}\n"
+        f"+++ b/{patch_target}\n"
+    )
+    candidate = {
         "candidate_id": candidate_id,
-        "patch": (
-            f"diff --git a/{patch_target} b/{patch_target}\n"
-            f"--- a/{patch_target}\n"
-            f"+++ b/{patch_target}\n"
-        ),
+        "patch": patch_text,
         "baseline_self_report": baseline_self_report,
         "patch_operations": [
             {"path": patch_target, "mode": patch_mode, "content": patch_content},
@@ -661,6 +731,13 @@ def _runner_candidate(
             "pass_to_pass": [_cmd_for(oracle_pass_to_pass_passes)],
         },
     }
+    if include_baseline_decision:
+        candidate["single_agent_baseline_decision"] = _produced_baseline_decision(
+            candidate_id,
+            patch=patch_text,
+            accept=baseline_self_report,
+        )
+    return candidate
 
 
 def test_fixture_runner_executes_public_probe_and_excludes_hidden_oracle(tmp_path):
@@ -782,7 +859,8 @@ def test_fixture_runner_patch_apply_failure_is_recorded_not_crashed(tmp_path):
     # Bridge report rows reflect the rejection.
     row = report["bridge_report"]["per_row_results"][0]
     assert row["s_probe_accept"] is False
-    assert row["baseline_accept"] is True  # baseline still records self-report
+    assert row["baseline_accept"] is True
+    assert row["baseline_evidence_kind"] == "produced_single_agent_baseline"
     # Frozen decisions also record the rejection.
     frozen = report["frozen_decisions"]["rows"][0]
     assert frozen["s_probe_accept"] is False
@@ -790,6 +868,74 @@ def test_fixture_runner_patch_apply_failure_is_recorded_not_crashed(tmp_path):
     # Report-only invariants remain false.
     assert report["bridge_report"]["metric_applyable"] is False
     assert report["bridge_report"]["improvement_claim_allowed"] is False
+
+
+def test_fixture_runner_missing_produced_baseline_receipt_is_unavailable(tmp_path):
+    fixture_root = _build_runner_fixture(tmp_path)
+    output_dir = tmp_path / "out"
+    instance = _runner_instance("fixture_demo__repo-missing-baseline")
+    candidate = _runner_candidate(
+        "cand-missing-baseline",
+        baseline_self_report=True,
+        include_baseline_decision=False,
+    )
+
+    report = swebench_mergeability_fixture_runner(
+        fixture_root=fixture_root,
+        instance=instance,
+        candidates=[candidate],
+        s_probe_substrate=_runner_substrate(),
+        public_commands=[],
+        output_dir=output_dir,
+    )
+
+    row = report["bridge_report"]["per_row_results"][0]
+    assert row["baseline_accept"] is False
+    assert row["baseline_unavailable"] is True
+    assert row["baseline_evidence_kind"] == "missing"
+    assert row["baseline_unavailable_reason"] == "baseline_decisions_not_supplied"
+    assert row["legacy_baseline_self_report"] is True
+    assert row["legacy_baseline_self_report_calibration_only"] is True
+    baseline_arm = report["bridge_report"]["arms"][ARM_BASELINE]
+    assert baseline_arm["availability_status"] == "unavailable"
+    assert baseline_arm["accepted_count"] == 0
+    frozen = report["frozen_decisions"]["rows"][0]
+    assert frozen["baseline_accept"] is False
+    assert frozen["baseline_unavailable"] is True
+    assert frozen["baseline_unavailable_reason"] == "baseline_decisions_not_supplied"
+
+
+def test_fixture_runner_produced_baseline_receipt_populates_baseline_arm(tmp_path):
+    fixture_root = _build_runner_fixture(tmp_path)
+    output_dir = tmp_path / "out"
+    instance = _runner_instance("fixture_demo__repo-produced-baseline")
+    candidate = _runner_candidate("cand-produced-baseline")
+
+    report = swebench_mergeability_fixture_runner(
+        fixture_root=fixture_root,
+        instance=instance,
+        candidates=[candidate],
+        s_probe_substrate=_runner_substrate(),
+        public_commands=[],
+        output_dir=output_dir,
+    )
+
+    row = report["bridge_report"]["per_row_results"][0]
+    decision = candidate["single_agent_baseline_decision"]
+    assert row["baseline_accept"] is True
+    assert row["baseline_unavailable"] is False
+    assert row["baseline_decision_source"] == "replayed_single_agent_baseline"
+    assert row["baseline_evidence_kind"] == "produced_single_agent_baseline"
+    assert row["baseline_candidate_id"] == "cand-produced-baseline"
+    assert row["baseline_candidate_artifact_hash"] == decision["candidate_artifact_hash"]
+    assert row["baseline_prompt_sha256"] == decision["prompt_sha256"]
+    assert row["baseline_producer"]["runner_label"] == (
+        "swebench-single-agent-baseline-replay"
+    )
+    baseline_arm = report["bridge_report"]["arms"][ARM_BASELINE]
+    assert baseline_arm["availability_status"] == "available"
+    assert baseline_arm["decision_source"] == "replayed_single_agent_baseline"
+    assert baseline_arm["evidence_kind"] == "produced_single_agent_baseline"
 
 
 def test_fixture_runner_marks_full_gate_unavailable_without_panel(tmp_path):
@@ -1039,6 +1185,12 @@ def _write_replay_manifest(
     for candidate_id in ("real-good", "real-bad", "bad-patch"):
         patch_text = _invalid_model_patch() if candidate_id == "bad-patch" else _valid_model_patch()
         (patches / f"{candidate_id}.patch").write_text(patch_text, encoding="utf-8")
+    for candidate in default_candidates:
+        candidate["single_agent_baseline_decision"] = _produced_baseline_decision(
+            str(candidate["candidate_id"]),
+            patch=_valid_model_patch(),
+            accept=True,
+        )
 
     manifest = {
         "schema_version": "supervisor-swebench-mergeability-replay-manifest/v1",
@@ -1370,6 +1522,31 @@ def test_live_runner_generates_matched_arms_and_reuses_replay_report(tmp_path):
     frozen_path = Path(report["replay_report"]["instance_reports"][0]["frozen_decisions_path"])
     oracle_path = Path(report["replay_report"]["instance_reports"][0]["oracle_outputs_path"])
     assert frozen_path.stat().st_mtime_ns <= oracle_path.stat().st_mtime_ns
+
+
+def test_live_runner_without_baseline_decision_receipts_does_not_synthesize_accept(tmp_path):
+    report = swebench_mergeability_live_runner(
+        manifest_path=_write_live_manifest(tmp_path),
+        output_dir=tmp_path / "out",
+        baseline_generator=_FakeLiveGenerator(),
+        supervisor_generator=_FakeLiveGenerator(),
+        allow_live=True,
+        max_budget_usd=1.0,
+        model="claude-opus-4-8",
+        provider="anthropic",
+    )
+
+    rows = report["bridge_report"]["per_row_results"]
+    assert rows
+    assert all(row["baseline_accept"] is False for row in rows)
+    assert all(row["baseline_unavailable"] is True for row in rows)
+    assert {row["baseline_evidence_kind"] for row in rows} == {"missing"}
+    baseline_arm = report["bridge_report"]["arms"][ARM_BASELINE]
+    assert baseline_arm["availability_status"] == "unavailable"
+    assert baseline_arm["accepted_count"] == 0
+    assert baseline_arm["unavailable_count"] == len(rows)
+    assert report["bridge_report"]["metric_applyable"] is False
+    assert report["bridge_report"]["improvement_claim_allowed"] is False
 
 
 def test_live_runner_budget_overrun_is_unavailable_not_accepted(tmp_path):
