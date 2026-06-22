@@ -788,6 +788,9 @@ SWEBENCH_MERGEABILITY_OFFICIAL_REPLAY_REPORT_SCHEMA_VERSION = (
 SWEBENCH_MERGEABILITY_OFFICIAL_LIVE_REPORT_SCHEMA_VERSION = (
     "supervisor-swebench-official-live-report/v1"
 )
+SWEBENCH_MERGEABILITY_OFFICIAL_ALL_ARMS_DIAGNOSTIC_SCHEMA_VERSION = (
+    "supervisor-swebench-official-all-arms-diagnostic-report/v1"
+)
 SWEBENCH_MERGEABILITY_REVIEWER_PACKET_SCHEMA_VERSION = (
     "supervisor-swebench-mergeability-reviewer-packet/v1"
 )
@@ -2435,6 +2438,335 @@ def swebench_mergeability_official_replay_runner(
     )
     report["report_path"] = str(report_path)
     return report
+
+
+def swebench_mergeability_official_all_arms_diagnostic_runner(
+    *,
+    dataset: str,
+    dataset_split: str,
+    predictions_path: str | Path,
+    output_dir: str | Path,
+    allow_dataset_fetch: bool = False,
+    dataset_loader: Callable[..., Sequence[Mapping[str, Any]]] | None = None,
+    repo_materializer: Callable[..., str | Path] | None = None,
+    oracle_runner: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+    oracle_adapter_kind: str = DEFAULT_OFFICIAL_ORACLE_ADAPTER_KIND,
+    instance_ids: Sequence[str] | None = None,
+    limit: int | None = None,
+    reviewer_panel: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+    reviewer_panel_mode: str = "configured",
+    configured_reviewer_panel_options: ConfiguredReviewerPanelOptions | None = None,
+    timeout_s: float = 30.0,
+    min_good: int = 1,
+    min_bad: int = 1,
+) -> dict[str, Any]:
+    """Run a small official-oracle diagnostic and require all arms to populate.
+
+    This is still diagnostic/report-only. It proves that official replay,
+    produced baseline receipts, S_probe, configured S_full, and oracle ceiling
+    can all emit rows before any powered benchmark claim is considered.
+    """
+    output_path = Path(output_dir).expanduser().resolve()
+    effective_reviewer_panel = reviewer_panel
+    if (
+        reviewer_panel_mode == "configured"
+        and effective_reviewer_panel is None
+        and configured_reviewer_panel_options is None
+    ):
+        # Diagnostic mode must fail closed without accidentally launching live
+        # reviewer infrastructure from a missing injection.
+        effective_reviewer_panel = _official_all_arms_unavailable_reviewer_panel
+    try:
+        official_report = swebench_mergeability_official_replay_runner(
+            dataset=dataset,
+            dataset_split=dataset_split,
+            predictions_path=predictions_path,
+            output_dir=output_path,
+            allow_dataset_fetch=allow_dataset_fetch,
+            dataset_loader=dataset_loader,
+            repo_materializer=repo_materializer,
+            oracle_runner=oracle_runner,
+            oracle_adapter_kind=oracle_adapter_kind,
+            instance_ids=instance_ids,
+            limit=limit,
+            reviewer_panel=effective_reviewer_panel,
+            reviewer_panel_mode=reviewer_panel_mode,
+            configured_reviewer_panel_options=configured_reviewer_panel_options,
+            timeout_s=timeout_s,
+        )
+    except SwebenchMergeabilityFixtureRunnerError as exc:
+        if "forbidden oracle material" not in str(exc):
+            raise
+        official_report = _official_all_arms_leak_unavailable_official_report(
+            dataset=dataset,
+            dataset_split=dataset_split,
+            oracle_adapter_kind=oracle_adapter_kind,
+            reason=str(exc),
+        )
+    report = _build_official_all_arms_diagnostic_report(
+        official_report=official_report,
+        min_good=min_good,
+        min_bad=min_bad,
+    )
+    report_path = output_path / "official_all_arms_diagnostic_report.json"
+    report["report_path"] = str(report_path)
+    report["report_sha256"] = _sha256_json({
+        key: value for key, value in report.items() if key != "report_sha256"
+    })
+    report_path.write_text(
+        json.dumps(report, sort_keys=True, indent=2, default=str),
+        encoding="utf-8",
+    )
+    return report
+
+
+def _official_all_arms_leak_unavailable_official_report(
+    *,
+    dataset: str,
+    dataset_split: str,
+    oracle_adapter_kind: str,
+    reason: str,
+) -> dict[str, Any]:
+    leak_check = {
+        "ok": False,
+        "refs": [reason],
+    }
+    bridge_report = {
+        "schema_version": SWEBENCH_PRO_BRIDGE_REPORT_SCHEMA_VERSION,
+        "status": "unavailable",
+        "instance_count": 0,
+        "candidate_count": 0,
+        "arms": {},
+        "per_row_results": [],
+        "metrics_suppressed": True,
+        "metrics_unavailable_reasons": ["hidden_field_leak_detected"],
+        "oracle_isolation": {
+            "ok": False,
+            "violations": [{
+                "reason": "hidden_field_leak_detected",
+                "refs": [reason],
+            }],
+        },
+        "metric_applyable": False,
+        "improvement_claim_allowed": False,
+        "default_change_allowed": False,
+        "policy_mutated": False,
+        "gate_advanced": False,
+    }
+    return {
+        "status": "unavailable",
+        "dataset": str(dataset),
+        "dataset_split": str(dataset_split),
+        "oracle_adapter_kind": str(oracle_adapter_kind),
+        "instance_count": 0,
+        "candidate_count": 0,
+        "report_path": "",
+        "report_sha256": "",
+        "hidden_field_leak_check": leak_check,
+        "configured_reviewer_panel_preflight": {},
+        "metrics_unavailable_reasons": ["hidden_field_leak_detected"],
+        "bridge_report": bridge_report,
+    }
+
+
+def _official_all_arms_unavailable_reviewer_panel(
+    _packet: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "decision": "unavailable",
+        "available": False,
+        "reason": "reviewer_panel_not_configured_for_diagnostic",
+        "reviewer_ids": ["configured-reviewer-panel"],
+        "available_reviewers": [],
+        "missing_reviewers": ["configured-reviewer-panel"],
+        "reviewer_results": [
+            {
+                "reviewer_id": "configured-reviewer-panel",
+                "runtime": "configured",
+                "model": None,
+                "verdict_present": False,
+                "failure_classification": "reviewer_panel_not_configured_for_diagnostic",
+            }
+        ],
+    }
+
+
+def _build_official_all_arms_diagnostic_report(
+    *,
+    official_report: Mapping[str, Any],
+    min_good: int,
+    min_bad: int,
+) -> dict[str, Any]:
+    bridge = official_report.get("bridge_report") or {}
+    arms = bridge.get("arms") if isinstance(bridge, Mapping) else {}
+    if not isinstance(arms, Mapping):
+        arms = {}
+    rows = bridge.get("per_row_results") if isinstance(bridge, Mapping) else []
+    if not isinstance(rows, Sequence) or isinstance(rows, (str, bytes)):
+        rows = []
+    missing_arms = [arm for arm in ARM_NAMES if arm not in arms]
+    baseline = arms.get(ARM_BASELINE) if isinstance(arms.get(ARM_BASELINE), Mapping) else {}
+    s_probe = arms.get(ARM_S_PROBE) if isinstance(arms.get(ARM_S_PROBE), Mapping) else {}
+    s_full = arms.get(ARM_S_FULL) if isinstance(arms.get(ARM_S_FULL), Mapping) else {}
+    oracle_ceiling = (
+        arms.get(ARM_ORACLE_CEILING)
+        if isinstance(arms.get(ARM_ORACLE_CEILING), Mapping) else {}
+    )
+    matched_all = (
+        bridge.get("false_accept_at_matched_true_accept")
+        if isinstance(bridge, Mapping) else {}
+    )
+    if not isinstance(matched_all, Mapping):
+        matched_all = {}
+    matched_status = {
+        ARM_S_PROBE: str(
+            (matched_all.get(ARM_S_PROBE) or {}).get("status")
+            if isinstance(matched_all.get(ARM_S_PROBE), Mapping)
+            else "unavailable"
+        ),
+        ARM_S_FULL: str(
+            (matched_all.get(ARM_S_FULL) or {}).get("status")
+            if isinstance(matched_all.get(ARM_S_FULL), Mapping)
+            else "unavailable"
+        ),
+    }
+    n_good = sum(
+        1
+        for row in rows
+        if isinstance(row, Mapping)
+        and bool(row.get("oracle_accept"))
+        and not bool(row.get("oracle_unavailable"))
+    )
+    n_bad = sum(
+        1
+        for row in rows
+        if isinstance(row, Mapping)
+        and not bool(row.get("oracle_accept"))
+        and not bool(row.get("oracle_unavailable"))
+    )
+    preflight = official_report.get("configured_reviewer_panel_preflight") or {}
+    if not isinstance(preflight, Mapping):
+        preflight = {}
+    baseline_available = (
+        bool(baseline)
+        and baseline.get("availability_status") == "available"
+        and int(baseline.get("unavailable_count") or 0) == 0
+    )
+    s_probe_available = (
+        bool(s_probe)
+        and s_probe.get("availability_status") == "available"
+        and int(s_probe.get("unavailable_count") or 0) == 0
+    )
+    s_full_available = (
+        bool(s_full)
+        and s_full.get("availability_status") == "available"
+        and int(s_full.get("unavailable_count") or 0) == 0
+    )
+    oracle_ceiling_available = (
+        bool(oracle_ceiling)
+        and oracle_ceiling.get("availability_status") == "available"
+        and int(oracle_ceiling.get("unavailable_count") or 0) == 0
+    )
+    all_arms_populated = bool(
+        not missing_arms
+        and baseline_available
+        and s_probe_available
+        and s_full_available
+        and oracle_ceiling_available
+    )
+
+    unavailable_reasons: list[str] = []
+    if official_report.get("status") != "completed":
+        unavailable_reasons.append("official_replay_unavailable")
+    if missing_arms:
+        unavailable_reasons.append("missing_arms:" + ",".join(missing_arms))
+    if not baseline_available:
+        unavailable_reasons.append("baseline_unavailable")
+    if not s_probe_available:
+        unavailable_reasons.append("s_probe_unavailable")
+    if not s_full_available:
+        unavailable_reasons.append("s_full_unavailable")
+    if not oracle_ceiling_available:
+        unavailable_reasons.append("oracle_ceiling_unavailable")
+    if not bool(preflight.get("full_roster_available")):
+        unavailable_reasons.append("reviewer_panel_full_roster_unavailable")
+    if n_good < int(min_good):
+        unavailable_reasons.append("insufficient_oracle_good")
+    if n_bad < int(min_bad):
+        unavailable_reasons.append("insufficient_oracle_bad")
+    leak_check = official_report.get("hidden_field_leak_check") or {}
+    if isinstance(leak_check, Mapping) and not bool(leak_check.get("ok", True)):
+        unavailable_reasons.append("hidden_field_leak_detected")
+    if matched_status[ARM_S_FULL] != "computed":
+        unavailable_reasons.append(
+            "matched_true_accept_not_computed:" + matched_status[ARM_S_FULL]
+        )
+    if isinstance(bridge, Mapping) and bridge.get("metrics_suppressed"):
+        unavailable_reasons.extend(
+            str(reason)
+            for reason in (bridge.get("metrics_unavailable_reasons") or [])
+            if str(reason)
+        )
+    status = "completed" if not unavailable_reasons else "unavailable"
+    return {
+        "schema_version": (
+            SWEBENCH_MERGEABILITY_OFFICIAL_ALL_ARMS_DIAGNOSTIC_SCHEMA_VERSION
+        ),
+        "status": status,
+        "dataset": str(official_report.get("dataset") or ""),
+        "dataset_split": str(official_report.get("dataset_split") or ""),
+        "official_replay_report_path": str(official_report.get("report_path") or ""),
+        "official_replay_report_sha256": str(official_report.get("report_sha256") or ""),
+        "official_replay_status": str(official_report.get("status") or ""),
+        "oracle_adapter_kind": str(official_report.get("oracle_adapter_kind") or ""),
+        "official_replay_used": True,
+        "diagnostic_only": True,
+        "plumbing_smoke_only": True,
+        "instance_count": int(official_report.get("instance_count") or 0),
+        "candidate_count": int(official_report.get("candidate_count") or 0),
+        "n_good": n_good,
+        "n_bad": n_bad,
+        "min_good": int(min_good),
+        "min_bad": int(min_bad),
+        "arms_present": sorted(str(arm) for arm in arms),
+        "missing_arms": missing_arms,
+        "all_arms_populated": all_arms_populated,
+        "baseline_available": baseline_available,
+        "s_probe_available": s_probe_available,
+        "s_full_available": s_full_available,
+        "oracle_ceiling_available": oracle_ceiling_available,
+        "configured_reviewer_panel_preflight": dict(preflight),
+        "hidden_field_leak_check": (
+            dict(leak_check) if isinstance(leak_check, Mapping) else {}
+        ),
+        "matched_true_accept_status": matched_status,
+        "supervisor_full_gate_matched_true_accept": (
+            dict(matched_all.get(ARM_S_FULL))
+            if isinstance(matched_all.get(ARM_S_FULL), Mapping) else {}
+        ),
+        "far_tar_frr": (
+            dict(bridge.get("far_tar_frr"))
+            if isinstance(bridge, Mapping)
+            and isinstance(bridge.get("far_tar_frr"), Mapping)
+            else None
+        ),
+        "metrics_unavailable_reasons": sorted(set(unavailable_reasons)),
+        "all_arms_populated_is_not_success_without_matched_tar": True,
+        "diagnostic_ready_for_scale": status == "completed",
+        "bridge_report": dict(bridge) if isinstance(bridge, Mapping) else {},
+        "metric_applyable": False,
+        "improvement_claim_allowed": False,
+        "powered_improvement_claim_allowed": False,
+        "human_mergeability_claim_allowed": False,
+        "default_change_allowed": False,
+        "policy_mutated": False,
+        "gate_advanced": False,
+        "report_only": {
+            "default_change_allowed": False,
+            "config_mutated": False,
+            "policy_mutated": False,
+        },
+    }
 
 
 def _official_replay_unavailable_reasons(

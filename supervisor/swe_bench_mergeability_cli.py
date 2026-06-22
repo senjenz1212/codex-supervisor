@@ -20,6 +20,7 @@ from .swe_bench_mergeability import (
     SUPPORTED_OFFICIAL_REPLAY_ORACLE_ADAPTER_KINDS,
     SwebenchMergeabilityFixtureRunnerError,
     swebench_mergeability_live_runner,
+    swebench_mergeability_official_all_arms_diagnostic_runner,
     swebench_mergeability_official_replay_runner,
     swebench_mergeability_replay_runner,
 )
@@ -30,6 +31,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--manifest")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--official-replay", action="store_true")
+    parser.add_argument("--official-all-arms-diagnostic", action="store_true")
     parser.add_argument("--dataset", default="")
     parser.add_argument("--dataset-split", default="test")
     parser.add_argument("--predictions", default="")
@@ -104,7 +106,7 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     try:
-        if args.official_replay:
+        if args.official_replay or args.official_all_arms_diagnostic:
             if not args.allow_dataset_fetch:
                 print(
                     "refusing official SWE-bench replay without --allow-dataset-fetch",
@@ -149,22 +151,30 @@ def main(argv: list[str] | None = None) -> int:
             )
             instance_ids = list(args.instance_id) or None
             limit = args.limit if args.limit > 0 else None
-            report = swebench_mergeability_official_replay_runner(
-                dataset=args.dataset,
-                dataset_split=args.dataset_split,
-                predictions_path=args.predictions,
-                output_dir=args.output_dir,
-                allow_dataset_fetch=args.allow_dataset_fetch,
-                dataset_loader=dataset_loader,
-                repo_materializer=repo_materializer,
-                oracle_runner=oracle_runner,
-                oracle_adapter_kind=args.oracle_adapter_kind,
-                instance_ids=instance_ids,
-                limit=limit,
-                reviewer_panel=reviewer_panel,
-                reviewer_panel_mode=reviewer_panel_mode,
-                timeout_s=args.timeout_s,
-            )
+            official_kwargs = {
+                "dataset": args.dataset,
+                "dataset_split": args.dataset_split,
+                "predictions_path": args.predictions,
+                "output_dir": args.output_dir,
+                "allow_dataset_fetch": args.allow_dataset_fetch,
+                "dataset_loader": dataset_loader,
+                "repo_materializer": repo_materializer,
+                "oracle_runner": oracle_runner,
+                "oracle_adapter_kind": args.oracle_adapter_kind,
+                "instance_ids": instance_ids,
+                "limit": limit,
+                "reviewer_panel": reviewer_panel,
+                "reviewer_panel_mode": reviewer_panel_mode,
+                "timeout_s": args.timeout_s,
+            }
+            if args.official_all_arms_diagnostic:
+                report = swebench_mergeability_official_all_arms_diagnostic_runner(
+                    **official_kwargs
+                )
+            else:
+                report = swebench_mergeability_official_replay_runner(
+                    **official_kwargs
+                )
         elif args.run_live:
             if not args.manifest:
                 print(
@@ -256,6 +266,16 @@ def main(argv: list[str] | None = None) -> int:
             report.get("metrics_unavailable_reasons")
             or bridge.get("metrics_unavailable_reasons")
             or []
+        ),
+        "diagnostic_ready_for_scale": bool(report.get("diagnostic_ready_for_scale")),
+        "all_arms_populated": bool(report.get("all_arms_populated")),
+        "baseline_available": report.get("baseline_available"),
+        "s_probe_available": report.get("s_probe_available"),
+        "s_full_available": report.get("s_full_available"),
+        "oracle_ceiling_available": report.get("oracle_ceiling_available"),
+        "matched_true_accept_status": report.get(
+            "matched_true_accept_status",
+            bridge.get("matched_true_accept_status"),
         ),
         "metric_applyable": bool(report.get("metric_applyable") or bridge.get("metric_applyable")),
         "improvement_claim_allowed": bool(

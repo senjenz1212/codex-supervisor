@@ -30,6 +30,7 @@ from supervisor.swe_bench_mergeability import (
     SwebenchProBridgeError,
     build_swe_bench_pro_public_packet,
     swebench_mergeability_fixture_runner,
+    swebench_mergeability_official_all_arms_diagnostic_runner,
     swebench_mergeability_official_live_runner,
     swebench_mergeability_live_runner,
     swebench_mergeability_official_replay_runner,
@@ -2767,6 +2768,57 @@ def test_official_replay_cli_passes_fake_runner_and_writes_report(tmp_path):
     assert report["bridge_report"]["metric_applyable"] is False
 
 
+def test_official_all_arms_diagnostic_cli_writes_unavailable_report_without_panel(tmp_path):
+    records = [_official_record("official_demo__repo-A01")]
+    dataset_path = _write_official_dataset_jsonl(tmp_path, records)
+    predictions_path = _write_multi_official_predictions(
+        tmp_path, ["official_demo__repo-A01"]
+    )
+    output_dir = tmp_path / "out"
+
+    fake_module = "tests.test_swe_bench_pro_mergeability_bridge"
+    result = _run_official_replay_cli(
+        [
+            "--official-all-arms-diagnostic",
+            "--allow-dataset-fetch",
+            "--dataset",
+            "fixture-official",
+            "--dataset-split",
+            "test",
+            "--predictions",
+            str(predictions_path),
+            "--output-dir",
+            str(output_dir),
+            "--oracle-adapter",
+            f"{fake_module}:_cli_fake_official_oracle_runner",
+            "--oracle-adapter-kind",
+            "official_docker_or_equivalent",
+            "--dataset-loader",
+            f"{fake_module}:_cli_fake_official_dataset_loader",
+            "--repo-materializer",
+            f"{fake_module}:_cli_fake_official_repo_materializer",
+        ],
+        env_overrides={_OFFICIAL_REPLAY_FAKE_DATASET_ENV: str(dataset_path)},
+    )
+
+    assert result.returncode == 0, result.stderr
+    summary = json.loads(result.stdout)
+    assert summary["status"] == "unavailable"
+    assert summary["metric_applyable"] is False
+    assert summary["diagnostic_ready_for_scale"] is False
+    assert summary["all_arms_populated"] is False
+    assert summary["s_full_available"] is False
+    assert summary["matched_true_accept_status"][ARM_S_FULL] == "unavailable"
+    report_path = output_dir / "official_all_arms_diagnostic_report.json"
+    assert Path(summary["report"]) == report_path
+    assert report_path.exists()
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["status"] == "unavailable"
+    assert report["s_full_available"] is False
+    assert "s_full_unavailable" in report["metrics_unavailable_reasons"]
+    _assert_diagnostic_report_only(report)
+
+
 def test_official_replay_label_only_adapter_receipt_is_unavailable(tmp_path):
     predictions_path = _write_official_predictions(tmp_path)
 
@@ -3204,6 +3256,114 @@ def _smoke_oracle_runner(context):
         "pass_to_pass_status": "pass",
         "oracle_adapter_receipt": _official_adapter_receipt(context),
     }
+
+
+def _official_oracle_for_good_ids(good_ids: set[str]):
+    def oracle(context):
+        fail_to_pass = "pass" if str(context["instance_id"]) in good_ids else "fail"
+        return {
+            "fail_to_pass_status": fail_to_pass,
+            "pass_to_pass_status": "pass",
+            "oracle_adapter_receipt": _official_adapter_receipt(
+                context,
+                fail_to_pass_status=fail_to_pass,
+                pass_to_pass_status="pass",
+            ),
+        }
+
+    return oracle
+
+
+def _full_roster_panel_for_bad_ids(bad_candidate_fragments: set[str]):
+    def panel(packet):
+        candidate_id = str(packet["candidate_id"])
+        decision = (
+            "revise"
+            if any(fragment in candidate_id for fragment in bad_candidate_fragments)
+            else "accept"
+        )
+        return {
+            "decision": decision,
+            "available": True,
+            "reason": "reviewer_non_accept" if decision == "revise" else "all_available_reviewers_accept",
+            "reviewer_ids": ["cursor-rigorous", "codex-reviewer"],
+            "available_reviewers": ["cursor-rigorous", "codex-reviewer"],
+            "missing_reviewers": [],
+            "reviewer_results": [
+                {
+                    "reviewer_id": "cursor-rigorous",
+                    "runtime": "cursor_sdk",
+                    "model": "rigorous",
+                    "verdict_present": True,
+                    "decision": decision,
+                    "severity": "important" if decision == "revise" else "low",
+                    "transcript_sha256": "a" * 64,
+                    "output_sha256": "b" * 64,
+                },
+                {
+                    "reviewer_id": "codex-reviewer",
+                    "runtime": "codex_cli",
+                    "model": "gpt-5.5",
+                    "verdict_present": True,
+                    "decision": "accept",
+                    "severity": "low",
+                    "transcript_sha256": "c" * 64,
+                    "output_sha256": "d" * 64,
+                },
+            ],
+        }
+
+    return panel
+
+
+def _assert_diagnostic_report_only(report: dict) -> None:
+    assert report["metric_applyable"] is False
+    assert report["improvement_claim_allowed"] is False
+    assert report["powered_improvement_claim_allowed"] is False
+    assert report["human_mergeability_claim_allowed"] is False
+    assert report["default_change_allowed"] is False
+    assert report["policy_mutated"] is False
+    assert report["gate_advanced"] is False
+
+
+def _write_official_predictions_without_baseline(
+    tmp_path: Path,
+    instance_ids: list[str],
+    *,
+    name: str = "predictions-no-baseline.jsonl",
+) -> Path:
+    lines = [
+        json.dumps({
+            "instance_id": instance_id,
+            "candidate_id": f"{instance_id}-cand",
+            "model_patch": _valid_model_patch(),
+        })
+        for instance_id in instance_ids
+    ]
+    path = tmp_path / name
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def _write_official_predictions_with_hidden_candidate_id(
+    tmp_path: Path,
+    *,
+    instance_id: str = "official_demo__repo-001",
+    candidate_id: str = "official-cand-FAIL_TO_PASS",
+) -> Path:
+    prediction = {
+        "instance_id": instance_id,
+        "candidate_id": candidate_id,
+        "model_patch": _valid_model_patch(),
+        "single_agent_baseline_decision": _produced_baseline_decision(
+            candidate_id,
+            patch=_valid_model_patch(),
+            accept=True,
+        ),
+    }
+    path = tmp_path / "predictions-hidden-candidate.jsonl"
+    path.write_text(json.dumps(prediction) + "\n", encoding="utf-8")
+    return path
 
 
 def test_official_replay_smoke_writes_report_with_selected_instances(tmp_path):
@@ -3685,3 +3845,211 @@ def test_official_replay_smoke_emits_no_policy_proposal(tmp_path):
         affected_gates=("mergeability",),
     )
     assert proposals == []
+
+
+def test_official_all_arms_diagnostic_completes_with_matched_tar_and_no_claim(tmp_path):
+    """Slice 4: official diagnostic only completes when every arm is populated."""
+    records = [
+        _official_record("official_demo__repo-A01"),
+        _official_record("official_demo__repo-B02"),
+        _official_record("official_demo__repo-C03"),
+    ]
+    predictions_path = _write_multi_official_predictions(
+        tmp_path,
+        ["official_demo__repo-A01", "official_demo__repo-B02", "official_demo__repo-C03"],
+    )
+
+    report = swebench_mergeability_official_all_arms_diagnostic_runner(
+        dataset="fixture-official",
+        dataset_split="test",
+        predictions_path=predictions_path,
+        output_dir=tmp_path / "out",
+        dataset_loader=lambda **_kwargs: records,
+        repo_materializer=_official_materializer,
+        oracle_runner=_official_oracle_for_good_ids({
+            "official_demo__repo-A01",
+            "official_demo__repo-B02",
+        }),
+        oracle_adapter_kind="official_docker_or_equivalent",
+        reviewer_panel=_full_roster_panel_for_bad_ids({"repo-C03"}),
+        reviewer_panel_mode="configured",
+        min_good=2,
+        min_bad=1,
+    )
+
+    assert report["status"] == "completed"
+    assert report["diagnostic_ready_for_scale"] is True
+    assert report["all_arms_populated"] is True
+    assert report["n_good"] == 2
+    assert report["n_bad"] == 1
+    assert report["baseline_available"] is True
+    assert report["s_probe_available"] is True
+    assert report["s_full_available"] is True
+    assert report["oracle_ceiling_available"] is True
+    assert report["matched_true_accept_status"][ARM_S_FULL] == "computed"
+    assert report["supervisor_full_gate_matched_true_accept"]["false_accept_delta"] == -1.0
+    assert report["far_tar_frr"][ARM_S_FULL]["false_accept_rate"] == 0.0
+    assert report["far_tar_frr"][ARM_BASELINE]["false_accept_rate"] == 1.0
+    assert report["configured_reviewer_panel_preflight"]["full_roster_available"] is True
+    assert report["configured_reviewer_panel_preflight"]["failure_classification"] == (
+        "quality_reject"
+    )
+    assert report["hidden_field_leak_check"]["ok"] is True
+    assert report["metrics_unavailable_reasons"] == []
+    _assert_diagnostic_report_only(report)
+    persisted = json.loads(
+        (tmp_path / "out" / "official_all_arms_diagnostic_report.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert persisted["report_sha256"] == report["report_sha256"]
+
+
+def test_official_all_arms_diagnostic_is_unavailable_when_oracle_is_unavailable(tmp_path):
+    predictions_path = _write_official_predictions(tmp_path)
+
+    def unavailable_adapter(context):
+        return {
+            "fail_to_pass_status": "unavailable",
+            "pass_to_pass_status": "unavailable",
+            "oracle_unavailable": True,
+            "oracle_unavailable_reason": "official_harness_failed",
+            "oracle_adapter_receipt": {
+                **_official_adapter_receipt(
+                    context,
+                    fail_to_pass_status="unavailable",
+                    pass_to_pass_status="unavailable",
+                ),
+                "return_code": 1,
+                "oracle_unavailable": True,
+                "unavailable_reason": "official_harness_failed",
+            },
+        }
+
+    report = swebench_mergeability_official_all_arms_diagnostic_runner(
+        dataset="fixture-official",
+        dataset_split="test",
+        predictions_path=predictions_path,
+        output_dir=tmp_path / "out",
+        dataset_loader=lambda **_kwargs: [_official_record()],
+        repo_materializer=_official_materializer,
+        oracle_runner=unavailable_adapter,
+        oracle_adapter_kind="official_docker_or_equivalent",
+        reviewer_panel=_full_roster_panel_for_bad_ids(set()),
+        reviewer_panel_mode="configured",
+    )
+
+    assert report["status"] == "unavailable"
+    assert report["diagnostic_ready_for_scale"] is False
+    reasons = set(report["metrics_unavailable_reasons"])
+    assert "official_replay_unavailable" in reasons
+    assert "oracle_unavailable" in reasons
+    assert report["far_tar_frr"] is None
+    _assert_diagnostic_report_only(report)
+
+
+def test_official_all_arms_diagnostic_refuses_claim_when_full_gate_unavailable(tmp_path):
+    records = [
+        _official_record("official_demo__repo-A01"),
+        _official_record("official_demo__repo-B02"),
+        _official_record("official_demo__repo-C03"),
+    ]
+    predictions_path = _write_multi_official_predictions(
+        tmp_path,
+        ["official_demo__repo-A01", "official_demo__repo-B02", "official_demo__repo-C03"],
+    )
+
+    report = swebench_mergeability_official_all_arms_diagnostic_runner(
+        dataset="fixture-official",
+        dataset_split="test",
+        predictions_path=predictions_path,
+        output_dir=tmp_path / "out",
+        dataset_loader=lambda **_kwargs: records,
+        repo_materializer=_official_materializer,
+        oracle_runner=_official_oracle_for_good_ids({
+            "official_demo__repo-A01",
+            "official_demo__repo-B02",
+        }),
+        oracle_adapter_kind="official_docker_or_equivalent",
+        reviewer_panel=None,
+        reviewer_panel_mode="configured",
+        min_good=2,
+        min_bad=1,
+    )
+
+    assert report["status"] == "unavailable"
+    assert report["s_full_available"] is False
+    reasons = set(report["metrics_unavailable_reasons"])
+    assert "s_full_unavailable" in reasons
+    assert "reviewer_panel_full_roster_unavailable" in reasons
+    assert any(
+        reason.startswith("matched_true_accept_not_computed:")
+        for reason in reasons
+    )
+    assert report["all_arms_populated"] is False
+    _assert_diagnostic_report_only(report)
+
+
+def test_official_all_arms_diagnostic_refuses_claim_when_baseline_unavailable(tmp_path):
+    records = [
+        _official_record("official_demo__repo-A01"),
+        _official_record("official_demo__repo-B02"),
+        _official_record("official_demo__repo-C03"),
+    ]
+    predictions_path = _write_official_predictions_without_baseline(
+        tmp_path,
+        ["official_demo__repo-A01", "official_demo__repo-B02", "official_demo__repo-C03"],
+    )
+
+    report = swebench_mergeability_official_all_arms_diagnostic_runner(
+        dataset="fixture-official",
+        dataset_split="test",
+        predictions_path=predictions_path,
+        output_dir=tmp_path / "out",
+        dataset_loader=lambda **_kwargs: records,
+        repo_materializer=_official_materializer,
+        oracle_runner=_official_oracle_for_good_ids({
+            "official_demo__repo-A01",
+            "official_demo__repo-B02",
+        }),
+        oracle_adapter_kind="official_docker_or_equivalent",
+        reviewer_panel=_full_roster_panel_for_bad_ids({"repo-C03"}),
+        reviewer_panel_mode="configured",
+        min_good=2,
+        min_bad=1,
+    )
+
+    assert report["status"] == "unavailable"
+    assert report["baseline_available"] is False
+    assert report["s_full_available"] is True
+    reasons = set(report["metrics_unavailable_reasons"])
+    assert "baseline_unavailable" in reasons
+    assert "matched_true_accept_not_computed:unavailable" in reasons
+    assert report["bridge_report"]["arms"][ARM_BASELINE]["availability_status"] == (
+        "unavailable"
+    )
+    _assert_diagnostic_report_only(report)
+
+
+def test_official_all_arms_diagnostic_blocks_hidden_field_leak(tmp_path):
+    predictions_path = _write_official_predictions_with_hidden_candidate_id(tmp_path)
+
+    report = swebench_mergeability_official_all_arms_diagnostic_runner(
+        dataset="fixture-official",
+        dataset_split="test",
+        predictions_path=predictions_path,
+        output_dir=tmp_path / "out",
+        dataset_loader=lambda **_kwargs: [_official_record()],
+        repo_materializer=_official_materializer,
+        oracle_runner=_smoke_oracle_runner,
+        oracle_adapter_kind="official_docker_or_equivalent",
+        reviewer_panel=_full_roster_panel_for_bad_ids(set()),
+        reviewer_panel_mode="configured",
+    )
+
+    assert report["status"] == "unavailable"
+    assert report["hidden_field_leak_check"]["ok"] is False
+    assert report["hidden_field_leak_check"]["refs"]
+    assert "hidden_field_leak_detected" in report["metrics_unavailable_reasons"]
+    assert report["bridge_report"]["oracle_isolation"]["ok"] is False
+    _assert_diagnostic_report_only(report)

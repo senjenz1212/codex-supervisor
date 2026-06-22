@@ -1,0 +1,54 @@
+{
+  "schema_version": "supervisor-skill-receipts/v1",
+  "task_id": "swebench-official-diagnostic-all-arms-20260622",
+  "receipts": [
+    {
+      "stage": "to_prd",
+      "skill": "to-prd",
+      "skill_path": "/Users/sam.zhang/.codex/skills/to-prd/SKILL.md",
+      "artifact": "docs/dual-agent/swebench-official-diagnostic-all-arms-20260622/prd.md",
+      "status": "accepted"
+    },
+    {
+      "stage": "codebase_design",
+      "skill": "codebase-design",
+      "skill_path": "/Users/sam.zhang/.codex/skills/codebase-design/SKILL.md",
+      "artifact": "docs/dual-agent/swebench-official-diagnostic-all-arms-20260622/implementation-plan.md",
+      "status": "accepted"
+    },
+    {
+      "stage": "prd_grill",
+      "skill": "grill-with-docs",
+      "skill_path": "/Users/sam.zhang/.codex/skills/grill-with-docs/SKILL.md",
+      "artifact": "docs/dual-agent/swebench-official-diagnostic-all-arms-20260622/grill-findings.md",
+      "status": "accepted"
+    },
+    {
+      "stage": "to_issues",
+      "skill": "to-issues",
+      "skill_path": "/Users/sam.zhang/.codex/skills/to-issues/SKILL.md",
+      "artifact": "docs/dual-agent/swebench-official-diagnostic-all-arms-20260622/issues.md",
+      "status": "accepted"
+    },
+    {
+      "stage": "tdd",
+      "skill": "tdd",
+      "skill_path": "/Users/sam.zhang/.codex/skills/tdd/SKILL.md",
+      "artifact": "docs/dual-agent/swebench-official-diagnostic-all-arms-20260622/tdd.md",
+      "status": "accepted"
+    },
+    {
+      "stage": "tdd_grill",
+      "skill": "grill-with-docs",
+      "skill_path": "/Users/sam.zhang/.codex/skills/grill-with-docs/SKILL.md",
+      "artifact": "docs/dual-agent/swebench-official-diagnostic-all-arms-20260622/grill-findings-tdd.md",
+      "status": "accepted"
+    }
+  ],
+  "translation_audit": {
+    "current_child_skills_loaded": true,
+    "public_boundary_first": true,
+    "unresolved_findings": false,
+    "helper_only_first_tests": false
+  }
+}
