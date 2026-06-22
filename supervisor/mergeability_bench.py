@@ -885,6 +885,29 @@ def run_paired_acceptance_pilot(
         single_agent_baseline_accept = bool(single_agent_baseline_decision["accept"])
         supervisor_accept = bool(supervisor_review["accept"])
         supervisor_full_gate_accept = bool(full_gate_review["accept"])
+        panel_result = (
+            full_gate_review.get("panel_result")
+            if isinstance(full_gate_review.get("panel_result"), Mapping)
+            else {}
+        )
+        if not codex_only_calibration_active:
+            codex_only_calibration_unavailable = True
+        elif not supervisor_accept:
+            # The single-reviewer calibration measures the panel's marginal
+            # effect after S_probe. Public rejects short-circuit before any
+            # reviewer evidence is needed.
+            codex_only_calibration_unavailable = False
+        else:
+            codex_only_calibration_unavailable = not bool(
+                "oracle_isolation_violation" not in full_gate_review.get("gaming_flags", [])
+                and panel_result.get("available")
+                and not panel_result.get("missing_reviewers")
+            )
+        codex_only_calibration_accept = bool(
+            supervisor_accept
+            and not codex_only_calibration_unavailable
+            and panel_result.get("decision") == "accept"
+        )
         row = {
             "task_id": result["task_id"],
             "task_hash": task_hashes[result["task_id"]],
@@ -904,6 +927,8 @@ def run_paired_acceptance_pilot(
             "supervisor_candidate_review_accept": supervisor_accept,
             "supervisor_full_gate_accept": supervisor_full_gate_accept,
             "supervisor_full_gate_unavailable": bool(full_gate_review["unavailable"]),
+            "codex_only_calibration_panel_accept": codex_only_calibration_accept,
+            "codex_only_calibration_panel_unavailable": codex_only_calibration_unavailable,
             "oracle_ceiling_accept": oracle_accept,
             "baseline_false_accept": metadata_accept_all_baseline_accept and not oracle_accept,
             "metadata_accept_all_baseline_false_accept": (
@@ -915,6 +940,9 @@ def run_paired_acceptance_pilot(
             "supervisor_false_accept": supervisor_accept and not oracle_accept,
             "supervisor_candidate_review_false_accept": supervisor_accept and not oracle_accept,
             "supervisor_full_gate_false_accept": supervisor_full_gate_accept and not oracle_accept,
+            "codex_only_calibration_panel_false_accept": (
+                codex_only_calibration_accept and not oracle_accept
+            ),
             "oracle_ceiling_false_accept": oracle_accept and not oracle_accept,
             "baseline_false_reject": (not metadata_accept_all_baseline_accept) and oracle_accept,
             "metadata_accept_all_baseline_false_reject": (
@@ -928,6 +956,11 @@ def run_paired_acceptance_pilot(
             "supervisor_false_reject": (not supervisor_accept) and oracle_accept,
             "supervisor_candidate_review_false_reject": (not supervisor_accept) and oracle_accept,
             "supervisor_full_gate_false_reject": (not supervisor_full_gate_accept) and oracle_accept,
+            "codex_only_calibration_panel_false_reject": (
+                (not codex_only_calibration_accept)
+                and (not codex_only_calibration_unavailable)
+                and oracle_accept
+            ),
             "oracle_ceiling_false_reject": (not oracle_accept) and oracle_accept,
             "receipt_id": result["receipt_id"],
             "receipt": result["receipt"],
@@ -952,6 +985,9 @@ def run_paired_acceptance_pilot(
             "supervisor_decision_source": "supervisor_candidate_review",
             "supervisor_candidate_review_decision_source": "supervisor_candidate_review",
             "supervisor_full_gate_decision_source": "supervisor_full_gate",
+            "codex_only_calibration_panel_decision_source": (
+                "codex_only_single_reviewer_calibration"
+            ),
             "supervisor_review": supervisor_review,
             "supervisor_full_gate_review": full_gate_review,
             "supervisor_full_gate_reviewer_results": list(
@@ -1054,6 +1090,14 @@ def run_paired_acceptance_pilot(
         decision_source="supervisor_candidate_review+independent_reviewer_panel",
         oracle_coupled=False,
     )
+    codex_only_calibration_panel = _summarize_acceptance_arm(
+        rows,
+        arm="codex_only_calibration_panel",
+        arm_role="codex_only_single_reviewer_calibration",
+        decision_source="codex_only_single_reviewer_calibration",
+        oracle_coupled=False,
+        evidence_kind="codex_only_calibration",
+    )
     supervisor = dict(supervisor_candidate_review)
     supervisor["arm"] = "supervisor"
     supervisor["legacy_alias_of"] = "supervisor_candidate_review"
@@ -1081,6 +1125,10 @@ def run_paired_acceptance_pilot(
     oracle_agreement = {
         "supervisor_candidate_review": _oracle_agreement(rows, arm="supervisor_candidate_review"),
         "supervisor_full_gate": _oracle_agreement(rows, arm="supervisor_full_gate"),
+        "codex_only_calibration_panel": _oracle_agreement(
+            rows,
+            arm="codex_only_calibration_panel",
+        ),
         "baseline": _oracle_agreement(rows, arm="baseline"),
         "metadata_accept_all_baseline": _oracle_agreement(rows, arm="metadata_accept_all_baseline"),
         "single_agent_baseline": _oracle_agreement(rows, arm="single_agent_baseline"),
@@ -1127,6 +1175,21 @@ def run_paired_acceptance_pilot(
         full_gate=supervisor_full_gate,
         full_roster_available_count=full_roster_available_count,
     )
+    codex_only_roster_available_count = sum(
+        1 for row in rows if not bool(row.get("codex_only_calibration_panel_unavailable"))
+    )
+    if codex_only_calibration_active:
+        codex_only_panel_marginal_delta = _panel_marginal_delta_at_matched_true_accept(
+            public_review=supervisor_candidate_review,
+            full_gate=codex_only_calibration_panel,
+            full_roster_available_count=codex_only_roster_available_count,
+        )
+    else:
+        codex_only_panel_marginal_delta = {
+            "status": "unavailable",
+            "reason": "codex_only_calibration_inactive",
+            "full_roster_available_count": 0,
+        }
     metric_splits = _metric_splits(
         rows,
         arms={
@@ -1135,6 +1198,7 @@ def run_paired_acceptance_pilot(
             "single_agent_baseline": single_agent_baseline,
             "supervisor_candidate_review": supervisor_candidate_review,
             "supervisor_full_gate": supervisor_full_gate,
+            "codex_only_calibration_panel": codex_only_calibration_panel,
             "oracle_ceiling": oracle_ceiling,
             "supervisor": supervisor,
         },
@@ -1170,6 +1234,7 @@ def run_paired_acceptance_pilot(
             "single_agent_baseline": single_agent_baseline,
             "supervisor_candidate_review": supervisor_candidate_review,
             "supervisor_full_gate": supervisor_full_gate,
+            "codex_only_calibration_panel": codex_only_calibration_panel,
             "oracle_ceiling": oracle_ceiling,
             "supervisor": supervisor,
         },
@@ -1212,6 +1277,9 @@ def run_paired_acceptance_pilot(
             metadata_accept_all_baseline=metadata_accept_all_baseline,
         ),
         "panel_marginal_delta_at_matched_true_accept": panel_marginal_delta,
+        "codex_only_calibration_panel_marginal_delta_at_matched_true_accept": (
+            codex_only_panel_marginal_delta
+        ),
         "matched_true_accept_status": matched_true_accept["status"],
         "oracle_agreement": oracle_agreement,
         "disagreements": disagreements,
@@ -1238,6 +1306,10 @@ def run_paired_acceptance_pilot(
                 1 for row in rows if bool(row.get("supervisor_full_gate_unavailable"))
             ),
             "full_roster_available_count": full_roster_available_count,
+            "codex_only_roster_available_count": codex_only_roster_available_count,
+            "codex_only_panel_marginal_delta_at_matched_true_accept": (
+                codex_only_panel_marginal_delta
+            ),
             "panel_quality_reject_count": sum(
                 1 for row in rows if bool(row.get("panel_quality_reject"))
             ),
@@ -3219,7 +3291,7 @@ def _resolve_configured_panel_adapters(
         return list(options.reviewers)
     runner = options.runner if options.runner is not None else invoke_cursor_agent
     codex_runner = options.codex_runner if options.codex_runner is not None else subprocess.run
-    return list(
+    adapters = list(
         configured_reviewers(
             reviewer_output_mode=options.reviewer_output_mode,
             reviewer_model=options.reviewer_model,
@@ -3228,6 +3300,9 @@ def _resolve_configured_panel_adapters(
             codex_model=options.codex_model,
         )
     )
+    if options.codex_only_calibration:
+        return [adapter for adapter in adapters if adapter.spec.runtime == "codex_cli"]
+    return adapters
 
 
 def _configured_panel_review_request(

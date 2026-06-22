@@ -3156,3 +3156,81 @@ def test_codex_only_calibration_is_labeled_and_not_full_panel(tmp_path):
         repo_root=Path.cwd(),
         affected_gates=("execution", "outcome_review"),
     ) == []
+
+
+def test_codex_only_calibration_provisions_codex_cli_without_cursor(tmp_path):
+    invocations: list[tuple[str, str]] = []
+
+    def invoker(adapter, request):
+        invocations.append((adapter.spec.reviewer_id, adapter.spec.runtime))
+        if adapter.spec.runtime == "cursor_sdk":
+            raise AssertionError("codex-only calibration must not invoke Cursor")
+        return _fake_cursor_result("accept", model=adapter.spec.model or "fake-model")
+
+    panel = build_configured_reviewer_panel(
+        ConfiguredReviewerPanelOptions(
+            codex_only_calibration=True,
+            reviewer_invoker=invoker,
+            review_cwd=tmp_path,
+        )
+    )
+
+    result = panel({
+        "task_id": "codex-only-calibration",
+        "candidate_id": "candidate-1",
+        "packet_id": "packet-1",
+        "packet_sha256": "0" * 64,
+    })
+
+    assert invocations == [("independent-reviewer-1", "codex_cli")]
+    assert result["reviewer_ids"] == ["independent-reviewer-1"]
+    assert result["available_reviewers"] == ["independent-reviewer-1"]
+    assert result["missing_reviewers"] == []
+    assert result["decision"] == "accept"
+    assert result["available"] is True
+
+
+def test_codex_only_calibration_reports_single_reviewer_marginal_without_full_panel_claim(
+    tmp_path,
+):
+    def invoker(adapter, request):
+        if adapter.spec.runtime == "cursor_sdk":
+            raise AssertionError("codex-only calibration must not invoke Cursor")
+        return _fake_cursor_result("accept", model=adapter.spec.model or "fake-model")
+
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            codex_only_calibration=True,
+            reviewer_invoker=invoker,
+            review_cwd=tmp_path,
+        ),
+    )
+
+    panel_block = report["configured_reviewer_panel"]
+    assert panel_block["report_mode"] == "codex_only_calibration"
+    assert panel_block["full_panel_evidence_allowed"] is False
+    assert panel_block["full_roster_available_count"] == 0
+    assert panel_block["codex_only_roster_available_count"] > 0
+
+    full_gate = report["arms"]["supervisor_full_gate"]
+    assert full_gate["availability_status"] == "unavailable"
+
+    codex_arm = report["arms"]["codex_only_calibration_panel"]
+    assert codex_arm["availability_status"] == "available"
+    assert codex_arm["unavailable_count"] == 0
+    assert codex_arm["accepted_count"] == report["arms"]["supervisor_candidate_review"]["accepted_count"]
+
+    delta = report["codex_only_calibration_panel_marginal_delta_at_matched_true_accept"]
+    assert delta["status"] == "computed"
+    assert delta["false_accept_rate_delta"] == 0.0
+
+    assert report["metric_applyable"] is False
+    assert report["improvement_claim_allowed"] is False
+    assert derive_policy_evolution_proposals_from_report(
+        report,
+        repo_root=Path.cwd(),
+        affected_gates=("execution", "outcome_review"),
+    ) == []
