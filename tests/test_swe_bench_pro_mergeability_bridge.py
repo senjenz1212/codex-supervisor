@@ -1454,8 +1454,10 @@ def test_official_replay_materializes_public_bundle_and_excludes_hidden_oracle(t
             "oracle_adapter_receipt": {
                 "saw_fail_to_pass": context["FAIL_TO_PASS"],
                 "frozen_exists": Path(context["frozen_decisions_path"]).exists(),
+                **_official_adapter_receipt(context),
             },
         },
+        oracle_adapter_kind="official_docker_or_equivalent",
     )
 
     assert report["schema_version"] == "supervisor-swebench-official-replay-report/v1"
@@ -1508,6 +1510,11 @@ def test_official_replay_freezes_decisions_before_oracle_adapter(tmp_path):
         return {
             "fail_to_pass_status": "fail",
             "pass_to_pass_status": "pass",
+            "oracle_adapter_receipt": _official_adapter_receipt(
+                context,
+                fail_to_pass_status="fail",
+                pass_to_pass_status="pass",
+            ),
         }
 
     report = swebench_mergeability_official_replay_runner(
@@ -1518,7 +1525,7 @@ def test_official_replay_freezes_decisions_before_oracle_adapter(tmp_path):
         dataset_loader=lambda **_kwargs: [_official_record()],
         repo_materializer=_official_materializer,
         oracle_runner=oracle,
-        oracle_adapter_kind="deterministic_test_adapter",
+        oracle_adapter_kind="official_docker_or_equivalent",
     )
 
     assert oracle_calls == [{
@@ -1531,7 +1538,7 @@ def test_official_replay_freezes_decisions_before_oracle_adapter(tmp_path):
     oracle_path = Path(instance_report["oracle_outputs_path"])
     assert frozen_path.stat().st_mtime_ns <= oracle_path.stat().st_mtime_ns
     oracle_payload = json.loads(oracle_path.read_text(encoding="utf-8"))
-    assert oracle_payload["rows"][0]["oracle_adapter_kind"] == "deterministic_test_adapter"
+    assert oracle_payload["rows"][0]["oracle_adapter_kind"] == "official_docker_or_equivalent"
     assert report["bridge_report"]["per_row_results"][0]["oracle_accept"] is False
 
 
@@ -1543,15 +1550,18 @@ def test_official_replay_report_labels_oracle_adapter_and_stays_report_only(tmp_
         output_dir=tmp_path / "out",
         dataset_loader=lambda **_kwargs: [_official_record()],
         repo_materializer=_official_materializer,
-        oracle_runner=lambda _context: {
+        oracle_runner=lambda context: {
             "fail_to_pass_status": "pass",
             "pass_to_pass_status": "pass",
+            "oracle_adapter_receipt": _official_adapter_receipt(context),
         },
         oracle_adapter_kind="official_docker_or_equivalent",
     )
 
     assert report["oracle_adapter_kind"] == "official_docker_or_equivalent"
     assert report["replay_report"]["oracle_adapter_kind"] == "official_docker_or_equivalent"
+    assert report["status"] == "completed"
+    assert report["oracle_receipt_validation"]["validated"] is True
     assert report["bridge_report"]["metric_applyable"] is False
     assert report["bridge_report"]["improvement_claim_allowed"] is False
     assert report["metric_applyable"] is False
@@ -1741,11 +1751,12 @@ def test_official_live_generates_matched_arms_and_reuses_official_replay(tmp_pat
         provider="anthropic",
         dataset_loader=lambda **_kwargs: [_official_record()],
         repo_materializer=_official_materializer,
-        oracle_runner=lambda _context: {
+        oracle_runner=lambda context: {
             "fail_to_pass_status": "pass",
             "pass_to_pass_status": "pass",
+            "oracle_adapter_receipt": _official_adapter_receipt(context),
         },
-        oracle_adapter_kind="deterministic_test_adapter",
+        oracle_adapter_kind="official_docker_or_equivalent",
     )
 
     assert report["schema_version"] == "supervisor-swebench-official-live-report/v1"
@@ -2087,3 +2098,616 @@ def test_live_cli_approved_path_runs_command_generators(tmp_path):
     assert report["status"] == "completed"
     assert report["bridge_report"]["metric_applyable"] is False
     assert report["live_generation_arms"]["baseline"]["cost_usd"] == 0.2
+
+
+# ---------------------------------------------------------------------------
+# Filtered official replay smoke (CLI + filtering + label validation)
+# ---------------------------------------------------------------------------
+
+
+_OFFICIAL_REPLAY_FAKE_DATASET_ENV = "SWEBENCH_OFFICIAL_REPLAY_FAKE_DATASET_PATH"
+
+
+def _official_adapter_receipt(
+    context,
+    *,
+    command: list[str] | None = None,
+    fail_to_pass_status: str = "pass",
+    pass_to_pass_status: str = "pass",
+    official_equivalent_labels: dict[str, str] | None = None,
+) -> dict:
+    receipt = {
+        "command": command or ["fake-official-harness", str(context["instance_id"])],
+        "return_code": 0,
+        "stdout_sha256": sha256(b"stdout").hexdigest(),
+        "stderr_sha256": sha256(b"stderr").hexdigest(),
+        "evaluator_version": "swebench-harness-test",
+        "harness": {
+            "name": "swebench.harness.run_evaluation",
+            "mode": "official-equivalent-test",
+        },
+        "artifact_paths": {
+            "report": str(
+                Path(context["frozen_decisions_path"]).parent
+                / "fake-official-report.json"
+            ),
+        },
+        "fail_to_pass_status": fail_to_pass_status,
+        "pass_to_pass_status": pass_to_pass_status,
+        "frozen_decisions_exists": Path(
+            context["frozen_decisions_path"]
+        ).exists(),
+    }
+    if official_equivalent_labels is not None:
+        receipt["official_equivalent_labels"] = dict(official_equivalent_labels)
+    return receipt
+
+
+def _cli_fake_official_oracle_runner(context):
+    """Importable oracle adapter used by the official-replay CLI smoke tests."""
+    return {
+        "fail_to_pass_status": "pass",
+        "pass_to_pass_status": "pass",
+        "oracle_adapter_receipt": _official_adapter_receipt(context),
+    }
+
+
+def _cli_label_only_oracle_runner(_context):
+    """Importable adapter with insufficient official-harness proof."""
+    return {
+        "fail_to_pass_status": "pass",
+        "pass_to_pass_status": "pass",
+        "oracle_adapter_receipt": {
+            "command": ["not-actually-official"],
+            "return_code": 0,
+        },
+    }
+
+
+def _cli_fake_official_dataset_loader(*, dataset, split):
+    """Importable dataset loader: reads JSONL of records from an env var."""
+    import os as _os
+    path = _os.environ.get(_OFFICIAL_REPLAY_FAKE_DATASET_ENV)
+    if not path:
+        raise RuntimeError(
+            f"{_OFFICIAL_REPLAY_FAKE_DATASET_ENV} not set for fake dataset loader"
+        )
+    records = []
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            records.append(json.loads(line))
+    return records
+
+
+def _cli_fake_official_repo_materializer(*, record, output_dir):
+    """Importable repo materializer that creates a small public bundle."""
+    return _official_materializer(record=record, output_dir=output_dir)
+
+
+def _write_official_dataset_jsonl(
+    tmp_path: Path,
+    records: list[dict],
+    *,
+    name: str = "official_records.jsonl",
+) -> Path:
+    path = tmp_path / name
+    path.write_text(
+        "\n".join(json.dumps(record) for record in records) + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def _write_multi_official_predictions(
+    tmp_path: Path,
+    instance_ids: list[str],
+    *,
+    name: str = "predictions.jsonl",
+) -> Path:
+    lines = []
+    for instance_id in instance_ids:
+        prediction = {
+            "instance_id": instance_id,
+            "candidate_id": f"{instance_id}-cand",
+            "model_patch": _valid_model_patch(),
+            "single_agent_baseline_decision": _produced_baseline_decision(
+                f"{instance_id}-cand",
+                patch=_valid_model_patch(),
+                accept=True,
+            ),
+        }
+        lines.append(json.dumps(prediction))
+    path = tmp_path / name
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def _run_official_replay_cli(
+    args: list[str],
+    *,
+    env_overrides: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess:
+    import os as _os
+    repo_root = Path(__file__).resolve().parents[1]
+    env = _os.environ.copy()
+    existing_pythonpath = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = (
+        f"{repo_root}{_os.pathsep}{existing_pythonpath}"
+        if existing_pythonpath
+        else str(repo_root)
+    )
+    if env_overrides:
+        env.update(env_overrides)
+    return subprocess.run(
+        [sys.executable, "scripts/run_swe_bench_mergeability_replay.py", *args],
+        cwd=repo_root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=env,
+    )
+
+
+def test_official_replay_cli_requires_oracle_adapter_before_metrics(tmp_path):
+    result = _run_official_replay_cli([
+        "--official-replay",
+        "--allow-dataset-fetch",
+        "--dataset",
+        "SWE-bench/SWE-bench_Verified",
+        "--dataset-split",
+        "test",
+        "--predictions",
+        str(tmp_path / "missing.jsonl"),
+        "--output-dir",
+        str(tmp_path / "out"),
+    ])
+
+    assert result.returncode == 2, result.stderr
+    assert "without --oracle-adapter" in result.stderr
+    out_dir = tmp_path / "out"
+    if out_dir.exists():
+        assert not (out_dir / "official_replay_report.json").exists()
+
+
+def test_official_replay_cli_rejects_unknown_adapter_kind_before_metrics(tmp_path):
+    output_dir = tmp_path / "out"
+    fake_module = "tests.test_swe_bench_pro_mergeability_bridge"
+
+    result = _run_official_replay_cli([
+        "--official-replay",
+        "--allow-dataset-fetch",
+        "--dataset",
+        "fixture-official",
+        "--dataset-split",
+        "test",
+        "--predictions",
+        str(tmp_path / "predictions.jsonl"),
+        "--output-dir",
+        str(output_dir),
+        "--oracle-adapter",
+        f"{fake_module}:_cli_fake_official_oracle_runner",
+        "--oracle-adapter-kind",
+        "deterministic_test_adapter",
+    ])
+
+    assert result.returncode == 2, result.stderr
+    assert "unsupported official SWE-bench oracle adapter kind" in result.stderr
+    assert "official_docker_or_equivalent" in result.stderr
+    assert "official_equivalent" in result.stderr
+    assert not (output_dir / "official_replay_report.json").exists()
+
+
+def test_official_replay_runner_rejects_unknown_adapter_kind_before_metrics(tmp_path):
+    with pytest.raises(
+        SwebenchMergeabilityFixtureRunnerError,
+        match="unsupported official SWE-bench oracle adapter kind",
+    ):
+        swebench_mergeability_official_replay_runner(
+            dataset="fixture-official",
+            dataset_split="test",
+            predictions_path=tmp_path / "missing.jsonl",
+            output_dir=tmp_path / "out",
+            dataset_loader=lambda **_kwargs: [_official_record()],
+            repo_materializer=_official_materializer,
+            oracle_runner=lambda _context: {
+                "fail_to_pass_status": "pass",
+                "pass_to_pass_status": "pass",
+            },
+            oracle_adapter_kind="deterministic_test_adapter",
+        )
+
+    assert not (tmp_path / "out" / "official_replay_report.json").exists()
+
+
+def test_official_replay_cli_passes_fake_runner_and_writes_report(tmp_path):
+    records = [_official_record("official_demo__repo-A01")]
+    dataset_path = _write_official_dataset_jsonl(tmp_path, records)
+    predictions_path = _write_multi_official_predictions(
+        tmp_path, ["official_demo__repo-A01"]
+    )
+    output_dir = tmp_path / "out"
+
+    fake_module = "tests.test_swe_bench_pro_mergeability_bridge"
+    result = _run_official_replay_cli(
+        [
+            "--official-replay",
+            "--allow-dataset-fetch",
+            "--dataset",
+            "fixture-official",
+            "--dataset-split",
+            "test",
+            "--predictions",
+            str(predictions_path),
+            "--output-dir",
+            str(output_dir),
+            "--oracle-adapter",
+            f"{fake_module}:_cli_fake_official_oracle_runner",
+            "--oracle-adapter-kind",
+            "official_docker_or_equivalent",
+            "--dataset-loader",
+            f"{fake_module}:_cli_fake_official_dataset_loader",
+            "--repo-materializer",
+            f"{fake_module}:_cli_fake_official_repo_materializer",
+        ],
+        env_overrides={_OFFICIAL_REPLAY_FAKE_DATASET_ENV: str(dataset_path)},
+    )
+
+    assert result.returncode == 0, result.stderr
+    report_path = output_dir / "official_replay_report.json"
+    assert report_path.exists()
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["status"] == "completed"
+    assert report["official_replay_used"] is True
+    assert report["oracle_adapter_kind"] == "official_docker_or_equivalent"
+    instance_report = report["replay_report"]["instance_reports"][0]
+    oracle_payload = json.loads(
+        Path(instance_report["oracle_outputs_path"]).read_text(encoding="utf-8")
+    )
+    receipt = next(
+        r for r in oracle_payload["rows"][0]["oracle_command_receipts"]
+        if r["name"] == "official_oracle_adapter"
+    )
+    assert receipt["receipt"]["return_code"] == 0
+    assert receipt["receipt"]["frozen_decisions_exists"] is True
+    assert report["oracle_receipt_validation"]["validated"] is True
+    assert report["bridge_report"]["metric_applyable"] is False
+
+
+def test_official_replay_label_only_adapter_receipt_is_unavailable(tmp_path):
+    predictions_path = _write_official_predictions(tmp_path)
+
+    def label_only_adapter(_context):
+        return {
+            "fail_to_pass_status": "pass",
+            "pass_to_pass_status": "pass",
+            "oracle_adapter_receipt": {
+                "command": ["not-actually-official"],
+                "return_code": 0,
+            },
+        }
+
+    report = swebench_mergeability_official_replay_runner(
+        dataset="fixture-official",
+        dataset_split="test",
+        predictions_path=predictions_path,
+        output_dir=tmp_path / "out",
+        dataset_loader=lambda **_kwargs: [_official_record()],
+        repo_materializer=_official_materializer,
+        oracle_runner=label_only_adapter,
+        oracle_adapter_kind="official_docker_or_equivalent",
+    )
+
+    assert report["status"] == "unavailable"
+    validation = report["oracle_receipt_validation"]
+    assert validation["required"] is True
+    assert validation["validated"] is False
+    reasons = {mismatch["reason"] for mismatch in validation["mismatches"]}
+    assert "missing_official_harness_metadata" in reasons
+    assert "missing_required_receipt_field" in reasons
+    assert "receipt_status_mismatch" in reasons
+    assert report["metrics_unavailable_reasons"] == [
+        "oracle_receipt_validation_failed"
+    ]
+    assert report["bridge_report"]["status"] == "unavailable"
+    assert report["bridge_report"]["metrics_suppressed"] is True
+    assert "far_tar_frr" not in report["bridge_report"]
+    assert report["replay_report"]["status"] == "unavailable"
+    assert report["replay_report"]["metrics_suppressed"] is True
+    assert "far_tar_frr" not in report["replay_report"]["bridge_report"]
+    instance_report = report["replay_report"]["instance_reports"][0]
+    assert instance_report["metrics_suppressed"] is True
+    assert "far_tar_frr" not in instance_report["bridge_report"]
+    replay_report_path = tmp_path / "out" / "replay" / "report.json"
+    instance_report_path = (
+        tmp_path
+        / "out"
+        / "replay"
+        / "instances"
+        / "official_demo__repo-001"
+        / "report.json"
+    )
+    replay_report_on_disk = json.loads(
+        replay_report_path.read_text(encoding="utf-8")
+    )
+    instance_report_on_disk = json.loads(
+        instance_report_path.read_text(encoding="utf-8")
+    )
+    assert replay_report_on_disk["status"] == "unavailable"
+    assert instance_report_on_disk["status"] == "unavailable"
+    assert "far_tar_frr" not in json.dumps(replay_report_on_disk)
+    assert "far_tar_frr" not in json.dumps(instance_report_on_disk)
+    assert report["metric_applyable"] is False
+    assert report["improvement_claim_allowed"] is False
+
+
+def test_official_replay_cli_suppresses_metrics_when_oracle_proof_invalid(tmp_path):
+    records = [_official_record("official_demo__repo-A01")]
+    dataset_path = _write_official_dataset_jsonl(tmp_path, records)
+    predictions_path = _write_multi_official_predictions(
+        tmp_path, ["official_demo__repo-A01"]
+    )
+    output_dir = tmp_path / "out"
+
+    fake_module = "tests.test_swe_bench_pro_mergeability_bridge"
+    result = _run_official_replay_cli(
+        [
+            "--official-replay",
+            "--allow-dataset-fetch",
+            "--dataset",
+            "fixture-official",
+            "--dataset-split",
+            "test",
+            "--predictions",
+            str(predictions_path),
+            "--output-dir",
+            str(output_dir),
+            "--oracle-adapter",
+            f"{fake_module}:_cli_label_only_oracle_runner",
+            "--oracle-adapter-kind",
+            "official_docker_or_equivalent",
+            "--dataset-loader",
+            f"{fake_module}:_cli_fake_official_dataset_loader",
+            "--repo-materializer",
+            f"{fake_module}:_cli_fake_official_repo_materializer",
+        ],
+        env_overrides={_OFFICIAL_REPLAY_FAKE_DATASET_ENV: str(dataset_path)},
+    )
+
+    assert result.returncode == 0, result.stderr
+    summary = json.loads(result.stdout)
+    assert summary["status"] == "unavailable"
+    assert summary["far_tar_frr"] is None
+    assert summary["metrics_suppressed"] is True
+    assert summary["metrics_unavailable_reasons"] == [
+        "oracle_receipt_validation_failed"
+    ]
+
+    report = json.loads(
+        (output_dir / "official_replay_report.json").read_text(encoding="utf-8")
+    )
+    assert report["status"] == "unavailable"
+    assert report["bridge_report"]["metrics_suppressed"] is True
+    assert "far_tar_frr" not in report["bridge_report"]
+    replay_report_on_disk = json.loads(
+        (output_dir / "replay" / "report.json").read_text(encoding="utf-8")
+    )
+    instance_report_on_disk = json.loads(
+        (
+            output_dir
+            / "replay"
+            / "instances"
+            / "official_demo__repo-A01"
+            / "report.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert "far_tar_frr" not in json.dumps(replay_report_on_disk)
+    assert "far_tar_frr" not in json.dumps(instance_report_on_disk)
+
+
+def test_instance_id_filtering_happens_before_prediction_coverage(tmp_path):
+    records = [
+        _official_record("official_demo__repo-A01"),
+        _official_record("official_demo__repo-B02"),
+    ]
+    dataset_path = _write_official_dataset_jsonl(tmp_path, records)
+    predictions_path = _write_multi_official_predictions(
+        tmp_path, ["official_demo__repo-A01"]
+    )
+    output_dir = tmp_path / "out"
+
+    fake_module = "tests.test_swe_bench_pro_mergeability_bridge"
+    result = _run_official_replay_cli(
+        [
+            "--official-replay",
+            "--allow-dataset-fetch",
+            "--dataset",
+            "fixture-official",
+            "--dataset-split",
+            "test",
+            "--predictions",
+            str(predictions_path),
+            "--output-dir",
+            str(output_dir),
+            "--oracle-adapter",
+            f"{fake_module}:_cli_fake_official_oracle_runner",
+            "--dataset-loader",
+            f"{fake_module}:_cli_fake_official_dataset_loader",
+            "--repo-materializer",
+            f"{fake_module}:_cli_fake_official_repo_materializer",
+            "--instance-id",
+            "official_demo__repo-A01",
+        ],
+        env_overrides={_OFFICIAL_REPLAY_FAKE_DATASET_ENV: str(dataset_path)},
+    )
+
+    assert result.returncode == 0, result.stderr
+    report = json.loads(
+        (output_dir / "official_replay_report.json").read_text(encoding="utf-8")
+    )
+    filt = report["selection_filter"]
+    assert filt["instance_ids_requested"] == ["official_demo__repo-A01"]
+    assert filt["selected_instance_ids"] == ["official_demo__repo-A01"]
+    assert report["instance_count"] == 1
+    assert report["status"] == "completed"
+
+
+def test_limit_filtering_is_deterministic_and_reported(tmp_path):
+    records = [
+        _official_record("official_demo__repo-C03"),
+        _official_record("official_demo__repo-A01"),
+        _official_record("official_demo__repo-B02"),
+    ]
+    dataset_path = _write_official_dataset_jsonl(tmp_path, records)
+    predictions_path = _write_multi_official_predictions(
+        tmp_path,
+        [
+            "official_demo__repo-A01",
+            "official_demo__repo-B02",
+            "official_demo__repo-C03",
+        ],
+    )
+
+    fake_module = "tests.test_swe_bench_pro_mergeability_bridge"
+
+    def _run(output_dir: Path) -> dict:
+        result = _run_official_replay_cli(
+            [
+                "--official-replay",
+                "--allow-dataset-fetch",
+                "--dataset",
+                "fixture-official",
+                "--dataset-split",
+                "test",
+                "--predictions",
+                str(predictions_path),
+                "--output-dir",
+                str(output_dir),
+                "--oracle-adapter",
+                f"{fake_module}:_cli_fake_official_oracle_runner",
+                "--dataset-loader",
+                f"{fake_module}:_cli_fake_official_dataset_loader",
+                "--repo-materializer",
+                f"{fake_module}:_cli_fake_official_repo_materializer",
+                "--limit",
+                "2",
+            ],
+            env_overrides={_OFFICIAL_REPLAY_FAKE_DATASET_ENV: str(dataset_path)},
+        )
+        assert result.returncode == 0, result.stderr
+        return json.loads(
+            (output_dir / "official_replay_report.json").read_text(encoding="utf-8")
+        )
+
+    report_a = _run(tmp_path / "out-a")
+    report_b = _run(tmp_path / "out-b")
+
+    assert (
+        report_a["selection_filter"]["selected_instance_ids"]
+        == report_b["selection_filter"]["selected_instance_ids"]
+        == ["official_demo__repo-A01", "official_demo__repo-B02"]
+    )
+    assert report_a["selection_filter"]["limit_requested"] == 2
+    assert report_a["instance_count"] == 2
+
+
+def test_oracle_receipts_are_after_frozen_decisions_and_hide_oracle_fields(tmp_path):
+    predictions_path = _write_official_predictions(tmp_path)
+    oracle_calls: list[dict] = []
+
+    def oracle(context):
+        oracle_calls.append({
+            "frozen_exists": Path(context["frozen_decisions_path"]).exists(),
+        })
+        return {
+            "fail_to_pass_status": "pass",
+            "pass_to_pass_status": "pass",
+            "oracle_adapter_receipt": _official_adapter_receipt(
+                context,
+                command=["fake-oracle"],
+            ),
+        }
+
+    report = swebench_mergeability_official_replay_runner(
+        dataset="fixture-official",
+        dataset_split="test",
+        predictions_path=predictions_path,
+        output_dir=tmp_path / "out",
+        dataset_loader=lambda **_kwargs: [_official_record()],
+        repo_materializer=_official_materializer,
+        oracle_runner=oracle,
+        oracle_adapter_kind="official_docker_or_equivalent",
+    )
+
+    assert oracle_calls == [{"frozen_exists": True}]
+    instance_report = report["replay_report"]["instance_reports"][0]
+    frozen_path = Path(instance_report["frozen_decisions_path"])
+    oracle_path = Path(instance_report["oracle_outputs_path"])
+    assert frozen_path.exists()
+    assert oracle_path.exists()
+    assert frozen_path.stat().st_mtime_ns <= oracle_path.stat().st_mtime_ns
+
+    leak_check = report["hidden_field_leak_check"]
+    assert leak_check["ok"] is True
+    assert leak_check["refs"] == []
+
+    frozen_text = frozen_path.read_text(encoding="utf-8")
+    for forbidden in ("FAIL_TO_PASS", "PASS_TO_PASS", "test_patch", "SECRET"):
+        assert forbidden not in frozen_text
+    reviewer_packet_path = Path(
+        instance_report["reviewer_packets"][0]["reviewer_packet_path"]
+    )
+    reviewer_text = reviewer_packet_path.read_text(encoding="utf-8")
+    for forbidden in ("FAIL_TO_PASS", "PASS_TO_PASS", "test_patch", "SECRET"):
+        assert forbidden not in reviewer_text
+
+
+def test_official_equivalent_label_validation_failure_is_unavailable(tmp_path):
+    predictions_path = _write_official_predictions(tmp_path)
+
+    def mismatched_adapter(_context):
+        # adapter reports "pass" but its official-equivalent labels say "fail"
+        return {
+            "fail_to_pass_status": "pass",
+            "pass_to_pass_status": "pass",
+            "oracle_adapter_receipt": _official_adapter_receipt(
+                _context,
+                command=["fake-official-equivalent"],
+                official_equivalent_labels={
+                    "fail_to_pass_status": "fail",
+                    "pass_to_pass_status": "pass",
+                },
+            ),
+        }
+
+    report = swebench_mergeability_official_replay_runner(
+        dataset="fixture-official",
+        dataset_split="test",
+        predictions_path=predictions_path,
+        output_dir=tmp_path / "out",
+        dataset_loader=lambda **_kwargs: [_official_record()],
+        repo_materializer=_official_materializer,
+        oracle_runner=mismatched_adapter,
+        oracle_adapter_kind="official_equivalent",
+    )
+
+    assert report["status"] == "unavailable"
+    validation = report["label_validation"]
+    assert validation["required"] is True
+    assert validation["validated"] is False
+    assert validation["mismatches"]
+    first = validation["mismatches"][0]
+    assert first["reason"] == "label_mismatch"
+    assert first["field"] == "fail_to_pass_status"
+    assert report["metrics_unavailable_reasons"] == ["label_validation_failed"]
+    assert report["bridge_report"]["status"] == "unavailable"
+    assert report["bridge_report"]["metrics_suppressed"] is True
+    assert "far_tar_frr" not in report["bridge_report"]
+    assert report["replay_report"]["status"] == "unavailable"
+    assert report["replay_report"]["metrics_suppressed"] is True
+    assert "far_tar_frr" not in report["replay_report"]["bridge_report"]
+    assert report["metric_applyable"] is False
+    assert report["improvement_claim_allowed"] is False
+    assert report["default_change_allowed"] is False
+    assert report["policy_mutated"] is False
+    assert report["gate_advanced"] is False

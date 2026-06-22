@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import os
 import shlex
@@ -9,13 +10,14 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from .mergeability_bench import (
     ConfiguredReviewerPanelOptions,
     build_configured_reviewer_panel,
 )
 from .swe_bench_mergeability import (
+    SUPPORTED_OFFICIAL_REPLAY_ORACLE_ADAPTER_KINDS,
     SwebenchMergeabilityFixtureRunnerError,
     swebench_mergeability_live_runner,
     swebench_mergeability_official_replay_runner,
@@ -48,6 +50,44 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--reviewer-output-mode", default="cursor_sdk")
     parser.add_argument("--reviewer-model", default="")
     parser.add_argument("--codex-model", default="gpt-5.5")
+    parser.add_argument(
+        "--oracle-adapter",
+        default="",
+        help=(
+            "Python import path 'module:attr' resolving to an oracle runner "
+            "callable. Required for --official-replay."
+        ),
+    )
+    parser.add_argument(
+        "--oracle-adapter-kind",
+        default="official_docker_or_equivalent",
+        help=(
+            "Adapter kind label recorded with oracle receipts. Use "
+            "'official_equivalent' to enable smoke label validation."
+        ),
+    )
+    parser.add_argument(
+        "--instance-id",
+        action="append",
+        default=[],
+        help="Repeatable: select only these SWE-bench instance ids.",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="Limit selection to first N rows (sorted by instance_id).",
+    )
+    parser.add_argument(
+        "--dataset-loader",
+        default="",
+        help="Optional 'module:attr' import for a custom dataset loader.",
+    )
+    parser.add_argument(
+        "--repo-materializer",
+        default="",
+        help="Optional 'module:attr' import for a custom repo materializer.",
+    )
     args = parser.parse_args(argv)
 
     reviewer_panel = None
@@ -77,12 +117,50 @@ def main(argv: list[str] | None = None) -> int:
                     file=sys.stderr,
                 )
                 return 2
+            if not args.oracle_adapter:
+                print(
+                    "refusing official SWE-bench replay without --oracle-adapter",
+                    file=sys.stderr,
+                )
+                return 2
+            if (
+                args.oracle_adapter_kind
+                not in SUPPORTED_OFFICIAL_REPLAY_ORACLE_ADAPTER_KINDS
+            ):
+                allowed = ", ".join(
+                    sorted(SUPPORTED_OFFICIAL_REPLAY_ORACLE_ADAPTER_KINDS)
+                )
+                print(
+                    "unsupported official SWE-bench oracle adapter kind "
+                    f"{args.oracle_adapter_kind!r}; expected one of: {allowed}",
+                    file=sys.stderr,
+                )
+                return 2
+            oracle_runner = _resolve_import_callable(args.oracle_adapter)
+            dataset_loader = (
+                _resolve_import_callable(args.dataset_loader)
+                if args.dataset_loader
+                else None
+            )
+            repo_materializer = (
+                _resolve_import_callable(args.repo_materializer)
+                if args.repo_materializer
+                else None
+            )
+            instance_ids = list(args.instance_id) or None
+            limit = args.limit if args.limit > 0 else None
             report = swebench_mergeability_official_replay_runner(
                 dataset=args.dataset,
                 dataset_split=args.dataset_split,
                 predictions_path=args.predictions,
                 output_dir=args.output_dir,
                 allow_dataset_fetch=args.allow_dataset_fetch,
+                dataset_loader=dataset_loader,
+                repo_materializer=repo_materializer,
+                oracle_runner=oracle_runner,
+                oracle_adapter_kind=args.oracle_adapter_kind,
+                instance_ids=instance_ids,
+                limit=limit,
                 reviewer_panel=reviewer_panel,
                 reviewer_panel_mode=reviewer_panel_mode,
                 timeout_s=args.timeout_s,
@@ -153,6 +231,10 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     bridge = report.get("bridge_report") or {}
+    metrics_suppressed = bool(
+        report.get("status") == "unavailable"
+        or bridge.get("metrics_suppressed")
+    )
     summary = {
         "status": "reported" if report.get("status") != "unavailable" else "unavailable",
         "report": report.get("report_path") or str(Path(args.output_dir) / "live_report.json"),
@@ -168,7 +250,13 @@ def main(argv: list[str] | None = None) -> int:
         "live_generation_used": bool(report.get("live_generation_used")),
         "reviewer_panel_mode": args.reviewer_panel_mode,
         "s_probe_execution_substrate": report.get("s_probe_execution_substrate"),
-        "far_tar_frr": bridge.get("far_tar_frr"),
+        "far_tar_frr": None if metrics_suppressed else bridge.get("far_tar_frr"),
+        "metrics_suppressed": metrics_suppressed,
+        "metrics_unavailable_reasons": (
+            report.get("metrics_unavailable_reasons")
+            or bridge.get("metrics_unavailable_reasons")
+            or []
+        ),
         "metric_applyable": bool(report.get("metric_applyable") or bridge.get("metric_applyable")),
         "improvement_claim_allowed": bool(
             report.get("improvement_claim_allowed")
@@ -233,6 +321,35 @@ def _command_generator(
         return payload
 
     return _run
+
+
+def _resolve_import_callable(spec: str) -> Callable[..., Any]:
+    if ":" not in spec:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            f"import spec {spec!r} must be 'module:attr'"
+        )
+    module_name, _, attr_name = spec.partition(":")
+    if not module_name or not attr_name:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            f"import spec {spec!r} must be 'module:attr'"
+        )
+    try:
+        module = importlib.import_module(module_name)
+    except ImportError as exc:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            f"could not import module {module_name!r}: {exc}"
+        ) from exc
+    try:
+        target = getattr(module, attr_name)
+    except AttributeError as exc:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            f"module {module_name!r} has no attribute {attr_name!r}"
+        ) from exc
+    if not callable(target):
+        raise SwebenchMergeabilityFixtureRunnerError(
+            f"resolved {spec!r} is not callable"
+        )
+    return target
 
 
 def _safe_fragment(value: str) -> str:

@@ -1,0 +1,52 @@
+# Grill Findings
+
+These findings are derived from dual-agent gate objections in the ledger.
+Future duo-agent runs should also create this file through the `prd-to-tdd` skill's `grill-with-docs` gates before implementation.
+
+- event_id 847111 `prd_review`: PRD problem statement claims the CLI can route into a report without an oracle runner, but swe_bench_mergeability.py:1917-1919 already raises when oracle_runner is None and the CLI (swe_bench_mergeability_cli.py:80-89) passes none, so --official-replay currently errors rather than silently reporting; the framing is inaccurate though the underlying need (no way to provide a real adapter) is real
+- event_id 847111 `prd_review`: P1 (runner-level oracle requirement), P3 (hidden-field exclusion via allowlist :70-79 and denylist :49-53), and P5 (report-only invariants False :2057-2061) are already implemented by prior committed work (1cb8d034); only 3 of P3's 7 named fields are in the explicit SWE-bench denylist (patch/final_score/oracle_accept/expected_outcome rely on the general ORACLE_REVIEW_FORBIDDEN_KEYS+allowlist) - TDD must pin all 7
+- event_id 847111 `prd_review`: Net-new must be enforced by TDD or tests will be vacuously GREEN: CLI --oracle-adapter/--instance-ids/--limit config, instance filtering before prediction coverage (currently loops all records :1942 and raises on any missing prediction :1949-1952), and rejection of label-only adapters (receipt fallback _normalise_oracle_adapter_outcome :1066-1069 currently accepts a label-only adapter as status=passed)
+- event_id 847112 `prd_review`: both agents accepted
+- event_id 847178 `issues_review`: Low-sev: S1-AC3 (invariants False :2057-2061), S3-AC1 (hidden-field exclusion :50-51), S3-AC2 (receipt ordering :1465) are already-green; only S1 CLI wiring, S2 filtering, S3-AC3 label validation are net-new - TDD must avoid vacuous GREEN tests
+- event_id 847178 `issues_review`: Low-sev: no explicit dependency DAG/waves or reverse index in issues.md
+- event_id 847179 `issues_review`: both agents accepted
+- event_id 847299 `tdd_review`: Low severity: T1 (requires_oracle_adapter_before_metrics) GREEN-leaning because runner already raises on oracle_runner=None at :1917 so CLI already returns 2 / exits before metrics
+- event_id 847299 `tdd_review`: Low severity: T5 (receipts_after_frozen_hide_oracle) partly already-green - frozen_decisions_path:1465 precedes oracle and public-record leak scrub :2092-2099 already raises
+- event_id 847299 `tdd_review`: Minor: implementation-plan files-to-touch lists run_swe_bench_pro_pilot.py and swe_bench_eval rather than the actual official CLI swe_bench_mergeability_cli.py (implplan-stage concern, not a tdd blocker)
+- event_id 847457 `tdd_review`: both agents accepted
+- event_id 847513 `implementation_plan`: files-to-touch OMITS supervisor/swe_bench_mergeability_cli.py, the official-replay boundary (:80) where all 6 tests operate; CLI lacks --instance-id/--limit/oracle-adapter args and does not pass oracle_runner (:80-89)
+- event_id 847513 `implementation_plan`: plan lists tests/test_swe_bench_mergeability.py and tests/test_swe_bench_eval.py which do NOT exist; real official tests live in tests/test_swe_bench_pro_mergeability_bridge.py (:1416/:1441/:1498)
+- event_id 847513 `implementation_plan`: plan lists docs/.../prd.md as a file to touch but handoff marks it mutable_by_worker:false (immutable)
+- event_id 847513 `implementation_plan`: plan lists supervisor/swe_bench_eval.py and scripts/run_swe_bench_pro_pilot.py with no evidence they touch the official-replay path (grep official_replay|oracle_runner matched only mergeability.py/_cli.py/bridge-test)
+- event_id 847514 `implementation_plan`: agents have not both accepted yet; revise and continue
+- event_id 847516 `implementation_plan`: files-to-touch OMITS supervisor/swe_bench_mergeability_cli.py, the official-replay boundary (:80) where all 6 tests operate; CLI lacks --instance-id/--limit/oracle-adapter args and does not pass oracle_runner (:80-89)
+- event_id 847516 `implementation_plan`: plan lists tests/test_swe_bench_mergeability.py and tests/test_swe_bench_eval.py which do NOT exist; real official tests live in tests/test_swe_bench_pro_mergeability_bridge.py (:1416/:1441/:1498)
+- event_id 847516 `implementation_plan`: plan lists docs/.../prd.md as a file to touch but handoff marks it mutable_by_worker:false (immutable)
+- event_id 847516 `implementation_plan`: plan lists supervisor/swe_bench_eval.py and scripts/run_swe_bench_pro_pilot.py with no evidence they touch the official-replay path (grep official_replay|oracle_runner matched only mergeability.py/_cli.py/bridge-test)
+- event_id 847571 `implementation_plan`: files-to-touch OMITS supervisor/swe_bench_mergeability_cli.py - the official-replay boundary (:80-89) where all 6 TDD tests operate; call passes no oracle_runner and has no --instance-id/--limit/--oracle-adapter args
+- event_id 847571 `implementation_plan`: files-to-touch lists tests/test_swe_bench_mergeability.py and tests/test_swe_bench_eval.py which do not exist (only test_swe_bench_pro_eval.py and test_swe_bench_pro_mergeability_bridge.py exist)
+- event_id 847571 `implementation_plan`: files-to-touch lists docs/.../prd.md which is immutable (handoff mutable_by_worker:false)
+- event_id 847571 `implementation_plan`: files-to-touch lists scripts/run_swe_bench_pro_pilot.py (0 oracle/official matches) and supervisor/swe_bench_eval.py - spurious, not on official path
+- event_id 847571 `implementation_plan`: plan byte-identical to prior round (sha 599e5ca4) at unchanged HEAD f1f3b0d4 - worker resubmitted same handoff without addressing prior REVISE (FM-1.3 worker-side step repetition)
+- event_id 847572 `implementation_plan`: agents have not both accepted yet; revise and continue
+- event_id 847574 `implementation_plan`: files-to-touch OMITS supervisor/swe_bench_mergeability_cli.py - the official-replay boundary (:80-89) where all 6 TDD tests operate; call passes no oracle_runner and has no --instance-id/--limit/--oracle-adapter args
+- event_id 847574 `implementation_plan`: files-to-touch lists tests/test_swe_bench_mergeability.py and tests/test_swe_bench_eval.py which do not exist (only test_swe_bench_pro_eval.py and test_swe_bench_pro_mergeability_bridge.py exist)
+- event_id 847574 `implementation_plan`: files-to-touch lists docs/.../prd.md which is immutable (handoff mutable_by_worker:false)
+- event_id 847574 `implementation_plan`: files-to-touch lists scripts/run_swe_bench_pro_pilot.py (0 oracle/official matches) and supervisor/swe_bench_eval.py - spurious, not on official path
+- event_id 847574 `implementation_plan`: plan byte-identical to prior round (sha 599e5ca4) at unchanged HEAD f1f3b0d4 - worker resubmitted same handoff without addressing prior REVISE (FM-1.3 worker-side step repetition)
+- event_id 847607 `implementation_plan`: low-sev: plan traceability omits test2 from P5 coverage (TDD maps it P1/P4/P5); P5 still covered by test1+test6, no orphan
+- event_id 847607 `implementation_plan`: low-sev: 4th files-to-touch entry self-lists the implementation-plan.md itself, a mutable_by_worker:false planning artifact; harmless
+- event_id 847804 `implementation_plan`: both agents accepted
+- event_id 847934 `execution`: both agents accepted
+- event_id 847973 `outcome_review`: pytest and py_compile are approval-blocked locally so green could not be observed; test_status=unknown and supervisor runtime floor must rerun the 6 nodeids
+- event_id 847973 `outcome_review`: 4 of 6 tests spawn a real subprocess CLI relying on PYTHONPATH and importable test-module adapters, making them environment-sensitive in the runtime floor
+- event_id 848271 `outcome_review`: independent_reviewer_non_accept: independent-reviewer-1
+- event_id 848277 `outcome_review`: pytest and py_compile are approval-blocked locally so green could not be observed; test_status=unknown and supervisor runtime floor must rerun the 6 nodeids
+- event_id 848277 `outcome_review`: 4 of 6 tests spawn a real subprocess CLI relying on PYTHONPATH and importable test-module adapters, making them environment-sensitive in the runtime floor
+- event_id 848358 `outcome_review`: Local pytest execution is approval-blocked; test_status remains unknown and must be confirmed by the supervisor runtime floor.
+- event_id 848691 `outcome_review`: independent_reviewer_blocking_objection: independent-reviewer-1
+- event_id 848693 `outcome_review`: Local pytest execution is approval-blocked; test_status remains unknown and must be confirmed by the supervisor runtime floor.
+- event_id 848766 `outcome_review`: gate blocked
+- event_id 849337 `outcome_review`: independent_reviewer_non_accept: independent-reviewer-1
+- event_id 849450 `outcome_review`: Low-severity inherent ceiling: receipt validation proves structural completeness/status-consistency but a fully fabricated, self-consistent receipt passes; harness is trusted, fail-closed default unavailable mitigates.
+- event_id 849728 `outcome_review`: both agents accepted

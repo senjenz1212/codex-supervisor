@@ -759,6 +759,13 @@ PATCH_APPLY_FAILURE_REASON = "patch_apply_failure"
 STATIC_LINT_ONLY_SUBSTRATE = "static_lint_only"
 PUBLIC_COMMANDS_SUBSTRATE = "public_commands"
 DEFAULT_OFFICIAL_ORACLE_ADAPTER_KIND = "official_docker_or_equivalent"
+OFFICIAL_ORACLE_RECEIPT_VALIDATION_KINDS = frozenset({
+    DEFAULT_OFFICIAL_ORACLE_ADAPTER_KIND,
+    "official_equivalent",
+})
+SUPPORTED_OFFICIAL_REPLAY_ORACLE_ADAPTER_KINDS = (
+    OFFICIAL_ORACLE_RECEIPT_VALIDATION_KINDS
+)
 
 _OFFICIAL_RECORD_HIDDEN_KEYS: tuple[str, ...] = (
     "patch",
@@ -1895,6 +1902,8 @@ def swebench_mergeability_official_replay_runner(
     repo_materializer: Callable[..., str | Path] | None = None,
     oracle_runner: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
     oracle_adapter_kind: str = DEFAULT_OFFICIAL_ORACLE_ADAPTER_KIND,
+    instance_ids: Sequence[str] | None = None,
+    limit: int | None = None,
     reviewer_panel: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
     reviewer_panel_mode: str = "custom",
     configured_reviewer_panel_options: ConfiguredReviewerPanelOptions | None = None,
@@ -1918,6 +1927,7 @@ def swebench_mergeability_official_replay_runner(
         raise SwebenchMergeabilityFixtureRunnerError(
             "oracle_runner is required for official SWE-bench replay"
         )
+    _validate_official_replay_oracle_adapter_kind(str(oracle_adapter_kind))
 
     output_path = Path(output_dir).expanduser()
     output_path.mkdir(parents=True, exist_ok=True)
@@ -1931,7 +1941,47 @@ def swebench_mergeability_official_replay_runner(
         raise SwebenchMergeabilityFixtureRunnerError(
             "official SWE-bench replay dataset loader returned no records"
         )
+
+    requested_instance_ids = [str(i) for i in (instance_ids or [])]
+    requested_limit = int(limit) if limit else 0
+    selection_filter: dict[str, Any] = {
+        "instance_ids_requested": list(requested_instance_ids),
+        "limit_requested": requested_limit,
+    }
+    if requested_instance_ids:
+        wanted = set(requested_instance_ids)
+        available = {str(r.get("instance_id") or "") for r in official_records}
+        missing = sorted(wanted - available)
+        if missing:
+            raise SwebenchMergeabilityFixtureRunnerError(
+                "requested --instance-id values missing from dataset: "
+                + ", ".join(missing)
+            )
+        official_records = [
+            r for r in official_records
+            if str(r.get("instance_id") or "") in wanted
+        ]
+    if requested_limit > 0:
+        official_records = sorted(
+            official_records,
+            key=lambda r: str(r.get("instance_id") or ""),
+        )[:requested_limit]
+    selected_instance_ids = [
+        str(r.get("instance_id") or "") for r in official_records
+    ]
+    selection_filter["selected_instance_ids"] = list(selected_instance_ids)
+    if not official_records:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "official SWE-bench replay selection filter excluded all records"
+        )
+
     predictions = _load_official_predictions(predictions_path)
+    selected_set = set(selected_instance_ids)
+    predictions = {
+        key: value
+        for key, value in predictions.items()
+        if key in selected_set
+    }
 
     manifest_instances: list[dict[str, Any]] = []
     patch_dir = output_path / "official-patches"
@@ -2015,6 +2065,7 @@ def swebench_mergeability_official_replay_runner(
         "schema_version": SWEBENCH_MERGEABILITY_REPLAY_MANIFEST_SCHEMA_VERSION,
         "official_replay_dataset": str(dataset),
         "official_replay_split": str(dataset_split),
+        "selection_filter": dict(selection_filter),
         "instances": manifest_instances,
     }
     generated_manifest_path = output_path / "official_replay_manifest.json"
@@ -2033,9 +2084,40 @@ def swebench_mergeability_official_replay_runner(
         oracle_runner=oracle_runner,
         oracle_adapter_kind=oracle_adapter_kind,
     )
+    receipt_validation = _validate_official_oracle_receipts(
+        oracle_adapter_kind=str(oracle_adapter_kind),
+        replay_report=replay_report,
+    )
+    label_validation = _validate_official_equivalent_labels(
+        oracle_adapter_kind=str(oracle_adapter_kind),
+        replay_report=replay_report,
+    )
+    leak_check = _scan_official_replay_public_artifacts_for_leaks(
+        replay_report=replay_report,
+    )
+    report_status = "completed"
+    if not receipt_validation["validated"]:
+        report_status = "unavailable"
+    if not label_validation["validated"]:
+        report_status = "unavailable"
+    if leak_check["refs"]:
+        report_status = "unavailable"
+    unavailable_reasons = _official_replay_unavailable_reasons(
+        receipt_validation=receipt_validation,
+        label_validation=label_validation,
+        leak_check=leak_check,
+    )
+    replay_report_for_output = (
+        _suppress_unavailable_official_replay_metrics(
+            replay_report=replay_report,
+            unavailable_reasons=unavailable_reasons,
+        )
+        if report_status == "unavailable"
+        else replay_report
+    )
     report: dict[str, Any] = {
         "schema_version": SWEBENCH_MERGEABILITY_OFFICIAL_REPLAY_REPORT_SCHEMA_VERSION,
-        "status": "completed",
+        "status": report_status,
         "dataset": str(dataset),
         "dataset_split": str(dataset_split),
         "allow_dataset_fetch": bool(allow_dataset_fetch),
@@ -2052,8 +2134,13 @@ def swebench_mergeability_official_replay_runner(
         "candidate_count": sum(
             len(entry["candidates"]) for entry in manifest_instances
         ),
-        "replay_report": replay_report,
-        "bridge_report": replay_report["bridge_report"],
+        "selection_filter": dict(selection_filter),
+        "oracle_receipt_validation": receipt_validation,
+        "label_validation": label_validation,
+        "hidden_field_leak_check": leak_check,
+        "metrics_unavailable_reasons": unavailable_reasons,
+        "replay_report": replay_report_for_output,
+        "bridge_report": replay_report_for_output["bridge_report"],
         "metric_applyable": False,
         "improvement_claim_allowed": False,
         "default_change_allowed": False,
@@ -2071,6 +2158,318 @@ def swebench_mergeability_official_replay_runner(
     )
     report["report_path"] = str(report_path)
     return report
+
+
+def _official_replay_unavailable_reasons(
+    *,
+    receipt_validation: Mapping[str, Any],
+    label_validation: Mapping[str, Any],
+    leak_check: Mapping[str, Any],
+) -> list[str]:
+    reasons: list[str] = []
+    if not receipt_validation.get("validated", True):
+        reasons.append("oracle_receipt_validation_failed")
+    if not label_validation.get("validated", True):
+        reasons.append("label_validation_failed")
+    if leak_check.get("refs"):
+        reasons.append("hidden_field_leak_detected")
+    return reasons
+
+
+def _validate_official_replay_oracle_adapter_kind(oracle_adapter_kind: str) -> None:
+    if oracle_adapter_kind in SUPPORTED_OFFICIAL_REPLAY_ORACLE_ADAPTER_KINDS:
+        return
+    allowed = ", ".join(sorted(SUPPORTED_OFFICIAL_REPLAY_ORACLE_ADAPTER_KINDS))
+    raise SwebenchMergeabilityFixtureRunnerError(
+        "unsupported official SWE-bench oracle adapter kind "
+        f"{oracle_adapter_kind!r}; expected one of: {allowed}"
+    )
+
+
+def _suppress_unavailable_official_replay_metrics(
+    *,
+    replay_report: Mapping[str, Any],
+    unavailable_reasons: Sequence[str],
+) -> dict[str, Any]:
+    suppressed_bridge = _unavailable_official_bridge_report(
+        unavailable_reasons=unavailable_reasons
+    )
+    redacted = dict(replay_report)
+    redacted["status"] = "unavailable"
+    redacted["metrics_suppressed"] = True
+    redacted["metrics_unavailable_reasons"] = list(unavailable_reasons)
+    redacted["bridge_report"] = suppressed_bridge
+    original_report_path = redacted.get("report_path")
+    redacted.pop("report_path", None)
+    instance_reports: list[dict[str, Any]] = []
+    for instance_report in replay_report.get("instance_reports") or []:
+        if not isinstance(instance_report, Mapping):
+            continue
+        redacted_instance = dict(instance_report)
+        redacted_instance["status"] = "unavailable"
+        redacted_instance["metrics_suppressed"] = True
+        redacted_instance["metrics_unavailable_reasons"] = list(
+            unavailable_reasons
+        )
+        redacted_instance["bridge_report"] = suppressed_bridge
+        original_instance_report_path = redacted_instance.get("report_path")
+        redacted_instance.pop("report_path", None)
+        _rewrite_json_report(
+            original_instance_report_path,
+            redacted_instance,
+        )
+        instance_reports.append(redacted_instance)
+    redacted["instance_reports"] = instance_reports
+    _rewrite_json_report(original_report_path, redacted)
+    return redacted
+
+
+def _rewrite_json_report(path_value: Any, payload: Mapping[str, Any]) -> None:
+    if not path_value:
+        return
+    path = Path(str(path_value))
+    if not path.exists():
+        return
+    path.write_text(
+        json.dumps(dict(payload), sort_keys=True, indent=2, default=str),
+        encoding="utf-8",
+    )
+
+
+def _unavailable_official_bridge_report(
+    *,
+    unavailable_reasons: Sequence[str],
+) -> dict[str, Any]:
+    return {
+        "status": "unavailable",
+        "metrics_suppressed": True,
+        "metrics_unavailable_reasons": list(unavailable_reasons),
+        "metric_applyable": False,
+        "improvement_claim_allowed": False,
+        "default_change_allowed": False,
+        "policy_mutated": False,
+        "gate_advanced": False,
+    }
+
+
+def _validate_official_oracle_receipts(
+    *,
+    oracle_adapter_kind: str,
+    replay_report: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Require proof that official-labeled oracle adapters are not bare labels."""
+    if oracle_adapter_kind not in OFFICIAL_ORACLE_RECEIPT_VALIDATION_KINDS:
+        return {"required": False, "validated": True, "mismatches": []}
+
+    mismatches: list[dict[str, Any]] = []
+    for instance_report in replay_report.get("instance_reports") or []:
+        oracle_path = instance_report.get("oracle_outputs_path")
+        if not oracle_path:
+            mismatches.append({
+                "instance_id": instance_report.get("instance_id"),
+                "reason": "missing_oracle_outputs",
+            })
+            continue
+        oracle_payload = json.loads(
+            Path(oracle_path).read_text(encoding="utf-8")
+        )
+        for row in oracle_payload.get("rows") or []:
+            adapter_receipt = _official_oracle_adapter_receipt(row)
+            if not isinstance(adapter_receipt, Mapping):
+                mismatches.append({
+                    "instance_id": row.get("instance_id"),
+                    "candidate_id": row.get("candidate_id"),
+                    "reason": "missing_official_oracle_adapter_receipt",
+                })
+                continue
+            mismatches.extend(
+                _official_oracle_receipt_mismatches(
+                    row=row,
+                    receipt=adapter_receipt,
+                )
+            )
+    return {
+        "required": True,
+        "validated": len(mismatches) == 0,
+        "mismatches": mismatches,
+    }
+
+
+def _official_oracle_adapter_receipt(
+    row: Mapping[str, Any],
+) -> Mapping[str, Any] | None:
+    for receipt in row.get("oracle_command_receipts") or []:
+        if (
+            isinstance(receipt, Mapping)
+            and receipt.get("name") == "official_oracle_adapter"
+        ):
+            inner = receipt.get("receipt")
+            if isinstance(inner, Mapping):
+                return inner
+            return None
+    return None
+
+
+def _official_oracle_receipt_mismatches(
+    *,
+    row: Mapping[str, Any],
+    receipt: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    mismatches: list[dict[str, Any]] = []
+    base = {
+        "instance_id": row.get("instance_id"),
+        "candidate_id": row.get("candidate_id"),
+    }
+    for key in ("command", "stdout_sha256", "stderr_sha256", "evaluator_version"):
+        value = receipt.get(key)
+        if not value:
+            mismatches.append({
+                **base,
+                "field": key,
+                "reason": "missing_required_receipt_field",
+            })
+    command = receipt.get("command")
+    if command and (
+        isinstance(command, (str, bytes))
+        or not isinstance(command, Sequence)
+    ):
+        mismatches.append({
+            **base,
+            "field": "command",
+            "reason": "invalid_required_receipt_field",
+        })
+    return_code = receipt.get("return_code", receipt.get("returncode"))
+    if not isinstance(return_code, int) or return_code != 0:
+        mismatches.append({
+            **base,
+            "field": "return_code",
+            "reason": "invalid_return_code",
+        })
+    artifact_paths = receipt.get("artifact_paths")
+    if not isinstance(artifact_paths, Mapping) or not artifact_paths:
+        mismatches.append({
+            **base,
+            "field": "artifact_paths",
+            "reason": "missing_required_receipt_field",
+        })
+    if not _official_harness_metadata_present(receipt):
+        mismatches.append({
+            **base,
+            "field": "harness",
+            "reason": "missing_official_harness_metadata",
+        })
+    for key in ("fail_to_pass_status", "pass_to_pass_status"):
+        expected = str(row.get(key) or "").lower()
+        observed = str(receipt.get(key) or "").lower()
+        if observed not in {"pass", "fail"} or observed != expected:
+            mismatches.append({
+                **base,
+                "field": key,
+                "receipt_value": receipt.get(key),
+                "adapter_reported": row.get(key),
+                "reason": "receipt_status_mismatch",
+            })
+    return mismatches
+
+
+def _official_harness_metadata_present(receipt: Mapping[str, Any]) -> bool:
+    for key in ("harness", "harness_metadata", "docker", "docker_metadata"):
+        value = receipt.get(key)
+        if isinstance(value, Mapping) and value:
+            return True
+    docker_image = receipt.get("docker_image")
+    return bool(isinstance(docker_image, str) and docker_image.strip())
+
+
+def _validate_official_equivalent_labels(
+    *,
+    oracle_adapter_kind: str,
+    replay_report: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Cross-check official_equivalent adapter labels against reported status."""
+    if oracle_adapter_kind != "official_equivalent":
+        return {"required": False, "validated": True, "mismatches": []}
+    mismatches: list[dict[str, Any]] = []
+    for instance_report in replay_report.get("instance_reports") or []:
+        oracle_path = instance_report.get("oracle_outputs_path")
+        if not oracle_path:
+            mismatches.append({
+                "instance_id": instance_report.get("instance_id"),
+                "reason": "missing_oracle_outputs",
+            })
+            continue
+        oracle_payload = json.loads(
+            Path(oracle_path).read_text(encoding="utf-8")
+        )
+        for row in oracle_payload.get("rows") or []:
+            adapter_receipt = _official_oracle_adapter_receipt(row)
+            labels = (
+                adapter_receipt.get("official_equivalent_labels")
+                if isinstance(adapter_receipt, Mapping)
+                else None
+            )
+            if not isinstance(labels, Mapping):
+                mismatches.append({
+                    "instance_id": row.get("instance_id"),
+                    "candidate_id": row.get("candidate_id"),
+                    "reason": "missing_official_equivalent_labels",
+                })
+                continue
+            for key in ("fail_to_pass_status", "pass_to_pass_status"):
+                expected = str(labels.get(key) or "").lower()
+                reported = str(row.get(key) or "").lower()
+                if expected not in {"pass", "fail"} or expected != reported:
+                    mismatches.append({
+                        "instance_id": row.get("instance_id"),
+                        "candidate_id": row.get("candidate_id"),
+                        "field": key,
+                        "expected_official_equivalent": labels.get(key),
+                        "adapter_reported": row.get(key),
+                        "reason": "label_mismatch",
+                    })
+                    break
+    return {
+        "required": True,
+        "validated": len(mismatches) == 0,
+        "mismatches": mismatches,
+    }
+
+
+def _scan_official_replay_public_artifacts_for_leaks(
+    *,
+    replay_report: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Scan public artifacts for SWE-bench Pro hidden oracle field leaks."""
+    refs: list[str] = []
+    for instance_report in replay_report.get("instance_reports") or []:
+        instance_id = str(instance_report.get("instance_id") or "")
+        frozen_path = instance_report.get("frozen_decisions_path")
+        if frozen_path and Path(frozen_path).exists():
+            content = Path(frozen_path).read_text(encoding="utf-8")
+            for ref in _scan_for_swebench_pro_oracle_refs(content):
+                refs.append(f"frozen_decisions[{instance_id}]:{ref}")
+        for packet in instance_report.get("reviewer_packets") or []:
+            packet_path = packet.get("reviewer_packet_path") if isinstance(
+                packet, Mapping
+            ) else None
+            if packet_path and Path(packet_path).exists():
+                content = Path(packet_path).read_text(encoding="utf-8")
+                for ref in _scan_for_swebench_pro_oracle_refs(content):
+                    refs.append(f"reviewer_packet[{instance_id}]:{ref}")
+        for gen_input in instance_report.get("generator_inputs") or []:
+            input_path = gen_input.get("generator_input_path") if isinstance(
+                gen_input, Mapping
+            ) else None
+            if input_path and Path(input_path).exists():
+                content = Path(input_path).read_text(encoding="utf-8")
+                for ref in _scan_for_swebench_pro_oracle_refs(content):
+                    refs.append(f"generator_input[{instance_id}]:{ref}")
+    public_packets = (replay_report.get("bridge_report") or {}).get(
+        "public_packets"
+    ) or {}
+    for ref in _scan_for_swebench_pro_oracle_refs(public_packets):
+        refs.append(f"public_packets:{ref}")
+    return {"ok": not refs, "refs": refs}
 
 
 def _official_public_record(record: Mapping[str, Any]) -> dict[str, Any]:
