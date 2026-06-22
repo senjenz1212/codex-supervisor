@@ -364,6 +364,27 @@ def _oracle_outcome_for(
 def _interpret_oracle_outcome(outcome: Mapping[str, Any]) -> dict[str, Any]:
     fail_to_pass = str(outcome.get("fail_to_pass_status") or "").lower()
     pass_to_pass = str(outcome.get("pass_to_pass_status") or "").lower()
+    oracle_unavailable = bool(
+        outcome.get("oracle_unavailable")
+        or outcome.get("unavailable")
+        or str(outcome.get("status") or "").lower() == "unavailable"
+        or fail_to_pass == "unavailable"
+        or pass_to_pass == "unavailable"
+    )
+    if oracle_unavailable:
+        reason = str(
+            outcome.get("oracle_unavailable_reason")
+            or outcome.get("unavailable_reason")
+            or "oracle_unavailable"
+        )
+        return {
+            "fail_to_pass_status": "unavailable",
+            "pass_to_pass_status": "unavailable",
+            "oracle_accept": False,
+            "oracle_unavailable": True,
+            "oracle_unavailable_reason": reason,
+            "pass_to_pass_regression": False,
+        }
     if fail_to_pass not in {"pass", "fail"}:
         raise SwebenchProBridgeError(
             "oracle outcome fail_to_pass_status must be 'pass' or 'fail'"
@@ -377,6 +398,8 @@ def _interpret_oracle_outcome(outcome: Mapping[str, Any]) -> dict[str, Any]:
         "fail_to_pass_status": fail_to_pass,
         "pass_to_pass_status": pass_to_pass,
         "oracle_accept": oracle_accept,
+        "oracle_unavailable": False,
+        "oracle_unavailable_reason": "",
         "pass_to_pass_regression": pass_to_pass == "fail",
     }
 
@@ -435,6 +458,7 @@ def swebench_pro_mergeability_bridge_report(
     public_packets: list[dict[str, Any]] = []
     decision_rows: list[dict[str, Any]] = []
     oracle_isolation_violations: list[dict[str, Any]] = []
+    oracle_unavailable_findings: list[dict[str, Any]] = []
     unavailable_arms_per_row: list[dict[str, Any]] = []
 
     for instance in instances:
@@ -498,8 +522,10 @@ def swebench_pro_mergeability_bridge_report(
                 "s_full_accept": frozen["s_full_accept"],
                 "s_full_unavailable": frozen["s_full_unavailable"],
                 "oracle_ceiling_accept": outcome["oracle_accept"],
-                "oracle_ceiling_unavailable": False,
+                "oracle_ceiling_unavailable": outcome["oracle_unavailable"],
                 "oracle_accept": outcome["oracle_accept"],
+                "oracle_unavailable": outcome["oracle_unavailable"],
+                "oracle_unavailable_reason": outcome["oracle_unavailable_reason"],
                 "fail_to_pass_status": outcome["fail_to_pass_status"],
                 "pass_to_pass_status": outcome["pass_to_pass_status"],
                 "pass_to_pass_regression": outcome["pass_to_pass_regression"],
@@ -521,6 +547,15 @@ def swebench_pro_mergeability_bridge_report(
                     "candidate_id": candidate_id,
                     "refs": leak_refs,
                     "reason": "public_packet_contains_hidden_oracle_material",
+                })
+            if outcome["oracle_unavailable"]:
+                for arm_name in ARM_NAMES:
+                    row[f"{arm_name}_accept"] = False
+                    row[f"{arm_name}_unavailable"] = True
+                oracle_unavailable_findings.append({
+                    "instance_id": instance_id,
+                    "candidate_id": candidate_id,
+                    "reason": outcome["oracle_unavailable_reason"],
                 })
             rows.append(row)
             public_packets.append(packet)
@@ -571,6 +606,8 @@ def swebench_pro_mergeability_bridge_report(
         gaming_flags.append("oracle_isolation_violation")
     if no_regression_findings:
         gaming_flags.append("pass_to_pass_regression_detected")
+    metrics_suppressed = bool(oracle_unavailable_findings)
+    metrics_unavailable_reasons = ["oracle_unavailable"] if metrics_suppressed else []
 
     report = {
         "schema_version": SWEBENCH_PRO_BRIDGE_REPORT_SCHEMA_VERSION,
@@ -599,22 +636,8 @@ def swebench_pro_mergeability_bridge_report(
             ),
         },
         "arms": arm_summaries,
-        "far_tar_frr": {
-            arm: {
-                "false_accept_rate": arm_summaries[arm]["false_accept_rate"],
-                "true_accept_rate": arm_summaries[arm]["true_accept_rate"],
-                "false_reject_rate": arm_summaries[arm]["false_reject_rate"],
-                "n_bad": arm_summaries[arm]["n_bad"],
-                "n_good": arm_summaries[arm]["n_good"],
-                "false_accept_confidence_interval": arm_summaries[arm][
-                    "false_accept_confidence_interval"
-                ],
-                "true_accept_confidence_interval": arm_summaries[arm][
-                    "true_accept_confidence_interval"
-                ],
-            }
-            for arm in ARM_NAMES
-        },
+        "metrics_suppressed": metrics_suppressed,
+        "metrics_unavailable_reasons": metrics_unavailable_reasons,
         "false_accept_at_matched_true_accept": matched_true_accept,
         "matched_true_accept_status": {
             arm: matched_true_accept[arm]["status"]
@@ -623,6 +646,7 @@ def swebench_pro_mergeability_bridge_report(
         "panel_marginal_delta_at_matched_true_accept": panel_marginal_delta,
         "no_regression_findings": no_regression_findings,
         "no_regression_sha256": _sha256_json(no_regression_findings),
+        "oracle_unavailable_findings": oracle_unavailable_findings,
         "per_row_unavailable_arms": unavailable_arms_per_row,
         "per_row_results": rows,
         "metric_applyable": False,
@@ -659,6 +683,23 @@ def swebench_pro_mergeability_bridge_report(
         ],
         "gaming_flags": sorted(set(gaming_flags)),
     }
+    if not metrics_suppressed:
+        report["far_tar_frr"] = {
+            arm: {
+                "false_accept_rate": arm_summaries[arm]["false_accept_rate"],
+                "true_accept_rate": arm_summaries[arm]["true_accept_rate"],
+                "false_reject_rate": arm_summaries[arm]["false_reject_rate"],
+                "n_bad": arm_summaries[arm]["n_bad"],
+                "n_good": arm_summaries[arm]["n_good"],
+                "false_accept_confidence_interval": arm_summaries[arm][
+                    "false_accept_confidence_interval"
+                ],
+                "true_accept_confidence_interval": arm_summaries[arm][
+                    "true_accept_confidence_interval"
+                ],
+            }
+            for arm in ARM_NAMES
+        }
     report["report_sha256"] = _sha256_json(
         {key: value for key, value in report.items() if key != "report_sha256"}
     )
@@ -1063,7 +1104,7 @@ def _run_oracle_phase(
     return outcome, receipts
 
 
-def _normalise_oracle_adapter_outcome(raw: Mapping[str, Any]) -> tuple[dict[str, str], dict[str, Any]]:
+def _normalise_oracle_adapter_outcome(raw: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     if not isinstance(raw, Mapping):
         raise SwebenchMergeabilityFixtureRunnerError(
             "oracle_runner result must be a mapping"
@@ -1078,6 +1119,8 @@ def _normalise_oracle_adapter_outcome(raw: Mapping[str, Any]) -> tuple[dict[str,
     return {
         "fail_to_pass_status": outcome["fail_to_pass_status"],
         "pass_to_pass_status": outcome["pass_to_pass_status"],
+        "oracle_unavailable": outcome["oracle_unavailable"],
+        "oracle_unavailable_reason": outcome["oracle_unavailable_reason"],
     }, dict(receipt)
 
 
@@ -1559,6 +1602,10 @@ def swebench_mergeability_fixture_runner(
             "candidate_id": candidate_id,
             "fail_to_pass_status": outcome["fail_to_pass_status"],
             "pass_to_pass_status": outcome["pass_to_pass_status"],
+            "oracle_unavailable": bool(outcome.get("oracle_unavailable")),
+            "oracle_unavailable_reason": str(
+                outcome.get("oracle_unavailable_reason") or ""
+            ),
             "oracle_adapter_kind": str(oracle_adapter_kind),
             "oracle_command_receipts": receipts,
         })
@@ -1567,6 +1614,10 @@ def swebench_mergeability_fixture_runner(
             "candidate_id": candidate_id,
             "fail_to_pass_status": outcome["fail_to_pass_status"],
             "pass_to_pass_status": outcome["pass_to_pass_status"],
+            "oracle_unavailable": bool(outcome.get("oracle_unavailable")),
+            "oracle_unavailable_reason": str(
+                outcome.get("oracle_unavailable_reason") or ""
+            ),
         })
 
     oracle_outputs_path.write_text(
@@ -1840,6 +1891,10 @@ def swebench_mergeability_replay_runner(
             combined_oracle_outcomes[key] = {
                 "fail_to_pass_status": str(oracle_row["fail_to_pass_status"]),
                 "pass_to_pass_status": str(oracle_row["pass_to_pass_status"]),
+                "oracle_unavailable": bool(oracle_row.get("oracle_unavailable")),
+                "oracle_unavailable_reason": str(
+                    oracle_row.get("oracle_unavailable_reason") or ""
+                ),
             }
 
     combined_substrate = {
@@ -2100,6 +2155,9 @@ def swebench_mergeability_official_replay_runner(
     leak_check = _scan_official_replay_public_artifacts_for_leaks(
         replay_report=replay_report,
     )
+    bridge_metrics_suppressed = bool(
+        (replay_report.get("bridge_report") or {}).get("metrics_suppressed")
+    )
     report_status = "completed"
     if not receipt_validation["validated"]:
         report_status = "unavailable"
@@ -2107,10 +2165,13 @@ def swebench_mergeability_official_replay_runner(
         report_status = "unavailable"
     if leak_check["refs"]:
         report_status = "unavailable"
+    if bridge_metrics_suppressed:
+        report_status = "unavailable"
     unavailable_reasons = _official_replay_unavailable_reasons(
         receipt_validation=receipt_validation,
         label_validation=label_validation,
         leak_check=leak_check,
+        replay_report=replay_report,
     )
     replay_report_for_output = (
         _suppress_unavailable_official_replay_metrics(
@@ -2177,8 +2238,16 @@ def _official_replay_unavailable_reasons(
     receipt_validation: Mapping[str, Any],
     label_validation: Mapping[str, Any],
     leak_check: Mapping[str, Any],
+    replay_report: Mapping[str, Any],
 ) -> list[str]:
     reasons: list[str] = []
+    bridge_reasons = (replay_report.get("bridge_report") or {}).get(
+        "metrics_unavailable_reasons"
+    ) or []
+    for reason in bridge_reasons:
+        reason_text = str(reason)
+        if reason_text and reason_text not in reasons:
+            reasons.append(reason_text)
     if not receipt_validation.get("validated", True):
         reasons.append("oracle_receipt_validation_failed")
     if not label_validation.get("validated", True):
@@ -2332,6 +2401,7 @@ def _official_oracle_receipt_mismatches(
         "instance_id": row.get("instance_id"),
         "candidate_id": row.get("candidate_id"),
     }
+    row_unavailable = _oracle_status_unavailable(row)
     for key in ("command", "stdout_sha256", "stderr_sha256", "evaluator_version"):
         value = receipt.get(key)
         if not value:
@@ -2351,14 +2421,14 @@ def _official_oracle_receipt_mismatches(
             "reason": "invalid_required_receipt_field",
         })
     return_code = receipt.get("return_code", receipt.get("returncode"))
-    if not isinstance(return_code, int) or return_code != 0:
+    if not isinstance(return_code, int) or (not row_unavailable and return_code != 0):
         mismatches.append({
             **base,
             "field": "return_code",
             "reason": "invalid_return_code",
         })
     artifact_paths = receipt.get("artifact_paths")
-    if not isinstance(artifact_paths, Mapping) or not artifact_paths:
+    if not isinstance(artifact_paths, Mapping) or (not row_unavailable and not artifact_paths):
         mismatches.append({
             **base,
             "field": "artifact_paths",
@@ -2373,7 +2443,7 @@ def _official_oracle_receipt_mismatches(
     for key in ("fail_to_pass_status", "pass_to_pass_status"):
         expected = str(row.get(key) or "").lower()
         observed = str(receipt.get(key) or "").lower()
-        if observed not in {"pass", "fail"} or observed != expected:
+        if observed not in {"pass", "fail", "unavailable"} or observed != expected:
             mismatches.append({
                 **base,
                 "field": key,
@@ -2381,7 +2451,22 @@ def _official_oracle_receipt_mismatches(
                 "adapter_reported": row.get(key),
                 "reason": "receipt_status_mismatch",
             })
+    if row_unavailable and not str(receipt.get("unavailable_reason") or ""):
+        mismatches.append({
+            **base,
+            "field": "unavailable_reason",
+            "reason": "missing_required_receipt_field",
+        })
     return mismatches
+
+
+def _oracle_status_unavailable(row: Mapping[str, Any]) -> bool:
+    return bool(
+        row.get("oracle_unavailable")
+        or row.get("unavailable")
+        or str(row.get("fail_to_pass_status") or "").lower() == "unavailable"
+        or str(row.get("pass_to_pass_status") or "").lower() == "unavailable"
+    )
 
 
 def _official_harness_metadata_present(receipt: Mapping[str, Any]) -> bool:

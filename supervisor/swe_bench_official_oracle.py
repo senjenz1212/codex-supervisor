@@ -31,6 +31,7 @@ def run_official_harness_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
             stdout="",
             stderr="missing model_patch for official SWE-bench oracle",
             artifact_paths={},
+            reason="missing_model_patch",
         )
 
     artifact_root = Path(
@@ -134,6 +135,7 @@ def run_official_harness_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
                 "predictions": str(predictions_path),
                 "work_dir": str(work_dir),
             },
+            reason="official_oracle_timeout",
         )
 
     model_dir = model_name.replace("/", "__")
@@ -165,6 +167,11 @@ def run_official_harness_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
             stdout=completed.stdout,
             stderr=completed.stderr,
             artifact_paths=artifact_paths,
+            reason=(
+                "official_harness_failed"
+                if completed.returncode != 0
+                else "official_instance_report_missing"
+            ),
         )
 
     payload = json.loads(instance_report_path.read_text(encoding="utf-8"))
@@ -201,6 +208,7 @@ def _adapter_failure(
     stdout: str,
     stderr: str,
     artifact_paths: Mapping[str, str],
+    reason: str,
 ) -> dict[str, Any]:
     receipt = _adapter_receipt(
         context=context,
@@ -209,18 +217,22 @@ def _adapter_failure(
         stdout=stdout,
         stderr=stderr,
         artifact_paths=artifact_paths,
-        fail_to_pass_status="fail",
-        pass_to_pass_status="fail",
+        fail_to_pass_status="unavailable",
+        pass_to_pass_status="unavailable",
         dataset=os.environ.get(
             "SWEBENCH_OFFICIAL_ORACLE_DATASET",
             "SWE-bench/SWE-bench_Verified",
         ),
         split=os.environ.get("SWEBENCH_OFFICIAL_ORACLE_SPLIT", "test"),
         run_id="",
+        oracle_unavailable=True,
+        unavailable_reason=reason,
     )
     return {
-        "fail_to_pass_status": "fail",
-        "pass_to_pass_status": "fail",
+        "fail_to_pass_status": "unavailable",
+        "pass_to_pass_status": "unavailable",
+        "oracle_unavailable": True,
+        "oracle_unavailable_reason": reason,
         "oracle_adapter_receipt": receipt,
     }
 
@@ -238,8 +250,10 @@ def _adapter_receipt(
     dataset: str,
     split: str,
     run_id: str,
+    oracle_unavailable: bool = False,
+    unavailable_reason: str = "",
 ) -> dict[str, Any]:
-    return {
+    receipt = {
         "command": list(command),
         "return_code": int(return_code),
         "stdout_sha256": sha256(str(stdout).encode("utf-8")).hexdigest(),
@@ -260,6 +274,10 @@ def _adapter_receipt(
         "fail_to_pass_status": fail_to_pass_status,
         "pass_to_pass_status": pass_to_pass_status,
     }
+    if oracle_unavailable:
+        receipt["oracle_unavailable"] = True
+        receipt["unavailable_reason"] = unavailable_reason
+    return receipt
 
 
 def _status_for(tests_status: Any, key: str) -> str:

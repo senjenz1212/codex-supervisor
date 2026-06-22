@@ -2740,6 +2740,98 @@ def test_official_equivalent_label_validation_failure_is_unavailable(tmp_path):
     assert report["gate_advanced"] is False
 
 
+def test_official_replay_oracle_unavailable_suppresses_metrics(tmp_path):
+    predictions_path = _write_official_predictions(tmp_path)
+
+    def unavailable_adapter(context):
+        return {
+            "fail_to_pass_status": "unavailable",
+            "pass_to_pass_status": "unavailable",
+            "oracle_unavailable": True,
+            "oracle_unavailable_reason": "official_harness_failed",
+            "oracle_adapter_receipt": {
+                **_official_adapter_receipt(
+                    context,
+                    fail_to_pass_status="unavailable",
+                    pass_to_pass_status="unavailable",
+                ),
+                "return_code": 1,
+                "oracle_unavailable": True,
+                "unavailable_reason": "official_harness_failed",
+            },
+        }
+
+    report = swebench_mergeability_official_replay_runner(
+        dataset="fixture-official",
+        dataset_split="test",
+        predictions_path=predictions_path,
+        output_dir=tmp_path / "out",
+        dataset_loader=lambda **_kwargs: [_official_record()],
+        repo_materializer=_official_materializer,
+        oracle_runner=unavailable_adapter,
+        oracle_adapter_kind="official_docker_or_equivalent",
+    )
+
+    assert report["status"] == "unavailable"
+    assert report["oracle_receipt_validation"]["validated"] is True
+    assert report["metrics_unavailable_reasons"] == ["oracle_unavailable"]
+    assert report["bridge_report"]["metrics_suppressed"] is True
+    assert "far_tar_frr" not in report["bridge_report"]
+    oracle_path = (
+        tmp_path
+        / "out"
+        / "replay"
+        / "instances"
+        / "official_demo__repo-001"
+        / "oracle_outputs.json"
+    )
+    oracle_row = json.loads(oracle_path.read_text(encoding="utf-8"))["rows"][0]
+    assert oracle_row["fail_to_pass_status"] == "unavailable"
+    assert oracle_row["pass_to_pass_status"] == "unavailable"
+    assert oracle_row["oracle_unavailable"] is True
+    assert oracle_row["oracle_unavailable_reason"] == "official_harness_failed"
+
+
+def test_official_oracle_receipt_unavailable_requires_reason(tmp_path):
+    predictions_path = _write_official_predictions(tmp_path)
+
+    def unavailable_adapter_without_receipt_reason(context):
+        return {
+            "fail_to_pass_status": "unavailable",
+            "pass_to_pass_status": "unavailable",
+            "oracle_unavailable": True,
+            "oracle_unavailable_reason": "official_harness_failed",
+            "oracle_adapter_receipt": _official_adapter_receipt(
+                context,
+                fail_to_pass_status="unavailable",
+                pass_to_pass_status="unavailable",
+            ),
+        }
+
+    report = swebench_mergeability_official_replay_runner(
+        dataset="fixture-official",
+        dataset_split="test",
+        predictions_path=predictions_path,
+        output_dir=tmp_path / "out",
+        dataset_loader=lambda **_kwargs: [_official_record()],
+        repo_materializer=_official_materializer,
+        oracle_runner=unavailable_adapter_without_receipt_reason,
+        oracle_adapter_kind="official_docker_or_equivalent",
+    )
+
+    assert report["status"] == "unavailable"
+    assert report["metrics_unavailable_reasons"] == [
+        "oracle_unavailable",
+        "oracle_receipt_validation_failed",
+    ]
+    validation = report["oracle_receipt_validation"]
+    assert validation["validated"] is False
+    assert {
+        (mismatch.get("field"), mismatch.get("reason"))
+        for mismatch in validation["mismatches"]
+    } >= {("unavailable_reason", "missing_required_receipt_field")}
+
+
 def _smoke_oracle_runner(context):
     return {
         "fail_to_pass_status": "pass",
@@ -2978,6 +3070,161 @@ def test_official_harness_oracle_adapter_invokes_swebench_and_parses_report(
     assert receipt["return_code"] == 0
     assert receipt["harness"]["name"] == "swebench.harness.run_evaluation"
     assert Path(receipt["artifact_paths"]["instance_report"]).exists()
+
+
+def test_official_harness_oracle_nonzero_return_is_unavailable(tmp_path, monkeypatch):
+    monkeypatch.setenv("SWEBENCH_OFFICIAL_ORACLE_ARTIFACT_DIR", str(tmp_path / "oracle"))
+    monkeypatch.setenv("SWEBENCH_OFFICIAL_ORACLE_RUN_ID_PREFIX", "test-oracle")
+
+    def fake_run(command, *, cwd, env, text, capture_output, check, timeout):
+        return subprocess.CompletedProcess(
+            command,
+            1,
+            "official stdout",
+            "docker daemon unavailable",
+        )
+
+    monkeypatch.setattr(
+        "supervisor.swe_bench_official_oracle.subprocess.run",
+        fake_run,
+    )
+
+    result = run_official_harness_oracle({
+        "instance_id": "sympy__sympy-14711",
+        "candidate_id": "candidate-under-test",
+        "model_patch": _valid_model_patch(),
+        "model_patch_sha256": sha256(_valid_model_patch().encode("utf-8")).hexdigest(),
+        "frozen_decisions_path": str(tmp_path / "frozen_decisions.json"),
+        "frozen_decisions_sha256": "abc123",
+    })
+
+    assert result["fail_to_pass_status"] == "unavailable"
+    assert result["pass_to_pass_status"] == "unavailable"
+    assert result["oracle_unavailable"] is True
+    assert result["oracle_unavailable_reason"] == "official_harness_failed"
+    receipt = result["oracle_adapter_receipt"]
+    assert receipt["return_code"] == 1
+    assert receipt["oracle_unavailable"] is True
+    assert receipt["unavailable_reason"] == "official_harness_failed"
+    assert receipt["fail_to_pass_status"] == "unavailable"
+    assert receipt["pass_to_pass_status"] == "unavailable"
+
+
+def test_official_harness_oracle_timeout_is_unavailable(tmp_path, monkeypatch):
+    monkeypatch.setenv("SWEBENCH_OFFICIAL_ORACLE_ARTIFACT_DIR", str(tmp_path / "oracle"))
+    monkeypatch.setenv("SWEBENCH_OFFICIAL_ORACLE_RUN_ID_PREFIX", "test-oracle")
+
+    def fake_run(command, *, cwd, env, text, capture_output, check, timeout):
+        raise subprocess.TimeoutExpired(
+            cmd=command,
+            timeout=timeout,
+            output="partial official stdout",
+            stderr="timed out waiting for official harness",
+        )
+
+    monkeypatch.setattr(
+        "supervisor.swe_bench_official_oracle.subprocess.run",
+        fake_run,
+    )
+
+    result = run_official_harness_oracle({
+        "instance_id": "sympy__sympy-14711",
+        "candidate_id": "candidate-under-test",
+        "model_patch": _valid_model_patch(),
+        "model_patch_sha256": sha256(_valid_model_patch().encode("utf-8")).hexdigest(),
+        "frozen_decisions_path": str(tmp_path / "frozen_decisions.json"),
+        "frozen_decisions_sha256": "abc123",
+        "timeout_s": 1,
+    })
+
+    assert result["fail_to_pass_status"] == "unavailable"
+    assert result["pass_to_pass_status"] == "unavailable"
+    assert result["oracle_unavailable"] is True
+    assert result["oracle_unavailable_reason"] == "official_oracle_timeout"
+    receipt = result["oracle_adapter_receipt"]
+    assert receipt["return_code"] == 124
+    assert receipt["unavailable_reason"] == "official_oracle_timeout"
+    assert receipt["artifact_paths"]["predictions"].endswith("predictions.json")
+
+
+def test_official_harness_oracle_missing_report_is_unavailable(tmp_path, monkeypatch):
+    monkeypatch.setenv("SWEBENCH_OFFICIAL_ORACLE_ARTIFACT_DIR", str(tmp_path / "oracle"))
+    monkeypatch.setenv("SWEBENCH_OFFICIAL_ORACLE_RUN_ID_PREFIX", "test-oracle")
+
+    def fake_run(command, *, cwd, env, text, capture_output, check, timeout):
+        return subprocess.CompletedProcess(command, 0, "official stdout", "")
+
+    monkeypatch.setattr(
+        "supervisor.swe_bench_official_oracle.subprocess.run",
+        fake_run,
+    )
+
+    result = run_official_harness_oracle({
+        "instance_id": "sympy__sympy-14711",
+        "candidate_id": "candidate-under-test",
+        "model_patch": _valid_model_patch(),
+        "model_patch_sha256": sha256(_valid_model_patch().encode("utf-8")).hexdigest(),
+        "frozen_decisions_path": str(tmp_path / "frozen_decisions.json"),
+        "frozen_decisions_sha256": "abc123",
+    })
+
+    assert result["fail_to_pass_status"] == "unavailable"
+    assert result["pass_to_pass_status"] == "unavailable"
+    assert result["oracle_unavailable"] is True
+    assert result["oracle_unavailable_reason"] == "official_instance_report_missing"
+    receipt = result["oracle_adapter_receipt"]
+    assert receipt["return_code"] == 0
+    assert receipt["unavailable_reason"] == "official_instance_report_missing"
+    assert receipt["artifact_paths"]["predictions"].endswith("predictions.json")
+
+
+def test_official_harness_oracle_valid_failure_report_stays_fail(tmp_path, monkeypatch):
+    monkeypatch.setenv("SWEBENCH_OFFICIAL_ORACLE_ARTIFACT_DIR", str(tmp_path / "oracle"))
+    monkeypatch.setenv("SWEBENCH_OFFICIAL_ORACLE_RUN_ID_PREFIX", "test-oracle")
+
+    def fake_run(command, *, cwd, env, text, capture_output, check, timeout):
+        run_id = command[command.index("--run_id") + 1]
+        instance_id = command[command.index("--instance_ids") + 1]
+        report_dir = (
+            Path(cwd)
+            / "logs"
+            / "run_evaluation"
+            / run_id
+            / "supervisor-replay"
+            / instance_id
+        )
+        report_dir.mkdir(parents=True)
+        (report_dir / "report.json").write_text(
+            json.dumps({
+                instance_id: {
+                    "resolved": False,
+                    "tests_status": {
+                        "FAIL_TO_PASS": {"success": [], "failure": ["test_fixed"]},
+                        "PASS_TO_PASS": {"success": ["test_existing"], "failure": []},
+                    },
+                }
+            }),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(command, 0, "official stdout", "")
+
+    monkeypatch.setattr(
+        "supervisor.swe_bench_official_oracle.subprocess.run",
+        fake_run,
+    )
+
+    result = run_official_harness_oracle({
+        "instance_id": "sympy__sympy-14711",
+        "candidate_id": "candidate-under-test",
+        "model_patch": _valid_model_patch(),
+        "model_patch_sha256": sha256(_valid_model_patch().encode("utf-8")).hexdigest(),
+        "frozen_decisions_path": str(tmp_path / "frozen_decisions.json"),
+        "frozen_decisions_sha256": "abc123",
+    })
+
+    assert result["fail_to_pass_status"] == "fail"
+    assert result["pass_to_pass_status"] == "pass"
+    assert "oracle_unavailable" not in result
 
 
 def test_verified_smoke_is_labeled_plumbing_only(tmp_path):
