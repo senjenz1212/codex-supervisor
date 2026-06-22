@@ -212,6 +212,195 @@ def _litellm_metadata(*, finish_reason: str = "stop") -> dict[str, object]:
     }
 
 
+def _init_clean_git_repo(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True, text=True)
+    (path / "README.md").write_text("fixture\n", encoding="utf-8")
+    subprocess.run(["git", "add", "README.md"], cwd=path, check=True, capture_output=True, text=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.email=cursor-test@example.com",
+            "-c",
+            "user.name=Cursor Test",
+            "commit",
+            "-m",
+            "seed",
+        ],
+        cwd=path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_cursor_isolated_reviewer_cannot_mutate_source_worktree(tmp_path: Path, monkeypatch):
+    source = tmp_path / "repo"
+    _init_clean_git_repo(source)
+    captured: dict[str, Path] = {}
+
+    def fake_run(request: CursorInvocationRequest):
+        captured["review_cwd"] = Path(request.cwd)
+        (Path(request.cwd) / "cursor-note.txt").write_text("contained\n", encoding="utf-8")
+        outcome = _complete_cursor_outcome(task_id=request.task_id)
+        return f"<dual_agent_outcome>{outcome.model_dump_json()}</dual_agent_outcome>", {
+            "agent_id": "agent-1",
+            "run_id": "run-1",
+            "status": "finished",
+            "model": "composer-2.5",
+            "duration_ms": 10,
+            "reviewer_runtime": "cursor_sdk",
+            "reviewer_output_mode": "cursor_sdk",
+        }
+
+    monkeypatch.setattr(cursor_agent, "_run_cursor_sdk", fake_run)
+
+    result = invoke_cursor_agent(CursorInvocationRequest(
+        task_id="tri-agent",
+        gate="tdd_review",
+        instruction="Review the TDD plan.",
+        cwd=source,
+        reviewer_output_mode="cursor_sdk",
+        contract_retry_limit=0,
+    ))
+
+    assert result.probe.ok
+    assert cursor_accepts(result)
+    assert captured["review_cwd"].resolve() != source.resolve()
+    assert not (source / "cursor-note.txt").exists()
+    assert subprocess.run(
+        ["git", "status", "--porcelain=v1"],
+        cwd=source,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout == ""
+
+
+def test_cursor_isolated_reviewer_records_contained_mutation_diagnostic(
+    tmp_path: Path,
+    monkeypatch,
+):
+    source = tmp_path / "repo"
+    _init_clean_git_repo(source)
+
+    def fake_run(request: CursorInvocationRequest):
+        (Path(request.cwd) / "cursor-note.txt").write_text("contained\n", encoding="utf-8")
+        outcome = _complete_cursor_outcome(task_id=request.task_id)
+        return f"<dual_agent_outcome>{outcome.model_dump_json()}</dual_agent_outcome>", {
+            "agent_id": "agent-1",
+            "run_id": "run-1",
+            "status": "finished",
+            "model": "composer-2.5",
+            "duration_ms": 10,
+            "reviewer_runtime": "cursor_sdk",
+            "reviewer_output_mode": "cursor_sdk",
+        }
+
+    monkeypatch.setattr(cursor_agent, "_run_cursor_sdk", fake_run)
+
+    result = invoke_cursor_agent(CursorInvocationRequest(
+        task_id="tri-agent",
+        gate="tdd_review",
+        instruction="Review the TDD plan.",
+        cwd=source,
+        reviewer_output_mode="cursor_sdk",
+        contract_retry_limit=0,
+    ))
+
+    isolation = (result.diagnostics or {})["worktree_isolation"]
+    assert isolation["enabled"] is True
+    assert isolation["strategy"] == "copytree_public_reviewer_worktree"
+    assert isolation["source_cwd"] == str(source.resolve())
+    assert isolation["contained_mutation"] is True
+    assert isolation["before_snapshot_sha256"] != isolation["after_snapshot_sha256"]
+    assert "cursor-note.txt" in isolation["changed_paths"]
+
+
+def test_cursor_original_worktree_mutation_blocks_full_panel_evidence(
+    tmp_path: Path,
+    monkeypatch,
+):
+    source = tmp_path / "repo"
+    _init_clean_git_repo(source)
+
+    def fake_run(request: CursorInvocationRequest):
+        (Path(request.cwd) / "cursor-note.txt").write_text("unsafe\n", encoding="utf-8")
+        outcome = _complete_cursor_outcome(task_id=request.task_id)
+        return f"<dual_agent_outcome>{outcome.model_dump_json()}</dual_agent_outcome>", {
+            "agent_id": "agent-1",
+            "run_id": "run-1",
+            "status": "finished",
+            "model": "composer-2.5",
+            "duration_ms": 10,
+            "reviewer_runtime": "cursor_sdk",
+            "reviewer_output_mode": "cursor_sdk",
+        }
+
+    monkeypatch.setattr(cursor_agent, "_run_cursor_sdk", fake_run)
+
+    result = invoke_cursor_agent(CursorInvocationRequest(
+        task_id="tri-agent",
+        gate="tdd_review",
+        instruction="Review the TDD plan.",
+        cwd=source,
+        reviewer_output_mode="cursor_sdk",
+        contract_retry_limit=0,
+        reviewer_worktree_isolation="none",
+    ))
+
+    assert result.probe.status == "red"
+    assert result.probe.reason == "cursor_modified_worktree"
+    assert result.outcome is None
+    assert not cursor_accepts(result)
+    assert "?? cursor-note.txt" in result.probe.details["after"]
+
+
+def test_cursor_oracle_material_excluded_from_isolated_worktree(
+    tmp_path: Path,
+    monkeypatch,
+):
+    source = tmp_path / "repo"
+    (source / ".mergeability").mkdir(parents=True)
+    (source / ".mergeability" / "hidden.txt").write_text("secret\n", encoding="utf-8")
+    (source / "oracle_outputs.json").write_text("secret\n", encoding="utf-8")
+    (source / "FAIL_TO_PASS.txt").write_text("secret\n", encoding="utf-8")
+    (source / "PASS_TO_PASS.txt").write_text("secret\n", encoding="utf-8")
+    (source / "public.txt").write_text("visible\n", encoding="utf-8")
+
+    def fake_run(request: CursorInvocationRequest):
+        review_cwd = Path(request.cwd)
+        assert (review_cwd / "public.txt").exists()
+        assert not (review_cwd / ".mergeability").exists()
+        assert not (review_cwd / "oracle_outputs.json").exists()
+        assert not (review_cwd / "FAIL_TO_PASS.txt").exists()
+        assert not (review_cwd / "PASS_TO_PASS.txt").exists()
+        outcome = _complete_cursor_outcome(task_id=request.task_id)
+        return f"<dual_agent_outcome>{outcome.model_dump_json()}</dual_agent_outcome>", {
+            "agent_id": "agent-1",
+            "run_id": "run-1",
+            "status": "finished",
+            "model": "composer-2.5",
+            "duration_ms": 10,
+            "reviewer_runtime": "cursor_sdk",
+            "reviewer_output_mode": "cursor_sdk",
+        }
+
+    monkeypatch.setattr(cursor_agent, "_run_cursor_sdk", fake_run)
+
+    result = invoke_cursor_agent(CursorInvocationRequest(
+        task_id="tri-agent",
+        gate="tdd_review",
+        instruction="Review the TDD plan.",
+        cwd=source,
+        reviewer_output_mode="cursor_sdk",
+        contract_retry_limit=0,
+    ))
+
+    assert result.probe.ok
+
+
 def test_run_litellm_structured_calls_openai_schema_gateway(tmp_path: Path, monkeypatch):
     captured: dict[str, object] = {}
     outcome = _complete_cursor_outcome(task_id="tri-agent")
@@ -582,7 +771,10 @@ def test_cursor_sdk_is_default_invocation_and_records_diagnostics(tmp_path: Path
     assert result.reviewer_runtime == "cursor_sdk"
     assert result.reviewer_output_mode == "cursor_sdk"
     assert result.reviewer_assurance == "tool_backed_primary"
-    assert result.diagnostics == {"prompt_chars": 2048, "prompt_sha256": "a" * 64}
+    assert result.diagnostics["prompt_chars"] == 2048
+    assert result.diagnostics["prompt_sha256"] == "a" * 64
+    assert result.diagnostics["worktree_isolation"]["enabled"] is True
+    assert result.diagnostics["worktree_isolation"]["contained_mutation"] is False
 
 
 def test_cursor_sdk_infra_retry_succeeds_before_fallback(tmp_path: Path, monkeypatch):
@@ -1370,3 +1562,72 @@ def test_probe_env_loader_can_supply_cursor_api_key(tmp_path: Path, monkeypatch)
 
     assert loaded == {"CURSOR_API_KEY": "cursor-from-config"}
     assert os.environ["CURSOR_API_KEY"] == "cursor-from-config"
+
+
+def test_cursor_sdk_receives_sandbox_options_when_available(tmp_path: Path, monkeypatch):
+    captured: dict[str, object] = {}
+    outcome = _complete_cursor_outcome(task_id="tri-agent")
+
+    class FakeSandboxOptions:
+        def __init__(self, **kwargs):
+            self.enabled = kwargs.get("enabled")
+            captured["sandbox_options_kwargs"] = kwargs
+
+    class FakeLocalAgentOptions:
+        def __init__(self, **kwargs):
+            captured["local_options_kwargs"] = kwargs
+
+    class FakeRun:
+        id = "cursor-run-1"
+        status = "finished"
+        model = "composer-2.5"
+        duration_ms = 12
+
+        def text(self):
+            return f"<dual_agent_outcome>{outcome.model_dump_json()}</dual_agent_outcome>"
+
+    class FakeAgent:
+        agent_id = "cursor-agent-1"
+        model = "composer-2.5"
+
+        @classmethod
+        def create(cls, **kwargs):
+            captured["agent_kwargs"] = kwargs
+            return cls()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def send(self, prompt, options):
+            captured["send_options"] = options
+            return FakeRun()
+
+    monkeypatch.setitem(
+        sys.modules,
+        "cursor_sdk",
+        SimpleNamespace(Agent=FakeAgent, LocalAgentOptions=FakeLocalAgentOptions),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "cursor_sdk.types",
+        SimpleNamespace(SandboxOptions=FakeSandboxOptions),
+    )
+
+    cursor_agent._run_cursor_sdk(CursorInvocationRequest(
+        task_id="tri-agent",
+        gate="tdd_review",
+        instruction="Review the TDD plan.",
+        cwd=tmp_path,
+        reviewer_output_mode="cursor_sdk",
+        reviewer_worktree_isolation="none",
+    ))
+
+    local_options = captured["local_options_kwargs"]
+    sandbox_options = local_options["sandbox_options"]
+    assert isinstance(sandbox_options, FakeSandboxOptions)
+    assert sandbox_options.enabled is True
+    assert captured["sandbox_options_kwargs"] == {"enabled": True}
+    assert captured["send_options"] == {"mode": "plan"}

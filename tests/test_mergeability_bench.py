@@ -939,6 +939,69 @@ def test_configured_panel_unavailable_does_not_count_as_accept(tmp_path):
             assert review["panel_result"]["reason"] == "public_review_rejected"
 
 
+def test_full_panel_available_only_with_safe_cursor_and_codex_verdicts(tmp_path):
+    cursor_reviewer, codex_reviewer = _accepting_fake_reviewers()
+    available_report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path / "available",
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            reviewers=(cursor_reviewer, codex_reviewer),
+        ),
+    )
+    assert available_report["arms"]["supervisor_full_gate"]["availability_status"] == "available"
+    assert available_report["configured_reviewer_panel"]["full_roster_available_count"] > 0
+
+    unsafe_cursor = _RecordingFakeReviewer(
+        "independent-reviewer-0",
+        result=CursorInvocationResult(
+            probe=ProbeResult(
+                "CURSOR",
+                "red",
+                "cursor_modified_worktree",
+                {"before": "", "after": " M supervisor/cursor_agent.py\n"},
+            ),
+            outcome=None,
+            transcript="",
+            model="composer-2.5",
+            reviewer_runtime="cursor_sdk",
+            reviewer_output_mode="cursor_sdk",
+            reviewer_assurance="tool_backed_primary",
+        ),
+    )
+    safe_codex = _RecordingFakeReviewer(
+        "independent-reviewer-1",
+        result=_fake_cursor_result("accept", model="gpt-5.5"),
+    )
+
+    unavailable_report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path / "unavailable",
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            reviewers=(unsafe_cursor, safe_codex),
+        ),
+    )
+
+    full_gate = unavailable_report["arms"]["supervisor_full_gate"]
+    public_accept_count = sum(
+        1 for row in unavailable_report["per_task_results"]
+        if row["supervisor_candidate_review_accept"]
+    )
+    assert full_gate["unavailable_count"] == public_accept_count
+    assert full_gate["accepted_count"] == 0
+    assert unavailable_report["configured_reviewer_panel"]["full_roster_available_count"] == 0
+    assert "panel_missing_verdict_block" in unavailable_report["gaming_flags"]
+    for row in unavailable_report["per_task_results"]:
+        if not row["supervisor_candidate_review_accept"]:
+            continue
+        review = row["supervisor_full_gate_review"]
+        assert row["supervisor_full_gate_unavailable"] is True
+        assert review["panel_missing_verdict_block"] is True
+        assert review["panel_result"]["missing_reviewers"] == ["independent-reviewer-0"]
+        assert review["panel_result"]["available_reviewers"] == ["independent-reviewer-1"]
+
+
 def test_configured_panel_not_invoked_when_reviewer_packet_contains_oracle_material(
     tmp_path, monkeypatch
 ):

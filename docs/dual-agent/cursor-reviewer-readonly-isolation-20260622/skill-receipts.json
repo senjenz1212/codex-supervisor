@@ -1,0 +1,43 @@
+{
+  "schema_version": "skill-receipts/v1",
+  "task_id": "cursor-reviewer-readonly-isolation-20260622",
+  "receipts": [
+    {
+      "stage": "to_prd",
+      "skill": "/Users/sam.zhang/.codex/skills/to-prd/SKILL.md",
+      "artifact": "docs/dual-agent/cursor-reviewer-readonly-isolation-20260622/prd.md",
+      "status": "passed"
+    },
+    {
+      "stage": "codebase_design",
+      "skill": "/Users/sam.zhang/.codex/skills/codebase-design/SKILL.md",
+      "artifact": "docs/dual-agent/cursor-reviewer-readonly-isolation-20260622/prd.md",
+      "status": "passed",
+      "notes": "Selected invoke_cursor_agent as the public seam and CursorInvocationRequest as the interface extension."
+    },
+    {
+      "stage": "prd_grill",
+      "skill": "/Users/sam.zhang/.codex/skills/grill-with-docs/SKILL.md",
+      "artifact": "docs/dual-agent/cursor-reviewer-readonly-isolation-20260622/grill-findings.md",
+      "status": "passed"
+    },
+    {
+      "stage": "to_issues",
+      "skill": "/Users/sam.zhang/.codex/skills/to-issues/SKILL.md",
+      "artifact": "docs/dual-agent/cursor-reviewer-readonly-isolation-20260622/issues.md",
+      "status": "passed"
+    },
+    {
+      "stage": "tdd",
+      "skill": "/Users/sam.zhang/.codex/skills/tdd/SKILL.md",
+      "artifact": "docs/dual-agent/cursor-reviewer-readonly-isolation-20260622/tdd.md",
+      "status": "passed"
+    },
+    {
+      "stage": "tdd_grill",
+      "skill": "/Users/sam.zhang/.codex/skills/grill-with-docs/SKILL.md",
+      "artifact": "docs/dual-agent/cursor-reviewer-readonly-isolation-20260622/grill-findings-tdd.md",
+      "status": "passed"
+    }
+  ]
+}

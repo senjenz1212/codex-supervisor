@@ -10,8 +10,10 @@ import contextlib
 import hashlib
 import os
 import json
+import shutil
 import signal
 import subprocess
+import tempfile
 import time
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -29,9 +31,34 @@ CursorFailureClassification = Literal[
     "reviewer_access_denied",
 ]
 ReviewerOutputMode = Literal["litellm_structured", "cursor_sdk"]
+ReviewerWorktreeIsolation = Literal["copy", "none"]
 DEFAULT_STRUCTURED_REVIEWER_MODEL = "claude-opus-4-6"
 DEFAULT_STRUCTURED_REVIEWER_MAX_TOKENS = 4096
 DEFAULT_CURSOR_SDK_MODEL = "default"
+CURSOR_REVIEWER_WORKTREE_EXCLUDED_NAMES = frozenset({
+    ".git",
+    ".hg",
+    ".svn",
+    ".venv",
+    "node_modules",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".runtime-evidence",
+    ".scratch",
+    ".mergeability",
+    "oracle_outputs.json",
+    "hidden_test_commands.json",
+})
+CURSOR_REVIEWER_WORKTREE_EXCLUDED_MARKERS = (
+    ".mergeability",
+    "fail_to_pass",
+    "pass_to_pass",
+    "hidden_test",
+    "hidden_oracle",
+    "oracle_outputs",
+)
 
 
 @dataclass(frozen=True)
@@ -60,6 +87,8 @@ class CursorInvocationRequest:
     contract_retry_limit: int = 3
     reviewer_infra_retry_limit: int = 2
     reviewer_infra_retry_backoff_s: float = 1.0
+    reviewer_worktree_isolation: ReviewerWorktreeIsolation = "copy"
+    cursor_sdk_sandbox_enabled: bool = True
 
 
 @dataclass(frozen=True)
@@ -220,7 +249,26 @@ def invoke_cursor_agent(
             )
         try:
             if attempt_request.reviewer_output_mode == "cursor_sdk":
-                retry_result = _run_cursor_sdk_with_infra_retries(attempt_request)
+                with _cursor_reviewer_runtime_request(attempt_request) as (
+                    runtime_request,
+                    worktree_isolation,
+                ):
+                    retry_result = _run_cursor_sdk_with_infra_retries(runtime_request)
+                if worktree_isolation is not None:
+                    if isinstance(retry_result, CursorInvocationResult):
+                        retry_result = _with_worktree_isolation_diagnostics(
+                            retry_result,
+                            worktree_isolation,
+                        )
+                    else:
+                        transcript, metadata = retry_result
+                        retry_result = (
+                            transcript,
+                            {
+                                **metadata,
+                                "worktree_isolation": worktree_isolation,
+                            },
+                        )
                 if isinstance(retry_result, CursorInvocationResult):
                     return _fallback_or_primary_failure(
                         retry_result,
@@ -659,6 +707,7 @@ def _metadata_diagnostics(metadata: dict[str, Any]) -> dict[str, Any] | None:
         "prompt_tokens",
         "completion_tokens",
         "infrastructure_retries",
+        "worktree_isolation",
     )
     diagnostics = {
         key: metadata.get(key)
@@ -670,12 +719,25 @@ def _metadata_diagnostics(metadata: dict[str, Any]) -> dict[str, Any] | None:
 
 def _run_cursor_sdk(request: CursorInvocationRequest) -> tuple[str, dict[str, Any]]:
     from cursor_sdk import Agent, LocalAgentOptions
+    try:
+        from cursor_sdk.types import SandboxOptions
+    except (ImportError, AttributeError):  # pragma: no cover - SDK shape may vary.
+        SandboxOptions = None  # type: ignore[assignment]
 
     api_key = request.api_key or os.environ.get("CURSOR_API_KEY")
     prompt = build_cursor_prompt(request)
+    local_options: dict[str, Any] = {
+        "cwd": str(Path(request.cwd).expanduser()),
+    }
+    if request.cursor_sdk_sandbox_enabled:
+        local_options["sandbox_options"] = (
+            {"enabled": True}
+            if SandboxOptions is None
+            else SandboxOptions(enabled=True)
+        )
     kwargs: dict[str, Any] = {
         "model": select_cursor_model(quality=request.quality, explicit_model=request.model),
-        "local": LocalAgentOptions(cwd=str(Path(request.cwd).expanduser())),
+        "local": LocalAgentOptions(**local_options),
     }
     if api_key:
         kwargs["api_key"] = api_key
@@ -695,6 +757,134 @@ def _run_cursor_sdk(request: CursorInvocationRequest) -> tuple[str, dict[str, An
             "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
         }
     return transcript, metadata
+
+
+@contextlib.contextmanager
+def _cursor_reviewer_runtime_request(request: CursorInvocationRequest):
+    if (
+        request.reviewer_output_mode != "cursor_sdk"
+        or request.reviewer_worktree_isolation == "none"
+    ):
+        yield request, None
+        return
+
+    source = Path(request.cwd).expanduser().resolve()
+    with tempfile.TemporaryDirectory(prefix="cursor-reviewer-") as tmp_dir:
+        isolated = Path(tmp_dir) / "worktree"
+        shutil.copytree(
+            source,
+            isolated,
+            symlinks=True,
+            ignore=_cursor_reviewer_worktree_ignore(source),
+        )
+        before = _worktree_snapshot(isolated)
+        diagnostic: dict[str, Any] = {
+            "enabled": True,
+            "strategy": "copytree_public_reviewer_worktree",
+            "source_cwd": str(source),
+            "isolated_cwd": str(isolated),
+            "excluded_names": sorted(CURSOR_REVIEWER_WORKTREE_EXCLUDED_NAMES),
+            "excluded_markers": list(CURSOR_REVIEWER_WORKTREE_EXCLUDED_MARKERS),
+            "before_snapshot_sha256": before["sha256"],
+        }
+        try:
+            yield replace(request, cwd=isolated), diagnostic
+        finally:
+            after = _worktree_snapshot(isolated) if isolated.exists() else {
+                "sha256": "",
+                "entries": {},
+            }
+            changed_paths = _snapshot_changed_paths(before, after)
+            diagnostic.update({
+                "after_snapshot_sha256": after["sha256"],
+                "contained_mutation": before["sha256"] != after["sha256"],
+                "changed_paths": changed_paths[:50],
+                "changed_path_count": len(changed_paths),
+            })
+
+
+def _cursor_reviewer_worktree_ignore(source_root: Path):
+    source_root = source_root.resolve()
+
+    def _ignore(directory: str, names: list[str]) -> set[str]:
+        ignored: set[str] = set()
+        directory_path = Path(directory).resolve()
+        for name in names:
+            try:
+                rel_path = directory_path.relative_to(source_root) / name
+            except ValueError:
+                rel_path = Path(name)
+            if _exclude_from_cursor_reviewer_worktree(rel_path):
+                ignored.add(name)
+        return ignored
+
+    return _ignore
+
+
+def _exclude_from_cursor_reviewer_worktree(path: Path) -> bool:
+    name = path.name
+    if name in CURSOR_REVIEWER_WORKTREE_EXCLUDED_NAMES:
+        return True
+    lowered = path.as_posix().lower()
+    return any(marker in lowered for marker in CURSOR_REVIEWER_WORKTREE_EXCLUDED_MARKERS)
+
+
+def _worktree_snapshot(root: Path) -> dict[str, Any]:
+    entries: dict[str, dict[str, int]] = {}
+    if not root.exists():
+        return {"sha256": "", "entries": entries}
+    for directory, dirnames, filenames in os.walk(root):
+        directory_path = Path(directory)
+        dirnames[:] = [
+            dirname for dirname in dirnames
+            if not _exclude_from_cursor_reviewer_worktree(
+                (directory_path / dirname).relative_to(root)
+            )
+        ]
+        for filename in filenames:
+            file_path = directory_path / filename
+            rel_path = file_path.relative_to(root)
+            if _exclude_from_cursor_reviewer_worktree(rel_path):
+                continue
+            try:
+                stat = file_path.stat()
+            except OSError:
+                continue
+            entries[rel_path.as_posix()] = {
+                "size": int(stat.st_size),
+                "mtime_ns": int(stat.st_mtime_ns),
+            }
+    payload = json.dumps(entries, sort_keys=True, separators=(",", ":"))
+    return {
+        "sha256": hashlib.sha256(payload.encode("utf-8")).hexdigest(),
+        "entries": entries,
+    }
+
+
+def _snapshot_changed_paths(
+    before: dict[str, Any],
+    after: dict[str, Any],
+) -> list[str]:
+    before_entries = before.get("entries") if isinstance(before.get("entries"), dict) else {}
+    after_entries = after.get("entries") if isinstance(after.get("entries"), dict) else {}
+    changed: list[str] = []
+    for path in sorted(set(before_entries) | set(after_entries)):
+        if before_entries.get(path) != after_entries.get(path):
+            changed.append(path)
+    return changed
+
+
+def _with_worktree_isolation_diagnostics(
+    result: CursorInvocationResult,
+    diagnostic: dict[str, Any],
+) -> CursorInvocationResult:
+    return replace(
+        result,
+        diagnostics={
+            **(result.diagnostics or {}),
+            "worktree_isolation": diagnostic,
+        },
+    )
 
 
 def _run_litellm_structured(request: CursorInvocationRequest) -> tuple[str, dict[str, Any]]:
