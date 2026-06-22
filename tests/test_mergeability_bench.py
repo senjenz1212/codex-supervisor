@@ -2846,3 +2846,313 @@ def test_fixture_diagnostic_report_stays_calibration_only(tmp_path):
         repo_root=Path.cwd(),
         affected_gates=("execution", "outcome_review"),
     ) == []
+
+
+def _missing_verdict_panel(_packet):
+    return {
+        "decision": "unavailable",
+        "available": False,
+        "reason": "reviewer_panel_unavailable",
+        "reviewer_ids": ["fake-reviewer-a", "fake-reviewer-b"],
+        "available_reviewers": ["fake-reviewer-a"],
+        "missing_reviewers": ["fake-reviewer-b"],
+        "reviewer_results": [
+            {
+                "reviewer_id": "fake-reviewer-a",
+                "decision": "accept",
+                "verdict_present": True,
+                "runtime": "fake_runtime",
+                "model": "fake-model",
+            },
+            {
+                "reviewer_id": "fake-reviewer-b",
+                "decision": "unavailable",
+                "verdict_present": False,
+                "runtime": "fake_runtime",
+                "model": "fake-model",
+                "failure_classification": "reviewer_infrastructure",
+                "transcript_sha256": "",
+                "output_sha256": "",
+            },
+        ],
+    }
+
+
+def _partial_roster_accepting_panel(_packet):
+    return {
+        "decision": "accept",
+        "available": True,
+        "reason": "partial_roster_accepting",
+        "reviewer_ids": ["fake-reviewer-a", "fake-reviewer-b"],
+        "available_reviewers": ["fake-reviewer-a"],
+        "accepted_reviewers": ["fake-reviewer-a"],
+        "missing_reviewers": ["fake-reviewer-b"],
+        "reviewer_results": [
+            {
+                "reviewer_id": "fake-reviewer-a",
+                "decision": "accept",
+                "verdict_present": True,
+                "runtime": "fake_runtime",
+                "model": "fake-model",
+            },
+            {
+                "reviewer_id": "fake-reviewer-b",
+                "decision": "unavailable",
+                "verdict_present": False,
+                "runtime": "fake_runtime",
+                "model": "fake-model",
+                "failure_classification": "reviewer_infrastructure",
+                "transcript_sha256": "",
+                "output_sha256": "",
+            },
+        ],
+    }
+
+
+def _full_roster_deny_panel(_packet):
+    return {
+        "decision": "deny",
+        "available": True,
+        "reason": "panel_quality_disagreement",
+        "reviewer_ids": ["fake-reviewer-a", "fake-reviewer-b"],
+        "available_reviewers": ["fake-reviewer-a", "fake-reviewer-b"],
+        "missing_reviewers": [],
+        "reviewer_results": [
+            {
+                "reviewer_id": "fake-reviewer-a",
+                "decision": "deny",
+                "verdict_present": True,
+                "runtime": "fake_runtime",
+                "model": "fake-model",
+            },
+            {
+                "reviewer_id": "fake-reviewer-b",
+                "decision": "deny",
+                "verdict_present": True,
+                "runtime": "fake_runtime",
+                "model": "fake-model",
+            },
+        ],
+    }
+
+
+def _reviewer_zero_infrastructure_failure_panel(_packet):
+    return {
+        "decision": "unavailable",
+        "available": False,
+        "reason": "reviewer_panel_unavailable",
+        "reviewer_ids": ["fake-reviewer-0", "fake-reviewer-1"],
+        "available_reviewers": ["fake-reviewer-1"],
+        "missing_reviewers": ["fake-reviewer-0"],
+        "reviewer_results": [
+            {
+                "reviewer_id": "fake-reviewer-0",
+                "decision": "unavailable",
+                "verdict_present": False,
+                "runtime": "cursor_sdk",
+                "model": "fake-reviewer-zero-model",
+                "failure_classification": "reviewer_infrastructure",
+                "transcript_sha256": "a" * 64,
+                "output_sha256": "b" * 64,
+            },
+            {
+                "reviewer_id": "fake-reviewer-1",
+                "decision": "accept",
+                "verdict_present": True,
+                "runtime": "cursor_sdk",
+                "model": "fake-reviewer-one-model",
+            },
+        ],
+    }
+
+
+def test_missing_reviewer_verdict_blocks_production_but_labels_missing_block(tmp_path):
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        reviewer_panel=_missing_verdict_panel,
+    )
+
+    public_accept_rows = [
+        row for row in report["per_task_results"] if row["supervisor_candidate_review_accept"]
+    ]
+    assert public_accept_rows, "fixture corpus must include at least one public-accepting candidate"
+
+    for row in public_accept_rows:
+        assert row["supervisor_full_gate_accept"] is False
+        assert row["supervisor_full_gate_unavailable"] is True
+        assert row["panel_quality_label"] == "panel_missing_verdict_block"
+        assert row["panel_missing_verdict_block"] is True
+        assert row["panel_quality_reject"] is False
+        assert row["full_roster_available"] is False
+
+    full_gate = report["arms"]["supervisor_full_gate"]
+    assert full_gate["accepted_count"] == 0
+    assert full_gate["unavailable_count"] == len(public_accept_rows)
+    panel_block = report["configured_reviewer_panel"]
+    assert panel_block["panel_missing_verdict_block_count"] == len(public_accept_rows)
+    assert panel_block["panel_quality_reject_count"] == 0
+
+
+def test_partial_roster_accepting_panel_is_unavailable_not_full_gate_evidence(tmp_path):
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        reviewer_panel=_partial_roster_accepting_panel,
+    )
+
+    public_accept_rows = [
+        row for row in report["per_task_results"] if row["supervisor_candidate_review_accept"]
+    ]
+    assert public_accept_rows, "fixture corpus must include at least one public-accepting candidate"
+
+    for row in public_accept_rows:
+        assert row["panel_quality_label"] == "panel_missing_verdict_block"
+        assert row["panel_missing_verdict_block"] is True
+        assert row["panel_quality_reject"] is False
+        assert row["full_roster_available"] is False
+        assert row["supervisor_full_gate_accept"] is False
+        assert row["supervisor_full_gate_unavailable"] is True
+
+    full_gate = report["arms"]["supervisor_full_gate"]
+    assert full_gate["accepted_count"] == 0
+    assert full_gate["unavailable_count"] == len(public_accept_rows)
+
+    panel_block = report["configured_reviewer_panel"]
+    assert panel_block["panel_missing_verdict_block_count"] == len(public_accept_rows)
+    assert panel_block["panel_quality_reject_count"] == 0
+    assert panel_block["full_roster_available_count"] == 0
+
+
+def test_fully_available_rejecting_panel_counts_as_quality_reject(tmp_path):
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        reviewer_panel=_full_roster_deny_panel,
+    )
+
+    public_accept_rows = [
+        row for row in report["per_task_results"] if row["supervisor_candidate_review_accept"]
+    ]
+    assert public_accept_rows, "fixture corpus must include at least one public-accepting candidate"
+
+    for row in public_accept_rows:
+        assert row["full_roster_available"] is True
+        assert row["panel_quality_label"] == "panel_quality_reject"
+        assert row["panel_quality_reject"] is True
+        assert row["panel_missing_verdict_block"] is False
+        assert row["supervisor_full_gate_accept"] is False
+        assert row["supervisor_full_gate_unavailable"] is False
+
+    panel_block = report["configured_reviewer_panel"]
+    assert panel_block["panel_quality_reject_count"] == len(public_accept_rows)
+    assert panel_block["panel_missing_verdict_block_count"] == 0
+    assert panel_block["full_roster_available_count"] == len(public_accept_rows)
+
+
+def test_panel_marginal_refuses_when_no_full_roster_rows(tmp_path):
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        reviewer_panel=_unavailable_panel,
+    )
+
+    assert all(
+        row["full_roster_available"] is False for row in report["per_task_results"]
+    )
+    assert report["configured_reviewer_panel"]["full_roster_available_count"] == 0
+
+    delta = report["panel_marginal_delta_at_matched_true_accept"]
+    assert delta["status"] == "unavailable"
+    assert delta["reason"] == "no_full_roster_available_rows"
+    assert delta["full_roster_available_count"] == 0
+
+
+def test_reviewer_zero_infrastructure_failure_records_diagnostic(tmp_path):
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        reviewer_panel=_reviewer_zero_infrastructure_failure_panel,
+    )
+
+    public_accept_rows = [
+        row for row in report["per_task_results"] if row["supervisor_candidate_review_accept"]
+    ]
+    assert public_accept_rows, "fixture corpus must include at least one public-accepting candidate"
+
+    for row in public_accept_rows:
+        diagnostic = row["reviewer_infrastructure_diagnostic"]
+        assert diagnostic["failure_count"] >= 1
+        reviewer_zero = next(
+            (
+                entry for entry in diagnostic["reviewers"]
+                if entry["reviewer_id"] == "fake-reviewer-0"
+            ),
+            None,
+        )
+        assert reviewer_zero is not None
+        assert reviewer_zero["runtime"] == "cursor_sdk"
+        assert reviewer_zero["model"] == "fake-reviewer-zero-model"
+        assert reviewer_zero["failure_classification"] == "reviewer_infrastructure"
+        assert reviewer_zero["recoverable"] is True
+        assert reviewer_zero["transcript_sha256"] == "a" * 64
+        assert reviewer_zero["output_sha256"] == "b" * 64
+        diagnostic_text = json.dumps(diagnostic, sort_keys=True)
+        for forbidden in (
+            "oracle",
+            "hidden_test",
+            "final_score",
+            "expected_outcome",
+            "blocker_status",
+            "protected_path",
+        ):
+            assert forbidden not in diagnostic_text, forbidden
+
+    panel_diagnostics = report["configured_reviewer_panel"]["reviewer_infrastructure_diagnostics"]
+    assert any(
+        entry["diagnostic"].get("failure_count", 0) >= 1 for entry in panel_diagnostics
+    )
+
+
+def test_codex_only_calibration_is_labeled_and_not_full_panel(tmp_path):
+    reviewer_a, reviewer_b = _accepting_fake_reviewers()
+
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            reviewers=(reviewer_a, reviewer_b),
+            codex_only_calibration=True,
+        ),
+    )
+
+    panel_block = report["configured_reviewer_panel"]
+    assert panel_block["report_mode"] == "codex_only_calibration"
+    assert panel_block["full_panel_evidence_allowed"] is False
+    assert panel_block["codex_only_calibration"] is True
+    assert panel_block["full_roster_available_count"] == 0
+
+    for row in report["per_task_results"]:
+        assert row["codex_only_calibration"] is True
+        assert row["panel_quality_label"] == "codex_only_calibration"
+        assert row["full_roster_available"] is False
+        assert row["panel_quality_reject"] is False
+        assert row["panel_missing_verdict_block"] is False
+        assert row["supervisor_full_gate_accept"] is False
+        assert row["supervisor_full_gate_unavailable"] is True
+
+    full_gate = report["arms"]["supervisor_full_gate"]
+    assert full_gate["accepted_count"] == 0
+    assert full_gate["unavailable_count"] == report["candidate_count"]
+    assert full_gate["availability_status"] == "unavailable"
+    assert report["metric_applyable"] is False
+    assert report["improvement_claim_allowed"] is False
+    assert report["default_change_allowed"] is False
+    assert report["policy_mutated"] is False
+    assert report["gate_advanced"] is False
+    assert derive_policy_evolution_proposals_from_report(
+        report,
+        repo_root=Path.cwd(),
+        affected_gates=("execution", "outcome_review"),
+    ) == []

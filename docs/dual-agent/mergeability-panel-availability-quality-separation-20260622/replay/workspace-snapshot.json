@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "46e0cc51e816b5ea570eeb88bf83d29023d9120c9b6c64a625377250cb28178a",
+  "git": {
+    "diff_bytes": 829138,
+    "diff_sha256": "ccbc08f22796ea5e1d55ca48a27d7e7cf97090981cc00057682bf6eb03157d0f",
+    "diff_stat": ".../index.md                                       |   4 +-\n .../interactions.md                                | 173 ++++++++++++\n .../replay/manifest.json                           |  47 +++-\n .../replay/workspace-snapshot.json                 |  14 +-\n .../transcript.jsonl                               |   6 +\n .../transcript.md                                  | 173 ++++++++++++\n .../triage.md                                      |  16 +-\n supervisor/mergeability_bench.py                   | 176 +++++++++++-\n tests/test_mergeability_bench.py                   | 310 +++++++++++++++++++++\n 9 files changed, 889 insertions(+), 30 deletions(-)",
+    "head": "3577bacf",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "3577bacf",
+    "status_short": "M docs/dual-agent/swebench-official-oracle-runner-filtered-smoke-20260622/index.md\n M docs/dual-agent/swebench-official-oracle-runner-filtered-smoke-20260622/interactions.md\n M docs/dual-agent/swebench-official-oracle-runner-filtered-smoke-20260622/replay/manifest.json\n M docs/dual-agent/swebench-official-oracle-runner-filtered-smoke-20260622/replay/workspace-snapshot.json\n M docs/dual-agent/swebench-official-oracle-runner-filtered-smoke-20260622/transcript.jsonl\n M docs/dual-agent/swebench-official-oracle-runner-filtered-smoke-20260622/transcript.md\n M docs/dual-agent/swebench-official-oracle-runner-filtered-smoke-20260622/triage.md\n M supervisor/mergeability_bench.py\n M tests/test_mergeability_bench.py\n?? .scratch/auto-evolution-loop-current-demo-20260618/\n?? .scratch/comfy-cloud-prototype-visuals/\n?? .scratch/comfy-cloud-prototype-workflow-request.json\n?? .scratch/comfy-cloud-prototype-workflow-result.json\n?? .scratch/mergeability-calibration-pilot-sample/\n?? .scratch/mergeability-debug/\n?? .scratch/mergeability-debug2/\n?? .scratch/mergeability-debug3/\n?? .scratch/mergeability-heldout-final-sample/\n?? .scratch/mergeability-independent-supervisor-arm-sample/\n?? .scratch/swebench-pro-mergeability-bridge-20260620/\n?? docs/dual-agent/auto-evolution-loop-current-demo-20260618/\n?? docs/dual-agent/comfy-cloud-polished-first-run-prototype-20260618/\n?? docs/dual-agent/comfy-cloud-polished-first-run-prototype-workflow-20260618/\n?? docs/dual-agent/mergeability-independent-supervisor-arm-20260619/\n?? docs/dual-agent/mergeability-panel-availability-quality-separation-20260622/\n?? docs/product-strategy/\n?? docs/testing/comfy-cloud-guided-first-workflow-coverage-index.md"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "5ac9ef315745699fbbbbe93d82657a3ac4efeffc570faaab217bb9a17c1df27b",
+    "implementation_plan": "12a137324ddfbb6ba404da7b8dac144d695eb2001993542df5483118ac7382c9",
+    "issues": "2204cc6bbe785c2c65a942854ed4901a7b51c76d273b152fd0599812e700299f",
+    "prd": "b26bebe3c96eb7f59669376541b0f361a7e95e525cfc075474f8534d8f206143",
+    "tdd_plan": "c51dfd87709c38ba95b752fa9a23e9202a9c704310fb704a7409aafaf12c8ba5"
+  },
+  "status": "captured"
+}

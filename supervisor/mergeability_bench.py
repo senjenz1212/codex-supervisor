@@ -819,6 +819,10 @@ def run_paired_acceptance_pilot(
         )
     if reviewer_panel_mode == "configured" and reviewer_panel is None:
         reviewer_panel = build_configured_reviewer_panel(configured_reviewer_panel_options)
+    codex_only_calibration_active = bool(
+        configured_reviewer_panel_options is not None
+        and getattr(configured_reviewer_panel_options, "codex_only_calibration", False)
+    )
     started = time.monotonic()
     bench_root_path = Path(bench_root).expanduser().resolve()
     output_path = Path(output_dir).expanduser() if output_dir is not None else None
@@ -861,6 +865,7 @@ def run_paired_acceptance_pilot(
             candidate=candidate,
             public_review=supervisor_review,
             reviewer_panel=reviewer_panel,
+            codex_only_calibration=codex_only_calibration_active,
         )
         oracle_accept = float(result["final_score"]) >= 1.0
         metadata_accept_all_baseline_accept = _baseline_accepts(candidate)
@@ -966,6 +971,18 @@ def run_paired_acceptance_pilot(
             ),
             "s_probe_vs_s_full_disagreement": bool(
                 full_gate_review.get("s_probe_vs_s_full_disagreement")
+            ),
+            "panel_quality_label": str(
+                full_gate_review.get("panel_quality_label") or "panel_missing_verdict_block"
+            ),
+            "full_roster_available": bool(full_gate_review.get("full_roster_available")),
+            "panel_quality_reject": bool(full_gate_review.get("panel_quality_reject")),
+            "panel_missing_verdict_block": bool(
+                full_gate_review.get("panel_missing_verdict_block")
+            ),
+            "codex_only_calibration": bool(full_gate_review.get("codex_only_calibration")),
+            "reviewer_infrastructure_diagnostic": dict(
+                full_gate_review.get("reviewer_infrastructure_diagnostic") or {}
             ),
         }
         row["is_no_regression_failure"] = bool(
@@ -1102,9 +1119,13 @@ def run_paired_acceptance_pilot(
         baseline=single_agent_baseline,
         supervisor=supervisor_full_gate,
     )
+    full_roster_available_count = sum(
+        1 for row in rows if bool(row.get("full_roster_available"))
+    )
     panel_marginal_delta = _panel_marginal_delta_at_matched_true_accept(
         public_review=supervisor_candidate_review,
         full_gate=supervisor_full_gate,
+        full_roster_available_count=full_roster_available_count,
     )
     metric_splits = _metric_splits(
         rows,
@@ -1196,6 +1217,11 @@ def run_paired_acceptance_pilot(
         "disagreements": disagreements,
         "configured_reviewer_panel": {
             "mode": reviewer_panel_mode,
+            "report_mode": (
+                "codex_only_calibration" if codex_only_calibration_active else "full_panel"
+            ),
+            "full_panel_evidence_allowed": not codex_only_calibration_active,
+            "codex_only_calibration": codex_only_calibration_active,
             "configured_panel_active": (
                 reviewer_panel_mode == "configured"
                 and configured_reviewer_panel_options is not None
@@ -1211,6 +1237,27 @@ def run_paired_acceptance_pilot(
             "unavailable_full_gate_count": sum(
                 1 for row in rows if bool(row.get("supervisor_full_gate_unavailable"))
             ),
+            "full_roster_available_count": full_roster_available_count,
+            "panel_quality_reject_count": sum(
+                1 for row in rows if bool(row.get("panel_quality_reject"))
+            ),
+            "panel_missing_verdict_block_count": sum(
+                1 for row in rows if bool(row.get("panel_missing_verdict_block"))
+            ),
+            "reviewer_infrastructure_diagnostics": [
+                {
+                    "task_id": row["task_id"],
+                    "candidate_id": row["candidate_id"],
+                    "diagnostic": dict(row.get("reviewer_infrastructure_diagnostic") or {}),
+                }
+                for row in rows
+                if int(
+                    (row.get("reviewer_infrastructure_diagnostic") or {}).get(
+                        "failure_count", 0
+                    )
+                )
+                > 0
+            ],
         },
         "per_task_results": rows,
         "cost_usd": 0.0,
@@ -2537,12 +2584,99 @@ def review_mergeability_candidate_publicly(
     }
 
 
+_RECOVERABLE_REVIEWER_FAILURE_CLASSIFICATIONS = frozenset({
+    "reviewer_infrastructure",
+    "reviewer_infrastructure_unavailable",
+    "reviewer_invocation_failed",
+    "reviewer_runtime_timeout",
+})
+
+
+def _classify_panel_quality_label(
+    *,
+    panel: Mapping[str, Any],
+    leaks: Sequence[str],
+    public_accept: bool,
+    codex_only_calibration: bool,
+) -> tuple[str, bool]:
+    """Return ``(panel_quality_label, full_roster_available)``.
+
+    The label separates infrastructure unavailability (`panel_missing_verdict_block`)
+    from quality rejection (`panel_quality_reject`) at the mergeability report
+    boundary. Codex-only calibration mode overrides both because the partial
+    roster cannot stand in for full-panel evidence.
+    """
+
+    if codex_only_calibration:
+        return ("codex_only_calibration", False)
+    if leaks:
+        return ("panel_oracle_isolation_violation", False)
+    if not public_accept:
+        return ("panel_public_short_circuit", False)
+    available = bool(panel.get("available"))
+    if not available:
+        return ("panel_missing_verdict_block", False)
+    missing_reviewers = list(panel.get("missing_reviewers") or [])
+    if missing_reviewers:
+        return ("panel_missing_verdict_block", False)
+    decision = str(panel.get("decision") or "unavailable")
+    if decision == "accept":
+        return ("panel_quality_accept", True)
+    return ("panel_quality_reject", True)
+
+
+def _build_reviewer_infrastructure_diagnostic(
+    panel: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Summarise per-reviewer infrastructure failures.
+
+    The diagnostic carries only fields that are safe to surface in public
+    reports: reviewer identity, runtime, model, failure classification,
+    recoverability hint, and transcript/output hashes. Oracle material, hidden
+    tests, and protected-path content are never included.
+    """
+
+    reviewers: list[dict[str, Any]] = []
+    failure_count = 0
+    recoverable_count = 0
+    for summary in panel.get("reviewer_results") or []:
+        if not isinstance(summary, Mapping):
+            continue
+        classification = summary.get("failure_classification")
+        if classification is None and bool(summary.get("verdict_present")):
+            continue
+        if classification is None and not bool(summary.get("verdict_present")):
+            classification = "reviewer_missing_verdict"
+        classification_str = str(classification)
+        recoverable = classification_str in _RECOVERABLE_REVIEWER_FAILURE_CLASSIFICATIONS
+        reviewers.append({
+            "reviewer_id": str(summary.get("reviewer_id") or "unknown-reviewer"),
+            "runtime": str(summary.get("runtime") or "unknown"),
+            "model": summary.get("model"),
+            "failure_classification": classification_str,
+            "recoverable": recoverable,
+            "transcript_sha256": summary.get("transcript_sha256"),
+            "output_sha256": summary.get("output_sha256"),
+        })
+        failure_count += 1
+        if recoverable:
+            recoverable_count += 1
+    return {
+        "schema_version": "supervisor-reviewer-infrastructure-diagnostic/v1",
+        "reviewers": reviewers,
+        "failure_count": failure_count,
+        "recoverable_count": recoverable_count,
+        "missing_reviewers": list(panel.get("missing_reviewers") or []),
+    }
+
+
 def _review_mergeability_candidate_full_gate(
     *,
     task: MergeabilityTask,
     candidate: MergeabilityCandidate,
     public_review: Mapping[str, Any],
     reviewer_panel: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None,
+    codex_only_calibration: bool = False,
 ) -> dict[str, Any]:
     packet = _build_full_gate_reviewer_packet(
         task=task,
@@ -2565,14 +2699,37 @@ def _review_mergeability_candidate_full_gate(
         raw_panel = panel_fn(packet)
     panel = _normalise_reviewer_panel_result(raw_panel)
     reviewer_rationales = _reviewer_rationales_from_results(panel["reviewer_results"])
-    unavailable = bool(leaks) or not panel["available"]
-    panel_accept = bool(panel["available"] and panel["decision"] == "accept")
+    missing_reviewers = bool(panel.get("missing_reviewers"))
+    unavailable = (
+        bool(leaks)
+        or not panel["available"]
+        or missing_reviewers
+        or codex_only_calibration
+    )
+    panel_accept = bool(
+        panel["available"]
+        and panel["decision"] == "accept"
+        and not codex_only_calibration
+    )
     accept = bool(public_accept and panel_accept and not unavailable)
+    panel_quality_label, full_roster_available = _classify_panel_quality_label(
+        panel=panel,
+        leaks=leaks,
+        public_accept=public_accept,
+        codex_only_calibration=codex_only_calibration,
+    )
+    reviewer_infrastructure_diagnostic = _build_reviewer_infrastructure_diagnostic(panel)
     gaming_flags = set(public_review.get("gaming_flags") or [])
     if leaks:
         gaming_flags.add("oracle_isolation_violation")
     if unavailable:
         gaming_flags.add("reviewer_panel_unavailable")
+    if panel_quality_label == "panel_missing_verdict_block":
+        gaming_flags.add("panel_missing_verdict_block")
+    if panel_quality_label == "panel_quality_reject":
+        gaming_flags.add("panel_quality_reject")
+    if codex_only_calibration:
+        gaming_flags.add("codex_only_calibration")
     packet_ref = {
         "packet_id": packet["packet_id"],
         "packet_sha256": packet["packet_sha256"],
@@ -2609,6 +2766,12 @@ def _review_mergeability_candidate_full_gate(
         "gaming_flags": sorted(gaming_flags),
         "decision_source": "supervisor_candidate_review+independent_reviewer_panel",
         "oracle_coupled": False,
+        "panel_quality_label": panel_quality_label,
+        "full_roster_available": full_roster_available,
+        "panel_quality_reject": panel_quality_label == "panel_quality_reject",
+        "panel_missing_verdict_block": panel_quality_label == "panel_missing_verdict_block",
+        "codex_only_calibration": codex_only_calibration,
+        "reviewer_infrastructure_diagnostic": reviewer_infrastructure_diagnostic,
     }
 
 
@@ -2935,6 +3098,7 @@ class ConfiguredReviewerPanelOptions:
     gate: str = SUPERVISOR_CONFIGURED_PANEL_GATE
     round_index: int = 0
     low_confidence_threshold: float = 0.0
+    codex_only_calibration: bool = False
 
 
 def build_configured_reviewer_panel(
@@ -4085,13 +4249,21 @@ def _panel_marginal_delta_at_matched_true_accept(
     *,
     public_review: Mapping[str, Any],
     full_gate: Mapping[str, Any],
+    full_roster_available_count: int = 0,
 ) -> dict[str, Any]:
+    if full_roster_available_count <= 0:
+        return {
+            "status": "unavailable",
+            "reason": "no_full_roster_available_rows",
+            "full_roster_available_count": full_roster_available_count,
+        }
     unavailable_count = int(full_gate.get("unavailable_count") or 0)
     if unavailable_count:
         return {
             "status": "unavailable",
             "reason": "reviewer_panel_unavailable",
             "unavailable_count": unavailable_count,
+            "full_roster_available_count": full_roster_available_count,
         }
     denominator = int(full_gate.get("true_accept_denominator") or 0)
     if denominator < 2:
