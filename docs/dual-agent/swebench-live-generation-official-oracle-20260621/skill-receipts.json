@@ -1,0 +1,35 @@
+{
+  "task_id": "swebench-live-generation-official-oracle-20260621",
+  "receipts": [
+    {
+      "stage": "to_prd",
+      "skill": "/Users/sam.zhang/.codex/skills/to-prd/SKILL.md",
+      "artifact": "prd.md",
+      "status": "accepted"
+    },
+    {
+      "stage": "prd_grill",
+      "skill": "/Users/sam.zhang/.codex/skills/grill-with-docs/SKILL.md",
+      "artifact": "grill-findings.md",
+      "status": "accepted"
+    },
+    {
+      "stage": "to_issues",
+      "skill": "/Users/sam.zhang/.codex/skills/to-issues/SKILL.md",
+      "artifact": "issues.md",
+      "status": "accepted"
+    },
+    {
+      "stage": "tdd",
+      "skill": "/Users/sam.zhang/.codex/skills/tdd/SKILL.md",
+      "artifact": "tdd.md",
+      "status": "accepted"
+    },
+    {
+      "stage": "tdd_grill",
+      "skill": "/Users/sam.zhang/.codex/skills/grill-with-docs/SKILL.md",
+      "artifact": "grill-findings-tdd.md",
+      "status": "accepted"
+    }
+  ]
+}

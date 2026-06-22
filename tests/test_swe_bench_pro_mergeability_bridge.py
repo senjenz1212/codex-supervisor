@@ -29,6 +29,7 @@ from supervisor.swe_bench_mergeability import (
     SwebenchProBridgeError,
     build_swe_bench_pro_public_packet,
     swebench_mergeability_fixture_runner,
+    swebench_mergeability_official_live_runner,
     swebench_mergeability_live_runner,
     swebench_mergeability_official_replay_runner,
     swebench_mergeability_replay_runner,
@@ -1662,6 +1663,183 @@ class _FakeLiveGenerator:
             "wall_clock_s": 0.5,
             "token_usage": {"input_tokens": 101, "output_tokens": 23},
         }
+
+
+def test_official_live_refuses_without_allow_live_before_generators_run(tmp_path):
+    baseline = _FailingLiveGenerator()
+    supervisor = _FailingLiveGenerator()
+    loader_calls: list[str] = []
+
+    def loader(**_kwargs):
+        loader_calls.append("loader")
+        raise AssertionError("loader should not run")
+
+    with pytest.raises(SwebenchMergeabilityFixtureRunnerError, match="allow_live"):
+        swebench_mergeability_official_live_runner(
+            dataset="fixture-official",
+            dataset_split="test",
+            output_dir=tmp_path / "out",
+            baseline_generator=baseline,
+            supervisor_generator=supervisor,
+            allow_live=False,
+            max_budget_usd=1.0,
+            model="claude-opus-4-8",
+            provider="anthropic",
+            dataset_loader=loader,
+            repo_materializer=_official_materializer,
+            oracle_runner=lambda _context: {
+                "fail_to_pass_status": "pass",
+                "pass_to_pass_status": "pass",
+            },
+        )
+
+    assert loader_calls == []
+    assert baseline.calls == []
+    assert supervisor.calls == []
+
+
+def test_official_live_refuses_without_budget_before_generators_run(tmp_path):
+    baseline = _FailingLiveGenerator()
+    supervisor = _FailingLiveGenerator()
+
+    with pytest.raises(SwebenchMergeabilityFixtureRunnerError, match="max_budget_usd"):
+        swebench_mergeability_official_live_runner(
+            dataset="fixture-official",
+            dataset_split="test",
+            output_dir=tmp_path / "out",
+            baseline_generator=baseline,
+            supervisor_generator=supervisor,
+            allow_live=True,
+            max_budget_usd=0.0,
+            model="claude-opus-4-8",
+            provider="anthropic",
+            dataset_loader=lambda **_kwargs: [_official_record()],
+            repo_materializer=_official_materializer,
+            oracle_runner=lambda _context: {
+                "fail_to_pass_status": "pass",
+                "pass_to_pass_status": "pass",
+            },
+        )
+
+    assert baseline.calls == []
+    assert supervisor.calls == []
+
+
+def test_official_live_generates_matched_arms_and_reuses_official_replay(tmp_path):
+    baseline = _FakeLiveGenerator()
+    supervisor = _FakeLiveGenerator()
+
+    report = swebench_mergeability_official_live_runner(
+        dataset="fixture-official",
+        dataset_split="test",
+        output_dir=tmp_path / "out",
+        baseline_generator=baseline,
+        supervisor_generator=supervisor,
+        allow_live=True,
+        max_budget_usd=1.0,
+        model="claude-opus-4-8",
+        provider="anthropic",
+        dataset_loader=lambda **_kwargs: [_official_record()],
+        repo_materializer=_official_materializer,
+        oracle_runner=lambda _context: {
+            "fail_to_pass_status": "pass",
+            "pass_to_pass_status": "pass",
+        },
+        oracle_adapter_kind="deterministic_test_adapter",
+    )
+
+    assert report["schema_version"] == "supervisor-swebench-official-live-report/v1"
+    assert report["status"] == "completed"
+    assert report["official_replay_used"] is True
+    assert report["live_generation_used"] is True
+    assert report["live_fetch_used"] is False
+    assert Path(report["generated_predictions_path"]).exists()
+    assert report["official_replay_report"]["schema_version"] == (
+        "supervisor-swebench-official-replay-report/v1"
+    )
+    assert report["bridge_report"]["metric_applyable"] is False
+    assert report["metric_applyable"] is False
+    assert report["policy_mutated"] is False
+
+    arms = report["live_generation_arms"]
+    assert set(arms) == {"baseline", "supervisor"}
+    assert arms["baseline"]["model"] == arms["supervisor"]["model"] == "claude-opus-4-8"
+    assert arms["baseline"]["provider"] == arms["supervisor"]["provider"] == "anthropic"
+    assert arms["baseline"]["budget_usd"] == arms["supervisor"]["budget_usd"] == 1.0
+    assert arms["baseline"]["timeout_s"] == arms["supervisor"]["timeout_s"] == 30.0
+    assert arms["baseline"]["prompt_hash"] == arms["supervisor"]["prompt_hash"]
+    assert arms["baseline"]["candidate_artifact_hash"]
+    assert arms["supervisor"]["candidate_artifact_hash"]
+    assert report["evaluator_hash"] == report["official_replay_report"]["report_sha256"]
+
+
+def test_official_live_generator_inputs_exclude_hidden_oracle(tmp_path):
+    baseline = _FakeLiveGenerator()
+    supervisor = _FakeLiveGenerator()
+
+    swebench_mergeability_official_live_runner(
+        dataset="fixture-official",
+        dataset_split="test",
+        output_dir=tmp_path / "out",
+        baseline_generator=baseline,
+        supervisor_generator=supervisor,
+        allow_live=True,
+        max_budget_usd=1.0,
+        model="claude-opus-4-8",
+        provider="anthropic",
+        dataset_loader=lambda **_kwargs: [_official_record()],
+        repo_materializer=_official_materializer,
+        oracle_runner=lambda _context: {
+            "fail_to_pass_status": "pass",
+            "pass_to_pass_status": "pass",
+        },
+    )
+
+    for generator in (baseline, supervisor):
+        assert len(generator.calls) == 1
+        encoded = json.dumps(generator.calls[0], sort_keys=True)
+        for forbidden in (
+            "SECRET GOLD PATCH",
+            "SECRET TEST PATCH",
+            "FAIL_TO_PASS",
+            "PASS_TO_PASS",
+            "final_score",
+            "oracle_accept",
+        ):
+            assert forbidden not in encoded
+        public_worktree = Path(generator.calls[0]["public_worktree_ref"])
+        assert (public_worktree / "parser.py").exists()
+        assert not (public_worktree / "hidden").exists()
+
+
+def test_official_live_budget_overrun_is_unavailable_not_accepted(tmp_path):
+    report = swebench_mergeability_official_live_runner(
+        dataset="fixture-official",
+        dataset_split="test",
+        output_dir=tmp_path / "out",
+        baseline_generator=_FakeLiveGenerator(cost_usd=1.5),
+        supervisor_generator=_FakeLiveGenerator(),
+        allow_live=True,
+        max_budget_usd=1.0,
+        model="claude-opus-4-8",
+        provider="anthropic",
+        dataset_loader=lambda **_kwargs: [_official_record()],
+        repo_materializer=_official_materializer,
+        oracle_runner=lambda _context: {
+            "fail_to_pass_status": "pass",
+            "pass_to_pass_status": "pass",
+        },
+    )
+
+    assert report["status"] == "unavailable"
+    assert report["unavailable_reason"] == "budget_exceeded"
+    assert "budget_exceeded" in report["gaming_flags"]
+    assert report["live_generation_arms"]["baseline"]["status"] == "unavailable"
+    assert report["live_generation_arms"]["baseline"]["accepted"] is False
+    assert "official_replay_report" not in report
+    assert report["metric_applyable"] is False
+    assert report["improvement_claim_allowed"] is False
+    assert report["policy_mutated"] is False
 
 
 def test_live_runner_refuses_without_allow_live_before_generators_run(tmp_path):

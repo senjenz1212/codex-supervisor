@@ -744,6 +744,9 @@ SWEBENCH_MERGEABILITY_LIVE_REPORT_SCHEMA_VERSION = (
 SWEBENCH_MERGEABILITY_OFFICIAL_REPLAY_REPORT_SCHEMA_VERSION = (
     "supervisor-swebench-official-replay-report/v1"
 )
+SWEBENCH_MERGEABILITY_OFFICIAL_LIVE_REPORT_SCHEMA_VERSION = (
+    "supervisor-swebench-official-live-report/v1"
+)
 SWEBENCH_MERGEABILITY_REVIEWER_PACKET_SCHEMA_VERSION = (
     "supervisor-swebench-mergeability-reviewer-packet/v1"
 )
@@ -2214,6 +2217,378 @@ def _default_official_repo_materializer(
             f"{checkout_result.stderr_tail or checkout_result.stdout_tail}"
         )
     return output_path
+
+
+def swebench_mergeability_official_live_runner(
+    *,
+    dataset: str,
+    dataset_split: str,
+    output_dir: str | Path,
+    baseline_generator: Callable[[Mapping[str, Any]], Mapping[str, Any]],
+    supervisor_generator: Callable[[Mapping[str, Any]], Mapping[str, Any]],
+    allow_live: bool,
+    max_budget_usd: float,
+    model: str,
+    provider: str,
+    allow_dataset_fetch: bool = False,
+    dataset_loader: Callable[..., Sequence[Mapping[str, Any]]] | None = None,
+    repo_materializer: Callable[..., str | Path] | None = None,
+    oracle_runner: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+    oracle_adapter_kind: str = DEFAULT_OFFICIAL_ORACLE_ADAPTER_KIND,
+    timeout_s: float = 30.0,
+    reviewer_panel: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+    reviewer_panel_mode: str = "custom",
+    configured_reviewer_panel_options: ConfiguredReviewerPanelOptions | None = None,
+) -> dict[str, Any]:
+    """Generate matched live candidates, then evaluate via official replay."""
+    if not allow_live:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "refusing official SWE-bench live run without allow_live=true"
+        )
+    budget = float(max_budget_usd or 0.0)
+    if budget <= 0:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "refusing official SWE-bench live run without max_budget_usd > 0"
+        )
+    if dataset_loader is None and not allow_dataset_fetch:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "refusing official SWE-bench live run without allow_dataset_fetch "
+            "or an injected dataset_loader"
+        )
+    if oracle_runner is None:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "oracle_runner is required for official SWE-bench live run"
+        )
+
+    started = time.monotonic()
+    output_path = Path(output_dir).expanduser()
+    output_path.mkdir(parents=True, exist_ok=True)
+    loader = dataset_loader or _default_official_dataset_loader
+    materializer = repo_materializer or _default_official_repo_materializer
+    raw_records = loader(dataset=dataset, split=dataset_split)
+    if not isinstance(raw_records, Sequence) or isinstance(raw_records, (str, bytes)):
+        raw_records = list(raw_records)  # type: ignore[arg-type]
+    official_records = [dict(record) for record in raw_records]
+    if not official_records:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "official SWE-bench live loader returned no records"
+        )
+
+    arm_config = {
+        "model": str(model or ""),
+        "provider": str(provider or ""),
+        "budget_usd": budget,
+        "timeout_s": float(timeout_s),
+    }
+    live_arms = {
+        "baseline": _empty_live_generation_arm("baseline", arm_config),
+        "supervisor": _empty_live_generation_arm("supervisor", arm_config),
+    }
+    patch_dir = output_path / "official-live-patches"
+    patch_dir.mkdir(parents=True, exist_ok=True)
+    materialized_dir = output_path / "official-live-public-bundles"
+    materialized_dir.mkdir(parents=True, exist_ok=True)
+    predictions: list[dict[str, Any]] = []
+
+    for record in official_records:
+        public_record = _official_public_record(record)
+        instance_id = str(public_record.get("instance_id") or "")
+        public_bundle = materializer(
+            record=public_record,
+            output_dir=materialized_dir / _safe_artifact_fragment(instance_id),
+        )
+        public_bundle_path = Path(public_bundle).expanduser().resolve()
+        if not public_bundle_path.exists():
+            raise SwebenchMergeabilityFixtureRunnerError(
+                f"repo_materializer returned missing public bundle: {public_bundle_path}"
+            )
+
+        for arm, generator in (
+            ("baseline", baseline_generator),
+            ("supervisor", supervisor_generator),
+        ):
+            generator_input = _build_official_live_generator_input(
+                public_record=public_record,
+                public_bundle=public_bundle_path,
+                arm=arm,
+                config=arm_config,
+                public_root=(
+                    output_path
+                    / "official-live-generator-inputs"
+                    / _safe_artifact_fragment(instance_id)
+                    / arm
+                ),
+            )
+            generation_started = time.monotonic()
+            raw_result = generator(generator_input)
+            measured_wall_clock = time.monotonic() - generation_started
+            generation = _normalise_swebench_live_generation_result(
+                raw_result,
+                default_candidate_id=f"{arm}-{instance_id}",
+                measured_wall_clock_s=measured_wall_clock,
+            )
+            record_payload = _live_generation_record(
+                arm=arm,
+                instance_id=instance_id,
+                config=arm_config,
+                generator_input=generator_input,
+                generation=generation,
+                patch_dir=patch_dir,
+            )
+            live_arms[arm]["candidates"].append(record_payload)
+            live_arms[arm]["cost_usd"] = round(
+                float(live_arms[arm]["cost_usd"])
+                + float(record_payload["cost_usd"]),
+                6,
+            )
+            live_arms[arm]["wall_clock_s"] = round(
+                float(live_arms[arm]["wall_clock_s"])
+                + float(record_payload["wall_clock_s"]),
+                6,
+            )
+            live_arms[arm]["prompt_hash"] = (
+                live_arms[arm]["prompt_hash"] or record_payload["prompt_hash"]
+            )
+            live_arms[arm]["generator_input_hash"] = (
+                live_arms[arm]["generator_input_hash"]
+                or record_payload["generator_input_hash"]
+            )
+            live_arms[arm]["token_usage"] = (
+                live_arms[arm]["token_usage"]
+                or dict(record_payload["token_usage"])
+            )
+            live_arms[arm]["candidate_artifact_hash"] = record_payload[
+                "candidate_artifact_hash"
+            ]
+
+            if float(live_arms[arm]["cost_usd"]) > budget:
+                live_arms[arm]["status"] = "unavailable"
+                live_arms[arm]["accepted"] = False
+                live_arms[arm]["unavailable_reason"] = "budget_exceeded"
+                report = _official_live_unavailable_report(
+                    dataset=dataset,
+                    dataset_split=dataset_split,
+                    output_path=output_path,
+                    started=started,
+                    reason="budget_exceeded",
+                    arms=live_arms,
+                    arm_config=arm_config,
+                    gaming_flags=("budget_exceeded",),
+                )
+                _write_official_live_report(output_path, report)
+                return report
+
+            prediction: dict[str, Any] = {
+                "instance_id": instance_id,
+                "candidate_id": record_payload["candidate_id"],
+                "model_patch": generation["model_patch"],
+            }
+            explicit_baseline_receipt = generation.get("single_agent_baseline_decision")
+            if not isinstance(explicit_baseline_receipt, Mapping):
+                explicit_baseline_receipt = generation.get("baseline_decision")
+            if isinstance(explicit_baseline_receipt, Mapping):
+                prediction["single_agent_baseline_decision"] = dict(
+                    explicit_baseline_receipt
+                )
+            elif arm == "baseline" and isinstance(generation.get("accept"), bool):
+                prediction["single_agent_baseline_decision"] = {
+                    "candidate_id": record_payload["candidate_id"],
+                    "accept": bool(generation["accept"]),
+                    "decision_source": "official_live_single_agent_generation",
+                    "candidate_artifact_hash": record_payload[
+                        "candidate_artifact_hash"
+                    ],
+                    "producer": {
+                        "model": arm_config["model"],
+                        "provider": arm_config["provider"],
+                        "runner_label": "swebench-official-live-baseline-generator",
+                    },
+                    "prompt_sha256": record_payload["prompt_hash"],
+                }
+            predictions.append(prediction)
+
+    predictions_path = output_path / "official_live_predictions.jsonl"
+    predictions_path.write_text(
+        "\n".join(json.dumps(item, sort_keys=True) for item in predictions) + "\n",
+        encoding="utf-8",
+    )
+
+    official_replay_report = swebench_mergeability_official_replay_runner(
+        dataset=dataset,
+        dataset_split=dataset_split,
+        predictions_path=predictions_path,
+        output_dir=output_path / "official-replay",
+        allow_dataset_fetch=allow_dataset_fetch,
+        dataset_loader=lambda **_kwargs: official_records,
+        repo_materializer=materializer,
+        oracle_runner=oracle_runner,
+        oracle_adapter_kind=oracle_adapter_kind,
+        reviewer_panel=reviewer_panel,
+        reviewer_panel_mode=reviewer_panel_mode,
+        configured_reviewer_panel_options=configured_reviewer_panel_options,
+        timeout_s=timeout_s,
+    )
+    for arm in live_arms.values():
+        arm["status"] = "completed"
+        arm["accepted"] = False
+        arm["evaluated_by_official_replay"] = True
+
+    report: dict[str, Any] = {
+        "schema_version": SWEBENCH_MERGEABILITY_OFFICIAL_LIVE_REPORT_SCHEMA_VERSION,
+        "status": "completed",
+        "unavailable_reason": "",
+        "dataset": str(dataset),
+        "dataset_split": str(dataset_split),
+        "allow_live": True,
+        "allow_dataset_fetch": bool(allow_dataset_fetch),
+        "official_replay_used": True,
+        "live_generation_used": True,
+        "live_fetch_used": False,
+        "generated_predictions_path": str(predictions_path),
+        "generated_predictions_sha256": sha256(
+            predictions_path.read_bytes()
+        ).hexdigest(),
+        "instance_count": len(official_records),
+        "candidate_count": len(predictions),
+        "model": arm_config["model"],
+        "provider": arm_config["provider"],
+        "max_budget_usd": budget,
+        "timeout_s": float(timeout_s),
+        "live_generation_arms": live_arms,
+        "total_cost_usd": round(
+            sum(float(arm["cost_usd"]) for arm in live_arms.values()),
+            6,
+        ),
+        "oracle_adapter_kind": str(oracle_adapter_kind),
+        "official_replay_report": official_replay_report,
+        "bridge_report": official_replay_report["bridge_report"],
+        "evaluator_hash": official_replay_report["report_sha256"],
+        "metric_applyable": False,
+        "improvement_claim_allowed": False,
+        "default_change_allowed": False,
+        "policy_mutated": False,
+        "gate_advanced": False,
+        "gaming_flags": [],
+        "wall_clock_s": round(time.monotonic() - started, 6),
+    }
+    report["report_sha256"] = _sha256_json({
+        key: value for key, value in report.items() if key != "report_sha256"
+    })
+    _write_official_live_report(output_path, report)
+    return report
+
+
+def _build_official_live_generator_input(
+    *,
+    public_record: Mapping[str, Any],
+    public_bundle: Path,
+    arm: str,
+    config: Mapping[str, Any],
+    public_root: Path,
+) -> dict[str, Any]:
+    if public_root.exists():
+        shutil.rmtree(public_root)
+    _copy_public_fixture_tree(
+        public_bundle,
+        public_root,
+        protected_paths=_DEFAULT_PROTECTED_PATHS,
+    )
+    public_manifest = _public_tree_manifest(public_root)
+    stable_prompt = {
+        "instance_id": public_record["instance_id"],
+        "repo": public_record.get("repo", ""),
+        "base_commit": public_record.get("base_commit", ""),
+        "problem_statement": public_record.get("problem_statement", ""),
+        "public_checkout_ref": public_record.get("public_checkout_ref", ""),
+        "public_checkout_sha256": public_record.get("public_checkout_sha256", ""),
+        "public_worktree_manifest": public_manifest,
+    }
+    generator_input = {
+        "schema_version": "supervisor-swebench-official-live-generator-input/v1",
+        "arm": arm,
+        "instance_id": public_record["instance_id"],
+        "repo": public_record.get("repo", ""),
+        "base_commit": public_record.get("base_commit", ""),
+        "problem_statement": public_record.get("problem_statement", ""),
+        "public_checkout_ref": public_record.get("public_checkout_ref", ""),
+        "public_checkout_sha256": public_record.get("public_checkout_sha256", ""),
+        "public_worktree_ref": str(public_root),
+        "public_worktree_sha256": _sha256_json(public_manifest),
+        "public_worktree_manifest": public_manifest,
+        "protected_path_policy_count": len(_DEFAULT_PROTECTED_PATHS),
+        "protected_path_policy_sha256": _sha256_json(list(_DEFAULT_PROTECTED_PATHS)),
+        "generation_config": dict(config),
+        "prompt_hash": _sha256_json(stable_prompt),
+        "generator_input_hash": _sha256_json({
+            **stable_prompt,
+            "arm": arm,
+            "generation_config": dict(config),
+        }),
+    }
+    leaks = _scan_for_swebench_pro_oracle_refs(generator_input)
+    if leaks:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "official live generator input references forbidden oracle material: "
+            + ", ".join(leaks)
+        )
+    return generator_input
+
+
+def _official_live_unavailable_report(
+    *,
+    dataset: str,
+    dataset_split: str,
+    output_path: Path,
+    started: float,
+    reason: str,
+    arms: Mapping[str, Mapping[str, Any]],
+    arm_config: Mapping[str, Any],
+    gaming_flags: Sequence[str] = (),
+) -> dict[str, Any]:
+    report: dict[str, Any] = {
+        "schema_version": SWEBENCH_MERGEABILITY_OFFICIAL_LIVE_REPORT_SCHEMA_VERSION,
+        "status": "unavailable",
+        "unavailable_reason": reason,
+        "dataset": str(dataset),
+        "dataset_split": str(dataset_split),
+        "allow_live": True,
+        "official_replay_used": False,
+        "live_generation_used": True,
+        "live_fetch_used": False,
+        "instance_count": 0,
+        "candidate_count": sum(
+            len(arm.get("candidates") or []) for arm in arms.values()
+        ),
+        "model": str(arm_config.get("model") or ""),
+        "provider": str(arm_config.get("provider") or ""),
+        "max_budget_usd": float(arm_config.get("budget_usd") or 0.0),
+        "timeout_s": float(arm_config.get("timeout_s") or 0.0),
+        "live_generation_arms": {key: dict(value) for key, value in arms.items()},
+        "total_cost_usd": round(
+            sum(float(arm.get("cost_usd") or 0.0) for arm in arms.values()),
+            6,
+        ),
+        "metric_applyable": False,
+        "improvement_claim_allowed": False,
+        "default_change_allowed": False,
+        "policy_mutated": False,
+        "gate_advanced": False,
+        "gaming_flags": sorted(set(gaming_flags)),
+        "wall_clock_s": round(time.monotonic() - started, 6),
+        "report_path": str(output_path / "official_live_report.json"),
+    }
+    report["report_sha256"] = _sha256_json({
+        key: value for key, value in report.items() if key != "report_sha256"
+    })
+    return report
+
+
+def _write_official_live_report(output_path: Path, report: Mapping[str, Any]) -> None:
+    output_path.mkdir(parents=True, exist_ok=True)
+    (output_path / "official_live_report.json").write_text(
+        json.dumps(dict(report), sort_keys=True, indent=2, default=str),
+        encoding="utf-8",
+    )
 
 
 def swebench_mergeability_live_runner(
