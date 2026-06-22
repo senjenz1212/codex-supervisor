@@ -1,0 +1,44 @@
+[
+  {
+    "kind": "skill_run",
+    "stage": "to_prd",
+    "skill": "to-prd",
+    "status": "accepted",
+    "artifact": "docs/dual-agent/swebench-mergeability-panel-availability-preflight-20260622/prd.md"
+  },
+  {
+    "kind": "skill_run",
+    "stage": "codebase_design",
+    "skill": "codebase-design",
+    "status": "accepted",
+    "artifact": "docs/dual-agent/swebench-mergeability-panel-availability-preflight-20260622/prd.md"
+  },
+  {
+    "kind": "skill_run",
+    "stage": "prd_grill",
+    "skill": "grill-with-docs",
+    "status": "accepted",
+    "artifact": "docs/dual-agent/swebench-mergeability-panel-availability-preflight-20260622/grill-findings.md"
+  },
+  {
+    "kind": "skill_run",
+    "stage": "to_issues",
+    "skill": "to-issues",
+    "status": "accepted",
+    "artifact": "docs/dual-agent/swebench-mergeability-panel-availability-preflight-20260622/issues.md"
+  },
+  {
+    "kind": "skill_run",
+    "stage": "tdd",
+    "skill": "tdd",
+    "status": "accepted",
+    "artifact": "docs/dual-agent/swebench-mergeability-panel-availability-preflight-20260622/tdd.md"
+  },
+  {
+    "kind": "skill_run",
+    "stage": "tdd_grill",
+    "skill": "grill-with-docs",
+    "status": "accepted",
+    "artifact": "docs/dual-agent/swebench-mergeability-panel-availability-preflight-20260622/grill-findings-tdd.md"
+  }
+]

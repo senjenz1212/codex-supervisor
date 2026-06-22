@@ -1162,6 +1162,13 @@ def _strict_panel_decision(
             "reason": REVIEWER_PANEL_UNAVAILABLE_REASON,
             "reviewer_id": "",
             "reviewer_notes": "",
+            "reviewer_ids": [],
+            "available_reviewers": [],
+            "missing_reviewers": [],
+            "reviewer_results": [],
+            "panel_decision": None,
+            "full_roster_available": False,
+            "failure_classification": "uninvoked",
         }
     if not isinstance(raw, Mapping):
         raise SwebenchMergeabilityFixtureRunnerError(
@@ -1171,12 +1178,33 @@ def _strict_panel_decision(
     if "decision" in raw or "available" in raw:
         decision = str(raw.get("decision") or "").lower()
         available = bool(raw.get("available"))
-        unavailable = (not available) or decision == "unavailable"
-        accept = bool(available and decision == "accept")
         reviewer_ids = [str(item) for item in raw.get("reviewer_ids") or []]
         available_reviewers = [
             str(item) for item in raw.get("available_reviewers") or []
         ]
+        missing_reviewers = [
+            str(item) for item in raw.get("missing_reviewers") or []
+        ]
+        reviewer_results = _public_reviewer_result_summaries(
+            raw.get("reviewer_results") or []
+        )
+        full_roster_available = bool(
+            available
+            and reviewer_ids
+            and not missing_reviewers
+            and set(available_reviewers) >= set(reviewer_ids)
+        )
+        unavailable = (not full_roster_available) or decision == "unavailable"
+        accept = bool(full_roster_available and decision == "accept")
+        failure_classification = _configured_panel_failure_classification(
+            available=available,
+            decision=decision,
+            reviewer_ids=reviewer_ids,
+            missing_reviewers=missing_reviewers,
+            reviewer_results=reviewer_results,
+            full_roster_available=full_roster_available,
+            reason=str(raw.get("reason") or ""),
+        )
         reviewer_id = (
             available_reviewers[0]
             if available_reviewers
@@ -1186,12 +1214,19 @@ def _strict_panel_decision(
             "accept": accept,
             "unavailable": unavailable,
             "reason": (
-                REVIEWER_PANEL_UNAVAILABLE_REASON
+                failure_classification
                 if unavailable
                 else str(raw.get("reason") or "")
             ),
             "reviewer_id": reviewer_id,
             "reviewer_notes": str(raw.get("reviewer_notes") or ""),
+            "reviewer_ids": reviewer_ids,
+            "available_reviewers": available_reviewers,
+            "missing_reviewers": missing_reviewers,
+            "reviewer_results": reviewer_results,
+            "panel_decision": raw.get("panel_decision"),
+            "full_roster_available": full_roster_available,
+            "failure_classification": failure_classification,
         }
     unavailable = bool(raw.get("unavailable"))
     accept = bool(raw.get("accept")) and not unavailable
@@ -1205,6 +1240,148 @@ def _strict_panel_decision(
         ),
         "reviewer_id": str(raw.get("reviewer_id") or ""),
         "reviewer_notes": str(raw.get("reviewer_notes") or ""),
+        "reviewer_ids": [str(raw.get("reviewer_id") or "")] if raw.get("reviewer_id") else [],
+        "available_reviewers": [str(raw.get("reviewer_id") or "")] if raw.get("reviewer_id") and not unavailable else [],
+        "missing_reviewers": [],
+        "reviewer_results": [],
+        "panel_decision": None,
+        "full_roster_available": not unavailable,
+        "failure_classification": (
+            REVIEWER_PANEL_UNAVAILABLE_REASON if unavailable
+            else ("available" if accept else "quality_reject")
+        ),
+    }
+
+
+def _public_reviewer_result_summaries(raw_results: Any) -> list[dict[str, Any]]:
+    summaries: list[dict[str, Any]] = []
+    if not isinstance(raw_results, Sequence) or isinstance(raw_results, (str, bytes)):
+        return summaries
+    for item in raw_results:
+        if not isinstance(item, Mapping):
+            continue
+        classification = item.get("failure_classification")
+        if classification is None and not bool(item.get("verdict_present")):
+            classification = "reviewer_missing_verdict"
+        summaries.append({
+            "reviewer_id": str(item.get("reviewer_id") or "unknown-reviewer"),
+            "runtime": str(item.get("runtime") or "unknown"),
+            "model": item.get("model"),
+            "verdict_present": bool(item.get("verdict_present")),
+            "decision": str(item.get("decision") or ""),
+            "severity": str(item.get("severity") or ""),
+            "failure_classification": (
+                str(classification) if classification is not None else None
+            ),
+            "transcript_sha256": item.get("transcript_sha256"),
+            "output_sha256": item.get("output_sha256"),
+        })
+    return summaries
+
+
+def _configured_panel_failure_classification(
+    *,
+    available: bool,
+    decision: str,
+    reviewer_ids: Sequence[str],
+    missing_reviewers: Sequence[str],
+    reviewer_results: Sequence[Mapping[str, Any]],
+    full_roster_available: bool,
+    reason: str,
+) -> str:
+    if not reviewer_ids:
+        return "missing_reviewer_roster"
+    if missing_reviewers:
+        return "missing_reviewer_verdict"
+    infrastructure_failures = [
+        str(result.get("failure_classification") or "")
+        for result in reviewer_results
+        if result.get("failure_classification")
+    ]
+    if infrastructure_failures and not full_roster_available:
+        return "reviewer_infrastructure_unavailable"
+    if not available or decision == "unavailable":
+        return reason or REVIEWER_PANEL_UNAVAILABLE_REASON
+    if full_roster_available and decision in {"revise", "deny"}:
+        return "quality_reject"
+    if full_roster_available and decision == "accept":
+        return "available"
+    return REVIEWER_PANEL_UNAVAILABLE_REASON
+
+
+def _swebench_reviewer_panel_preflight(
+    reviewer_results: Sequence[Mapping[str, Any]],
+    *,
+    reviewer_panel_mode: str,
+) -> dict[str, Any]:
+    per_candidate = [dict(result) for result in reviewer_results]
+    configured = reviewer_panel_mode == "configured"
+    available_reviewers = sorted({
+        reviewer
+        for result in per_candidate
+        for reviewer in (result.get("available_reviewers") or [])
+    })
+    missing_reviewers = sorted({
+        reviewer
+        for result in per_candidate
+        for reviewer in (result.get("missing_reviewers") or [])
+    })
+    classifications = sorted({
+        str(result.get("failure_classification") or "")
+        for result in per_candidate
+        if str(result.get("failure_classification") or "")
+    })
+    transcript_hashes = sorted({
+        str(summary.get("transcript_sha256") or "")
+        for result in per_candidate
+        for summary in (result.get("reviewer_results") or [])
+        if str(summary.get("transcript_sha256") or "")
+    })
+    output_hashes = sorted({
+        str(summary.get("output_sha256") or "")
+        for result in per_candidate
+        for summary in (result.get("reviewer_results") or [])
+        if str(summary.get("output_sha256") or "")
+    })
+    full_roster_available_count = sum(
+        1 for result in per_candidate if bool(result.get("full_roster_available"))
+    )
+    unavailable_count = sum(
+        1 for result in per_candidate if bool(result.get("unavailable"))
+    )
+    if not configured:
+        aggregate = "uninvoked"
+    elif any(c == "missing_reviewer_roster" for c in classifications):
+        aggregate = "missing_reviewer_roster"
+    elif missing_reviewers:
+        aggregate = "missing_reviewer_verdict"
+    elif any(c == "reviewer_infrastructure_unavailable" for c in classifications):
+        aggregate = "reviewer_infrastructure_unavailable"
+    elif per_candidate and full_roster_available_count == len(per_candidate):
+        aggregate = (
+            "quality_reject"
+            if any(c == "quality_reject" for c in classifications)
+            else "available"
+        )
+    else:
+        aggregate = REVIEWER_PANEL_UNAVAILABLE_REASON
+    return {
+        "schema_version": "supervisor-swebench-reviewer-panel-preflight/v1",
+        "mode": reviewer_panel_mode,
+        "configured_panel_invoked": configured,
+        "candidate_count": len(per_candidate),
+        "full_roster_available": bool(
+            configured and per_candidate and full_roster_available_count == len(per_candidate)
+        ),
+        "full_roster_available_count": full_roster_available_count,
+        "unavailable_count": unavailable_count,
+        "available_reviewers": available_reviewers,
+        "missing_reviewers": missing_reviewers,
+        "failure_classification": aggregate,
+        "failure_classifications": classifications,
+        "transcript_sha256s": transcript_hashes,
+        "output_sha256s": output_hashes,
+        "reviewer_results": per_candidate,
     }
 
 
@@ -1217,6 +1394,7 @@ def swebench_mergeability_fixture_runner(
     public_commands: Sequence[Sequence[str]],
     output_dir: Path,
     reviewer_panel: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+    reviewer_panel_mode: str = "custom",
     protected_paths: Sequence[str] | None = None,
     timeout_s: float = 30.0,
     oracle_runner: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
@@ -1410,6 +1588,13 @@ def swebench_mergeability_fixture_runner(
             "reason": panel_decision["reason"],
             "reviewer_id": panel_decision["reviewer_id"],
             "reviewer_notes": panel_decision["reviewer_notes"],
+            "reviewer_ids": list(panel_decision["reviewer_ids"]),
+            "available_reviewers": list(panel_decision["available_reviewers"]),
+            "missing_reviewers": list(panel_decision["missing_reviewers"]),
+            "reviewer_results": list(panel_decision["reviewer_results"]),
+            "panel_decision": panel_decision["panel_decision"],
+            "full_roster_available": panel_decision["full_roster_available"],
+            "failure_classification": panel_decision["failure_classification"],
         })
 
         if panel_decision["unavailable"]:
@@ -1636,6 +1821,11 @@ def swebench_mergeability_fixture_runner(
     runner_report: dict[str, Any] = {
         "schema_version": SWEBENCH_MERGEABILITY_FIXTURE_REPORT_SCHEMA_VERSION,
         "instance_id": instance_id,
+        "reviewer_panel_mode": reviewer_panel_mode,
+        "configured_reviewer_panel_preflight": _swebench_reviewer_panel_preflight(
+            reviewer_results,
+            reviewer_panel_mode=reviewer_panel_mode,
+        ),
         "frozen_decisions": frozen_decisions_payload,
         "frozen_decisions_path": str(frozen_decisions_path),
         "oracle_outputs_path": str(oracle_outputs_path),
@@ -1837,6 +2027,7 @@ def swebench_mergeability_replay_runner(
             public_commands=item["public_commands"],
             output_dir=instance_output_dir,
             reviewer_panel=reviewer_panel,
+            reviewer_panel_mode=reviewer_panel_mode,
             protected_paths=item["protected_paths"],
             timeout_s=timeout_s,
             oracle_runner=oracle_runner,
@@ -1919,6 +2110,11 @@ def swebench_mergeability_replay_runner(
         "public_command_count": aggregate_public_command_count,
         "hidden_oracle_excluded": True,
     }
+    combined_reviewer_results = [
+        result
+        for instance_report in instance_reports
+        for result in (instance_report.get("independent_reviewer_results") or [])
+    ]
     report: dict[str, Any] = {
         "schema_version": SWEBENCH_MERGEABILITY_REPLAY_REPORT_SCHEMA_VERSION,
         "manifest_path": manifest["manifest_path"],
@@ -1927,6 +2123,10 @@ def swebench_mergeability_replay_runner(
         "candidate_count": len(combined_candidate_artifacts),
         "s_probe_execution_substrate": s_probe_execution_substrate,
         "reviewer_panel_mode": reviewer_panel_mode,
+        "configured_reviewer_panel_preflight": _swebench_reviewer_panel_preflight(
+            combined_reviewer_results,
+            reviewer_panel_mode=reviewer_panel_mode,
+        ),
         "oracle_adapter_kind": str(oracle_adapter_kind),
         "instance_reports": instance_reports,
         "bridge_report": bridge_report,
@@ -2205,6 +2405,10 @@ def swebench_mergeability_official_replay_runner(
         "label_validation": label_validation,
         "hidden_field_leak_check": leak_check,
         "metrics_unavailable_reasons": unavailable_reasons,
+        "configured_reviewer_panel_preflight": replay_report_for_output.get(
+            "configured_reviewer_panel_preflight",
+            {},
+        ),
         "replay_report": replay_report_for_output,
         "bridge_report": replay_report_for_output["bridge_report"],
         "metric_applyable": False,

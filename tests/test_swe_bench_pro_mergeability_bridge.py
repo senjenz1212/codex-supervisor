@@ -1339,15 +1339,192 @@ def test_replay_runner_accepts_configured_style_panel_result(tmp_path):
         manifest_path=manifest_path,
         output_dir=tmp_path / "out",
         reviewer_panel=configured_style_panel,
+        reviewer_panel_mode="configured",
     )
 
     assert calls == ["real-good", "real-bad"]
     rows = report["bridge_report"]["per_row_results"]
     assert all(row["s_full_unavailable"] is False for row in rows)
     assert all(row["s_full_accept"] is True for row in rows)
+    preflight = report["configured_reviewer_panel_preflight"]
+    assert preflight["full_roster_available"] is True
+    assert preflight["failure_classification"] == "available"
+    assert preflight["available_reviewers"] == ["independent-reviewer-0"]
     assert report["instance_reports"][0]["independent_reviewer_results"][0]["reviewer_id"] == (
         "independent-reviewer-0"
     )
+
+
+def test_replay_runner_unconfigured_panel_preflight_reports_uninvoked(tmp_path):
+    manifest_path = _write_replay_manifest(tmp_path)
+
+    report = swebench_mergeability_replay_runner(
+        manifest_path=manifest_path,
+        output_dir=tmp_path / "out",
+    )
+
+    preflight = report["configured_reviewer_panel_preflight"]
+    assert preflight["mode"] == "custom"
+    assert preflight["configured_panel_invoked"] is False
+    assert preflight["full_roster_available"] is False
+    assert preflight["failure_classification"] == "uninvoked"
+    assert all(
+        row["s_full_unavailable"]
+        for row in report["bridge_report"]["per_row_results"]
+    )
+
+
+def test_replay_runner_configured_missing_reviewer_keeps_s_full_unavailable(tmp_path):
+    manifest_path = _write_replay_manifest(tmp_path)
+
+    def missing_reviewer_panel(_packet):
+        return {
+            "decision": "revise",
+            "available": True,
+            "reason": "missing_reviewer_verdict",
+            "reviewer_ids": ["independent-reviewer-0", "independent-reviewer-1"],
+            "available_reviewers": ["independent-reviewer-0"],
+            "missing_reviewers": ["independent-reviewer-1"],
+            "reviewer_results": [
+                {
+                    "reviewer_id": "independent-reviewer-0",
+                    "runtime": "cursor_sdk",
+                    "model": "cursor-default",
+                    "verdict_present": True,
+                    "decision": "accept",
+                    "severity": "low",
+                    "transcript_sha256": "a" * 64,
+                    "output_sha256": "b" * 64,
+                },
+                {
+                    "reviewer_id": "independent-reviewer-1",
+                    "runtime": "codex_cli",
+                    "model": "gpt-5.5",
+                    "verdict_present": False,
+                    "failure_classification": "reviewer_invocation_failed",
+                    "transcript_sha256": "c" * 64,
+                    "output_sha256": "d" * 64,
+                },
+            ],
+        }
+
+    report = swebench_mergeability_replay_runner(
+        manifest_path=manifest_path,
+        output_dir=tmp_path / "out",
+        reviewer_panel=missing_reviewer_panel,
+        reviewer_panel_mode="configured",
+    )
+
+    rows = report["bridge_report"]["per_row_results"]
+    assert all(row["s_full_unavailable"] is True for row in rows)
+    assert all(row["s_full_accept"] is False for row in rows)
+    preflight = report["configured_reviewer_panel_preflight"]
+    assert preflight["configured_panel_invoked"] is True
+    assert preflight["full_roster_available"] is False
+    assert preflight["failure_classification"] == "missing_reviewer_verdict"
+    assert preflight["available_reviewers"] == ["independent-reviewer-0"]
+    assert preflight["missing_reviewers"] == ["independent-reviewer-1"]
+    assert preflight["transcript_sha256s"] == ["a" * 64, "c" * 64]
+    reviewer_row = report["instance_reports"][0]["independent_reviewer_results"][0]
+    assert reviewer_row["failure_classification"] == "missing_reviewer_verdict"
+    assert reviewer_row["reviewer_results"][1]["failure_classification"] == (
+        "reviewer_invocation_failed"
+    )
+
+
+def test_replay_runner_configured_missing_roster_evidence_keeps_s_full_unavailable(tmp_path):
+    manifest_path = _write_replay_manifest(tmp_path)
+
+    def missing_roster_panel(_packet):
+        return {
+            "decision": "accept",
+            "available": True,
+            "reason": "all_available_reviewers_accept",
+            "available_reviewers": ["independent-reviewer-0"],
+            "missing_reviewers": [],
+            "reviewer_results": [
+                {
+                    "reviewer_id": "independent-reviewer-0",
+                    "runtime": "cursor_sdk",
+                    "model": "cursor-default",
+                    "verdict_present": True,
+                    "decision": "accept",
+                    "severity": "low",
+                    "transcript_sha256": "3" * 64,
+                    "output_sha256": "4" * 64,
+                },
+            ],
+        }
+
+    report = swebench_mergeability_replay_runner(
+        manifest_path=manifest_path,
+        output_dir=tmp_path / "out",
+        reviewer_panel=missing_roster_panel,
+        reviewer_panel_mode="configured",
+    )
+
+    rows = report["bridge_report"]["per_row_results"]
+    assert all(row["s_full_unavailable"] is True for row in rows)
+    assert all(row["s_full_accept"] is False for row in rows)
+    preflight = report["configured_reviewer_panel_preflight"]
+    assert preflight["full_roster_available"] is False
+    assert preflight["failure_classification"] == "missing_reviewer_roster"
+    assert preflight["available_reviewers"] == ["independent-reviewer-0"]
+    assert preflight["missing_reviewers"] == []
+    reviewer_row = report["instance_reports"][0]["independent_reviewer_results"][0]
+    assert reviewer_row["failure_classification"] == "missing_reviewer_roster"
+    assert reviewer_row["reason"] == "missing_reviewer_roster"
+
+
+def test_replay_runner_configured_quality_reject_is_not_infrastructure_unavailable(tmp_path):
+    manifest_path = _write_replay_manifest(tmp_path)
+
+    def rejecting_full_roster_panel(_packet):
+        return {
+            "decision": "revise",
+            "available": True,
+            "reason": "reviewer_non_accept",
+            "reviewer_ids": ["independent-reviewer-0", "independent-reviewer-1"],
+            "available_reviewers": ["independent-reviewer-0", "independent-reviewer-1"],
+            "missing_reviewers": [],
+            "reviewer_results": [
+                {
+                    "reviewer_id": "independent-reviewer-0",
+                    "runtime": "cursor_sdk",
+                    "model": "cursor-default",
+                    "verdict_present": True,
+                    "decision": "revise",
+                    "severity": "important",
+                    "transcript_sha256": "e" * 64,
+                    "output_sha256": "f" * 64,
+                },
+                {
+                    "reviewer_id": "independent-reviewer-1",
+                    "runtime": "codex_cli",
+                    "model": "gpt-5.5",
+                    "verdict_present": True,
+                    "decision": "accept",
+                    "severity": "low",
+                    "transcript_sha256": "1" * 64,
+                    "output_sha256": "2" * 64,
+                },
+            ],
+        }
+
+    report = swebench_mergeability_replay_runner(
+        manifest_path=manifest_path,
+        output_dir=tmp_path / "out",
+        reviewer_panel=rejecting_full_roster_panel,
+        reviewer_panel_mode="configured",
+    )
+
+    rows = report["bridge_report"]["per_row_results"]
+    assert all(row["s_full_unavailable"] is False for row in rows)
+    assert all(row["s_full_accept"] is False for row in rows)
+    preflight = report["configured_reviewer_panel_preflight"]
+    assert preflight["full_roster_available"] is True
+    assert preflight["failure_classification"] == "quality_reject"
+    assert "reviewer_infrastructure_unavailable" not in preflight["failure_classifications"]
 
 
 def test_replay_cli_runs_manifest_without_live_fetch_or_panel(tmp_path):
