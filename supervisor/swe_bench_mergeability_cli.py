@@ -18,14 +18,20 @@ from .mergeability_bench import (
 from .swe_bench_mergeability import (
     SwebenchMergeabilityFixtureRunnerError,
     swebench_mergeability_live_runner,
+    swebench_mergeability_official_replay_runner,
     swebench_mergeability_replay_runner,
 )
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--manifest", required=True)
+    parser.add_argument("--manifest")
     parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--official-replay", action="store_true")
+    parser.add_argument("--dataset", default="")
+    parser.add_argument("--dataset-split", default="test")
+    parser.add_argument("--predictions", default="")
+    parser.add_argument("--allow-dataset-fetch", action="store_true")
     parser.add_argument("--timeout-s", type=float, default=30.0)
     parser.add_argument("--run-live", action="store_true")
     parser.add_argument("--allow-live", action="store_true")
@@ -58,7 +64,36 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     try:
-        if args.run_live:
+        if args.official_replay:
+            if not args.allow_dataset_fetch:
+                print(
+                    "refusing official SWE-bench replay without --allow-dataset-fetch",
+                    file=sys.stderr,
+                )
+                return 2
+            if not args.dataset or not args.predictions:
+                print(
+                    "refusing official SWE-bench replay without --dataset and --predictions",
+                    file=sys.stderr,
+                )
+                return 2
+            report = swebench_mergeability_official_replay_runner(
+                dataset=args.dataset,
+                dataset_split=args.dataset_split,
+                predictions_path=args.predictions,
+                output_dir=args.output_dir,
+                allow_dataset_fetch=args.allow_dataset_fetch,
+                reviewer_panel=reviewer_panel,
+                reviewer_panel_mode=reviewer_panel_mode,
+                timeout_s=args.timeout_s,
+            )
+        elif args.run_live:
+            if not args.manifest:
+                print(
+                    "refusing live SWE-bench mergeability run without --manifest",
+                    file=sys.stderr,
+                )
+                return 2
             if not args.allow_live:
                 print(
                     "refusing live SWE-bench mergeability run without --allow-live",
@@ -100,6 +135,12 @@ def main(argv: list[str] | None = None) -> int:
                 reviewer_panel_mode=reviewer_panel_mode,
             )
         else:
+            if not args.manifest:
+                print(
+                    "refusing replay without --manifest",
+                    file=sys.stderr,
+                )
+                return 2
             report = swebench_mergeability_replay_runner(
                 manifest_path=args.manifest,
                 output_dir=args.output_dir,
@@ -116,7 +157,11 @@ def main(argv: list[str] | None = None) -> int:
         "status": "reported" if report.get("status") != "unavailable" else "unavailable",
         "report": report.get("report_path") or str(Path(args.output_dir) / "live_report.json"),
         "report_sha256": report["report_sha256"],
-        "manifest": report["manifest_path"],
+        "manifest": (
+            report.get("manifest_path")
+            or report.get("generated_replay_manifest_path")
+            or ""
+        ),
         "instance_count": report["instance_count"],
         "candidate_count": report["candidate_count"],
         "allow_live": bool(report.get("allow_live")),

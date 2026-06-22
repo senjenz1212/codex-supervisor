@@ -1,0 +1,46 @@
+{
+  "schema_version": "skill-receipts/v1",
+  "task_id": "swebench-official-replay-mergeability-oracle-20260621",
+  "receipts": [
+    {
+      "receipt_id": "skill-to-prd-swebench-official-replay-mergeability-oracle-20260621",
+      "kind": "skill_run",
+      "skill": "to-prd",
+      "stage": "to_prd",
+      "artifact": "docs/dual-agent/swebench-official-replay-mergeability-oracle-20260621/prd.md",
+      "status": "passed"
+    },
+    {
+      "receipt_id": "skill-prd-grill-swebench-official-replay-mergeability-oracle-20260621",
+      "kind": "skill_run",
+      "skill": "grill-with-docs",
+      "stage": "prd_grill",
+      "artifact": "docs/dual-agent/swebench-official-replay-mergeability-oracle-20260621/grill-findings.md",
+      "status": "passed"
+    },
+    {
+      "receipt_id": "skill-to-issues-swebench-official-replay-mergeability-oracle-20260621",
+      "kind": "skill_run",
+      "skill": "to-issues",
+      "stage": "to_issues",
+      "artifact": "docs/dual-agent/swebench-official-replay-mergeability-oracle-20260621/issues.md",
+      "status": "passed"
+    },
+    {
+      "receipt_id": "skill-tdd-swebench-official-replay-mergeability-oracle-20260621",
+      "kind": "skill_run",
+      "skill": "tdd",
+      "stage": "tdd",
+      "artifact": "docs/dual-agent/swebench-official-replay-mergeability-oracle-20260621/tdd.md",
+      "status": "passed"
+    },
+    {
+      "receipt_id": "skill-tdd-grill-swebench-official-replay-mergeability-oracle-20260621",
+      "kind": "skill_run",
+      "skill": "grill-with-docs",
+      "stage": "tdd_grill",
+      "artifact": "docs/dual-agent/swebench-official-replay-mergeability-oracle-20260621/grill-findings-tdd.md",
+      "status": "passed"
+    }
+  ]
+}

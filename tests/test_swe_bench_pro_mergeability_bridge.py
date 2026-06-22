@@ -30,6 +30,7 @@ from supervisor.swe_bench_mergeability import (
     build_swe_bench_pro_public_packet,
     swebench_mergeability_fixture_runner,
     swebench_mergeability_live_runner,
+    swebench_mergeability_official_replay_runner,
     swebench_mergeability_replay_runner,
     swebench_pro_mergeability_bridge_report,
 )
@@ -1350,6 +1351,239 @@ def test_replay_cli_runs_manifest_without_live_fetch_or_panel(tmp_path):
     assert report["bridge_report"]["arms"][ARM_S_FULL]["availability_status"] == "unavailable"
     assert report["bridge_report"]["metric_applyable"] is False
     assert report["bridge_report"]["improvement_claim_allowed"] is False
+
+
+# ---------------------------------------------------------------------------
+# Official SWE-bench replay adapter
+# ---------------------------------------------------------------------------
+
+
+def _write_official_predictions(
+    tmp_path: Path,
+    *,
+    instance_id: str = "official_demo__repo-001",
+    candidate_id: str = "official-cand",
+) -> Path:
+    prediction = {
+        "instance_id": instance_id,
+        "candidate_id": candidate_id,
+        "model_patch": _valid_model_patch(),
+        "single_agent_baseline_decision": _produced_baseline_decision(
+            candidate_id,
+            patch=_valid_model_patch(),
+            accept=True,
+        ),
+    }
+    predictions_path = tmp_path / "predictions.jsonl"
+    predictions_path.write_text(json.dumps(prediction) + "\n", encoding="utf-8")
+    return predictions_path
+
+
+def _official_record(instance_id: str = "official_demo__repo-001") -> dict:
+    return {
+        "instance_id": instance_id,
+        "repo": "octocat/example",
+        "base_commit": "cafebabe" * 5,
+        "problem_statement": "Fix the public parser behavior",
+        "patch": "SECRET GOLD PATCH",
+        "test_patch": "SECRET TEST PATCH",
+        "FAIL_TO_PASS": ["tests/test_parser.py::test_hidden"],
+        "PASS_TO_PASS": ["tests/test_parser.py::test_existing"],
+        "final_score": 1,
+    }
+
+
+def _official_materializer(*, record, output_dir):
+    assert "patch" not in record
+    assert "test_patch" not in record
+    assert "FAIL_TO_PASS" not in record
+    assert "PASS_TO_PASS" not in record
+    bundle = Path(output_dir) / "public-bundle"
+    bundle.mkdir(parents=True, exist_ok=True)
+    (bundle / "parser.py").write_text(
+        "def parse(value):\n    return value\n",
+        encoding="utf-8",
+    )
+    (bundle / "hidden").mkdir()
+    (bundle / "hidden" / "should_not_copy.py").write_text(
+        "oracle_accept = True\n",
+        encoding="utf-8",
+    )
+    return bundle
+
+
+def test_official_replay_refuses_dataset_fetch_without_opt_in(tmp_path):
+    calls: list[str] = []
+
+    def materializer(**_kwargs):
+        calls.append("materializer")
+        raise AssertionError("materializer must not run")
+
+    def oracle(**_kwargs):
+        calls.append("oracle")
+        raise AssertionError("oracle must not run")
+
+    with pytest.raises(SwebenchMergeabilityFixtureRunnerError, match="allow_dataset_fetch"):
+        swebench_mergeability_official_replay_runner(
+            dataset="SWE-bench/SWE-bench_Verified",
+            dataset_split="test",
+            predictions_path=tmp_path / "missing.jsonl",
+            output_dir=tmp_path / "out",
+            allow_dataset_fetch=False,
+            repo_materializer=materializer,
+            oracle_runner=oracle,
+        )
+
+    assert calls == []
+
+
+def test_official_replay_materializes_public_bundle_and_excludes_hidden_oracle(tmp_path):
+    predictions_path = _write_official_predictions(tmp_path)
+
+    report = swebench_mergeability_official_replay_runner(
+        dataset="fixture-official",
+        dataset_split="test",
+        predictions_path=predictions_path,
+        output_dir=tmp_path / "out",
+        dataset_loader=lambda **_kwargs: [_official_record()],
+        repo_materializer=_official_materializer,
+        oracle_runner=lambda context: {
+            "fail_to_pass_status": "pass",
+            "pass_to_pass_status": "pass",
+            "oracle_adapter_receipt": {
+                "saw_fail_to_pass": context["FAIL_TO_PASS"],
+                "frozen_exists": Path(context["frozen_decisions_path"]).exists(),
+            },
+        },
+    )
+
+    assert report["schema_version"] == "supervisor-swebench-official-replay-report/v1"
+    assert report["official_replay_used"] is True
+    assert report["live_fetch_used"] is False
+    assert report["live_generation_used"] is False
+    assert report["bridge_report"]["oracle_isolation"]["ok"] is True
+    public_packet_text = json.dumps(report["bridge_report"]["public_packets"], sort_keys=True)
+    for forbidden in (
+        "SECRET GOLD PATCH",
+        "SECRET TEST PATCH",
+        "FAIL_TO_PASS",
+        "PASS_TO_PASS",
+        "final_score",
+        "oracle_accept",
+    ):
+        assert forbidden not in public_packet_text
+    reviewer_packet_path = Path(
+        report["replay_report"]["instance_reports"][0]["reviewer_packets"][0][
+            "reviewer_packet_path"
+        ]
+    )
+    reviewer_packet_text = reviewer_packet_path.read_text(encoding="utf-8")
+    for forbidden in (
+        "SECRET GOLD PATCH",
+        "SECRET TEST PATCH",
+        "FAIL_TO_PASS",
+        "PASS_TO_PASS",
+        "final_score",
+        "oracle_accept",
+    ):
+        assert forbidden not in reviewer_packet_text
+    frozen_text = Path(
+        report["replay_report"]["instance_reports"][0]["frozen_decisions_path"]
+    ).read_text(encoding="utf-8")
+    for forbidden in ("FAIL_TO_PASS", "PASS_TO_PASS", "SECRET TEST PATCH"):
+        assert forbidden not in frozen_text
+
+
+def test_official_replay_freezes_decisions_before_oracle_adapter(tmp_path):
+    predictions_path = _write_official_predictions(tmp_path)
+    oracle_calls: list[dict] = []
+
+    def oracle(context):
+        oracle_calls.append({
+            "frozen_exists": Path(context["frozen_decisions_path"]).exists(),
+            "fail_to_pass": list(context["FAIL_TO_PASS"]),
+            "pass_to_pass": list(context["PASS_TO_PASS"]),
+        })
+        return {
+            "fail_to_pass_status": "fail",
+            "pass_to_pass_status": "pass",
+        }
+
+    report = swebench_mergeability_official_replay_runner(
+        dataset="fixture-official",
+        dataset_split="test",
+        predictions_path=predictions_path,
+        output_dir=tmp_path / "out",
+        dataset_loader=lambda **_kwargs: [_official_record()],
+        repo_materializer=_official_materializer,
+        oracle_runner=oracle,
+        oracle_adapter_kind="deterministic_test_adapter",
+    )
+
+    assert oracle_calls == [{
+        "frozen_exists": True,
+        "fail_to_pass": ["tests/test_parser.py::test_hidden"],
+        "pass_to_pass": ["tests/test_parser.py::test_existing"],
+    }]
+    instance_report = report["replay_report"]["instance_reports"][0]
+    frozen_path = Path(instance_report["frozen_decisions_path"])
+    oracle_path = Path(instance_report["oracle_outputs_path"])
+    assert frozen_path.stat().st_mtime_ns <= oracle_path.stat().st_mtime_ns
+    oracle_payload = json.loads(oracle_path.read_text(encoding="utf-8"))
+    assert oracle_payload["rows"][0]["oracle_adapter_kind"] == "deterministic_test_adapter"
+    assert report["bridge_report"]["per_row_results"][0]["oracle_accept"] is False
+
+
+def test_official_replay_report_labels_oracle_adapter_and_stays_report_only(tmp_path):
+    report = swebench_mergeability_official_replay_runner(
+        dataset="fixture-official",
+        dataset_split="test",
+        predictions_path=_write_official_predictions(tmp_path),
+        output_dir=tmp_path / "out",
+        dataset_loader=lambda **_kwargs: [_official_record()],
+        repo_materializer=_official_materializer,
+        oracle_runner=lambda _context: {
+            "fail_to_pass_status": "pass",
+            "pass_to_pass_status": "pass",
+        },
+        oracle_adapter_kind="official_docker_or_equivalent",
+    )
+
+    assert report["oracle_adapter_kind"] == "official_docker_or_equivalent"
+    assert report["replay_report"]["oracle_adapter_kind"] == "official_docker_or_equivalent"
+    assert report["bridge_report"]["metric_applyable"] is False
+    assert report["bridge_report"]["improvement_claim_allowed"] is False
+    assert report["metric_applyable"] is False
+    assert report["improvement_claim_allowed"] is False
+    assert report["default_change_allowed"] is False
+    assert report["policy_mutated"] is False
+    assert report["gate_advanced"] is False
+
+
+def test_official_replay_cli_refuses_without_opt_in(tmp_path):
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/run_swe_bench_mergeability_replay.py",
+            "--official-replay",
+            "--dataset",
+            "SWE-bench/SWE-bench_Verified",
+            "--dataset-split",
+            "test",
+            "--predictions",
+            str(tmp_path / "missing.jsonl"),
+            "--output-dir",
+            str(tmp_path / "out"),
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert "without --allow-dataset-fetch" in result.stderr
 
 
 # ---------------------------------------------------------------------------

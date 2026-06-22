@@ -741,6 +741,9 @@ SWEBENCH_MERGEABILITY_REPLAY_REPORT_SCHEMA_VERSION = (
 SWEBENCH_MERGEABILITY_LIVE_REPORT_SCHEMA_VERSION = (
     "supervisor-swebench-mergeability-live-report/v1"
 )
+SWEBENCH_MERGEABILITY_OFFICIAL_REPLAY_REPORT_SCHEMA_VERSION = (
+    "supervisor-swebench-official-replay-report/v1"
+)
 SWEBENCH_MERGEABILITY_REVIEWER_PACKET_SCHEMA_VERSION = (
     "supervisor-swebench-mergeability-reviewer-packet/v1"
 )
@@ -752,6 +755,18 @@ REVIEWER_PANEL_UNAVAILABLE_REASON = "reviewer_panel_unavailable"
 PATCH_APPLY_FAILURE_REASON = "patch_apply_failure"
 STATIC_LINT_ONLY_SUBSTRATE = "static_lint_only"
 PUBLIC_COMMANDS_SUBSTRATE = "public_commands"
+DEFAULT_OFFICIAL_ORACLE_ADAPTER_KIND = "official_docker_or_equivalent"
+
+_OFFICIAL_RECORD_HIDDEN_KEYS: tuple[str, ...] = (
+    "patch",
+    "test_patch",
+    "FAIL_TO_PASS",
+    "PASS_TO_PASS",
+    "final_score",
+    "oracle_accept",
+    "expected_outcome",
+    "hidden_test_commands",
+)
 
 _DEFAULT_PROTECTED_PATHS: tuple[str, ...] = (
     "hidden/",
@@ -1037,6 +1052,24 @@ def _run_oracle_phase(
     return outcome, receipts
 
 
+def _normalise_oracle_adapter_outcome(raw: Mapping[str, Any]) -> tuple[dict[str, str], dict[str, Any]]:
+    if not isinstance(raw, Mapping):
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "oracle_runner result must be a mapping"
+        )
+    outcome = _interpret_oracle_outcome(raw)
+    receipt = raw.get("oracle_adapter_receipt")
+    if not isinstance(receipt, Mapping):
+        receipt = {
+            "status": "passed",
+            "adapter_reported": True,
+        }
+    return {
+        "fail_to_pass_status": outcome["fail_to_pass_status"],
+        "pass_to_pass_status": outcome["pass_to_pass_status"],
+    }, dict(receipt)
+
+
 def _normalise_protected_paths(value: Sequence[str] | None) -> tuple[str, ...]:
     if not value:
         base = list(_DEFAULT_PROTECTED_PATHS)
@@ -1133,6 +1166,8 @@ def swebench_mergeability_fixture_runner(
     reviewer_panel: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
     protected_paths: Sequence[str] | None = None,
     timeout_s: float = 30.0,
+    oracle_runner: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+    oracle_adapter_kind: str = "candidate_oracle_commands",
 ) -> dict[str, Any]:
     """Run a fixture-first executable SWE-bench mergeability evaluation.
 
@@ -1437,7 +1472,7 @@ def swebench_mergeability_fixture_runner(
         "frozen_at_epoch_s": frozen_at,
     })
 
-    # Oracle phase: execute oracle commands AFTER freeze.
+    # Oracle phase: execute oracle commands or adapter AFTER freeze.
     oracle_outputs_path = output_dir / "oracle_outputs.json"
     if oracle_outputs_path.exists():
         raise SwebenchMergeabilityFixtureRunnerError(
@@ -1455,18 +1490,61 @@ def swebench_mergeability_fixture_runner(
         candidate = next(c for c in candidates if str(c.get("candidate_id")) == candidate_id)
         per_candidate_dir = output_dir / "candidates" / candidate_id
         public_worktree = Path(entry["public_worktree"])
-        candidate_oracle = _candidate_oracle_commands(candidate)
-        outcome, receipts = _run_oracle_phase(
-            worktree=public_worktree,
-            oracle_commands=candidate_oracle,
-            timeout_s=timeout_s,
-        )
+        if oracle_runner is None:
+            candidate_oracle = _candidate_oracle_commands(candidate)
+            outcome, receipts = _run_oracle_phase(
+                worktree=public_worktree,
+                oracle_commands=candidate_oracle,
+                timeout_s=timeout_s,
+            )
+            adapter_receipt: dict[str, Any] = {}
+        else:
+            adapter_context = {
+                "instance_id": instance_id,
+                "candidate_id": candidate_id,
+                "public_worktree": str(public_worktree),
+                "frozen_decisions_path": str(frozen_decisions_path),
+                "frozen_decisions_sha256": frozen_decisions_payload[
+                    "frozen_decisions_sha256"
+                ],
+                "oracle_adapter_kind": str(oracle_adapter_kind),
+                "FAIL_TO_PASS": list(
+                    candidate.get("FAIL_TO_PASS")
+                    or instance.get("FAIL_TO_PASS")
+                    or []
+                ),
+                "PASS_TO_PASS": list(
+                    candidate.get("PASS_TO_PASS")
+                    or instance.get("PASS_TO_PASS")
+                    or []
+                ),
+                "test_patch": str(
+                    candidate.get("test_patch")
+                    or instance.get("test_patch")
+                    or ""
+                ),
+                "official_patch": str(
+                    candidate.get("official_patch")
+                    or instance.get("patch")
+                    or ""
+                ),
+            }
+            outcome, adapter_receipt = _normalise_oracle_adapter_outcome(
+                oracle_runner(adapter_context)
+            )
+            receipts = [{
+                "name": "official_oracle_adapter",
+                "status": "passed",
+                "oracle_adapter_kind": str(oracle_adapter_kind),
+                "receipt": adapter_receipt,
+            }]
         oracle_outcomes[key] = outcome
         oracle_phase_payload["rows"].append({
             "instance_id": instance_id,
             "candidate_id": candidate_id,
             "fail_to_pass_status": outcome["fail_to_pass_status"],
             "pass_to_pass_status": outcome["pass_to_pass_status"],
+            "oracle_adapter_kind": str(oracle_adapter_kind),
             "oracle_command_receipts": receipts,
         })
         oracle_phase_records.append({
@@ -1496,6 +1574,7 @@ def swebench_mergeability_fixture_runner(
         "frozen_decisions_path": str(frozen_decisions_path),
         "oracle_outputs_path": str(oracle_outputs_path),
         "public_commands": public_commands_list,
+        "oracle_adapter_kind": str(oracle_adapter_kind),
         "s_probe_execution_substrate": s_probe_execution_substrate,
         "protected_paths": list(protected_paths_tuple),
         "per_candidate_artifacts": per_candidate_artifacts,
@@ -1649,6 +1728,8 @@ def swebench_mergeability_replay_runner(
     reviewer_panel_mode: str = "custom",
     configured_reviewer_panel_options: ConfiguredReviewerPanelOptions | None = None,
     timeout_s: float = 30.0,
+    oracle_runner: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+    oracle_adapter_kind: str = "candidate_oracle_commands",
 ) -> dict[str, Any]:
     if reviewer_panel_mode not in {"custom", "configured"}:
         raise SwebenchMergeabilityFixtureRunnerError(
@@ -1692,6 +1773,8 @@ def swebench_mergeability_replay_runner(
             reviewer_panel=reviewer_panel,
             protected_paths=item["protected_paths"],
             timeout_s=timeout_s,
+            oracle_runner=oracle_runner,
+            oracle_adapter_kind=oracle_adapter_kind,
         )
         instance_reports.append(instance_report)
         combined_instances.append(instance)
@@ -1774,6 +1857,7 @@ def swebench_mergeability_replay_runner(
         "candidate_count": len(combined_candidate_artifacts),
         "s_probe_execution_substrate": s_probe_execution_substrate,
         "reviewer_panel_mode": reviewer_panel_mode,
+        "oracle_adapter_kind": str(oracle_adapter_kind),
         "instance_reports": instance_reports,
         "bridge_report": bridge_report,
         "metric_applyable": False,
@@ -1795,6 +1879,341 @@ def swebench_mergeability_replay_runner(
     )
     report["report_path"] = str(report_path)
     return report
+
+
+def swebench_mergeability_official_replay_runner(
+    *,
+    dataset: str,
+    dataset_split: str,
+    predictions_path: str | Path,
+    output_dir: str | Path,
+    allow_dataset_fetch: bool = False,
+    dataset_loader: Callable[..., Sequence[Mapping[str, Any]]] | None = None,
+    repo_materializer: Callable[..., str | Path] | None = None,
+    oracle_runner: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+    oracle_adapter_kind: str = DEFAULT_OFFICIAL_ORACLE_ADAPTER_KIND,
+    reviewer_panel: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+    reviewer_panel_mode: str = "custom",
+    configured_reviewer_panel_options: ConfiguredReviewerPanelOptions | None = None,
+    timeout_s: float = 30.0,
+) -> dict[str, Any]:
+    """Replay official-style SWE-bench records through mergeability machinery.
+
+    This adapter intentionally sits above ``swebench_mergeability_replay_runner``:
+    it loads official rows, materializes public-only bundles, resolves model
+    patches from predictions JSONL, and delegates packet isolation plus FAR/TAR
+    aggregation to the existing replay/bridge path. Hidden official fields are
+    given only to ``oracle_runner`` after decision freeze.
+    """
+    started = time.monotonic()
+    if dataset_loader is None and not allow_dataset_fetch:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "refusing official SWE-bench replay without allow_dataset_fetch "
+            "(--allow-dataset-fetch) or an injected dataset_loader"
+        )
+    if oracle_runner is None:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "oracle_runner is required for official SWE-bench replay"
+        )
+
+    output_path = Path(output_dir).expanduser()
+    output_path.mkdir(parents=True, exist_ok=True)
+    loader = dataset_loader or _default_official_dataset_loader
+    materializer = repo_materializer or _default_official_repo_materializer
+    raw_records = loader(dataset=dataset, split=dataset_split)
+    if not isinstance(raw_records, Sequence) or isinstance(raw_records, (str, bytes)):
+        raw_records = list(raw_records)  # type: ignore[arg-type]
+    official_records = [dict(record) for record in raw_records]
+    if not official_records:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "official SWE-bench replay dataset loader returned no records"
+        )
+    predictions = _load_official_predictions(predictions_path)
+
+    manifest_instances: list[dict[str, Any]] = []
+    patch_dir = output_path / "official-patches"
+    patch_dir.mkdir(parents=True, exist_ok=True)
+    materialized_dir = output_path / "official-public-bundles"
+    materialized_dir.mkdir(parents=True, exist_ok=True)
+
+    for record in official_records:
+        instance_id = str(record.get("instance_id") or "")
+        if not instance_id:
+            raise SwebenchMergeabilityFixtureRunnerError(
+                "official record.instance_id is required"
+            )
+        record_predictions = predictions.get(instance_id) or []
+        if not record_predictions:
+            raise SwebenchMergeabilityFixtureRunnerError(
+                f"prediction missing for official instance {instance_id}"
+            )
+
+        public_record = _official_public_record(record)
+        public_bundle = materializer(
+            record=public_record,
+            output_dir=materialized_dir / _safe_artifact_fragment(instance_id),
+        )
+        public_bundle_path = Path(public_bundle).expanduser().resolve()
+        if not public_bundle_path.exists():
+            raise SwebenchMergeabilityFixtureRunnerError(
+                f"repo_materializer returned missing public bundle: {public_bundle_path}"
+            )
+
+        hidden = _official_hidden_oracle(record)
+        candidates: list[dict[str, Any]] = []
+        for prediction in record_predictions:
+            candidate_id = str(prediction["candidate_id"])
+            model_patch = str(prediction["model_patch"])
+            patch_path = (
+                patch_dir
+                / f"{_safe_artifact_fragment(instance_id)}-{_safe_artifact_fragment(candidate_id)}.patch"
+            )
+            patch_path.write_text(model_patch, encoding="utf-8")
+            candidate: dict[str, Any] = {
+                "candidate_id": candidate_id,
+                "model_patch_path": str(patch_path),
+                "FAIL_TO_PASS": list(hidden["FAIL_TO_PASS"]),
+                "PASS_TO_PASS": list(hidden["PASS_TO_PASS"]),
+                "test_patch": str(hidden["test_patch"]),
+                "official_patch": str(hidden["patch"]),
+            }
+            for key in PRODUCED_BASELINE_RECEIPT_KEYS:
+                if key in prediction and isinstance(prediction[key], Mapping):
+                    candidate[key] = dict(prediction[key])
+                    break
+            candidates.append(candidate)
+
+        manifest_instances.append({
+            **public_record,
+            "FAIL_TO_PASS": list(hidden["FAIL_TO_PASS"]),
+            "PASS_TO_PASS": list(hidden["PASS_TO_PASS"]),
+            "test_patch": str(hidden["test_patch"]),
+            "public_bundle": str(public_bundle_path),
+            "protected_paths": list(_DEFAULT_PROTECTED_PATHS),
+            "s_probe_substrate": {
+                "kind": PUBLIC_STATIC_PATCH_PROBE,
+                "requires_patch_applies": True,
+                "public_lint_commands": list(
+                    public_record.get("public_lint_commands") or []
+                ),
+                "public_build_commands": list(
+                    public_record.get("public_build_commands") or []
+                ),
+            },
+            "public_commands": list(
+                public_record.get("public_commands")
+                or public_record.get("public_lint_commands")
+                or []
+            ),
+            "candidates": candidates,
+        })
+
+    generated_manifest = {
+        "schema_version": SWEBENCH_MERGEABILITY_REPLAY_MANIFEST_SCHEMA_VERSION,
+        "official_replay_dataset": str(dataset),
+        "official_replay_split": str(dataset_split),
+        "instances": manifest_instances,
+    }
+    generated_manifest_path = output_path / "official_replay_manifest.json"
+    generated_manifest_path.write_text(
+        json.dumps(generated_manifest, sort_keys=True, indent=2, default=str),
+        encoding="utf-8",
+    )
+
+    replay_report = swebench_mergeability_replay_runner(
+        manifest_path=generated_manifest_path,
+        output_dir=output_path / "replay",
+        reviewer_panel=reviewer_panel,
+        reviewer_panel_mode=reviewer_panel_mode,
+        configured_reviewer_panel_options=configured_reviewer_panel_options,
+        timeout_s=timeout_s,
+        oracle_runner=oracle_runner,
+        oracle_adapter_kind=oracle_adapter_kind,
+    )
+    report: dict[str, Any] = {
+        "schema_version": SWEBENCH_MERGEABILITY_OFFICIAL_REPLAY_REPORT_SCHEMA_VERSION,
+        "status": "completed",
+        "dataset": str(dataset),
+        "dataset_split": str(dataset_split),
+        "allow_dataset_fetch": bool(allow_dataset_fetch),
+        "official_replay_used": True,
+        "live_fetch_used": False,
+        "live_generation_used": False,
+        "predictions_path": str(Path(predictions_path).expanduser()),
+        "generated_replay_manifest_path": str(generated_manifest_path),
+        "generated_replay_manifest_sha256": sha256(
+            generated_manifest_path.read_bytes()
+        ).hexdigest(),
+        "oracle_adapter_kind": str(oracle_adapter_kind),
+        "instance_count": len(manifest_instances),
+        "candidate_count": sum(
+            len(entry["candidates"]) for entry in manifest_instances
+        ),
+        "replay_report": replay_report,
+        "bridge_report": replay_report["bridge_report"],
+        "metric_applyable": False,
+        "improvement_claim_allowed": False,
+        "default_change_allowed": False,
+        "policy_mutated": False,
+        "gate_advanced": False,
+        "wall_clock_s": round(time.monotonic() - started, 6),
+    }
+    report["report_sha256"] = _sha256_json({
+        key: value for key, value in report.items() if key != "report_sha256"
+    })
+    report_path = output_path / "official_replay_report.json"
+    report_path.write_text(
+        json.dumps(report, sort_keys=True, indent=2, default=str),
+        encoding="utf-8",
+    )
+    report["report_path"] = str(report_path)
+    return report
+
+
+def _official_public_record(record: Mapping[str, Any]) -> dict[str, Any]:
+    public = {
+        "instance_id": str(record.get("instance_id") or ""),
+        "repo": str(record.get("repo") or ""),
+        "base_commit": str(record.get("base_commit") or ""),
+        "problem_statement": str(record.get("problem_statement") or ""),
+        "public_checkout_ref": str(
+            record.get("public_checkout_ref")
+            or record.get("base_commit")
+            or ""
+        ),
+        "public_checkout_sha256": str(record.get("public_checkout_sha256") or ""),
+    }
+    for key in ("public_lint_commands", "public_build_commands", "public_commands"):
+        if key in record:
+            public[key] = record[key]
+    for hidden_key in _OFFICIAL_RECORD_HIDDEN_KEYS:
+        public.pop(hidden_key, None)
+    leaks = _scan_for_swebench_pro_oracle_refs(public)
+    if leaks:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "official public record references forbidden oracle material: "
+            + ", ".join(leaks)
+        )
+    return public
+
+
+def _official_hidden_oracle(record: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "patch": str(record.get("patch") or ""),
+        "test_patch": str(record.get("test_patch") or ""),
+        "FAIL_TO_PASS": [str(item) for item in (record.get("FAIL_TO_PASS") or [])],
+        "PASS_TO_PASS": [str(item) for item in (record.get("PASS_TO_PASS") or [])],
+    }
+
+
+def _load_official_predictions(predictions_path: str | Path) -> dict[str, list[dict[str, Any]]]:
+    path = Path(predictions_path).expanduser().resolve()
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            f"could not read predictions JSONL {path}: {exc}"
+        ) from exc
+    by_instance: dict[str, list[dict[str, Any]]] = {}
+    for index, line in enumerate(lines, start=1):
+        if not line.strip():
+            continue
+        try:
+            raw = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise SwebenchMergeabilityFixtureRunnerError(
+                f"invalid predictions JSONL at line {index}: {exc}"
+            ) from exc
+        if not isinstance(raw, Mapping):
+            raise SwebenchMergeabilityFixtureRunnerError(
+                f"prediction line {index} must be a JSON object"
+            )
+        instance_id = str(raw.get("instance_id") or "")
+        if not instance_id:
+            raise SwebenchMergeabilityFixtureRunnerError(
+                f"prediction line {index} missing instance_id"
+            )
+        model_patch = str(
+            raw.get("model_patch")
+            or raw.get("prediction")
+            or raw.get("patch")
+            or ""
+        )
+        if not model_patch.strip():
+            raise SwebenchMergeabilityFixtureRunnerError(
+                f"prediction line {index} missing model_patch"
+            )
+        candidate = {
+            "candidate_id": str(raw.get("candidate_id") or f"prediction-{index}"),
+            "model_patch": model_patch,
+        }
+        for key in PRODUCED_BASELINE_RECEIPT_KEYS:
+            if key in raw and isinstance(raw[key], Mapping):
+                candidate[key] = dict(raw[key])
+        by_instance.setdefault(instance_id, []).append(candidate)
+    if not by_instance:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "predictions JSONL contains no candidates"
+        )
+    return by_instance
+
+
+def _default_official_dataset_loader(*, dataset: str, split: str) -> Sequence[Mapping[str, Any]]:
+    try:
+        from datasets import load_dataset  # type: ignore[import-not-found]
+    except ImportError as exc:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "official SWE-bench replay requires the optional datasets package "
+            "or an injected dataset_loader"
+        ) from exc
+    loaded = load_dataset(dataset, split=split)
+    return list(loaded)
+
+
+def _default_official_repo_materializer(
+    *,
+    record: Mapping[str, Any],
+    output_dir: str | Path,
+) -> Path:
+    repo = str(record.get("repo") or "")
+    base_commit = str(record.get("base_commit") or "")
+    if not repo or not base_commit:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "official repo materializer requires repo and base_commit"
+        )
+    output_path = Path(output_dir).expanduser()
+    if output_path.exists():
+        shutil.rmtree(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    clone_url = (
+        repo
+        if repo.startswith(("https://", "git@"))
+        else f"https://github.com/{repo}.git"
+    )
+    clone_result = _run_command(
+        ("git", "clone", "--no-checkout", clone_url, str(output_path)),
+        cwd=output_path.parent,
+        timeout_s=600.0,
+        name="official_repo_clone",
+    )
+    if clone_result.status != "passed":
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "official repo clone failed for "
+            f"{repo}: {clone_result.stderr_tail or clone_result.stdout_tail}"
+        )
+    checkout_result = _run_command(
+        ("git", "checkout", base_commit),
+        cwd=output_path,
+        timeout_s=300.0,
+        name="official_repo_checkout",
+    )
+    if checkout_result.status != "passed":
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "official repo checkout failed for "
+            f"{repo}@{base_commit}: "
+            f"{checkout_result.stderr_tail or checkout_result.stdout_tail}"
+        )
+    return output_path
 
 
 def swebench_mergeability_live_runner(
