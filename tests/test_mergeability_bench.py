@@ -97,6 +97,10 @@ def _deny_panel(_packet):
     }
 
 
+def _reject_public_review_panel(packet):
+    return _deny_panel(packet)
+
+
 def _factorial_arm_decisions(*, unmatched_tar: bool = False) -> dict[str, dict[str, object]]:
     positives = {"known-good", "secondary-rubric-only", "text-known-good"}
     public_traps = {"hidden-behavior-miss", "text-hidden-behavior-miss"}
@@ -3452,6 +3456,57 @@ def _codex_cli_accept_reviewer(
     )
 
 
+class _CandidateDecisionReviewer:
+    def __init__(
+        self,
+        reviewer_id: str,
+        *,
+        runtime: str,
+        decisions: dict[str, str],
+        model: str,
+        isolation: dict[str, object] | None = None,
+    ):
+        self.spec = ReviewerSpec(
+            reviewer_id=reviewer_id,
+            runtime=runtime,
+            model=model,
+            provider_family="cursor" if runtime == "cursor_sdk" else "openai",
+            lineage=(runtime, model),
+            tool_access="codebase_tools",
+            assurance_grade="tool_backed_primary",
+        )
+        self._decisions = decisions
+        self._isolation = isolation
+        self.calls: list[CursorInvocationRequest] = []
+
+    def review(self, request: CursorInvocationRequest) -> CursorInvocationResult:
+        self.calls.append(request)
+        packet = request.review_packet or {}
+        candidate_id = str(packet.get("candidate_id") or "")
+        decision = self._decisions.get(candidate_id, "accept")
+        diagnostics = (
+            {"worktree_isolation": self._isolation}
+            if self._isolation is not None else None
+        )
+        return CursorInvocationResult(
+            probe=ProbeResult("INDEPENDENT_REVIEWER", "green", "fake_ok", {}),
+            outcome=_fake_outcome(decision),
+            transcript=f"{self.spec.reviewer_id} {candidate_id} {decision}",
+            model=self.spec.model,
+            reviewer_runtime=self.spec.runtime,
+            reviewer_output_mode=self.spec.runtime,
+            reviewer_assurance="tool_backed_primary",
+            diagnostics=diagnostics,
+        )
+
+
+def _two_candidate_paths() -> tuple[Path, Path]:
+    return (
+        BENCH_ROOT / "candidates" / "known_good.json",
+        BENCH_ROOT / "candidates" / "hidden_behavior_miss.json",
+    )
+
+
 def test_configured_full_panel_smoke_writes_paired_acceptance_report(tmp_path):
     cursor_reviewer = _cursor_sdk_accept_reviewer()
     codex_reviewer = _codex_cli_accept_reviewer()
@@ -3669,3 +3724,205 @@ def test_configured_full_panel_report_only_invariants_false(tmp_path):
         repo_root=Path.cwd(),
         affected_gates=("execution", "outcome_review"),
     ) == []
+
+
+def test_configured_full_panel_run_populates_full_roster_rows(tmp_path):
+    cursor_reviewer = _cursor_sdk_accept_reviewer()
+    codex_reviewer = _codex_cli_accept_reviewer()
+
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path / "available",
+        candidate_paths=_two_candidate_paths(),
+        strict_calibration=False,
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            reviewers=(cursor_reviewer, codex_reviewer),
+        ),
+    )
+
+    assert report["arms"]["supervisor_full_gate"]["availability_status"] == "available"
+    assert report["configured_reviewer_panel"]["full_roster_available_count"] > 0
+    assert (tmp_path / "available" / "paired_acceptance_report.json").exists()
+
+    missing_cursor = _RecordingFakeReviewer(
+        "independent-reviewer-0",
+        result=_unavailable_cursor_result(
+            ReviewerSpec(reviewer_id="independent-reviewer-0", runtime="cursor_sdk"),
+            reason="reviewer_infrastructure_unavailable",
+        ),
+    )
+    partial_report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path / "partial",
+        candidate_paths=_two_candidate_paths(),
+        strict_calibration=False,
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            reviewers=(missing_cursor, codex_reviewer),
+        ),
+    )
+
+    assert partial_report["configured_reviewer_panel"]["full_roster_available_count"] == 0
+    assert partial_report["arms"]["supervisor_full_gate"]["unavailable_count"] > 0
+
+
+def test_full_panel_report_emits_per_reviewer_arms(tmp_path):
+    cursor_reviewer = _CandidateDecisionReviewer(
+        "independent-reviewer-0",
+        runtime="cursor_sdk",
+        model="default",
+        decisions={
+            "known-good": "accept",
+            "hidden-behavior-miss": "accept",
+        },
+    )
+    codex_reviewer = _CandidateDecisionReviewer(
+        "independent-reviewer-1",
+        runtime="codex_cli",
+        model="gpt-5.5",
+        decisions={
+            "known-good": "accept",
+            "hidden-behavior-miss": "revise",
+        },
+    )
+
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        candidate_paths=_two_candidate_paths(),
+        strict_calibration=False,
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            reviewers=(cursor_reviewer, codex_reviewer),
+        ),
+    )
+
+    per_reviewer = report["per_reviewer_arms"]
+    assert set(per_reviewer) == {"independent-reviewer-0", "independent-reviewer-1"}
+    assert per_reviewer["independent-reviewer-0"]["false_accept_count"] == 1
+    assert per_reviewer["independent-reviewer-1"]["false_accept_count"] == 0
+    assert per_reviewer["independent-reviewer-1"]["per_candidate_results"]
+    assert report["arms"]["supervisor_full_gate"]["false_accept_count"] == 0
+    agreement = report["configured_reviewer_panel"]["inter_reviewer_agreement"]
+    assert agreement == [
+        {
+            "reviewer_pair": ["independent-reviewer-0", "independent-reviewer-1"],
+            "shared_candidate_count": 2,
+            "agreement_count": 1,
+            "agreement_rate": 0.5,
+        }
+    ]
+
+
+def test_isolated_cursor_reviewer_does_not_flag_modified_worktree(tmp_path):
+    host_untracked = tmp_path / "host-untracked.txt"
+    host_untracked.write_text("host write outside isolated reviewer worktree\n", encoding="utf-8")
+    cursor_reviewer = _CandidateDecisionReviewer(
+        "independent-reviewer-0",
+        runtime="cursor_sdk",
+        model="default",
+        decisions={"known-good": "accept", "hidden-behavior-miss": "accept"},
+        isolation=_cursor_sdk_isolation_diagnostic(),
+    )
+    codex_reviewer = _CandidateDecisionReviewer(
+        "independent-reviewer-1",
+        runtime="codex_cli",
+        model="gpt-5.5",
+        decisions={"known-good": "accept", "hidden-behavior-miss": "accept"},
+    )
+
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path / "report",
+        candidate_paths=_two_candidate_paths(),
+        strict_calibration=False,
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            reviewers=(cursor_reviewer, codex_reviewer),
+        ),
+    )
+
+    cursor_entries = [
+        item
+        for row in report["per_task_results"]
+        for item in row["supervisor_full_gate_reviewer_results"]
+        if item["reviewer_id"] == "independent-reviewer-0"
+    ]
+    assert cursor_entries
+    assert all(
+        item["worktree_isolation"]["contained_mutation"] is False
+        for item in cursor_entries
+    )
+    assert "cursor_modified_worktree" not in json.dumps(cursor_entries, sort_keys=True)
+
+
+def test_panel_marginal_computed_or_honest_not_matched(tmp_path):
+    accepting_report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path / "matched",
+        reviewer_panel=_accept_public_review_panel,
+    )
+    computed = accepting_report["panel_marginal_delta_at_matched_true_accept"]
+    assert computed["status"] == "computed"
+    assert isinstance(computed["false_accept_rate_delta"], float)
+
+    rejecting_report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path / "not_matched",
+        reviewer_panel=_reject_public_review_panel,
+    )
+    not_matched = rejecting_report["panel_marginal_delta_at_matched_true_accept"]
+    assert not_matched["status"] == "not_matched"
+    assert not_matched["reason"] == "public_review_and_full_gate_true_accept_rates_differ"
+
+
+def test_reviewer_infra_failure_marks_unavailable_not_quality_reject(tmp_path):
+    missing_cursor = _RecordingFakeReviewer(
+        "independent-reviewer-0",
+        result=_unavailable_cursor_result(
+            ReviewerSpec(reviewer_id="independent-reviewer-0", runtime="cursor_sdk"),
+            reason="reviewer_infrastructure_unavailable",
+        ),
+    )
+    codex_reviewer = _codex_cli_accept_reviewer()
+
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        candidate_paths=_two_candidate_paths(),
+        strict_calibration=False,
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            reviewers=(missing_cursor, codex_reviewer),
+        ),
+    )
+
+    for row in report["per_task_results"]:
+        assert row["supervisor_full_gate_accept"] is False
+        assert row["supervisor_full_gate_unavailable"] is True
+        assert row["panel_quality_label"] == "panel_missing_verdict_block"
+        assert row["panel_quality_reject"] is False
+
+
+def test_full_panel_report_is_report_only_and_oracle_isolated(tmp_path):
+    cursor_reviewer = _cursor_sdk_accept_reviewer()
+    codex_reviewer = _codex_cli_accept_reviewer()
+
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        candidate_paths=_two_candidate_paths(),
+        strict_calibration=False,
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            reviewers=(cursor_reviewer, codex_reviewer),
+        ),
+    )
+
+    assert report["metric_applyable"] is False
+    assert report["improvement_claim_allowed"] is False
+    assert report["policy_mutated"] is False
+    assert report["gate_advanced"] is False
+    assert report["oracle_isolation"]["ok"] is True
+    assert report["hidden_field_leak_check"]["ok"] is True

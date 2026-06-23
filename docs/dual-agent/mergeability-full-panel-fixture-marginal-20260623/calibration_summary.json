@@ -1,0 +1,119 @@
+{
+  "bench_root": "/Users/sam.zhang/Documents/codex-supervisor/tests/fixtures/mergeability_bench",
+  "calibration_metric_applyable": false,
+  "candidate_count": 2,
+  "control_coverage_by_task_class": {
+    "arithmetic": {
+      "candidate_count": 2,
+      "control_kinds": [
+        "hidden_behavior_miss",
+        "known_good"
+      ],
+      "false_accept_trap_count": 1,
+      "missing_control_kinds": [],
+      "negative_control_count": 1,
+      "positive_control_count": 1,
+      "split": "held_out",
+      "task_class": "arithmetic",
+      "task_count": 1,
+      "task_ids": [
+        "calculator-addition"
+      ]
+    }
+  },
+  "default_change_allowed": false,
+  "errors": [
+    "missing required calibration controls: known_bad, missing_regression_test, noop, protected_path_escape, scope_escape, tautological_test"
+  ],
+  "excluded_task_ids": [],
+  "gaming_flags": [],
+  "gate_advanced": false,
+  "included_task_ids": [
+    "calculator-addition"
+  ],
+  "manifest_sha256": "9a0d357cc8e60e1f92dfe444817df9e8563c7741190e094d9c5f93d4ac292ec9",
+  "observed_control_kinds": [
+    "hidden_behavior_miss",
+    "known_good"
+  ],
+  "policy_mutated": false,
+  "receipt_ids": [
+    "mergeability:calculator-addition:hidden-behavior-miss",
+    "mergeability:calculator-addition:known-good"
+  ],
+  "required_control_kinds": [
+    "known_bad",
+    "known_good",
+    "missing_regression_test",
+    "noop",
+    "protected_path_escape",
+    "scope_escape",
+    "tautological_test"
+  ],
+  "results": [
+    {
+      "blocker_status": "failed",
+      "candidate_id": "hidden-behavior-miss",
+      "control_kind": "hidden_behavior_miss",
+      "expected_outcome": "fail",
+      "failures": [
+        "hidden tests:('/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python', '-m', 'pytest', 'hidden/test_behavior.py', '-q'):expected_pass:returncode_1"
+      ],
+      "final_score": 0.0,
+      "hidden_test_status": "failed",
+      "lint_build_status": "passed",
+      "observed_outcome": "fail",
+      "receipt": {
+        "blocker_status": "failed",
+        "candidate_id": "hidden-behavior-miss",
+        "evidence_grade": "runtime_native",
+        "final_score": 0.0,
+        "kind": "mergeability_result",
+        "receipt_id": "mergeability:calculator-addition:hidden-behavior-miss",
+        "result_ref": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/mergeability-full-panel-fixture-marginal-20260623/mergeability-results/calculator-addition-hidden-behavior-miss.json",
+        "result_sha256": "d18890e13be3da35682e66ac6262b641273a3712e04732c984265831e588bee5",
+        "source": "supervisor",
+        "status": "failed",
+        "supervisor_runtime_origin": "mergeability_bench",
+        "task_id": "calculator-addition"
+      },
+      "receipt_id": "mergeability:calculator-addition:hidden-behavior-miss",
+      "reverse_test_status": "passed",
+      "scope_status": "passed",
+      "task_id": "calculator-addition"
+    },
+    {
+      "blocker_status": "passed",
+      "candidate_id": "known-good",
+      "control_kind": "known_good",
+      "expected_outcome": "pass",
+      "failures": [],
+      "final_score": 1.0,
+      "hidden_test_status": "passed",
+      "lint_build_status": "passed",
+      "observed_outcome": "pass",
+      "receipt": {
+        "blocker_status": "passed",
+        "candidate_id": "known-good",
+        "evidence_grade": "runtime_native",
+        "final_score": 1.0,
+        "kind": "mergeability_result",
+        "receipt_id": "mergeability:calculator-addition:known-good",
+        "result_ref": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/mergeability-full-panel-fixture-marginal-20260623/mergeability-results/calculator-addition-known-good.json",
+        "result_sha256": "8af8536b5fda9c61eee47e4ac9c67af9460c850422a808f71f307406630a9c62",
+        "source": "supervisor",
+        "status": "passed",
+        "supervisor_runtime_origin": "mergeability_bench",
+        "task_id": "calculator-addition"
+      },
+      "receipt_id": "mergeability:calculator-addition:known-good",
+      "reverse_test_status": "passed",
+      "scope_status": "passed",
+      "task_id": "calculator-addition"
+    }
+  ],
+  "schema_version": "supervisor-mergeability-calibration/v1",
+  "status": "rejected",
+  "summary_sha256": "1a6fe6666343e8aaff3eb75feef96352432376167b14387888311cd060fdafd7",
+  "task_count": 2
+}

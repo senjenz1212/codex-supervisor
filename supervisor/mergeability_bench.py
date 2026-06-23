@@ -1191,6 +1191,9 @@ def run_paired_acceptance_pilot(
             "reason": "codex_only_calibration_inactive",
             "full_roster_available_count": 0,
         }
+    per_reviewer_arms = _per_reviewer_acceptance_arms(rows)
+    inter_reviewer_agreement = _inter_reviewer_agreement(rows)
+    reviewer_packet_leak_refs = _reviewer_packet_leak_refs(rows)
     metric_splits = _metric_splits(
         rows,
         arms={
@@ -1283,6 +1286,16 @@ def run_paired_acceptance_pilot(
         ),
         "matched_true_accept_status": matched_true_accept["status"],
         "oracle_agreement": oracle_agreement,
+        "per_reviewer_arms": per_reviewer_arms,
+        "oracle_isolation": {
+            "ok": not reviewer_packet_leak_refs,
+            "violations": reviewer_packet_leak_refs,
+        },
+        "hidden_field_leak_check": {
+            "ok": not reviewer_packet_leak_refs,
+            "refs": reviewer_packet_leak_refs,
+            "scope": "supervisor_full_gate_reviewer_packets",
+        },
         "disagreements": disagreements,
         "configured_reviewer_panel": {
             "mode": reviewer_panel_mode,
@@ -1317,6 +1330,7 @@ def run_paired_acceptance_pilot(
             "panel_missing_verdict_block_count": sum(
                 1 for row in rows if bool(row.get("panel_missing_verdict_block"))
             ),
+            "inter_reviewer_agreement": inter_reviewer_agreement,
             "reviewer_infrastructure_diagnostics": [
                 {
                     "task_id": row["task_id"],
@@ -3681,6 +3695,181 @@ def _summarize_acceptance_arm(
     if evidence_kind is not None:
         summary["evidence_kind"] = evidence_kind
     return summary
+
+
+def _normalise_mergeability_reviewer_result(raw: Mapping[str, Any]) -> dict[str, Any]:
+    reviewer_id = str(raw.get("reviewer_id") or raw.get("id") or "reviewer")
+    decision = str(raw.get("decision") or raw.get("status") or "unavailable")
+    if decision == "approved":
+        decision = "accept"
+    if decision == "reject":
+        decision = "deny"
+    if decision not in {"accept", "deny", "revise", "unavailable"}:
+        decision = "unavailable"
+    verdict_present = bool(raw.get("verdict_present"))
+    available = bool(verdict_present and decision in {"accept", "deny", "revise"})
+    return {
+        "reviewer_id": reviewer_id,
+        "decision": decision,
+        "accept": bool(available and decision == "accept" and raw.get("accepted", True)),
+        "available": available,
+        "verdict_present": verdict_present,
+        "reason": str(raw.get("reason") or raw.get("unavailable_reason") or ""),
+        "failure_classification": raw.get("failure_classification"),
+        "runtime": raw.get("runtime") or raw.get("reviewer_runtime"),
+        "reviewer_runtime": raw.get("reviewer_runtime") or raw.get("runtime"),
+        "model": raw.get("model"),
+        "transcript_sha256": raw.get("transcript_sha256"),
+        "output_sha256": raw.get("output_sha256"),
+        "worktree_isolation": raw.get("worktree_isolation"),
+    }
+
+
+def _per_reviewer_acceptance_arms(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    per_reviewer_candidates: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        for raw_result in row.get("supervisor_full_gate_reviewer_results") or []:
+            if not isinstance(raw_result, Mapping):
+                continue
+            normalised = _normalise_mergeability_reviewer_result(raw_result)
+            reviewer_id = normalised["reviewer_id"]
+            per_reviewer_candidates.setdefault(reviewer_id, []).append({
+                "task_id": row["task_id"],
+                "candidate_id": row["candidate_id"],
+                "candidate_hash": row.get("candidate_hash"),
+                "control_kind": row.get("control_kind"),
+                "oracle_accept": bool(row["oracle_accept"]),
+                "accept": bool(normalised["accept"]),
+                "available": bool(normalised["available"]),
+                "unavailable": not bool(normalised["available"]),
+                "decision": normalised["decision"],
+                "verdict_present": bool(normalised["verdict_present"]),
+                "reason": normalised["reason"],
+                "failure_classification": normalised["failure_classification"],
+                "runtime": normalised["runtime"],
+                "reviewer_runtime": normalised["reviewer_runtime"],
+                "model": normalised["model"],
+                "transcript_sha256": normalised["transcript_sha256"],
+                "output_sha256": normalised["output_sha256"],
+                "worktree_isolation": normalised["worktree_isolation"],
+            })
+
+    arms: dict[str, dict[str, Any]] = {}
+    for reviewer_id, candidate_rows in sorted(per_reviewer_candidates.items()):
+        available_rows = [row for row in candidate_rows if row["available"]]
+        false_accept_denominator = sum(1 for row in available_rows if not row["oracle_accept"])
+        true_accept_denominator = sum(1 for row in available_rows if row["oracle_accept"])
+        false_accept_count = sum(
+            1 for row in available_rows if row["accept"] and not row["oracle_accept"]
+        )
+        true_accept_count = sum(
+            1 for row in available_rows if row["accept"] and row["oracle_accept"]
+        )
+        false_reject_count = sum(
+            1 for row in available_rows if not row["accept"] and row["oracle_accept"]
+        )
+        true_reject_count = sum(
+            1 for row in available_rows if not row["accept"] and not row["oracle_accept"]
+        )
+        unavailable_count = sum(1 for row in candidate_rows if row["unavailable"])
+        runtimes = sorted({
+            str(row.get("reviewer_runtime") or row.get("runtime") or "")
+            for row in candidate_rows
+            if row.get("reviewer_runtime") or row.get("runtime")
+        })
+        models = sorted({
+            str(row.get("model") or "")
+            for row in candidate_rows
+            if row.get("model")
+        })
+        arms[reviewer_id] = {
+            "arm": reviewer_id,
+            "arm_role": "independent_reviewer",
+            "reviewer_id": reviewer_id,
+            "decision_source": "independent_reviewer_panel_member",
+            "oracle_coupled": False,
+            "candidate_count": len(candidate_rows),
+            "available_count": len(available_rows),
+            "unavailable_count": unavailable_count,
+            "availability_status": (
+                "unavailable"
+                if candidate_rows and unavailable_count == len(candidate_rows)
+                else "available"
+            ),
+            "accepted_count": sum(1 for row in available_rows if row["accept"]),
+            "rejected_count": sum(1 for row in available_rows if not row["accept"]),
+            "false_accept_count": false_accept_count,
+            "n_bad": false_accept_denominator,
+            "false_accept_denominator": false_accept_denominator,
+            "false_accept_rate": _rate(false_accept_count, false_accept_denominator),
+            "false_accept_confidence_interval": _wilson_interval(
+                false_accept_count,
+                false_accept_denominator,
+            ),
+            "true_accept_count": true_accept_count,
+            "n_good": true_accept_denominator,
+            "true_accept_denominator": true_accept_denominator,
+            "true_accept_rate": _rate(true_accept_count, true_accept_denominator),
+            "true_accept_confidence_interval": _wilson_interval(
+                true_accept_count,
+                true_accept_denominator,
+            ),
+            "false_reject_count": false_reject_count,
+            "false_reject_denominator": true_accept_denominator,
+            "false_reject_rate": _rate(false_reject_count, true_accept_denominator),
+            "true_reject_count": true_reject_count,
+            "runtime": runtimes[0] if len(runtimes) == 1 else ("mixed" if runtimes else "unknown"),
+            "model": models[0] if len(models) == 1 else ("mixed" if models else None),
+            "cost_usd": 0.0,
+            "per_candidate_results": candidate_rows,
+        }
+    return arms
+
+
+def _inter_reviewer_agreement(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_reviewer: dict[str, dict[str, bool]] = {}
+    for row in rows:
+        candidate_key = f"{row['task_id']}:{row['candidate_id']}"
+        for raw_result in row.get("supervisor_full_gate_reviewer_results") or []:
+            if not isinstance(raw_result, Mapping):
+                continue
+            normalised = _normalise_mergeability_reviewer_result(raw_result)
+            if not normalised["available"]:
+                continue
+            by_reviewer.setdefault(normalised["reviewer_id"], {})[candidate_key] = bool(
+                normalised["accept"]
+            )
+    reviewers = sorted(by_reviewer)
+    pairs: list[dict[str, Any]] = []
+    for left_index, left in enumerate(reviewers):
+        for right in reviewers[left_index + 1:]:
+            shared = sorted(set(by_reviewer[left]) & set(by_reviewer[right]))
+            agreement_count = sum(
+                1
+                for candidate_key in shared
+                if by_reviewer[left][candidate_key] == by_reviewer[right][candidate_key]
+            )
+            pairs.append({
+                "reviewer_pair": [left, right],
+                "shared_candidate_count": len(shared),
+                "agreement_count": agreement_count,
+                "agreement_rate": _rate(agreement_count, len(shared)),
+            })
+    return pairs
+
+
+def _reviewer_packet_leak_refs(rows: list[dict[str, Any]]) -> list[str]:
+    refs: list[str] = []
+    for row in rows:
+        review = row.get("supervisor_full_gate_review")
+        if not isinstance(review, Mapping):
+            continue
+        packet = review.get("reviewer_packet")
+        if not isinstance(packet, Mapping):
+            continue
+        prefix = f"{row['task_id']}:{row['candidate_id']}"
+        refs.extend(f"{prefix}:{ref}" for ref in _public_input_oracle_refs(packet))
+    return sorted(set(refs))
 
 
 def _validate_factorial_arm_pool(

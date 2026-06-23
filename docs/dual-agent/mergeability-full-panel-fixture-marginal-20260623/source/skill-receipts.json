@@ -1,0 +1,46 @@
+{
+  "schema_version": "supervisor-skill-receipts/v1",
+  "task_id": "mergeability-full-panel-fixture-marginal-20260623",
+  "receipts": [
+    {
+      "receipt_id": "skill-to_prd",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "to-prd",
+      "stage": "to_prd",
+      "artifact": "docs/dual-agent/mergeability-full-panel-fixture-marginal-20260623/source/prd.md"
+    },
+    {
+      "receipt_id": "skill-prd_grill",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "grill-with-docs",
+      "stage": "prd_grill",
+      "artifact": "docs/dual-agent/mergeability-full-panel-fixture-marginal-20260623/source/grill-findings.md"
+    },
+    {
+      "receipt_id": "skill-to_issues",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "to-issues",
+      "stage": "to_issues",
+      "artifact": "docs/dual-agent/mergeability-full-panel-fixture-marginal-20260623/source/issues.md"
+    },
+    {
+      "receipt_id": "skill-tdd",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "tdd",
+      "stage": "tdd",
+      "artifact": "docs/dual-agent/mergeability-full-panel-fixture-marginal-20260623/source/tdd.md"
+    },
+    {
+      "receipt_id": "skill-tdd_grill",
+      "kind": "skill_run",
+      "status": "passed",
+      "skill": "grill-with-docs",
+      "stage": "tdd_grill",
+      "artifact": "docs/dual-agent/mergeability-full-panel-fixture-marginal-20260623/source/grill-findings-tdd.md"
+    }
+  ]
+}
