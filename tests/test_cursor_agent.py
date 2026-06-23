@@ -333,6 +333,49 @@ def test_cursor_isolated_reviewer_records_contained_mutation_diagnostic(
     assert "cursor-note.txt" in isolation["changed_paths"]
 
 
+def test_cursor_isolated_reviewer_ignores_source_repo_status_churn(
+    tmp_path: Path,
+    monkeypatch,
+):
+    source = tmp_path / "repo"
+    _init_clean_git_repo(source)
+
+    def fake_run(request: CursorInvocationRequest):
+        outcome = _complete_cursor_outcome(task_id=request.task_id)
+        return f"<dual_agent_outcome>{outcome.model_dump_json()}</dual_agent_outcome>", {
+            "agent_id": "agent-1",
+            "run_id": "run-1",
+            "status": "finished",
+            "model": "composer-2.5",
+            "duration_ms": 10,
+            "reviewer_runtime": "cursor_sdk",
+            "reviewer_output_mode": "cursor_sdk",
+        }
+
+    def status_runner(*args, **kwargs):
+        raise AssertionError("isolated Cursor reviews must not gate on source git status")
+
+    monkeypatch.setattr(cursor_agent, "_run_cursor_sdk", fake_run)
+
+    result = invoke_cursor_agent(
+        CursorInvocationRequest(
+            task_id="tri-agent",
+            gate="tdd_review",
+            instruction="Review the TDD plan.",
+            cwd=source,
+            reviewer_output_mode="cursor_sdk",
+            contract_retry_limit=0,
+        ),
+        status_runner=status_runner,
+    )
+
+    assert result.probe.ok
+    assert cursor_accepts(result)
+    isolation = (result.diagnostics or {})["worktree_isolation"]
+    assert isolation["contained_mutation"] is False
+    assert isolation["changed_path_count"] == 0
+
+
 def test_cursor_original_worktree_mutation_blocks_full_panel_evidence(
     tmp_path: Path,
     monkeypatch,

@@ -246,7 +246,15 @@ def invoke_cursor_agent(
     *,
     status_runner: StatusRunner = subprocess.run,
 ) -> CursorInvocationResult:
-    before_status = _git_status(request.cwd, status_runner=status_runner)
+    guard_source_worktree = (
+        request.reviewer_output_mode != "cursor_sdk"
+        or request.reviewer_worktree_isolation == "none"
+    )
+    before_status = (
+        _git_status(request.cwd, status_runner=status_runner)
+        if guard_source_worktree
+        else None
+    )
     max_attempts = 1 + max(0, int(request.contract_retry_limit))
     attempt_transcripts: list[str] = []
     retry_reasons: list[str] = []
@@ -375,7 +383,11 @@ def invoke_cursor_agent(
             if attempt < max_attempts:
                 continue
 
-        after_status = _git_status(request.cwd, status_runner=status_runner)
+        after_status = (
+            _git_status(request.cwd, status_runner=status_runner)
+            if guard_source_worktree
+            else None
+        )
         if before_status is not None and after_status is not None and before_status != after_status:
             last_probe = ProbeResult(
                 "CURSOR",
