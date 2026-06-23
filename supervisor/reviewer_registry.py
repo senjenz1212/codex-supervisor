@@ -325,6 +325,11 @@ def independent_reviewer_result_from_cursor_result(
         "failure_classification": result.failure_classification,
         "recoverable": result.recoverable,
         "attempts": result.attempts,
+        "worktree_isolation": (
+            result.diagnostics.get("worktree_isolation")
+            if isinstance(result.diagnostics, dict)
+            else None
+        ),
     }
 
 

@@ -1,0 +1,67 @@
+[
+  {
+    "receipt_id": "mergeability-full-panel-diagnostic-smoke-20260623-to-prd",
+    "kind": "skill_run",
+    "status": "passed",
+    "skill": "to-prd",
+    "stage": "to_prd",
+    "artifact_ref": "docs/dual-agent/mergeability-full-panel-diagnostic-smoke-20260623/source/prd.md",
+    "artifact_sha256": "914a6a17a390a0f046e2193e8a5b2f0ff94ecdcd81c7ebeb1bf977bb9dbd3e53",
+    "created_at": 1782182513,
+    "claims": [
+      "PRD promise contracts authored for the full-panel diagnostic smoke"
+    ]
+  },
+  {
+    "receipt_id": "mergeability-full-panel-diagnostic-smoke-20260623-prd-grill",
+    "kind": "skill_run",
+    "status": "passed",
+    "skill": "grill-with-docs",
+    "stage": "prd_grill",
+    "artifact_ref": "docs/dual-agent/mergeability-full-panel-diagnostic-smoke-20260623/source/grill-findings.md",
+    "artifact_sha256": "59926d23423ed1fdd72c2b5401091dde7b29a60f45dd99de330b48f32700ebac",
+    "created_at": 1782182513,
+    "claims": [
+      "PRD grill findings resolved before implementation planning"
+    ]
+  },
+  {
+    "receipt_id": "mergeability-full-panel-diagnostic-smoke-20260623-to-issues",
+    "kind": "skill_run",
+    "status": "passed",
+    "skill": "to-issues",
+    "stage": "to_issues",
+    "artifact_ref": "docs/dual-agent/mergeability-full-panel-diagnostic-smoke-20260623/source/issues.md",
+    "artifact_sha256": "d9a9b9b3466e5088e1296898444f344b7ea8610c389e02b86e34816cf64ac6f5",
+    "created_at": 1782182513,
+    "claims": [
+      "Issues preserve PRD promises and public-boundary acceptance criteria"
+    ]
+  },
+  {
+    "receipt_id": "mergeability-full-panel-diagnostic-smoke-20260623-tdd",
+    "kind": "skill_run",
+    "status": "passed",
+    "skill": "tdd",
+    "stage": "tdd",
+    "artifact_ref": "docs/dual-agent/mergeability-full-panel-diagnostic-smoke-20260623/source/tdd.md",
+    "artifact_sha256": "e11b6e91ae8ed8700441a6ba511d3601ac4bd5fce87deed36441543fcb23fafa",
+    "created_at": 1782182513,
+    "claims": [
+      "TDD plan starts with public diagnostic boundary tests"
+    ]
+  },
+  {
+    "receipt_id": "mergeability-full-panel-diagnostic-smoke-20260623-tdd-grill",
+    "kind": "skill_run",
+    "status": "passed",
+    "skill": "grill-with-docs",
+    "stage": "tdd_grill",
+    "artifact_ref": "docs/dual-agent/mergeability-full-panel-diagnostic-smoke-20260623/source/grill-findings-tdd.md",
+    "artifact_sha256": "df8c069b8c5e630f3d0fc2543eea61c7ccfbfb7660b1e76e0a131889ad0f221e",
+    "created_at": 1782182513,
+    "claims": [
+      "TDD grill verifies public-boundary tests and report-only invariants"
+    ]
+  }
+]

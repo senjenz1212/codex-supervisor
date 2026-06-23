@@ -3085,6 +3085,13 @@ def _reviewer_result_summary(raw: Any) -> dict[str, Any]:
         "transcript_sha256": raw.get("transcript_sha256"),
         "output_sha256": raw.get("output_sha256"),
         "failure_classification": raw.get("failure_classification"),
+        "reviewer_runtime": raw.get("reviewer_runtime") or raw.get("runtime"),
+        "reviewer_output_mode": raw.get("reviewer_output_mode"),
+        "worktree_isolation": (
+            dict(raw.get("worktree_isolation"))
+            if isinstance(raw.get("worktree_isolation"), Mapping)
+            else None
+        ),
     }
 
 

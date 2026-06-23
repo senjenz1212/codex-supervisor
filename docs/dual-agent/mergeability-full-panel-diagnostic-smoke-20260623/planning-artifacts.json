@@ -1,0 +1,38 @@
+[
+  {
+    "kind": "prd",
+    "path": "docs/dual-agent/mergeability-full-panel-diagnostic-smoke-20260623/source/prd.md",
+    "sha256": "914a6a17a390a0f046e2193e8a5b2f0ff94ecdcd81c7ebeb1bf977bb9dbd3e53",
+    "mutable_by_worker": false
+  },
+  {
+    "kind": "grill_findings",
+    "path": "docs/dual-agent/mergeability-full-panel-diagnostic-smoke-20260623/source/grill-findings.md",
+    "sha256": "59926d23423ed1fdd72c2b5401091dde7b29a60f45dd99de330b48f32700ebac",
+    "mutable_by_worker": false
+  },
+  {
+    "kind": "issues",
+    "path": "docs/dual-agent/mergeability-full-panel-diagnostic-smoke-20260623/source/issues.md",
+    "sha256": "d9a9b9b3466e5088e1296898444f344b7ea8610c389e02b86e34816cf64ac6f5",
+    "mutable_by_worker": false
+  },
+  {
+    "kind": "tdd_plan",
+    "path": "docs/dual-agent/mergeability-full-panel-diagnostic-smoke-20260623/source/tdd.md",
+    "sha256": "e11b6e91ae8ed8700441a6ba511d3601ac4bd5fce87deed36441543fcb23fafa",
+    "mutable_by_worker": false
+  },
+  {
+    "kind": "grill_findings_tdd",
+    "path": "docs/dual-agent/mergeability-full-panel-diagnostic-smoke-20260623/source/grill-findings-tdd.md",
+    "sha256": "df8c069b8c5e630f3d0fc2543eea61c7ccfbfb7660b1e76e0a131889ad0f221e",
+    "mutable_by_worker": false
+  },
+  {
+    "kind": "implementation_plan",
+    "path": "docs/dual-agent/mergeability-full-panel-diagnostic-smoke-20260623/source/implementation-plan.md",
+    "sha256": "24bb30f45428d9daeee4d2001fb39d1537a1d39112c6fd62025cb59e766f535e",
+    "mutable_by_worker": false
+  }
+]
