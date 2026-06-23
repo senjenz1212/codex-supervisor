@@ -308,7 +308,7 @@ class Outcome(BaseModel):
                 text = ""
                 for key in (
                     "decision", "verdict", "text", "objection",
-                    "summary", "claim", "value",
+                    "path", "file", "filename", "summary", "claim", "value",
                 ):
                     candidate = item.get(key)
                     if isinstance(candidate, str) and candidate.strip():
@@ -329,6 +329,13 @@ class Outcome(BaseModel):
     @field_validator("tests", mode="before")
     @classmethod
     def _coerce_optional_text_list(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        return cls._coerce_text_list(value)
+
+    @field_validator("changed_files", mode="before")
+    @classmethod
+    def _coerce_changed_files(cls, value: Any) -> Any:
         if value is None:
             return None
         return cls._coerce_text_list(value)

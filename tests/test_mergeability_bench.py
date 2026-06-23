@@ -3177,6 +3177,56 @@ def test_reviewer_zero_infrastructure_failure_records_diagnostic(tmp_path):
     )
 
 
+def test_reviewer_infrastructure_diagnostic_records_redacted_failure_details(tmp_path):
+    fake_secret = "crsr_1234567890abcdef1234567890abcdef"
+    failing_reviewer = _RecordingFakeReviewer(
+        "fake-reviewer-0",
+        result=CursorInvocationResult(
+            probe=ProbeResult(
+                "CURSOR",
+                "red",
+                "reviewer_infrastructure_unavailable",
+                {
+                    "original_reason": "missing_api_key",
+                    "error": f"CURSOR_API_KEY={fake_secret}",
+                },
+            ),
+            outcome=None,
+            transcript="",
+            model="fake-cursor-model",
+            reviewer_runtime="cursor_sdk",
+            reviewer_output_mode="cursor_sdk",
+            reviewer_assurance="unavailable",
+            diagnostics={
+                "failure": {
+                    "probe": {
+                        "reason": "reviewer_infrastructure_unavailable",
+                        "details": {"error": f"api_key={fake_secret}"},
+                    }
+                }
+            },
+            failure_classification="reviewer_infrastructure_unavailable",
+            recoverable=True,
+        ),
+    )
+
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            reviewers=(failing_reviewer,),
+        ),
+    )
+
+    diagnostics = report["configured_reviewer_panel"]["reviewer_infrastructure_diagnostics"]
+    assert diagnostics
+    diagnostic_text = json.dumps(diagnostics, sort_keys=True)
+    assert fake_secret not in diagnostic_text
+    assert "missing_api_key" in diagnostic_text
+    assert "[REDACTED" in diagnostic_text
+
+
 def test_codex_only_calibration_is_labeled_and_not_full_panel(tmp_path):
     reviewer_a, reviewer_b = _accepting_fake_reviewers()
 
@@ -3251,6 +3301,49 @@ def test_codex_only_calibration_provisions_codex_cli_without_cursor(tmp_path):
     assert result["missing_reviewers"] == []
     assert result["decision"] == "accept"
     assert result["available"] is True
+
+
+def test_configured_panel_hydrates_cursor_key_from_codex_mcp_env(tmp_path, monkeypatch):
+    monkeypatch.delenv("CURSOR_API_KEY", raising=False)
+    codex_config = tmp_path / "config.toml"
+    codex_config.write_text(
+        "\n".join([
+            "[mcp_servers.codex_supervisor]",
+            'command = "/tmp/codex-supervisor-mcp"',
+            "",
+            "[mcp_servers.codex_supervisor.env]",
+            'CURSOR_API_KEY = "cursor-from-config"',
+        ]),
+        encoding="utf-8",
+    )
+    invocations: list[tuple[str, str, str | None]] = []
+
+    def invoker(adapter, request):
+        invocations.append(
+            (adapter.spec.reviewer_id, adapter.spec.runtime, request.api_key)
+        )
+        return _fake_cursor_result("accept", model=adapter.spec.model or "fake-model")
+
+    panel = build_configured_reviewer_panel(
+        ConfiguredReviewerPanelOptions(
+            reviewer_invoker=invoker,
+            review_cwd=tmp_path,
+            codex_config_path=codex_config,
+        )
+    )
+
+    result = panel({
+        "task_id": "configured-panel-env",
+        "candidate_id": "candidate-1",
+        "packet_id": "packet-1",
+        "packet_sha256": "0" * 64,
+    })
+
+    assert result["available"] is True
+    assert {runtime for _, runtime, _ in invocations} == {"cursor_sdk", "codex_cli"}
+    assert invocations
+    assert all(api_key == "cursor-from-config" for _, _, api_key in invocations)
+    assert os.environ["CURSOR_API_KEY"] == "cursor-from-config"
 
 
 def test_codex_only_calibration_reports_single_reviewer_marginal_without_full_panel_claim(

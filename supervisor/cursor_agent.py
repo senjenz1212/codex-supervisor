@@ -171,6 +171,7 @@ def build_cursor_prompt(request: CursorInvocationRequest, *, compact: bool = Fal
         claude_outcome,
         compact=compact,
     )
+    specialist_instruction = _specialist_return_instruction(request.expected_specialists)
     return "\n".join([
         f"Tri-agent review gate: {request.gate}.",
         f"Task id: {request.task_id}.",
@@ -210,9 +211,28 @@ def build_cursor_prompt(request: CursorInvocationRequest, *, compact: bool = Fal
         "Claude outcome JSON:",
         claude_outcome_text,
         "",
-        "Return a specialist named Cursor Reviewer. Use decision accept only if the gate should advance.",
+        specialist_instruction,
         _outcome_block_contract(),
     ])
+
+
+def _specialist_return_instruction(expected_specialists: tuple[str, ...]) -> str:
+    names = [str(name).strip() for name in expected_specialists if str(name).strip()]
+    if len(names) == 1:
+        return (
+            f"Return a specialist named {names[0]}. "
+            "Use decision accept only if the gate should advance."
+        )
+    if names:
+        joined = ", ".join(names)
+        return (
+            "Return specialist records with exactly these names: "
+            f"{joined}. Use decision accept only if the gate should advance."
+        )
+    return (
+        "Return a specialist record. "
+        "Use decision accept only if the gate should advance."
+    )
 
 
 def cursor_accepts(result: CursorInvocationResult | None) -> bool:
@@ -1246,6 +1266,8 @@ def _outcome_block_contract() -> str:
         "decisions array, objections array, changed_files array, tests array, "
         "test_status one of passed, failed, or unknown, confidence number from 0 to 1, confidence_rationale string, "
         "confidence_criteria array, claims array, and critical_review object. "
+        "All values inside decisions, objections, changed_files, tests, confidence_criteria, and claims "
+        "must be strings, not objects. "
         "critical_review must include strongest_objection string, missing_evidence array, "
         "contradictions_checked array, assumptions_to_verify array, "
         "what_would_change_my_mind string, decision string, severity string, "

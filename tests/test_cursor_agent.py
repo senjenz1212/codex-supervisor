@@ -54,6 +54,21 @@ def test_build_cursor_prompt_is_review_only_and_uses_typed_outcome_contract(tmp_
     assert "do not reject solely because the packet cannot yet include a sibling Cursor receipt" in prompt
 
 
+def test_build_cursor_prompt_uses_configured_specialist_name(tmp_path: Path):
+    request = CursorInvocationRequest(
+        task_id="mergeability-full-gate",
+        gate="mergeability_full_gate",
+        instruction="Review the public mergeability packet.",
+        cwd=tmp_path,
+        expected_specialists=("Independent Reviewer",),
+    )
+
+    prompt = build_cursor_prompt(request)
+
+    assert "Return a specialist named Independent Reviewer." in prompt
+    assert "Return a specialist named Cursor Reviewer." not in prompt
+
+
 def test_build_cursor_prompt_compacts_large_runtime_receipt_file_lists(tmp_path: Path):
     changed_files = [f"generated/file-{index}.txt" for index in range(25)]
     request = CursorInvocationRequest(

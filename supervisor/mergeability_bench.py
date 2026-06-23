@@ -28,6 +28,7 @@ from .reviewer_registry import (
     evaluate_reviewer_panel,
     independent_reviewer_results_from_review_results,
 )
+from .redaction import redact
 
 
 MERGEABILITY_TASK_SCHEMA_VERSION = "supervisor-mergeability-task/v1"
@@ -2721,7 +2722,7 @@ def _build_reviewer_infrastructure_diagnostic(
             classification = "reviewer_missing_verdict"
         classification_str = str(classification)
         recoverable = classification_str in _RECOVERABLE_REVIEWER_FAILURE_CLASSIFICATIONS
-        reviewers.append({
+        reviewer_entry = {
             "reviewer_id": str(summary.get("reviewer_id") or "unknown-reviewer"),
             "runtime": str(summary.get("runtime") or "unknown"),
             "model": summary.get("model"),
@@ -2729,7 +2730,14 @@ def _build_reviewer_infrastructure_diagnostic(
             "recoverable": recoverable,
             "transcript_sha256": summary.get("transcript_sha256"),
             "output_sha256": summary.get("output_sha256"),
-        })
+        }
+        if isinstance(summary.get("failure_details"), Mapping):
+            reviewer_entry["failure_details"] = redact(dict(summary["failure_details"]))
+        if isinstance(summary.get("diagnostics_failure"), Mapping):
+            reviewer_entry["diagnostics_failure"] = redact(
+                dict(summary["diagnostics_failure"])
+            )
+        reviewers.append(reviewer_entry)
         failure_count += 1
         if recoverable:
             recoverable_count += 1
@@ -3085,6 +3093,16 @@ def _reviewer_result_summary(raw: Any) -> dict[str, Any]:
         "transcript_sha256": raw.get("transcript_sha256"),
         "output_sha256": raw.get("output_sha256"),
         "failure_classification": raw.get("failure_classification"),
+        "failure_details": redact(
+            dict(raw.get("failure_details") or {})
+            if isinstance(raw.get("failure_details"), Mapping)
+            else {}
+        ),
+        "diagnostics_failure": redact(
+            dict(raw.get("diagnostics_failure") or {})
+            if isinstance(raw.get("diagnostics_failure"), Mapping)
+            else {}
+        ),
         "reviewer_runtime": raw.get("reviewer_runtime") or raw.get("runtime"),
         "reviewer_output_mode": raw.get("reviewer_output_mode"),
         "worktree_isolation": (
@@ -3174,6 +3192,9 @@ class ConfiguredReviewerPanelOptions:
     ) = None
     review_cwd: str | Path | None = None
     review_timeout_s: int = 600
+    cursor_api_key: str | None = None
+    codex_config_path: str | Path | None = None
+    load_codex_mcp_env: bool = True
     gate: str = SUPERVISOR_CONFIGURED_PANEL_GATE
     round_index: int = 0
     low_confidence_threshold: float = 0.0
@@ -3318,6 +3339,7 @@ def _configured_panel_review_request(
     options: ConfiguredReviewerPanelOptions,
 ) -> CursorInvocationRequest:
     cwd = Path(options.review_cwd) if options.review_cwd is not None else Path.cwd()
+    api_key = _configured_panel_cursor_api_key(options)
     instruction = (
         "Independently review whether the mergeability candidate evidence should "
         "pass the full supervisor gate. Use only the public reviewer packet and "
@@ -3331,8 +3353,40 @@ def _configured_panel_review_request(
         cwd=str(cwd),
         review_packet=dict(packet),
         timeout_s=options.review_timeout_s,
+        api_key=api_key,
         expected_specialists=("Independent Reviewer",),
     )
+
+
+def _configured_panel_cursor_api_key(
+    options: ConfiguredReviewerPanelOptions,
+) -> str | None:
+    if options.cursor_api_key:
+        return options.cursor_api_key
+    if options.load_codex_mcp_env and not os.environ.get("CURSOR_API_KEY"):
+        config_path = (
+            Path(options.codex_config_path).expanduser()
+            if options.codex_config_path is not None
+            else Path.home() / ".codex" / "config.toml"
+        )
+        _load_configured_panel_codex_mcp_env(config_path)
+    return os.environ.get("CURSOR_API_KEY")
+
+
+def _load_configured_panel_codex_mcp_env(path: Path) -> dict[str, str]:
+    """Load the same Codex MCP env layer used by the workflow CLI.
+
+    Mergeability diagnostics can run as direct library calls instead of through
+    AXI/dispatcher startup. Those local calls still need the Cursor credential
+    boundary hydrated, but the secret value must not be copied into reports or
+    repo files.
+    """
+
+    try:
+        from mcp_tools.codex_supervisor_workflow_cli import load_codex_mcp_env
+    except Exception:
+        return {}
+    return load_codex_mcp_env(path.expanduser())
 
 
 def _configured_panel_infrastructure_failure_result(

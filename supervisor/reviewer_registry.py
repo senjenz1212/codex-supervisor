@@ -21,6 +21,7 @@ from .cursor_agent import (
 )
 from .dual_agent import ProbeResult, evaluate_outcome_fidelity
 from .agent_mailbox import critical_review_prompt
+from .redaction import redact
 
 CodexRunner = Callable[..., subprocess.CompletedProcess[str]]
 
@@ -323,6 +324,15 @@ def independent_reviewer_result_from_cursor_result(
         "critical_review": critical_review,
         "tests": list(outcome_payload.get("tests") or []) if isinstance(outcome_payload, dict) else [],
         "failure_classification": result.failure_classification,
+        "failure_details": redact(
+            result.probe.details if isinstance(result.probe.details, dict) else {}
+        ),
+        "diagnostics_failure": redact(
+            result.diagnostics.get("failure")
+            if isinstance(result.diagnostics, dict)
+            and isinstance(result.diagnostics.get("failure"), dict)
+            else {}
+        ),
         "recoverable": result.recoverable,
         "attempts": result.attempts,
         "worktree_isolation": (
