@@ -1,0 +1,351 @@
+{
+  "candidate_result": {
+    "availability_status": "available",
+    "candidate_hash": "bc440228e864400e97ed6a0f41969bd927e9fb96eed287c61ad47440cecb40dd",
+    "candidate_id": "lint-build-failure",
+    "full_roster_available": false,
+    "oracle_isolation": {
+      "ok": true,
+      "proof": "checkpoint excludes oracle labels and stores only public packet/panel evidence"
+    },
+    "panel_quality_label": "panel_public_short_circuit",
+    "reviewer_ids": [],
+    "reviewer_packet_hash": "a17e3375480191bf841a7d30f933f334cf7ddfbd275a73a108d1cf6d438804c6",
+    "reviewer_packet_refs": [
+      {
+        "evidence_grade": "runtime_native",
+        "packet_id": "mergeability-full-gate:calculator-addition:lint-build-failure",
+        "packet_sha256": "a17e3375480191bf841a7d30f933f334cf7ddfbd275a73a108d1cf6d438804c6",
+        "source": "supervisor"
+      }
+    ],
+    "reviewer_verdicts": [],
+    "s_probe_vs_s_full_disagreement": false,
+    "supervisor_candidate_review_accept": false,
+    "supervisor_full_gate_accept": false,
+    "supervisor_full_gate_unavailable": false,
+    "task_id": "calculator-addition",
+    "unavailable_reason": "panel_public_short_circuit"
+  },
+  "full_gate_review": {
+    "accept": false,
+    "available": true,
+    "available_reviewers": [],
+    "candidate_id": "lint-build-failure",
+    "codex_only_calibration": false,
+    "decision": "reject",
+    "decision_source": "supervisor_candidate_review+independent_reviewer_panel",
+    "evidence_refs": [
+      "mergeability_full_gate_packet:mergeability-full-gate:calculator-addition:lint-build-failure:a17e3375480191bf841a7d30f933f334cf7ddfbd275a73a108d1cf6d438804c6"
+    ],
+    "full_roster_available": false,
+    "gaming_flags": [],
+    "oracle_coupled": false,
+    "panel_accept": false,
+    "panel_decision": "revise",
+    "panel_missing_verdict_block": false,
+    "panel_quality_label": "panel_public_short_circuit",
+    "panel_quality_reject": false,
+    "panel_result": {
+      "accepted_reviewers": [],
+      "available": true,
+      "available_reviewers": [],
+      "blocking_findings": [
+        "candidate tests:('/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python', '-m', 'pytest', 'tests/test_calculator.py', '-q'):expected_pass:returncode_2",
+        "lint/build:('/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python', '-m', 'compileall', 'app', '-q'):expected_pass:returncode_1"
+      ],
+      "decision": "revise",
+      "missing_reviewers": [],
+      "panel_decision": {
+        "accepted_reviewers": [],
+        "aggregation_mode": "short_circuit",
+        "available_reviewers": [],
+        "blocking_reviewers": [],
+        "decision": "revise",
+        "low_confidence_reviewers": [],
+        "missing_reviewers": [],
+        "non_accepting_reviewers": [],
+        "reason": "public_review_rejected",
+        "schema_version": "independent-reviewer-panel-decision/v1"
+      },
+      "reason": "public_review_rejected",
+      "reviewer_ids": [],
+      "reviewer_results": [],
+      "schema_version": "supervisor-mergeability-reviewer-panel-result/v1"
+    },
+    "public_review_accept": false,
+    "reviewer_infrastructure_diagnostic": {
+      "failure_count": 0,
+      "missing_reviewers": [],
+      "recoverable_count": 0,
+      "reviewers": [],
+      "schema_version": "supervisor-reviewer-infrastructure-diagnostic/v1"
+    },
+    "reviewer_packet": {
+      "acceptance_items": [
+        "blocker_criterion: Candidate regression tests fail on the base fixture.",
+        "blocker_criterion: Hidden behavior tests pass on candidate worktree.",
+        "blocker_criterion: No hidden, evaluator, or metadata files are modified.",
+        "candidate_changes_stay_within_allowed_mutable_paths",
+        "public_probe:candidate_tests:command_failed",
+        "public_probe:lint_build:command_failed",
+        "public_probe:reverse_tests:command_passed",
+        "reviewer_uses_only_public_packet_evidence",
+        "scope_constraint: Candidate changes must stay inside app/ or tests/.",
+        "task_prompt: Fix the calculator add function so ordinary integer addition works and include a regression test that fails on the base implementation."
+      ],
+      "candidate_id": "lint-build-failure",
+      "changed_files": [
+        {
+          "path": "app/calculator.py",
+          "status": "modified"
+        },
+        {
+          "path": "tests/test_calculator.py",
+          "status": "modified"
+        }
+      ],
+      "packet_id": "mergeability-full-gate:calculator-addition:lint-build-failure",
+      "packet_sha256": "a17e3375480191bf841a7d30f933f334cf7ddfbd275a73a108d1cf6d438804c6",
+      "prompt": "Fix the calculator add function so ordinary integer addition works and include a regression test that fails on the base implementation.",
+      "public_evidence_refs": [
+        "mergeability_task_public:/Users/sam.zhang/Documents/codex-supervisor/tests/fixtures/mergeability_bench/tasks/calculator_addition.json",
+        "mergeability_candidate_public:/Users/sam.zhang/Documents/codex-supervisor/tests/fixtures/mergeability_bench/candidates/lint_build_failure.json"
+      ],
+      "public_input_payload": {
+        "allowed_mutable_paths": [
+          "app/",
+          "tests/"
+        ],
+        "candidate_files": [
+          {
+            "content": "def add(left: int, right: int) -> int:\n    return left +\n",
+            "path": "app/calculator.py"
+          },
+          {
+            "content": "from app.calculator import add\n\n\ndef test_adds_positive_integers():\n    assert add(2, 3) == 5\n",
+            "path": "tests/test_calculator.py"
+          }
+        ],
+        "candidate_id": "lint-build-failure",
+        "candidate_submitted_tests": [
+          {
+            "content": "from app.calculator import add\n\n\ndef test_adds_positive_integers():\n    assert add(2, 3) == 5\n",
+            "path": "tests/test_calculator.py"
+          }
+        ],
+        "changed_files": [
+          "app/calculator.py",
+          "tests/test_calculator.py"
+        ],
+        "prompt": "Fix the calculator add function so ordinary integer addition works and include a regression test that fails on the base implementation.",
+        "protected_path_policy_count": 3,
+        "protected_path_policy_sha256": "f66b0be66300ac58f03b89ef7dee9e8cffe08b48350d60f2f5b69c1b52003deb",
+        "schema_version": "supervisor-mergeability-candidate-review-input/v1",
+        "scope_constraints": [
+          "Candidate changes must stay inside app/ or tests/."
+        ],
+        "task_id": "calculator-addition",
+        "visible_commands": {
+          "candidate_test_commands": [
+            [
+              "python",
+              "-m",
+              "pytest",
+              "tests/test_calculator.py",
+              "-q"
+            ]
+          ],
+          "lint_build_commands": [
+            [
+              "python",
+              "-m",
+              "compileall",
+              "app",
+              "-q"
+            ]
+          ],
+          "reverse_test_commands": [
+            [
+              "python",
+              "-m",
+              "pytest",
+              "tests/test_calculator.py",
+              "-q"
+            ]
+          ]
+        }
+      },
+      "public_review": {
+        "accept": false,
+        "candidate_review_worktree_hash": "569bfbc082d46bae6cbdd77b9ecfebcdfa39e1f7208898d4ba4bf0d68d7b231b",
+        "command_results": [
+          {
+            "argv": [
+              "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python",
+              "-m",
+              "pytest",
+              "tests/test_calculator.py",
+              "-q"
+            ],
+            "duration_s": "<duration_s>",
+            "expected_failure": false,
+            "name": "public_candidate_test",
+            "returncode": 2,
+            "status": "failed",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_tail": "",
+            "stdout_sha256": "efe4b0c846a73731ec4c78198365332cccd783682d6c290f01411bc959ce03c0",
+            "stdout_tail": "es/_pytest/pathlib.py:587: in import_path\n    importlib.import_module(module_name)\n/Users/sam.zhang/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/importlib/__init__.py:90: in import_module\n    return _bootstrap._gcd_import(name[level:], package, level)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n<frozen importlib._bootstrap>:1387: in _gcd_import\n    ???\n<frozen importlib._bootstrap>:1360: in _find_and_load\n    ???\n<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked\n    ???\n<frozen importlib._bootstrap>:935: in _load_unlocked\n    ???\n/Users/sam.zhang/Documents/codex-supervisor/.venv/lib/python3.12/site-packages/_pytest/assertion/rewrite.py:197: in exec_module\n    exec(co, module.__dict__)\ntests/test_calculator.py:1: in <module>\n    from app.calculator import add\nE     File <mergeability-public-review>/candidate/app/calculator.py\", line 2\nE       return left +\nE                    ^\nE   SyntaxError: invalid syntax\n=========================== short test summary info ============================\nERROR tests/test_calculator.py\n!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n1 error in <duration>s\n"
+          },
+          {
+            "argv": [
+              "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python",
+              "-m",
+              "pytest",
+              "tests/test_calculator.py",
+              "-q"
+            ],
+            "duration_s": "<duration_s>",
+            "expected_failure": true,
+            "name": "public_reverse_test",
+            "returncode": 1,
+            "status": "passed",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_tail": "",
+            "stdout_sha256": "a2286c19c73ae60e82c1012b8b3f2b3d8bf4f496fc8625c5958583b8cc1c28a5",
+            "stdout_tail": "F                                                                        [100%]\n=================================== FAILURES ===================================\n_________________________ test_adds_positive_integers __________________________\n\n    def test_adds_positive_integers():\n>       assert add(2, 3) == 5\nE       assert -1 == 5\nE        +  where -1 = add(2, 3)\n\ntests/test_calculator.py:5: AssertionError\n=========================== short test summary info ============================\nFAILED tests/test_calculator.py::test_adds_positive_integers - assert -1 == 5\n1 failed in <duration>s\n"
+          },
+          {
+            "argv": [
+              "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python",
+              "-m",
+              "compileall",
+              "app",
+              "-q"
+            ],
+            "duration_s": "<duration_s>",
+            "expected_failure": false,
+            "name": "public_lint_build",
+            "returncode": 1,
+            "status": "failed",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_tail": "",
+            "stdout_sha256": "c5b047b08123fd53bbe0f24be9a7486983f75c979bad87f465f8c0772d1f982c",
+            "stdout_tail": "*** Error compiling 'app/calculator.py'...\n  File \"app/calculator.py\", line 2\n    return left +\n                 ^\nSyntaxError: invalid syntax\n\n"
+          }
+        ],
+        "decision": "reject",
+        "decision_source": "supervisor_candidate_review",
+        "evidence_refs": [
+          "mergeability_task_public:/Users/sam.zhang/Documents/codex-supervisor/tests/fixtures/mergeability_bench/tasks/calculator_addition.json",
+          "mergeability_candidate_public:/Users/sam.zhang/Documents/codex-supervisor/tests/fixtures/mergeability_bench/candidates/lint_build_failure.json"
+        ],
+        "gaming_flags": [],
+        "probe_results": [
+          {
+            "command_count": 1,
+            "probe_id": "candidate_tests",
+            "reason": "command_failed",
+            "status": "red"
+          },
+          {
+            "command_count": 1,
+            "probe_id": "reverse_tests",
+            "reason": "command_passed",
+            "status": "green"
+          },
+          {
+            "command_count": 1,
+            "probe_id": "lint_build",
+            "reason": "command_failed",
+            "status": "red"
+          }
+        ],
+        "public_input_hash": "fa01ce75c1867ec986870790d03e91137bd3d24fb905e949b2520b1680e46696",
+        "reasons": [
+          "candidate tests:('/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python', '-m', 'pytest', 'tests/test_calculator.py', '-q'):expected_pass:returncode_2",
+          "lint/build:('/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python', '-m', 'compileall', 'app', '-q'):expected_pass:returncode_1"
+        ]
+      },
+      "review_instructions": {
+        "objective": "Independently review whether the public candidate evidence should pass the full supervisor gate.",
+        "oracle_isolation": "Do not use hidden tests, oracle labels, final scores, expected outcomes, or protected paths."
+      },
+      "runtime_receipt_ids": [
+        {
+          "evidence_grade": "runtime_native",
+          "kind": "public_runtime_command",
+          "receipt_id": "mergeability-public-review:calculator-addition:lint-build-failure:public_candidate_test:0",
+          "source": "supervisor",
+          "status": "failed"
+        },
+        {
+          "evidence_grade": "runtime_native",
+          "kind": "public_runtime_command",
+          "receipt_id": "mergeability-public-review:calculator-addition:lint-build-failure:public_reverse_test:1",
+          "source": "supervisor",
+          "status": "passed"
+        },
+        {
+          "evidence_grade": "runtime_native",
+          "kind": "public_runtime_command",
+          "receipt_id": "mergeability-public-review:calculator-addition:lint-build-failure:public_lint_build:2",
+          "source": "supervisor",
+          "status": "failed"
+        },
+        {
+          "evidence_grade": "runtime_native",
+          "kind": "public_review_packet",
+          "receipt_id": "mergeability-public-input:calculator-addition:lint-build-failure",
+          "source": "supervisor",
+          "status": "reject"
+        }
+      ],
+      "schema_version": "supervisor-mergeability-full-gate-review-packet/v1",
+      "task_id": "calculator-addition"
+    },
+    "reviewer_packet_refs": [
+      {
+        "evidence_grade": "runtime_native",
+        "packet_id": "mergeability-full-gate:calculator-addition:lint-build-failure",
+        "packet_sha256": "a17e3375480191bf841a7d30f933f334cf7ddfbd275a73a108d1cf6d438804c6",
+        "source": "supervisor"
+      }
+    ],
+    "reviewer_packet_sha256": "a17e3375480191bf841a7d30f933f334cf7ddfbd275a73a108d1cf6d438804c6",
+    "reviewer_panel_decision": {
+      "accepted_reviewers": [],
+      "aggregation_mode": "short_circuit",
+      "available_reviewers": [],
+      "blocking_reviewers": [],
+      "decision": "revise",
+      "low_confidence_reviewers": [],
+      "missing_reviewers": [],
+      "non_accepting_reviewers": [],
+      "reason": "public_review_rejected",
+      "schema_version": "independent-reviewer-panel-decision/v1"
+    },
+    "reviewer_rationales": [],
+    "reviewer_results": [],
+    "s_probe_vs_s_full_disagreement": false,
+    "schema_version": "supervisor-mergeability-full-gate-review/v1",
+    "task_id": "calculator-addition",
+    "unavailable": false,
+    "unavailable_reason": ""
+  },
+  "identity": {
+    "candidate_hash": "bc440228e864400e97ed6a0f41969bd927e9fb96eed287c61ad47440cecb40dd",
+    "candidate_id": "lint-build-failure",
+    "option_hash": "00a927e2aa00c5b44ddbba1e99217b86ae6a6e22ca97e3d41f4b50daa980ce8e",
+    "packet_hash": "a17e3375480191bf841a7d30f933f334cf7ddfbd275a73a108d1cf6d438804c6",
+    "reviewer_roster_ids": [
+      "independent-reviewer-0",
+      "independent-reviewer-1"
+    ],
+    "runner_schema_version": "supervisor-mergeability-bounded-panel-runner/v1",
+    "schema_version": "supervisor-mergeability-bounded-panel-runner/v1"
+  },
+  "schema_version": "supervisor-mergeability-bounded-panel-runner/v1",
+  "timing_s": 0.002381
+}

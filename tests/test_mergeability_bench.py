@@ -3926,3 +3926,554 @@ def test_full_panel_report_is_report_only_and_oracle_isolated(tmp_path):
     assert report["gate_advanced"] is False
     assert report["oracle_isolation"]["ok"] is True
     assert report["hidden_field_leak_check"]["ok"] is True
+
+
+# ---------------------------------------------------------------------------
+# Bounded parallel checkpointed full-panel mergeability fixture corpus runner.
+# These tests pin the public seam introduced for the bounded panel runner; they
+# must collect-error (RED) until the runner is added.
+# ---------------------------------------------------------------------------
+
+
+def _bounded_runner_module():
+    return mergeability_bench_module
+
+
+def _bounded_panel_runner_options(**kwargs):
+    BoundedPanelRunnerOptions = _bounded_runner_module().BoundedPanelRunnerOptions
+    return BoundedPanelRunnerOptions(**kwargs)
+
+
+def _run_bounded(**kwargs):
+    return _bounded_runner_module().run_bounded_parallel_panel_corpus(**kwargs)
+
+
+def _accepting_panel_options(reviewer_count: int = 2):
+    reviewers = tuple(
+        _RecordingFakeReviewer(f"fake-reviewer-{i}", result=_fake_cursor_result("accept"))
+        for i in range(reviewer_count)
+    )
+    return ConfiguredReviewerPanelOptions(reviewers=reviewers), reviewers
+
+
+def test_full_corpus_runner_executes_fake_configured_reviewers_with_bounded_parallelism(tmp_path):
+    options, _reviewers = _accepting_panel_options(2)
+    runner_options = _bounded_panel_runner_options(
+        max_candidate_workers=2,
+        max_reviewer_workers=1,
+        review_timeout_s=30.0,
+    )
+    report = _run_bounded(
+        bench_root=BENCH_ROOT,
+        options=runner_options,
+        output_dir=tmp_path,
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=options,
+    )
+    rows = report["per_task_results"]
+    # Deterministic ordering: sorted by (task_id, candidate_id).
+    sort_keys = [(row["task_id"], row["candidate_id"]) for row in rows]
+    assert sort_keys == sorted(sort_keys)
+    # bounded_runner block records what was run.
+    bounded = report["bounded_runner"]
+    assert bounded["max_candidate_workers"] == 2
+    assert bounded["max_reviewer_workers"] == 1
+    assert bounded["reviewer_fanout"] == "serial"
+    assert bounded["completed_candidate_count"] == len(rows)
+    assert bounded["runner_schema_version"] == (
+        _bounded_runner_module().BOUNDED_PANEL_RUNNER_SCHEMA_VERSION
+    )
+    # S_probe and S_full arms present.
+    assert "supervisor_candidate_review" in report["arms"]
+    assert "supervisor_full_gate" in report["arms"]
+    # Report-only flags.
+    assert report["metric_applyable"] is False
+    assert report["improvement_claim_allowed"] is False
+    assert report["policy_mutated"] is False
+    assert report["gate_advanced"] is False
+
+
+def test_max_candidate_workers_limits_concurrent_candidate_execution(tmp_path):
+    import threading
+    import time as _time
+
+    lock = threading.Lock()
+    state = {"in_flight": 0, "max_observed": 0, "calls": 0}
+
+    def fake_invoker(adapter, request):
+        with lock:
+            state["in_flight"] += 1
+            state["calls"] += 1
+            if state["in_flight"] > state["max_observed"]:
+                state["max_observed"] = state["in_flight"]
+        _time.sleep(0.08)
+        with lock:
+            state["in_flight"] -= 1
+        return _fake_cursor_result("accept")
+
+    reviewers = (
+        _RecordingFakeReviewer("fake-reviewer-a", result=_fake_cursor_result("accept")),
+        _RecordingFakeReviewer("fake-reviewer-b", result=_fake_cursor_result("accept")),
+    )
+    panel_options = ConfiguredReviewerPanelOptions(
+        reviewers=reviewers,
+        reviewer_invoker=fake_invoker,
+    )
+    runner_options = _bounded_panel_runner_options(
+        max_candidate_workers=2,
+        max_reviewer_workers=1,
+        review_timeout_s=30.0,
+    )
+    report = _run_bounded(
+        bench_root=BENCH_ROOT,
+        options=runner_options,
+        output_dir=tmp_path,
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=panel_options,
+    )
+    assert state["max_observed"] >= 1
+    # Each candidate panel invokes both reviewers serially within its worker,
+    # so per-candidate concurrency at the reviewer level is bounded by the
+    # candidate worker count.
+    assert state["max_observed"] <= runner_options.max_candidate_workers * 2
+    # bounded_runner records the worker setting.
+    assert report["bounded_runner"]["max_candidate_workers"] == 2
+
+
+def test_max_reviewer_workers_limits_concurrent_reviewers_per_candidate(tmp_path):
+    options, _reviewers = _accepting_panel_options(2)
+    runner_options = _bounded_panel_runner_options(
+        max_candidate_workers=2,
+        max_reviewer_workers=3,
+        review_timeout_s=30.0,
+    )
+    report = _run_bounded(
+        bench_root=BENCH_ROOT,
+        options=runner_options,
+        output_dir=tmp_path,
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=options,
+    )
+    assert report["bounded_runner"]["reviewer_fanout"] == "serial"
+    assert report["bounded_runner"]["max_reviewer_workers"] == 3
+
+
+def test_timeout_missing_verdict_and_partial_roster_are_unavailable_never_accept(tmp_path):
+    import time as _time
+
+    # Partial roster scenario: one reviewer accepts, the other returns no
+    # verdict / fails so the panel reports missing_reviewers and the runner
+    # must mark every candidate unavailable, never accepted.
+    accept_reviewer = _RecordingFakeReviewer(
+        "fake-reviewer-a", result=_fake_cursor_result("accept")
+    )
+    missing_reviewer = _RecordingFakeReviewer(
+        "fake-reviewer-b",
+        result=_unavailable_cursor_result(
+            ReviewerSpec(reviewer_id="fake-reviewer-b", runtime="fake_runtime"),
+            reason="missing_verdict",
+        ),
+    )
+    panel_options = ConfiguredReviewerPanelOptions(
+        reviewers=(accept_reviewer, missing_reviewer),
+    )
+    runner_options = _bounded_panel_runner_options(
+        max_candidate_workers=2,
+        review_timeout_s=30.0,
+    )
+    report = _run_bounded(
+        bench_root=BENCH_ROOT,
+        options=runner_options,
+        output_dir=tmp_path,
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=panel_options,
+    )
+    full_gate = report["arms"]["supervisor_full_gate"]
+    assert full_gate["accepted_count"] == 0
+    for row in report["per_task_results"]:
+        assert row["supervisor_full_gate_accept"] is False
+        if row["supervisor_candidate_review_accept"]:
+            assert row["supervisor_full_gate_unavailable"] is True
+
+    # Timeout scenario: a slow panel function exceeds review_timeout_s, so the
+    # runner converts the result into an unavailable row instead of accepting.
+    def slow_panel(_packet):
+        _time.sleep(0.3)
+        return {
+            "decision": "accept",
+            "available": True,
+            "reason": "should_not_be_used",
+            "reviewer_ids": ["slow-reviewer"],
+        }
+
+    timeout_options = _bounded_panel_runner_options(
+        max_candidate_workers=1,
+        review_timeout_s=0.05,
+    )
+    report_timeout = _run_bounded(
+        bench_root=BENCH_ROOT,
+        options=timeout_options,
+        output_dir=tmp_path / "timeout",
+        reviewer_panel=slow_panel,
+    )
+    accepted = sum(
+        1 for row in report_timeout["per_task_results"]
+        if row["supervisor_full_gate_accept"]
+    )
+    assert accepted == 0
+    timeout_rows = [
+        row for row in report_timeout["per_task_results"]
+        if row["supervisor_candidate_review_accept"]
+    ]
+    assert timeout_rows, "expected at least one public-accepted row"
+    for row in timeout_rows:
+        assert row["supervisor_full_gate_unavailable"] is True
+
+
+def test_max_wall_clock_s_writes_partial_report_and_resume_command(tmp_path):
+    import time as _time
+
+    def slow_panel(_packet):
+        _time.sleep(0.5)
+        return {
+            "decision": "accept",
+            "available": True,
+            "reason": "should_not_complete",
+            "reviewer_ids": ["slow-reviewer"],
+        }
+
+    checkpoint_dir = tmp_path / "ckpt"
+    runner_options = _bounded_panel_runner_options(
+        max_candidate_workers=1,
+        review_timeout_s=30.0,
+        max_wall_clock_s=0.3,
+        checkpoint_dir=checkpoint_dir,
+    )
+    report = _run_bounded(
+        bench_root=BENCH_ROOT,
+        options=runner_options,
+        output_dir=tmp_path / "out",
+        reviewer_panel=slow_panel,
+    )
+    bounded = report["bounded_runner"]
+    assert bounded["wall_clock_stopped"] is True
+    assert int(bounded["interrupted_candidate_count"]) >= 1
+    assert isinstance(bounded["resume_command"], str)
+    assert str(checkpoint_dir) in bounded["resume_command"]
+    assert report["metric_applyable"] is False
+
+
+def test_candidate_selector_and_max_candidates_limit_diagnostic_run_without_full_corpus_claim(
+    tmp_path,
+):
+    options, _reviewers = _accepting_panel_options(2)
+    runner_options = _bounded_panel_runner_options(
+        max_candidate_workers=2,
+        candidate_selector=("known-good", "noop"),
+        max_candidates=2,
+    )
+    report = _run_bounded(
+        bench_root=BENCH_ROOT,
+        options=runner_options,
+        output_dir=tmp_path,
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=options,
+        strict_calibration=False,
+    )
+    rows = report["per_task_results"]
+    assert {row["candidate_id"] for row in rows} == {"known-good", "noop"}
+    scope = report["diagnostic_scope"]
+    assert scope["full_corpus_claim"] is False
+    assert scope["selected_candidate_count"] == 2
+    assert scope["total_candidate_count"] >= 2
+    assert "known-good" in tuple(scope["candidate_selector"])
+    # Ordering is deterministic.
+    sort_keys = [(row["task_id"], row["candidate_id"]) for row in rows]
+    assert sort_keys == sorted(sort_keys)
+
+
+def test_checkpoint_written_before_aggregate_report(tmp_path):
+    options, _reviewers = _accepting_panel_options(2)
+    checkpoint_dir = tmp_path / "ckpt"
+    output_dir = tmp_path / "out"
+    runner_options = _bounded_panel_runner_options(
+        max_candidate_workers=2,
+        checkpoint_dir=checkpoint_dir,
+        candidate_selector=("known-good", "noop"),
+    )
+    report = _run_bounded(
+        bench_root=BENCH_ROOT,
+        options=runner_options,
+        output_dir=output_dir,
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=options,
+        strict_calibration=False,
+    )
+    ckpt_files = sorted((checkpoint_dir / "per_candidate_results").glob("*.json"))
+    assert len(ckpt_files) == len(report["per_task_results"])
+    report_path = output_dir / "paired_acceptance_report.json"
+    assert report_path.exists()
+    for path in ckpt_files:
+        assert path.stat().st_mtime <= report_path.stat().st_mtime
+
+
+def test_checkpoint_resume_reuses_matching_candidate_packet_and_recomputes_stale_checkpoint(
+    tmp_path,
+):
+    counter = {"calls": 0}
+
+    def counting_invoker(adapter, request):
+        counter["calls"] += 1
+        return _fake_cursor_result("accept")
+
+    reviewers = (
+        _RecordingFakeReviewer("fake-reviewer-a", result=_fake_cursor_result("accept")),
+        _RecordingFakeReviewer("fake-reviewer-b", result=_fake_cursor_result("accept")),
+    )
+    panel_options = ConfiguredReviewerPanelOptions(
+        reviewers=reviewers, reviewer_invoker=counting_invoker
+    )
+    checkpoint_dir = tmp_path / "ckpt"
+    runner_options = _bounded_panel_runner_options(
+        max_candidate_workers=1,
+        checkpoint_dir=checkpoint_dir,
+        resume=True,
+        candidate_selector=("known-good",),
+    )
+
+    _run_bounded(
+        bench_root=BENCH_ROOT,
+        options=runner_options,
+        output_dir=tmp_path / "first",
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=panel_options,
+        strict_calibration=False,
+    )
+    first_calls = counter["calls"]
+    assert first_calls > 0
+
+    # Second run with matching checkpoint identity: panel must not run.
+    _run_bounded(
+        bench_root=BENCH_ROOT,
+        options=runner_options,
+        output_dir=tmp_path / "second",
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=panel_options,
+        strict_calibration=False,
+    )
+    assert counter["calls"] == first_calls, "resume should reuse matching checkpoint"
+
+    # Mutate the checkpoint identity to make it stale; the runner must recompute.
+    ckpt_files = sorted((checkpoint_dir / "per_candidate_results").glob("*.json"))
+    assert ckpt_files
+    payload = json.loads(ckpt_files[0].read_text(encoding="utf-8"))
+    payload["identity"]["candidate_hash"] = "deadbeef" * 8
+    ckpt_files[0].write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+
+    _run_bounded(
+        bench_root=BENCH_ROOT,
+        options=runner_options,
+        output_dir=tmp_path / "third",
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=panel_options,
+        strict_calibration=False,
+    )
+    assert counter["calls"] > first_calls, "stale checkpoint should trigger recompute"
+
+
+def test_checkpoint_and_dashboard_leak_detection_blocks_hidden_oracle_material(tmp_path):
+    render = _bounded_runner_module().render_panel_dashboard_html
+
+    leaky_report_key = {
+        "schema_version": "supervisor-mergeability-paired-report/v1",
+        "per_task_results": [
+            {
+                "task_id": "t1",
+                "candidate_id": "c1",
+                "expected_outcome": "pass",  # forbidden key
+            }
+        ],
+        "arms": {},
+        "configured_reviewer_panel": {},
+        "bounded_runner": {},
+        "report_only_invariants": {},
+    }
+    with pytest.raises(MergeabilityBenchError):
+        render(leaky_report_key)
+
+    leaky_report_score = {
+        "schema_version": "supervisor-mergeability-paired-report/v1",
+        "per_task_results": [
+            {
+                "task_id": "t1",
+                "candidate_id": "c1",
+                "final_score": 1.0,  # forbidden key
+            }
+        ],
+        "arms": {},
+        "configured_reviewer_panel": {},
+        "bounded_runner": {},
+        "report_only_invariants": {},
+    }
+    with pytest.raises(MergeabilityBenchError):
+        render(leaky_report_score)
+
+
+def test_annotation_dashboard_renders_public_metrics_without_oracle_material(tmp_path):
+    options, _reviewers = _accepting_panel_options(2)
+    runner_options = _bounded_panel_runner_options(
+        max_candidate_workers=2,
+        candidate_selector=("known-good", "noop", "known-bad"),
+    )
+    report = _run_bounded(
+        bench_root=BENCH_ROOT,
+        options=runner_options,
+        output_dir=tmp_path,
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=options,
+        strict_calibration=False,
+    )
+    # Strip rows of any field name that includes forbidden keys (they live on
+    # the underlying reviewer review structures the dashboard does not need).
+    public_report = _bounded_runner_module()._public_dashboard_report(report)
+    html = _bounded_runner_module().render_panel_dashboard_html(public_report)
+    lower = html.lower()
+    for needle in (
+        "candidate",
+        "n_good",
+        "s_probe",
+        "s_full",
+        "panel marginal",
+        "discordance",
+        "per-reviewer",
+        "agreement",
+        "report-only",
+    ):
+        assert needle in lower, needle
+    # No forbidden oracle markers in the rendered HTML.
+    from supervisor.mergeability_bench import (
+        ORACLE_REVIEW_FORBIDDEN_KEYS,
+        ORACLE_REVIEW_FORBIDDEN_TEXT,
+    )
+    for marker in ORACLE_REVIEW_FORBIDDEN_TEXT:
+        assert marker not in html
+    for key in ORACLE_REVIEW_FORBIDDEN_KEYS:
+        assert key not in html
+
+
+def test_panel_marginal_not_computed_still_reports_probe_full_discordance(tmp_path):
+    options, _reviewers = _accepting_panel_options(2)
+    runner_options = _bounded_panel_runner_options(
+        max_candidate_workers=1,
+        candidate_selector=("noop", "known-bad", "hidden-behavior-miss"),
+    )
+
+    def denying_panel(_packet):
+        return {
+            "decision": "deny",
+            "available": True,
+            "reason": "denied_for_test",
+            "reviewer_ids": ["deny-reviewer"],
+        }
+
+    report = _run_bounded(
+        bench_root=BENCH_ROOT,
+        options=runner_options,
+        output_dir=tmp_path,
+        reviewer_panel=denying_panel,
+        strict_calibration=False,
+    )
+    assert isinstance(report["s_probe_vs_s_full_discordant_count"], int)
+    assert report["s_probe_vs_s_full_discordant_count"] >= 0
+    marginal = report["panel_marginal_delta_at_matched_true_accept"]
+    assert marginal["status"] != "computed"
+
+
+def test_report_only_invariants_false_for_all_checkpointed_runs(tmp_path):
+    options, _reviewers = _accepting_panel_options(2)
+
+    # Scenario A: full corpus.
+    full_options = _bounded_panel_runner_options(max_candidate_workers=2)
+    report_full = _run_bounded(
+        bench_root=BENCH_ROOT,
+        options=full_options,
+        output_dir=tmp_path / "full",
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=options,
+    )
+
+    # Scenario B: diagnostic selector.
+    diag_options = _bounded_panel_runner_options(
+        max_candidate_workers=2,
+        candidate_selector=("known-good", "noop"),
+    )
+    report_diag = _run_bounded(
+        bench_root=BENCH_ROOT,
+        options=diag_options,
+        output_dir=tmp_path / "diag",
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=options,
+        strict_calibration=False,
+    )
+
+    # Scenario C: partial via wall-clock.
+    import time as _time
+
+    def slow_panel(_packet):
+        _time.sleep(0.5)
+        return {
+            "decision": "accept",
+            "available": True,
+            "reason": "should_not_complete",
+            "reviewer_ids": ["slow-reviewer"],
+        }
+
+    partial_options = _bounded_panel_runner_options(
+        max_candidate_workers=1,
+        max_wall_clock_s=0.3,
+        checkpoint_dir=tmp_path / "partial-ckpt",
+    )
+    report_partial = _run_bounded(
+        bench_root=BENCH_ROOT,
+        options=partial_options,
+        output_dir=tmp_path / "partial",
+        reviewer_panel=slow_panel,
+    )
+
+    for label, report in (
+        ("full", report_full),
+        ("diag", report_diag),
+        ("partial", report_partial),
+    ):
+        assert report["metric_applyable"] is False, label
+        assert report["improvement_claim_allowed"] is False, label
+        assert report["policy_mutated"] is False, label
+        assert report["gate_advanced"] is False, label
+        invariants = report["report_only_invariants"]
+        assert invariants["metric_applyable"] is False, label
+        assert invariants["improvement_claim_allowed"] is False, label
+        assert invariants["policy_mutated"] is False, label
+        assert invariants["gate_advanced"] is False, label
+
+
+def test_full_fixture_corpus_smoke_writes_report_checkpoints_runtime_evidence_and_html(tmp_path):
+    options, _reviewers = _accepting_panel_options(2)
+    checkpoint_dir = tmp_path / "ckpt"
+    output_dir = tmp_path / "out"
+    runner_options = _bounded_panel_runner_options(
+        max_candidate_workers=4,
+        checkpoint_dir=checkpoint_dir,
+    )
+    report = _run_bounded(
+        bench_root=BENCH_ROOT,
+        options=runner_options,
+        output_dir=output_dir,
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=options,
+    )
+    assert (output_dir / "paired_acceptance_report.json").exists()
+    ckpt_files = sorted((checkpoint_dir / "per_candidate_results").glob("*.json"))
+    assert len(ckpt_files) == 21
+    assert (output_dir / "runtime-evidence.md").exists()
+    assert (output_dir / "review.html").exists()
+    assert report["bounded_runner"]["completed_candidate_count"] == 21

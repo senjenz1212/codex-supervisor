@@ -1,0 +1,471 @@
+{
+  "candidate_result": {
+    "availability_status": "available",
+    "candidate_hash": "e8e663c7cff9b85480bf989e5a30f2cc6b7829f865be493edbc05925a988b3c1",
+    "candidate_id": "diagnostic-text-split-join-title",
+    "full_roster_available": true,
+    "oracle_isolation": {
+      "ok": true,
+      "proof": "checkpoint excludes oracle labels and stores only public packet/panel evidence"
+    },
+    "panel_quality_label": "panel_quality_accept",
+    "reviewer_ids": [
+      "independent-reviewer-0",
+      "independent-reviewer-1"
+    ],
+    "reviewer_packet_hash": "1b1c7781174390d223121963c162367db2ba55cbdd5722e4d01c757b7a93f455",
+    "reviewer_packet_refs": [
+      {
+        "evidence_grade": "runtime_native",
+        "packet_id": "mergeability-full-gate:text-normalization:diagnostic-text-split-join-title",
+        "packet_sha256": "1b1c7781174390d223121963c162367db2ba55cbdd5722e4d01c757b7a93f455",
+        "source": "supervisor"
+      }
+    ],
+    "reviewer_verdicts": [
+      {
+        "accept": true,
+        "available": true,
+        "decision": "accept",
+        "failure_classification": null,
+        "model": "default",
+        "output_sha256": "db68be807201fe4a947ba3b990e8be89f7ec26c4cfe2d349e4878dfd05c278a3",
+        "reason": "",
+        "reviewer_id": "independent-reviewer-0",
+        "reviewer_runtime": "cursor_sdk",
+        "runtime": "cursor_sdk",
+        "transcript_sha256": "186d96e677e42eb025ef3776813bcad0e18ded90ac49d429e21450affb4b3e95",
+        "verdict_present": true,
+        "worktree_isolation": "isolated_worktree"
+      },
+      {
+        "accept": true,
+        "available": true,
+        "decision": "accept",
+        "failure_classification": null,
+        "model": "gpt-5.5",
+        "output_sha256": "243bbd2440dc8562fa256ab2be8e6a7dffeb11c65dd9e5781e9b651276b5e7e1",
+        "reason": "",
+        "reviewer_id": "independent-reviewer-1",
+        "reviewer_runtime": "codex_cli",
+        "runtime": "codex_cli",
+        "transcript_sha256": "62fbfc4652fa913990d7b21248c06fab0883051a0160a3e167f97236466d23c0",
+        "verdict_present": true,
+        "worktree_isolation": null
+      }
+    ],
+    "s_probe_vs_s_full_disagreement": false,
+    "supervisor_candidate_review_accept": true,
+    "supervisor_full_gate_accept": true,
+    "supervisor_full_gate_unavailable": false,
+    "task_id": "text-normalization",
+    "unavailable_reason": "panel_quality_accept"
+  },
+  "full_gate_review": {
+    "accept": true,
+    "available": true,
+    "available_reviewers": [
+      "independent-reviewer-0",
+      "independent-reviewer-1"
+    ],
+    "candidate_id": "diagnostic-text-split-join-title",
+    "codex_only_calibration": false,
+    "decision": "accept",
+    "decision_source": "supervisor_candidate_review+independent_reviewer_panel",
+    "evidence_refs": [
+      "mergeability_full_gate_packet:mergeability-full-gate:text-normalization:diagnostic-text-split-join-title:1b1c7781174390d223121963c162367db2ba55cbdd5722e4d01c757b7a93f455"
+    ],
+    "full_roster_available": true,
+    "gaming_flags": [],
+    "oracle_coupled": false,
+    "panel_accept": true,
+    "panel_decision": "accept",
+    "panel_missing_verdict_block": false,
+    "panel_quality_label": "panel_quality_accept",
+    "panel_quality_reject": false,
+    "panel_result": {
+      "accepted_reviewers": [
+        "independent-reviewer-0",
+        "independent-reviewer-1"
+      ],
+      "available": true,
+      "available_reviewers": [
+        "independent-reviewer-0",
+        "independent-reviewer-1"
+      ],
+      "blocking_findings": [],
+      "decision": "accept",
+      "missing_reviewers": [],
+      "panel_decision": {
+        "accepted_reviewers": [
+          "independent-reviewer-0",
+          "independent-reviewer-1"
+        ],
+        "aggregation_mode": "conservative",
+        "available_reviewers": [
+          "independent-reviewer-0",
+          "independent-reviewer-1"
+        ],
+        "blocking_reviewers": [],
+        "decision": "accept",
+        "low_confidence_reviewers": [],
+        "missing_reviewers": [],
+        "non_accepting_reviewers": [],
+        "reason": "all_available_reviewers_accept",
+        "schema_version": "independent-reviewer-panel-decision/v1"
+      },
+      "reason": "all_available_reviewers_accept",
+      "reviewer_ids": [
+        "independent-reviewer-0",
+        "independent-reviewer-1"
+      ],
+      "reviewer_results": [
+        {
+          "accept": true,
+          "available": true,
+          "decision": "accept",
+          "failure_classification": null,
+          "model": "default",
+          "output_sha256": "db68be807201fe4a947ba3b990e8be89f7ec26c4cfe2d349e4878dfd05c278a3",
+          "reason": "",
+          "reviewer_id": "independent-reviewer-0",
+          "reviewer_runtime": "cursor_sdk",
+          "runtime": "cursor_sdk",
+          "transcript_sha256": "186d96e677e42eb025ef3776813bcad0e18ded90ac49d429e21450affb4b3e95",
+          "verdict_present": true,
+          "worktree_isolation": "isolated_worktree"
+        },
+        {
+          "accept": true,
+          "available": true,
+          "decision": "accept",
+          "failure_classification": null,
+          "model": "gpt-5.5",
+          "output_sha256": "243bbd2440dc8562fa256ab2be8e6a7dffeb11c65dd9e5781e9b651276b5e7e1",
+          "reason": "",
+          "reviewer_id": "independent-reviewer-1",
+          "reviewer_runtime": "codex_cli",
+          "runtime": "codex_cli",
+          "transcript_sha256": "62fbfc4652fa913990d7b21248c06fab0883051a0160a3e167f97236466d23c0",
+          "verdict_present": true,
+          "worktree_isolation": null
+        }
+      ],
+      "schema_version": "supervisor-mergeability-reviewer-panel-result/v1"
+    },
+    "public_review_accept": true,
+    "reviewer_infrastructure_diagnostic": {
+      "failure_count": 0,
+      "missing_reviewers": [],
+      "recoverable_count": 0,
+      "reviewers": [],
+      "schema_version": "supervisor-reviewer-infrastructure-diagnostic/v1"
+    },
+    "reviewer_packet": {
+      "acceptance_items": [
+        "blocker_criterion: Candidate regression tests fail on the base fixture.",
+        "blocker_criterion: Hidden behavior tests pass on candidate worktree.",
+        "blocker_criterion: No hidden, evaluator, or metadata files are modified.",
+        "candidate_changes_stay_within_allowed_mutable_paths",
+        "public_probe:candidate_tests:command_passed",
+        "public_probe:lint_build:command_passed",
+        "public_probe:reverse_tests:command_passed",
+        "public_probe:supervisor_candidate_review:public_review_passed",
+        "reviewer_uses_only_public_packet_evidence",
+        "scope_constraint: Candidate changes must stay inside app/ or tests/.",
+        "task_prompt: Fix the title normalization helper so whitespace is collapsed and words are title-cased, and include a regression test that fails on the base implementation."
+      ],
+      "candidate_id": "diagnostic-text-split-join-title",
+      "changed_files": [
+        {
+          "path": "app/text_ops.py",
+          "status": "modified"
+        },
+        {
+          "path": "tests/test_text_ops.py",
+          "status": "modified"
+        }
+      ],
+      "packet_id": "mergeability-full-gate:text-normalization:diagnostic-text-split-join-title",
+      "packet_sha256": "1b1c7781174390d223121963c162367db2ba55cbdd5722e4d01c757b7a93f455",
+      "prompt": "Fix the title normalization helper so whitespace is collapsed and words are title-cased, and include a regression test that fails on the base implementation.",
+      "public_evidence_refs": [
+        "mergeability_task_public:/Users/sam.zhang/Documents/codex-supervisor/tests/fixtures/mergeability_bench/tasks/text_normalization.json",
+        "mergeability_candidate_public:/Users/sam.zhang/Documents/codex-supervisor/tests/fixtures/mergeability_bench/candidates/diagnostic_text_split_join_title.json"
+      ],
+      "public_input_payload": {
+        "allowed_mutable_paths": [
+          "app/",
+          "tests/"
+        ],
+        "candidate_files": [
+          {
+            "content": "def normalize_title(text: str) -> str:\n    words = text.split()\n    return \" \".join(word.capitalize() for word in words)\n",
+            "path": "app/text_ops.py"
+          },
+          {
+            "content": "from app.text_ops import normalize_title\n\n\ndef test_normalize_title_handles_api_style_words():\n    assert normalize_title(\"api client\") == \"Api Client\"\n",
+            "path": "tests/test_text_ops.py"
+          }
+        ],
+        "candidate_id": "diagnostic-text-split-join-title",
+        "candidate_submitted_tests": [
+          {
+            "content": "from app.text_ops import normalize_title\n\n\ndef test_normalize_title_handles_api_style_words():\n    assert normalize_title(\"api client\") == \"Api Client\"\n",
+            "path": "tests/test_text_ops.py"
+          }
+        ],
+        "changed_files": [
+          "app/text_ops.py",
+          "tests/test_text_ops.py"
+        ],
+        "prompt": "Fix the title normalization helper so whitespace is collapsed and words are title-cased, and include a regression test that fails on the base implementation.",
+        "protected_path_policy_count": 3,
+        "protected_path_policy_sha256": "f66b0be66300ac58f03b89ef7dee9e8cffe08b48350d60f2f5b69c1b52003deb",
+        "schema_version": "supervisor-mergeability-candidate-review-input/v1",
+        "scope_constraints": [
+          "Candidate changes must stay inside app/ or tests/."
+        ],
+        "task_id": "text-normalization",
+        "visible_commands": {
+          "candidate_test_commands": [
+            [
+              "python",
+              "-m",
+              "pytest",
+              "tests/test_text_ops.py",
+              "-q"
+            ]
+          ],
+          "lint_build_commands": [
+            [
+              "python",
+              "-m",
+              "compileall",
+              "app",
+              "-q"
+            ]
+          ],
+          "reverse_test_commands": [
+            [
+              "python",
+              "-m",
+              "pytest",
+              "tests/test_text_ops.py",
+              "-q"
+            ]
+          ]
+        }
+      },
+      "public_review": {
+        "accept": true,
+        "candidate_review_worktree_hash": "14170414db41fc86a790567dc0357782a0bbd65b657a344a18461134222ff48b",
+        "command_results": [
+          {
+            "argv": [
+              "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python",
+              "-m",
+              "pytest",
+              "tests/test_text_ops.py",
+              "-q"
+            ],
+            "duration_s": "<duration_s>",
+            "expected_failure": false,
+            "name": "public_candidate_test",
+            "returncode": 0,
+            "status": "passed",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_tail": "",
+            "stdout_sha256": "08012d48ba103cade1ef63c9d3d05e311eba69801f290983def895e33bd66e89",
+            "stdout_tail": ".                                                                        [100%]\n1 passed in <duration>s\n"
+          },
+          {
+            "argv": [
+              "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python",
+              "-m",
+              "pytest",
+              "tests/test_text_ops.py",
+              "-q"
+            ],
+            "duration_s": "<duration_s>",
+            "expected_failure": true,
+            "name": "public_reverse_test",
+            "returncode": 1,
+            "status": "passed",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_tail": "",
+            "stdout_sha256": "70e866d2178b8e4de31eaf89b9bb61f0b8316a7914af7abd00fac553eb8e77c1",
+            "stdout_tail": "F                                                                        [100%]\n=================================== FAILURES ===================================\n_________________ test_normalize_title_handles_api_style_words _________________\n\n    def test_normalize_title_handles_api_style_words():\n>       assert normalize_title(\"api client\") == \"Api Client\"\nE       AssertionError: assert 'API CLIENT' == 'Api Client'\nE         \nE         - Api Client\nE         + API CLIENT\n\ntests/test_text_ops.py:5: AssertionError\n=========================== short test summary info ============================\nFAILED tests/test_text_ops.py::test_normalize_title_handles_api_style_words\n1 failed in <duration>s\n"
+          },
+          {
+            "argv": [
+              "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python",
+              "-m",
+              "compileall",
+              "app",
+              "-q"
+            ],
+            "duration_s": "<duration_s>",
+            "expected_failure": false,
+            "name": "public_lint_build",
+            "returncode": 0,
+            "status": "passed",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_tail": "",
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": ""
+          }
+        ],
+        "decision": "accept",
+        "decision_source": "supervisor_candidate_review",
+        "evidence_refs": [
+          "mergeability_task_public:/Users/sam.zhang/Documents/codex-supervisor/tests/fixtures/mergeability_bench/tasks/text_normalization.json",
+          "mergeability_candidate_public:/Users/sam.zhang/Documents/codex-supervisor/tests/fixtures/mergeability_bench/candidates/diagnostic_text_split_join_title.json"
+        ],
+        "gaming_flags": [],
+        "probe_results": [
+          {
+            "command_count": 1,
+            "probe_id": "candidate_tests",
+            "reason": "command_passed",
+            "status": "green"
+          },
+          {
+            "command_count": 1,
+            "probe_id": "reverse_tests",
+            "reason": "command_passed",
+            "status": "green"
+          },
+          {
+            "command_count": 1,
+            "probe_id": "lint_build",
+            "reason": "command_passed",
+            "status": "green"
+          },
+          {
+            "probe_id": "supervisor_candidate_review",
+            "reason": "public_review_passed",
+            "status": "green"
+          }
+        ],
+        "public_input_hash": "697d9a16249c9ee83f281c5eebb90124875131460c36226a5951e6f61aedb6f4",
+        "reasons": []
+      },
+      "review_instructions": {
+        "objective": "Independently review whether the public candidate evidence should pass the full supervisor gate.",
+        "oracle_isolation": "Do not use hidden tests, oracle labels, final scores, expected outcomes, or protected paths."
+      },
+      "runtime_receipt_ids": [
+        {
+          "evidence_grade": "runtime_native",
+          "kind": "public_runtime_command",
+          "receipt_id": "mergeability-public-review:text-normalization:diagnostic-text-split-join-title:public_candidate_test:0",
+          "source": "supervisor",
+          "status": "passed"
+        },
+        {
+          "evidence_grade": "runtime_native",
+          "kind": "public_runtime_command",
+          "receipt_id": "mergeability-public-review:text-normalization:diagnostic-text-split-join-title:public_reverse_test:1",
+          "source": "supervisor",
+          "status": "passed"
+        },
+        {
+          "evidence_grade": "runtime_native",
+          "kind": "public_runtime_command",
+          "receipt_id": "mergeability-public-review:text-normalization:diagnostic-text-split-join-title:public_lint_build:2",
+          "source": "supervisor",
+          "status": "passed"
+        },
+        {
+          "evidence_grade": "runtime_native",
+          "kind": "public_review_packet",
+          "receipt_id": "mergeability-public-input:text-normalization:diagnostic-text-split-join-title",
+          "source": "supervisor",
+          "status": "accept"
+        }
+      ],
+      "schema_version": "supervisor-mergeability-full-gate-review-packet/v1",
+      "task_id": "text-normalization"
+    },
+    "reviewer_packet_refs": [
+      {
+        "evidence_grade": "runtime_native",
+        "packet_id": "mergeability-full-gate:text-normalization:diagnostic-text-split-join-title",
+        "packet_sha256": "1b1c7781174390d223121963c162367db2ba55cbdd5722e4d01c757b7a93f455",
+        "source": "supervisor"
+      }
+    ],
+    "reviewer_packet_sha256": "1b1c7781174390d223121963c162367db2ba55cbdd5722e4d01c757b7a93f455",
+    "reviewer_panel_decision": {
+      "accepted_reviewers": [
+        "independent-reviewer-0",
+        "independent-reviewer-1"
+      ],
+      "aggregation_mode": "conservative",
+      "available_reviewers": [
+        "independent-reviewer-0",
+        "independent-reviewer-1"
+      ],
+      "blocking_reviewers": [],
+      "decision": "accept",
+      "low_confidence_reviewers": [],
+      "missing_reviewers": [],
+      "non_accepting_reviewers": [],
+      "reason": "all_available_reviewers_accept",
+      "schema_version": "independent-reviewer-panel-decision/v1"
+    },
+    "reviewer_rationales": [],
+    "reviewer_results": [
+      {
+        "accept": true,
+        "available": true,
+        "decision": "accept",
+        "failure_classification": null,
+        "model": "default",
+        "output_sha256": "db68be807201fe4a947ba3b990e8be89f7ec26c4cfe2d349e4878dfd05c278a3",
+        "reason": "",
+        "reviewer_id": "independent-reviewer-0",
+        "reviewer_runtime": "cursor_sdk",
+        "runtime": "cursor_sdk",
+        "transcript_sha256": "186d96e677e42eb025ef3776813bcad0e18ded90ac49d429e21450affb4b3e95",
+        "verdict_present": true,
+        "worktree_isolation": "isolated_worktree"
+      },
+      {
+        "accept": true,
+        "available": true,
+        "decision": "accept",
+        "failure_classification": null,
+        "model": "gpt-5.5",
+        "output_sha256": "243bbd2440dc8562fa256ab2be8e6a7dffeb11c65dd9e5781e9b651276b5e7e1",
+        "reason": "",
+        "reviewer_id": "independent-reviewer-1",
+        "reviewer_runtime": "codex_cli",
+        "runtime": "codex_cli",
+        "transcript_sha256": "62fbfc4652fa913990d7b21248c06fab0883051a0160a3e167f97236466d23c0",
+        "verdict_present": true,
+        "worktree_isolation": null
+      }
+    ],
+    "s_probe_vs_s_full_disagreement": false,
+    "schema_version": "supervisor-mergeability-full-gate-review/v1",
+    "task_id": "text-normalization",
+    "unavailable": false,
+    "unavailable_reason": ""
+  },
+  "identity": {
+    "candidate_hash": "e8e663c7cff9b85480bf989e5a30f2cc6b7829f865be493edbc05925a988b3c1",
+    "candidate_id": "diagnostic-text-split-join-title",
+    "option_hash": "00a927e2aa00c5b44ddbba1e99217b86ae6a6e22ca97e3d41f4b50daa980ce8e",
+    "packet_hash": "1b1c7781174390d223121963c162367db2ba55cbdd5722e4d01c757b7a93f455",
+    "reviewer_roster_ids": [
+      "independent-reviewer-0",
+      "independent-reviewer-1"
+    ],
+    "runner_schema_version": "supervisor-mergeability-bounded-panel-runner/v1",
+    "schema_version": "supervisor-mergeability-bounded-panel-runner/v1"
+  },
+  "schema_version": "supervisor-mergeability-bounded-panel-runner/v1",
+  "timing_s": 0.001549
+}

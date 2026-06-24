@@ -1,0 +1,299 @@
+{
+  "candidate_result": {
+    "availability_status": "available",
+    "candidate_hash": "39b07e711a16be1da1f93f27f49688c6da6770542993f35728f7619b1e833056",
+    "candidate_id": "wrong-test-path",
+    "full_roster_available": false,
+    "oracle_isolation": {
+      "ok": true,
+      "proof": "checkpoint excludes oracle labels and stores only public packet/panel evidence"
+    },
+    "panel_quality_label": "panel_public_short_circuit",
+    "reviewer_ids": [],
+    "reviewer_packet_hash": "171e850a6290c03d82b8f37f8ae925dd051f68ecde7bf26bce5420f7b9bff844",
+    "reviewer_packet_refs": [
+      {
+        "evidence_grade": "runtime_native",
+        "packet_id": "mergeability-full-gate:calculator-addition:wrong-test-path",
+        "packet_sha256": "171e850a6290c03d82b8f37f8ae925dd051f68ecde7bf26bce5420f7b9bff844",
+        "source": "supervisor"
+      }
+    ],
+    "reviewer_verdicts": [],
+    "s_probe_vs_s_full_disagreement": false,
+    "supervisor_candidate_review_accept": false,
+    "supervisor_full_gate_accept": false,
+    "supervisor_full_gate_unavailable": false,
+    "task_id": "calculator-addition",
+    "unavailable_reason": "panel_public_short_circuit"
+  },
+  "full_gate_review": {
+    "accept": false,
+    "available": true,
+    "available_reviewers": [],
+    "candidate_id": "wrong-test-path",
+    "codex_only_calibration": false,
+    "decision": "reject",
+    "decision_source": "supervisor_candidate_review+independent_reviewer_panel",
+    "evidence_refs": [
+      "mergeability_full_gate_packet:mergeability-full-gate:calculator-addition:wrong-test-path:171e850a6290c03d82b8f37f8ae925dd051f68ecde7bf26bce5420f7b9bff844"
+    ],
+    "full_roster_available": false,
+    "gaming_flags": [],
+    "oracle_coupled": false,
+    "panel_accept": false,
+    "panel_decision": "revise",
+    "panel_missing_verdict_block": false,
+    "panel_quality_label": "panel_public_short_circuit",
+    "panel_quality_reject": false,
+    "panel_result": {
+      "accepted_reviewers": [],
+      "available": true,
+      "available_reviewers": [],
+      "blocking_findings": [
+        "candidate tests:missing_candidate_test_target:tests/test_calculator.py",
+        "reverse tests:missing_candidate_test_target:tests/test_calculator.py"
+      ],
+      "decision": "revise",
+      "missing_reviewers": [],
+      "panel_decision": {
+        "accepted_reviewers": [],
+        "aggregation_mode": "short_circuit",
+        "available_reviewers": [],
+        "blocking_reviewers": [],
+        "decision": "revise",
+        "low_confidence_reviewers": [],
+        "missing_reviewers": [],
+        "non_accepting_reviewers": [],
+        "reason": "public_review_rejected",
+        "schema_version": "independent-reviewer-panel-decision/v1"
+      },
+      "reason": "public_review_rejected",
+      "reviewer_ids": [],
+      "reviewer_results": [],
+      "schema_version": "supervisor-mergeability-reviewer-panel-result/v1"
+    },
+    "public_review_accept": false,
+    "reviewer_infrastructure_diagnostic": {
+      "failure_count": 0,
+      "missing_reviewers": [],
+      "recoverable_count": 0,
+      "reviewers": [],
+      "schema_version": "supervisor-reviewer-infrastructure-diagnostic/v1"
+    },
+    "reviewer_packet": {
+      "acceptance_items": [
+        "blocker_criterion: Candidate regression tests fail on the base fixture.",
+        "blocker_criterion: Hidden behavior tests pass on candidate worktree.",
+        "blocker_criterion: No hidden, evaluator, or metadata files are modified.",
+        "candidate_changes_stay_within_allowed_mutable_paths",
+        "public_probe:candidate_tests:not_executed",
+        "public_probe:lint_build:command_passed",
+        "public_probe:reverse_tests:not_executed",
+        "reviewer_uses_only_public_packet_evidence",
+        "scope_constraint: Candidate changes must stay inside app/ or tests/.",
+        "task_prompt: Fix the calculator add function so ordinary integer addition works and include a regression test that fails on the base implementation."
+      ],
+      "candidate_id": "wrong-test-path",
+      "changed_files": [
+        {
+          "path": "app/calculator.py",
+          "status": "modified"
+        },
+        {
+          "path": "tests/test_other.py",
+          "status": "modified"
+        }
+      ],
+      "packet_id": "mergeability-full-gate:calculator-addition:wrong-test-path",
+      "packet_sha256": "171e850a6290c03d82b8f37f8ae925dd051f68ecde7bf26bce5420f7b9bff844",
+      "prompt": "Fix the calculator add function so ordinary integer addition works and include a regression test that fails on the base implementation.",
+      "public_evidence_refs": [
+        "mergeability_task_public:/Users/sam.zhang/Documents/codex-supervisor/tests/fixtures/mergeability_bench/tasks/calculator_addition.json",
+        "mergeability_candidate_public:/Users/sam.zhang/Documents/codex-supervisor/tests/fixtures/mergeability_bench/candidates/wrong_test_path.json"
+      ],
+      "public_input_payload": {
+        "allowed_mutable_paths": [
+          "app/",
+          "tests/"
+        ],
+        "candidate_files": [
+          {
+            "content": "def add(left: int, right: int) -> int:\n    return left + right\n",
+            "path": "app/calculator.py"
+          },
+          {
+            "content": "from app.calculator import add\n\n\ndef test_adds_positive_integers():\n    assert add(2, 3) == 5\n",
+            "path": "tests/test_other.py"
+          }
+        ],
+        "candidate_id": "wrong-test-path",
+        "candidate_submitted_tests": [
+          {
+            "content": "from app.calculator import add\n\n\ndef test_adds_positive_integers():\n    assert add(2, 3) == 5\n",
+            "path": "tests/test_other.py"
+          }
+        ],
+        "changed_files": [
+          "app/calculator.py",
+          "tests/test_other.py"
+        ],
+        "prompt": "Fix the calculator add function so ordinary integer addition works and include a regression test that fails on the base implementation.",
+        "protected_path_policy_count": 3,
+        "protected_path_policy_sha256": "f66b0be66300ac58f03b89ef7dee9e8cffe08b48350d60f2f5b69c1b52003deb",
+        "schema_version": "supervisor-mergeability-candidate-review-input/v1",
+        "scope_constraints": [
+          "Candidate changes must stay inside app/ or tests/."
+        ],
+        "task_id": "calculator-addition",
+        "visible_commands": {
+          "candidate_test_commands": [
+            [
+              "python",
+              "-m",
+              "pytest",
+              "tests/test_calculator.py",
+              "-q"
+            ]
+          ],
+          "lint_build_commands": [
+            [
+              "python",
+              "-m",
+              "compileall",
+              "app",
+              "-q"
+            ]
+          ],
+          "reverse_test_commands": [
+            [
+              "python",
+              "-m",
+              "pytest",
+              "tests/test_calculator.py",
+              "-q"
+            ]
+          ]
+        }
+      },
+      "public_review": {
+        "accept": false,
+        "candidate_review_worktree_hash": "6064b6e7e511672e366e12044476232d39396a924dad99c60686abe2ee47c9c5",
+        "command_results": [
+          {
+            "argv": [
+              "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python",
+              "-m",
+              "compileall",
+              "app",
+              "-q"
+            ],
+            "duration_s": "<duration_s>",
+            "expected_failure": false,
+            "name": "public_lint_build",
+            "returncode": 0,
+            "status": "passed",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_tail": "",
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": ""
+          }
+        ],
+        "decision": "reject",
+        "decision_source": "supervisor_candidate_review",
+        "evidence_refs": [
+          "mergeability_task_public:/Users/sam.zhang/Documents/codex-supervisor/tests/fixtures/mergeability_bench/tasks/calculator_addition.json",
+          "mergeability_candidate_public:/Users/sam.zhang/Documents/codex-supervisor/tests/fixtures/mergeability_bench/candidates/wrong_test_path.json"
+        ],
+        "gaming_flags": [],
+        "probe_results": [
+          {
+            "probe_id": "candidate_tests",
+            "reason": "not_executed",
+            "status": "red"
+          },
+          {
+            "probe_id": "reverse_tests",
+            "reason": "not_executed",
+            "status": "red"
+          },
+          {
+            "command_count": 1,
+            "probe_id": "lint_build",
+            "reason": "command_passed",
+            "status": "green"
+          }
+        ],
+        "public_input_hash": "da6e02bad31f089e5ddf9ba0f1c8fbbe9904b71979c71cff940ac09f2bd3079b",
+        "reasons": [
+          "candidate tests:missing_candidate_test_target:tests/test_calculator.py",
+          "reverse tests:missing_candidate_test_target:tests/test_calculator.py"
+        ]
+      },
+      "review_instructions": {
+        "objective": "Independently review whether the public candidate evidence should pass the full supervisor gate.",
+        "oracle_isolation": "Do not use hidden tests, oracle labels, final scores, expected outcomes, or protected paths."
+      },
+      "runtime_receipt_ids": [
+        {
+          "evidence_grade": "runtime_native",
+          "kind": "public_runtime_command",
+          "receipt_id": "mergeability-public-review:calculator-addition:wrong-test-path:public_lint_build:0",
+          "source": "supervisor",
+          "status": "passed"
+        },
+        {
+          "evidence_grade": "runtime_native",
+          "kind": "public_review_packet",
+          "receipt_id": "mergeability-public-input:calculator-addition:wrong-test-path",
+          "source": "supervisor",
+          "status": "reject"
+        }
+      ],
+      "schema_version": "supervisor-mergeability-full-gate-review-packet/v1",
+      "task_id": "calculator-addition"
+    },
+    "reviewer_packet_refs": [
+      {
+        "evidence_grade": "runtime_native",
+        "packet_id": "mergeability-full-gate:calculator-addition:wrong-test-path",
+        "packet_sha256": "171e850a6290c03d82b8f37f8ae925dd051f68ecde7bf26bce5420f7b9bff844",
+        "source": "supervisor"
+      }
+    ],
+    "reviewer_packet_sha256": "171e850a6290c03d82b8f37f8ae925dd051f68ecde7bf26bce5420f7b9bff844",
+    "reviewer_panel_decision": {
+      "accepted_reviewers": [],
+      "aggregation_mode": "short_circuit",
+      "available_reviewers": [],
+      "blocking_reviewers": [],
+      "decision": "revise",
+      "low_confidence_reviewers": [],
+      "missing_reviewers": [],
+      "non_accepting_reviewers": [],
+      "reason": "public_review_rejected",
+      "schema_version": "independent-reviewer-panel-decision/v1"
+    },
+    "reviewer_rationales": [],
+    "reviewer_results": [],
+    "s_probe_vs_s_full_disagreement": false,
+    "schema_version": "supervisor-mergeability-full-gate-review/v1",
+    "task_id": "calculator-addition",
+    "unavailable": false,
+    "unavailable_reason": ""
+  },
+  "identity": {
+    "candidate_hash": "39b07e711a16be1da1f93f27f49688c6da6770542993f35728f7619b1e833056",
+    "candidate_id": "wrong-test-path",
+    "option_hash": "00a927e2aa00c5b44ddbba1e99217b86ae6a6e22ca97e3d41f4b50daa980ce8e",
+    "packet_hash": "171e850a6290c03d82b8f37f8ae925dd051f68ecde7bf26bce5420f7b9bff844",
+    "reviewer_roster_ids": [
+      "independent-reviewer-0",
+      "independent-reviewer-1"
+    ],
+    "runner_schema_version": "supervisor-mergeability-bounded-panel-runner/v1",
+    "schema_version": "supervisor-mergeability-bounded-panel-runner/v1"
+  },
+  "schema_version": "supervisor-mergeability-bounded-panel-runner/v1",
+  "timing_s": 0.000758
+}

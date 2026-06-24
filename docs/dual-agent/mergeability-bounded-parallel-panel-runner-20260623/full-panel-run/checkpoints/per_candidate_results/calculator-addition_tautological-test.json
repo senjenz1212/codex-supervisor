@@ -1,0 +1,351 @@
+{
+  "candidate_result": {
+    "availability_status": "available",
+    "candidate_hash": "430c57a933b206199533bf59c62fc8f3cb0995497b7efc9e01b7069788cef571",
+    "candidate_id": "tautological-test",
+    "full_roster_available": false,
+    "oracle_isolation": {
+      "ok": true,
+      "proof": "checkpoint excludes oracle labels and stores only public packet/panel evidence"
+    },
+    "panel_quality_label": "panel_public_short_circuit",
+    "reviewer_ids": [],
+    "reviewer_packet_hash": "36540868ff6ab7ac1b6c2eb2f6aac4f9b496f60d001044568680d18ccf7ed08b",
+    "reviewer_packet_refs": [
+      {
+        "evidence_grade": "runtime_native",
+        "packet_id": "mergeability-full-gate:calculator-addition:tautological-test",
+        "packet_sha256": "36540868ff6ab7ac1b6c2eb2f6aac4f9b496f60d001044568680d18ccf7ed08b",
+        "source": "supervisor"
+      }
+    ],
+    "reviewer_verdicts": [],
+    "s_probe_vs_s_full_disagreement": false,
+    "supervisor_candidate_review_accept": false,
+    "supervisor_full_gate_accept": false,
+    "supervisor_full_gate_unavailable": false,
+    "task_id": "calculator-addition",
+    "unavailable_reason": "panel_public_short_circuit"
+  },
+  "full_gate_review": {
+    "accept": false,
+    "available": true,
+    "available_reviewers": [],
+    "candidate_id": "tautological-test",
+    "codex_only_calibration": false,
+    "decision": "reject",
+    "decision_source": "supervisor_candidate_review+independent_reviewer_panel",
+    "evidence_refs": [
+      "mergeability_full_gate_packet:mergeability-full-gate:calculator-addition:tautological-test:36540868ff6ab7ac1b6c2eb2f6aac4f9b496f60d001044568680d18ccf7ed08b"
+    ],
+    "full_roster_available": false,
+    "gaming_flags": [],
+    "oracle_coupled": false,
+    "panel_accept": false,
+    "panel_decision": "revise",
+    "panel_missing_verdict_block": false,
+    "panel_quality_label": "panel_public_short_circuit",
+    "panel_quality_reject": false,
+    "panel_result": {
+      "accepted_reviewers": [],
+      "available": true,
+      "available_reviewers": [],
+      "blocking_findings": [
+        "candidate tests:('/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python', '-m', 'pytest', 'tests/test_calculator.py', '-q'):expected_pass:returncode_1",
+        "reverse tests:('/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python', '-m', 'pytest', 'tests/test_calculator.py', '-q'):expected_fail_on_base:returncode_0"
+      ],
+      "decision": "revise",
+      "missing_reviewers": [],
+      "panel_decision": {
+        "accepted_reviewers": [],
+        "aggregation_mode": "short_circuit",
+        "available_reviewers": [],
+        "blocking_reviewers": [],
+        "decision": "revise",
+        "low_confidence_reviewers": [],
+        "missing_reviewers": [],
+        "non_accepting_reviewers": [],
+        "reason": "public_review_rejected",
+        "schema_version": "independent-reviewer-panel-decision/v1"
+      },
+      "reason": "public_review_rejected",
+      "reviewer_ids": [],
+      "reviewer_results": [],
+      "schema_version": "supervisor-mergeability-reviewer-panel-result/v1"
+    },
+    "public_review_accept": false,
+    "reviewer_infrastructure_diagnostic": {
+      "failure_count": 0,
+      "missing_reviewers": [],
+      "recoverable_count": 0,
+      "reviewers": [],
+      "schema_version": "supervisor-reviewer-infrastructure-diagnostic/v1"
+    },
+    "reviewer_packet": {
+      "acceptance_items": [
+        "blocker_criterion: Candidate regression tests fail on the base fixture.",
+        "blocker_criterion: Hidden behavior tests pass on candidate worktree.",
+        "blocker_criterion: No hidden, evaluator, or metadata files are modified.",
+        "candidate_changes_stay_within_allowed_mutable_paths",
+        "public_probe:candidate_tests:command_failed",
+        "public_probe:lint_build:command_passed",
+        "public_probe:reverse_tests:command_failed",
+        "reviewer_uses_only_public_packet_evidence",
+        "scope_constraint: Candidate changes must stay inside app/ or tests/.",
+        "task_prompt: Fix the calculator add function so ordinary integer addition works and include a regression test that fails on the base implementation."
+      ],
+      "candidate_id": "tautological-test",
+      "changed_files": [
+        {
+          "path": "app/calculator.py",
+          "status": "modified"
+        },
+        {
+          "path": "tests/test_calculator.py",
+          "status": "modified"
+        }
+      ],
+      "packet_id": "mergeability-full-gate:calculator-addition:tautological-test",
+      "packet_sha256": "36540868ff6ab7ac1b6c2eb2f6aac4f9b496f60d001044568680d18ccf7ed08b",
+      "prompt": "Fix the calculator add function so ordinary integer addition works and include a regression test that fails on the base implementation.",
+      "public_evidence_refs": [
+        "mergeability_task_public:/Users/sam.zhang/Documents/codex-supervisor/tests/fixtures/mergeability_bench/tasks/calculator_addition.json",
+        "mergeability_candidate_public:/Users/sam.zhang/Documents/codex-supervisor/tests/fixtures/mergeability_bench/candidates/tautological_test.json"
+      ],
+      "public_input_payload": {
+        "allowed_mutable_paths": [
+          "app/",
+          "tests/"
+        ],
+        "candidate_files": [
+          {
+            "content": "def add(left: int, right: int) -> int:\n    return left + right\n",
+            "path": "app/calculator.py"
+          },
+          {
+            "content": "from app.calculator import add\n\n\ndef test_preserves_broken_base_behavior():\n    assert add(5, 3) == 2\n",
+            "path": "tests/test_calculator.py"
+          }
+        ],
+        "candidate_id": "tautological-test",
+        "candidate_submitted_tests": [
+          {
+            "content": "from app.calculator import add\n\n\ndef test_preserves_broken_base_behavior():\n    assert add(5, 3) == 2\n",
+            "path": "tests/test_calculator.py"
+          }
+        ],
+        "changed_files": [
+          "app/calculator.py",
+          "tests/test_calculator.py"
+        ],
+        "prompt": "Fix the calculator add function so ordinary integer addition works and include a regression test that fails on the base implementation.",
+        "protected_path_policy_count": 3,
+        "protected_path_policy_sha256": "f66b0be66300ac58f03b89ef7dee9e8cffe08b48350d60f2f5b69c1b52003deb",
+        "schema_version": "supervisor-mergeability-candidate-review-input/v1",
+        "scope_constraints": [
+          "Candidate changes must stay inside app/ or tests/."
+        ],
+        "task_id": "calculator-addition",
+        "visible_commands": {
+          "candidate_test_commands": [
+            [
+              "python",
+              "-m",
+              "pytest",
+              "tests/test_calculator.py",
+              "-q"
+            ]
+          ],
+          "lint_build_commands": [
+            [
+              "python",
+              "-m",
+              "compileall",
+              "app",
+              "-q"
+            ]
+          ],
+          "reverse_test_commands": [
+            [
+              "python",
+              "-m",
+              "pytest",
+              "tests/test_calculator.py",
+              "-q"
+            ]
+          ]
+        }
+      },
+      "public_review": {
+        "accept": false,
+        "candidate_review_worktree_hash": "e2ed54e422e3a0563ac6ac69596fd0911c0223e9044a1d0049f15862c6eeedfc",
+        "command_results": [
+          {
+            "argv": [
+              "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python",
+              "-m",
+              "pytest",
+              "tests/test_calculator.py",
+              "-q"
+            ],
+            "duration_s": "<duration_s>",
+            "expected_failure": false,
+            "name": "public_candidate_test",
+            "returncode": 1,
+            "status": "failed",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_tail": "",
+            "stdout_sha256": "5af9646f5f5a63051a90367041a4f2b6a8d4d0fdd88c99434e41eaff64d16b38",
+            "stdout_tail": "F                                                                        [100%]\n=================================== FAILURES ===================================\n_____________________ test_preserves_broken_base_behavior ______________________\n\n    def test_preserves_broken_base_behavior():\n>       assert add(5, 3) == 2\nE       assert 8 == 2\nE        +  where 8 = add(5, 3)\n\ntests/test_calculator.py:5: AssertionError\n=========================== short test summary info ============================\nFAILED tests/test_calculator.py::test_preserves_broken_base_behavior - assert...\n1 failed in <duration>s\n"
+          },
+          {
+            "argv": [
+              "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python",
+              "-m",
+              "pytest",
+              "tests/test_calculator.py",
+              "-q"
+            ],
+            "duration_s": "<duration_s>",
+            "expected_failure": true,
+            "name": "public_reverse_test",
+            "returncode": 0,
+            "status": "failed",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_tail": "",
+            "stdout_sha256": "08012d48ba103cade1ef63c9d3d05e311eba69801f290983def895e33bd66e89",
+            "stdout_tail": ".                                                                        [100%]\n1 passed in <duration>s\n"
+          },
+          {
+            "argv": [
+              "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python",
+              "-m",
+              "compileall",
+              "app",
+              "-q"
+            ],
+            "duration_s": "<duration_s>",
+            "expected_failure": false,
+            "name": "public_lint_build",
+            "returncode": 0,
+            "status": "passed",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_tail": "",
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": ""
+          }
+        ],
+        "decision": "reject",
+        "decision_source": "supervisor_candidate_review",
+        "evidence_refs": [
+          "mergeability_task_public:/Users/sam.zhang/Documents/codex-supervisor/tests/fixtures/mergeability_bench/tasks/calculator_addition.json",
+          "mergeability_candidate_public:/Users/sam.zhang/Documents/codex-supervisor/tests/fixtures/mergeability_bench/candidates/tautological_test.json"
+        ],
+        "gaming_flags": [],
+        "probe_results": [
+          {
+            "command_count": 1,
+            "probe_id": "candidate_tests",
+            "reason": "command_failed",
+            "status": "red"
+          },
+          {
+            "command_count": 1,
+            "probe_id": "reverse_tests",
+            "reason": "command_failed",
+            "status": "red"
+          },
+          {
+            "command_count": 1,
+            "probe_id": "lint_build",
+            "reason": "command_passed",
+            "status": "green"
+          }
+        ],
+        "public_input_hash": "f77b70d2a5e8761933039de36e81017937276a6efc6acae0a1507f34dc6acb92",
+        "reasons": [
+          "candidate tests:('/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python', '-m', 'pytest', 'tests/test_calculator.py', '-q'):expected_pass:returncode_1",
+          "reverse tests:('/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python', '-m', 'pytest', 'tests/test_calculator.py', '-q'):expected_fail_on_base:returncode_0"
+        ]
+      },
+      "review_instructions": {
+        "objective": "Independently review whether the public candidate evidence should pass the full supervisor gate.",
+        "oracle_isolation": "Do not use hidden tests, oracle labels, final scores, expected outcomes, or protected paths."
+      },
+      "runtime_receipt_ids": [
+        {
+          "evidence_grade": "runtime_native",
+          "kind": "public_runtime_command",
+          "receipt_id": "mergeability-public-review:calculator-addition:tautological-test:public_candidate_test:0",
+          "source": "supervisor",
+          "status": "failed"
+        },
+        {
+          "evidence_grade": "runtime_native",
+          "kind": "public_runtime_command",
+          "receipt_id": "mergeability-public-review:calculator-addition:tautological-test:public_reverse_test:1",
+          "source": "supervisor",
+          "status": "failed"
+        },
+        {
+          "evidence_grade": "runtime_native",
+          "kind": "public_runtime_command",
+          "receipt_id": "mergeability-public-review:calculator-addition:tautological-test:public_lint_build:2",
+          "source": "supervisor",
+          "status": "passed"
+        },
+        {
+          "evidence_grade": "runtime_native",
+          "kind": "public_review_packet",
+          "receipt_id": "mergeability-public-input:calculator-addition:tautological-test",
+          "source": "supervisor",
+          "status": "reject"
+        }
+      ],
+      "schema_version": "supervisor-mergeability-full-gate-review-packet/v1",
+      "task_id": "calculator-addition"
+    },
+    "reviewer_packet_refs": [
+      {
+        "evidence_grade": "runtime_native",
+        "packet_id": "mergeability-full-gate:calculator-addition:tautological-test",
+        "packet_sha256": "36540868ff6ab7ac1b6c2eb2f6aac4f9b496f60d001044568680d18ccf7ed08b",
+        "source": "supervisor"
+      }
+    ],
+    "reviewer_packet_sha256": "36540868ff6ab7ac1b6c2eb2f6aac4f9b496f60d001044568680d18ccf7ed08b",
+    "reviewer_panel_decision": {
+      "accepted_reviewers": [],
+      "aggregation_mode": "short_circuit",
+      "available_reviewers": [],
+      "blocking_reviewers": [],
+      "decision": "revise",
+      "low_confidence_reviewers": [],
+      "missing_reviewers": [],
+      "non_accepting_reviewers": [],
+      "reason": "public_review_rejected",
+      "schema_version": "independent-reviewer-panel-decision/v1"
+    },
+    "reviewer_rationales": [],
+    "reviewer_results": [],
+    "s_probe_vs_s_full_disagreement": false,
+    "schema_version": "supervisor-mergeability-full-gate-review/v1",
+    "task_id": "calculator-addition",
+    "unavailable": false,
+    "unavailable_reason": ""
+  },
+  "identity": {
+    "candidate_hash": "430c57a933b206199533bf59c62fc8f3cb0995497b7efc9e01b7069788cef571",
+    "candidate_id": "tautological-test",
+    "option_hash": "00a927e2aa00c5b44ddbba1e99217b86ae6a6e22ca97e3d41f4b50daa980ce8e",
+    "packet_hash": "36540868ff6ab7ac1b6c2eb2f6aac4f9b496f60d001044568680d18ccf7ed08b",
+    "reviewer_roster_ids": [
+      "independent-reviewer-0",
+      "independent-reviewer-1"
+    ],
+    "runner_schema_version": "supervisor-mergeability-bounded-panel-runner/v1",
+    "schema_version": "supervisor-mergeability-bounded-panel-runner/v1"
+  },
+  "schema_version": "supervisor-mergeability-bounded-panel-runner/v1",
+  "timing_s": 0.00144
+}

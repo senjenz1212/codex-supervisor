@@ -1,0 +1,78 @@
+[
+  {
+    "receipt_id": "skill-to-prd-mergeability-bounded-parallel-panel-runner-20260623",
+    "kind": "skill_run",
+    "status": "passed",
+    "skill": "to-prd",
+    "stage": "to_prd",
+    "artifacts": [
+      "docs/dual-agent/mergeability-bounded-parallel-panel-runner-20260623/prd.md",
+      "docs/dual-agent/mergeability-bounded-parallel-panel-runner-20260623/source/prd.md"
+    ],
+    "claims": [
+      "Loaded current to-prd skill and synthesized the PRD from the attached task and current code facts.",
+      "PRD contains required sections and PRD Promise Contracts P1 through P5."
+    ]
+  },
+  {
+    "receipt_id": "skill-prd-grill-mergeability-bounded-parallel-panel-runner-20260623",
+    "kind": "skill_run",
+    "status": "passed",
+    "skill": "grill-with-docs",
+    "stage": "prd_grill",
+    "artifacts": [
+      "docs/dual-agent/mergeability-bounded-parallel-panel-runner-20260623/grill-findings.md",
+      "docs/dual-agent/mergeability-bounded-parallel-panel-runner-20260623/source/grill-findings.md"
+    ],
+    "claims": [
+      "Loaded current grill-with-docs skill and its domain-modeling and grilling dependencies.",
+      "Resolved PRD findings before issue slicing."
+    ]
+  },
+  {
+    "receipt_id": "skill-to-issues-mergeability-bounded-parallel-panel-runner-20260623",
+    "kind": "skill_run",
+    "status": "passed",
+    "skill": "to-issues",
+    "stage": "to_issues",
+    "artifacts": [
+      "docs/dual-agent/mergeability-bounded-parallel-panel-runner-20260623/issues.md",
+      "docs/dual-agent/mergeability-bounded-parallel-panel-runner-20260623/source/issues.md"
+    ],
+    "claims": [
+      "Loaded current to-issues skill and sliced the PRD into vertical tracer-bullet issues.",
+      "Each issue includes a PRD promise block and first public-boundary RED seam."
+    ]
+  },
+  {
+    "receipt_id": "skill-tdd-mergeability-bounded-parallel-panel-runner-20260623",
+    "kind": "skill_run",
+    "status": "passed",
+    "skill": "tdd",
+    "stage": "tdd",
+    "artifacts": [
+      "docs/dual-agent/mergeability-bounded-parallel-panel-runner-20260623/tdd.md",
+      "docs/dual-agent/mergeability-bounded-parallel-panel-runner-20260623/source/tdd.md"
+    ],
+    "claims": [
+      "Loaded current tdd skill and supporting tests and mocking guidance.",
+      "TDD plan starts with public-boundary RED tests and uses fake reviewers only below the configured reviewer adapter seam.",
+      "TDD plan explicitly covers max_wall_clock_s, candidate selector/max_candidates, discordance without matched marginal, and report-only invariant flags."
+    ]
+  },
+  {
+    "receipt_id": "skill-tdd-grill-mergeability-bounded-parallel-panel-runner-20260623",
+    "kind": "skill_run",
+    "status": "passed",
+    "skill": "grill-with-docs",
+    "stage": "tdd_grill",
+    "artifacts": [
+      "docs/dual-agent/mergeability-bounded-parallel-panel-runner-20260623/grill-findings-tdd.md",
+      "docs/dual-agent/mergeability-bounded-parallel-panel-runner-20260623/source/grill-findings-tdd.md"
+    ],
+    "claims": [
+      "Loaded current grill-with-docs skill for the TDD review gate.",
+      "Resolved findings about helper-only tests, checkpoint safety, fail-closed reviewer behavior, leak detection, partial real-run evidence, and missing implementation-knob RED coverage."
+    ]
+  }
+]

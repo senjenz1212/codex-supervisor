@@ -1,6 +1,8 @@
 """Deterministic held-out mergeability bench primitives."""
 from __future__ import annotations
 
+import concurrent.futures
+import html as _html
 import json
 import math
 import os
@@ -9,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from dataclasses import dataclass, field
 from hashlib import sha256
@@ -2904,6 +2907,17 @@ def _build_full_gate_reviewer_packet(
     candidate: MergeabilityCandidate,
     public_review: Mapping[str, Any],
 ) -> dict[str, Any]:
+    def _stable_command_payload(raw: Any) -> dict[str, Any]:
+        if not isinstance(raw, Mapping):
+            return {"value": str(raw)}
+        payload = dict(raw)
+        if "duration_s" in payload:
+            payload["duration_s"] = "<duration_s>"
+        for text_key in ("stdout_tail", "stderr_tail"):
+            if text_key in payload:
+                payload[text_key] = _stable_command_text(str(payload[text_key]))
+        return payload
+
     public_files = {
         path: content
         for path, content in candidate.files.items()
@@ -2951,7 +2965,10 @@ def _build_full_gate_reviewer_packet(
             "accept": bool(public_review.get("accept")),
             "reasons": list(public_review.get("reasons") or []),
             "probe_results": list(public_review.get("probe_results") or []),
-            "command_results": list(public_review.get("command_results") or []),
+            "command_results": [
+                _stable_command_payload(result)
+                for result in public_review.get("command_results") or []
+            ],
             "evidence_refs": list(public_review.get("evidence_refs") or []),
             "public_input_hash": str(public_review.get("public_input_hash") or ""),
             "candidate_review_worktree_hash": str(public_review.get("candidate_review_worktree_hash") or ""),
@@ -4391,7 +4408,7 @@ def _public_input_oracle_refs(value: Any, *, path: str = "") -> list[str]:
         for index, nested in enumerate(value):
             refs.extend(_public_input_oracle_refs(nested, path=f"{path}[{index}]"))
     elif isinstance(value, str):
-        for marker in ORACLE_REVIEW_FORBIDDEN_TEXT:
+        for marker in tuple(ORACLE_REVIEW_FORBIDDEN_TEXT) + tuple(ORACLE_REVIEW_FORBIDDEN_KEYS):
             if marker in value:
                 refs.append(path or marker)
                 break
@@ -4431,7 +4448,10 @@ def _protected_refs_in_tree(root: Path, *, protected_paths: tuple[str, ...]) -> 
 def _hash_tree(root: Path) -> str:
     entries: list[dict[str, str]] = []
     for path in sorted(item for item in root.rglob("*") if item.is_file()):
-        rel = _normalise_relpath(path.relative_to(root).as_posix())
+        relative_path = path.relative_to(root)
+        if "__pycache__" in relative_path.parts or relative_path.suffix == ".pyc":
+            continue
+        rel = _normalise_relpath(relative_path.as_posix())
         entries.append({
             "path": rel,
             "sha256": sha256(path.read_bytes()).hexdigest(),
@@ -4935,4 +4955,1890 @@ def _tail(text: str, limit: int = 1200) -> str:
 
 
 def _stable_command_text(text: str) -> str:
-    return re.sub(r"in \d+(?:\.\d+)?s", "in <duration>s", text)
+    stable = re.sub(r"in \d+(?:\.\d+)?s", "in <duration>s", text)
+    stable = re.sub(
+        r'(?:"?)(?:/private)?/var/folders/[^"\s]+/mergeability-public-review-[^/"\s]+',
+        "<mergeability-public-review>",
+        stable,
+    )
+    stable = re.sub(
+        r'(?:"?)(?:/private)?/var/folders/[^"\s]+/cursor-reviewer-[^/"\s]+',
+        "<cursor-reviewer-worktree>",
+        stable,
+    )
+    return stable
+
+
+# ---------------------------------------------------------------------------
+# Bounded parallel checkpointed full-panel mergeability fixture corpus runner.
+# ---------------------------------------------------------------------------
+
+
+BOUNDED_PANEL_RUNNER_SCHEMA_VERSION = "supervisor-mergeability-bounded-panel-runner/v1"
+
+
+@dataclass(frozen=True)
+class BoundedPanelRunnerOptions:
+    """Knobs for the bounded parallel full-panel mergeability corpus runner.
+
+    The defaults keep the runner conservative: small candidate-worker count, a
+    deliberately serial reviewer fanout (recorded as such in the report), and
+    a generous per-review timeout. Wall-clock and candidate-selection knobs
+    default to "no limit"; checkpointing is opt-in via ``checkpoint_dir``.
+    """
+
+    max_candidate_workers: int = 2
+    max_reviewer_workers: int = 1
+    review_timeout_s: float = 600.0
+    max_wall_clock_s: float | None = None
+    max_candidates: int | None = None
+    candidate_selector: tuple[str, ...] | None = None
+    checkpoint_dir: str | Path | None = None
+    resume: bool = True
+
+
+def _bounded_runner_unavailable_full_gate(
+    *,
+    task: MergeabilityTask,
+    candidate: MergeabilityCandidate,
+    public_review: Mapping[str, Any],
+    reason: str,
+    detail: str = "",
+) -> dict[str, Any]:
+    """Build an unavailable full-gate review dict that never accepts.
+
+    Mirrors the shape of `_review_mergeability_candidate_full_gate` so the
+    aggregation helpers can consume the row without special-casing.
+    """
+
+    panel = _normalise_reviewer_panel_result({
+        "decision": "unavailable",
+        "available": False,
+        "reason": reason,
+        "blocking_findings": [detail] if detail else [],
+    })
+    packet = _build_full_gate_reviewer_packet(
+        task=task,
+        candidate=candidate,
+        public_review=public_review,
+    )
+    packet_ref = {
+        "packet_id": packet["packet_id"],
+        "packet_sha256": packet["packet_sha256"],
+        "source": "supervisor",
+        "evidence_grade": "runtime_native",
+    }
+    gaming_flags = sorted(set(public_review.get("gaming_flags") or []) | {
+        "reviewer_panel_unavailable",
+    })
+    return {
+        "schema_version": SUPERVISOR_FULL_GATE_RESULT_SCHEMA_VERSION,
+        "task_id": task.task_id,
+        "candidate_id": candidate.candidate_id,
+        "decision": "reject",
+        "accept": False,
+        "available": False,
+        "unavailable": True,
+        "unavailable_reason": reason,
+        "public_review_accept": bool(public_review.get("accept")),
+        "panel_accept": False,
+        "panel_decision": "unavailable",
+        "panel_result": panel,
+        "reviewer_results": [],
+        "reviewer_rationales": [],
+        "reviewer_panel_decision": None,
+        "available_reviewers": [],
+        "s_probe_vs_s_full_disagreement": False,
+        "reviewer_packet": packet,
+        "reviewer_packet_refs": [packet_ref],
+        "reviewer_packet_sha256": packet["packet_sha256"],
+        "evidence_refs": [
+            f"mergeability_full_gate_packet:{packet['packet_id']}:{packet['packet_sha256']}",
+        ],
+        "gaming_flags": gaming_flags,
+        "decision_source": "supervisor_candidate_review+independent_reviewer_panel",
+        "oracle_coupled": False,
+        "panel_quality_label": "panel_missing_verdict_block",
+        "full_roster_available": False,
+        "panel_quality_reject": False,
+        "panel_missing_verdict_block": True,
+        "codex_only_calibration": False,
+        "reviewer_infrastructure_diagnostic": {
+            "schema_version": "supervisor-reviewer-infrastructure-diagnostic/v1",
+            "reviewers": [],
+            "failure_count": 0,
+            "recoverable_count": 0,
+            "missing_reviewers": [],
+        },
+    }
+
+
+def _bounded_runner_option_hash(
+    options: BoundedPanelRunnerOptions,
+    *,
+    configured_reviewer_panel_options: ConfiguredReviewerPanelOptions | None,
+) -> str:
+    panel_keys: dict[str, Any] = {}
+    if configured_reviewer_panel_options is not None:
+        opts = configured_reviewer_panel_options
+        panel_keys = {
+            "reviewer_output_mode": opts.reviewer_output_mode,
+            "reviewer_model": opts.reviewer_model,
+            "codex_model": opts.codex_model,
+            "review_timeout_s": opts.review_timeout_s,
+            "gate": opts.gate,
+            "round_index": opts.round_index,
+            "low_confidence_threshold": opts.low_confidence_threshold,
+            "codex_only_calibration": opts.codex_only_calibration,
+        }
+    return _sha256_json({
+        "max_candidate_workers": options.max_candidate_workers,
+        "max_reviewer_workers": options.max_reviewer_workers,
+        "review_timeout_s": options.review_timeout_s,
+        "max_wall_clock_s": options.max_wall_clock_s,
+        "candidate_selector": list(options.candidate_selector or ()),
+        "max_candidates": options.max_candidates,
+        "panel": panel_keys,
+    })
+
+
+def _bounded_runner_reviewer_roster_ids(
+    configured_reviewer_panel_options: ConfiguredReviewerPanelOptions | None,
+) -> tuple[str, ...]:
+    if configured_reviewer_panel_options is None:
+        return ()
+    reviewers = configured_reviewer_panel_options.reviewers
+    if reviewers is None:
+        reviewers = _resolve_configured_panel_adapters(configured_reviewer_panel_options)
+    ids: list[str] = []
+    for reviewer in reviewers:
+        spec = getattr(reviewer, "spec", None)
+        rid = getattr(spec, "reviewer_id", None) if spec is not None else None
+        if rid is None:
+            rid = getattr(reviewer, "reviewer_id", None) or "unknown-reviewer"
+        ids.append(str(rid))
+    return tuple(ids)
+
+
+def _bounded_runner_resume_command(
+    options: BoundedPanelRunnerOptions,
+    *,
+    bench_root: Path,
+    output_dir: Path | None,
+) -> str:
+    parts = [
+        "python -m supervisor.mergeability_bench",
+        "--bench-root", str(bench_root),
+        "--max-candidate-workers", str(options.max_candidate_workers),
+        "--max-reviewer-workers", str(options.max_reviewer_workers),
+        "--review-timeout-s", str(options.review_timeout_s),
+        "--reviewer-panel-mode", "configured",
+    ]
+    if options.max_wall_clock_s is not None:
+        parts.extend(["--max-wall-clock-s", str(options.max_wall_clock_s)])
+    if options.max_candidates is not None:
+        parts.extend(["--max-candidates", str(options.max_candidates)])
+    for candidate_id in options.candidate_selector or ():
+        parts.extend(["--candidate-id", str(candidate_id)])
+    if options.checkpoint_dir is not None:
+        parts.extend(["--checkpoint-dir", str(options.checkpoint_dir)])
+    if output_dir is not None:
+        parts.extend(["--output-dir", str(output_dir)])
+    return " ".join(parts)
+
+
+def _checkpoint_path_for_candidate(
+    checkpoint_dir: Path | None,
+    *,
+    task_id: str,
+    candidate_id: str,
+) -> Path | None:
+    if checkpoint_dir is None:
+        return None
+    return checkpoint_dir / "per_candidate_results" / f"{task_id}_{candidate_id}.json"
+
+
+def _bounded_runner_identity(
+    *,
+    candidate: MergeabilityCandidate,
+    candidate_hash: str,
+    packet_sha256: str,
+    reviewer_roster_ids: tuple[str, ...],
+    option_hash: str,
+) -> dict[str, Any]:
+    return {
+        "candidate_id": candidate.candidate_id,
+        "candidate_hash": candidate_hash,
+        "packet_hash": packet_sha256,
+        "reviewer_roster_ids": list(reviewer_roster_ids),
+        "schema_version": BOUNDED_PANEL_RUNNER_SCHEMA_VERSION,
+        "option_hash": option_hash,
+        "runner_schema_version": BOUNDED_PANEL_RUNNER_SCHEMA_VERSION,
+    }
+
+
+def _bounded_runner_load_checkpoint(
+    path: Path | None,
+    *,
+    expected_identity: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    if path is None or not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    identity = payload.get("identity")
+    if not isinstance(identity, Mapping):
+        return None
+    for key in (
+        "candidate_hash",
+        "packet_hash",
+        "schema_version",
+        "option_hash",
+        "runner_schema_version",
+    ):
+        if identity.get(key) != expected_identity.get(key):
+            return None
+    if list(identity.get("reviewer_roster_ids") or []) != list(
+        expected_identity.get("reviewer_roster_ids") or []
+    ):
+        return None
+    if _public_input_oracle_refs(payload):
+        return None
+    full_gate_review = payload.get("full_gate_review")
+    if not isinstance(full_gate_review, Mapping):
+        return None
+    return dict(full_gate_review)
+
+
+def _bounded_runner_public_safe_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        safe: dict[str, Any] = {}
+        for key, nested in value.items():
+            key_text = str(key)
+            if key_text in ORACLE_REVIEW_FORBIDDEN_KEYS:
+                continue
+            safe[key_text] = _bounded_runner_public_safe_value(nested)
+        return safe
+    if isinstance(value, (list, tuple)):
+        return [_bounded_runner_public_safe_value(nested) for nested in value]
+    if isinstance(value, str):
+        text = value
+        markers = (
+            tuple(ORACLE_REVIEW_FORBIDDEN_TEXT)
+            + tuple(ORACLE_REVIEW_FORBIDDEN_KEYS)
+            + (
+                ".mergeability",
+                "hidden_test_commands.json",
+                "oracle_outputs.json",
+            )
+        )
+        for marker in markers:
+            text = text.replace(marker, "[redacted-oracle-marker]")
+        return text
+    return value
+
+
+def _bounded_runner_public_full_gate_review(
+    review: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Return a checkpoint/report-safe full-gate review.
+
+    Live reviewers can mention protected paths while explaining that they did
+    not inspect them. Public artifacts only need reviewer verdict metadata and
+    packet hashes, so strip free-form reviewer payloads down to normalized
+    verdict fields before leak scanning.
+    """
+
+    safe = _bounded_runner_public_safe_value(dict(review))
+    normalized_results: list[dict[str, Any]] = []
+    for raw in review.get("reviewer_results") or []:
+        if not isinstance(raw, Mapping):
+            continue
+        normalised = _normalise_mergeability_reviewer_result(raw)
+        if normalised.get("worktree_isolation") is not None:
+            normalised["worktree_isolation"] = "isolated_worktree"
+        normalized_results.append(_bounded_runner_public_safe_value(normalised))
+    safe["reviewer_results"] = normalized_results
+    safe["reviewer_rationales"] = []
+    panel_result = safe.get("panel_result")
+    if isinstance(panel_result, Mapping):
+        panel_result = dict(panel_result)
+        panel_result["reviewer_results"] = normalized_results
+        panel_result["blocking_findings"] = _bounded_runner_public_safe_value(
+            panel_result.get("blocking_findings") or []
+        )
+        panel_result["panel_decision"] = _bounded_runner_public_safe_value(
+            panel_result.get("panel_decision")
+        )
+        safe["panel_result"] = panel_result
+    leaks = _public_input_oracle_refs(safe)
+    if leaks:
+        raise MergeabilityBenchError(
+            "bounded panel runner full-gate review leaked oracle material: "
+            + ", ".join(leaks)
+        )
+    return safe
+
+
+def _bounded_runner_write_checkpoint(
+    path: Path,
+    *,
+    identity: Mapping[str, Any],
+    row: Mapping[str, Any],
+    timing_s: float,
+) -> None:
+    full_gate_review = row.get("supervisor_full_gate_review")
+    if not isinstance(full_gate_review, Mapping):
+        raise MergeabilityBenchError(
+            "bounded panel runner checkpoint missing full gate review"
+        )
+    full_gate_review = _bounded_runner_public_full_gate_review(full_gate_review)
+    reviewer_verdicts: list[dict[str, Any]] = []
+    for raw_result in row.get("supervisor_full_gate_reviewer_results") or []:
+        if not isinstance(raw_result, Mapping):
+            continue
+        normalised = _normalise_mergeability_reviewer_result(raw_result)
+        worktree_isolation = (
+            "isolated_worktree"
+            if normalised.get("worktree_isolation") is not None
+            else None
+        )
+        reviewer_verdicts.append({
+            "reviewer_id": normalised["reviewer_id"],
+            "decision": normalised["decision"],
+            "accept": bool(normalised["accept"]),
+            "available": bool(normalised["available"]),
+            "verdict_present": bool(normalised["verdict_present"]),
+            "reason": normalised["reason"],
+            "failure_classification": normalised["failure_classification"],
+            "runtime": normalised["runtime"],
+            "reviewer_runtime": normalised["reviewer_runtime"],
+            "model": normalised["model"],
+            "transcript_sha256": normalised["transcript_sha256"],
+            "output_sha256": normalised["output_sha256"],
+            "worktree_isolation": worktree_isolation,
+        })
+    candidate_result = {
+        "task_id": str(row.get("task_id") or ""),
+        "candidate_id": str(row.get("candidate_id") or ""),
+        "candidate_hash": str(row.get("candidate_hash") or ""),
+        "reviewer_packet_hash": str(
+            row.get("supervisor_full_gate_reviewer_packet_sha256") or ""
+        ),
+        "reviewer_packet_refs": list(
+            row.get("supervisor_full_gate_reviewer_packet_refs") or []
+        ),
+        "reviewer_ids": [
+            verdict["reviewer_id"] for verdict in reviewer_verdicts
+        ],
+        "reviewer_verdicts": reviewer_verdicts,
+        "availability_status": (
+            "unavailable"
+            if bool(row.get("supervisor_full_gate_unavailable"))
+            else "available"
+        ),
+        "supervisor_candidate_review_accept": bool(
+            row.get("supervisor_candidate_review_accept")
+        ),
+        "supervisor_full_gate_accept": bool(row.get("supervisor_full_gate_accept")),
+        "supervisor_full_gate_unavailable": bool(
+            row.get("supervisor_full_gate_unavailable")
+        ),
+        "unavailable_reason": str(
+            full_gate_review.get("unavailable_reason")
+            or row.get("panel_quality_label")
+            or ""
+        ),
+        "panel_quality_label": str(row.get("panel_quality_label") or ""),
+        "full_roster_available": bool(row.get("full_roster_available")),
+        "s_probe_vs_s_full_disagreement": bool(
+            row.get("s_probe_vs_s_full_disagreement")
+        ),
+        "oracle_isolation": {
+            "ok": True,
+            "proof": "checkpoint excludes oracle labels and stores only public packet/panel evidence",
+        },
+    }
+    payload = {
+        "schema_version": BOUNDED_PANEL_RUNNER_SCHEMA_VERSION,
+        "identity": dict(identity),
+        "candidate_result": candidate_result,
+        "full_gate_review": dict(full_gate_review),
+        "timing_s": float(timing_s),
+    }
+    leaks = _public_input_oracle_refs(payload)
+    if leaks:
+        raise MergeabilityBenchError(
+            "bounded panel runner checkpoint leaked oracle material: "
+            + ", ".join(leaks)
+        )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+
+
+def _bounded_runner_build_row(
+    *,
+    task: MergeabilityTask,
+    candidate: MergeabilityCandidate,
+    grading_entry: Mapping[str, Any],
+    task_hash: str,
+    candidate_hash: str,
+    supervisor_review: Mapping[str, Any],
+    full_gate_review: Mapping[str, Any],
+    single_agent_baseline_decisions: Mapping[str, Mapping[str, Any]] | None,
+    codex_only_calibration_active: bool,
+) -> dict[str, Any]:
+    """Build a per-candidate row mirroring `run_paired_acceptance_pilot` rows.
+
+    Copied here intentionally; the existing runner is not refactored so this
+    bounded variant can evolve independently per the implementation plan.
+    """
+
+    oracle_accept = float(grading_entry["final_score"]) >= 1.0
+    metadata_accept_all_baseline_accept = _baseline_accepts(candidate)
+    baseline_raw = (
+        single_agent_baseline_decisions.get(candidate.candidate_id)
+        if single_agent_baseline_decisions is not None
+        else None
+    )
+    single_agent_baseline_decision = _resolve_powered_baseline_decision(
+        raw=baseline_raw,
+        expected_candidate_artifact_hash=candidate_hash,
+        expected_candidate_id=candidate.candidate_id,
+    )
+    single_agent_baseline_available = not bool(single_agent_baseline_decision["unavailable"])
+    single_agent_baseline_accept = bool(single_agent_baseline_decision["accept"])
+    supervisor_accept = bool(supervisor_review["accept"])
+    supervisor_full_gate_accept = bool(full_gate_review["accept"])
+    panel_result = (
+        full_gate_review.get("panel_result")
+        if isinstance(full_gate_review.get("panel_result"), Mapping)
+        else {}
+    )
+    if not codex_only_calibration_active:
+        codex_only_calibration_unavailable = True
+    elif not supervisor_accept:
+        codex_only_calibration_unavailable = False
+    else:
+        codex_only_calibration_unavailable = not bool(
+            "oracle_isolation_violation" not in full_gate_review.get("gaming_flags", [])
+            and panel_result.get("available")
+            and not panel_result.get("missing_reviewers")
+        )
+    codex_only_calibration_accept = bool(
+        supervisor_accept
+        and not codex_only_calibration_unavailable
+        and panel_result.get("decision") == "accept"
+    )
+    row: dict[str, Any] = {
+        "task_id": grading_entry["task_id"],
+        "task_hash": task_hash,
+        "task_class": task.task_class,
+        "split": task.split,
+        "candidate_id": grading_entry["candidate_id"],
+        "candidate_hash": candidate_hash,
+        "control_kind": grading_entry["control_kind"],
+        "expected_outcome": grading_entry["expected_outcome"],
+        "oracle_accept": oracle_accept,
+        "baseline_accept": metadata_accept_all_baseline_accept,
+        "metadata_accept_all_baseline_accept": metadata_accept_all_baseline_accept,
+        "metadata_accept_all_baseline_unavailable": False,
+        "single_agent_baseline_accept": single_agent_baseline_accept,
+        "single_agent_baseline_unavailable": not single_agent_baseline_available,
+        "supervisor_accept": supervisor_accept,
+        "supervisor_candidate_review_accept": supervisor_accept,
+        "supervisor_full_gate_accept": supervisor_full_gate_accept,
+        "supervisor_full_gate_unavailable": bool(full_gate_review["unavailable"]),
+        "codex_only_calibration_panel_accept": codex_only_calibration_accept,
+        "codex_only_calibration_panel_unavailable": codex_only_calibration_unavailable,
+        "oracle_ceiling_accept": oracle_accept,
+        "baseline_false_accept": metadata_accept_all_baseline_accept and not oracle_accept,
+        "metadata_accept_all_baseline_false_accept": (
+            metadata_accept_all_baseline_accept and not oracle_accept
+        ),
+        "single_agent_baseline_false_accept": (
+            single_agent_baseline_available and single_agent_baseline_accept and not oracle_accept
+        ),
+        "supervisor_false_accept": supervisor_accept and not oracle_accept,
+        "supervisor_candidate_review_false_accept": supervisor_accept and not oracle_accept,
+        "supervisor_full_gate_false_accept": supervisor_full_gate_accept and not oracle_accept,
+        "codex_only_calibration_panel_false_accept": (
+            codex_only_calibration_accept and not oracle_accept
+        ),
+        "oracle_ceiling_false_accept": oracle_accept and not oracle_accept,
+        "baseline_false_reject": (not metadata_accept_all_baseline_accept) and oracle_accept,
+        "metadata_accept_all_baseline_false_reject": (
+            (not metadata_accept_all_baseline_accept) and oracle_accept
+        ),
+        "single_agent_baseline_false_reject": (
+            single_agent_baseline_available
+            and (not single_agent_baseline_accept)
+            and oracle_accept
+        ),
+        "supervisor_false_reject": (not supervisor_accept) and oracle_accept,
+        "supervisor_candidate_review_false_reject": (not supervisor_accept) and oracle_accept,
+        "supervisor_full_gate_false_reject": (not supervisor_full_gate_accept) and oracle_accept,
+        "codex_only_calibration_panel_false_reject": (
+            (not codex_only_calibration_accept)
+            and (not codex_only_calibration_unavailable)
+            and oracle_accept
+        ),
+        "oracle_ceiling_false_reject": (not oracle_accept) and oracle_accept,
+        "receipt_id": grading_entry["receipt_id"],
+        "receipt": grading_entry["receipt"],
+        "blocker_status": grading_entry["blocker_status"],
+        "failures": list(grading_entry["failures"]),
+        "baseline_decision_source": "candidate_self_report",
+        "baseline_evidence_kind": "metadata_calibration",
+        "metadata_accept_all_baseline_decision_source": "candidate_self_report",
+        "metadata_accept_all_baseline_evidence_kind": "metadata_calibration",
+        "single_agent_baseline_candidate_id": single_agent_baseline_decision["candidate_id"],
+        "single_agent_baseline_decision_source": single_agent_baseline_decision["decision_source"],
+        "single_agent_baseline_evidence_kind": single_agent_baseline_decision["evidence_kind"],
+        "single_agent_baseline_candidate_artifact_hash": (
+            single_agent_baseline_decision["candidate_artifact_hash"]
+        ),
+        "single_agent_baseline_producer": dict(single_agent_baseline_decision["producer"]),
+        "single_agent_baseline_prompt_sha256": single_agent_baseline_decision["prompt_sha256"],
+        "single_agent_baseline_unavailable_reason": (
+            single_agent_baseline_decision["unavailable_reason"]
+        ),
+        "oracle_ceiling_decision_source": "oracle_final_score",
+        "supervisor_decision_source": "supervisor_candidate_review",
+        "supervisor_candidate_review_decision_source": "supervisor_candidate_review",
+        "supervisor_full_gate_decision_source": "supervisor_full_gate",
+        "codex_only_calibration_panel_decision_source": (
+            "codex_only_single_reviewer_calibration"
+        ),
+        "supervisor_review": dict(supervisor_review),
+        "supervisor_full_gate_review": dict(full_gate_review),
+        "supervisor_full_gate_reviewer_results": list(
+            full_gate_review.get("reviewer_results") or []
+        ),
+        "supervisor_full_gate_reviewer_rationales": list(
+            full_gate_review.get("reviewer_rationales") or []
+        ),
+        "supervisor_full_gate_reviewer_packet_refs": list(
+            full_gate_review.get("reviewer_packet_refs") or []
+        ),
+        "supervisor_full_gate_reviewer_packet_sha256": str(
+            full_gate_review.get("reviewer_packet_sha256") or ""
+        ),
+        "supervisor_full_gate_reviewer_panel_decision": (
+            full_gate_review.get("reviewer_panel_decision")
+        ),
+        "s_probe_vs_s_full_disagreement": bool(
+            full_gate_review.get("s_probe_vs_s_full_disagreement")
+        ),
+        "panel_quality_label": str(
+            full_gate_review.get("panel_quality_label") or "panel_missing_verdict_block"
+        ),
+        "full_roster_available": bool(full_gate_review.get("full_roster_available")),
+        "panel_quality_reject": bool(full_gate_review.get("panel_quality_reject")),
+        "panel_missing_verdict_block": bool(
+            full_gate_review.get("panel_missing_verdict_block")
+        ),
+        "codex_only_calibration": bool(full_gate_review.get("codex_only_calibration")),
+        "reviewer_infrastructure_diagnostic": dict(
+            full_gate_review.get("reviewer_infrastructure_diagnostic") or {}
+        ),
+    }
+    row["is_no_regression_failure"] = bool(
+        metadata_accept_all_baseline_accept
+        and oracle_accept
+        and not supervisor_full_gate_accept
+        and not bool(full_gate_review["unavailable"])
+    )
+    return row
+
+
+def run_bounded_parallel_panel_corpus(
+    bench_root: str | Path,
+    *,
+    options: BoundedPanelRunnerOptions | None = None,
+    output_dir: str | Path | None = None,
+    configured_reviewer_panel_options: ConfiguredReviewerPanelOptions | None = None,
+    reviewer_panel: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+    reviewer_panel_mode: str = "custom",
+    single_agent_baseline_decisions: Mapping[str, Mapping[str, Any]] | None = None,
+    strict_calibration: bool = True,
+    timeout_s: float = 30.0,
+) -> dict[str, Any]:
+    """Run the fixture mergeability corpus with bounded parallel panel calls.
+
+    Sorts rows by ``(task_id, candidate_id)`` regardless of completion order,
+    writes per-candidate checkpoints before the aggregate report, applies
+    candidate selection and wall-clock limits honestly (no claim of full
+    corpus when filtered), and emits a public-only annotation HTML dashboard.
+    All results are calibration evidence only; report-only invariants stay
+    false even on partial or wall-clock-truncated runs.
+    """
+
+    if reviewer_panel_mode not in {"custom", "configured"}:
+        raise MergeabilityBenchError(
+            f"unknown reviewer_panel_mode: {reviewer_panel_mode!r}"
+        )
+    opts = options or BoundedPanelRunnerOptions()
+    codex_only_calibration_active = bool(
+        configured_reviewer_panel_options is not None
+        and getattr(configured_reviewer_panel_options, "codex_only_calibration", False)
+    )
+    if reviewer_panel_mode == "configured" and reviewer_panel is None:
+        reviewer_panel = build_configured_reviewer_panel(configured_reviewer_panel_options)
+    panel_fn = reviewer_panel or _default_unavailable_reviewer_panel
+
+    started = time.monotonic()
+    bench_root_path = Path(bench_root).expanduser().resolve()
+    output_path = Path(output_dir).expanduser() if output_dir is not None else None
+    checkpoint_dir = (
+        Path(opts.checkpoint_dir).expanduser() if opts.checkpoint_dir is not None else None
+    )
+
+    # Build manifest from full corpus for top-level provenance, then apply
+    # filter to derive the actually-scheduled candidate set.
+    full_manifest = build_mergeability_corpus_manifest(bench_root_path)
+    tasks = {task.task_id: task for task in load_mergeability_tasks(bench_root_path)}
+    all_candidates = list(load_mergeability_candidates(bench_root_path))
+    selected_candidates = list(all_candidates)
+    if opts.candidate_selector is not None:
+        wanted = set(opts.candidate_selector)
+        selected_candidates = [c for c in selected_candidates if c.candidate_id in wanted]
+    selected_candidates.sort(key=lambda c: (c.task_id, c.candidate_id))
+    if opts.max_candidates is not None:
+        selected_candidates = selected_candidates[: opts.max_candidates]
+    filtered = (
+        opts.candidate_selector is not None
+        or opts.max_candidates is not None
+    )
+    if not selected_candidates:
+        raise MergeabilityBenchError(
+            "bounded panel runner: no candidates remain after applying selector"
+        )
+    selected_paths = tuple(
+        Path(candidate.candidate_ref) for candidate in selected_candidates
+    )
+    selected_path_strs = tuple(str(p) for p in selected_paths)
+
+    # Manifest reflecting the SCHEDULED candidates for hashing/provenance.
+    manifest = build_mergeability_corpus_manifest(
+        bench_root_path, candidate_paths=selected_path_strs
+    )
+    task_hashes = {entry["task_id"]: entry["task_hash"] for entry in manifest["tasks"]}
+    candidate_hashes = {
+        (entry["task_id"], entry["candidate_id"]): entry["candidate_hash"]
+        for entry in manifest["candidates"]
+    }
+
+    # Strict calibration would refuse a filtered corpus; only enforce when the
+    # caller explicitly opts in *and* did not filter (filter implies relax).
+    calibration = validate_mergeability_corpus(
+        bench_root_path,
+        strict=strict_calibration and not filtered,
+        candidate_paths=selected_path_strs,
+        timeout_s=timeout_s,
+    )
+
+    if filtered:
+        # `validate_mergeability_corpus` keeps aggregate manifests honest by
+        # excluding task slices that lack both positive and negative controls.
+        # Diagnostic selectors are intentionally allowed to run narrower slices,
+        # so grade the selected candidates directly while keeping the report's
+        # full-corpus claim disabled.
+        present = {
+            (entry["task_id"], entry["candidate_id"])
+            for entry in calibration.get("results", [])
+            if isinstance(entry, Mapping)
+        }
+        diagnostic_results = list(calibration.get("results", []))
+        for candidate in selected_candidates:
+            key = (candidate.task_id, candidate.candidate_id)
+            task = tasks.get(candidate.task_id)
+            if key in present or task is None:
+                continue
+            result = grade_mergeability_candidate(
+                task,
+                candidate,
+                bench_root=bench_root_path,
+                timeout_s=timeout_s,
+            )
+            receipt = result_receipt(result)
+            expected = _candidate_expected_outcome(candidate)
+            observed = "pass" if result.final_score >= 1.0 else "fail"
+            diagnostic_results.append({
+                "task_id": result.task_id,
+                "candidate_id": result.candidate_id,
+                "control_kind": _candidate_control_kind(candidate),
+                "expected_outcome": expected,
+                "observed_outcome": observed,
+                "final_score": result.final_score,
+                "blocker_status": result.blocker_status,
+                "hidden_test_status": result.hidden_test_status,
+                "reverse_test_status": result.reverse_test_status,
+                "scope_status": result.scope_status,
+                "lint_build_status": result.lint_build_status,
+                "failures": list(result.failures),
+                "receipt_id": receipt["receipt_id"],
+                "receipt": receipt,
+            })
+        calibration = dict(calibration)
+        calibration["results"] = sorted(
+            diagnostic_results,
+            key=lambda entry: (entry["task_id"], entry["candidate_id"]),
+        )
+        calibration["summary_sha256"] = _sha256_json({
+            key: value for key, value in calibration.items()
+            if key != "summary_sha256"
+        })
+
+    # Public reviews are cheap and run serially.
+    public_reviews: dict[str, dict[str, Any]] = {}
+    for candidate in selected_candidates:
+        if candidate.task_id not in tasks:
+            continue
+        public_reviews[candidate.candidate_id] = review_mergeability_candidate_publicly(
+            tasks[candidate.task_id],
+            candidate,
+            bench_root=bench_root_path,
+            timeout_s=timeout_s,
+        )
+
+    grading_index = {entry["candidate_id"]: entry for entry in calibration["results"]}
+    reviewer_roster_ids = _bounded_runner_reviewer_roster_ids(
+        configured_reviewer_panel_options
+    )
+    option_hash = _bounded_runner_option_hash(
+        opts,
+        configured_reviewer_panel_options=configured_reviewer_panel_options,
+    )
+
+    # Pre-build packets so we can hash them for checkpoint identity and pass
+    # them to the panel callable.
+    packets: dict[str, dict[str, Any]] = {}
+    identities: dict[str, dict[str, Any]] = {}
+    for candidate in selected_candidates:
+        if candidate.candidate_id not in public_reviews:
+            continue
+        packet = _build_full_gate_reviewer_packet(
+            task=tasks[candidate.task_id],
+            candidate=candidate,
+            public_review=public_reviews[candidate.candidate_id],
+        )
+        packets[candidate.candidate_id] = packet
+        identities[candidate.candidate_id] = _bounded_runner_identity(
+            candidate=candidate,
+            candidate_hash=candidate_hashes[(candidate.task_id, candidate.candidate_id)],
+            packet_sha256=str(packet["packet_sha256"]),
+            reviewer_roster_ids=reviewer_roster_ids,
+            option_hash=option_hash,
+        )
+
+    # First pass: resume public-safe full-gate reviews whose checkpoints match
+    # identity. Oracle-derived row fields are rebuilt from the current
+    # deterministic grader below; checkpoints do not store oracle labels.
+    cached_full_gate_reviews: dict[str, dict[str, Any]] = {}
+    needs_panel: list[MergeabilityCandidate] = []
+    if checkpoint_dir is not None and opts.resume:
+        for candidate in selected_candidates:
+            if candidate.candidate_id not in identities:
+                continue
+            ckpt_path = _checkpoint_path_for_candidate(
+                checkpoint_dir,
+                task_id=candidate.task_id,
+                candidate_id=candidate.candidate_id,
+            )
+            existing = _bounded_runner_load_checkpoint(
+                ckpt_path,
+                expected_identity=identities[candidate.candidate_id],
+            )
+            if existing is not None:
+                cached_full_gate_reviews[candidate.candidate_id] = existing
+            else:
+                needs_panel.append(candidate)
+    else:
+        needs_panel = [
+            candidate for candidate in selected_candidates
+            if candidate.candidate_id in identities
+        ]
+
+    # Schedule panel calls with bounded parallelism + wall-clock budget.
+    panel_results: dict[str, dict[str, Any]] = {}
+    interrupted_ids: list[str] = []
+    timed_out_ids: list[str] = []
+    wall_clock_stopped = False
+    wall_start = time.monotonic()
+    max_workers = max(1, int(opts.max_candidate_workers))
+
+    def _wall_clock_remaining() -> float | None:
+        if opts.max_wall_clock_s is None:
+            return None
+        return max(0.0, float(opts.max_wall_clock_s) - (time.monotonic() - wall_start))
+
+    if needs_panel:
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
+        try:
+            in_flight: dict[concurrent.futures.Future, str] = {}
+            pending_iter = iter(needs_panel)
+            exhausted = False
+            while True:
+                while len(in_flight) < max_workers and not exhausted:
+                    remaining = _wall_clock_remaining()
+                    if remaining is not None and remaining <= 0.0:
+                        wall_clock_stopped = True
+                        break
+                    try:
+                        candidate = next(pending_iter)
+                    except StopIteration:
+                        exhausted = True
+                        break
+                    cid = candidate.candidate_id
+                    packet = packets[cid]
+                    future = executor.submit(panel_fn, packet)
+                    in_flight[future] = cid
+
+                if wall_clock_stopped:
+                    for remaining_candidate in pending_iter:
+                        interrupted_ids.append(remaining_candidate.candidate_id)
+                    exhausted = True
+
+                if not in_flight:
+                    break
+
+                # Wait for at least one future; bound by review timeout and
+                # any remaining wall-clock budget.
+                remaining_wall = _wall_clock_remaining()
+                if remaining_wall is not None and remaining_wall <= 0.0:
+                    wait_timeout: float | None = 0.0
+                else:
+                    wait_timeout = opts.review_timeout_s
+                    if remaining_wall is not None:
+                        wait_timeout = min(wait_timeout, remaining_wall)
+                done, _not_done = concurrent.futures.wait(
+                    list(in_flight.keys()),
+                    timeout=wait_timeout,
+                    return_when=concurrent.futures.FIRST_COMPLETED,
+                )
+                if not done:
+                    remaining_wall = _wall_clock_remaining()
+                    if remaining_wall is not None and remaining_wall <= 0.0:
+                        wall_clock_stopped = True
+                        for fut, cid in list(in_flight.items()):
+                            fut.cancel()
+                            interrupted_ids.append(cid)
+                            del in_flight[fut]
+                        continue
+                    # Per-review timeout: cancel and mark unavailable.
+                    for fut, cid in list(in_flight.items()):
+                        fut.cancel()
+                        timed_out_ids.append(cid)
+                        del in_flight[fut]
+                    continue
+                for fut in done:
+                    cid = in_flight.pop(fut)
+                    try:
+                        panel_results[cid] = dict(fut.result(timeout=0.001))
+                    except Exception as exc:  # noqa: BLE001
+                        panel_results[cid] = {
+                            "decision": "unavailable",
+                            "available": False,
+                            "reason": "reviewer_invocation_failed",
+                            "blocking_findings": [f"{type(exc).__name__}: {exc}"],
+                        }
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
+
+    # Build rows for every selected candidate. Resumed full-gate reviews take
+    # precedence; panel results are wrapped through the full-gate path;
+    # interrupted/timeout become unavailable rows that never accept.
+    rows: list[dict[str, Any]] = []
+    completed_count = 0
+    timing_per_candidate: dict[str, float] = {}
+    for candidate in selected_candidates:
+        cid = candidate.candidate_id
+        if cid not in identities:
+            continue
+        public_review = public_reviews[cid]
+        row_start = time.monotonic()
+        if cid in cached_full_gate_reviews:
+            full_gate_review = dict(cached_full_gate_reviews[cid])
+        elif cid in interrupted_ids:
+            full_gate_review = _bounded_runner_unavailable_full_gate(
+                task=tasks[candidate.task_id],
+                candidate=candidate,
+                public_review=public_review,
+                reason="wall_clock_exceeded",
+                detail="bounded panel runner stopped scheduling new candidates",
+            )
+        elif cid in timed_out_ids:
+            full_gate_review = _bounded_runner_unavailable_full_gate(
+                task=tasks[candidate.task_id],
+                candidate=candidate,
+                public_review=public_review,
+                reason="review_timeout",
+                detail=f"panel call exceeded review_timeout_s={opts.review_timeout_s}",
+            )
+        elif cid in panel_results:
+            cached_panel_result = panel_results[cid]
+
+            def _cached_panel(_packet, _result=cached_panel_result):
+                return _result
+
+            full_gate_review = _review_mergeability_candidate_full_gate(
+                task=tasks[candidate.task_id],
+                candidate=candidate,
+                public_review=public_review,
+                reviewer_panel=_cached_panel,
+                codex_only_calibration=codex_only_calibration_active,
+            )
+        else:
+            # Should not happen, but fail closed.
+            full_gate_review = _bounded_runner_unavailable_full_gate(
+                task=tasks[candidate.task_id],
+                candidate=candidate,
+                public_review=public_review,
+                reason="reviewer_panel_unavailable",
+                detail="missing panel result for candidate",
+            )
+        full_gate_review = _bounded_runner_public_full_gate_review(full_gate_review)
+        grading_entry = grading_index.get(cid)
+        if grading_entry is None:
+            # Filtered candidate excluded by manifest task allowlist.
+            continue
+        row = _bounded_runner_build_row(
+            task=tasks[candidate.task_id],
+            candidate=candidate,
+            grading_entry=grading_entry,
+            task_hash=task_hashes[candidate.task_id],
+            candidate_hash=candidate_hashes[(candidate.task_id, cid)],
+            supervisor_review=public_review,
+            full_gate_review=full_gate_review,
+            single_agent_baseline_decisions=single_agent_baseline_decisions,
+            codex_only_calibration_active=codex_only_calibration_active,
+        )
+        timing_per_candidate[cid] = round(time.monotonic() - row_start, 6)
+        rows.append(row)
+        completed_count += 1
+
+    # Checkpoint write happens BEFORE we assemble or write the aggregate
+    # report. Each checkpoint is leak-scanned via `_public_input_oracle_refs`.
+    checkpoint_refs: list[str] = []
+    if checkpoint_dir is not None:
+        for row in rows:
+            cid = row["candidate_id"]
+            if cid not in identities:
+                continue
+            ckpt_path = _checkpoint_path_for_candidate(
+                checkpoint_dir,
+                task_id=row["task_id"],
+                candidate_id=cid,
+            )
+            if ckpt_path is None:
+                continue
+            if cid in cached_full_gate_reviews and ckpt_path.exists():
+                # Already on disk, identity already validated. Keep as-is.
+                checkpoint_refs.append(str(ckpt_path))
+                continue
+            _bounded_runner_write_checkpoint(
+                ckpt_path,
+                identity=identities[cid],
+                row=row,
+                timing_s=timing_per_candidate.get(cid, 0.0),
+            )
+            checkpoint_refs.append(str(ckpt_path))
+
+    # Deterministic ordering.
+    rows.sort(key=lambda r: (r["task_id"], r["candidate_id"]))
+
+    # Aggregate arms — mirror run_paired_acceptance_pilot.
+    metadata_accept_all_baseline = _summarize_acceptance_arm(
+        rows,
+        arm="metadata_accept_all_baseline",
+        arm_role="metadata_accept_all_baseline",
+        decision_source="candidate_self_report",
+        oracle_coupled=False,
+        evidence_kind="metadata_calibration",
+    )
+    baseline = dict(metadata_accept_all_baseline)
+    baseline["arm"] = "baseline"
+    baseline["arm_role"] = "baseline_self_report"
+    baseline["legacy_alias_of"] = "metadata_accept_all_baseline"
+
+    def _single_agent_baseline_evidence_kind() -> str:
+        available = [row for row in rows if not bool(row.get("single_agent_baseline_unavailable"))]
+        source_rows = available if available else rows
+        kinds = {str(row.get("single_agent_baseline_evidence_kind") or "missing") for row in source_rows}
+        if len(kinds) == 1:
+            return next(iter(kinds))
+        return "mixed_produced_baseline"
+
+    def _single_agent_baseline_decision_source() -> str:
+        available = [row for row in rows if not bool(row.get("single_agent_baseline_unavailable"))]
+        if not available:
+            return "produced_single_agent_baseline_unavailable"
+        sources = {str(row.get("single_agent_baseline_decision_source") or "") for row in available}
+        sources.discard("")
+        if len(sources) == 1:
+            return next(iter(sources))
+        return "mixed_produced_single_agent_baseline"
+
+    single_agent_baseline = _summarize_acceptance_arm(
+        rows,
+        arm="single_agent_baseline",
+        arm_role="single_agent_baseline",
+        decision_source=_single_agent_baseline_decision_source(),
+        oracle_coupled=False,
+        evidence_kind=_single_agent_baseline_evidence_kind(),
+    )
+    oracle_ceiling = _summarize_acceptance_arm(
+        rows,
+        arm="oracle_ceiling",
+        arm_role="oracle_ceiling",
+        decision_source="oracle_final_score",
+        oracle_coupled=True,
+    )
+    supervisor_candidate_review = _summarize_acceptance_arm(
+        rows,
+        arm="supervisor_candidate_review",
+        arm_role="supervisor_candidate_review",
+        decision_source="supervisor_candidate_review",
+        oracle_coupled=False,
+    )
+    supervisor_full_gate = _summarize_acceptance_arm(
+        rows,
+        arm="supervisor_full_gate",
+        arm_role="supervisor_full_gate",
+        decision_source="supervisor_candidate_review+independent_reviewer_panel",
+        oracle_coupled=False,
+    )
+    codex_only_calibration_panel = _summarize_acceptance_arm(
+        rows,
+        arm="codex_only_calibration_panel",
+        arm_role="codex_only_single_reviewer_calibration",
+        decision_source="codex_only_single_reviewer_calibration",
+        oracle_coupled=False,
+        evidence_kind="codex_only_calibration",
+    )
+    supervisor = dict(supervisor_candidate_review)
+    supervisor["arm"] = "supervisor"
+    supervisor["legacy_alias_of"] = "supervisor_candidate_review"
+
+    disagreements = [
+        {
+            "task_id": row["task_id"],
+            "candidate_id": row["candidate_id"],
+            "control_kind": row["control_kind"],
+            "baseline_accept": row["baseline_accept"],
+            "supervisor_accept": row["supervisor_accept"],
+            "oracle_accept": row["oracle_accept"],
+            "reason": "supervisor_candidate_review_disagreed_with_oracle",
+        }
+        for row in rows
+        if row["supervisor_accept"] != row["oracle_accept"]
+    ]
+    positive_control_count = sum(
+        1 for entry in manifest["candidates"] if entry["expected_outcome"] == "pass"
+    )
+    negative_control_count = sum(
+        1 for entry in manifest["candidates"] if entry["expected_outcome"] == "fail"
+    )
+    heldout_coverage = _heldout_coverage_from_manifest(manifest)
+    no_regression_findings = _no_regression_findings(rows, manifest)
+    oracle_agreement = {
+        "supervisor_candidate_review": _oracle_agreement(rows, arm="supervisor_candidate_review"),
+        "supervisor_full_gate": _oracle_agreement(rows, arm="supervisor_full_gate"),
+        "codex_only_calibration_panel": _oracle_agreement(
+            rows,
+            arm="codex_only_calibration_panel",
+        ),
+        "baseline": _oracle_agreement(rows, arm="baseline"),
+        "metadata_accept_all_baseline": _oracle_agreement(rows, arm="metadata_accept_all_baseline"),
+        "single_agent_baseline": _oracle_agreement(rows, arm="single_agent_baseline"),
+        "oracle_ceiling": _oracle_agreement(rows, arm="oracle_ceiling"),
+    }
+    gaming_flags: set[str] = set(calibration["gaming_flags"])
+    for row in rows:
+        gaming_flags.update(row["supervisor_review"].get("gaming_flags", []))
+        gaming_flags.update(row["supervisor_full_gate_review"].get("gaming_flags", []))
+    if _should_trip_perfect_agreement(rows, oracle_agreement["supervisor_candidate_review"]):
+        gaming_flags.add("perfect_oracle_agreement_tripwire")
+    if no_regression_findings:
+        gaming_flags.add("no_regression_failure_detected")
+    if single_agent_baseline["unavailable_count"]:
+        gaming_flags.add("baseline_evidence_unavailable")
+
+    full_roster_available_count = sum(
+        1 for row in rows if bool(row.get("full_roster_available"))
+    )
+    panel_marginal_delta = _panel_marginal_delta_at_matched_true_accept(
+        public_review=supervisor_candidate_review,
+        full_gate=supervisor_full_gate,
+        full_roster_available_count=full_roster_available_count,
+    )
+    codex_only_roster_available_count = sum(
+        1 for row in rows if not bool(row.get("codex_only_calibration_panel_unavailable"))
+    )
+    if codex_only_calibration_active:
+        codex_only_panel_marginal_delta = _panel_marginal_delta_at_matched_true_accept(
+            public_review=supervisor_candidate_review,
+            full_gate=codex_only_calibration_panel,
+            full_roster_available_count=codex_only_roster_available_count,
+        )
+    else:
+        codex_only_panel_marginal_delta = {
+            "status": "unavailable",
+            "reason": "codex_only_calibration_inactive",
+            "full_roster_available_count": 0,
+        }
+    per_reviewer_arms = _per_reviewer_acceptance_arms(rows)
+    inter_reviewer_agreement = _inter_reviewer_agreement(rows)
+    reviewer_packet_leak_refs = _reviewer_packet_leak_refs(rows)
+    metric_splits = _metric_splits(
+        rows,
+        arms={
+            "baseline": baseline,
+            "metadata_accept_all_baseline": metadata_accept_all_baseline,
+            "single_agent_baseline": single_agent_baseline,
+            "supervisor_candidate_review": supervisor_candidate_review,
+            "supervisor_full_gate": supervisor_full_gate,
+            "codex_only_calibration_panel": codex_only_calibration_panel,
+            "oracle_ceiling": oracle_ceiling,
+            "supervisor": supervisor,
+        },
+    )
+    matched_true_accept = _false_accept_at_matched_true_accept(
+        baseline=baseline,
+        supervisor=supervisor_candidate_review,
+    )
+    single_agent_baseline_matched_true_accept = _false_accept_at_matched_true_accept(
+        baseline=single_agent_baseline,
+        supervisor=supervisor_candidate_review,
+    )
+    full_gate_matched_true_accept = _false_accept_at_matched_true_accept(
+        baseline=baseline,
+        supervisor=supervisor_full_gate,
+    )
+    full_gate_single_agent_baseline_matched_true_accept = _false_accept_at_matched_true_accept(
+        baseline=single_agent_baseline,
+        supervisor=supervisor_full_gate,
+    )
+
+    s_probe_vs_s_full_discordant_count = sum(
+        1 for row in rows
+        if (not bool(row.get("supervisor_full_gate_unavailable")))
+        and bool(row.get("supervisor_full_gate_accept")) != bool(row.get("supervisor_accept"))
+    )
+
+    bounded_runner_block = {
+        "max_candidate_workers": int(opts.max_candidate_workers),
+        "max_reviewer_workers": int(opts.max_reviewer_workers),
+        "reviewer_fanout": "serial",
+        "review_timeout_s": float(opts.review_timeout_s),
+        "max_wall_clock_s": opts.max_wall_clock_s,
+        "wall_clock_stopped": bool(wall_clock_stopped),
+        "completed_candidate_count": int(completed_count),
+        "unavailable_candidate_count": sum(
+            1 for row in rows if bool(row.get("supervisor_full_gate_unavailable"))
+        ),
+        "interrupted_candidate_count": len(interrupted_ids) + len(timed_out_ids),
+        "checkpoint_refs": list(checkpoint_refs),
+        "resume_command": _bounded_runner_resume_command(
+            opts, bench_root=bench_root_path, output_dir=output_path
+        ),
+        "runner_schema_version": BOUNDED_PANEL_RUNNER_SCHEMA_VERSION,
+        "option_hash": option_hash,
+        "reviewer_roster_ids": list(reviewer_roster_ids),
+    }
+
+    total_candidate_count = len(all_candidates)
+    selected_candidate_count = len(selected_candidates)
+    diagnostic_scope = {
+        "full_corpus_claim": not filtered,
+        "selected_candidate_count": selected_candidate_count,
+        "total_candidate_count": total_candidate_count,
+    }
+    if filtered:
+        diagnostic_scope["candidate_selector"] = list(opts.candidate_selector or ())
+        diagnostic_scope["max_candidates"] = opts.max_candidates
+
+    report_only_invariants = {
+        "metric_applyable": False,
+        "improvement_claim_allowed": False,
+        "policy_mutated": False,
+        "gate_advanced": False,
+    }
+
+    report: dict[str, Any] = {
+        "schema_version": MERGEABILITY_PAIRED_REPORT_SCHEMA_VERSION,
+        "bench_root": bench_root_path.as_posix(),
+        "manifest_sha256": manifest["manifest_sha256"],
+        "full_corpus_manifest_sha256": full_manifest["manifest_sha256"],
+        "calibration_summary_sha256": calibration["summary_sha256"],
+        "task_count": manifest["task_count"],
+        "included_task_ids": manifest["included_task_ids"],
+        "candidate_count": len(rows),
+        "positive_control_count": positive_control_count,
+        "negative_control_count": negative_control_count,
+        "heldout_coverage": heldout_coverage,
+        "heldout_coverage_sha256": _sha256_json(heldout_coverage),
+        "split_policy": manifest["split_policy"],
+        "metric_splits": metric_splits,
+        "no_regression_findings": no_regression_findings,
+        "no_regression_sha256": _sha256_json(no_regression_findings),
+        "candidate_pool_sha256": _sha256_json([
+            {
+                "task_id": row["task_id"],
+                "task_hash": task_hashes[row["task_id"]],
+                "candidate_id": row["candidate_id"],
+                "candidate_hash": candidate_hashes[(row["task_id"], row["candidate_id"])],
+            }
+            for row in rows
+        ]),
+        "arms": {
+            "baseline": baseline,
+            "metadata_accept_all_baseline": metadata_accept_all_baseline,
+            "single_agent_baseline": single_agent_baseline,
+            "supervisor_candidate_review": supervisor_candidate_review,
+            "supervisor_full_gate": supervisor_full_gate,
+            "codex_only_calibration_panel": codex_only_calibration_panel,
+            "oracle_ceiling": oracle_ceiling,
+            "supervisor": supervisor,
+        },
+        "delta": {
+            "oracle_ceiling_minus_baseline_false_accept_rate": round(
+                oracle_ceiling["false_accept_rate"] - baseline["false_accept_rate"], 6
+            ),
+            "oracle_ceiling_minus_baseline_true_accept_rate": round(
+                oracle_ceiling["true_accept_rate"] - baseline["true_accept_rate"], 6
+            ),
+            "supervisor_minus_baseline_false_accept_rate": round(
+                supervisor_candidate_review["false_accept_rate"] - baseline["false_accept_rate"], 6
+            ),
+            "supervisor_minus_baseline_true_accept_rate": round(
+                supervisor_candidate_review["true_accept_rate"] - baseline["true_accept_rate"], 6
+            ),
+            "supervisor_full_gate_minus_baseline_false_accept_rate": round(
+                supervisor_full_gate["false_accept_rate"] - baseline["false_accept_rate"], 6
+            ),
+            "supervisor_full_gate_minus_baseline_true_accept_rate": round(
+                supervisor_full_gate["true_accept_rate"] - baseline["true_accept_rate"], 6
+            ),
+        },
+        "false_accept_at_matched_true_accept": matched_true_accept,
+        "single_agent_baseline_false_accept_at_matched_true_accept": (
+            single_agent_baseline_matched_true_accept
+        ),
+        "supervisor_full_gate_false_accept_at_matched_true_accept": full_gate_matched_true_accept,
+        "supervisor_full_gate_vs_single_agent_baseline_false_accept_at_matched_true_accept": (
+            full_gate_single_agent_baseline_matched_true_accept
+        ),
+        "primary_comparison_name": "supervisor_vs_single_agent_baseline",
+        "primary_matched_true_accept_status": single_agent_baseline_matched_true_accept["status"],
+        "comparisons": _paired_acceptance_comparisons(
+            legacy_metadata_matched_true_accept=matched_true_accept,
+            single_agent_matched_true_accept=single_agent_baseline_matched_true_accept,
+            full_gate_metadata_matched_true_accept=full_gate_matched_true_accept,
+            full_gate_single_agent_matched_true_accept=full_gate_single_agent_baseline_matched_true_accept,
+            single_agent_baseline=single_agent_baseline,
+            metadata_accept_all_baseline=metadata_accept_all_baseline,
+        ),
+        "panel_marginal_delta_at_matched_true_accept": panel_marginal_delta,
+        "codex_only_calibration_panel_marginal_delta_at_matched_true_accept": (
+            codex_only_panel_marginal_delta
+        ),
+        "matched_true_accept_status": matched_true_accept["status"],
+        "oracle_agreement": oracle_agreement,
+        "per_reviewer_arms": per_reviewer_arms,
+        "oracle_isolation": {
+            "ok": not reviewer_packet_leak_refs,
+            "violations": reviewer_packet_leak_refs,
+        },
+        "hidden_field_leak_check": {
+            "ok": not reviewer_packet_leak_refs,
+            "refs": reviewer_packet_leak_refs,
+            "scope": "supervisor_full_gate_reviewer_packets",
+        },
+        "disagreements": disagreements,
+        "configured_reviewer_panel": {
+            "mode": reviewer_panel_mode,
+            "report_mode": (
+                "codex_only_calibration" if codex_only_calibration_active else "full_panel"
+            ),
+            "full_panel_evidence_allowed": not codex_only_calibration_active,
+            "codex_only_calibration": codex_only_calibration_active,
+            "configured_panel_active": (
+                reviewer_panel_mode == "configured"
+                and configured_reviewer_panel_options is not None
+            ) or (
+                reviewer_panel_mode == "configured" and reviewer_panel is not None
+            ),
+            "s_probe_vs_s_full_disagreement_count": sum(
+                1 for row in rows if bool(row.get("s_probe_vs_s_full_disagreement"))
+            ),
+            "available_full_gate_count": sum(
+                1 for row in rows if not bool(row.get("supervisor_full_gate_unavailable"))
+            ),
+            "unavailable_full_gate_count": sum(
+                1 for row in rows if bool(row.get("supervisor_full_gate_unavailable"))
+            ),
+            "full_roster_available_count": full_roster_available_count,
+            "codex_only_roster_available_count": codex_only_roster_available_count,
+            "codex_only_panel_marginal_delta_at_matched_true_accept": (
+                codex_only_panel_marginal_delta
+            ),
+            "panel_quality_reject_count": sum(
+                1 for row in rows if bool(row.get("panel_quality_reject"))
+            ),
+            "panel_missing_verdict_block_count": sum(
+                1 for row in rows if bool(row.get("panel_missing_verdict_block"))
+            ),
+            "inter_reviewer_agreement": inter_reviewer_agreement,
+            "reviewer_infrastructure_diagnostics": [
+                {
+                    "task_id": row["task_id"],
+                    "candidate_id": row["candidate_id"],
+                    "diagnostic": dict(row.get("reviewer_infrastructure_diagnostic") or {}),
+                }
+                for row in rows
+                if int(
+                    (row.get("reviewer_infrastructure_diagnostic") or {}).get(
+                        "failure_count", 0
+                    )
+                )
+                > 0
+            ],
+        },
+        "per_task_results": rows,
+        "cost_usd": 0.0,
+        "wall_clock_s": round(time.monotonic() - started, 6),
+        "report_label": "calibration",
+        "heldout_reporting": {
+            "primary_metric_split": "held_out",
+            "dev_metric_status": metric_splits["dev"]["status"],
+            "best_of_k_in_sample": {
+                "present": False,
+                "label_allowed_as_heldout_improvement": False,
+                "reason": "held_out_metrics_are_reported_separately_from_in_sample_or_peak_selection",
+            },
+            "heldout_improvement_claim_allowed": False,
+        },
+        "metric_applyable": False,
+        "improvement_claim_allowed": False,
+        "gaming_flags": sorted(gaming_flags),
+        "baseline_evidence_kind": "metadata_calibration",
+        "validity_notes": [
+            "Bounded panel runner: rows preserve S_probe and S_full semantics; unavailable "
+            "reviewer panel rows are never accepted.",
+            "Filtered, wall-clock-truncated, and timed-out runs are calibration evidence "
+            "only; report-only invariants stay false.",
+        ],
+        "default_change_allowed": False,
+        "policy_mutated": False,
+        "gate_advanced": False,
+        "recommendation": {
+            "report_only": True,
+            "applyable_policy_proposal": False,
+            "next_step": "grow an oracle-isolated corpus before any powered live-generation experiment",
+        },
+        "bounded_runner": bounded_runner_block,
+        "diagnostic_scope": diagnostic_scope,
+        "s_probe_vs_s_full_discordant_count": int(s_probe_vs_s_full_discordant_count),
+        "report_only_invariants": report_only_invariants,
+    }
+
+    # Leak detection on the public aggregate/reporting path. The internal JSON
+    # report carries oracle-derived scoring labels by design; checkpoints and
+    # dashboard/public projections must not.
+    report_leaks = _public_input_oracle_refs(_public_dashboard_report(report))
+    if report_leaks:
+        raise MergeabilityBenchError(
+            "bounded panel runner aggregate report leaked oracle material: "
+            + ", ".join(report_leaks)
+        )
+
+    report["report_sha256"] = _sha256_json({
+        key: value for key, value in report.items() if key != "report_sha256"
+    })
+
+    if output_path is not None:
+        output_path.mkdir(parents=True, exist_ok=True)
+        _export_paired_acceptance_artifacts(
+            output_path,
+            manifest=manifest,
+            calibration=calibration,
+            report=report,
+            rows=rows,
+        )
+        # runtime evidence markdown
+        runtime_evidence_lines = [
+            "# Bounded Panel Runner Runtime Evidence",
+            "",
+            f"- bench_root: {bench_root_path.as_posix()}",
+            f"- runner_schema_version: {BOUNDED_PANEL_RUNNER_SCHEMA_VERSION}",
+            f"- max_candidate_workers: {opts.max_candidate_workers}",
+            f"- max_reviewer_workers: {opts.max_reviewer_workers}",
+            f"- reviewer_fanout: serial",
+            f"- review_timeout_s: {opts.review_timeout_s}",
+            f"- max_wall_clock_s: {opts.max_wall_clock_s}",
+            f"- wall_clock_stopped: {wall_clock_stopped}",
+            f"- completed_candidate_count: {completed_count}",
+            f"- interrupted_candidate_count: {len(interrupted_ids) + len(timed_out_ids)}",
+            f"- selected_candidate_count: {selected_candidate_count}",
+            f"- total_candidate_count: {total_candidate_count}",
+            f"- full_corpus_claim: {not filtered}",
+            f"- metric_applyable: False",
+            f"- improvement_claim_allowed: False",
+        ]
+        (output_path / "runtime-evidence.md").write_text(
+            "\n".join(runtime_evidence_lines) + "\n",
+            encoding="utf-8",
+        )
+        html_text = render_panel_dashboard_html(_public_dashboard_report(report))
+        (output_path / "review.html").write_text(html_text, encoding="utf-8")
+
+    return report
+
+
+def _public_dashboard_report(report: Mapping[str, Any]) -> dict[str, Any]:
+    """Return a dashboard-safe view of the report with oracle fields stripped.
+
+    The dashboard helper must accept only public surfaces. Build this as a
+    whitelist rather than a shallow copy so oracle labels in the internal
+    scoring report cannot drift into Lavish/reviewer annotation surfaces.
+    """
+
+    def _public_arm(arm: Mapping[str, Any] | None) -> dict[str, Any]:
+        if not isinstance(arm, Mapping):
+            return {}
+        keys = (
+            "arm",
+            "arm_role",
+            "candidate_count",
+            "available_count",
+            "unavailable_count",
+            "availability_status",
+            "accepted_count",
+            "rejected_count",
+            "false_accept_count",
+            "n_bad",
+            "false_accept_denominator",
+            "false_accept_rate",
+            "false_accept_confidence_interval",
+            "true_accept_count",
+            "n_good",
+            "true_accept_denominator",
+            "true_accept_rate",
+            "true_accept_confidence_interval",
+            "false_reject_count",
+            "false_reject_denominator",
+            "false_reject_rate",
+            "true_reject_count",
+            "runtime",
+            "model",
+            "cost_usd",
+        )
+        return {key: arm[key] for key in keys if key in arm}
+
+    arms = report.get("arms") if isinstance(report.get("arms"), Mapping) else {}
+    panel_block = (
+        report.get("configured_reviewer_panel")
+        if isinstance(report.get("configured_reviewer_panel"), Mapping)
+        else {}
+    )
+    per_reviewer = (
+        report.get("per_reviewer_arms")
+        if isinstance(report.get("per_reviewer_arms"), Mapping)
+        else {}
+    )
+    safe: dict[str, Any] = {
+        "schema_version": report.get("schema_version"),
+        "candidate_count": report.get("candidate_count"),
+        "arms": {
+            "supervisor_candidate_review": _public_arm(
+                arms.get("supervisor_candidate_review") if isinstance(arms, Mapping) else {}
+            ),
+            "supervisor_full_gate": _public_arm(
+                arms.get("supervisor_full_gate") if isinstance(arms, Mapping) else {}
+            ),
+        },
+        "panel_marginal_delta_at_matched_true_accept": dict(
+            report.get("panel_marginal_delta_at_matched_true_accept") or {}
+        ),
+        "configured_reviewer_panel": {
+            "mode": panel_block.get("mode") if isinstance(panel_block, Mapping) else None,
+            "report_mode": (
+                panel_block.get("report_mode") if isinstance(panel_block, Mapping) else None
+            ),
+            "configured_panel_active": (
+                panel_block.get("configured_panel_active")
+                if isinstance(panel_block, Mapping)
+                else None
+            ),
+            "s_probe_vs_s_full_disagreement_count": (
+                panel_block.get("s_probe_vs_s_full_disagreement_count")
+                if isinstance(panel_block, Mapping)
+                else None
+            ),
+            "available_full_gate_count": (
+                panel_block.get("available_full_gate_count")
+                if isinstance(panel_block, Mapping)
+                else None
+            ),
+            "unavailable_full_gate_count": (
+                panel_block.get("unavailable_full_gate_count")
+                if isinstance(panel_block, Mapping)
+                else None
+            ),
+            "full_roster_available_count": (
+                panel_block.get("full_roster_available_count")
+                if isinstance(panel_block, Mapping)
+                else None
+            ),
+            "panel_quality_reject_count": (
+                panel_block.get("panel_quality_reject_count")
+                if isinstance(panel_block, Mapping)
+                else None
+            ),
+            "panel_missing_verdict_block_count": (
+                panel_block.get("panel_missing_verdict_block_count")
+                if isinstance(panel_block, Mapping)
+                else None
+            ),
+            "inter_reviewer_agreement": list(
+                panel_block.get("inter_reviewer_agreement") or []
+            )
+            if isinstance(panel_block, Mapping)
+            else [],
+        },
+        "per_reviewer_arms": {
+            str(reviewer_id): _public_arm(arm if isinstance(arm, Mapping) else {})
+            for reviewer_id, arm in sorted((per_reviewer or {}).items())
+        }
+        if isinstance(per_reviewer, Mapping)
+        else {},
+        "bounded_runner": dict(report.get("bounded_runner") or {}),
+        "diagnostic_scope": dict(report.get("diagnostic_scope") or {}),
+        "s_probe_vs_s_full_discordant_count": report.get(
+            "s_probe_vs_s_full_discordant_count"
+        ),
+        "report_only_invariants": dict(report.get("report_only_invariants") or {}),
+    }
+    # Provide a minimal public projection per row.
+    rows = report.get("per_task_results") or []
+    public_rows: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, Mapping):
+            continue
+        public_rows.append({
+            "task_id": str(row.get("task_id") or ""),
+            "candidate_id": str(row.get("candidate_id") or ""),
+            "control_kind": str(row.get("control_kind") or ""),
+            "split": str(row.get("split") or ""),
+            "supervisor_accept": bool(row.get("supervisor_accept")),
+            "supervisor_full_gate_accept": bool(row.get("supervisor_full_gate_accept")),
+            "supervisor_full_gate_unavailable": bool(
+                row.get("supervisor_full_gate_unavailable")
+            ),
+            "panel_quality_label": str(row.get("panel_quality_label") or ""),
+            "full_roster_available": bool(row.get("full_roster_available")),
+            "s_probe_vs_s_full_disagreement": bool(
+                row.get("s_probe_vs_s_full_disagreement")
+            ),
+        })
+    safe["dashboard_rows"] = public_rows
+    leaks = _public_input_oracle_refs(safe)
+    if leaks:
+        raise MergeabilityBenchError(
+            "public dashboard projection leaked oracle material: " + ", ".join(leaks)
+        )
+    return safe
+
+
+def render_panel_dashboard_html(report: Mapping[str, Any]) -> str:
+    """Render an annotation-ready HTML dashboard from a public report.
+
+    The dashboard is intentionally simple: it is a public-only view that can
+    be opened in Lavish for human annotation without affecting scoring,
+    policy, or gate authority. Leak detection runs before rendering and a
+    second scan runs on the rendered HTML; either finding raises
+    ``MergeabilityBenchError`` so hidden oracle material never enters a
+    public review surface.
+    """
+
+    leaks = _public_input_oracle_refs(dict(report))
+    if leaks:
+        raise MergeabilityBenchError(
+            "panel dashboard input leaked oracle material: " + ", ".join(leaks)
+        )
+    esc = _html.escape
+
+    arms = report.get("arms") or {}
+    probe = arms.get("supervisor_candidate_review") or {}
+    full = arms.get("supervisor_full_gate") or {}
+    bounded = report.get("bounded_runner") or {}
+    panel_block = report.get("configured_reviewer_panel") or {}
+    panel_marginal = report.get("panel_marginal_delta_at_matched_true_accept") or {}
+    invariants = report.get("report_only_invariants") or {
+        "metric_applyable": False,
+        "improvement_claim_allowed": False,
+        "policy_mutated": False,
+        "gate_advanced": False,
+    }
+    per_reviewer = report.get("per_reviewer_arms") or {}
+    inter_reviewer = panel_block.get("inter_reviewer_agreement") or []
+    diagnostic_scope = report.get("diagnostic_scope") or {}
+    rows = report.get("dashboard_rows") or []
+
+    def _fmt(value: Any) -> str:
+        if isinstance(value, float):
+            return f"{value:.6f}"
+        if value is None:
+            return ""
+        return str(value)
+
+    parts: list[str] = []
+    parts.append("<!doctype html>")
+    parts.append("<html><head><meta charset='utf-8'>")
+    parts.append("<title>Mergeability Panel Annotation Dashboard</title>")
+    parts.append(
+        "<style>body{font-family:system-ui,sans-serif;margin:2em;}"
+        "table{border-collapse:collapse;margin:1em 0;}"
+        "th,td{border:1px solid #ccc;padding:4px 8px;text-align:left;}"
+        "h2{margin-top:1.5em;}</style>"
+    )
+    parts.append("</head><body>")
+    parts.append("<h1>Mergeability Panel Annotation Dashboard</h1>")
+    parts.append("<p>Public-only review surface. No oracle material.</p>")
+
+    parts.append("<h2>Candidate Counts</h2>")
+    parts.append("<table>")
+    parts.append(
+        "<tr><th>total candidates</th><td>"
+        + esc(_fmt(report.get("candidate_count")))
+        + "</td></tr>"
+    )
+    parts.append(
+        "<tr><th>n_good</th><td>" + esc(_fmt(full.get("n_good"))) + "</td></tr>"
+    )
+    parts.append(
+        "<tr><th>n_bad</th><td>" + esc(_fmt(full.get("n_bad"))) + "</td></tr>"
+    )
+    parts.append("</table>")
+
+    parts.append("<h2>Arms Table (S_probe vs S_full)</h2>")
+    parts.append("<table>")
+    parts.append(
+        "<tr><th>arm</th><th>FAR</th><th>TAR</th><th>available</th><th>unavailable</th></tr>"
+    )
+    for arm_name, arm in (
+        ("S_probe (supervisor_candidate_review)", probe),
+        ("S_full (supervisor_full_gate)", full),
+    ):
+        parts.append(
+            "<tr><td>"
+            + esc(arm_name)
+            + "</td><td>"
+            + esc(_fmt(arm.get("false_accept_rate")))
+            + "</td><td>"
+            + esc(_fmt(arm.get("true_accept_rate")))
+            + "</td><td>"
+            + esc(_fmt(arm.get("available_count")))
+            + "</td><td>"
+            + esc(_fmt(arm.get("unavailable_count")))
+            + "</td></tr>"
+        )
+    parts.append("</table>")
+
+    parts.append("<h2>Panel Marginal</h2>")
+    parts.append(
+        "<p>Status: "
+        + esc(_fmt(panel_marginal.get("status")))
+        + " - reason: "
+        + esc(_fmt(panel_marginal.get("reason") or ""))
+        + "</p>"
+    )
+
+    parts.append("<h2>S_probe-vs-S_full Discordance</h2>")
+    parts.append(
+        "<p>Discordant rows: "
+        + esc(_fmt(report.get("s_probe_vs_s_full_discordant_count")))
+        + "</p>"
+    )
+
+    parts.append("<h2>Per-Reviewer Arms</h2>")
+    parts.append("<table><tr><th>reviewer</th><th>FAR</th><th>TAR</th><th>available</th></tr>")
+    for reviewer_id, arm in sorted((per_reviewer or {}).items()):
+        if not isinstance(arm, Mapping):
+            continue
+        parts.append(
+            "<tr><td>"
+            + esc(str(reviewer_id))
+            + "</td><td>"
+            + esc(_fmt(arm.get("false_accept_rate")))
+            + "</td><td>"
+            + esc(_fmt(arm.get("true_accept_rate")))
+            + "</td><td>"
+            + esc(_fmt(arm.get("available_count")))
+            + "</td></tr>"
+        )
+    parts.append("</table>")
+
+    parts.append("<h2>Inter-Reviewer Agreement</h2>")
+    parts.append("<table><tr><th>pair</th><th>agreement</th></tr>")
+    for entry in inter_reviewer:
+        if not isinstance(entry, Mapping):
+            continue
+        pair = entry.get("reviewer_pair") or entry.get("pair") or "?"
+        parts.append(
+            "<tr><td>"
+            + esc(_fmt(pair))
+            + "</td><td>"
+            + esc(_fmt(entry.get("agreement_rate")))
+            + "</td></tr>"
+        )
+    parts.append("</table>")
+
+    parts.append("<h2>Unavailable Rows</h2>")
+    parts.append("<table><tr><th>task</th><th>candidate</th><th>reason</th></tr>")
+    for row in rows:
+        if not row.get("supervisor_full_gate_unavailable"):
+            continue
+        parts.append(
+            "<tr><td>"
+            + esc(_fmt(row.get("task_id")))
+            + "</td><td>"
+            + esc(_fmt(row.get("candidate_id")))
+            + "</td><td>"
+            + esc(_fmt(row.get("panel_quality_label")))
+            + "</td></tr>"
+        )
+    parts.append("</table>")
+
+    parts.append("<h2>Report-Only Flags</h2>")
+    parts.append("<table>")
+    for key, value in sorted(invariants.items()):
+        parts.append(
+            "<tr><th>"
+            + esc(str(key))
+            + "</th><td>"
+            + esc(_fmt(value))
+            + "</td></tr>"
+        )
+    parts.append("</table>")
+
+    parts.append("<h2>Bounded Runner</h2>")
+    parts.append("<table>")
+    for key in (
+        "max_candidate_workers",
+        "max_reviewer_workers",
+        "reviewer_fanout",
+        "review_timeout_s",
+        "max_wall_clock_s",
+        "wall_clock_stopped",
+        "completed_candidate_count",
+        "interrupted_candidate_count",
+    ):
+        parts.append(
+            "<tr><th>"
+            + esc(str(key))
+            + "</th><td>"
+            + esc(_fmt(bounded.get(key)))
+            + "</td></tr>"
+        )
+    parts.append("</table>")
+
+    parts.append("<h2>Diagnostic Scope</h2>")
+    parts.append("<table>")
+    for key in (
+        "full_corpus_claim",
+        "selected_candidate_count",
+        "total_candidate_count",
+    ):
+        parts.append(
+            "<tr><th>"
+            + esc(str(key))
+            + "</th><td>"
+            + esc(_fmt(diagnostic_scope.get(key)))
+            + "</td></tr>"
+        )
+    parts.append("</table>")
+
+    parts.append("</body></html>")
+    html_text = "".join(parts)
+
+    for marker in ORACLE_REVIEW_FORBIDDEN_TEXT:
+        if marker in html_text:
+            raise MergeabilityBenchError(
+                "panel dashboard HTML leaked oracle marker: " + marker
+            )
+    for key in ORACLE_REVIEW_FORBIDDEN_KEYS:
+        if key in html_text:
+            raise MergeabilityBenchError(
+                "panel dashboard HTML leaked forbidden key: " + key
+            )
+    return html_text
+
+
+def _bounded_panel_runner_main(argv: Sequence[str] | None = None) -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Run the bounded checkpointed mergeability panel corpus runner."
+    )
+    parser.add_argument("--bench-root", required=True)
+    parser.add_argument("--output-dir")
+    parser.add_argument("--checkpoint-dir")
+    parser.add_argument("--max-candidate-workers", type=int, default=2)
+    parser.add_argument("--max-reviewer-workers", type=int, default=1)
+    parser.add_argument("--review-timeout-s", type=float, default=600.0)
+    parser.add_argument("--max-wall-clock-s", type=float)
+    parser.add_argument("--max-candidates", type=int)
+    parser.add_argument("--candidate-id", action="append", dest="candidate_ids")
+    parser.add_argument(
+        "--reviewer-panel-mode",
+        choices=("configured", "custom"),
+        default="configured",
+    )
+    parser.add_argument("--no-resume", action="store_true")
+    parser.add_argument("--relaxed-calibration", action="store_true")
+    args = parser.parse_args(argv)
+
+    options = BoundedPanelRunnerOptions(
+        max_candidate_workers=args.max_candidate_workers,
+        max_reviewer_workers=args.max_reviewer_workers,
+        review_timeout_s=args.review_timeout_s,
+        max_wall_clock_s=args.max_wall_clock_s,
+        max_candidates=args.max_candidates,
+        candidate_selector=tuple(args.candidate_ids) if args.candidate_ids else None,
+        checkpoint_dir=args.checkpoint_dir,
+        resume=not args.no_resume,
+    )
+    configured_options = (
+        ConfiguredReviewerPanelOptions()
+        if args.reviewer_panel_mode == "configured"
+        else None
+    )
+    report = run_bounded_parallel_panel_corpus(
+        bench_root=args.bench_root,
+        options=options,
+        output_dir=args.output_dir,
+        configured_reviewer_panel_options=configured_options,
+        reviewer_panel_mode=args.reviewer_panel_mode,
+        strict_calibration=not args.relaxed_calibration,
+    )
+    summary = {
+        "candidate_count": report.get("candidate_count"),
+        "report_label": report.get("report_label"),
+        "metric_applyable": report.get("metric_applyable"),
+        "improvement_claim_allowed": report.get("improvement_claim_allowed"),
+        "bounded_runner": report.get("bounded_runner"),
+        "output_dir": args.output_dir,
+    }
+    print(json.dumps(summary, sort_keys=True, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(_bounded_panel_runner_main())
