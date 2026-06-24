@@ -396,6 +396,7 @@ def independent_reviewer_result_from_cursor_result(
         "provider_family": _provider_family(runtime, model),
         "lineage": list(_lineage(runtime, model)),
         "tool_access": _tool_access(runtime),
+        "tool_backed_command_evidence": _has_tool_command_evidence(result),
         "assurance_grade": _assurance_grade(result),
         "reviewer_assurance": result.reviewer_assurance,
         "transcript_refs": [
@@ -1196,6 +1197,8 @@ def _tool_access(runtime: str | None) -> str:
 def _assurance_grade(result: CursorInvocationResult) -> str:
     assurance = str(result.reviewer_assurance or "").lower()
     runtime = str(result.reviewer_runtime or result.reviewer_output_mode or "").lower()
+    if "litellm" in runtime and not _has_tool_command_evidence(result):
+        return "text_only"
     if "codex_cli" in runtime:
         if "tool" in assurance or _has_codex_cli_command_evidence(result):
             return "agentic"
@@ -1207,6 +1210,21 @@ def _assurance_grade(result: CursorInvocationResult) -> str:
     if "text" in assurance or "litellm" in runtime:
         return "text_only"
     return "self_reported"
+
+
+def _has_tool_command_evidence(result: CursorInvocationResult) -> bool:
+    diagnostics = result.diagnostics if isinstance(result.diagnostics, dict) else {}
+    for key in ("codex_cli", "cursor_sdk", "tool_use", "commands"):
+        payload = diagnostics.get(key)
+        if not isinstance(payload, dict):
+            continue
+        count = payload.get("command_execution_count")
+        if isinstance(count, int) and count > 0:
+            return True
+        executions = payload.get("command_executions")
+        if isinstance(executions, list) and executions:
+            return True
+    return False
 
 
 def _has_codex_cli_command_evidence(result: CursorInvocationResult) -> bool:

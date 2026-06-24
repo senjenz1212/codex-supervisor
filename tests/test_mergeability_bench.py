@@ -3909,7 +3909,20 @@ def test_full_panel_report_emits_per_reviewer_arms(tmp_path):
     assert per_reviewer["independent-reviewer-0"]["false_accept_count"] == 1
     assert per_reviewer["independent-reviewer-1"]["false_accept_count"] == 0
     assert per_reviewer["independent-reviewer-1"]["per_candidate_results"]
+    assert per_reviewer["independent-reviewer-0"]["provider_family"] == "cursor"
+    assert per_reviewer["independent-reviewer-0"]["tool_access"] == "codebase_tools"
+    assert per_reviewer["independent-reviewer-0"]["assurance_grade"] == "agentic"
+    assert per_reviewer["independent-reviewer-1"]["provider_family"] == "openai"
+    assert per_reviewer["independent-reviewer-1"]["tool_access"] == "codebase_tools"
     assert report["arms"]["supervisor_full_gate"]["false_accept_count"] == 0
+    provenance = report["configured_reviewer_panel"]["reviewer_provenance"]
+    assert {
+        item["reviewer_id"]: item["provider_family"]
+        for item in provenance["reviewers"]
+    } == {
+        "independent-reviewer-0": "cursor",
+        "independent-reviewer-1": "openai",
+    }
     agreement = report["configured_reviewer_panel"]["inter_reviewer_agreement"]
     assert agreement == [
         {
@@ -3919,6 +3932,125 @@ def test_full_panel_report_emits_per_reviewer_arms(tmp_path):
             "agreement_rate": 0.5,
         }
     ]
+
+
+def test_cursor_default_is_unproven_cross_family_without_resolved_provider(tmp_path):
+    cursor_reviewer = _CandidateDecisionReviewer(
+        "independent-reviewer-0",
+        runtime="cursor_sdk",
+        model="default",
+        decisions={"known-good": "accept", "hidden-behavior-miss": "accept"},
+    )
+    codex_reviewer = _CandidateDecisionReviewer(
+        "independent-reviewer-1",
+        runtime="codex_cli",
+        model="gpt-5.5",
+        decisions={"known-good": "accept", "hidden-behavior-miss": "accept"},
+    )
+
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        candidate_paths=_two_candidate_paths(),
+        strict_calibration=False,
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            reviewers=(cursor_reviewer, codex_reviewer),
+        ),
+    )
+
+    provenance = report["configured_reviewer_panel"]["reviewer_provenance"]
+    cursor = {
+        item["reviewer_id"]: item
+        for item in provenance["reviewers"]
+    }["independent-reviewer-0"]
+    assert cursor["model"] == "default"
+    assert cursor["cross_family_claim_status"] == "unproven_default_model"
+    assert cursor["counts_as_proven_cross_family"] is False
+    assert "independent-reviewer-0" in provenance["cursor_default_unproven_reviewer_ids"]
+    guard = report["roster_selection_guard"]
+    assert "cursor_default_provider_family_unproven" in guard["reasons"]
+    assert "treat_cursor_default_as_proven_cross_family_without_provider_evidence" in (
+        guard["forbidden_conclusions"]
+    )
+
+
+def test_litellm_structured_reviewer_is_labeled_text_only_without_tool_evidence(tmp_path):
+    litellm_reviewer = _CandidateDecisionReviewer(
+        "independent-reviewer-gemini",
+        runtime="litellm_structured",
+        model="gemini-2.5-pro",
+        decisions={"known-good": "accept", "hidden-behavior-miss": "revise"},
+    )
+
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        candidate_paths=_two_candidate_paths(),
+        strict_calibration=False,
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            reviewers=(litellm_reviewer,),
+        ),
+    )
+
+    arm = report["per_reviewer_arms"]["independent-reviewer-gemini"]
+    assert arm["provider_family"] == "google"
+    assert arm["tool_access"] == "text_only"
+    assert arm["assurance_grade"] == "text_only"
+    assert arm["tool_backed_command_evidence"] is False
+
+    provenance = report["configured_reviewer_panel"]["reviewer_provenance"]
+    assert provenance["text_only_reviewer_ids"] == ["independent-reviewer-gemini"]
+    assert provenance["reviewers"][0]["tool_backed_command_evidence"] is False
+    guard = report["roster_selection_guard"]
+    assert "text_only_reviewer_without_tool_backed_evidence" in guard["reasons"]
+    assert "treat_text_only_reviewer_as_tool_backed_without_command_evidence" in (
+        guard["forbidden_conclusions"]
+    )
+
+
+def test_same_family_generator_reviewer_decisive_vote_warns(tmp_path):
+    codex_reviewer = _CandidateDecisionReviewer(
+        "independent-reviewer-1",
+        runtime="codex_cli",
+        model="gpt-5.5",
+        decisions={"known-good": "accept", "hidden-behavior-miss": "accept"},
+    )
+    baseline_decisions = _produced_baseline_decisions(
+        candidate_filter={"known-good", "hidden-behavior-miss"},
+    )
+    for decision in baseline_decisions.values():
+        decision["producer"] = {
+            **decision["producer"],
+            "provider": "openai",
+            "provider_family": "openai",
+            "model": "gpt-5.5",
+        }
+
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        candidate_paths=_two_candidate_paths(),
+        strict_calibration=False,
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            reviewers=(codex_reviewer,),
+        ),
+        single_agent_baseline_decisions=baseline_decisions,
+    )
+
+    disjointness = report["configured_reviewer_panel"]["generator_disjointness"]
+    assert disjointness["same_family_decisive_vote_count"] >= 1
+    warning = disjointness["self_preference_warnings"][0]
+    assert warning["generator_family"] == "openai"
+    assert warning["reviewer_family"] == "openai"
+    assert warning["reason"] == "sole_same_family_decisive_reviewer"
+    guard = report["roster_selection_guard"]
+    assert "same_family_generator_reviewer_decisive_vote" in guard["reasons"]
+    assert "allow_single_family_reviewer_as_sole_decisive_same_family_judge" in (
+        guard["forbidden_conclusions"]
+    )
 
 
 def test_isolated_cursor_reviewer_does_not_flag_modified_worktree(tmp_path):

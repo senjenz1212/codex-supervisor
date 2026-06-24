@@ -1197,6 +1197,8 @@ def run_paired_acceptance_pilot(
     per_reviewer_arms = _per_reviewer_acceptance_arms(rows)
     inter_reviewer_agreement = _inter_reviewer_agreement(rows)
     reviewer_packet_leak_refs = _reviewer_packet_leak_refs(rows)
+    reviewer_provenance = _reviewer_provenance_report(rows)
+    generator_disjointness = _generator_disjointness_report(rows)
     metric_splits = _metric_splits(
         rows,
         arms={
@@ -1213,6 +1215,8 @@ def run_paired_acceptance_pilot(
     roster_selection_guard = _roster_selection_guard(
         inter_reviewer_agreement=inter_reviewer_agreement,
         codex_only_calibration_active=codex_only_calibration_active,
+        reviewer_provenance=reviewer_provenance,
+        generator_disjointness=generator_disjointness,
     )
     report = {
         "schema_version": MERGEABILITY_PAIRED_REPORT_SCHEMA_VERSION,
@@ -1294,6 +1298,8 @@ def run_paired_acceptance_pilot(
         "matched_true_accept_status": matched_true_accept["status"],
         "oracle_agreement": oracle_agreement,
         "per_reviewer_arms": per_reviewer_arms,
+        "reviewer_provenance": reviewer_provenance,
+        "generator_disjointness": generator_disjointness,
         "oracle_isolation": {
             "ok": not reviewer_packet_leak_refs,
             "violations": reviewer_packet_leak_refs,
@@ -1314,6 +1320,11 @@ def run_paired_acceptance_pilot(
             "codex_only_calibration": codex_only_calibration_active,
             "roster_selection_allowed": False,
             "roster_selection_guard": roster_selection_guard,
+            "reviewer_provenance": reviewer_provenance,
+            "generator_disjointness": generator_disjointness,
+            "self_preference_warnings": list(
+                generator_disjointness.get("self_preference_warnings") or []
+            ),
             "configured_panel_active": (
                 reviewer_panel_mode == "configured"
                 and configured_reviewer_panel_options is not None
@@ -1646,6 +1657,8 @@ def _roster_selection_guard(
     *,
     inter_reviewer_agreement: Sequence[Mapping[str, Any]],
     codex_only_calibration_active: bool,
+    reviewer_provenance: Mapping[str, Any] | None = None,
+    generator_disjointness: Mapping[str, Any] | None = None,
     evidence_scope: str = "fixture_diagnostic_only",
 ) -> dict[str, Any]:
     shared_pairs = [
@@ -1664,6 +1677,27 @@ def _roster_selection_guard(
         reasons.append("codex_only_calibration_is_not_full_panel_evidence")
     if saturated_agreement:
         reasons.append("fixture_corpus_saturated_for_roster_selection")
+    cursor_default_ids = (
+        list(reviewer_provenance.get("cursor_default_unproven_reviewer_ids") or [])
+        if isinstance(reviewer_provenance, Mapping)
+        else []
+    )
+    text_only_ids = (
+        list(reviewer_provenance.get("text_only_reviewer_ids") or [])
+        if isinstance(reviewer_provenance, Mapping)
+        else []
+    )
+    same_family_count = (
+        int(generator_disjointness.get("same_family_decisive_vote_count") or 0)
+        if isinstance(generator_disjointness, Mapping)
+        else 0
+    )
+    if cursor_default_ids:
+        reasons.append("cursor_default_provider_family_unproven")
+    if text_only_ids:
+        reasons.append("text_only_reviewer_without_tool_backed_evidence")
+    if same_family_count:
+        reasons.append("same_family_generator_reviewer_decisive_vote")
     return {
         "schema_version": "supervisor-mergeability-roster-selection-guard/v1",
         "evidence_scope": evidence_scope,
@@ -1678,6 +1712,8 @@ def _roster_selection_guard(
             "real_or_disagreement_enriched_candidates",
             "oracle_grounded_far_tar_by_roster",
             "reviewer_disagreement_and_self_preference_analysis",
+            "reviewer_provider_family_and_tool_access_provenance",
+            "generator_family_disjointness_by_candidate",
             "report_only_until_powered_live_evidence",
         ],
         "forbidden_conclusions": [
@@ -1685,6 +1721,8 @@ def _roster_selection_guard(
             "select_codex_only_from_fixture_only_ablation",
             "treat_cursor_default_as_proven_cross_family_without_provider_evidence",
             "treat_saturated_fixture_agreement_as_no_diversity_value",
+            "treat_text_only_reviewer_as_tool_backed_without_command_evidence",
+            "allow_single_family_reviewer_as_sole_decisive_same_family_judge",
         ],
     }
 
@@ -3277,6 +3315,9 @@ def _reviewer_result_summary(raw: Any) -> dict[str, Any]:
             "runtime": "unknown",
             "model": None,
             "provider_family": "unknown",
+            "lineage": [],
+            "tool_access": "unknown",
+            "tool_backed_command_evidence": False,
             "assurance_grade": "self_reported",
         }
     return {
@@ -3290,6 +3331,8 @@ def _reviewer_result_summary(raw: Any) -> dict[str, Any]:
         "model": raw.get("model"),
         "provider_family": str(raw.get("provider_family") or "unknown"),
         "lineage": list(raw.get("lineage") or []),
+        "tool_access": str(raw.get("tool_access") or "unknown"),
+        "tool_backed_command_evidence": bool(raw.get("tool_backed_command_evidence")),
         "assurance_grade": str(raw.get("assurance_grade") or "self_reported"),
         "reviewer_assurance": raw.get("reviewer_assurance"),
         "summary": str(raw.get("summary") or ""),
@@ -3901,6 +3944,23 @@ def _normalise_mergeability_reviewer_result(raw: Mapping[str, Any]) -> dict[str,
         decision = "unavailable"
     verdict_present = bool(raw.get("verdict_present"))
     available = bool(verdict_present and decision in {"accept", "deny", "revise"})
+    runtime = str(raw.get("runtime") or raw.get("reviewer_runtime") or "unknown")
+    model = raw.get("model")
+    provider_family = str(
+        raw.get("provider_family") or _provider_family_from_runtime_model(runtime, model)
+    )
+    lineage_raw = raw.get("lineage")
+    lineage = (
+        list(lineage_raw)
+        if isinstance(lineage_raw, (list, tuple))
+        else _reviewer_lineage(runtime, model, provider_family)
+    )
+    tool_backed_command_evidence = bool(raw.get("tool_backed_command_evidence"))
+    tool_access = str(raw.get("tool_access") or _tool_access_from_runtime(runtime))
+    assurance_grade = str(raw.get("assurance_grade") or "self_reported")
+    if "litellm" in runtime.lower() and not tool_backed_command_evidence:
+        tool_access = "text_only"
+        assurance_grade = "text_only"
     return {
         "reviewer_id": reviewer_id,
         "decision": decision,
@@ -3909,12 +3969,203 @@ def _normalise_mergeability_reviewer_result(raw: Mapping[str, Any]) -> dict[str,
         "verdict_present": verdict_present,
         "reason": str(raw.get("reason") or raw.get("unavailable_reason") or ""),
         "failure_classification": raw.get("failure_classification"),
-        "runtime": raw.get("runtime") or raw.get("reviewer_runtime"),
+        "runtime": runtime,
         "reviewer_runtime": raw.get("reviewer_runtime") or raw.get("runtime"),
-        "model": raw.get("model"),
+        "model": model,
+        "provider_family": provider_family,
+        "lineage": lineage,
+        "tool_access": tool_access,
+        "assurance_grade": assurance_grade,
+        "tool_backed_command_evidence": tool_backed_command_evidence,
         "transcript_sha256": raw.get("transcript_sha256"),
         "output_sha256": raw.get("output_sha256"),
         "worktree_isolation": raw.get("worktree_isolation"),
+    }
+
+
+def _provider_family_from_runtime_model(runtime: Any, model: Any) -> str:
+    runtime_text = str(runtime or "").lower()
+    model_text = str(model or "").lower()
+    if "codex" in runtime_text:
+        return "openai"
+    if "cursor" in runtime_text:
+        return "cursor"
+    if "gemini" in model_text:
+        return "google"
+    if "claude" in model_text:
+        return "anthropic"
+    if "gpt" in model_text or "openai" in runtime_text:
+        return "openai"
+    if "litellm" in runtime_text:
+        return "openai_compatible"
+    provider_text = str(model or runtime or "").lower()
+    if "openai" in provider_text:
+        return "openai"
+    return "unknown"
+
+
+def _tool_access_from_runtime(runtime: Any) -> str:
+    runtime_text = str(runtime or "").lower()
+    if "codex_cli" in runtime_text or "cursor" in runtime_text:
+        return "codebase_tools"
+    if "litellm" in runtime_text:
+        return "text_only"
+    return "unknown"
+
+
+def _reviewer_lineage(runtime: Any, model: Any, provider_family: str) -> list[str]:
+    values = [provider_family, str(runtime or ""), str(model or "")]
+    return list(dict.fromkeys(value for value in values if value and value != "unknown"))
+
+
+def _provenance_value(items: Sequence[Mapping[str, Any]], key: str, default: Any) -> Any:
+    values = {
+        item.get(key)
+        for item in items
+        if item.get(key) not in (None, "", [])
+    }
+    if not values:
+        return default
+    if len(values) == 1:
+        return next(iter(values))
+    return "mixed"
+
+
+def _reviewer_cross_family_claim_status(item: Mapping[str, Any]) -> tuple[str, bool]:
+    runtime = str(item.get("runtime") or item.get("reviewer_runtime") or "").lower()
+    model = str(item.get("model") or "").strip().lower()
+    provider_family = str(item.get("provider_family") or "unknown")
+    if "cursor" in runtime and model in {"", "default"}:
+        return ("unproven_default_model", False)
+    if provider_family in {"", "unknown", "openai_compatible"}:
+        return ("unproven_provider_family", False)
+    return ("recorded_provider_family", True)
+
+
+def _reviewer_provenance_report(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    by_reviewer: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        for raw_result in row.get("supervisor_full_gate_reviewer_results") or []:
+            if not isinstance(raw_result, Mapping):
+                continue
+            normalised = _normalise_mergeability_reviewer_result(raw_result)
+            by_reviewer.setdefault(normalised["reviewer_id"], []).append(normalised)
+
+    reviewers: list[dict[str, Any]] = []
+    for reviewer_id, entries in sorted(by_reviewer.items()):
+        runtime = _provenance_value(entries, "runtime", "unknown")
+        model = _provenance_value(entries, "model", None)
+        provider_family = _provenance_value(entries, "provider_family", "unknown")
+        lineage_values: list[str] = []
+        for entry in entries:
+            for value in entry.get("lineage") or []:
+                value_text = str(value)
+                if value_text and value_text not in lineage_values:
+                    lineage_values.append(value_text)
+        tool_access = _provenance_value(entries, "tool_access", "unknown")
+        assurance_grade = _provenance_value(entries, "assurance_grade", "self_reported")
+        tool_backed_command_evidence = any(
+            bool(entry.get("tool_backed_command_evidence")) for entry in entries
+        )
+        if str(runtime).lower() == "litellm_structured" and not tool_backed_command_evidence:
+            tool_access = "text_only"
+            assurance_grade = "text_only"
+        status, counts_as_proven_cross_family = _reviewer_cross_family_claim_status({
+            "runtime": runtime,
+            "model": model,
+            "provider_family": provider_family,
+        })
+        reviewers.append({
+            "reviewer_id": reviewer_id,
+            "runtime": runtime,
+            "model": model,
+            "provider_family": provider_family,
+            "lineage": lineage_values,
+            "tool_access": tool_access,
+            "assurance_grade": assurance_grade,
+            "tool_backed_command_evidence": tool_backed_command_evidence,
+            "cross_family_claim_status": status,
+            "counts_as_proven_cross_family": counts_as_proven_cross_family,
+            "candidate_count": len(entries),
+            "available_count": sum(1 for entry in entries if entry["available"]),
+        })
+
+    cursor_default_ids = [
+        item["reviewer_id"]
+        for item in reviewers
+        if item["cross_family_claim_status"] == "unproven_default_model"
+    ]
+    text_only_ids = [
+        item["reviewer_id"]
+        for item in reviewers
+        if item["tool_access"] == "text_only" and not item["tool_backed_command_evidence"]
+    ]
+    return {
+        "schema_version": "supervisor-mergeability-reviewer-provenance/v1",
+        "reviewer_count": len(reviewers),
+        "reviewers": reviewers,
+        "cursor_default_unproven_reviewer_ids": cursor_default_ids,
+        "text_only_reviewer_ids": text_only_ids,
+        "tool_backed_reviewer_ids": [
+            item["reviewer_id"]
+            for item in reviewers
+            if item["tool_access"] == "codebase_tools"
+        ],
+        "tool_backed_command_evidence_reviewer_ids": [
+            item["reviewer_id"]
+            for item in reviewers
+            if item["tool_backed_command_evidence"]
+        ],
+    }
+
+
+def _producer_family_from_row(row: Mapping[str, Any]) -> str:
+    producer = row.get("single_agent_baseline_producer")
+    if not isinstance(producer, Mapping):
+        return "unknown"
+    explicit = str(producer.get("provider_family") or "").strip().lower()
+    if explicit:
+        return explicit
+    provider = str(producer.get("provider") or producer.get("family") or "").strip().lower()
+    model = str(producer.get("model") or "").strip().lower()
+    return _provider_family_from_runtime_model(provider, model)
+
+
+def _generator_disjointness_report(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    warnings: list[dict[str, Any]] = []
+    known_generator_rows = 0
+    for row in rows:
+        generator_family = _producer_family_from_row(row)
+        if generator_family == "unknown":
+            continue
+        known_generator_rows += 1
+        available_reviewers: list[dict[str, Any]] = []
+        for raw_result in row.get("supervisor_full_gate_reviewer_results") or []:
+            if not isinstance(raw_result, Mapping):
+                continue
+            normalised = _normalise_mergeability_reviewer_result(raw_result)
+            if normalised["available"]:
+                available_reviewers.append(normalised)
+        if len(available_reviewers) != 1:
+            continue
+        reviewer = available_reviewers[0]
+        reviewer_family = str(reviewer.get("provider_family") or "unknown")
+        if reviewer_family != "unknown" and reviewer_family == generator_family:
+            warnings.append({
+                "task_id": str(row.get("task_id") or ""),
+                "candidate_id": str(row.get("candidate_id") or ""),
+                "generator_family": generator_family,
+                "reviewer_id": reviewer["reviewer_id"],
+                "reviewer_family": reviewer_family,
+                "reviewer_decision": reviewer["decision"],
+                "reason": "sole_same_family_decisive_reviewer",
+            })
+    return {
+        "schema_version": "supervisor-mergeability-generator-disjointness/v1",
+        "generator_family_source": "single_agent_baseline_producer",
+        "known_generator_family_row_count": known_generator_rows,
+        "same_family_decisive_vote_count": len(warnings),
+        "self_preference_warnings": warnings,
     }
 
 
@@ -3942,6 +4193,11 @@ def _per_reviewer_acceptance_arms(rows: list[dict[str, Any]]) -> dict[str, dict[
                 "runtime": normalised["runtime"],
                 "reviewer_runtime": normalised["reviewer_runtime"],
                 "model": normalised["model"],
+                "provider_family": normalised["provider_family"],
+                "lineage": normalised["lineage"],
+                "tool_access": normalised["tool_access"],
+                "assurance_grade": normalised["assurance_grade"],
+                "tool_backed_command_evidence": normalised["tool_backed_command_evidence"],
                 "transcript_sha256": normalised["transcript_sha256"],
                 "output_sha256": normalised["output_sha256"],
                 "worktree_isolation": normalised["worktree_isolation"],
@@ -3975,6 +4231,30 @@ def _per_reviewer_acceptance_arms(rows: list[dict[str, Any]]) -> dict[str, dict[
             for row in candidate_rows
             if row.get("model")
         })
+        provider_families = sorted({
+            str(row.get("provider_family") or "")
+            for row in candidate_rows
+            if row.get("provider_family")
+        })
+        tool_accesses = sorted({
+            str(row.get("tool_access") or "")
+            for row in candidate_rows
+            if row.get("tool_access")
+        })
+        assurance_grades = sorted({
+            str(row.get("assurance_grade") or "")
+            for row in candidate_rows
+            if row.get("assurance_grade")
+        })
+        lineage_values: list[str] = []
+        for row in candidate_rows:
+            for value in row.get("lineage") or []:
+                value_text = str(value)
+                if value_text and value_text not in lineage_values:
+                    lineage_values.append(value_text)
+        tool_backed_command_evidence = any(
+            bool(row.get("tool_backed_command_evidence")) for row in candidate_rows
+        )
         arms[reviewer_id] = {
             "arm": reviewer_id,
             "arm_role": "independent_reviewer",
@@ -4013,6 +4293,14 @@ def _per_reviewer_acceptance_arms(rows: list[dict[str, Any]]) -> dict[str, dict[
             "true_reject_count": true_reject_count,
             "runtime": runtimes[0] if len(runtimes) == 1 else ("mixed" if runtimes else "unknown"),
             "model": models[0] if len(models) == 1 else ("mixed" if models else None),
+            "provider_family": provider_families[0]
+            if len(provider_families) == 1 else ("mixed" if provider_families else "unknown"),
+            "lineage": lineage_values,
+            "tool_access": tool_accesses[0]
+            if len(tool_accesses) == 1 else ("mixed" if tool_accesses else "unknown"),
+            "assurance_grade": assurance_grades[0]
+            if len(assurance_grades) == 1 else ("mixed" if assurance_grades else "self_reported"),
+            "tool_backed_command_evidence": tool_backed_command_evidence,
             "cost_usd": 0.0,
             "per_candidate_results": candidate_rows,
         }
@@ -6271,6 +6559,8 @@ def run_bounded_parallel_panel_corpus(
     per_reviewer_arms = _per_reviewer_acceptance_arms(rows)
     inter_reviewer_agreement = _inter_reviewer_agreement(rows)
     reviewer_packet_leak_refs = _reviewer_packet_leak_refs(rows)
+    reviewer_provenance = _reviewer_provenance_report(rows)
+    generator_disjointness = _generator_disjointness_report(rows)
     metric_splits = _metric_splits(
         rows,
         arms={
@@ -6287,6 +6577,8 @@ def run_bounded_parallel_panel_corpus(
     roster_selection_guard = _roster_selection_guard(
         inter_reviewer_agreement=inter_reviewer_agreement,
         codex_only_calibration_active=codex_only_calibration_active,
+        reviewer_provenance=reviewer_provenance,
+        generator_disjointness=generator_disjointness,
     )
     matched_true_accept = _false_accept_at_matched_true_accept(
         baseline=baseline,
@@ -6446,6 +6738,8 @@ def run_bounded_parallel_panel_corpus(
         "matched_true_accept_status": matched_true_accept["status"],
         "oracle_agreement": oracle_agreement,
         "per_reviewer_arms": per_reviewer_arms,
+        "reviewer_provenance": reviewer_provenance,
+        "generator_disjointness": generator_disjointness,
         "oracle_isolation": {
             "ok": not reviewer_packet_leak_refs,
             "violations": reviewer_packet_leak_refs,
@@ -6466,6 +6760,11 @@ def run_bounded_parallel_panel_corpus(
             "codex_only_calibration": codex_only_calibration_active,
             "roster_selection_allowed": False,
             "roster_selection_guard": roster_selection_guard,
+            "reviewer_provenance": reviewer_provenance,
+            "generator_disjointness": generator_disjointness,
+            "self_preference_warnings": list(
+                generator_disjointness.get("self_preference_warnings") or []
+            ),
             "configured_panel_active": (
                 reviewer_panel_mode == "configured"
                 and configured_reviewer_panel_options is not None
@@ -6638,6 +6937,11 @@ def _public_dashboard_report(report: Mapping[str, Any]) -> dict[str, Any]:
             "true_reject_count",
             "runtime",
             "model",
+            "provider_family",
+            "lineage",
+            "tool_access",
+            "assurance_grade",
+            "tool_backed_command_evidence",
             "cost_usd",
         )
         return {key: arm[key] for key in keys if key in arm}
@@ -6733,6 +7037,16 @@ def _public_dashboard_report(report: Mapping[str, Any]) -> dict[str, Any]:
             )
             if isinstance(panel_block, Mapping)
             else [],
+            "reviewer_provenance": dict(
+                panel_block.get("reviewer_provenance") or {}
+            )
+            if isinstance(panel_block, Mapping)
+            else {},
+            "generator_disjointness": dict(
+                panel_block.get("generator_disjointness") or {}
+            )
+            if isinstance(panel_block, Mapping)
+            else {},
         },
         "per_reviewer_arms": {
             str(reviewer_id): _public_arm(arm if isinstance(arm, Mapping) else {})
