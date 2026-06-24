@@ -712,6 +712,27 @@ def test_full_gate_reviewer_packet_includes_context_receipt_fields(tmp_path):
         assert "reverse_classical_test_quality" in evidence
 
 
+def test_full_gate_reviewer_packet_includes_public_mergeability_rubric(tmp_path):
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        reviewer_panel=_accept_public_review_panel,
+    )
+
+    for row in report["per_task_results"]:
+        packet = row["supervisor_full_gate_review"]["reviewer_packet"]
+        rubric = packet["mergeability_rubric"]
+        assert rubric["schema_version"] == "supervisor-mergeability-rubric/v1"
+        assert rubric["allowed_labels"] == [
+            "mergeable",
+            "not_mergeable",
+            "needs_human_review",
+        ]
+        assert "unverifiable_from_public_evidence" in rubric["criteria"]
+        assert "hidden oracle fail" not in json.dumps(rubric).lower()
+        assert _public_input_oracle_refs(packet) == []
+
+
 def test_full_gate_reviewer_packet_records_reverse_classical_test_quality(tmp_path):
     report = run_paired_acceptance_pilot(
         BENCH_ROOT,
@@ -822,6 +843,35 @@ def _fake_cursor_result(decision: str, *, model: str = "fake-model") -> CursorIn
         probe=ProbeResult("INDEPENDENT_REVIEWER", "green", "fake_ok", {}),
         outcome=_fake_outcome(decision),
         transcript=f"fake reviewer transcript {decision}",
+        model=model,
+        reviewer_runtime="fake_runtime",
+        reviewer_output_mode="cursor_sdk",
+        reviewer_assurance="self_reported",
+    )
+
+
+def _fake_rubric_cursor_result(
+    decision: str,
+    *,
+    label: str,
+    model: str = "fake-model",
+) -> CursorInvocationResult:
+    outcome = _fake_outcome(decision)
+    critical = dict(outcome.critical_review or {})
+    critical["mergeability_label"] = label
+    critical["mergeability_rubric"] = {
+        "behavioral_correctness": "unverifiable from public evidence",
+        "regression_risk": "requires human review",
+        "test_quality": "public evidence insufficient",
+        "scope_locality": "within public scope",
+        "maintainability": "unknown",
+        "safety": "no public suspicious behavior",
+        "unverifiable_from_public_evidence": label == "needs_human_review",
+    }
+    return CursorInvocationResult(
+        probe=ProbeResult("INDEPENDENT_REVIEWER", "green", "fake_ok", {}),
+        outcome=outcome.model_copy(update={"critical_review": critical}),
+        transcript=f"fake reviewer transcript {decision} {label}",
         model=model,
         reviewer_runtime="fake_runtime",
         reviewer_output_mode="cursor_sdk",
@@ -4164,6 +4214,73 @@ def test_full_panel_report_is_report_only_and_oracle_isolated(tmp_path):
     assert report["gate_advanced"] is False
     assert report["oracle_isolation"]["ok"] is True
     assert report["hidden_field_leak_check"]["ok"] is True
+
+
+def test_needs_human_review_is_abstention_not_acceptance(tmp_path):
+    abstaining_reviewer = _RecordingFakeReviewer(
+        "independent-reviewer-0",
+        result=_fake_rubric_cursor_result("accept", label="needs_human_review"),
+    )
+
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        candidate_paths=_two_candidate_paths(),
+        strict_calibration=False,
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            reviewers=(abstaining_reviewer,),
+        ),
+    )
+
+    public_accept_rows = [
+        row for row in report["per_task_results"]
+        if row["supervisor_candidate_review_accept"]
+    ]
+    assert public_accept_rows
+    for row in public_accept_rows:
+        assert row["supervisor_full_gate_accept"] is False
+        assert row["supervisor_full_gate_unavailable"] is False
+        labels = [
+            result["mergeability_label"]
+            for result in row["supervisor_full_gate_reviewer_results"]
+        ]
+        assert labels == ["needs_human_review"]
+
+    full_gate = report["arms"]["supervisor_full_gate"]
+    assert full_gate["accepted_count"] == 0
+    assert full_gate["false_accept_count"] == 0
+    coverage = report["mergeability_rubric_coverage"]
+    assert coverage["scoring_authority"] == "deterministic_oracle"
+    assert coverage["labels"]["needs_human_review"] == len(public_accept_rows)
+    assert coverage["abstention_count"] == len(public_accept_rows)
+    assert coverage["abstention_is_accept"] is False
+    assert report["configured_reviewer_panel"]["mergeability_rubric_coverage"] == coverage
+
+
+def test_mergeability_rubric_labels_are_descriptive_not_scoring_authority(tmp_path):
+    reviewer = _RecordingFakeReviewer(
+        "independent-reviewer-0",
+        result=_fake_rubric_cursor_result("accept", label="mergeable"),
+    )
+
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        candidate_paths=_two_candidate_paths(),
+        strict_calibration=False,
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            reviewers=(reviewer,),
+        ),
+    )
+
+    coverage = report["mergeability_rubric_coverage"]
+    assert coverage["llm_labels_descriptive_only"] is True
+    assert coverage["scoring_authority"] == "deterministic_oracle"
+    assert coverage["labels"]["mergeable"] > 0
+    assert report["arms"]["supervisor_full_gate"]["oracle_coupled"] is False
+    assert report["oracle_agreement"]["supervisor_full_gate"]["scored_by"] == "held_out_oracle"
 
 
 # ---------------------------------------------------------------------------

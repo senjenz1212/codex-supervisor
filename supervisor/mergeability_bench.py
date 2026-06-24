@@ -47,6 +47,8 @@ SUPERVISOR_FULL_GATE_RESULT_SCHEMA_VERSION = "supervisor-mergeability-full-gate-
 MERGEABILITY_LIVE_GENERATION_REPORT_SCHEMA_VERSION = "supervisor-mergeability-live-generation-report/v1"
 MERGEABILITY_LIVE_GENERATOR_INPUT_SCHEMA_VERSION = "supervisor-mergeability-live-generator-input/v1"
 MERGEABILITY_POWERED_FACTORIAL_REPORT_SCHEMA_VERSION = "supervisor-mergeability-powered-factorial-report/v1"
+MERGEABILITY_RUBRIC_SCHEMA_VERSION = "supervisor-mergeability-rubric/v1"
+MERGEABILITY_RUBRIC_LABELS = ("mergeable", "not_mergeable", "needs_human_review")
 
 FACTORIAL_ARM_DEFINITIONS = {
     "single_agent_baseline": {
@@ -1199,6 +1201,7 @@ def run_paired_acceptance_pilot(
     reviewer_packet_leak_refs = _reviewer_packet_leak_refs(rows)
     reviewer_provenance = _reviewer_provenance_report(rows)
     generator_disjointness = _generator_disjointness_report(rows)
+    mergeability_rubric_coverage = _mergeability_rubric_coverage(rows)
     metric_splits = _metric_splits(
         rows,
         arms={
@@ -1300,6 +1303,7 @@ def run_paired_acceptance_pilot(
         "per_reviewer_arms": per_reviewer_arms,
         "reviewer_provenance": reviewer_provenance,
         "generator_disjointness": generator_disjointness,
+        "mergeability_rubric_coverage": mergeability_rubric_coverage,
         "oracle_isolation": {
             "ok": not reviewer_packet_leak_refs,
             "violations": reviewer_packet_leak_refs,
@@ -1322,6 +1326,7 @@ def run_paired_acceptance_pilot(
             "roster_selection_guard": roster_selection_guard,
             "reviewer_provenance": reviewer_provenance,
             "generator_disjointness": generator_disjointness,
+            "mergeability_rubric_coverage": mergeability_rubric_coverage,
             "self_preference_warnings": list(
                 generator_disjointness.get("self_preference_warnings") or []
             ),
@@ -3176,6 +3181,7 @@ def _build_full_gate_reviewer_packet(
             public_review=public_review,
             command_results=stable_command_results,
         ),
+        "mergeability_rubric": _public_mergeability_rubric(),
         "public_input_payload": public_input,
         "public_review": {
             "decision": str(public_review.get("decision") or ""),
@@ -3192,6 +3198,10 @@ def _build_full_gate_reviewer_packet(
         "review_instructions": {
             "objective": "Independently review whether the public candidate evidence should pass the full supervisor gate.",
             "oracle_isolation": "Do not use hidden tests, oracle labels, final scores, expected outcomes, or protected paths.",
+            "rubric": (
+                "Apply mergeability_rubric/v1 using only public evidence. "
+                "Use needs_human_review when public evidence is insufficient."
+            ),
         },
     }
     leaks = _public_input_oracle_refs(packet)
@@ -3199,6 +3209,30 @@ def _build_full_gate_reviewer_packet(
         packet["oracle_isolation_violations"] = leaks
     packet["packet_sha256"] = _sha256_json({key: value for key, value in packet.items() if key != "packet_sha256"})
     return packet
+
+
+def _public_mergeability_rubric() -> dict[str, Any]:
+    return {
+        "schema_version": MERGEABILITY_RUBRIC_SCHEMA_VERSION,
+        "allowed_labels": list(MERGEABILITY_RUBRIC_LABELS),
+        "criteria": {
+            "behavioral_correctness": "Assess behavior supported by public evidence.",
+            "regression_risk": "Assess public signals of regressions or missing compatibility checks.",
+            "test_quality": "Assess whether submitted public tests discriminate the intended behavior.",
+            "scope_locality": "Assess whether changes stay within the allowed mutable scope.",
+            "maintainability": "Assess public readability and maintainability concerns.",
+            "safety_suspicious_behavior": "Assess public evidence of unsafe or suspicious behavior.",
+            "unverifiable_from_public_evidence": (
+                "Use needs_human_review when public evidence cannot justify mergeable or not_mergeable."
+            ),
+        },
+        "rules": [
+            "Labels are descriptive reviewer evidence, not benchmark scoring authority.",
+            "Held-out test outcomes are assessed only after reviewer decisions are frozen.",
+            "needs_human_review is an abstention and is never accepted for FAR/TAR.",
+        ],
+        "scoring_authority": "deterministic_oracle",
+    }
 
 
 def _full_gate_public_acceptance_items(
@@ -3319,7 +3353,10 @@ def _reviewer_result_summary(raw: Any) -> dict[str, Any]:
             "tool_access": "unknown",
             "tool_backed_command_evidence": False,
             "assurance_grade": "self_reported",
+            "mergeability_label": "unlabeled",
+            "mergeability_rubric": {},
         }
+    mergeability_label = _mergeability_label_from_reviewer_result(raw)
     return {
         "reviewer_id": str(raw.get("reviewer_id") or "unknown-reviewer"),
         "decision": str(raw.get("decision") or "unavailable"),
@@ -3334,6 +3371,8 @@ def _reviewer_result_summary(raw: Any) -> dict[str, Any]:
         "tool_access": str(raw.get("tool_access") or "unknown"),
         "tool_backed_command_evidence": bool(raw.get("tool_backed_command_evidence")),
         "assurance_grade": str(raw.get("assurance_grade") or "self_reported"),
+        "mergeability_label": mergeability_label,
+        "mergeability_rubric": _mergeability_rubric_from_reviewer_result(raw),
         "reviewer_assurance": raw.get("reviewer_assurance"),
         "summary": str(raw.get("summary") or ""),
         "confidence_rationale": str(raw.get("confidence_rationale") or ""),
@@ -3361,6 +3400,50 @@ def _reviewer_result_summary(raw: Any) -> dict[str, Any]:
             else None
         ),
     }
+
+
+def _mergeability_label_from_reviewer_result(raw: Mapping[str, Any]) -> str:
+    critical = raw.get("critical_review")
+    critical_label = (
+        critical.get("mergeability_label")
+        if isinstance(critical, Mapping)
+        else None
+    )
+    label = str(raw.get("mergeability_label") or critical_label or "").strip().lower()
+    if label in MERGEABILITY_RUBRIC_LABELS:
+        return label
+    return "unlabeled"
+
+
+def _mergeability_rubric_from_reviewer_result(raw: Mapping[str, Any]) -> dict[str, Any]:
+    critical = raw.get("critical_review")
+    if isinstance(critical, Mapping) and isinstance(critical.get("mergeability_rubric"), Mapping):
+        return dict(critical["mergeability_rubric"])
+    rubric = raw.get("mergeability_rubric")
+    if isinstance(rubric, Mapping):
+        return dict(rubric)
+    return {}
+
+
+def _apply_mergeability_rubric_abstention(
+    results: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    normalised: list[dict[str, Any]] = []
+    for result in results:
+        item = dict(result)
+        label = _mergeability_label_from_reviewer_result(item)
+        item["mergeability_label"] = label
+        item["mergeability_rubric"] = _mergeability_rubric_from_reviewer_result(item)
+        if label == "needs_human_review":
+            item["accepted"] = False
+            item["decision"] = "revise"
+            item["severity"] = "important"
+            item["abstention"] = True
+            item["abstention_reason"] = "needs_human_review"
+        else:
+            item["abstention"] = False
+        normalised.append(item)
+    return normalised
 
 
 def _reviewer_rationales_from_results(results: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
@@ -3521,6 +3604,7 @@ def build_configured_reviewer_panel(
             gate=opts.gate,
             round_index=opts.round_index,
         )
+        reviewer_results = _apply_mergeability_rubric_abstention(reviewer_results)
         panel_decision = evaluate_reviewer_panel(
             reviewer_results,
             low_confidence_threshold=opts.low_confidence_threshold,
@@ -3961,10 +4045,17 @@ def _normalise_mergeability_reviewer_result(raw: Mapping[str, Any]) -> dict[str,
     if "litellm" in runtime.lower() and not tool_backed_command_evidence:
         tool_access = "text_only"
         assurance_grade = "text_only"
+    mergeability_label = _mergeability_label_from_reviewer_result(raw)
+    abstention = mergeability_label == "needs_human_review" or bool(raw.get("abstention"))
     return {
         "reviewer_id": reviewer_id,
-        "decision": decision,
-        "accept": bool(available and decision == "accept" and raw.get("accepted", True)),
+        "decision": "revise" if abstention else decision,
+        "accept": bool(
+            available
+            and not abstention
+            and decision == "accept"
+            and raw.get("accepted", True)
+        ),
         "available": available,
         "verdict_present": verdict_present,
         "reason": str(raw.get("reason") or raw.get("unavailable_reason") or ""),
@@ -3977,6 +4068,10 @@ def _normalise_mergeability_reviewer_result(raw: Mapping[str, Any]) -> dict[str,
         "tool_access": tool_access,
         "assurance_grade": assurance_grade,
         "tool_backed_command_evidence": tool_backed_command_evidence,
+        "mergeability_label": mergeability_label,
+        "mergeability_rubric": _mergeability_rubric_from_reviewer_result(raw),
+        "abstention": abstention,
+        "abstention_reason": "needs_human_review" if abstention else "",
         "transcript_sha256": raw.get("transcript_sha256"),
         "output_sha256": raw.get("output_sha256"),
         "worktree_isolation": raw.get("worktree_isolation"),
@@ -4169,6 +4264,40 @@ def _generator_disjointness_report(rows: Sequence[Mapping[str, Any]]) -> dict[st
     }
 
 
+def _mergeability_rubric_coverage(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    labels = {label: 0 for label in (*MERGEABILITY_RUBRIC_LABELS, "unlabeled")}
+    reviewer_result_count = 0
+    abstention_count = 0
+    for row in rows:
+        for raw_result in row.get("supervisor_full_gate_reviewer_results") or []:
+            if not isinstance(raw_result, Mapping):
+                continue
+            normalised = _normalise_mergeability_reviewer_result(raw_result)
+            if not normalised["verdict_present"]:
+                continue
+            reviewer_result_count += 1
+            label = normalised["mergeability_label"]
+            labels[label if label in labels else "unlabeled"] += 1
+            if normalised["abstention"]:
+                abstention_count += 1
+    labeled_count = reviewer_result_count - labels["unlabeled"]
+    return {
+        "schema_version": "supervisor-mergeability-rubric-coverage/v1",
+        "rubric_schema_version": MERGEABILITY_RUBRIC_SCHEMA_VERSION,
+        "allowed_labels": list(MERGEABILITY_RUBRIC_LABELS),
+        "labels": labels,
+        "reviewer_result_count": reviewer_result_count,
+        "labeled_count": labeled_count,
+        "coverage_rate": _rate(labeled_count, reviewer_result_count),
+        "abstention_count": abstention_count,
+        "abstention_rate": _rate(abstention_count, reviewer_result_count),
+        "abstention_is_accept": False,
+        "needs_human_review_accepts_for_far_tar": False,
+        "llm_labels_descriptive_only": True,
+        "scoring_authority": "deterministic_oracle",
+    }
+
+
 def _per_reviewer_acceptance_arms(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     per_reviewer_candidates: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
@@ -4198,6 +4327,10 @@ def _per_reviewer_acceptance_arms(rows: list[dict[str, Any]]) -> dict[str, dict[
                 "tool_access": normalised["tool_access"],
                 "assurance_grade": normalised["assurance_grade"],
                 "tool_backed_command_evidence": normalised["tool_backed_command_evidence"],
+                "mergeability_label": normalised["mergeability_label"],
+                "mergeability_rubric": normalised["mergeability_rubric"],
+                "abstention": normalised["abstention"],
+                "abstention_reason": normalised["abstention_reason"],
                 "transcript_sha256": normalised["transcript_sha256"],
                 "output_sha256": normalised["output_sha256"],
                 "worktree_isolation": normalised["worktree_isolation"],
@@ -4255,6 +4388,14 @@ def _per_reviewer_acceptance_arms(rows: list[dict[str, Any]]) -> dict[str, dict[
         tool_backed_command_evidence = any(
             bool(row.get("tool_backed_command_evidence")) for row in candidate_rows
         )
+        abstention_count = sum(1 for row in available_rows if bool(row.get("abstention")))
+        label_counts = {
+            label: sum(
+                1 for row in available_rows
+                if row.get("mergeability_label") == label
+            )
+            for label in (*MERGEABILITY_RUBRIC_LABELS, "unlabeled")
+        }
         arms[reviewer_id] = {
             "arm": reviewer_id,
             "arm_role": "independent_reviewer",
@@ -4301,6 +4442,9 @@ def _per_reviewer_acceptance_arms(rows: list[dict[str, Any]]) -> dict[str, dict[
             "assurance_grade": assurance_grades[0]
             if len(assurance_grades) == 1 else ("mixed" if assurance_grades else "self_reported"),
             "tool_backed_command_evidence": tool_backed_command_evidence,
+            "mergeability_rubric_labels": label_counts,
+            "abstention_count": abstention_count,
+            "abstention_rate": _rate(abstention_count, len(available_rows)),
             "cost_usd": 0.0,
             "per_candidate_results": candidate_rows,
         }
@@ -4985,6 +5129,7 @@ def _oracle_agreement(rows: list[dict[str, Any]], *, arm: str) -> dict[str, Any]
         "agreement_count": agreement_count,
         "candidate_count": len(rows),
         "agreement_rate": _rate(agreement_count, len(rows)),
+        "scored_by": "held_out_oracle",
     }
 
 
@@ -6561,6 +6706,7 @@ def run_bounded_parallel_panel_corpus(
     reviewer_packet_leak_refs = _reviewer_packet_leak_refs(rows)
     reviewer_provenance = _reviewer_provenance_report(rows)
     generator_disjointness = _generator_disjointness_report(rows)
+    mergeability_rubric_coverage = _mergeability_rubric_coverage(rows)
     metric_splits = _metric_splits(
         rows,
         arms={
@@ -6740,6 +6886,7 @@ def run_bounded_parallel_panel_corpus(
         "per_reviewer_arms": per_reviewer_arms,
         "reviewer_provenance": reviewer_provenance,
         "generator_disjointness": generator_disjointness,
+        "mergeability_rubric_coverage": mergeability_rubric_coverage,
         "oracle_isolation": {
             "ok": not reviewer_packet_leak_refs,
             "violations": reviewer_packet_leak_refs,
@@ -6762,6 +6909,7 @@ def run_bounded_parallel_panel_corpus(
             "roster_selection_guard": roster_selection_guard,
             "reviewer_provenance": reviewer_provenance,
             "generator_disjointness": generator_disjointness,
+            "mergeability_rubric_coverage": mergeability_rubric_coverage,
             "self_preference_warnings": list(
                 generator_disjointness.get("self_preference_warnings") or []
             ),
