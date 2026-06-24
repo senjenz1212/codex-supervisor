@@ -2915,6 +2915,81 @@ def test_fixture_diagnostic_report_stays_calibration_only(tmp_path):
     ) == []
 
 
+def test_fixture_roster_selection_guard_blocks_fixture_only_selection(tmp_path):
+    reviewer_a, reviewer_b = _accepting_fake_reviewers()
+    report = run_fixture_panel_produced_baseline_measurement(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            reviewers=(reviewer_a, reviewer_b),
+        ),
+    )
+
+    guard = report["roster_selection_guard"]
+    assert guard["evidence_scope"] == "fixture_diagnostic_only"
+    assert guard["roster_selection_allowed"] is False
+    assert guard["fixture_only_can_select_roster"] is False
+    assert guard["codex_only_can_select_roster"] is False
+    assert guard["decision_authority"] == "blocked"
+    assert "real_or_disagreement_enriched_candidates" in guard["required_evidence"]
+    assert "drop_reviewers_from_fixture_only_ablation" in guard["forbidden_conclusions"]
+    assert report["configured_reviewer_panel"]["roster_selection_allowed"] is False
+    assert report["configured_reviewer_panel"]["roster_selection_guard"] == guard
+    assert report["recommendation"]["roster_selection_allowed"] is False
+    assert derive_policy_evolution_proposals_from_report(
+        report,
+        repo_root=Path.cwd(),
+        affected_gates=("execution", "outcome_review"),
+    ) == []
+
+
+def test_saturated_fixture_agreement_cannot_justify_dropping_reviewers(tmp_path):
+    reviewer_a, reviewer_b = _accepting_fake_reviewers()
+    report = run_fixture_panel_produced_baseline_measurement(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            reviewers=(reviewer_a, reviewer_b),
+        ),
+    )
+
+    agreement = report["configured_reviewer_panel"]["inter_reviewer_agreement"]
+    assert agreement
+    assert all(entry["agreement_rate"] == 1.0 for entry in agreement)
+    guard = report["roster_selection_guard"]
+    assert guard["saturated_reviewer_agreement"] is True
+    assert "fixture_corpus_saturated_for_roster_selection" in guard["reasons"]
+    assert "treat_saturated_fixture_agreement_as_no_diversity_value" in (
+        guard["forbidden_conclusions"]
+    )
+
+
+def test_codex_only_calibration_keeps_roster_selection_blocked(tmp_path):
+    def invoker(adapter, request):
+        if adapter.spec.runtime == "cursor_sdk":
+            raise AssertionError("codex-only calibration must not invoke Cursor")
+        return _fake_cursor_result("accept", model=adapter.spec.model or "fake-model")
+
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            codex_only_calibration=True,
+            reviewer_invoker=invoker,
+            review_cwd=tmp_path,
+        ),
+    )
+
+    panel_block = report["configured_reviewer_panel"]
+    assert panel_block["report_mode"] == "codex_only_calibration"
+    assert panel_block["full_panel_evidence_allowed"] is False
+    guard = report["roster_selection_guard"]
+    assert guard["roster_selection_allowed"] is False
+    assert guard["codex_only_can_select_roster"] is False
+    assert "codex_only_calibration_is_not_full_panel_evidence" in guard["reasons"]
+
+
 def _missing_verdict_panel(_packet):
     return {
         "decision": "unavailable",
@@ -4477,3 +4552,28 @@ def test_full_fixture_corpus_smoke_writes_report_checkpoints_runtime_evidence_an
     assert (output_dir / "runtime-evidence.md").exists()
     assert (output_dir / "review.html").exists()
     assert report["bounded_runner"]["completed_candidate_count"] == 21
+
+
+def test_bounded_runner_reports_roster_cache_policy(tmp_path):
+    options, _reviewers = _accepting_panel_options(2)
+    runner_options = _bounded_panel_runner_options(
+        max_candidate_workers=2,
+        candidate_selector=("known-good", "noop"),
+        checkpoint_dir=tmp_path / "ckpt",
+    )
+    report = _run_bounded(
+        bench_root=BENCH_ROOT,
+        options=runner_options,
+        output_dir=tmp_path / "out",
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=options,
+        strict_calibration=False,
+    )
+
+    cache_policy = report["bounded_runner"]["cache_policy"]
+    assert cache_policy["reviewer_roster_ids_in_identity"] is True
+    assert cache_policy["option_hash_in_identity"] is True
+    assert cache_policy["changed_roster_recomputes"] is True
+    assert "reviewer_roster_ids" in cache_policy["checkpoint_reuse_requires"]
+    assert "option_hash" in cache_policy["checkpoint_reuse_requires"]
+    assert report["roster_selection_guard"]["roster_selection_allowed"] is False

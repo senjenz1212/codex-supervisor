@@ -1210,6 +1210,10 @@ def run_paired_acceptance_pilot(
             "supervisor": supervisor,
         },
     )
+    roster_selection_guard = _roster_selection_guard(
+        inter_reviewer_agreement=inter_reviewer_agreement,
+        codex_only_calibration_active=codex_only_calibration_active,
+    )
     report = {
         "schema_version": MERGEABILITY_PAIRED_REPORT_SCHEMA_VERSION,
         "bench_root": bench_root_path.as_posix(),
@@ -1299,6 +1303,7 @@ def run_paired_acceptance_pilot(
             "refs": reviewer_packet_leak_refs,
             "scope": "supervisor_full_gate_reviewer_packets",
         },
+        "roster_selection_guard": roster_selection_guard,
         "disagreements": disagreements,
         "configured_reviewer_panel": {
             "mode": reviewer_panel_mode,
@@ -1307,6 +1312,8 @@ def run_paired_acceptance_pilot(
             ),
             "full_panel_evidence_allowed": not codex_only_calibration_active,
             "codex_only_calibration": codex_only_calibration_active,
+            "roster_selection_allowed": False,
+            "roster_selection_guard": roster_selection_guard,
             "configured_panel_active": (
                 reviewer_panel_mode == "configured"
                 and configured_reviewer_panel_options is not None
@@ -1374,6 +1381,8 @@ def run_paired_acceptance_pilot(
             "reviewer-panel decision from a public-only packet; unavailable reviewers are not "
             "imputed from the public-check arm.",
             "This fixture-scale report is calibration evidence only, not proof of production improvement.",
+            "Fixture-only roster diagnostics cannot select Codex-only or drop reviewers; "
+            "roster selection requires real or disagreement-enriched same-pool evidence.",
             "Baseline arm is metadata calibration of fixture candidate self-reports, not a produced "
             "single-agent baseline; do not treat it as replayable baseline evidence.",
             "The single_agent_baseline arm is reported only from replayable produced-baseline "
@@ -1385,6 +1394,7 @@ def run_paired_acceptance_pilot(
         "recommendation": {
             "report_only": True,
             "applyable_policy_proposal": False,
+            "roster_selection_allowed": False,
             "next_step": "grow an oracle-isolated corpus before any powered live-generation experiment",
         },
     }
@@ -1632,6 +1642,53 @@ def _paired_acceptance_comparisons(
     }
 
 
+def _roster_selection_guard(
+    *,
+    inter_reviewer_agreement: Sequence[Mapping[str, Any]],
+    codex_only_calibration_active: bool,
+    evidence_scope: str = "fixture_diagnostic_only",
+) -> dict[str, Any]:
+    shared_pairs = [
+        entry for entry in inter_reviewer_agreement
+        if int(entry.get("shared_candidate_count") or 0) > 0
+    ]
+    saturated_agreement = bool(shared_pairs) and all(
+        float(entry.get("agreement_rate") or 0.0) >= 1.0
+        for entry in shared_pairs
+    )
+    reasons = [
+        "fixture_only_evidence_cannot_select_reviewer_roster",
+        "real_or_disagreement_enriched_candidate_pool_required",
+    ]
+    if codex_only_calibration_active:
+        reasons.append("codex_only_calibration_is_not_full_panel_evidence")
+    if saturated_agreement:
+        reasons.append("fixture_corpus_saturated_for_roster_selection")
+    return {
+        "schema_version": "supervisor-mergeability-roster-selection-guard/v1",
+        "evidence_scope": evidence_scope,
+        "roster_selection_allowed": False,
+        "fixture_only_can_select_roster": False,
+        "codex_only_can_select_roster": False,
+        "saturated_reviewer_agreement": saturated_agreement,
+        "decision_authority": "blocked",
+        "reasons": reasons,
+        "required_evidence": [
+            "same_candidate_pool_across_roster_arms",
+            "real_or_disagreement_enriched_candidates",
+            "oracle_grounded_far_tar_by_roster",
+            "reviewer_disagreement_and_self_preference_analysis",
+            "report_only_until_powered_live_evidence",
+        ],
+        "forbidden_conclusions": [
+            "drop_reviewers_from_fixture_only_ablation",
+            "select_codex_only_from_fixture_only_ablation",
+            "treat_cursor_default_as_proven_cross_family_without_provider_evidence",
+            "treat_saturated_fixture_agreement_as_no_diversity_value",
+        ],
+    }
+
+
 def _validate_fixture_panel_measurement_report(report: Mapping[str, Any]) -> None:
     arms = report.get("arms")
     if not isinstance(arms, Mapping):
@@ -1648,6 +1705,9 @@ def _validate_fixture_panel_measurement_report(report: Mapping[str, Any]) -> Non
     if not isinstance(panel_delta, Mapping) or panel_delta.get("status") not in {"computed", "not_matched"}:
         status = panel_delta.get("status") if isinstance(panel_delta, Mapping) else "missing"
         raise MergeabilityBenchError(f"fixture measurement panel marginal unavailable: {status}")
+    guard = report.get("roster_selection_guard")
+    if not isinstance(guard, Mapping) or guard.get("roster_selection_allowed") is not False:
+        raise MergeabilityBenchError("fixture measurement missing roster selection guard")
     comparisons = report.get("comparisons")
     if not isinstance(comparisons, Mapping):
         raise MergeabilityBenchError("fixture measurement report missing comparisons")
@@ -6108,6 +6168,10 @@ def run_bounded_parallel_panel_corpus(
             "supervisor": supervisor,
         },
     )
+    roster_selection_guard = _roster_selection_guard(
+        inter_reviewer_agreement=inter_reviewer_agreement,
+        codex_only_calibration_active=codex_only_calibration_active,
+    )
     matched_true_accept = _false_accept_at_matched_true_accept(
         baseline=baseline,
         supervisor=supervisor_candidate_review,
@@ -6150,6 +6214,21 @@ def run_bounded_parallel_panel_corpus(
         "runner_schema_version": BOUNDED_PANEL_RUNNER_SCHEMA_VERSION,
         "option_hash": option_hash,
         "reviewer_roster_ids": list(reviewer_roster_ids),
+        "cache_policy": {
+            "reviewer_roster_ids_in_identity": True,
+            "option_hash_in_identity": True,
+            "changed_roster_recomputes": True,
+            "changed_options_recompute": True,
+            "checkpoint_reuse_requires": [
+                "candidate_hash",
+                "packet_hash",
+                "schema_version",
+                "runner_schema_version",
+                "option_hash",
+                "reviewer_roster_ids",
+            ],
+            "stale_checkpoint_action": "recompute_reviewer_work",
+        },
     }
 
     total_candidate_count = len(all_candidates)
@@ -6260,6 +6339,7 @@ def run_bounded_parallel_panel_corpus(
             "refs": reviewer_packet_leak_refs,
             "scope": "supervisor_full_gate_reviewer_packets",
         },
+        "roster_selection_guard": roster_selection_guard,
         "disagreements": disagreements,
         "configured_reviewer_panel": {
             "mode": reviewer_panel_mode,
@@ -6268,6 +6348,8 @@ def run_bounded_parallel_panel_corpus(
             ),
             "full_panel_evidence_allowed": not codex_only_calibration_active,
             "codex_only_calibration": codex_only_calibration_active,
+            "roster_selection_allowed": False,
+            "roster_selection_guard": roster_selection_guard,
             "configured_panel_active": (
                 reviewer_panel_mode == "configured"
                 and configured_reviewer_panel_options is not None
@@ -6331,6 +6413,8 @@ def run_bounded_parallel_panel_corpus(
         "validity_notes": [
             "Bounded panel runner: rows preserve S_probe and S_full semantics; unavailable "
             "reviewer panel rows are never accepted.",
+            "Fixture-only roster diagnostics cannot select Codex-only or drop reviewers; "
+            "roster selection requires real or disagreement-enriched same-pool evidence.",
             "Filtered, wall-clock-truncated, and timed-out runs are calibration evidence "
             "only; report-only invariants stay false.",
         ],
@@ -6340,6 +6424,7 @@ def run_bounded_parallel_panel_corpus(
         "recommendation": {
             "report_only": True,
             "applyable_policy_proposal": False,
+            "roster_selection_allowed": False,
             "next_step": "grow an oracle-isolated corpus before any powered live-generation experiment",
         },
         "bounded_runner": bounded_runner_block,
@@ -6452,6 +6537,11 @@ def _public_dashboard_report(report: Mapping[str, Any]) -> dict[str, Any]:
         if isinstance(report.get("per_reviewer_arms"), Mapping)
         else {}
     )
+    roster_guard = (
+        report.get("roster_selection_guard")
+        if isinstance(report.get("roster_selection_guard"), Mapping)
+        else {}
+    )
     safe: dict[str, Any] = {
         "schema_version": report.get("schema_version"),
         "candidate_count": report.get("candidate_count"),
@@ -6466,6 +6556,22 @@ def _public_dashboard_report(report: Mapping[str, Any]) -> dict[str, Any]:
         "panel_marginal_delta_at_matched_true_accept": dict(
             report.get("panel_marginal_delta_at_matched_true_accept") or {}
         ),
+        "roster_selection_guard": {
+            "evidence_scope": roster_guard.get("evidence_scope"),
+            "roster_selection_allowed": roster_guard.get("roster_selection_allowed"),
+            "fixture_only_can_select_roster": roster_guard.get(
+                "fixture_only_can_select_roster"
+            ),
+            "codex_only_can_select_roster": roster_guard.get(
+                "codex_only_can_select_roster"
+            ),
+            "saturated_reviewer_agreement": roster_guard.get(
+                "saturated_reviewer_agreement"
+            ),
+            "decision_authority": roster_guard.get("decision_authority"),
+            "reasons": list(roster_guard.get("reasons") or []),
+            "required_evidence": list(roster_guard.get("required_evidence") or []),
+        },
         "configured_reviewer_panel": {
             "mode": panel_block.get("mode") if isinstance(panel_block, Mapping) else None,
             "report_mode": (
@@ -6580,6 +6686,7 @@ def render_panel_dashboard_html(report: Mapping[str, Any]) -> str:
     bounded = report.get("bounded_runner") or {}
     panel_block = report.get("configured_reviewer_panel") or {}
     panel_marginal = report.get("panel_marginal_delta_at_matched_true_accept") or {}
+    roster_guard = report.get("roster_selection_guard") or {}
     invariants = report.get("report_only_invariants") or {
         "metric_applyable": False,
         "improvement_claim_allowed": False,
@@ -6659,6 +6766,30 @@ def render_panel_dashboard_html(report: Mapping[str, Any]) -> str:
         + esc(_fmt(panel_marginal.get("reason") or ""))
         + "</p>"
     )
+
+    parts.append("<h2>Roster Selection Guard</h2>")
+    parts.append("<table>")
+    for key in (
+        "evidence_scope",
+        "roster_selection_allowed",
+        "fixture_only_can_select_roster",
+        "codex_only_can_select_roster",
+        "saturated_reviewer_agreement",
+        "decision_authority",
+    ):
+        parts.append(
+            "<tr><th>"
+            + esc(str(key))
+            + "</th><td>"
+            + esc(_fmt(roster_guard.get(key)))
+            + "</td></tr>"
+        )
+    parts.append(
+        "<tr><th>required evidence</th><td>"
+        + esc(", ".join(str(item) for item in roster_guard.get("required_evidence") or []))
+        + "</td></tr>"
+    )
+    parts.append("</table>")
 
     parts.append("<h2>S_probe-vs-S_full Discordance</h2>")
     parts.append(

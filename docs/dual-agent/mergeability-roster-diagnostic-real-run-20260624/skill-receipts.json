@@ -1,0 +1,49 @@
+{
+  "schema_version": "supervisor-skill-receipts/v1",
+  "task_id": "mergeability-roster-diagnostic-real-run-20260624",
+  "receipts": [
+    {
+      "stage": "to_prd",
+      "skill": "/Users/sam.zhang/.codex/skills/to-prd/SKILL.md",
+      "artifact": "docs/dual-agent/mergeability-roster-diagnostic-real-run-20260624/prd.md",
+      "status": "pass"
+    },
+    {
+      "stage": "codebase_design",
+      "skill": "/Users/sam.zhang/.codex/skills/codebase-design/SKILL.md",
+      "artifact": "docs/dual-agent/mergeability-roster-diagnostic-real-run-20260624/prd.md",
+      "status": "pass"
+    },
+    {
+      "stage": "prd_grill",
+      "skill": "/Users/sam.zhang/.codex/skills/grill-with-docs/SKILL.md",
+      "artifact": "docs/dual-agent/mergeability-roster-diagnostic-real-run-20260624/grill-findings.md",
+      "status": "pass"
+    },
+    {
+      "stage": "to_issues",
+      "skill": "/Users/sam.zhang/.codex/skills/to-issues/SKILL.md",
+      "artifact": "docs/dual-agent/mergeability-roster-diagnostic-real-run-20260624/issues.md",
+      "status": "pass"
+    },
+    {
+      "stage": "tdd",
+      "skill": "/Users/sam.zhang/.codex/skills/tdd/SKILL.md",
+      "artifact": "docs/dual-agent/mergeability-roster-diagnostic-real-run-20260624/tdd.md",
+      "status": "pass"
+    },
+    {
+      "stage": "tdd_grill",
+      "skill": "/Users/sam.zhang/.codex/skills/grill-with-docs/SKILL.md",
+      "artifact": "docs/dual-agent/mergeability-roster-diagnostic-real-run-20260624/grill-findings-tdd.md",
+      "status": "pass"
+    }
+  ],
+  "translation_audit": {
+    "all_child_skills_loaded": true,
+    "every_prd_promise_has_issue_claimant": true,
+    "first_tests_are_public_boundary": true,
+    "helper_only_tests_rejected": true,
+    "report_only_invariants_preserved": true
+  }
+}
