@@ -40,6 +40,7 @@ from supervisor.mergeability_bench import (
     result_receipt,
     run_fixture_panel_produced_baseline_measurement,
     run_live_mergeability_candidate_generation,
+    run_mergeability_reviewer_roster_diagnostic,
     run_paired_acceptance_pilot,
     run_powered_factorial_mergeability_evaluation,
     validate_mergeability_corpus,
@@ -4281,6 +4282,269 @@ def test_mergeability_rubric_labels_are_descriptive_not_scoring_authority(tmp_pa
     assert coverage["labels"]["mergeable"] > 0
     assert report["arms"]["supervisor_full_gate"]["oracle_coupled"] is False
     assert report["oracle_agreement"]["supervisor_full_gate"]["scored_by"] == "held_out_oracle"
+
+
+# ---------------------------------------------------------------------------
+# Real/disagreement-enriched reviewer roster diagnostic.
+# ---------------------------------------------------------------------------
+
+
+def _roster_result(
+    reviewer_id: str,
+    decision: str,
+    *,
+    runtime: str,
+    model: str,
+    provider_family: str,
+    tool_access: str = "codebase_tools",
+    tool_backed_command_evidence: bool = False,
+    label: str | None = None,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "reviewer_id": reviewer_id,
+        "decision": decision,
+        "accepted": decision == "accept",
+        "verdict_present": True,
+        "runtime": runtime,
+        "reviewer_runtime": runtime,
+        "model": model,
+        "provider_family": provider_family,
+        "lineage": [provider_family, runtime, model],
+        "tool_access": tool_access,
+        "tool_backed_command_evidence": tool_backed_command_evidence,
+        "assurance_grade": "tool_backed_primary"
+        if tool_access == "codebase_tools"
+        else "text_only",
+        "transcript_sha256": "a" * 64,
+        "output_sha256": "b" * 64,
+    }
+    if label is not None:
+        payload["mergeability_label"] = label
+    return payload
+
+
+def test_reviewer_roster_diagnostic_reports_same_pool_roster_arms(tmp_path):
+    reviewer_results = {
+        "known-good": [
+            _roster_result(
+                "independent-reviewer-1",
+                "accept",
+                runtime="codex_cli",
+                model="gpt-5.5",
+                provider_family="openai",
+            ),
+            _roster_result(
+                "independent-reviewer-gemini",
+                "accept",
+                runtime="litellm_structured",
+                model="gemini-2.5-pro",
+                provider_family="google",
+                tool_access="text_only",
+                label="mergeable",
+            ),
+        ],
+        "hidden-behavior-miss": [
+            _roster_result(
+                "independent-reviewer-1",
+                "deny",
+                runtime="codex_cli",
+                model="gpt-5.5",
+                provider_family="openai",
+            ),
+            _roster_result(
+                "independent-reviewer-gemini",
+                "accept",
+                runtime="litellm_structured",
+                model="gemini-2.5-pro",
+                provider_family="google",
+                tool_access="text_only",
+                label="mergeable",
+            ),
+        ],
+    }
+
+    report = run_mergeability_reviewer_roster_diagnostic(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        candidate_paths=_two_candidate_paths(),
+        strict_calibration=False,
+        reviewer_panel_results=reviewer_results,
+        evidence_scope="disagreement_enriched",
+    )
+
+    assert (tmp_path / "roster_diagnostic_report.json").exists()
+    assert report["same_candidate_pool"] is True
+    assert set(report["arms"]) >= {
+        "s_probe",
+        "s_probe_codex",
+        "s_probe_cross_family_text_only",
+        "s_probe_full_panel",
+    }
+    assert len(set(report["candidate_pool_by_arm_sha256"].values())) == 1
+    assert report["arms"]["s_probe"]["false_accept_count"] == 1
+    assert report["arms"]["s_probe_codex"]["false_accept_count"] == 0
+    assert report["arms"]["s_probe_cross_family_text_only"]["false_accept_count"] == 1
+    assert report["arms"]["s_probe_full_panel"]["false_accept_count"] == 0
+    assert report["per_reviewer_arms"]["independent-reviewer-1"]["false_accept_count"] == 0
+    assert report["per_reviewer_arms"]["independent-reviewer-gemini"]["false_accept_count"] == 1
+    assert report["pairwise_reviewer_agreement"][0]["agreement_rate"] == 0.5
+    assert report["pairwise_oracle_error_overlap"][0]["left_error_count"] == 0
+    assert report["pairwise_oracle_error_overlap"][0]["right_error_count"] == 1
+    assert report["mergeability_rubric_coverage"]["labels"]["mergeable"] == 2
+    assert report["metric_applyable"] is False
+    assert report["improvement_claim_allowed"] is False
+    assert report["policy_mutated"] is False
+    assert report["gate_advanced"] is False
+
+
+def test_reviewer_roster_diagnostic_rejects_unknown_candidate_receipts(tmp_path):
+    with pytest.raises(MergeabilityBenchError, match="unknown reviewer result candidate"):
+        run_mergeability_reviewer_roster_diagnostic(
+            BENCH_ROOT,
+            output_dir=tmp_path,
+            candidate_paths=_two_candidate_paths(),
+            strict_calibration=False,
+            reviewer_panel_results={
+                "candidate-not-in-pool": [
+                    _roster_result(
+                        "independent-reviewer-1",
+                        "accept",
+                        runtime="codex_cli",
+                        model="gpt-5.5",
+                        provider_family="openai",
+                    )
+                ]
+            },
+        )
+
+
+def test_roster_diagnostic_zero_error_reviewers_do_not_create_independence_claim(tmp_path):
+    reviewer_results = {
+        "known-good": [
+            _roster_result("codex", "accept", runtime="codex_cli", model="gpt-5.5", provider_family="openai"),
+            _roster_result("cursor", "accept", runtime="cursor_sdk", model="composer-2.5", provider_family="cursor"),
+        ],
+        "hidden-behavior-miss": [
+            _roster_result("codex", "deny", runtime="codex_cli", model="gpt-5.5", provider_family="openai"),
+            _roster_result("cursor", "deny", runtime="cursor_sdk", model="composer-2.5", provider_family="cursor"),
+        ],
+    }
+
+    report = run_mergeability_reviewer_roster_diagnostic(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        candidate_paths=_two_candidate_paths(),
+        strict_calibration=False,
+        reviewer_panel_results=reviewer_results,
+        evidence_scope="disagreement_enriched",
+    )
+
+    assert report["effective_vote_estimate"]["status"] == "unavailable"
+    assert report["effective_vote_estimate"]["reason"] == "zero_oracle_grounded_reviewer_errors"
+    guard = report["roster_selection_guard"]
+    assert guard["roster_selection_allowed"] is False
+    assert "oracle_grounded_reviewer_errors_required" in guard["reasons"]
+
+
+def test_roster_diagnostic_fixture_scope_blocks_roster_selection_even_with_errors(tmp_path):
+    reviewer_results = {
+        "known-good": [
+            _roster_result("codex", "accept", runtime="codex_cli", model="gpt-5.5", provider_family="openai"),
+            _roster_result("cursor", "accept", runtime="cursor_sdk", model="composer-2.5", provider_family="cursor"),
+        ],
+        "hidden-behavior-miss": [
+            _roster_result("codex", "accept", runtime="codex_cli", model="gpt-5.5", provider_family="openai"),
+            _roster_result("cursor", "deny", runtime="cursor_sdk", model="composer-2.5", provider_family="cursor"),
+        ],
+    }
+
+    report = run_mergeability_reviewer_roster_diagnostic(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        candidate_paths=_two_candidate_paths(),
+        strict_calibration=False,
+        reviewer_panel_results=reviewer_results,
+        evidence_scope="fixture_diagnostic_only",
+    )
+
+    guard = report["roster_selection_guard"]
+    assert guard["roster_selection_allowed"] is False
+    assert guard["fixture_only_can_select_roster"] is False
+    assert "fixture_only_evidence_cannot_select_reviewer_roster" in guard["reasons"]
+    assert report["effective_vote_estimate"]["status"] == "computed"
+
+
+def test_roster_diagnostic_self_preference_warning_blocks_authority(tmp_path):
+    reviewer_results = {
+        "known-good": [
+            _roster_result(
+                "independent-reviewer-1",
+                "accept",
+                runtime="codex_cli",
+                model="gpt-5.5",
+                provider_family="openai",
+            )
+        ],
+        "hidden-behavior-miss": [
+            _roster_result(
+                "independent-reviewer-1",
+                "accept",
+                runtime="codex_cli",
+                model="gpt-5.5",
+                provider_family="openai",
+            )
+        ],
+    }
+
+    report = run_mergeability_reviewer_roster_diagnostic(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        candidate_paths=_two_candidate_paths(),
+        strict_calibration=False,
+        reviewer_panel_results=reviewer_results,
+        evidence_scope="disagreement_enriched",
+        generator_family_by_candidate={
+            "known-good": "openai",
+            "hidden-behavior-miss": "openai",
+        },
+    )
+
+    disjointness = report["generator_disjointness"]
+    assert disjointness["same_family_decisive_vote_count"] == 2
+    guard = report["roster_selection_guard"]
+    assert guard["roster_selection_allowed"] is False
+    assert "same_family_generator_reviewer_decisive_vote" in guard["reasons"]
+
+
+def test_roster_diagnostic_can_mark_disagreement_enriched_error_evidence_available(tmp_path):
+    reviewer_results = {
+        "known-good": [
+            _roster_result("codex", "accept", runtime="codex_cli", model="gpt-5.5", provider_family="openai"),
+            _roster_result("cursor", "accept", runtime="cursor_sdk", model="composer-2.5", provider_family="cursor"),
+        ],
+        "hidden-behavior-miss": [
+            _roster_result("codex", "accept", runtime="codex_cli", model="gpt-5.5", provider_family="openai"),
+            _roster_result("cursor", "deny", runtime="cursor_sdk", model="composer-2.5", provider_family="cursor"),
+        ],
+    }
+
+    report = run_mergeability_reviewer_roster_diagnostic(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        candidate_paths=_two_candidate_paths(),
+        strict_calibration=False,
+        reviewer_panel_results=reviewer_results,
+        evidence_scope="disagreement_enriched",
+    )
+
+    guard = report["roster_selection_guard"]
+    assert guard["roster_selection_allowed"] is True
+    assert guard["decision_authority"] == "diagnostic_evidence_available"
+    assert report["effective_vote_estimate"]["status"] == "computed"
+    assert report["metric_applyable"] is False
+    assert report["improvement_claim_allowed"] is False
+    assert report["policy_mutated"] is False
+    assert report["gate_advanced"] is False
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,42 @@
+{
+  "schema_version": "supervisor-runtime-evidence/v1",
+  "task_id": "mergeability-real-roster-diagnostic-20260624",
+  "status": "accepted_with_orchestration_blocker",
+  "commands": [
+    {
+      "command": "uv run pytest tests/test_mergeability_bench.py -k 'roster_diagnostic'",
+      "status": "passed",
+      "summary": "6 passed, 138 deselected in 5.00s"
+    },
+    {
+      "command": "uv run pytest tests/test_mergeability_bench.py -k 'roster_selection_guard or codex_only_calibration or reviewer_provenance or generator_disjointness or mergeability_rubric or roster_diagnostic'",
+      "status": "passed",
+      "summary": "13 passed, 131 deselected in 44.78s"
+    },
+    {
+      "command": "uv run pytest tests/test_mergeability_bench.py",
+      "status": "passed",
+      "summary": "144 passed in 929.18s (0:15:29)"
+    },
+    {
+      "command": "uv run pytest tests/test_reviewer_panel_aggregation.py",
+      "status": "passed",
+      "summary": "8 passed in 0.23s"
+    },
+    {
+      "command": "git diff --check -- supervisor/mergeability_bench.py tests/test_mergeability_bench.py docs/dual-agent/mergeability-real-roster-diagnostic-20260624",
+      "status": "passed",
+      "summary": "no whitespace errors"
+    },
+    {
+      "command": "codex-supervisor-axi --help",
+      "status": "blocked",
+      "summary": "zsh:1: command not found: codex-supervisor-axi"
+    },
+    {
+      "command": "no-mistakes axi",
+      "status": "blocked",
+      "summary": "zsh:1: command not found: no-mistakes"
+    }
+  ]
+}

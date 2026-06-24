@@ -47,6 +47,7 @@ SUPERVISOR_FULL_GATE_RESULT_SCHEMA_VERSION = "supervisor-mergeability-full-gate-
 MERGEABILITY_LIVE_GENERATION_REPORT_SCHEMA_VERSION = "supervisor-mergeability-live-generation-report/v1"
 MERGEABILITY_LIVE_GENERATOR_INPUT_SCHEMA_VERSION = "supervisor-mergeability-live-generator-input/v1"
 MERGEABILITY_POWERED_FACTORIAL_REPORT_SCHEMA_VERSION = "supervisor-mergeability-powered-factorial-report/v1"
+MERGEABILITY_ROSTER_DIAGNOSTIC_REPORT_SCHEMA_VERSION = "supervisor-mergeability-roster-diagnostic-report/v1"
 MERGEABILITY_RUBRIC_SCHEMA_VERSION = "supervisor-mergeability-rubric/v1"
 MERGEABILITY_RUBRIC_LABELS = ("mergeable", "not_mergeable", "needs_human_review")
 
@@ -2067,6 +2068,209 @@ def run_powered_factorial_mergeability_evaluation(
     })
     if output_path is not None:
         _export_powered_factorial_artifacts(
+            output_path,
+            manifest=manifest,
+            calibration=calibration,
+            report=report,
+            rows=rows,
+        )
+    return report
+
+
+def run_mergeability_reviewer_roster_diagnostic(
+    bench_root: str | Path,
+    *,
+    output_dir: str | Path | None = None,
+    candidate_paths: tuple[str | Path, ...] = (),
+    timeout_s: float = 30.0,
+    strict_calibration: bool = True,
+    reviewer_panel_results: Mapping[str, list[Mapping[str, Any]]] | None = None,
+    evidence_scope: str = "fixture_diagnostic_only",
+    generator_family_by_candidate: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """Build a report-only reviewer-roster diagnostic over one candidate pool."""
+    started = time.monotonic()
+    bench_root_path = Path(bench_root).expanduser().resolve()
+    output_path = Path(output_dir).expanduser() if output_dir is not None else None
+    manifest = build_mergeability_corpus_manifest(bench_root_path, candidate_paths=candidate_paths)
+    tasks = {task.task_id: task for task in load_mergeability_tasks(bench_root_path)}
+    candidate_list = (
+        tuple(load_mergeability_candidate(path) for path in candidate_paths)
+        if candidate_paths else load_mergeability_candidates(bench_root_path)
+    )
+    candidate_ids = tuple(candidate.candidate_id for candidate in candidate_list if candidate.task_id in tasks)
+    reviewer_results_by_candidate = {
+        str(candidate_id): list(results or [])
+        for candidate_id, results in (reviewer_panel_results or {}).items()
+    }
+    _validate_roster_diagnostic_candidate_pool(
+        reviewer_results_by_candidate,
+        candidate_ids=candidate_ids,
+    )
+    public_reviews = {
+        candidate.candidate_id: review_mergeability_candidate_publicly(
+            tasks[candidate.task_id],
+            candidate,
+            bench_root=bench_root_path,
+            timeout_s=timeout_s,
+        )
+        for candidate in candidate_list
+        if candidate.task_id in tasks
+    }
+    calibration = validate_mergeability_corpus(
+        bench_root_path,
+        output_dir=output_path,
+        strict=strict_calibration,
+        candidate_paths=candidate_paths,
+        timeout_s=timeout_s,
+    )
+    candidates = {candidate.candidate_id: candidate for candidate in candidate_list}
+    task_hashes = {entry["task_id"]: entry["task_hash"] for entry in manifest["tasks"]}
+    candidate_hashes = {
+        (entry["task_id"], entry["candidate_id"]): entry["candidate_hash"]
+        for entry in manifest["candidates"]
+    }
+    arm_rosters = _roster_diagnostic_arm_rosters(reviewer_results_by_candidate)
+
+    rows: list[dict[str, Any]] = []
+    for result in calibration["results"]:
+        candidate = candidates[result["candidate_id"]]
+        task = tasks[candidate.task_id]
+        raw_reviewer_results = list(reviewer_results_by_candidate.get(candidate.candidate_id) or [])
+        normalised_by_id: dict[str, dict[str, Any]] = {}
+        for raw in raw_reviewer_results:
+            if not isinstance(raw, Mapping):
+                continue
+            normalised = _normalise_mergeability_reviewer_result(raw)
+            normalised_by_id[normalised["reviewer_id"]] = normalised
+        oracle_accept = float(result["final_score"]) >= 1.0
+        public_review = public_reviews[candidate.candidate_id]
+        row: dict[str, Any] = {
+            "task_id": result["task_id"],
+            "task_class": task.task_class,
+            "split": task.split,
+            "candidate_id": result["candidate_id"],
+            "candidate_hash": candidate_hashes[(result["task_id"], result["candidate_id"])],
+            "task_hash": task_hashes[result["task_id"]],
+            "control_kind": result["control_kind"],
+            "oracle_accept": oracle_accept,
+            "receipt_id": result["receipt_id"],
+            "receipt": result["receipt"],
+            "blocker_status": result["blocker_status"],
+            "failures": result["failures"],
+            "supervisor_public_review": public_review,
+            "supervisor_full_gate_reviewer_results": raw_reviewer_results,
+            "single_agent_baseline_producer": _diagnostic_generator_producer(
+                candidate.candidate_id,
+                generator_family_by_candidate=generator_family_by_candidate,
+            ),
+        }
+        row["s_probe_accept"] = bool(public_review["accept"])
+        row["s_probe_unavailable"] = False
+        for arm, reviewer_ids in arm_rosters.items():
+            if arm == "s_probe":
+                continue
+            decision = _roster_diagnostic_arm_decision(
+                public_accept=bool(public_review["accept"]),
+                reviewer_ids=reviewer_ids,
+                reviewer_results_by_id=normalised_by_id,
+            )
+            row[f"{arm}_accept"] = bool(decision["accept"])
+            row[f"{arm}_unavailable"] = bool(decision["unavailable"])
+            row[f"{arm}_unavailable_reason"] = decision["reason"]
+        rows.append(row)
+
+    candidate_pool = [
+        {
+            "task_id": row["task_id"],
+            "task_hash": row["task_hash"],
+            "candidate_id": row["candidate_id"],
+            "candidate_hash": row["candidate_hash"],
+        }
+        for row in rows
+    ]
+    candidate_pool_sha256 = _sha256_json(candidate_pool)
+    arm_definitions = _roster_diagnostic_arm_definitions(arm_rosters)
+    arms = {
+        arm: _summarize_acceptance_arm(
+            rows,
+            arm=arm,
+            arm_role=definition["arm_role"],
+            decision_source=definition["decision_source"],
+            oracle_coupled=False,
+            evidence_kind=definition["evidence_kind"],
+        )
+        for arm, definition in arm_definitions.items()
+    }
+    for arm in arms.values():
+        arm["candidate_pool_sha256"] = candidate_pool_sha256
+    candidate_pool_by_arm = {arm: candidate_pool_sha256 for arm in arms}
+    per_reviewer_arms = _per_reviewer_acceptance_arms(rows)
+    pairwise_agreement = _inter_reviewer_agreement(rows)
+    pairwise_error_overlap = _reviewer_oracle_error_overlap(rows)
+    effective_vote_estimate = _effective_vote_estimate(
+        per_reviewer_arms=per_reviewer_arms,
+        pairwise_error_overlap=pairwise_error_overlap,
+    )
+    reviewer_provenance = _reviewer_provenance_report(rows)
+    generator_disjointness = _generator_disjointness_report(rows)
+    mergeability_rubric_coverage = _mergeability_rubric_coverage(rows)
+    roster_selection_guard = _roster_diagnostic_selection_guard(
+        evidence_scope=evidence_scope,
+        pairwise_reviewer_agreement=pairwise_agreement,
+        pairwise_oracle_error_overlap=pairwise_error_overlap,
+        effective_vote_estimate=effective_vote_estimate,
+        reviewer_provenance=reviewer_provenance,
+        generator_disjointness=generator_disjointness,
+    )
+    report = {
+        "schema_version": MERGEABILITY_ROSTER_DIAGNOSTIC_REPORT_SCHEMA_VERSION,
+        "report_label": "reviewer_roster_diagnostic",
+        "bench_root": bench_root_path.as_posix(),
+        "manifest_sha256": manifest["manifest_sha256"],
+        "calibration_summary_sha256": calibration["summary_sha256"],
+        "candidate_pool_sha256": candidate_pool_sha256,
+        "candidate_pool_by_arm_sha256": candidate_pool_by_arm,
+        "same_candidate_pool": len(set(candidate_pool_by_arm.values())) == 1,
+        "evidence_scope": evidence_scope,
+        "task_count": manifest["task_count"],
+        "candidate_count": len(rows),
+        "arms": arms,
+        "arm_rosters": {arm: list(reviewer_ids) for arm, reviewer_ids in arm_rosters.items()},
+        "per_reviewer_arms": per_reviewer_arms,
+        "pairwise_reviewer_agreement": pairwise_agreement,
+        "pairwise_oracle_error_overlap": pairwise_error_overlap,
+        "effective_vote_estimate": effective_vote_estimate,
+        "reviewer_provenance": reviewer_provenance,
+        "generator_disjointness": generator_disjointness,
+        "mergeability_rubric_coverage": mergeability_rubric_coverage,
+        "roster_selection_guard": roster_selection_guard,
+        "per_task_results": rows,
+        "metric_applyable": False,
+        "improvement_claim_allowed": False,
+        "default_change_allowed": False,
+        "policy_mutated": False,
+        "gate_advanced": False,
+        "cost_usd": 0.0,
+        "wall_clock_s": round(time.monotonic() - started, 6),
+        "validity_notes": [
+            "Roster diagnostics compare all arms on the same candidate pool.",
+            "Reviewer decisions are fixed before held-out oracle labels are used for aggregate scoring.",
+            "Fixture-only roster diagnostics cannot select Codex-only or drop reviewers.",
+            "Effective-vote estimates are unavailable unless reviewer oracle errors exist.",
+        ],
+        "recommendation": {
+            "report_only": True,
+            "applyable_policy_proposal": False,
+            "roster_selection_allowed": bool(roster_selection_guard["roster_selection_allowed"]),
+            "next_step": "run the same diagnostic on real SWE-bench-style candidates before roster promotion",
+        },
+    }
+    report["report_sha256"] = _sha256_json({
+        key: value for key, value in report.items() if key != "report_sha256"
+    })
+    if output_path is not None:
+        _export_roster_diagnostic_artifacts(
             output_path,
             manifest=manifest,
             calibration=calibration,
@@ -4866,6 +5070,303 @@ def _reviewer_pairwise_agreement(
     return pairs
 
 
+def _validate_roster_diagnostic_candidate_pool(
+    reviewer_panel_results: Mapping[str, list[Mapping[str, Any]]],
+    *,
+    candidate_ids: tuple[str, ...],
+) -> None:
+    expected = set(candidate_ids)
+    actual = {str(candidate_id) for candidate_id in reviewer_panel_results}
+    extra = sorted(actual - expected)
+    if extra:
+        raise MergeabilityBenchError(
+            "unknown reviewer result candidate: " + ", ".join(extra)
+        )
+
+
+def _roster_diagnostic_arm_rosters(
+    reviewer_panel_results: Mapping[str, list[Mapping[str, Any]]],
+) -> dict[str, tuple[str, ...]]:
+    by_reviewer: dict[str, dict[str, Any]] = {}
+    for results in reviewer_panel_results.values():
+        for raw in results:
+            if not isinstance(raw, Mapping):
+                continue
+            normalised = _normalise_mergeability_reviewer_result(raw)
+            by_reviewer.setdefault(normalised["reviewer_id"], normalised)
+
+    def first_matching(predicate: Callable[[Mapping[str, Any]], bool]) -> str | None:
+        for reviewer_id, result in sorted(by_reviewer.items()):
+            if predicate(result):
+                return reviewer_id
+        return None
+
+    codex_id = first_matching(
+        lambda result: result["reviewer_id"] == "independent-reviewer-1"
+        or result["provider_family"] == "openai"
+        or result["runtime"] == "codex_cli"
+    )
+    text_only_id = first_matching(
+        lambda result: result["provider_family"] not in {"openai", "unknown"}
+        and result["tool_access"] == "text_only"
+    )
+    tool_backed_cross_family_id = first_matching(
+        lambda result: result["provider_family"] not in {"openai", "unknown"}
+        and (
+            result["tool_access"] == "codebase_tools"
+            or bool(result["tool_backed_command_evidence"])
+        )
+    )
+
+    arms: dict[str, tuple[str, ...]] = {"s_probe": ()}
+    if codex_id is not None:
+        arms["s_probe_codex"] = (codex_id,)
+    if text_only_id is not None:
+        arms["s_probe_cross_family_text_only"] = (text_only_id,)
+    full_panel = tuple(sorted(by_reviewer))
+    if full_panel:
+        arms["s_probe_full_panel"] = full_panel
+    if tool_backed_cross_family_id is not None:
+        arms["s_probe_tool_backed_cross_family"] = (tool_backed_cross_family_id,)
+    return arms
+
+
+def _roster_diagnostic_arm_definitions(
+    arm_rosters: Mapping[str, tuple[str, ...]],
+) -> dict[str, dict[str, str]]:
+    definitions = {
+        "s_probe": {
+            "arm_role": "deterministic_public_probe",
+            "decision_source": "supervisor_candidate_review",
+            "evidence_kind": "public_runtime_evidence",
+        },
+        "s_probe_codex": {
+            "arm_role": "s_probe_plus_codex_reviewer",
+            "decision_source": "supervisor_candidate_review+codex_reviewer",
+            "evidence_kind": "codex_single_reviewer_diagnostic",
+        },
+        "s_probe_cross_family_text_only": {
+            "arm_role": "s_probe_plus_cross_family_text_only_reviewer",
+            "decision_source": "supervisor_candidate_review+cross_family_text_only_reviewer",
+            "evidence_kind": "cross_family_text_only_reviewer_diagnostic",
+        },
+        "s_probe_full_panel": {
+            "arm_role": "s_probe_plus_full_reviewer_panel",
+            "decision_source": "supervisor_candidate_review+full_reviewer_panel",
+            "evidence_kind": "full_panel_roster_diagnostic",
+        },
+        "s_probe_tool_backed_cross_family": {
+            "arm_role": "s_probe_plus_tool_backed_cross_family_reviewer",
+            "decision_source": "supervisor_candidate_review+tool_backed_cross_family_reviewer",
+            "evidence_kind": "tool_backed_cross_family_reviewer_diagnostic",
+        },
+    }
+    return {
+        arm: definitions[arm]
+        for arm in arm_rosters
+        if arm in definitions
+    }
+
+
+def _roster_diagnostic_arm_decision(
+    *,
+    public_accept: bool,
+    reviewer_ids: tuple[str, ...],
+    reviewer_results_by_id: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    if not reviewer_ids:
+        return {"accept": False, "unavailable": True, "reason": "empty_reviewer_roster"}
+    selected = [reviewer_results_by_id.get(reviewer_id) for reviewer_id in reviewer_ids]
+    if any(result is None for result in selected):
+        return {"accept": False, "unavailable": True, "reason": "reviewer_result_missing"}
+    if any(not bool(result.get("available")) for result in selected if result is not None):
+        return {"accept": False, "unavailable": True, "reason": "reviewer_unavailable"}
+    panel_accept = all(bool(result.get("accept")) for result in selected if result is not None)
+    return {
+        "accept": bool(public_accept and panel_accept),
+        "unavailable": False,
+        "reason": "",
+    }
+
+
+def _diagnostic_generator_producer(
+    candidate_id: str,
+    *,
+    generator_family_by_candidate: Mapping[str, str] | None,
+) -> dict[str, Any]:
+    if not isinstance(generator_family_by_candidate, Mapping):
+        return {}
+    family = str(generator_family_by_candidate.get(candidate_id) or "").strip().lower()
+    if not family:
+        return {}
+    return {
+        "provider_family": family,
+        "provider": family,
+        "model": f"{family}-diagnostic-generator",
+        "runner_label": "roster-diagnostic-replay",
+    }
+
+
+def _reviewer_oracle_error_overlap(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_reviewer: dict[str, dict[str, bool]] = {}
+    oracle_by_candidate: dict[str, bool] = {}
+    for row in rows:
+        candidate_key = f"{row['task_id']}:{row['candidate_id']}"
+        oracle_by_candidate[candidate_key] = bool(row["oracle_accept"])
+        for raw_result in row.get("supervisor_full_gate_reviewer_results") or []:
+            if not isinstance(raw_result, Mapping):
+                continue
+            normalised = _normalise_mergeability_reviewer_result(raw_result)
+            if not normalised["available"]:
+                continue
+            by_reviewer.setdefault(normalised["reviewer_id"], {})[candidate_key] = bool(
+                normalised["accept"]
+            )
+    reviewers = sorted(by_reviewer)
+    pairs: list[dict[str, Any]] = []
+    for left_index, left in enumerate(reviewers):
+        for right in reviewers[left_index + 1:]:
+            shared = sorted(set(by_reviewer[left]) & set(by_reviewer[right]))
+            left_errors = {
+                candidate_key
+                for candidate_key in shared
+                if by_reviewer[left][candidate_key] != oracle_by_candidate[candidate_key]
+            }
+            right_errors = {
+                candidate_key
+                for candidate_key in shared
+                if by_reviewer[right][candidate_key] != oracle_by_candidate[candidate_key]
+            }
+            union = left_errors | right_errors
+            overlap = left_errors & right_errors
+            pairs.append({
+                "reviewer_pair": [left, right],
+                "shared_candidate_count": len(shared),
+                "left_error_count": len(left_errors),
+                "right_error_count": len(right_errors),
+                "overlap_error_count": len(overlap),
+                "union_error_count": len(union),
+                "error_jaccard": _rate(len(overlap), len(union)),
+            })
+    return pairs
+
+
+def _effective_vote_estimate(
+    *,
+    per_reviewer_arms: Mapping[str, Mapping[str, Any]],
+    pairwise_error_overlap: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    reviewer_error_counts = {
+        reviewer_id: int(arm.get("false_accept_count") or 0)
+        + int(arm.get("false_reject_count") or 0)
+        for reviewer_id, arm in sorted(per_reviewer_arms.items())
+    }
+    total_errors = sum(reviewer_error_counts.values())
+    if total_errors <= 0:
+        return {
+            "status": "unavailable",
+            "reason": "zero_oracle_grounded_reviewer_errors",
+            "reviewer_error_counts": reviewer_error_counts,
+        }
+    if not pairwise_error_overlap:
+        return {
+            "status": "unavailable",
+            "reason": "requires_at_least_two_reviewers",
+            "reviewer_error_counts": reviewer_error_counts,
+        }
+    mean_error_jaccard = round(
+        sum(float(pair.get("error_jaccard") or 0.0) for pair in pairwise_error_overlap)
+        / len(pairwise_error_overlap),
+        6,
+    )
+    reviewer_count = len(reviewer_error_counts)
+    return {
+        "status": "computed",
+        "reviewer_count": reviewer_count,
+        "reviewer_error_counts": reviewer_error_counts,
+        "total_reviewer_error_count": total_errors,
+        "mean_pairwise_error_jaccard": mean_error_jaccard,
+        "effective_vote_count_estimate": round(
+            max(1.0, reviewer_count * (1.0 - mean_error_jaccard)),
+            6,
+        ),
+        "method": "heuristic_error_overlap_discount",
+    }
+
+
+def _roster_diagnostic_selection_guard(
+    *,
+    evidence_scope: str,
+    pairwise_reviewer_agreement: Sequence[Mapping[str, Any]],
+    pairwise_oracle_error_overlap: Sequence[Mapping[str, Any]],
+    effective_vote_estimate: Mapping[str, Any],
+    reviewer_provenance: Mapping[str, Any],
+    generator_disjointness: Mapping[str, Any],
+) -> dict[str, Any]:
+    scope = str(evidence_scope or "fixture_diagnostic_only")
+    enriched_scope = scope in {
+        "real_instances",
+        "real_benchmark",
+        "swe_bench_replay",
+        "swe_bench_live",
+        "disagreement_enriched",
+    }
+    has_oracle_grounded_errors = effective_vote_estimate.get("status") == "computed"
+    same_family_count = int(generator_disjointness.get("same_family_decisive_vote_count") or 0)
+    reviewer_disagreement_count = sum(
+        1
+        for pair in pairwise_reviewer_agreement
+        if int(pair.get("shared_candidate_count") or 0) > 0
+        and float(pair.get("agreement_rate") or 0.0) < 1.0
+    )
+    oracle_error_pair_count = sum(
+        1
+        for pair in pairwise_oracle_error_overlap
+        if int(pair.get("union_error_count") or 0) > 0
+    )
+    reasons: list[str] = []
+    if not enriched_scope:
+        reasons.append("fixture_only_evidence_cannot_select_reviewer_roster")
+    if not has_oracle_grounded_errors:
+        reasons.append("oracle_grounded_reviewer_errors_required")
+    if same_family_count:
+        reasons.append("same_family_generator_reviewer_decisive_vote")
+    cursor_default_ids = list(reviewer_provenance.get("cursor_default_unproven_reviewer_ids") or [])
+    if cursor_default_ids:
+        reasons.append("cursor_default_provider_family_unproven")
+    allowed = bool(enriched_scope and has_oracle_grounded_errors and same_family_count == 0)
+    return {
+        "schema_version": "supervisor-mergeability-roster-diagnostic-selection-guard/v1",
+        "evidence_scope": scope,
+        "roster_selection_allowed": allowed,
+        "fixture_only_can_select_roster": False,
+        "codex_only_can_select_roster": False,
+        "decision_authority": (
+            "diagnostic_evidence_available" if allowed else "blocked"
+        ),
+        "reviewer_disagreement_pair_count": reviewer_disagreement_count,
+        "oracle_error_pair_count": oracle_error_pair_count,
+        "has_oracle_grounded_reviewer_errors": has_oracle_grounded_errors,
+        "reasons": reasons,
+        "required_evidence": [
+            "same_candidate_pool_across_roster_arms",
+            "real_or_disagreement_enriched_candidates",
+            "oracle_grounded_far_tar_by_roster",
+            "pairwise_reviewer_agreement",
+            "pairwise_oracle_error_overlap",
+            "generator_family_disjointness_by_candidate",
+            "report_only_until_powered_live_evidence",
+        ],
+        "forbidden_conclusions": [
+            "drop_reviewers_from_fixture_only_ablation",
+            "select_codex_only_from_fixture_only_ablation",
+            "treat_zero_reviewer_errors_as_independence_proof",
+            "treat_disagreement_without_oracle_errors_as_selection_evidence",
+            "allow_single_family_reviewer_as_sole_decisive_same_family_judge",
+        ],
+    }
+
+
 def _factorial_sample_size_sufficiency(
     rows: list[dict[str, Any]],
     *,
@@ -5314,6 +5815,27 @@ def _export_powered_factorial_artifacts(
         encoding="utf-8",
     )
     with (output_dir / "powered_factorial_per_task_results.jsonl").open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, sort_keys=True) + "\n")
+
+
+def _export_roster_diagnostic_artifacts(
+    output_dir: Path,
+    *,
+    manifest: dict[str, Any],
+    calibration: dict[str, Any],
+    report: dict[str, Any],
+    rows: list[dict[str, Any]],
+) -> None:
+    _export_calibration_artifacts(output_dir, manifest=manifest, summary=calibration)
+    (output_dir / "roster_diagnostic_report.json").write_text(
+        json.dumps(report, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    with (output_dir / "roster_diagnostic_per_task_results.jsonl").open(
+        "w",
+        encoding="utf-8",
+    ) as handle:
         for row in rows:
             handle.write(json.dumps(row, sort_keys=True) + "\n")
 
