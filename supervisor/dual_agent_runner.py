@@ -59,6 +59,7 @@ from .trace_envelope import ensure_tool_call_timing, timed_tool_call
 
 
 HANDOFF_LOCK_RECLAIM_GRACE_S = 60
+PROJECT_LEAD_SKILL_PATH = Path(".claude") / "skills" / "lead" / "SKILL.md"
 
 
 @dataclass(frozen=True)
@@ -299,7 +300,7 @@ def run_dual_agent_gate(
             packet_path = write_handoff_packet(
                 request,
                 planning_artifacts=spec.planning_artifacts,
-                lead_skill_path=spec.lead_skill_path,
+                lead_skill_path=_lead_skill_path_for_spec(spec),
                 outcome_validation_policy=spec.outcome_validation_policy,
             )
         handoff_tool_call.update({
@@ -608,6 +609,13 @@ async def run_dual_agent_gate_with_escalation(
         attempts=result.attempts,
         escalation=escalation,
     )
+
+
+def _lead_skill_path_for_spec(spec: DualAgentGateSpec) -> str | Path | None:
+    if spec.lead_skill_path is not None:
+        return spec.lead_skill_path
+    project_skill = Path(spec.cwd).resolve() / PROJECT_LEAD_SKILL_PATH
+    return project_skill if project_skill.is_file() else None
 
 
 def resume_pending_gates(

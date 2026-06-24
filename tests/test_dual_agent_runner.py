@@ -23,7 +23,7 @@ from supervisor.dual_agent_runner import (
     send_stale_paused_digests,
     write_replay_fixture_family,
 )
-from supervisor.dual_agent_lead import OutcomeValidationPolicy, PlanningArtifact
+from supervisor.dual_agent_lead import OutcomeValidationPolicy, PlanningArtifact, compute_file_sha256
 from supervisor.state import State
 
 
@@ -283,6 +283,44 @@ def test_cs24_gate_runner_writes_handoff_invokes_lead_and_verifies_planning_boun
     assert result.probes["P3"].ok
     packet = json.loads(result.handoff_packet_path.read_text())
     assert packet["planning_artifacts"][0]["kind"] == "prd"
+
+
+def test_gate_runner_auto_pins_project_local_lead_skill(tmp_path):
+    planning_artifacts = _write_good_planning_artifacts(tmp_path)
+    lead_skill = tmp_path / ".claude" / "skills" / "lead" / "SKILL.md"
+    lead_skill.parent.mkdir(parents=True)
+    lead_skill.write_text(
+        "---\nname: lead\ndescription: Project-local lead.\n---\n# Lead\n",
+        encoding="utf-8",
+    )
+    stdout = build_lead_replay_stdout(
+        "Lead reviewed packet.\n" + _outcome_block(decision="accept plan"),
+        model="claude-opus-4-7",
+    )
+
+    def fake_runner(argv, **kwargs):
+        return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
+
+    spec = DualAgentGateSpec(
+        task_id="gate-local-lead",
+        run_id="run-local-lead",
+        gate="prd_review",
+        instruction="Review the PRD packet.",
+        cwd=tmp_path,
+        planning_artifacts=planning_artifacts,
+        expected_specialists=("Planner",),
+        expected_decisions=("accept plan",),
+        expected_objections=(),
+    )
+
+    result = run_dual_agent_gate(spec, runner=fake_runner)
+
+    packet = json.loads(result.handoff_packet_path.read_text())
+    assert packet["lead_skill"] == {
+        "path": str(lead_skill.resolve()),
+        "sha256": compute_file_sha256(lead_skill),
+        "version": "unversioned",
+    }
 
 
 def test_gate_runner_records_claude_response_trace_fields(tmp_path):
