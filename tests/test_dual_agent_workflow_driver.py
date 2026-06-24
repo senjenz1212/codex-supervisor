@@ -6414,6 +6414,62 @@ def test_codex_cli_reviewer_parses_typed_outcome_with_hashes(tmp_path):
     assert kwargs["stdin"] is subprocess.DEVNULL
 
 
+def test_codex_cli_reviewer_retries_recoverable_infra_failure_then_succeeds(tmp_path):
+    from supervisor.reviewer_registry import CodexCliReviewer, ReviewerSpec
+
+    calls: list[tuple[list[str], dict]] = []
+
+    def fake_codex_runner(argv, **kwargs):
+        calls.append((list(argv), dict(kwargs)))
+        if len(calls) == 1:
+            return subprocess.CompletedProcess(
+                argv,
+                1,
+                stdout="",
+                stderr="stream disconnected - retrying sampling request",
+            )
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=_codex_reviewer_jsonl("workflow-1"),
+            stderr="",
+        )
+
+    reviewer = CodexCliReviewer(
+        spec=ReviewerSpec(
+            reviewer_id="independent-reviewer-1",
+            runtime="codex_cli",
+            model="gpt-5.5",
+            provider_family="openai",
+            lineage=("openai", "codex_cli", "gpt-5.5"),
+            tool_access="codebase_tools",
+            assurance_grade="agentic",
+        ),
+        runner=fake_codex_runner,
+    )
+
+    result = reviewer.review(CursorInvocationRequest(
+        task_id="workflow-1",
+        gate="implementation_plan",
+        instruction="Review.",
+        cwd=tmp_path,
+        reviewer_infra_retry_limit=2,
+        reviewer_infra_retry_backoff_s=0,
+    ))
+
+    assert result.probe.ok
+    assert result.outcome is not None
+    assert result.attempts == 2
+    assert result.retry_reasons == ("codex_cli_nonzero_exit",)
+    assert len(calls) == 2
+    assert result.diagnostics is not None
+    retry_diag = result.diagnostics["infrastructure_retries"]
+    assert retry_diag["retry_limit"] == 2
+    assert retry_diag["attempt_count"] == 2
+    assert retry_diag["exhausted"] is False
+    assert retry_diag["attempts"][0]["reason"] == "codex_cli_nonzero_exit"
+
+
 def test_codex_cli_reviewer_without_command_evidence_is_not_agentic(tmp_path):
     from supervisor.reviewer_registry import (
         CodexCliReviewer,

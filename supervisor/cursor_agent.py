@@ -39,17 +39,26 @@ CURSOR_REVIEWER_WORKTREE_EXCLUDED_NAMES = frozenset({
     ".git",
     ".hg",
     ".svn",
+    ".claude",
+    ".codex",
+    ".cortex",
+    ".cursor",
+    ".handoff",
+    ".orchestrator-state",
     ".venv",
-    "node_modules",
-    "__pycache__",
-    ".pytest_cache",
-    ".mypy_cache",
-    ".ruff_cache",
     ".runtime-evidence",
     ".scratch",
     ".mergeability",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    "__pycache__",
+    "dist",
     "oracle_outputs.json",
     "hidden_test_commands.json",
+    "node_modules",
+    "runs",
+    "test-results",
 })
 CURSOR_REVIEWER_WORKTREE_EXCLUDED_MARKERS = (
     ".mergeability",
@@ -807,7 +816,10 @@ def _cursor_reviewer_runtime_request(request: CursorInvocationRequest):
             source,
             isolated,
             symlinks=True,
-            ignore=_cursor_reviewer_worktree_ignore(source),
+            ignore=_cursor_reviewer_worktree_ignore(
+                source,
+                kept_dual_agent_task_id=request.task_id,
+            ),
         )
         before = _worktree_snapshot(isolated)
         diagnostic: dict[str, Any] = {
@@ -815,6 +827,7 @@ def _cursor_reviewer_runtime_request(request: CursorInvocationRequest):
             "strategy": "copytree_public_reviewer_worktree",
             "source_cwd": str(source),
             "isolated_cwd": str(isolated),
+            "kept_dual_agent_task_id": request.task_id,
             "excluded_names": sorted(CURSOR_REVIEWER_WORKTREE_EXCLUDED_NAMES),
             "excluded_markers": list(CURSOR_REVIEWER_WORKTREE_EXCLUDED_MARKERS),
             "before_snapshot_sha256": before["sha256"],
@@ -835,7 +848,11 @@ def _cursor_reviewer_runtime_request(request: CursorInvocationRequest):
             })
 
 
-def _cursor_reviewer_worktree_ignore(source_root: Path):
+def _cursor_reviewer_worktree_ignore(
+    source_root: Path,
+    *,
+    kept_dual_agent_task_id: str | None = None,
+):
     source_root = source_root.resolve()
 
     def _ignore(directory: str, names: list[str]) -> set[str]:
@@ -846,17 +863,33 @@ def _cursor_reviewer_worktree_ignore(source_root: Path):
                 rel_path = directory_path.relative_to(source_root) / name
             except ValueError:
                 rel_path = Path(name)
-            if _exclude_from_cursor_reviewer_worktree(rel_path):
+            if _exclude_from_cursor_reviewer_worktree(
+                rel_path,
+                kept_dual_agent_task_id=kept_dual_agent_task_id,
+            ):
                 ignored.add(name)
         return ignored
 
     return _ignore
 
 
-def _exclude_from_cursor_reviewer_worktree(path: Path) -> bool:
+def _exclude_from_cursor_reviewer_worktree(
+    path: Path,
+    *,
+    kept_dual_agent_task_id: str | None = None,
+) -> bool:
     name = path.name
     if name in CURSOR_REVIEWER_WORKTREE_EXCLUDED_NAMES:
         return True
+    if kept_dual_agent_task_id:
+        parts = path.parts
+        if (
+            len(parts) >= 3
+            and parts[0] == "docs"
+            and parts[1] == "dual-agent"
+            and parts[2] != kept_dual_agent_task_id
+        ):
+            return True
     lowered = path.as_posix().lower()
     return any(marker in lowered for marker in CURSOR_REVIEWER_WORKTREE_EXCLUDED_MARKERS)
 

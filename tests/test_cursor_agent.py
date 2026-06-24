@@ -459,6 +459,103 @@ def test_cursor_oracle_material_excluded_from_isolated_worktree(
     assert result.probe.ok
 
 
+def test_cursor_isolated_reviewer_keeps_only_current_dual_agent_task_docs(
+    tmp_path: Path,
+    monkeypatch,
+):
+    source = tmp_path / "repo"
+    current = source / "docs" / "dual-agent" / "current-task"
+    previous = source / "docs" / "dual-agent" / "previous-task"
+    current.mkdir(parents=True)
+    previous.mkdir(parents=True)
+    (current / "implementation-plan.md").write_text("current evidence\n", encoding="utf-8")
+    (previous / "transcript.jsonl").write_text("old large transcript\n", encoding="utf-8")
+
+    def fake_run(request: CursorInvocationRequest):
+        review_cwd = Path(request.cwd)
+        assert (review_cwd / "docs" / "dual-agent" / "current-task").exists()
+        assert (review_cwd / "docs" / "dual-agent" / "current-task" / "implementation-plan.md").exists()
+        assert not (review_cwd / "docs" / "dual-agent" / "previous-task").exists()
+        outcome = _complete_cursor_outcome(task_id=request.task_id)
+        return f"<dual_agent_outcome>{outcome.model_dump_json()}</dual_agent_outcome>", {
+            "agent_id": "agent-1",
+            "run_id": "run-1",
+            "status": "finished",
+            "model": "composer-2.5",
+            "duration_ms": 10,
+            "reviewer_runtime": "cursor_sdk",
+            "reviewer_output_mode": "cursor_sdk",
+        }
+
+    monkeypatch.setattr(cursor_agent, "_run_cursor_sdk", fake_run)
+
+    result = invoke_cursor_agent(CursorInvocationRequest(
+        task_id="current-task",
+        gate="implementation_plan",
+        instruction="Review the implementation plan.",
+        cwd=source,
+        reviewer_output_mode="cursor_sdk",
+        contract_retry_limit=0,
+    ))
+
+    assert result.probe.ok
+    isolation = (result.diagnostics or {})["worktree_isolation"]
+    assert isolation["kept_dual_agent_task_id"] == "current-task"
+
+
+def test_cursor_isolated_reviewer_excludes_generated_runtime_directories(
+    tmp_path: Path,
+    monkeypatch,
+):
+    source = tmp_path / "repo"
+    excluded_dirs = (
+        ".claude",
+        ".codex",
+        ".cortex",
+        ".cursor",
+        ".handoff",
+        ".orchestrator-state",
+        "dist",
+        "runs",
+        "test-results",
+    )
+    for dirname in excluded_dirs:
+        path = source / dirname
+        path.mkdir(parents=True)
+        (path / "generated.txt").write_text("runtime output\n", encoding="utf-8")
+    (source / "src").mkdir(parents=True)
+    (source / "src" / "public.py").write_text("print('review me')\n", encoding="utf-8")
+
+    def fake_run(request: CursorInvocationRequest):
+        review_cwd = Path(request.cwd)
+        assert (review_cwd / "src" / "public.py").exists()
+        for dirname in excluded_dirs:
+            assert not (review_cwd / dirname).exists()
+        outcome = _complete_cursor_outcome(task_id=request.task_id)
+        return f"<dual_agent_outcome>{outcome.model_dump_json()}</dual_agent_outcome>", {
+            "agent_id": "agent-1",
+            "run_id": "run-1",
+            "status": "finished",
+            "model": "composer-2.5",
+            "duration_ms": 10,
+            "reviewer_runtime": "cursor_sdk",
+            "reviewer_output_mode": "cursor_sdk",
+        }
+
+    monkeypatch.setattr(cursor_agent, "_run_cursor_sdk", fake_run)
+
+    result = invoke_cursor_agent(CursorInvocationRequest(
+        task_id="tri-agent",
+        gate="implementation_plan",
+        instruction="Review the implementation plan.",
+        cwd=source,
+        reviewer_output_mode="cursor_sdk",
+        contract_retry_limit=0,
+    ))
+
+    assert result.probe.ok
+
+
 def test_run_litellm_structured_calls_openai_schema_gateway(tmp_path: Path, monkeypatch):
     captured: dict[str, object] = {}
     outcome = _complete_cursor_outcome(task_id="tri-agent")

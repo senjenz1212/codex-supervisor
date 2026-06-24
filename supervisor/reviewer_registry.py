@@ -87,47 +87,118 @@ class CodexCliReviewer:
             "read-only",
             prompt,
         ]
-        try:
-            completed = self.runner(
-                argv,
-                cwd=str(Path(request.cwd).expanduser()),
-                capture_output=True,
-                stdin=subprocess.DEVNULL,
-                text=True,
-                timeout=request.timeout_s,
+        retry_limit = max(0, int(request.reviewer_infra_retry_limit or 0))
+        backoff_base_s = max(0.0, float(request.reviewer_infra_retry_backoff_s or 0.0))
+        failed_attempts: list[dict[str, Any]] = []
+        retry_backoff_s: list[float] = []
+        retry_reasons: list[str] = []
+        for attempt_index in range(retry_limit + 1):
+            attempt = attempt_index + 1
+            try:
+                completed = self.runner(
+                    argv,
+                    cwd=str(Path(request.cwd).expanduser()),
+                    capture_output=True,
+                    stdin=subprocess.DEVNULL,
+                    text=True,
+                    timeout=request.timeout_s,
+                )
+            except Exception as exc:  # pragma: no cover - concrete subprocess errors vary.
+                reason = "codex_cli_invocation_failed"
+                details = {"error": str(exc)}
+                transcript = ""
+                failed_attempts.append({
+                    "attempt": attempt,
+                    "reason": reason,
+                    **details,
+                })
+                retry_reasons.append(reason)
+                if attempt_index >= retry_limit:
+                    return _codex_cli_infrastructure_result(
+                        reason=reason,
+                        model=model,
+                        transcript=transcript,
+                        duration_ms=_duration_ms(started),
+                        details={
+                            **details,
+                            "retry_limit": retry_limit,
+                            "attempt_count": attempt,
+                        },
+                        attempts=attempt,
+                        retry_reasons=tuple(retry_reasons),
+                        retry_diagnostics=_codex_cli_retry_diagnostics(
+                            retry_limit=retry_limit,
+                            attempt_count=attempt,
+                            exhausted=True,
+                            attempts=failed_attempts,
+                            backoff_s=retry_backoff_s,
+                        ),
+                    )
+                delay_s = backoff_base_s * (2 ** attempt_index)
+                retry_backoff_s.append(delay_s)
+                if delay_s:
+                    time.sleep(delay_s)
+                continue
+
+            raw_stdout = completed.stdout or ""
+            raw_stderr = completed.stderr or ""
+            metadata = _parse_codex_cli_jsonl(raw_stdout)
+            transcript = "\n\n".join(
+                item
+                for item in (
+                    raw_stdout,
+                    f"[stderr]\n{raw_stderr}" if raw_stderr else "",
+                    "[agent_messages]\n" + "\n".join(metadata["agent_messages"])
+                    if metadata["agent_messages"] else "",
+                )
+                if item
             )
-        except Exception as exc:  # pragma: no cover - concrete subprocess errors vary.
+            if completed.returncode != 0:
+                reason = "codex_cli_nonzero_exit"
+                details = {
+                    "returncode": completed.returncode,
+                    "stderr_tail": raw_stderr[-2000:],
+                }
+                failed_attempts.append({
+                    "attempt": attempt,
+                    "reason": reason,
+                    **details,
+                })
+                retry_reasons.append(reason)
+                if attempt_index >= retry_limit:
+                    return _codex_cli_infrastructure_result(
+                        reason=reason,
+                        model=model,
+                        transcript=transcript,
+                        duration_ms=_duration_ms(started),
+                        details={
+                            **details,
+                            "retry_limit": retry_limit,
+                            "attempt_count": attempt,
+                        },
+                        attempts=attempt,
+                        retry_reasons=tuple(retry_reasons),
+                        retry_diagnostics=_codex_cli_retry_diagnostics(
+                            retry_limit=retry_limit,
+                            attempt_count=attempt,
+                            exhausted=True,
+                            attempts=failed_attempts,
+                            backoff_s=retry_backoff_s,
+                        ),
+                    )
+                delay_s = backoff_base_s * (2 ** attempt_index)
+                retry_backoff_s.append(delay_s)
+                if delay_s:
+                    time.sleep(delay_s)
+                continue
+            break
+        else:  # pragma: no cover - loop always returns or breaks.
             return _codex_cli_infrastructure_result(
                 reason="codex_cli_invocation_failed",
                 model=model,
                 transcript="",
                 duration_ms=_duration_ms(started),
-                details={"error": str(exc)},
-            )
-
-        raw_stdout = completed.stdout or ""
-        raw_stderr = completed.stderr or ""
-        metadata = _parse_codex_cli_jsonl(raw_stdout)
-        transcript = "\n\n".join(
-            item
-            for item in (
-                raw_stdout,
-                f"[stderr]\n{raw_stderr}" if raw_stderr else "",
-                "[agent_messages]\n" + "\n".join(metadata["agent_messages"])
-                if metadata["agent_messages"] else "",
-            )
-            if item
-        )
-        if completed.returncode != 0:
-            return _codex_cli_infrastructure_result(
-                reason="codex_cli_nonzero_exit",
-                model=model,
-                transcript=transcript,
-                duration_ms=_duration_ms(started),
-                details={
-                    "returncode": completed.returncode,
-                    "stderr_tail": raw_stderr[-2000:],
-                },
+                details={"error": "retry_loop_exhausted_without_result"},
             )
 
         probe, outcome = evaluate_outcome_fidelity(
@@ -167,12 +238,19 @@ class CodexCliReviewer:
                         "command_execution_count": len(metadata["command_executions"]),
                         "stdout_sha256": hashlib.sha256(raw_stdout.encode("utf-8")).hexdigest(),
                         "stderr_sha256": hashlib.sha256(raw_stderr.encode("utf-8")).hexdigest(),
-                    }
+                    },
+                    "infrastructure_retries": _codex_cli_retry_diagnostics(
+                        retry_limit=retry_limit,
+                        attempt_count=attempt,
+                        exhausted=False,
+                        attempts=failed_attempts,
+                        backoff_s=retry_backoff_s,
+                    ),
                 },
                 failure_classification="reviewer_contract_unmet",
                 recoverable=True,
-                attempts=1,
-                retry_reasons=(probe.reason,),
+                attempts=attempt,
+                retry_reasons=(*retry_reasons, probe.reason),
             )
 
         return CursorInvocationResult(
@@ -191,12 +269,20 @@ class CodexCliReviewer:
                 "codex_cli": {
                     "thread_id": metadata.get("thread_id"),
                     "command_executions": metadata["command_executions"],
-                    "command_execution_count": len(metadata["command_executions"]),
-                    "stdout_sha256": hashlib.sha256(raw_stdout.encode("utf-8")).hexdigest(),
-                    "stderr_sha256": hashlib.sha256(raw_stderr.encode("utf-8")).hexdigest(),
-                }
-            },
-            attempts=1,
+                        "command_execution_count": len(metadata["command_executions"]),
+                        "stdout_sha256": hashlib.sha256(raw_stdout.encode("utf-8")).hexdigest(),
+                        "stderr_sha256": hashlib.sha256(raw_stderr.encode("utf-8")).hexdigest(),
+                    },
+                    "infrastructure_retries": _codex_cli_retry_diagnostics(
+                        retry_limit=retry_limit,
+                        attempt_count=attempt,
+                        exhausted=False,
+                        attempts=failed_attempts,
+                        backoff_s=retry_backoff_s,
+                    ),
+                },
+            attempts=attempt,
+            retry_reasons=tuple(retry_reasons),
         )
 
 
@@ -1304,7 +1390,13 @@ def _codex_cli_infrastructure_result(
     transcript: str,
     duration_ms: int,
     details: dict[str, Any],
+    attempts: int = 1,
+    retry_reasons: tuple[str, ...] | None = None,
+    retry_diagnostics: dict[str, Any] | None = None,
 ) -> CursorInvocationResult:
+    diagnostics = {"codex_cli": {"reason": reason, **details}}
+    if retry_diagnostics is not None:
+        diagnostics["infrastructure_retries"] = retry_diagnostics
     return CursorInvocationResult(
         probe=ProbeResult(
             "CODEX_REVIEWER",
@@ -1324,12 +1416,29 @@ def _codex_cli_infrastructure_result(
         reviewer_output_mode="codex_cli",
         duration_ms=duration_ms,
         reviewer_assurance="unavailable",
-        diagnostics={"codex_cli": {"reason": reason, **details}},
+        diagnostics=diagnostics,
         failure_classification="reviewer_infrastructure_unavailable",
         recoverable=True,
-        attempts=1,
-        retry_reasons=(reason,),
+        attempts=attempts,
+        retry_reasons=retry_reasons or (reason,),
     )
+
+
+def _codex_cli_retry_diagnostics(
+    *,
+    retry_limit: int,
+    attempt_count: int,
+    exhausted: bool,
+    attempts: list[dict[str, Any]],
+    backoff_s: list[float],
+) -> dict[str, Any]:
+    return {
+        "retry_limit": retry_limit,
+        "attempt_count": attempt_count,
+        "exhausted": exhausted,
+        "attempts": list(attempts),
+        "backoff_s": list(backoff_s),
+    }
 
 
 def _duration_ms(started: float) -> int:
