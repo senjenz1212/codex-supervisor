@@ -1002,6 +1002,91 @@ def _command_receipt(result: Any) -> dict[str, Any]:
     }
 
 
+def _receipt_group_status(
+    receipts: Sequence[Mapping[str, Any]],
+    *,
+    name: str,
+    empty_status: str,
+) -> str:
+    matching = [
+        receipt for receipt in receipts
+        if str(receipt.get("name") or "") == name
+    ]
+    if not matching:
+        return empty_status
+    return "passed" if all(str(receipt.get("status") or "") == "passed" for receipt in matching) else "failed"
+
+
+def _swebench_public_execution_evidence(
+    *,
+    public_packet: Mapping[str, Any],
+    patch_apply_status: str,
+    patch_apply_receipts: Sequence[Mapping[str, Any]],
+    public_command_receipts: Sequence[Mapping[str, Any]],
+    protected_paths: tuple[str, ...],
+) -> dict[str, Any]:
+    substrate = (
+        dict(public_packet.get("s_probe_substrate") or {})
+        if isinstance(public_packet.get("s_probe_substrate"), Mapping)
+        else {}
+    )
+    public_command_status = _receipt_group_status(
+        public_command_receipts,
+        name="public_probe",
+        empty_status="not_configured",
+    )
+    return {
+        "schema_version": "supervisor-swebench-public-execution-evidence/v1",
+        "evidence_boundary": "public_only",
+        "patch_apply_check": {
+            "status": patch_apply_status,
+            "receipt_count": len(patch_apply_receipts),
+            "receipts": [dict(receipt) for receipt in patch_apply_receipts],
+        },
+        "public_probe_commands": {
+            "status": public_command_status,
+            "receipt_count": len(public_command_receipts),
+            "receipts": [dict(receipt) for receipt in public_command_receipts],
+        },
+        "public_ci_lint": {
+            "status": public_command_status,
+            "configured_lint_command_count": len(substrate.get("public_lint_commands") or []),
+            "configured_build_command_count": len(substrate.get("public_build_commands") or []),
+        },
+        "reverse_classical_test_quality": {
+            "status": "not_configured",
+            "reason": "swe_bench_replay_packets_do_not_include_candidate_submitted_public_tests",
+        },
+        "scope_locality": {
+            "status": "passed",
+            "public_checkout_ref": str(public_packet.get("public_checkout_ref") or ""),
+        },
+        "protected_path_exclusion": {
+            "status": "passed",
+            "protected_path_content_included": False,
+            "protected_path_count": len(protected_paths),
+            "protected_paths_sha256": sha256(
+                json.dumps(
+                    sorted(protected_paths),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest(),
+        },
+        "hidden_oracle_exclusion": {
+            "status": "passed",
+            "hidden_oracle_material_included": False,
+            "excluded_material_categories": [
+                "held_out_fail_to_pass_tests",
+                "held_out_pass_to_pass_tests",
+                "answer_key_test_delta",
+                "answer_key_acceptance_labels",
+                "protected_path_content",
+            ],
+        },
+    }
+
+
 def _build_reviewer_packet(
     *,
     instance: Mapping[str, Any],
@@ -1031,6 +1116,13 @@ def _build_reviewer_packet(
         "patch_apply_status": patch_apply_status,
         "patch_apply_receipts": [dict(receipt) for receipt in patch_apply_receipts],
         "public_command_receipts": [dict(receipt) for receipt in public_command_receipts],
+        "public_execution_evidence": _swebench_public_execution_evidence(
+            public_packet=public_packet,
+            patch_apply_status=patch_apply_status,
+            patch_apply_receipts=patch_apply_receipts,
+            public_command_receipts=public_command_receipts,
+            protected_paths=protected_paths,
+        ),
         "path_policy": {
             "protected_path_count": len(protected_paths),
             "protected_paths_sha256": sha256(

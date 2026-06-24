@@ -786,6 +786,13 @@ def test_fixture_runner_executes_public_probe_and_excludes_hidden_oracle(tmp_pat
     packet_text = reviewer_packet_path.read_text(encoding="utf-8")
     for forbidden in ("FAIL_TO_PASS", "PASS_TO_PASS", "test_patch", "oracle_accept"):
         assert forbidden not in packet_text
+    reviewer_packet = json.loads(packet_text)
+    evidence = reviewer_packet["public_execution_evidence"]
+    assert evidence["schema_version"] == "supervisor-swebench-public-execution-evidence/v1"
+    assert evidence["patch_apply_check"]["status"] == "passed"
+    assert evidence["public_probe_commands"]["status"] == "passed"
+    assert evidence["hidden_oracle_exclusion"]["hidden_oracle_material_included"] is False
+    assert evidence["protected_path_exclusion"]["protected_path_content_included"] is False
     # Schema version reflects the fixture runner.
     assert report["schema_version"] == SWEBENCH_MERGEABILITY_FIXTURE_REPORT_SCHEMA_VERSION
 

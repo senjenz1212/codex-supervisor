@@ -2961,23 +2961,132 @@ def _public_review_rejected_panel_result(public_review: Mapping[str, Any]) -> di
     }
 
 
+def _stable_public_command_payload(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, Mapping):
+        return {"value": str(raw)}
+    payload = dict(raw)
+    if "duration_s" in payload:
+        payload["duration_s"] = "<duration_s>"
+    for text_key in ("stdout_tail", "stderr_tail"):
+        if text_key in payload:
+            payload[text_key] = _stable_command_text(str(payload[text_key]))
+    return payload
+
+
+def _command_evidence_status(
+    command_results: Sequence[Mapping[str, Any]],
+    *,
+    name: str,
+    empty_status: str,
+) -> str:
+    matching = [
+        result for result in command_results
+        if str(result.get("name") or "") == name
+    ]
+    if not matching:
+        return empty_status
+    return "passed" if all(str(result.get("status") or "") == "passed" for result in matching) else "failed"
+
+
+def _public_execution_evidence(
+    *,
+    task: MergeabilityTask,
+    public_candidate: MergeabilityCandidate,
+    public_review: Mapping[str, Any],
+    command_results: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    reasons = [str(reason) for reason in public_review.get("reasons") or []]
+    gaming_flags = {str(flag) for flag in public_review.get("gaming_flags") or []}
+    candidate_test_files = _candidate_test_files(public_candidate.files)
+    candidate_test_status = _command_evidence_status(
+        command_results,
+        name="public_candidate_test",
+        empty_status="not_submitted" if not candidate_test_files else "not_executed",
+    )
+    reverse_test_status = _command_evidence_status(
+        command_results,
+        name="public_reverse_test",
+        empty_status="not_submitted" if not candidate_test_files else "not_executed",
+    )
+    if not candidate_test_files:
+        reverse_classical_status = "not_submitted"
+    elif candidate_test_status == "passed" and reverse_test_status == "passed":
+        reverse_classical_status = "passed"
+    elif candidate_test_status == "failed":
+        reverse_classical_status = "candidate_tests_fail_on_patched_code"
+    elif reverse_test_status == "failed":
+        reverse_classical_status = "weak_or_non_discriminating_tests"
+    else:
+        reverse_classical_status = "not_executed"
+    scope_failure_count = sum(1 for reason in reasons if reason.startswith("scope:"))
+    protected_refs = list(public_review.get("protected_paths_present_in_review_worktree") or [])
+    protected_candidate_path_count = sum(
+        1 for path in set(public_candidate.changed_files) | set(public_candidate.files)
+        if _matches_prefix(_normalise_relpath(path), task.protected_paths)
+    )
+    hidden_oracle_clean = "oracle_isolation_violation" not in gaming_flags
+    return {
+        "schema_version": "supervisor-mergeability-public-execution-evidence/v1",
+        "evidence_boundary": "public_only",
+        "patch_apply_check": {
+            "status": "not_applicable",
+            "reason": "fixture_candidate_file_overlay",
+        },
+        "candidate_file_overlay": {
+            "status": "passed" if hidden_oracle_clean else "failed",
+            "public_file_count": len(public_candidate.files),
+            "public_changed_file_count": len(public_candidate.changed_files),
+        },
+        "public_candidate_tests": {
+            "status": candidate_test_status,
+            "submitted": bool(candidate_test_files),
+            "candidate_test_file_count": len(candidate_test_files),
+        },
+        "reverse_classical_test_quality": {
+            "status": reverse_classical_status,
+            "candidate_tests_on_patched_code": candidate_test_status,
+            "candidate_tests_on_original_code": reverse_test_status,
+        },
+        "public_ci_lint": {
+            "status": _command_evidence_status(
+                command_results,
+                name="public_lint_build",
+                empty_status="not_configured",
+            ),
+            "configured_command_count": len(task.lint_build_commands),
+        },
+        "scope_locality": {
+            "status": "failed" if scope_failure_count else "passed",
+            "scope_failure_count": scope_failure_count,
+            "allowed_mutable_paths": list(task.allowed_mutable_paths),
+            "public_changed_files": list(public_candidate.changed_files),
+        },
+        "protected_path_exclusion": {
+            "status": "failed" if protected_refs or protected_candidate_path_count else "passed",
+            "protected_path_content_included": False,
+            "protected_candidate_path_count": protected_candidate_path_count,
+            "protected_refs_in_public_worktree_count": len(protected_refs),
+        },
+        "hidden_oracle_exclusion": {
+            "status": "passed" if hidden_oracle_clean else "failed",
+            "hidden_oracle_material_included": False,
+            "excluded_material_categories": [
+                "held_out_behavior_tests",
+                "answer_key_acceptance_labels",
+                "answer_key_scores",
+                "answer_key_expected_results",
+                "protected_path_content",
+            ],
+        },
+    }
+
+
 def _build_full_gate_reviewer_packet(
     *,
     task: MergeabilityTask,
     candidate: MergeabilityCandidate,
     public_review: Mapping[str, Any],
 ) -> dict[str, Any]:
-    def _stable_command_payload(raw: Any) -> dict[str, Any]:
-        if not isinstance(raw, Mapping):
-            return {"value": str(raw)}
-        payload = dict(raw)
-        if "duration_s" in payload:
-            payload["duration_s"] = "<duration_s>"
-        for text_key in ("stdout_tail", "stderr_tail"):
-            if text_key in payload:
-                payload[text_key] = _stable_command_text(str(payload[text_key]))
-        return payload
-
     public_files = {
         path: content
         for path, content in candidate.files.items()
@@ -3003,6 +3112,10 @@ def _build_full_gate_reviewer_packet(
         candidate=candidate,
         public_review=public_review,
     )
+    stable_command_results = [
+        _stable_public_command_payload(result)
+        for result in public_review.get("command_results") or []
+    ]
     packet = {
         "schema_version": SUPERVISOR_FULL_GATE_PACKET_SCHEMA_VERSION,
         "packet_id": f"mergeability-full-gate:{task.task_id}:{candidate.candidate_id}",
@@ -3019,16 +3132,19 @@ def _build_full_gate_reviewer_packet(
         ),
         "runtime_receipt_ids": runtime_receipt_ids,
         "public_evidence_refs": list(public_review.get("evidence_refs") or []),
+        "public_execution_evidence": _public_execution_evidence(
+            task=task,
+            public_candidate=public_candidate,
+            public_review=public_review,
+            command_results=stable_command_results,
+        ),
         "public_input_payload": public_input,
         "public_review": {
             "decision": str(public_review.get("decision") or ""),
             "accept": bool(public_review.get("accept")),
             "reasons": list(public_review.get("reasons") or []),
             "probe_results": list(public_review.get("probe_results") or []),
-            "command_results": [
-                _stable_command_payload(result)
-                for result in public_review.get("command_results") or []
-            ],
+            "command_results": stable_command_results,
             "evidence_refs": list(public_review.get("evidence_refs") or []),
             "public_input_hash": str(public_review.get("public_input_hash") or ""),
             "candidate_review_worktree_hash": str(public_review.get("candidate_review_worktree_hash") or ""),

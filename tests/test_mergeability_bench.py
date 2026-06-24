@@ -701,6 +701,37 @@ def test_full_gate_reviewer_packet_includes_context_receipt_fields(tmp_path):
             changed["path"]
             for changed in packet["changed_files"]
         } == set(packet["public_input_payload"]["changed_files"])
+        evidence = packet["public_execution_evidence"]
+        assert evidence["schema_version"] == "supervisor-mergeability-public-execution-evidence/v1"
+        assert evidence["evidence_boundary"] == "public_only"
+        assert evidence["patch_apply_check"]["status"] == "not_applicable"
+        assert evidence["hidden_oracle_exclusion"]["hidden_oracle_material_included"] is False
+        assert evidence["protected_path_exclusion"]["protected_path_content_included"] is False
+        assert "public_ci_lint" in evidence
+        assert "scope_locality" in evidence
+        assert "reverse_classical_test_quality" in evidence
+
+
+def test_full_gate_reviewer_packet_records_reverse_classical_test_quality(tmp_path):
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        reviewer_panel=_accept_public_review_panel,
+    )
+
+    row = next(
+        item for item in report["per_task_results"]
+        if item["candidate_id"] == "known-good"
+    )
+    packet = row["supervisor_full_gate_review"]["reviewer_packet"]
+    evidence = packet["public_execution_evidence"]
+    assert evidence["public_candidate_tests"]["status"] == "passed"
+    assert evidence["public_candidate_tests"]["candidate_test_file_count"] == 1
+    assert evidence["reverse_classical_test_quality"] == {
+        "status": "passed",
+        "candidate_tests_on_patched_code": "passed",
+        "candidate_tests_on_original_code": "passed",
+    }
 
 
 def test_full_gate_unavailable_reviewer_does_not_count_as_accept(tmp_path):
