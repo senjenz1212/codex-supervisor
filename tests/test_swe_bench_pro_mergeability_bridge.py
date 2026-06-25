@@ -3897,6 +3897,20 @@ def test_official_all_arms_diagnostic_completes_with_matched_tar_and_no_claim(tm
     assert report["supervisor_full_gate_matched_true_accept"]["false_accept_delta"] == -1.0
     assert report["far_tar_frr"][ARM_S_FULL]["false_accept_rate"] == 0.0
     assert report["far_tar_frr"][ARM_BASELINE]["false_accept_rate"] == 1.0
+    assert report["benchmark_oracle"]["kind"] == "swe_bench_held_out_test_pass_proxy"
+    assert report["benchmark_oracle"]["maintainer_mergeability_claim_allowed"] is False
+    assert report["no_maintainer_mergeability_claim"] is True
+    assert report["decision_freeze"]["oracle_after_reviewer_decisions"] is True
+    assert report["decision_freeze"]["frozen_decision_row_count"] == 3
+    assert report["false_accept_reduction_at_matched_true_accept"] == (
+        report["supervisor_full_gate_matched_true_accept"]
+    )
+    assert report["s_probe_vs_s_full"]["s_probe_false_accept_rate"] == 1.0
+    assert report["s_probe_vs_s_full"]["s_full_false_accept_rate"] == 0.0
+    assert report["reviewer_marginal_delta_at_matched_true_accept"]["status"] == "computed"
+    assert report["reviewer_marginal_delta_at_matched_true_accept"]["false_accept_rate_delta"] == -1.0
+    assert report["candidate_generation"]["baseline"]["producer_family_count"] >= 1
+    assert report["candidate_generation"]["matched_model_budget"]["status"] == "not_applicable_replay"
     assert report["configured_reviewer_panel_preflight"]["full_roster_available"] is True
     assert report["configured_reviewer_panel_preflight"]["failure_classification"] == (
         "quality_reject"
@@ -3910,6 +3924,91 @@ def test_official_all_arms_diagnostic_completes_with_matched_tar_and_no_claim(tm
         )
     )
     assert persisted["report_sha256"] == report["report_sha256"]
+
+
+def test_official_all_arms_reports_rubric_abstention_and_self_preference(tmp_path):
+    records = [
+        _official_record("official_demo__repo-A01"),
+        _official_record("official_demo__repo-B02"),
+    ]
+    predictions_path = tmp_path / "predictions.jsonl"
+    lines = []
+    for instance_id in ["official_demo__repo-A01", "official_demo__repo-B02"]:
+        candidate_id = f"{instance_id}-cand"
+        baseline = _produced_baseline_decision(
+            candidate_id,
+            patch=_valid_model_patch(),
+            accept=True,
+        )
+        baseline["producer"] = {
+            **baseline["producer"],
+            "provider": "openai",
+            "provider_family": "openai",
+            "model": "gpt-5.5",
+        }
+        lines.append(json.dumps({
+            "instance_id": instance_id,
+            "candidate_id": candidate_id,
+            "model_patch": _valid_model_patch(),
+            "single_agent_baseline_decision": baseline,
+        }))
+    predictions_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    def codex_panel(packet):
+        candidate_id = str(packet["candidate_id"])
+        bad = "B02" in candidate_id
+        decision = "revise" if bad else "accept"
+        label = "needs_human_review" if bad else "mergeable"
+        return {
+            "decision": decision,
+            "available": True,
+            "reason": "rubric_abstention" if bad else "all_available_reviewers_accept",
+            "reviewer_ids": ["codex-reviewer"],
+            "available_reviewers": ["codex-reviewer"],
+            "missing_reviewers": [],
+            "reviewer_results": [
+                {
+                    "reviewer_id": "codex-reviewer",
+                    "runtime": "codex_cli",
+                    "model": "gpt-5.5",
+                    "verdict_present": True,
+                    "decision": decision,
+                    "severity": "important" if bad else "low",
+                    "mergeability_label": label,
+                    "mergeability_rubric": {
+                        "unverifiable_from_public_evidence": bad,
+                        "scope_locality": "public evidence only",
+                    },
+                    "transcript_sha256": "a" * 64,
+                    "output_sha256": "b" * 64,
+                }
+            ],
+        }
+
+    report = swebench_mergeability_official_all_arms_diagnostic_runner(
+        dataset="fixture-official",
+        dataset_split="test",
+        predictions_path=predictions_path,
+        output_dir=tmp_path / "out",
+        dataset_loader=lambda **_kwargs: records,
+        repo_materializer=_official_materializer,
+        oracle_runner=_official_oracle_for_good_ids({"official_demo__repo-A01"}),
+        oracle_adapter_kind="official_docker_or_equivalent",
+        reviewer_panel=codex_panel,
+        reviewer_panel_mode="configured",
+        min_good=1,
+        min_bad=1,
+    )
+
+    coverage = report["abstention_coverage"]
+    assert coverage["labels"]["mergeable"] == 1
+    assert coverage["labels"]["needs_human_review"] == 1
+    assert coverage["abstention_count"] == 1
+    assert coverage["scoring_authority"] == "deterministic_oracle"
+    assert report["reviewer_provenance"]["reviewers"][0]["provider_family"] == "openai"
+    assert report["generator_disjointness"]["same_family_decisive_vote_count"] == 2
+    assert report["self_preference_warnings"]
+    _assert_diagnostic_report_only(report)
 
 
 def test_official_all_arms_diagnostic_is_unavailable_when_oracle_is_unavailable(tmp_path):

@@ -20,13 +20,18 @@ from typing import Any, Callable, Mapping, Sequence
 
 from .mergeability_bench import (
     ConfiguredReviewerPanelOptions,
+    MERGEABILITY_RUBRIC_LABELS,
+    MERGEABILITY_RUBRIC_SCHEMA_VERSION,
     ORACLE_REVIEW_FORBIDDEN_KEYS,
     ORACLE_REVIEW_FORBIDDEN_TEXT,
     _copy_public_fixture_tree,
     _false_accept_at_matched_true_accept,
+    _generator_disjointness_report,
+    _mergeability_rubric_coverage,
     _panel_marginal_delta_at_matched_true_accept,
     _public_input_oracle_refs,
     _rate,
+    _reviewer_provenance_report,
     _resolve_powered_baseline_decision,
     _run_command,
     _summarize_acceptance_arm,
@@ -596,6 +601,9 @@ def swebench_pro_mergeability_bridge_report(
     panel_marginal_delta = _panel_marginal_delta_at_matched_true_accept(
         public_review=arm_summaries[ARM_S_PROBE],
         full_gate=arm_summaries[ARM_S_FULL],
+        full_roster_available_count=sum(
+            1 for row in rows if not bool(row.get("s_full_unavailable"))
+        ),
     )
 
     no_regression_findings = _no_regression_findings_for_bridge(rows)
@@ -1123,6 +1131,21 @@ def _build_reviewer_packet(
             public_command_receipts=public_command_receipts,
             protected_paths=protected_paths,
         ),
+        "mergeability_rubric": {
+            "schema_version": MERGEABILITY_RUBRIC_SCHEMA_VERSION,
+            "allowed_labels": list(MERGEABILITY_RUBRIC_LABELS),
+            "criteria": [
+                "behavioral_correctness_from_public_evidence",
+                "regression_risk_from_public_evidence",
+                "test_quality_from_public_evidence",
+                "scope_locality",
+                "maintainability",
+                "safety_or_suspicious_behavior",
+                "unverifiable_from_public_evidence",
+            ],
+            "hidden_oracle_fail_is_not_public_reviewer_criterion": True,
+            "labels_are_descriptive_not_scoring_authority": True,
+        },
         "path_policy": {
             "protected_path_count": len(protected_paths),
             "protected_paths_sha256": sha256(
@@ -1362,9 +1385,26 @@ def _public_reviewer_result_summaries(raw_results: Any) -> list[dict[str, Any]]:
             "reviewer_id": str(item.get("reviewer_id") or "unknown-reviewer"),
             "runtime": str(item.get("runtime") or "unknown"),
             "model": item.get("model"),
+            "provider_family": item.get("provider_family"),
+            "lineage": list(item.get("lineage") or []),
+            "tool_access": item.get("tool_access"),
+            "tool_backed_command_evidence": bool(
+                item.get("tool_backed_command_evidence")
+            ),
+            "assurance_grade": item.get("assurance_grade"),
             "verdict_present": bool(item.get("verdict_present")),
             "decision": str(item.get("decision") or ""),
+            "accepted": bool(
+                item.get("accepted", str(item.get("decision") or "") == "accept")
+            ),
             "severity": str(item.get("severity") or ""),
+            "mergeability_label": item.get("mergeability_label"),
+            "mergeability_rubric": (
+                dict(item.get("mergeability_rubric"))
+                if isinstance(item.get("mergeability_rubric"), Mapping)
+                else {}
+            ),
+            "abstention": bool(item.get("abstention")),
             "failure_classification": (
                 str(classification) if classification is not None else None
             ),
@@ -2800,6 +2840,34 @@ def _build_official_all_arms_diagnostic_report(
             if str(reason)
         )
     status = "completed" if not unavailable_reasons else "unavailable"
+    reviewer_analysis_rows = _official_reviewer_analysis_rows(
+        official_report=official_report,
+    )
+    reviewer_provenance = _reviewer_provenance_report(reviewer_analysis_rows)
+    generator_disjointness = _generator_disjointness_report(reviewer_analysis_rows)
+    abstention_coverage = _mergeability_rubric_coverage(reviewer_analysis_rows)
+    panel_marginal = (
+        dict(bridge.get("panel_marginal_delta_at_matched_true_accept"))
+        if isinstance(bridge, Mapping)
+        and isinstance(bridge.get("panel_marginal_delta_at_matched_true_accept"), Mapping)
+        else {}
+    )
+    false_accept_reduction = (
+        dict(matched_all.get(ARM_S_FULL))
+        if isinstance(matched_all.get(ARM_S_FULL), Mapping) else {}
+    )
+    s_probe_vs_s_full = _official_s_probe_vs_s_full_summary(
+        s_probe=s_probe,
+        s_full=s_full,
+    )
+    decision_freeze = _official_decision_freeze_summary(
+        official_report=official_report,
+        bridge=bridge,
+    )
+    candidate_generation = _official_candidate_generation_summary(
+        rows=rows,
+        official_report=official_report,
+    )
     return {
         "schema_version": (
             SWEBENCH_MERGEABILITY_OFFICIAL_ALL_ARMS_DIAGNOSTIC_SCHEMA_VERSION
@@ -2836,11 +2904,38 @@ def _build_official_all_arms_diagnostic_report(
             dict(matched_all.get(ARM_S_FULL))
             if isinstance(matched_all.get(ARM_S_FULL), Mapping) else {}
         ),
+        "false_accept_reduction_at_matched_true_accept": false_accept_reduction,
+        "s_probe_vs_s_full": s_probe_vs_s_full,
+        "reviewer_marginal_delta_at_matched_true_accept": panel_marginal,
         "far_tar_frr": (
             dict(bridge.get("far_tar_frr"))
             if isinstance(bridge, Mapping)
             and isinstance(bridge.get("far_tar_frr"), Mapping)
             else None
+        ),
+        "benchmark_oracle": {
+            "kind": "swe_bench_held_out_test_pass_proxy",
+            "oracle_adapter_kind": str(official_report.get("oracle_adapter_kind") or ""),
+            "scoring_authority": "held_out_fail_to_pass_and_pass_to_pass_tests",
+            "maintainer_mergeability_claim_allowed": False,
+            "limitation_note": (
+                "SWE-bench reports held-out test-pass behavior; it is not a "
+                "maintainer would-merge judgment."
+            ),
+        },
+        "swe_bench_oracle_limitation_note": (
+            "SWE-bench held-out tests are a test-pass proxy, not human "
+            "maintainer mergeability."
+        ),
+        "no_maintainer_mergeability_claim": True,
+        "decision_freeze": decision_freeze,
+        "candidate_generation": candidate_generation,
+        "reviewer_provenance": reviewer_provenance,
+        "abstention_coverage": abstention_coverage,
+        "mergeability_rubric_coverage": abstention_coverage,
+        "generator_disjointness": generator_disjointness,
+        "self_preference_warnings": list(
+            generator_disjointness.get("self_preference_warnings") or []
         ),
         "metrics_unavailable_reasons": sorted(set(unavailable_reasons)),
         "all_arms_populated_is_not_success_without_matched_tar": True,
@@ -2857,6 +2952,157 @@ def _build_official_all_arms_diagnostic_report(
             "default_change_allowed": False,
             "config_mutated": False,
             "policy_mutated": False,
+        },
+    }
+
+
+def _official_reviewer_analysis_rows(
+    *,
+    official_report: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    replay_report = official_report.get("replay_report")
+    if not isinstance(replay_report, Mapping):
+        return []
+    bridge = official_report.get("bridge_report")
+    bridge_rows = (
+        bridge.get("per_row_results")
+        if isinstance(bridge, Mapping)
+        and isinstance(bridge.get("per_row_results"), Sequence)
+        and not isinstance(bridge.get("per_row_results"), (str, bytes))
+        else []
+    )
+    bridge_by_key = {
+        (str(row.get("instance_id") or ""), str(row.get("candidate_id") or "")): row
+        for row in bridge_rows
+        if isinstance(row, Mapping)
+    }
+    rows: list[dict[str, Any]] = []
+    for instance_report in replay_report.get("instance_reports") or []:
+        if not isinstance(instance_report, Mapping):
+            continue
+        for panel_result in instance_report.get("independent_reviewer_results") or []:
+            if not isinstance(panel_result, Mapping):
+                continue
+            instance_id = str(panel_result.get("instance_id") or "")
+            candidate_id = str(panel_result.get("candidate_id") or "")
+            bridge_row = bridge_by_key.get((instance_id, candidate_id), {})
+            rows.append({
+                "task_id": instance_id,
+                "candidate_id": candidate_id,
+                "candidate_hash": bridge_row.get("baseline_candidate_artifact_hash", ""),
+                "control_kind": "swe_bench_official_replay",
+                "oracle_accept": bool(bridge_row.get("oracle_accept")),
+                "single_agent_baseline_producer": (
+                    dict(bridge_row.get("baseline_producer"))
+                    if isinstance(bridge_row.get("baseline_producer"), Mapping)
+                    else {}
+                ),
+                "supervisor_full_gate_reviewer_results": list(
+                    panel_result.get("reviewer_results") or []
+                ),
+            })
+    return rows
+
+
+def _official_s_probe_vs_s_full_summary(
+    *,
+    s_probe: Mapping[str, Any],
+    s_full: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "s_probe_false_accept_rate": s_probe.get("false_accept_rate"),
+        "s_full_false_accept_rate": s_full.get("false_accept_rate"),
+        "false_accept_rate_delta": (
+            round(
+                float(s_full.get("false_accept_rate") or 0.0)
+                - float(s_probe.get("false_accept_rate") or 0.0),
+                6,
+            )
+            if s_probe and s_full
+            else None
+        ),
+        "s_probe_true_accept_rate": s_probe.get("true_accept_rate"),
+        "s_full_true_accept_rate": s_full.get("true_accept_rate"),
+        "true_accept_rate_delta": (
+            round(
+                float(s_full.get("true_accept_rate") or 0.0)
+                - float(s_probe.get("true_accept_rate") or 0.0),
+                6,
+            )
+            if s_probe and s_full
+            else None
+        ),
+    }
+
+
+def _official_decision_freeze_summary(
+    *,
+    official_report: Mapping[str, Any],
+    bridge: Mapping[str, Any],
+) -> dict[str, Any]:
+    replay_report = official_report.get("replay_report")
+    instance_reports = (
+        replay_report.get("instance_reports")
+        if isinstance(replay_report, Mapping)
+        and isinstance(replay_report.get("instance_reports"), Sequence)
+        and not isinstance(replay_report.get("instance_reports"), (str, bytes))
+        else []
+    )
+    frozen_paths = [
+        str(instance_report.get("frozen_decisions_path") or "")
+        for instance_report in instance_reports
+        if isinstance(instance_report, Mapping)
+        and instance_report.get("frozen_decisions_path")
+    ]
+    oracle_paths = [
+        str(instance_report.get("oracle_outputs_path") or "")
+        for instance_report in instance_reports
+        if isinstance(instance_report, Mapping)
+        and instance_report.get("oracle_outputs_path")
+    ]
+    decision_rows = bridge.get("decision_phase_rows") if isinstance(bridge, Mapping) else []
+    if not isinstance(decision_rows, Sequence) or isinstance(decision_rows, (str, bytes)):
+        decision_rows = []
+    return {
+        "oracle_after_reviewer_decisions": bool(frozen_paths and oracle_paths),
+        "frozen_decision_row_count": len(decision_rows),
+        "decision_phase_sha256": str(bridge.get("decision_phase_sha256") or ""),
+        "frozen_decisions_paths": frozen_paths,
+        "oracle_outputs_paths": oracle_paths,
+    }
+
+
+def _official_candidate_generation_summary(
+    *,
+    rows: Sequence[Any],
+    official_report: Mapping[str, Any],
+) -> dict[str, Any]:
+    producer_families = sorted({
+        str((row.get("baseline_producer") or {}).get("provider_family")
+            or (row.get("baseline_producer") or {}).get("provider")
+            or "unknown")
+        for row in rows
+        if isinstance(row, Mapping)
+    })
+    return {
+        "baseline": {
+            "source": "produced_single_agent_baseline_receipts",
+            "candidate_count": len([row for row in rows if isinstance(row, Mapping)]),
+            "provider_families": producer_families,
+            "producer_family_count": len(producer_families),
+        },
+        "supervisor": {
+            "source": "replayed_model_patch_artifacts",
+            "candidate_count": len([row for row in rows if isinstance(row, Mapping)]),
+            "live_generation_used": bool(official_report.get("live_generation_used")),
+        },
+        "matched_model_budget": {
+            "required_when_live_generation_used": True,
+            "status": (
+                "recorded"
+                if bool(official_report.get("live_generation_used"))
+                else "not_applicable_replay"
+            ),
         },
     }
 
