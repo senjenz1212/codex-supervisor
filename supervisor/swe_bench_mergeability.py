@@ -25,12 +25,17 @@ from .mergeability_bench import (
     ORACLE_REVIEW_FORBIDDEN_KEYS,
     ORACLE_REVIEW_FORBIDDEN_TEXT,
     _copy_public_fixture_tree,
+    _effective_vote_estimate,
     _false_accept_at_matched_true_accept,
     _generator_disjointness_report,
+    _inter_reviewer_agreement,
+    _leave_one_reviewer_out_analysis,
     _mergeability_rubric_coverage,
     _panel_marginal_delta_at_matched_true_accept,
+    _per_reviewer_acceptance_arms,
     _public_input_oracle_refs,
     _rate,
+    _reviewer_oracle_error_overlap,
     _reviewer_provenance_report,
     _resolve_powered_baseline_decision,
     _run_command,
@@ -3125,6 +3130,10 @@ def _build_official_all_arms_diagnostic_report(
     )
     reviewer_provenance = _reviewer_provenance_report(reviewer_analysis_rows)
     generator_disjointness = _generator_disjointness_report(reviewer_analysis_rows)
+    reviewer_independence = _official_reviewer_independence_metrics(
+        reviewer_analysis_rows,
+        full_stack=s_full,
+    )
     abstention_coverage = _mergeability_rubric_coverage(reviewer_analysis_rows)
     panel_marginal = (
         dict(bridge.get("panel_marginal_delta_at_matched_true_accept"))
@@ -3166,6 +3175,10 @@ def _build_official_all_arms_diagnostic_report(
         "plumbing_smoke_only": True,
         "instance_count": int(official_report.get("instance_count") or 0),
         "candidate_count": int(official_report.get("candidate_count") or 0),
+        "candidate_pool_sha256": reviewer_independence["candidate_pool_sha256"],
+        "independence_metric_candidate_pool_sha256": (
+            reviewer_independence["metric_candidate_pool_sha256"]
+        ),
         "n_good": n_good,
         "n_bad": n_bad,
         "min_good": int(min_good),
@@ -3213,6 +3226,9 @@ def _build_official_all_arms_diagnostic_report(
         "decision_freeze": decision_freeze,
         "candidate_generation": candidate_generation,
         "reviewer_provenance": reviewer_provenance,
+        "inter_reviewer_agreement": reviewer_independence["inter_reviewer_agreement"],
+        "leave_one_reviewer_out": reviewer_independence["leave_one_reviewer_out"],
+        "effective_vote_estimate": reviewer_independence["effective_vote_estimate"],
         "abstention_coverage": abstention_coverage,
         "mergeability_rubric_coverage": abstention_coverage,
         "generator_disjointness": generator_disjointness,
@@ -3383,6 +3399,10 @@ def _official_reviewer_analysis_rows(
                 "candidate_hash": bridge_row.get("baseline_candidate_artifact_hash", ""),
                 "control_kind": "swe_bench_official_replay",
                 "oracle_accept": bool(bridge_row.get("oracle_accept")),
+                "oracle_unavailable": bool(
+                    bridge_row.get("oracle_unavailable", not bool(bridge_row))
+                ),
+                "s_probe_accept": bool(bridge_row.get("s_probe_accept")),
                 "single_agent_baseline_producer": (
                     dict(bridge_row.get("baseline_producer"))
                     if isinstance(bridge_row.get("baseline_producer"), Mapping)
@@ -3391,8 +3411,63 @@ def _official_reviewer_analysis_rows(
                 "supervisor_full_gate_reviewer_results": list(
                     panel_result.get("reviewer_results") or []
                 ),
-            })
+        })
     return rows
+
+
+def _official_reviewer_independence_metrics(
+    rows: list[dict[str, Any]],
+    *,
+    full_stack: Mapping[str, Any],
+) -> dict[str, Any]:
+    metric_rows = [
+        row for row in rows
+        if not bool(row.get("oracle_unavailable"))
+    ]
+    candidate_pool_sha256 = _sha256_json([
+        {
+            "task_id": str(row.get("task_id") or ""),
+            "candidate_id": str(row.get("candidate_id") or ""),
+            "candidate_hash": str(row.get("candidate_hash") or ""),
+        }
+        for row in metric_rows
+    ])
+    per_reviewer_arms = _per_reviewer_acceptance_arms(metric_rows)
+    pairwise_error_overlap = _reviewer_oracle_error_overlap(metric_rows)
+    leave_one_rows: list[dict[str, Any]] = []
+    reviewer_panel_results: dict[str, list[Mapping[str, Any]]] = {}
+    for row in metric_rows:
+        unique_candidate_id = f"{row['task_id']}:{row['candidate_id']}"
+        filtered_results = [
+            result
+            for result in row.get("supervisor_full_gate_reviewer_results") or []
+            if isinstance(result, Mapping) and bool(result.get("verdict_present"))
+        ]
+        if filtered_results:
+            reviewer_panel_results[unique_candidate_id] = filtered_results
+        leave_row = dict(row)
+        leave_row["candidate_id"] = unique_candidate_id
+        leave_row["runtime_evidence_floor_accept"] = bool(row.get("s_probe_accept"))
+        leave_one_rows.append(leave_row)
+
+    return {
+        "candidate_pool_sha256": candidate_pool_sha256,
+        "metric_candidate_pool_sha256": {
+            "inter_reviewer_agreement": candidate_pool_sha256,
+            "leave_one_reviewer_out": candidate_pool_sha256,
+            "effective_vote_estimate": candidate_pool_sha256,
+        },
+        "inter_reviewer_agreement": _inter_reviewer_agreement(metric_rows),
+        "leave_one_reviewer_out": _leave_one_reviewer_out_analysis(
+            leave_one_rows,
+            reviewer_panel_results=reviewer_panel_results,
+            full_stack=full_stack,
+        ),
+        "effective_vote_estimate": _effective_vote_estimate(
+            per_reviewer_arms=per_reviewer_arms,
+            pairwise_error_overlap=pairwise_error_overlap,
+        ),
+    }
 
 
 def _official_s_probe_vs_s_full_summary(
