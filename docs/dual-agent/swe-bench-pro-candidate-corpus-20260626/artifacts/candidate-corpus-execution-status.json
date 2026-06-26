@@ -1,0 +1,65 @@
+{
+  "schema_version": "supervisor-swebench-pro-candidate-corpus-execution-status/v1",
+  "task_id": "swe-bench-pro-candidate-corpus-20260626",
+  "status": "unavailable",
+  "artifact_kind": "blocked_execution_evidence",
+  "recorded_date": "2026-06-26",
+  "required_output": "pro-predictions.jsonl with >=2 oracle-good and >=1 oracle-bad candidates",
+  "produced_predictions_path": "",
+  "produced_predictions_sha256": "",
+  "corpus_summary": {
+    "candidate_count": 0,
+    "n_good": 0,
+    "n_bad": 0,
+    "false_accept_denominator": 0,
+    "far_degenerate": true
+  },
+  "blocked_reasons": [
+    "docker_version_timeout_after_10s",
+    "host_filesystem_capacity_100_percent",
+    "real_single_agent_solver_attempts_not_executed",
+    "slice1_pro_oracle_labeling_not_executed"
+  ],
+  "current_preflight_evidence": {
+    "docker_path": "/usr/local/bin/docker",
+    "docker_version_probe": {
+      "command": ".venv/bin/python docker version probe with 10s timeout",
+      "status": "timeout",
+      "elapsed_s": 10.007,
+      "stdout_tail": "",
+      "stderr_tail": ""
+    },
+    "disk_probe": {
+      "command": "df -k . /tmp",
+      "filesystem": "/dev/disk3s5",
+      "available_1024_blocks": 6773684,
+      "capacity": "100%",
+      "mount": "/System/Volumes/Data"
+    },
+    "dependency_artifact": {
+      "path": "docs/dual-agent/swe-bench-pro-oracle-adapter-20260626/artifacts/pro-real/swe_bench_pro_adapter_real_attempt.json",
+      "status": "unavailable",
+      "blocked_reasons": [
+        "host_disk_full:no_space_left_on_device",
+        "first_instance_scoring_output_empty_after_container_runtime_failure",
+        "three_instance_artifact_incomplete"
+      ]
+    }
+  },
+  "honesty_boundary": {
+    "no_pro_predictions_jsonl_emitted": true,
+    "no_synthetic_or_hand_faked_bad_patches": true,
+    "oracle_bad_requires_patch_applied_true": true,
+    "non_applying_patches_excluded_from_n_bad": true
+  },
+  "authority_flags": {
+    "metric_applyable": false,
+    "improvement_claim_allowed": false,
+    "powered_improvement_claim_allowed": false,
+    "human_mergeability_claim_allowed": false,
+    "default_change_allowed": false,
+    "policy_mutated": false,
+    "gate_advanced": false
+  },
+  "next_unblocked_execution_step": "Free disk and restore Docker responsiveness, then run real multi-attempt single-agent solver attempts per selected Pro instance and label only patch-applied attempts through the Slice-1 Pro oracle."
+}

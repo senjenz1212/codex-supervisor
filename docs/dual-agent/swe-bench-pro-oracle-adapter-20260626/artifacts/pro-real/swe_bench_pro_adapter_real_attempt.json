@@ -1,0 +1,98 @@
+{
+  "artifact_sha256": "9451e6724920784596dc52759722ea18c557e17ceaf9974ec648c9fd958da180",
+  "attempt_stage": "docker",
+  "attempts": [
+    {
+      "adapter_path_proven": true,
+      "candidate_id": "instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan-gold-patch-tier1",
+      "entryscript": {
+        "exists": true,
+        "path": "docs/dual-agent/swe-bench-pro-oracle-adapter-20260626/artifacts/pro-real/oracle-artifacts/instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan/instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan-gold-patch-tier1/workspace/entryscript.sh",
+        "sha256": "9423c150846e87eb3a3ddbdeb45a946175ac084a5bd6c01071c88421ef6a1954",
+        "size_bytes": 524,
+        "tail": "#!/usr/bin/env bash\nset -uo pipefail\ncd /app\ngit reset --hard 1e137b07052bc3ea0da44ed201702c94055b8ad2\ngit checkout 1e137b07052bc3ea0da44ed201702c94055b8ad2\ngit apply -v /workspace/patch.diff\ngit checkout 04998908ba6721d64eba79ae3b65a351dcfbc5b5 -- test/database/keys.js test/user/emails.js\nbash /workspace/run_script.sh test/database.js,test/database/keys.js,test/user/emails.js > /workspace/stdout.log 2> /workspace/stderr.log\npython /workspace/parser.py /workspace/stdout.log /workspace/stderr.log /workspace/output.json\n"
+      },
+      "instance_id": "instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan",
+      "observed_stage": "scoring",
+      "output_json": {
+        "exists": true,
+        "path": "docs/dual-agent/swe-bench-pro-oracle-adapter-20260626/artifacts/pro-real/oracle-artifacts/instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan/instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan-gold-patch-tier1/workspace/output.json",
+        "sha256": "58e3a5c3daba970fc031b9e24d27bc107c18ca7c30e77371752d833e6b79d141",
+        "size_bytes": 17,
+        "tail": "{\n  \"tests\": []\n}"
+      },
+      "repo": "NodeBB/NodeBB",
+      "result_interpretation": "well_formed_empty_parser_output_means_required_tests_not_observed_passed",
+      "stderr_log": {
+        "exists": true,
+        "path": "docs/dual-agent/swe-bench-pro-oracle-adapter-20260626/artifacts/pro-real/oracle-artifacts/instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan/instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan-gold-patch-tier1/workspace/stderr.log",
+        "sha256": "7c21a8f558a07d46adc57ebe8230bf98ebccf618a464bff6ba8c54e0f62299d0",
+        "size_bytes": 307,
+        "tail": "npm warn config production Use `--omit=dev` instead.\nqemu: uncaught target signal 11 (Segmentation fault) - core dumped\n/workspace/run_script.sh: line 8:    82 Segmentation fault      redis-server --daemonize yes --protected-mode no --appendonly yes\ncp: cannot stat '/tmp/test/.': No such file or directory\n"
+      },
+      "stdout_log": {
+        "exists": true,
+        "path": "docs/dual-agent/swe-bench-pro-oracle-adapter-20260626/artifacts/pro-real/oracle-artifacts/instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan/instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan-gold-patch-tier1/workspace/stdout.log",
+        "sha256": "2aec12858e0b9100826e9b4bd0b52232693615892adb64704825fb9ceff26b42",
+        "size_bytes": 972,
+        "tail": "Running selected tests: test/database.js test/database/keys.js test/user/emails.js\n\nup to date, audited 1426 packages in 40s\n\n219 packages are looking for funding\n  run `npm fund` for details\n\n84 vulnerabilities (14 low, 32 moderate, 36 high, 2 critical)\n\nTo address issues that do not require attention, run:\n  npm audit fix\n\nTo address all issues possible (including breaking changes), run:\n  npm audit fix --force\n\nSome issues need review, and may require choosing\na different dependency.\n\nRun `npm audit` for details.\n\nchanged 1 package, and audited 1426 packages in 27s\n\n219 packages are looking for funding\n  run `npm fund` for details\n\n83 vulnerabilities (14 low, 32 moderate, 35 high, 2 critical)\n\nTo address issues that do not require attention, run:\n  npm audit fix\n\nTo address all issues possible (including breaking changes), run:\n  npm audit fix --force\n\nSome issues need review, and may require choosing\na different dependency.\n\nRun `npm audit` for details.\n"
+      }
+    },
+    {
+      "adapter_path_proven": false,
+      "candidate_id": "instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c-gold-patch-tier1",
+      "entryscript": {
+        "exists": true,
+        "path": "docs/dual-agent/swe-bench-pro-oracle-adapter-20260626/artifacts/pro-real/oracle-artifacts/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c-gold-patch-tier1/workspace/entryscript.sh",
+        "sha256": "9f50b51fd763656f7c2f632eb65eff429619f7fae74e514aceda3bad61b2cec3",
+        "size_bytes": 543,
+        "tail": "#!/usr/bin/env bash\nset -uo pipefail\ncd /app\ngit reset --hard ebfe9b7aa0c4ba9d451f993e08955004aaec4345\ngit checkout ebfe9b7aa0c4ba9d451f993e08955004aaec4345\ngit apply -v /workspace/patch.diff\ngit checkout f91ace96223cac8161c16dd061907e138fe85111 -- tests/unit/utils/test_log.py tests/unit/utils/test_qtlog.py\nbash /workspace/run_script.sh tests/unit/utils/test_log.py,tests/unit/utils/test_qtlog.py > /workspace/stdout.log 2> /workspace/stderr.log\npython /workspace/parser.py /workspace/stdout.log /workspace/stderr.log /workspace/output.json\n"
+      },
+      "instance_id": "instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c",
+      "observed_stage": "docker_or_parser_incomplete_before_summary_persisted",
+      "output_json": {
+        "exists": false,
+        "path": "docs/dual-agent/swe-bench-pro-oracle-adapter-20260626/artifacts/pro-real/oracle-artifacts/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c-gold-patch-tier1/workspace/output.json"
+      },
+      "repo": "qutebrowser/qutebrowser"
+    },
+    {
+      "adapter_path_proven": false,
+      "candidate_id": "instance_NodeBB__NodeBB-51d8f3b195bddb13a13ddc0de110722774d9bb1b-vf2cf3cbd463b7ad942381f1c6d077626485a1e9e-gold-patch-tier1",
+      "error": "OSError: [Errno 28] No space left on device while creating workspace",
+      "instance_id": "instance_NodeBB__NodeBB-51d8f3b195bddb13a13ddc0de110722774d9bb1b-vf2cf3cbd463b7ad942381f1c6d077626485a1e9e",
+      "observed_stage": "workspace_creation",
+      "output_json": {
+        "exists": false,
+        "path": "docs/dual-agent/swe-bench-pro-oracle-adapter-20260626/artifacts/pro-real/oracle-artifacts/instance_NodeBB__NodeBB-51d8f3b195bddb13a13ddc0de110722774d9bb1b-vf2cf3cbd463b7ad942381f1c6d077626485a1e9e/instance_NodeBB__NodeBB-51d8f3b195bddb13a13ddc0de110722774d9bb1b-vf2cf3cbd463b7ad942381f1c6d077626485a1e9e-gold-patch-tier1/workspace/output.json"
+      },
+      "repo": "NodeBB/NodeBB"
+    }
+  ],
+  "authority_flags": {
+    "default_change_allowed": false,
+    "gate_advanced": false,
+    "human_mergeability_claim_allowed": false,
+    "improvement_claim_allowed": false,
+    "metric_applyable": false,
+    "policy_mutated": false,
+    "powered_improvement_claim_allowed": false,
+    "real_benchmark_claim_allowed": false
+  },
+  "blocked_reasons": [
+    "host_disk_full:no_space_left_on_device",
+    "first_instance_scoring_output_empty_after_container_runtime_failure",
+    "three_instance_artifact_incomplete"
+  ],
+  "note": "This is a real local Docker adapter attempt. The first row reached container execution and parser output; the run then failed with OSError ENOSPC before the third workspace could be created. No benchmark or policy-evolution claim is allowed.",
+  "recorded_epoch_s": 1782459034.843126,
+  "schema_version": "supervisor-swebench-pro-oracle-adapter-real-attempt/v1",
+  "source": {
+    "predictions_path": "docs/dual-agent/auto-evolve-benchmark-promotion-bridge-20260625/artifacts/aeb0-real/run-inputs/pro-gold-predictions.jsonl",
+    "scripts_dir": "supervisor/vendor/swe_bench_pro/run_scripts",
+    "source_rows_path": "/tmp/swebench-pro-os.ZTNRKb/repo/helper_code/sweap_eval_full_v2.jsonl",
+    "swe_bench_pro_os_commit": "ca10a60a5fcae51e6948ffe1485d4153d421e6c5"
+  },
+  "status": "unavailable",
+  "task_id": "swe-bench-pro-oracle-adapter-20260626"
+}
