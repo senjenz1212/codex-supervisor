@@ -19,6 +19,16 @@ from .schema import AutoresearchAttempt, AutoresearchExperiment, stable_json_dum
 
 @dataclass(frozen=True)
 class EvaluatorExecutionResult:
+    """Execution-derived result of a single attempt's evaluator run.
+
+    ``metric_before`` is the measured empty-floor metric from the pre-flight
+    stripped-overlay evaluator pass (``None`` when the attempt has no policy
+    overlay candidate, when the pre-flight failed, or when the field was not
+    persisted by an older durable payload). ``metric_after`` is the median of
+    ``metric_trials`` once any trials have been recorded, and ``metric_delta``
+    is ``metric_after - metric_before`` when both are present.
+    """
+
     metric_trials: tuple[float, ...]
     metric_source: str
     evaluator_run_ref: str
@@ -47,7 +57,21 @@ def run_evaluator_trials(
     repo_root: str | Path,
     output_dir: str | Path,
 ) -> EvaluatorExecutionResult:
-    """Run the experiment evaluator in an isolated attempt worktree."""
+    """Run the experiment evaluator in an isolated attempt worktree.
+
+    When the attempt's ``policy_candidate_changes`` include a
+    ``policy-overlay.yaml`` (or ``.yml``) candidate and the durable progress
+    file does not already carry a measured empty floor, an additional
+    pre-flight evaluator pass is executed against a copy of the worktree with
+    those overlay candidates stripped to empty content. The pre-flight pass
+    runs with ``AUTORESEARCH_EMPTY_FLOOR=1`` in its environment, and its
+    metric becomes ``metric_before`` on the returned result. ``metric_after``
+    is the median of the candidate trial metrics and ``metric_delta`` is the
+    difference. If the pre-flight pass fails, the failure is recorded as an
+    execution error (prefixed ``empty_floor:``), ``metric_before`` stays
+    ``None``, and the candidate trials are still attempted; the pending seed
+    is never reused as execution evidence.
+    """
     repo_root_path = Path(repo_root).expanduser().resolve()
     output_dir_path = Path(output_dir).expanduser().resolve()
     evaluator_rel = _normalise_path(experiment.evaluator_ref, repo_root=repo_root_path)
@@ -390,6 +414,12 @@ def _evaluator_environment(
     attempt_json: Path,
     control_kind: str = "",
 ) -> dict[str, str]:
+    # Evaluator subprocesses observe a fixed set of AUTORESEARCH_* variables:
+    # ATTEMPT_WORKTREE, SOURCE_ROOT, PROGRESS_PATH, TRIAL_INDEX, METRIC_NAME,
+    # ATTEMPT_JSON, optional CONTROL_KIND (set for quality-control passes), and
+    # optional EMPTY_FLOOR=1 (set only for the stripped-overlay pre-flight pass
+    # added by the empty-floor evaluator path; custom evaluators may inspect it
+    # to short-circuit when an overlay candidate is empty).
     env = {
         key: value
         for key, value in base_env.items()

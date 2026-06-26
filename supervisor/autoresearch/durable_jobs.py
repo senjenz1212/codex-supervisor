@@ -45,7 +45,14 @@ def run_durable_evaluator_trials(
     repo_root: str | Path,
     output_dir: str | Path,
 ) -> EvaluatorExecutionResult:
-    """Run evaluator trials through the existing job ledger claim/recovery lane."""
+    """Run evaluator trials through the existing job ledger claim/recovery lane.
+
+    The terminal payload persists the execution-derived ``metric_before``,
+    ``metric_after``, and ``metric_delta`` alongside the trial metrics, so
+    that a resumed or terminal-replayed job returns the same measured
+    empty-floor evidence as the original execution and ``run_autoresearch_fixture``
+    can propagate it into the attempt without recomputing from the seed.
+    """
     repo_root_path = Path(repo_root).expanduser().resolve()
     output_dir_path = Path(output_dir).expanduser().resolve()
     job_paths = _job_paths(output_dir=output_dir_path, attempt_id=attempt.attempt_id)

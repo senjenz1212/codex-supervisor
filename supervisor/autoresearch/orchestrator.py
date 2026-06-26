@@ -54,7 +54,15 @@ def run_autoresearch_fixture(
     output_dir: str | Path | None = None,
     execution_mode: str | None = None,
 ) -> dict[str, Any]:
-    """Run a deterministic fixture and write ledger-backed evidence events."""
+    """Run a deterministic fixture and write ledger-backed evidence events.
+
+    In ``live`` execution mode, durable evaluator execution overrides the
+    fixture's seed ``metric_before``, ``metric_after``, and ``metric_delta``
+    with the execution-derived values returned from ``run_evaluator_trials``
+    (see ``_execution_or_attempt_metric``). When the evaluator could not
+    measure a value, a ``pending`` seed is dropped to ``None`` so that
+    ``empty_floor_comparison()`` cannot mistake a seed for execution evidence.
+    """
     fixture = _load_fixture(fixture_path)
     experiment = resolve_evaluator_defaults(
         AutoresearchExperiment.from_mapping(fixture["experiment"]),
