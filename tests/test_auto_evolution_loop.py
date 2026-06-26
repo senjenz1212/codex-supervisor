@@ -156,14 +156,15 @@ def _prepare_repo(root: Path) -> None:
         "args = parser.parse_args()\n"
         "attempt = json.loads(open(args.attempt_json, encoding='utf-8').read())\n"
         "control = attempt.get('evaluator_quality_control') or {}\n"
+        "baseline = float(control.get('baseline_metric') or 0.0)\n"
         "if control.get('kind') == 'noop':\n"
-        "    value = 0.0\n"
+        "    value = baseline\n"
         "elif control.get('kind') == 'harmful':\n"
-        "    value = -0.1\n"
+        "    value = baseline - 0.1\n"
         "elif control.get('kind') == 'known_good':\n"
-        "    value = 0.2\n"
+        "    value = baseline + 0.2\n"
         "elif control.get('kind') == 'determinism':\n"
-        "    value = 0.75\n"
+        "    value = baseline + 0.2\n"
         "else:\n"
         "    value = 0.70 + (args.trial_index * 0.05)\n"
         "print(json.dumps({'metric_name': args.metric_name, 'metric_value': value, 'cost_usd': 0.0}))\n",
@@ -404,7 +405,9 @@ def _run_loop(tmp_path: Path, *, disabled_wire: str | None = None) -> LoopProof:
     report = runner_result["results"][0]["report"]
     assert report["records"][0]["metric_source"] == "evaluator_execution"
     assert report["records"][0]["validation_status"] == "accepted"
-    assert report["records"][0]["metric_before"] == 0.0
+    assert report["records"][0]["metric_before"] == 0.7
+    assert report["records"][0]["metric_after"] == 0.75
+    assert report["records"][0]["metric_delta"] == 0.05
     report_event = _event_by_kind(state, run_id=auto_run_id, kind="autoresearch_report_emitted")
 
     proposal_event = _required_event_by_kind(

@@ -8,9 +8,10 @@ import subprocess
 import sys
 import tempfile
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from hashlib import sha256
 from pathlib import Path
+from statistics import median
 from typing import Any, Mapping
 
 from .schema import AutoresearchAttempt, AutoresearchExperiment, stable_json_dumps
@@ -30,6 +31,9 @@ class EvaluatorExecutionResult:
     evaluator_quality: dict[str, Any] = field(default_factory=dict)
     job_id: str = ""
     resumed_from_trial_count: int = 0
+    metric_before: float | None = None
+    metric_after: float | None = None
+    metric_delta: float | None = None
 
 
 class EvaluatorContractError(RuntimeError):
@@ -65,6 +69,12 @@ def run_evaluator_trials(
     cost_usd = float(progress["cost_usd"])
     resumed_from_trial_count = len(metric_trials)
     evaluator_quality: dict[str, Any] = {}
+    empty_floor_record = dict(progress.get("empty_floor_record") or {})
+    metric_before = _optional_float(progress.get("metric_before"))
+    if metric_before is None:
+        metric_before = _optional_float(progress.get("empty_floor_metric"))
+    metric_after = _candidate_metric_after(metric_trials)
+    metric_delta = _metric_delta(metric_before, metric_after)
 
     with tempfile.TemporaryDirectory(prefix="autoresearch-attempt-") as temp_dir:
         temp_path = Path(temp_dir)
@@ -94,6 +104,40 @@ def run_evaluator_trials(
         source_changed_paths: list[str] = []
 
         try:
+            empty_floor_refs = _empty_floor_candidate_refs(attempt, repo_root=repo_root_path)
+            if empty_floor_refs and metric_before is None:
+                try:
+                    empty_floor_record = _run_empty_floor_evaluator(
+                        experiment=experiment,
+                        repo_root=repo_root_path,
+                        worktree=worktree,
+                        temp_path=temp_path,
+                        executable_evaluator=executable_evaluator,
+                        progress_path=progress_path,
+                        attempt_json=attempt_json,
+                        candidate_refs=tuple(empty_floor_refs),
+                    )
+                except (EvaluatorContractError, subprocess.TimeoutExpired) as exc:
+                    message = str(exc)
+                    if isinstance(exc, subprocess.TimeoutExpired):
+                        message = f"timeout: {message}"
+                    execution_errors.append(f"empty_floor: {message}")
+                else:
+                    metric_before = _optional_float(empty_floor_record.get("empty_floor_metric"))
+                    cost_usd += float(empty_floor_record.get("cost_usd") or 0.0)
+                    metric_delta = _metric_delta(metric_before, metric_after)
+                    _write_progress(
+                        progress_path,
+                        experiment=experiment,
+                        attempt=attempt,
+                        evaluator_rel=evaluator_rel,
+                        trial_records=trial_records,
+                        cost_usd=cost_usd,
+                        empty_floor_record=empty_floor_record,
+                        metric_before=metric_before,
+                        metric_after=metric_after,
+                        metric_delta=metric_delta,
+                    )
             for trial_index in range(len(metric_trials), max(0, experiment.k_trials)):
                 trial_started = time.monotonic()
                 command = [
@@ -134,6 +178,8 @@ def run_evaluator_trials(
                 trial_payload = _parse_trial_payload(completed.stdout)
                 metric_value = round(_metric_value(trial_payload, metric_name=experiment.metric_name), 12)
                 metric_trials.append(metric_value)
+                metric_after = _candidate_metric_after(metric_trials)
+                metric_delta = _metric_delta(metric_before, metric_after)
                 cost_usd += float(trial_payload.get("cost_usd") or 0.0)
                 trial_records.append({
                     "trial_index": trial_index,
@@ -149,6 +195,10 @@ def run_evaluator_trials(
                     evaluator_rel=evaluator_rel,
                     trial_records=trial_records,
                     cost_usd=cost_usd,
+                    empty_floor_record=empty_floor_record,
+                    metric_before=metric_before,
+                    metric_after=metric_after,
+                    metric_delta=metric_delta,
                 )
                 if experiment.budget_usd > 0 and cost_usd > experiment.budget_usd:
                     execution_errors.append(
@@ -202,9 +252,18 @@ def run_evaluator_trials(
         if execution_errors and not metric_trials:
             raise EvaluatorContractError("; ".join(execution_errors))
         if not execution_errors:
+            quality_attempt = attempt
+            if empty_floor_record and metric_before is not None:
+                quality_attempt = replace(
+                    attempt,
+                    metric_before=metric_before,
+                    metric_after=metric_after,
+                    metric_delta=metric_delta,
+                    metric_source="evaluator_execution",
+                )
             evaluator_quality = _run_evaluator_quality_controls(
                 experiment=experiment,
-                attempt=attempt,
+                attempt=quality_attempt,
                 repo_root=repo_root_path,
                 output_dir=output_dir_path,
                 worktree=worktree,
@@ -222,6 +281,11 @@ def run_evaluator_trials(
         "metric_name": experiment.metric_name,
         "k_trials": experiment.k_trials,
         "metric_trials": metric_trials,
+        "empty_floor_metric": metric_before,
+        "empty_floor_record": empty_floor_record,
+        "metric_before": metric_before,
+        "metric_after": metric_after,
+        "metric_delta": metric_delta,
         "trial_records": trial_records,
         "execution_errors": execution_errors,
         "budget_usd": experiment.budget_usd,
@@ -253,6 +317,9 @@ def run_evaluator_trials(
         wall_clock_s=round(time.monotonic() - started, 6),
         evaluator_quality=evaluator_quality,
         resumed_from_trial_count=resumed_from_trial_count,
+        metric_before=metric_before,
+        metric_after=metric_after,
+        metric_delta=metric_delta,
     )
 
 
@@ -350,6 +417,105 @@ def _evaluator_environment(
     if control_kind:
         env["AUTORESEARCH_CONTROL_KIND"] = control_kind
     return env
+
+
+def _empty_floor_candidate_refs(attempt: AutoresearchAttempt, *, repo_root: Path) -> list[str]:
+    refs = [
+        ref for ref in _policy_candidate_refs(attempt, repo_root=repo_root)
+        if Path(ref).name in {"policy-overlay.yaml", "policy-overlay.yml"}
+    ]
+    return list(dict.fromkeys(refs))
+
+
+def _run_empty_floor_evaluator(
+    *,
+    experiment: AutoresearchExperiment,
+    repo_root: Path,
+    worktree: Path,
+    temp_path: Path,
+    executable_evaluator: Path,
+    progress_path: Path,
+    attempt_json: Path,
+    candidate_refs: tuple[str, ...],
+) -> dict[str, Any]:
+    started = time.monotonic()
+    empty_worktree = temp_path / "empty-floor-worktree"
+    if empty_worktree.exists():
+        shutil.rmtree(empty_worktree)
+    shutil.copytree(worktree, empty_worktree, dirs_exist_ok=True)
+    for candidate_ref in candidate_refs:
+        candidate_path = empty_worktree / _normalise_path(candidate_ref, repo_root=repo_root)
+        candidate_path.parent.mkdir(parents=True, exist_ok=True)
+        candidate_path.write_text("", encoding="utf-8")
+
+    command = [
+        *_evaluator_command(executable_evaluator),
+        "--attempt-worktree",
+        str(empty_worktree),
+        "--trial-index",
+        "0",
+        "--metric-name",
+        experiment.metric_name,
+        "--attempt-json",
+        str(attempt_json),
+    ]
+    completed = subprocess.run(
+        command,
+        cwd=empty_worktree,
+        input="",
+        capture_output=True,
+        text=True,
+        timeout=max(0.001, float(experiment.timeout_s)),
+        check=False,
+        env={
+            **_evaluator_environment(
+                base_env=os.environ,
+                repo_root=repo_root,
+                worktree=empty_worktree,
+                temp_path=temp_path,
+                progress_path=progress_path,
+                trial_index=0,
+                metric_name=experiment.metric_name,
+                attempt_json=attempt_json,
+            ),
+            "AUTORESEARCH_EMPTY_FLOOR": "1",
+        },
+    )
+    if completed.returncode != 0:
+        raise EvaluatorContractError(
+            f"empty-floor evaluator exited {completed.returncode}: "
+            f"{completed.stderr.strip() or completed.stdout.strip()}"
+        )
+    trial_payload = _parse_trial_payload(completed.stdout)
+    metric_value = round(_metric_value(trial_payload, metric_name=experiment.metric_name), 12)
+    return {
+        "schema_version": "supervisor-autoresearch-empty-floor-run/v1",
+        "metric_source": "evaluator_execution",
+        "empty_floor_metric": metric_value,
+        "candidate_refs": list(candidate_refs),
+        "stdout_sha256": sha256(completed.stdout.encode("utf-8")).hexdigest(),
+        "stderr_sha256": sha256(completed.stderr.encode("utf-8")).hexdigest(),
+        "duration_s": round(time.monotonic() - started, 6),
+        "cost_usd": round(float(trial_payload.get("cost_usd") or 0.0), 6),
+    }
+
+
+def _candidate_metric_after(metric_trials: list[float]) -> float | None:
+    if not metric_trials:
+        return None
+    return round(float(median(metric_trials)), 6)
+
+
+def _metric_delta(before: float | None, after: float | None) -> float | None:
+    if before is None or after is None:
+        return None
+    return round(float(after) - float(before), 6)
+
+
+def _optional_float(value: Any) -> float | None:
+    if value in {None, ""}:
+        return None
+    return round(float(value), 6)
 
 
 def _run_evaluator_quality_controls(
@@ -846,6 +1012,11 @@ def _load_progress(
     return {
         "trial_records": contiguous,
         "cost_usd": float(payload.get("cost_usd") or 0.0),
+        "empty_floor_record": dict(payload.get("empty_floor_record") or {}),
+        "empty_floor_metric": _optional_float(payload.get("empty_floor_metric")),
+        "metric_before": _optional_float(payload.get("metric_before")),
+        "metric_after": _optional_float(payload.get("metric_after")),
+        "metric_delta": _optional_float(payload.get("metric_delta")),
     }
 
 
@@ -857,6 +1028,10 @@ def _write_progress(
     evaluator_rel: str,
     trial_records: list[dict[str, Any]],
     cost_usd: float,
+    empty_floor_record: Mapping[str, Any] | None = None,
+    metric_before: float | None = None,
+    metric_after: float | None = None,
+    metric_delta: float | None = None,
 ) -> None:
     progress_path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -871,6 +1046,12 @@ def _write_progress(
         "completed_trial_count": len(trial_records),
         "cost_usd": round(float(cost_usd), 6),
     }
+    if empty_floor_record:
+        payload["empty_floor_record"] = dict(empty_floor_record)
+        payload["empty_floor_metric"] = _optional_float(empty_floor_record.get("empty_floor_metric"))
+    payload["metric_before"] = metric_before
+    payload["metric_after"] = metric_after
+    payload["metric_delta"] = metric_delta
     progress_path.write_text(
         json.dumps(payload, sort_keys=True, indent=2) + "\n",
         encoding="utf-8",

@@ -133,6 +133,21 @@ def run_autoresearch_fixture(
                 attempt = replace(
                     attempt,
                     metric_trials=execution.metric_trials,
+                    metric_before=_execution_or_attempt_metric(
+                        execution.metric_before,
+                        attempt.metric_before,
+                        attempt=attempt,
+                    ),
+                    metric_after=_execution_or_attempt_metric(
+                        execution.metric_after,
+                        attempt.metric_after,
+                        attempt=attempt,
+                    ),
+                    metric_delta=_execution_or_attempt_metric(
+                        execution.metric_delta,
+                        attempt.metric_delta,
+                        attempt=attempt,
+                    ),
                     metric_source=execution.metric_source,
                     evaluator_run_ref=execution.evaluator_run_ref,
                     evaluator_run_hash=execution.evaluator_run_hash,
@@ -389,6 +404,19 @@ def _execution_output_dir(
     if output_dir is not None:
         return Path(output_dir)
     return Path(repo_root).expanduser().resolve() / ".scratch" / "autoresearch" / run_id
+
+
+def _execution_or_attempt_metric(
+    execution_value: float | None,
+    attempt_value: float | None,
+    *,
+    attempt: AutoresearchAttempt,
+) -> float | None:
+    if execution_value is not None:
+        return execution_value
+    if attempt.metric_source == "pending":
+        return None
+    return attempt_value
 
 
 def _quality_control_refs(evaluator_quality: dict[str, Any]) -> list[str]:
