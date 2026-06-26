@@ -7,7 +7,7 @@ import subprocess
 import sys
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 
 def run_official_harness_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
@@ -44,10 +44,11 @@ def run_official_harness_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
         "SWEBENCH_OFFICIAL_ORACLE_RUN_ID_PREFIX",
         "supervisor-official-oracle",
     )
-    run_id = (
-        f"{_safe_fragment(run_id_prefix)}-"
-        f"{_safe_fragment(instance_id)}-"
-        f"{_safe_fragment(candidate_id)}"
+    run_id = _safe_filename(
+        run_id_prefix,
+        instance_id,
+        candidate_id,
+        max_length=180,
     )
     work_dir = artifact_root / _safe_fragment(instance_id) / _safe_fragment(candidate_id)
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -177,8 +178,44 @@ def run_official_harness_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
     payload = json.loads(instance_report_path.read_text(encoding="utf-8"))
     row = payload.get(instance_id) or {}
     tests_status = row.get("tests_status") if isinstance(row, Mapping) else {}
-    fail_to_pass_status = _status_for(tests_status, "FAIL_TO_PASS")
-    pass_to_pass_status = _status_for(tests_status, "PASS_TO_PASS")
+    fail_to_pass_status, fail_to_pass_reason = _status_for_with_reason(
+        tests_status,
+        "FAIL_TO_PASS",
+    )
+    pass_to_pass_status, pass_to_pass_reason = _status_for_with_reason(
+        tests_status,
+        "PASS_TO_PASS",
+    )
+    unavailable_reasons = [
+        reason for reason in (fail_to_pass_reason, pass_to_pass_reason) if reason
+    ]
+    if unavailable_reasons:
+        reason = (
+            "official_report_status_bucket_unavailable:"
+            + ",".join(unavailable_reasons)
+        )
+        receipt = _adapter_receipt(
+            context=context,
+            command=command,
+            return_code=completed.returncode,
+            stdout=completed.stdout,
+            stderr=completed.stderr,
+            artifact_paths=artifact_paths,
+            fail_to_pass_status="unavailable",
+            pass_to_pass_status="unavailable",
+            dataset=dataset,
+            split=split,
+            run_id=run_id,
+            oracle_unavailable=True,
+            unavailable_reason=reason,
+        )
+        return {
+            "fail_to_pass_status": "unavailable",
+            "pass_to_pass_status": "unavailable",
+            "oracle_unavailable": True,
+            "oracle_unavailable_reason": reason,
+            "oracle_adapter_receipt": receipt,
+        }
 
     receipt = _adapter_receipt(
         context=context,
@@ -281,13 +318,22 @@ def _adapter_receipt(
 
 
 def _status_for(tests_status: Any, key: str) -> str:
+    status, _reason = _status_for_with_reason(tests_status, key)
+    return status
+
+
+def _status_for_with_reason(tests_status: Any, key: str) -> tuple[str, str]:
     if not isinstance(tests_status, Mapping):
-        return "fail"
+        return "unavailable", "tests_status_missing_or_malformed"
+    if key not in tests_status:
+        return "unavailable", f"{key}_bucket_missing"
     bucket = tests_status.get(key)
     if not isinstance(bucket, Mapping):
-        return "pass"
+        return "unavailable", f"{key}_bucket_malformed"
     failures = bucket.get("failure") or []
-    return "fail" if failures else "pass"
+    if not isinstance(failures, Sequence) or isinstance(failures, (str, bytes)):
+        return "unavailable", f"{key}_failure_malformed"
+    return ("fail" if failures else "pass"), ""
 
 
 def _required_text(context: Mapping[str, Any], key: str) -> str:
@@ -302,3 +348,15 @@ def _safe_fragment(value: str) -> str:
         char if char.isalnum() or char in {"-", "_"} else "_"
         for char in str(value)
     ).strip("_") or "artifact"
+
+
+def _safe_filename(*fragments: str, max_length: int = 180) -> str:
+    stem = "-".join(_safe_fragment(fragment) for fragment in fragments)
+    if len(stem) <= max_length:
+        return stem
+    digest = sha256(
+        "\0".join(str(fragment) for fragment in fragments).encode("utf-8")
+    ).hexdigest()[:16]
+    prefix_limit = max(1, max_length - len(digest) - 1)
+    prefix = stem[:prefix_limit].rstrip("-_") or "artifact"
+    return f"{prefix}-{digest}"

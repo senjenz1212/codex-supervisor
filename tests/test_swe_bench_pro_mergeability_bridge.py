@@ -2671,6 +2671,38 @@ def test_official_replay_cli_requires_oracle_adapter_before_metrics(tmp_path):
         assert not (out_dir / "official_replay_report.json").exists()
 
 
+def test_aeb0_missing_cli_prerequisites_write_blocked_artifact(tmp_path):
+    output_dir = tmp_path / "out"
+    result = _run_official_replay_cli([
+        "--official-all-arms-diagnostic",
+        "--dataset",
+        "SWE-bench/SWE-bench_Pro",
+        "--dataset-split",
+        "test",
+        "--predictions",
+        str(tmp_path / "predictions.jsonl"),
+        "--output-dir",
+        str(output_dir),
+        "--oracle-adapter",
+        "tests.test_swe_bench_pro_mergeability_bridge:_cli_fake_official_oracle_runner",
+    ])
+
+    assert result.returncode == 2
+    assert "without --allow-dataset-fetch" in result.stderr
+    report_path = output_dir / "official_all_arms_diagnostic_report.json"
+    assert report_path.exists()
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["status"] == "unavailable"
+    assert report["aeb0_artifact_gate"]["status"] == "blocked"
+    assert report["aeb0_artifact_gate"]["blocked_reasons"] == [
+        "missing_cli_prerequisite:allow_dataset_fetch"
+    ]
+    assert report["metrics_unavailable_reasons"] == [
+        "missing_cli_prerequisite:allow_dataset_fetch"
+    ]
+    _assert_diagnostic_report_only(report)
+
+
 def test_official_replay_cli_rejects_unknown_adapter_kind_before_metrics(tmp_path):
     output_dir = tmp_path / "out"
     fake_module = "tests.test_swe_bench_pro_mergeability_bridge"
@@ -3421,6 +3453,38 @@ def test_official_replay_smoke_writes_report_with_selected_instances(tmp_path):
     ]
 
 
+def test_official_replay_bounds_long_pro_patch_artifact_filenames(tmp_path):
+    """P1: Pro-shaped ids must not produce path components that exceed FS limits."""
+    instance_id = "instance_" + ("prorepo-" * 18)
+    candidate_id = "candidate_" + ("gold-patch-" * 18)
+    records = [_official_record(instance_id)]
+    predictions_path = _write_official_predictions(
+        tmp_path,
+        instance_id=instance_id,
+        candidate_id=candidate_id,
+    )
+
+    report = swebench_mergeability_official_replay_runner(
+        dataset="fixture-official",
+        dataset_split="test",
+        predictions_path=predictions_path,
+        output_dir=tmp_path / "out",
+        dataset_loader=lambda **_kwargs: records,
+        repo_materializer=_official_materializer,
+        oracle_runner=_smoke_oracle_runner,
+        oracle_adapter_kind="official_docker_or_equivalent",
+        instance_ids=[instance_id],
+    )
+
+    manifest = json.loads(
+        Path(report["generated_replay_manifest_path"]).read_text(encoding="utf-8")
+    )
+    patch_path = Path(manifest["instances"][0]["candidates"][0]["model_patch_path"])
+    assert patch_path.exists()
+    assert len(patch_path.name.encode("utf-8")) <= 180
+    assert patch_path.name.endswith(".patch")
+
+
 def test_official_replay_normalizes_json_encoded_test_lists(tmp_path):
     """P2: real dataset JSON-string test lists are not persisted as char arrays."""
     record = _official_record()
@@ -3603,6 +3667,164 @@ def test_official_harness_oracle_adapter_invokes_swebench_and_parses_report(
     assert receipt["return_code"] == 0
     assert receipt["harness"]["name"] == "swebench.harness.run_evaluation"
     assert Path(receipt["artifact_paths"]["instance_report"]).exists()
+
+
+def test_official_harness_oracle_bounds_long_run_id(tmp_path, monkeypatch):
+    """P3: Pro-shaped ids must not create overlong SWE-bench run ids."""
+    monkeypatch.setenv("SWEBENCH_OFFICIAL_ORACLE_ARTIFACT_DIR", str(tmp_path / "oracle"))
+    monkeypatch.setenv("SWEBENCH_OFFICIAL_ORACLE_RUN_ID_PREFIX", "test-oracle")
+    observed: dict[str, str] = {}
+
+    def fake_run(command, *, cwd, env, text, capture_output, check, timeout):
+        run_id = command[command.index("--run_id") + 1]
+        instance_id = command[command.index("--instance_ids") + 1]
+        observed["run_id"] = run_id
+        report_dir = (
+            Path(cwd)
+            / "logs"
+            / "run_evaluation"
+            / run_id
+            / "supervisor-replay"
+            / instance_id
+        )
+        report_dir.mkdir(parents=True)
+        (report_dir / "report.json").write_text(
+            json.dumps({
+                instance_id: {
+                    "resolved": True,
+                    "tests_status": {
+                        "FAIL_TO_PASS": {"success": ["test_fixed"], "failure": []},
+                        "PASS_TO_PASS": {"success": ["test_existing"], "failure": []},
+                    },
+                }
+            }),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(command, 0, "official stdout", "")
+
+    monkeypatch.setattr(
+        "supervisor.swe_bench_official_oracle.subprocess.run",
+        fake_run,
+    )
+
+    result = run_official_harness_oracle({
+        "instance_id": "instance_" + ("prorepo-" * 18),
+        "candidate_id": "candidate_" + ("gold-patch-" * 18),
+        "model_patch": _valid_model_patch(),
+        "model_patch_sha256": sha256(_valid_model_patch().encode("utf-8")).hexdigest(),
+        "frozen_decisions_path": str(tmp_path / "frozen_decisions.json"),
+        "frozen_decisions_sha256": "abc123",
+    })
+
+    assert result["fail_to_pass_status"] == "pass"
+    assert len(observed["run_id"].encode("utf-8")) <= 180
+
+
+def test_official_oracle_empty_present_buckets_can_pass(tmp_path, monkeypatch):
+    monkeypatch.setenv("SWEBENCH_OFFICIAL_ORACLE_ARTIFACT_DIR", str(tmp_path / "oracle"))
+    monkeypatch.setenv("SWEBENCH_OFFICIAL_ORACLE_RUN_ID_PREFIX", "test-oracle")
+
+    def fake_run(command, *, cwd, env, text, capture_output, check, timeout):
+        run_id = command[command.index("--run_id") + 1]
+        instance_id = command[command.index("--instance_ids") + 1]
+        report_dir = (
+            Path(cwd)
+            / "logs"
+            / "run_evaluation"
+            / run_id
+            / "supervisor-replay"
+            / instance_id
+        )
+        report_dir.mkdir(parents=True)
+        (report_dir / "report.json").write_text(
+            json.dumps({
+                instance_id: {
+                    "resolved": True,
+                    "tests_status": {
+                        "FAIL_TO_PASS": {},
+                        "PASS_TO_PASS": {"success": [], "failure": []},
+                    },
+                }
+            }),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(command, 0, "official stdout", "")
+
+    monkeypatch.setattr(
+        "supervisor.swe_bench_official_oracle.subprocess.run",
+        fake_run,
+    )
+
+    result = run_official_harness_oracle({
+        "instance_id": "sympy__sympy-14711",
+        "candidate_id": "candidate-under-test",
+        "model_patch": _valid_model_patch(),
+        "model_patch_sha256": sha256(_valid_model_patch().encode("utf-8")).hexdigest(),
+        "frozen_decisions_path": str(tmp_path / "frozen_decisions.json"),
+        "frozen_decisions_sha256": "abc123",
+    })
+
+    assert result["fail_to_pass_status"] == "pass"
+    assert result["pass_to_pass_status"] == "pass"
+    assert "oracle_unavailable" not in result
+
+
+def test_official_oracle_missing_or_malformed_status_bucket_is_unavailable(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("SWEBENCH_OFFICIAL_ORACLE_ARTIFACT_DIR", str(tmp_path / "oracle"))
+    monkeypatch.setenv("SWEBENCH_OFFICIAL_ORACLE_RUN_ID_PREFIX", "test-oracle")
+
+    def fake_run(command, *, cwd, env, text, capture_output, check, timeout):
+        run_id = command[command.index("--run_id") + 1]
+        instance_id = command[command.index("--instance_ids") + 1]
+        report_dir = (
+            Path(cwd)
+            / "logs"
+            / "run_evaluation"
+            / run_id
+            / "supervisor-replay"
+            / instance_id
+        )
+        report_dir.mkdir(parents=True)
+        (report_dir / "report.json").write_text(
+            json.dumps({
+                instance_id: {
+                    "resolved": True,
+                    "tests_status": {
+                        "FAIL_TO_PASS": {"success": [], "failure": []},
+                        "PASS_TO_PASS": ["malformed"],
+                    },
+                }
+            }),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(command, 0, "official stdout", "")
+
+    monkeypatch.setattr(
+        "supervisor.swe_bench_official_oracle.subprocess.run",
+        fake_run,
+    )
+
+    result = run_official_harness_oracle({
+        "instance_id": "sympy__sympy-14711",
+        "candidate_id": "candidate-under-test",
+        "model_patch": _valid_model_patch(),
+        "model_patch_sha256": sha256(_valid_model_patch().encode("utf-8")).hexdigest(),
+        "frozen_decisions_path": str(tmp_path / "frozen_decisions.json"),
+        "frozen_decisions_sha256": "abc123",
+    })
+
+    assert result["fail_to_pass_status"] == "unavailable"
+    assert result["pass_to_pass_status"] == "unavailable"
+    assert result["oracle_unavailable"] is True
+    assert result["oracle_unavailable_reason"] == (
+        "official_report_status_bucket_unavailable:PASS_TO_PASS_bucket_malformed"
+    )
+    receipt = result["oracle_adapter_receipt"]
+    assert receipt["fail_to_pass_status"] == "unavailable"
+    assert receipt["pass_to_pass_status"] == "unavailable"
+    assert receipt["unavailable_reason"] == result["oracle_unavailable_reason"]
 
 
 def test_official_harness_oracle_nonzero_return_is_unavailable(tmp_path, monkeypatch):
@@ -3885,6 +4107,10 @@ def test_official_all_arms_diagnostic_completes_with_matched_tar_and_no_claim(tm
     )
 
     assert report["status"] == "completed"
+    assert report["aeb0_artifact_gate"]["status"] == "blocked"
+    assert report["aeb0_artifact_gate"]["blocked_reasons"] == [
+        "dataset_not_pinned_to_pro_or_held_out_equivalent"
+    ]
     assert report["diagnostic_ready_for_scale"] is True
     assert report["all_arms_populated"] is True
     assert report["n_good"] == 2
@@ -4046,6 +4272,11 @@ def test_official_all_arms_diagnostic_is_unavailable_when_oracle_is_unavailable(
     )
 
     assert report["status"] == "unavailable"
+    assert report["attempt_stage"] == "harness"
+    assert report["decision_freeze"]["frozen_decision_row_count"] == 1
+    assert len(report["decision_freeze"]["decision_phase_sha256"]) == 64
+    assert report["aeb0_artifact_gate"]["status"] == "blocked"
+    assert "oracle_unavailable" in report["aeb0_artifact_gate"]["blocked_reasons"]
     assert report["diagnostic_ready_for_scale"] is False
     reasons = set(report["metrics_unavailable_reasons"])
     assert "official_replay_unavailable" in reasons
@@ -4126,14 +4357,58 @@ def test_official_all_arms_diagnostic_refuses_claim_when_baseline_unavailable(tm
     )
 
     assert report["status"] == "unavailable"
+    assert report["aeb0_artifact_gate"]["status"] == "blocked"
     assert report["baseline_available"] is False
     assert report["s_full_available"] is True
     reasons = set(report["metrics_unavailable_reasons"])
     assert "baseline_unavailable" in reasons
+    assert "baseline_unavailable" in report["aeb0_artifact_gate"]["blocked_reasons"]
     assert "matched_true_accept_not_computed:unavailable" in reasons
     assert report["bridge_report"]["arms"][ARM_BASELINE]["availability_status"] == (
         "unavailable"
     )
+    _assert_diagnostic_report_only(report)
+
+
+def test_aeb0_verified_dataset_is_smoke_only(tmp_path):
+    records = [
+        _official_record("official_demo__repo-A01"),
+        _official_record("official_demo__repo-B02"),
+        _official_record("official_demo__repo-C03"),
+    ]
+    predictions_path = _write_multi_official_predictions(
+        tmp_path,
+        ["official_demo__repo-A01", "official_demo__repo-B02", "official_demo__repo-C03"],
+    )
+
+    report = swebench_mergeability_official_all_arms_diagnostic_runner(
+        dataset="SWE-bench/SWE-bench_Verified",
+        dataset_split="test",
+        predictions_path=predictions_path,
+        output_dir=tmp_path / "out",
+        dataset_loader=lambda **_kwargs: records,
+        repo_materializer=_official_materializer,
+        oracle_runner=_official_oracle_for_good_ids({
+            "official_demo__repo-A01",
+            "official_demo__repo-B02",
+        }),
+        oracle_adapter_kind="official_docker_or_equivalent",
+        reviewer_panel=_full_roster_panel_for_bad_ids({"repo-C03"}),
+        reviewer_panel_mode="configured",
+        min_good=2,
+        min_bad=1,
+    )
+
+    assert report["status"] == "completed"
+    assert report["dataset_readiness"]["dataset"] == "SWE-bench/SWE-bench_Verified"
+    assert report["dataset_readiness"]["claim_scope"] == "smoke_only"
+    assert report["dataset_readiness"]["verified_smoke_only"] is True
+    assert report["dataset_readiness"]["serious_benchmark_claim_allowed"] is False
+    assert report["aeb0_artifact_gate"]["status"] == "blocked"
+    assert report["aeb0_artifact_gate"]["blocked_reasons"] == [
+        "swe_bench_verified_is_plumbing_smoke_only"
+    ]
+    assert report["aeb0_artifact_gate"]["real_benchmark_claim_allowed"] is False
     _assert_diagnostic_report_only(report)
 
 

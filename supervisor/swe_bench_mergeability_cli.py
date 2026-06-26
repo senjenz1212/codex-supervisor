@@ -23,6 +23,7 @@ from .swe_bench_mergeability import (
     swebench_mergeability_official_all_arms_diagnostic_runner,
     swebench_mergeability_official_replay_runner,
     swebench_mergeability_replay_runner,
+    write_swebench_official_all_arms_blocked_artifact,
 )
 
 
@@ -112,18 +113,35 @@ def main(argv: list[str] | None = None) -> int:
                     "refusing official SWE-bench replay without --allow-dataset-fetch",
                     file=sys.stderr,
                 )
+                if args.official_all_arms_diagnostic:
+                    _write_aeb0_cli_blocked_artifact(
+                        args,
+                        ["missing_cli_prerequisite:allow_dataset_fetch"],
+                    )
                 return 2
             if not args.dataset or not args.predictions:
                 print(
                     "refusing official SWE-bench replay without --dataset and --predictions",
                     file=sys.stderr,
                 )
+                if args.official_all_arms_diagnostic:
+                    reasons = []
+                    if not args.dataset:
+                        reasons.append("missing_cli_prerequisite:dataset")
+                    if not args.predictions:
+                        reasons.append("missing_cli_prerequisite:predictions")
+                    _write_aeb0_cli_blocked_artifact(args, reasons)
                 return 2
             if not args.oracle_adapter:
                 print(
                     "refusing official SWE-bench replay without --oracle-adapter",
                     file=sys.stderr,
                 )
+                if args.official_all_arms_diagnostic:
+                    _write_aeb0_cli_blocked_artifact(
+                        args,
+                        ["missing_cli_prerequisite:oracle_adapter"],
+                    )
                 return 2
             if (
                 args.oracle_adapter_kind
@@ -137,6 +155,11 @@ def main(argv: list[str] | None = None) -> int:
                     f"{args.oracle_adapter_kind!r}; expected one of: {allowed}",
                     file=sys.stderr,
                 )
+                if args.official_all_arms_diagnostic:
+                    _write_aeb0_cli_blocked_artifact(
+                        args,
+                        [f"unsupported_oracle_adapter_kind:{args.oracle_adapter_kind}"],
+                    )
                 return 2
             oracle_runner = _resolve_import_callable(args.oracle_adapter)
             dataset_loader = (
@@ -285,6 +308,20 @@ def main(argv: list[str] | None = None) -> int:
     }
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
+
+
+def _write_aeb0_cli_blocked_artifact(
+    args: argparse.Namespace,
+    blocked_reasons: list[str],
+) -> None:
+    write_swebench_official_all_arms_blocked_artifact(
+        output_dir=args.output_dir,
+        blocked_reasons=blocked_reasons,
+        dataset=args.dataset,
+        dataset_split=args.dataset_split,
+        predictions_path=args.predictions or None,
+        oracle_adapter_kind=args.oracle_adapter_kind,
+    )
 
 
 def _command_generator(

@@ -1,0 +1,79 @@
+{
+  "default_change_allowed": false,
+  "improvement_claim_allowed": false,
+  "metric_applyable": false,
+  "recommendation": {
+    "decision": "blocked",
+    "operator_review_required": true,
+    "reason": "benchmark_evidence_conversion_blocked"
+  },
+  "records": [
+    {
+      "artifact_hashes": {},
+      "attempt_id": "benchmark-promotion-7c3fcf1659e705c4",
+      "benchmark_report_sha256": "9097d213d61e7e3eb927d980df3423de25d70d35792028d74be079b19c8c66ac",
+      "blocked_reasons": [
+        "aeb0_artifact_not_completed",
+        "missing_evaluator_run_hash",
+        "missing_power_contract"
+      ],
+      "changed_files": [
+        "candidates/policy-overlay.yaml"
+      ],
+      "cost_usd": 0.0,
+      "default_change_allowed": false,
+      "empty_floor_comparison": {
+        "metric_delta": 0.0,
+        "status": "not_run"
+      },
+      "evaluator_quality": {
+        "source": "supervisor_control_execution"
+      },
+      "evaluator_run_hash": "",
+      "evaluator_run_ref": "pending-real-evaluator-run.json",
+      "evidence_refs": [
+        "aeb0:docs/dual-agent/auto-evolve-benchmark-promotion-bridge-20260625/artifacts/aeb0-blocked/official_all_arms_diagnostic_report.json"
+      ],
+      "experiment_id": "auto-evolve-benchmark-promotion",
+      "gaming_flags": [],
+      "gate_advanced": false,
+      "metric_after": null,
+      "metric_before": null,
+      "metric_delta": null,
+      "metric_iqr": null,
+      "metric_median": null,
+      "metric_name": "benchmark_evidence_conversion",
+      "metric_source": "evaluator_execution",
+      "metric_trials": [],
+      "policy_candidate_changes": {},
+      "policy_mutated": false,
+      "policy_overlay_candidate_ref": "candidates/policy-overlay.yaml",
+      "quality_unstable_across_trials": false,
+      "recommendation": "blocked benchmark evidence conversion",
+      "schema_version": "supervisor-autoresearch-report/v1",
+      "task_id": "benchmark-to-autoresearch-evidence-conversion",
+      "validation_errors": [
+        "aeb0_artifact_not_completed",
+        "missing_evaluator_run_hash",
+        "missing_power_contract"
+      ],
+      "validation_status": "blocked",
+      "wall_clock_s": 0.0
+    }
+  ],
+  "report_only": {
+    "config_mutated": false,
+    "default_change_allowed": false,
+    "operator_review_required": true,
+    "policy_mutated": false
+  },
+  "report_ref": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/auto-evolve-benchmark-promotion-bridge-20260625/artifacts/autoresearch-bridge-blocked/autoresearch_benchmark_promotion_report.json",
+  "report_sha256": "39152f3f2310b02d081030074150d72e04e887d4fc5b7b434f971a0eea3a0f87",
+  "schema_version": "supervisor-autoresearch-summary/v1",
+  "summary": {
+    "accepted_attempt_count": 0,
+    "attempt_count": 1,
+    "rejected_attempt_count": 1,
+    "report_only": true
+  }
+}

@@ -1,0 +1,71 @@
+{
+  "accepted_sink_fields": [
+    "annotation",
+    "dashboard_url",
+    "trace_id"
+  ],
+  "blocked_reasons": [],
+  "default_change_allowed": false,
+  "gate_advanced": false,
+  "human_mergeability_claim_allowed": false,
+  "improvement_claim_allowed": false,
+  "metric_applyable": false,
+  "policy_mutated": false,
+  "powered_improvement_claim_allowed": false,
+  "rejected_sink_fields": [],
+  "report_only": {
+    "config_mutated": false,
+    "default_change_allowed": false,
+    "operator_review_required": true,
+    "policy_mutated": false
+  },
+  "report_path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/auto-evolve-observability-sink-20260626/artifacts/slice1/observability_sink_report.json",
+  "report_sha256": "03a1ade85bcfad69fefa6de700f4fdf221131ba30d5b49b750b1f95157d46416",
+  "schema_version": "supervisor-auto-evolve-observability-sink/v1",
+  "sink_authority_flags": {
+    "gate_advanced": false,
+    "human_mergeability_claim_allowed": false,
+    "improvement_claim_allowed": false,
+    "metric_applyable": false,
+    "policy_mutated": false,
+    "powered_improvement_claim_allowed": false
+  },
+  "sink_kind": "langfuse",
+  "sink_recommendation": {
+    "chosen": "langfuse",
+    "reason": "Langfuse is preferred for LiteLLM-native tracing; Opik remains a candidate if the annotation/eval workflow becomes the primary product surface.",
+    "scope": "read_only_artifact_ingest",
+    "trust_path_role": "none"
+  },
+  "source_artifacts": {
+    "aeb0": {
+      "blocked_reasons": [
+        "missing_cli_prerequisite:allow_dataset_fetch"
+      ],
+      "exists": true,
+      "path": "docs/dual-agent/auto-evolve-benchmark-promotion-bridge-20260625/artifacts/aeb0-blocked/official_all_arms_diagnostic_report.json",
+      "sha256": "f0f29561f8cc8e3e50f793542e6cf4d1b1ebb9cedb489ba9456b5ac6c70ec5f3",
+      "status": "blocked"
+    }
+  },
+  "source_authority_flags": {
+    "gate_advanced": false,
+    "human_mergeability_claim_allowed": false,
+    "improvement_claim_allowed": false,
+    "metric_applyable": false,
+    "policy_mutated": false,
+    "powered_improvement_claim_allowed": false
+  },
+  "status": "reported",
+  "trust_path": {
+    "can_change_effective_vote": false,
+    "can_change_roster_selection": false,
+    "can_satisfy_candidate_overlay": false,
+    "can_satisfy_empty_floor": false,
+    "can_satisfy_evaluator_run_ref": false,
+    "can_satisfy_policy_derivation": false,
+    "can_satisfy_quality_controls": false,
+    "sink_never_in_trust_path": true
+  },
+  "warnings": []
+}

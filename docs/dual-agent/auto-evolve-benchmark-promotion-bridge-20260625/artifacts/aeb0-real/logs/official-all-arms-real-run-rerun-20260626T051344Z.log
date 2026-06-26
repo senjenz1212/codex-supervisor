@@ -1,0 +1,47 @@
+started_at=2026-06-26T05:13:44Z
+cwd=/Users/sam.zhang/Documents/codex-supervisor
+python=Python 3.12.13
+docker_version="29.4.0"
+command=.venv/bin/python -m supervisor.swe_bench_mergeability_cli --official-all-arms-diagnostic --allow-dataset-fetch --dataset ScaleAI/SWE-bench_Pro --dataset-split test --predictions docs/dual-agent/auto-evolve-benchmark-promotion-bridge-20260625/artifacts/aeb0-real/run-inputs/pro-gold-predictions.jsonl --output-dir docs/dual-agent/auto-evolve-benchmark-promotion-bridge-20260625/artifacts/aeb0-real --oracle-adapter supervisor.swe_bench_official_oracle:run_official_harness_oracle --oracle-adapter-kind official_docker_or_equivalent --reviewer-panel-mode unavailable --instance-id instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan --instance-id instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c --instance-id instance_NodeBB__NodeBB-51d8f3b195bddb13a13ddc0de110722774d9bb1b-vf2cf3cbd463b7ad942381f1c6d077626485a1e9e
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+{
+  "all_arms_populated": false,
+  "allow_live": false,
+  "baseline_available": false,
+  "candidate_count": 3,
+  "diagnostic_ready_for_scale": false,
+  "far_tar_frr": null,
+  "improvement_claim_allowed": false,
+  "instance_count": 3,
+  "live_generation_used": false,
+  "manifest": "",
+  "matched_true_accept_status": {
+    "s_full": "unavailable",
+    "s_probe": "unavailable"
+  },
+  "metric_applyable": false,
+  "metrics_suppressed": true,
+  "metrics_unavailable_reasons": [
+    "baseline_unavailable",
+    "insufficient_oracle_bad",
+    "insufficient_oracle_good",
+    "matched_true_accept_not_computed:unavailable",
+    "missing_arms:baseline,s_probe,s_full,oracle_ceiling",
+    "official_replay_unavailable",
+    "oracle_ceiling_unavailable",
+    "oracle_unavailable",
+    "reviewer_panel_full_roster_unavailable",
+    "s_full_unavailable",
+    "s_probe_unavailable"
+  ],
+  "oracle_ceiling_available": false,
+  "report": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/auto-evolve-benchmark-promotion-bridge-20260625/artifacts/aeb0-real/official_all_arms_diagnostic_report.json",
+  "report_sha256": "7fe0497415147010652f7e4a5e4b81e58e6e65137a3495d45bf0aaa72125d14d",
+  "reviewer_panel_mode": "unavailable",
+  "s_full_available": false,
+  "s_probe_available": false,
+  "s_probe_execution_substrate": null,
+  "status": "unavailable"
+}
+finished_at=2026-06-26T05:18:39Z
+exit_code=0

@@ -1,0 +1,4 @@
+$ .venv/bin/python - <<PY imports
+swebench 4.1.0
+datasets 5.0.0
+docker 7.1.0

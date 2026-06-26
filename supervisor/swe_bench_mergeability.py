@@ -2412,9 +2412,10 @@ def swebench_mergeability_official_replay_runner(
         for prediction in record_predictions:
             candidate_id = str(prediction["candidate_id"])
             model_patch = str(prediction["model_patch"])
-            patch_path = (
-                patch_dir
-                / f"{_safe_artifact_fragment(instance_id)}-{_safe_artifact_fragment(candidate_id)}.patch"
+            patch_path = patch_dir / _safe_artifact_filename(
+                instance_id,
+                candidate_id,
+                suffix=".patch",
             )
             patch_path.write_text(model_patch, encoding="utf-8")
             candidate: dict[str, Any] = {
@@ -2723,6 +2724,127 @@ def _official_all_arms_unavailable_reviewer_panel(
     }
 
 
+def write_swebench_official_all_arms_blocked_artifact(
+    *,
+    output_dir: str | Path,
+    blocked_reasons: Sequence[str],
+    dataset: str = "",
+    dataset_split: str = "",
+    predictions_path: str | Path | None = None,
+    oracle_adapter_kind: str = "",
+    min_good: int = 1,
+    min_bad: int = 1,
+    attempt_stage: str = "recon",
+    attempt_evidence: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Write the AEB-0 artifact when a pre-run blocker prevents replay."""
+    output_path = Path(output_dir).expanduser().resolve()
+    output_path.mkdir(parents=True, exist_ok=True)
+    reasons = [str(reason) for reason in blocked_reasons if str(reason)]
+    if not reasons:
+        reasons = ["real_official_all_arms_artifact_required"]
+    dataset_readiness = _aeb0_dataset_readiness(dataset)
+    bridge_report = _unavailable_official_bridge_report(
+        unavailable_reasons=reasons,
+    )
+    report: dict[str, Any] = {
+        "schema_version": (
+            SWEBENCH_MERGEABILITY_OFFICIAL_ALL_ARMS_DIAGNOSTIC_SCHEMA_VERSION
+        ),
+        "status": "unavailable",
+        "dataset": str(dataset or ""),
+        "dataset_split": str(dataset_split or ""),
+        "predictions_path": str(Path(predictions_path).expanduser())
+        if predictions_path
+        else "",
+        "official_replay_report_path": "",
+        "official_replay_report_sha256": "",
+        "official_replay_status": "not_started",
+        "attempt_stage": str(attempt_stage or "recon"),
+        "attempt_evidence": dict(attempt_evidence or {}),
+        "oracle_adapter_kind": str(oracle_adapter_kind or ""),
+        "official_replay_used": False,
+        "diagnostic_only": True,
+        "plumbing_smoke_only": True,
+        "instance_count": 0,
+        "candidate_count": 0,
+        "n_good": 0,
+        "n_bad": 0,
+        "min_good": int(min_good),
+        "min_bad": int(min_bad),
+        "arms_present": [],
+        "missing_arms": list(ARM_NAMES),
+        "all_arms_populated": False,
+        "baseline_available": False,
+        "s_probe_available": False,
+        "s_full_available": False,
+        "oracle_ceiling_available": False,
+        "configured_reviewer_panel_preflight": {},
+        "hidden_field_leak_check": {},
+        "matched_true_accept_status": {
+            ARM_S_PROBE: "unavailable",
+            ARM_S_FULL: "unavailable",
+        },
+        "supervisor_full_gate_matched_true_accept": {},
+        "false_accept_reduction_at_matched_true_accept": {},
+        "s_probe_vs_s_full": {},
+        "reviewer_marginal_delta_at_matched_true_accept": {},
+        "far_tar_frr": None,
+        "benchmark_oracle": {
+            "kind": "swe_bench_held_out_test_pass_proxy",
+            "oracle_adapter_kind": str(oracle_adapter_kind or ""),
+            "scoring_authority": "held_out_fail_to_pass_and_pass_to_pass_tests",
+            "maintainer_mergeability_claim_allowed": False,
+            "limitation_note": (
+                "SWE-bench reports held-out test-pass behavior; it is not a "
+                "maintainer would-merge judgment."
+            ),
+        },
+        "swe_bench_oracle_limitation_note": (
+            "SWE-bench held-out tests are a test-pass proxy, not human "
+            "maintainer mergeability."
+        ),
+        "no_maintainer_mergeability_claim": True,
+        "decision_freeze": {},
+        "candidate_generation": {},
+        "reviewer_provenance": {},
+        "abstention_coverage": {},
+        "mergeability_rubric_coverage": {},
+        "generator_disjointness": {},
+        "self_preference_warnings": [],
+        "metrics_unavailable_reasons": list(reasons),
+        "all_arms_populated_is_not_success_without_matched_tar": True,
+        "diagnostic_ready_for_scale": False,
+        "dataset_readiness": dataset_readiness,
+        "aeb0_artifact_gate": _aeb0_artifact_gate(
+            status="unavailable",
+            blocked_reasons=reasons,
+            dataset_readiness=dataset_readiness,
+        ),
+        "real_evidence_claim_blocked_reasons": _aeb0_real_claim_blocked_reasons(
+            blocked_reasons=reasons,
+            dataset_readiness=dataset_readiness,
+        ),
+        "bridge_report": bridge_report,
+        **_aeb0_authority_flags(),
+        "report_only": {
+            "default_change_allowed": False,
+            "config_mutated": False,
+            "policy_mutated": False,
+        },
+    }
+    report_path = output_path / "official_all_arms_diagnostic_report.json"
+    report["report_path"] = str(report_path)
+    report["report_sha256"] = _sha256_json({
+        key: value for key, value in report.items() if key != "report_sha256"
+    })
+    report_path.write_text(
+        json.dumps(report, sort_keys=True, indent=2, default=str),
+        encoding="utf-8",
+    )
+    return report
+
+
 def _build_official_all_arms_diagnostic_report(
     *,
     official_report: Mapping[str, Any],
@@ -2840,6 +2962,8 @@ def _build_official_all_arms_diagnostic_report(
             if str(reason)
         )
     status = "completed" if not unavailable_reasons else "unavailable"
+    blocked_reasons = sorted(set(unavailable_reasons))
+    dataset_readiness = _aeb0_dataset_readiness(str(official_report.get("dataset") or ""))
     reviewer_analysis_rows = _official_reviewer_analysis_rows(
         official_report=official_report,
     )
@@ -2868,6 +2992,7 @@ def _build_official_all_arms_diagnostic_report(
         rows=rows,
         official_report=official_report,
     )
+    attempt_stage = _official_all_arms_attempt_stage(official_report)
     return {
         "schema_version": (
             SWEBENCH_MERGEABILITY_OFFICIAL_ALL_ARMS_DIAGNOSTIC_SCHEMA_VERSION
@@ -2878,6 +3003,7 @@ def _build_official_all_arms_diagnostic_report(
         "official_replay_report_path": str(official_report.get("report_path") or ""),
         "official_replay_report_sha256": str(official_report.get("report_sha256") or ""),
         "official_replay_status": str(official_report.get("status") or ""),
+        "attempt_stage": attempt_stage,
         "oracle_adapter_kind": str(official_report.get("oracle_adapter_kind") or ""),
         "official_replay_used": True,
         "diagnostic_only": True,
@@ -2937,10 +3063,43 @@ def _build_official_all_arms_diagnostic_report(
         "self_preference_warnings": list(
             generator_disjointness.get("self_preference_warnings") or []
         ),
-        "metrics_unavailable_reasons": sorted(set(unavailable_reasons)),
+        "metrics_unavailable_reasons": blocked_reasons,
         "all_arms_populated_is_not_success_without_matched_tar": True,
         "diagnostic_ready_for_scale": status == "completed",
+        "dataset_readiness": dataset_readiness,
+        "aeb0_artifact_gate": _aeb0_artifact_gate(
+            status=status,
+            blocked_reasons=blocked_reasons,
+            dataset_readiness=dataset_readiness,
+        ),
+        "real_evidence_claim_blocked_reasons": _aeb0_real_claim_blocked_reasons(
+            blocked_reasons=blocked_reasons,
+            dataset_readiness=dataset_readiness,
+        ),
         "bridge_report": dict(bridge) if isinstance(bridge, Mapping) else {},
+        **_aeb0_authority_flags(),
+        "report_only": {
+            "default_change_allowed": False,
+            "config_mutated": False,
+            "policy_mutated": False,
+        },
+    }
+
+
+def _official_all_arms_attempt_stage(official_report: Mapping[str, Any]) -> str:
+    if official_report.get("status") == "completed":
+        return "scoring"
+    if isinstance(official_report.get("replay_report"), Mapping):
+        return "harness"
+    if int(official_report.get("instance_count") or 0) > 0:
+        return "harness"
+    if str(official_report.get("dataset") or ""):
+        return "dataset_fetch"
+    return "recon"
+
+
+def _aeb0_authority_flags() -> dict[str, bool]:
+    return {
         "metric_applyable": False,
         "improvement_claim_allowed": False,
         "powered_improvement_claim_allowed": False,
@@ -2948,12 +3107,88 @@ def _build_official_all_arms_diagnostic_report(
         "default_change_allowed": False,
         "policy_mutated": False,
         "gate_advanced": False,
-        "report_only": {
-            "default_change_allowed": False,
-            "config_mutated": False,
-            "policy_mutated": False,
-        },
     }
+
+
+def _aeb0_dataset_readiness(dataset: str) -> dict[str, Any]:
+    dataset_text = str(dataset or "")
+    normalized = dataset_text.lower().replace("_", "-")
+    verified_smoke_only = "swe-bench-verified" in normalized or (
+        "verified" in normalized and "swe-bench" in normalized
+    )
+    pro_or_held_out = (
+        "swe-bench-pro" in normalized
+        or normalized.endswith("/pro")
+        or "held-out" in normalized
+        or "heldout" in normalized
+    )
+    if verified_smoke_only:
+        claim_scope = "smoke_only"
+    elif pro_or_held_out:
+        claim_scope = "candidate_serious_benchmark"
+    else:
+        claim_scope = "fixture_or_unknown_smoke"
+    return {
+        "dataset": dataset_text,
+        "claim_scope": claim_scope,
+        "verified_smoke_only": verified_smoke_only,
+        "pro_or_held_out_equivalent": pro_or_held_out,
+        "serious_benchmark_claim_allowed": False,
+        "reason": (
+            "swe_bench_verified_is_plumbing_smoke_only"
+            if verified_smoke_only
+            else (
+                "serious_claim_still_requires_human_review_and_powered_evidence"
+                if pro_or_held_out
+                else "dataset_not_pinned_to_pro_or_held_out_equivalent"
+            )
+        ),
+    }
+
+
+def _aeb0_artifact_gate(
+    *,
+    status: str,
+    blocked_reasons: Sequence[str],
+    dataset_readiness: Mapping[str, Any],
+) -> dict[str, Any]:
+    blocked = [str(reason) for reason in blocked_reasons if str(reason)]
+    dataset_blocked_reason = _aeb0_dataset_blocked_reason(dataset_readiness)
+    if dataset_blocked_reason and dataset_blocked_reason not in blocked:
+        blocked.append(dataset_blocked_reason)
+    gate_status = "completed" if status == "completed" and not blocked else "blocked"
+    return {
+        "gate_id": "AEB-0",
+        "name": "Real Official All-Arms Artifact Gate",
+        "status": gate_status,
+        "blocked_reasons": blocked,
+        "real_official_all_arms_artifact_required": True,
+        "real_or_blocked_artifact": "real" if gate_status == "completed" else "blocked",
+        "real_benchmark_claim_allowed": gate_status == "completed",
+        "authority_flags": _aeb0_authority_flags(),
+        "dataset_claim_scope": str(dataset_readiness.get("claim_scope") or ""),
+    }
+
+
+def _aeb0_real_claim_blocked_reasons(
+    *,
+    blocked_reasons: Sequence[str],
+    dataset_readiness: Mapping[str, Any],
+) -> list[str]:
+    reasons = [str(reason) for reason in blocked_reasons if str(reason)]
+    dataset_reason = _aeb0_dataset_blocked_reason(dataset_readiness)
+    if dataset_reason and dataset_reason not in reasons:
+        reasons.append(dataset_reason)
+    return reasons
+
+
+def _aeb0_dataset_blocked_reason(dataset_readiness: Mapping[str, Any]) -> str:
+    if bool(dataset_readiness.get("pro_or_held_out_equivalent")):
+        return ""
+    return str(
+        dataset_readiness.get("reason")
+        or "dataset_not_pinned_to_pro_or_held_out_equivalent"
+    )
 
 
 def _official_reviewer_analysis_rows(
@@ -3063,13 +3298,40 @@ def _official_decision_freeze_summary(
     decision_rows = bridge.get("decision_phase_rows") if isinstance(bridge, Mapping) else []
     if not isinstance(decision_rows, Sequence) or isinstance(decision_rows, (str, bytes)):
         decision_rows = []
+    if not decision_rows:
+        decision_rows = _official_frozen_decision_rows_from_instance_reports(
+            instance_reports
+        )
+    decision_phase_sha256 = str(bridge.get("decision_phase_sha256") or "")
+    if not decision_phase_sha256 and decision_rows:
+        decision_phase_sha256 = _sha256_json(decision_rows)
     return {
         "oracle_after_reviewer_decisions": bool(frozen_paths and oracle_paths),
         "frozen_decision_row_count": len(decision_rows),
-        "decision_phase_sha256": str(bridge.get("decision_phase_sha256") or ""),
+        "decision_phase_sha256": decision_phase_sha256,
         "frozen_decisions_paths": frozen_paths,
         "oracle_outputs_paths": oracle_paths,
     }
+
+
+def _official_frozen_decision_rows_from_instance_reports(
+    instance_reports: Sequence[Any],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for instance_report in instance_reports:
+        if not isinstance(instance_report, Mapping):
+            continue
+        frozen = instance_report.get("frozen_decisions")
+        if not isinstance(frozen, Mapping):
+            continue
+        frozen_rows = frozen.get("rows")
+        if not isinstance(frozen_rows, Sequence) or isinstance(
+            frozen_rows,
+            (str, bytes),
+        ):
+            continue
+        rows.extend(dict(row) for row in frozen_rows if isinstance(row, Mapping))
+    return rows
 
 
 def _official_candidate_generation_summary(
@@ -4440,7 +4702,11 @@ def _live_generation_record(
     candidate_id = str(generation["candidate_id"])
     patch_text = str(generation["model_patch"])
     patch_hash = sha256(patch_text.encode("utf-8")).hexdigest()
-    patch_path = patch_dir / f"{_safe_artifact_fragment(instance_id)}-{_safe_artifact_fragment(candidate_id)}.patch"
+    patch_path = patch_dir / _safe_artifact_filename(
+        instance_id,
+        candidate_id,
+        suffix=".patch",
+    )
     patch_path.write_text(patch_text, encoding="utf-8")
     return {
         "arm": arm,
@@ -4470,6 +4736,24 @@ def _safe_artifact_fragment(value: str) -> str:
     for char in str(value):
         safe.append(char if char.isalnum() or char in {"-", "_"} else "_")
     return "".join(safe).strip("_") or "artifact"
+
+
+def _safe_artifact_filename(
+    *fragments: str,
+    suffix: str = "",
+    max_length: int = 180,
+) -> str:
+    clean_suffix = str(suffix or "")
+    stem = "-".join(_safe_artifact_fragment(fragment) for fragment in fragments)
+    if len(stem) + len(clean_suffix) <= max_length:
+        return f"{stem}{clean_suffix}"
+
+    digest = sha256(
+        "\0".join(str(fragment) for fragment in fragments).encode("utf-8")
+    ).hexdigest()[:16]
+    prefix_limit = max(1, max_length - len(clean_suffix) - len(digest) - 1)
+    prefix = stem[:prefix_limit].rstrip("-_") or "artifact"
+    return f"{prefix}-{digest}{clean_suffix}"
 
 
 def _live_unavailable_report(
