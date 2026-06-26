@@ -28,6 +28,7 @@ from supervisor.swe_bench_mergeability import (
     SWEBENCH_PRO_FORBIDDEN_KEYS,
     SwebenchMergeabilityFixtureRunnerError,
     SwebenchProBridgeError,
+    _default_official_repo_materializer,
     build_swe_bench_pro_public_packet,
     swebench_mergeability_fixture_runner,
     swebench_mergeability_official_all_arms_diagnostic_runner,
@@ -1626,6 +1627,68 @@ def _official_materializer(*, record, output_dir):
     return bundle
 
 
+def test_default_official_repo_materializer_strips_git_history(tmp_path):
+    source_repo = tmp_path / "source"
+    source_repo.mkdir()
+    subprocess.run(["git", "init"], cwd=source_repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=source_repo,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test"],
+        cwd=source_repo,
+        check=True,
+    )
+    (source_repo / "module.py").write_text("value = 'base'\n", encoding="utf-8")
+    subprocess.run(["git", "add", "module.py"], cwd=source_repo, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "base"],
+        cwd=source_repo,
+        check=True,
+        capture_output=True,
+    )
+    base_commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=source_repo,
+        text=True,
+        check=True,
+        capture_output=True,
+    ).stdout.strip()
+    (source_repo / "future_fix.py").write_text("SECRET FUTURE FIX\n", encoding="utf-8")
+    subprocess.run(["git", "add", "future_fix.py"], cwd=source_repo, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "future fix"],
+        cwd=source_repo,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "tag", "secret-future-tag"],
+        cwd=source_repo,
+        check=True,
+        capture_output=True,
+    )
+
+    bundle = _default_official_repo_materializer(
+        record={"repo": str(source_repo), "base_commit": base_commit},
+        output_dir=tmp_path / "bundle",
+    )
+
+    assert (bundle / "module.py").read_text(encoding="utf-8") == "value = 'base'\n"
+    assert not (bundle / "future_fix.py").exists()
+    assert not (bundle / ".git").exists()
+    result = subprocess.run(
+        ["git", "show", "secret-future-tag:future_fix.py"],
+        cwd=bundle,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode != 0
+
+
 def test_official_replay_gold_smoke_without_produced_baseline_receipt_is_unavailable(tmp_path):
     prediction = {
         "instance_id": "official_demo__repo-001",
@@ -1819,6 +1882,76 @@ def test_official_replay_materializes_public_bundle_and_excludes_hidden_oracle(t
     ).read_text(encoding="utf-8")
     for forbidden in ("FAIL_TO_PASS", "PASS_TO_PASS", "SECRET TEST PATCH"):
         assert forbidden not in frozen_text
+
+
+def test_official_replay_keeps_lowercase_pro_fields_post_freeze(tmp_path):
+    predictions_path = _write_official_predictions(tmp_path)
+    record = {
+        **_official_record(),
+        "fail_to_pass": ["tests/test_parser.py::test_lowercase_secret"],
+        "pass_to_pass": json.dumps(["tests/test_parser.py::test_lowercase_existing"]),
+        "before_repo_set_cmd": "echo do-not-run\ngit checkout abc123 -- SECRET_SETUP_FILE",
+        "selected_test_files_to_run": json.dumps(["SECRET_SELECTED_TEST_FILE"]),
+        "dockerhub_tag": "SECRET_DOCKER_TAG",
+    }
+    observed: dict[str, object] = {}
+
+    def oracle(context):
+        observed.update({
+            "fail_to_pass": list(context["fail_to_pass"]),
+            "pass_to_pass": list(context["pass_to_pass"]),
+            "before_repo_set_cmd": context["before_repo_set_cmd"],
+            "selected_test_files_to_run": list(context["selected_test_files_to_run"]),
+            "dockerhub_tag": context["dockerhub_tag"],
+            "frozen_exists": Path(context["frozen_decisions_path"]).exists(),
+        })
+        return {
+            "fail_to_pass_status": "pass",
+            "pass_to_pass_status": "pass",
+            "oracle_adapter_receipt": _official_adapter_receipt(context),
+        }
+
+    report = swebench_mergeability_official_replay_runner(
+        dataset="fixture-official",
+        dataset_split="test",
+        predictions_path=predictions_path,
+        output_dir=tmp_path / "out",
+        dataset_loader=lambda **_kwargs: [record],
+        repo_materializer=_official_materializer,
+        oracle_runner=oracle,
+        oracle_adapter_kind="official_docker_or_equivalent",
+    )
+
+    assert observed == {
+        "fail_to_pass": ["tests/test_parser.py::test_lowercase_secret"],
+        "pass_to_pass": ["tests/test_parser.py::test_lowercase_existing"],
+        "before_repo_set_cmd": "echo do-not-run\ngit checkout abc123 -- SECRET_SETUP_FILE",
+        "selected_test_files_to_run": ["SECRET_SELECTED_TEST_FILE"],
+        "dockerhub_tag": "SECRET_DOCKER_TAG",
+        "frozen_exists": True,
+    }
+    assert report["hidden_field_leak_check"]["ok"] is True
+
+    instance_report = report["replay_report"]["instance_reports"][0]
+    reviewer_packet_path = Path(
+        instance_report["reviewer_packets"][0]["reviewer_packet_path"]
+    )
+    frozen_path = Path(instance_report["frozen_decisions_path"])
+    public_packet_text = json.dumps(report["bridge_report"]["public_packets"], sort_keys=True)
+    public_text = "\n".join([
+        public_packet_text,
+        reviewer_packet_path.read_text(encoding="utf-8"),
+        frozen_path.read_text(encoding="utf-8"),
+    ])
+    for forbidden in (
+        "before_repo_set_cmd",
+        "selected_test_files_to_run",
+        "dockerhub_tag",
+        "SECRET_SETUP_FILE",
+        "SECRET_SELECTED_TEST_FILE",
+        "SECRET_DOCKER_TAG",
+    ):
+        assert forbidden not in public_text
 
 
 def test_official_replay_freezes_decisions_before_oracle_adapter(tmp_path):
@@ -2534,6 +2667,8 @@ def _official_adapter_receipt(
                 / "fake-official-report.json"
             ),
         },
+        "frozen_decisions_sha256": context["frozen_decisions_sha256"],
+        "model_patch_sha256": context["model_patch_sha256"],
         "fail_to_pass_status": fail_to_pass_status,
         "pass_to_pass_status": pass_to_pass_status,
         "frozen_decisions_exists": Path(
@@ -2924,6 +3059,42 @@ def test_official_replay_label_only_adapter_receipt_is_unavailable(tmp_path):
     assert "far_tar_frr" not in json.dumps(instance_report_on_disk)
     assert report["metric_applyable"] is False
     assert report["improvement_claim_allowed"] is False
+
+
+def test_official_replay_receipt_hash_mismatch_is_unavailable(tmp_path):
+    predictions_path = _write_official_predictions(tmp_path)
+
+    def mismatched_hash_adapter(context):
+        receipt = _official_adapter_receipt(context)
+        receipt["frozen_decisions_sha256"] = "wrong-frozen-sha"
+        receipt["model_patch_sha256"] = "wrong-model-patch-sha"
+        return {
+            "fail_to_pass_status": "pass",
+            "pass_to_pass_status": "pass",
+            "oracle_adapter_receipt": receipt,
+        }
+
+    report = swebench_mergeability_official_replay_runner(
+        dataset="fixture-official",
+        dataset_split="test",
+        predictions_path=predictions_path,
+        output_dir=tmp_path / "out",
+        dataset_loader=lambda **_kwargs: [_official_record()],
+        repo_materializer=_official_materializer,
+        oracle_runner=mismatched_hash_adapter,
+        oracle_adapter_kind="official_docker_or_equivalent",
+    )
+
+    assert report["status"] == "unavailable"
+    validation = report["oracle_receipt_validation"]
+    assert validation["validated"] is False
+    assert {
+        (mismatch.get("field"), mismatch.get("reason"))
+        for mismatch in validation["mismatches"]
+    } >= {
+        ("frozen_decisions_sha256", "receipt_hash_mismatch"),
+        ("model_patch_sha256", "receipt_hash_mismatch"),
+    }
 
 
 def test_official_replay_cli_suppresses_metrics_when_oracle_proof_invalid(tmp_path):
