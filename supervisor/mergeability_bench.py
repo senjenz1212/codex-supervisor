@@ -1803,6 +1803,13 @@ def run_powered_factorial_mergeability_evaluation(
 
     The report compares the same candidate pool across factorial arms. Oracle
     labels are used only after arm decisions are fixed, for aggregate metrics.
+
+    ``powered_thresholds`` accepts ``min_bad``/``min_good`` for raw oracle
+    bucket sample-size sufficiency and ``min_discordant``/``alpha`` for the
+    paired McNemar gate over full-supervisor-stack vs single-agent-baseline
+    decisions. ``metric_applyable`` requires both raw sample-size sufficiency
+    and paired-power sufficiency; ``promotion_guardrails`` exposes each side
+    as ``sample_size_threshold_met`` and ``paired_power_threshold_met``.
     """
     started = time.monotonic()
     bench_root_path = Path(bench_root).expanduser().resolve()
