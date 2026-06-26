@@ -1825,9 +1825,8 @@ def test_paired_report_separates_heldout_metrics_and_confidence_intervals(tmp_pa
         assert arm["n_good"] == arm["true_accept_denominator"]
         false_accept_ci = arm["false_accept_confidence_interval"]
         true_accept_ci = arm["true_accept_confidence_interval"]
-        assert false_accept_ci["method"] == "wilson_score"
-        assert true_accept_ci["method"] == "wilson_score"
-        assert false_accept_ci["label"] == "approximate_binary_proportion_interval"
+        assert false_accept_ci["method"] in {"wilson_score", "rule_of_three"}
+        assert true_accept_ci["method"] in {"wilson_score", "rule_of_three"}
         assert false_accept_ci["denominator"] == arm["false_accept_denominator"]
         assert true_accept_ci["denominator"] == arm["true_accept_denominator"]
 
@@ -2400,8 +2399,14 @@ def test_powered_factorial_records_far_tar_frr_confidence_and_discordance(tmp_pa
     assert "false_accept_rate" in arm
     assert "true_accept_rate" in arm
     assert "false_reject_rate" in arm
-    assert arm["false_accept_confidence_interval"]["method"] == "wilson_score"
-    assert arm["true_accept_confidence_interval"]["method"] == "wilson_score"
+    assert arm["false_accept_confidence_interval"]["method"] in {
+        "wilson_score",
+        "rule_of_three",
+    }
+    assert arm["true_accept_confidence_interval"]["method"] in {
+        "wilson_score",
+        "rule_of_three",
+    }
     discordance = report["paired_discordant_counts"]["full_supervisor_stack"]
     assert discordance["candidate_count"] == report["candidate_count"]
     assert discordance["left_accept_right_reject"] >= 1
@@ -2504,10 +2509,13 @@ def test_powered_threshold_met_may_allow_metric_but_never_mutates_policy(tmp_pat
         output_dir=tmp_path,
         arm_decisions=_factorial_arm_decisions(),
         reviewer_panel_results=_factorial_reviewer_results(),
-        powered_thresholds={"min_bad": 1, "min_good": 1},
+        powered_thresholds={"min_bad": 1, "min_good": 1, "min_discordant": 1},
     )
 
     assert report["sample_size_sufficiency"]["status"] == "sufficient"
+    assert report["paired_power"]["status"] == "sufficient"
+    assert report["promotion_guardrails"]["sample_size_threshold_met"] is True
+    assert report["promotion_guardrails"]["paired_power_threshold_met"] is True
     assert report["metric_applyable"] is True
     assert report["improvement_claim_allowed"] is False
     assert report["default_change_allowed"] is False

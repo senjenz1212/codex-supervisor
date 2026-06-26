@@ -586,6 +586,7 @@ def test_far_tar_frr_denominators_use_post_decision_oracle_labels():
     assert far_tar_frr["n_good"] == 2
     assert far_tar_frr["false_accept_confidence_interval"]["denominator"] == 1
     assert far_tar_frr["true_accept_confidence_interval"]["denominator"] == 2
+    assert far_tar_frr["false_reject_confidence_interval"]["denominator"] == 2
     # Decision rows are unchanged even after oracle labels attached.
     decision_row = report["decision_phase_rows"][0]
     assert "oracle_accept" not in decision_row

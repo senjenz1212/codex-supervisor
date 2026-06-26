@@ -1969,6 +1969,10 @@ def run_powered_factorial_mergeability_evaluation(
             int(arm["false_reject_count"]),
             int(arm["false_reject_denominator"]),
         )
+        arm["false_reject_rate_summary"] = _rate_summary(
+            int(arm["false_reject_count"]),
+            int(arm["false_reject_denominator"]),
+        )
         arm["improvement_claim_allowed"] = False if arm_name == "oracle_ceiling" else None
 
     candidate_pool = [
@@ -1999,6 +2003,11 @@ def run_powered_factorial_mergeability_evaluation(
         for arm in FACTORIAL_ARM_DEFINITIONS
         if arm != "single_agent_baseline"
     }
+    paired_power = _paired_power_sufficiency(
+        paired_discordant,
+        powered_thresholds=powered_thresholds or {},
+        required_comparison="full_supervisor_stack",
+    )
     leave_one = _leave_one_reviewer_out_analysis(
         rows,
         reviewer_panel_results=reviewer_panel_results or {},
@@ -2014,7 +2023,9 @@ def run_powered_factorial_mergeability_evaluation(
         all_gaming_flags.add("reviewer_panel_unavailable")
     if arms["single_agent_baseline"]["unavailable_count"]:
         all_gaming_flags.add("baseline_evidence_unavailable")
-    powered = sample_size["status"] == "sufficient"
+    sample_size_powered = sample_size["status"] == "sufficient"
+    paired_powered = paired_power["status"] == "sufficient"
+    powered = sample_size_powered and paired_powered
     full_stack_available = arms["full_supervisor_stack"]["unavailable_count"] == 0
     metric_applyable = bool(powered and full_stack_available and not all_gaming_flags)
     trend_rows = _factorial_trend_rows(
@@ -2036,12 +2047,15 @@ def run_powered_factorial_mergeability_evaluation(
         "arms": arms,
         "matched_true_accept": matched_true_accept,
         "paired_discordant_counts": paired_discordant,
+        "paired_power": paired_power,
         "leave_one_reviewer_out": leave_one,
         "sample_size_sufficiency": sample_size,
         "per_task_results": rows,
         "trend_rows": trend_rows,
         "promotion_guardrails": {
             "powered_threshold_required": True,
+            "sample_size_threshold_met": sample_size_powered,
+            "paired_power_threshold_met": paired_powered,
             "powered_threshold_met": powered,
             "gaming_flags_block_promotion": bool(all_gaming_flags),
             "reviewer_panel_unavailable_blocks_full_stack_claim": not full_stack_available,
@@ -4188,6 +4202,9 @@ def _summarize_acceptance_arm(
     true_reject_count = sum(
         1 for row in available_rows if not row[accept_key] and not row["oracle_accept"]
     )
+    false_accept_ci = _wilson_interval(false_accept_count, false_accept_denominator)
+    true_accept_ci = _wilson_interval(true_accept_count, true_accept_denominator)
+    false_reject_ci = _wilson_interval(false_reject_count, true_accept_denominator)
     unavailable_count = sum(1 for row in rows if bool(row.get(unavailable_key)))
     summary = {
         "arm": arm,
@@ -4204,15 +4221,34 @@ def _summarize_acceptance_arm(
         "n_bad": false_accept_denominator,
         "false_accept_denominator": false_accept_denominator,
         "false_accept_rate": _rate(false_accept_count, false_accept_denominator),
-        "false_accept_confidence_interval": _wilson_interval(false_accept_count, false_accept_denominator),
+        "false_accept_confidence_interval": false_accept_ci,
+        "false_accept_rate_summary": {
+            "rate": _rate(false_accept_count, false_accept_denominator),
+            "ci_low": false_accept_ci["lower"],
+            "ci_high": false_accept_ci["upper"],
+            "confidence_interval": false_accept_ci,
+        },
         "true_accept_count": true_accept_count,
         "n_good": true_accept_denominator,
         "true_accept_denominator": true_accept_denominator,
         "true_accept_rate": _rate(true_accept_count, true_accept_denominator),
-        "true_accept_confidence_interval": _wilson_interval(true_accept_count, true_accept_denominator),
+        "true_accept_confidence_interval": true_accept_ci,
+        "true_accept_rate_summary": {
+            "rate": _rate(true_accept_count, true_accept_denominator),
+            "ci_low": true_accept_ci["lower"],
+            "ci_high": true_accept_ci["upper"],
+            "confidence_interval": true_accept_ci,
+        },
         "false_reject_count": false_reject_count,
         "false_reject_denominator": true_accept_denominator,
         "false_reject_rate": _rate(false_reject_count, true_accept_denominator),
+        "false_reject_confidence_interval": false_reject_ci,
+        "false_reject_rate_summary": {
+            "rate": _rate(false_reject_count, true_accept_denominator),
+            "ci_low": false_reject_ci["lower"],
+            "ci_high": false_reject_ci["upper"],
+            "confidence_interval": false_reject_ci,
+        },
         "true_reject_count": true_reject_count,
         "cost_usd": 0.0,
     }
@@ -4961,14 +4997,114 @@ def _paired_discordant_counts(
     left_reject_right_accept = sum(1 for row in rows if not row[left_key] and row[right_key])
     both_accept = sum(1 for row in rows if row[left_key] and row[right_key])
     both_reject = sum(1 for row in rows if not row[left_key] and not row[right_key])
+    discordant_pair_count = left_accept_right_reject + left_reject_right_accept
     return {
         "left_arm": left_arm,
         "right_arm": right_arm,
         "candidate_count": len(rows),
         "left_accept_right_reject": left_accept_right_reject,
         "left_reject_right_accept": left_reject_right_accept,
+        "discordant_pair_count": discordant_pair_count,
+        "concordant_pair_count": both_accept + both_reject,
         "both_accept": both_accept,
         "both_reject": both_reject,
+    }
+
+
+def _binomial_two_sided_mcnemar_p_value(b: int, c: int) -> float:
+    discordant_n = b + c
+    if discordant_n <= 0:
+        return 1.0
+    tail = sum(
+        math.comb(discordant_n, k)
+        for k in range(0, min(b, c) + 1)
+    ) / (2 ** discordant_n)
+    return min(1.0, 2 * tail)
+
+
+def _paired_power_comparison(
+    counts: Mapping[str, Any],
+    *,
+    min_discordant: int,
+    alpha: float,
+) -> dict[str, Any]:
+    b = int(counts.get("left_accept_right_reject") or 0)
+    c = int(counts.get("left_reject_right_accept") or 0)
+    discordant_n = b + c
+    base = {
+        "left_arm": counts.get("left_arm"),
+        "right_arm": counts.get("right_arm"),
+        "candidate_count": int(counts.get("candidate_count") or 0),
+        "left_accept_right_reject": b,
+        "left_reject_right_accept": c,
+        "discordant_pair_count": discordant_n,
+        "concordant_pair_count": int(counts.get("concordant_pair_count") or 0),
+        "min_discordant": min_discordant,
+        "alpha": alpha,
+    }
+    if discordant_n <= 0:
+        return {
+            **base,
+            "status": "underpowered",
+            "method": "no_discordant_pairs",
+            "statistic": None,
+            "p_value": None,
+            "mcnemar_test_passed": False,
+            "reasons": ["no_discordant_pairs"],
+        }
+    if discordant_n < min_discordant:
+        p_value = _binomial_two_sided_mcnemar_p_value(b, c)
+        return {
+            **base,
+            "status": "underpowered",
+            "method": "exact_binomial_two_sided",
+            "statistic": None,
+            "p_value": round(p_value, 6),
+            "mcnemar_test_passed": p_value <= alpha,
+            "reasons": ["insufficient_discordant_pairs"],
+        }
+    statistic = ((abs(b - c) - 1) ** 2) / discordant_n
+    p_value = math.erfc(math.sqrt(statistic / 2))
+    passed = p_value <= alpha
+    return {
+        **base,
+        "status": "sufficient" if passed else "underpowered",
+        "method": "mcnemar_chi_square_continuity_corrected",
+        "statistic": round(statistic, 6),
+        "p_value": round(p_value, 6),
+        "mcnemar_test_passed": passed,
+        "reasons": [] if passed else ["mcnemar_test_not_significant"],
+    }
+
+
+def _paired_power_sufficiency(
+    paired_discordant: Mapping[str, Mapping[str, Any]],
+    *,
+    powered_thresholds: Mapping[str, Any],
+    required_comparison: str,
+) -> dict[str, Any]:
+    min_discordant = int(powered_thresholds.get("min_discordant", 25))
+    alpha = float(powered_thresholds.get("alpha", 0.05))
+    comparisons = {
+        arm: _paired_power_comparison(
+            counts,
+            min_discordant=min_discordant,
+            alpha=alpha,
+        )
+        for arm, counts in sorted(paired_discordant.items())
+    }
+    required = comparisons.get(required_comparison)
+    status = (
+        "sufficient"
+        if required and required.get("status") == "sufficient"
+        else "underpowered"
+    )
+    return {
+        "status": status,
+        "required_comparison": required_comparison,
+        "min_discordant": min_discordant,
+        "alpha": alpha,
+        "comparisons": comparisons,
     }
 
 
@@ -5452,6 +5588,16 @@ def _wilson_interval(count: int, denominator: int) -> dict[str, Any]:
             "lower": None,
             "upper": None,
         }
+    if count == 0:
+        return {
+            "method": "rule_of_three",
+            "confidence": 0.95,
+            "label": "zero_event_rule_of_three_upper_bound",
+            "count": count,
+            "denominator": denominator,
+            "lower": 0.0,
+            "upper": round(min(1.0, 3 / denominator), 6),
+        }
     z = 1.959963984540054
     p_hat = count / denominator
     z2 = z * z
@@ -5469,6 +5615,16 @@ def _wilson_interval(count: int, denominator: int) -> dict[str, Any]:
         "denominator": denominator,
         "lower": round(max(0.0, centre - radius), 6),
         "upper": round(min(1.0, centre + radius), 6),
+    }
+
+
+def _rate_summary(count: int, denominator: int) -> dict[str, Any]:
+    interval = _wilson_interval(count, denominator)
+    return {
+        "rate": _rate(count, denominator),
+        "ci_low": interval["lower"],
+        "ci_high": interval["upper"],
+        "confidence_interval": interval,
     }
 
 

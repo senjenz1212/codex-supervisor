@@ -705,6 +705,9 @@ def swebench_pro_mergeability_bridge_report(
                 "true_accept_confidence_interval": arm_summaries[arm][
                     "true_accept_confidence_interval"
                 ],
+                "false_reject_confidence_interval": arm_summaries[arm][
+                    "false_reject_confidence_interval"
+                ],
             }
             for arm in ARM_NAMES
         }
