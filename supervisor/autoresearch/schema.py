@@ -287,6 +287,17 @@ class AutoresearchValidationReport:
         return payload
 
     def empty_floor_comparison(self) -> dict[str, Any] | None:
+        """Return the execution-derived empty-floor comparison or ``None``.
+
+        Returns ``None`` when ``metric_before``, ``metric_after``, or
+        ``metric_delta`` is missing -- including when the orchestrator dropped a
+        ``pending`` seed because the live evaluator could not measure a value.
+        A real live run that executed the stripped-overlay pre-flight pass and
+        recorded at least one candidate trial returns a dict that carries
+        ``metric_source`` (``evaluator_execution`` for live evidence), the
+        measured ``empty_floor_metric``, the candidate ``candidate_metric``
+        (median of trial metrics), ``metric_delta``, and the trial count.
+        """
         if self.metric_before is None or self.metric_after is None or self.metric_delta is None:
             return None
         return {
