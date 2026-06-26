@@ -6,10 +6,10 @@ for a post-acceptance validation step.
 """
 from __future__ import annotations
 
+import csv
 import json
 import shutil
 import subprocess
-import tempfile
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -171,20 +171,69 @@ def run_no_mistakes_validation(
     command = build_no_mistakes_command(cfg, intent=request.intent)
     skip_steps = _effective_skip_steps(cfg)
     cwd = Path(request.cwd).expanduser()
+    artifact_stash: dict[str, Any] | None = None
+
+    def finish(result: NoMistakesValidationResult) -> NoMistakesValidationResult:
+        restore = _restore_workflow_artifact_stash(cwd, artifact_stash)
+        if not restore["blocked"]:
+            return result
+        return _result(
+            request,
+            status="blocked",
+            verdict="advisory_blocked" if cfg.policy == "advisory" else "required_blocked",
+            reason=str(restore["reason"]),
+            command=command,
+            skip_steps=skip_steps,
+            exit_code=result.exit_code,
+            wall_clock_s=result.wall_clock_s,
+            findings=result.findings,
+            stdout_tail=result.stdout_tail,
+            stderr_tail=_tail("\n".join(
+                item for item in [result.stderr_tail, str(restore.get("stderr") or "")]
+                if item
+            )),
+            changed_files_before=result.changed_files_before,
+            changed_files_after=tuple(_snapshot(cwd)["changed_files"]),
+            head_before=result.head_before,
+            head_after=result.head_after,
+            validation_cwd=result.validation_cwd,
+            isolated_worktree=result.isolated_worktree,
+        )
 
     if cfg.policy == "off":
-        return _result(
+        return finish(_result(
             request,
             status="skipped",
             verdict="skipped",
             reason="no_mistakes_policy_off",
             command=command,
             skip_steps=skip_steps,
-        )
+        ))
 
     preflight = _preflight_snapshot(cwd, require_clean=cfg.require_clean_committed_branch)
+    if preflight["blocked"] and preflight["reason"] == "no_mistakes_dirty_worktree":
+        artifact_stash = _stash_workflow_artifacts_if_safe(
+            cwd,
+            request=request,
+            changed_files=tuple(preflight["changed_files"]),
+        )
+        if artifact_stash["blocked"]:
+            return finish(_result(
+                request,
+                status="skipped" if cfg.policy == "advisory" else "blocked",
+                verdict="unavailable" if cfg.policy == "advisory" else "required_blocked",
+                reason=str(artifact_stash["reason"]),
+                command=command,
+                skip_steps=skip_steps,
+                changed_files_before=tuple(preflight["changed_files"]),
+                changed_files_after=tuple(preflight["changed_files"]),
+                head_before=preflight["head"],
+                head_after=preflight["head"],
+            ))
+        if artifact_stash["stashed"]:
+            preflight = _preflight_snapshot(cwd, require_clean=cfg.require_clean_committed_branch)
     if preflight["blocked"]:
-        return _result(
+        return finish(_result(
             request,
             status="skipped" if cfg.policy == "advisory" else "blocked",
             verdict="unavailable" if cfg.policy == "advisory" else "required_blocked",
@@ -195,11 +244,11 @@ def run_no_mistakes_validation(
             changed_files_after=tuple(preflight["changed_files"]),
             head_before=preflight["head"],
             head_after=preflight["head"],
-        )
+        ))
 
     workspace = _prepare_validation_workspace(cwd, request=request)
     if workspace["blocked"]:
-        return _result(
+        return finish(_result(
             request,
             status="skipped" if cfg.policy == "advisory" else "blocked",
             verdict="unavailable" if cfg.policy == "advisory" else "required_blocked",
@@ -210,7 +259,7 @@ def run_no_mistakes_validation(
             changed_files_after=tuple(preflight["changed_files"]),
             head_before=preflight["head"],
             head_after=preflight["head"],
-        )
+        ))
 
     validation_cwd = Path(workspace["validation_cwd"])
     validation_preflight = _snapshot(validation_cwd)
@@ -286,7 +335,7 @@ def run_no_mistakes_validation(
             _cleanup_validation_workspace(workspace)
 
     if result is not None:
-        return result
+        return finish(result)
     wall_clock_s = time.monotonic() - started
     postflight = _snapshot(validation_cwd)
     stdout = str(completed.stdout or "")
@@ -296,7 +345,7 @@ def run_no_mistakes_validation(
         tuple(validation_preflight["changed_files"]) != tuple(postflight["changed_files"])
         or validation_preflight["head"] != postflight["head"]
     )
-    passing_outcome = not outcome or _normalise_action(outcome) in PASSING_OUTCOMES
+    passing_outcome = bool(outcome) and _normalise_action(outcome) in PASSING_OUTCOMES
     if changed:
         verdict: NoMistakesVerdict = "changed_requires_rerun"
         status: NoMistakesStatus = "blocked"
@@ -316,7 +365,7 @@ def run_no_mistakes_validation(
     else:
         verdict = "advisory_blocked" if cfg.policy == "advisory" else "required_blocked"
         status = "blocked"
-        reason = f"no_mistakes_gate_{gate}" if gate else f"no_mistakes_outcome_{outcome}"
+        reason = f"no_mistakes_gate_{gate}" if gate else "no_mistakes_missing_outcome"
 
     result = _result(
         request,
@@ -338,7 +387,7 @@ def run_no_mistakes_validation(
         isolated_worktree=bool(workspace["isolated_worktree"]),
     )
     _cleanup_validation_workspace(workspace)
-    return result
+    return finish(result)
 
 
 def build_no_mistakes_command(config: NoMistakesConfig, *, intent: str) -> tuple[str, ...]:
@@ -381,6 +430,9 @@ def parse_no_mistakes_output(stdout: str) -> tuple[list[NoMistakesFinding], str,
             outcome = line.split(":", 1)[1].strip()
             continue
         if line.startswith("gate:"):
+            gate = line.split(":", 1)[1].strip()
+            continue
+        if line.startswith("step:") and not gate:
             gate = line.split(":", 1)[1].strip()
             continue
         if _looks_like_structured_no_mistakes(line):
@@ -443,6 +495,101 @@ def _preflight_snapshot(cwd: Path, *, require_clean: bool) -> dict[str, Any]:
     return {**snapshot, "blocked": False, "reason": ""}
 
 
+def _stash_workflow_artifacts_if_safe(
+    cwd: Path,
+    *,
+    request: NoMistakesValidationRequest,
+    changed_files: tuple[str, ...],
+) -> dict[str, Any]:
+    if not changed_files:
+        return {"blocked": False, "stashed": False, "stash_ref": None}
+    prefix = _workflow_artifact_prefix(request.task_id)
+    if prefix is None:
+        return {"blocked": True, "reason": "no_mistakes_dirty_worktree"}
+    if not all(_is_under_prefix(path, prefix) for path in changed_files):
+        return {"blocked": True, "reason": "no_mistakes_dirty_worktree"}
+
+    marker = f"codex-supervisor:no-mistakes-artifacts:{request.run_id}:{uuid.uuid4()}"
+    before = _stash_refs(cwd)
+    push = _run_git(
+        cwd,
+        "stash",
+        "push",
+        "--include-untracked",
+        "-m",
+        marker,
+        "--",
+        str(prefix),
+    )
+    if push.returncode != 0:
+        return {
+            "blocked": True,
+            "reason": "no_mistakes_artifact_stash_failed",
+            "stderr": _tail(push.stderr or push.stdout or ""),
+        }
+    after = _stash_refs(cwd)
+    new_refs = [item for item in after if item not in before and marker in item[1]]
+    if not new_refs:
+        return {"blocked": False, "stashed": False, "stash_ref": None}
+    return {
+        "blocked": False,
+        "stashed": True,
+        "stash_ref": new_refs[0][0],
+        "marker": marker,
+    }
+
+
+def _restore_workflow_artifact_stash(
+    cwd: Path,
+    stash: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if not stash or not stash.get("stashed"):
+        return {"blocked": False}
+    stash_ref = str(stash.get("stash_ref") or "")
+    if not stash_ref:
+        return {"blocked": True, "reason": "no_mistakes_artifact_restore_failed"}
+    apply_result = _run_git(cwd, "stash", "apply", stash_ref)
+    if apply_result.returncode != 0:
+        return {
+            "blocked": True,
+            "reason": "no_mistakes_artifact_restore_failed",
+            "stderr": _tail(apply_result.stderr or apply_result.stdout or ""),
+        }
+    _run_git(cwd, "stash", "drop", stash_ref)
+    return {"blocked": False}
+
+
+def _workflow_artifact_prefix(task_id: str) -> Path | None:
+    task = str(task_id or "").strip()
+    if not task:
+        return None
+    task_path = Path(task)
+    if task_path.is_absolute() or any(part in {"", ".", ".."} for part in task_path.parts):
+        return None
+    return Path("docs") / "dual-agent" / task_path
+
+
+def _is_under_prefix(path: str, prefix: Path) -> bool:
+    try:
+        Path(path).relative_to(prefix)
+        return True
+    except ValueError:
+        return Path(path) == prefix
+
+
+def _stash_refs(cwd: Path) -> list[tuple[str, str]]:
+    result = _run_git(cwd, "stash", "list", "--format=%gd%x00%s")
+    refs: list[tuple[str, str]] = []
+    if result.returncode != 0:
+        return refs
+    for line in result.stdout.splitlines():
+        if "\0" not in line:
+            continue
+        ref, subject = line.split("\0", 1)
+        refs.append((ref, subject))
+    return refs
+
+
 def _snapshot(cwd: Path) -> dict[str, Any]:
     head_result = _run_git(cwd, "rev-parse", "HEAD")
     status_result = _run_git(cwd, "status", "--porcelain")
@@ -464,38 +611,15 @@ def _prepare_validation_workspace(
     *,
     request: NoMistakesValidationRequest,
 ) -> dict[str, Any]:
-    if not request.config.require_clean_committed_branch:
-        return {
-            "blocked": False,
-            "reason": "",
-            "validation_cwd": cwd,
-            "isolated_worktree": False,
-            "temp_parent": None,
-            "worktree_path": None,
-            "repo_cwd": cwd,
-        }
-    temp_parent = Path(tempfile.mkdtemp(prefix="codex-no-mistakes-"))
-    worktree_path = temp_parent / "worktree"
-    add_result = _run_git(cwd, "worktree", "add", "--detach", str(worktree_path), "HEAD")
-    if add_result.returncode != 0:
-        shutil.rmtree(temp_parent, ignore_errors=True)
-        return {
-            "blocked": True,
-            "reason": "no_mistakes_isolated_worktree_failed",
-            "validation_cwd": cwd,
-            "isolated_worktree": False,
-            "temp_parent": None,
-            "worktree_path": None,
-            "repo_cwd": cwd,
-            "stderr": _tail(add_result.stderr or ""),
-        }
+    del request
     return {
         "blocked": False,
         "reason": "",
-        "validation_cwd": worktree_path,
-        "isolated_worktree": True,
-        "temp_parent": temp_parent,
-        "worktree_path": worktree_path,
+        "validation_cwd": cwd,
+        "isolated_worktree": False,
+        "temp_parent": None,
+        "worktree_path": None,
+        "branch_name": None,
         "repo_cwd": cwd,
     }
 
@@ -504,10 +628,19 @@ def _cleanup_validation_workspace(workspace: dict[str, Any]) -> None:
     worktree_path = workspace.get("worktree_path")
     temp_parent = workspace.get("temp_parent")
     repo_cwd = workspace.get("repo_cwd")
+    branch_name = workspace.get("branch_name")
     if worktree_path:
         subprocess.run(
             ["git", "worktree", "remove", "--force", str(worktree_path)],
             cwd=str(repo_cwd) if repo_cwd else None,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    if repo_cwd and branch_name:
+        subprocess.run(
+            ["git", "branch", "-D", str(branch_name)],
+            cwd=str(repo_cwd),
             capture_output=True,
             text=True,
             check=False,
@@ -623,17 +756,26 @@ def _finding_from_csvish_line(line: str) -> NoMistakesFinding | None:
     compact = line.lstrip("-* ").strip()
     if "," not in compact:
         return None
-    parts = [part.strip() for part in compact.split(",")]
+    try:
+        parts = [part.strip() for part in next(csv.reader([compact]))]
+    except csv.Error:
+        parts = [part.strip() for part in compact.split(",")]
     if len(parts) < 5:
         return None
-    if _normalise_action(parts[-1]) not in {"auto_fix", "ask_user", "no_op"}:
+    action_index = -1
+    if _normalise_action(parts[-1]) in {"auto_fix", "ask_user", "no_op"}:
+        action_index = len(parts) - 1
+    elif len(parts) >= 4 and _normalise_action(parts[3]) in {"auto_fix", "ask_user", "no_op"}:
+        action_index = 3
+    if action_index < 0:
         return None
+    description_parts = parts[3:action_index] + parts[action_index + 1:]
     return NoMistakesFinding(
         finding_id=parts[0],
         severity=parts[1],
         file=parts[2],
-        description=",".join(parts[3:-1]).strip(),
-        action=parts[-1],
+        description=", ".join(description_parts).strip(),
+        action=parts[action_index],
         raw=line,
     )
 
