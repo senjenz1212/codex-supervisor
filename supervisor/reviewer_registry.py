@@ -6,7 +6,7 @@ import json
 import re
 import subprocess
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
@@ -50,7 +50,33 @@ class CursorCompatibleReviewer:
     runner: Callable[[CursorInvocationRequest], CursorInvocationResult] = invoke_cursor_agent
 
     def review(self, request: CursorInvocationRequest) -> CursorInvocationResult:
-        return self.runner(request)
+        return self.runner(
+            replace(
+                request,
+                reviewer_output_mode=self.spec.runtime,  # type: ignore[arg-type]
+                reviewer_model=self.spec.model or request.reviewer_model,
+            )
+        )
+
+
+@dataclass(frozen=True)
+class LiteLLMReviewer:
+    spec: ReviewerSpec
+    runner: Callable[[CursorInvocationRequest], CursorInvocationResult] = invoke_cursor_agent
+    openai_api_key: str | None = None
+    openai_base_url: str | None = None
+
+    def review(self, request: CursorInvocationRequest) -> CursorInvocationResult:
+        return self.runner(
+            replace(
+                request,
+                reviewer_output_mode="litellm_structured",
+                reviewer_model=self.spec.model or request.reviewer_model,
+                openai_api_key=self.openai_api_key or request.openai_api_key,
+                openai_base_url=self.openai_base_url or request.openai_base_url,
+                expected_specialists=("Independent Reviewer",),
+            )
+        )
 
 
 @dataclass(frozen=True)
@@ -293,6 +319,11 @@ def configured_reviewers(
     runner: Callable[[CursorInvocationRequest], CursorInvocationResult] = invoke_cursor_agent,
     codex_runner: CodexRunner = subprocess.run,
     codex_model: str = "gpt-5.5",
+    litellm_runner: Callable[[CursorInvocationRequest], CursorInvocationResult] | None = None,
+    litellm_model: str | None = None,
+    litellm_provider_family: str | None = None,
+    litellm_openai_api_key: str | None = None,
+    litellm_openai_base_url: str | None = None,
 ) -> list[ReviewerAdapter]:
     """Return the configured reviewer roster for a gate.
 
@@ -318,10 +349,39 @@ def configured_reviewers(
         tool_access="codebase_tools",
         assurance_grade="agentic",
     )
-    return [
+    reviewers: list[ReviewerAdapter] = [
         CursorCompatibleReviewer(spec=legacy_spec, runner=runner),
         CodexCliReviewer(spec=codex_spec, runner=codex_runner),
     ]
+    if litellm_model:
+        litellm_family = (
+            litellm_provider_family
+            or _provider_family("litellm_structured", litellm_model)
+        )
+        litellm_spec = ReviewerSpec(
+            reviewer_id="independent-reviewer-litellm",
+            runtime="litellm_structured",
+            model=litellm_model,
+            provider_family=litellm_family,
+            lineage=tuple(
+                dict.fromkeys(
+                    value
+                    for value in (litellm_family, "litellm_structured", litellm_model)
+                    if value and value != "unknown"
+                )
+            ),
+            tool_access="text_only",
+            assurance_grade="text_only",
+        )
+        reviewers.append(
+            LiteLLMReviewer(
+                spec=litellm_spec,
+                runner=litellm_runner or runner,
+                openai_api_key=litellm_openai_api_key,
+                openai_base_url=litellm_openai_base_url,
+            )
+        )
+    return reviewers
 
 
 def independent_reviewer_results_from_cursor_result(
@@ -439,15 +499,54 @@ def independent_reviewer_results_from_review_results(
     round_index: int,
 ) -> list[dict[str, Any]]:
     return [
-        independent_reviewer_result_from_cursor_result(
-            result,
-            task_id=task_id,
-            gate=gate,
-            round_index=round_index,
-            reviewer_id=spec.reviewer_id,
+        _result_with_spec_provenance(
+            independent_reviewer_result_from_cursor_result(
+                result,
+                task_id=task_id,
+                gate=gate,
+                round_index=round_index,
+                reviewer_id=spec.reviewer_id,
+            ),
+            spec,
         )
         for spec, result in review_results
     ]
+
+
+def _result_with_spec_provenance(
+    result: dict[str, Any],
+    spec: ReviewerSpec,
+) -> dict[str, Any]:
+    payload = dict(result)
+    payload["runtime"] = spec.runtime or payload.get("runtime")
+    payload["reviewer_runtime"] = spec.runtime or payload.get("reviewer_runtime")
+    if spec.model:
+        payload["model"] = spec.model
+    result_family = str(payload.get("provider_family") or "").strip()
+    result_family_unproven = result_family in {"", "unknown", "openai_compatible"}
+    if (
+        result_family_unproven
+        and spec.provider_family
+        and spec.provider_family != "unknown"
+    ):
+        payload["provider_family"] = spec.provider_family
+    if spec.lineage and (result_family_unproven or not payload.get("lineage")):
+        payload["lineage"] = list(spec.lineage)
+    result_tool_access = str(payload.get("tool_access") or "").strip()
+    if (
+        result_tool_access in {"", "unknown"}
+        and spec.tool_access
+        and spec.tool_access != "unknown"
+    ):
+        payload["tool_access"] = spec.tool_access
+    result_assurance = str(payload.get("assurance_grade") or "").strip()
+    if (
+        result_assurance in {"", "self_reported"}
+        and spec.assurance_grade
+        and spec.assurance_grade != "self_reported"
+    ):
+        payload["assurance_grade"] = spec.assurance_grade
+    return payload
 
 
 def evaluate_reviewer_panel(

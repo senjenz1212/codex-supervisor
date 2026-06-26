@@ -157,9 +157,18 @@ def test_all_arms_report_includes_independence_metrics():
         min_bad=1,
     )
 
-    assert no_reviewers["inter_reviewer_agreement"] == []
+    assert no_reviewers["inter_reviewer_agreement"]["status"] == "unavailable"
+    assert no_reviewers["inter_reviewer_agreement"]["reason"] == (
+        "reviewer_roster_not_verified_cross_family"
+    )
     assert no_reviewers["leave_one_reviewer_out"]["status"] == "unavailable"
+    assert no_reviewers["leave_one_reviewer_out"]["reason"] == (
+        "reviewer_roster_not_verified_cross_family"
+    )
     assert no_reviewers["effective_vote_estimate"]["status"] == "unavailable"
+    assert no_reviewers["effective_vote_estimate"]["reason"] == (
+        "reviewer_roster_not_verified_cross_family"
+    )
 
     zero_errors = _build_official_all_arms_diagnostic_report(
         official_report=_official_report(

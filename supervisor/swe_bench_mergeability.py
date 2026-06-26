@@ -31,11 +31,14 @@ from .mergeability_bench import (
     _inter_reviewer_agreement,
     _leave_one_reviewer_out_analysis,
     _mergeability_rubric_coverage,
+    _normalise_mergeability_reviewer_result,
     _panel_marginal_delta_at_matched_true_accept,
     _per_reviewer_acceptance_arms,
+    _producer_family_from_row,
     _public_input_oracle_refs,
     _rate,
     _reviewer_oracle_error_overlap,
+    _reviewer_cross_family_claim_status,
     _reviewer_provenance_report,
     _resolve_powered_baseline_decision,
     _run_command,
@@ -3082,12 +3085,20 @@ def _build_official_all_arms_diagnostic_report(
         and oracle_ceiling.get("availability_status") == "available"
         and int(oracle_ceiling.get("unavailable_count") or 0) == 0
     )
-    all_arms_populated = bool(
+    arm_execution_populated = bool(
         not missing_arms
         and baseline_available
         and s_probe_available
         and s_full_available
         and oracle_ceiling_available
+    )
+    reviewer_analysis_rows = _official_reviewer_analysis_rows(
+        official_report=official_report,
+    )
+    reviewer_provenance = _reviewer_provenance_report(reviewer_analysis_rows)
+    generator_disjointness = _generator_disjointness_report(reviewer_analysis_rows)
+    reviewer_roster_cross_family_verification = (
+        _official_reviewer_roster_cross_family_verification(reviewer_analysis_rows)
     )
 
     unavailable_reasons: list[str] = []
@@ -3122,17 +3133,22 @@ def _build_official_all_arms_diagnostic_report(
             for reason in (bridge.get("metrics_unavailable_reasons") or [])
             if str(reason)
         )
+    if not bool(reviewer_roster_cross_family_verification.get("verified")):
+        unavailable_reasons.append("reviewer_roster_not_verified_cross_family")
+        unavailable_reasons.extend(
+            str(reason)
+            for reason in (
+                reviewer_roster_cross_family_verification.get("reasons") or []
+            )
+            if str(reason)
+        )
     status = "completed" if not unavailable_reasons else "unavailable"
     blocked_reasons = sorted(set(unavailable_reasons))
     dataset_readiness = _aeb0_dataset_readiness(str(official_report.get("dataset") or ""))
-    reviewer_analysis_rows = _official_reviewer_analysis_rows(
-        official_report=official_report,
-    )
-    reviewer_provenance = _reviewer_provenance_report(reviewer_analysis_rows)
-    generator_disjointness = _generator_disjointness_report(reviewer_analysis_rows)
     reviewer_independence = _official_reviewer_independence_metrics(
         reviewer_analysis_rows,
         full_stack=s_full,
+        roster_verified=bool(reviewer_roster_cross_family_verification.get("verified")),
     )
     abstention_coverage = _mergeability_rubric_coverage(reviewer_analysis_rows)
     panel_marginal = (
@@ -3185,7 +3201,11 @@ def _build_official_all_arms_diagnostic_report(
         "min_bad": int(min_bad),
         "arms_present": sorted(str(arm) for arm in arms),
         "missing_arms": missing_arms,
-        "all_arms_populated": all_arms_populated,
+        "arm_execution_populated": arm_execution_populated,
+        "all_arms_populated": (
+            arm_execution_populated
+            and bool(reviewer_roster_cross_family_verification.get("verified"))
+        ),
         "baseline_available": baseline_available,
         "s_probe_available": s_probe_available,
         "s_full_available": s_full_available,
@@ -3226,6 +3246,9 @@ def _build_official_all_arms_diagnostic_report(
         "decision_freeze": decision_freeze,
         "candidate_generation": candidate_generation,
         "reviewer_provenance": reviewer_provenance,
+        "reviewer_roster_cross_family_verification": (
+            reviewer_roster_cross_family_verification
+        ),
         "inter_reviewer_agreement": reviewer_independence["inter_reviewer_agreement"],
         "leave_one_reviewer_out": reviewer_independence["leave_one_reviewer_out"],
         "effective_vote_estimate": reviewer_independence["effective_vote_estimate"],
@@ -3415,10 +3438,121 @@ def _official_reviewer_analysis_rows(
     return rows
 
 
+def _official_reviewer_roster_cross_family_verification(
+    rows: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    proven_provider_families: set[str] = set()
+    proven_reviewer_families: dict[str, set[str]] = {}
+    available_reviewer_ids: set[str] = set()
+    unproven_reviewers: dict[tuple[str, str, str], dict[str, Any]] = {}
+    baseline_family_conflicts: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+    known_baseline_family_row_count = 0
+
+    for row in rows:
+        baseline_family = _producer_family_from_row(row)
+        baseline_family_known = baseline_family not in {"", "unknown"}
+        if baseline_family_known:
+            known_baseline_family_row_count += 1
+        for raw_result in row.get("supervisor_full_gate_reviewer_results") or []:
+            if not isinstance(raw_result, Mapping):
+                continue
+            normalised = _normalise_mergeability_reviewer_result(raw_result)
+            if not normalised["available"]:
+                continue
+            reviewer_id = str(normalised["reviewer_id"])
+            available_reviewer_ids.add(reviewer_id)
+            provider_family = str(
+                normalised.get("provider_family") or "unknown"
+            ).strip().lower()
+            status, counts_as_proven = _reviewer_cross_family_claim_status(normalised)
+            if provider_family == "mixed":
+                status = "unproven_provider_family"
+                counts_as_proven = False
+            if not counts_as_proven:
+                unproven_reviewers[(reviewer_id, provider_family, status)] = {
+                    "reviewer_id": reviewer_id,
+                    "provider_family": provider_family,
+                    "runtime": normalised.get("runtime"),
+                    "model": normalised.get("model"),
+                    "cross_family_claim_status": status,
+                }
+                continue
+            proven_provider_families.add(provider_family)
+            proven_reviewer_families.setdefault(reviewer_id, set()).add(provider_family)
+            if baseline_family_known and provider_family == baseline_family:
+                conflict_key = (
+                    str(row.get("task_id") or ""),
+                    str(row.get("candidate_id") or ""),
+                    reviewer_id,
+                    provider_family,
+                )
+                baseline_family_conflicts[conflict_key] = {
+                    "task_id": conflict_key[0],
+                    "candidate_id": conflict_key[1],
+                    "baseline_family": baseline_family,
+                    "reviewer_id": reviewer_id,
+                    "reviewer_family": provider_family,
+                    "reason": "same_family_generator_reviewer_decisive_vote",
+                }
+
+    unproven = sorted(
+        unproven_reviewers.values(),
+        key=lambda item: (
+            str(item["reviewer_id"]),
+            str(item["provider_family"]),
+            str(item["cross_family_claim_status"]),
+        ),
+    )
+    conflicts = sorted(
+        baseline_family_conflicts.values(),
+        key=lambda item: (
+            str(item["task_id"]),
+            str(item["candidate_id"]),
+            str(item["reviewer_id"]),
+        ),
+    )
+    reasons: list[str] = []
+    if not available_reviewer_ids:
+        reasons.append("reviewer_roster_empty")
+    if len(proven_provider_families) < 2:
+        reasons.append("insufficient_proven_reviewer_provider_families")
+    if unproven:
+        statuses = {
+            str(item["cross_family_claim_status"])
+            for item in unproven
+        }
+        if "unproven_default_model" in statuses:
+            reasons.append("cursor_default_provider_family_unproven")
+        if "unproven_provider_family" in statuses:
+            reasons.append("unproven_provider_family")
+    if conflicts:
+        reasons.append("same_family_generator_reviewer_decisive_vote")
+    verified = not reasons
+    return {
+        "schema_version": (
+            "supervisor-swebench-reviewer-roster-cross-family-verification/v1"
+        ),
+        "status": "verified" if verified else "blocked",
+        "verified": verified,
+        "reason": "" if verified else "reviewer_roster_not_verified_cross_family",
+        "available_reviewer_count": len(available_reviewer_ids),
+        "proven_provider_families": sorted(proven_provider_families),
+        "proven_reviewer_families": {
+            reviewer_id: sorted(families)
+            for reviewer_id, families in sorted(proven_reviewer_families.items())
+        },
+        "unproven_reviewers": unproven,
+        "baseline_family_conflicts": conflicts,
+        "known_baseline_family_row_count": known_baseline_family_row_count,
+        "reasons": reasons,
+    }
+
+
 def _official_reviewer_independence_metrics(
     rows: list[dict[str, Any]],
     *,
     full_stack: Mapping[str, Any],
+    roster_verified: bool = True,
 ) -> dict[str, Any]:
     metric_rows = [
         row for row in rows
@@ -3432,6 +3566,27 @@ def _official_reviewer_independence_metrics(
         }
         for row in metric_rows
     ])
+    if not roster_verified:
+        reason = "reviewer_roster_not_verified_cross_family"
+        unavailable = {
+            "status": "unavailable",
+            "reason": reason,
+            "candidate_pool_sha256": candidate_pool_sha256,
+        }
+        return {
+            "candidate_pool_sha256": candidate_pool_sha256,
+            "metric_candidate_pool_sha256": {
+                "inter_reviewer_agreement": candidate_pool_sha256,
+                "leave_one_reviewer_out": candidate_pool_sha256,
+                "effective_vote_estimate": candidate_pool_sha256,
+            },
+            "inter_reviewer_agreement": {
+                **unavailable,
+                "reviewer_pairs": [],
+            },
+            "leave_one_reviewer_out": dict(unavailable),
+            "effective_vote_estimate": dict(unavailable),
+        }
     per_reviewer_arms = _per_reviewer_acceptance_arms(metric_rows)
     pairwise_error_overlap = _reviewer_oracle_error_overlap(metric_rows)
     leave_one_rows: list[dict[str, Any]] = []

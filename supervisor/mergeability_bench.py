@@ -3745,6 +3745,11 @@ class ConfiguredReviewerPanelOptions:
     reviewers: Sequence[ReviewerAdapter] | None = None
     runner: Callable[[CursorInvocationRequest], CursorInvocationResult] | None = None
     codex_runner: Callable[..., Any] | None = None
+    litellm_runner: Callable[[CursorInvocationRequest], CursorInvocationResult] | None = None
+    litellm_model: str | None = None
+    litellm_provider_family: str | None = None
+    litellm_openai_api_key: str | None = None
+    litellm_openai_base_url: str | None = None
     reviewer_invoker: (
         Callable[[ReviewerAdapter, CursorInvocationRequest], CursorInvocationResult] | None
     ) = None
@@ -3885,6 +3890,11 @@ def _resolve_configured_panel_adapters(
             runner=runner,
             codex_runner=codex_runner,
             codex_model=options.codex_model,
+            litellm_runner=options.litellm_runner,
+            litellm_model=options.litellm_model,
+            litellm_provider_family=options.litellm_provider_family,
+            litellm_openai_api_key=options.litellm_openai_api_key,
+            litellm_openai_base_url=options.litellm_openai_base_url,
         )
     )
     if options.codex_only_calibration:
@@ -3913,6 +3923,8 @@ def _configured_panel_review_request(
         review_packet=dict(packet),
         timeout_s=options.review_timeout_s,
         api_key=api_key,
+        reviewer_output_mode=options.reviewer_output_mode,  # type: ignore[arg-type]
+        reviewer_model=options.reviewer_model,
         expected_specialists=("Independent Reviewer",),
     )
 
@@ -6379,6 +6391,8 @@ def _bounded_runner_option_hash(
             "reviewer_output_mode": opts.reviewer_output_mode,
             "reviewer_model": opts.reviewer_model,
             "codex_model": opts.codex_model,
+            "litellm_model": opts.litellm_model,
+            "litellm_provider_family": opts.litellm_provider_family,
             "review_timeout_s": opts.review_timeout_s,
             "gate": opts.gate,
             "round_index": opts.round_index,
@@ -8195,6 +8209,11 @@ def _bounded_panel_runner_main(argv: Sequence[str] | None = None) -> int:
         choices=("configured", "custom"),
         default="configured",
     )
+    parser.add_argument("--reviewer-output-mode", default=SUPERVISOR_CONFIGURED_PANEL_REVIEWER_MODE_DEFAULT)
+    parser.add_argument("--reviewer-model", default="")
+    parser.add_argument("--codex-model", default="gpt-5.5")
+    parser.add_argument("--litellm-model", default="gemini-3.1-pro-preview")
+    parser.add_argument("--litellm-provider-family", default="google")
     parser.add_argument("--no-resume", action="store_true")
     parser.add_argument("--relaxed-calibration", action="store_true")
     args = parser.parse_args(argv)
@@ -8210,7 +8229,13 @@ def _bounded_panel_runner_main(argv: Sequence[str] | None = None) -> int:
         resume=not args.no_resume,
     )
     configured_options = (
-        ConfiguredReviewerPanelOptions()
+        ConfiguredReviewerPanelOptions(
+            reviewer_output_mode=args.reviewer_output_mode,
+            reviewer_model=args.reviewer_model or None,
+            codex_model=args.codex_model,
+            litellm_model=args.litellm_model or None,
+            litellm_provider_family=args.litellm_provider_family or None,
+        )
         if args.reviewer_panel_mode == "configured"
         else None
     )

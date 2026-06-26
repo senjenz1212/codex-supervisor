@@ -53,6 +53,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--reviewer-output-mode", default="cursor_sdk")
     parser.add_argument("--reviewer-model", default="")
     parser.add_argument("--codex-model", default="gpt-5.5")
+    parser.add_argument("--litellm-model", default="gemini-3.1-pro-preview")
+    parser.add_argument("--litellm-provider-family", default="google")
     parser.add_argument(
         "--oracle-adapter",
         default="",
@@ -102,6 +104,8 @@ def main(argv: list[str] | None = None) -> int:
                 reviewer_output_mode=args.reviewer_output_mode,
                 reviewer_model=args.reviewer_model or None,
                 codex_model=args.codex_model,
+                litellm_model=args.litellm_model or None,
+                litellm_provider_family=args.litellm_provider_family or None,
                 review_cwd=Path.cwd(),
             )
         )
