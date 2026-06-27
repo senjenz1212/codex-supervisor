@@ -280,6 +280,7 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
         "parser": str(workspace_dir / "parser.py"),
         "entryscript": str(workspace_dir / "entryscript.sh"),
         "patch_apply_receipt": str(workspace_dir / "patch_apply.json"),
+        "test_command_receipt": str(workspace_dir / "test_command.json"),
         "stdout": str(workspace_dir / "stdout.log"),
         "stderr": str(workspace_dir / "stderr.log"),
         "output_json": str(workspace_dir / "output.json"),
@@ -487,6 +488,9 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
 
     output_path = workspace_dir / "output.json"
     if not output_path.exists():
+        test_command_return_code = _pro_test_command_return_code(
+            workspace_dir / "test_command.json"
+        )
         return _pro_adapter_failure(
             context=context,
             command=run_command,
@@ -501,12 +505,16 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
             pull_command=pull_command,
             pull_return_code=pull_result.returncode,
             patch_applied=patch_applied,
+            test_command_return_code=test_command_return_code,
         )
 
     try:
         parser_payload = json.loads(output_path.read_text(encoding="utf-8"))
         passed_tests = _pro_passed_tests(parser_payload)
     except (OSError, json.JSONDecodeError, ValueError) as exc:
+        test_command_return_code = _pro_test_command_return_code(
+            workspace_dir / "test_command.json"
+        )
         return _pro_adapter_failure(
             context=context,
             command=run_command,
@@ -521,10 +529,14 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
             pull_command=pull_command,
             pull_return_code=pull_result.returncode,
             patch_applied=patch_applied,
+            test_command_return_code=test_command_return_code,
         )
 
     fail_to_pass_status = "pass" if set(fail_to_pass) <= passed_tests else "fail"
     pass_to_pass_status = "pass" if set(pass_to_pass) <= passed_tests else "fail"
+    test_command_return_code = _pro_test_command_return_code(
+        workspace_dir / "test_command.json"
+    )
     receipt = _pro_adapter_receipt(
         context=context,
         command=run_command,
@@ -543,6 +555,7 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
         selected_tests=selected_tests,
         before_repo_set_cmd=before_repo_set_cmd,
         patch_applied=True,
+        test_command_return_code=test_command_return_code,
     )
     return {
         "fail_to_pass_status": fail_to_pass_status,
@@ -604,6 +617,7 @@ def _pro_adapter_failure(
     pull_command: list[str] | None = None,
     pull_return_code: int | None = None,
     patch_applied: bool | None = None,
+    test_command_return_code: int | None = None,
 ) -> dict[str, Any]:
     receipt = _pro_adapter_receipt(
         context=context,
@@ -622,6 +636,7 @@ def _pro_adapter_failure(
         pull_command=pull_command,
         pull_return_code=pull_return_code,
         patch_applied=patch_applied,
+        test_command_return_code=test_command_return_code,
         run_id="",
         selected_tests=_pro_test_list(context.get("selected_test_files_to_run") or []),
         before_repo_set_cmd=_last_nonempty_line(
@@ -702,6 +717,7 @@ def _pro_adapter_receipt(
     pull_command: list[str] | None = None,
     pull_return_code: int | None = None,
     patch_applied: bool | None = None,
+    test_command_return_code: int | None = None,
 ) -> dict[str, Any]:
     docker_metadata: dict[str, Any] = {
         "image": docker_image,
@@ -741,6 +757,8 @@ def _pro_adapter_receipt(
     }
     if patch_applied is not None:
         receipt["patch_applied"] = bool(patch_applied)
+    if test_command_return_code is not None:
+        receipt["test_command_return_code"] = int(test_command_return_code)
     if oracle_unavailable:
         receipt["oracle_unavailable"] = True
         receipt["unavailable_reason"] = unavailable_reason
@@ -779,6 +797,21 @@ def _pro_patch_applied(path: Path) -> bool | None:
     return None
 
 
+def _pro_test_command_return_code(path: Path) -> int | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, Mapping):
+        return None
+    raw = payload.get("test_command_return_code")
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, int):
+        return raw
+    return None
+
+
 def _pro_entryscript(
     *,
     base_commit: str,
@@ -804,7 +837,13 @@ def _pro_entryscript(
     if before_repo_set_cmd.strip():
         lines.append(before_repo_set_cmd.strip())
     lines.extend([
-        f"bash /workspace/run_script.sh {selected_arg} > /workspace/stdout.log 2> /workspace/stderr.log",
+        "test_command_exit=0",
+        f"if bash /workspace/run_script.sh {selected_arg} > /workspace/stdout.log 2> /workspace/stderr.log; then",
+        "  test_command_exit=0",
+        "else",
+        "  test_command_exit=$?",
+        "fi",
+        "printf '{\"test_command_return_code\": %s}\\n' \"$test_command_exit\" > /workspace/test_command.json",
         "python /workspace/parser.py /workspace/stdout.log /workspace/stderr.log /workspace/output.json",
         "",
     ])

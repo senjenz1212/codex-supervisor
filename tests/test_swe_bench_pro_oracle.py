@@ -72,6 +72,38 @@ def _fake_docker_runner(tmp_path: Path, output_payload: dict):
     return calls, fake_run
 
 
+def _fake_docker_runner_with_test_command_receipt(
+    tmp_path: Path,
+    output_payload: dict,
+    *,
+    test_command_return_code: int,
+    docker_return_code: int = 0,
+):
+    calls: list[list[str]] = []
+
+    def fake_run(command, *, cwd, env, text, capture_output, check, timeout):
+        calls.append(list(command))
+        if command[:2] == ["docker", "pull"]:
+            return subprocess.CompletedProcess(command, 0, "pull ok", "")
+        if command[:2] == ["docker", "run"]:
+            volume_arg = command[command.index("-v") + 1]
+            workspace = Path(volume_arg.split(":", 1)[0])
+            (workspace / "stdout.log").write_text("test stdout\n", encoding="utf-8")
+            (workspace / "stderr.log").write_text("", encoding="utf-8")
+            (workspace / "test_command.json").write_text(
+                json.dumps({"test_command_return_code": test_command_return_code}),
+                encoding="utf-8",
+            )
+            (workspace / "output.json").write_text(
+                json.dumps(output_payload),
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(command, docker_return_code, "run ok", "")
+        raise AssertionError(f"unexpected command: {command}")
+
+    return calls, fake_run
+
+
 def test_pro_runner_returns_pass_status_on_gold_fixture(tmp_path, monkeypatch):
     monkeypatch.setenv("SWEBENCH_PRO_ORACLE_ARTIFACT_DIR", str(tmp_path / "oracle"))
     output_payload = {
@@ -97,6 +129,21 @@ def test_pro_runner_returns_pass_status_on_gold_fixture(tmp_path, monkeypatch):
     assert Path(receipt["artifact_paths"]["output_json"]).exists()
 
 
+def test_pro_entryscript_runs_parser_after_test_command_failure():
+    script = official_oracle._pro_entryscript(
+        base_commit="abc123",
+        before_repo_set_cmd="",
+        selected_tests=["tests/test_parser.py"],
+    )
+
+    run_index = script.index("if bash /workspace/run_script.sh")
+    receipt_index = script.index("/workspace/test_command.json")
+    parser_index = script.index("python /workspace/parser.py")
+
+    assert run_index < receipt_index < parser_index
+    assert "test_command_exit=$?" in script
+
+
 def test_pro_runner_unavailable_on_pull_or_parse_failure(tmp_path, monkeypatch):
     monkeypatch.setenv("SWEBENCH_PRO_ORACLE_ARTIFACT_DIR", str(tmp_path / "oracle"))
 
@@ -114,6 +161,40 @@ def test_pro_runner_unavailable_on_pull_or_parse_failure(tmp_path, monkeypatch):
     receipt = result["oracle_adapter_receipt"]
     assert receipt["return_code"] == 1
     assert receipt["unavailable_reason"] == "docker_pull_failed"
+
+
+def test_pro_runner_preserves_test_command_receipt_when_parser_output_missing(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setenv("SWEBENCH_PRO_ORACLE_ARTIFACT_DIR", str(tmp_path / "oracle"))
+
+    def fake_run(command, *, cwd, env, text, capture_output, check, timeout):
+        if command[:2] == ["docker", "pull"]:
+            return subprocess.CompletedProcess(command, 0, "pull ok", "")
+        if command[:2] == ["docker", "run"]:
+            volume_arg = command[command.index("-v") + 1]
+            workspace = Path(volume_arg.split(":", 1)[0])
+            (workspace / "patch_apply.json").write_text(
+                json.dumps({"patch_applied": True}),
+                encoding="utf-8",
+            )
+            (workspace / "test_command.json").write_text(
+                json.dumps({"test_command_return_code": 1}),
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(command, 1, "run failed", "")
+        raise AssertionError(f"unexpected command: {command}")
+
+    monkeypatch.setattr(official_oracle.subprocess, "run", fake_run)
+
+    result = run_swe_bench_pro_oracle(_pro_context(tmp_path))
+
+    assert result["oracle_unavailable"] is True
+    assert result["oracle_unavailable_reason"] == "pro_parser_output_missing"
+    receipt = result["oracle_adapter_receipt"]
+    assert receipt["test_command_return_code"] == 1
+    assert receipt["patch_applied"] is True
 
 
 def test_pro_runner_unavailable_when_patch_does_not_apply(tmp_path, monkeypatch):
@@ -186,6 +267,34 @@ def test_pro_runner_classifies_fail_to_pass_and_pass_to_pass_independently(
 
     assert result["fail_to_pass_status"] == expected_fail_to_pass
     assert result["pass_to_pass_status"] == expected_pass_to_pass
+
+
+def test_pro_runner_classifies_failed_test_command_when_parser_output_exists(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setenv("SWEBENCH_PRO_ORACLE_ARTIFACT_DIR", str(tmp_path / "oracle"))
+    output_payload = {
+        "tests": [
+            {"name": "tests/test_parser.py::test_hidden", "status": "FAILED"},
+            {"name": "tests/test_parser.py::test_existing", "status": "PASSED"},
+        ]
+    }
+    _calls, fake_run = _fake_docker_runner_with_test_command_receipt(
+        tmp_path,
+        output_payload,
+        test_command_return_code=1,
+    )
+    monkeypatch.setattr(official_oracle.subprocess, "run", fake_run)
+
+    result = run_swe_bench_pro_oracle(_pro_context(tmp_path))
+
+    assert result["fail_to_pass_status"] == "fail"
+    assert result["pass_to_pass_status"] == "pass"
+    assert "oracle_unavailable" not in result
+    receipt = result["oracle_adapter_receipt"]
+    assert receipt["return_code"] == 0
+    assert receipt["test_command_return_code"] == 1
 
 
 def test_pro_runner_outcome_feeds_interpret_contract(tmp_path, monkeypatch):
