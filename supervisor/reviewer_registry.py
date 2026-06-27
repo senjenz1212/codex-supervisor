@@ -328,7 +328,10 @@ def configured_reviewers(
 
     This is intentionally small: reviewer 0 is the legacy Cursor-compatible
     slot, reviewer 1 is the GPT-family Codex CLI route proven by route
-    evidence. Wider plugin mechanics are deliberately out of scope.
+    evidence. An optional third LiteLLM reviewer is appended only when a
+    caller opts in by passing ``litellm_model``; an empty or ``None`` value
+    keeps the roster at two reviewers. Wider plugin mechanics are
+    deliberately out of scope.
     """
     legacy_spec = ReviewerSpec(
         reviewer_id="independent-reviewer-0",
