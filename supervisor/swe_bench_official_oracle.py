@@ -818,6 +818,15 @@ def _pro_entryscript(
     before_repo_set_cmd: str,
     selected_tests: Sequence[str],
 ) -> str:
+    """Build the container entryscript for one Pro candidate.
+
+    The run_script is wrapped so its exit code is captured to
+    ``test_command.json`` and the parser still runs on the captured logs.
+    Without the wrapper, ``set -e`` would abort the script before
+    ``parser.py`` writes ``output.json``, causing legitimate test failures
+    to be misreported as ``pro_parser_output_missing`` instead of yielding
+    a ``fail`` status from the parsed test results.
+    """
     selected = ",".join(str(item) for item in selected_tests)
     selected_arg = shlex.quote(selected)
     lines = [
