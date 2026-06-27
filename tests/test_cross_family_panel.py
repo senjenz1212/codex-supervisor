@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from supervisor.cursor_agent import CursorInvocationRequest, CursorInvocationResult
 from supervisor.dual_agent import Outcome, ProbeResult
-from supervisor.mergeability_bench import ConfiguredReviewerPanelOptions
+from supervisor.mergeability_bench import (
+    ConfiguredReviewerPanelOptions,
+    SUPERVISOR_CONFIGURED_PANEL_LITELLM_MODEL_DEFAULT,
+    SUPERVISOR_CONFIGURED_PANEL_LITELLM_PROVIDER_FAMILY_DEFAULT,
+)
 from supervisor.reviewer_registry import (
     configured_reviewers,
     independent_reviewer_results_from_review_results,
@@ -184,6 +188,32 @@ def test_litellm_reviewer_reports_real_provider_family(tmp_path):
     assert rows[0]["provider_family"] != "openai_compatible"
     assert rows[0]["tool_access"] == "text_only"
     assert rows[0]["assurance_grade"] == "text_only"
+
+
+def test_litellm_reviewer_is_opt_in_to_avoid_silent_roster_expansion():
+    assert SUPERVISOR_CONFIGURED_PANEL_LITELLM_MODEL_DEFAULT == ""
+    assert SUPERVISOR_CONFIGURED_PANEL_LITELLM_PROVIDER_FAMILY_DEFAULT == ""
+
+    default_reviewers = configured_reviewers(
+        reviewer_output_mode="cursor_sdk",
+        reviewer_model=None,
+    )
+    default_ids = {reviewer.spec.reviewer_id for reviewer in default_reviewers}
+    assert "independent-reviewer-litellm" not in default_ids
+
+    explicit_reviewers = configured_reviewers(
+        reviewer_output_mode="cursor_sdk",
+        reviewer_model=None,
+        litellm_model="gemini-3.1-pro-preview",
+        litellm_provider_family="google",
+    )
+    explicit_litellm = [
+        reviewer
+        for reviewer in explicit_reviewers
+        if reviewer.spec.reviewer_id == "independent-reviewer-litellm"
+    ]
+    assert len(explicit_litellm) == 1
+    assert explicit_litellm[0].spec.provider_family == "google"
 
 
 def test_same_family_panel_blocks_independence_measurement():

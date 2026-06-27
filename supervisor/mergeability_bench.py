@@ -30,6 +30,7 @@ from .reviewer_registry import (
     configured_reviewers,
     evaluate_reviewer_panel,
     independent_reviewer_results_from_review_results,
+    provider_family_for_reviewer,
 )
 from .redaction import redact
 
@@ -3726,6 +3727,8 @@ def _default_unavailable_reviewer_panel(_packet: Mapping[str, Any]) -> Mapping[s
 
 SUPERVISOR_CONFIGURED_PANEL_GATE = "mergeability_full_gate"
 SUPERVISOR_CONFIGURED_PANEL_REVIEWER_MODE_DEFAULT = "cursor_sdk"
+SUPERVISOR_CONFIGURED_PANEL_LITELLM_MODEL_DEFAULT = ""
+SUPERVISOR_CONFIGURED_PANEL_LITELLM_PROVIDER_FAMILY_DEFAULT = ""
 
 
 @dataclass(frozen=True)
@@ -4290,7 +4293,7 @@ def _normalise_mergeability_reviewer_result(raw: Mapping[str, Any]) -> dict[str,
     runtime = str(raw.get("runtime") or raw.get("reviewer_runtime") or "unknown")
     model = raw.get("model")
     provider_family = str(
-        raw.get("provider_family") or _provider_family_from_runtime_model(runtime, model)
+        raw.get("provider_family") or provider_family_for_reviewer(runtime, model)
     )
     lineage_raw = raw.get("lineage")
     lineage = (
@@ -4335,27 +4338,6 @@ def _normalise_mergeability_reviewer_result(raw: Mapping[str, Any]) -> dict[str,
         "output_sha256": raw.get("output_sha256"),
         "worktree_isolation": raw.get("worktree_isolation"),
     }
-
-
-def _provider_family_from_runtime_model(runtime: Any, model: Any) -> str:
-    runtime_text = str(runtime or "").lower()
-    model_text = str(model or "").lower()
-    if "codex" in runtime_text:
-        return "openai"
-    if "cursor" in runtime_text:
-        return "cursor"
-    if "gemini" in model_text:
-        return "google"
-    if "claude" in model_text:
-        return "anthropic"
-    if "gpt" in model_text or "openai" in runtime_text:
-        return "openai"
-    if "litellm" in runtime_text:
-        return "openai_compatible"
-    provider_text = str(model or runtime or "").lower()
-    if "openai" in provider_text:
-        return "openai"
-    return "unknown"
 
 
 def _tool_access_from_runtime(runtime: Any) -> str:
@@ -4482,7 +4464,7 @@ def _producer_family_from_row(row: Mapping[str, Any]) -> str:
         return explicit
     provider = str(producer.get("provider") or producer.get("family") or "").strip().lower()
     model = str(producer.get("model") or "").strip().lower()
-    return _provider_family_from_runtime_model(provider, model)
+    return provider_family_for_reviewer(provider, model)
 
 
 def _generator_disjointness_report(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
@@ -8212,8 +8194,16 @@ def _bounded_panel_runner_main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--reviewer-output-mode", default=SUPERVISOR_CONFIGURED_PANEL_REVIEWER_MODE_DEFAULT)
     parser.add_argument("--reviewer-model", default="")
     parser.add_argument("--codex-model", default="gpt-5.5")
-    parser.add_argument("--litellm-model", default="gemini-3.1-pro-preview")
-    parser.add_argument("--litellm-provider-family", default="google")
+    parser.add_argument(
+        "--litellm-model",
+        default=SUPERVISOR_CONFIGURED_PANEL_LITELLM_MODEL_DEFAULT,
+        help="Opt in to a LiteLLM reviewer by providing its model name.",
+    )
+    parser.add_argument(
+        "--litellm-provider-family",
+        default=SUPERVISOR_CONFIGURED_PANEL_LITELLM_PROVIDER_FAMILY_DEFAULT,
+        help="Explicit provider family for the opt-in LiteLLM reviewer.",
+    )
     parser.add_argument("--no-resume", action="store_true")
     parser.add_argument("--relaxed-calibration", action="store_true")
     args = parser.parse_args(argv)

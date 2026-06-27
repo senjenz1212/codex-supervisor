@@ -74,7 +74,6 @@ class LiteLLMReviewer:
                 reviewer_model=self.spec.model or request.reviewer_model,
                 openai_api_key=self.openai_api_key or request.openai_api_key,
                 openai_base_url=self.openai_base_url or request.openai_base_url,
-                expected_specialists=("Independent Reviewer",),
             )
         )
 
@@ -518,30 +517,46 @@ def _result_with_spec_provenance(
     spec: ReviewerSpec,
 ) -> dict[str, Any]:
     payload = dict(result)
-    payload["runtime"] = spec.runtime or payload.get("runtime")
-    payload["reviewer_runtime"] = spec.runtime or payload.get("reviewer_runtime")
-    if spec.model:
+    result_runtime = str(payload.get("runtime") or "").strip()
+    runtime_matches_spec = (
+        not spec.runtime
+        or result_runtime in {"", "unknown"}
+        or result_runtime == spec.runtime
+    )
+    if result_runtime in {"", "unknown"} and spec.runtime:
+        payload["runtime"] = spec.runtime
+    result_reviewer_runtime = str(payload.get("reviewer_runtime") or "").strip()
+    if result_reviewer_runtime in {"", "unknown"} and spec.runtime:
+        payload["reviewer_runtime"] = spec.runtime
+    if spec.model and runtime_matches_spec:
         payload["model"] = spec.model
     result_family = str(payload.get("provider_family") or "").strip()
     result_family_unproven = result_family in {"", "unknown", "openai_compatible"}
     if (
-        result_family_unproven
+        runtime_matches_spec
+        and result_family_unproven
         and spec.provider_family
         and spec.provider_family != "unknown"
     ):
         payload["provider_family"] = spec.provider_family
-    if spec.lineage and (result_family_unproven or not payload.get("lineage")):
+    if (
+        runtime_matches_spec
+        and spec.lineage
+        and (result_family_unproven or not payload.get("lineage"))
+    ):
         payload["lineage"] = list(spec.lineage)
     result_tool_access = str(payload.get("tool_access") or "").strip()
     if (
-        result_tool_access in {"", "unknown"}
+        runtime_matches_spec
+        and result_tool_access in {"", "unknown"}
         and spec.tool_access
         and spec.tool_access != "unknown"
     ):
         payload["tool_access"] = spec.tool_access
     result_assurance = str(payload.get("assurance_grade") or "").strip()
     if (
-        result_assurance in {"", "self_reported"}
+        runtime_matches_spec
+        and result_assurance in {"", "self_reported"}
         and spec.assurance_grade
         and spec.assurance_grade != "self_reported"
     ):
@@ -1254,7 +1269,7 @@ def _decision_from_result(result: CursorInvocationResult) -> str:
     return "accept" if cursor_accepts(result) else "revise"
 
 
-def _provider_family(runtime: str | None, model: str | None) -> str:
+def _provider_family(runtime: Any, model: Any) -> str:
     runtime_text = str(runtime or "").lower()
     model_text = str(model or "").lower()
     if "codex" in runtime_text:
@@ -1269,7 +1284,12 @@ def _provider_family(runtime: str | None, model: str | None) -> str:
         return "openai"
     if "litellm" in runtime_text:
         return "openai_compatible"
+    if "openai" in model_text:
+        return "openai"
     return "unknown"
+
+
+provider_family_for_reviewer = _provider_family
 
 
 def _lineage(runtime: str | None, model: str | None) -> tuple[str, ...]:

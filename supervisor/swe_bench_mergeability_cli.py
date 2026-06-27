@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from .mergeability_bench import (
+    SUPERVISOR_CONFIGURED_PANEL_LITELLM_MODEL_DEFAULT,
+    SUPERVISOR_CONFIGURED_PANEL_LITELLM_PROVIDER_FAMILY_DEFAULT,
     ConfiguredReviewerPanelOptions,
     build_configured_reviewer_panel,
 )
@@ -53,8 +55,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--reviewer-output-mode", default="cursor_sdk")
     parser.add_argument("--reviewer-model", default="")
     parser.add_argument("--codex-model", default="gpt-5.5")
-    parser.add_argument("--litellm-model", default="gemini-3.1-pro-preview")
-    parser.add_argument("--litellm-provider-family", default="google")
+    parser.add_argument(
+        "--litellm-model",
+        default=SUPERVISOR_CONFIGURED_PANEL_LITELLM_MODEL_DEFAULT,
+        help="Opt in to a LiteLLM reviewer by providing its model name.",
+    )
+    parser.add_argument(
+        "--litellm-provider-family",
+        default=SUPERVISOR_CONFIGURED_PANEL_LITELLM_PROVIDER_FAMILY_DEFAULT,
+        help="Explicit provider family for the opt-in LiteLLM reviewer.",
+    )
     parser.add_argument(
         "--oracle-adapter",
         default="",
