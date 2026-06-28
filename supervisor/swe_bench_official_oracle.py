@@ -13,6 +13,90 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 
+def swe_bench_pro_oracle_scripts_dir(context: Mapping[str, Any] | None = None) -> Path:
+    """Return the configured SWE-bench Pro per-instance scripts directory."""
+    context = context or {}
+    return Path(
+        str(
+            context.get("swe_bench_pro_scripts_dir")
+            or os.environ.get(
+                "SWEBENCH_PRO_ORACLE_SCRIPTS_DIR",
+                Path(__file__).resolve().parent
+                / "vendor"
+                / "swe_bench_pro"
+                / "run_scripts",
+            )
+        )
+    ).expanduser()
+
+
+def preflight_swe_bench_pro_run_scripts(
+    instance_ids: Sequence[str],
+    *,
+    scripts_dir: str | Path | None = None,
+) -> dict[str, Any]:
+    """Check that every selected Pro instance has its bespoke scripts."""
+    resolved_scripts_dir = (
+        Path(scripts_dir).expanduser()
+        if scripts_dir is not None
+        else swe_bench_pro_oracle_scripts_dir()
+    )
+    checked: list[str] = []
+    resolved: list[dict[str, Any]] = []
+    missing: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for raw_instance_id in instance_ids:
+        instance_id = str(raw_instance_id or "").strip()
+        if not instance_id or instance_id in seen:
+            continue
+        seen.add(instance_id)
+        checked.append(instance_id)
+        instance_scripts_dir = resolved_scripts_dir / instance_id
+        run_script = instance_scripts_dir / "run_script.sh"
+        parser = instance_scripts_dir / "parser.py"
+        missing_files = sorted(
+            name
+            for name, path in (
+                ("run_script.sh", run_script),
+                ("parser.py", parser),
+            )
+            if not path.exists()
+        )
+        if missing_files:
+            missing.append({
+                "instance_id": instance_id,
+                "missing": missing_files,
+                "scripts_dir": str(instance_scripts_dir),
+            })
+            continue
+        run_script_bytes = run_script.read_bytes()
+        parser_bytes = parser.read_bytes()
+        resolved.append({
+            "instance_id": instance_id,
+            "run_script": str(run_script),
+            "run_script_bytes": len(run_script_bytes),
+            "run_script_sha256": sha256(run_script_bytes).hexdigest(),
+            "parser": str(parser),
+            "parser_bytes": len(parser_bytes),
+            "parser_sha256": sha256(parser_bytes).hexdigest(),
+        })
+    reason = ""
+    if missing:
+        reason = "pro_script_missing:" + ";".join(
+            f"{entry['instance_id']}({','.join(entry['missing'])})"
+            for entry in missing
+        )
+    return {
+        "ok": not missing,
+        "scripts_dir": str(resolved_scripts_dir),
+        "checked_instance_ids": checked,
+        "missing_instance_ids": [entry["instance_id"] for entry in missing],
+        "missing": missing,
+        "resolved": resolved,
+        "reason": reason,
+    }
+
+
 def run_official_harness_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
     """Run ``swebench.harness.run_evaluation`` for one frozen candidate.
 
@@ -311,40 +395,26 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
             attempt_stage="harness",
         )
 
-    scripts_dir = Path(
-        str(
-            context.get("swe_bench_pro_scripts_dir")
-            or os.environ.get(
-                "SWEBENCH_PRO_ORACLE_SCRIPTS_DIR",
-                Path(__file__).resolve().parent
-                / "vendor"
-                / "swe_bench_pro"
-                / "run_scripts",
-            )
-        )
-    ).expanduser()
-    instance_scripts_dir = scripts_dir / instance_id
-    source_run_script = instance_scripts_dir / "run_script.sh"
-    source_parser = instance_scripts_dir / "parser.py"
-    if not source_run_script.exists() or not source_parser.exists():
-        missing = [
-            name
-            for name, path in (
-                ("run_script.sh", source_run_script),
-                ("parser.py", source_parser),
-            )
-            if not path.exists()
-        ]
+    scripts_dir = swe_bench_pro_oracle_scripts_dir(context)
+    scripts_preflight = preflight_swe_bench_pro_run_scripts(
+        [instance_id],
+        scripts_dir=scripts_dir,
+    )
+    if not scripts_preflight["ok"]:
         return _pro_adapter_failure(
             context=context,
             command=[],
             return_code=2,
             stdout="",
-            stderr="missing SWE-bench Pro scripts: " + ",".join(missing),
+            stderr="missing SWE-bench Pro scripts: " + scripts_preflight["reason"],
             artifact_paths=artifact_paths,
-            reason="pro_script_missing:" + ",".join(missing),
+            reason=str(scripts_preflight["reason"]),
             attempt_stage="harness",
         )
+    resolved_scripts = scripts_preflight["resolved"][0]
+    source_run_script = Path(str(resolved_scripts["run_script"]))
+    source_parser = Path(str(resolved_scripts["parser"]))
+    source_script_evidence = dict(resolved_scripts)
 
     fail_to_pass = _pro_test_list(
         context.get("fail_to_pass")
@@ -414,6 +484,7 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
             attempt_stage="docker",
             docker_image=docker_image,
             docker_platform=docker_platform,
+            source_script_evidence=source_script_evidence,
         )
     if pull_result.returncode != 0:
         return _pro_adapter_failure(
@@ -427,6 +498,7 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
             attempt_stage="docker",
             docker_image=docker_image,
             docker_platform=docker_platform,
+            source_script_evidence=source_script_evidence,
         )
 
     run_command = [
@@ -465,6 +537,7 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
             docker_platform=docker_platform,
             pull_command=pull_command,
             pull_return_code=pull_result.returncode,
+            source_script_evidence=source_script_evidence,
         )
 
     patch_applied = _pro_patch_applied(workspace_dir / "patch_apply.json")
@@ -488,6 +561,7 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
             pull_command=pull_command,
             pull_return_code=pull_result.returncode,
             patch_applied=patch_applied,
+            source_script_evidence=source_script_evidence,
         )
 
     output_path = workspace_dir / "output.json"
@@ -510,6 +584,7 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
             pull_return_code=pull_result.returncode,
             patch_applied=patch_applied,
             test_command_return_code=test_command_return_code,
+            source_script_evidence=source_script_evidence,
         )
 
     try:
@@ -535,6 +610,7 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
             pull_return_code=pull_result.returncode,
             patch_applied=patch_applied,
             test_command_return_code=test_command_return_code,
+            source_script_evidence=source_script_evidence,
         )
 
     test_command_return_code = _pro_test_command_return_code(
@@ -556,6 +632,7 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
             pull_return_code=pull_result.returncode,
             patch_applied=True,
             test_command_return_code=test_command_return_code,
+            source_script_evidence=source_script_evidence,
         )
 
     fail_to_pass_status = "pass" if set(fail_to_pass) <= passed_tests else "fail"
@@ -579,6 +656,7 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
         before_repo_set_cmd=before_repo_set_cmd,
         patch_applied=True,
         test_command_return_code=test_command_return_code,
+        source_script_evidence=source_script_evidence,
     )
     return {
         "fail_to_pass_status": fail_to_pass_status,
@@ -641,6 +719,7 @@ def _pro_adapter_failure(
     pull_return_code: int | None = None,
     patch_applied: bool | None = None,
     test_command_return_code: int | None = None,
+    source_script_evidence: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     receipt = _pro_adapter_receipt(
         context=context,
@@ -660,6 +739,7 @@ def _pro_adapter_failure(
         pull_return_code=pull_return_code,
         patch_applied=patch_applied,
         test_command_return_code=test_command_return_code,
+        source_script_evidence=source_script_evidence,
         run_id="",
         selected_tests=_pro_test_list(context.get("selected_test_files_to_run") or []),
         before_repo_set_cmd=str(context.get("before_repo_set_cmd") or ""),
@@ -739,6 +819,7 @@ def _pro_adapter_receipt(
     pull_return_code: int | None = None,
     patch_applied: bool | None = None,
     test_command_return_code: int | None = None,
+    source_script_evidence: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     docker_metadata: dict[str, Any] = {
         "image": docker_image,
@@ -776,6 +857,8 @@ def _pro_adapter_receipt(
             before_repo_set_cmd.encode("utf-8")
         ).hexdigest(),
     }
+    if source_script_evidence is not None:
+        receipt["source_run_scripts"] = dict(source_script_evidence)
     if patch_applied is not None:
         receipt["patch_applied"] = bool(patch_applied)
     if test_command_return_code is not None:

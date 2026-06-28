@@ -12,6 +12,7 @@ policy proposals.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import time
 from hashlib import sha256
@@ -45,6 +46,11 @@ from .mergeability_bench import (
     _summarize_acceptance_arm,
     _wilson_interval,
     build_configured_reviewer_panel,
+)
+from .swe_bench_official_oracle import (
+    preflight_swe_bench_pro_run_scripts,
+    run_swe_bench_pro_oracle,
+    swe_bench_pro_oracle_scripts_dir,
 )
 
 
@@ -899,6 +905,18 @@ OFFICIAL_ORACLE_RECEIPT_VALIDATION_KINDS = frozenset({
 SUPPORTED_OFFICIAL_REPLAY_ORACLE_ADAPTER_KINDS = (
     OFFICIAL_ORACLE_RECEIPT_VALIDATION_KINDS
 )
+
+
+def _official_replay_should_preflight_pro_scripts(
+    *,
+    oracle_runner: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None,
+    swe_bench_pro_scripts_dir: str | Path | None,
+) -> bool:
+    if swe_bench_pro_scripts_dir is not None:
+        return True
+    if os.environ.get("SWEBENCH_PRO_ORACLE_SCRIPTS_DIR"):
+        return True
+    return oracle_runner is run_swe_bench_pro_oracle
 
 _OFFICIAL_RECORD_HIDDEN_KEYS: tuple[str, ...] = (
     "patch",
@@ -2024,6 +2042,11 @@ def swebench_mergeability_fixture_runner(
                     or instance.get("dockerhub_tag")
                     or ""
                 ),
+                "swe_bench_pro_scripts_dir": str(
+                    candidate.get("swe_bench_pro_scripts_dir")
+                    or instance.get("swe_bench_pro_scripts_dir")
+                    or ""
+                ),
                 "repo": str(instance.get("repo") or ""),
                 "base_commit": str(instance.get("base_commit") or ""),
                 "test_patch": str(
@@ -2441,6 +2464,7 @@ def swebench_mergeability_official_replay_runner(
     reviewer_panel_mode: str = "custom",
     configured_reviewer_panel_options: ConfiguredReviewerPanelOptions | None = None,
     timeout_s: float = 30.0,
+    swe_bench_pro_scripts_dir: str | Path | None = None,
 ) -> dict[str, Any]:
     """Replay official-style SWE-bench records through mergeability machinery.
 
@@ -2507,6 +2531,30 @@ def swebench_mergeability_official_replay_runner(
         raise SwebenchMergeabilityFixtureRunnerError(
             "official SWE-bench replay selection filter excluded all records"
         )
+    run_scripts_preflight: dict[str, Any] = {}
+    if _official_replay_should_preflight_pro_scripts(
+        oracle_runner=oracle_runner,
+        swe_bench_pro_scripts_dir=swe_bench_pro_scripts_dir,
+    ):
+        scripts_dir = (
+            Path(swe_bench_pro_scripts_dir).expanduser()
+            if swe_bench_pro_scripts_dir is not None
+            else swe_bench_pro_oracle_scripts_dir()
+        )
+        run_scripts_preflight = preflight_swe_bench_pro_run_scripts(
+            selected_instance_ids,
+            scripts_dir=scripts_dir,
+        )
+        selection_filter["swe_bench_pro_scripts_dir"] = str(
+            run_scripts_preflight["scripts_dir"]
+        )
+        selection_filter["swe_bench_pro_run_scripts_preflight"] = dict(
+            run_scripts_preflight
+        )
+        if not run_scripts_preflight["ok"]:
+            raise SwebenchMergeabilityFixtureRunnerError(
+                str(run_scripts_preflight["reason"])
+            )
 
     predictions = _load_official_predictions(predictions_path)
     selected_set = set(selected_instance_ids)
@@ -2575,6 +2623,10 @@ def swebench_mergeability_official_replay_runner(
                 "test_patch": str(hidden["test_patch"]),
                 "official_patch": str(hidden["patch"]),
             }
+            if run_scripts_preflight:
+                candidate["swe_bench_pro_scripts_dir"] = str(
+                    run_scripts_preflight["scripts_dir"]
+                )
             for key in PRODUCED_BASELINE_RECEIPT_KEYS:
                 if key in prediction and isinstance(prediction[key], Mapping):
                     candidate[key] = dict(prediction[key])
@@ -2601,6 +2653,9 @@ def swebench_mergeability_official_replay_runner(
             "selected_test_files_to_run": list(hidden["selected_test_files_to_run"]),
             "dockerhub_tag": str(hidden["dockerhub_tag"]),
             "test_patch": str(hidden["test_patch"]),
+            "swe_bench_pro_scripts_dir": str(
+                run_scripts_preflight.get("scripts_dir") or ""
+            ),
             "public_bundle": str(public_bundle_path),
             "protected_paths": list(_DEFAULT_PROTECTED_PATHS),
             "s_probe_substrate": {
@@ -2701,6 +2756,7 @@ def swebench_mergeability_official_replay_runner(
             len(entry["candidates"]) for entry in manifest_instances
         ),
         "selection_filter": dict(selection_filter),
+        "swe_bench_pro_run_scripts_preflight": dict(run_scripts_preflight),
         "oracle_receipt_validation": receipt_validation,
         "label_validation": label_validation,
         "hidden_field_leak_check": leak_check,
@@ -2756,6 +2812,7 @@ def swebench_mergeability_official_all_arms_diagnostic_runner(
     timeout_s: float = 30.0,
     min_good: int = 1,
     min_bad: int = 1,
+    swe_bench_pro_scripts_dir: str | Path | None = None,
 ) -> dict[str, Any]:
     """Run a small official-oracle diagnostic and require all arms to populate.
 
@@ -2790,6 +2847,7 @@ def swebench_mergeability_official_all_arms_diagnostic_runner(
             reviewer_panel_mode=reviewer_panel_mode,
             configured_reviewer_panel_options=configured_reviewer_panel_options,
             timeout_s=timeout_s,
+            swe_bench_pro_scripts_dir=swe_bench_pro_scripts_dir,
         )
     except SwebenchMergeabilityFixtureRunnerError as exc:
         if "forbidden oracle material" not in str(exc):
@@ -4586,6 +4644,7 @@ def swebench_mergeability_official_live_runner(
     reviewer_panel: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
     reviewer_panel_mode: str = "custom",
     configured_reviewer_panel_options: ConfiguredReviewerPanelOptions | None = None,
+    swe_bench_pro_scripts_dir: str | Path | None = None,
 ) -> dict[str, Any]:
     """Generate matched live candidates, then evaluate via official replay."""
     if not allow_live:
@@ -4779,6 +4838,7 @@ def swebench_mergeability_official_live_runner(
         reviewer_panel_mode=reviewer_panel_mode,
         configured_reviewer_panel_options=configured_reviewer_panel_options,
         timeout_s=timeout_s,
+        swe_bench_pro_scripts_dir=swe_bench_pro_scripts_dir,
     )
     for arm in live_arms.values():
         arm["status"] = "completed"

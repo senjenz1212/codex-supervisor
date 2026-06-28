@@ -134,7 +134,72 @@ def test_pro_runner_returns_pass_status_on_gold_fixture(tmp_path, monkeypatch):
     assert receipt["patch_applied"] is True
     assert receipt["docker"]["image"] == "jefzda/sweap-images:nodebb.nodebb-demo"
     assert receipt["harness"]["name"] == "swe-bench-pro-local-docker"
+    source = receipt["source_run_scripts"]
+    assert source["instance_id"] == "instance_NodeBB__NodeBB-demo"
+    assert source["run_script_sha256"] == sha256(
+        Path(source["run_script"]).read_bytes()
+    ).hexdigest()
+    assert source["parser_sha256"] == sha256(
+        Path(source["parser"]).read_bytes()
+    ).hexdigest()
     assert Path(receipt["artifact_paths"]["output_json"]).exists()
+
+
+def test_pro_runner_missing_scripts_fails_before_docker(tmp_path, monkeypatch):
+    monkeypatch.setenv("SWEBENCH_PRO_ORACLE_ARTIFACT_DIR", str(tmp_path / "oracle"))
+    context = _pro_context(tmp_path)
+    context["swe_bench_pro_scripts_dir"] = str(tmp_path / "empty-run-scripts")
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("docker must not run when Pro scripts are missing")
+
+    monkeypatch.setattr(official_oracle.subprocess, "run", fail_if_called)
+
+    result = run_swe_bench_pro_oracle(context)
+
+    assert result["fail_to_pass_status"] == "unavailable"
+    assert result["pass_to_pass_status"] == "unavailable"
+    assert result["oracle_unavailable"] is True
+    assert result["oracle_unavailable_reason"] == (
+        "pro_script_missing:"
+        "instance_NodeBB__NodeBB-demo(parser.py,run_script.sh)"
+    )
+    receipt = result["oracle_adapter_receipt"]
+    assert receipt["command"] == []
+    assert receipt["unavailable_reason"] == result["oracle_unavailable_reason"]
+
+
+def test_pro_runner_copies_source_scripts_verbatim(tmp_path, monkeypatch):
+    monkeypatch.setenv("SWEBENCH_PRO_ORACLE_ARTIFACT_DIR", str(tmp_path / "oracle"))
+    instance_id = "instance_NodeBB__NodeBB-demo"
+    context = _pro_context(tmp_path, instance_id=instance_id)
+    instance_dir = Path(context["swe_bench_pro_scripts_dir"]) / instance_id
+    run_script_text = "#!/usr/bin/env bash\necho bespoke-run-script\n"
+    parser_text = "import json, sys\njson.dump({'tests': []}, open(sys.argv[3], 'w'))\n"
+    (instance_dir / "run_script.sh").write_text(run_script_text, encoding="utf-8")
+    (instance_dir / "parser.py").write_text(parser_text, encoding="utf-8")
+    output_payload = {
+        "tests": [
+            {"name": "tests/test_parser.py::test_hidden", "status": "PASSED"},
+            {"name": "tests/test_parser.py::test_existing", "status": "PASSED"},
+        ]
+    }
+    _calls, fake_run = _fake_docker_runner(tmp_path, output_payload)
+    monkeypatch.setattr(official_oracle.subprocess, "run", fake_run)
+
+    result = run_swe_bench_pro_oracle(context)
+
+    receipt = result["oracle_adapter_receipt"]
+    workspace_run_script = Path(receipt["artifact_paths"]["run_script"])
+    workspace_parser = Path(receipt["artifact_paths"]["parser"])
+    assert workspace_run_script.read_text(encoding="utf-8") == run_script_text
+    assert workspace_parser.read_text(encoding="utf-8") == parser_text
+    assert receipt["source_run_scripts"]["run_script_sha256"] == sha256(
+        run_script_text.encode("utf-8")
+    ).hexdigest()
+    assert receipt["source_run_scripts"]["parser_sha256"] == sha256(
+        parser_text.encode("utf-8")
+    ).hexdigest()
 
 
 def test_pro_entryscript_runs_parser_after_test_command_failure():

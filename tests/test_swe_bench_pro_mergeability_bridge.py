@@ -1594,6 +1594,15 @@ def _write_official_predictions(
     return predictions_path
 
 
+def _write_official_prediction_rows(tmp_path: Path, rows: list[dict]) -> Path:
+    predictions_path = tmp_path / "predictions.jsonl"
+    predictions_path.write_text(
+        "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    return predictions_path
+
+
 def _official_record(instance_id: str = "official_demo__repo-001") -> dict:
     return {
         "instance_id": instance_id,
@@ -1798,6 +1807,68 @@ def test_official_replay_hash_mismatched_baseline_receipt_is_unavailable(tmp_pat
     matched = report["bridge_report"]["false_accept_at_matched_true_accept"][ARM_S_PROBE]
     assert matched["status"] == "unavailable"
     assert matched["reason"] == "baseline_arm_unavailable"
+
+
+def test_official_replay_preflights_selected_pro_run_scripts_before_oracle(
+    tmp_path,
+    monkeypatch,
+):
+    instance_ids = [
+        "official_demo__repo-001",
+        "official_demo__repo-002",
+        "official_demo__repo-003",
+    ]
+    predictions_path = _write_official_prediction_rows(
+        tmp_path,
+        [
+            {
+                "instance_id": instance_id,
+                "candidate_id": f"candidate-{index}",
+                "model_patch": _valid_model_patch(),
+                "single_agent_baseline_decision": _produced_baseline_decision(
+                    f"candidate-{index}",
+                    patch=_valid_model_patch(),
+                ),
+            }
+            for index, instance_id in enumerate(instance_ids, start=1)
+        ],
+    )
+    scripts_dir = tmp_path / "run_scripts"
+    present_dir = scripts_dir / "official_demo__repo-001"
+    present_dir.mkdir(parents=True)
+    (present_dir / "run_script.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    (present_dir / "parser.py").write_text("import json\n", encoding="utf-8")
+    monkeypatch.setenv("SWEBENCH_PRO_ORACLE_SCRIPTS_DIR", str(scripts_dir))
+    calls: list[str] = []
+
+    def materializer(**_kwargs):
+        calls.append("materializer")
+        raise AssertionError("materializer must not run before scripts preflight")
+
+    def oracle(_context):
+        calls.append("oracle")
+        raise AssertionError("oracle must not run before scripts preflight")
+
+    with pytest.raises(SwebenchMergeabilityFixtureRunnerError) as excinfo:
+        swebench_mergeability_official_replay_runner(
+            dataset="fixture-official",
+            dataset_split="test",
+            predictions_path=predictions_path,
+            output_dir=tmp_path / "out",
+            dataset_loader=lambda **_kwargs: [
+                _official_record(instance_id) for instance_id in instance_ids
+            ],
+            repo_materializer=materializer,
+            oracle_runner=oracle,
+            oracle_adapter_kind="official_docker_or_equivalent",
+            instance_ids=instance_ids,
+        )
+
+    message = str(excinfo.value)
+    assert "pro_script_missing:" in message
+    assert "official_demo__repo-002(parser.py,run_script.sh)" in message
+    assert "official_demo__repo-003(parser.py,run_script.sh)" in message
+    assert calls == []
 
 
 def test_official_replay_refuses_dataset_fetch_without_opt_in(tmp_path):

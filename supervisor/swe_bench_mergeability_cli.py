@@ -103,6 +103,14 @@ def main(argv: list[str] | None = None) -> int:
         default="",
         help="Optional 'module:attr' import for a custom repo materializer.",
     )
+    parser.add_argument(
+        "--swe-bench-pro-scripts-dir",
+        default="",
+        help=(
+            "Optional SWE-bench Pro run_scripts root. Equivalent to "
+            "SWEBENCH_PRO_ORACLE_SCRIPTS_DIR for official Pro replay preflight."
+        ),
+    )
     args = parser.parse_args(argv)
 
     reviewer_panel = None
@@ -203,6 +211,7 @@ def main(argv: list[str] | None = None) -> int:
                 "reviewer_panel": reviewer_panel,
                 "reviewer_panel_mode": reviewer_panel_mode,
                 "timeout_s": args.timeout_s,
+                "swe_bench_pro_scripts_dir": args.swe_bench_pro_scripts_dir or None,
             }
             if args.official_all_arms_diagnostic:
                 report = swebench_mergeability_official_all_arms_diagnostic_runner(
