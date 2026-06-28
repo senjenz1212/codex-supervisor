@@ -60,6 +60,10 @@ def _fake_docker_runner(tmp_path: Path, output_payload: dict):
         if command[:2] == ["docker", "run"]:
             volume_arg = command[command.index("-v") + 1]
             workspace = Path(volume_arg.split(":", 1)[0])
+            (workspace / "patch_apply.json").write_text(
+                json.dumps({"patch_applied": True}),
+                encoding="utf-8",
+            )
             (workspace / "stdout.log").write_text("test stdout\n", encoding="utf-8")
             (workspace / "stderr.log").write_text("", encoding="utf-8")
             (workspace / "output.json").write_text(
@@ -88,6 +92,10 @@ def _fake_docker_runner_with_test_command_receipt(
         if command[:2] == ["docker", "run"]:
             volume_arg = command[command.index("-v") + 1]
             workspace = Path(volume_arg.split(":", 1)[0])
+            (workspace / "patch_apply.json").write_text(
+                json.dumps({"patch_applied": True}),
+                encoding="utf-8",
+            )
             (workspace / "stdout.log").write_text("test stdout\n", encoding="utf-8")
             (workspace / "stderr.log").write_text("", encoding="utf-8")
             (workspace / "test_command.json").write_text(

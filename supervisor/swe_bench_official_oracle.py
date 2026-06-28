@@ -1,6 +1,7 @@
 """Official SWE-bench oracle adapter for mergeability replay smoke runs."""
 from __future__ import annotations
 
+import ast
 import json
 import os
 import platform as py_platform
@@ -356,9 +357,7 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
         or []
     )
     selected_tests = _pro_test_list(context.get("selected_test_files_to_run") or [])
-    before_repo_set_cmd = _last_nonempty_line(
-        str(context.get("before_repo_set_cmd") or "")
-    )
+    before_repo_set_cmd = str(context.get("before_repo_set_cmd") or "")
     docker_image = _pro_docker_image(context)
     docker_platform = _pro_docker_platform()
     subprocess_timeout_s = int(
@@ -469,7 +468,12 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
         )
 
     patch_applied = _pro_patch_applied(workspace_dir / "patch_apply.json")
-    if patch_applied is False:
+    if patch_applied is not True:
+        reason = (
+            "patch_apply_failed"
+            if patch_applied is False
+            else "patch_apply_receipt_missing_or_malformed"
+        )
         return _pro_adapter_failure(
             context=context,
             command=run_command,
@@ -477,13 +481,13 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
             stdout=run_result.stdout,
             stderr=run_result.stderr,
             artifact_paths=artifact_paths,
-            reason="patch_apply_failed",
+            reason=reason,
             attempt_stage="patch_apply",
             docker_image=docker_image,
             docker_platform=docker_platform,
             pull_command=pull_command,
             pull_return_code=pull_result.returncode,
-            patch_applied=False,
+            patch_applied=patch_applied,
         )
 
     output_path = workspace_dir / "output.json"
@@ -510,6 +514,7 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
 
     try:
         parser_payload = json.loads(output_path.read_text(encoding="utf-8"))
+        parsed_test_count = _pro_test_count(parser_payload)
         passed_tests = _pro_passed_tests(parser_payload)
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         test_command_return_code = _pro_test_command_return_code(
@@ -532,11 +537,29 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
             test_command_return_code=test_command_return_code,
         )
 
-    fail_to_pass_status = "pass" if set(fail_to_pass) <= passed_tests else "fail"
-    pass_to_pass_status = "pass" if set(pass_to_pass) <= passed_tests else "fail"
     test_command_return_code = _pro_test_command_return_code(
         workspace_dir / "test_command.json"
     )
+    if parsed_test_count == 0:
+        return _pro_adapter_failure(
+            context=context,
+            command=run_command,
+            return_code=run_result.returncode,
+            stdout=run_result.stdout,
+            stderr=run_result.stderr,
+            artifact_paths=artifact_paths,
+            reason="pro_parser_output_empty",
+            attempt_stage="scoring",
+            docker_image=docker_image,
+            docker_platform=docker_platform,
+            pull_command=pull_command,
+            pull_return_code=pull_result.returncode,
+            patch_applied=True,
+            test_command_return_code=test_command_return_code,
+        )
+
+    fail_to_pass_status = "pass" if set(fail_to_pass) <= passed_tests else "fail"
+    pass_to_pass_status = "pass" if set(pass_to_pass) <= passed_tests else "fail"
     receipt = _pro_adapter_receipt(
         context=context,
         command=run_command,
@@ -639,9 +662,7 @@ def _pro_adapter_failure(
         test_command_return_code=test_command_return_code,
         run_id="",
         selected_tests=_pro_test_list(context.get("selected_test_files_to_run") or []),
-        before_repo_set_cmd=_last_nonempty_line(
-            str(context.get("before_repo_set_cmd") or "")
-        ),
+        before_repo_set_cmd=str(context.get("before_repo_set_cmd") or ""),
     )
     return {
         "fail_to_pass_status": "unavailable",
@@ -829,12 +850,20 @@ def _pro_entryscript(
     """
     selected = ",".join(str(item) for item in selected_tests)
     selected_arg = shlex.quote(selected)
+    pre_patch_commands, post_patch_commands = _split_pro_before_repo_set_cmd(
+        before_repo_set_cmd
+    )
+    if not pre_patch_commands:
+        pre_patch_commands = [
+            f"git reset --hard {shlex.quote(base_commit)}",
+            f"git checkout {shlex.quote(base_commit)}",
+        ]
+
     lines = [
         "#!/usr/bin/env bash",
         "set -euo pipefail",
         "cd /app",
-        f"git reset --hard {shlex.quote(base_commit)}",
-        f"git checkout {shlex.quote(base_commit)}",
+        *pre_patch_commands,
         "if git apply -v /workspace/patch.diff; then",
         "  printf '{\"patch_applied\": true}\\n' > /workspace/patch_apply.json",
         "else",
@@ -843,8 +872,7 @@ def _pro_entryscript(
         "  exit \"$status\"",
         "fi",
     ]
-    if before_repo_set_cmd.strip():
-        lines.append(before_repo_set_cmd.strip())
+    lines.extend(post_patch_commands)
     lines.extend([
         "test_command_exit=0",
         f"if bash /workspace/run_script.sh {selected_arg} > /workspace/stdout.log 2> /workspace/stderr.log; then",
@@ -857,6 +885,42 @@ def _pro_entryscript(
         "",
     ])
     return "\n".join(lines)
+
+
+def _split_pro_before_repo_set_cmd(value: str) -> tuple[list[str], list[str]]:
+    pre_patch: list[str] = []
+    post_patch: list[str] = []
+    for command in _pro_shell_commands(value):
+        if _is_pro_pre_patch_repo_setup(command):
+            pre_patch.append(command)
+        else:
+            post_patch.append(command)
+    return pre_patch, post_patch
+
+
+def _pro_shell_commands(value: str) -> list[str]:
+    commands: list[str] = []
+    for raw_line in str(value).splitlines():
+        for raw_command in raw_line.split("&&"):
+            command = raw_command.strip()
+            if command:
+                commands.append(command)
+    return commands
+
+
+def _is_pro_pre_patch_repo_setup(command: str) -> bool:
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return False
+    if len(tokens) < 2 or tokens[0] != "git":
+        return False
+    git_command = tokens[1]
+    if git_command in {"reset", "clean"}:
+        return True
+    if git_command == "checkout":
+        return "--" not in tokens
+    return False
 
 
 def _pro_docker_image(context: Mapping[str, Any]) -> str:
@@ -920,7 +984,10 @@ def _pro_test_list(raw: Any) -> list[str]:
         try:
             parsed = json.loads(text)
         except json.JSONDecodeError:
-            return [text]
+            try:
+                parsed = ast.literal_eval(text)
+            except (SyntaxError, ValueError):
+                return [text]
         return _pro_test_list(parsed)
     if isinstance(raw, Sequence) and not isinstance(raw, (bytes, bytearray)):
         return [str(item) for item in raw]
@@ -944,6 +1011,15 @@ def _pro_passed_tests(payload: Any) -> set[str]:
         if status == "PASSED":
             passed.add(name)
     return passed
+
+
+def _pro_test_count(payload: Any) -> int:
+    if not isinstance(payload, Mapping):
+        raise ValueError("Pro parser output must be a JSON object")
+    tests = payload.get("tests")
+    if not isinstance(tests, Sequence) or isinstance(tests, (str, bytes)):
+        raise ValueError("Pro parser output missing tests list")
+    return len(tests)
 
 
 def _last_nonempty_line(value: str) -> str:
