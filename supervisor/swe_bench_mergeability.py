@@ -4547,7 +4547,25 @@ def swebench_mergeability_powered_factorial_runner(
     alpha: float = 0.05,
     timeout_s: float = 30.0,
 ) -> dict[str, Any]:
-    """Run the powered factorial evaluator over an oracle-labeled Pro corpus."""
+    """Run the powered factorial evaluator over an oracle-labeled Pro corpus.
+
+    Loads the SWE-bench Pro predictions JSONL at ``predictions_path``, adapts
+    every row's explicit ``oracle_label``, ``candidate_artifact_hash``, trusted
+    ``single_agent_baseline_decision`` receipt, ``reviewer_panel_results``, and
+    the four required arm decisions
+    (``same_model_multi_agent_decision``, ``hetero_multi_reviewer_decision``,
+    ``runtime_evidence_floor_decision``, ``full_supervisor_stack_decision``)
+    into ``run_powered_factorial_mergeability_evaluation``. ``min_good`` /
+    ``min_bad`` drive raw oracle sample-size sufficiency; ``min_discordant`` /
+    ``alpha`` drive the paired McNemar gate over the full supervisor stack vs
+    the single-agent baseline arm. The returned report is augmented with the
+    report-only ``evidence_conversion_power_contract`` block; every authority
+    flag (``metric_applyable``, ``powered_improvement_claim_allowed``,
+    ``human_mergeability_claim_allowed``, ``improvement_claim_allowed``,
+    ``default_change_allowed``, ``policy_mutated``, ``gate_advanced``) is
+    held false. ``powered_metric_applyable`` reflects the raw factorial
+    evaluator status for diagnostics only.
+    """
     predictions_file = Path(predictions_path).expanduser().resolve()
     output_path = Path(output_dir).expanduser().resolve()
     output_path.mkdir(parents=True, exist_ok=True)

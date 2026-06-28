@@ -1,4 +1,12 @@
-"""CLI for deterministic SWE-bench mergeability replay bundles."""
+"""CLI for deterministic SWE-bench mergeability replay bundles.
+
+Exposes the replay, live, official-replay, official-all-arms diagnostic, and
+SWE-bench Pro powered factorial runners. ``--powered-factorial`` adapts an
+oracle-labeled Pro predictions JSONL through
+``swebench_mergeability_powered_factorial_runner`` and surfaces the
+report-only ``evidence_conversion_power_contract`` with no authority flag
+mutations; the all-arms diagnostic remains a separate report-only path.
+"""
 from __future__ import annotations
 
 import argparse

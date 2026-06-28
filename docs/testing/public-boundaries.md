@@ -380,3 +380,25 @@ a supported adapter kind, refuses live runs without `--allow-live`,
 all-arms diagnostic artifact when prerequisites are missing. The CLI must not
 execute reviewer or oracle work itself; it composes the public runners under
 the supervisor seams above.
+
+## swe_bench_mergeability_powered_factorial_cli
+
+Drive the SWE-bench Pro powered factorial evaluation through the same
+`codex-supervisor-swebench-mergeability-replay` entry point with
+`--powered-factorial` plus `--predictions` and `--output-dir`. Tests must
+prove the CLI forwards `--min-good`, `--min-bad`, `--min-discordant`, and
+`--alpha` into `swebench_mergeability_powered_factorial_runner(...)`, refuses
+to run without `--predictions`, and emits a `powered_factorial_report.json`
+that adapts each Pro prediction row's explicit `oracle_label`,
+`candidate_artifact_hash`, trusted `single_agent_baseline_decision` receipt,
+`reviewer_panel_results`, and the four arm decisions
+(`same_model_multi_agent_decision`, `hetero_multi_reviewer_decision`,
+`runtime_evidence_floor_decision`, `full_supervisor_stack_decision`) into
+`run_powered_factorial_mergeability_evaluation`. The CLI summary must surface
+`evidence_conversion_power_contract` and `powered_metric_applyable`. Every
+authority flag on the report (`metric_applyable`,
+`powered_improvement_claim_allowed`, `human_mergeability_claim_allowed`,
+`improvement_claim_allowed`, `default_change_allowed`, `policy_mutated`,
+`gate_advanced`) must remain false; the powered factorial path must not
+invoke any benchmark-to-policy promotion bridge and the all-arms diagnostic
+remains a separate report-only mode.
