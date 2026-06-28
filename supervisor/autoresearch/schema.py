@@ -185,6 +185,8 @@ class AutoresearchValidationReport:
     metric_name: str
     metric_trials: tuple[float, ...]
     metric_source: str
+    evaluator_ref: str
+    evaluator_hash: str
     evaluator_run_ref: str
     evaluator_run_hash: str
     metric_before: float | None
@@ -219,6 +221,8 @@ class AutoresearchValidationReport:
             "metric_name": self.metric_name,
             "metric_trials": list(self.metric_trials),
             "metric_source": self.metric_source,
+            "evaluator_ref": self.evaluator_ref,
+            "evaluator_hash": self.evaluator_hash,
             "evaluator_run_ref": self.evaluator_run_ref,
             "evaluator_run_hash": self.evaluator_run_hash,
             "metric_before": self.metric_before,
@@ -260,6 +264,8 @@ class AutoresearchValidationReport:
             "metric_name": self.metric_name,
             "metric_trials": list(self.metric_trials),
             "metric_source": self.metric_source,
+            "evaluator_ref": self.evaluator_ref,
+            "evaluator_hash": self.evaluator_hash,
             "evaluator_run_ref": self.evaluator_run_ref,
             "evaluator_run_hash": self.evaluator_run_hash,
             "metric_before": self.metric_before,

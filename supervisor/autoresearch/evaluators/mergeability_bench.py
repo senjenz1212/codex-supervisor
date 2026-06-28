@@ -30,18 +30,15 @@ def main() -> int:
 
     attempt = json.loads(Path(args.attempt_json).read_text(encoding="utf-8"))
     bench_root = Path(os.environ.get("MERGEABILITY_BENCH_ROOT") or source_root / "tests/fixtures/mergeability_bench").resolve()
-    task_id = str(
-        attempt.get("mergeability_task_id")
-        or os.environ.get("MERGEABILITY_TASK_ID")
-        or attempt.get("task_id")
-        or "calculator-addition"
-    )
+    task_id = _task_id_for_attempt(attempt)
     control = attempt.get("evaluator_quality_control") or {}
     control_kind = str(control.get("kind") or os.environ.get("AUTORESEARCH_CONTROL_KIND") or "")
     candidate_ref = _candidate_ref_for_attempt(
         attempt,
         control_kind=control_kind,
         bench_root=bench_root,
+        attempt_worktree=Path(args.attempt_worktree).resolve(),
+        attempt_json_path=Path(args.attempt_json).resolve(),
     )
 
     task = load_mergeability_task(bench_root, task_id)
@@ -81,6 +78,8 @@ def _candidate_ref_for_attempt(
     *,
     control_kind: str,
     bench_root: Path,
+    attempt_worktree: Path,
+    attempt_json_path: Path,
 ) -> Path:
     if control_kind in {"noop", "harmful", "known_good", "determinism"}:
         candidate_name = "known_good" if control_kind == "determinism" else control_kind
@@ -90,13 +89,17 @@ def _candidate_ref_for_attempt(
     raw = (
         attempt.get("mergeability_candidate_ref")
         or attempt.get("patch_ref")
+        or _first_policy_candidate_ref(attempt)
         or os.environ.get("MERGEABILITY_CANDIDATE_REF")
         or "candidates/known_good.json"
     )
     candidate = Path(str(raw))
     if candidate.is_absolute():
         return candidate
-    attempt_ref = Path(os.environ.get("AUTORESEARCH_ATTEMPT_JSON") or "").parent / candidate
+    worktree_ref = attempt_worktree / candidate
+    if worktree_ref.exists():
+        return worktree_ref
+    attempt_ref = attempt_json_path.parent / candidate
     if attempt_ref.exists():
         return attempt_ref
     source_root = Path(os.environ.get("AUTORESEARCH_SOURCE_ROOT") or ".").resolve()
@@ -104,6 +107,26 @@ def _candidate_ref_for_attempt(
     if source_ref.exists():
         return source_ref
     return bench_root / candidate
+
+
+def _first_policy_candidate_ref(attempt: dict[str, Any]) -> str:
+    changes = attempt.get("policy_candidate_changes")
+    if isinstance(changes, dict):
+        for value in changes.values():
+            if str(value).strip():
+                return str(value)
+    value = attempt.get("policy_overlay_candidate_ref") or attempt.get("candidate_overlay_ref")
+    return str(value or "")
+
+
+def _task_id_for_attempt(attempt: dict[str, Any]) -> str:
+    explicit = str(attempt.get("mergeability_task_id") or os.environ.get("MERGEABILITY_TASK_ID") or "").strip()
+    if explicit:
+        return explicit
+    task_id = str(attempt.get("task_id") or "").strip()
+    if task_id and not task_id.startswith("autoresearch:"):
+        return task_id
+    return "calculator-addition"
 
 
 if __name__ == "__main__":

@@ -138,10 +138,10 @@ def test_autoresearch_signal_generator_drafts_one_experiment_for_repeated_taxono
     assert draft["taxonomy_code"] == "FM-3.2"
     assert third_event_id in draft["provenance"]["event_ids"]
     assert draft["experiment"]["evaluator_ref"].endswith(
-        "supervisor/autoresearch/evaluators/replay_corpus.py"
+        "supervisor/autoresearch/evaluators/mergeability_bench.py"
     )
     assert draft["experiment"]["evaluator_hash"]
-    assert draft["experiment"]["metric_name"] == "pass_rate"
+    assert draft["experiment"]["metric_name"] == "mergeability_score"
     assert draft["experiment"]["k_trials"] == 2
     assert draft["experiment"]["mutable_paths"] == ["supervisor/autoresearch/orchestrator.py"]
     assert len(_queue_rows(state)) == 1

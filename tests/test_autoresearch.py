@@ -732,18 +732,21 @@ print(json.dumps({"metric_value": 0.7 + (args.trial_index * 0.05)}))
     ) == "1"
 
 
-def test_autoresearch_default_replay_corpus_evaluator_produces_pass_rate(tmp_path):
+def test_autoresearch_default_behavioral_evaluator_produces_mergeability_score(tmp_path):
     fixture = _write_fixture(
         tmp_path,
-        experiment=_live_experiment(
-            evaluator_ref="",
-            evaluator_hash="",
-            metric_name="",
+            experiment=_live_experiment(
+                task_id="calculator-addition",
+                evaluator_ref="",
+                evaluator_hash="",
+                metric_name="",
             k_trials=2,
             mutable_paths=["workspace"],
             immutable_paths=["locked"],
         ),
-        attempts=[_live_attempt()],
+            attempts=[_live_attempt(
+                patch_ref=(Path("tests/fixtures/mergeability_bench") / "candidates/known_good.json").as_posix(),
+            )],
     )
     state = State(str(tmp_path / "state.db"))
 
@@ -758,10 +761,10 @@ def test_autoresearch_default_replay_corpus_evaluator_produces_pass_rate(tmp_pat
 
     record = report["records"][0]
     assert report["experiment"]["evaluator_ref"].endswith(
-        "supervisor/autoresearch/evaluators/replay_corpus.py"
+        "supervisor/autoresearch/evaluators/mergeability_bench.py"
     )
     assert report["experiment"]["evaluator_hash"]
-    assert record["metric_name"] == "pass_rate"
+    assert record["metric_name"] == "mergeability_score"
     assert record["metric_source"] == "evaluator_execution"
     assert len(record["metric_trials"]) == 2
     assert all(0.0 <= value <= 1.0 for value in record["metric_trials"])

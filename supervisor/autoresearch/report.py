@@ -43,8 +43,10 @@ def build_autoresearch_report(reports: Iterable[AutoresearchValidationReport]) -
         },
         "recommendation": _recommendation(records),
         "default_change_allowed": False,
+        "automatic_policy_mutation": False,
         "report_only": {
             "default_change_allowed": False,
+            "automatic_policy_mutation": False,
             "config_mutated": False,
             "policy_mutated": False,
             "operator_review_required": True,

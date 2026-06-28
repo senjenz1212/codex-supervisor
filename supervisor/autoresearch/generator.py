@@ -17,6 +17,14 @@ from .validation import DEFAULT_IMMUTABLE_PATHS
 AUTORESEARCH_DRAFT_SCHEMA_VERSION = "supervisor-autoresearch-experiment-draft/v1"
 AUTORESEARCH_ACTIVATION_SCHEMA_VERSION = "supervisor-autoresearch-experiment-activation/v1"
 AUTORESEARCH_RUNNER_SCHEMA_VERSION = "supervisor-autoresearch-auto-runner/v1"
+RESERVED_OPERATOR_IDENTITIES = frozenset({
+    "codex-supervisor-axi",
+    "codex-supervisor",
+    "autoresearch",
+    "auto",
+    "automated",
+    "system",
+})
 
 
 @dataclass(frozen=True)
@@ -193,6 +201,7 @@ def activate_autoresearch_experiment(
     Report-only rows remain report-only and cannot be promoted through this
     transition; they require a separate stability-proposal process.
     """
+    _require_named_operator(operator=operator, approval_channel=approval_channel)
     activated_at = int(time.time()) if now is None else int(now)
     row = state.activate_autoresearch_experiment(
         experiment_id=experiment_id,
@@ -229,6 +238,7 @@ def park_autoresearch_experiment(
     now: int | None = None,
 ) -> dict[str, Any]:
     """Operator transition from draft/runnable to parked without running it."""
+    _require_named_operator(operator=operator, approval_channel=approval_channel)
     parked_at = int(time.time()) if now is None else int(now)
     row = state.park_autoresearch_experiment(
         experiment_id=experiment_id,
@@ -253,6 +263,16 @@ def park_autoresearch_experiment(
         },
     )
     return row
+
+
+def _require_named_operator(*, operator: str, approval_channel: str) -> None:
+    normalized = str(operator or "").strip()
+    if not normalized:
+        raise ValueError("operator is required")
+    if normalized.lower() in RESERVED_OPERATOR_IDENTITIES:
+        raise ValueError("named human operator is required")
+    if not str(approval_channel or "").strip():
+        raise ValueError("approval_channel is required")
 
 
 def run_runnable_autoresearch_experiments(

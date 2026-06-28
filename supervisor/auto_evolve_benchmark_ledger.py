@@ -18,6 +18,7 @@ AUTHORITY_FLAGS_FALSE: dict[str, bool] = {
     "improvement_claim_allowed": False,
     "powered_improvement_claim_allowed": False,
     "human_mergeability_claim_allowed": False,
+    "default_change_allowed": False,
     "policy_mutated": False,
     "gate_advanced": False,
 }

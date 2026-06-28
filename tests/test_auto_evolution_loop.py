@@ -142,7 +142,7 @@ def _prepare_repo(root: Path) -> None:
     (root / ".supervisor/policy-overlay.yaml").write_text(BASE_OVERLAY, encoding="utf-8")
     (root / "candidates").mkdir(parents=True, exist_ok=True)
     (root / "candidates/policy-overlay.yaml").write_text(CANDIDATE_OVERLAY, encoding="utf-8")
-    evaluator = root / "supervisor/autoresearch/evaluators/replay_corpus.py"
+    evaluator = root / "supervisor/autoresearch/evaluators/mergeability_bench.py"
     evaluator.parent.mkdir(parents=True, exist_ok=True)
     evaluator.write_text(
         "#!/usr/bin/env python\n"

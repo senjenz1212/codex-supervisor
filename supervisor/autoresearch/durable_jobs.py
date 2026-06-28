@@ -15,6 +15,7 @@ from .schema import AutoresearchAttempt, AutoresearchExperiment, sha256_json
 
 LEASE_TTL_S = 60
 DEFAULT_REPLAY_CORPUS_EVALUATOR = Path("supervisor/autoresearch/evaluators/replay_corpus.py")
+DEFAULT_BEHAVIORAL_EVALUATOR = Path("supervisor/autoresearch/evaluators/mergeability_bench.py")
 
 
 def resolve_evaluator_defaults(
@@ -22,17 +23,17 @@ def resolve_evaluator_defaults(
     *,
     repo_root: str | Path,
 ) -> AutoresearchExperiment:
-    """Fill the repo-native replay-corpus evaluator when no evaluator is supplied."""
+    """Fill the repo-native behavioral evaluator when no evaluator is supplied."""
     if experiment.evaluator_ref or experiment.evaluator_hash:
         return experiment
     repo_root_path = Path(repo_root).expanduser().resolve()
-    evaluator_path = repo_root_path / DEFAULT_REPLAY_CORPUS_EVALUATOR
+    evaluator_path = repo_root_path / DEFAULT_BEHAVIORAL_EVALUATOR
     evaluator_hash = sha256(evaluator_path.read_bytes()).hexdigest()
     return replace(
         experiment,
-        evaluator_ref=DEFAULT_REPLAY_CORPUS_EVALUATOR.as_posix(),
+        evaluator_ref=DEFAULT_BEHAVIORAL_EVALUATOR.as_posix(),
         evaluator_hash=evaluator_hash,
-        metric_name="pass_rate",
+        metric_name="mergeability_score",
     )
 
 

@@ -67,6 +67,10 @@ def promote_benchmark_report_to_autoresearch_report(
             "operator_review_required": True,
         },
         "default_change_allowed": False,
+        "metric_applyable": False,
+        "improvement_claim_allowed": False,
+        "operator_facing_only": True,
+        "policy_derivation_allowed": False,
         "report_only": {
             "default_change_allowed": False,
             "config_mutated": False,
@@ -74,9 +78,6 @@ def promote_benchmark_report_to_autoresearch_report(
             "operator_review_required": True,
         },
     }
-    if status != "accepted":
-        report["metric_applyable"] = False
-        report["improvement_claim_allowed"] = False
     report["report_sha256"] = sha256_json({
         key: value for key, value in report.items() if key != "report_sha256"
     })
@@ -190,6 +191,8 @@ def _autoresearch_record(
         "metric_source": "evaluator_execution",
         "evaluator_run_ref": evaluator_run_ref,
         "evaluator_run_hash": evaluator_run_hash,
+        "evaluator_ref": "",
+        "evaluator_hash": "",
         "metric_before": None,
         "metric_after": None,
         "metric_delta": None,
@@ -212,6 +215,10 @@ def _autoresearch_record(
         "cost_usd": 0.0,
         "wall_clock_s": 0.0,
         "default_change_allowed": False,
+        "metric_applyable": False,
+        "improvement_claim_allowed": False,
+        "operator_facing_only": True,
+        "policy_derivation_allowed": False,
         "policy_mutated": False,
         "gate_advanced": False,
         "benchmark_report_sha256": benchmark_hash,
