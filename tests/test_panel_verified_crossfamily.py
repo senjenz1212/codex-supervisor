@@ -40,7 +40,7 @@ def _outcome(decision: str = "accept") -> Outcome:
 
 def _cursor_result(
     *,
-    model: str,
+    model: str | None,
     runtime: str = "litellm_structured",
     decision: str = "accept",
 ) -> CursorInvocationResult:
@@ -233,6 +233,34 @@ def test_operator_flag_alone_is_not_proven():
         round_index=0,
     )
 
+    assert rows[0]["provider_family"] == "google"
+    assert rows[0]["provider_family_verified"] is False
+    assert rows[0]["provider_family_source"] == "operator_config"
+    assert _reviewer_cross_family_claim_status(rows[0]) == (
+        "operator_asserted_provider_family_unverified",
+        False,
+    )
+
+
+def test_requested_model_without_served_model_is_not_proven():
+    spec = ReviewerSpec(
+        reviewer_id="independent-reviewer-litellm",
+        runtime="litellm_structured",
+        model="gemini-3.1-pro-preview",
+        provider_family="google",
+        lineage=("google", "litellm_structured", "gemini-3.1-pro-preview"),
+        tool_access="text_only",
+        assurance_grade="text_only",
+    )
+
+    rows = independent_reviewer_results_from_review_results(
+        [(spec, _cursor_result(model=None))],
+        task_id="panel-verified-crossfamily",
+        gate="mergeability_full_gate",
+        round_index=0,
+    )
+
+    assert rows[0]["model"] == "gemini-3.1-pro-preview"
     assert rows[0]["provider_family"] == "google"
     assert rows[0]["provider_family_verified"] is False
     assert rows[0]["provider_family_source"] == "operator_config"

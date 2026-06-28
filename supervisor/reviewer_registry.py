@@ -536,13 +536,14 @@ def _result_with_spec_provenance(
     result_reviewer_runtime = str(payload.get("reviewer_runtime") or "").strip()
     if result_reviewer_runtime in {"", "unknown"} and spec.runtime:
         payload["reviewer_runtime"] = spec.runtime
-    result_model = str(payload.get("model") or "").strip()
+    served_model = str(payload.get("model") or "").strip()
+    result_model = served_model
     if spec.model and runtime_matches_spec and result_model in {"", "unknown"}:
         payload["model"] = spec.model
         result_model = spec.model
     verified_family, verified, source = provider_family_verification_for_reviewer(
         payload.get("runtime"),
-        result_model,
+        served_model,
     )
     result_family = str(payload.get("provider_family") or "").strip()
     result_family_unproven = result_family in {"", "unknown", "openai_compatible"}

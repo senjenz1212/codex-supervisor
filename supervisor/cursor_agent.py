@@ -1005,7 +1005,7 @@ def _run_litellm_structured(request: CursorInvocationRequest) -> tuple[str, dict
     content = getattr(message, "content", None) or ""
     transcript = f"<dual_agent_outcome>{content}</dual_agent_outcome>"
     usage = getattr(response, "usage", None)
-    served_model = _model_id(getattr(response, "model", None)) or model
+    served_model = _model_id(getattr(response, "model", None))
     metadata = {
         "agent_id": None,
         "run_id": getattr(response, "id", None),
