@@ -47,7 +47,16 @@ codex-supervisor-axi --json submit --task-id <task> --run-id <run> --intent "<in
 codex-supervisor-axi --json poll <job_id>
 codex-supervisor-axi --json catch-up <run_id> --last-event-id <event_id>
 codex-supervisor-axi --json trends --task-class source_change --gate outcome_review
+codex-supervisor-axi --json experiments activate <experiment_id> --operator <named-human>
+codex-supervisor-axi --json approve --run-id <run> --proposal-id <proposal_id> --approver <named-human>
+codex-supervisor-axi --json deny --run-id <run> --proposal-id <proposal_id> --approver <named-human>
 ```
+
+`experiments activate`, `experiments park`, `approve`, and `deny` no longer
+default `--operator`/`--approver` to the CLI service identity and reject
+reserved identities (`codex-supervisor-axi`, `codex-supervisor`,
+`autoresearch`, `auto`, `automated`, `system`), so a named human must be
+passed for every human-touchpoint transition.
 
 MCP `run_dual_agent_workflow`, `poll_dual_agent_workflow_job`, and
 `catch_up_dual_agent_workflow` remain available as a compatibility shim over
