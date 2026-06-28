@@ -1,0 +1,94 @@
+{
+  "schema_version": "supervisor-powered-real-benchmark-execution-status/v1",
+  "task_id": "powered-real-benchmark-run-20260626",
+  "recorded_date": "2026-06-28",
+  "status": "blocked",
+  "artifact_kind": "blocked_execution_evidence",
+  "required_output": "powered_factorial_report.json plus all-arms diagnostic status satisfying >=30 oracle-good, >=30 oracle-bad, >=25 discordant full-supervisor-stack pairs, McNemar p<=0.05, FAR/TAR/FRR confidence intervals, panel marginal evidence, and report-only proxy labels",
+  "produced_powered_report_path": "",
+  "produced_powered_report_sha256": "",
+  "real_benchmark_claim_allowed": false,
+  "blocking_summary": {
+    "scaled_pro_predictions_available": false,
+    "powered_factorial_report_available": false,
+    "all_arms_diagnostic_ready_for_scale": false,
+    "candidate_count": 0,
+    "n_good": 0,
+    "n_bad": 0,
+    "discordant_pair_count": 0,
+    "mcnemar_p_value": null,
+    "far_tar_frr_available": false,
+    "panel_marginal_available": false
+  },
+  "current_artifact_evidence": {
+    "aeb0_all_arms_report": {
+      "path": "docs/dual-agent/auto-evolve-benchmark-promotion-bridge-20260625/artifacts/aeb0-real/official_all_arms_diagnostic_report.json",
+      "status": "unavailable",
+      "candidate_count": 3,
+      "instance_count": 3,
+      "n_good": 0,
+      "n_bad": 0,
+      "all_arms_populated": false,
+      "diagnostic_ready_for_scale": false,
+      "official_replay_status": "unavailable",
+      "metrics_unavailable_reasons": [
+        "baseline_unavailable",
+        "docker_container_not_reached:harness_spec_construction_failed_before_image_build",
+        "insufficient_oracle_bad",
+        "insufficient_oracle_good",
+        "matched_true_accept_not_computed:unavailable",
+        "missing_arms:baseline,s_probe,s_full,oracle_ceiling",
+        "official_harness_failed:pro_repo_specs_unavailable_in_swebench_4.1.0",
+        "official_replay_unavailable",
+        "oracle_ceiling_unavailable",
+        "oracle_unavailable",
+        "reviewer_panel_full_roster_unavailable",
+        "s_full_unavailable",
+        "s_probe_unavailable"
+      ]
+    },
+    "pro_corpus_generate_label": {
+      "path": "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/corpus-generate-label-execution-status.json",
+      "status": "blocked",
+      "produced_predictions_path": "",
+      "candidate_count": 0,
+      "n_good": 0,
+      "n_bad": 0,
+      "far_degenerate": true
+    },
+    "swe_bench_pro_candidate_corpus": {
+      "path": "docs/dual-agent/swe-bench-pro-candidate-corpus-20260626/artifacts/candidate-corpus-execution-status.json",
+      "status": "unavailable",
+      "produced_predictions_path": "",
+      "candidate_count": 0,
+      "n_good": 0,
+      "n_bad": 0,
+      "far_degenerate": true
+    },
+    "gold_smoke_input": {
+      "path": "docs/dual-agent/auto-evolve-benchmark-promotion-bridge-20260625/artifacts/aeb0-real/run-inputs/pro-gold-predictions.jsonl",
+      "line_count": 3,
+      "counts_as_scaled_real_benchmark": false,
+      "reason": "gold-only smoke input lacks oracle-bad generated attempts"
+    }
+  },
+  "honesty_boundary": {
+    "no_scaled_powered_report_committed": true,
+    "no_synthetic_or_hand_faked_bad_patches": true,
+    "gold_reference_patch_is_good_backstop_only": true,
+    "fixture_smoke_not_counted_as_real_benchmark": true,
+    "report_only": true,
+    "benchmark_oracle_kind_required": "swe_bench_held_out_test_pass_proxy",
+    "maintainer_mergeability_claim_allowed": false
+  },
+  "next_unblocked_execution_step": "On the native linux/amd64 VM with Docker running, sufficient disk, run_scripts coverage, and an approved live single-agent solver command/model configuration, run k>1 solver attempts on enough SWE-bench Pro instances to produce roughly 100-150 candidate rows, append dataset reference-patch gold attempts, label only patch-applied attempts through the Pro oracle, run the powered factorial runner with the verified cross-family robust panel, then feed the powered report and all-arms diagnostic into assert_powered_real_benchmark_definition_of_done.",
+  "authority_flags": {
+    "metric_applyable": false,
+    "improvement_claim_allowed": false,
+    "powered_improvement_claim_allowed": false,
+    "human_mergeability_claim_allowed": false,
+    "default_change_allowed": false,
+    "policy_mutated": false,
+    "gate_advanced": false
+  }
+}
