@@ -333,3 +333,50 @@ reviewer rationales, unavailable-panel failure, and report-only authority flags.
 Rows already rejected by the public floor may short-circuit as available
 full-gate rejects with `public_review_rejected`; reviewer verdicts remain
 mandatory for every row that the public floor would otherwise accept.
+
+## reviewer_panel_aggregation
+
+Aggregate independent reviewer verdicts through `evaluate_reviewer_panel` and
+`ConfiguredReviewerPanelOptions.panel_aggregation_mode`. Tests must prove
+hard-block precedence holds in every mode: critical/important revise or deny
+still produces `revise`, missing verdicts still produce `revise`, and
+low-confidence accept still escalates. `"conservative"` (default for direct
+callers) must preserve all-reviewers-accept ordering; `"geometric_median"`
+(default for SWE-bench replay CLIs) is allowed only to settle the remaining
+accept-vs-revise tie. When robust mode is requested the panel decision must
+record `aggregation_mode="geometric_median"` with a `robust_aggregation`
+summary, and any active calibration must be dropped so robust precedence is
+visible rather than silently overwritten.
+
+## reviewer_provider_family_verification
+
+Resolve a reviewer's provider family through
+`provider_family_verification_for_reviewer` and the
+`_result_with_spec_provenance` provenance helper. Tests must prove that a
+served-model match (`served_model`/`response_model`/`response_metadata`) sets
+`provider_family_verified=true`, that operator-named families are recorded with
+`provider_family_source="operator_config"` and not counted as verified, and
+that downstream provenance reports preserve the verified flag. The official
+all-arms diagnostic verifier must additionally treat
+`unverified_provider_family`,
+`operator_asserted_provider_family_unverified`, and any official-replay row
+without `panel_aggregation_mode == "geometric_median"`
+(`reviewer_panel_not_robustly_aggregated`) as cross-family readiness blockers
+without flipping any authority flag.
+
+## swe_bench_mergeability_replay_cli
+
+Drive deterministic SWE-bench mergeability replay, live, and official-all-arms
+diagnostic runs through `codex-supervisor-swebench-mergeability-replay`
+(`supervisor.swe_bench_mergeability_cli:main`). Tests must prove the CLI
+forwards `--reviewer-panel-mode`, `--reviewer-output-mode`,
+`--reviewer-model`, `--codex-model`, `--litellm-model`,
+`--litellm-provider-family`, `--panel-aggregation-mode`, `--oracle-adapter`,
+`--oracle-adapter-kind`, `--swe-bench-pro-scripts-dir`, and the dataset-fetch
+and budget guards to the underlying runners, refuses official replay without
+`--allow-dataset-fetch`, `--dataset`, `--predictions`, `--oracle-adapter`, and
+a supported adapter kind, refuses live runs without `--allow-live`,
+`--max-budget-usd > 0`, and both generator commands, and writes a blocked
+all-arms diagnostic artifact when prerequisites are missing. The CLI must not
+execute reviewer or oracle work itself; it composes the public runners under
+the supervisor seams above.

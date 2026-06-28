@@ -389,7 +389,7 @@ python -m compileall -q supervisor daemon.py mcp_tools
 Current verified result:
 
 ```text
-179 passed
+1113 passed
 ```
 
 ## Replay Fixtures
