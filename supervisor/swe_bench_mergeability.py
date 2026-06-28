@@ -21,8 +21,10 @@ from typing import Any, Callable, Mapping, Sequence
 
 from .mergeability_bench import (
     ConfiguredReviewerPanelOptions,
+    MERGEABILITY_CANDIDATE_SCHEMA_VERSION,
     MERGEABILITY_RUBRIC_LABELS,
     MERGEABILITY_RUBRIC_SCHEMA_VERSION,
+    MERGEABILITY_TASK_SCHEMA_VERSION,
     ORACLE_REVIEW_FORBIDDEN_KEYS,
     ORACLE_REVIEW_FORBIDDEN_TEXT,
     _copy_public_fixture_tree,
@@ -46,6 +48,7 @@ from .mergeability_bench import (
     _summarize_acceptance_arm,
     _wilson_interval,
     build_configured_reviewer_panel,
+    run_powered_factorial_mergeability_evaluation,
 )
 from .swe_bench_official_oracle import (
     preflight_swe_bench_pro_run_scripts,
@@ -98,6 +101,12 @@ PRODUCED_BASELINE_RECEIPT_KEYS = (
     "produced_baseline_decision",
     "baseline_decision",
 )
+POWERED_FACTORIAL_ARM_DECISION_KEYS = {
+    "same_model_multi_agent": "same_model_multi_agent_decision",
+    "hetero_multi_reviewer": "hetero_multi_reviewer_decision",
+    "runtime_evidence_floor": "runtime_evidence_floor_decision",
+    "full_supervisor_stack": "full_supervisor_stack_decision",
+}
 OFFICIAL_PREDICTION_METADATA_KEYS = (
     "oracle_label",
     "candidate_artifact_hash",
@@ -4472,6 +4481,19 @@ def _load_official_predictions(predictions_path: str | Path) -> dict[str, list[d
         for key in PRODUCED_BASELINE_RECEIPT_KEYS:
             if key in raw and isinstance(raw[key], Mapping):
                 candidate[key] = dict(raw[key])
+        for key in POWERED_FACTORIAL_ARM_DECISION_KEYS.values():
+            if key in raw and isinstance(raw[key], Mapping):
+                candidate[key] = dict(raw[key])
+        reviewer_panel_results = raw.get("reviewer_panel_results")
+        if (
+            isinstance(reviewer_panel_results, Sequence)
+            and not isinstance(reviewer_panel_results, (str, bytes, bytearray))
+        ):
+            candidate["reviewer_panel_results"] = [
+                dict(item)
+                for item in reviewer_panel_results
+                if isinstance(item, Mapping)
+            ]
         by_instance.setdefault(instance_id, []).append(candidate)
     if not by_instance:
         raise SwebenchMergeabilityFixtureRunnerError(
@@ -4512,6 +4534,420 @@ def summarize_swe_bench_pro_candidate_corpus(
     """Summarize report-only FAR denominator readiness for a Pro corpus."""
     predictions = _load_official_predictions(predictions_path)
     return _candidate_corpus_summary_from_predictions(predictions)
+
+
+def swebench_mergeability_powered_factorial_runner(
+    *,
+    predictions_path: str | Path,
+    output_dir: str | Path,
+    min_good: int = 30,
+    min_bad: int = 30,
+    min_discordant: int = 25,
+    alpha: float = 0.05,
+    timeout_s: float = 30.0,
+) -> dict[str, Any]:
+    """Run the powered factorial evaluator over an oracle-labeled Pro corpus."""
+    predictions_file = Path(predictions_path).expanduser().resolve()
+    output_path = Path(output_dir).expanduser().resolve()
+    output_path.mkdir(parents=True, exist_ok=True)
+    predictions = _load_official_predictions(predictions_file)
+    candidates = _powered_factorial_flatten_predictions(predictions)
+    arm_decisions = _powered_factorial_arm_decisions(candidates)
+    reviewer_panel_results = _powered_factorial_reviewer_panel_results(candidates)
+    public_reviews = _powered_factorial_public_reviews(candidates)
+    adapter_root = output_path / "pro_powered_factorial_adapter"
+    adapter_manifest = _write_powered_factorial_adapter_corpus(candidates, adapter_root)
+    thresholds = {
+        "min_good": int(min_good),
+        "min_bad": int(min_bad),
+        "min_discordant": int(min_discordant),
+        "alpha": float(alpha),
+    }
+    report = run_powered_factorial_mergeability_evaluation(
+        adapter_root,
+        output_dir=output_path,
+        timeout_s=timeout_s,
+        strict_calibration=False,
+        arm_decisions=arm_decisions,
+        reviewer_panel_results=reviewer_panel_results,
+        powered_thresholds=thresholds,
+        precomputed_calibration=_powered_factorial_precomputed_calibration(
+            candidates,
+            adapter_manifest=adapter_manifest,
+        ),
+        public_reviews=public_reviews,
+        candidate_artifact_hashes={
+            str(candidate["candidate_id"]): str(candidate["candidate_artifact_hash"])
+            for candidate in candidates
+        },
+    )
+    core_metric_applyable = bool(report.get("metric_applyable"))
+    report.update({
+        "source_predictions_path": str(predictions_file),
+        "source_predictions_sha256": sha256(predictions_file.read_bytes()).hexdigest(),
+        "pro_candidate_count": len(candidates),
+        "pro_instance_count": len(predictions),
+        "adapter_corpus_root": str(adapter_root),
+        "adapter_manifest_path": str(adapter_manifest["adapter_manifest_path"]),
+        "adapter_manifest_sha256": adapter_manifest["adapter_manifest_sha256"],
+        "powered_metric_applyable": core_metric_applyable,
+        "metric_applyable": False,
+        "powered_improvement_claim_allowed": False,
+        "human_mergeability_claim_allowed": False,
+        "improvement_claim_allowed": False,
+        "default_change_allowed": False,
+        "policy_mutated": False,
+        "gate_advanced": False,
+    })
+    report["evidence_conversion_power_contract"] = _evidence_conversion_power_contract(
+        report,
+        thresholds=thresholds,
+    )
+    report["report_sha256"] = _sha256_json({
+        key: value for key, value in report.items() if key != "report_sha256"
+    })
+    report_path = output_path / "powered_factorial_report.json"
+    report["report_path"] = str(report_path)
+    report_path.write_text(
+        json.dumps(report, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return report
+
+
+def _powered_factorial_flatten_predictions(
+    predictions: Mapping[str, Sequence[Mapping[str, Any]]],
+) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    for instance_id, rows in sorted(predictions.items()):
+        for candidate in rows:
+            if not isinstance(candidate, Mapping):
+                continue
+            copied = dict(candidate)
+            copied.setdefault("instance_id", instance_id)
+            candidates.append(copied)
+    if not candidates:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "powered factorial Pro corpus contains no candidates"
+        )
+    duplicate_ids = sorted({
+        str(candidate.get("candidate_id") or "")
+        for candidate in candidates
+        if sum(
+            1
+            for other in candidates
+            if str(other.get("candidate_id") or "")
+            == str(candidate.get("candidate_id") or "")
+        ) > 1
+    })
+    if duplicate_ids:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "powered factorial Pro corpus requires globally unique candidate_id values: "
+            + ", ".join(duplicate_ids)
+        )
+    unlabeled = [
+        str(candidate.get("candidate_id") or "")
+        for candidate in candidates
+        if candidate.get("oracle_label") not in {ORACLE_GOOD_LABEL, ORACLE_BAD_LABEL}
+    ]
+    if unlabeled:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "powered factorial Pro corpus requires oracle labels for every candidate: "
+            + ", ".join(unlabeled)
+        )
+    missing_hashes = [
+        str(candidate.get("candidate_id") or "")
+        for candidate in candidates
+        if not str(candidate.get("candidate_artifact_hash") or "").strip()
+    ]
+    if missing_hashes:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "powered factorial Pro corpus requires candidate_artifact_hash for every candidate: "
+            + ", ".join(missing_hashes)
+        )
+    missing_provenance = [
+        str(candidate.get("candidate_id") or "")
+        for candidate in candidates
+        if not isinstance(candidate.get("origin"), Mapping)
+        or not candidate.get("origin")
+        or not isinstance(candidate.get("producer"), Mapping)
+        or not candidate.get("producer")
+    ]
+    if missing_provenance:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "powered factorial Pro corpus requires origin and producer provenance for every candidate: "
+            + ", ".join(missing_provenance)
+        )
+    return candidates
+
+
+def _write_powered_factorial_adapter_corpus(
+    candidates: Sequence[Mapping[str, Any]],
+    adapter_root: Path,
+) -> dict[str, Any]:
+    if adapter_root.exists():
+        shutil.rmtree(adapter_root)
+    tasks_dir = adapter_root / "tasks"
+    candidates_dir = adapter_root / "candidates"
+    tasks_dir.mkdir(parents=True, exist_ok=True)
+    candidates_dir.mkdir(parents=True, exist_ok=True)
+    instance_ids = sorted({str(candidate.get("instance_id") or "") for candidate in candidates})
+    task_paths: list[str] = []
+    candidate_paths: list[str] = []
+    for instance_id in instance_ids:
+        task_path = tasks_dir / f"{_safe_powered_fragment(instance_id)}.json"
+        task_payload = {
+            "schema_version": MERGEABILITY_TASK_SCHEMA_VERSION,
+            "task_id": instance_id,
+            "split": "held_out",
+            "task_class": "swe_bench_pro",
+            "repo_fixture_ref": f"pro-adapter/{_safe_powered_fragment(instance_id)}",
+            "prompt": f"SWE-bench Pro powered factorial adapter for {instance_id}",
+            "allowed_mutable_paths": ["patches/"],
+            "hidden_test_commands": [["python", "-c", "raise SystemExit(0)"]],
+            "protected_paths": ["hidden/", ".mergeability/"],
+        }
+        task_path.write_text(
+            json.dumps(task_payload, sort_keys=True, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        task_paths.append(str(task_path))
+    for candidate in candidates:
+        instance_id = str(candidate.get("instance_id") or "")
+        candidate_id = str(candidate.get("candidate_id") or "")
+        oracle_label = str(candidate.get("oracle_label") or "")
+        patch_path = f"patches/{_safe_powered_fragment(candidate_id)}.diff"
+        candidate_path = candidates_dir / f"{_safe_powered_fragment(candidate_id)}.json"
+        candidate_payload = {
+            "schema_version": MERGEABILITY_CANDIDATE_SCHEMA_VERSION,
+            "candidate_id": candidate_id,
+            "task_id": instance_id,
+            "changed_files": [patch_path],
+            "files": {patch_path: str(candidate.get("model_patch") or "")},
+            "provenance": {
+                "kind": "swe_bench_pro_powered_factorial_adapter",
+                "origin": dict(candidate.get("origin") or {}),
+                "producer": dict(candidate.get("producer") or {}),
+                "candidate_artifact_hash": str(candidate.get("candidate_artifact_hash") or ""),
+                "oracle_label": oracle_label,
+            },
+            "generator_metadata": {
+                "control": "known_good" if oracle_label == ORACLE_GOOD_LABEL else "known_bad",
+                "expected_outcome": "pass" if oracle_label == ORACLE_GOOD_LABEL else "fail",
+                "source": "swe_bench_pro_oracle_label",
+            },
+        }
+        candidate_path.write_text(
+            json.dumps(candidate_payload, sort_keys=True, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        candidate_paths.append(str(candidate_path))
+    manifest = {
+        "schema_version": "supervisor-swebench-pro-powered-factorial-adapter/v1",
+        "adapter_root": str(adapter_root),
+        "task_paths": task_paths,
+        "candidate_paths": candidate_paths,
+        "source": "swe_bench_pro_predictions_jsonl",
+    }
+    manifest["adapter_manifest_sha256"] = _sha256_json(manifest)
+    manifest_path = adapter_root / "adapter_manifest.json"
+    manifest["adapter_manifest_path"] = str(manifest_path)
+    manifest_path.write_text(
+        json.dumps(manifest, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return manifest
+
+
+def _powered_factorial_arm_decisions(
+    candidates: Sequence[Mapping[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    arms: dict[str, dict[str, Any]] = {"single_agent_baseline": {}}
+    for arm in POWERED_FACTORIAL_ARM_DECISION_KEYS:
+        arms[arm] = {}
+    for candidate in candidates:
+        candidate_id = str(candidate.get("candidate_id") or "")
+        baseline = candidate.get("single_agent_baseline_decision")
+        if not isinstance(baseline, Mapping):
+            raise SwebenchMergeabilityFixtureRunnerError(
+                f"powered factorial candidate {candidate_id} missing trusted baseline receipt"
+            )
+        resolved_baseline = _resolve_powered_baseline_decision(
+            raw=baseline,
+            expected_candidate_artifact_hash=str(candidate.get("candidate_artifact_hash") or ""),
+            expected_candidate_id=candidate_id,
+        )
+        if resolved_baseline["unavailable"]:
+            raise SwebenchMergeabilityFixtureRunnerError(
+                "powered factorial candidate "
+                f"{candidate_id} baseline receipt is not trusted: "
+                f"{resolved_baseline['unavailable_reason']}"
+            )
+        arms["single_agent_baseline"][candidate_id] = dict(baseline)
+        for arm, key in POWERED_FACTORIAL_ARM_DECISION_KEYS.items():
+            raw = candidate.get(key)
+            if not isinstance(raw, Mapping):
+                raise SwebenchMergeabilityFixtureRunnerError(
+                    f"powered factorial candidate {candidate_id} missing {key}"
+                )
+            if not isinstance(raw.get("accept"), bool):
+                raise SwebenchMergeabilityFixtureRunnerError(
+                    f"powered factorial candidate {candidate_id} {key}.accept must be boolean"
+                )
+            if "unavailable" in raw and not isinstance(raw.get("unavailable"), bool):
+                raise SwebenchMergeabilityFixtureRunnerError(
+                    f"powered factorial candidate {candidate_id} {key}.unavailable must be boolean"
+                )
+            decision_source = str(raw.get("decision_source") or "").strip()
+            if not decision_source:
+                raise SwebenchMergeabilityFixtureRunnerError(
+                    f"powered factorial candidate {candidate_id} {key}.decision_source is required"
+                )
+            arms[arm][candidate_id] = {
+                "accept": bool(raw.get("accept")),
+                "unavailable": bool(raw.get("unavailable")),
+                "decision_source": decision_source,
+            }
+    return arms
+
+
+def _powered_factorial_reviewer_panel_results(
+    candidates: Sequence[Mapping[str, Any]],
+) -> dict[str, list[Mapping[str, Any]]]:
+    return {
+        str(candidate.get("candidate_id") or ""): list(candidate.get("reviewer_panel_results") or [])
+        for candidate in candidates
+    }
+
+
+def _powered_factorial_public_reviews(
+    candidates: Sequence[Mapping[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    public_reviews: dict[str, dict[str, Any]] = {}
+    for candidate in candidates:
+        candidate_id = str(candidate.get("candidate_id") or "")
+        raw = candidate.get("runtime_evidence_floor_decision")
+        if not isinstance(raw, Mapping):
+            raise SwebenchMergeabilityFixtureRunnerError(
+                f"powered factorial candidate {candidate_id} missing runtime_evidence_floor_decision"
+            )
+        public_reviews[candidate_id] = {
+            "accept": bool(raw.get("accept")),
+            "unavailable": bool(raw.get("unavailable")),
+            "decision_source": str(
+                raw.get("decision_source") or "swe_bench_pro_runtime_evidence_floor"
+            ),
+            "reason": str(raw.get("reason") or ""),
+        }
+    return public_reviews
+
+
+def _powered_factorial_precomputed_calibration(
+    candidates: Sequence[Mapping[str, Any]],
+    *,
+    adapter_manifest: Mapping[str, Any],
+) -> dict[str, Any]:
+    results: list[dict[str, Any]] = []
+    for candidate in candidates:
+        candidate_id = str(candidate.get("candidate_id") or "")
+        instance_id = str(candidate.get("instance_id") or "")
+        oracle_good = candidate.get("oracle_label") == ORACLE_GOOD_LABEL
+        receipt = {
+            "receipt_id": f"swebench-pro-oracle-label:{instance_id}:{candidate_id}",
+            "kind": "swe_bench_pro_oracle_label",
+            "source": "swe_bench_pro_predictions_jsonl",
+            "status": "passed" if oracle_good else "failed",
+            "task_id": instance_id,
+            "candidate_id": candidate_id,
+            "final_score": 1.0 if oracle_good else 0.0,
+            "candidate_artifact_hash": str(candidate.get("candidate_artifact_hash") or ""),
+        }
+        results.append({
+            "task_id": instance_id,
+            "candidate_id": candidate_id,
+            "oracle_label": str(candidate.get("oracle_label") or ""),
+            "control_kind": "known_good" if oracle_good else "known_bad",
+            "expected_outcome": "pass" if oracle_good else "fail",
+            "observed_outcome": "pass" if oracle_good else "fail",
+            "final_score": 1.0 if oracle_good else 0.0,
+            "blocker_status": "passed" if oracle_good else "failed",
+            "hidden_test_status": "precomputed",
+            "reverse_test_status": "precomputed",
+            "scope_status": "precomputed",
+            "lint_build_status": "precomputed",
+            "failures": [] if oracle_good else ["swe_bench_pro_oracle_bad"],
+            "receipt_id": receipt["receipt_id"],
+            "receipt": receipt,
+        })
+    summary = {
+        "schema_version": "supervisor-mergeability-calibration/v1",
+        "status": "accepted",
+        "bench_root": str(adapter_manifest.get("adapter_root") or ""),
+        "manifest_sha256": str(adapter_manifest.get("adapter_manifest_sha256") or ""),
+        "task_count": len({result["task_id"] for result in results}),
+        "candidate_count": len(results),
+        "included_task_ids": sorted({str(result["task_id"]) for result in results}),
+        "excluded_task_ids": [],
+        "required_control_kinds": [],
+        "observed_control_kinds": sorted({str(result["control_kind"]) for result in results}),
+        "control_coverage_by_task_class": {},
+        "results": results,
+        "receipt_ids": [str(result["receipt_id"]) for result in results],
+        "gaming_flags": [],
+        "calibration_metric_applyable": False,
+        "default_change_allowed": False,
+        "policy_mutated": False,
+        "gate_advanced": False,
+        "errors": [],
+    }
+    summary["summary_sha256"] = _sha256_json(summary)
+    return summary
+
+
+def _evidence_conversion_power_contract(
+    report: Mapping[str, Any],
+    *,
+    thresholds: Mapping[str, Any],
+) -> dict[str, Any]:
+    sample_size = dict(report.get("sample_size_sufficiency") or {})
+    paired_power = dict(report.get("paired_power") or {})
+    comparisons = paired_power.get("comparisons") if isinstance(paired_power.get("comparisons"), Mapping) else {}
+    required = dict((comparisons or {}).get("full_supervisor_stack") or {})
+    reasons: list[str] = []
+    if sample_size.get("status") != "sufficient":
+        reasons.append("sample_size_underpowered")
+    if paired_power.get("status") != "sufficient":
+        reasons.append("paired_power_underpowered")
+    if required and required.get("mcnemar_test_passed") is not True:
+        reason_values = [
+            str(reason)
+            for reason in required.get("reasons") or []
+            if str(reason)
+        ]
+        reasons.extend(reason_values or ["mcnemar_test_not_significant"])
+    reasons = sorted(set(reasons))
+    return {
+        "schema_version": "supervisor-evidence-conversion-power-contract/v1",
+        "status": "qualified" if not reasons else "underpowered",
+        "thresholds": {
+            "min_good": int(thresholds.get("min_good", 30)),
+            "min_bad": int(thresholds.get("min_bad", 30)),
+            "min_discordant": int(thresholds.get("min_discordant", 25)),
+            "alpha": float(thresholds.get("alpha", 0.05)),
+        },
+        "sample_size_status": str(sample_size.get("status") or "missing"),
+        "paired_power_status": str(paired_power.get("status") or "missing"),
+        "required_comparison": required,
+        "reasons": reasons,
+        "report_only": True,
+        "operator_review_required": True,
+        "policy_mutation_allowed": False,
+    }
+
+
+def _safe_powered_fragment(value: str) -> str:
+    text = "".join(ch if ch.isalnum() or ch in {"-", "_", "."} else "_" for ch in value)
+    return text.strip("._") or "item"
 
 
 def build_swe_bench_pro_candidate_corpus(

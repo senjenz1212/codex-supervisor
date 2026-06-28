@@ -1799,6 +1799,9 @@ def run_powered_factorial_mergeability_evaluation(
     arm_decisions: Mapping[str, Mapping[str, Any]] | None = None,
     reviewer_panel_results: Mapping[str, list[Mapping[str, Any]]] | None = None,
     powered_thresholds: Mapping[str, int] | None = None,
+    precomputed_calibration: Mapping[str, Any] | None = None,
+    public_reviews: Mapping[str, Mapping[str, Any]] | None = None,
+    candidate_artifact_hashes: Mapping[str, str] | None = None,
     gaming_flags: tuple[str, ...] | list[str] = (),
 ) -> dict[str, Any]:
     """Build a report-only powered factorial mergeability evaluation.
@@ -1824,28 +1827,56 @@ def run_powered_factorial_mergeability_evaluation(
     )
     candidate_ids = tuple(candidate.candidate_id for candidate in candidate_list if candidate.task_id in tasks)
     _validate_factorial_arm_pool(arm_decisions or {}, candidate_ids=candidate_ids)
-    public_reviews = {
-        candidate.candidate_id: review_mergeability_candidate_publicly(
-            tasks[candidate.task_id],
-            candidate,
-            bench_root=bench_root_path,
+    if public_reviews is None:
+        resolved_public_reviews = {
+            candidate.candidate_id: review_mergeability_candidate_publicly(
+                tasks[candidate.task_id],
+                candidate,
+                bench_root=bench_root_path,
+                timeout_s=timeout_s,
+            )
+            for candidate in candidate_list
+            if candidate.task_id in tasks
+        }
+    else:
+        resolved_public_reviews = {
+            str(candidate_id): _normalise_precomputed_public_review(
+                raw,
+                candidate_id=str(candidate_id),
+            )
+            for candidate_id, raw in public_reviews.items()
+        }
+        missing_public_reviews = sorted(set(candidate_ids) - set(resolved_public_reviews))
+        extra_public_reviews = sorted(set(resolved_public_reviews) - set(candidate_ids))
+        if missing_public_reviews or extra_public_reviews:
+            raise MergeabilityBenchError(
+                "precomputed public review candidate pool mismatch: "
+                f"missing={missing_public_reviews} extra={extra_public_reviews}"
+            )
+    if precomputed_calibration is None:
+        calibration = validate_mergeability_corpus(
+            bench_root_path,
+            output_dir=output_path,
+            strict=strict_calibration,
+            candidate_paths=candidate_paths,
             timeout_s=timeout_s,
         )
-        for candidate in candidate_list
-        if candidate.task_id in tasks
-    }
-    calibration = validate_mergeability_corpus(
-        bench_root_path,
-        output_dir=output_path,
-        strict=strict_calibration,
-        candidate_paths=candidate_paths,
-        timeout_s=timeout_s,
-    )
+    else:
+        calibration = _normalise_precomputed_calibration(
+            precomputed_calibration,
+            candidate_ids=candidate_ids,
+            manifest=manifest,
+            bench_root=bench_root_path,
+        )
     candidates = {candidate.candidate_id: candidate for candidate in candidate_list}
     task_hashes = {entry["task_id"]: entry["task_hash"] for entry in manifest["tasks"]}
-    candidate_hashes = {
+    manifest_candidate_hashes = {
         (entry["task_id"], entry["candidate_id"]): entry["candidate_hash"]
         for entry in manifest["candidates"]
+    }
+    candidate_hashes_by_id = {
+        str(candidate_id): str(candidate_hash)
+        for candidate_id, candidate_hash in (candidate_artifact_hashes or {}).items()
     }
 
     rows: list[dict[str, Any]] = []
@@ -1853,8 +1884,17 @@ def run_powered_factorial_mergeability_evaluation(
         candidate = candidates[result["candidate_id"]]
         task = tasks[candidate.task_id]
         oracle_accept = float(result["final_score"]) >= 1.0
-        public_review = public_reviews[candidate.candidate_id]
+        public_review = resolved_public_reviews[candidate.candidate_id]
         reviewer_results = list((reviewer_panel_results or {}).get(candidate.candidate_id) or [])
+        candidate_artifact_hash = candidate_hashes_by_id.get(candidate.candidate_id)
+        if candidate_artifact_hash is None:
+            manifest_key = (result["task_id"], result["candidate_id"])
+            candidate_artifact_hash = manifest_candidate_hashes.get(manifest_key)
+        if candidate_artifact_hash is None:
+            raise MergeabilityBenchError(
+                "candidate artifact hash missing for powered factorial row: "
+                f"{result['task_id']}/{result['candidate_id']}"
+            )
         full_gate_from_reviewers = _factorial_full_stack_decision(
             public_accept=bool(public_review["accept"]),
             reviewer_results=reviewer_results,
@@ -1863,9 +1903,7 @@ def run_powered_factorial_mergeability_evaluation(
         baseline_raw = baseline_per_arm.get(candidate.candidate_id) if baseline_per_arm else None
         baseline_decision = _resolve_powered_baseline_decision(
             raw=baseline_raw,
-            expected_candidate_artifact_hash=candidate_hashes[
-                (result["task_id"], result["candidate_id"])
-            ],
+            expected_candidate_artifact_hash=candidate_artifact_hash,
             expected_candidate_id=candidate.candidate_id,
         )
         defaults = {
@@ -1901,10 +1939,11 @@ def run_powered_factorial_mergeability_evaluation(
             "task_class": task.task_class,
             "split": task.split,
             "candidate_id": result["candidate_id"],
-            "candidate_hash": candidate_hashes[(result["task_id"], result["candidate_id"])],
+            "candidate_hash": candidate_artifact_hash,
             "task_hash": task_hashes[result["task_id"]],
             "control_kind": result["control_kind"],
             "oracle_accept": oracle_accept,
+            "oracle_label": str(result.get("oracle_label") or ""),
             "receipt_id": result["receipt_id"],
             "receipt": result["receipt"],
             "blocker_status": result["blocker_status"],
@@ -4821,6 +4860,79 @@ def _validate_factorial_arm_pool(
                 "candidate pool mismatch for factorial arm "
                 f"{arm}: missing={missing} extra={extra}"
             )
+
+
+def _normalise_precomputed_public_review(
+    raw: Mapping[str, Any],
+    *,
+    candidate_id: str,
+) -> dict[str, Any]:
+    if not isinstance(raw, Mapping):
+        raise MergeabilityBenchError(
+            f"precomputed public review for {candidate_id} must be a mapping"
+        )
+    return {
+        "accept": bool(raw.get("accept")),
+        "unavailable": bool(raw.get("unavailable")),
+        "reason": str(raw.get("reason") or raw.get("unavailable_reason") or ""),
+        "decision_source": str(raw.get("decision_source") or "precomputed_public_review"),
+        "probe_results": list(raw.get("probe_results") or []),
+        "gaming_flags": list(raw.get("gaming_flags") or []),
+    }
+
+
+def _normalise_precomputed_calibration(
+    raw: Mapping[str, Any],
+    *,
+    candidate_ids: tuple[str, ...],
+    manifest: Mapping[str, Any],
+    bench_root: Path,
+) -> dict[str, Any]:
+    if not isinstance(raw, Mapping):
+        raise MergeabilityBenchError("precomputed calibration must be a mapping")
+    calibration = dict(raw)
+    raw_results = calibration.get("results")
+    if not isinstance(raw_results, Sequence) or isinstance(raw_results, (str, bytes, bytearray)):
+        raise MergeabilityBenchError("precomputed calibration results must be a sequence")
+    results = [dict(result) for result in raw_results if isinstance(result, Mapping)]
+    result_ids = {str(result.get("candidate_id") or "") for result in results}
+    expected_ids = set(candidate_ids)
+    missing = sorted(expected_ids - result_ids)
+    extra = sorted(result_ids - expected_ids)
+    if "" in result_ids:
+        extra.append("")
+    if missing or extra:
+        raise MergeabilityBenchError(
+            "precomputed calibration candidate pool mismatch: "
+            f"missing={missing} extra={sorted(set(extra))}"
+        )
+    calibration.setdefault("schema_version", MERGEABILITY_CALIBRATION_SCHEMA_VERSION)
+    calibration.setdefault("status", "accepted")
+    calibration.setdefault("bench_root", bench_root.as_posix())
+    calibration.setdefault("manifest_sha256", manifest.get("manifest_sha256"))
+    calibration.setdefault("task_count", manifest.get("task_count"))
+    calibration.setdefault("candidate_count", len(results))
+    calibration.setdefault("included_task_ids", manifest.get("included_task_ids") or [])
+    calibration.setdefault("excluded_task_ids", manifest.get("excluded_task_ids") or [])
+    calibration.setdefault("required_control_kinds", sorted(REQUIRED_CALIBRATION_CONTROL_KINDS))
+    calibration.setdefault("observed_control_kinds", [])
+    calibration.setdefault("control_coverage_by_task_class", manifest.get("control_coverage_by_task_class") or {})
+    calibration["results"] = results
+    calibration.setdefault("receipt_ids", [
+        str(result.get("receipt_id") or "")
+        for result in results
+        if result.get("receipt_id")
+    ])
+    calibration.setdefault("gaming_flags", [])
+    calibration.setdefault("calibration_metric_applyable", False)
+    calibration.setdefault("default_change_allowed", False)
+    calibration.setdefault("policy_mutated", False)
+    calibration.setdefault("gate_advanced", False)
+    calibration.setdefault("errors", [])
+    calibration["summary_sha256"] = _sha256_json({
+        key: value for key, value in calibration.items() if key != "summary_sha256"
+    })
+    return calibration
 
 
 def _resolve_powered_baseline_decision(

@@ -24,6 +24,7 @@ from .swe_bench_mergeability import (
     swebench_mergeability_live_runner,
     swebench_mergeability_official_all_arms_diagnostic_runner,
     swebench_mergeability_official_replay_runner,
+    swebench_mergeability_powered_factorial_runner,
     swebench_mergeability_replay_runner,
     write_swebench_official_all_arms_blocked_artifact,
 )
@@ -35,9 +36,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--official-replay", action="store_true")
     parser.add_argument("--official-all-arms-diagnostic", action="store_true")
+    parser.add_argument("--powered-factorial", action="store_true")
     parser.add_argument("--dataset", default="")
     parser.add_argument("--dataset-split", default="test")
     parser.add_argument("--predictions", default="")
+    parser.add_argument("--min-good", type=int, default=30)
+    parser.add_argument("--min-bad", type=int, default=30)
+    parser.add_argument("--min-discordant", type=int, default=25)
+    parser.add_argument("--alpha", type=float, default=0.05)
     parser.add_argument("--allow-dataset-fetch", action="store_true")
     parser.add_argument("--timeout-s", type=float, default=30.0)
     parser.add_argument("--run-live", action="store_true")
@@ -136,6 +142,37 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     try:
+        if args.powered_factorial:
+            if not args.predictions:
+                print(
+                    "refusing powered factorial run without --predictions",
+                    file=sys.stderr,
+                )
+                return 2
+            report = swebench_mergeability_powered_factorial_runner(
+                predictions_path=args.predictions,
+                output_dir=args.output_dir,
+                min_good=args.min_good,
+                min_bad=args.min_bad,
+                min_discordant=args.min_discordant,
+                alpha=args.alpha,
+                timeout_s=args.timeout_s,
+            )
+            summary = {
+                "status": "reported",
+                "report": report.get("report_path")
+                or str(Path(args.output_dir) / "powered_factorial_report.json"),
+                "report_sha256": report["report_sha256"],
+                "candidate_count": report["candidate_count"],
+                "source_predictions_path": report["source_predictions_path"],
+                "metric_applyable": bool(report.get("metric_applyable")),
+                "powered_metric_applyable": bool(report.get("powered_metric_applyable")),
+                "evidence_conversion_power_contract": report.get(
+                    "evidence_conversion_power_contract"
+                ),
+            }
+            print(json.dumps(summary, indent=2, sort_keys=True))
+            return 0
         if args.official_replay or args.official_all_arms_diagnostic:
             if not args.allow_dataset_fetch:
                 print(
