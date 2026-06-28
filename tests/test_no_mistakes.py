@@ -736,6 +736,89 @@ def test_no_mistakes_runner_exception_reports_branch_state_without_cleanup(tmp_p
     assert (tmp_path / "partial-output.txt").exists()
 
 
+def test_rollback_failed_stash_apply_missing_prefix_fails_closed(tmp_path):
+    from supervisor.no_mistakes import _rollback_failed_stash_apply
+
+    _init_git_repo(tmp_path)
+    untracked = tmp_path / "operator-scratch.txt"
+    untracked.write_text("preserve-me\n", encoding="utf-8")
+    nested_untracked = tmp_path / "nested" / "operator-notes.md"
+    nested_untracked.parent.mkdir()
+    nested_untracked.write_text("also-preserve\n", encoding="utf-8")
+    pre_stash = subprocess.run(
+        ["git", "stash", "list"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+
+    stderr = _rollback_failed_stash_apply(tmp_path, "", "stash@{0}")
+
+    assert "no_mistakes_artifact_restore_missing_prefix" in stderr
+    assert untracked.exists()
+    assert nested_untracked.exists()
+    post_stash = subprocess.run(
+        ["git", "stash", "list"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert pre_stash == post_stash
+
+
+def test_rollback_failed_stash_apply_scoped_clean_preserves_outside_prefix(tmp_path):
+    from supervisor.no_mistakes import _rollback_failed_stash_apply
+
+    _init_git_repo(tmp_path)
+    artifact_prefix = tmp_path / "docs" / "dual-agent" / "task-1"
+    artifact_prefix.mkdir(parents=True)
+    tracked_artifact = artifact_prefix / "tracked.txt"
+    tracked_artifact.write_text("baseline\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "add", str(tracked_artifact.relative_to(tmp_path))],
+        cwd=tmp_path,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "add artifact"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    tracked_artifact.write_text("modified\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "stash", "push", "-m", "fake-stash"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    inside_prefix_untracked = artifact_prefix / "scratch-conflict.txt"
+    inside_prefix_untracked.write_text("inside-prefix\n", encoding="utf-8")
+    outside_prefix_untracked = tmp_path / "unrelated-operator-file.txt"
+    outside_prefix_untracked.write_text("must-survive\n", encoding="utf-8")
+
+    stderr = _rollback_failed_stash_apply(
+        tmp_path, str(artifact_prefix.relative_to(tmp_path)), "stash@{0}"
+    )
+
+    assert "fatal" not in stderr.lower()
+    assert outside_prefix_untracked.exists()
+    assert not inside_prefix_untracked.exists()
+    assert tracked_artifact.read_text(encoding="utf-8") == "baseline\n"
+    stash_list = subprocess.run(
+        ["git", "stash", "list"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "fake-stash" not in stash_list
+
+
 def _init_git_repo(path: Path) -> None:
     subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True, text=True)
     subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=path, check=True)

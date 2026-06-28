@@ -1025,7 +1025,12 @@ def _last_nonempty_line(value: str) -> str:
     return ""
 
 
+_PRO_SHELL_OPERATORS: tuple[str, ...] = ("&&", "||", ";", "|")
+
+
 def _is_pro_pre_patch_repo_setup(command: str) -> bool:
+    if any(operator in command for operator in _PRO_SHELL_OPERATORS):
+        return False
     try:
         tokens = shlex.split(command)
     except ValueError:

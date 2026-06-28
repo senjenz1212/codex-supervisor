@@ -279,6 +279,33 @@ def test_pro_entryscript_does_not_split_chained_last_line():
     assert script.count("pip install foo") == 1
 
 
+def test_pro_entryscript_does_not_hoist_chained_git_reset_line():
+    script = official_oracle._pro_entryscript(
+        base_commit="abc123",
+        before_repo_set_cmd="git reset --hard otherhash && pip install bar",
+        selected_tests=["tests/test_parser.py"],
+    )
+
+    apply_index = script.index("git apply -v /workspace/patch.diff")
+    chained_index = script.index("git reset --hard otherhash && pip install bar")
+
+    assert chained_index > apply_index
+    assert "pip install bar" in script
+    assert script.count("pip install bar") == 1
+
+
+def test_is_pro_pre_patch_repo_setup_rejects_lines_with_shell_operators():
+    classify = official_oracle._is_pro_pre_patch_repo_setup
+
+    assert classify("git reset --hard otherhash") is True
+    assert classify("git clean -fd") is True
+    assert classify("git checkout otherhash") is True
+    assert classify("git reset --hard otherhash && pip install bar") is False
+    assert classify("git clean -fd || true") is False
+    assert classify("git reset --hard otherhash ; pip install bar") is False
+    assert classify("git reset --hard otherhash | tee log") is False
+
+
 def test_pro_entryscript_hardcodes_upstream_reset_and_checkout():
     script = official_oracle._pro_entryscript(
         base_commit="abc123",

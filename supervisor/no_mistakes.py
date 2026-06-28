@@ -591,15 +591,28 @@ def _rollback_failed_stash_apply(
     """Undo a half-applied `git stash apply` so the worktree is not left dirty.
 
     On conflict, ``git stash apply`` leaves merge markers in the working tree
-    and keeps the stash on the stash list. Roll back any partial writes and
-    drop the stash so the caller does not strand the worktree.
+    and keeps the stash on the stash list. Roll back the partial writes inside
+    the known artifact prefix using HEAD-anchored git invocations so any
+    unexpectedly-staged index entries are also reverted, then drop the stash
+    so the caller does not strand the worktree.
+
+    When ``prefix_path`` is missing or empty we fail closed: the caller cannot
+    name the directory that was stashed, so we refuse to run ``git checkout``
+    or ``git clean`` over an unbounded scope (which would otherwise wipe
+    untracked files across the entire worktree) and leave the stash on the
+    stash list for manual recovery.
     """
     errors: list[str] = []
-    paths = [prefix_path] if prefix_path else ["--", "."]
-    checkout_result = _run_git(cwd, "checkout", "--", *paths)
+    if not prefix_path:
+        errors.append("no_mistakes_artifact_restore_missing_prefix")
+        return "\n".join(error for error in errors if error)
+    reset_result = _run_git(cwd, "reset", "HEAD", "--", prefix_path)
+    if reset_result.returncode != 0:
+        errors.append(reset_result.stderr or reset_result.stdout or "")
+    checkout_result = _run_git(cwd, "checkout", "HEAD", "--", prefix_path)
     if checkout_result.returncode != 0:
         errors.append(checkout_result.stderr or checkout_result.stdout or "")
-    clean_result = _run_git(cwd, "clean", "-fd", *([prefix_path] if prefix_path else []))
+    clean_result = _run_git(cwd, "clean", "-fd", "--", prefix_path)
     if clean_result.returncode != 0:
         errors.append(clean_result.stderr or clean_result.stdout or "")
     drop_result = _run_git(cwd, "stash", "drop", stash_ref)
