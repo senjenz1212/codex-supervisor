@@ -4318,6 +4318,15 @@ def _normalise_prediction_mapping(raw: Any, *, field: str) -> dict[str, Any]:
     )
 
 
+def _required_prediction_mapping(raw: Any, *, field: str) -> dict[str, Any]:
+    value = _normalise_prediction_mapping(raw, field=field)
+    if not value:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            f"generated candidate {field} provenance is required"
+        )
+    return value
+
+
 def _prediction_hash(
     *,
     raw: Mapping[str, Any],
@@ -4526,11 +4535,11 @@ def build_swe_bench_pro_candidate_corpus(
             "candidate_artifact_hash": patch_sha256,
             "model_patch_sha256": patch_sha256,
             "diff_sha256": patch_sha256,
-            "origin": _normalise_prediction_mapping(
+            "origin": _required_prediction_mapping(
                 attempt.get("origin"),
                 field="origin",
             ),
-            "producer": _normalise_prediction_mapping(
+            "producer": _required_prediction_mapping(
                 attempt.get("producer"),
                 field="producer",
             ),
