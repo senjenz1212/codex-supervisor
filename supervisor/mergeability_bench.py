@@ -3779,7 +3779,7 @@ class ConfiguredReviewerPanelOptions:
     gate: str = SUPERVISOR_CONFIGURED_PANEL_GATE
     round_index: int = 0
     low_confidence_threshold: float = 0.0
-    panel_aggregation_mode: str = "conservative"
+    panel_aggregation_mode: str = "geometric_median"
     codex_only_calibration: bool = False
 
 

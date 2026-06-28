@@ -1029,9 +1029,11 @@ def _pro_docker_image(context: Mapping[str, Any]) -> str:
 def _pro_dockerhub_tag(*, instance_id: str, repo: str) -> str:
     if "/" not in repo:
         return _safe_fragment(instance_id)[:128]
-    repo_base, repo_name = repo.lower().split("/", 1)
-    hsh = instance_id.replace("instance_", "")
-    if repo == "element-hq/element-web" and instance_id.endswith("-vnan"):
+    repo_slug = repo.lower()
+    repo_base, repo_name = repo_slug.split("/", 1)
+    hsh = instance_id.replace("instance_", "").lower()
+    hsh = hsh.removeprefix(f"{repo_base}__{repo_name}-")
+    if repo_slug == "element-hq/element-web" and instance_id.endswith("-vnan"):
         repo_name = "element"
         hsh = hsh[:-5]
     elif hsh.endswith("-vnan"):

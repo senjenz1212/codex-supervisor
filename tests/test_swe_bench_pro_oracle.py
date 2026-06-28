@@ -125,6 +125,13 @@ def test_pro_scripts_empty_env_uses_vendored_default(monkeypatch):
     )
 
 
+def test_pro_dockerhub_tag_strips_instance_repo_prefix():
+    assert official_oracle._pro_dockerhub_tag(
+        instance_id="instance_qutebrowser__qutebrowser-f91ace-1234",
+        repo="qutebrowser/qutebrowser",
+    ) == "qutebrowser.qutebrowser-f91ace-1234"
+
+
 def test_pro_runner_returns_pass_status_on_gold_fixture(tmp_path, monkeypatch):
     monkeypatch.setenv("SWEBENCH_PRO_ORACLE_ARTIFACT_DIR", str(tmp_path / "oracle"))
     output_payload = {
