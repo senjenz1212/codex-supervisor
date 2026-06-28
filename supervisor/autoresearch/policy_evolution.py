@@ -580,7 +580,7 @@ def _normalise_evaluator_ref(value: Any) -> str:
     raw = str(value or "").strip().replace("\\", "/")
     if not raw:
         return ""
-    return posixpath.normpath(raw).lstrip("./")
+    return posixpath.normpath(raw).removeprefix("./")
 
 
 def _record_quality_control_error(record: Mapping[str, Any]) -> str | None:

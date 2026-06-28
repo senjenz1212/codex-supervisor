@@ -4308,6 +4308,8 @@ def _roster_result(
     tool_access: str = "codebase_tools",
     tool_backed_command_evidence: bool = False,
     label: str | None = None,
+    provider_family_verified: bool = True,
+    provider_family_source: str = "served_model",
 ) -> dict[str, object]:
     payload: dict[str, object] = {
         "reviewer_id": reviewer_id,
@@ -4318,6 +4320,8 @@ def _roster_result(
         "reviewer_runtime": runtime,
         "model": model,
         "provider_family": provider_family,
+        "provider_family_verified": provider_family_verified,
+        "provider_family_source": provider_family_source,
         "lineage": [provider_family, runtime, model],
         "tool_access": tool_access,
         "tool_backed_command_evidence": tool_backed_command_evidence,

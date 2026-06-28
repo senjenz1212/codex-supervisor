@@ -95,18 +95,28 @@ def _candidate_ref_for_attempt(
     )
     candidate = Path(str(raw))
     if candidate.is_absolute():
-        return candidate
-    worktree_ref = attempt_worktree / candidate
-    if worktree_ref.exists():
-        return worktree_ref
-    attempt_ref = attempt_json_path.parent / candidate
-    if attempt_ref.exists():
-        return attempt_ref
+        raise ValueError(
+            f"mergeability candidate ref must be relative, not absolute: {candidate}"
+        )
     source_root = Path(os.environ.get("AUTORESEARCH_SOURCE_ROOT") or ".").resolve()
-    source_ref = source_root / candidate
-    if source_ref.exists():
-        return source_ref
-    return bench_root / candidate
+    roots = (
+        attempt_worktree.resolve(),
+        attempt_json_path.parent.resolve(),
+        source_root,
+        bench_root.resolve(),
+    )
+    bench_root_resolved = roots[-1]
+    for root in roots:
+        resolved = (root / candidate).resolve()
+        try:
+            resolved.relative_to(root)
+        except ValueError:
+            raise ValueError(
+                f"mergeability candidate ref escapes root {root}: {raw}"
+            ) from None
+        if resolved.exists() or root == bench_root_resolved:
+            return resolved
+    raise RuntimeError("unreachable: bench_root fallback should always return")
 
 
 def _first_policy_candidate_ref(attempt: dict[str, Any]) -> str:

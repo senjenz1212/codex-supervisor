@@ -678,7 +678,7 @@ def evaluate_reviewer_panel(
             decision = "escalate"
             reason = "low_confidence_accept"
         else:
-            robust_aggregation = _geometric_median_accept_summary(reviewer_inputs)
+            robust_aggregation = _majority_accept_summary(reviewer_inputs)
             if bool(robust_aggregation.get("accept")):
                 decision = "accept"
                 reason = "robust_geometric_median_accept"
@@ -1335,7 +1335,7 @@ def _clamp_confidence(value: float) -> float:
     return max(0.0, min(1.0, float(value)))
 
 
-def _geometric_median_accept_summary(
+def _majority_accept_summary(
     reviewer_inputs: list[dict[str, Any]],
 ) -> dict[str, Any]:
     scored_inputs = [
@@ -1436,7 +1436,7 @@ def provider_family_verification_for_reviewer(
 ) -> tuple[str, bool, str]:
     served_family = _provider_family_from_served_model(model)
     if served_family not in {"", "unknown", "openai_compatible"}:
-        return served_family, True, "served_model"
+        return served_family, False, "served_model_name_inference"
     inferred = _provider_family(runtime, model)
     return inferred, False, "runtime_inference"
 

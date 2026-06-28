@@ -635,6 +635,30 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
             source_script_evidence=source_script_evidence,
         )
 
+    missing_oracle_buckets: list[str] = []
+    if not fail_to_pass:
+        missing_oracle_buckets.append("fail_to_pass")
+    if not pass_to_pass:
+        missing_oracle_buckets.append("pass_to_pass")
+    if missing_oracle_buckets:
+        return _pro_adapter_failure(
+            context=context,
+            command=run_command,
+            return_code=run_result.returncode,
+            stdout=run_result.stdout,
+            stderr=run_result.stderr,
+            artifact_paths=artifact_paths,
+            reason="pro_oracle_bucket_empty:" + ",".join(missing_oracle_buckets),
+            attempt_stage="scoring",
+            docker_image=docker_image,
+            docker_platform=docker_platform,
+            pull_command=pull_command,
+            pull_return_code=pull_result.returncode,
+            patch_applied=True,
+            test_command_return_code=test_command_return_code,
+            source_script_evidence=source_script_evidence,
+        )
+
     fail_to_pass_status = "pass" if set(fail_to_pass) <= passed_tests else "fail"
     pass_to_pass_status = "pass" if set(pass_to_pass) <= passed_tests else "fail"
     receipt = _pro_adapter_receipt(

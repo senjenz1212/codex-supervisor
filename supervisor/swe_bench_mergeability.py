@@ -1511,7 +1511,7 @@ def _public_reviewer_result_summaries(raw_results: Any) -> list[dict[str, Any]]:
         classification = item.get("failure_classification")
         if classification is None and not bool(item.get("verdict_present")):
             classification = "reviewer_missing_verdict"
-        summaries.append({
+        summary: dict[str, Any] = {
             "reviewer_id": str(item.get("reviewer_id") or "unknown-reviewer"),
             "runtime": str(item.get("runtime") or "unknown"),
             "model": item.get("model"),
@@ -1540,7 +1540,12 @@ def _public_reviewer_result_summaries(raw_results: Any) -> list[dict[str, Any]]:
             ),
             "transcript_sha256": item.get("transcript_sha256"),
             "output_sha256": item.get("output_sha256"),
-        })
+        }
+        if "provider_family_verified" in item:
+            summary["provider_family_verified"] = bool(item.get("provider_family_verified"))
+        if item.get("provider_family_source"):
+            summary["provider_family_source"] = str(item.get("provider_family_source"))
+        summaries.append(summary)
     return summaries
 
 

@@ -2193,7 +2193,10 @@ def run_mergeability_reviewer_roster_diagnostic(
         (entry["task_id"], entry["candidate_id"]): entry["candidate_hash"]
         for entry in manifest["candidates"]
     }
-    arm_rosters = _roster_diagnostic_arm_rosters(reviewer_results_by_candidate)
+    arm_rosters = _roster_diagnostic_arm_rosters(
+        reviewer_results_by_candidate,
+        generator_family_by_candidate=generator_family_by_candidate,
+    )
 
     rows: list[dict[str, Any]] = []
     for result in calibration["results"]:
@@ -5399,6 +5402,8 @@ def _validate_roster_diagnostic_candidate_pool(
 
 def _roster_diagnostic_arm_rosters(
     reviewer_panel_results: Mapping[str, list[Mapping[str, Any]]],
+    *,
+    generator_family_by_candidate: Mapping[str, str] | None = None,
 ) -> dict[str, tuple[str, ...]]:
     by_reviewer: dict[str, dict[str, Any]] = {}
     for results in reviewer_panel_results.values():
@@ -5407,6 +5412,15 @@ def _roster_diagnostic_arm_rosters(
                 continue
             normalised = _normalise_mergeability_reviewer_result(raw)
             by_reviewer.setdefault(normalised["reviewer_id"], normalised)
+
+    generator_families: set[str] = set()
+    if isinstance(generator_family_by_candidate, Mapping):
+        for family in generator_family_by_candidate.values():
+            family_text = str(family or "").strip().lower()
+            if family_text and family_text not in {"unknown", "openai_compatible"}:
+                generator_families.add(family_text)
+
+    excluded_cross_family = {"openai", "unknown"} | generator_families
 
     def first_matching(predicate: Callable[[Mapping[str, Any]], bool]) -> str | None:
         for reviewer_id, result in sorted(by_reviewer.items()):
@@ -5420,11 +5434,13 @@ def _roster_diagnostic_arm_rosters(
         or result["runtime"] == "codex_cli"
     )
     text_only_id = first_matching(
-        lambda result: result["provider_family"] not in {"openai", "unknown"}
+        lambda result: result["provider_family"] not in excluded_cross_family
+        and bool(result.get("provider_family_verified"))
         and result["tool_access"] == "text_only"
     )
     tool_backed_cross_family_id = first_matching(
-        lambda result: result["provider_family"] not in {"openai", "unknown"}
+        lambda result: result["provider_family"] not in excluded_cross_family
+        and bool(result.get("provider_family_verified"))
         and (
             result["tool_access"] == "codebase_tools"
             or bool(result["tool_backed_command_evidence"])

@@ -207,11 +207,11 @@ def test_provider_family_from_served_model_not_flag():
 
     assert rows[0]["model"] == "claude-3-5-sonnet-20260620"
     assert rows[0]["provider_family"] == "anthropic"
-    assert rows[0]["provider_family_verified"] is True
-    assert rows[0]["provider_family_source"] == "served_model"
+    assert rows[0]["provider_family_verified"] is False
+    assert rows[0]["provider_family_source"] == "served_model_name_inference"
     assert _reviewer_cross_family_claim_status(rows[0]) == (
-        "verified_served_provider_family",
-        True,
+        "unverified_provider_family",
+        False,
     )
 
 
