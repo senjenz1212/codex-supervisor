@@ -112,6 +112,19 @@ def _fake_docker_runner_with_test_command_receipt(
     return calls, fake_run
 
 
+def test_pro_scripts_empty_env_uses_vendored_default(monkeypatch):
+    monkeypatch.setenv("SWEBENCH_PRO_ORACLE_SCRIPTS_DIR", " ")
+
+    scripts_dir = official_oracle.swe_bench_pro_oracle_scripts_dir({})
+
+    assert scripts_dir == (
+        Path(official_oracle.__file__).resolve().parent
+        / "vendor"
+        / "swe_bench_pro"
+        / "run_scripts"
+    )
+
+
 def test_pro_runner_returns_pass_status_on_gold_fixture(tmp_path, monkeypatch):
     monkeypatch.setenv("SWEBENCH_PRO_ORACLE_ARTIFACT_DIR", str(tmp_path / "oracle"))
     output_payload = {

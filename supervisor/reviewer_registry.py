@@ -438,6 +438,11 @@ def independent_reviewer_result_from_cursor_result(
     )
     runtime = result.reviewer_runtime or result.reviewer_output_mode or "unknown"
     model = result.model
+    requested_model = (
+        result.diagnostics.get("requested_model")
+        if isinstance(result.diagnostics, dict)
+        else None
+    )
     provider_family, provider_family_verified, provider_family_source = (
         provider_family_verification_for_reviewer(runtime, model)
     )
@@ -458,6 +463,7 @@ def independent_reviewer_result_from_cursor_result(
         "reviewer_runtime": result.reviewer_runtime,
         "reviewer_output_mode": result.reviewer_output_mode,
         "model": model,
+        "requested_model": requested_model,
         "provider_family": provider_family,
         "provider_family_verified": provider_family_verified,
         "provider_family_source": provider_family_source,
@@ -537,10 +543,13 @@ def _result_with_spec_provenance(
     if result_reviewer_runtime in {"", "unknown"} and spec.runtime:
         payload["reviewer_runtime"] = spec.runtime
     served_model = str(payload.get("model") or "").strip()
-    result_model = served_model
-    if spec.model and runtime_matches_spec and result_model in {"", "unknown"}:
-        payload["model"] = spec.model
-        result_model = spec.model
+    if (
+        spec.model
+        and runtime_matches_spec
+        and served_model in {"", "unknown"}
+        and not payload.get("requested_model")
+    ):
+        payload["requested_model"] = spec.model
     verified_family, verified, source = provider_family_verification_for_reviewer(
         payload.get("runtime"),
         served_model,

@@ -260,7 +260,8 @@ def test_requested_model_without_served_model_is_not_proven():
         round_index=0,
     )
 
-    assert rows[0]["model"] == "gemini-3.1-pro-preview"
+    assert rows[0]["model"] is None
+    assert rows[0]["requested_model"] == "gemini-3.1-pro-preview"
     assert rows[0]["provider_family"] == "google"
     assert rows[0]["provider_family_verified"] is False
     assert rows[0]["provider_family_source"] == "operator_config"

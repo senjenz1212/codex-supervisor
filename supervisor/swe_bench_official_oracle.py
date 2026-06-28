@@ -16,18 +16,18 @@ from typing import Any, Mapping, Sequence
 def swe_bench_pro_oracle_scripts_dir(context: Mapping[str, Any] | None = None) -> Path:
     """Return the configured SWE-bench Pro per-instance scripts directory."""
     context = context or {}
-    return Path(
-        str(
-            context.get("swe_bench_pro_scripts_dir")
-            or os.environ.get(
-                "SWEBENCH_PRO_ORACLE_SCRIPTS_DIR",
-                Path(__file__).resolve().parent
-                / "vendor"
-                / "swe_bench_pro"
-                / "run_scripts",
-            )
-        )
-    ).expanduser()
+    default_path = (
+        Path(__file__).resolve().parent
+        / "vendor"
+        / "swe_bench_pro"
+        / "run_scripts"
+    )
+    configured = (
+        context.get("swe_bench_pro_scripts_dir")
+        or os.environ.get("SWEBENCH_PRO_ORACLE_SCRIPTS_DIR")
+    )
+    configured_text = str(configured).strip() if configured is not None else ""
+    return Path(configured_text or str(default_path)).expanduser()
 
 
 def preflight_swe_bench_pro_run_scripts(

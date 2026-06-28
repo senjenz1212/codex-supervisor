@@ -37,6 +37,7 @@ def _produced_baseline_decisions(
             "decision_source": "produced_single_agent_baseline",
             "producer": {
                 "agent": "discordant-power-fixture",
+                "provider": "fixture",
                 "runner_label": "discordant-power-fixture",
                 "model": "fixture-baseline-llm",
             },
