@@ -1865,6 +1865,7 @@ def run_powered_factorial_mergeability_evaluation(
             expected_candidate_artifact_hash=candidate_hashes[
                 (result["task_id"], result["candidate_id"])
             ],
+            expected_candidate_id=candidate.candidate_id,
         )
         defaults = {
             "single_agent_baseline": {
@@ -4804,6 +4805,9 @@ def _resolve_powered_baseline_decision(
             or ""
         ).strip()
         model_label = str(raw.get("model") or producer.get("model") or "").strip()
+        provider_label = str(
+            raw.get("provider") or producer.get("provider") or ""
+        ).strip()
         if expected_candidate_id is not None and supplied_candidate_id:
             if supplied_candidate_id != expected_candidate_id:
                 decision = dict(unavailable_template)
@@ -4843,7 +4847,7 @@ def _resolve_powered_baseline_decision(
             decision["prompt_sha256"] = str(raw.get("prompt_sha256") or "")
             return decision
         missing_replay_fields: list[str] = []
-        if expected_candidate_id is not None and not supplied_candidate_id:
+        if not supplied_candidate_id:
             missing_replay_fields.append("candidate_id")
         if not isinstance(raw.get("accept"), bool):
             missing_replay_fields.append("accept")
@@ -4851,9 +4855,11 @@ def _resolve_powered_baseline_decision(
             missing_replay_fields.append("decision_source")
         if not isinstance(producer, Mapping) or not producer:
             missing_replay_fields.append("producer")
-        if expected_candidate_id is not None and not model_label:
+        if not model_label:
             missing_replay_fields.append("model")
-        if expected_candidate_id is not None and not runner_label:
+        if not provider_label:
+            missing_replay_fields.append("provider")
+        if not runner_label:
             missing_replay_fields.append("runner_label")
         if not str(raw.get("prompt_sha256") or "").strip():
             missing_replay_fields.append("prompt_sha256")

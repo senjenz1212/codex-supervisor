@@ -2725,7 +2725,8 @@ def test_powered_factorial_baseline_missing_replay_fields_is_unavailable(tmp_pat
         assert row["single_agent_baseline_evidence_kind"] == "malformed"
         assert row["single_agent_baseline_unavailable_reason"] == (
             "malformed_baseline_row_missing_replay_evidence:"
-            "accept,decision_source,producer,prompt_sha256"
+            "accept,candidate_id,decision_source,model,producer,prompt_sha256,"
+            "provider,runner_label"
         )
 
 

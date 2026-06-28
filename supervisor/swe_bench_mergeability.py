@@ -4459,7 +4459,7 @@ def build_swe_bench_pro_candidate_corpus(
                 f"duplicate generated candidate hash for {candidate_id}: {patch_sha256}"
             )
         seen_hashes.add(patch_sha256)
-        rows.append({
+        row = {
             "instance_id": instance_id,
             "candidate_id": candidate_id,
             "model_patch": model_patch,
@@ -4476,7 +4476,11 @@ def build_swe_bench_pro_candidate_corpus(
                 attempt.get("producer"),
                 field="producer",
             ),
-        })
+        }
+        for key in PRODUCED_BASELINE_RECEIPT_KEYS:
+            if key in attempt and isinstance(attempt[key], Mapping):
+                row[key] = dict(attempt[key])
+        rows.append(row)
     path.write_text(
         "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
         encoding="utf-8",
