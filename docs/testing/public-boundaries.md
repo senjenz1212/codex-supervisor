@@ -402,3 +402,32 @@ authority flag on the report (`metric_applyable`,
 `gate_advanced`) must remain false; the powered factorial path must not
 invoke any benchmark-to-policy promotion bridge and the all-arms diagnostic
 remains a separate report-only mode.
+
+## powered_real_benchmark_definition_of_done
+
+Validate the scaled powered SWE-bench Pro real-benchmark artifact through
+`assert_powered_real_benchmark_definition_of_done(powered_report=...,
+all_arms_diagnostic_report=...)` in `supervisor.powered_real_benchmark`. Tests
+must drive the public checker with report-shaped fixtures and prove the
+composed artifact (powered factorial report plus separate all-arms diagnostic
+status) passes only when raw `>=30` oracle-good and `>=30` oracle-bad floors
+hold, the paired `full_supervisor_stack` McNemar comparison reports
+`status="sufficient"` with `discordant_pair_count >= min_discordant` and
+`p_value <= alpha`, FAR/TAR/FRR confidence-interval blocks (Wilson-family
+method, positive denominator, populated bounds) are present for the
+`baseline`, `s_probe`, `s_full`, and `oracle_ceiling` arms, panel marginal
+evidence is recorded, the `source_predictions_path` is not a fixture,
+synthetic, smoke, or gold-only path, `benchmark_oracle.kind =
+"swe_bench_held_out_test_pass_proxy"` with `maintainer_mergeability_claim_allowed
+= false` and `no_maintainer_mergeability_claim = true`, the powered
+`evidence_conversion_power_contract` is qualified/report-only/operator-reviewed
+with `policy_mutation_allowed=false`, and every authority flag
+(`metric_applyable`, `improvement_claim_allowed`,
+`powered_improvement_claim_allowed`, `human_mergeability_claim_allowed`,
+`default_change_allowed`, `policy_mutated`, `gate_advanced`) is false on the
+powered report, all-arms report, and nested `aeb0_artifact_gate.authority_flags`.
+Underpowered, mislabeled, or fixture-sourced artifacts must raise
+`PoweredRealBenchmarkDoDError` with explicit reason codes. This boundary must
+not run the scaled benchmark, execute Docker, the Pro oracle, the live
+solver, or the cross-family reviewer panel; live execution is recorded
+separately as blocked execution evidence.
