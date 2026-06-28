@@ -948,6 +948,12 @@ def _pro_entryscript(
 ) -> str:
     """Build the container entryscript for one Pro candidate.
 
+    Mirrors upstream ``create_entryscript`` (scaleapi/SWE-bench_Pro-os,
+    pinned commit ``ca10a60a``): the dataset's ``before_repo_set_cmd`` is
+    collapsed to its last non-empty line and dropped verbatim after
+    ``git apply``. Only the upstream patch-wipe foot-gun is carved out --
+    if that last line is a ``git reset|clean|checkout`` invocation, it is
+    hoisted above ``git apply`` so the just-applied patch is not wiped.
     The run_script is wrapped so its exit code is captured to
     ``test_command.json`` and the parser still runs on the captured logs.
     Without the wrapper, ``set -e`` would abort the script before
@@ -957,20 +963,20 @@ def _pro_entryscript(
     """
     selected = ",".join(str(item) for item in selected_tests)
     selected_arg = shlex.quote(selected)
-    pre_patch_commands, post_patch_commands = _split_pro_before_repo_set_cmd(
+    pre_patch_extra, post_patch_line = _classify_pro_before_repo_set_cmd(
         before_repo_set_cmd
     )
-    if not pre_patch_commands:
-        pre_patch_commands = [
-            f"git reset --hard {shlex.quote(base_commit)}",
-            f"git checkout {shlex.quote(base_commit)}",
-        ]
 
     lines = [
         "#!/usr/bin/env bash",
         "set -euo pipefail",
         "cd /app",
-        *pre_patch_commands,
+        f"git reset --hard {shlex.quote(base_commit)}",
+        f"git checkout {shlex.quote(base_commit)}",
+    ]
+    if pre_patch_extra:
+        lines.append(pre_patch_extra)
+    lines.extend([
         "if git apply -v /workspace/patch.diff; then",
         "  printf '{\"patch_applied\": true}\\n' > /workspace/patch_apply.json",
         "else",
@@ -978,8 +984,9 @@ def _pro_entryscript(
         "  printf '{\"patch_applied\": false, \"return_code\": %s}\\n' \"$status\" > /workspace/patch_apply.json",
         "  exit \"$status\"",
         "fi",
-    ]
-    lines.extend(post_patch_commands)
+    ])
+    if post_patch_line:
+        lines.append(post_patch_line)
     lines.extend([
         "test_command_exit=0",
         f"if bash /workspace/run_script.sh {selected_arg} > /workspace/stdout.log 2> /workspace/stderr.log; then",
@@ -994,25 +1001,28 @@ def _pro_entryscript(
     return "\n".join(lines)
 
 
-def _split_pro_before_repo_set_cmd(value: str) -> tuple[list[str], list[str]]:
-    pre_patch: list[str] = []
-    post_patch: list[str] = []
-    for command in _pro_shell_commands(value):
-        if _is_pro_pre_patch_repo_setup(command):
-            pre_patch.append(command)
-        else:
-            post_patch.append(command)
-    return pre_patch, post_patch
+def _classify_pro_before_repo_set_cmd(value: str) -> tuple[str, str]:
+    """Return ``(pre_patch_extra, post_patch_line)`` for an entryscript.
+
+    Upstream uses ``sample["before_repo_set_cmd"].strip().split("\\n")[-1]``
+    verbatim after ``git apply``. The single carve-out is the patch-wipe
+    foot-gun: when that last line is a ``git reset|clean|checkout`` that
+    would erase the applied patch, hoist it ahead of ``git apply`` instead.
+    """
+    last_line = _last_nonempty_line(value)
+    if not last_line:
+        return "", ""
+    if _is_pro_pre_patch_repo_setup(last_line):
+        return last_line, ""
+    return "", last_line
 
 
-def _pro_shell_commands(value: str) -> list[str]:
-    commands: list[str] = []
-    for raw_line in str(value).splitlines():
-        for raw_command in raw_line.split("&&"):
-            command = raw_command.strip()
-            if command:
-                commands.append(command)
-    return commands
+def _last_nonempty_line(value: str) -> str:
+    for raw_line in reversed(str(value).splitlines()):
+        line = raw_line.strip()
+        if line:
+            return line
+    return ""
 
 
 def _is_pro_pre_patch_repo_setup(command: str) -> bool:

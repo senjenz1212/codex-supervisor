@@ -61,7 +61,7 @@ def _write_fake_runner(tmp_path: Path) -> Path:
         "import json, os\n"
         "from pathlib import Path\n"
         "attempt = int(os.environ['SWEBENCH_SOLVER_ATTEMPT_INDEX'])\n"
-        "calls = Path(os.environ['FAKE_SOLVER_CALLS'])\n"
+        "calls = Path(os.environ['SWEBENCH_SOLVER_FAKE_CALLS'])\n"
         "records = []\n"
         "if calls.exists():\n"
         "    records = json.loads(calls.read_text(encoding='utf-8'))\n"
@@ -110,7 +110,7 @@ def _run_solver_generator(tmp_path: Path, *, k: int = 3) -> tuple[dict, Path, Pa
     public = _write_public_worktree(tmp_path)
     runner = _write_fake_runner(tmp_path)
     calls = tmp_path / "runner-calls.json"
-    os.environ["FAKE_SOLVER_CALLS"] = str(calls)
+    os.environ["SWEBENCH_SOLVER_FAKE_CALLS"] = str(calls)
     generator = _command_generator(
         _solver_command(runner, k=k),
         output_dir=tmp_path / "generator-out",
@@ -224,11 +224,45 @@ def test_baseline_receipt_rejected_when_replay_evidence_missing(
     assert missing_field in decision["unavailable_reason"]
 
 
+def test_runner_subprocess_env_scrubs_oracle_secrets(tmp_path, monkeypatch):
+    monkeypatch.setenv("SWEBENCH_PRO_ORACLE_DOCKERHUB_USERNAME", "leaky-user")
+    monkeypatch.setenv("FAIL_TO_PASS", "hidden::test")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "leaky-key")
+    monkeypatch.setenv("SWEBENCH_SOLVER_KEEP_THIS", "ok-token")
+    public = _write_public_worktree(tmp_path)
+    runner = tmp_path / "env_check_runner.py"
+    env_dump = tmp_path / "env-dump.json"
+    runner.write_text(
+        "import json, os\n"
+        "from pathlib import Path\n"
+        f"Path({str(env_dump)!r}).write_text(json.dumps(dict(os.environ)), encoding='utf-8')\n"
+        "Path('module.py').write_text('value = 1\\n', encoding='utf-8')\n"
+        "output = Path(os.environ['SWEBENCH_SOLVER_ATTEMPT_OUTPUT'])\n"
+        "output.write_text(json.dumps({'accept': True, 'cost_usd': 0.0,"
+        " 'token_usage': {'input_tokens': 1, 'output_tokens': 1}}),"
+        " encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    generator = _command_generator(
+        _solver_command(runner, k=2),
+        output_dir=tmp_path / "generator-out",
+        arm="baseline",
+    )
+    generator(_generator_input(public))
+
+    dumped = json.loads(env_dump.read_text(encoding="utf-8"))
+    assert "SWEBENCH_PRO_ORACLE_DOCKERHUB_USERNAME" not in dumped
+    assert "FAIL_TO_PASS" not in dumped
+    assert "ANTHROPIC_API_KEY" not in dumped
+    assert dumped.get("SWEBENCH_SOLVER_KEEP_THIS") == "ok-token"
+    assert dumped.get("SWEBENCH_SOLVER_ATTEMPT_OUTPUT")
+
+
 def test_generator_reads_only_public_packet(tmp_path):
     public = _write_public_worktree(tmp_path)
     runner = _write_fake_runner(tmp_path)
     calls = tmp_path / "runner-calls.json"
-    os.environ["FAKE_SOLVER_CALLS"] = str(calls)
+    os.environ["SWEBENCH_SOLVER_FAKE_CALLS"] = str(calls)
     generator_input = _generator_input(public)
     generator_input["fail_to_pass"] = ["hidden::test"]
     generator = _command_generator(

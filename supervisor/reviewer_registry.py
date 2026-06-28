@@ -670,21 +670,6 @@ def evaluate_reviewer_panel(
     elif blocking_reviewers:
         decision = "revise"
         reason = "blocking_reviewer_objection"
-    elif requested_aggregation_mode == "geometric_median":
-        if missing_reviewers:
-            decision = "revise"
-            reason = "missing_reviewer_verdict"
-        elif low_confidence_reviewers:
-            decision = "escalate"
-            reason = "low_confidence_accept"
-        else:
-            robust_aggregation = _majority_accept_summary(reviewer_inputs)
-            if bool(robust_aggregation.get("accept")):
-                decision = "accept"
-                reason = "robust_geometric_median_accept"
-            else:
-                decision = "revise"
-                reason = "robust_geometric_median_reject"
     elif non_accepting_reviewers:
         decision = "revise"
         reason = "reviewer_non_accept"
@@ -694,9 +679,15 @@ def evaluate_reviewer_panel(
     elif low_confidence_reviewers:
         decision = "escalate"
         reason = "low_confidence_accept"
+    elif requested_aggregation_mode == "geometric_median":
+        robust_aggregation = _majority_accept_summary(reviewer_inputs)
+        if bool(robust_aggregation.get("accept")):
+            decision = "accept"
+            reason = "robust_geometric_median_accept"
+        else:
+            decision = "revise"
+            reason = "robust_geometric_median_reject"
     calibrated_accept: dict[str, Any] | None = None
-    if requested_aggregation_mode == "geometric_median":
-        active_calibration = None
     if active_calibration is not None and not _calibration_covers_reviewer_inputs(
         active_calibration,
         reviewer_inputs,

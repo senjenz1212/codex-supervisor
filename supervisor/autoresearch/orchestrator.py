@@ -422,7 +422,7 @@ def _execution_or_attempt_metric(
 ) -> float | None:
     if execution_value is not None:
         return execution_value
-    if attempt.metric_source == "pending":
+    if attempt.metric_source != "evaluator_execution":
         return None
     return attempt_value
 

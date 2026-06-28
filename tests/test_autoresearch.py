@@ -431,6 +431,59 @@ def test_autoresearch_validation_rejects_evaluator_hash_mismatch(tmp_path):
     ]
 
 
+def test_execution_or_attempt_metric_drops_fixture_seed_when_execution_missing():
+    from supervisor.autoresearch.orchestrator import _execution_or_attempt_metric
+
+    fixture_seeded = _attempt(metric_source="fixture", metric_before=0.5)
+    assert _execution_or_attempt_metric(None, 0.5, attempt=fixture_seeded) is None
+
+    human_seeded = _attempt(metric_source="human_seed", metric_before=0.5)
+    assert _execution_or_attempt_metric(None, 0.5, attempt=human_seeded) is None
+
+    pending_seeded = _attempt(metric_source="pending", metric_before=0.5)
+    assert _execution_or_attempt_metric(None, 0.5, attempt=pending_seeded) is None
+
+    execution_seeded = _attempt(metric_source="evaluator_execution", metric_before=0.5)
+    assert _execution_or_attempt_metric(None, 0.5, attempt=execution_seeded) == 0.5
+
+
+def test_empty_floor_comparison_returns_none_for_non_execution_metric_source():
+    fixture_attempt = _attempt(
+        metric_source="fixture",
+        metric_before=0.4,
+        metric_after=0.7,
+        metric_delta=0.3,
+    )
+    fixture_report = validate_attempt(
+        experiment=_experiment(),
+        attempt=fixture_attempt,
+    )
+
+    assert fixture_report.metric_source == "fixture"
+    assert fixture_report.empty_floor_comparison() is None
+    payload = fixture_report.to_payload()
+    assert payload["empty_floor_comparison"] is None
+
+    execution_attempt = _attempt(
+        metric_source="evaluator_execution",
+        metric_before=0.4,
+        metric_after=0.7,
+        metric_delta=0.3,
+    )
+    execution_report = validate_attempt(
+        experiment=_experiment(),
+        attempt=execution_attempt,
+    )
+
+    assert execution_report.empty_floor_comparison() == {
+        "metric_source": "evaluator_execution",
+        "empty_floor_metric": 0.4,
+        "candidate_metric": 0.7,
+        "metric_delta": 0.3,
+        "k_trials": 3,
+    }
+
+
 def test_autoresearch_validation_rejects_fixture_metrics_without_evaluator_execution():
     report = validate_attempt(
         experiment=_experiment(),

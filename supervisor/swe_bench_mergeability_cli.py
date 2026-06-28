@@ -82,8 +82,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--panel-aggregation-mode",
         choices=("conservative", "geometric_median"),
-        default="geometric_median",
-        help="Configured reviewer panel aggregation mode.",
+        default="conservative",
+        help=(
+            "Configured reviewer panel aggregation mode. Defaults to "
+            "conservative; geometric_median still honors the "
+            "non-accepting-reviewer floor and calibration."
+        ),
     )
     parser.add_argument(
         "--oracle-adapter",

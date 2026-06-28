@@ -341,8 +341,19 @@ def run_no_mistakes_validation(
     stdout = str(completed.stdout or "")
     stderr = str(completed.stderr or "")
     findings, outcome, gate = parse_no_mistakes_output(stdout)
+    stashed_prefix = (
+        str(artifact_stash.get("artifact_prefix") or "")
+        if artifact_stash and artifact_stash.get("stashed")
+        else ""
+    )
+    preflight_changes = _filter_changes_outside_prefix(
+        validation_preflight["changed_files"], stashed_prefix
+    )
+    postflight_changes = _filter_changes_outside_prefix(
+        postflight["changed_files"], stashed_prefix
+    )
     changed = (
-        tuple(validation_preflight["changed_files"]) != tuple(postflight["changed_files"])
+        preflight_changes != postflight_changes
         or validation_preflight["head"] != postflight["head"]
     )
     passing_outcome = bool(outcome) and _normalise_action(outcome) in PASSING_OUTCOMES
@@ -536,6 +547,7 @@ def _stash_workflow_artifacts_if_safe(
         "stashed": True,
         "stash_ref": new_refs[0][0],
         "marker": marker,
+        "artifact_prefix": str(prefix),
     }
 
 
@@ -548,15 +560,52 @@ def _restore_workflow_artifact_stash(
     stash_ref = str(stash.get("stash_ref") or "")
     if not stash_ref:
         return {"blocked": True, "reason": "no_mistakes_artifact_restore_failed"}
+    prefix = stash.get("artifact_prefix")
+    prefix_path = str(prefix) if prefix else ""
     apply_result = _run_git(cwd, "stash", "apply", stash_ref)
     if apply_result.returncode != 0:
+        rollback_stderr = _rollback_failed_stash_apply(cwd, prefix_path, stash_ref)
         return {
             "blocked": True,
             "reason": "no_mistakes_artifact_restore_failed",
-            "stderr": _tail(apply_result.stderr or apply_result.stdout or ""),
+            "stderr": _tail(
+                "\n".join(
+                    item
+                    for item in [
+                        apply_result.stderr or apply_result.stdout or "",
+                        rollback_stderr,
+                    ]
+                    if item
+                )
+            ),
         }
     _run_git(cwd, "stash", "drop", stash_ref)
     return {"blocked": False}
+
+
+def _rollback_failed_stash_apply(
+    cwd: Path,
+    prefix_path: str,
+    stash_ref: str,
+) -> str:
+    """Undo a half-applied `git stash apply` so the worktree is not left dirty.
+
+    On conflict, ``git stash apply`` leaves merge markers in the working tree
+    and keeps the stash on the stash list. Roll back any partial writes and
+    drop the stash so the caller does not strand the worktree.
+    """
+    errors: list[str] = []
+    paths = [prefix_path] if prefix_path else ["--", "."]
+    checkout_result = _run_git(cwd, "checkout", "--", *paths)
+    if checkout_result.returncode != 0:
+        errors.append(checkout_result.stderr or checkout_result.stdout or "")
+    clean_result = _run_git(cwd, "clean", "-fd", *([prefix_path] if prefix_path else []))
+    if clean_result.returncode != 0:
+        errors.append(clean_result.stderr or clean_result.stdout or "")
+    drop_result = _run_git(cwd, "stash", "drop", stash_ref)
+    if drop_result.returncode != 0:
+        errors.append(drop_result.stderr or drop_result.stdout or "")
+    return "\n".join(error for error in errors if error)
 
 
 def _workflow_artifact_prefix(task_id: str) -> Path | None:
@@ -575,6 +624,16 @@ def _is_under_prefix(path: str, prefix: Path) -> bool:
         return True
     except ValueError:
         return Path(path) == prefix
+
+
+def _filter_changes_outside_prefix(
+    changed_files: tuple[str, ...],
+    prefix_path: str,
+) -> tuple[str, ...]:
+    if not prefix_path:
+        return tuple(changed_files)
+    prefix = Path(prefix_path)
+    return tuple(path for path in changed_files if not _is_under_prefix(path, prefix))
 
 
 def _stash_refs(cwd: Path) -> list[tuple[str, str]]:

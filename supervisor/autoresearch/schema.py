@@ -296,14 +296,19 @@ class AutoresearchValidationReport:
         """Return the execution-derived empty-floor comparison or ``None``.
 
         Returns ``None`` when ``metric_before``, ``metric_after``, or
-        ``metric_delta`` is missing -- including when the orchestrator dropped a
-        ``pending`` seed because the live evaluator could not measure a value.
-        A real live run that executed the stripped-overlay pre-flight pass and
-        recorded at least one candidate trial returns a dict that carries
-        ``metric_source`` (``evaluator_execution`` for live evidence), the
-        measured ``empty_floor_metric``, the candidate ``candidate_metric``
-        (median of trial metrics), ``metric_delta``, and the trial count.
+        ``metric_delta`` is missing -- including when the orchestrator dropped
+        a non-execution seed because the live evaluator could not measure a
+        value. Also returns ``None`` whenever ``metric_source`` is not
+        ``evaluator_execution`` so a stale fixture or human seed cannot be
+        laundered as execution evidence. A real live run that executed the
+        stripped-overlay pre-flight pass and recorded at least one candidate
+        trial returns a dict that carries ``metric_source`` set to
+        ``evaluator_execution``, the measured ``empty_floor_metric``, the
+        candidate ``candidate_metric`` (median of trial metrics),
+        ``metric_delta``, and the trial count.
         """
+        if self.metric_source != "evaluator_execution":
+            return None
         if self.metric_before is None or self.metric_after is None or self.metric_delta is None:
             return None
         return {

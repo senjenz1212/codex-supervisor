@@ -237,6 +237,62 @@ def test_pro_entryscript_runs_parser_after_test_command_failure():
     assert "test_command_exit=$?" in script
 
 
+def test_pro_entryscript_uses_last_line_of_before_repo_set_cmd():
+    script = official_oracle._pro_entryscript(
+        base_commit="abc123",
+        before_repo_set_cmd="pip install foo\npip install bar",
+        selected_tests=["tests/test_parser.py"],
+    )
+
+    apply_index = script.index("git apply -v /workspace/patch.diff")
+    last_line_index = script.index("pip install bar")
+
+    assert "pip install foo" not in script
+    assert last_line_index > apply_index
+
+
+def test_pro_entryscript_hoists_pre_patch_repo_setup_carveout():
+    script = official_oracle._pro_entryscript(
+        base_commit="abc123",
+        before_repo_set_cmd="echo ignored\ngit reset --hard otherhash",
+        selected_tests=["tests/test_parser.py"],
+    )
+
+    apply_index = script.index("git apply -v /workspace/patch.diff")
+    hoisted_index = script.index("git reset --hard otherhash")
+
+    assert "echo ignored" not in script
+    assert hoisted_index < apply_index
+
+
+def test_pro_entryscript_does_not_split_chained_last_line():
+    script = official_oracle._pro_entryscript(
+        base_commit="abc123",
+        before_repo_set_cmd="pip install foo && pip install bar || true",
+        selected_tests=["tests/test_parser.py"],
+    )
+
+    apply_index = script.index("git apply -v /workspace/patch.diff")
+    chain_index = script.index("pip install foo && pip install bar || true")
+
+    assert chain_index > apply_index
+    assert script.count("pip install foo") == 1
+
+
+def test_pro_entryscript_hardcodes_upstream_reset_and_checkout():
+    script = official_oracle._pro_entryscript(
+        base_commit="abc123",
+        before_repo_set_cmd="",
+        selected_tests=["tests/test_parser.py"],
+    )
+
+    reset_index = script.index("git reset --hard abc123")
+    checkout_index = script.index("git checkout abc123")
+    apply_index = script.index("git apply -v /workspace/patch.diff")
+
+    assert reset_index < checkout_index < apply_index
+
+
 def test_pro_runner_unavailable_on_pull_or_parse_failure(tmp_path, monkeypatch):
     monkeypatch.setenv("SWEBENCH_PRO_ORACLE_ARTIFACT_DIR", str(tmp_path / "oracle"))
 

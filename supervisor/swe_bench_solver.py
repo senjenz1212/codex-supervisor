@@ -47,6 +47,35 @@ _FORBIDDEN_PUBLIC_PACKET_TEXT = (
     ".mergeability/",
 )
 
+_RUNNER_ENV_ALLOWLIST = frozenset({
+    "PATH",
+    "HOME",
+    "USER",
+    "LOGNAME",
+    "SHELL",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TZ",
+    "TMPDIR",
+    "TEMP",
+    "TMP",
+    "PWD",
+    "TERM",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "REQUESTS_CA_BUNDLE",
+    "CURL_CA_BUNDLE",
+    "PYTHONHASHSEED",
+    "VIRTUAL_ENV",
+    "PYTHONPATH",
+})
+
+_RUNNER_ENV_PREFIX_ALLOWLIST = (
+    "SWEBENCH_SOLVER_",
+    "LC_",
+)
+
 
 @dataclass(frozen=True)
 class SweBenchInstance:
@@ -141,6 +170,24 @@ def _copy_public_worktree(source: Path, destination: Path) -> None:
     _run_git(destination, ["config", "user.name", "SWE Bench Solver"])
     _run_git(destination, ["add", "-A"])
     _run_git(destination, ["commit", "--allow-empty", "-m", "public base"])
+
+
+def _runner_scrubbed_env() -> dict[str, str]:
+    """Build a runner subprocess env with only allowlisted host vars.
+
+    Mirrors the trust boundary advertised by `_runner_public_packet`:
+    oracle/dataset secrets (FAIL_TO_PASS, before_repo_set_cmd, dockerhub
+    creds, etc.) commonly travel in host env vars in SWE-bench tooling,
+    so a vanilla ``os.environ.copy()`` would defeat the JSON-side scrub.
+    """
+    env: dict[str, str] = {}
+    for key, value in os.environ.items():
+        if key in _RUNNER_ENV_ALLOWLIST:
+            env[key] = value
+            continue
+        if any(key.startswith(prefix) for prefix in _RUNNER_ENV_PREFIX_ALLOWLIST):
+            env[key] = value
+    return env
 
 
 def _read_attempt_output(path: Path) -> dict[str, Any]:
@@ -292,7 +339,7 @@ def _run_generator_mode(args: argparse.Namespace, *, input_path: Path, output_pa
             encoding="utf-8",
         )
         attempt_output_path = attempt_io_dir / "attempt_output.json"
-        env = os.environ.copy()
+        env = _runner_scrubbed_env()
         env.update({
             "SWEBENCH_SOLVER_ATTEMPT_INDEX": str(attempt_index),
             "SWEBENCH_SOLVER_SOLVER": str(args.solver),

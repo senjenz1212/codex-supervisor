@@ -271,7 +271,7 @@ def test_requested_model_without_served_model_is_not_proven():
     )
 
 
-def test_robust_aggregation_bounds_one_contaminated_judge():
+def test_robust_aggregation_floor_blocks_one_contaminated_judge():
     decision = evaluate_reviewer_panel(
         [
             _panel_input("google-reviewer", "accept"),
@@ -287,13 +287,10 @@ def test_robust_aggregation_bounds_one_contaminated_judge():
     )
 
     assert decision["aggregation_mode"] == "geometric_median"
-    assert decision["decision"] == "accept"
-    assert decision["reason"] == "robust_geometric_median_accept"
+    assert decision["decision"] == "revise"
+    assert decision["reason"] == "reviewer_non_accept"
     assert decision["non_accepting_reviewers"] == ["contaminated-reviewer"]
-    robust = decision["robust_aggregation"]
-    assert robust["geometric_median_score"] == 1.0
-    assert robust["score_points"] == [1.0, 1.0, 0.0]
-    assert robust["contaminated_judge_bound"] == 1
+    assert "robust_aggregation" not in decision
 
 
 def test_unverified_panel_blocks_measurement():

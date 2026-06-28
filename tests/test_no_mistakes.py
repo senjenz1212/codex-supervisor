@@ -556,6 +556,109 @@ def test_no_mistakes_artifact_stash_restore(tmp_path):
     ).stdout
 
 
+def test_no_mistakes_validator_writes_to_stashed_prefix_do_not_force_rerun(tmp_path):
+    from supervisor.no_mistakes import (
+        NoMistakesConfig,
+        NoMistakesValidationRequest,
+        run_no_mistakes_validation,
+    )
+
+    _init_git_repo(tmp_path)
+    artifact = tmp_path / "docs" / "dual-agent" / "task-1" / "index.md"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text("before\n", encoding="utf-8")
+    subprocess.run(["git", "add", str(artifact.relative_to(tmp_path))], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "add workflow artifact"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    artifact.write_text("after\n", encoding="utf-8")
+
+    def validator_writes_to_artifact_prefix(argv, **kwargs):
+        validator_output = Path(kwargs["cwd"]) / "docs" / "dual-agent" / "task-1" / "verdict.json"
+        validator_output.parent.mkdir(parents=True, exist_ok=True)
+        validator_output.write_text("{\"ok\": true}\n", encoding="utf-8")
+        return subprocess.CompletedProcess(argv, 0, stdout="outcome: checks-passed\n", stderr="")
+
+    result = run_no_mistakes_validation(
+        NoMistakesValidationRequest(
+            cwd=tmp_path,
+            task_id="task-1",
+            run_id="run-artifact-write",
+            intent="Validate.",
+            config=NoMistakesConfig(policy="required"),
+        ),
+        runner=validator_writes_to_artifact_prefix,
+    )
+
+    assert result.verdict == "accepted"
+    assert result.reason == "no_mistakes_checks_passed"
+
+
+def test_no_mistakes_stash_apply_conflict_rolls_back_and_drops_stash(tmp_path):
+    from supervisor.no_mistakes import (
+        NoMistakesConfig,
+        NoMistakesValidationRequest,
+        run_no_mistakes_validation,
+    )
+
+    _init_git_repo(tmp_path)
+    artifact = tmp_path / "docs" / "dual-agent" / "task-1" / "index.md"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text("before\n", encoding="utf-8")
+    subprocess.run(["git", "add", str(artifact.relative_to(tmp_path))], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "add workflow artifact"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    artifact.write_text("after\n", encoding="utf-8")
+
+    def validator_overwrites_stashed_artifact_with_conflict(argv, **kwargs):
+        artifact_in_cwd = Path(kwargs["cwd"]) / "docs" / "dual-agent" / "task-1" / "index.md"
+        artifact_in_cwd.parent.mkdir(parents=True, exist_ok=True)
+        artifact_in_cwd.write_text("conflicting-validator-write\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "add", str(artifact_in_cwd.relative_to(kwargs["cwd"]))],
+            cwd=kwargs["cwd"],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "conflicting validator write"],
+            cwd=kwargs["cwd"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return subprocess.CompletedProcess(argv, 0, stdout="outcome: checks-passed\n", stderr="")
+
+    result = run_no_mistakes_validation(
+        NoMistakesValidationRequest(
+            cwd=tmp_path,
+            task_id="task-1",
+            run_id="run-stash-conflict",
+            intent="Validate.",
+            config=NoMistakesConfig(policy="required"),
+        ),
+        runner=validator_overwrites_stashed_artifact_with_conflict,
+    )
+
+    assert result.verdict in {"required_blocked", "advisory_blocked"}
+    stash_list = subprocess.run(
+        ["git", "stash", "list"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "codex-supervisor:no-mistakes-artifacts" not in stash_list
+
+
 def test_no_mistakes_clean_branch_runs_on_checked_out_branch(tmp_path):
     from supervisor.no_mistakes import (
         NoMistakesConfig,

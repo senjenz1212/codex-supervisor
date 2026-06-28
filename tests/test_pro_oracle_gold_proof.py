@@ -210,9 +210,7 @@ def test_before_repo_setup_does_not_erase_patch_before_tests(tmp_path, monkeypat
     monkeypatch.setattr(official_oracle.subprocess, "run", fake_run)
     context = _pro_context(tmp_path)
     context["before_repo_set_cmd"] = "\n".join([
-        "git reset --hard abc123",
-        "git clean -fd",
-        "git checkout abc123",
+        "pip install foo",
         "git checkout issue456 -- tests/test_parser.py",
     ])
 
@@ -221,7 +219,6 @@ def test_before_repo_setup_does_not_erase_patch_before_tests(tmp_path, monkeypat
     assert result["fail_to_pass_status"] == "pass"
     script = captured_entryscript["text"]
     reset_index = script.index("git reset --hard abc123")
-    clean_index = script.index("git clean -fd")
     base_checkout_index = script.index("git checkout abc123")
     apply_index = script.index("git apply -v /workspace/patch.diff")
     hidden_checkout_index = script.index(
@@ -229,5 +226,61 @@ def test_before_repo_setup_does_not_erase_patch_before_tests(tmp_path, monkeypat
     )
     run_index = script.index("if bash /workspace/run_script.sh")
 
-    assert reset_index < clean_index < base_checkout_index < apply_index
+    assert reset_index < base_checkout_index < apply_index
     assert apply_index < hidden_checkout_index < run_index
+    assert "pip install foo" not in script
+
+
+def test_before_repo_setup_hoists_patch_wiping_reset_on_last_line(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("SWEBENCH_PRO_ORACLE_ARTIFACT_DIR", str(tmp_path / "oracle"))
+    captured_entryscript: dict[str, str] = {}
+
+    def fake_run(command, *, cwd, env, text, capture_output, check, timeout):
+        if command[:2] == ["docker", "pull"]:
+            return subprocess.CompletedProcess(command, 0, "pull ok", "")
+        if command[:2] == ["docker", "run"]:
+            volume_arg = command[command.index("-v") + 1]
+            workspace = Path(volume_arg.split(":", 1)[0])
+            captured_entryscript["text"] = (workspace / "entryscript.sh").read_text(
+                encoding="utf-8"
+            )
+            (workspace / "patch_apply.json").write_text(
+                json.dumps({"patch_applied": True}),
+                encoding="utf-8",
+            )
+            (workspace / "test_command.json").write_text(
+                json.dumps({"test_command_return_code": 0}),
+                encoding="utf-8",
+            )
+            (workspace / "output.json").write_text(
+                json.dumps({
+                    "tests": [
+                        {
+                            "name": "tests/test_parser.py::test_hidden",
+                            "status": "PASSED",
+                        },
+                        {
+                            "name": "tests/test_parser.py::test_existing",
+                            "status": "PASSED",
+                        },
+                    ]
+                }),
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(command, 0, "run ok", "")
+        raise AssertionError(f"unexpected command: {command}")
+
+    monkeypatch.setattr(official_oracle.subprocess, "run", fake_run)
+    context = _pro_context(tmp_path)
+    context["before_repo_set_cmd"] = "git reset --hard otherhash"
+
+    result = run_swe_bench_pro_oracle(context)
+
+    assert result["fail_to_pass_status"] == "pass"
+    script = captured_entryscript["text"]
+    hoisted_index = script.index("git reset --hard otherhash")
+    apply_index = script.index("git apply -v /workspace/patch.diff")
+
+    assert hoisted_index < apply_index

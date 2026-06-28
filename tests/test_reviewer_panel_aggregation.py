@@ -281,7 +281,7 @@ def test_evaluate_reviewer_panel_conservative_non_accept_precedes_low_confidence
     assert decision["non_accepting_reviewers"] == ["independent-reviewer-1"]
 
 
-def test_evaluate_reviewer_panel_geometric_median_precedes_calibration():
+def test_evaluate_reviewer_panel_geometric_median_still_runs_calibration():
     decision = evaluate_reviewer_panel(
         [
             _accepting_result("independent-reviewer-0"),
@@ -291,12 +291,10 @@ def test_evaluate_reviewer_panel_geometric_median_precedes_calibration():
         calibration=_calibration(),
     )
 
-    assert decision["aggregation_mode"] == "geometric_median"
+    assert decision["aggregation_mode"] == "calibrated_weighted"
     assert decision["decision"] == "accept"
-    assert decision["reason"] == "robust_geometric_median_accept"
-    assert "robust_aggregation" in decision
-    assert "calibration" not in decision
-    assert "calibrated_accept" not in decision
+    assert "calibration" in decision
+    assert "calibrated_accept" in decision
 
 
 def test_load_reviewer_panel_calibration_rejects_formula_inconsistent_weights(tmp_path):
