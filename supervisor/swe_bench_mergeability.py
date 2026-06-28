@@ -15,6 +15,7 @@ import json
 import os
 import shutil
 import time
+from collections import Counter
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
@@ -4630,16 +4631,10 @@ def _powered_factorial_flatten_predictions(
         raise SwebenchMergeabilityFixtureRunnerError(
             "powered factorial Pro corpus contains no candidates"
         )
-    duplicate_ids = sorted({
-        str(candidate.get("candidate_id") or "")
-        for candidate in candidates
-        if sum(
-            1
-            for other in candidates
-            if str(other.get("candidate_id") or "")
-            == str(candidate.get("candidate_id") or "")
-        ) > 1
-    })
+    candidate_id_counts = Counter(
+        str(candidate.get("candidate_id") or "") for candidate in candidates
+    )
+    duplicate_ids = sorted(cid for cid, count in candidate_id_counts.items() if count > 1)
     if duplicate_ids:
         raise SwebenchMergeabilityFixtureRunnerError(
             "powered factorial Pro corpus requires globally unique candidate_id values: "
@@ -4947,7 +4942,9 @@ def _evidence_conversion_power_contract(
 
 def _safe_powered_fragment(value: str) -> str:
     text = "".join(ch if ch.isalnum() or ch in {"-", "_", "."} else "_" for ch in value)
-    return text.strip("._") or "item"
+    sanitized = text.strip("._") or "item"
+    digest = sha256(value.encode("utf-8")).hexdigest()[:12]
+    return f"{sanitized}-{digest}"
 
 
 def build_swe_bench_pro_candidate_corpus(
