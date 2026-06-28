@@ -3564,35 +3564,62 @@ def _full_roster_panel_for_bad_ids(bad_candidate_fragments: set[str]):
             if any(fragment in candidate_id for fragment in bad_candidate_fragments)
             else "accept"
         )
+        reviewer_results = [
+            {
+                "reviewer_id": "google-reviewer",
+                "runtime": "litellm_structured",
+                "model": "gemini-3.1-pro-preview",
+                "provider_family": "google",
+                "provider_family_verified": True,
+                "provider_family_source": "served_model",
+                "verdict_present": True,
+                "decision": decision,
+                "severity": "important" if decision == "revise" else "low",
+                "transcript_sha256": "a" * 64,
+                "output_sha256": "b" * 64,
+            },
+            {
+                "reviewer_id": "codex-reviewer",
+                "runtime": "codex_cli",
+                "model": "gpt-5.5",
+                "provider_family": "openai",
+                "provider_family_verified": True,
+                "provider_family_source": "served_model",
+                "verdict_present": True,
+                "decision": "accept",
+                "severity": "low",
+                "transcript_sha256": "c" * 64,
+                "output_sha256": "d" * 64,
+            },
+        ]
+        reviewer_ids = [str(result["reviewer_id"]) for result in reviewer_results]
+        accepted_reviewers = [
+            str(result["reviewer_id"])
+            for result in reviewer_results
+            if str(result["decision"]) == "accept"
+        ]
         return {
             "decision": decision,
             "available": True,
             "reason": "reviewer_non_accept" if decision == "revise" else "all_available_reviewers_accept",
-            "reviewer_ids": ["cursor-rigorous", "codex-reviewer"],
-            "available_reviewers": ["cursor-rigorous", "codex-reviewer"],
+            "reviewer_ids": reviewer_ids,
+            "available_reviewers": reviewer_ids,
             "missing_reviewers": [],
-            "reviewer_results": [
-                {
-                    "reviewer_id": "cursor-rigorous",
-                    "runtime": "cursor_sdk",
-                    "model": "rigorous",
-                    "verdict_present": True,
-                    "decision": decision,
-                    "severity": "important" if decision == "revise" else "low",
-                    "transcript_sha256": "a" * 64,
-                    "output_sha256": "b" * 64,
-                },
-                {
-                    "reviewer_id": "codex-reviewer",
-                    "runtime": "codex_cli",
-                    "model": "gpt-5.5",
-                    "verdict_present": True,
-                    "decision": "accept",
-                    "severity": "low",
-                    "transcript_sha256": "c" * 64,
-                    "output_sha256": "d" * 64,
-                },
-            ],
+            "reviewer_results": reviewer_results,
+            "panel_decision": {
+                "schema_version": "independent-reviewer-panel-decision/v1",
+                "decision": decision,
+                "reason": "blocking_reviewer_objection"
+                if decision == "revise"
+                else "robust_geometric_median_accept",
+                "aggregation_mode": "geometric_median",
+                "available_reviewers": reviewer_ids,
+                "accepted_reviewers": accepted_reviewers,
+                "blocking_reviewers": ["google-reviewer"] if decision == "revise" else [],
+                "non_accepting_reviewers": ["google-reviewer"] if decision == "revise" else [],
+                "missing_reviewers": [],
+                "low_confidence_reviewers": [],
+            },
         }
 
     return panel

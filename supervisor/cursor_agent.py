@@ -744,6 +744,7 @@ def _metadata_diagnostics(metadata: dict[str, Any]) -> dict[str, Any] | None:
     keys = (
         "prompt_chars",
         "prompt_sha256",
+        "requested_model",
         "finish_reason",
         "prompt_tokens",
         "completion_tokens",
@@ -1004,11 +1005,13 @@ def _run_litellm_structured(request: CursorInvocationRequest) -> tuple[str, dict
     content = getattr(message, "content", None) or ""
     transcript = f"<dual_agent_outcome>{content}</dual_agent_outcome>"
     usage = getattr(response, "usage", None)
+    served_model = _model_id(getattr(response, "model", None)) or model
     metadata = {
         "agent_id": None,
         "run_id": getattr(response, "id", None),
         "status": "finished",
-        "model": model,
+        "model": served_model,
+        "requested_model": model,
         "reviewer_runtime": "litellm_structured",
         "reviewer_output_mode": "litellm_structured",
         "duration_ms": None,

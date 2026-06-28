@@ -31,6 +31,7 @@ from .reviewer_registry import (
     evaluate_reviewer_panel,
     independent_reviewer_results_from_review_results,
     provider_family_for_reviewer,
+    provider_family_verification_for_reviewer,
 )
 from .redaction import redact
 
@@ -3576,6 +3577,8 @@ def _reviewer_result_summary(raw: Any) -> dict[str, Any]:
             "runtime": "unknown",
             "model": None,
             "provider_family": "unknown",
+            "provider_family_verified": False,
+            "provider_family_source": "unknown",
             "lineage": [],
             "tool_access": "unknown",
             "tool_backed_command_evidence": False,
@@ -3594,6 +3597,8 @@ def _reviewer_result_summary(raw: Any) -> dict[str, Any]:
         "runtime": str(raw.get("runtime") or raw.get("reviewer_runtime") or "unknown"),
         "model": raw.get("model"),
         "provider_family": str(raw.get("provider_family") or "unknown"),
+        "provider_family_verified": bool(raw.get("provider_family_verified")),
+        "provider_family_source": str(raw.get("provider_family_source") or ""),
         "lineage": list(raw.get("lineage") or []),
         "tool_access": str(raw.get("tool_access") or "unknown"),
         "tool_backed_command_evidence": bool(raw.get("tool_backed_command_evidence")),
@@ -3702,7 +3707,7 @@ def _reviewer_rationales_from_results(results: Sequence[Mapping[str, Any]]) -> l
 
 
 def _reviewer_panel_decision_summary(raw: Mapping[str, Any]) -> dict[str, Any]:
-    return {
+    payload = {
         "schema_version": str(
             raw.get("schema_version") or "independent-reviewer-panel-decision/v1"
         ),
@@ -3716,6 +3721,13 @@ def _reviewer_panel_decision_summary(raw: Mapping[str, Any]) -> dict[str, Any]:
         "missing_reviewers": list(raw.get("missing_reviewers") or []),
         "low_confidence_reviewers": list(raw.get("low_confidence_reviewers") or []),
     }
+    if isinstance(raw.get("robust_aggregation"), Mapping):
+        payload["robust_aggregation"] = dict(raw["robust_aggregation"])
+    if isinstance(raw.get("calibration"), Mapping):
+        payload["calibration"] = dict(raw["calibration"])
+    if isinstance(raw.get("calibrated_accept"), Mapping):
+        payload["calibrated_accept"] = dict(raw["calibrated_accept"])
+    return payload
 
 
 def _default_unavailable_reviewer_panel(_packet: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -3765,6 +3777,7 @@ class ConfiguredReviewerPanelOptions:
     gate: str = SUPERVISOR_CONFIGURED_PANEL_GATE
     round_index: int = 0
     low_confidence_threshold: float = 0.0
+    panel_aggregation_mode: str = "conservative"
     codex_only_calibration: bool = False
 
 
@@ -3842,6 +3855,7 @@ def build_configured_reviewer_panel(
         panel_decision = evaluate_reviewer_panel(
             reviewer_results,
             low_confidence_threshold=opts.low_confidence_threshold,
+            aggregation_mode=opts.panel_aggregation_mode,
         )
         available_reviewers = list(panel_decision.get("available_reviewers") or [])
         missing_reviewers = list(panel_decision.get("missing_reviewers") or [])
@@ -4293,9 +4307,24 @@ def _normalise_mergeability_reviewer_result(raw: Mapping[str, Any]) -> dict[str,
     available = bool(verdict_present and decision in {"accept", "deny", "revise"})
     runtime = str(raw.get("runtime") or raw.get("reviewer_runtime") or "unknown")
     model = raw.get("model")
-    provider_family = str(
-        raw.get("provider_family") or provider_family_for_reviewer(runtime, model)
+    inferred_family, inferred_verified, inferred_source = (
+        provider_family_verification_for_reviewer(runtime, model)
     )
+    raw_provider_family = str(raw.get("provider_family") or "").strip()
+    provider_family = raw_provider_family or inferred_family
+    if "provider_family_verified" in raw:
+        provider_family_verified = bool(raw.get("provider_family_verified"))
+    elif raw_provider_family and inferred_verified and raw_provider_family == inferred_family:
+        provider_family_verified = True
+    else:
+        provider_family_verified = bool(inferred_verified and provider_family == inferred_family)
+    provider_family_source = str(raw.get("provider_family_source") or "").strip()
+    if not provider_family_source:
+        provider_family_source = (
+            inferred_source
+            if provider_family_verified
+            else ("operator_config" if raw_provider_family else inferred_source)
+        )
     lineage_raw = raw.get("lineage")
     lineage = (
         list(lineage_raw)
@@ -4327,6 +4356,8 @@ def _normalise_mergeability_reviewer_result(raw: Mapping[str, Any]) -> dict[str,
         "reviewer_runtime": raw.get("reviewer_runtime") or raw.get("runtime"),
         "model": model,
         "provider_family": provider_family,
+        "provider_family_verified": provider_family_verified,
+        "provider_family_source": provider_family_source,
         "lineage": lineage,
         "tool_access": tool_access,
         "assurance_grade": assurance_grade,
@@ -4372,11 +4403,21 @@ def _reviewer_cross_family_claim_status(item: Mapping[str, Any]) -> tuple[str, b
     runtime = str(item.get("runtime") or item.get("reviewer_runtime") or "").lower()
     model = str(item.get("model") or "").strip().lower()
     provider_family = str(item.get("provider_family") or "unknown")
+    provider_family_verified = bool(item.get("provider_family_verified"))
+    provider_family_source = str(item.get("provider_family_source") or "").strip()
     if "cursor" in runtime and model in {"", "default"}:
         return ("unproven_default_model", False)
     if provider_family in {"", "unknown", "openai_compatible"}:
         return ("unproven_provider_family", False)
-    return ("recorded_provider_family", True)
+    if provider_family_verified and provider_family_source in {
+        "served_model",
+        "response_model",
+        "response_metadata",
+    }:
+        return ("verified_served_provider_family", True)
+    if provider_family_source == "operator_config":
+        return ("operator_asserted_provider_family_unverified", False)
+    return ("unverified_provider_family", False)
 
 
 def _reviewer_provenance_report(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
@@ -4393,6 +4434,14 @@ def _reviewer_provenance_report(rows: Sequence[Mapping[str, Any]]) -> dict[str, 
         runtime = _provenance_value(entries, "runtime", "unknown")
         model = _provenance_value(entries, "model", None)
         provider_family = _provenance_value(entries, "provider_family", "unknown")
+        provider_family_verified = all(
+            bool(entry.get("provider_family_verified")) for entry in entries
+        )
+        provider_family_source = _provenance_value(
+            entries,
+            "provider_family_source",
+            "unknown",
+        )
         lineage_values: list[str] = []
         for entry in entries:
             for value in entry.get("lineage") or []:
@@ -4411,12 +4460,16 @@ def _reviewer_provenance_report(rows: Sequence[Mapping[str, Any]]) -> dict[str, 
             "runtime": runtime,
             "model": model,
             "provider_family": provider_family,
+            "provider_family_verified": provider_family_verified,
+            "provider_family_source": provider_family_source,
         })
         reviewers.append({
             "reviewer_id": reviewer_id,
             "runtime": runtime,
             "model": model,
             "provider_family": provider_family,
+            "provider_family_verified": provider_family_verified,
+            "provider_family_source": provider_family_source,
             "lineage": lineage_values,
             "tool_access": tool_access,
             "assurance_grade": assurance_grade,
@@ -4565,6 +4618,8 @@ def _per_reviewer_acceptance_arms(rows: list[dict[str, Any]]) -> dict[str, dict[
                 "reviewer_runtime": normalised["reviewer_runtime"],
                 "model": normalised["model"],
                 "provider_family": normalised["provider_family"],
+                "provider_family_verified": normalised["provider_family_verified"],
+                "provider_family_source": normalised["provider_family_source"],
                 "lineage": normalised["lineage"],
                 "tool_access": normalised["tool_access"],
                 "assurance_grade": normalised["assurance_grade"],
@@ -6385,6 +6440,7 @@ def _bounded_runner_option_hash(
             "gate": opts.gate,
             "round_index": opts.round_index,
             "low_confidence_threshold": opts.low_confidence_threshold,
+            "panel_aggregation_mode": opts.panel_aggregation_mode,
             "codex_only_calibration": opts.codex_only_calibration,
         }
     return _sha256_json({
@@ -8210,6 +8266,12 @@ def _bounded_panel_runner_main(argv: Sequence[str] | None = None) -> int:
         default=SUPERVISOR_CONFIGURED_PANEL_LITELLM_PROVIDER_FAMILY_DEFAULT,
         help="Explicit provider family for the opt-in LiteLLM reviewer.",
     )
+    parser.add_argument(
+        "--panel-aggregation-mode",
+        choices=("conservative", "geometric_median"),
+        default="geometric_median",
+        help="Configured reviewer panel aggregation mode.",
+    )
     parser.add_argument("--no-resume", action="store_true")
     parser.add_argument("--relaxed-calibration", action="store_true")
     args = parser.parse_args(argv)
@@ -8231,6 +8293,7 @@ def _bounded_panel_runner_main(argv: Sequence[str] | None = None) -> int:
             codex_model=args.codex_model,
             litellm_model=args.litellm_model or None,
             litellm_provider_family=args.litellm_provider_family or None,
+            panel_aggregation_mode=args.panel_aggregation_mode,
         )
         if args.reviewer_panel_mode == "configured"
         else None

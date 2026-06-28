@@ -438,6 +438,9 @@ def independent_reviewer_result_from_cursor_result(
     )
     runtime = result.reviewer_runtime or result.reviewer_output_mode or "unknown"
     model = result.model
+    provider_family, provider_family_verified, provider_family_source = (
+        provider_family_verification_for_reviewer(runtime, model)
+    )
     return {
         "schema_version": "independent-reviewer-panel-result/v1",
         "reviewer_id": reviewer_id,
@@ -455,7 +458,9 @@ def independent_reviewer_result_from_cursor_result(
         "reviewer_runtime": result.reviewer_runtime,
         "reviewer_output_mode": result.reviewer_output_mode,
         "model": model,
-        "provider_family": _provider_family(runtime, model),
+        "provider_family": provider_family,
+        "provider_family_verified": provider_family_verified,
+        "provider_family_source": provider_family_source,
         "lineage": list(_lineage(runtime, model)),
         "tool_access": _tool_access(runtime),
         "tool_backed_command_evidence": _has_tool_command_evidence(result),
@@ -531,21 +536,47 @@ def _result_with_spec_provenance(
     result_reviewer_runtime = str(payload.get("reviewer_runtime") or "").strip()
     if result_reviewer_runtime in {"", "unknown"} and spec.runtime:
         payload["reviewer_runtime"] = spec.runtime
-    if spec.model and runtime_matches_spec:
+    result_model = str(payload.get("model") or "").strip()
+    if spec.model and runtime_matches_spec and result_model in {"", "unknown"}:
         payload["model"] = spec.model
+        result_model = spec.model
+    verified_family, verified, source = provider_family_verification_for_reviewer(
+        payload.get("runtime"),
+        result_model,
+    )
     result_family = str(payload.get("provider_family") or "").strip()
     result_family_unproven = result_family in {"", "unknown", "openai_compatible"}
-    if (
+    if verified:
+        payload["provider_family"] = verified_family
+        payload["provider_family_verified"] = True
+        payload["provider_family_source"] = source
+        result_family_unproven = False
+    elif (
         runtime_matches_spec
         and result_family_unproven
         and spec.provider_family
-        and spec.provider_family != "unknown"
+        and spec.provider_family not in {"unknown", "openai_compatible"}
     ):
         payload["provider_family"] = spec.provider_family
+        payload["provider_family_verified"] = False
+        payload["provider_family_source"] = "operator_config"
+    else:
+        if not payload.get("provider_family"):
+            payload["provider_family"] = verified_family
+        payload["provider_family_verified"] = bool(payload.get("provider_family_verified"))
+        payload["provider_family_source"] = str(
+            payload.get("provider_family_source") or source
+        )
+    final_family = str(payload.get("provider_family") or "").strip()
+    final_family_unproven = final_family in {"", "unknown", "openai_compatible"}
     if (
         runtime_matches_spec
         and spec.lineage
-        and (result_family_unproven or not payload.get("lineage"))
+        and (
+            payload.get("provider_family_source") == "operator_config"
+            or final_family_unproven
+            or not payload.get("lineage")
+        )
     ):
         payload["lineage"] = list(spec.lineage)
     result_tool_access = str(payload.get("tool_access") or "").strip()
@@ -572,9 +603,13 @@ def evaluate_reviewer_panel(
     *,
     low_confidence_threshold: float = 0.0,
     calibration: dict[str, Any] | None = None,
+    aggregation_mode: str = "conservative",
 ) -> dict[str, Any]:
     """Aggregate independent reviewers without weakening hard blocks."""
     threshold = _clamp_confidence(low_confidence_threshold)
+    requested_aggregation_mode = str(aggregation_mode or "conservative").strip().lower()
+    if requested_aggregation_mode not in {"conservative", "geometric_median"}:
+        requested_aggregation_mode = "conservative"
     active_calibration = _normalise_panel_calibration(calibration)
     reviewer_inputs = [_reviewer_input_summary(result) for result in results if isinstance(result, dict)]
     available_reviewers = [
@@ -619,11 +654,27 @@ def evaluate_reviewer_panel(
 
     decision = "accept"
     reason = "all_available_reviewers_accept"
+    robust_aggregation: dict[str, Any] | None = None
     if not reviewer_inputs:
         reason = "review_not_required"
     elif blocking_reviewers:
         decision = "revise"
         reason = "blocking_reviewer_objection"
+    elif requested_aggregation_mode == "geometric_median":
+        if missing_reviewers:
+            decision = "revise"
+            reason = "missing_reviewer_verdict"
+        elif low_confidence_reviewers:
+            decision = "escalate"
+            reason = "low_confidence_accept"
+        else:
+            robust_aggregation = _geometric_median_accept_summary(reviewer_inputs)
+            if bool(robust_aggregation.get("accept")):
+                decision = "accept"
+                reason = "robust_geometric_median_accept"
+            else:
+                decision = "revise"
+                reason = "robust_geometric_median_reject"
     elif non_accepting_reviewers:
         decision = "revise"
         reason = "reviewer_non_accept"
@@ -634,6 +685,8 @@ def evaluate_reviewer_panel(
         decision = "escalate"
         reason = "low_confidence_accept"
     calibrated_accept: dict[str, Any] | None = None
+    if requested_aggregation_mode == "geometric_median":
+        active_calibration = None
     if active_calibration is not None and not _calibration_covers_reviewer_inputs(
         active_calibration,
         reviewer_inputs,
@@ -652,7 +705,11 @@ def evaluate_reviewer_panel(
         "schema_version": "independent-reviewer-panel-decision/v1",
         "decision": decision,
         "reason": reason,
-        "aggregation_mode": "calibrated_weighted" if active_calibration is not None else "conservative",
+        "aggregation_mode": (
+            "calibrated_weighted"
+            if active_calibration is not None
+            else requested_aggregation_mode
+        ),
         "low_confidence_threshold": threshold,
         "available_reviewers": available_reviewers,
         "accepted_reviewers": accepted_reviewers,
@@ -666,6 +723,8 @@ def evaluate_reviewer_panel(
         payload["calibration"] = _calibration_decision_summary(active_calibration)
     if calibrated_accept is not None:
         payload["calibrated_accept"] = calibrated_accept
+    if robust_aggregation is not None:
+        payload["robust_aggregation"] = robust_aggregation
     return payload
 
 
@@ -1116,6 +1175,8 @@ def _reviewer_input_summary(result: dict[str, Any]) -> dict[str, Any]:
         "runtime": result.get("runtime") or result.get("reviewer_runtime"),
         "model": result.get("model"),
         "provider_family": result.get("provider_family"),
+        "provider_family_verified": bool(result.get("provider_family_verified")),
+        "provider_family_source": result.get("provider_family_source"),
         "lineage": list(result.get("lineage") or []),
         "tool_access": result.get("tool_access"),
         "assurance_grade": result.get("assurance_grade"),
@@ -1264,6 +1325,43 @@ def _clamp_confidence(value: float) -> float:
     return max(0.0, min(1.0, float(value)))
 
 
+def _geometric_median_accept_summary(
+    reviewer_inputs: list[dict[str, Any]],
+) -> dict[str, Any]:
+    scored_inputs = [
+        item
+        for item in reviewer_inputs
+        if item["verdict_present"] and item["decision"] in {"accept", "revise", "deny"}
+    ]
+    score_points = [
+        1.0 if item["decision"] == "accept" else 0.0
+        for item in scored_inputs
+    ]
+    if not score_points:
+        return {
+            "status": "unavailable",
+            "accept": False,
+            "score_points": [],
+            "geometric_median_score": None,
+            "accept_threshold": 0.5,
+            "contaminated_judge_bound": 0,
+        }
+    ordered = sorted(score_points)
+    midpoint = len(ordered) // 2
+    if len(ordered) % 2:
+        median_score = ordered[midpoint]
+    else:
+        median_score = (ordered[midpoint - 1] + ordered[midpoint]) / 2.0
+    return {
+        "status": "computed",
+        "accept": median_score > 0.5,
+        "score_points": score_points,
+        "geometric_median_score": median_score,
+        "accept_threshold": 0.5,
+        "contaminated_judge_bound": max(0, (len(score_points) - 1) // 2),
+    }
+
+
 def _decision_from_result(result: CursorInvocationResult) -> str:
     if result.outcome is not None:
         for decision in result.outcome.decisions:
@@ -1293,6 +1391,44 @@ def _provider_family(runtime: Any, model: Any) -> str:
 
 
 provider_family_for_reviewer = _provider_family
+
+
+def _provider_family_from_served_model(model: Any) -> str:
+    model_text = str(model or "").strip().lower()
+    if model_text in {"", "default", "proxy-default", "auto"}:
+        return "unknown"
+    if "gemini" in model_text or model_text.startswith("google/"):
+        return "google"
+    if "claude" in model_text or model_text.startswith("anthropic/"):
+        return "anthropic"
+    if (
+        "gpt" in model_text
+        or model_text.startswith(("o1", "o3", "o4", "openai/"))
+        or "openai" in model_text
+    ):
+        return "openai"
+    if "llama" in model_text or model_text.startswith("meta/"):
+        return "meta"
+    if "mistral" in model_text or "mixtral" in model_text:
+        return "mistral"
+    if "deepseek" in model_text:
+        return "deepseek"
+    if "grok" in model_text or model_text.startswith("xai/"):
+        return "xai"
+    if "command-r" in model_text or model_text.startswith("cohere/"):
+        return "cohere"
+    return "unknown"
+
+
+def provider_family_verification_for_reviewer(
+    runtime: Any,
+    model: Any,
+) -> tuple[str, bool, str]:
+    served_family = _provider_family_from_served_model(model)
+    if served_family not in {"", "unknown", "openai_compatible"}:
+        return served_family, True, "served_model"
+    inferred = _provider_family(runtime, model)
+    return inferred, False, "runtime_inference"
 
 
 def _lineage(runtime: str | None, model: str | None) -> tuple[str, ...]:

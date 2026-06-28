@@ -3474,6 +3474,11 @@ def _official_reviewer_analysis_rows(
             instance_id = str(panel_result.get("instance_id") or "")
             candidate_id = str(panel_result.get("candidate_id") or "")
             bridge_row = bridge_by_key.get((instance_id, candidate_id), {})
+            panel_decision = (
+                dict(panel_result.get("panel_decision"))
+                if isinstance(panel_result.get("panel_decision"), Mapping)
+                else {}
+            )
             rows.append({
                 "task_id": instance_id,
                 "candidate_id": candidate_id,
@@ -3492,6 +3497,10 @@ def _official_reviewer_analysis_rows(
                 "supervisor_full_gate_reviewer_results": list(
                     panel_result.get("reviewer_results") or []
                 ),
+                "supervisor_full_gate_panel_decision": panel_decision,
+                "panel_aggregation_mode": str(
+                    panel_decision.get("aggregation_mode") or ""
+                ),
         })
     return rows
 
@@ -3504,9 +3513,23 @@ def _official_reviewer_roster_cross_family_verification(
     available_reviewer_ids: set[str] = set()
     unproven_reviewers: dict[tuple[str, str, str], dict[str, Any]] = {}
     baseline_family_conflicts: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+    non_robust_panel_results: dict[tuple[str, str, str], dict[str, Any]] = {}
     known_baseline_family_row_count = 0
 
     for row in rows:
+        panel_aggregation_mode = str(row.get("panel_aggregation_mode") or "").strip()
+        if panel_aggregation_mode != "geometric_median":
+            key = (
+                str(row.get("task_id") or ""),
+                str(row.get("candidate_id") or ""),
+                panel_aggregation_mode or "missing",
+            )
+            non_robust_panel_results[key] = {
+                "task_id": key[0],
+                "candidate_id": key[1],
+                "aggregation_mode": key[2],
+                "reason": "reviewer_panel_not_robustly_aggregated",
+            }
         baseline_family = _producer_family_from_row(row)
         baseline_family_known = baseline_family not in {"", "unknown"}
         if baseline_family_known:
@@ -3569,6 +3592,14 @@ def _official_reviewer_roster_cross_family_verification(
             str(item["reviewer_id"]),
         ),
     )
+    non_robust = sorted(
+        non_robust_panel_results.values(),
+        key=lambda item: (
+            str(item["task_id"]),
+            str(item["candidate_id"]),
+            str(item["aggregation_mode"]),
+        ),
+    )
     reasons: list[str] = []
     if not available_reviewer_ids:
         reasons.append("reviewer_roster_empty")
@@ -3583,8 +3614,14 @@ def _official_reviewer_roster_cross_family_verification(
             reasons.append("cursor_default_provider_family_unproven")
         if "unproven_provider_family" in statuses:
             reasons.append("unproven_provider_family")
+        if "operator_asserted_provider_family_unverified" in statuses:
+            reasons.append("operator_asserted_provider_family_unverified")
+        if "unverified_provider_family" in statuses:
+            reasons.append("unverified_provider_family")
     if conflicts:
         reasons.append("same_family_generator_reviewer_decisive_vote")
+    if non_robust:
+        reasons.append("reviewer_panel_not_robustly_aggregated")
     verified = not reasons
     return {
         "schema_version": (
@@ -3601,6 +3638,7 @@ def _official_reviewer_roster_cross_family_verification(
         },
         "unproven_reviewers": unproven,
         "baseline_family_conflicts": conflicts,
+        "non_robust_panel_results": non_robust,
         "known_baseline_family_row_count": known_baseline_family_row_count,
         "reasons": reasons,
     }

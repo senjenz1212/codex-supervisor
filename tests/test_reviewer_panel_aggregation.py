@@ -258,6 +258,47 @@ def test_load_reviewer_panel_calibration_rejects_fixture_only_provenance(tmp_pat
     assert load_reviewer_panel_calibration(report["exports"]["calibration_json"]) is None
 
 
+def test_evaluate_reviewer_panel_conservative_non_accept_precedes_low_confidence():
+    low_confidence_accept = {
+        **_accepting_result("independent-reviewer-0"),
+        "confidence": 0.1,
+    }
+    non_blocking_revise = {
+        **_accepting_result("independent-reviewer-1"),
+        "accepted": False,
+        "decision": "revise",
+        "severity": "low",
+    }
+
+    decision = evaluate_reviewer_panel(
+        [low_confidence_accept, non_blocking_revise],
+        low_confidence_threshold=0.5,
+    )
+
+    assert decision["aggregation_mode"] == "conservative"
+    assert decision["decision"] == "revise"
+    assert decision["reason"] == "reviewer_non_accept"
+    assert decision["non_accepting_reviewers"] == ["independent-reviewer-1"]
+
+
+def test_evaluate_reviewer_panel_geometric_median_precedes_calibration():
+    decision = evaluate_reviewer_panel(
+        [
+            _accepting_result("independent-reviewer-0"),
+            _accepting_result("independent-reviewer-1"),
+        ],
+        aggregation_mode="geometric_median",
+        calibration=_calibration(),
+    )
+
+    assert decision["aggregation_mode"] == "geometric_median"
+    assert decision["decision"] == "accept"
+    assert decision["reason"] == "robust_geometric_median_accept"
+    assert "robust_aggregation" in decision
+    assert "calibration" not in decision
+    assert "calibrated_accept" not in decision
+
+
 def test_load_reviewer_panel_calibration_rejects_formula_inconsistent_weights(tmp_path):
     from supervisor.reviewer_registry import _calibration_sha256
 

@@ -31,10 +31,37 @@ def _reviewer_result(reviewer_id: str, decision: str, *, runtime: str, model: st
     }
 
 
+def _panel_decision(reviewers: list[dict]) -> dict:
+    reviewer_ids = [str(item["reviewer_id"]) for item in reviewers]
+    accepted = [
+        str(item["reviewer_id"])
+        for item in reviewers
+        if str(item.get("decision")) == "accept"
+    ]
+    return {
+        "schema_version": "independent-reviewer-panel-decision/v1",
+        "decision": "accept" if len(accepted) == len(reviewer_ids) else "revise",
+        "reason": "fixture",
+        "aggregation_mode": "geometric_median",
+        "available_reviewers": reviewer_ids,
+        "accepted_reviewers": accepted,
+        "blocking_reviewers": [],
+        "non_accepting_reviewers": [
+            reviewer_id for reviewer_id in reviewer_ids if reviewer_id not in accepted
+        ],
+        "missing_reviewers": [],
+    }
+
+
 def _official_report(*, include_reviewers: bool, zero_reviewer_errors: bool = False) -> dict:
     good_reviewers = [
         _reviewer_result("codex-reviewer", "accept", runtime="codex_cli", model="gpt-5.5"),
-        _reviewer_result("cursor-reviewer", "accept", runtime="cursor_sdk", model="composer"),
+        _reviewer_result(
+            "google-reviewer",
+            "accept",
+            runtime="litellm_structured",
+            model="gemini-3.1-pro-preview",
+        ),
     ]
     bad_reviewers = [
         _reviewer_result(
@@ -43,7 +70,12 @@ def _official_report(*, include_reviewers: bool, zero_reviewer_errors: bool = Fa
             runtime="codex_cli",
             model="gpt-5.5",
         ),
-        _reviewer_result("cursor-reviewer", "deny", runtime="cursor_sdk", model="composer"),
+        _reviewer_result(
+            "google-reviewer",
+            "deny",
+            runtime="litellm_structured",
+            model="gemini-3.1-pro-preview",
+        ),
     ]
     if not include_reviewers:
         good_reviewers = []
@@ -68,6 +100,7 @@ def _official_report(*, include_reviewers: bool, zero_reviewer_errors: bool = Fa
                             "instance_id": "task-good",
                             "candidate_id": "candidate-shared",
                             "reviewer_results": good_reviewers,
+                            "panel_decision": _panel_decision(good_reviewers),
                         }
                     ]
                 },
@@ -77,6 +110,7 @@ def _official_report(*, include_reviewers: bool, zero_reviewer_errors: bool = Fa
                             "instance_id": "task-bad",
                             "candidate_id": "candidate-shared",
                             "reviewer_results": bad_reviewers,
+                            "panel_decision": _panel_decision(bad_reviewers),
                         }
                     ]
                 },
@@ -131,7 +165,7 @@ def test_all_arms_report_includes_independence_metrics():
     }
     assert report["inter_reviewer_agreement"] == [
         {
-            "reviewer_pair": ["codex-reviewer", "cursor-reviewer"],
+            "reviewer_pair": ["codex-reviewer", "google-reviewer"],
             "shared_candidate_count": 2,
             "agreement_count": 1,
             "agreement_rate": 0.5,
@@ -143,7 +177,7 @@ def test_all_arms_report_includes_independence_metrics():
         for effect in report["leave_one_reviewer_out"]["reviewer_effects"]
     } == {
         "codex-reviewer": 0.0,
-        "cursor-reviewer": 1.0,
+        "google-reviewer": 1.0,
     }
     assert report["effective_vote_estimate"]["status"] == "computed"
     assert report["effective_vote_estimate"]["effective_vote_count_estimate"] == 2.0

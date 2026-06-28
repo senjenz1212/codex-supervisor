@@ -66,6 +66,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Explicit provider family for the opt-in LiteLLM reviewer.",
     )
     parser.add_argument(
+        "--panel-aggregation-mode",
+        choices=("conservative", "geometric_median"),
+        default="geometric_median",
+        help="Configured reviewer panel aggregation mode.",
+    )
+    parser.add_argument(
         "--oracle-adapter",
         default="",
         help=(
@@ -124,6 +130,7 @@ def main(argv: list[str] | None = None) -> int:
                 codex_model=args.codex_model,
                 litellm_model=args.litellm_model or None,
                 litellm_provider_family=args.litellm_provider_family or None,
+                panel_aggregation_mode=args.panel_aggregation_mode,
                 review_cwd=Path.cwd(),
             )
         )
