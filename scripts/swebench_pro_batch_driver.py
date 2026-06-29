@@ -125,6 +125,8 @@ def _oracle_context_for_gold(record: Mapping[str, Any], scripts_dir: str) -> dic
     return {
         "instance_id": instance_id,
         "candidate_id": f"{instance_id}-dataset-reference-gold-dry-oracle",
+        "repo": str(record.get("repo") or ""),
+        "dockerhub_tag": str(record.get("dockerhub_tag") or ""),
         "model_patch": _record_reference_patch(record),
         "base_commit": str(record.get("base_commit") or ""),
         "fail_to_pass": record.get("FAIL_TO_PASS") or record.get("fail_to_pass") or [],
@@ -446,6 +448,8 @@ def _augment_attempt_with_oracle_context(
     scripts_dir: str,
 ) -> dict[str, Any]:
     enriched = dict(attempt)
+    enriched["repo"] = str(record.get("repo") or "")
+    enriched["dockerhub_tag"] = str(record.get("dockerhub_tag") or "")
     enriched["base_commit"] = str(record.get("base_commit") or "")
     enriched["FAIL_TO_PASS"] = (
         record.get("FAIL_TO_PASS") or record.get("fail_to_pass") or []

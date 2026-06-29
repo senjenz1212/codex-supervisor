@@ -10,9 +10,9 @@
   ],
   "pinned_batch_driver": {
     "driver": "scripts/swebench_pro_batch_driver.py",
-    "driver_sha256": "7ff42924c933c9c520360ef1b4d3cc53842179d58f8bdb5a9a25004bc2cc08bc",
+    "driver_sha256": "c67e4957e064dab892b0e13015d7b54e2536391d690768d55498722a3dfb98c5",
     "test": "tests/test_swebench_pro_batch_driver.py",
-    "test_sha256": "bac99f95105edd550ddf0cc1e5453dc1c9f50be7c9c429679f0e8344f3d075de",
+    "test_sha256": "a2f09cd144fb09e3f427ddab4e832d68ba61552e88124db455b97828660747d1",
     "solver_runner_pin": "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/solver-runner-pin-claude-code-haiku-20260629.json",
     "solver_runner_pin_sha256": "08222bf08fef00fde37941e2532e8b673db2cefa37675d30d7ad9c321383642c"
   },
