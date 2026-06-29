@@ -25,7 +25,7 @@
     "provider": "anthropic_via_unity_litellm",
     "claude_code_version": "2.1.114 (Claude Code)",
     "runner_wrapper": "scripts/swebench_pro_claude_code_runner.py",
-    "runner_wrapper_sha256": "0a95bd4cbb42390cfdcc8d6248e98fd531816c16b5a88db4cb0b88ca840e62bb",
+    "runner_wrapper_sha256": "efb40d65f2527e8b691d087f1e418b897e52b352e1b675474bb33139bf9f5326",
     "prompt_template": "docs/dual-agent/pro-corpus-generate-label-20260626/runner/claude-code-haiku-swebench-pro-prompt.md",
     "prompt_template_sha256": "e24b6f1b5e0900493678c2b9f1fd0e2ec9dc4f32c40b7595e072c1dba6669109",
     "litellm_route": {

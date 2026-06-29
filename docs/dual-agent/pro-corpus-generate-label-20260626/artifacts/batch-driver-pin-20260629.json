@@ -10,11 +10,11 @@
   ],
   "pinned_batch_driver": {
     "driver": "scripts/swebench_pro_batch_driver.py",
-    "driver_sha256": "9548368f3635ba9fb608165556965680ba3470696fbaac3f5b8a08603d601d29",
+    "driver_sha256": "7ff42924c933c9c520360ef1b4d3cc53842179d58f8bdb5a9a25004bc2cc08bc",
     "test": "tests/test_swebench_pro_batch_driver.py",
-    "test_sha256": "4f0317519f06d64a66e8bd960e68bf6108713a243ae3eb661d298b3c2bc05a04",
+    "test_sha256": "bac99f95105edd550ddf0cc1e5453dc1c9f50be7c9c429679f0e8344f3d075de",
     "solver_runner_pin": "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/solver-runner-pin-claude-code-haiku-20260629.json",
-    "solver_runner_pin_sha256": "4d56466646c2bf75e30d5d11485dace8f44d8d2d8aedb97543b536aa81986ddc"
+    "solver_runner_pin_sha256": "08222bf08fef00fde37941e2532e8b673db2cefa37675d30d7ad9c321383642c"
   },
   "phase_order": [
     "write batch-driver-manifest.json",
