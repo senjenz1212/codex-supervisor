@@ -403,6 +403,31 @@ authority flag on the report (`metric_applyable`,
 invoke any benchmark-to-policy promotion bridge and the all-arms diagnostic
 remains a separate report-only mode.
 
+## swe_bench_pro_label_stability_wrapper
+
+Repeat the SWE-bench Pro oracle `N` times per already-labeled prediction row
+through `repeat_oracle_labels(...)`, `classify_stability(...)`, and
+`filter_stable_corpus(...)` in `scripts/swebench_pro_label_stability.py`, with
+the `scripts/swebench_pro_label_stability.py` CLI as a secondary boundary that
+proves live work is explicit. Tests must inject a fake oracle runner and reuse
+`scripts.swebench_pro_batch_driver._augment_attempt_with_oracle_context` for
+Pro oracle context, and must not call live Docker, the Pro oracle, the solver,
+Telegram, Anthropic, or OpenAI. The wrapper must keep candidates whose
+`repeats` runs all agree on `(fail_to_pass_status, pass_to_pass_status)`
+without recomputing `oracle_label`, `candidate_artifact_hash`,
+`model_patch_sha256`, or `diff_sha256`; drop disagreeing completed runs as
+`unstable_label`; drop any unavailable repeat fail-closed as
+`oracle_unavailable:<reason>`; report `flake_rate = unstable /
+total_evaluated`; and fail closed on empty input or all-dropped output instead
+of writing an empty stable corpus as success. The CLI must exit non-zero
+before any oracle call unless `--allow-live` is supplied, and the flake
+report plus stable JSONL must contain no token values, no patch text, and
+keep every authority flag (`metric_applyable`, `improvement_claim_allowed`,
+`powered_improvement_claim_allowed`, `human_mergeability_claim_allowed`,
+`default_change_allowed`, `policy_mutated`, `gate_advanced`) false. This is a
+report-only filtering gate between Pro oracle labeling and the powered
+factorial CLI; it must not mutate policy, advance gates, or relabel rows.
+
 ## powered_real_benchmark_definition_of_done
 
 Validate the scaled powered SWE-bench Pro real-benchmark artifact through
