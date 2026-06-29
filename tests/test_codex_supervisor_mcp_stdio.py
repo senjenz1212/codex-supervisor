@@ -17,6 +17,44 @@ from supervisor.target.types import ScopeContract
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "planning_validator"
 
 
+def _evaluator_quality_controls() -> dict:
+    return {
+        "source": "supervisor_control_execution",
+        "evidence_grade": "runtime_native",
+        "supervisor_runtime_origin": "run_evaluator_quality_controls",
+        "candidate_affects_evaluated_path": True,
+        "determinism": {
+            "source": "repeated_execution",
+            "evidence_grade": "runtime_native",
+            "supervisor_runtime_origin": "run_evaluator_quality_controls",
+            "output_hashes": ["stable-output", "stable-output"],
+        },
+        "controls": {
+            "noop": {
+                "source": "supervisor_control_execution",
+                "evidence_grade": "runtime_native",
+                "supervisor_runtime_origin": "run_evaluator_quality_controls",
+                "metric_source": "evaluator_execution",
+                "metric_delta": 0.0,
+            },
+            "harmful": {
+                "source": "supervisor_control_execution",
+                "evidence_grade": "runtime_native",
+                "supervisor_runtime_origin": "run_evaluator_quality_controls",
+                "metric_source": "evaluator_execution",
+                "metric_delta": -0.1,
+            },
+            "known_good": {
+                "source": "supervisor_control_execution",
+                "evidence_grade": "runtime_native",
+                "supervisor_runtime_origin": "run_evaluator_quality_controls",
+                "metric_source": "evaluator_execution",
+                "metric_delta": 0.2,
+            },
+        },
+    }
+
+
 def _cfg(tmp_path) -> Config:
     return Config(**{
         "target": {
@@ -384,7 +422,8 @@ async def test_autoresearch_policy_evolution_tools_apply_only_after_operator_app
             "metric_source": "evaluator_execution",
             "evaluator_run_ref": "docs/dual-agent/run/evaluator-runs/attempt-policy-1.json",
             "evaluator_run_hash": "evaluator-run-hash",
-                "changed_files": ["candidates/policy-overlay.yaml"],
+            "changed_files": ["candidates/policy-overlay.yaml"],
+            "evaluator_quality": _evaluator_quality_controls(),
             "gaming_flags": [],
             "validation_errors": [],
             "cost_usd": 0.19,
@@ -510,6 +549,7 @@ async def test_autoresearch_policy_proposal_tool_derives_from_report_without_can
             "policy_candidate_changes": {
                 ".supervisor/policy-overlay.yaml": "candidates/policy-overlay.yaml",
             },
+            "evaluator_quality": _evaluator_quality_controls(),
             "gaming_flags": [],
             "validation_errors": [],
             "cost_usd": 0.19,

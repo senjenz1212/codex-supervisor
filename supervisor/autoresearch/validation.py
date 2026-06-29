@@ -158,6 +158,8 @@ def validate_attempt(
         metric_name=experiment.metric_name,
         metric_trials=tuple(float(value) for value in attempt.metric_trials),
         metric_source=attempt.metric_source,
+        evaluator_ref=experiment.evaluator_ref,
+        evaluator_hash=experiment.evaluator_hash,
         evaluator_run_ref=attempt.evaluator_run_ref,
         evaluator_run_hash=attempt.evaluator_run_hash,
         metric_before=metric_before,

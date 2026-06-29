@@ -294,7 +294,7 @@ def _operator_decision(args: argparse.Namespace, _cfg: Config, state: State, *, 
     if proposal_id:
         proposal = _proposal_from_run_events(state, run_id=args.run_id, proposal_id=proposal_id)
         repo_root = Path(getattr(args, "repo_root", os.getcwd()) or os.getcwd()).expanduser().resolve()
-        approver = str(getattr(args, "approver", "") or "").strip() or "codex-supervisor-axi"
+        approver = str(getattr(args, "approver", "") or "").strip()
         if decision == "approve":
             approval = approve_policy_proposal(
                 proposal,
@@ -528,7 +528,7 @@ def _build_parser() -> argparse.ArgumentParser:
         decision.add_argument("--approval-channel", default="cli")
         decision.add_argument("--proposal-id")
         decision.add_argument("--repo-root", default=os.getcwd())
-        decision.add_argument("--approver", default="codex-supervisor-axi")
+        decision.add_argument("--approver", default="")
 
     lessons = subparsers.add_parser("lessons")
     lessons.add_argument("--limit", type=int, default=20)
@@ -555,10 +555,10 @@ def _build_parser() -> argparse.ArgumentParser:
     experiments_generate.add_argument("--repo-root", default=os.getcwd())
     experiments_activate = experiment_subparsers.add_parser("activate")
     experiments_activate.add_argument("experiment_id")
-    experiments_activate.add_argument("--operator", default="codex-supervisor-axi")
+    experiments_activate.add_argument("--operator", default="")
     experiments_park = experiment_subparsers.add_parser("park")
     experiments_park.add_argument("experiment_id")
-    experiments_park.add_argument("--operator", default="codex-supervisor-axi")
+    experiments_park.add_argument("--operator", default="")
     experiments_park.add_argument("--reason", default="")
     return parser
 

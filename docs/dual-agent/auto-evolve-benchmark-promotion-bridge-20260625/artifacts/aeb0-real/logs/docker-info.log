@@ -1,0 +1,2 @@
+$ docker info --format {{json .ServerVersion}}
+"29.4.0"

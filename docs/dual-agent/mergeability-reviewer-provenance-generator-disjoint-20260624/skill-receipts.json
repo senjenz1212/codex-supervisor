@@ -1,0 +1,42 @@
+{
+  "schema_version": "supervisor-skill-receipts/v1",
+  "task_id": "mergeability-reviewer-provenance-generator-disjoint-20260624",
+  "receipts": [
+    {
+      "stage": "to_prd",
+      "skill": "/Users/sam.zhang/.codex/skills/to-prd/SKILL.md",
+      "artifact": "docs/dual-agent/mergeability-reviewer-provenance-generator-disjoint-20260624/prd.md",
+      "status": "used"
+    },
+    {
+      "stage": "codebase_design",
+      "skill": "/Users/sam.zhang/.codex/skills/codebase-design/SKILL.md",
+      "artifact": "paired and bounded mergeability report seams",
+      "status": "used"
+    },
+    {
+      "stage": "prd_grill",
+      "skill": "/Users/sam.zhang/.codex/skills/grill-with-docs/SKILL.md",
+      "artifact": "docs/dual-agent/mergeability-reviewer-provenance-generator-disjoint-20260624/grill-findings.md",
+      "status": "used"
+    },
+    {
+      "stage": "to_issues",
+      "skill": "/Users/sam.zhang/.codex/skills/to-issues/SKILL.md",
+      "artifact": "docs/dual-agent/mergeability-reviewer-provenance-generator-disjoint-20260624/issues.md",
+      "status": "used"
+    },
+    {
+      "stage": "tdd",
+      "skill": "/Users/sam.zhang/.codex/skills/tdd/SKILL.md",
+      "artifact": "docs/dual-agent/mergeability-reviewer-provenance-generator-disjoint-20260624/tdd.md",
+      "status": "used"
+    },
+    {
+      "stage": "tdd_grill",
+      "skill": "/Users/sam.zhang/.codex/skills/grill-with-docs/SKILL.md",
+      "artifact": "docs/dual-agent/mergeability-reviewer-provenance-generator-disjoint-20260624/grill-findings-tdd.md",
+      "status": "used"
+    }
+  ]
+}

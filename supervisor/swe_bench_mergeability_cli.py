@@ -1,4 +1,12 @@
-"""CLI for deterministic SWE-bench mergeability replay bundles."""
+"""CLI for deterministic SWE-bench mergeability replay bundles.
+
+Exposes the replay, live, official-replay, official-all-arms diagnostic, and
+SWE-bench Pro powered factorial runners. ``--powered-factorial`` adapts an
+oracle-labeled Pro predictions JSONL through
+``swebench_mergeability_powered_factorial_runner`` and surfaces the
+report-only ``evidence_conversion_power_contract`` with no authority flag
+mutations; the all-arms diagnostic remains a separate report-only path.
+"""
 from __future__ import annotations
 
 import argparse
@@ -13,6 +21,8 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from .mergeability_bench import (
+    SUPERVISOR_CONFIGURED_PANEL_LITELLM_MODEL_DEFAULT,
+    SUPERVISOR_CONFIGURED_PANEL_LITELLM_PROVIDER_FAMILY_DEFAULT,
     ConfiguredReviewerPanelOptions,
     build_configured_reviewer_panel,
 )
@@ -22,7 +32,9 @@ from .swe_bench_mergeability import (
     swebench_mergeability_live_runner,
     swebench_mergeability_official_all_arms_diagnostic_runner,
     swebench_mergeability_official_replay_runner,
+    swebench_mergeability_powered_factorial_runner,
     swebench_mergeability_replay_runner,
+    write_swebench_official_all_arms_blocked_artifact,
 )
 
 
@@ -32,9 +44,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--official-replay", action="store_true")
     parser.add_argument("--official-all-arms-diagnostic", action="store_true")
+    parser.add_argument("--powered-factorial", action="store_true")
     parser.add_argument("--dataset", default="")
     parser.add_argument("--dataset-split", default="test")
     parser.add_argument("--predictions", default="")
+    parser.add_argument("--min-good", type=int, default=30)
+    parser.add_argument("--min-bad", type=int, default=30)
+    parser.add_argument("--min-discordant", type=int, default=25)
+    parser.add_argument("--alpha", type=float, default=0.05)
     parser.add_argument("--allow-dataset-fetch", action="store_true")
     parser.add_argument("--timeout-s", type=float, default=30.0)
     parser.add_argument("--run-live", action="store_true")
@@ -52,6 +69,26 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--reviewer-output-mode", default="cursor_sdk")
     parser.add_argument("--reviewer-model", default="")
     parser.add_argument("--codex-model", default="gpt-5.5")
+    parser.add_argument(
+        "--litellm-model",
+        default=SUPERVISOR_CONFIGURED_PANEL_LITELLM_MODEL_DEFAULT,
+        help="Opt in to a LiteLLM reviewer by providing its model name.",
+    )
+    parser.add_argument(
+        "--litellm-provider-family",
+        default=SUPERVISOR_CONFIGURED_PANEL_LITELLM_PROVIDER_FAMILY_DEFAULT,
+        help="Explicit provider family for the opt-in LiteLLM reviewer.",
+    )
+    parser.add_argument(
+        "--panel-aggregation-mode",
+        choices=("conservative", "geometric_median"),
+        default="conservative",
+        help=(
+            "Configured reviewer panel aggregation mode. Defaults to "
+            "conservative; geometric_median still honors the "
+            "non-accepting-reviewer floor and calibration."
+        ),
+    )
     parser.add_argument(
         "--oracle-adapter",
         default="",
@@ -90,6 +127,14 @@ def main(argv: list[str] | None = None) -> int:
         default="",
         help="Optional 'module:attr' import for a custom repo materializer.",
     )
+    parser.add_argument(
+        "--swe-bench-pro-scripts-dir",
+        default="",
+        help=(
+            "Optional SWE-bench Pro run_scripts root. Equivalent to "
+            "SWEBENCH_PRO_ORACLE_SCRIPTS_DIR for official Pro replay preflight."
+        ),
+    )
     args = parser.parse_args(argv)
 
     reviewer_panel = None
@@ -101,29 +146,80 @@ def main(argv: list[str] | None = None) -> int:
                 reviewer_output_mode=args.reviewer_output_mode,
                 reviewer_model=args.reviewer_model or None,
                 codex_model=args.codex_model,
+                litellm_model=args.litellm_model or None,
+                litellm_provider_family=args.litellm_provider_family or None,
+                panel_aggregation_mode=args.panel_aggregation_mode,
                 review_cwd=Path.cwd(),
             )
         )
 
     try:
+        if args.powered_factorial:
+            if not args.predictions:
+                print(
+                    "refusing powered factorial run without --predictions",
+                    file=sys.stderr,
+                )
+                return 2
+            report = swebench_mergeability_powered_factorial_runner(
+                predictions_path=args.predictions,
+                output_dir=args.output_dir,
+                min_good=args.min_good,
+                min_bad=args.min_bad,
+                min_discordant=args.min_discordant,
+                alpha=args.alpha,
+                timeout_s=args.timeout_s,
+            )
+            summary = {
+                "status": "reported",
+                "report": report.get("report_path")
+                or str(Path(args.output_dir) / "powered_factorial_report.json"),
+                "report_sha256": report["report_sha256"],
+                "candidate_count": report["candidate_count"],
+                "source_predictions_path": report["source_predictions_path"],
+                "metric_applyable": bool(report.get("metric_applyable")),
+                "powered_metric_applyable": bool(report.get("powered_metric_applyable")),
+                "evidence_conversion_power_contract": report.get(
+                    "evidence_conversion_power_contract"
+                ),
+            }
+            print(json.dumps(summary, indent=2, sort_keys=True))
+            return 0
         if args.official_replay or args.official_all_arms_diagnostic:
             if not args.allow_dataset_fetch:
                 print(
                     "refusing official SWE-bench replay without --allow-dataset-fetch",
                     file=sys.stderr,
                 )
+                if args.official_all_arms_diagnostic:
+                    _write_aeb0_cli_blocked_artifact(
+                        args,
+                        ["missing_cli_prerequisite:allow_dataset_fetch"],
+                    )
                 return 2
             if not args.dataset or not args.predictions:
                 print(
                     "refusing official SWE-bench replay without --dataset and --predictions",
                     file=sys.stderr,
                 )
+                if args.official_all_arms_diagnostic:
+                    reasons = []
+                    if not args.dataset:
+                        reasons.append("missing_cli_prerequisite:dataset")
+                    if not args.predictions:
+                        reasons.append("missing_cli_prerequisite:predictions")
+                    _write_aeb0_cli_blocked_artifact(args, reasons)
                 return 2
             if not args.oracle_adapter:
                 print(
                     "refusing official SWE-bench replay without --oracle-adapter",
                     file=sys.stderr,
                 )
+                if args.official_all_arms_diagnostic:
+                    _write_aeb0_cli_blocked_artifact(
+                        args,
+                        ["missing_cli_prerequisite:oracle_adapter"],
+                    )
                 return 2
             if (
                 args.oracle_adapter_kind
@@ -137,6 +233,11 @@ def main(argv: list[str] | None = None) -> int:
                     f"{args.oracle_adapter_kind!r}; expected one of: {allowed}",
                     file=sys.stderr,
                 )
+                if args.official_all_arms_diagnostic:
+                    _write_aeb0_cli_blocked_artifact(
+                        args,
+                        [f"unsupported_oracle_adapter_kind:{args.oracle_adapter_kind}"],
+                    )
                 return 2
             oracle_runner = _resolve_import_callable(args.oracle_adapter)
             dataset_loader = (
@@ -166,6 +267,7 @@ def main(argv: list[str] | None = None) -> int:
                 "reviewer_panel": reviewer_panel,
                 "reviewer_panel_mode": reviewer_panel_mode,
                 "timeout_s": args.timeout_s,
+                "swe_bench_pro_scripts_dir": args.swe_bench_pro_scripts_dir or None,
             }
             if args.official_all_arms_diagnostic:
                 report = swebench_mergeability_official_all_arms_diagnostic_runner(
@@ -285,6 +387,20 @@ def main(argv: list[str] | None = None) -> int:
     }
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
+
+
+def _write_aeb0_cli_blocked_artifact(
+    args: argparse.Namespace,
+    blocked_reasons: list[str],
+) -> None:
+    write_swebench_official_all_arms_blocked_artifact(
+        output_dir=args.output_dir,
+        blocked_reasons=blocked_reasons,
+        dataset=args.dataset,
+        dataset_split=args.dataset_split,
+        predictions_path=args.predictions or None,
+        oracle_adapter_kind=args.oracle_adapter_kind,
+    )
 
 
 def _command_generator(

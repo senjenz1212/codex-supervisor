@@ -1,0 +1,23 @@
+{
+  "accepted_attempts": 1,
+  "attempt_count": 3,
+  "candidate_hashes": [
+    "3c8a6f3165321f791e3fe7096ecb84efcb91114d303d5aa6cad258b57ef0d9c4",
+    "8f744041762be59e45af227e95784b89fe8f9f058d3cc2b1ee095e1100d9779f",
+    "83b4d38ac59e15d208dbd13b3805550b082f44d3924d3a6d72508059c02a2f3c"
+  ],
+  "command": [
+    "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python",
+    "-m",
+    "supervisor.swe_bench_solver",
+    "--solver",
+    "..."
+  ],
+  "control_files_excluded_from_patch": true,
+  "has_untracked_file_diff": true,
+  "returncode": 0,
+  "schema_version": "supervisor-pro-single-agent-solver-smoke/v1",
+  "status": "completed",
+  "stderr_tail": "",
+  "task_id": "pro-single-agent-solver-20260626"
+}

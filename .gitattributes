@@ -1,0 +1,3 @@
+docs/dual-agent/**/artifacts/**/*.patch -whitespace
+docs/dual-agent/**/artifacts/**/model.patch -whitespace
+docs/dual-agent/**/artifacts/** -whitespace

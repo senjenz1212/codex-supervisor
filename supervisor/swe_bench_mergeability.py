@@ -12,26 +12,49 @@ policy proposals.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import time
+from collections import Counter
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 from .mergeability_bench import (
     ConfiguredReviewerPanelOptions,
+    MERGEABILITY_CANDIDATE_SCHEMA_VERSION,
+    MERGEABILITY_RUBRIC_LABELS,
+    MERGEABILITY_RUBRIC_SCHEMA_VERSION,
+    MERGEABILITY_TASK_SCHEMA_VERSION,
     ORACLE_REVIEW_FORBIDDEN_KEYS,
     ORACLE_REVIEW_FORBIDDEN_TEXT,
     _copy_public_fixture_tree,
+    _effective_vote_estimate,
     _false_accept_at_matched_true_accept,
+    _generator_disjointness_report,
+    _inter_reviewer_agreement,
+    _leave_one_reviewer_out_analysis,
+    _mergeability_rubric_coverage,
+    _normalise_mergeability_reviewer_result,
     _panel_marginal_delta_at_matched_true_accept,
+    _per_reviewer_acceptance_arms,
+    _producer_family_from_row,
     _public_input_oracle_refs,
     _rate,
+    _reviewer_oracle_error_overlap,
+    _reviewer_cross_family_claim_status,
+    _reviewer_provenance_report,
     _resolve_powered_baseline_decision,
     _run_command,
     _summarize_acceptance_arm,
     _wilson_interval,
     build_configured_reviewer_panel,
+    run_powered_factorial_mergeability_evaluation,
+)
+from .swe_bench_official_oracle import (
+    preflight_swe_bench_pro_run_scripts,
+    run_swe_bench_pro_oracle,
+    swe_bench_pro_oracle_scripts_dir,
 )
 
 
@@ -49,7 +72,20 @@ PUBLIC_STATIC_PATCH_PROBE = "public_static_patch_probe"
 SWEBENCH_PRO_HIDDEN_ORACLE_KEYS = frozenset({
     "FAIL_TO_PASS",
     "PASS_TO_PASS",
+    "fail_to_pass",
+    "pass_to_pass",
     "test_patch",
+    "before_repo_set_cmd",
+    "selected_test_files_to_run",
+    "dockerhub_tag",
+})
+SWEBENCH_PRO_HIDDEN_ORACLE_TEXT_MARKERS = frozenset({
+    "FAIL_TO_PASS",
+    "PASS_TO_PASS",
+    "test_patch",
+    "before_repo_set_cmd",
+    "selected_test_files_to_run",
+    "dockerhub_tag",
 })
 SWEBENCH_PRO_FORBIDDEN_KEYS = frozenset(
     set(ORACLE_REVIEW_FORBIDDEN_KEYS) | set(SWEBENCH_PRO_HIDDEN_ORACLE_KEYS)
@@ -66,6 +102,23 @@ PRODUCED_BASELINE_RECEIPT_KEYS = (
     "produced_baseline_decision",
     "baseline_decision",
 )
+POWERED_FACTORIAL_ARM_DECISION_KEYS = {
+    "same_model_multi_agent": "same_model_multi_agent_decision",
+    "hetero_multi_reviewer": "hetero_multi_reviewer_decision",
+    "runtime_evidence_floor": "runtime_evidence_floor_decision",
+    "full_supervisor_stack": "full_supervisor_stack_decision",
+}
+OFFICIAL_PREDICTION_METADATA_KEYS = (
+    "oracle_label",
+    "candidate_artifact_hash",
+    "model_patch_sha256",
+    "diff_sha256",
+    "origin",
+    "producer",
+    "patch_applied",
+)
+ORACLE_GOOD_LABEL = "oracle-good"
+ORACLE_BAD_LABEL = "oracle-bad"
 
 _PUBLIC_PACKET_ALLOWED_INSTANCE_KEYS = (
     "instance_id",
@@ -113,7 +166,7 @@ def _scan_for_swebench_pro_oracle_refs(value: Any, *, path: str = "") -> list[st
                 )
             )
     elif isinstance(value, str):
-        for marker in SWEBENCH_PRO_HIDDEN_ORACLE_KEYS:
+        for marker in SWEBENCH_PRO_HIDDEN_ORACLE_TEXT_MARKERS:
             if marker in value:
                 refs.append(path or marker)
                 break
@@ -364,17 +417,20 @@ def _oracle_outcome_for(
 def _interpret_oracle_outcome(outcome: Mapping[str, Any]) -> dict[str, Any]:
     fail_to_pass = str(outcome.get("fail_to_pass_status") or "").lower()
     pass_to_pass = str(outcome.get("pass_to_pass_status") or "").lower()
+    patch_applied = _patch_applied_from_oracle_result(outcome)
     oracle_unavailable = bool(
         outcome.get("oracle_unavailable")
         or outcome.get("unavailable")
         or str(outcome.get("status") or "").lower() == "unavailable"
         or fail_to_pass == "unavailable"
         or pass_to_pass == "unavailable"
+        or patch_applied is False
     )
     if oracle_unavailable:
         reason = str(
             outcome.get("oracle_unavailable_reason")
             or outcome.get("unavailable_reason")
+            or ("patch_apply_failed" if patch_applied is False else "")
             or "oracle_unavailable"
         )
         return {
@@ -384,6 +440,7 @@ def _interpret_oracle_outcome(outcome: Mapping[str, Any]) -> dict[str, Any]:
             "oracle_unavailable": True,
             "oracle_unavailable_reason": reason,
             "pass_to_pass_regression": False,
+            "patch_applied": patch_applied,
         }
     if fail_to_pass not in {"pass", "fail"}:
         raise SwebenchProBridgeError(
@@ -401,7 +458,25 @@ def _interpret_oracle_outcome(outcome: Mapping[str, Any]) -> dict[str, Any]:
         "oracle_unavailable": False,
         "oracle_unavailable_reason": "",
         "pass_to_pass_regression": pass_to_pass == "fail",
+        "patch_applied": patch_applied,
     }
+
+
+def _patch_applied_from_oracle_result(value: Mapping[str, Any]) -> bool | None:
+    raw = value.get("patch_applied")
+    if raw is None:
+        receipt = value.get("oracle_adapter_receipt")
+        if isinstance(receipt, Mapping):
+            raw = receipt.get("patch_applied")
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, str):
+        normalised = raw.strip().lower()
+        if normalised in {"true", "1", "yes", "passed"}:
+            return True
+        if normalised in {"false", "0", "no", "failed"}:
+            return False
+    return None
 
 
 def _no_regression_findings_for_bridge(
@@ -498,6 +573,29 @@ def swebench_pro_mergeability_bridge_report(
             row: dict[str, Any] = {
                 "instance_id": instance_id,
                 "candidate_id": candidate_id,
+                "candidate_artifact_hash": str(
+                    candidate.get("candidate_artifact_hash")
+                    or packet["candidate_artifact_hash"]
+                ),
+                "model_patch_sha256": str(
+                    candidate.get("model_patch_sha256")
+                    or sha256(str(candidate.get("patch") or "").encode("utf-8")).hexdigest()
+                ),
+                "diff_sha256": str(
+                    candidate.get("diff_sha256")
+                    or sha256(str(candidate.get("patch") or "").encode("utf-8")).hexdigest()
+                ),
+                "oracle_label": str(candidate.get("oracle_label") or ""),
+                "origin": (
+                    dict(candidate["origin"])
+                    if isinstance(candidate.get("origin"), Mapping)
+                    else {}
+                ),
+                "producer": (
+                    dict(candidate["producer"])
+                    if isinstance(candidate.get("producer"), Mapping)
+                    else {}
+                ),
                 "public_packet_sha256": frozen["public_packet_sha256"],
                 "decision_phase_sha256": frozen["decision_phase_sha256"],
                 "oracle_isolation_ok": packet_isolation_ok,
@@ -529,6 +627,7 @@ def swebench_pro_mergeability_bridge_report(
                 "fail_to_pass_status": outcome["fail_to_pass_status"],
                 "pass_to_pass_status": outcome["pass_to_pass_status"],
                 "pass_to_pass_regression": outcome["pass_to_pass_regression"],
+                "patch_applied": outcome.get("patch_applied"),
                 "s_full_disagrees_with_s_probe": (
                     frozen["s_probe_accept"] != frozen["s_full_accept"]
                     and not frozen["s_full_unavailable"]
@@ -596,6 +695,9 @@ def swebench_pro_mergeability_bridge_report(
     panel_marginal_delta = _panel_marginal_delta_at_matched_true_accept(
         public_review=arm_summaries[ARM_S_PROBE],
         full_gate=arm_summaries[ARM_S_FULL],
+        full_roster_available_count=sum(
+            1 for row in rows if not bool(row.get("s_full_unavailable"))
+        ),
     )
 
     no_regression_findings = _no_regression_findings_for_bridge(rows)
@@ -696,6 +798,9 @@ def swebench_pro_mergeability_bridge_report(
                 ],
                 "true_accept_confidence_interval": arm_summaries[arm][
                     "true_accept_confidence_interval"
+                ],
+                "false_reject_confidence_interval": arm_summaries[arm][
+                    "false_reject_confidence_interval"
                 ],
             }
             for arm in ARM_NAMES
@@ -811,11 +916,28 @@ SUPPORTED_OFFICIAL_REPLAY_ORACLE_ADAPTER_KINDS = (
     OFFICIAL_ORACLE_RECEIPT_VALIDATION_KINDS
 )
 
+
+def _official_replay_should_preflight_pro_scripts(
+    *,
+    oracle_runner: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None,
+    swe_bench_pro_scripts_dir: str | Path | None,
+) -> bool:
+    if swe_bench_pro_scripts_dir is not None:
+        return True
+    if os.environ.get("SWEBENCH_PRO_ORACLE_SCRIPTS_DIR"):
+        return True
+    return oracle_runner is run_swe_bench_pro_oracle
+
 _OFFICIAL_RECORD_HIDDEN_KEYS: tuple[str, ...] = (
     "patch",
     "test_patch",
     "FAIL_TO_PASS",
     "PASS_TO_PASS",
+    "fail_to_pass",
+    "pass_to_pass",
+    "before_repo_set_cmd",
+    "selected_test_files_to_run",
+    "dockerhub_tag",
     "final_score",
     "oracle_accept",
     "expected_outcome",
@@ -1002,6 +1124,91 @@ def _command_receipt(result: Any) -> dict[str, Any]:
     }
 
 
+def _receipt_group_status(
+    receipts: Sequence[Mapping[str, Any]],
+    *,
+    name: str,
+    empty_status: str,
+) -> str:
+    matching = [
+        receipt for receipt in receipts
+        if str(receipt.get("name") or "") == name
+    ]
+    if not matching:
+        return empty_status
+    return "passed" if all(str(receipt.get("status") or "") == "passed" for receipt in matching) else "failed"
+
+
+def _swebench_public_execution_evidence(
+    *,
+    public_packet: Mapping[str, Any],
+    patch_apply_status: str,
+    patch_apply_receipts: Sequence[Mapping[str, Any]],
+    public_command_receipts: Sequence[Mapping[str, Any]],
+    protected_paths: tuple[str, ...],
+) -> dict[str, Any]:
+    substrate = (
+        dict(public_packet.get("s_probe_substrate") or {})
+        if isinstance(public_packet.get("s_probe_substrate"), Mapping)
+        else {}
+    )
+    public_command_status = _receipt_group_status(
+        public_command_receipts,
+        name="public_probe",
+        empty_status="not_configured",
+    )
+    return {
+        "schema_version": "supervisor-swebench-public-execution-evidence/v1",
+        "evidence_boundary": "public_only",
+        "patch_apply_check": {
+            "status": patch_apply_status,
+            "receipt_count": len(patch_apply_receipts),
+            "receipts": [dict(receipt) for receipt in patch_apply_receipts],
+        },
+        "public_probe_commands": {
+            "status": public_command_status,
+            "receipt_count": len(public_command_receipts),
+            "receipts": [dict(receipt) for receipt in public_command_receipts],
+        },
+        "public_ci_lint": {
+            "status": public_command_status,
+            "configured_lint_command_count": len(substrate.get("public_lint_commands") or []),
+            "configured_build_command_count": len(substrate.get("public_build_commands") or []),
+        },
+        "reverse_classical_test_quality": {
+            "status": "not_configured",
+            "reason": "swe_bench_replay_packets_do_not_include_candidate_submitted_public_tests",
+        },
+        "scope_locality": {
+            "status": "passed",
+            "public_checkout_ref": str(public_packet.get("public_checkout_ref") or ""),
+        },
+        "protected_path_exclusion": {
+            "status": "passed",
+            "protected_path_content_included": False,
+            "protected_path_count": len(protected_paths),
+            "protected_paths_sha256": sha256(
+                json.dumps(
+                    sorted(protected_paths),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest(),
+        },
+        "hidden_oracle_exclusion": {
+            "status": "passed",
+            "hidden_oracle_material_included": False,
+            "excluded_material_categories": [
+                "held_out_fail_to_pass_tests",
+                "held_out_pass_to_pass_tests",
+                "answer_key_test_delta",
+                "answer_key_acceptance_labels",
+                "protected_path_content",
+            ],
+        },
+    }
+
+
 def _build_reviewer_packet(
     *,
     instance: Mapping[str, Any],
@@ -1031,6 +1238,28 @@ def _build_reviewer_packet(
         "patch_apply_status": patch_apply_status,
         "patch_apply_receipts": [dict(receipt) for receipt in patch_apply_receipts],
         "public_command_receipts": [dict(receipt) for receipt in public_command_receipts],
+        "public_execution_evidence": _swebench_public_execution_evidence(
+            public_packet=public_packet,
+            patch_apply_status=patch_apply_status,
+            patch_apply_receipts=patch_apply_receipts,
+            public_command_receipts=public_command_receipts,
+            protected_paths=protected_paths,
+        ),
+        "mergeability_rubric": {
+            "schema_version": MERGEABILITY_RUBRIC_SCHEMA_VERSION,
+            "allowed_labels": list(MERGEABILITY_RUBRIC_LABELS),
+            "criteria": [
+                "behavioral_correctness_from_public_evidence",
+                "regression_risk_from_public_evidence",
+                "test_quality_from_public_evidence",
+                "scope_locality",
+                "maintainability",
+                "safety_or_suspicious_behavior",
+                "unverifiable_from_public_evidence",
+            ],
+            "hidden_oracle_fail_is_not_public_reviewer_criterion": True,
+            "labels_are_descriptive_not_scoring_authority": True,
+        },
         "path_policy": {
             "protected_path_count": len(protected_paths),
             "protected_paths_sha256": sha256(
@@ -1124,7 +1353,23 @@ def _normalise_oracle_adapter_outcome(raw: Mapping[str, Any]) -> tuple[dict[str,
         "pass_to_pass_status": outcome["pass_to_pass_status"],
         "oracle_unavailable": outcome["oracle_unavailable"],
         "oracle_unavailable_reason": outcome["oracle_unavailable_reason"],
+        "patch_applied": outcome.get("patch_applied"),
     }, dict(receipt)
+
+
+def _candidate_prediction_metadata(candidate: Mapping[str, Any]) -> dict[str, Any]:
+    metadata: dict[str, Any] = {}
+    for key in OFFICIAL_PREDICTION_METADATA_KEYS:
+        if key not in candidate:
+            continue
+        value = candidate[key]
+        if isinstance(value, Mapping):
+            metadata[key] = dict(value)
+        elif isinstance(value, list):
+            metadata[key] = list(value)
+        else:
+            metadata[key] = value
+    return metadata
 
 
 def _normalise_protected_paths(value: Sequence[str] | None) -> tuple[str, ...]:
@@ -1266,19 +1511,41 @@ def _public_reviewer_result_summaries(raw_results: Any) -> list[dict[str, Any]]:
         classification = item.get("failure_classification")
         if classification is None and not bool(item.get("verdict_present")):
             classification = "reviewer_missing_verdict"
-        summaries.append({
+        summary: dict[str, Any] = {
             "reviewer_id": str(item.get("reviewer_id") or "unknown-reviewer"),
             "runtime": str(item.get("runtime") or "unknown"),
             "model": item.get("model"),
+            "provider_family": item.get("provider_family"),
+            "lineage": list(item.get("lineage") or []),
+            "tool_access": item.get("tool_access"),
+            "tool_backed_command_evidence": bool(
+                item.get("tool_backed_command_evidence")
+            ),
+            "assurance_grade": item.get("assurance_grade"),
             "verdict_present": bool(item.get("verdict_present")),
             "decision": str(item.get("decision") or ""),
+            "accepted": bool(
+                item.get("accepted", str(item.get("decision") or "") == "accept")
+            ),
             "severity": str(item.get("severity") or ""),
+            "mergeability_label": item.get("mergeability_label"),
+            "mergeability_rubric": (
+                dict(item.get("mergeability_rubric"))
+                if isinstance(item.get("mergeability_rubric"), Mapping)
+                else {}
+            ),
+            "abstention": bool(item.get("abstention")),
             "failure_classification": (
                 str(classification) if classification is not None else None
             ),
             "transcript_sha256": item.get("transcript_sha256"),
             "output_sha256": item.get("output_sha256"),
-        })
+        }
+        if "provider_family_verified" in item:
+            summary["provider_family_verified"] = bool(item.get("provider_family_verified"))
+        if item.get("provider_family_source"):
+            summary["provider_family_source"] = str(item.get("provider_family_source"))
+        summaries.append(summary)
     return summaries
 
 
@@ -1630,6 +1897,7 @@ def swebench_mergeability_fixture_runner(
             "candidate_id": candidate_id,
             "patch": str(candidate.get("patch") or ""),
             "baseline_self_report": candidate.get("baseline_self_report"),
+            **_candidate_prediction_metadata(candidate),
         }
         arm_decisions[ARM_BASELINE][key] = dict(baseline_decision)
         arm_decisions[ARM_S_PROBE][key] = {
@@ -1645,6 +1913,7 @@ def swebench_mergeability_fixture_runner(
             "candidate_id": candidate_id,
             "patch_apply_status": patch_apply_status,
             "patch_apply_receipts": patch_apply_receipts,
+            **_candidate_prediction_metadata(candidate),
             "public_command_status": public_command_status,
             "public_command_receipts": public_command_receipts,
             "s_probe_execution_substrate": dict(s_probe_execution_substrate),
@@ -1759,6 +2028,42 @@ def swebench_mergeability_fixture_runner(
                     or instance.get("PASS_TO_PASS")
                     or []
                 ),
+                "fail_to_pass": _official_test_list(
+                    candidate.get("fail_to_pass")
+                    or instance.get("fail_to_pass")
+                    or candidate.get("FAIL_TO_PASS")
+                    or instance.get("FAIL_TO_PASS")
+                    or []
+                ),
+                "pass_to_pass": _official_test_list(
+                    candidate.get("pass_to_pass")
+                    or instance.get("pass_to_pass")
+                    or candidate.get("PASS_TO_PASS")
+                    or instance.get("PASS_TO_PASS")
+                    or []
+                ),
+                "before_repo_set_cmd": str(
+                    candidate.get("before_repo_set_cmd")
+                    or instance.get("before_repo_set_cmd")
+                    or ""
+                ),
+                "selected_test_files_to_run": _official_test_list(
+                    candidate.get("selected_test_files_to_run")
+                    or instance.get("selected_test_files_to_run")
+                    or []
+                ),
+                "dockerhub_tag": str(
+                    candidate.get("dockerhub_tag")
+                    or instance.get("dockerhub_tag")
+                    or ""
+                ),
+                "swe_bench_pro_scripts_dir": str(
+                    candidate.get("swe_bench_pro_scripts_dir")
+                    or instance.get("swe_bench_pro_scripts_dir")
+                    or ""
+                ),
+                "repo": str(instance.get("repo") or ""),
+                "base_commit": str(instance.get("base_commit") or ""),
                 "test_patch": str(
                     candidate.get("test_patch")
                     or instance.get("test_patch")
@@ -1790,6 +2095,7 @@ def swebench_mergeability_fixture_runner(
             "candidate_id": candidate_id,
             "fail_to_pass_status": outcome["fail_to_pass_status"],
             "pass_to_pass_status": outcome["pass_to_pass_status"],
+            "patch_applied": outcome.get("patch_applied"),
             "oracle_unavailable": bool(outcome.get("oracle_unavailable")),
             "oracle_unavailable_reason": str(
                 outcome.get("oracle_unavailable_reason") or ""
@@ -1802,6 +2108,7 @@ def swebench_mergeability_fixture_runner(
             "candidate_id": candidate_id,
             "fail_to_pass_status": outcome["fail_to_pass_status"],
             "pass_to_pass_status": outcome["pass_to_pass_status"],
+            "patch_applied": outcome.get("patch_applied"),
             "oracle_unavailable": bool(outcome.get("oracle_unavailable")),
             "oracle_unavailable_reason": str(
                 outcome.get("oracle_unavailable_reason") or ""
@@ -2085,6 +2392,7 @@ def swebench_mergeability_replay_runner(
             combined_oracle_outcomes[key] = {
                 "fail_to_pass_status": str(oracle_row["fail_to_pass_status"]),
                 "pass_to_pass_status": str(oracle_row["pass_to_pass_status"]),
+                "patch_applied": oracle_row.get("patch_applied"),
                 "oracle_unavailable": bool(oracle_row.get("oracle_unavailable")),
                 "oracle_unavailable_reason": str(
                     oracle_row.get("oracle_unavailable_reason") or ""
@@ -2171,6 +2479,7 @@ def swebench_mergeability_official_replay_runner(
     reviewer_panel_mode: str = "custom",
     configured_reviewer_panel_options: ConfiguredReviewerPanelOptions | None = None,
     timeout_s: float = 30.0,
+    swe_bench_pro_scripts_dir: str | Path | None = None,
 ) -> dict[str, Any]:
     """Replay official-style SWE-bench records through mergeability machinery.
 
@@ -2237,6 +2546,30 @@ def swebench_mergeability_official_replay_runner(
         raise SwebenchMergeabilityFixtureRunnerError(
             "official SWE-bench replay selection filter excluded all records"
         )
+    run_scripts_preflight: dict[str, Any] = {}
+    if _official_replay_should_preflight_pro_scripts(
+        oracle_runner=oracle_runner,
+        swe_bench_pro_scripts_dir=swe_bench_pro_scripts_dir,
+    ):
+        scripts_dir = (
+            Path(swe_bench_pro_scripts_dir).expanduser()
+            if swe_bench_pro_scripts_dir is not None
+            else swe_bench_pro_oracle_scripts_dir()
+        )
+        run_scripts_preflight = preflight_swe_bench_pro_run_scripts(
+            selected_instance_ids,
+            scripts_dir=scripts_dir,
+        )
+        selection_filter["swe_bench_pro_scripts_dir"] = str(
+            run_scripts_preflight["scripts_dir"]
+        )
+        selection_filter["swe_bench_pro_run_scripts_preflight"] = dict(
+            run_scripts_preflight
+        )
+        if not run_scripts_preflight["ok"]:
+            raise SwebenchMergeabilityFixtureRunnerError(
+                str(run_scripts_preflight["reason"])
+            )
 
     predictions = _load_official_predictions(predictions_path)
     selected_set = set(selected_instance_ids)
@@ -2274,15 +2607,20 @@ def swebench_mergeability_official_replay_runner(
             raise SwebenchMergeabilityFixtureRunnerError(
                 f"repo_materializer returned missing public bundle: {public_bundle_path}"
             )
+        _ensure_public_bundle_has_no_git(
+            public_bundle_path,
+            context=f"official replay public bundle {instance_id}",
+        )
 
         hidden = _official_hidden_oracle(record)
         candidates: list[dict[str, Any]] = []
         for prediction in record_predictions:
             candidate_id = str(prediction["candidate_id"])
             model_patch = str(prediction["model_patch"])
-            patch_path = (
-                patch_dir
-                / f"{_safe_artifact_fragment(instance_id)}-{_safe_artifact_fragment(candidate_id)}.patch"
+            patch_path = patch_dir / _safe_artifact_filename(
+                instance_id,
+                candidate_id,
+                suffix=".patch",
             )
             patch_path.write_text(model_patch, encoding="utf-8")
             candidate: dict[str, Any] = {
@@ -2290,20 +2628,49 @@ def swebench_mergeability_official_replay_runner(
                 "model_patch_path": str(patch_path),
                 "FAIL_TO_PASS": list(hidden["FAIL_TO_PASS"]),
                 "PASS_TO_PASS": list(hidden["PASS_TO_PASS"]),
+                "fail_to_pass": list(hidden["fail_to_pass"]),
+                "pass_to_pass": list(hidden["pass_to_pass"]),
+                "before_repo_set_cmd": str(hidden["before_repo_set_cmd"]),
+                "selected_test_files_to_run": list(
+                    hidden["selected_test_files_to_run"]
+                ),
+                "dockerhub_tag": str(hidden["dockerhub_tag"]),
                 "test_patch": str(hidden["test_patch"]),
                 "official_patch": str(hidden["patch"]),
             }
+            if run_scripts_preflight:
+                candidate["swe_bench_pro_scripts_dir"] = str(
+                    run_scripts_preflight["scripts_dir"]
+                )
             for key in PRODUCED_BASELINE_RECEIPT_KEYS:
                 if key in prediction and isinstance(prediction[key], Mapping):
                     candidate[key] = dict(prediction[key])
                     break
+            for key in OFFICIAL_PREDICTION_METADATA_KEYS:
+                if key not in prediction:
+                    continue
+                value = prediction[key]
+                if isinstance(value, Mapping):
+                    candidate[key] = dict(value)
+                elif isinstance(value, list):
+                    candidate[key] = list(value)
+                else:
+                    candidate[key] = value
             candidates.append(candidate)
 
         manifest_instances.append({
             **public_record,
             "FAIL_TO_PASS": list(hidden["FAIL_TO_PASS"]),
             "PASS_TO_PASS": list(hidden["PASS_TO_PASS"]),
+            "fail_to_pass": list(hidden["fail_to_pass"]),
+            "pass_to_pass": list(hidden["pass_to_pass"]),
+            "before_repo_set_cmd": str(hidden["before_repo_set_cmd"]),
+            "selected_test_files_to_run": list(hidden["selected_test_files_to_run"]),
+            "dockerhub_tag": str(hidden["dockerhub_tag"]),
             "test_patch": str(hidden["test_patch"]),
+            "swe_bench_pro_scripts_dir": str(
+                run_scripts_preflight.get("scripts_dir") or ""
+            ),
             "public_bundle": str(public_bundle_path),
             "protected_paths": list(_DEFAULT_PROTECTED_PATHS),
             "s_probe_substrate": {
@@ -2404,6 +2771,7 @@ def swebench_mergeability_official_replay_runner(
             len(entry["candidates"]) for entry in manifest_instances
         ),
         "selection_filter": dict(selection_filter),
+        "swe_bench_pro_run_scripts_preflight": dict(run_scripts_preflight),
         "oracle_receipt_validation": receipt_validation,
         "label_validation": label_validation,
         "hidden_field_leak_check": leak_check,
@@ -2459,6 +2827,7 @@ def swebench_mergeability_official_all_arms_diagnostic_runner(
     timeout_s: float = 30.0,
     min_good: int = 1,
     min_bad: int = 1,
+    swe_bench_pro_scripts_dir: str | Path | None = None,
 ) -> dict[str, Any]:
     """Run a small official-oracle diagnostic and require all arms to populate.
 
@@ -2493,6 +2862,7 @@ def swebench_mergeability_official_all_arms_diagnostic_runner(
             reviewer_panel_mode=reviewer_panel_mode,
             configured_reviewer_panel_options=configured_reviewer_panel_options,
             timeout_s=timeout_s,
+            swe_bench_pro_scripts_dir=swe_bench_pro_scripts_dir,
         )
     except SwebenchMergeabilityFixtureRunnerError as exc:
         if "forbidden oracle material" not in str(exc):
@@ -2591,6 +2961,127 @@ def _official_all_arms_unavailable_reviewer_panel(
     }
 
 
+def write_swebench_official_all_arms_blocked_artifact(
+    *,
+    output_dir: str | Path,
+    blocked_reasons: Sequence[str],
+    dataset: str = "",
+    dataset_split: str = "",
+    predictions_path: str | Path | None = None,
+    oracle_adapter_kind: str = "",
+    min_good: int = 1,
+    min_bad: int = 1,
+    attempt_stage: str = "recon",
+    attempt_evidence: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Write the AEB-0 artifact when a pre-run blocker prevents replay."""
+    output_path = Path(output_dir).expanduser().resolve()
+    output_path.mkdir(parents=True, exist_ok=True)
+    reasons = [str(reason) for reason in blocked_reasons if str(reason)]
+    if not reasons:
+        reasons = ["real_official_all_arms_artifact_required"]
+    dataset_readiness = _aeb0_dataset_readiness(dataset)
+    bridge_report = _unavailable_official_bridge_report(
+        unavailable_reasons=reasons,
+    )
+    report: dict[str, Any] = {
+        "schema_version": (
+            SWEBENCH_MERGEABILITY_OFFICIAL_ALL_ARMS_DIAGNOSTIC_SCHEMA_VERSION
+        ),
+        "status": "unavailable",
+        "dataset": str(dataset or ""),
+        "dataset_split": str(dataset_split or ""),
+        "predictions_path": str(Path(predictions_path).expanduser())
+        if predictions_path
+        else "",
+        "official_replay_report_path": "",
+        "official_replay_report_sha256": "",
+        "official_replay_status": "not_started",
+        "attempt_stage": str(attempt_stage or "recon"),
+        "attempt_evidence": dict(attempt_evidence or {}),
+        "oracle_adapter_kind": str(oracle_adapter_kind or ""),
+        "official_replay_used": False,
+        "diagnostic_only": True,
+        "plumbing_smoke_only": True,
+        "instance_count": 0,
+        "candidate_count": 0,
+        "n_good": 0,
+        "n_bad": 0,
+        "min_good": int(min_good),
+        "min_bad": int(min_bad),
+        "arms_present": [],
+        "missing_arms": list(ARM_NAMES),
+        "all_arms_populated": False,
+        "baseline_available": False,
+        "s_probe_available": False,
+        "s_full_available": False,
+        "oracle_ceiling_available": False,
+        "configured_reviewer_panel_preflight": {},
+        "hidden_field_leak_check": {},
+        "matched_true_accept_status": {
+            ARM_S_PROBE: "unavailable",
+            ARM_S_FULL: "unavailable",
+        },
+        "supervisor_full_gate_matched_true_accept": {},
+        "false_accept_reduction_at_matched_true_accept": {},
+        "s_probe_vs_s_full": {},
+        "reviewer_marginal_delta_at_matched_true_accept": {},
+        "far_tar_frr": None,
+        "benchmark_oracle": {
+            "kind": "swe_bench_held_out_test_pass_proxy",
+            "oracle_adapter_kind": str(oracle_adapter_kind or ""),
+            "scoring_authority": "held_out_fail_to_pass_and_pass_to_pass_tests",
+            "maintainer_mergeability_claim_allowed": False,
+            "limitation_note": (
+                "SWE-bench reports held-out test-pass behavior; it is not a "
+                "maintainer would-merge judgment."
+            ),
+        },
+        "swe_bench_oracle_limitation_note": (
+            "SWE-bench held-out tests are a test-pass proxy, not human "
+            "maintainer mergeability."
+        ),
+        "no_maintainer_mergeability_claim": True,
+        "decision_freeze": {},
+        "candidate_generation": {},
+        "reviewer_provenance": {},
+        "abstention_coverage": {},
+        "mergeability_rubric_coverage": {},
+        "generator_disjointness": {},
+        "self_preference_warnings": [],
+        "metrics_unavailable_reasons": list(reasons),
+        "all_arms_populated_is_not_success_without_matched_tar": True,
+        "diagnostic_ready_for_scale": False,
+        "dataset_readiness": dataset_readiness,
+        "aeb0_artifact_gate": _aeb0_artifact_gate(
+            status="unavailable",
+            blocked_reasons=reasons,
+            dataset_readiness=dataset_readiness,
+        ),
+        "real_evidence_claim_blocked_reasons": _aeb0_real_claim_blocked_reasons(
+            blocked_reasons=reasons,
+            dataset_readiness=dataset_readiness,
+        ),
+        "bridge_report": bridge_report,
+        **_aeb0_authority_flags(),
+        "report_only": {
+            "default_change_allowed": False,
+            "config_mutated": False,
+            "policy_mutated": False,
+        },
+    }
+    report_path = output_path / "official_all_arms_diagnostic_report.json"
+    report["report_path"] = str(report_path)
+    report["report_sha256"] = _sha256_json({
+        key: value for key, value in report.items() if key != "report_sha256"
+    })
+    report_path.write_text(
+        json.dumps(report, sort_keys=True, indent=2, default=str),
+        encoding="utf-8",
+    )
+    return report
+
+
 def _build_official_all_arms_diagnostic_report(
     *,
     official_report: Mapping[str, Any],
@@ -2667,12 +3158,20 @@ def _build_official_all_arms_diagnostic_report(
         and oracle_ceiling.get("availability_status") == "available"
         and int(oracle_ceiling.get("unavailable_count") or 0) == 0
     )
-    all_arms_populated = bool(
+    arm_execution_populated = bool(
         not missing_arms
         and baseline_available
         and s_probe_available
         and s_full_available
         and oracle_ceiling_available
+    )
+    reviewer_analysis_rows = _official_reviewer_analysis_rows(
+        official_report=official_report,
+    )
+    reviewer_provenance = _reviewer_provenance_report(reviewer_analysis_rows)
+    generator_disjointness = _generator_disjointness_report(reviewer_analysis_rows)
+    reviewer_roster_cross_family_verification = (
+        _official_reviewer_roster_cross_family_verification(reviewer_analysis_rows)
     )
 
     unavailable_reasons: list[str] = []
@@ -2707,7 +3206,47 @@ def _build_official_all_arms_diagnostic_report(
             for reason in (bridge.get("metrics_unavailable_reasons") or [])
             if str(reason)
         )
+    if not bool(reviewer_roster_cross_family_verification.get("verified")):
+        unavailable_reasons.append("reviewer_roster_not_verified_cross_family")
+        unavailable_reasons.extend(
+            str(reason)
+            for reason in (
+                reviewer_roster_cross_family_verification.get("reasons") or []
+            )
+            if str(reason)
+        )
     status = "completed" if not unavailable_reasons else "unavailable"
+    blocked_reasons = sorted(set(unavailable_reasons))
+    dataset_readiness = _aeb0_dataset_readiness(str(official_report.get("dataset") or ""))
+    reviewer_independence = _official_reviewer_independence_metrics(
+        reviewer_analysis_rows,
+        full_stack=s_full,
+        roster_verified=bool(reviewer_roster_cross_family_verification.get("verified")),
+    )
+    abstention_coverage = _mergeability_rubric_coverage(reviewer_analysis_rows)
+    panel_marginal = (
+        dict(bridge.get("panel_marginal_delta_at_matched_true_accept"))
+        if isinstance(bridge, Mapping)
+        and isinstance(bridge.get("panel_marginal_delta_at_matched_true_accept"), Mapping)
+        else {}
+    )
+    false_accept_reduction = (
+        dict(matched_all.get(ARM_S_FULL))
+        if isinstance(matched_all.get(ARM_S_FULL), Mapping) else {}
+    )
+    s_probe_vs_s_full = _official_s_probe_vs_s_full_summary(
+        s_probe=s_probe,
+        s_full=s_full,
+    )
+    decision_freeze = _official_decision_freeze_summary(
+        official_report=official_report,
+        bridge=bridge,
+    )
+    candidate_generation = _official_candidate_generation_summary(
+        rows=rows,
+        official_report=official_report,
+    )
+    attempt_stage = _official_all_arms_attempt_stage(official_report)
     return {
         "schema_version": (
             SWEBENCH_MERGEABILITY_OFFICIAL_ALL_ARMS_DIAGNOSTIC_SCHEMA_VERSION
@@ -2718,19 +3257,28 @@ def _build_official_all_arms_diagnostic_report(
         "official_replay_report_path": str(official_report.get("report_path") or ""),
         "official_replay_report_sha256": str(official_report.get("report_sha256") or ""),
         "official_replay_status": str(official_report.get("status") or ""),
+        "attempt_stage": attempt_stage,
         "oracle_adapter_kind": str(official_report.get("oracle_adapter_kind") or ""),
         "official_replay_used": True,
         "diagnostic_only": True,
         "plumbing_smoke_only": True,
         "instance_count": int(official_report.get("instance_count") or 0),
         "candidate_count": int(official_report.get("candidate_count") or 0),
+        "candidate_pool_sha256": reviewer_independence["candidate_pool_sha256"],
+        "independence_metric_candidate_pool_sha256": (
+            reviewer_independence["metric_candidate_pool_sha256"]
+        ),
         "n_good": n_good,
         "n_bad": n_bad,
         "min_good": int(min_good),
         "min_bad": int(min_bad),
         "arms_present": sorted(str(arm) for arm in arms),
         "missing_arms": missing_arms,
-        "all_arms_populated": all_arms_populated,
+        "arm_execution_populated": arm_execution_populated,
+        "all_arms_populated": (
+            arm_execution_populated
+            and bool(reviewer_roster_cross_family_verification.get("verified"))
+        ),
         "baseline_available": baseline_available,
         "s_probe_available": s_probe_available,
         "s_full_available": s_full_available,
@@ -2744,16 +3292,82 @@ def _build_official_all_arms_diagnostic_report(
             dict(matched_all.get(ARM_S_FULL))
             if isinstance(matched_all.get(ARM_S_FULL), Mapping) else {}
         ),
+        "false_accept_reduction_at_matched_true_accept": false_accept_reduction,
+        "s_probe_vs_s_full": s_probe_vs_s_full,
+        "reviewer_marginal_delta_at_matched_true_accept": panel_marginal,
         "far_tar_frr": (
             dict(bridge.get("far_tar_frr"))
             if isinstance(bridge, Mapping)
             and isinstance(bridge.get("far_tar_frr"), Mapping)
             else None
         ),
-        "metrics_unavailable_reasons": sorted(set(unavailable_reasons)),
+        "benchmark_oracle": {
+            "kind": "swe_bench_held_out_test_pass_proxy",
+            "oracle_adapter_kind": str(official_report.get("oracle_adapter_kind") or ""),
+            "scoring_authority": "held_out_fail_to_pass_and_pass_to_pass_tests",
+            "maintainer_mergeability_claim_allowed": False,
+            "limitation_note": (
+                "SWE-bench reports held-out test-pass behavior; it is not a "
+                "maintainer would-merge judgment."
+            ),
+        },
+        "swe_bench_oracle_limitation_note": (
+            "SWE-bench held-out tests are a test-pass proxy, not human "
+            "maintainer mergeability."
+        ),
+        "no_maintainer_mergeability_claim": True,
+        "decision_freeze": decision_freeze,
+        "candidate_generation": candidate_generation,
+        "reviewer_provenance": reviewer_provenance,
+        "reviewer_roster_cross_family_verification": (
+            reviewer_roster_cross_family_verification
+        ),
+        "inter_reviewer_agreement": reviewer_independence["inter_reviewer_agreement"],
+        "leave_one_reviewer_out": reviewer_independence["leave_one_reviewer_out"],
+        "effective_vote_estimate": reviewer_independence["effective_vote_estimate"],
+        "abstention_coverage": abstention_coverage,
+        "mergeability_rubric_coverage": abstention_coverage,
+        "generator_disjointness": generator_disjointness,
+        "self_preference_warnings": list(
+            generator_disjointness.get("self_preference_warnings") or []
+        ),
+        "metrics_unavailable_reasons": blocked_reasons,
         "all_arms_populated_is_not_success_without_matched_tar": True,
         "diagnostic_ready_for_scale": status == "completed",
+        "dataset_readiness": dataset_readiness,
+        "aeb0_artifact_gate": _aeb0_artifact_gate(
+            status=status,
+            blocked_reasons=blocked_reasons,
+            dataset_readiness=dataset_readiness,
+        ),
+        "real_evidence_claim_blocked_reasons": _aeb0_real_claim_blocked_reasons(
+            blocked_reasons=blocked_reasons,
+            dataset_readiness=dataset_readiness,
+        ),
         "bridge_report": dict(bridge) if isinstance(bridge, Mapping) else {},
+        **_aeb0_authority_flags(),
+        "report_only": {
+            "default_change_allowed": False,
+            "config_mutated": False,
+            "policy_mutated": False,
+        },
+    }
+
+
+def _official_all_arms_attempt_stage(official_report: Mapping[str, Any]) -> str:
+    if official_report.get("status") == "completed":
+        return "scoring"
+    if isinstance(official_report.get("replay_report"), Mapping):
+        return "harness"
+    if int(official_report.get("instance_count") or 0) > 0:
+        return "harness"
+    if str(official_report.get("dataset") or ""):
+        return "dataset_fetch"
+    return "recon"
+
+
+def _aeb0_authority_flags() -> dict[str, bool]:
+    return {
         "metric_applyable": False,
         "improvement_claim_allowed": False,
         "powered_improvement_claim_allowed": False,
@@ -2761,10 +3375,493 @@ def _build_official_all_arms_diagnostic_report(
         "default_change_allowed": False,
         "policy_mutated": False,
         "gate_advanced": False,
-        "report_only": {
-            "default_change_allowed": False,
-            "config_mutated": False,
-            "policy_mutated": False,
+    }
+
+
+def _aeb0_dataset_readiness(dataset: str) -> dict[str, Any]:
+    dataset_text = str(dataset or "")
+    normalized = dataset_text.lower().replace("_", "-")
+    verified_smoke_only = "swe-bench-verified" in normalized or (
+        "verified" in normalized and "swe-bench" in normalized
+    )
+    pro_or_held_out = (
+        "swe-bench-pro" in normalized
+        or normalized.endswith("/pro")
+        or "held-out" in normalized
+        or "heldout" in normalized
+    )
+    if verified_smoke_only:
+        claim_scope = "smoke_only"
+    elif pro_or_held_out:
+        claim_scope = "candidate_serious_benchmark"
+    else:
+        claim_scope = "fixture_or_unknown_smoke"
+    return {
+        "dataset": dataset_text,
+        "claim_scope": claim_scope,
+        "verified_smoke_only": verified_smoke_only,
+        "pro_or_held_out_equivalent": pro_or_held_out,
+        "serious_benchmark_claim_allowed": False,
+        "reason": (
+            "swe_bench_verified_is_plumbing_smoke_only"
+            if verified_smoke_only
+            else (
+                "serious_claim_still_requires_human_review_and_powered_evidence"
+                if pro_or_held_out
+                else "dataset_not_pinned_to_pro_or_held_out_equivalent"
+            )
+        ),
+    }
+
+
+def _aeb0_artifact_gate(
+    *,
+    status: str,
+    blocked_reasons: Sequence[str],
+    dataset_readiness: Mapping[str, Any],
+) -> dict[str, Any]:
+    blocked = [str(reason) for reason in blocked_reasons if str(reason)]
+    dataset_blocked_reason = _aeb0_dataset_blocked_reason(dataset_readiness)
+    if dataset_blocked_reason and dataset_blocked_reason not in blocked:
+        blocked.append(dataset_blocked_reason)
+    gate_status = "completed" if status == "completed" and not blocked else "blocked"
+    return {
+        "gate_id": "AEB-0",
+        "name": "Real Official All-Arms Artifact Gate",
+        "status": gate_status,
+        "blocked_reasons": blocked,
+        "real_official_all_arms_artifact_required": True,
+        "real_or_blocked_artifact": "real" if gate_status == "completed" else "blocked",
+        "real_benchmark_claim_allowed": gate_status == "completed",
+        "authority_flags": _aeb0_authority_flags(),
+        "dataset_claim_scope": str(dataset_readiness.get("claim_scope") or ""),
+    }
+
+
+def _aeb0_real_claim_blocked_reasons(
+    *,
+    blocked_reasons: Sequence[str],
+    dataset_readiness: Mapping[str, Any],
+) -> list[str]:
+    reasons = [str(reason) for reason in blocked_reasons if str(reason)]
+    dataset_reason = _aeb0_dataset_blocked_reason(dataset_readiness)
+    if dataset_reason and dataset_reason not in reasons:
+        reasons.append(dataset_reason)
+    return reasons
+
+
+def _aeb0_dataset_blocked_reason(dataset_readiness: Mapping[str, Any]) -> str:
+    if bool(dataset_readiness.get("pro_or_held_out_equivalent")):
+        return ""
+    return str(
+        dataset_readiness.get("reason")
+        or "dataset_not_pinned_to_pro_or_held_out_equivalent"
+    )
+
+
+def _official_reviewer_analysis_rows(
+    *,
+    official_report: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    replay_report = official_report.get("replay_report")
+    if not isinstance(replay_report, Mapping):
+        return []
+    bridge = official_report.get("bridge_report")
+    bridge_rows = (
+        bridge.get("per_row_results")
+        if isinstance(bridge, Mapping)
+        and isinstance(bridge.get("per_row_results"), Sequence)
+        and not isinstance(bridge.get("per_row_results"), (str, bytes))
+        else []
+    )
+    bridge_by_key = {
+        (str(row.get("instance_id") or ""), str(row.get("candidate_id") or "")): row
+        for row in bridge_rows
+        if isinstance(row, Mapping)
+    }
+    rows: list[dict[str, Any]] = []
+    for instance_report in replay_report.get("instance_reports") or []:
+        if not isinstance(instance_report, Mapping):
+            continue
+        for panel_result in instance_report.get("independent_reviewer_results") or []:
+            if not isinstance(panel_result, Mapping):
+                continue
+            instance_id = str(panel_result.get("instance_id") or "")
+            candidate_id = str(panel_result.get("candidate_id") or "")
+            bridge_row = bridge_by_key.get((instance_id, candidate_id), {})
+            panel_decision = (
+                dict(panel_result.get("panel_decision"))
+                if isinstance(panel_result.get("panel_decision"), Mapping)
+                else {}
+            )
+            rows.append({
+                "task_id": instance_id,
+                "candidate_id": candidate_id,
+                "candidate_hash": bridge_row.get("baseline_candidate_artifact_hash", ""),
+                "control_kind": "swe_bench_official_replay",
+                "oracle_accept": bool(bridge_row.get("oracle_accept")),
+                "oracle_unavailable": bool(
+                    bridge_row.get("oracle_unavailable", not bool(bridge_row))
+                ),
+                "s_probe_accept": bool(bridge_row.get("s_probe_accept")),
+                "single_agent_baseline_producer": (
+                    dict(bridge_row.get("baseline_producer"))
+                    if isinstance(bridge_row.get("baseline_producer"), Mapping)
+                    else {}
+                ),
+                "supervisor_full_gate_reviewer_results": list(
+                    panel_result.get("reviewer_results") or []
+                ),
+                "supervisor_full_gate_panel_decision": panel_decision,
+                "panel_aggregation_mode": str(
+                    panel_decision.get("aggregation_mode") or ""
+                ),
+        })
+    return rows
+
+
+def _official_reviewer_roster_cross_family_verification(
+    rows: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    proven_provider_families: set[str] = set()
+    proven_reviewer_families: dict[str, set[str]] = {}
+    available_reviewer_ids: set[str] = set()
+    unproven_reviewers: dict[tuple[str, str, str], dict[str, Any]] = {}
+    baseline_family_conflicts: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+    non_robust_panel_results: dict[tuple[str, str, str], dict[str, Any]] = {}
+    known_baseline_family_row_count = 0
+
+    for row in rows:
+        panel_aggregation_mode = str(row.get("panel_aggregation_mode") or "").strip()
+        if panel_aggregation_mode != "geometric_median":
+            key = (
+                str(row.get("task_id") or ""),
+                str(row.get("candidate_id") or ""),
+                panel_aggregation_mode or "missing",
+            )
+            non_robust_panel_results[key] = {
+                "task_id": key[0],
+                "candidate_id": key[1],
+                "aggregation_mode": key[2],
+                "reason": "reviewer_panel_not_robustly_aggregated",
+            }
+        baseline_family = _producer_family_from_row(row)
+        baseline_family_known = baseline_family not in {"", "unknown"}
+        if baseline_family_known:
+            known_baseline_family_row_count += 1
+        for raw_result in row.get("supervisor_full_gate_reviewer_results") or []:
+            if not isinstance(raw_result, Mapping):
+                continue
+            normalised = _normalise_mergeability_reviewer_result(raw_result)
+            if not normalised["available"]:
+                continue
+            reviewer_id = str(normalised["reviewer_id"])
+            available_reviewer_ids.add(reviewer_id)
+            provider_family = str(
+                normalised.get("provider_family") or "unknown"
+            ).strip().lower()
+            status, counts_as_proven = _reviewer_cross_family_claim_status(normalised)
+            if provider_family == "mixed":
+                status = "unproven_provider_family"
+                counts_as_proven = False
+            if not counts_as_proven:
+                unproven_reviewers[(reviewer_id, provider_family, status)] = {
+                    "reviewer_id": reviewer_id,
+                    "provider_family": provider_family,
+                    "runtime": normalised.get("runtime"),
+                    "model": normalised.get("model"),
+                    "cross_family_claim_status": status,
+                }
+                continue
+            proven_provider_families.add(provider_family)
+            proven_reviewer_families.setdefault(reviewer_id, set()).add(provider_family)
+            if baseline_family_known and provider_family == baseline_family:
+                conflict_key = (
+                    str(row.get("task_id") or ""),
+                    str(row.get("candidate_id") or ""),
+                    reviewer_id,
+                    provider_family,
+                )
+                baseline_family_conflicts[conflict_key] = {
+                    "task_id": conflict_key[0],
+                    "candidate_id": conflict_key[1],
+                    "baseline_family": baseline_family,
+                    "reviewer_id": reviewer_id,
+                    "reviewer_family": provider_family,
+                    "reason": "same_family_generator_reviewer_decisive_vote",
+                }
+
+    unproven = sorted(
+        unproven_reviewers.values(),
+        key=lambda item: (
+            str(item["reviewer_id"]),
+            str(item["provider_family"]),
+            str(item["cross_family_claim_status"]),
+        ),
+    )
+    conflicts = sorted(
+        baseline_family_conflicts.values(),
+        key=lambda item: (
+            str(item["task_id"]),
+            str(item["candidate_id"]),
+            str(item["reviewer_id"]),
+        ),
+    )
+    non_robust = sorted(
+        non_robust_panel_results.values(),
+        key=lambda item: (
+            str(item["task_id"]),
+            str(item["candidate_id"]),
+            str(item["aggregation_mode"]),
+        ),
+    )
+    reasons: list[str] = []
+    if not available_reviewer_ids:
+        reasons.append("reviewer_roster_empty")
+    if len(proven_provider_families) < 2:
+        reasons.append("insufficient_proven_reviewer_provider_families")
+    if unproven:
+        statuses = {
+            str(item["cross_family_claim_status"])
+            for item in unproven
+        }
+        if "unproven_default_model" in statuses:
+            reasons.append("cursor_default_provider_family_unproven")
+        if "unproven_provider_family" in statuses:
+            reasons.append("unproven_provider_family")
+        if "operator_asserted_provider_family_unverified" in statuses:
+            reasons.append("operator_asserted_provider_family_unverified")
+        if "unverified_provider_family" in statuses:
+            reasons.append("unverified_provider_family")
+    if conflicts:
+        reasons.append("same_family_generator_reviewer_decisive_vote")
+    if non_robust:
+        reasons.append("reviewer_panel_not_robustly_aggregated")
+    verified = not reasons
+    return {
+        "schema_version": (
+            "supervisor-swebench-reviewer-roster-cross-family-verification/v1"
+        ),
+        "status": "verified" if verified else "blocked",
+        "verified": verified,
+        "reason": "" if verified else "reviewer_roster_not_verified_cross_family",
+        "available_reviewer_count": len(available_reviewer_ids),
+        "proven_provider_families": sorted(proven_provider_families),
+        "proven_reviewer_families": {
+            reviewer_id: sorted(families)
+            for reviewer_id, families in sorted(proven_reviewer_families.items())
+        },
+        "unproven_reviewers": unproven,
+        "baseline_family_conflicts": conflicts,
+        "non_robust_panel_results": non_robust,
+        "known_baseline_family_row_count": known_baseline_family_row_count,
+        "reasons": reasons,
+    }
+
+
+def _official_reviewer_independence_metrics(
+    rows: list[dict[str, Any]],
+    *,
+    full_stack: Mapping[str, Any],
+    roster_verified: bool = True,
+) -> dict[str, Any]:
+    metric_rows = [
+        row for row in rows
+        if not bool(row.get("oracle_unavailable"))
+    ]
+    candidate_pool_sha256 = _sha256_json([
+        {
+            "task_id": str(row.get("task_id") or ""),
+            "candidate_id": str(row.get("candidate_id") or ""),
+            "candidate_hash": str(row.get("candidate_hash") or ""),
+        }
+        for row in metric_rows
+    ])
+    if not roster_verified:
+        reason = "reviewer_roster_not_verified_cross_family"
+        unavailable = {
+            "status": "unavailable",
+            "reason": reason,
+            "candidate_pool_sha256": candidate_pool_sha256,
+        }
+        return {
+            "candidate_pool_sha256": candidate_pool_sha256,
+            "metric_candidate_pool_sha256": {
+                "inter_reviewer_agreement": candidate_pool_sha256,
+                "leave_one_reviewer_out": candidate_pool_sha256,
+                "effective_vote_estimate": candidate_pool_sha256,
+            },
+            "inter_reviewer_agreement": {
+                **unavailable,
+                "reviewer_pairs": [],
+            },
+            "leave_one_reviewer_out": dict(unavailable),
+            "effective_vote_estimate": dict(unavailable),
+        }
+    per_reviewer_arms = _per_reviewer_acceptance_arms(metric_rows)
+    pairwise_error_overlap = _reviewer_oracle_error_overlap(metric_rows)
+    leave_one_rows: list[dict[str, Any]] = []
+    reviewer_panel_results: dict[str, list[Mapping[str, Any]]] = {}
+    for row in metric_rows:
+        unique_candidate_id = f"{row['task_id']}:{row['candidate_id']}"
+        filtered_results = [
+            result
+            for result in row.get("supervisor_full_gate_reviewer_results") or []
+            if isinstance(result, Mapping) and bool(result.get("verdict_present"))
+        ]
+        if filtered_results:
+            reviewer_panel_results[unique_candidate_id] = filtered_results
+        leave_row = dict(row)
+        leave_row["candidate_id"] = unique_candidate_id
+        leave_row["runtime_evidence_floor_accept"] = bool(row.get("s_probe_accept"))
+        leave_one_rows.append(leave_row)
+
+    return {
+        "candidate_pool_sha256": candidate_pool_sha256,
+        "metric_candidate_pool_sha256": {
+            "inter_reviewer_agreement": candidate_pool_sha256,
+            "leave_one_reviewer_out": candidate_pool_sha256,
+            "effective_vote_estimate": candidate_pool_sha256,
+        },
+        "inter_reviewer_agreement": _inter_reviewer_agreement(metric_rows),
+        "leave_one_reviewer_out": _leave_one_reviewer_out_analysis(
+            leave_one_rows,
+            reviewer_panel_results=reviewer_panel_results,
+            full_stack=full_stack,
+        ),
+        "effective_vote_estimate": _effective_vote_estimate(
+            per_reviewer_arms=per_reviewer_arms,
+            pairwise_error_overlap=pairwise_error_overlap,
+        ),
+    }
+
+
+def _official_s_probe_vs_s_full_summary(
+    *,
+    s_probe: Mapping[str, Any],
+    s_full: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "s_probe_false_accept_rate": s_probe.get("false_accept_rate"),
+        "s_full_false_accept_rate": s_full.get("false_accept_rate"),
+        "false_accept_rate_delta": (
+            round(
+                float(s_full.get("false_accept_rate") or 0.0)
+                - float(s_probe.get("false_accept_rate") or 0.0),
+                6,
+            )
+            if s_probe and s_full
+            else None
+        ),
+        "s_probe_true_accept_rate": s_probe.get("true_accept_rate"),
+        "s_full_true_accept_rate": s_full.get("true_accept_rate"),
+        "true_accept_rate_delta": (
+            round(
+                float(s_full.get("true_accept_rate") or 0.0)
+                - float(s_probe.get("true_accept_rate") or 0.0),
+                6,
+            )
+            if s_probe and s_full
+            else None
+        ),
+    }
+
+
+def _official_decision_freeze_summary(
+    *,
+    official_report: Mapping[str, Any],
+    bridge: Mapping[str, Any],
+) -> dict[str, Any]:
+    replay_report = official_report.get("replay_report")
+    instance_reports = (
+        replay_report.get("instance_reports")
+        if isinstance(replay_report, Mapping)
+        and isinstance(replay_report.get("instance_reports"), Sequence)
+        and not isinstance(replay_report.get("instance_reports"), (str, bytes))
+        else []
+    )
+    frozen_paths = [
+        str(instance_report.get("frozen_decisions_path") or "")
+        for instance_report in instance_reports
+        if isinstance(instance_report, Mapping)
+        and instance_report.get("frozen_decisions_path")
+    ]
+    oracle_paths = [
+        str(instance_report.get("oracle_outputs_path") or "")
+        for instance_report in instance_reports
+        if isinstance(instance_report, Mapping)
+        and instance_report.get("oracle_outputs_path")
+    ]
+    decision_rows = bridge.get("decision_phase_rows") if isinstance(bridge, Mapping) else []
+    if not isinstance(decision_rows, Sequence) or isinstance(decision_rows, (str, bytes)):
+        decision_rows = []
+    if not decision_rows:
+        decision_rows = _official_frozen_decision_rows_from_instance_reports(
+            instance_reports
+        )
+    decision_phase_sha256 = str(bridge.get("decision_phase_sha256") or "")
+    if not decision_phase_sha256 and decision_rows:
+        decision_phase_sha256 = _sha256_json(decision_rows)
+    return {
+        "oracle_after_reviewer_decisions": bool(frozen_paths and oracle_paths),
+        "frozen_decision_row_count": len(decision_rows),
+        "decision_phase_sha256": decision_phase_sha256,
+        "frozen_decisions_paths": frozen_paths,
+        "oracle_outputs_paths": oracle_paths,
+    }
+
+
+def _official_frozen_decision_rows_from_instance_reports(
+    instance_reports: Sequence[Any],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for instance_report in instance_reports:
+        if not isinstance(instance_report, Mapping):
+            continue
+        frozen = instance_report.get("frozen_decisions")
+        if not isinstance(frozen, Mapping):
+            continue
+        frozen_rows = frozen.get("rows")
+        if not isinstance(frozen_rows, Sequence) or isinstance(
+            frozen_rows,
+            (str, bytes),
+        ):
+            continue
+        rows.extend(dict(row) for row in frozen_rows if isinstance(row, Mapping))
+    return rows
+
+
+def _official_candidate_generation_summary(
+    *,
+    rows: Sequence[Any],
+    official_report: Mapping[str, Any],
+) -> dict[str, Any]:
+    producer_families = sorted({
+        str((row.get("baseline_producer") or {}).get("provider_family")
+            or (row.get("baseline_producer") or {}).get("provider")
+            or "unknown")
+        for row in rows
+        if isinstance(row, Mapping)
+    })
+    return {
+        "baseline": {
+            "source": "produced_single_agent_baseline_receipts",
+            "candidate_count": len([row for row in rows if isinstance(row, Mapping)]),
+            "provider_families": producer_families,
+            "producer_family_count": len(producer_families),
+        },
+        "supervisor": {
+            "source": "replayed_model_patch_artifacts",
+            "candidate_count": len([row for row in rows if isinstance(row, Mapping)]),
+            "live_generation_used": bool(official_report.get("live_generation_used")),
+        },
+        "matched_model_budget": {
+            "required_when_live_generation_used": True,
+            "status": (
+                "recorded"
+                if bool(official_report.get("live_generation_used"))
+                else "not_applicable_replay"
+            ),
         },
     }
 
@@ -2890,6 +3987,19 @@ def _validate_official_oracle_receipts(
         oracle_payload = json.loads(
             Path(oracle_path).read_text(encoding="utf-8")
         )
+        expected_frozen_sha256 = str(
+            (instance_report.get("frozen_decisions") or {}).get(
+                "frozen_decisions_sha256"
+            )
+            or ""
+        )
+        expected_patch_sha256_by_candidate = {
+            str(artifact.get("candidate_id") or ""): _candidate_artifact_patch_sha256(
+                artifact
+            )
+            for artifact in instance_report.get("per_candidate_artifacts") or []
+            if isinstance(artifact, Mapping)
+        }
         for row in oracle_payload.get("rows") or []:
             adapter_receipt = _official_oracle_adapter_receipt(row)
             if not isinstance(adapter_receipt, Mapping):
@@ -2903,6 +4013,11 @@ def _validate_official_oracle_receipts(
                 _official_oracle_receipt_mismatches(
                     row=row,
                     receipt=adapter_receipt,
+                    expected_frozen_decisions_sha256=expected_frozen_sha256,
+                    expected_model_patch_sha256=expected_patch_sha256_by_candidate.get(
+                        str(row.get("candidate_id") or ""),
+                        "",
+                    ),
                 )
             )
     return {
@@ -2927,10 +4042,29 @@ def _official_oracle_adapter_receipt(
     return None
 
 
+def _candidate_artifact_patch_sha256(artifact: Mapping[str, Any]) -> str:
+    for receipt in artifact.get("patch_apply_receipts") or []:
+        if isinstance(receipt, Mapping):
+            patch_sha256 = str(receipt.get("patch_sha256") or "")
+            if patch_sha256:
+                return patch_sha256
+    baseline_decision = artifact.get("baseline_decision")
+    if isinstance(baseline_decision, Mapping):
+        candidate_hash = str(baseline_decision.get("candidate_artifact_hash") or "")
+        if candidate_hash:
+            return candidate_hash
+    patch = artifact.get("patch")
+    if patch is not None:
+        return sha256(str(patch).encode("utf-8")).hexdigest()
+    return ""
+
+
 def _official_oracle_receipt_mismatches(
     *,
     row: Mapping[str, Any],
     receipt: Mapping[str, Any],
+    expected_frozen_decisions_sha256: str = "",
+    expected_model_patch_sha256: str = "",
 ) -> list[dict[str, Any]]:
     mismatches: list[dict[str, Any]] = []
     base = {
@@ -2993,6 +4127,27 @@ def _official_oracle_receipt_mismatches(
             "field": "unavailable_reason",
             "reason": "missing_required_receipt_field",
         })
+    for field, expected in (
+        ("frozen_decisions_sha256", expected_frozen_decisions_sha256),
+        ("model_patch_sha256", expected_model_patch_sha256),
+    ):
+        if not expected:
+            continue
+        observed = str(receipt.get(field) or "")
+        if not observed:
+            mismatches.append({
+                **base,
+                "field": field,
+                "reason": "missing_required_receipt_field",
+            })
+        elif observed != expected:
+            mismatches.append({
+                **base,
+                "field": field,
+                "receipt_value": observed,
+                "expected_value": expected,
+                "reason": "receipt_hash_mismatch",
+            })
     return mismatches
 
 
@@ -3097,12 +4252,32 @@ def _scan_official_replay_public_artifacts_for_leaks(
                 content = Path(input_path).read_text(encoding="utf-8")
                 for ref in _scan_for_swebench_pro_oracle_refs(content):
                     refs.append(f"generator_input[{instance_id}]:{ref}")
+        for artifact in instance_report.get("per_candidate_artifacts") or []:
+            public_worktree = (
+                artifact.get("public_worktree")
+                if isinstance(artifact, Mapping)
+                else None
+            )
+            if public_worktree and (Path(public_worktree) / ".git").exists():
+                candidate_id = str(artifact.get("candidate_id") or "")
+                refs.append(
+                    f"public_worktree[{instance_id}/{candidate_id}]:.git"
+                )
     public_packets = (replay_report.get("bridge_report") or {}).get(
         "public_packets"
     ) or {}
     for ref in _scan_for_swebench_pro_oracle_refs(public_packets):
         refs.append(f"public_packets:{ref}")
     return {"ok": not refs, "refs": refs}
+
+
+def _ensure_public_bundle_has_no_git(path: Path, *, context: str) -> None:
+    git_path = path / ".git"
+    if not git_path.exists():
+        return
+    raise SwebenchMergeabilityFixtureRunnerError(
+        f"{context} contains .git metadata; public bundles must be detached trees"
+    )
 
 
 def _official_public_record(record: Mapping[str, Any]) -> dict[str, Any]:
@@ -3133,11 +4308,22 @@ def _official_public_record(record: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _official_hidden_oracle(record: Mapping[str, Any]) -> dict[str, Any]:
+    fail_to_pass = _official_test_list(record.get("fail_to_pass"))
+    pass_to_pass = _official_test_list(record.get("pass_to_pass"))
+    upper_fail_to_pass = _official_test_list(record.get("FAIL_TO_PASS"))
+    upper_pass_to_pass = _official_test_list(record.get("PASS_TO_PASS"))
     return {
         "patch": str(record.get("patch") or ""),
         "test_patch": str(record.get("test_patch") or ""),
-        "FAIL_TO_PASS": _official_test_list(record.get("FAIL_TO_PASS")),
-        "PASS_TO_PASS": _official_test_list(record.get("PASS_TO_PASS")),
+        "FAIL_TO_PASS": upper_fail_to_pass or fail_to_pass,
+        "PASS_TO_PASS": upper_pass_to_pass or pass_to_pass,
+        "fail_to_pass": fail_to_pass or upper_fail_to_pass,
+        "pass_to_pass": pass_to_pass or upper_pass_to_pass,
+        "before_repo_set_cmd": str(record.get("before_repo_set_cmd") or ""),
+        "selected_test_files_to_run": _official_test_list(
+            record.get("selected_test_files_to_run")
+        ),
+        "dockerhub_tag": str(record.get("dockerhub_tag") or ""),
     }
 
 
@@ -3162,6 +4348,55 @@ def _official_test_list(raw: Any) -> list[str]:
     return [str(raw)]
 
 
+def _normalise_prediction_oracle_label(raw: Any) -> str:
+    label = str(raw or "").strip().lower().replace("_", "-")
+    if not label:
+        return ""
+    if label in {"good", "pass", "resolved", ORACLE_GOOD_LABEL}:
+        return ORACLE_GOOD_LABEL
+    if label in {"bad", "fail", "nonresolving", "non-resolving", ORACLE_BAD_LABEL}:
+        return ORACLE_BAD_LABEL
+    raise SwebenchMergeabilityFixtureRunnerError(
+        "prediction oracle_label must be 'oracle-good' or 'oracle-bad'"
+    )
+
+
+def _normalise_prediction_mapping(raw: Any, *, field: str) -> dict[str, Any]:
+    if raw is None or raw == "":
+        return {}
+    if isinstance(raw, Mapping):
+        return dict(raw)
+    raise SwebenchMergeabilityFixtureRunnerError(
+        f"prediction {field} must be a JSON object"
+    )
+
+
+def _required_prediction_mapping(raw: Any, *, field: str) -> dict[str, Any]:
+    value = _normalise_prediction_mapping(raw, field=field)
+    if not value:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            f"generated candidate {field} provenance is required"
+        )
+    return value
+
+
+def _prediction_hash(
+    *,
+    raw: Mapping[str, Any],
+    key: str,
+    model_patch_sha256: str,
+    line_number: int,
+) -> str:
+    supplied = str(raw.get(key) or "").strip()
+    if not supplied:
+        return model_patch_sha256
+    if supplied != model_patch_sha256:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            f"prediction line {line_number} {key} does not match model_patch sha256"
+        )
+    return supplied
+
+
 def _load_official_predictions(predictions_path: str | Path) -> dict[str, list[dict[str, Any]]]:
     path = Path(predictions_path).expanduser().resolve()
     try:
@@ -3171,6 +4406,7 @@ def _load_official_predictions(predictions_path: str | Path) -> dict[str, list[d
             f"could not read predictions JSONL {path}: {exc}"
         ) from exc
     by_instance: dict[str, list[dict[str, Any]]] = {}
+    seen_candidate_hashes: dict[str, str] = {}
     for index, line in enumerate(lines, start=1):
         if not line.strip():
             continue
@@ -3199,19 +4435,633 @@ def _load_official_predictions(predictions_path: str | Path) -> dict[str, list[d
             raise SwebenchMergeabilityFixtureRunnerError(
                 f"prediction line {index} missing model_patch"
             )
+        patch_sha256 = sha256(model_patch.encode("utf-8")).hexdigest()
+        candidate_artifact_hash = _prediction_hash(
+            raw=raw,
+            key="candidate_artifact_hash",
+            model_patch_sha256=patch_sha256,
+            line_number=index,
+        )
+        model_patch_sha256 = _prediction_hash(
+            raw=raw,
+            key="model_patch_sha256",
+            model_patch_sha256=patch_sha256,
+            line_number=index,
+        )
+        diff_sha256 = _prediction_hash(
+            raw=raw,
+            key="diff_sha256",
+            model_patch_sha256=patch_sha256,
+            line_number=index,
+        )
+        candidate_id = str(raw.get("candidate_id") or f"prediction-{index}")
+        oracle_label = _normalise_prediction_oracle_label(
+            raw.get("oracle_label") or raw.get("label") or raw.get("oracle_status")
+        )
+        if oracle_label:
+            duplicate = seen_candidate_hashes.get(candidate_artifact_hash)
+            if duplicate is not None:
+                raise SwebenchMergeabilityFixtureRunnerError(
+                    "prediction candidate_artifact_hash duplicated at line "
+                    f"{index}: {candidate_artifact_hash} already used by {duplicate}"
+                )
+            seen_candidate_hashes[candidate_artifact_hash] = (
+                f"{instance_id}/{candidate_id}"
+            )
         candidate = {
-            "candidate_id": str(raw.get("candidate_id") or f"prediction-{index}"),
+            "candidate_id": candidate_id,
             "model_patch": model_patch,
+            "oracle_label": oracle_label,
+            "candidate_artifact_hash": candidate_artifact_hash,
+            "model_patch_sha256": model_patch_sha256,
+            "diff_sha256": diff_sha256,
+            "origin": _normalise_prediction_mapping(raw.get("origin"), field="origin"),
+            "producer": _normalise_prediction_mapping(
+                raw.get("producer"),
+                field="producer",
+            ),
         }
+        patch_applied = _patch_applied_from_oracle_result(raw)
+        if patch_applied is not None:
+            candidate["patch_applied"] = patch_applied
         for key in PRODUCED_BASELINE_RECEIPT_KEYS:
             if key in raw and isinstance(raw[key], Mapping):
                 candidate[key] = dict(raw[key])
+        for key in POWERED_FACTORIAL_ARM_DECISION_KEYS.values():
+            if key in raw and isinstance(raw[key], Mapping):
+                candidate[key] = dict(raw[key])
+        reviewer_panel_results = raw.get("reviewer_panel_results")
+        if (
+            isinstance(reviewer_panel_results, Sequence)
+            and not isinstance(reviewer_panel_results, (str, bytes, bytearray))
+        ):
+            candidate["reviewer_panel_results"] = [
+                dict(item)
+                for item in reviewer_panel_results
+                if isinstance(item, Mapping)
+            ]
         by_instance.setdefault(instance_id, []).append(candidate)
     if not by_instance:
         raise SwebenchMergeabilityFixtureRunnerError(
             "predictions JSONL contains no candidates"
         )
     return by_instance
+
+
+def _candidate_corpus_summary_from_predictions(
+    predictions: Mapping[str, Sequence[Mapping[str, Any]]],
+) -> dict[str, Any]:
+    rows = [
+        candidate
+        for candidates in predictions.values()
+        for candidate in candidates
+        if isinstance(candidate, Mapping)
+    ]
+    n_good = sum(
+        1 for candidate in rows if candidate.get("oracle_label") == ORACLE_GOOD_LABEL
+    )
+    n_bad = sum(
+        1 for candidate in rows if candidate.get("oracle_label") == ORACLE_BAD_LABEL
+    )
+    unlabeled = len(rows) - n_good - n_bad
+    return {
+        "candidate_count": len(rows),
+        "n_good": n_good,
+        "n_bad": n_bad,
+        "false_accept_denominator": n_bad,
+        "far_degenerate": n_bad == 0,
+        "unlabeled_count": unlabeled,
+    }
+
+
+def summarize_swe_bench_pro_candidate_corpus(
+    predictions_path: str | Path,
+) -> dict[str, Any]:
+    """Summarize report-only FAR denominator readiness for a Pro corpus."""
+    predictions = _load_official_predictions(predictions_path)
+    return _candidate_corpus_summary_from_predictions(predictions)
+
+
+def swebench_mergeability_powered_factorial_runner(
+    *,
+    predictions_path: str | Path,
+    output_dir: str | Path,
+    min_good: int = 30,
+    min_bad: int = 30,
+    min_discordant: int = 25,
+    alpha: float = 0.05,
+    timeout_s: float = 30.0,
+) -> dict[str, Any]:
+    """Run the powered factorial evaluator over an oracle-labeled Pro corpus.
+
+    Loads the SWE-bench Pro predictions JSONL at ``predictions_path``, adapts
+    every row's explicit ``oracle_label``, ``candidate_artifact_hash``, trusted
+    ``single_agent_baseline_decision`` receipt, ``reviewer_panel_results``, and
+    the four required arm decisions
+    (``same_model_multi_agent_decision``, ``hetero_multi_reviewer_decision``,
+    ``runtime_evidence_floor_decision``, ``full_supervisor_stack_decision``)
+    into ``run_powered_factorial_mergeability_evaluation``. ``min_good`` /
+    ``min_bad`` drive raw oracle sample-size sufficiency; ``min_discordant`` /
+    ``alpha`` drive the paired McNemar gate over the full supervisor stack vs
+    the single-agent baseline arm. The returned report is augmented with the
+    report-only ``evidence_conversion_power_contract`` block; every authority
+    flag (``metric_applyable``, ``powered_improvement_claim_allowed``,
+    ``human_mergeability_claim_allowed``, ``improvement_claim_allowed``,
+    ``default_change_allowed``, ``policy_mutated``, ``gate_advanced``) is
+    held false. ``powered_metric_applyable`` reflects the raw factorial
+    evaluator status for diagnostics only.
+    """
+    predictions_file = Path(predictions_path).expanduser().resolve()
+    output_path = Path(output_dir).expanduser().resolve()
+    output_path.mkdir(parents=True, exist_ok=True)
+    predictions = _load_official_predictions(predictions_file)
+    candidates = _powered_factorial_flatten_predictions(predictions)
+    arm_decisions = _powered_factorial_arm_decisions(candidates)
+    reviewer_panel_results = _powered_factorial_reviewer_panel_results(candidates)
+    public_reviews = _powered_factorial_public_reviews(candidates)
+    adapter_root = output_path / "pro_powered_factorial_adapter"
+    adapter_manifest = _write_powered_factorial_adapter_corpus(candidates, adapter_root)
+    thresholds = {
+        "min_good": int(min_good),
+        "min_bad": int(min_bad),
+        "min_discordant": int(min_discordant),
+        "alpha": float(alpha),
+    }
+    report = run_powered_factorial_mergeability_evaluation(
+        adapter_root,
+        output_dir=output_path,
+        timeout_s=timeout_s,
+        strict_calibration=False,
+        arm_decisions=arm_decisions,
+        reviewer_panel_results=reviewer_panel_results,
+        powered_thresholds=thresholds,
+        precomputed_calibration=_powered_factorial_precomputed_calibration(
+            candidates,
+            adapter_manifest=adapter_manifest,
+        ),
+        public_reviews=public_reviews,
+        candidate_artifact_hashes={
+            str(candidate["candidate_id"]): str(candidate["candidate_artifact_hash"])
+            for candidate in candidates
+        },
+    )
+    core_metric_applyable = bool(report.get("metric_applyable"))
+    report.update({
+        "source_predictions_path": str(predictions_file),
+        "source_predictions_sha256": sha256(predictions_file.read_bytes()).hexdigest(),
+        "pro_candidate_count": len(candidates),
+        "pro_instance_count": len(predictions),
+        "adapter_corpus_root": str(adapter_root),
+        "adapter_manifest_path": str(adapter_manifest["adapter_manifest_path"]),
+        "adapter_manifest_sha256": adapter_manifest["adapter_manifest_sha256"],
+        "powered_metric_applyable": core_metric_applyable,
+        "metric_applyable": False,
+        "powered_improvement_claim_allowed": False,
+        "human_mergeability_claim_allowed": False,
+        "improvement_claim_allowed": False,
+        "default_change_allowed": False,
+        "policy_mutated": False,
+        "gate_advanced": False,
+    })
+    report["evidence_conversion_power_contract"] = _evidence_conversion_power_contract(
+        report,
+        thresholds=thresholds,
+    )
+    report["report_sha256"] = _sha256_json({
+        key: value for key, value in report.items() if key != "report_sha256"
+    })
+    report_path = output_path / "powered_factorial_report.json"
+    report["report_path"] = str(report_path)
+    report_path.write_text(
+        json.dumps(report, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return report
+
+
+def _powered_factorial_flatten_predictions(
+    predictions: Mapping[str, Sequence[Mapping[str, Any]]],
+) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    for instance_id, rows in sorted(predictions.items()):
+        for candidate in rows:
+            if not isinstance(candidate, Mapping):
+                continue
+            copied = dict(candidate)
+            copied.setdefault("instance_id", instance_id)
+            candidates.append(copied)
+    if not candidates:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "powered factorial Pro corpus contains no candidates"
+        )
+    candidate_id_counts = Counter(
+        str(candidate.get("candidate_id") or "") for candidate in candidates
+    )
+    duplicate_ids = sorted(cid for cid, count in candidate_id_counts.items() if count > 1)
+    if duplicate_ids:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "powered factorial Pro corpus requires globally unique candidate_id values: "
+            + ", ".join(duplicate_ids)
+        )
+    unlabeled = [
+        str(candidate.get("candidate_id") or "")
+        for candidate in candidates
+        if candidate.get("oracle_label") not in {ORACLE_GOOD_LABEL, ORACLE_BAD_LABEL}
+    ]
+    if unlabeled:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "powered factorial Pro corpus requires oracle labels for every candidate: "
+            + ", ".join(unlabeled)
+        )
+    missing_hashes = [
+        str(candidate.get("candidate_id") or "")
+        for candidate in candidates
+        if not str(candidate.get("candidate_artifact_hash") or "").strip()
+    ]
+    if missing_hashes:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "powered factorial Pro corpus requires candidate_artifact_hash for every candidate: "
+            + ", ".join(missing_hashes)
+        )
+    missing_provenance = [
+        str(candidate.get("candidate_id") or "")
+        for candidate in candidates
+        if not isinstance(candidate.get("origin"), Mapping)
+        or not candidate.get("origin")
+        or not isinstance(candidate.get("producer"), Mapping)
+        or not candidate.get("producer")
+    ]
+    if missing_provenance:
+        raise SwebenchMergeabilityFixtureRunnerError(
+            "powered factorial Pro corpus requires origin and producer provenance for every candidate: "
+            + ", ".join(missing_provenance)
+        )
+    return candidates
+
+
+def _write_powered_factorial_adapter_corpus(
+    candidates: Sequence[Mapping[str, Any]],
+    adapter_root: Path,
+) -> dict[str, Any]:
+    if adapter_root.exists():
+        shutil.rmtree(adapter_root)
+    tasks_dir = adapter_root / "tasks"
+    candidates_dir = adapter_root / "candidates"
+    tasks_dir.mkdir(parents=True, exist_ok=True)
+    candidates_dir.mkdir(parents=True, exist_ok=True)
+    instance_ids = sorted({str(candidate.get("instance_id") or "") for candidate in candidates})
+    task_paths: list[str] = []
+    candidate_paths: list[str] = []
+    for instance_id in instance_ids:
+        task_path = tasks_dir / f"{_safe_powered_fragment(instance_id)}.json"
+        task_payload = {
+            "schema_version": MERGEABILITY_TASK_SCHEMA_VERSION,
+            "task_id": instance_id,
+            "split": "held_out",
+            "task_class": "swe_bench_pro",
+            "repo_fixture_ref": f"pro-adapter/{_safe_powered_fragment(instance_id)}",
+            "prompt": f"SWE-bench Pro powered factorial adapter for {instance_id}",
+            "allowed_mutable_paths": ["patches/"],
+            "hidden_test_commands": [["python", "-c", "raise SystemExit(0)"]],
+            "protected_paths": ["hidden/", ".mergeability/"],
+        }
+        task_path.write_text(
+            json.dumps(task_payload, sort_keys=True, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        task_paths.append(str(task_path))
+    for candidate in candidates:
+        instance_id = str(candidate.get("instance_id") or "")
+        candidate_id = str(candidate.get("candidate_id") or "")
+        oracle_label = str(candidate.get("oracle_label") or "")
+        patch_path = f"patches/{_safe_powered_fragment(candidate_id)}.diff"
+        candidate_path = candidates_dir / f"{_safe_powered_fragment(candidate_id)}.json"
+        candidate_payload = {
+            "schema_version": MERGEABILITY_CANDIDATE_SCHEMA_VERSION,
+            "candidate_id": candidate_id,
+            "task_id": instance_id,
+            "changed_files": [patch_path],
+            "files": {patch_path: str(candidate.get("model_patch") or "")},
+            "provenance": {
+                "kind": "swe_bench_pro_powered_factorial_adapter",
+                "origin": dict(candidate.get("origin") or {}),
+                "producer": dict(candidate.get("producer") or {}),
+                "candidate_artifact_hash": str(candidate.get("candidate_artifact_hash") or ""),
+                "oracle_label": oracle_label,
+            },
+            "generator_metadata": {
+                "control": "known_good" if oracle_label == ORACLE_GOOD_LABEL else "known_bad",
+                "expected_outcome": "pass" if oracle_label == ORACLE_GOOD_LABEL else "fail",
+                "source": "swe_bench_pro_oracle_label",
+            },
+        }
+        candidate_path.write_text(
+            json.dumps(candidate_payload, sort_keys=True, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        candidate_paths.append(str(candidate_path))
+    manifest = {
+        "schema_version": "supervisor-swebench-pro-powered-factorial-adapter/v1",
+        "adapter_root": str(adapter_root),
+        "task_paths": task_paths,
+        "candidate_paths": candidate_paths,
+        "source": "swe_bench_pro_predictions_jsonl",
+    }
+    manifest["adapter_manifest_sha256"] = _sha256_json(manifest)
+    manifest_path = adapter_root / "adapter_manifest.json"
+    manifest["adapter_manifest_path"] = str(manifest_path)
+    manifest_path.write_text(
+        json.dumps(manifest, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return manifest
+
+
+def _powered_factorial_arm_decisions(
+    candidates: Sequence[Mapping[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    arms: dict[str, dict[str, Any]] = {"single_agent_baseline": {}}
+    for arm in POWERED_FACTORIAL_ARM_DECISION_KEYS:
+        arms[arm] = {}
+    for candidate in candidates:
+        candidate_id = str(candidate.get("candidate_id") or "")
+        baseline = candidate.get("single_agent_baseline_decision")
+        if not isinstance(baseline, Mapping):
+            raise SwebenchMergeabilityFixtureRunnerError(
+                f"powered factorial candidate {candidate_id} missing trusted baseline receipt"
+            )
+        resolved_baseline = _resolve_powered_baseline_decision(
+            raw=baseline,
+            expected_candidate_artifact_hash=str(candidate.get("candidate_artifact_hash") or ""),
+            expected_candidate_id=candidate_id,
+        )
+        if resolved_baseline["unavailable"]:
+            raise SwebenchMergeabilityFixtureRunnerError(
+                "powered factorial candidate "
+                f"{candidate_id} baseline receipt is not trusted: "
+                f"{resolved_baseline['unavailable_reason']}"
+            )
+        arms["single_agent_baseline"][candidate_id] = dict(baseline)
+        for arm, key in POWERED_FACTORIAL_ARM_DECISION_KEYS.items():
+            raw = candidate.get(key)
+            if not isinstance(raw, Mapping):
+                raise SwebenchMergeabilityFixtureRunnerError(
+                    f"powered factorial candidate {candidate_id} missing {key}"
+                )
+            if not isinstance(raw.get("accept"), bool):
+                raise SwebenchMergeabilityFixtureRunnerError(
+                    f"powered factorial candidate {candidate_id} {key}.accept must be boolean"
+                )
+            if "unavailable" in raw and not isinstance(raw.get("unavailable"), bool):
+                raise SwebenchMergeabilityFixtureRunnerError(
+                    f"powered factorial candidate {candidate_id} {key}.unavailable must be boolean"
+                )
+            decision_source = str(raw.get("decision_source") or "").strip()
+            if not decision_source:
+                raise SwebenchMergeabilityFixtureRunnerError(
+                    f"powered factorial candidate {candidate_id} {key}.decision_source is required"
+                )
+            arms[arm][candidate_id] = {
+                "accept": bool(raw.get("accept")),
+                "unavailable": bool(raw.get("unavailable")),
+                "decision_source": decision_source,
+            }
+    return arms
+
+
+def _powered_factorial_reviewer_panel_results(
+    candidates: Sequence[Mapping[str, Any]],
+) -> dict[str, list[Mapping[str, Any]]]:
+    return {
+        str(candidate.get("candidate_id") or ""): list(candidate.get("reviewer_panel_results") or [])
+        for candidate in candidates
+    }
+
+
+def _powered_factorial_public_reviews(
+    candidates: Sequence[Mapping[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    public_reviews: dict[str, dict[str, Any]] = {}
+    for candidate in candidates:
+        candidate_id = str(candidate.get("candidate_id") or "")
+        raw = candidate.get("runtime_evidence_floor_decision")
+        if not isinstance(raw, Mapping):
+            raise SwebenchMergeabilityFixtureRunnerError(
+                f"powered factorial candidate {candidate_id} missing runtime_evidence_floor_decision"
+            )
+        public_reviews[candidate_id] = {
+            "accept": bool(raw.get("accept")),
+            "unavailable": bool(raw.get("unavailable")),
+            "decision_source": str(
+                raw.get("decision_source") or "swe_bench_pro_runtime_evidence_floor"
+            ),
+            "reason": str(raw.get("reason") or ""),
+        }
+    return public_reviews
+
+
+def _powered_factorial_precomputed_calibration(
+    candidates: Sequence[Mapping[str, Any]],
+    *,
+    adapter_manifest: Mapping[str, Any],
+) -> dict[str, Any]:
+    results: list[dict[str, Any]] = []
+    for candidate in candidates:
+        candidate_id = str(candidate.get("candidate_id") or "")
+        instance_id = str(candidate.get("instance_id") or "")
+        oracle_good = candidate.get("oracle_label") == ORACLE_GOOD_LABEL
+        receipt = {
+            "receipt_id": f"swebench-pro-oracle-label:{instance_id}:{candidate_id}",
+            "kind": "swe_bench_pro_oracle_label",
+            "source": "swe_bench_pro_predictions_jsonl",
+            "status": "passed" if oracle_good else "failed",
+            "task_id": instance_id,
+            "candidate_id": candidate_id,
+            "final_score": 1.0 if oracle_good else 0.0,
+            "candidate_artifact_hash": str(candidate.get("candidate_artifact_hash") or ""),
+        }
+        results.append({
+            "task_id": instance_id,
+            "candidate_id": candidate_id,
+            "oracle_label": str(candidate.get("oracle_label") or ""),
+            "control_kind": "known_good" if oracle_good else "known_bad",
+            "expected_outcome": "pass" if oracle_good else "fail",
+            "observed_outcome": "pass" if oracle_good else "fail",
+            "final_score": 1.0 if oracle_good else 0.0,
+            "blocker_status": "passed" if oracle_good else "failed",
+            "hidden_test_status": "precomputed",
+            "reverse_test_status": "precomputed",
+            "scope_status": "precomputed",
+            "lint_build_status": "precomputed",
+            "failures": [] if oracle_good else ["swe_bench_pro_oracle_bad"],
+            "receipt_id": receipt["receipt_id"],
+            "receipt": receipt,
+        })
+    summary = {
+        "schema_version": "supervisor-mergeability-calibration/v1",
+        "status": "accepted",
+        "bench_root": str(adapter_manifest.get("adapter_root") or ""),
+        "manifest_sha256": str(adapter_manifest.get("adapter_manifest_sha256") or ""),
+        "task_count": len({result["task_id"] for result in results}),
+        "candidate_count": len(results),
+        "included_task_ids": sorted({str(result["task_id"]) for result in results}),
+        "excluded_task_ids": [],
+        "required_control_kinds": [],
+        "observed_control_kinds": sorted({str(result["control_kind"]) for result in results}),
+        "control_coverage_by_task_class": {},
+        "results": results,
+        "receipt_ids": [str(result["receipt_id"]) for result in results],
+        "gaming_flags": [],
+        "calibration_metric_applyable": False,
+        "default_change_allowed": False,
+        "policy_mutated": False,
+        "gate_advanced": False,
+        "errors": [],
+    }
+    summary["summary_sha256"] = _sha256_json(summary)
+    return summary
+
+
+def _evidence_conversion_power_contract(
+    report: Mapping[str, Any],
+    *,
+    thresholds: Mapping[str, Any],
+) -> dict[str, Any]:
+    sample_size = dict(report.get("sample_size_sufficiency") or {})
+    paired_power = dict(report.get("paired_power") or {})
+    comparisons = paired_power.get("comparisons") if isinstance(paired_power.get("comparisons"), Mapping) else {}
+    required = dict((comparisons or {}).get("full_supervisor_stack") or {})
+    reasons: list[str] = []
+    if sample_size.get("status") != "sufficient":
+        reasons.append("sample_size_underpowered")
+    if paired_power.get("status") != "sufficient":
+        reasons.append("paired_power_underpowered")
+    if required and required.get("mcnemar_test_passed") is not True:
+        reason_values = [
+            str(reason)
+            for reason in required.get("reasons") or []
+            if str(reason)
+        ]
+        reasons.extend(reason_values or ["mcnemar_test_not_significant"])
+    reasons = sorted(set(reasons))
+    return {
+        "schema_version": "supervisor-evidence-conversion-power-contract/v1",
+        "status": "qualified" if not reasons else "underpowered",
+        "thresholds": {
+            "min_good": int(thresholds.get("min_good", 30)),
+            "min_bad": int(thresholds.get("min_bad", 30)),
+            "min_discordant": int(thresholds.get("min_discordant", 25)),
+            "alpha": float(thresholds.get("alpha", 0.05)),
+        },
+        "sample_size_status": str(sample_size.get("status") or "missing"),
+        "paired_power_status": str(paired_power.get("status") or "missing"),
+        "required_comparison": required,
+        "reasons": reasons,
+        "report_only": True,
+        "operator_review_required": True,
+        "policy_mutation_allowed": False,
+    }
+
+
+def _safe_powered_fragment(value: str) -> str:
+    text = "".join(ch if ch.isalnum() or ch in {"-", "_", "."} else "_" for ch in value)
+    sanitized = text.strip("._") or "item"
+    digest = sha256(value.encode("utf-8")).hexdigest()[:12]
+    return f"{sanitized}-{digest}"
+
+
+def build_swe_bench_pro_candidate_corpus(
+    *,
+    attempts: Sequence[Mapping[str, Any]],
+    output_path: str | Path,
+    oracle_runner: Callable[[Mapping[str, Any]], Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Write oracle-labeled Pro prediction rows from generated solver attempts."""
+    path = Path(output_path).expanduser().resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rows: list[dict[str, Any]] = []
+    excluded: list[dict[str, Any]] = []
+    seen_hashes: set[str] = set()
+    for index, attempt in enumerate(attempts, start=1):
+        instance_id = str(attempt.get("instance_id") or "")
+        candidate_id = str(attempt.get("candidate_id") or f"attempt-{index}")
+        model_patch = str(
+            attempt.get("model_patch")
+            or attempt.get("patch")
+            or attempt.get("prediction")
+            or ""
+        )
+        if not instance_id or not model_patch.strip():
+            raise SwebenchMergeabilityFixtureRunnerError(
+                f"attempt {index} missing instance_id or model_patch"
+            )
+        raw_outcome = oracle_runner(attempt)
+        outcome = _interpret_oracle_outcome(raw_outcome)
+        if outcome["oracle_unavailable"]:
+            excluded.append({
+                "instance_id": instance_id,
+                "candidate_id": candidate_id,
+                "reason": outcome["oracle_unavailable_reason"],
+            })
+            continue
+        if outcome.get("patch_applied") is not True:
+            excluded.append({
+                "instance_id": instance_id,
+                "candidate_id": candidate_id,
+                "reason": "patch_applied_evidence_missing_or_false",
+            })
+            continue
+        oracle_label = (
+            ORACLE_GOOD_LABEL if outcome["oracle_accept"] else ORACLE_BAD_LABEL
+        )
+        patch_sha256 = sha256(model_patch.encode("utf-8")).hexdigest()
+        if patch_sha256 in seen_hashes:
+            raise SwebenchMergeabilityFixtureRunnerError(
+                f"duplicate generated candidate hash for {candidate_id}: {patch_sha256}"
+            )
+        seen_hashes.add(patch_sha256)
+        row = {
+            "instance_id": instance_id,
+            "candidate_id": candidate_id,
+            "model_patch": model_patch,
+            "oracle_label": oracle_label,
+            "patch_applied": True,
+            "candidate_artifact_hash": patch_sha256,
+            "model_patch_sha256": patch_sha256,
+            "diff_sha256": patch_sha256,
+            "origin": _required_prediction_mapping(
+                attempt.get("origin"),
+                field="origin",
+            ),
+            "producer": _required_prediction_mapping(
+                attempt.get("producer"),
+                field="producer",
+            ),
+        }
+        for key in PRODUCED_BASELINE_RECEIPT_KEYS:
+            if key in attempt and isinstance(attempt[key], Mapping):
+                row[key] = dict(attempt[key])
+        rows.append(row)
+    path.write_text(
+        "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    summary = _candidate_corpus_summary_from_predictions({"generated": rows})
+    return {
+        "schema_version": "supervisor-swebench-pro-candidate-corpus-report/v1",
+        "status": "completed" if rows else "unavailable",
+        "output_path": str(path),
+        "rows": rows,
+        "excluded": excluded,
+        "summary": summary,
+        "metric_applyable": False,
+        "improvement_claim_allowed": False,
+        "powered_improvement_claim_allowed": False,
+        "human_mergeability_claim_allowed": False,
+        "default_change_allowed": False,
+        "policy_mutated": False,
+        "gate_advanced": False,
+    }
 
 
 def _default_official_dataset_loader(*, dataset: str, split: str) -> Sequence[Mapping[str, Any]]:
@@ -3243,7 +5093,7 @@ def _default_official_repo_materializer(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     clone_url = (
         repo
-        if repo.startswith(("https://", "git@"))
+        if repo.startswith(("https://", "git@", "file://")) or Path(repo).expanduser().exists()
         else f"https://github.com/{repo}.git"
     )
     clone_result = _run_command(
@@ -3269,6 +5119,11 @@ def _default_official_repo_materializer(
             f"{repo}@{base_commit}: "
             f"{checkout_result.stderr_tail or checkout_result.stdout_tail}"
         )
+    git_metadata = output_path / ".git"
+    if git_metadata.is_dir():
+        shutil.rmtree(git_metadata)
+    elif git_metadata.exists():
+        git_metadata.unlink()
     return output_path
 
 
@@ -3292,6 +5147,7 @@ def swebench_mergeability_official_live_runner(
     reviewer_panel: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
     reviewer_panel_mode: str = "custom",
     configured_reviewer_panel_options: ConfiguredReviewerPanelOptions | None = None,
+    swe_bench_pro_scripts_dir: str | Path | None = None,
 ) -> dict[str, Any]:
     """Generate matched live candidates, then evaluate via official replay."""
     if not allow_live:
@@ -3355,6 +5211,10 @@ def swebench_mergeability_official_live_runner(
             raise SwebenchMergeabilityFixtureRunnerError(
                 f"repo_materializer returned missing public bundle: {public_bundle_path}"
             )
+        _ensure_public_bundle_has_no_git(
+            public_bundle_path,
+            context=f"official live public bundle {instance_id}",
+        )
 
         for arm, generator in (
             ("baseline", baseline_generator),
@@ -3481,6 +5341,7 @@ def swebench_mergeability_official_live_runner(
         reviewer_panel_mode=reviewer_panel_mode,
         configured_reviewer_panel_options=configured_reviewer_panel_options,
         timeout_s=timeout_s,
+        swe_bench_pro_scripts_dir=swe_bench_pro_scripts_dir,
     )
     for arm in live_arms.values():
         arm["status"] = "completed"
@@ -4102,7 +5963,11 @@ def _live_generation_record(
     candidate_id = str(generation["candidate_id"])
     patch_text = str(generation["model_patch"])
     patch_hash = sha256(patch_text.encode("utf-8")).hexdigest()
-    patch_path = patch_dir / f"{_safe_artifact_fragment(instance_id)}-{_safe_artifact_fragment(candidate_id)}.patch"
+    patch_path = patch_dir / _safe_artifact_filename(
+        instance_id,
+        candidate_id,
+        suffix=".patch",
+    )
     patch_path.write_text(patch_text, encoding="utf-8")
     return {
         "arm": arm,
@@ -4132,6 +5997,24 @@ def _safe_artifact_fragment(value: str) -> str:
     for char in str(value):
         safe.append(char if char.isalnum() or char in {"-", "_"} else "_")
     return "".join(safe).strip("_") or "artifact"
+
+
+def _safe_artifact_filename(
+    *fragments: str,
+    suffix: str = "",
+    max_length: int = 180,
+) -> str:
+    clean_suffix = str(suffix or "")
+    stem = "-".join(_safe_artifact_fragment(fragment) for fragment in fragments)
+    if len(stem) + len(clean_suffix) <= max_length:
+        return f"{stem}{clean_suffix}"
+
+    digest = sha256(
+        "\0".join(str(fragment) for fragment in fragments).encode("utf-8")
+    ).hexdigest()[:16]
+    prefix_limit = max(1, max_length - len(clean_suffix) - len(digest) - 1)
+    prefix = stem[:prefix_limit].rstrip("-_") or "artifact"
+    return f"{prefix}-{digest}{clean_suffix}"
 
 
 def _live_unavailable_report(

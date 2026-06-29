@@ -918,6 +918,15 @@ def _runtime_test_command_argv(command: str, validation_cwd: Path) -> dict[str, 
         return {"status": "rejected", "reason": "shell_metacharacter", "argv": []}
 
     executable = Path(parts[0]).name
+    if executable == "uv":
+        if len(parts) >= 3 and parts[1] == "run":
+            nested = _runtime_test_command_argv(shlex.join(parts[2:]), validation_cwd)
+            if nested["status"] == "allowed":
+                return {
+                    **nested,
+                    "reason": f"uv_run_{nested['reason']}",
+                }
+        return {"status": "rejected", "reason": "uv_run_target_not_allowlisted", "argv": []}
     if executable == "pytest":
         return {
             "status": "allowed",

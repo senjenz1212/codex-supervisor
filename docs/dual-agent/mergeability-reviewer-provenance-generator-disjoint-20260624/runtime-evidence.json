@@ -1,0 +1,41 @@
+{
+  "schema_version": "supervisor-runtime-evidence/v1",
+  "task_id": "mergeability-reviewer-provenance-generator-disjoint-20260624",
+  "commands": [
+    {
+      "command": "uv run pytest tests/test_mergeability_bench.py -k \"per_reviewer_arms or cursor_default or litellm or same_family_generator\"",
+      "status": "passed",
+      "summary": "4 passed, 131 deselected"
+    },
+    {
+      "command": "uv run pytest tests/test_mergeability_bench.py -k \"roster_selection_guard or per_reviewer_arms or cursor_default or litellm or same_family_generator or full_panel_report or configured_full_panel or public_dashboard\"",
+      "status": "passed",
+      "summary": "13 passed, 122 deselected"
+    },
+    {
+      "command": "uv run pytest tests/test_mergeability_bench.py -k \"per_reviewer_arms or cursor_default or litellm or same_family_generator or public_dashboard or roster_selection_guard\"",
+      "status": "passed",
+      "summary": "5 passed, 130 deselected"
+    },
+    {
+      "command": "uv run pytest tests/test_reviewer_panel_aggregation.py",
+      "status": "passed",
+      "summary": "8 passed"
+    },
+    {
+      "command": "uv run pytest tests/test_mergeability_bench.py",
+      "status": "passed",
+      "summary": "135 passed in 787.61s"
+    }
+  ],
+  "workflow_limitations": [
+    "codex-supervisor-axi was not available on PATH",
+    "no-mistakes was not available on PATH"
+  ],
+  "report_only_invariants": {
+    "metric_applyable": false,
+    "improvement_claim_allowed": false,
+    "policy_mutated": false,
+    "gate_advanced": false
+  }
+}

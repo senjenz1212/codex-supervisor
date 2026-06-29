@@ -15,10 +15,10 @@ execution; the detached dispatcher and workflow worker remain the runtime.
 
 1. Recurring supervisor failure signals are recorded in the ledger.
 2. Workflow finalization drafts an inert AutoResearch experiment with provenance.
-3. Human touchpoint 1: the operator runs `codex-supervisor-axi experiments activate <experiment_id>`.
-4. The daemon runner executes runnable experiments through the durable evaluator lane, capped by `max_runnable_experiments_per_week`.
-5. Accepted reports derive draft policy-overlay proposals; no policy is applied automatically.
-6. Human touchpoint 2: the operator runs `codex-supervisor-axi approve --proposal-id <proposal_id>` or `codex-supervisor-axi deny --proposal-id <proposal_id>`.
+3. Human touchpoint 1: the operator runs `codex-supervisor-axi experiments activate <experiment_id> --operator <named-human>`. The CLI no longer defaults `--operator` to the service identity; reserved identities such as `codex-supervisor-axi`, `codex-supervisor`, `autoresearch`, `auto`, `automated`, and `system` are rejected so activation requires a named human.
+4. The daemon runner executes runnable experiments through the durable evaluator lane, capped by `max_runnable_experiments_per_week`. Unresolved experiments default to the behavioral mergeability evaluator (`supervisor/autoresearch/evaluators/mergeability_bench.py`) with `metric_name=mergeability_score`; the replay-corpus evaluator remains available for explicit replay but is rejected by policy derivation as an adoption signal.
+5. Accepted reports derive draft policy-overlay proposals; no policy is applied automatically. Benchmark-promotion records and replay-corpus records are rejected by the policy-derivation applyability guard so they cannot become AutoResearch proposals.
+6. Human touchpoint 2: the operator runs `codex-supervisor-axi approve --run-id <run> --proposal-id <proposal_id> --approver <named-human>` or `codex-supervisor-axi deny --run-id <run> --proposal-id <proposal_id> --approver <named-human>`. `--approver` no longer defaults to the service identity and rejects the same reserved identities as the activation path.
 7. Approved overlays affect subsequent gate instruction composition and are attributed in trend rows.
 8. The weekly audit cadence `p11_audit_cadence_s` records observational P11 audit events.
 9. Regression windows draft rollback proposals; rollback still requires operator approval.

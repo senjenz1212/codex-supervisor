@@ -246,6 +246,47 @@ def test_axi_experiments_activate_transitions_draft_to_runnable(capsys, tmp_path
     assert row["status"] == "runnable"
 
 
+def test_axi_experiments_activate_requires_named_operator(capsys, tmp_path):
+    config = _config_path(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    for index in range(3):
+        state.write_event(
+            run_id=f"signal-{index}",
+            source="dual_agent",
+            kind="dual_agent_gate_result",
+            payload={
+                "task_id": "task",
+                "task_class": "source_change",
+                "lesson_task_class": "source_change",
+                "gate": "execution",
+                "status": "blocked",
+                "implicated_paths": ["supervisor/autoresearch/orchestrator.py"],
+                "trace_envelope": {
+                    "failure_taxonomy": {"mast_code": "FM-3.2"},
+                },
+            },
+        )
+    [draft] = generate_autoresearch_experiment_drafts(
+        state=state,
+        repo_root=Path.cwd(),
+        config=AutoResearchGeneratorConfig(recurrence_threshold=3),
+    )
+
+    assert axi.main([
+        "--config",
+        str(config),
+        "--json",
+        "experiments",
+        "activate",
+        draft["experiment_id"],
+    ]) == 1
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["error"]["message"] == "operator is required"
+    [row] = state.list_autoresearch_experiment_queue()
+    assert row["status"] == "draft"
+
+
 def test_axi_experiments_park_drains_draft_with_audit_event(capsys, tmp_path):
     config = _config_path(tmp_path)
     state = State(str(tmp_path / "state.db"))
@@ -357,6 +398,60 @@ def test_axi_policy_approve_proposal_applies_hashes_and_rollback_pointer(capsys,
     assert target.read_text(encoding="utf-8") == candidate.read_text(encoding="utf-8")
 
 
+def test_axi_policy_approve_requires_named_approver(capsys, tmp_path):
+    config = _config_path(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    target = tmp_path / ".supervisor" / "policy-overlay.yaml"
+    candidate = tmp_path / "candidates" / "policy-overlay.yaml"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    candidate.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("schema_version: supervisor-policy-overlay/v1\ninstruction_guidance_blocks: {}\n", encoding="utf-8")
+    candidate.write_text(
+        "schema_version: supervisor-policy-overlay/v1\ninstruction_guidance_blocks:\n  outcome_review:\n    - require live evidence\n",
+        encoding="utf-8",
+    )
+    proposal = {
+        "schema_version": "supervisor-autoresearch-policy-proposal/v1",
+        "proposal_id": "ARP-cli",
+        "status": "draft",
+        "changes": [{
+            "target_path": ".supervisor/policy-overlay.yaml",
+            "candidate_ref": "candidates/policy-overlay.yaml",
+            "before_hash": sha256(target.read_bytes()).hexdigest(),
+            "after_hash": sha256(candidate.read_bytes()).hexdigest(),
+        }],
+        "requires_operator_approval": True,
+        "default_change_allowed": False,
+        "automatic_policy_mutation": False,
+        "gate_advanced": False,
+    }
+    state.write_event(
+        run_id="policy-run",
+        source="autoresearch",
+        kind="autoresearch_policy_proposal_created",
+        payload=proposal,
+    )
+
+    assert axi.main([
+        "--config",
+        str(config),
+        "--json",
+        "approve",
+        "--run-id",
+        "policy-run",
+        "--proposal-id",
+        "ARP-cli",
+        "--repo-root",
+        str(tmp_path),
+    ]) == 1
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["error"]["message"] == "approver is required"
+    assert target.read_text(encoding="utf-8") == (
+        "schema_version: supervisor-policy-overlay/v1\ninstruction_guidance_blocks: {}\n"
+    )
+
+
 def test_axi_policy_deny_proposal_records_denial_without_apply(capsys, tmp_path):
     config = _config_path(tmp_path)
     state = State(str(tmp_path / "state.db"))
@@ -386,6 +481,8 @@ def test_axi_policy_deny_proposal_records_denial_without_apply(capsys, tmp_path)
         "policy-run",
         "--proposal-id",
         "ARP-deny",
+        "--approver",
+        "operator@example.com",
         "--reason",
         "not enough evidence",
     ]) == 0

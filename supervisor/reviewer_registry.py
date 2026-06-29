@@ -6,7 +6,7 @@ import json
 import re
 import subprocess
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
@@ -50,7 +50,32 @@ class CursorCompatibleReviewer:
     runner: Callable[[CursorInvocationRequest], CursorInvocationResult] = invoke_cursor_agent
 
     def review(self, request: CursorInvocationRequest) -> CursorInvocationResult:
-        return self.runner(request)
+        return self.runner(
+            replace(
+                request,
+                reviewer_output_mode=self.spec.runtime,  # type: ignore[arg-type]
+                reviewer_model=self.spec.model or request.reviewer_model,
+            )
+        )
+
+
+@dataclass(frozen=True)
+class LiteLLMReviewer:
+    spec: ReviewerSpec
+    runner: Callable[[CursorInvocationRequest], CursorInvocationResult] = invoke_cursor_agent
+    openai_api_key: str | None = None
+    openai_base_url: str | None = None
+
+    def review(self, request: CursorInvocationRequest) -> CursorInvocationResult:
+        return self.runner(
+            replace(
+                request,
+                reviewer_output_mode="litellm_structured",
+                reviewer_model=self.spec.model or request.reviewer_model,
+                openai_api_key=self.openai_api_key or request.openai_api_key,
+                openai_base_url=self.openai_base_url or request.openai_base_url,
+            )
+        )
 
 
 @dataclass(frozen=True)
@@ -293,12 +318,20 @@ def configured_reviewers(
     runner: Callable[[CursorInvocationRequest], CursorInvocationResult] = invoke_cursor_agent,
     codex_runner: CodexRunner = subprocess.run,
     codex_model: str = "gpt-5.5",
+    litellm_runner: Callable[[CursorInvocationRequest], CursorInvocationResult] | None = None,
+    litellm_model: str | None = None,
+    litellm_provider_family: str | None = None,
+    litellm_openai_api_key: str | None = None,
+    litellm_openai_base_url: str | None = None,
 ) -> list[ReviewerAdapter]:
     """Return the configured reviewer roster for a gate.
 
     This is intentionally small: reviewer 0 is the legacy Cursor-compatible
     slot, reviewer 1 is the GPT-family Codex CLI route proven by route
-    evidence. Wider plugin mechanics are deliberately out of scope.
+    evidence. An optional third LiteLLM reviewer is appended only when a
+    caller opts in by passing ``litellm_model``; an empty or ``None`` value
+    keeps the roster at two reviewers. Wider plugin mechanics are
+    deliberately out of scope.
     """
     legacy_spec = ReviewerSpec(
         reviewer_id="independent-reviewer-0",
@@ -318,10 +351,39 @@ def configured_reviewers(
         tool_access="codebase_tools",
         assurance_grade="agentic",
     )
-    return [
+    reviewers: list[ReviewerAdapter] = [
         CursorCompatibleReviewer(spec=legacy_spec, runner=runner),
         CodexCliReviewer(spec=codex_spec, runner=codex_runner),
     ]
+    if litellm_model:
+        litellm_family = (
+            litellm_provider_family
+            or _provider_family("litellm_structured", litellm_model)
+        )
+        litellm_spec = ReviewerSpec(
+            reviewer_id="independent-reviewer-litellm",
+            runtime="litellm_structured",
+            model=litellm_model,
+            provider_family=litellm_family,
+            lineage=tuple(
+                dict.fromkeys(
+                    value
+                    for value in (litellm_family, "litellm_structured", litellm_model)
+                    if value and value != "unknown"
+                )
+            ),
+            tool_access="text_only",
+            assurance_grade="text_only",
+        )
+        reviewers.append(
+            LiteLLMReviewer(
+                spec=litellm_spec,
+                runner=litellm_runner or runner,
+                openai_api_key=litellm_openai_api_key,
+                openai_base_url=litellm_openai_base_url,
+            )
+        )
+    return reviewers
 
 
 def independent_reviewer_results_from_cursor_result(
@@ -376,6 +438,14 @@ def independent_reviewer_result_from_cursor_result(
     )
     runtime = result.reviewer_runtime or result.reviewer_output_mode or "unknown"
     model = result.model
+    requested_model = (
+        result.diagnostics.get("requested_model")
+        if isinstance(result.diagnostics, dict)
+        else None
+    )
+    provider_family, provider_family_verified, provider_family_source = (
+        provider_family_verification_for_reviewer(runtime, model)
+    )
     return {
         "schema_version": "independent-reviewer-panel-result/v1",
         "reviewer_id": reviewer_id,
@@ -393,9 +463,13 @@ def independent_reviewer_result_from_cursor_result(
         "reviewer_runtime": result.reviewer_runtime,
         "reviewer_output_mode": result.reviewer_output_mode,
         "model": model,
-        "provider_family": _provider_family(runtime, model),
+        "requested_model": requested_model,
+        "provider_family": provider_family,
+        "provider_family_verified": provider_family_verified,
+        "provider_family_source": provider_family_source,
         "lineage": list(_lineage(runtime, model)),
         "tool_access": _tool_access(runtime),
+        "tool_backed_command_evidence": _has_tool_command_evidence(result),
         "assurance_grade": _assurance_grade(result),
         "reviewer_assurance": result.reviewer_assurance,
         "transcript_refs": [
@@ -438,15 +512,100 @@ def independent_reviewer_results_from_review_results(
     round_index: int,
 ) -> list[dict[str, Any]]:
     return [
-        independent_reviewer_result_from_cursor_result(
-            result,
-            task_id=task_id,
-            gate=gate,
-            round_index=round_index,
-            reviewer_id=spec.reviewer_id,
+        _result_with_spec_provenance(
+            independent_reviewer_result_from_cursor_result(
+                result,
+                task_id=task_id,
+                gate=gate,
+                round_index=round_index,
+                reviewer_id=spec.reviewer_id,
+            ),
+            spec,
         )
         for spec, result in review_results
     ]
+
+
+def _result_with_spec_provenance(
+    result: dict[str, Any],
+    spec: ReviewerSpec,
+) -> dict[str, Any]:
+    payload = dict(result)
+    result_runtime = str(payload.get("runtime") or "").strip()
+    runtime_matches_spec = (
+        not spec.runtime
+        or result_runtime in {"", "unknown"}
+        or result_runtime == spec.runtime
+    )
+    if result_runtime in {"", "unknown"} and spec.runtime:
+        payload["runtime"] = spec.runtime
+    result_reviewer_runtime = str(payload.get("reviewer_runtime") or "").strip()
+    if result_reviewer_runtime in {"", "unknown"} and spec.runtime:
+        payload["reviewer_runtime"] = spec.runtime
+    served_model = str(payload.get("model") or "").strip()
+    if (
+        spec.model
+        and runtime_matches_spec
+        and served_model in {"", "unknown"}
+        and not payload.get("requested_model")
+    ):
+        payload["requested_model"] = spec.model
+    verified_family, verified, source = provider_family_verification_for_reviewer(
+        payload.get("runtime"),
+        served_model,
+    )
+    result_family = str(payload.get("provider_family") or "").strip()
+    result_family_unproven = result_family in {"", "unknown", "openai_compatible"}
+    if verified:
+        payload["provider_family"] = verified_family
+        payload["provider_family_verified"] = True
+        payload["provider_family_source"] = source
+        result_family_unproven = False
+    elif (
+        runtime_matches_spec
+        and result_family_unproven
+        and spec.provider_family
+        and spec.provider_family not in {"unknown", "openai_compatible"}
+    ):
+        payload["provider_family"] = spec.provider_family
+        payload["provider_family_verified"] = False
+        payload["provider_family_source"] = "operator_config"
+    else:
+        if not payload.get("provider_family"):
+            payload["provider_family"] = verified_family
+        payload["provider_family_verified"] = bool(payload.get("provider_family_verified"))
+        payload["provider_family_source"] = str(
+            payload.get("provider_family_source") or source
+        )
+    final_family = str(payload.get("provider_family") or "").strip()
+    final_family_unproven = final_family in {"", "unknown", "openai_compatible"}
+    if (
+        runtime_matches_spec
+        and spec.lineage
+        and (
+            payload.get("provider_family_source") == "operator_config"
+            or final_family_unproven
+            or not payload.get("lineage")
+        )
+    ):
+        payload["lineage"] = list(spec.lineage)
+    result_tool_access = str(payload.get("tool_access") or "").strip()
+    if (
+        runtime_matches_spec
+        and result_tool_access in {"", "unknown"}
+        and spec.tool_access
+        and spec.tool_access != "unknown"
+    ):
+        payload["tool_access"] = spec.tool_access
+    result_assurance = str(payload.get("assurance_grade") or "").strip()
+    if (
+        runtime_matches_spec
+        and result_assurance in {"", "self_reported"}
+        and spec.assurance_grade
+        and spec.assurance_grade != "self_reported"
+    ):
+        payload["assurance_grade"] = spec.assurance_grade
+    return payload
 
 
 def evaluate_reviewer_panel(
@@ -454,9 +613,13 @@ def evaluate_reviewer_panel(
     *,
     low_confidence_threshold: float = 0.0,
     calibration: dict[str, Any] | None = None,
+    aggregation_mode: str = "conservative",
 ) -> dict[str, Any]:
     """Aggregate independent reviewers without weakening hard blocks."""
     threshold = _clamp_confidence(low_confidence_threshold)
+    requested_aggregation_mode = str(aggregation_mode or "conservative").strip().lower()
+    if requested_aggregation_mode not in {"conservative", "geometric_median"}:
+        requested_aggregation_mode = "conservative"
     active_calibration = _normalise_panel_calibration(calibration)
     reviewer_inputs = [_reviewer_input_summary(result) for result in results if isinstance(result, dict)]
     available_reviewers = [
@@ -501,6 +664,7 @@ def evaluate_reviewer_panel(
 
     decision = "accept"
     reason = "all_available_reviewers_accept"
+    robust_aggregation: dict[str, Any] | None = None
     if not reviewer_inputs:
         reason = "review_not_required"
     elif blocking_reviewers:
@@ -515,6 +679,14 @@ def evaluate_reviewer_panel(
     elif low_confidence_reviewers:
         decision = "escalate"
         reason = "low_confidence_accept"
+    elif requested_aggregation_mode == "geometric_median":
+        robust_aggregation = _majority_accept_summary(reviewer_inputs)
+        if bool(robust_aggregation.get("accept")):
+            decision = "accept"
+            reason = "robust_geometric_median_accept"
+        else:
+            decision = "revise"
+            reason = "robust_geometric_median_reject"
     calibrated_accept: dict[str, Any] | None = None
     if active_calibration is not None and not _calibration_covers_reviewer_inputs(
         active_calibration,
@@ -534,7 +706,11 @@ def evaluate_reviewer_panel(
         "schema_version": "independent-reviewer-panel-decision/v1",
         "decision": decision,
         "reason": reason,
-        "aggregation_mode": "calibrated_weighted" if active_calibration is not None else "conservative",
+        "aggregation_mode": (
+            "calibrated_weighted"
+            if active_calibration is not None
+            else requested_aggregation_mode
+        ),
         "low_confidence_threshold": threshold,
         "available_reviewers": available_reviewers,
         "accepted_reviewers": accepted_reviewers,
@@ -548,6 +724,8 @@ def evaluate_reviewer_panel(
         payload["calibration"] = _calibration_decision_summary(active_calibration)
     if calibrated_accept is not None:
         payload["calibrated_accept"] = calibrated_accept
+    if robust_aggregation is not None:
+        payload["robust_aggregation"] = robust_aggregation
     return payload
 
 
@@ -998,6 +1176,8 @@ def _reviewer_input_summary(result: dict[str, Any]) -> dict[str, Any]:
         "runtime": result.get("runtime") or result.get("reviewer_runtime"),
         "model": result.get("model"),
         "provider_family": result.get("provider_family"),
+        "provider_family_verified": bool(result.get("provider_family_verified")),
+        "provider_family_source": result.get("provider_family_source"),
         "lineage": list(result.get("lineage") or []),
         "tool_access": result.get("tool_access"),
         "assurance_grade": result.get("assurance_grade"),
@@ -1146,6 +1326,43 @@ def _clamp_confidence(value: float) -> float:
     return max(0.0, min(1.0, float(value)))
 
 
+def _majority_accept_summary(
+    reviewer_inputs: list[dict[str, Any]],
+) -> dict[str, Any]:
+    scored_inputs = [
+        item
+        for item in reviewer_inputs
+        if item["verdict_present"] and item["decision"] in {"accept", "revise", "deny"}
+    ]
+    score_points = [
+        1.0 if item["decision"] == "accept" else 0.0
+        for item in scored_inputs
+    ]
+    if not score_points:
+        return {
+            "status": "unavailable",
+            "accept": False,
+            "score_points": [],
+            "geometric_median_score": None,
+            "accept_threshold": 0.5,
+            "contaminated_judge_bound": 0,
+        }
+    ordered = sorted(score_points)
+    midpoint = len(ordered) // 2
+    if len(ordered) % 2:
+        median_score = ordered[midpoint]
+    else:
+        median_score = (ordered[midpoint - 1] + ordered[midpoint]) / 2.0
+    return {
+        "status": "computed",
+        "accept": median_score > 0.5,
+        "score_points": score_points,
+        "geometric_median_score": median_score,
+        "accept_threshold": 0.5,
+        "contaminated_judge_bound": max(0, (len(score_points) - 1) // 2),
+    }
+
+
 def _decision_from_result(result: CursorInvocationResult) -> str:
     if result.outcome is not None:
         for decision in result.outcome.decisions:
@@ -1154,7 +1371,7 @@ def _decision_from_result(result: CursorInvocationResult) -> str:
     return "accept" if cursor_accepts(result) else "revise"
 
 
-def _provider_family(runtime: str | None, model: str | None) -> str:
+def _provider_family(runtime: Any, model: Any) -> str:
     runtime_text = str(runtime or "").lower()
     model_text = str(model or "").lower()
     if "codex" in runtime_text:
@@ -1169,7 +1386,50 @@ def _provider_family(runtime: str | None, model: str | None) -> str:
         return "openai"
     if "litellm" in runtime_text:
         return "openai_compatible"
+    if "openai" in model_text:
+        return "openai"
     return "unknown"
+
+
+provider_family_for_reviewer = _provider_family
+
+
+def _provider_family_from_served_model(model: Any) -> str:
+    model_text = str(model or "").strip().lower()
+    if model_text in {"", "default", "proxy-default", "auto"}:
+        return "unknown"
+    if "gemini" in model_text or model_text.startswith("google/"):
+        return "google"
+    if "claude" in model_text or model_text.startswith("anthropic/"):
+        return "anthropic"
+    if (
+        "gpt" in model_text
+        or model_text.startswith(("o1", "o3", "o4", "openai/"))
+        or "openai" in model_text
+    ):
+        return "openai"
+    if "llama" in model_text or model_text.startswith("meta/"):
+        return "meta"
+    if "mistral" in model_text or "mixtral" in model_text:
+        return "mistral"
+    if "deepseek" in model_text:
+        return "deepseek"
+    if "grok" in model_text or model_text.startswith("xai/"):
+        return "xai"
+    if "command-r" in model_text or model_text.startswith("cohere/"):
+        return "cohere"
+    return "unknown"
+
+
+def provider_family_verification_for_reviewer(
+    runtime: Any,
+    model: Any,
+) -> tuple[str, bool, str]:
+    served_family = _provider_family_from_served_model(model)
+    if served_family not in {"", "unknown", "openai_compatible"}:
+        return served_family, False, "served_model_name_inference"
+    inferred = _provider_family(runtime, model)
+    return inferred, False, "runtime_inference"
 
 
 def _lineage(runtime: str | None, model: str | None) -> tuple[str, ...]:
@@ -1196,6 +1456,8 @@ def _tool_access(runtime: str | None) -> str:
 def _assurance_grade(result: CursorInvocationResult) -> str:
     assurance = str(result.reviewer_assurance or "").lower()
     runtime = str(result.reviewer_runtime or result.reviewer_output_mode or "").lower()
+    if "litellm" in runtime and not _has_tool_command_evidence(result):
+        return "text_only"
     if "codex_cli" in runtime:
         if "tool" in assurance or _has_codex_cli_command_evidence(result):
             return "agentic"
@@ -1207,6 +1469,21 @@ def _assurance_grade(result: CursorInvocationResult) -> str:
     if "text" in assurance or "litellm" in runtime:
         return "text_only"
     return "self_reported"
+
+
+def _has_tool_command_evidence(result: CursorInvocationResult) -> bool:
+    diagnostics = result.diagnostics if isinstance(result.diagnostics, dict) else {}
+    for key in ("codex_cli", "cursor_sdk", "tool_use", "commands"):
+        payload = diagnostics.get(key)
+        if not isinstance(payload, dict):
+            continue
+        count = payload.get("command_execution_count")
+        if isinstance(count, int) and count > 0:
+            return True
+        executions = payload.get("command_executions")
+        if isinstance(executions, list) and executions:
+            return True
+    return False
 
 
 def _has_codex_cli_command_evidence(result: CursorInvocationResult) -> bool:

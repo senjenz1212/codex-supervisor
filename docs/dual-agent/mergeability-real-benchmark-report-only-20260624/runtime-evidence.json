@@ -1,0 +1,22 @@
+{
+  "schema_version": "supervisor-runtime-evidence/v1",
+  "task_id": "mergeability-real-benchmark-report-only-20260624",
+  "status": "passed",
+  "commands": [
+    {
+      "command": "uv run pytest tests/test_swe_bench_pro_mergeability_bridge.py",
+      "status": "passed",
+      "summary": "81 passed in 10.43s"
+    },
+    {
+      "command": "uv run pytest tests/test_runtime_evidence.py",
+      "status": "passed",
+      "summary": "23 passed in 4.74s"
+    },
+    {
+      "command": "git diff --check -- supervisor/swe_bench_mergeability.py tests/test_swe_bench_pro_mergeability_bridge.py docs/dual-agent/mergeability-real-benchmark-report-only-20260624",
+      "status": "passed",
+      "summary": "no whitespace errors"
+    }
+  ]
+}

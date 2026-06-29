@@ -1,0 +1,66 @@
+{
+  "fail_to_pass_status": "pass",
+  "oracle_adapter_receipt": {
+    "artifact_paths": {
+      "entryscript": "/home/bokken/codex-swebench-pro-benchmark/repo/docs/dual-agent/pro-oracle-gold-proof-20260626/artifacts/oracle-artifacts/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c-gold-patch/workspace/entryscript.sh",
+      "output_json": "/home/bokken/codex-swebench-pro-benchmark/repo/docs/dual-agent/pro-oracle-gold-proof-20260626/artifacts/oracle-artifacts/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c-gold-patch/workspace/output.json",
+      "parser": "/home/bokken/codex-swebench-pro-benchmark/repo/docs/dual-agent/pro-oracle-gold-proof-20260626/artifacts/oracle-artifacts/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c-gold-patch/workspace/parser.py",
+      "patch": "/home/bokken/codex-swebench-pro-benchmark/repo/docs/dual-agent/pro-oracle-gold-proof-20260626/artifacts/oracle-artifacts/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c-gold-patch/workspace/patch.diff",
+      "patch_apply_receipt": "/home/bokken/codex-swebench-pro-benchmark/repo/docs/dual-agent/pro-oracle-gold-proof-20260626/artifacts/oracle-artifacts/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c-gold-patch/workspace/patch_apply.json",
+      "run_script": "/home/bokken/codex-swebench-pro-benchmark/repo/docs/dual-agent/pro-oracle-gold-proof-20260626/artifacts/oracle-artifacts/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c-gold-patch/workspace/run_script.sh",
+      "stderr": "/home/bokken/codex-swebench-pro-benchmark/repo/docs/dual-agent/pro-oracle-gold-proof-20260626/artifacts/oracle-artifacts/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c-gold-patch/workspace/stderr.log",
+      "stdout": "/home/bokken/codex-swebench-pro-benchmark/repo/docs/dual-agent/pro-oracle-gold-proof-20260626/artifacts/oracle-artifacts/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c-gold-patch/workspace/stdout.log",
+      "test_command_receipt": "/home/bokken/codex-swebench-pro-benchmark/repo/docs/dual-agent/pro-oracle-gold-proof-20260626/artifacts/oracle-artifacts/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c-gold-patch/workspace/test_command.json",
+      "work_dir": "/home/bokken/codex-swebench-pro-benchmark/repo/docs/dual-agent/pro-oracle-gold-proof-20260626/artifacts/oracle-artifacts/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c-gold-patch",
+      "workspace": "/home/bokken/codex-swebench-pro-benchmark/repo/docs/dual-agent/pro-oracle-gold-proof-20260626/artifacts/oracle-artifacts/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c-gold-patch/workspace"
+    },
+    "before_repo_set_cmd_sha256": "9793f463af29f8154eae1bef26254b4e28665236b87f97d49329206432c50724",
+    "command": [
+      "docker",
+      "run",
+      "--rm",
+      "-v",
+      "/home/bokken/codex-swebench-pro-benchmark/repo/docs/dual-agent/pro-oracle-gold-proof-20260626/artifacts/oracle-artifacts/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c/instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c-gold-patch/workspace:/workspace",
+      "--entrypoint",
+      "/bin/bash",
+      "jefzda/sweap-images:qutebrowser.qutebrowser-qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f",
+      "-c",
+      "bash /workspace/entryscript.sh"
+    ],
+    "docker": {
+      "attempt_stage": "scoring",
+      "image": "jefzda/sweap-images:qutebrowser.qutebrowser-qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f",
+      "pull_command": [
+        "docker",
+        "pull",
+        "jefzda/sweap-images:qutebrowser.qutebrowser-qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f"
+      ],
+      "pull_return_code": 0
+    },
+    "evaluator_version": "swe-bench-pro-local-docker",
+    "fail_to_pass_status": "pass",
+    "frozen_decisions_path": "",
+    "frozen_decisions_sha256": "",
+    "harness": {
+      "name": "swe-bench-pro-local-docker",
+      "pinned_commit": "ca10a60a5fcae51e6948ffe1485d4153d421e6c5",
+      "run_id": "pro-oracle-gold-proof-instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c-instance_qutebrowser__qu-2439465b575ab239",
+      "source": "scaleapi/SWE-bench_Pro-os"
+    },
+    "model_patch_sha256": "905cefcda5fc64e740e928d283fe1173b18b529c9191e97fc67848a540f85a80",
+    "pass_to_pass_status": "pass",
+    "patch_applied": true,
+    "return_code": 0,
+    "selected_test_files_to_run": [
+      "tests/unit/utils/test_log.py",
+      "tests/unit/utils/test_qtlog.py"
+    ],
+    "stderr_sha256": "eee5741003d3b01bd616a51354dd169ee650c9da70e0b67be176faa5d52a9d1b",
+    "stderr_tail": "HEAD is now at ebfe9b7aa Move qt_message_handler() to qtlog\nChecking patch qutebrowser/browser/qtnetworkdownloads.py...\nChecking patch qutebrowser/utils/log.py...\nChecking patch qutebrowser/utils/qtlog.py...\nApplied patch qutebrowser/browser/qtnetworkdownloads.py cleanly.\nApplied patch qutebrowser/utils/log.py cleanly.\nApplied patch qutebrowser/utils/qtlog.py cleanly.\n",
+    "stdout_sha256": "20e722f3ab0ead8398a000d2f7ffd1a5f1d800731a84d2df4835c47020f90fcb",
+    "stdout_tail": "HEAD is now at ebfe9b7aa Move qt_message_handler() to qtlog\n",
+    "test_command_return_code": 0
+  },
+  "pass_to_pass_status": "pass",
+  "patch_applied": true
+}

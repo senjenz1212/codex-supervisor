@@ -431,6 +431,59 @@ def test_autoresearch_validation_rejects_evaluator_hash_mismatch(tmp_path):
     ]
 
 
+def test_execution_or_attempt_metric_drops_fixture_seed_when_execution_missing():
+    from supervisor.autoresearch.orchestrator import _execution_or_attempt_metric
+
+    fixture_seeded = _attempt(metric_source="fixture", metric_before=0.5)
+    assert _execution_or_attempt_metric(None, 0.5, attempt=fixture_seeded) is None
+
+    human_seeded = _attempt(metric_source="human_seed", metric_before=0.5)
+    assert _execution_or_attempt_metric(None, 0.5, attempt=human_seeded) is None
+
+    pending_seeded = _attempt(metric_source="pending", metric_before=0.5)
+    assert _execution_or_attempt_metric(None, 0.5, attempt=pending_seeded) is None
+
+    execution_seeded = _attempt(metric_source="evaluator_execution", metric_before=0.5)
+    assert _execution_or_attempt_metric(None, 0.5, attempt=execution_seeded) == 0.5
+
+
+def test_empty_floor_comparison_returns_none_for_non_execution_metric_source():
+    fixture_attempt = _attempt(
+        metric_source="fixture",
+        metric_before=0.4,
+        metric_after=0.7,
+        metric_delta=0.3,
+    )
+    fixture_report = validate_attempt(
+        experiment=_experiment(),
+        attempt=fixture_attempt,
+    )
+
+    assert fixture_report.metric_source == "fixture"
+    assert fixture_report.empty_floor_comparison() is None
+    payload = fixture_report.to_payload()
+    assert payload["empty_floor_comparison"] is None
+
+    execution_attempt = _attempt(
+        metric_source="evaluator_execution",
+        metric_before=0.4,
+        metric_after=0.7,
+        metric_delta=0.3,
+    )
+    execution_report = validate_attempt(
+        experiment=_experiment(),
+        attempt=execution_attempt,
+    )
+
+    assert execution_report.empty_floor_comparison() == {
+        "metric_source": "evaluator_execution",
+        "empty_floor_metric": 0.4,
+        "candidate_metric": 0.7,
+        "metric_delta": 0.3,
+        "k_trials": 3,
+    }
+
+
 def test_autoresearch_validation_rejects_fixture_metrics_without_evaluator_execution():
     report = validate_attempt(
         experiment=_experiment(),
@@ -732,18 +785,21 @@ print(json.dumps({"metric_value": 0.7 + (args.trial_index * 0.05)}))
     ) == "1"
 
 
-def test_autoresearch_default_replay_corpus_evaluator_produces_pass_rate(tmp_path):
+def test_autoresearch_default_behavioral_evaluator_produces_mergeability_score(tmp_path):
     fixture = _write_fixture(
         tmp_path,
-        experiment=_live_experiment(
-            evaluator_ref="",
-            evaluator_hash="",
-            metric_name="",
+            experiment=_live_experiment(
+                task_id="calculator-addition",
+                evaluator_ref="",
+                evaluator_hash="",
+                metric_name="",
             k_trials=2,
             mutable_paths=["workspace"],
             immutable_paths=["locked"],
         ),
-        attempts=[_live_attempt()],
+            attempts=[_live_attempt(
+                patch_ref=(Path("tests/fixtures/mergeability_bench") / "candidates/known_good.json").as_posix(),
+            )],
     )
     state = State(str(tmp_path / "state.db"))
 
@@ -758,10 +814,10 @@ def test_autoresearch_default_replay_corpus_evaluator_produces_pass_rate(tmp_pat
 
     record = report["records"][0]
     assert report["experiment"]["evaluator_ref"].endswith(
-        "supervisor/autoresearch/evaluators/replay_corpus.py"
+        "supervisor/autoresearch/evaluators/mergeability_bench.py"
     )
     assert report["experiment"]["evaluator_hash"]
-    assert record["metric_name"] == "pass_rate"
+    assert record["metric_name"] == "mergeability_score"
     assert record["metric_source"] == "evaluator_execution"
     assert len(record["metric_trials"]) == 2
     assert all(0.0 <= value <= 1.0 for value in record["metric_trials"])

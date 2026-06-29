@@ -13,8 +13,11 @@ venv/
 # Local scratch/runtime state
 pytest-cache-files-*/
 .codex-supervisor/
+.scratch/
 .scratch/gui-probes/
 .handoff/
+docs/dual-agent/*/artifacts/*/official-public-bundles/
+docs/dual-agent/*/artifacts/*/replay/**/public_worktree/
 *.db
 *.sqlite
 *.sqlite3

@@ -40,6 +40,7 @@ from supervisor.mergeability_bench import (
     result_receipt,
     run_fixture_panel_produced_baseline_measurement,
     run_live_mergeability_candidate_generation,
+    run_mergeability_reviewer_roster_diagnostic,
     run_paired_acceptance_pilot,
     run_powered_factorial_mergeability_evaluation,
     validate_mergeability_corpus,
@@ -701,6 +702,58 @@ def test_full_gate_reviewer_packet_includes_context_receipt_fields(tmp_path):
             changed["path"]
             for changed in packet["changed_files"]
         } == set(packet["public_input_payload"]["changed_files"])
+        evidence = packet["public_execution_evidence"]
+        assert evidence["schema_version"] == "supervisor-mergeability-public-execution-evidence/v1"
+        assert evidence["evidence_boundary"] == "public_only"
+        assert evidence["patch_apply_check"]["status"] == "not_applicable"
+        assert evidence["hidden_oracle_exclusion"]["hidden_oracle_material_included"] is False
+        assert evidence["protected_path_exclusion"]["protected_path_content_included"] is False
+        assert "public_ci_lint" in evidence
+        assert "scope_locality" in evidence
+        assert "reverse_classical_test_quality" in evidence
+
+
+def test_full_gate_reviewer_packet_includes_public_mergeability_rubric(tmp_path):
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        reviewer_panel=_accept_public_review_panel,
+    )
+
+    for row in report["per_task_results"]:
+        packet = row["supervisor_full_gate_review"]["reviewer_packet"]
+        rubric = packet["mergeability_rubric"]
+        assert rubric["schema_version"] == "supervisor-mergeability-rubric/v1"
+        assert rubric["allowed_labels"] == [
+            "mergeable",
+            "not_mergeable",
+            "needs_human_review",
+        ]
+        assert "unverifiable_from_public_evidence" in rubric["criteria"]
+        assert "hidden oracle fail" not in json.dumps(rubric).lower()
+        assert _public_input_oracle_refs(packet) == []
+
+
+def test_full_gate_reviewer_packet_records_reverse_classical_test_quality(tmp_path):
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        reviewer_panel=_accept_public_review_panel,
+    )
+
+    row = next(
+        item for item in report["per_task_results"]
+        if item["candidate_id"] == "known-good"
+    )
+    packet = row["supervisor_full_gate_review"]["reviewer_packet"]
+    evidence = packet["public_execution_evidence"]
+    assert evidence["public_candidate_tests"]["status"] == "passed"
+    assert evidence["public_candidate_tests"]["candidate_test_file_count"] == 1
+    assert evidence["reverse_classical_test_quality"] == {
+        "status": "passed",
+        "candidate_tests_on_patched_code": "passed",
+        "candidate_tests_on_original_code": "passed",
+    }
 
 
 def test_full_gate_unavailable_reviewer_does_not_count_as_accept(tmp_path):
@@ -791,6 +844,35 @@ def _fake_cursor_result(decision: str, *, model: str = "fake-model") -> CursorIn
         probe=ProbeResult("INDEPENDENT_REVIEWER", "green", "fake_ok", {}),
         outcome=_fake_outcome(decision),
         transcript=f"fake reviewer transcript {decision}",
+        model=model,
+        reviewer_runtime="fake_runtime",
+        reviewer_output_mode="cursor_sdk",
+        reviewer_assurance="self_reported",
+    )
+
+
+def _fake_rubric_cursor_result(
+    decision: str,
+    *,
+    label: str,
+    model: str = "fake-model",
+) -> CursorInvocationResult:
+    outcome = _fake_outcome(decision)
+    critical = dict(outcome.critical_review or {})
+    critical["mergeability_label"] = label
+    critical["mergeability_rubric"] = {
+        "behavioral_correctness": "unverifiable from public evidence",
+        "regression_risk": "requires human review",
+        "test_quality": "public evidence insufficient",
+        "scope_locality": "within public scope",
+        "maintainability": "unknown",
+        "safety": "no public suspicious behavior",
+        "unverifiable_from_public_evidence": label == "needs_human_review",
+    }
+    return CursorInvocationResult(
+        probe=ProbeResult("INDEPENDENT_REVIEWER", "green", "fake_ok", {}),
+        outcome=outcome.model_copy(update={"critical_review": critical}),
+        transcript=f"fake reviewer transcript {decision} {label}",
         model=model,
         reviewer_runtime="fake_runtime",
         reviewer_output_mode="cursor_sdk",
@@ -1743,9 +1825,8 @@ def test_paired_report_separates_heldout_metrics_and_confidence_intervals(tmp_pa
         assert arm["n_good"] == arm["true_accept_denominator"]
         false_accept_ci = arm["false_accept_confidence_interval"]
         true_accept_ci = arm["true_accept_confidence_interval"]
-        assert false_accept_ci["method"] == "wilson_score"
-        assert true_accept_ci["method"] == "wilson_score"
-        assert false_accept_ci["label"] == "approximate_binary_proportion_interval"
+        assert false_accept_ci["method"] in {"wilson_score", "rule_of_three"}
+        assert true_accept_ci["method"] in {"wilson_score", "rule_of_three"}
         assert false_accept_ci["denominator"] == arm["false_accept_denominator"]
         assert true_accept_ci["denominator"] == arm["true_accept_denominator"]
 
@@ -2318,8 +2399,14 @@ def test_powered_factorial_records_far_tar_frr_confidence_and_discordance(tmp_pa
     assert "false_accept_rate" in arm
     assert "true_accept_rate" in arm
     assert "false_reject_rate" in arm
-    assert arm["false_accept_confidence_interval"]["method"] == "wilson_score"
-    assert arm["true_accept_confidence_interval"]["method"] == "wilson_score"
+    assert arm["false_accept_confidence_interval"]["method"] in {
+        "wilson_score",
+        "rule_of_three",
+    }
+    assert arm["true_accept_confidence_interval"]["method"] in {
+        "wilson_score",
+        "rule_of_three",
+    }
     discordance = report["paired_discordant_counts"]["full_supervisor_stack"]
     assert discordance["candidate_count"] == report["candidate_count"]
     assert discordance["left_accept_right_reject"] >= 1
@@ -2422,10 +2509,13 @@ def test_powered_threshold_met_may_allow_metric_but_never_mutates_policy(tmp_pat
         output_dir=tmp_path,
         arm_decisions=_factorial_arm_decisions(),
         reviewer_panel_results=_factorial_reviewer_results(),
-        powered_thresholds={"min_bad": 1, "min_good": 1},
+        powered_thresholds={"min_bad": 1, "min_good": 1, "min_discordant": 1},
     )
 
     assert report["sample_size_sufficiency"]["status"] == "sufficient"
+    assert report["paired_power"]["status"] == "sufficient"
+    assert report["promotion_guardrails"]["sample_size_threshold_met"] is True
+    assert report["promotion_guardrails"]["paired_power_threshold_met"] is True
     assert report["metric_applyable"] is True
     assert report["improvement_claim_allowed"] is False
     assert report["default_change_allowed"] is False
@@ -2635,7 +2725,8 @@ def test_powered_factorial_baseline_missing_replay_fields_is_unavailable(tmp_pat
         assert row["single_agent_baseline_evidence_kind"] == "malformed"
         assert row["single_agent_baseline_unavailable_reason"] == (
             "malformed_baseline_row_missing_replay_evidence:"
-            "accept,decision_source,producer,prompt_sha256"
+            "accept,candidate_id,decision_source,model,producer,prompt_sha256,"
+            "provider,runner_label"
         )
 
 
@@ -3878,7 +3969,20 @@ def test_full_panel_report_emits_per_reviewer_arms(tmp_path):
     assert per_reviewer["independent-reviewer-0"]["false_accept_count"] == 1
     assert per_reviewer["independent-reviewer-1"]["false_accept_count"] == 0
     assert per_reviewer["independent-reviewer-1"]["per_candidate_results"]
+    assert per_reviewer["independent-reviewer-0"]["provider_family"] == "cursor"
+    assert per_reviewer["independent-reviewer-0"]["tool_access"] == "codebase_tools"
+    assert per_reviewer["independent-reviewer-0"]["assurance_grade"] == "agentic"
+    assert per_reviewer["independent-reviewer-1"]["provider_family"] == "openai"
+    assert per_reviewer["independent-reviewer-1"]["tool_access"] == "codebase_tools"
     assert report["arms"]["supervisor_full_gate"]["false_accept_count"] == 0
+    provenance = report["configured_reviewer_panel"]["reviewer_provenance"]
+    assert {
+        item["reviewer_id"]: item["provider_family"]
+        for item in provenance["reviewers"]
+    } == {
+        "independent-reviewer-0": "cursor",
+        "independent-reviewer-1": "openai",
+    }
     agreement = report["configured_reviewer_panel"]["inter_reviewer_agreement"]
     assert agreement == [
         {
@@ -3888,6 +3992,125 @@ def test_full_panel_report_emits_per_reviewer_arms(tmp_path):
             "agreement_rate": 0.5,
         }
     ]
+
+
+def test_cursor_default_is_unproven_cross_family_without_resolved_provider(tmp_path):
+    cursor_reviewer = _CandidateDecisionReviewer(
+        "independent-reviewer-0",
+        runtime="cursor_sdk",
+        model="default",
+        decisions={"known-good": "accept", "hidden-behavior-miss": "accept"},
+    )
+    codex_reviewer = _CandidateDecisionReviewer(
+        "independent-reviewer-1",
+        runtime="codex_cli",
+        model="gpt-5.5",
+        decisions={"known-good": "accept", "hidden-behavior-miss": "accept"},
+    )
+
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        candidate_paths=_two_candidate_paths(),
+        strict_calibration=False,
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            reviewers=(cursor_reviewer, codex_reviewer),
+        ),
+    )
+
+    provenance = report["configured_reviewer_panel"]["reviewer_provenance"]
+    cursor = {
+        item["reviewer_id"]: item
+        for item in provenance["reviewers"]
+    }["independent-reviewer-0"]
+    assert cursor["model"] == "default"
+    assert cursor["cross_family_claim_status"] == "unproven_default_model"
+    assert cursor["counts_as_proven_cross_family"] is False
+    assert "independent-reviewer-0" in provenance["cursor_default_unproven_reviewer_ids"]
+    guard = report["roster_selection_guard"]
+    assert "cursor_default_provider_family_unproven" in guard["reasons"]
+    assert "treat_cursor_default_as_proven_cross_family_without_provider_evidence" in (
+        guard["forbidden_conclusions"]
+    )
+
+
+def test_litellm_structured_reviewer_is_labeled_text_only_without_tool_evidence(tmp_path):
+    litellm_reviewer = _CandidateDecisionReviewer(
+        "independent-reviewer-gemini",
+        runtime="litellm_structured",
+        model="gemini-2.5-pro",
+        decisions={"known-good": "accept", "hidden-behavior-miss": "revise"},
+    )
+
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        candidate_paths=_two_candidate_paths(),
+        strict_calibration=False,
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            reviewers=(litellm_reviewer,),
+        ),
+    )
+
+    arm = report["per_reviewer_arms"]["independent-reviewer-gemini"]
+    assert arm["provider_family"] == "google"
+    assert arm["tool_access"] == "text_only"
+    assert arm["assurance_grade"] == "text_only"
+    assert arm["tool_backed_command_evidence"] is False
+
+    provenance = report["configured_reviewer_panel"]["reviewer_provenance"]
+    assert provenance["text_only_reviewer_ids"] == ["independent-reviewer-gemini"]
+    assert provenance["reviewers"][0]["tool_backed_command_evidence"] is False
+    guard = report["roster_selection_guard"]
+    assert "text_only_reviewer_without_tool_backed_evidence" in guard["reasons"]
+    assert "treat_text_only_reviewer_as_tool_backed_without_command_evidence" in (
+        guard["forbidden_conclusions"]
+    )
+
+
+def test_same_family_generator_reviewer_decisive_vote_warns(tmp_path):
+    codex_reviewer = _CandidateDecisionReviewer(
+        "independent-reviewer-1",
+        runtime="codex_cli",
+        model="gpt-5.5",
+        decisions={"known-good": "accept", "hidden-behavior-miss": "accept"},
+    )
+    baseline_decisions = _produced_baseline_decisions(
+        candidate_filter={"known-good", "hidden-behavior-miss"},
+    )
+    for decision in baseline_decisions.values():
+        decision["producer"] = {
+            **decision["producer"],
+            "provider": "openai",
+            "provider_family": "openai",
+            "model": "gpt-5.5",
+        }
+
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        candidate_paths=_two_candidate_paths(),
+        strict_calibration=False,
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            reviewers=(codex_reviewer,),
+        ),
+        single_agent_baseline_decisions=baseline_decisions,
+    )
+
+    disjointness = report["configured_reviewer_panel"]["generator_disjointness"]
+    assert disjointness["same_family_decisive_vote_count"] >= 1
+    warning = disjointness["self_preference_warnings"][0]
+    assert warning["generator_family"] == "openai"
+    assert warning["reviewer_family"] == "openai"
+    assert warning["reason"] == "sole_same_family_decisive_reviewer"
+    guard = report["roster_selection_guard"]
+    assert "same_family_generator_reviewer_decisive_vote" in guard["reasons"]
+    assert "allow_single_family_reviewer_as_sole_decisive_same_family_judge" in (
+        guard["forbidden_conclusions"]
+    )
 
 
 def test_isolated_cursor_reviewer_does_not_flag_modified_worktree(tmp_path):
@@ -4001,6 +4224,340 @@ def test_full_panel_report_is_report_only_and_oracle_isolated(tmp_path):
     assert report["gate_advanced"] is False
     assert report["oracle_isolation"]["ok"] is True
     assert report["hidden_field_leak_check"]["ok"] is True
+
+
+def test_needs_human_review_is_abstention_not_acceptance(tmp_path):
+    abstaining_reviewer = _RecordingFakeReviewer(
+        "independent-reviewer-0",
+        result=_fake_rubric_cursor_result("accept", label="needs_human_review"),
+    )
+
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        candidate_paths=_two_candidate_paths(),
+        strict_calibration=False,
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            reviewers=(abstaining_reviewer,),
+        ),
+    )
+
+    public_accept_rows = [
+        row for row in report["per_task_results"]
+        if row["supervisor_candidate_review_accept"]
+    ]
+    assert public_accept_rows
+    for row in public_accept_rows:
+        assert row["supervisor_full_gate_accept"] is False
+        assert row["supervisor_full_gate_unavailable"] is False
+        labels = [
+            result["mergeability_label"]
+            for result in row["supervisor_full_gate_reviewer_results"]
+        ]
+        assert labels == ["needs_human_review"]
+
+    full_gate = report["arms"]["supervisor_full_gate"]
+    assert full_gate["accepted_count"] == 0
+    assert full_gate["false_accept_count"] == 0
+    coverage = report["mergeability_rubric_coverage"]
+    assert coverage["scoring_authority"] == "deterministic_oracle"
+    assert coverage["labels"]["needs_human_review"] == len(public_accept_rows)
+    assert coverage["abstention_count"] == len(public_accept_rows)
+    assert coverage["abstention_is_accept"] is False
+    assert report["configured_reviewer_panel"]["mergeability_rubric_coverage"] == coverage
+
+
+def test_mergeability_rubric_labels_are_descriptive_not_scoring_authority(tmp_path):
+    reviewer = _RecordingFakeReviewer(
+        "independent-reviewer-0",
+        result=_fake_rubric_cursor_result("accept", label="mergeable"),
+    )
+
+    report = run_paired_acceptance_pilot(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        candidate_paths=_two_candidate_paths(),
+        strict_calibration=False,
+        reviewer_panel_mode="configured",
+        configured_reviewer_panel_options=ConfiguredReviewerPanelOptions(
+            reviewers=(reviewer,),
+        ),
+    )
+
+    coverage = report["mergeability_rubric_coverage"]
+    assert coverage["llm_labels_descriptive_only"] is True
+    assert coverage["scoring_authority"] == "deterministic_oracle"
+    assert coverage["labels"]["mergeable"] > 0
+    assert report["arms"]["supervisor_full_gate"]["oracle_coupled"] is False
+    assert report["oracle_agreement"]["supervisor_full_gate"]["scored_by"] == "held_out_oracle"
+
+
+# ---------------------------------------------------------------------------
+# Real/disagreement-enriched reviewer roster diagnostic.
+# ---------------------------------------------------------------------------
+
+
+def _roster_result(
+    reviewer_id: str,
+    decision: str,
+    *,
+    runtime: str,
+    model: str,
+    provider_family: str,
+    tool_access: str = "codebase_tools",
+    tool_backed_command_evidence: bool = False,
+    label: str | None = None,
+    provider_family_verified: bool = True,
+    provider_family_source: str = "served_model",
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "reviewer_id": reviewer_id,
+        "decision": decision,
+        "accepted": decision == "accept",
+        "verdict_present": True,
+        "runtime": runtime,
+        "reviewer_runtime": runtime,
+        "model": model,
+        "provider_family": provider_family,
+        "provider_family_verified": provider_family_verified,
+        "provider_family_source": provider_family_source,
+        "lineage": [provider_family, runtime, model],
+        "tool_access": tool_access,
+        "tool_backed_command_evidence": tool_backed_command_evidence,
+        "assurance_grade": "tool_backed_primary"
+        if tool_access == "codebase_tools"
+        else "text_only",
+        "transcript_sha256": "a" * 64,
+        "output_sha256": "b" * 64,
+    }
+    if label is not None:
+        payload["mergeability_label"] = label
+    return payload
+
+
+def test_reviewer_roster_diagnostic_reports_same_pool_roster_arms(tmp_path):
+    reviewer_results = {
+        "known-good": [
+            _roster_result(
+                "independent-reviewer-1",
+                "accept",
+                runtime="codex_cli",
+                model="gpt-5.5",
+                provider_family="openai",
+            ),
+            _roster_result(
+                "independent-reviewer-gemini",
+                "accept",
+                runtime="litellm_structured",
+                model="gemini-2.5-pro",
+                provider_family="google",
+                tool_access="text_only",
+                label="mergeable",
+            ),
+        ],
+        "hidden-behavior-miss": [
+            _roster_result(
+                "independent-reviewer-1",
+                "deny",
+                runtime="codex_cli",
+                model="gpt-5.5",
+                provider_family="openai",
+            ),
+            _roster_result(
+                "independent-reviewer-gemini",
+                "accept",
+                runtime="litellm_structured",
+                model="gemini-2.5-pro",
+                provider_family="google",
+                tool_access="text_only",
+                label="mergeable",
+            ),
+        ],
+    }
+
+    report = run_mergeability_reviewer_roster_diagnostic(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        candidate_paths=_two_candidate_paths(),
+        strict_calibration=False,
+        reviewer_panel_results=reviewer_results,
+        evidence_scope="disagreement_enriched",
+    )
+
+    assert (tmp_path / "roster_diagnostic_report.json").exists()
+    assert report["same_candidate_pool"] is True
+    assert set(report["arms"]) >= {
+        "s_probe",
+        "s_probe_codex",
+        "s_probe_cross_family_text_only",
+        "s_probe_full_panel",
+    }
+    assert len(set(report["candidate_pool_by_arm_sha256"].values())) == 1
+    assert report["arms"]["s_probe"]["false_accept_count"] == 1
+    assert report["arms"]["s_probe_codex"]["false_accept_count"] == 0
+    assert report["arms"]["s_probe_cross_family_text_only"]["false_accept_count"] == 1
+    assert report["arms"]["s_probe_full_panel"]["false_accept_count"] == 0
+    assert report["per_reviewer_arms"]["independent-reviewer-1"]["false_accept_count"] == 0
+    assert report["per_reviewer_arms"]["independent-reviewer-gemini"]["false_accept_count"] == 1
+    assert report["pairwise_reviewer_agreement"][0]["agreement_rate"] == 0.5
+    assert report["pairwise_oracle_error_overlap"][0]["left_error_count"] == 0
+    assert report["pairwise_oracle_error_overlap"][0]["right_error_count"] == 1
+    assert report["mergeability_rubric_coverage"]["labels"]["mergeable"] == 2
+    assert report["metric_applyable"] is False
+    assert report["improvement_claim_allowed"] is False
+    assert report["policy_mutated"] is False
+    assert report["gate_advanced"] is False
+
+
+def test_reviewer_roster_diagnostic_rejects_unknown_candidate_receipts(tmp_path):
+    with pytest.raises(MergeabilityBenchError, match="unknown reviewer result candidate"):
+        run_mergeability_reviewer_roster_diagnostic(
+            BENCH_ROOT,
+            output_dir=tmp_path,
+            candidate_paths=_two_candidate_paths(),
+            strict_calibration=False,
+            reviewer_panel_results={
+                "candidate-not-in-pool": [
+                    _roster_result(
+                        "independent-reviewer-1",
+                        "accept",
+                        runtime="codex_cli",
+                        model="gpt-5.5",
+                        provider_family="openai",
+                    )
+                ]
+            },
+        )
+
+
+def test_roster_diagnostic_zero_error_reviewers_do_not_create_independence_claim(tmp_path):
+    reviewer_results = {
+        "known-good": [
+            _roster_result("codex", "accept", runtime="codex_cli", model="gpt-5.5", provider_family="openai"),
+            _roster_result("cursor", "accept", runtime="cursor_sdk", model="composer-2.5", provider_family="cursor"),
+        ],
+        "hidden-behavior-miss": [
+            _roster_result("codex", "deny", runtime="codex_cli", model="gpt-5.5", provider_family="openai"),
+            _roster_result("cursor", "deny", runtime="cursor_sdk", model="composer-2.5", provider_family="cursor"),
+        ],
+    }
+
+    report = run_mergeability_reviewer_roster_diagnostic(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        candidate_paths=_two_candidate_paths(),
+        strict_calibration=False,
+        reviewer_panel_results=reviewer_results,
+        evidence_scope="disagreement_enriched",
+    )
+
+    assert report["effective_vote_estimate"]["status"] == "unavailable"
+    assert report["effective_vote_estimate"]["reason"] == "zero_oracle_grounded_reviewer_errors"
+    guard = report["roster_selection_guard"]
+    assert guard["roster_selection_allowed"] is False
+    assert "oracle_grounded_reviewer_errors_required" in guard["reasons"]
+
+
+def test_roster_diagnostic_fixture_scope_blocks_roster_selection_even_with_errors(tmp_path):
+    reviewer_results = {
+        "known-good": [
+            _roster_result("codex", "accept", runtime="codex_cli", model="gpt-5.5", provider_family="openai"),
+            _roster_result("cursor", "accept", runtime="cursor_sdk", model="composer-2.5", provider_family="cursor"),
+        ],
+        "hidden-behavior-miss": [
+            _roster_result("codex", "accept", runtime="codex_cli", model="gpt-5.5", provider_family="openai"),
+            _roster_result("cursor", "deny", runtime="cursor_sdk", model="composer-2.5", provider_family="cursor"),
+        ],
+    }
+
+    report = run_mergeability_reviewer_roster_diagnostic(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        candidate_paths=_two_candidate_paths(),
+        strict_calibration=False,
+        reviewer_panel_results=reviewer_results,
+        evidence_scope="fixture_diagnostic_only",
+    )
+
+    guard = report["roster_selection_guard"]
+    assert guard["roster_selection_allowed"] is False
+    assert guard["fixture_only_can_select_roster"] is False
+    assert "fixture_only_evidence_cannot_select_reviewer_roster" in guard["reasons"]
+    assert report["effective_vote_estimate"]["status"] == "computed"
+
+
+def test_roster_diagnostic_self_preference_warning_blocks_authority(tmp_path):
+    reviewer_results = {
+        "known-good": [
+            _roster_result(
+                "independent-reviewer-1",
+                "accept",
+                runtime="codex_cli",
+                model="gpt-5.5",
+                provider_family="openai",
+            )
+        ],
+        "hidden-behavior-miss": [
+            _roster_result(
+                "independent-reviewer-1",
+                "accept",
+                runtime="codex_cli",
+                model="gpt-5.5",
+                provider_family="openai",
+            )
+        ],
+    }
+
+    report = run_mergeability_reviewer_roster_diagnostic(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        candidate_paths=_two_candidate_paths(),
+        strict_calibration=False,
+        reviewer_panel_results=reviewer_results,
+        evidence_scope="disagreement_enriched",
+        generator_family_by_candidate={
+            "known-good": "openai",
+            "hidden-behavior-miss": "openai",
+        },
+    )
+
+    disjointness = report["generator_disjointness"]
+    assert disjointness["same_family_decisive_vote_count"] == 2
+    guard = report["roster_selection_guard"]
+    assert guard["roster_selection_allowed"] is False
+    assert "same_family_generator_reviewer_decisive_vote" in guard["reasons"]
+
+
+def test_roster_diagnostic_can_mark_disagreement_enriched_error_evidence_available(tmp_path):
+    reviewer_results = {
+        "known-good": [
+            _roster_result("codex", "accept", runtime="codex_cli", model="gpt-5.5", provider_family="openai"),
+            _roster_result("cursor", "accept", runtime="cursor_sdk", model="composer-2.5", provider_family="cursor"),
+        ],
+        "hidden-behavior-miss": [
+            _roster_result("codex", "accept", runtime="codex_cli", model="gpt-5.5", provider_family="openai"),
+            _roster_result("cursor", "deny", runtime="cursor_sdk", model="composer-2.5", provider_family="cursor"),
+        ],
+    }
+
+    report = run_mergeability_reviewer_roster_diagnostic(
+        BENCH_ROOT,
+        output_dir=tmp_path,
+        candidate_paths=_two_candidate_paths(),
+        strict_calibration=False,
+        reviewer_panel_results=reviewer_results,
+        evidence_scope="disagreement_enriched",
+    )
+
+    guard = report["roster_selection_guard"]
+    assert guard["roster_selection_allowed"] is True
+    assert guard["decision_authority"] == "diagnostic_evidence_available"
+    assert report["effective_vote_estimate"]["status"] == "computed"
+    assert report["metric_applyable"] is False
+    assert report["improvement_claim_allowed"] is False
+    assert report["policy_mutated"] is False
+    assert report["gate_advanced"] is False
 
 
 # ---------------------------------------------------------------------------

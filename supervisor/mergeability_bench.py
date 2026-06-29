@@ -30,6 +30,8 @@ from .reviewer_registry import (
     configured_reviewers,
     evaluate_reviewer_panel,
     independent_reviewer_results_from_review_results,
+    provider_family_for_reviewer,
+    provider_family_verification_for_reviewer,
 )
 from .redaction import redact
 
@@ -47,6 +49,9 @@ SUPERVISOR_FULL_GATE_RESULT_SCHEMA_VERSION = "supervisor-mergeability-full-gate-
 MERGEABILITY_LIVE_GENERATION_REPORT_SCHEMA_VERSION = "supervisor-mergeability-live-generation-report/v1"
 MERGEABILITY_LIVE_GENERATOR_INPUT_SCHEMA_VERSION = "supervisor-mergeability-live-generator-input/v1"
 MERGEABILITY_POWERED_FACTORIAL_REPORT_SCHEMA_VERSION = "supervisor-mergeability-powered-factorial-report/v1"
+MERGEABILITY_ROSTER_DIAGNOSTIC_REPORT_SCHEMA_VERSION = "supervisor-mergeability-roster-diagnostic-report/v1"
+MERGEABILITY_RUBRIC_SCHEMA_VERSION = "supervisor-mergeability-rubric/v1"
+MERGEABILITY_RUBRIC_LABELS = ("mergeable", "not_mergeable", "needs_human_review")
 
 FACTORIAL_ARM_DEFINITIONS = {
     "single_agent_baseline": {
@@ -1197,6 +1202,9 @@ def run_paired_acceptance_pilot(
     per_reviewer_arms = _per_reviewer_acceptance_arms(rows)
     inter_reviewer_agreement = _inter_reviewer_agreement(rows)
     reviewer_packet_leak_refs = _reviewer_packet_leak_refs(rows)
+    reviewer_provenance = _reviewer_provenance_report(rows)
+    generator_disjointness = _generator_disjointness_report(rows)
+    mergeability_rubric_coverage = _mergeability_rubric_coverage(rows)
     metric_splits = _metric_splits(
         rows,
         arms={
@@ -1213,6 +1221,8 @@ def run_paired_acceptance_pilot(
     roster_selection_guard = _roster_selection_guard(
         inter_reviewer_agreement=inter_reviewer_agreement,
         codex_only_calibration_active=codex_only_calibration_active,
+        reviewer_provenance=reviewer_provenance,
+        generator_disjointness=generator_disjointness,
     )
     report = {
         "schema_version": MERGEABILITY_PAIRED_REPORT_SCHEMA_VERSION,
@@ -1294,6 +1304,9 @@ def run_paired_acceptance_pilot(
         "matched_true_accept_status": matched_true_accept["status"],
         "oracle_agreement": oracle_agreement,
         "per_reviewer_arms": per_reviewer_arms,
+        "reviewer_provenance": reviewer_provenance,
+        "generator_disjointness": generator_disjointness,
+        "mergeability_rubric_coverage": mergeability_rubric_coverage,
         "oracle_isolation": {
             "ok": not reviewer_packet_leak_refs,
             "violations": reviewer_packet_leak_refs,
@@ -1314,6 +1327,12 @@ def run_paired_acceptance_pilot(
             "codex_only_calibration": codex_only_calibration_active,
             "roster_selection_allowed": False,
             "roster_selection_guard": roster_selection_guard,
+            "reviewer_provenance": reviewer_provenance,
+            "generator_disjointness": generator_disjointness,
+            "mergeability_rubric_coverage": mergeability_rubric_coverage,
+            "self_preference_warnings": list(
+                generator_disjointness.get("self_preference_warnings") or []
+            ),
             "configured_panel_active": (
                 reviewer_panel_mode == "configured"
                 and configured_reviewer_panel_options is not None
@@ -1646,6 +1665,8 @@ def _roster_selection_guard(
     *,
     inter_reviewer_agreement: Sequence[Mapping[str, Any]],
     codex_only_calibration_active: bool,
+    reviewer_provenance: Mapping[str, Any] | None = None,
+    generator_disjointness: Mapping[str, Any] | None = None,
     evidence_scope: str = "fixture_diagnostic_only",
 ) -> dict[str, Any]:
     shared_pairs = [
@@ -1664,6 +1685,27 @@ def _roster_selection_guard(
         reasons.append("codex_only_calibration_is_not_full_panel_evidence")
     if saturated_agreement:
         reasons.append("fixture_corpus_saturated_for_roster_selection")
+    cursor_default_ids = (
+        list(reviewer_provenance.get("cursor_default_unproven_reviewer_ids") or [])
+        if isinstance(reviewer_provenance, Mapping)
+        else []
+    )
+    text_only_ids = (
+        list(reviewer_provenance.get("text_only_reviewer_ids") or [])
+        if isinstance(reviewer_provenance, Mapping)
+        else []
+    )
+    same_family_count = (
+        int(generator_disjointness.get("same_family_decisive_vote_count") or 0)
+        if isinstance(generator_disjointness, Mapping)
+        else 0
+    )
+    if cursor_default_ids:
+        reasons.append("cursor_default_provider_family_unproven")
+    if text_only_ids:
+        reasons.append("text_only_reviewer_without_tool_backed_evidence")
+    if same_family_count:
+        reasons.append("same_family_generator_reviewer_decisive_vote")
     return {
         "schema_version": "supervisor-mergeability-roster-selection-guard/v1",
         "evidence_scope": evidence_scope,
@@ -1678,6 +1720,8 @@ def _roster_selection_guard(
             "real_or_disagreement_enriched_candidates",
             "oracle_grounded_far_tar_by_roster",
             "reviewer_disagreement_and_self_preference_analysis",
+            "reviewer_provider_family_and_tool_access_provenance",
+            "generator_family_disjointness_by_candidate",
             "report_only_until_powered_live_evidence",
         ],
         "forbidden_conclusions": [
@@ -1685,6 +1729,8 @@ def _roster_selection_guard(
             "select_codex_only_from_fixture_only_ablation",
             "treat_cursor_default_as_proven_cross_family_without_provider_evidence",
             "treat_saturated_fixture_agreement_as_no_diversity_value",
+            "treat_text_only_reviewer_as_tool_backed_without_command_evidence",
+            "allow_single_family_reviewer_as_sole_decisive_same_family_judge",
         ],
     }
 
@@ -1753,12 +1799,22 @@ def run_powered_factorial_mergeability_evaluation(
     arm_decisions: Mapping[str, Mapping[str, Any]] | None = None,
     reviewer_panel_results: Mapping[str, list[Mapping[str, Any]]] | None = None,
     powered_thresholds: Mapping[str, int] | None = None,
+    precomputed_calibration: Mapping[str, Any] | None = None,
+    public_reviews: Mapping[str, Mapping[str, Any]] | None = None,
+    candidate_artifact_hashes: Mapping[str, str] | None = None,
     gaming_flags: tuple[str, ...] | list[str] = (),
 ) -> dict[str, Any]:
     """Build a report-only powered factorial mergeability evaluation.
 
     The report compares the same candidate pool across factorial arms. Oracle
     labels are used only after arm decisions are fixed, for aggregate metrics.
+
+    ``powered_thresholds`` accepts ``min_bad``/``min_good`` for raw oracle
+    bucket sample-size sufficiency and ``min_discordant``/``alpha`` for the
+    paired McNemar gate over full-supervisor-stack vs single-agent-baseline
+    decisions. ``metric_applyable`` requires both raw sample-size sufficiency
+    and paired-power sufficiency; ``promotion_guardrails`` exposes each side
+    as ``sample_size_threshold_met`` and ``paired_power_threshold_met``.
     """
     started = time.monotonic()
     bench_root_path = Path(bench_root).expanduser().resolve()
@@ -1771,28 +1827,56 @@ def run_powered_factorial_mergeability_evaluation(
     )
     candidate_ids = tuple(candidate.candidate_id for candidate in candidate_list if candidate.task_id in tasks)
     _validate_factorial_arm_pool(arm_decisions or {}, candidate_ids=candidate_ids)
-    public_reviews = {
-        candidate.candidate_id: review_mergeability_candidate_publicly(
-            tasks[candidate.task_id],
-            candidate,
-            bench_root=bench_root_path,
+    if public_reviews is None:
+        resolved_public_reviews = {
+            candidate.candidate_id: review_mergeability_candidate_publicly(
+                tasks[candidate.task_id],
+                candidate,
+                bench_root=bench_root_path,
+                timeout_s=timeout_s,
+            )
+            for candidate in candidate_list
+            if candidate.task_id in tasks
+        }
+    else:
+        resolved_public_reviews = {
+            str(candidate_id): _normalise_precomputed_public_review(
+                raw,
+                candidate_id=str(candidate_id),
+            )
+            for candidate_id, raw in public_reviews.items()
+        }
+        missing_public_reviews = sorted(set(candidate_ids) - set(resolved_public_reviews))
+        extra_public_reviews = sorted(set(resolved_public_reviews) - set(candidate_ids))
+        if missing_public_reviews or extra_public_reviews:
+            raise MergeabilityBenchError(
+                "precomputed public review candidate pool mismatch: "
+                f"missing={missing_public_reviews} extra={extra_public_reviews}"
+            )
+    if precomputed_calibration is None:
+        calibration = validate_mergeability_corpus(
+            bench_root_path,
+            output_dir=output_path,
+            strict=strict_calibration,
+            candidate_paths=candidate_paths,
             timeout_s=timeout_s,
         )
-        for candidate in candidate_list
-        if candidate.task_id in tasks
-    }
-    calibration = validate_mergeability_corpus(
-        bench_root_path,
-        output_dir=output_path,
-        strict=strict_calibration,
-        candidate_paths=candidate_paths,
-        timeout_s=timeout_s,
-    )
+    else:
+        calibration = _normalise_precomputed_calibration(
+            precomputed_calibration,
+            candidate_ids=candidate_ids,
+            manifest=manifest,
+            bench_root=bench_root_path,
+        )
     candidates = {candidate.candidate_id: candidate for candidate in candidate_list}
     task_hashes = {entry["task_id"]: entry["task_hash"] for entry in manifest["tasks"]}
-    candidate_hashes = {
+    manifest_candidate_hashes = {
         (entry["task_id"], entry["candidate_id"]): entry["candidate_hash"]
         for entry in manifest["candidates"]
+    }
+    candidate_hashes_by_id = {
+        str(candidate_id): str(candidate_hash)
+        for candidate_id, candidate_hash in (candidate_artifact_hashes or {}).items()
     }
 
     rows: list[dict[str, Any]] = []
@@ -1800,8 +1884,17 @@ def run_powered_factorial_mergeability_evaluation(
         candidate = candidates[result["candidate_id"]]
         task = tasks[candidate.task_id]
         oracle_accept = float(result["final_score"]) >= 1.0
-        public_review = public_reviews[candidate.candidate_id]
+        public_review = resolved_public_reviews[candidate.candidate_id]
         reviewer_results = list((reviewer_panel_results or {}).get(candidate.candidate_id) or [])
+        candidate_artifact_hash = candidate_hashes_by_id.get(candidate.candidate_id)
+        if candidate_artifact_hash is None:
+            manifest_key = (result["task_id"], result["candidate_id"])
+            candidate_artifact_hash = manifest_candidate_hashes.get(manifest_key)
+        if candidate_artifact_hash is None:
+            raise MergeabilityBenchError(
+                "candidate artifact hash missing for powered factorial row: "
+                f"{result['task_id']}/{result['candidate_id']}"
+            )
         full_gate_from_reviewers = _factorial_full_stack_decision(
             public_accept=bool(public_review["accept"]),
             reviewer_results=reviewer_results,
@@ -1810,9 +1903,8 @@ def run_powered_factorial_mergeability_evaluation(
         baseline_raw = baseline_per_arm.get(candidate.candidate_id) if baseline_per_arm else None
         baseline_decision = _resolve_powered_baseline_decision(
             raw=baseline_raw,
-            expected_candidate_artifact_hash=candidate_hashes[
-                (result["task_id"], result["candidate_id"])
-            ],
+            expected_candidate_artifact_hash=candidate_artifact_hash,
+            expected_candidate_id=candidate.candidate_id,
         )
         defaults = {
             "single_agent_baseline": {
@@ -1847,10 +1939,11 @@ def run_powered_factorial_mergeability_evaluation(
             "task_class": task.task_class,
             "split": task.split,
             "candidate_id": result["candidate_id"],
-            "candidate_hash": candidate_hashes[(result["task_id"], result["candidate_id"])],
+            "candidate_hash": candidate_artifact_hash,
             "task_hash": task_hashes[result["task_id"]],
             "control_kind": result["control_kind"],
             "oracle_accept": oracle_accept,
+            "oracle_label": str(result.get("oracle_label") or ""),
             "receipt_id": result["receipt_id"],
             "receipt": result["receipt"],
             "blocker_status": result["blocker_status"],
@@ -1925,6 +2018,10 @@ def run_powered_factorial_mergeability_evaluation(
             int(arm["false_reject_count"]),
             int(arm["false_reject_denominator"]),
         )
+        arm["false_reject_rate_summary"] = _rate_summary(
+            int(arm["false_reject_count"]),
+            int(arm["false_reject_denominator"]),
+        )
         arm["improvement_claim_allowed"] = False if arm_name == "oracle_ceiling" else None
 
     candidate_pool = [
@@ -1955,6 +2052,11 @@ def run_powered_factorial_mergeability_evaluation(
         for arm in FACTORIAL_ARM_DEFINITIONS
         if arm != "single_agent_baseline"
     }
+    paired_power = _paired_power_sufficiency(
+        paired_discordant,
+        powered_thresholds=powered_thresholds or {},
+        required_comparison="full_supervisor_stack",
+    )
     leave_one = _leave_one_reviewer_out_analysis(
         rows,
         reviewer_panel_results=reviewer_panel_results or {},
@@ -1970,7 +2072,9 @@ def run_powered_factorial_mergeability_evaluation(
         all_gaming_flags.add("reviewer_panel_unavailable")
     if arms["single_agent_baseline"]["unavailable_count"]:
         all_gaming_flags.add("baseline_evidence_unavailable")
-    powered = sample_size["status"] == "sufficient"
+    sample_size_powered = sample_size["status"] == "sufficient"
+    paired_powered = paired_power["status"] == "sufficient"
+    powered = sample_size_powered and paired_powered
     full_stack_available = arms["full_supervisor_stack"]["unavailable_count"] == 0
     metric_applyable = bool(powered and full_stack_available and not all_gaming_flags)
     trend_rows = _factorial_trend_rows(
@@ -1992,12 +2096,15 @@ def run_powered_factorial_mergeability_evaluation(
         "arms": arms,
         "matched_true_accept": matched_true_accept,
         "paired_discordant_counts": paired_discordant,
+        "paired_power": paired_power,
         "leave_one_reviewer_out": leave_one,
         "sample_size_sufficiency": sample_size,
         "per_task_results": rows,
         "trend_rows": trend_rows,
         "promotion_guardrails": {
             "powered_threshold_required": True,
+            "sample_size_threshold_met": sample_size_powered,
+            "paired_power_threshold_met": paired_powered,
             "powered_threshold_met": powered,
             "gaming_flags_block_promotion": bool(all_gaming_flags),
             "reviewer_panel_unavailable_blocks_full_stack_claim": not full_stack_available,
@@ -2024,6 +2131,212 @@ def run_powered_factorial_mergeability_evaluation(
     })
     if output_path is not None:
         _export_powered_factorial_artifacts(
+            output_path,
+            manifest=manifest,
+            calibration=calibration,
+            report=report,
+            rows=rows,
+        )
+    return report
+
+
+def run_mergeability_reviewer_roster_diagnostic(
+    bench_root: str | Path,
+    *,
+    output_dir: str | Path | None = None,
+    candidate_paths: tuple[str | Path, ...] = (),
+    timeout_s: float = 30.0,
+    strict_calibration: bool = True,
+    reviewer_panel_results: Mapping[str, list[Mapping[str, Any]]] | None = None,
+    evidence_scope: str = "fixture_diagnostic_only",
+    generator_family_by_candidate: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """Build a report-only reviewer-roster diagnostic over one candidate pool."""
+    started = time.monotonic()
+    bench_root_path = Path(bench_root).expanduser().resolve()
+    output_path = Path(output_dir).expanduser() if output_dir is not None else None
+    manifest = build_mergeability_corpus_manifest(bench_root_path, candidate_paths=candidate_paths)
+    tasks = {task.task_id: task for task in load_mergeability_tasks(bench_root_path)}
+    candidate_list = (
+        tuple(load_mergeability_candidate(path) for path in candidate_paths)
+        if candidate_paths else load_mergeability_candidates(bench_root_path)
+    )
+    candidate_ids = tuple(candidate.candidate_id for candidate in candidate_list if candidate.task_id in tasks)
+    reviewer_results_by_candidate = {
+        str(candidate_id): list(results or [])
+        for candidate_id, results in (reviewer_panel_results or {}).items()
+    }
+    _validate_roster_diagnostic_candidate_pool(
+        reviewer_results_by_candidate,
+        candidate_ids=candidate_ids,
+    )
+    public_reviews = {
+        candidate.candidate_id: review_mergeability_candidate_publicly(
+            tasks[candidate.task_id],
+            candidate,
+            bench_root=bench_root_path,
+            timeout_s=timeout_s,
+        )
+        for candidate in candidate_list
+        if candidate.task_id in tasks
+    }
+    calibration = validate_mergeability_corpus(
+        bench_root_path,
+        output_dir=output_path,
+        strict=strict_calibration,
+        candidate_paths=candidate_paths,
+        timeout_s=timeout_s,
+    )
+    candidates = {candidate.candidate_id: candidate for candidate in candidate_list}
+    task_hashes = {entry["task_id"]: entry["task_hash"] for entry in manifest["tasks"]}
+    candidate_hashes = {
+        (entry["task_id"], entry["candidate_id"]): entry["candidate_hash"]
+        for entry in manifest["candidates"]
+    }
+    arm_rosters = _roster_diagnostic_arm_rosters(
+        reviewer_results_by_candidate,
+        generator_family_by_candidate=generator_family_by_candidate,
+    )
+
+    rows: list[dict[str, Any]] = []
+    for result in calibration["results"]:
+        candidate = candidates[result["candidate_id"]]
+        task = tasks[candidate.task_id]
+        raw_reviewer_results = list(reviewer_results_by_candidate.get(candidate.candidate_id) or [])
+        normalised_by_id: dict[str, dict[str, Any]] = {}
+        for raw in raw_reviewer_results:
+            if not isinstance(raw, Mapping):
+                continue
+            normalised = _normalise_mergeability_reviewer_result(raw)
+            normalised_by_id[normalised["reviewer_id"]] = normalised
+        oracle_accept = float(result["final_score"]) >= 1.0
+        public_review = public_reviews[candidate.candidate_id]
+        row: dict[str, Any] = {
+            "task_id": result["task_id"],
+            "task_class": task.task_class,
+            "split": task.split,
+            "candidate_id": result["candidate_id"],
+            "candidate_hash": candidate_hashes[(result["task_id"], result["candidate_id"])],
+            "task_hash": task_hashes[result["task_id"]],
+            "control_kind": result["control_kind"],
+            "oracle_accept": oracle_accept,
+            "receipt_id": result["receipt_id"],
+            "receipt": result["receipt"],
+            "blocker_status": result["blocker_status"],
+            "failures": result["failures"],
+            "supervisor_public_review": public_review,
+            "supervisor_full_gate_reviewer_results": raw_reviewer_results,
+            "single_agent_baseline_producer": _diagnostic_generator_producer(
+                candidate.candidate_id,
+                generator_family_by_candidate=generator_family_by_candidate,
+            ),
+        }
+        row["s_probe_accept"] = bool(public_review["accept"])
+        row["s_probe_unavailable"] = False
+        for arm, reviewer_ids in arm_rosters.items():
+            if arm == "s_probe":
+                continue
+            decision = _roster_diagnostic_arm_decision(
+                public_accept=bool(public_review["accept"]),
+                reviewer_ids=reviewer_ids,
+                reviewer_results_by_id=normalised_by_id,
+            )
+            row[f"{arm}_accept"] = bool(decision["accept"])
+            row[f"{arm}_unavailable"] = bool(decision["unavailable"])
+            row[f"{arm}_unavailable_reason"] = decision["reason"]
+        rows.append(row)
+
+    candidate_pool = [
+        {
+            "task_id": row["task_id"],
+            "task_hash": row["task_hash"],
+            "candidate_id": row["candidate_id"],
+            "candidate_hash": row["candidate_hash"],
+        }
+        for row in rows
+    ]
+    candidate_pool_sha256 = _sha256_json(candidate_pool)
+    arm_definitions = _roster_diagnostic_arm_definitions(arm_rosters)
+    arms = {
+        arm: _summarize_acceptance_arm(
+            rows,
+            arm=arm,
+            arm_role=definition["arm_role"],
+            decision_source=definition["decision_source"],
+            oracle_coupled=False,
+            evidence_kind=definition["evidence_kind"],
+        )
+        for arm, definition in arm_definitions.items()
+    }
+    for arm in arms.values():
+        arm["candidate_pool_sha256"] = candidate_pool_sha256
+    candidate_pool_by_arm = {arm: candidate_pool_sha256 for arm in arms}
+    per_reviewer_arms = _per_reviewer_acceptance_arms(rows)
+    pairwise_agreement = _inter_reviewer_agreement(rows)
+    pairwise_error_overlap = _reviewer_oracle_error_overlap(rows)
+    effective_vote_estimate = _effective_vote_estimate(
+        per_reviewer_arms=per_reviewer_arms,
+        pairwise_error_overlap=pairwise_error_overlap,
+    )
+    reviewer_provenance = _reviewer_provenance_report(rows)
+    generator_disjointness = _generator_disjointness_report(rows)
+    mergeability_rubric_coverage = _mergeability_rubric_coverage(rows)
+    roster_selection_guard = _roster_diagnostic_selection_guard(
+        evidence_scope=evidence_scope,
+        pairwise_reviewer_agreement=pairwise_agreement,
+        pairwise_oracle_error_overlap=pairwise_error_overlap,
+        effective_vote_estimate=effective_vote_estimate,
+        reviewer_provenance=reviewer_provenance,
+        generator_disjointness=generator_disjointness,
+    )
+    report = {
+        "schema_version": MERGEABILITY_ROSTER_DIAGNOSTIC_REPORT_SCHEMA_VERSION,
+        "report_label": "reviewer_roster_diagnostic",
+        "bench_root": bench_root_path.as_posix(),
+        "manifest_sha256": manifest["manifest_sha256"],
+        "calibration_summary_sha256": calibration["summary_sha256"],
+        "candidate_pool_sha256": candidate_pool_sha256,
+        "candidate_pool_by_arm_sha256": candidate_pool_by_arm,
+        "same_candidate_pool": len(set(candidate_pool_by_arm.values())) == 1,
+        "evidence_scope": evidence_scope,
+        "task_count": manifest["task_count"],
+        "candidate_count": len(rows),
+        "arms": arms,
+        "arm_rosters": {arm: list(reviewer_ids) for arm, reviewer_ids in arm_rosters.items()},
+        "per_reviewer_arms": per_reviewer_arms,
+        "pairwise_reviewer_agreement": pairwise_agreement,
+        "pairwise_oracle_error_overlap": pairwise_error_overlap,
+        "effective_vote_estimate": effective_vote_estimate,
+        "reviewer_provenance": reviewer_provenance,
+        "generator_disjointness": generator_disjointness,
+        "mergeability_rubric_coverage": mergeability_rubric_coverage,
+        "roster_selection_guard": roster_selection_guard,
+        "per_task_results": rows,
+        "metric_applyable": False,
+        "improvement_claim_allowed": False,
+        "default_change_allowed": False,
+        "policy_mutated": False,
+        "gate_advanced": False,
+        "cost_usd": 0.0,
+        "wall_clock_s": round(time.monotonic() - started, 6),
+        "validity_notes": [
+            "Roster diagnostics compare all arms on the same candidate pool.",
+            "Reviewer decisions are fixed before held-out oracle labels are used for aggregate scoring.",
+            "Fixture-only roster diagnostics cannot select Codex-only or drop reviewers.",
+            "Effective-vote estimates are unavailable unless reviewer oracle errors exist.",
+        ],
+        "recommendation": {
+            "report_only": True,
+            "applyable_policy_proposal": False,
+            "roster_selection_allowed": bool(roster_selection_guard["roster_selection_allowed"]),
+            "next_step": "run the same diagnostic on real SWE-bench-style candidates before roster promotion",
+        },
+    }
+    report["report_sha256"] = _sha256_json({
+        key: value for key, value in report.items() if key != "report_sha256"
+    })
+    if output_path is not None:
+        _export_roster_diagnostic_artifacts(
             output_path,
             manifest=manifest,
             calibration=calibration,
@@ -2961,23 +3274,132 @@ def _public_review_rejected_panel_result(public_review: Mapping[str, Any]) -> di
     }
 
 
+def _stable_public_command_payload(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, Mapping):
+        return {"value": str(raw)}
+    payload = dict(raw)
+    if "duration_s" in payload:
+        payload["duration_s"] = "<duration_s>"
+    for text_key in ("stdout_tail", "stderr_tail"):
+        if text_key in payload:
+            payload[text_key] = _stable_command_text(str(payload[text_key]))
+    return payload
+
+
+def _command_evidence_status(
+    command_results: Sequence[Mapping[str, Any]],
+    *,
+    name: str,
+    empty_status: str,
+) -> str:
+    matching = [
+        result for result in command_results
+        if str(result.get("name") or "") == name
+    ]
+    if not matching:
+        return empty_status
+    return "passed" if all(str(result.get("status") or "") == "passed" for result in matching) else "failed"
+
+
+def _public_execution_evidence(
+    *,
+    task: MergeabilityTask,
+    public_candidate: MergeabilityCandidate,
+    public_review: Mapping[str, Any],
+    command_results: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    reasons = [str(reason) for reason in public_review.get("reasons") or []]
+    gaming_flags = {str(flag) for flag in public_review.get("gaming_flags") or []}
+    candidate_test_files = _candidate_test_files(public_candidate.files)
+    candidate_test_status = _command_evidence_status(
+        command_results,
+        name="public_candidate_test",
+        empty_status="not_submitted" if not candidate_test_files else "not_executed",
+    )
+    reverse_test_status = _command_evidence_status(
+        command_results,
+        name="public_reverse_test",
+        empty_status="not_submitted" if not candidate_test_files else "not_executed",
+    )
+    if not candidate_test_files:
+        reverse_classical_status = "not_submitted"
+    elif candidate_test_status == "passed" and reverse_test_status == "passed":
+        reverse_classical_status = "passed"
+    elif candidate_test_status == "failed":
+        reverse_classical_status = "candidate_tests_fail_on_patched_code"
+    elif reverse_test_status == "failed":
+        reverse_classical_status = "weak_or_non_discriminating_tests"
+    else:
+        reverse_classical_status = "not_executed"
+    scope_failure_count = sum(1 for reason in reasons if reason.startswith("scope:"))
+    protected_refs = list(public_review.get("protected_paths_present_in_review_worktree") or [])
+    protected_candidate_path_count = sum(
+        1 for path in set(public_candidate.changed_files) | set(public_candidate.files)
+        if _matches_prefix(_normalise_relpath(path), task.protected_paths)
+    )
+    hidden_oracle_clean = "oracle_isolation_violation" not in gaming_flags
+    return {
+        "schema_version": "supervisor-mergeability-public-execution-evidence/v1",
+        "evidence_boundary": "public_only",
+        "patch_apply_check": {
+            "status": "not_applicable",
+            "reason": "fixture_candidate_file_overlay",
+        },
+        "candidate_file_overlay": {
+            "status": "passed" if hidden_oracle_clean else "failed",
+            "public_file_count": len(public_candidate.files),
+            "public_changed_file_count": len(public_candidate.changed_files),
+        },
+        "public_candidate_tests": {
+            "status": candidate_test_status,
+            "submitted": bool(candidate_test_files),
+            "candidate_test_file_count": len(candidate_test_files),
+        },
+        "reverse_classical_test_quality": {
+            "status": reverse_classical_status,
+            "candidate_tests_on_patched_code": candidate_test_status,
+            "candidate_tests_on_original_code": reverse_test_status,
+        },
+        "public_ci_lint": {
+            "status": _command_evidence_status(
+                command_results,
+                name="public_lint_build",
+                empty_status="not_configured",
+            ),
+            "configured_command_count": len(task.lint_build_commands),
+        },
+        "scope_locality": {
+            "status": "failed" if scope_failure_count else "passed",
+            "scope_failure_count": scope_failure_count,
+            "allowed_mutable_paths": list(task.allowed_mutable_paths),
+            "public_changed_files": list(public_candidate.changed_files),
+        },
+        "protected_path_exclusion": {
+            "status": "failed" if protected_refs or protected_candidate_path_count else "passed",
+            "protected_path_content_included": False,
+            "protected_candidate_path_count": protected_candidate_path_count,
+            "protected_refs_in_public_worktree_count": len(protected_refs),
+        },
+        "hidden_oracle_exclusion": {
+            "status": "passed" if hidden_oracle_clean else "failed",
+            "hidden_oracle_material_included": False,
+            "excluded_material_categories": [
+                "held_out_behavior_tests",
+                "answer_key_acceptance_labels",
+                "answer_key_scores",
+                "answer_key_expected_results",
+                "protected_path_content",
+            ],
+        },
+    }
+
+
 def _build_full_gate_reviewer_packet(
     *,
     task: MergeabilityTask,
     candidate: MergeabilityCandidate,
     public_review: Mapping[str, Any],
 ) -> dict[str, Any]:
-    def _stable_command_payload(raw: Any) -> dict[str, Any]:
-        if not isinstance(raw, Mapping):
-            return {"value": str(raw)}
-        payload = dict(raw)
-        if "duration_s" in payload:
-            payload["duration_s"] = "<duration_s>"
-        for text_key in ("stdout_tail", "stderr_tail"):
-            if text_key in payload:
-                payload[text_key] = _stable_command_text(str(payload[text_key]))
-        return payload
-
     public_files = {
         path: content
         for path, content in candidate.files.items()
@@ -3003,6 +3425,10 @@ def _build_full_gate_reviewer_packet(
         candidate=candidate,
         public_review=public_review,
     )
+    stable_command_results = [
+        _stable_public_command_payload(result)
+        for result in public_review.get("command_results") or []
+    ]
     packet = {
         "schema_version": SUPERVISOR_FULL_GATE_PACKET_SCHEMA_VERSION,
         "packet_id": f"mergeability-full-gate:{task.task_id}:{candidate.candidate_id}",
@@ -3019,16 +3445,20 @@ def _build_full_gate_reviewer_packet(
         ),
         "runtime_receipt_ids": runtime_receipt_ids,
         "public_evidence_refs": list(public_review.get("evidence_refs") or []),
+        "public_execution_evidence": _public_execution_evidence(
+            task=task,
+            public_candidate=public_candidate,
+            public_review=public_review,
+            command_results=stable_command_results,
+        ),
+        "mergeability_rubric": _public_mergeability_rubric(),
         "public_input_payload": public_input,
         "public_review": {
             "decision": str(public_review.get("decision") or ""),
             "accept": bool(public_review.get("accept")),
             "reasons": list(public_review.get("reasons") or []),
             "probe_results": list(public_review.get("probe_results") or []),
-            "command_results": [
-                _stable_command_payload(result)
-                for result in public_review.get("command_results") or []
-            ],
+            "command_results": stable_command_results,
             "evidence_refs": list(public_review.get("evidence_refs") or []),
             "public_input_hash": str(public_review.get("public_input_hash") or ""),
             "candidate_review_worktree_hash": str(public_review.get("candidate_review_worktree_hash") or ""),
@@ -3038,6 +3468,10 @@ def _build_full_gate_reviewer_packet(
         "review_instructions": {
             "objective": "Independently review whether the public candidate evidence should pass the full supervisor gate.",
             "oracle_isolation": "Do not use hidden tests, oracle labels, final scores, expected outcomes, or protected paths.",
+            "rubric": (
+                "Apply mergeability_rubric/v1 using only public evidence. "
+                "Use needs_human_review when public evidence is insufficient."
+            ),
         },
     }
     leaks = _public_input_oracle_refs(packet)
@@ -3045,6 +3479,30 @@ def _build_full_gate_reviewer_packet(
         packet["oracle_isolation_violations"] = leaks
     packet["packet_sha256"] = _sha256_json({key: value for key, value in packet.items() if key != "packet_sha256"})
     return packet
+
+
+def _public_mergeability_rubric() -> dict[str, Any]:
+    return {
+        "schema_version": MERGEABILITY_RUBRIC_SCHEMA_VERSION,
+        "allowed_labels": list(MERGEABILITY_RUBRIC_LABELS),
+        "criteria": {
+            "behavioral_correctness": "Assess behavior supported by public evidence.",
+            "regression_risk": "Assess public signals of regressions or missing compatibility checks.",
+            "test_quality": "Assess whether submitted public tests discriminate the intended behavior.",
+            "scope_locality": "Assess whether changes stay within the allowed mutable scope.",
+            "maintainability": "Assess public readability and maintainability concerns.",
+            "safety_suspicious_behavior": "Assess public evidence of unsafe or suspicious behavior.",
+            "unverifiable_from_public_evidence": (
+                "Use needs_human_review when public evidence cannot justify mergeable or not_mergeable."
+            ),
+        },
+        "rules": [
+            "Labels are descriptive reviewer evidence, not benchmark scoring authority.",
+            "Held-out test outcomes are assessed only after reviewer decisions are frozen.",
+            "needs_human_review is an abstention and is never accepted for FAR/TAR.",
+        ],
+        "scoring_authority": "deterministic_oracle",
+    }
 
 
 def _full_gate_public_acceptance_items(
@@ -3160,9 +3618,18 @@ def _reviewer_result_summary(raw: Any) -> dict[str, Any]:
             "severity": "unknown",
             "runtime": "unknown",
             "model": None,
+            "requested_model": None,
             "provider_family": "unknown",
+            "provider_family_verified": False,
+            "provider_family_source": "unknown",
+            "lineage": [],
+            "tool_access": "unknown",
+            "tool_backed_command_evidence": False,
             "assurance_grade": "self_reported",
+            "mergeability_label": "unlabeled",
+            "mergeability_rubric": {},
         }
+    mergeability_label = _mergeability_label_from_reviewer_result(raw)
     return {
         "reviewer_id": str(raw.get("reviewer_id") or "unknown-reviewer"),
         "decision": str(raw.get("decision") or "unavailable"),
@@ -3172,9 +3639,16 @@ def _reviewer_result_summary(raw: Any) -> dict[str, Any]:
         "confidence": raw.get("confidence"),
         "runtime": str(raw.get("runtime") or raw.get("reviewer_runtime") or "unknown"),
         "model": raw.get("model"),
+        "requested_model": raw.get("requested_model"),
         "provider_family": str(raw.get("provider_family") or "unknown"),
+        "provider_family_verified": bool(raw.get("provider_family_verified")),
+        "provider_family_source": str(raw.get("provider_family_source") or ""),
         "lineage": list(raw.get("lineage") or []),
+        "tool_access": str(raw.get("tool_access") or "unknown"),
+        "tool_backed_command_evidence": bool(raw.get("tool_backed_command_evidence")),
         "assurance_grade": str(raw.get("assurance_grade") or "self_reported"),
+        "mergeability_label": mergeability_label,
+        "mergeability_rubric": _mergeability_rubric_from_reviewer_result(raw),
         "reviewer_assurance": raw.get("reviewer_assurance"),
         "summary": str(raw.get("summary") or ""),
         "confidence_rationale": str(raw.get("confidence_rationale") or ""),
@@ -3202,6 +3676,50 @@ def _reviewer_result_summary(raw: Any) -> dict[str, Any]:
             else None
         ),
     }
+
+
+def _mergeability_label_from_reviewer_result(raw: Mapping[str, Any]) -> str:
+    critical = raw.get("critical_review")
+    critical_label = (
+        critical.get("mergeability_label")
+        if isinstance(critical, Mapping)
+        else None
+    )
+    label = str(raw.get("mergeability_label") or critical_label or "").strip().lower()
+    if label in MERGEABILITY_RUBRIC_LABELS:
+        return label
+    return "unlabeled"
+
+
+def _mergeability_rubric_from_reviewer_result(raw: Mapping[str, Any]) -> dict[str, Any]:
+    critical = raw.get("critical_review")
+    if isinstance(critical, Mapping) and isinstance(critical.get("mergeability_rubric"), Mapping):
+        return dict(critical["mergeability_rubric"])
+    rubric = raw.get("mergeability_rubric")
+    if isinstance(rubric, Mapping):
+        return dict(rubric)
+    return {}
+
+
+def _apply_mergeability_rubric_abstention(
+    results: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    normalised: list[dict[str, Any]] = []
+    for result in results:
+        item = dict(result)
+        label = _mergeability_label_from_reviewer_result(item)
+        item["mergeability_label"] = label
+        item["mergeability_rubric"] = _mergeability_rubric_from_reviewer_result(item)
+        if label == "needs_human_review":
+            item["accepted"] = False
+            item["decision"] = "revise"
+            item["severity"] = "important"
+            item["abstention"] = True
+            item["abstention_reason"] = "needs_human_review"
+        else:
+            item["abstention"] = False
+        normalised.append(item)
+    return normalised
 
 
 def _reviewer_rationales_from_results(results: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
@@ -3233,7 +3751,7 @@ def _reviewer_rationales_from_results(results: Sequence[Mapping[str, Any]]) -> l
 
 
 def _reviewer_panel_decision_summary(raw: Mapping[str, Any]) -> dict[str, Any]:
-    return {
+    payload = {
         "schema_version": str(
             raw.get("schema_version") or "independent-reviewer-panel-decision/v1"
         ),
@@ -3247,6 +3765,13 @@ def _reviewer_panel_decision_summary(raw: Mapping[str, Any]) -> dict[str, Any]:
         "missing_reviewers": list(raw.get("missing_reviewers") or []),
         "low_confidence_reviewers": list(raw.get("low_confidence_reviewers") or []),
     }
+    if isinstance(raw.get("robust_aggregation"), Mapping):
+        payload["robust_aggregation"] = dict(raw["robust_aggregation"])
+    if isinstance(raw.get("calibration"), Mapping):
+        payload["calibration"] = dict(raw["calibration"])
+    if isinstance(raw.get("calibrated_accept"), Mapping):
+        payload["calibrated_accept"] = dict(raw["calibrated_accept"])
+    return payload
 
 
 def _default_unavailable_reviewer_panel(_packet: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -3259,6 +3784,8 @@ def _default_unavailable_reviewer_panel(_packet: Mapping[str, Any]) -> Mapping[s
 
 SUPERVISOR_CONFIGURED_PANEL_GATE = "mergeability_full_gate"
 SUPERVISOR_CONFIGURED_PANEL_REVIEWER_MODE_DEFAULT = "cursor_sdk"
+SUPERVISOR_CONFIGURED_PANEL_LITELLM_MODEL_DEFAULT = ""
+SUPERVISOR_CONFIGURED_PANEL_LITELLM_PROVIDER_FAMILY_DEFAULT = ""
 
 
 @dataclass(frozen=True)
@@ -3278,6 +3805,11 @@ class ConfiguredReviewerPanelOptions:
     reviewers: Sequence[ReviewerAdapter] | None = None
     runner: Callable[[CursorInvocationRequest], CursorInvocationResult] | None = None
     codex_runner: Callable[..., Any] | None = None
+    litellm_runner: Callable[[CursorInvocationRequest], CursorInvocationResult] | None = None
+    litellm_model: str | None = None
+    litellm_provider_family: str | None = None
+    litellm_openai_api_key: str | None = None
+    litellm_openai_base_url: str | None = None
     reviewer_invoker: (
         Callable[[ReviewerAdapter, CursorInvocationRequest], CursorInvocationResult] | None
     ) = None
@@ -3289,6 +3821,7 @@ class ConfiguredReviewerPanelOptions:
     gate: str = SUPERVISOR_CONFIGURED_PANEL_GATE
     round_index: int = 0
     low_confidence_threshold: float = 0.0
+    panel_aggregation_mode: str = "conservative"
     codex_only_calibration: bool = False
 
 
@@ -3362,9 +3895,11 @@ def build_configured_reviewer_panel(
             gate=opts.gate,
             round_index=opts.round_index,
         )
+        reviewer_results = _apply_mergeability_rubric_abstention(reviewer_results)
         panel_decision = evaluate_reviewer_panel(
             reviewer_results,
             low_confidence_threshold=opts.low_confidence_threshold,
+            aggregation_mode=opts.panel_aggregation_mode,
         )
         available_reviewers = list(panel_decision.get("available_reviewers") or [])
         missing_reviewers = list(panel_decision.get("missing_reviewers") or [])
@@ -3417,6 +3952,11 @@ def _resolve_configured_panel_adapters(
             runner=runner,
             codex_runner=codex_runner,
             codex_model=options.codex_model,
+            litellm_runner=options.litellm_runner,
+            litellm_model=options.litellm_model,
+            litellm_provider_family=options.litellm_provider_family,
+            litellm_openai_api_key=options.litellm_openai_api_key,
+            litellm_openai_base_url=options.litellm_openai_base_url,
         )
     )
     if options.codex_only_calibration:
@@ -3445,6 +3985,8 @@ def _configured_panel_review_request(
         review_packet=dict(packet),
         timeout_s=options.review_timeout_s,
         api_key=api_key,
+        reviewer_output_mode=options.reviewer_output_mode,  # type: ignore[arg-type]
+        reviewer_model=options.reviewer_model,
         expected_specialists=("Independent Reviewer",),
     )
 
@@ -3741,6 +4283,9 @@ def _summarize_acceptance_arm(
     true_reject_count = sum(
         1 for row in available_rows if not row[accept_key] and not row["oracle_accept"]
     )
+    false_accept_ci = _wilson_interval(false_accept_count, false_accept_denominator)
+    true_accept_ci = _wilson_interval(true_accept_count, true_accept_denominator)
+    false_reject_ci = _wilson_interval(false_reject_count, true_accept_denominator)
     unavailable_count = sum(1 for row in rows if bool(row.get(unavailable_key)))
     summary = {
         "arm": arm,
@@ -3757,15 +4302,34 @@ def _summarize_acceptance_arm(
         "n_bad": false_accept_denominator,
         "false_accept_denominator": false_accept_denominator,
         "false_accept_rate": _rate(false_accept_count, false_accept_denominator),
-        "false_accept_confidence_interval": _wilson_interval(false_accept_count, false_accept_denominator),
+        "false_accept_confidence_interval": false_accept_ci,
+        "false_accept_rate_summary": {
+            "rate": _rate(false_accept_count, false_accept_denominator),
+            "ci_low": false_accept_ci["lower"],
+            "ci_high": false_accept_ci["upper"],
+            "confidence_interval": false_accept_ci,
+        },
         "true_accept_count": true_accept_count,
         "n_good": true_accept_denominator,
         "true_accept_denominator": true_accept_denominator,
         "true_accept_rate": _rate(true_accept_count, true_accept_denominator),
-        "true_accept_confidence_interval": _wilson_interval(true_accept_count, true_accept_denominator),
+        "true_accept_confidence_interval": true_accept_ci,
+        "true_accept_rate_summary": {
+            "rate": _rate(true_accept_count, true_accept_denominator),
+            "ci_low": true_accept_ci["lower"],
+            "ci_high": true_accept_ci["upper"],
+            "confidence_interval": true_accept_ci,
+        },
         "false_reject_count": false_reject_count,
         "false_reject_denominator": true_accept_denominator,
         "false_reject_rate": _rate(false_reject_count, true_accept_denominator),
+        "false_reject_confidence_interval": false_reject_ci,
+        "false_reject_rate_summary": {
+            "rate": _rate(false_reject_count, true_accept_denominator),
+            "ci_low": false_reject_ci["lower"],
+            "ci_high": false_reject_ci["upper"],
+            "confidence_interval": false_reject_ci,
+        },
         "true_reject_count": true_reject_count,
         "cost_usd": 0.0,
     }
@@ -3785,20 +4349,292 @@ def _normalise_mergeability_reviewer_result(raw: Mapping[str, Any]) -> dict[str,
         decision = "unavailable"
     verdict_present = bool(raw.get("verdict_present"))
     available = bool(verdict_present and decision in {"accept", "deny", "revise"})
+    runtime = str(raw.get("runtime") or raw.get("reviewer_runtime") or "unknown")
+    model = raw.get("model")
+    inferred_family, inferred_verified, inferred_source = (
+        provider_family_verification_for_reviewer(runtime, model)
+    )
+    raw_provider_family = str(raw.get("provider_family") or "").strip()
+    provider_family = raw_provider_family or inferred_family
+    if "provider_family_verified" in raw:
+        provider_family_verified = bool(raw.get("provider_family_verified"))
+    elif raw_provider_family and inferred_verified and raw_provider_family == inferred_family:
+        provider_family_verified = True
+    else:
+        provider_family_verified = bool(inferred_verified and provider_family == inferred_family)
+    provider_family_source = str(raw.get("provider_family_source") or "").strip()
+    if not provider_family_source:
+        provider_family_source = (
+            inferred_source
+            if provider_family_verified
+            else ("operator_config" if raw_provider_family else inferred_source)
+        )
+    lineage_raw = raw.get("lineage")
+    lineage = (
+        list(lineage_raw)
+        if isinstance(lineage_raw, (list, tuple))
+        else _reviewer_lineage(runtime, model, provider_family)
+    )
+    tool_backed_command_evidence = bool(raw.get("tool_backed_command_evidence"))
+    tool_access = str(raw.get("tool_access") or _tool_access_from_runtime(runtime))
+    assurance_grade = str(raw.get("assurance_grade") or "self_reported")
+    if "litellm" in runtime.lower() and not tool_backed_command_evidence:
+        tool_access = "text_only"
+        assurance_grade = "text_only"
+    mergeability_label = _mergeability_label_from_reviewer_result(raw)
+    abstention = mergeability_label == "needs_human_review" or bool(raw.get("abstention"))
     return {
         "reviewer_id": reviewer_id,
-        "decision": decision,
-        "accept": bool(available and decision == "accept" and raw.get("accepted", True)),
+        "decision": "revise" if abstention else decision,
+        "accept": bool(
+            available
+            and not abstention
+            and decision == "accept"
+            and raw.get("accepted", True)
+        ),
         "available": available,
         "verdict_present": verdict_present,
         "reason": str(raw.get("reason") or raw.get("unavailable_reason") or ""),
         "failure_classification": raw.get("failure_classification"),
-        "runtime": raw.get("runtime") or raw.get("reviewer_runtime"),
+        "runtime": runtime,
         "reviewer_runtime": raw.get("reviewer_runtime") or raw.get("runtime"),
-        "model": raw.get("model"),
+        "model": model,
+        "requested_model": raw.get("requested_model"),
+        "provider_family": provider_family,
+        "provider_family_verified": provider_family_verified,
+        "provider_family_source": provider_family_source,
+        "lineage": lineage,
+        "tool_access": tool_access,
+        "assurance_grade": assurance_grade,
+        "tool_backed_command_evidence": tool_backed_command_evidence,
+        "mergeability_label": mergeability_label,
+        "mergeability_rubric": _mergeability_rubric_from_reviewer_result(raw),
+        "abstention": abstention,
+        "abstention_reason": "needs_human_review" if abstention else "",
         "transcript_sha256": raw.get("transcript_sha256"),
         "output_sha256": raw.get("output_sha256"),
         "worktree_isolation": raw.get("worktree_isolation"),
+    }
+
+
+def _tool_access_from_runtime(runtime: Any) -> str:
+    runtime_text = str(runtime or "").lower()
+    if "codex_cli" in runtime_text or "cursor" in runtime_text:
+        return "codebase_tools"
+    if "litellm" in runtime_text:
+        return "text_only"
+    return "unknown"
+
+
+def _reviewer_lineage(runtime: Any, model: Any, provider_family: str) -> list[str]:
+    values = [provider_family, str(runtime or ""), str(model or "")]
+    return list(dict.fromkeys(value for value in values if value and value != "unknown"))
+
+
+def _provenance_value(items: Sequence[Mapping[str, Any]], key: str, default: Any) -> Any:
+    values = {
+        item.get(key)
+        for item in items
+        if item.get(key) not in (None, "", [])
+    }
+    if not values:
+        return default
+    if len(values) == 1:
+        return next(iter(values))
+    return "mixed"
+
+
+def _reviewer_cross_family_claim_status(item: Mapping[str, Any]) -> tuple[str, bool]:
+    runtime = str(item.get("runtime") or item.get("reviewer_runtime") or "").lower()
+    model = str(item.get("model") or "").strip().lower()
+    provider_family = str(item.get("provider_family") or "unknown")
+    provider_family_verified = bool(item.get("provider_family_verified"))
+    provider_family_source = str(item.get("provider_family_source") or "").strip()
+    if "cursor" in runtime and model in {"", "default"}:
+        return ("unproven_default_model", False)
+    if provider_family in {"", "unknown", "openai_compatible"}:
+        return ("unproven_provider_family", False)
+    if provider_family_verified and provider_family_source in {
+        "served_model",
+        "response_model",
+        "response_metadata",
+    }:
+        return ("verified_served_provider_family", True)
+    if provider_family_source == "operator_config":
+        return ("operator_asserted_provider_family_unverified", False)
+    return ("unverified_provider_family", False)
+
+
+def _reviewer_provenance_report(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    by_reviewer: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        for raw_result in row.get("supervisor_full_gate_reviewer_results") or []:
+            if not isinstance(raw_result, Mapping):
+                continue
+            normalised = _normalise_mergeability_reviewer_result(raw_result)
+            by_reviewer.setdefault(normalised["reviewer_id"], []).append(normalised)
+
+    reviewers: list[dict[str, Any]] = []
+    for reviewer_id, entries in sorted(by_reviewer.items()):
+        runtime = _provenance_value(entries, "runtime", "unknown")
+        model = _provenance_value(entries, "model", None)
+        provider_family = _provenance_value(entries, "provider_family", "unknown")
+        provider_family_verified = all(
+            bool(entry.get("provider_family_verified")) for entry in entries
+        )
+        provider_family_source = _provenance_value(
+            entries,
+            "provider_family_source",
+            "unknown",
+        )
+        lineage_values: list[str] = []
+        for entry in entries:
+            for value in entry.get("lineage") or []:
+                value_text = str(value)
+                if value_text and value_text not in lineage_values:
+                    lineage_values.append(value_text)
+        tool_access = _provenance_value(entries, "tool_access", "unknown")
+        assurance_grade = _provenance_value(entries, "assurance_grade", "self_reported")
+        tool_backed_command_evidence = any(
+            bool(entry.get("tool_backed_command_evidence")) for entry in entries
+        )
+        if str(runtime).lower() == "litellm_structured" and not tool_backed_command_evidence:
+            tool_access = "text_only"
+            assurance_grade = "text_only"
+        status, counts_as_proven_cross_family = _reviewer_cross_family_claim_status({
+            "runtime": runtime,
+            "model": model,
+            "provider_family": provider_family,
+            "provider_family_verified": provider_family_verified,
+            "provider_family_source": provider_family_source,
+        })
+        reviewers.append({
+            "reviewer_id": reviewer_id,
+            "runtime": runtime,
+            "model": model,
+            "provider_family": provider_family,
+            "provider_family_verified": provider_family_verified,
+            "provider_family_source": provider_family_source,
+            "lineage": lineage_values,
+            "tool_access": tool_access,
+            "assurance_grade": assurance_grade,
+            "tool_backed_command_evidence": tool_backed_command_evidence,
+            "cross_family_claim_status": status,
+            "counts_as_proven_cross_family": counts_as_proven_cross_family,
+            "candidate_count": len(entries),
+            "available_count": sum(1 for entry in entries if entry["available"]),
+        })
+
+    cursor_default_ids = [
+        item["reviewer_id"]
+        for item in reviewers
+        if item["cross_family_claim_status"] == "unproven_default_model"
+    ]
+    text_only_ids = [
+        item["reviewer_id"]
+        for item in reviewers
+        if item["tool_access"] == "text_only" and not item["tool_backed_command_evidence"]
+    ]
+    return {
+        "schema_version": "supervisor-mergeability-reviewer-provenance/v1",
+        "reviewer_count": len(reviewers),
+        "reviewers": reviewers,
+        "cursor_default_unproven_reviewer_ids": cursor_default_ids,
+        "text_only_reviewer_ids": text_only_ids,
+        "tool_backed_reviewer_ids": [
+            item["reviewer_id"]
+            for item in reviewers
+            if item["tool_access"] == "codebase_tools"
+        ],
+        "tool_backed_command_evidence_reviewer_ids": [
+            item["reviewer_id"]
+            for item in reviewers
+            if item["tool_backed_command_evidence"]
+        ],
+    }
+
+
+def _producer_family_from_row(row: Mapping[str, Any]) -> str:
+    producer = row.get("single_agent_baseline_producer")
+    if not isinstance(producer, Mapping):
+        return "unknown"
+    explicit = str(producer.get("provider_family") or "").strip().lower()
+    if explicit:
+        return explicit
+    provider = str(producer.get("provider") or producer.get("family") or "").strip().lower()
+    model = str(producer.get("model") or "").strip().lower()
+    return provider_family_for_reviewer(provider, model)
+
+
+def _generator_disjointness_report(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    warnings: list[dict[str, Any]] = []
+    known_generator_rows = 0
+    for row in rows:
+        generator_family = _producer_family_from_row(row)
+        if generator_family == "unknown":
+            continue
+        known_generator_rows += 1
+        available_reviewers: list[dict[str, Any]] = []
+        for raw_result in row.get("supervisor_full_gate_reviewer_results") or []:
+            if not isinstance(raw_result, Mapping):
+                continue
+            normalised = _normalise_mergeability_reviewer_result(raw_result)
+            if normalised["available"]:
+                available_reviewers.append(normalised)
+        if len(available_reviewers) != 1:
+            continue
+        reviewer = available_reviewers[0]
+        reviewer_family = str(reviewer.get("provider_family") or "unknown")
+        if reviewer_family != "unknown" and reviewer_family == generator_family:
+            warnings.append({
+                "task_id": str(row.get("task_id") or ""),
+                "candidate_id": str(row.get("candidate_id") or ""),
+                "generator_family": generator_family,
+                "reviewer_id": reviewer["reviewer_id"],
+                "reviewer_family": reviewer_family,
+                "reviewer_decision": reviewer["decision"],
+                "reason": "sole_same_family_decisive_reviewer",
+            })
+    return {
+        "schema_version": "supervisor-mergeability-generator-disjointness/v1",
+        "generator_family_source": "single_agent_baseline_producer",
+        "known_generator_family_row_count": known_generator_rows,
+        "same_family_decisive_vote_count": len(warnings),
+        "self_preference_warnings": warnings,
+    }
+
+
+def _mergeability_rubric_coverage(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    labels = {label: 0 for label in (*MERGEABILITY_RUBRIC_LABELS, "unlabeled")}
+    reviewer_result_count = 0
+    abstention_count = 0
+    for row in rows:
+        for raw_result in row.get("supervisor_full_gate_reviewer_results") or []:
+            if not isinstance(raw_result, Mapping):
+                continue
+            normalised = _normalise_mergeability_reviewer_result(raw_result)
+            if not normalised["verdict_present"]:
+                continue
+            reviewer_result_count += 1
+            label = normalised["mergeability_label"]
+            labels[label if label in labels else "unlabeled"] += 1
+            if normalised["abstention"]:
+                abstention_count += 1
+    labeled_count = reviewer_result_count - labels["unlabeled"]
+    return {
+        "schema_version": "supervisor-mergeability-rubric-coverage/v1",
+        "rubric_schema_version": MERGEABILITY_RUBRIC_SCHEMA_VERSION,
+        "allowed_labels": list(MERGEABILITY_RUBRIC_LABELS),
+        "labels": labels,
+        "reviewer_result_count": reviewer_result_count,
+        "labeled_count": labeled_count,
+        "coverage_rate": _rate(labeled_count, reviewer_result_count),
+        "abstention_count": abstention_count,
+        "abstention_rate": _rate(abstention_count, reviewer_result_count),
+        "abstention_is_accept": False,
+        "needs_human_review_accepts_for_far_tar": False,
+        "llm_labels_descriptive_only": True,
+        "scoring_authority": "deterministic_oracle",
     }
 
 
@@ -3826,6 +4662,17 @@ def _per_reviewer_acceptance_arms(rows: list[dict[str, Any]]) -> dict[str, dict[
                 "runtime": normalised["runtime"],
                 "reviewer_runtime": normalised["reviewer_runtime"],
                 "model": normalised["model"],
+                "provider_family": normalised["provider_family"],
+                "provider_family_verified": normalised["provider_family_verified"],
+                "provider_family_source": normalised["provider_family_source"],
+                "lineage": normalised["lineage"],
+                "tool_access": normalised["tool_access"],
+                "assurance_grade": normalised["assurance_grade"],
+                "tool_backed_command_evidence": normalised["tool_backed_command_evidence"],
+                "mergeability_label": normalised["mergeability_label"],
+                "mergeability_rubric": normalised["mergeability_rubric"],
+                "abstention": normalised["abstention"],
+                "abstention_reason": normalised["abstention_reason"],
                 "transcript_sha256": normalised["transcript_sha256"],
                 "output_sha256": normalised["output_sha256"],
                 "worktree_isolation": normalised["worktree_isolation"],
@@ -3859,6 +4706,38 @@ def _per_reviewer_acceptance_arms(rows: list[dict[str, Any]]) -> dict[str, dict[
             for row in candidate_rows
             if row.get("model")
         })
+        provider_families = sorted({
+            str(row.get("provider_family") or "")
+            for row in candidate_rows
+            if row.get("provider_family")
+        })
+        tool_accesses = sorted({
+            str(row.get("tool_access") or "")
+            for row in candidate_rows
+            if row.get("tool_access")
+        })
+        assurance_grades = sorted({
+            str(row.get("assurance_grade") or "")
+            for row in candidate_rows
+            if row.get("assurance_grade")
+        })
+        lineage_values: list[str] = []
+        for row in candidate_rows:
+            for value in row.get("lineage") or []:
+                value_text = str(value)
+                if value_text and value_text not in lineage_values:
+                    lineage_values.append(value_text)
+        tool_backed_command_evidence = any(
+            bool(row.get("tool_backed_command_evidence")) for row in candidate_rows
+        )
+        abstention_count = sum(1 for row in available_rows if bool(row.get("abstention")))
+        label_counts = {
+            label: sum(
+                1 for row in available_rows
+                if row.get("mergeability_label") == label
+            )
+            for label in (*MERGEABILITY_RUBRIC_LABELS, "unlabeled")
+        }
         arms[reviewer_id] = {
             "arm": reviewer_id,
             "arm_role": "independent_reviewer",
@@ -3897,6 +4776,17 @@ def _per_reviewer_acceptance_arms(rows: list[dict[str, Any]]) -> dict[str, dict[
             "true_reject_count": true_reject_count,
             "runtime": runtimes[0] if len(runtimes) == 1 else ("mixed" if runtimes else "unknown"),
             "model": models[0] if len(models) == 1 else ("mixed" if models else None),
+            "provider_family": provider_families[0]
+            if len(provider_families) == 1 else ("mixed" if provider_families else "unknown"),
+            "lineage": lineage_values,
+            "tool_access": tool_accesses[0]
+            if len(tool_accesses) == 1 else ("mixed" if tool_accesses else "unknown"),
+            "assurance_grade": assurance_grades[0]
+            if len(assurance_grades) == 1 else ("mixed" if assurance_grades else "self_reported"),
+            "tool_backed_command_evidence": tool_backed_command_evidence,
+            "mergeability_rubric_labels": label_counts,
+            "abstention_count": abstention_count,
+            "abstention_rate": _rate(abstention_count, len(available_rows)),
             "cost_usd": 0.0,
             "per_candidate_results": candidate_rows,
         }
@@ -3975,6 +4865,79 @@ def _validate_factorial_arm_pool(
             )
 
 
+def _normalise_precomputed_public_review(
+    raw: Mapping[str, Any],
+    *,
+    candidate_id: str,
+) -> dict[str, Any]:
+    if not isinstance(raw, Mapping):
+        raise MergeabilityBenchError(
+            f"precomputed public review for {candidate_id} must be a mapping"
+        )
+    return {
+        "accept": bool(raw.get("accept")),
+        "unavailable": bool(raw.get("unavailable")),
+        "reason": str(raw.get("reason") or raw.get("unavailable_reason") or ""),
+        "decision_source": str(raw.get("decision_source") or "precomputed_public_review"),
+        "probe_results": list(raw.get("probe_results") or []),
+        "gaming_flags": list(raw.get("gaming_flags") or []),
+    }
+
+
+def _normalise_precomputed_calibration(
+    raw: Mapping[str, Any],
+    *,
+    candidate_ids: tuple[str, ...],
+    manifest: Mapping[str, Any],
+    bench_root: Path,
+) -> dict[str, Any]:
+    if not isinstance(raw, Mapping):
+        raise MergeabilityBenchError("precomputed calibration must be a mapping")
+    calibration = dict(raw)
+    raw_results = calibration.get("results")
+    if not isinstance(raw_results, Sequence) or isinstance(raw_results, (str, bytes, bytearray)):
+        raise MergeabilityBenchError("precomputed calibration results must be a sequence")
+    results = [dict(result) for result in raw_results if isinstance(result, Mapping)]
+    result_ids = {str(result.get("candidate_id") or "") for result in results}
+    expected_ids = set(candidate_ids)
+    missing = sorted(expected_ids - result_ids)
+    extra = sorted(result_ids - expected_ids)
+    if "" in result_ids:
+        extra.append("")
+    if missing or extra:
+        raise MergeabilityBenchError(
+            "precomputed calibration candidate pool mismatch: "
+            f"missing={missing} extra={sorted(set(extra))}"
+        )
+    calibration.setdefault("schema_version", MERGEABILITY_CALIBRATION_SCHEMA_VERSION)
+    calibration.setdefault("status", "accepted")
+    calibration.setdefault("bench_root", bench_root.as_posix())
+    calibration.setdefault("manifest_sha256", manifest.get("manifest_sha256"))
+    calibration.setdefault("task_count", manifest.get("task_count"))
+    calibration.setdefault("candidate_count", len(results))
+    calibration.setdefault("included_task_ids", manifest.get("included_task_ids") or [])
+    calibration.setdefault("excluded_task_ids", manifest.get("excluded_task_ids") or [])
+    calibration.setdefault("required_control_kinds", sorted(REQUIRED_CALIBRATION_CONTROL_KINDS))
+    calibration.setdefault("observed_control_kinds", [])
+    calibration.setdefault("control_coverage_by_task_class", manifest.get("control_coverage_by_task_class") or {})
+    calibration["results"] = results
+    calibration.setdefault("receipt_ids", [
+        str(result.get("receipt_id") or "")
+        for result in results
+        if result.get("receipt_id")
+    ])
+    calibration.setdefault("gaming_flags", [])
+    calibration.setdefault("calibration_metric_applyable", False)
+    calibration.setdefault("default_change_allowed", False)
+    calibration.setdefault("policy_mutated", False)
+    calibration.setdefault("gate_advanced", False)
+    calibration.setdefault("errors", [])
+    calibration["summary_sha256"] = _sha256_json({
+        key: value for key, value in calibration.items() if key != "summary_sha256"
+    })
+    return calibration
+
+
 def _resolve_powered_baseline_decision(
     *,
     raw: Any,
@@ -4015,6 +4978,9 @@ def _resolve_powered_baseline_decision(
             or ""
         ).strip()
         model_label = str(raw.get("model") or producer.get("model") or "").strip()
+        provider_label = str(
+            raw.get("provider") or producer.get("provider") or ""
+        ).strip()
         if expected_candidate_id is not None and supplied_candidate_id:
             if supplied_candidate_id != expected_candidate_id:
                 decision = dict(unavailable_template)
@@ -4054,7 +5020,7 @@ def _resolve_powered_baseline_decision(
             decision["prompt_sha256"] = str(raw.get("prompt_sha256") or "")
             return decision
         missing_replay_fields: list[str] = []
-        if expected_candidate_id is not None and not supplied_candidate_id:
+        if not supplied_candidate_id:
             missing_replay_fields.append("candidate_id")
         if not isinstance(raw.get("accept"), bool):
             missing_replay_fields.append("accept")
@@ -4062,9 +5028,11 @@ def _resolve_powered_baseline_decision(
             missing_replay_fields.append("decision_source")
         if not isinstance(producer, Mapping) or not producer:
             missing_replay_fields.append("producer")
-        if expected_candidate_id is not None and not model_label:
+        if not model_label:
             missing_replay_fields.append("model")
-        if expected_candidate_id is not None and not runner_label:
+        if not provider_label:
+            missing_replay_fields.append("provider")
+        if not runner_label:
             missing_replay_fields.append("runner_label")
         if not str(raw.get("prompt_sha256") or "").strip():
             missing_replay_fields.append("prompt_sha256")
@@ -4209,14 +5177,114 @@ def _paired_discordant_counts(
     left_reject_right_accept = sum(1 for row in rows if not row[left_key] and row[right_key])
     both_accept = sum(1 for row in rows if row[left_key] and row[right_key])
     both_reject = sum(1 for row in rows if not row[left_key] and not row[right_key])
+    discordant_pair_count = left_accept_right_reject + left_reject_right_accept
     return {
         "left_arm": left_arm,
         "right_arm": right_arm,
         "candidate_count": len(rows),
         "left_accept_right_reject": left_accept_right_reject,
         "left_reject_right_accept": left_reject_right_accept,
+        "discordant_pair_count": discordant_pair_count,
+        "concordant_pair_count": both_accept + both_reject,
         "both_accept": both_accept,
         "both_reject": both_reject,
+    }
+
+
+def _binomial_two_sided_mcnemar_p_value(b: int, c: int) -> float:
+    discordant_n = b + c
+    if discordant_n <= 0:
+        return 1.0
+    tail = sum(
+        math.comb(discordant_n, k)
+        for k in range(0, min(b, c) + 1)
+    ) / (2 ** discordant_n)
+    return min(1.0, 2 * tail)
+
+
+def _paired_power_comparison(
+    counts: Mapping[str, Any],
+    *,
+    min_discordant: int,
+    alpha: float,
+) -> dict[str, Any]:
+    b = int(counts.get("left_accept_right_reject") or 0)
+    c = int(counts.get("left_reject_right_accept") or 0)
+    discordant_n = b + c
+    base = {
+        "left_arm": counts.get("left_arm"),
+        "right_arm": counts.get("right_arm"),
+        "candidate_count": int(counts.get("candidate_count") or 0),
+        "left_accept_right_reject": b,
+        "left_reject_right_accept": c,
+        "discordant_pair_count": discordant_n,
+        "concordant_pair_count": int(counts.get("concordant_pair_count") or 0),
+        "min_discordant": min_discordant,
+        "alpha": alpha,
+    }
+    if discordant_n <= 0:
+        return {
+            **base,
+            "status": "underpowered",
+            "method": "no_discordant_pairs",
+            "statistic": None,
+            "p_value": None,
+            "mcnemar_test_passed": False,
+            "reasons": ["no_discordant_pairs"],
+        }
+    if discordant_n < min_discordant:
+        p_value = _binomial_two_sided_mcnemar_p_value(b, c)
+        return {
+            **base,
+            "status": "underpowered",
+            "method": "exact_binomial_two_sided",
+            "statistic": None,
+            "p_value": round(p_value, 6),
+            "mcnemar_test_passed": p_value <= alpha,
+            "reasons": ["insufficient_discordant_pairs"],
+        }
+    statistic = ((abs(b - c) - 1) ** 2) / discordant_n
+    p_value = math.erfc(math.sqrt(statistic / 2))
+    passed = p_value <= alpha
+    return {
+        **base,
+        "status": "sufficient" if passed else "underpowered",
+        "method": "mcnemar_chi_square_continuity_corrected",
+        "statistic": round(statistic, 6),
+        "p_value": round(p_value, 6),
+        "mcnemar_test_passed": passed,
+        "reasons": [] if passed else ["mcnemar_test_not_significant"],
+    }
+
+
+def _paired_power_sufficiency(
+    paired_discordant: Mapping[str, Mapping[str, Any]],
+    *,
+    powered_thresholds: Mapping[str, Any],
+    required_comparison: str,
+) -> dict[str, Any]:
+    min_discordant = int(powered_thresholds.get("min_discordant", 25))
+    alpha = float(powered_thresholds.get("alpha", 0.05))
+    comparisons = {
+        arm: _paired_power_comparison(
+            counts,
+            min_discordant=min_discordant,
+            alpha=alpha,
+        )
+        for arm, counts in sorted(paired_discordant.items())
+    }
+    required = comparisons.get(required_comparison)
+    status = (
+        "sufficient"
+        if required and required.get("status") == "sufficient"
+        else "underpowered"
+    )
+    return {
+        "status": status,
+        "required_comparison": required_comparison,
+        "min_discordant": min_discordant,
+        "alpha": alpha,
+        "comparisons": comparisons,
     }
 
 
@@ -4318,6 +5386,316 @@ def _reviewer_pairwise_agreement(
     return pairs
 
 
+def _validate_roster_diagnostic_candidate_pool(
+    reviewer_panel_results: Mapping[str, list[Mapping[str, Any]]],
+    *,
+    candidate_ids: tuple[str, ...],
+) -> None:
+    expected = set(candidate_ids)
+    actual = {str(candidate_id) for candidate_id in reviewer_panel_results}
+    extra = sorted(actual - expected)
+    if extra:
+        raise MergeabilityBenchError(
+            "unknown reviewer result candidate: " + ", ".join(extra)
+        )
+
+
+def _roster_diagnostic_arm_rosters(
+    reviewer_panel_results: Mapping[str, list[Mapping[str, Any]]],
+    *,
+    generator_family_by_candidate: Mapping[str, str] | None = None,
+) -> dict[str, tuple[str, ...]]:
+    by_reviewer: dict[str, dict[str, Any]] = {}
+    for results in reviewer_panel_results.values():
+        for raw in results:
+            if not isinstance(raw, Mapping):
+                continue
+            normalised = _normalise_mergeability_reviewer_result(raw)
+            by_reviewer.setdefault(normalised["reviewer_id"], normalised)
+
+    generator_families: set[str] = set()
+    if isinstance(generator_family_by_candidate, Mapping):
+        for family in generator_family_by_candidate.values():
+            family_text = str(family or "").strip().lower()
+            if family_text and family_text not in {"unknown", "openai_compatible"}:
+                generator_families.add(family_text)
+
+    excluded_cross_family = {"openai", "unknown"} | generator_families
+
+    def first_matching(predicate: Callable[[Mapping[str, Any]], bool]) -> str | None:
+        for reviewer_id, result in sorted(by_reviewer.items()):
+            if predicate(result):
+                return reviewer_id
+        return None
+
+    codex_id = first_matching(
+        lambda result: result["reviewer_id"] == "independent-reviewer-1"
+        or result["provider_family"] == "openai"
+        or result["runtime"] == "codex_cli"
+    )
+    text_only_id = first_matching(
+        lambda result: result["provider_family"] not in excluded_cross_family
+        and bool(result.get("provider_family_verified"))
+        and result["tool_access"] == "text_only"
+    )
+    tool_backed_cross_family_id = first_matching(
+        lambda result: result["provider_family"] not in excluded_cross_family
+        and bool(result.get("provider_family_verified"))
+        and (
+            result["tool_access"] == "codebase_tools"
+            or bool(result["tool_backed_command_evidence"])
+        )
+    )
+
+    arms: dict[str, tuple[str, ...]] = {"s_probe": ()}
+    if codex_id is not None:
+        arms["s_probe_codex"] = (codex_id,)
+    if text_only_id is not None:
+        arms["s_probe_cross_family_text_only"] = (text_only_id,)
+    full_panel = tuple(sorted(by_reviewer))
+    if full_panel:
+        arms["s_probe_full_panel"] = full_panel
+    if tool_backed_cross_family_id is not None:
+        arms["s_probe_tool_backed_cross_family"] = (tool_backed_cross_family_id,)
+    return arms
+
+
+def _roster_diagnostic_arm_definitions(
+    arm_rosters: Mapping[str, tuple[str, ...]],
+) -> dict[str, dict[str, str]]:
+    definitions = {
+        "s_probe": {
+            "arm_role": "deterministic_public_probe",
+            "decision_source": "supervisor_candidate_review",
+            "evidence_kind": "public_runtime_evidence",
+        },
+        "s_probe_codex": {
+            "arm_role": "s_probe_plus_codex_reviewer",
+            "decision_source": "supervisor_candidate_review+codex_reviewer",
+            "evidence_kind": "codex_single_reviewer_diagnostic",
+        },
+        "s_probe_cross_family_text_only": {
+            "arm_role": "s_probe_plus_cross_family_text_only_reviewer",
+            "decision_source": "supervisor_candidate_review+cross_family_text_only_reviewer",
+            "evidence_kind": "cross_family_text_only_reviewer_diagnostic",
+        },
+        "s_probe_full_panel": {
+            "arm_role": "s_probe_plus_full_reviewer_panel",
+            "decision_source": "supervisor_candidate_review+full_reviewer_panel",
+            "evidence_kind": "full_panel_roster_diagnostic",
+        },
+        "s_probe_tool_backed_cross_family": {
+            "arm_role": "s_probe_plus_tool_backed_cross_family_reviewer",
+            "decision_source": "supervisor_candidate_review+tool_backed_cross_family_reviewer",
+            "evidence_kind": "tool_backed_cross_family_reviewer_diagnostic",
+        },
+    }
+    return {
+        arm: definitions[arm]
+        for arm in arm_rosters
+        if arm in definitions
+    }
+
+
+def _roster_diagnostic_arm_decision(
+    *,
+    public_accept: bool,
+    reviewer_ids: tuple[str, ...],
+    reviewer_results_by_id: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    if not reviewer_ids:
+        return {"accept": False, "unavailable": True, "reason": "empty_reviewer_roster"}
+    selected = [reviewer_results_by_id.get(reviewer_id) for reviewer_id in reviewer_ids]
+    if any(result is None for result in selected):
+        return {"accept": False, "unavailable": True, "reason": "reviewer_result_missing"}
+    if any(not bool(result.get("available")) for result in selected if result is not None):
+        return {"accept": False, "unavailable": True, "reason": "reviewer_unavailable"}
+    panel_accept = all(bool(result.get("accept")) for result in selected if result is not None)
+    return {
+        "accept": bool(public_accept and panel_accept),
+        "unavailable": False,
+        "reason": "",
+    }
+
+
+def _diagnostic_generator_producer(
+    candidate_id: str,
+    *,
+    generator_family_by_candidate: Mapping[str, str] | None,
+) -> dict[str, Any]:
+    if not isinstance(generator_family_by_candidate, Mapping):
+        return {}
+    family = str(generator_family_by_candidate.get(candidate_id) or "").strip().lower()
+    if not family:
+        return {}
+    return {
+        "provider_family": family,
+        "provider": family,
+        "model": f"{family}-diagnostic-generator",
+        "runner_label": "roster-diagnostic-replay",
+    }
+
+
+def _reviewer_oracle_error_overlap(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_reviewer: dict[str, dict[str, bool]] = {}
+    oracle_by_candidate: dict[str, bool] = {}
+    for row in rows:
+        candidate_key = f"{row['task_id']}:{row['candidate_id']}"
+        oracle_by_candidate[candidate_key] = bool(row["oracle_accept"])
+        for raw_result in row.get("supervisor_full_gate_reviewer_results") or []:
+            if not isinstance(raw_result, Mapping):
+                continue
+            normalised = _normalise_mergeability_reviewer_result(raw_result)
+            if not normalised["available"]:
+                continue
+            by_reviewer.setdefault(normalised["reviewer_id"], {})[candidate_key] = bool(
+                normalised["accept"]
+            )
+    reviewers = sorted(by_reviewer)
+    pairs: list[dict[str, Any]] = []
+    for left_index, left in enumerate(reviewers):
+        for right in reviewers[left_index + 1:]:
+            shared = sorted(set(by_reviewer[left]) & set(by_reviewer[right]))
+            left_errors = {
+                candidate_key
+                for candidate_key in shared
+                if by_reviewer[left][candidate_key] != oracle_by_candidate[candidate_key]
+            }
+            right_errors = {
+                candidate_key
+                for candidate_key in shared
+                if by_reviewer[right][candidate_key] != oracle_by_candidate[candidate_key]
+            }
+            union = left_errors | right_errors
+            overlap = left_errors & right_errors
+            pairs.append({
+                "reviewer_pair": [left, right],
+                "shared_candidate_count": len(shared),
+                "left_error_count": len(left_errors),
+                "right_error_count": len(right_errors),
+                "overlap_error_count": len(overlap),
+                "union_error_count": len(union),
+                "error_jaccard": _rate(len(overlap), len(union)),
+            })
+    return pairs
+
+
+def _effective_vote_estimate(
+    *,
+    per_reviewer_arms: Mapping[str, Mapping[str, Any]],
+    pairwise_error_overlap: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    reviewer_error_counts = {
+        reviewer_id: int(arm.get("false_accept_count") or 0)
+        + int(arm.get("false_reject_count") or 0)
+        for reviewer_id, arm in sorted(per_reviewer_arms.items())
+    }
+    total_errors = sum(reviewer_error_counts.values())
+    if total_errors <= 0:
+        return {
+            "status": "unavailable",
+            "reason": "zero_oracle_grounded_reviewer_errors",
+            "reviewer_error_counts": reviewer_error_counts,
+        }
+    if not pairwise_error_overlap:
+        return {
+            "status": "unavailable",
+            "reason": "requires_at_least_two_reviewers",
+            "reviewer_error_counts": reviewer_error_counts,
+        }
+    mean_error_jaccard = round(
+        sum(float(pair.get("error_jaccard") or 0.0) for pair in pairwise_error_overlap)
+        / len(pairwise_error_overlap),
+        6,
+    )
+    reviewer_count = len(reviewer_error_counts)
+    return {
+        "status": "computed",
+        "reviewer_count": reviewer_count,
+        "reviewer_error_counts": reviewer_error_counts,
+        "total_reviewer_error_count": total_errors,
+        "mean_pairwise_error_jaccard": mean_error_jaccard,
+        "effective_vote_count_estimate": round(
+            max(1.0, reviewer_count * (1.0 - mean_error_jaccard)),
+            6,
+        ),
+        "method": "heuristic_error_overlap_discount",
+    }
+
+
+def _roster_diagnostic_selection_guard(
+    *,
+    evidence_scope: str,
+    pairwise_reviewer_agreement: Sequence[Mapping[str, Any]],
+    pairwise_oracle_error_overlap: Sequence[Mapping[str, Any]],
+    effective_vote_estimate: Mapping[str, Any],
+    reviewer_provenance: Mapping[str, Any],
+    generator_disjointness: Mapping[str, Any],
+) -> dict[str, Any]:
+    scope = str(evidence_scope or "fixture_diagnostic_only")
+    enriched_scope = scope in {
+        "real_instances",
+        "real_benchmark",
+        "swe_bench_replay",
+        "swe_bench_live",
+        "disagreement_enriched",
+    }
+    has_oracle_grounded_errors = effective_vote_estimate.get("status") == "computed"
+    same_family_count = int(generator_disjointness.get("same_family_decisive_vote_count") or 0)
+    reviewer_disagreement_count = sum(
+        1
+        for pair in pairwise_reviewer_agreement
+        if int(pair.get("shared_candidate_count") or 0) > 0
+        and float(pair.get("agreement_rate") or 0.0) < 1.0
+    )
+    oracle_error_pair_count = sum(
+        1
+        for pair in pairwise_oracle_error_overlap
+        if int(pair.get("union_error_count") or 0) > 0
+    )
+    reasons: list[str] = []
+    if not enriched_scope:
+        reasons.append("fixture_only_evidence_cannot_select_reviewer_roster")
+    if not has_oracle_grounded_errors:
+        reasons.append("oracle_grounded_reviewer_errors_required")
+    if same_family_count:
+        reasons.append("same_family_generator_reviewer_decisive_vote")
+    cursor_default_ids = list(reviewer_provenance.get("cursor_default_unproven_reviewer_ids") or [])
+    if cursor_default_ids:
+        reasons.append("cursor_default_provider_family_unproven")
+    allowed = bool(enriched_scope and has_oracle_grounded_errors and same_family_count == 0)
+    return {
+        "schema_version": "supervisor-mergeability-roster-diagnostic-selection-guard/v1",
+        "evidence_scope": scope,
+        "roster_selection_allowed": allowed,
+        "fixture_only_can_select_roster": False,
+        "codex_only_can_select_roster": False,
+        "decision_authority": (
+            "diagnostic_evidence_available" if allowed else "blocked"
+        ),
+        "reviewer_disagreement_pair_count": reviewer_disagreement_count,
+        "oracle_error_pair_count": oracle_error_pair_count,
+        "has_oracle_grounded_reviewer_errors": has_oracle_grounded_errors,
+        "reasons": reasons,
+        "required_evidence": [
+            "same_candidate_pool_across_roster_arms",
+            "real_or_disagreement_enriched_candidates",
+            "oracle_grounded_far_tar_by_roster",
+            "pairwise_reviewer_agreement",
+            "pairwise_oracle_error_overlap",
+            "generator_family_disjointness_by_candidate",
+            "report_only_until_powered_live_evidence",
+        ],
+        "forbidden_conclusions": [
+            "drop_reviewers_from_fixture_only_ablation",
+            "select_codex_only_from_fixture_only_ablation",
+            "treat_zero_reviewer_errors_as_independence_proof",
+            "treat_disagreement_without_oracle_errors_as_selection_evidence",
+            "allow_single_family_reviewer_as_sole_decisive_same_family_judge",
+        ],
+    }
+
+
 def _factorial_sample_size_sufficiency(
     rows: list[dict[str, Any]],
     *,
@@ -4403,6 +5781,16 @@ def _wilson_interval(count: int, denominator: int) -> dict[str, Any]:
             "lower": None,
             "upper": None,
         }
+    if count == 0:
+        return {
+            "method": "rule_of_three",
+            "confidence": 0.95,
+            "label": "zero_event_rule_of_three_upper_bound",
+            "count": count,
+            "denominator": denominator,
+            "lower": 0.0,
+            "upper": round(min(1.0, 3 / denominator), 6),
+        }
     z = 1.959963984540054
     p_hat = count / denominator
     z2 = z * z
@@ -4420,6 +5808,16 @@ def _wilson_interval(count: int, denominator: int) -> dict[str, Any]:
         "denominator": denominator,
         "lower": round(max(0.0, centre - radius), 6),
         "upper": round(min(1.0, centre + radius), 6),
+    }
+
+
+def _rate_summary(count: int, denominator: int) -> dict[str, Any]:
+    interval = _wilson_interval(count, denominator)
+    return {
+        "rate": _rate(count, denominator),
+        "ci_low": interval["lower"],
+        "ci_high": interval["upper"],
+        "confidence_interval": interval,
     }
 
 
@@ -4581,6 +5979,7 @@ def _oracle_agreement(rows: list[dict[str, Any]], *, arm: str) -> dict[str, Any]
         "agreement_count": agreement_count,
         "candidate_count": len(rows),
         "agreement_rate": _rate(agreement_count, len(rows)),
+        "scored_by": "held_out_oracle",
     }
 
 
@@ -4765,6 +6164,27 @@ def _export_powered_factorial_artifacts(
         encoding="utf-8",
     )
     with (output_dir / "powered_factorial_per_task_results.jsonl").open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, sort_keys=True) + "\n")
+
+
+def _export_roster_diagnostic_artifacts(
+    output_dir: Path,
+    *,
+    manifest: dict[str, Any],
+    calibration: dict[str, Any],
+    report: dict[str, Any],
+    rows: list[dict[str, Any]],
+) -> None:
+    _export_calibration_artifacts(output_dir, manifest=manifest, summary=calibration)
+    (output_dir / "roster_diagnostic_report.json").write_text(
+        json.dumps(report, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    with (output_dir / "roster_diagnostic_per_task_results.jsonl").open(
+        "w",
+        encoding="utf-8",
+    ) as handle:
         for row in rows:
             handle.write(json.dumps(row, sort_keys=True) + "\n")
 
@@ -5145,10 +6565,13 @@ def _bounded_runner_option_hash(
             "reviewer_output_mode": opts.reviewer_output_mode,
             "reviewer_model": opts.reviewer_model,
             "codex_model": opts.codex_model,
+            "litellm_model": opts.litellm_model,
+            "litellm_provider_family": opts.litellm_provider_family,
             "review_timeout_s": opts.review_timeout_s,
             "gate": opts.gate,
             "round_index": opts.round_index,
             "low_confidence_threshold": opts.low_confidence_threshold,
+            "panel_aggregation_mode": opts.panel_aggregation_mode,
             "codex_only_calibration": opts.codex_only_calibration,
         }
     return _sha256_json({
@@ -6155,6 +7578,9 @@ def run_bounded_parallel_panel_corpus(
     per_reviewer_arms = _per_reviewer_acceptance_arms(rows)
     inter_reviewer_agreement = _inter_reviewer_agreement(rows)
     reviewer_packet_leak_refs = _reviewer_packet_leak_refs(rows)
+    reviewer_provenance = _reviewer_provenance_report(rows)
+    generator_disjointness = _generator_disjointness_report(rows)
+    mergeability_rubric_coverage = _mergeability_rubric_coverage(rows)
     metric_splits = _metric_splits(
         rows,
         arms={
@@ -6171,6 +7597,8 @@ def run_bounded_parallel_panel_corpus(
     roster_selection_guard = _roster_selection_guard(
         inter_reviewer_agreement=inter_reviewer_agreement,
         codex_only_calibration_active=codex_only_calibration_active,
+        reviewer_provenance=reviewer_provenance,
+        generator_disjointness=generator_disjointness,
     )
     matched_true_accept = _false_accept_at_matched_true_accept(
         baseline=baseline,
@@ -6330,6 +7758,9 @@ def run_bounded_parallel_panel_corpus(
         "matched_true_accept_status": matched_true_accept["status"],
         "oracle_agreement": oracle_agreement,
         "per_reviewer_arms": per_reviewer_arms,
+        "reviewer_provenance": reviewer_provenance,
+        "generator_disjointness": generator_disjointness,
+        "mergeability_rubric_coverage": mergeability_rubric_coverage,
         "oracle_isolation": {
             "ok": not reviewer_packet_leak_refs,
             "violations": reviewer_packet_leak_refs,
@@ -6350,6 +7781,12 @@ def run_bounded_parallel_panel_corpus(
             "codex_only_calibration": codex_only_calibration_active,
             "roster_selection_allowed": False,
             "roster_selection_guard": roster_selection_guard,
+            "reviewer_provenance": reviewer_provenance,
+            "generator_disjointness": generator_disjointness,
+            "mergeability_rubric_coverage": mergeability_rubric_coverage,
+            "self_preference_warnings": list(
+                generator_disjointness.get("self_preference_warnings") or []
+            ),
             "configured_panel_active": (
                 reviewer_panel_mode == "configured"
                 and configured_reviewer_panel_options is not None
@@ -6522,6 +7959,11 @@ def _public_dashboard_report(report: Mapping[str, Any]) -> dict[str, Any]:
             "true_reject_count",
             "runtime",
             "model",
+            "provider_family",
+            "lineage",
+            "tool_access",
+            "assurance_grade",
+            "tool_backed_command_evidence",
             "cost_usd",
         )
         return {key: arm[key] for key in keys if key in arm}
@@ -6617,6 +8059,16 @@ def _public_dashboard_report(report: Mapping[str, Any]) -> dict[str, Any]:
             )
             if isinstance(panel_block, Mapping)
             else [],
+            "reviewer_provenance": dict(
+                panel_block.get("reviewer_provenance") or {}
+            )
+            if isinstance(panel_block, Mapping)
+            else {},
+            "generator_disjointness": dict(
+                panel_block.get("generator_disjointness") or {}
+            )
+            if isinstance(panel_block, Mapping)
+            else {},
         },
         "per_reviewer_arms": {
             str(reviewer_id): _public_arm(arm if isinstance(arm, Mapping) else {})
@@ -6932,6 +8384,25 @@ def _bounded_panel_runner_main(argv: Sequence[str] | None = None) -> int:
         choices=("configured", "custom"),
         default="configured",
     )
+    parser.add_argument("--reviewer-output-mode", default=SUPERVISOR_CONFIGURED_PANEL_REVIEWER_MODE_DEFAULT)
+    parser.add_argument("--reviewer-model", default="")
+    parser.add_argument("--codex-model", default="gpt-5.5")
+    parser.add_argument(
+        "--litellm-model",
+        default=SUPERVISOR_CONFIGURED_PANEL_LITELLM_MODEL_DEFAULT,
+        help="Opt in to a LiteLLM reviewer by providing its model name.",
+    )
+    parser.add_argument(
+        "--litellm-provider-family",
+        default=SUPERVISOR_CONFIGURED_PANEL_LITELLM_PROVIDER_FAMILY_DEFAULT,
+        help="Explicit provider family for the opt-in LiteLLM reviewer.",
+    )
+    parser.add_argument(
+        "--panel-aggregation-mode",
+        choices=("conservative", "geometric_median"),
+        default="geometric_median",
+        help="Configured reviewer panel aggregation mode.",
+    )
     parser.add_argument("--no-resume", action="store_true")
     parser.add_argument("--relaxed-calibration", action="store_true")
     args = parser.parse_args(argv)
@@ -6947,7 +8418,14 @@ def _bounded_panel_runner_main(argv: Sequence[str] | None = None) -> int:
         resume=not args.no_resume,
     )
     configured_options = (
-        ConfiguredReviewerPanelOptions()
+        ConfiguredReviewerPanelOptions(
+            reviewer_output_mode=args.reviewer_output_mode,
+            reviewer_model=args.reviewer_model or None,
+            codex_model=args.codex_model,
+            litellm_model=args.litellm_model or None,
+            litellm_provider_family=args.litellm_provider_family or None,
+            panel_aggregation_mode=args.panel_aggregation_mode,
+        )
         if args.reviewer_panel_mode == "configured"
         else None
     )

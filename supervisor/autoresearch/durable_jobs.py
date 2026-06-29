@@ -15,6 +15,7 @@ from .schema import AutoresearchAttempt, AutoresearchExperiment, sha256_json
 
 LEASE_TTL_S = 60
 DEFAULT_REPLAY_CORPUS_EVALUATOR = Path("supervisor/autoresearch/evaluators/replay_corpus.py")
+DEFAULT_BEHAVIORAL_EVALUATOR = Path("supervisor/autoresearch/evaluators/mergeability_bench.py")
 
 
 def resolve_evaluator_defaults(
@@ -22,17 +23,17 @@ def resolve_evaluator_defaults(
     *,
     repo_root: str | Path,
 ) -> AutoresearchExperiment:
-    """Fill the repo-native replay-corpus evaluator when no evaluator is supplied."""
+    """Fill the repo-native behavioral evaluator when no evaluator is supplied."""
     if experiment.evaluator_ref or experiment.evaluator_hash:
         return experiment
     repo_root_path = Path(repo_root).expanduser().resolve()
-    evaluator_path = repo_root_path / DEFAULT_REPLAY_CORPUS_EVALUATOR
+    evaluator_path = repo_root_path / DEFAULT_BEHAVIORAL_EVALUATOR
     evaluator_hash = sha256(evaluator_path.read_bytes()).hexdigest()
     return replace(
         experiment,
-        evaluator_ref=DEFAULT_REPLAY_CORPUS_EVALUATOR.as_posix(),
+        evaluator_ref=DEFAULT_BEHAVIORAL_EVALUATOR.as_posix(),
         evaluator_hash=evaluator_hash,
-        metric_name="pass_rate",
+        metric_name="mergeability_score",
     )
 
 
@@ -45,7 +46,14 @@ def run_durable_evaluator_trials(
     repo_root: str | Path,
     output_dir: str | Path,
 ) -> EvaluatorExecutionResult:
-    """Run evaluator trials through the existing job ledger claim/recovery lane."""
+    """Run evaluator trials through the existing job ledger claim/recovery lane.
+
+    The terminal payload persists the execution-derived ``metric_before``,
+    ``metric_after``, and ``metric_delta`` alongside the trial metrics, so
+    that a resumed or terminal-replayed job returns the same measured
+    empty-floor evidence as the original execution and ``run_autoresearch_fixture``
+    can propagate it into the attempt without recomputing from the seed.
+    """
     repo_root_path = Path(repo_root).expanduser().resolve()
     output_dir_path = Path(output_dir).expanduser().resolve()
     job_paths = _job_paths(output_dir=output_dir_path, attempt_id=attempt.attempt_id)
@@ -278,6 +286,9 @@ def _terminal_payload(
 def _execution_payload(execution: EvaluatorExecutionResult) -> dict[str, Any]:
     return {
         "metric_trials": list(execution.metric_trials),
+        "metric_before": execution.metric_before,
+        "metric_after": execution.metric_after,
+        "metric_delta": execution.metric_delta,
         "metric_source": execution.metric_source,
         "evaluator_run_ref": execution.evaluator_run_ref,
         "evaluator_run_hash": execution.evaluator_run_hash,
@@ -327,9 +338,15 @@ def _execution_from_terminal(*, row: Any, result_path: Path) -> EvaluatorExecuti
             wall_clock_s=0.0,
             evaluator_quality={},
             job_id=str(payload.get("job_id") or ""),
+            metric_before=None,
+            metric_after=None,
+            metric_delta=None,
         )
     return EvaluatorExecutionResult(
         metric_trials=tuple(float(value) for value in execution.get("metric_trials") or ()),
+        metric_before=_optional_float(execution.get("metric_before")),
+        metric_after=_optional_float(execution.get("metric_after")),
+        metric_delta=_optional_float(execution.get("metric_delta")),
         metric_source=str(execution.get("metric_source") or "evaluator_execution"),
         evaluator_run_ref=str(execution.get("evaluator_run_ref") or ""),
         evaluator_run_hash=str(execution.get("evaluator_run_hash") or ""),
@@ -358,6 +375,12 @@ def _retryable_evaluator_crash(
     if "budget_exceeded" in joined or "timeout" in joined or "outside mutable surface" in joined:
         return False
     return any(error.startswith("evaluator exited") or "timeout" in error.lower() for error in errors)
+
+
+def _optional_float(value: Any) -> float | None:
+    if value in {None, ""}:
+        return None
+    return round(float(value), 6)
 
 
 def _job_id(*, run_id: str, experiment: AutoresearchExperiment, attempt: AutoresearchAttempt) -> str:

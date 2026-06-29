@@ -1,0 +1,122 @@
+{
+  "abstention_coverage": {},
+  "aeb0_artifact_gate": {
+    "authority_flags": {
+      "default_change_allowed": false,
+      "gate_advanced": false,
+      "human_mergeability_claim_allowed": false,
+      "improvement_claim_allowed": false,
+      "metric_applyable": false,
+      "policy_mutated": false,
+      "powered_improvement_claim_allowed": false
+    },
+    "blocked_reasons": [
+      "missing_cli_prerequisite:allow_dataset_fetch"
+    ],
+    "dataset_claim_scope": "candidate_serious_benchmark",
+    "gate_id": "AEB-0",
+    "name": "Real Official All-Arms Artifact Gate",
+    "real_benchmark_claim_allowed": false,
+    "real_official_all_arms_artifact_required": true,
+    "real_or_blocked_artifact": "blocked",
+    "status": "blocked"
+  },
+  "all_arms_populated": false,
+  "all_arms_populated_is_not_success_without_matched_tar": true,
+  "arms_present": [],
+  "baseline_available": false,
+  "benchmark_oracle": {
+    "kind": "swe_bench_held_out_test_pass_proxy",
+    "limitation_note": "SWE-bench reports held-out test-pass behavior; it is not a maintainer would-merge judgment.",
+    "maintainer_mergeability_claim_allowed": false,
+    "oracle_adapter_kind": "official_docker_or_equivalent",
+    "scoring_authority": "held_out_fail_to_pass_and_pass_to_pass_tests"
+  },
+  "bridge_report": {
+    "default_change_allowed": false,
+    "gate_advanced": false,
+    "improvement_claim_allowed": false,
+    "metric_applyable": false,
+    "metrics_suppressed": true,
+    "metrics_unavailable_reasons": [
+      "missing_cli_prerequisite:allow_dataset_fetch"
+    ],
+    "policy_mutated": false,
+    "status": "unavailable"
+  },
+  "candidate_count": 0,
+  "candidate_generation": {},
+  "configured_reviewer_panel_preflight": {},
+  "dataset": "SWE-bench/SWE-bench_Pro",
+  "dataset_readiness": {
+    "claim_scope": "candidate_serious_benchmark",
+    "dataset": "SWE-bench/SWE-bench_Pro",
+    "pro_or_held_out_equivalent": true,
+    "reason": "serious_claim_still_requires_human_review_and_powered_evidence",
+    "serious_benchmark_claim_allowed": false,
+    "verified_smoke_only": false
+  },
+  "dataset_split": "test",
+  "decision_freeze": {},
+  "default_change_allowed": false,
+  "diagnostic_only": true,
+  "diagnostic_ready_for_scale": false,
+  "false_accept_reduction_at_matched_true_accept": {},
+  "far_tar_frr": null,
+  "gate_advanced": false,
+  "generator_disjointness": {},
+  "hidden_field_leak_check": {},
+  "human_mergeability_claim_allowed": false,
+  "improvement_claim_allowed": false,
+  "instance_count": 0,
+  "matched_true_accept_status": {
+    "s_full": "unavailable",
+    "s_probe": "unavailable"
+  },
+  "mergeability_rubric_coverage": {},
+  "metric_applyable": false,
+  "metrics_unavailable_reasons": [
+    "missing_cli_prerequisite:allow_dataset_fetch"
+  ],
+  "min_bad": 1,
+  "min_good": 1,
+  "missing_arms": [
+    "baseline",
+    "s_probe",
+    "s_full",
+    "oracle_ceiling"
+  ],
+  "n_bad": 0,
+  "n_good": 0,
+  "no_maintainer_mergeability_claim": true,
+  "official_replay_report_path": "",
+  "official_replay_report_sha256": "",
+  "official_replay_status": "not_started",
+  "official_replay_used": false,
+  "oracle_adapter_kind": "official_docker_or_equivalent",
+  "oracle_ceiling_available": false,
+  "plumbing_smoke_only": true,
+  "policy_mutated": false,
+  "powered_improvement_claim_allowed": false,
+  "predictions_path": "docs/dual-agent/auto-evolve-benchmark-promotion-bridge-20260625/artifacts/missing-real-pro-predictions.jsonl",
+  "real_evidence_claim_blocked_reasons": [
+    "missing_cli_prerequisite:allow_dataset_fetch"
+  ],
+  "report_only": {
+    "config_mutated": false,
+    "default_change_allowed": false,
+    "policy_mutated": false
+  },
+  "report_path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/auto-evolve-benchmark-promotion-bridge-20260625/artifacts/aeb0-blocked/official_all_arms_diagnostic_report.json",
+  "report_sha256": "9097d213d61e7e3eb927d980df3423de25d70d35792028d74be079b19c8c66ac",
+  "reviewer_marginal_delta_at_matched_true_accept": {},
+  "reviewer_provenance": {},
+  "s_full_available": false,
+  "s_probe_available": false,
+  "s_probe_vs_s_full": {},
+  "schema_version": "supervisor-swebench-official-all-arms-diagnostic-report/v1",
+  "self_preference_warnings": [],
+  "status": "unavailable",
+  "supervisor_full_gate_matched_true_accept": {},
+  "swe_bench_oracle_limitation_note": "SWE-bench held-out tests are a test-pass proxy, not human maintainer mergeability."
+}

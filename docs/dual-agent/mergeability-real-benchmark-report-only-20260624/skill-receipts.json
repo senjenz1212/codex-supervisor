@@ -1,0 +1,55 @@
+{
+  "schema_version": "supervisor-skill-receipts/v1",
+  "task_id": "mergeability-real-benchmark-report-only-20260624",
+  "receipts": [
+    {
+      "stage": "umbrella",
+      "skill": "prd-to-tdd",
+      "source": "/Users/sam.zhang/.codex/skills/prd-to-tdd/SKILL.md",
+      "status": "accepted",
+      "artifact": "prd.md,tdd.md"
+    },
+    {
+      "stage": "to_prd",
+      "skill": "to-prd",
+      "source": "/Users/sam.zhang/.codex/skills/to-prd/SKILL.md",
+      "status": "accepted",
+      "artifact": "prd.md"
+    },
+    {
+      "stage": "codebase_design",
+      "skill": "codebase-design",
+      "source": "/Users/sam.zhang/.codex/skills/codebase-design/SKILL.md",
+      "status": "accepted",
+      "artifact": "prd.md"
+    },
+    {
+      "stage": "prd_grill",
+      "skill": "grill-with-docs",
+      "source": "/Users/sam.zhang/.codex/skills/grill-with-docs/SKILL.md",
+      "status": "accepted",
+      "artifact": "grill-findings.md"
+    },
+    {
+      "stage": "to_issues",
+      "skill": "to-issues",
+      "source": "/Users/sam.zhang/.codex/skills/to-issues/SKILL.md",
+      "status": "accepted",
+      "artifact": "issues.md"
+    },
+    {
+      "stage": "tdd",
+      "skill": "tdd",
+      "source": "/Users/sam.zhang/.codex/skills/tdd/SKILL.md",
+      "status": "accepted",
+      "artifact": "tdd.md"
+    },
+    {
+      "stage": "tdd_grill",
+      "skill": "grill-with-docs",
+      "source": "/Users/sam.zhang/.codex/skills/grill-with-docs/SKILL.md",
+      "status": "accepted",
+      "artifact": "grill-findings-tdd.md"
+    }
+  ]
+}

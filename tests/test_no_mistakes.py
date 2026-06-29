@@ -177,6 +177,87 @@ def test_no_mistakes_adapter_parses_outcome_and_gate_findings(tmp_path):
     assert blocked.findings[0].action == "auto-fix"
 
 
+def test_no_mistakes_adapter_blocks_toon_review_gate_with_action_column_before_description(tmp_path):
+    from supervisor.no_mistakes import (
+        NoMistakesConfig,
+        NoMistakesValidationRequest,
+        run_no_mistakes_validation,
+    )
+
+    def toon_gate_runner(argv, **kwargs):
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=(
+                "step: review\n"
+                "status: awaiting_approval\n"
+                "findings[3]{id,severity,file,action,description}:\n"
+                "  string-sort-attempt-dirs,info,cortex/vela_eval/production_confidence.py,no-op,Latent sort issue for attempt-10 vs attempt-2\n"
+                "  auth-secret-reused-as-hmac-key,warning,cortex/task_store/agents_substrate.py,ask-user,Fallback HMAC signing key uses CORTEX_GATEWAY_SERVICE_AUTH, also bearer token\n"
+                "  supervisor-swallows-unexpected-exceptions,info,cortex/vela_supervisor/service.py,no-op,Unexpected exceptions are reported as degraded observations\n"
+            ),
+            stderr="",
+        )
+
+    result = run_no_mistakes_validation(
+        NoMistakesValidationRequest(
+            cwd=tmp_path,
+            task_id="task-1",
+            run_id="run-toon-gate",
+            intent="Validate.",
+            config=NoMistakesConfig(policy="required", require_clean_committed_branch=False),
+        ),
+        runner=toon_gate_runner,
+    )
+
+    assert result.verdict == "required_blocked"
+    assert result.status == "blocked"
+    assert result.reason == "no_mistakes_gate_review"
+    assert [finding.finding_id for finding in result.findings] == [
+        "string-sort-attempt-dirs",
+        "auth-secret-reused-as-hmac-key",
+        "supervisor-swallows-unexpected-exceptions",
+    ]
+    ask_user = result.findings[1]
+    assert ask_user.action == "ask-user"
+    assert ask_user.description == (
+        "Fallback HMAC signing key uses CORTEX_GATEWAY_SERVICE_AUTH, also bearer token"
+    )
+    assert result.blocking_findings[0].finding_id == "auth-secret-reused-as-hmac-key"
+
+
+def test_no_mistakes_required_blocks_exit_zero_without_outcome_or_findings(tmp_path):
+    from supervisor.no_mistakes import (
+        NoMistakesConfig,
+        NoMistakesValidationRequest,
+        run_no_mistakes_validation,
+    )
+
+    def incomplete_toon_runner(argv, **kwargs):
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout="status: complete\n",
+            stderr="",
+        )
+
+    result = run_no_mistakes_validation(
+        NoMistakesValidationRequest(
+            cwd=tmp_path,
+            task_id="task-1",
+            run_id="run-missing-outcome",
+            intent="Validate.",
+            config=NoMistakesConfig(policy="required", require_clean_committed_branch=False),
+        ),
+        runner=incomplete_toon_runner,
+    )
+
+    assert result.verdict == "required_blocked"
+    assert result.status == "blocked"
+    assert result.reason == "no_mistakes_missing_outcome"
+    assert result.findings == ()
+
+
 def test_no_mistakes_adapter_parses_structured_json_contract(tmp_path):
     from supervisor.no_mistakes import (
         NoMistakesConfig,
@@ -411,7 +492,174 @@ def test_no_mistakes_changes_require_supervisor_rerun(tmp_path):
     assert result.to_receipt()["status"] == "blocked"
 
 
-def test_no_mistakes_clean_branch_runs_in_isolated_worktree(tmp_path):
+def test_no_mistakes_artifact_stash_restore(tmp_path):
+    from supervisor.no_mistakes import (
+        NoMistakesConfig,
+        NoMistakesValidationRequest,
+        run_no_mistakes_validation,
+    )
+
+    _init_git_repo(tmp_path)
+    artifact = tmp_path / "docs" / "dual-agent" / "task-1" / "index.md"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text("before\n", encoding="utf-8")
+    subprocess.run(["git", "add", str(artifact.relative_to(tmp_path))], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "add workflow artifact"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    artifact.write_text("after\n", encoding="utf-8")
+
+    runner_statuses: list[str] = []
+
+    def clean_runner(argv, **kwargs):
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=kwargs["cwd"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        runner_statuses.append(status)
+        return subprocess.CompletedProcess(argv, 0, stdout="outcome: checks-passed\n", stderr="")
+
+    result = run_no_mistakes_validation(
+        NoMistakesValidationRequest(
+            cwd=tmp_path,
+            task_id="task-1",
+            run_id="run-artifacts",
+            intent="Validate.",
+            config=NoMistakesConfig(policy="required"),
+        ),
+        runner=clean_runner,
+    )
+
+    assert result.verdict == "accepted"
+    assert runner_statuses == [""]
+    assert artifact.read_text(encoding="utf-8") == "after\n"
+    assert "docs/dual-agent/task-1/index.md" in subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "codex-supervisor:no-mistakes-artifacts" not in subprocess.run(
+        ["git", "stash", "list"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+
+
+def test_no_mistakes_validator_writes_to_stashed_prefix_do_not_force_rerun(tmp_path):
+    from supervisor.no_mistakes import (
+        NoMistakesConfig,
+        NoMistakesValidationRequest,
+        run_no_mistakes_validation,
+    )
+
+    _init_git_repo(tmp_path)
+    artifact = tmp_path / "docs" / "dual-agent" / "task-1" / "index.md"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text("before\n", encoding="utf-8")
+    subprocess.run(["git", "add", str(artifact.relative_to(tmp_path))], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "add workflow artifact"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    artifact.write_text("after\n", encoding="utf-8")
+
+    def validator_writes_to_artifact_prefix(argv, **kwargs):
+        validator_output = Path(kwargs["cwd"]) / "docs" / "dual-agent" / "task-1" / "verdict.json"
+        validator_output.parent.mkdir(parents=True, exist_ok=True)
+        validator_output.write_text("{\"ok\": true}\n", encoding="utf-8")
+        return subprocess.CompletedProcess(argv, 0, stdout="outcome: checks-passed\n", stderr="")
+
+    result = run_no_mistakes_validation(
+        NoMistakesValidationRequest(
+            cwd=tmp_path,
+            task_id="task-1",
+            run_id="run-artifact-write",
+            intent="Validate.",
+            config=NoMistakesConfig(policy="required"),
+        ),
+        runner=validator_writes_to_artifact_prefix,
+    )
+
+    assert result.verdict == "accepted"
+    assert result.reason == "no_mistakes_checks_passed"
+
+
+def test_no_mistakes_stash_apply_conflict_rolls_back_and_drops_stash(tmp_path):
+    from supervisor.no_mistakes import (
+        NoMistakesConfig,
+        NoMistakesValidationRequest,
+        run_no_mistakes_validation,
+    )
+
+    _init_git_repo(tmp_path)
+    artifact = tmp_path / "docs" / "dual-agent" / "task-1" / "index.md"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text("before\n", encoding="utf-8")
+    subprocess.run(["git", "add", str(artifact.relative_to(tmp_path))], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "add workflow artifact"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    artifact.write_text("after\n", encoding="utf-8")
+
+    def validator_overwrites_stashed_artifact_with_conflict(argv, **kwargs):
+        artifact_in_cwd = Path(kwargs["cwd"]) / "docs" / "dual-agent" / "task-1" / "index.md"
+        artifact_in_cwd.parent.mkdir(parents=True, exist_ok=True)
+        artifact_in_cwd.write_text("conflicting-validator-write\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "add", str(artifact_in_cwd.relative_to(kwargs["cwd"]))],
+            cwd=kwargs["cwd"],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "conflicting validator write"],
+            cwd=kwargs["cwd"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return subprocess.CompletedProcess(argv, 0, stdout="outcome: checks-passed\n", stderr="")
+
+    result = run_no_mistakes_validation(
+        NoMistakesValidationRequest(
+            cwd=tmp_path,
+            task_id="task-1",
+            run_id="run-stash-conflict",
+            intent="Validate.",
+            config=NoMistakesConfig(policy="required"),
+        ),
+        runner=validator_overwrites_stashed_artifact_with_conflict,
+    )
+
+    assert result.verdict in {"required_blocked", "advisory_blocked"}
+    stash_list = subprocess.run(
+        ["git", "stash", "list"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "codex-supervisor:no-mistakes-artifacts" not in stash_list
+
+
+def test_no_mistakes_clean_branch_runs_on_checked_out_branch(tmp_path):
     from supervisor.no_mistakes import (
         NoMistakesConfig,
         NoMistakesValidationRequest,
@@ -420,9 +668,18 @@ def test_no_mistakes_clean_branch_runs_in_isolated_worktree(tmp_path):
 
     _init_git_repo(tmp_path)
     runner_cwds: list[str] = []
+    runner_branches: list[str] = []
 
     def fake_runner(argv, **kwargs):
         runner_cwds.append(str(kwargs["cwd"]))
+        branch = subprocess.run(
+            ["git", "symbolic-ref", "--short", "HEAD"],
+            cwd=kwargs["cwd"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        runner_branches.append(branch)
         (Path(kwargs["cwd"]) / "isolated-change.txt").write_text("changed\n", encoding="utf-8")
         return subprocess.CompletedProcess(argv, 0, stdout="outcome: checks-passed\n", stderr="")
 
@@ -437,14 +694,16 @@ def test_no_mistakes_clean_branch_runs_in_isolated_worktree(tmp_path):
         runner=fake_runner,
     )
 
-    assert result.isolated_worktree is True
+    assert result.isolated_worktree is False
     assert runner_cwds
-    assert Path(runner_cwds[0]) != tmp_path
+    assert Path(runner_cwds[0]) == tmp_path
+    assert runner_branches[0] in {"main", "master"}
+    assert result.verdict == "changed_requires_rerun"
     assert "isolated-change.txt" in result.changed_files_after
-    assert not (tmp_path / "isolated-change.txt").exists()
+    assert (tmp_path / "isolated-change.txt").exists()
 
 
-def test_no_mistakes_runner_exception_cleans_isolated_worktree(tmp_path):
+def test_no_mistakes_runner_exception_reports_branch_state_without_cleanup(tmp_path):
     from supervisor.no_mistakes import (
         NoMistakesConfig,
         NoMistakesValidationRequest,
@@ -471,10 +730,93 @@ def test_no_mistakes_runner_exception_cleans_isolated_worktree(tmp_path):
     assert result.verdict == "required_blocked"
     assert result.status == "failed"
     assert result.reason == "no_mistakes_runner_exception"
-    assert result.isolated_worktree is True
+    assert result.isolated_worktree is False
     assert result.validation_cwd is not None
-    assert not Path(result.validation_cwd).exists()
-    assert not (tmp_path / "partial-output.txt").exists()
+    assert Path(result.validation_cwd).exists()
+    assert (tmp_path / "partial-output.txt").exists()
+
+
+def test_rollback_failed_stash_apply_missing_prefix_fails_closed(tmp_path):
+    from supervisor.no_mistakes import _rollback_failed_stash_apply
+
+    _init_git_repo(tmp_path)
+    untracked = tmp_path / "operator-scratch.txt"
+    untracked.write_text("preserve-me\n", encoding="utf-8")
+    nested_untracked = tmp_path / "nested" / "operator-notes.md"
+    nested_untracked.parent.mkdir()
+    nested_untracked.write_text("also-preserve\n", encoding="utf-8")
+    pre_stash = subprocess.run(
+        ["git", "stash", "list"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+
+    stderr = _rollback_failed_stash_apply(tmp_path, "", "stash@{0}")
+
+    assert "no_mistakes_artifact_restore_missing_prefix" in stderr
+    assert untracked.exists()
+    assert nested_untracked.exists()
+    post_stash = subprocess.run(
+        ["git", "stash", "list"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert pre_stash == post_stash
+
+
+def test_rollback_failed_stash_apply_scoped_clean_preserves_outside_prefix(tmp_path):
+    from supervisor.no_mistakes import _rollback_failed_stash_apply
+
+    _init_git_repo(tmp_path)
+    artifact_prefix = tmp_path / "docs" / "dual-agent" / "task-1"
+    artifact_prefix.mkdir(parents=True)
+    tracked_artifact = artifact_prefix / "tracked.txt"
+    tracked_artifact.write_text("baseline\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "add", str(tracked_artifact.relative_to(tmp_path))],
+        cwd=tmp_path,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "add artifact"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    tracked_artifact.write_text("modified\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "stash", "push", "-m", "fake-stash"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    inside_prefix_untracked = artifact_prefix / "scratch-conflict.txt"
+    inside_prefix_untracked.write_text("inside-prefix\n", encoding="utf-8")
+    outside_prefix_untracked = tmp_path / "unrelated-operator-file.txt"
+    outside_prefix_untracked.write_text("must-survive\n", encoding="utf-8")
+
+    stderr = _rollback_failed_stash_apply(
+        tmp_path, str(artifact_prefix.relative_to(tmp_path)), "stash@{0}"
+    )
+
+    assert "fatal" not in stderr.lower()
+    assert outside_prefix_untracked.exists()
+    assert not inside_prefix_untracked.exists()
+    assert tracked_artifact.read_text(encoding="utf-8") == "baseline\n"
+    stash_list = subprocess.run(
+        ["git", "stash", "list"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "fake-stash" not in stash_list
 
 
 def _init_git_repo(path: Path) -> None:

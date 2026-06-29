@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import difflib
+import posixpath
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, Mapping, Protocol
@@ -15,6 +16,17 @@ POLICY_APPROVAL_SCHEMA_VERSION = "supervisor-autoresearch-policy-approval/v1"
 POLICY_DENIAL_SCHEMA_VERSION = "supervisor-autoresearch-policy-denial/v1"
 POLICY_ROLLBACK_SCHEMA_VERSION = "supervisor-autoresearch-policy-rollback/v1"
 POLICY_DERIVATION_SCHEMA_VERSION = "supervisor-autoresearch-policy-derivation/v1"
+REPLAY_CORPUS_EVALUATOR_REF = "supervisor/autoresearch/evaluators/replay_corpus.py"
+BENCHMARK_PROMOTION_EXPERIMENT_ID = "auto-evolve-benchmark-promotion"
+BENCHMARK_PROMOTION_METRIC_NAME = "benchmark_evidence_conversion"
+RESERVED_OPERATOR_IDENTITIES = frozenset({
+    "codex-supervisor-axi",
+    "codex-supervisor",
+    "autoresearch",
+    "auto",
+    "automated",
+    "system",
+})
 
 
 class EventWriter(Protocol):
@@ -520,6 +532,10 @@ def _should_record_applyability_skip(reason: str) -> bool:
 
 
 def _record_applyability_error(record: Mapping[str, Any]) -> str | None:
+    if _record_is_benchmark_promotion(record):
+        return "benchmark promotion records are operator-facing only"
+    if _record_uses_replay_corpus_evaluator(record):
+        return "replay-corpus evaluator is not an adoption signal"
     if str(record.get("validation_status") or "") != "accepted":
         return "accepted validation status is required for policy derivation"
     if record.get("metric_applyable") is False:
@@ -542,6 +558,29 @@ def _record_applyability_error(record: Mapping[str, Any]) -> str | None:
     if record.get("gate_advanced") is not False:
         return "gate_advanced must remain false"
     return _record_quality_control_error(record)
+
+
+def _record_is_benchmark_promotion(record: Mapping[str, Any]) -> bool:
+    return (
+        str(record.get("experiment_id") or "") == BENCHMARK_PROMOTION_EXPERIMENT_ID
+        or str(record.get("metric_name") or "") == BENCHMARK_PROMOTION_METRIC_NAME
+        or bool(record.get("benchmark_report_sha256"))
+        or record.get("policy_derivation_allowed") is False
+    )
+
+
+def _record_uses_replay_corpus_evaluator(record: Mapping[str, Any]) -> bool:
+    evaluator_ref = _normalise_evaluator_ref(record.get("evaluator_ref"))
+    return evaluator_ref == REPLAY_CORPUS_EVALUATOR_REF or evaluator_ref.endswith(
+        "/" + REPLAY_CORPUS_EVALUATOR_REF
+    )
+
+
+def _normalise_evaluator_ref(value: Any) -> str:
+    raw = str(value or "").strip().replace("\\", "/")
+    if not raw:
+        return ""
+    return posixpath.normpath(raw).removeprefix("./")
 
 
 def _record_quality_control_error(record: Mapping[str, Any]) -> str | None:
@@ -838,8 +877,11 @@ def _authority_invariants(*, operator_approved: bool) -> dict[str, Any]:
 
 
 def _require_operator(*, approver: str, approval_channel: str) -> None:
-    if not str(approver or "").strip():
+    normalized = str(approver or "").strip()
+    if not normalized:
         raise PolicyEvolutionError("approver is required")
+    if normalized.lower() in RESERVED_OPERATOR_IDENTITIES:
+        raise PolicyEvolutionError("named human approver is required")
     if not str(approval_channel or "").strip():
         raise PolicyEvolutionError("approval_channel is required")
 

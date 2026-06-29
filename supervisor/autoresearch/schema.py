@@ -185,6 +185,8 @@ class AutoresearchValidationReport:
     metric_name: str
     metric_trials: tuple[float, ...]
     metric_source: str
+    evaluator_ref: str
+    evaluator_hash: str
     evaluator_run_ref: str
     evaluator_run_hash: str
     metric_before: float | None
@@ -219,6 +221,8 @@ class AutoresearchValidationReport:
             "metric_name": self.metric_name,
             "metric_trials": list(self.metric_trials),
             "metric_source": self.metric_source,
+            "evaluator_ref": self.evaluator_ref,
+            "evaluator_hash": self.evaluator_hash,
             "evaluator_run_ref": self.evaluator_run_ref,
             "evaluator_run_hash": self.evaluator_run_hash,
             "metric_before": self.metric_before,
@@ -260,6 +264,8 @@ class AutoresearchValidationReport:
             "metric_name": self.metric_name,
             "metric_trials": list(self.metric_trials),
             "metric_source": self.metric_source,
+            "evaluator_ref": self.evaluator_ref,
+            "evaluator_hash": self.evaluator_hash,
             "evaluator_run_ref": self.evaluator_run_ref,
             "evaluator_run_hash": self.evaluator_run_hash,
             "metric_before": self.metric_before,
@@ -287,6 +293,22 @@ class AutoresearchValidationReport:
         return payload
 
     def empty_floor_comparison(self) -> dict[str, Any] | None:
+        """Return the execution-derived empty-floor comparison or ``None``.
+
+        Returns ``None`` when ``metric_before``, ``metric_after``, or
+        ``metric_delta`` is missing -- including when the orchestrator dropped
+        a non-execution seed because the live evaluator could not measure a
+        value. Also returns ``None`` whenever ``metric_source`` is not
+        ``evaluator_execution`` so a stale fixture or human seed cannot be
+        laundered as execution evidence. A real live run that executed the
+        stripped-overlay pre-flight pass and recorded at least one candidate
+        trial returns a dict that carries ``metric_source`` set to
+        ``evaluator_execution``, the measured ``empty_floor_metric``, the
+        candidate ``candidate_metric`` (median of trial metrics),
+        ``metric_delta``, and the trial count.
+        """
+        if self.metric_source != "evaluator_execution":
+            return None
         if self.metric_before is None or self.metric_after is None or self.metric_delta is None:
             return None
         return {

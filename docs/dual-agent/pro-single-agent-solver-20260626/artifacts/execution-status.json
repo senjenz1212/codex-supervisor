@@ -1,0 +1,16 @@
+{
+  "authority_flags": {
+    "default_change_allowed": false,
+    "gate_advanced": false,
+    "human_mergeability_claim_allowed": false,
+    "improvement_claim_allowed": false,
+    "metric_applyable": false,
+    "policy_mutated": false,
+    "powered_improvement_claim_allowed": false
+  },
+  "blocked_reason": "No approved live SWE-bench Pro single-agent runner command/model configuration was supplied in this session; the committed local smoke uses a fake runner below the public generator boundary and is not evidence of real model performance.",
+  "live_k_run_status": "blocked",
+  "local_contract_smoke": "docs/dual-agent/pro-single-agent-solver-20260626/artifacts/local-contract-smoke.json",
+  "schema_version": "supervisor-pro-single-agent-solver-execution-status/v1",
+  "task_id": "pro-single-agent-solver-20260626"
+}

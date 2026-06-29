@@ -333,3 +333,101 @@ reviewer rationales, unavailable-panel failure, and report-only authority flags.
 Rows already rejected by the public floor may short-circuit as available
 full-gate rejects with `public_review_rejected`; reviewer verdicts remain
 mandatory for every row that the public floor would otherwise accept.
+
+## reviewer_panel_aggregation
+
+Aggregate independent reviewer verdicts through `evaluate_reviewer_panel` and
+`ConfiguredReviewerPanelOptions.panel_aggregation_mode`. Tests must prove
+hard-block precedence holds in every mode: critical/important revise or deny
+still produces `revise`, missing verdicts still produce `revise`, and
+low-confidence accept still escalates. `"conservative"` (default for direct
+callers) must preserve all-reviewers-accept ordering; `"geometric_median"`
+(default for SWE-bench replay CLIs) is allowed only to settle the remaining
+accept-vs-revise tie. When robust mode is requested the panel decision must
+record `aggregation_mode="geometric_median"` with a `robust_aggregation`
+summary, and any active calibration must be dropped so robust precedence is
+visible rather than silently overwritten.
+
+## reviewer_provider_family_verification
+
+Resolve a reviewer's provider family through
+`provider_family_verification_for_reviewer` and the
+`_result_with_spec_provenance` provenance helper. Tests must prove that a
+served-model match (`served_model`/`response_model`/`response_metadata`) sets
+`provider_family_verified=true`, that operator-named families are recorded with
+`provider_family_source="operator_config"` and not counted as verified, and
+that downstream provenance reports preserve the verified flag. The official
+all-arms diagnostic verifier must additionally treat
+`unverified_provider_family`,
+`operator_asserted_provider_family_unverified`, and any official-replay row
+without `panel_aggregation_mode == "geometric_median"`
+(`reviewer_panel_not_robustly_aggregated`) as cross-family readiness blockers
+without flipping any authority flag.
+
+## swe_bench_mergeability_replay_cli
+
+Drive deterministic SWE-bench mergeability replay, live, and official-all-arms
+diagnostic runs through `codex-supervisor-swebench-mergeability-replay`
+(`supervisor.swe_bench_mergeability_cli:main`). Tests must prove the CLI
+forwards `--reviewer-panel-mode`, `--reviewer-output-mode`,
+`--reviewer-model`, `--codex-model`, `--litellm-model`,
+`--litellm-provider-family`, `--panel-aggregation-mode`, `--oracle-adapter`,
+`--oracle-adapter-kind`, `--swe-bench-pro-scripts-dir`, and the dataset-fetch
+and budget guards to the underlying runners, refuses official replay without
+`--allow-dataset-fetch`, `--dataset`, `--predictions`, `--oracle-adapter`, and
+a supported adapter kind, refuses live runs without `--allow-live`,
+`--max-budget-usd > 0`, and both generator commands, and writes a blocked
+all-arms diagnostic artifact when prerequisites are missing. The CLI must not
+execute reviewer or oracle work itself; it composes the public runners under
+the supervisor seams above.
+
+## swe_bench_mergeability_powered_factorial_cli
+
+Drive the SWE-bench Pro powered factorial evaluation through the same
+`codex-supervisor-swebench-mergeability-replay` entry point with
+`--powered-factorial` plus `--predictions` and `--output-dir`. Tests must
+prove the CLI forwards `--min-good`, `--min-bad`, `--min-discordant`, and
+`--alpha` into `swebench_mergeability_powered_factorial_runner(...)`, refuses
+to run without `--predictions`, and emits a `powered_factorial_report.json`
+that adapts each Pro prediction row's explicit `oracle_label`,
+`candidate_artifact_hash`, trusted `single_agent_baseline_decision` receipt,
+`reviewer_panel_results`, and the four arm decisions
+(`same_model_multi_agent_decision`, `hetero_multi_reviewer_decision`,
+`runtime_evidence_floor_decision`, `full_supervisor_stack_decision`) into
+`run_powered_factorial_mergeability_evaluation`. The CLI summary must surface
+`evidence_conversion_power_contract` and `powered_metric_applyable`. Every
+authority flag on the report (`metric_applyable`,
+`powered_improvement_claim_allowed`, `human_mergeability_claim_allowed`,
+`improvement_claim_allowed`, `default_change_allowed`, `policy_mutated`,
+`gate_advanced`) must remain false; the powered factorial path must not
+invoke any benchmark-to-policy promotion bridge and the all-arms diagnostic
+remains a separate report-only mode.
+
+## powered_real_benchmark_definition_of_done
+
+Validate the scaled powered SWE-bench Pro real-benchmark artifact through
+`assert_powered_real_benchmark_definition_of_done(powered_report=...,
+all_arms_diagnostic_report=...)` in `supervisor.powered_real_benchmark`. Tests
+must drive the public checker with report-shaped fixtures and prove the
+composed artifact (powered factorial report plus separate all-arms diagnostic
+status) passes only when raw `>=30` oracle-good and `>=30` oracle-bad floors
+hold, the paired `full_supervisor_stack` McNemar comparison reports
+`status="sufficient"` with `discordant_pair_count >= min_discordant` and
+`p_value <= alpha`, FAR/TAR/FRR confidence-interval blocks (Wilson-family
+method, positive denominator, populated bounds) are present for the
+`baseline`, `s_probe`, `s_full`, and `oracle_ceiling` arms, panel marginal
+evidence is recorded, the `source_predictions_path` is not a fixture,
+synthetic, smoke, or gold-only path, `benchmark_oracle.kind =
+"swe_bench_held_out_test_pass_proxy"` with `maintainer_mergeability_claim_allowed
+= false` and `no_maintainer_mergeability_claim = true`, the powered
+`evidence_conversion_power_contract` is qualified/report-only/operator-reviewed
+with `policy_mutation_allowed=false`, and every authority flag
+(`metric_applyable`, `improvement_claim_allowed`,
+`powered_improvement_claim_allowed`, `human_mergeability_claim_allowed`,
+`default_change_allowed`, `policy_mutated`, `gate_advanced`) is false on the
+powered report, all-arms report, and nested `aeb0_artifact_gate.authority_flags`.
+Underpowered, mislabeled, or fixture-sourced artifacts must raise
+`PoweredRealBenchmarkDoDError` with explicit reason codes. This boundary must
+not run the scaled benchmark, execute Docker, the Pro oracle, the live
+solver, or the cross-family reviewer panel; live execution is recorded
+separately as blocked execution evidence.
