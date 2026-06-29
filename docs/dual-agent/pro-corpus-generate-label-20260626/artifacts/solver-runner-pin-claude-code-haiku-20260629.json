@@ -1,0 +1,85 @@
+{
+  "schema_version": "supervisor-swebench-pro-solver-runner-pin/v1",
+  "task_id": "pro-corpus-generate-label-20260626",
+  "recorded_date": "2026-06-29",
+  "status": "pinned_for_future_scaling",
+  "purpose": "Pin the single-agent solver route before scaling the SWE-bench Pro corpus so future powered-corpus rows are reproducible and defensible.",
+  "prior_seed_pilot": {
+    "artifact": "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/pro-predictions-qutebrowser-haiku-20260629.jsonl",
+    "producer_model": "claude-3-5-haiku-20241022",
+    "producer_provider": "anthropic_via_unity_litellm",
+    "runner_label": "claude-code-litellm-haiku-real-swebench-pro-pilot",
+    "prompt_sha256_recorded_in_receipts": "44b113ccbef3c7d1f3f7b8088a267f818bc0595769d646c819743b1483112e80",
+    "retroactive_reproducibility_status": "not_fully_reproducible",
+    "missing_from_prior_receipt": [
+      "exact runner command argv",
+      "exact prompt template text",
+      "Claude Code CLI version",
+      "LiteLLM route base URL"
+    ],
+    "boundary": "The seed pilot remains valid real execution evidence, but scaled powered-corpus runs must use the pinned runner below rather than inferring the missing runner details from the pilot."
+  },
+  "pinned_runner": {
+    "runner_label": "claude-code-litellm-haiku-real-swebench-pro-pilot",
+    "model": "claude-3-5-haiku-20241022",
+    "provider": "anthropic_via_unity_litellm",
+    "claude_code_version": "2.1.114 (Claude Code)",
+    "runner_wrapper": "scripts/swebench_pro_claude_code_runner.py",
+    "runner_wrapper_sha256": "efb40d65f2527e8b691d087f1e418b897e52b352e1b675474bb33139bf9f5326",
+    "prompt_template": "docs/dual-agent/pro-corpus-generate-label-20260626/runner/claude-code-haiku-swebench-pro-prompt.md",
+    "prompt_template_sha256": "e24b6f1b5e0900493678c2b9f1fd0e2ec9dc4f32c40b7595e072c1dba6669109",
+    "litellm_route": {
+      "kind": "anthropic_compatible_litellm",
+      "base_url": "https://uai-litellm.internal.unity.com",
+      "host": "uai-litellm.internal.unity.com",
+      "secret_env": "SWEBENCH_SOLVER_LITELLM_AUTH_TOKEN",
+      "public_artifact_secret_policy": "record env var name only; never commit token value"
+    },
+    "runner_command_bokken": "/home/bokken/codex-swebench-pro-benchmark/repo-main/.venv/bin/python /home/bokken/codex-swebench-pro-benchmark/repo-main/scripts/swebench_pro_claude_code_runner.py --prompt-template /home/bokken/codex-swebench-pro-benchmark/repo-main/docs/dual-agent/pro-corpus-generate-label-20260626/runner/claude-code-haiku-swebench-pro-prompt.md --claude-bin claude --model claude-3-5-haiku-20241022 --provider anthropic_via_unity_litellm --runner-label claude-code-litellm-haiku-real-swebench-pro-pilot --litellm-base-url https://uai-litellm.internal.unity.com --max-budget-usd 0.200000 --permission-mode bypassPermissions",
+    "solver_command_template_bokken": "After exporting SWEBENCH_SOLVER_LITELLM_AUTH_TOKEN in the operator shell, run: /home/bokken/codex-swebench-pro-benchmark/repo-main/.venv/bin/python -m supervisor.swe_bench_solver --solver claude-code-litellm-haiku-real-swebench-pro-pilot --allow-live --max-budget-usd <per-instance-budget-usd> --k <attempts-per-instance> --runner-command '<runner_command_bokken>'"
+  },
+  "instance_roster_gate_before_scaling": {
+    "required": true,
+    "why": "The seed pilot observed roughly one usable oracle-runnable instance out of four attempts; solver budget should be spent only after run_scripts preflight and a dry oracle run prove selected instances are runnable.",
+    "preflight_steps": [
+      "Run preflight_swe_bench_pro_run_scripts over the candidate instance ids using .scratch/SWE-bench_Pro-os/run_scripts or another pinned clone of scaleapi/SWE-bench_Pro-os.",
+      "Run a dry Pro oracle/gold-patch check for each selected instance and keep only instances with patch_applied=true, non-empty parsed tests, fail_to_pass_status=pass, pass_to_pass_status=pass, and test_command_return_code=0.",
+      "Record excluded instances and concrete oracle unavailable reasons, including pro_script_missing, pro_parser_output_empty, pro_oracle_bucket_empty, dependency-install timeouts, and container failures."
+    ],
+    "known_seed_observations": [
+      {
+        "instance_family": "qutebrowser",
+        "status": "usable",
+        "evidence": "seed pilot produced 2 oracle-good and 1 oracle-bad candidates including gold backstop"
+      },
+      {
+        "instance_family": "vuls",
+        "status": "excluded",
+        "evidence": "pro_parser_output_empty and pro_oracle_bucket_empty:pass_to_pass"
+      },
+      {
+        "instance_family": "nodebb",
+        "status": "not_counted",
+        "evidence": "generation started but oracle container was still in dependency installation after qutebrowser seed success"
+      }
+    ]
+  },
+  "scaling_gate": {
+    "min_good": 30,
+    "min_bad": 30,
+    "min_discordant_pairs": 25,
+    "alpha": 0.05,
+    "forbidden_shortcut": "Do not use min_good=1 or min_bad=1 for a powered claim; that can make a run look completed while underpowered.",
+    "labeling": "report-only swe_bench_held_out_test_pass_proxy; do not call it maintainer mergeability",
+    "cross_family_expectation": "Expect reviewer cross-family proof to remain unverified unless a real out-of-band provider-family attestation exists; report it as operator-asserted/unverified rather than verified."
+  },
+  "authority_flags": {
+    "metric_applyable": false,
+    "improvement_claim_allowed": false,
+    "powered_improvement_claim_allowed": false,
+    "human_mergeability_claim_allowed": false,
+    "default_change_allowed": false,
+    "policy_mutated": false,
+    "gate_advanced": false
+  }
+}

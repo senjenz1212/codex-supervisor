@@ -1,0 +1,74 @@
+{
+  "schema_version": "supervisor-swebench-pro-batch-driver-pin/v1",
+  "task_id": "pro-corpus-generate-label-20260626",
+  "recorded_date": "2026-06-29",
+  "status": "pinned_for_future_scaling",
+  "purpose": "Pin the end-to-end SWE-bench Pro scaling driver before spending additional solver/oracle budget.",
+  "depends_on": [
+    "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/solver-runner-pin-claude-code-haiku-20260629.json",
+    "scripts/swebench_pro_claude_code_runner.py"
+  ],
+  "pinned_batch_driver": {
+    "driver": "scripts/swebench_pro_batch_driver.py",
+    "driver_sha256": "7ff42924c933c9c520360ef1b4d3cc53842179d58f8bdb5a9a25004bc2cc08bc",
+    "test": "tests/test_swebench_pro_batch_driver.py",
+    "test_sha256": "bac99f95105edd550ddf0cc1e5453dc1c9f50be7c9c429679f0e8344f3d075de",
+    "solver_runner_pin": "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/solver-runner-pin-claude-code-haiku-20260629.json",
+    "solver_runner_pin_sha256": "08222bf08fef00fde37941e2532e8b673db2cefa37675d30d7ad9c321383642c"
+  },
+  "phase_order": [
+    "write batch-driver-manifest.json",
+    "preflight_swe_bench_pro_run_scripts for every candidate instance",
+    "optional dry Pro oracle gold-patch run per instance",
+    "keep only instances with scripts present, patch_applied=true, non-empty parsed tests, fail_to_pass_status=pass, pass_to_pass_status=pass, and test_command_return_code=0",
+    "run k>1 single-agent solver attempts only for curated instances",
+    "append dataset reference gold backstop attempts",
+    "label all applying candidates through run_swe_bench_pro_oracle",
+    "run powered factorial only after a panel-annotated corpus exists",
+    "record exclusions, Docker prune results, thresholds, and report-only labels"
+  ],
+  "bokken_command_template": {
+    "secret_policy": "export SWEBENCH_SOLVER_LITELLM_AUTH_TOKEN in the operator shell; never commit or echo token values",
+    "records": "/home/bokken/codex-swebench-pro-benchmark/inputs/pro-public-records.jsonl",
+    "output_dir": "/home/bokken/codex-swebench-pro-benchmark/runs/<run-id>",
+    "scripts_dir": "/home/bokken/SWE-bench_Pro-os/run_scripts",
+    "curate_solver_label_command": "/home/bokken/codex-swebench-pro-benchmark/repo-main/.venv/bin/python /home/bokken/codex-swebench-pro-benchmark/repo-main/scripts/swebench_pro_batch_driver.py --records /home/bokken/codex-swebench-pro-benchmark/inputs/pro-public-records.jsonl --output-dir /home/bokken/codex-swebench-pro-benchmark/runs/<run-id> --swe-bench-pro-scripts-dir /home/bokken/SWE-bench_Pro-os/run_scripts --python-executable /home/bokken/codex-swebench-pro-benchmark/repo-main/.venv/bin/python --runner-command '/home/bokken/codex-swebench-pro-benchmark/repo-main/.venv/bin/python /home/bokken/codex-swebench-pro-benchmark/repo-main/scripts/swebench_pro_claude_code_runner.py --prompt-template /home/bokken/codex-swebench-pro-benchmark/repo-main/docs/dual-agent/pro-corpus-generate-label-20260626/runner/claude-code-haiku-swebench-pro-prompt.md --claude-bin claude --model claude-3-5-haiku-20241022 --provider anthropic_via_unity_litellm --runner-label claude-code-litellm-haiku-real-swebench-pro-pilot --litellm-base-url https://uai-litellm.internal.unity.com --max-budget-usd 0.200000 --permission-mode bypassPermissions' --solver claude-code-litellm-haiku-real-swebench-pro-pilot --model claude-3-5-haiku-20241022 --provider anthropic_via_unity_litellm --k <attempts-per-instance> --max-budget-usd <per-instance-budget-usd> --min-good 30 --min-bad 30 --min-discordant 25 --alpha 0.05 --oracle-timeout-s 3600 --run-dry-oracle --run-solver --run-labeling --allow-live --prune-docker-between-instances",
+    "powered_after_panel_command": "/home/bokken/codex-swebench-pro-benchmark/repo-main/.venv/bin/python /home/bokken/codex-swebench-pro-benchmark/repo-main/scripts/swebench_pro_batch_driver.py --records /home/bokken/codex-swebench-pro-benchmark/inputs/pro-public-records.jsonl --output-dir /home/bokken/codex-swebench-pro-benchmark/runs/<run-id> --powered-predictions /home/bokken/codex-swebench-pro-benchmark/runs/<run-id>/panel-annotated-pro-predictions.jsonl --swe-bench-pro-scripts-dir /home/bokken/SWE-bench_Pro-os/run_scripts --min-good 30 --min-bad 30 --min-discordant 25 --alpha 0.05 --run-powered"
+  },
+  "roster_curation_gate": {
+    "budget_assumption": "The seed pilot yielded roughly one oracle-runnable usable instance out of four attempted families, so preflight at least 100 candidate instances before expecting 30 usable instances.",
+    "required_before_solver_budget": true,
+    "exclusion_recording": [
+      "pro_script_missing",
+      "dry_oracle_gold_not_runnable",
+      "dry_oracle_exception",
+      "pro_parser_output_empty",
+      "pro_oracle_bucket_empty",
+      "dependency-install timeout",
+      "container failure"
+    ]
+  },
+  "scaling_thresholds": {
+    "min_good": 30,
+    "min_bad": 30,
+    "min_discordant_pairs": 25,
+    "alpha": 0.05,
+    "forbidden_shortcut": "Do not use min_good=1 or min_bad=1 for powered claims."
+  },
+  "panel_handoff": {
+    "required_after_corpus": true,
+    "input": "real Pro predictions corpus with single_agent_baseline_decision receipts",
+    "output": "panel accept/revise decisions per candidate, FAR/TAR with Wilson intervals, and at least 25 discordant pairs versus baseline before powered qualification",
+    "cross_family_status": "operator_asserted_unverified_until_attestation_exists",
+    "label": "report-only swe_bench_held_out_test_pass_proxy; not maintainer mergeability"
+  },
+  "authority_flags": {
+    "metric_applyable": false,
+    "improvement_claim_allowed": false,
+    "powered_improvement_claim_allowed": false,
+    "human_mergeability_claim_allowed": false,
+    "default_change_allowed": false,
+    "policy_mutated": false,
+    "gate_advanced": false
+  }
+}
