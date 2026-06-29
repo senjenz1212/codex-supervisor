@@ -1,79 +1,100 @@
 {
   "schema_version": "supervisor-pro-corpus-generate-label-execution-status/v1",
   "task_id": "pro-corpus-generate-label-20260626",
-  "recorded_date": "2026-06-28",
-  "status": "blocked",
-  "artifact_kind": "blocked_execution_evidence",
+  "recorded_date": "2026-06-29",
+  "status": "completed_seed_pilot",
+  "artifact_kind": "real_execution_evidence",
   "required_output": "pro-predictions.jsonl with >=2 oracle-good and >=1 oracle-bad candidates from real solver/gold attempts labeled by the Pro oracle",
-  "produced_predictions_path": "",
-  "produced_predictions_sha256": "",
-  "corpus_summary": {
-    "candidate_count": 0,
-    "n_good": 0,
-    "n_bad": 0,
-    "false_accept_denominator": 0,
-    "far_degenerate": true
+  "produced_predictions_path": "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/pro-predictions-qutebrowser-haiku-20260629.jsonl",
+  "produced_predictions_sha256": "2fc506d9648c09e408c6ef85c97cff329999d7b2a76128a67462d6e4dda58b85",
+  "corpus_report_path": "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/candidate-corpus-report-qutebrowser-haiku-20260629.json",
+  "corpus_report_sha256": "3688c8d8265a9e41627f38b48e662564f8a2472c0511212c99f0699bf5473e9a",
+  "generation_summary_path": "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/generation-summary-qutebrowser-haiku-20260629.json",
+  "generation_summary_sha256": "a898297576a0340f9bcd9f238f75e11f90a80f9ce524216f1d7aee2ff214583a",
+  "execution_environment": {
+    "kind": "bokken_vm",
+    "job_id": "9044f339-1f2f-46fe-b907-95950213f5ce",
+    "host_arch": "linux/amd64",
+    "repo_checkout": "/home/bokken/codex-swebench-pro-benchmark/repo-main",
+    "repo_head": "a1afad5dec302bbb23f279e314625048f8e82474",
+    "docker_available": true,
+    "run_scripts_path": ".scratch/SWE-bench_Pro-os/run_scripts"
   },
-  "blocked_reasons": [
-    "current_host_not_native_linux_amd64:uname_m=arm64",
-    "docker_daemon_unavailable:Cannot connect to the Docker daemon at unix:///Users/sam.zhang/.docker/run/docker.sock",
-    "host_filesystem_capacity_100_percent",
-    "live_single_agent_solver_dependency_blocked:no_approved_live_runner_command_or_model_configuration",
-    "real_k_gt_1_solver_attempts_not_executed",
-    "real_slice1_pro_oracle_labeling_for_generated_attempts_not_executed"
-  ],
-  "dependency_evidence": {
-    "pro_oracle_gold_proof": {
-      "path": "docs/dual-agent/pro-oracle-gold-proof-20260626/artifacts/gold-proof-manifest.json",
-      "status": "completed",
-      "gold_good_available": true,
-      "instance_id": "instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c",
-      "result_summary": {
-        "fail_to_pass_status": "pass",
-        "pass_to_pass_status": "pass",
-        "patch_applied": true,
-        "test_command_return_code": 0,
-        "parsed_test_count": 56
+  "solver_run": {
+    "instance_id": "instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c",
+    "dataset": "ScaleAI/SWE-bench_Pro",
+    "split": "test",
+    "solver": "claude-code-litellm-haiku-real-swebench-pro-pilot",
+    "model": "claude-3-5-haiku-20241022",
+    "provider": "anthropic_via_unity_litellm",
+    "attempt_count": 2,
+    "attempts": [
+      {
+        "candidate_id": "instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c-attempt-1",
+        "patch_bytes": 2888,
+        "candidate_artifact_hash": "c7066e7c1c303b3bb8363813d44dabdbe1cc235cf668ee1f1b7f9811d4e97ad3",
+        "oracle_label": "oracle-bad",
+        "patch_applied": true
+      },
+      {
+        "candidate_id": "instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c-attempt-2",
+        "patch_bytes": 2994,
+        "candidate_artifact_hash": "6330c798ac454f0adafb517cdd7f4b6545e042b6a7518ed4a46fe0e3e503572c",
+        "oracle_label": "oracle-good",
+        "patch_applied": true
+      }
+    ],
+    "gold_backstop": {
+      "candidate_id": "instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c-dataset-reference-gold",
+      "candidate_artifact_hash": "905cefcda5fc64e740e928d283fe1173b18b529c9191e97fc67848a540f85a80",
+      "oracle_label": "oracle-good",
+      "patch_applied": true
+    }
+  },
+  "corpus_summary": {
+    "candidate_count": 3,
+    "n_good": 2,
+    "n_bad": 1,
+    "false_accept_denominator": 1,
+    "far_degenerate": false,
+    "unlabeled_count": 0
+  },
+  "additional_pilot_observations": [
+    {
+      "path": ".scratch/pro-real-pilot/labeling/pro-predictions-pilot.jsonl",
+      "status": "completed_but_far_degenerate",
+      "summary": {
+        "candidate_count": 3,
+        "n_good": 3,
+        "n_bad": 0,
+        "far_degenerate": true
       }
     },
-    "pro_single_agent_solver": {
-      "path": "docs/dual-agent/pro-single-agent-solver-20260626/artifacts/execution-status.json",
-      "live_k_run_status": "blocked",
-      "blocked_reason": "No approved live SWE-bench Pro single-agent runner command/model configuration was supplied in this session; the committed local smoke uses a fake runner below the public generator boundary and is not evidence of real model performance."
+    {
+      "path": ".scratch/pro-real-pilot/batch/vuls-haiku/labeling/pro-predictions-pilot.jsonl",
+      "status": "unavailable",
+      "excluded_reasons": [
+        "pro_parser_output_empty",
+        "pro_oracle_bucket_empty:pass_to_pass"
+      ]
     },
-    "pro_runscripts_coverage": {
-      "path": "docs/dual-agent/pro-runscripts-coverage-20260626/artifacts/upstream-run-scripts-source.json",
-      "preflight_ok": true,
-      "checked_instance_count": 1000,
-      "run_scripts_path": ".scratch/SWE-bench_Pro-os/run_scripts"
+    {
+      "path": ".scratch/pro-real-pilot/batch/nodebb-haiku",
+      "status": "aborted_after_successful_generation",
+      "reason": "oracle container remained in dependency installation after the seed qutebrowser corpus succeeded"
     }
-  },
-  "current_host_probe": {
-    "uname_m": "arm64",
-    "docker_path": "/usr/local/bin/docker",
-    "docker_version_probe": {
-      "command": "docker version --format '{{json .}}'",
-      "return_code": 1,
-      "stdout_tail": "{\"Client\":{\"Version\":\"29.4.0\",\"ApiVersion\":\"1.54\",\"DefaultAPIVersion\":\"1.54\",\"GitCommit\":\"9d7ad9f\",\"GoVersion\":\"go1.26.1\",\"Os\":\"darwin\",\"Arch\":\"arm64\",\"BuildTime\":\"Tue Apr  7 08:34:32 2026\",\"Context\":\"desktop-linux\"},\"Server\":null}",
-      "stderr_tail": "Cannot connect to the Docker daemon at unix:///Users/sam.zhang/.docker/run/docker.sock. Is the docker daemon running?"
-    },
-    "disk_probe": {
-      "command": "df -k . /tmp",
-      "filesystem": "/dev/disk3s5",
-      "available_1024_blocks": 8851108,
-      "capacity": "100%",
-      "mount": "/System/Volumes/Data"
-    }
-  },
+  ],
   "honesty_boundary": {
-    "no_pro_predictions_jsonl_emitted": true,
     "no_synthetic_or_hand_faked_bad_patches": true,
+    "generator_received_public_packet_only": true,
+    "hidden_oracle_fields_added_only_after_generation_for_labeling": true,
     "gold_reference_patch_is_good_backstop_only": true,
     "oracle_bad_requires_patch_applied_true": true,
-    "non_applying_patches_excluded_from_n_bad": true,
+    "non_applying_or_oracle_unavailable_patches_excluded_from_n_bad": true,
+    "seed_pilot_not_powered": true,
     "fixture_smoke_not_counted_as_real_benchmark": true
   },
-  "next_unblocked_execution_step": "On the native linux/amd64 VM with Docker running and sufficient disk, supply an approved live single-agent runner command/model configuration, run k>1 solver attempts on selected Pro instances, append dataset reference-patch gold attempts, and label only patch-applied attempts through run_swe_bench_pro_oracle via build_swe_bench_pro_candidate_corpus.",
+  "next_unblocked_execution_step": "Scale from the 3-candidate seed pilot to a powered Pro corpus: >=30 oracle-good, >=30 oracle-bad, and enough paired decisions for >=25 discordant pairs before running the powered factorial report.",
   "authority_flags": {
     "metric_applyable": false,
     "improvement_claim_allowed": false,

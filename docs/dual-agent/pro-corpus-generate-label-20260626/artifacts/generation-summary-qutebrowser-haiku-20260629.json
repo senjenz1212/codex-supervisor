@@ -1,0 +1,32 @@
+{
+  "attempt_count": 2,
+  "attempts": [
+    {
+      "accept": true,
+      "candidate_id": "instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c-attempt-1",
+      "cost_usd": 0.07831916,
+      "patch_bytes": 2888,
+      "patch_sha256": "c7066e7c1c303b3bb8363813d44dabdbe1cc235cf668ee1f1b7f9811d4e97ad3",
+      "producer": {
+        "model": "claude-3-5-haiku-20241022",
+        "provider": "anthropic_via_unity_litellm",
+        "runner_label": "claude-code-litellm-haiku-real-swebench-pro-pilot"
+      }
+    },
+    {
+      "accept": true,
+      "candidate_id": "instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c-attempt-2",
+      "cost_usd": 0.10645252000000002,
+      "patch_bytes": 2994,
+      "patch_sha256": "6330c798ac454f0adafb517cdd7f4b6545e042b6a7518ed4a46fe0e3e503572c",
+      "producer": {
+        "model": "claude-3-5-haiku-20241022",
+        "provider": "anthropic_via_unity_litellm",
+        "runner_label": "claude-code-litellm-haiku-real-swebench-pro-pilot"
+      }
+    }
+  ],
+  "instance_id": "instance_qutebrowser__qutebrowser-f91ace96223cac8161c16dd061907e138fe85111-v059c6fdc75567943479b23ebca7c07b5e9a7f34c",
+  "model": "claude-3-5-haiku-20241022",
+  "output": "/home/bokken/codex-swebench-pro-benchmark/repo-main/.scratch/pro-real-pilot/batch/qutebrowser-haiku/generation/solver-output.json"
+}
