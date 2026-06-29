@@ -15,6 +15,7 @@ def _record(instance_id: str, *, public_worktree_ref: str = "/tmp/public") -> di
         "base_commit": "abc123",
         "problem_statement": "Fix the issue.",
         "reference_patch": "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-a\n+b\n",
+        "dockerhub_tag": "owner.repo-abc123",
         "FAIL_TO_PASS": ["test_file.py::test_fix"],
         "PASS_TO_PASS": ["test_file.py::test_existing"],
         "selected_test_files_to_run": ["test_file.py"],
@@ -60,6 +61,8 @@ def test_curate_roster_excludes_missing_scripts_and_failed_dry_oracle(tmp_path: 
     output_json.write_text(json.dumps({"tests": ["test_file.py::test_fix"]}), encoding="utf-8")
 
     def fake_oracle(context):
+        assert context["repo"] == "owner/repo"
+        assert context["dockerhub_tag"] == "owner.repo-abc123"
         if context["instance_id"] == bad:
             return {
                 "oracle_adapter_receipt": {
@@ -202,6 +205,8 @@ def test_build_and_label_corpus_injects_oracle_context_per_candidate(tmp_path: P
     assert report["status"] == "completed"
     assert len(seen) == 3  # two solver attempts plus one gold backstop
     for context in seen:
+        assert context["repo"] == "owner/repo"
+        assert context["dockerhub_tag"] == "owner.repo-abc123"
         assert context["base_commit"] == "abc123"
         assert context["FAIL_TO_PASS"] == ["test_file.py::test_fix"]
         assert context["PASS_TO_PASS"] == ["test_file.py::test_existing"]
