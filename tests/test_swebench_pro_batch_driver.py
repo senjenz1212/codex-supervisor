@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from scripts import swebench_pro_batch_driver as batch
 
 
@@ -15,8 +17,29 @@ def _record(instance_id: str, *, public_worktree_ref: str = "/tmp/public") -> di
         "reference_patch": "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-a\n+b\n",
         "FAIL_TO_PASS": ["test_file.py::test_fix"],
         "PASS_TO_PASS": ["test_file.py::test_existing"],
+        "selected_test_files_to_run": ["test_file.py"],
+        "before_repo_set_cmd": "echo prep",
         "public_worktree_ref": public_worktree_ref,
     }
+
+
+def _solver_attempt(instance_id: str, *, candidate_id: str, patch: str) -> dict:
+    return {
+        "instance_id": instance_id,
+        "candidate_id": candidate_id,
+        "model_patch": patch,
+        "candidate_artifact_hash": "h-" + candidate_id,
+        "origin": {"kind": "solver", "solver": "claude-code-haiku"},
+        "producer": {"kind": "claude_code", "model": "claude-3-5-haiku-20241022"},
+    }
+
+
+def _write_solver_output(path: Path, attempts: list[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"attempts": attempts}, sort_keys=True),
+        encoding="utf-8",
+    )
 
 
 def _write_scripts(root: Path, instance_id: str) -> None:
@@ -135,6 +158,118 @@ def test_generator_input_requires_materialized_public_worktree() -> None:
         assert "public_worktree_ref" in str(exc)
     else:
         raise AssertionError("expected missing public worktree to fail closed")
+
+
+def test_build_and_label_corpus_injects_oracle_context_per_candidate(tmp_path: Path) -> None:
+    scripts_dir = "/opt/pro-run-scripts"
+    record = _record("instance_good")
+    curated = [{"instance_id": "instance_good", "record": record}]
+    solver_output = tmp_path / "solver" / "instance_good" / "solver-output.json"
+    _write_solver_output(
+        solver_output,
+        [
+            _solver_attempt(
+                "instance_good",
+                candidate_id="instance_good-attempt-1",
+                patch="diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@\n-x\n+y\n",
+            ),
+            _solver_attempt(
+                "instance_good",
+                candidate_id="instance_good-attempt-2",
+                patch="diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@\n-x\n+z\n",
+            ),
+        ],
+    )
+
+    seen: list[dict] = []
+
+    def fake_oracle(context):
+        seen.append(dict(context))
+        return {
+            "fail_to_pass_status": "pass",
+            "pass_to_pass_status": "pass",
+            "oracle_adapter_receipt": {"patch_applied": True},
+        }
+
+    report = batch.build_and_label_corpus(
+        curated=curated,
+        solver_output_paths=[solver_output],
+        output_path=tmp_path / "pro-predictions.jsonl",
+        scripts_dir=scripts_dir,
+        oracle_runner=fake_oracle,
+    )
+
+    assert report["status"] == "completed"
+    assert len(seen) == 3  # two solver attempts plus one gold backstop
+    for context in seen:
+        assert context["base_commit"] == "abc123"
+        assert context["FAIL_TO_PASS"] == ["test_file.py::test_fix"]
+        assert context["PASS_TO_PASS"] == ["test_file.py::test_existing"]
+        assert context["selected_test_files_to_run"] == ["test_file.py"]
+        assert context["before_repo_set_cmd"] == "echo prep"
+        assert context["swe_bench_pro_scripts_dir"] == scripts_dir
+    gold = [ctx for ctx in seen if ctx["candidate_id"].endswith("-dataset-reference-gold")]
+    assert len(gold) == 1
+
+
+def test_build_and_label_corpus_fails_closed_on_empty_corpus(tmp_path: Path) -> None:
+    record = _record("instance_good")
+    curated = [{"instance_id": "instance_good", "record": record}]
+    solver_output = tmp_path / "solver" / "instance_good" / "solver-output.json"
+    _write_solver_output(
+        solver_output,
+        [
+            _solver_attempt(
+                "instance_good",
+                candidate_id="instance_good-attempt-1",
+                patch="diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@\n-x\n+y\n",
+            ),
+        ],
+    )
+
+    def unavailable_oracle(context):
+        return {
+            "oracle_unavailable": True,
+            "oracle_unavailable_reason": "missing_pro_oracle_context:base_commit",
+        }
+
+    predictions_path = tmp_path / "pro-predictions.jsonl"
+    with pytest.raises(RuntimeError, match="no applying candidates"):
+        batch.build_and_label_corpus(
+            curated=curated,
+            solver_output_paths=[solver_output],
+            output_path=predictions_path,
+            scripts_dir="/opt/pro-run-scripts",
+            oracle_runner=unavailable_oracle,
+        )
+    assert not predictions_path.exists()
+
+
+def test_build_and_label_corpus_rejects_attempt_without_curated_record(tmp_path: Path) -> None:
+    solver_output = tmp_path / "solver" / "instance_x" / "solver-output.json"
+    _write_solver_output(
+        solver_output,
+        [
+            _solver_attempt(
+                "unknown_instance",
+                candidate_id="unknown_instance-attempt-1",
+                patch="diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@\n-x\n+y\n",
+            ),
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="no matching curated dataset record"):
+        batch.build_and_label_corpus(
+            curated=[{"instance_id": "other", "record": _record("other")}],
+            solver_output_paths=[solver_output],
+            output_path=tmp_path / "pro-predictions.jsonl",
+            scripts_dir="/opt/pro-run-scripts",
+            oracle_runner=lambda ctx: {
+                "fail_to_pass_status": "pass",
+                "pass_to_pass_status": "pass",
+                "oracle_adapter_receipt": {"patch_applied": True},
+            },
+        )
 
 
 def test_powered_stage_requires_panel_annotated_corpus(tmp_path: Path) -> None:

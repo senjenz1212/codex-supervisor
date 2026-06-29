@@ -64,9 +64,17 @@ def _claude_env(base_url: str, token_env: str) -> dict[str, str]:
     env = dict(os.environ)
     env["ANTHROPIC_BASE_URL"] = base_url
     token = env.get(token_env, "")
-    if token:
-        env.setdefault("ANTHROPIC_AUTH_TOKEN", token)
-        env.setdefault("ANTHROPIC_API_KEY", token)
+    if not token:
+        return env
+    for key in ("ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"):
+        existing = env.get(key, "")
+        if existing and existing != token:
+            raise ValueError(
+                f"refusing to run Claude Code: pre-existing {key} disagrees with "
+                f"pinned LiteLLM token from {token_env}; unset {key} before invoking "
+                "this runner so the pinned route secret is used"
+            )
+        env[key] = token
     return env
 
 
@@ -86,12 +94,12 @@ def _normalise_usage(payload: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _decision_from_result(result_text: str) -> bool:
-    match = DECISION_RE.search(result_text)
-    if not match:
+    matches = DECISION_RE.findall(result_text)
+    if not matches:
         raise ValueError(
             "Claude result missing final SWEBENCH_SOLVER_DECISION: accept|reject marker"
         )
-    return match.group(1).lower() == "accept"
+    return matches[-1].lower() == "accept"
 
 
 def build_claude_command(

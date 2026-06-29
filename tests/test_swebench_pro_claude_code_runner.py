@@ -63,6 +63,8 @@ def test_claude_code_runner_writes_attempt_output_with_pinned_route(
     monkeypatch.setenv(runner.PUBLIC_PACKET_ENV, str(_packet(tmp_path)))
     monkeypatch.setenv(runner.ATTEMPT_OUTPUT_ENV, str(output))
     monkeypatch.setenv("SWEBENCH_SOLVER_LITELLM_AUTH_TOKEN", "route-secret")
+    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.chdir(tmp_path)
 
     rc = runner.main([
@@ -91,6 +93,83 @@ def test_claude_code_runner_writes_attempt_output_with_pinned_route(
     assert "route-secret" not in output.read_text(encoding="utf-8")
 
 
+def test_claude_env_overrides_preexisting_anthropic_token_when_equal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SWEBENCH_SOLVER_LITELLM_AUTH_TOKEN", "route-secret")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "route-secret")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "route-secret")
+
+    env = runner._claude_env(
+        "https://uai-litellm.internal.unity.com",
+        "SWEBENCH_SOLVER_LITELLM_AUTH_TOKEN",
+    )
+
+    assert env["ANTHROPIC_AUTH_TOKEN"] == "route-secret"
+    assert env["ANTHROPIC_API_KEY"] == "route-secret"
+    assert env["ANTHROPIC_BASE_URL"] == "https://uai-litellm.internal.unity.com"
+
+
+def test_claude_env_fails_closed_when_preexisting_api_key_disagrees(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SWEBENCH_SOLVER_LITELLM_AUTH_TOKEN", "route-secret")
+    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "operators-personal-key")
+
+    with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
+        runner._claude_env(
+            "https://uai-litellm.internal.unity.com",
+            "SWEBENCH_SOLVER_LITELLM_AUTH_TOKEN",
+        )
+
+
+def test_claude_env_fails_closed_when_preexisting_auth_token_disagrees(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SWEBENCH_SOLVER_LITELLM_AUTH_TOKEN", "route-secret")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "operators-anthropic-token")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    with pytest.raises(ValueError, match="ANTHROPIC_AUTH_TOKEN"):
+        runner._claude_env(
+            "https://uai-litellm.internal.unity.com",
+            "SWEBENCH_SOLVER_LITELLM_AUTH_TOKEN",
+        )
+
+
+def test_claude_env_overrides_preexisting_when_token_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("SWEBENCH_SOLVER_LITELLM_AUTH_TOKEN", raising=False)
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "operators-personal-key")
+
+    env = runner._claude_env(
+        "https://uai-litellm.internal.unity.com",
+        "SWEBENCH_SOLVER_LITELLM_AUTH_TOKEN",
+    )
+
+    assert env["ANTHROPIC_AUTH_TOKEN"] == "operators-personal-key"
+
+
+def test_decision_from_result_uses_last_marker() -> None:
+    text = (
+        "I considered rejecting first.\n"
+        "SWEBENCH_SOLVER_DECISION: reject\n"
+        "After reviewing the tests, here is my final answer.\n"
+        "SWEBENCH_SOLVER_DECISION: accept\n"
+    )
+    assert runner._decision_from_result(text) is True
+
+    text_reverse = (
+        "Initial thought:\n"
+        "SWEBENCH_SOLVER_DECISION: accept\n"
+        "But on second thought:\n"
+        "SWEBENCH_SOLVER_DECISION: reject\n"
+    )
+    assert runner._decision_from_result(text_reverse) is False
+
+
 def test_claude_code_runner_requires_explicit_decision_marker(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -103,6 +182,8 @@ def test_claude_code_runner_requires_explicit_decision_marker(
     monkeypatch.setenv(runner.PUBLIC_PACKET_ENV, str(_packet(tmp_path)))
     monkeypatch.setenv(runner.ATTEMPT_OUTPUT_ENV, str(output))
     monkeypatch.setenv("SWEBENCH_SOLVER_LITELLM_AUTH_TOKEN", "route-secret")
+    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.chdir(tmp_path)
 
     with pytest.raises(ValueError, match="SWEBENCH_SOLVER_DECISION"):

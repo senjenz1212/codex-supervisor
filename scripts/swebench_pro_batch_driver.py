@@ -440,22 +440,84 @@ def _gold_attempt(record: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _augment_attempt_with_oracle_context(
+    attempt: Mapping[str, Any],
+    record: Mapping[str, Any],
+    scripts_dir: str,
+) -> dict[str, Any]:
+    enriched = dict(attempt)
+    enriched["base_commit"] = str(record.get("base_commit") or "")
+    enriched["FAIL_TO_PASS"] = (
+        record.get("FAIL_TO_PASS") or record.get("fail_to_pass") or []
+    )
+    enriched["PASS_TO_PASS"] = (
+        record.get("PASS_TO_PASS") or record.get("pass_to_pass") or []
+    )
+    enriched["selected_test_files_to_run"] = (
+        record.get("selected_test_files_to_run") or []
+    )
+    enriched["before_repo_set_cmd"] = str(record.get("before_repo_set_cmd") or "")
+    enriched["swe_bench_pro_scripts_dir"] = scripts_dir
+    return enriched
+
+
 def build_and_label_corpus(
     *,
     curated: Sequence[Mapping[str, Any]],
     solver_output_paths: Sequence[str | Path],
     output_path: Path,
+    scripts_dir: str,
+    oracle_runner: Callable[[Mapping[str, Any]], Mapping[str, Any]] = run_swe_bench_pro_oracle,
 ) -> dict[str, Any]:
-    attempts = _load_solver_attempts(solver_output_paths)
+    records_by_instance: dict[str, Mapping[str, Any]] = {}
     for entry in curated:
         record = entry.get("record") if isinstance(entry, Mapping) else entry
-        if isinstance(record, Mapping):
-            attempts.append(_gold_attempt(record))
-    return build_swe_bench_pro_candidate_corpus(
-        attempts=attempts,
+        if not isinstance(record, Mapping):
+            continue
+        instance_id = str(record.get("instance_id") or "")
+        if instance_id:
+            records_by_instance[instance_id] = record
+
+    attempts = _load_solver_attempts(solver_output_paths)
+    enriched_attempts: list[dict[str, Any]] = []
+    for index, attempt in enumerate(attempts, start=1):
+        instance_id = str(attempt.get("instance_id") or "")
+        record = records_by_instance.get(instance_id)
+        if record is None:
+            raise RuntimeError(
+                f"solver attempt {index} for instance_id={instance_id!r} has no "
+                "matching curated dataset record; cannot supply Pro oracle context"
+            )
+        enriched_attempts.append(
+            _augment_attempt_with_oracle_context(attempt, record, scripts_dir)
+        )
+    for record in records_by_instance.values():
+        enriched_attempts.append(
+            _augment_attempt_with_oracle_context(
+                _gold_attempt(record), record, scripts_dir
+            )
+        )
+
+    report = build_swe_bench_pro_candidate_corpus(
+        attempts=enriched_attempts,
         output_path=output_path,
-        oracle_runner=run_swe_bench_pro_oracle,
+        oracle_runner=oracle_runner,
     )
+    if not report.get("rows"):
+        excluded_summary = [
+            f"{entry.get('instance_id')}::{entry.get('candidate_id')}::{entry.get('reason')}"
+            for entry in (report.get("excluded") or [])[:20]
+        ]
+        try:
+            Path(output_path).unlink()
+        except FileNotFoundError:
+            pass
+        raise RuntimeError(
+            "Pro oracle labeling produced no applying candidates; refusing to keep "
+            "an empty pro-predictions.jsonl after spending solver budget. "
+            "First excluded entries: " + ", ".join(excluded_summary)
+        )
+    return report
 
 
 def _safe_fragment(value: str) -> str:
@@ -641,10 +703,18 @@ def main(argv: list[str] | None = None) -> int:
             for result in solver_report["results"]
             if result.get("status") == "completed"
         ]
+        if not solver_outputs:
+            raise RuntimeError(
+                "--run-labeling requires at least one completed solver instance; "
+                f"solver batch reported {len(solver_report['results'])} attempts with "
+                "zero completed. Refusing to write an empty pro-predictions.jsonl "
+                "after spending solver budget."
+            )
         corpus_report = build_and_label_corpus(
             curated=roster["curated"],
             solver_output_paths=solver_outputs,
             output_path=predictions_path,
+            scripts_dir=config.scripts_dir,
         )
         _write_json(config.output_dir / "candidate-corpus-report.json", corpus_report)
 
