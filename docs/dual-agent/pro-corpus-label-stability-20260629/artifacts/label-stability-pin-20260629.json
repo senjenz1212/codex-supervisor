@@ -1,0 +1,39 @@
+{
+  "authority_flags": {
+    "default_change_allowed": false,
+    "gate_advanced": false,
+    "human_mergeability_claim_allowed": false,
+    "improvement_claim_allowed": false,
+    "metric_applyable": false,
+    "policy_mutated": false,
+    "powered_improvement_claim_allowed": false
+  },
+  "command_template": ".venv/bin/python scripts/swebench_pro_label_stability.py --records <curated-records.jsonl> --predictions <pro-predictions.jsonl> --swe-bench-pro-scripts-dir <run_scripts_dir> --repeats 3 --output <stable-pro-predictions.jsonl> --report <flake-report.json> --oracle-timeout-s 3600 --allow-live",
+  "hashes": {
+    "source_request_sha256": "489b1ab0d2cc13fa81245a10a279f828e77554d4dabddb52a3a1a70e4c80960d",
+    "test_sha256": "9279f463ed22d8056297ea1a3f0639f151c534fc6d7dfe05b9e983d06e8a18c6",
+    "wrapper_sha256": "fe761ddf9ac0a02f33f6d67705fe748134627cef55d896e349b0be41fe2932f6"
+  },
+  "labels": {
+    "benchmark_oracle_kind": "swe_bench_held_out_test_pass_proxy",
+    "gate": "label_stability_filter",
+    "report_only": true
+  },
+  "live_execution": {
+    "allow_live_required": true,
+    "default_oracle_runner": "supervisor.swe_bench_official_oracle.run_swe_bench_pro_oracle",
+    "env_var_names_only": [
+      "SWEBENCH_PRO_ORACLE_SCRIPTS_DIR",
+      "SWEBENCH_PRO_ORACLE_SUBPROCESS_TIMEOUT_S"
+    ],
+    "unit_tests_call_live_oracle": false
+  },
+  "repeats": 3,
+  "schema_version": "supervisor-swebench-pro-label-stability-pin/v1",
+  "stability_thresholds": {
+    "stable": "all repeats completed and all status pairs agree",
+    "unavailable": "any unavailable repeat or fewer than expected repeats",
+    "unstable": "completed repeats disagree"
+  },
+  "task_id": "pro-corpus-label-stability-20260629"
+}
