@@ -1,0 +1,173 @@
+{
+  "schema_version": "supervisor-swebench-pro-powered-scale-prereg/v1",
+  "task_id": "pro-corpus-powered-scale-run-20260629",
+  "preregistered_at_utc": "2026-06-30T01:55:40Z",
+  "status": "preregistered_before_scale_results",
+  "purpose": "Freeze the execution bar for the first complete powered SWE-bench Pro benchmark run before spending additional curation, solver, oracle, or reviewer budget.",
+  "immutability_rule": "Do not edit this preregistration after observing curation, solver, oracle-labeling, stability, panel, or powered-factorial results for this scale run.",
+  "start_state": {
+    "base_branch": "main",
+    "base_head": "04be1fdc2b65bb7faaa25b8c4bbdd0d0bc14ff40",
+    "required_merged_wrapper": "scripts/swebench_pro_label_stability.py",
+    "required_merged_wrapper_sha256": "fe761ddf9ac0a02f33f6d67705fe748134627cef55d896e349b0be41fe2932f6",
+    "verified_locally_before_prereg": true
+  },
+  "input_pool": {
+    "kind": "swe_bench_pro_public_records_candidate_pool",
+    "vm_path": "/home/bokken/codex-swebench-pro-benchmark/inputs/pro-public-records-candidate108-no-nodebb-vuls.jsonl",
+    "record_count_claim": 108,
+    "sha256": "e57926b3106d3d50ae52dae06810f6d9b02655071ed40e1b56962808a41e59c2",
+    "selection_rule": "Use this prefiltered public-record pool for Phase 0 dry-gold curation; run all instances that pass the curation gates, not just enough to hit the floor.",
+    "pre_exclusions": [
+      {
+        "repo": "NodeBB/NodeBB",
+        "scope": "all NodeBB instances in this scale input pool",
+        "reason": "Seed/pilot evidence recorded dependency-install stall risk: the NodeBB oracle container remained in dependency installation after qutebrowser seed success.",
+        "evidence_artifact": "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/corpus-generate-label-execution-status.json",
+        "evidence_pointer": "additional_pilot_observations[path=.scratch/pro-real-pilot/batch/nodebb-haiku]"
+      },
+      {
+        "repo": "future-architect/vuls",
+        "scope": "all vuls instances in this scale input pool",
+        "reason": "Seed/pilot evidence recorded Pro oracle parser/bucket failures: pro_parser_output_empty and pro_oracle_bucket_empty:pass_to_pass.",
+        "evidence_artifact": "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/corpus-generate-label-execution-status.json",
+        "evidence_pointer": "additional_pilot_observations[path=.scratch/pro-real-pilot/batch/vuls-haiku]"
+      }
+    ]
+  },
+  "execution_environment": {
+    "kind": "bokken_vm",
+    "job_id": "9044f339-1f2f-46fe-b907-95950213f5ce",
+    "repo_path": "/home/bokken/codex-swebench-pro-benchmark/repo-main",
+    "run_root": "/home/bokken/codex-swebench-pro-benchmark/runs/powered-scale-20260630T0200Z",
+    "swe_bench_pro_scripts_dir": "/home/bokken/codex-swebench-pro-benchmark/repo-main/.scratch/SWE-bench_Pro-os/run_scripts",
+    "forbidden_stale_scripts_dir": "/home/bokken/SWE-bench_Pro-os/run_scripts",
+    "secret_policy": "Secrets are referenced by environment variable name only. Never echo, paste, write, or commit secret values.",
+    "required_secret_env_vars": [
+      "SWEBENCH_SOLVER_LITELLM_AUTH_TOKEN",
+      "OPENAI_API_KEY",
+      "OPENAI_BASE_URL",
+      "CURSOR_API_KEY"
+    ]
+  },
+  "pinned_solver": {
+    "k": 8,
+    "solver": "claude-code-litellm-haiku-real-swebench-pro-pilot",
+    "model": "claude-3-5-haiku-20241022",
+    "provider": "anthropic_via_unity_litellm",
+    "runner_pin_artifact": "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/solver-runner-pin-claude-code-haiku-20260629.json",
+    "runner_pin_sha256": "08222bf08fef00fde37941e2532e8b673db2cefa37675d30d7ad9c321383642c",
+    "runner_wrapper": "scripts/swebench_pro_claude_code_runner.py",
+    "runner_wrapper_sha256": "efb40d65f2527e8b691d087f1e418b897e52b352e1b675474bb33139bf9f5326",
+    "batch_driver": "scripts/swebench_pro_batch_driver.py",
+    "batch_driver_sha256": "c67e4957e064dab892b0e13015d7b54e2536391d690768d55498722a3dfb98c5",
+    "runner_command_bokken": "/home/bokken/codex-swebench-pro-benchmark/repo-main/.venv/bin/python /home/bokken/codex-swebench-pro-benchmark/repo-main/scripts/swebench_pro_claude_code_runner.py --prompt-template /home/bokken/codex-swebench-pro-benchmark/repo-main/docs/dual-agent/pro-corpus-generate-label-20260626/runner/claude-code-haiku-swebench-pro-prompt.md --claude-bin claude --model claude-3-5-haiku-20241022 --provider anthropic_via_unity_litellm --runner-label claude-code-litellm-haiku-real-swebench-pro-pilot --litellm-base-url https://uai-litellm.internal.unity.com --max-budget-usd 0.200000 --permission-mode bypassPermissions"
+  },
+  "phase_plan": {
+    "phase_0_curation": {
+      "mode": "dry_gold_no_model_spend",
+      "oracle_timeout_s": 5400,
+      "prune_docker_between_instances": true,
+      "gate": "Read curated-roster.json. If runnable count or repo spread is too low to plausibly reach the reliability targets, halt and record the blocked/partial evidence before solver spend."
+    },
+    "phase_1_public_worktrees": {
+      "mode": "materialize_public_worktrees",
+      "leak_gate": "On at least three sampled runnable ids, assert the public_worktree_manifest contains none of that instance's FAIL_TO_PASS or selected_test_files_to_run files. One leak invalidates the run and must halt execution."
+    },
+    "phase_2_solver_and_oracle_label": {
+      "mode": "oversampled_solver_plus_gold_backstop",
+      "k": 8,
+      "max_budget_usd": 5.0,
+      "min_good": 30,
+      "min_bad": 30,
+      "oracle_timeout_s": 5400,
+      "gate": "Run all runnable instances. Hand-verify roughly 5 to 10 labels. If n_good < 30 or n_bad < 30, halt and expand instances or raise k before panel."
+    },
+    "phase_3_label_stability": {
+      "mode": "oracle_repeatability_gate",
+      "repeats": 3,
+      "label_stability_script": "scripts/swebench_pro_label_stability.py",
+      "label_stability_script_sha256": "fe761ddf9ac0a02f33f6d67705fe748134627cef55d896e349b0be41fe2932f6",
+      "oracle_timeout_s": 5400,
+      "gate": "Record flake_rate and dropped candidate ids. If post-stability n_good < 30 or n_bad < 30, halt and scale more before panel."
+    },
+    "phase_4_panel_and_powered_factorial": {
+      "mode": "full_configured_reviewer_roster_conservative_aggregation",
+      "reviewer_panel_mode": "configured",
+      "panel_aggregation_mode": "conservative",
+      "min_good": 30,
+      "min_bad": 30,
+      "min_discordant": 25,
+      "alpha": 0.05,
+      "gate": "Confirm discordant_pair_count >= 25 before qualified powered report status; target discordant_pair_count >= 50 for reliability."
+    },
+    "phase_5_honest_report": {
+      "mode": "assemble_and_commit_report_only_evidence",
+      "required_fields": [
+        "actual_n_good",
+        "actual_n_bad",
+        "FAR_TAR_FRR_with_Wilson_confidence_intervals",
+        "discordant_pair_count",
+        "McNemar_p",
+        "flake_rate",
+        "diversity_metric",
+        "cross_family_status",
+        "labeling",
+        "authority_flags",
+        "full_exclusion_log"
+      ]
+    }
+  },
+  "statistical_floors": {
+    "min_good": 30,
+    "min_bad": 30,
+    "min_discordant": 25,
+    "alpha": 0.05
+  },
+  "reliability_targets": {
+    "n_per_arm": 100,
+    "discordant_pairs": 50
+  },
+  "oracle_stability": {
+    "repeats": 3,
+    "stable_predictions_output": "pro-predictions.stable.jsonl",
+    "flake_report_output": "flake-report.json"
+  },
+  "panel": {
+    "roster": "full_configured_roster",
+    "reviewer_panel_mode": "configured",
+    "panel_aggregation_mode": "conservative",
+    "cross_family_expectation": "operator_asserted_unverified",
+    "cross_family_verified_expected": false
+  },
+  "reporting_labels": {
+    "labeling": "swe_bench_held_out_test_pass_proxy",
+    "forbidden_label": "maintainer_mergeability",
+    "report_only": true,
+    "promotion_forbidden": true,
+    "auto_evolve_forbidden": true
+  },
+  "authority_flags": {
+    "metric_applyable": false,
+    "improvement_claim_allowed": false,
+    "powered_improvement_claim_allowed": false,
+    "human_mergeability_claim_allowed": false,
+    "default_change_allowed": false,
+    "policy_mutated": false,
+    "gate_advanced": false
+  },
+  "halt_policy": {
+    "on_phase_failure": "Record honest blocked or partial execution evidence and halt.",
+    "forbidden": [
+      "mock live oracle",
+      "mock Docker",
+      "mock solver",
+      "mock reviewer panel",
+      "synthesize predictions",
+      "synthesize oracle labels",
+      "synthesize panel decisions",
+      "relabel to make thresholds pass",
+      "change this preregistration after seeing results"
+    ]
+  }
+}
