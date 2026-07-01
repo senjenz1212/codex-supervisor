@@ -127,6 +127,32 @@ def test_rc_nonzero_resolved_gold_is_runnable_with_disclosure(tmp_path: Path) ->
     assert details["rc_nonzero_resolved"] is True
 
 
+def test_gold_dry_oracle_fails_closed_without_test_command_receipt(
+    tmp_path: Path,
+) -> None:
+    output_json = tmp_path / "output.json"
+    output_json.write_text(
+        json.dumps({"tests": ["test_file.py::test_fix"]}),
+        encoding="utf-8",
+    )
+    result = {
+        "oracle_adapter_receipt": {
+            "patch_applied": True,
+            "fail_to_pass_status": "pass",
+            "pass_to_pass_status": "pass",
+            "artifact_paths": {"output_json": str(output_json)},
+        }
+    }
+
+    ok, reason, details = batch._oracle_gold_runnable(result)
+
+    assert ok is False
+    assert reason.startswith("dry_oracle_gold_not_runnable")
+    assert "test_command_return_code_present" in reason
+    assert details["test_command_return_code"] is None
+    assert details["rc_nonzero_resolved"] is False
+
+
 @pytest.mark.parametrize(
     ("receipt_updates", "output_payload", "missing_check"),
     [

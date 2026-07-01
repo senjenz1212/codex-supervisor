@@ -538,6 +538,35 @@ def test_pro_runner_classifies_failed_test_command_when_parser_output_exists(
     receipt = result["oracle_adapter_receipt"]
     assert receipt["return_code"] == 0
     assert receipt["test_command_return_code"] == 1
+    assert "rc_nonzero_resolved" not in receipt
+
+
+def test_pro_runner_discloses_rc_nonzero_when_parser_statuses_pass(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setenv("SWEBENCH_PRO_ORACLE_ARTIFACT_DIR", str(tmp_path / "oracle"))
+    output_payload = {
+        "tests": [
+            {"name": "tests/test_parser.py::test_hidden", "status": "PASSED"},
+            {"name": "tests/test_parser.py::test_existing", "status": "PASSED"},
+        ]
+    }
+    _calls, fake_run = _fake_docker_runner_with_test_command_receipt(
+        tmp_path,
+        output_payload,
+        test_command_return_code=1,
+    )
+    monkeypatch.setattr(official_oracle.subprocess, "run", fake_run)
+
+    result = run_swe_bench_pro_oracle(_pro_context(tmp_path))
+
+    assert result["fail_to_pass_status"] == "pass"
+    assert result["pass_to_pass_status"] == "pass"
+    assert result["rc_nonzero_resolved"] is True
+    receipt = result["oracle_adapter_receipt"]
+    assert receipt["test_command_return_code"] == 1
+    assert receipt["rc_nonzero_resolved"] is True
 
 
 def test_pro_runner_outcome_feeds_interpret_contract(tmp_path, monkeypatch):

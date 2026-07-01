@@ -186,6 +186,8 @@ def _oracle_gold_runnable(result: Mapping[str, Any]) -> tuple[bool, str, dict[st
         "patch_applied": details["patch_applied"],
         "fail_to_pass_status": details["fail_to_pass_status"] == "pass",
         "pass_to_pass_status": details["pass_to_pass_status"] == "pass",
+        "test_command_return_code_present": details["test_command_return_code"]
+        is not None,
         "tests_non_empty": int(details["tests_count"]) > 0,
     }
     missing = [name for name, ok in checks.items() if not ok]
@@ -715,9 +717,9 @@ def _assert_phase0_solver_spend_allowed(config: BatchConfig) -> None:
 def main(argv: list[str] | None = None) -> int:
     config = _parse_args(argv)
     records = _read_records(config.records_path)
-    config.output_dir.mkdir(parents=True, exist_ok=True)
     if config.run_solver:
         _assert_phase0_solver_spend_allowed(config)
+    config.output_dir.mkdir(parents=True, exist_ok=True)
     os.environ["SWEBENCH_PRO_ORACLE_SCRIPTS_DIR"] = config.scripts_dir
     os.environ["SWEBENCH_PRO_ORACLE_SUBPROCESS_TIMEOUT_S"] = str(config.oracle_timeout_s)
 

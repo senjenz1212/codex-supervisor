@@ -657,6 +657,11 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
     pass_to_pass_empty_vacuous_pass = not pass_to_pass
     fail_to_pass_status = "pass" if set(fail_to_pass) <= passed_tests else "fail"
     pass_to_pass_status = "pass" if set(pass_to_pass) <= passed_tests else "fail"
+    rc_nonzero_resolved = (
+        test_command_return_code not in (None, 0)
+        and fail_to_pass_status == "pass"
+        and pass_to_pass_status == "pass"
+    )
     receipt = _pro_adapter_receipt(
         context=context,
         command=run_command,
@@ -680,6 +685,7 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
         fail_to_pass_count=len(fail_to_pass),
         pass_to_pass_count=len(pass_to_pass),
         pass_to_pass_empty_vacuous_pass=pass_to_pass_empty_vacuous_pass,
+        rc_nonzero_resolved=rc_nonzero_resolved,
     )
     return {
         "fail_to_pass_status": fail_to_pass_status,
@@ -688,6 +694,7 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
         "fail_to_pass_count": len(fail_to_pass),
         "pass_to_pass_count": len(pass_to_pass),
         "pass_to_pass_empty_vacuous_pass": pass_to_pass_empty_vacuous_pass,
+        "rc_nonzero_resolved": rc_nonzero_resolved,
         "oracle_adapter_receipt": receipt,
     }
 
@@ -849,6 +856,7 @@ def _pro_adapter_receipt(
     fail_to_pass_count: int | None = None,
     pass_to_pass_count: int | None = None,
     pass_to_pass_empty_vacuous_pass: bool = False,
+    rc_nonzero_resolved: bool = False,
 ) -> dict[str, Any]:
     docker_metadata: dict[str, Any] = {
         "image": docker_image,
@@ -899,6 +907,8 @@ def _pro_adapter_receipt(
         receipt["pass_to_pass_empty_vacuous_pass"] = bool(
             pass_to_pass_empty_vacuous_pass
         )
+    if rc_nonzero_resolved:
+        receipt["rc_nonzero_resolved"] = True
     if oracle_unavailable:
         receipt["oracle_unavailable"] = True
         receipt["unavailable_reason"] = unavailable_reason

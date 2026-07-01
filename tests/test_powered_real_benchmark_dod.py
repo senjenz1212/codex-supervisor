@@ -234,6 +234,20 @@ def test_report_discloses_vacuous_and_rc_nonzero_counts():
     assert verdict["evidence"]["rc_nonzero_resolved_count"] == 1
 
 
+def test_report_requires_source_disclosure_counts():
+    powered = _powered_report()
+    powered.pop("source_disclosure_counts")
+
+    with pytest.raises(
+        PoweredRealBenchmarkDoDError,
+        match="source_disclosure_counts_missing",
+    ):
+        assert_powered_real_benchmark_definition_of_done(
+            powered_report=powered,
+            all_arms_diagnostic_report=_all_arms_report(),
+        )
+
+
 def test_underpowered_artifact_is_rejected():
     powered = _powered_report()
     sample_size = powered["sample_size_sufficiency"]
