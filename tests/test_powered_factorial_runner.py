@@ -169,6 +169,28 @@ def test_factorial_runner_consumes_pro_corpus(tmp_path):
     assert (tmp_path / "powered" / "powered_factorial_report.json").exists()
 
 
+def test_powered_runner_reports_source_disclosure_counts(tmp_path):
+    predictions_path = tmp_path / "pro-predictions.jsonl"
+    rows = _write_pro_predictions(predictions_path)
+    rows[0]["pass_to_pass_empty_vacuous_pass"] = True
+    rows[1]["rc_nonzero_resolved"] = True
+    _rewrite_rows(predictions_path, rows)
+
+    report = swebench_mergeability_powered_factorial_runner(
+        predictions_path=predictions_path,
+        output_dir=tmp_path / "powered",
+        min_good=1,
+        min_bad=1,
+        min_discordant=1,
+        alpha=1.0,
+    )
+
+    assert report["source_disclosure_counts"] == {
+        "vacuous_pass_to_pass_count": 1,
+        "rc_nonzero_resolved_count": 1,
+    }
+
+
 def test_power_contract_qualified_only_when_powered(tmp_path):
     predictions_path = tmp_path / "pro-predictions.jsonl"
     _write_pro_predictions(predictions_path)

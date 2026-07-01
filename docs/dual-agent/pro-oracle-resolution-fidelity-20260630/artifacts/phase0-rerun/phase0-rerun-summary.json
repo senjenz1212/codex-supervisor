@@ -1,0 +1,69 @@
+{
+  "blocked_reasons": [],
+  "checks": {
+    "candidate_volume_plausibly_supports_100_bad_and_50_discordant": true,
+    "curated_instances_at_least_reliability_good_target_100": true,
+    "no_single_repo_majority": true,
+    "repo_spread_at_least_5_repos": true
+  },
+  "curated_instances": 107,
+  "excluded_instances": 1,
+  "excluded_reasons": [
+    [
+      "dry_oracle_gold_not_runnable:patch_applied,fail_to_pass_status,pass_to_pass_status",
+      1
+    ]
+  ],
+  "phase0_decision": "phase0_gate_passed_hold_for_operator_before_solver",
+  "projected_solver_attempts_at_k8": 856,
+  "repo_counts": [
+    [
+      "ansible/ansible",
+      12
+    ],
+    [
+      "element-hq/element-web",
+      12
+    ],
+    [
+      "flipt-io/flipt",
+      12
+    ],
+    [
+      "gravitational/teleport",
+      12
+    ],
+    [
+      "internetarchive/openlibrary",
+      12
+    ],
+    [
+      "navidrome/navidrome",
+      12
+    ],
+    [
+      "qutebrowser/qutebrowser",
+      12
+    ],
+    [
+      "tutao/tutanota",
+      12
+    ],
+    [
+      "protonmail/webclients",
+      11
+    ]
+  ],
+  "sha256": {
+    "batch-driver-manifest.json": "7e60be688ed9fe7b0c2695f069bccc5c1cb0136d905a3cc018e933484006ea25",
+    "curated-roster.json": "1020d8922149caf87162eb7208d5d19157784aec6f264a51de0ed1a158b3c980",
+    "curation-command.txt": "03d6fee0521fd16d90c07cb1af554069e833b38614e9a9fbc9ec245a32912d0a",
+    "curation-driver.log": "70e305784d3eca9120a2f1406ca65b06623ff4870c99f4b98e19efe491a90b1a",
+    "phase0-gate-decision.json": "eeeb0df19830e95021608c0569688aed72c133e0ee135b5230ab735d74c5d796",
+    "phase0-gate-watch.log": "c03ca6abdc874e7015cec524f46d745d4ba5cb795e76c9d65840ea473b2d5ad5"
+  },
+  "solver_spend_allowed": false,
+  "status": "completed",
+  "top_repo_share": 0.11214953271028037,
+  "unique_repos": 9
+}

@@ -116,6 +116,10 @@ OFFICIAL_PREDICTION_METADATA_KEYS = (
     "origin",
     "producer",
     "patch_applied",
+    "fail_to_pass_count",
+    "pass_to_pass_count",
+    "pass_to_pass_empty_vacuous_pass",
+    "rc_nonzero_resolved",
 )
 ORACLE_GOOD_LABEL = "oracle-good"
 ORACLE_BAD_LABEL = "oracle-bad"
@@ -418,6 +422,7 @@ def _interpret_oracle_outcome(outcome: Mapping[str, Any]) -> dict[str, Any]:
     fail_to_pass = str(outcome.get("fail_to_pass_status") or "").lower()
     pass_to_pass = str(outcome.get("pass_to_pass_status") or "").lower()
     patch_applied = _patch_applied_from_oracle_result(outcome)
+    disclosures = _oracle_disclosures_from_outcome(outcome)
     oracle_unavailable = bool(
         outcome.get("oracle_unavailable")
         or outcome.get("unavailable")
@@ -441,6 +446,7 @@ def _interpret_oracle_outcome(outcome: Mapping[str, Any]) -> dict[str, Any]:
             "oracle_unavailable_reason": reason,
             "pass_to_pass_regression": False,
             "patch_applied": patch_applied,
+            **disclosures,
         }
     if fail_to_pass not in {"pass", "fail"}:
         raise SwebenchProBridgeError(
@@ -459,7 +465,29 @@ def _interpret_oracle_outcome(outcome: Mapping[str, Any]) -> dict[str, Any]:
         "oracle_unavailable_reason": "",
         "pass_to_pass_regression": pass_to_pass == "fail",
         "patch_applied": patch_applied,
+        **disclosures,
     }
+
+
+def _oracle_disclosures_from_outcome(outcome: Mapping[str, Any]) -> dict[str, Any]:
+    receipt = outcome.get("oracle_adapter_receipt")
+    if not isinstance(receipt, Mapping):
+        receipt = {}
+    disclosures: dict[str, Any] = {}
+    for key in ("pass_to_pass_empty_vacuous_pass", "rc_nonzero_resolved"):
+        raw = outcome.get(key)
+        if raw is None:
+            raw = receipt.get(key)
+        disclosures[key] = bool(raw is True)
+    for key in ("fail_to_pass_count", "pass_to_pass_count"):
+        raw = outcome.get(key)
+        if raw is None:
+            raw = receipt.get(key)
+        if isinstance(raw, bool):
+            continue
+        if isinstance(raw, int):
+            disclosures[key] = raw
+    return disclosures
 
 
 def _patch_applied_from_oracle_result(value: Mapping[str, Any]) -> bool | None:
@@ -628,12 +656,19 @@ def swebench_pro_mergeability_bridge_report(
                 "pass_to_pass_status": outcome["pass_to_pass_status"],
                 "pass_to_pass_regression": outcome["pass_to_pass_regression"],
                 "patch_applied": outcome.get("patch_applied"),
+                "pass_to_pass_empty_vacuous_pass": bool(
+                    outcome.get("pass_to_pass_empty_vacuous_pass")
+                ),
+                "rc_nonzero_resolved": bool(outcome.get("rc_nonzero_resolved")),
                 "s_full_disagrees_with_s_probe": (
                     frozen["s_probe_accept"] != frozen["s_full_accept"]
                     and not frozen["s_full_unavailable"]
                     and not frozen["s_probe_unavailable"]
                 ),
             }
+            for disclosure_count in ("fail_to_pass_count", "pass_to_pass_count"):
+                if disclosure_count in outcome:
+                    row[disclosure_count] = outcome[disclosure_count]
             if not packet_isolation_ok:
                 for arm_name in (ARM_BASELINE, ARM_S_PROBE, ARM_S_FULL):
                     row[f"{arm_name}_accept"] = False
@@ -1354,6 +1389,15 @@ def _normalise_oracle_adapter_outcome(raw: Mapping[str, Any]) -> tuple[dict[str,
         "oracle_unavailable": outcome["oracle_unavailable"],
         "oracle_unavailable_reason": outcome["oracle_unavailable_reason"],
         "patch_applied": outcome.get("patch_applied"),
+        "pass_to_pass_empty_vacuous_pass": bool(
+            outcome.get("pass_to_pass_empty_vacuous_pass")
+        ),
+        "rc_nonzero_resolved": bool(outcome.get("rc_nonzero_resolved")),
+        **{
+            key: outcome[key]
+            for key in ("fail_to_pass_count", "pass_to_pass_count")
+            if key in outcome
+        },
     }, dict(receipt)
 
 
@@ -2100,6 +2144,10 @@ def swebench_mergeability_fixture_runner(
             "oracle_unavailable_reason": str(
                 outcome.get("oracle_unavailable_reason") or ""
             ),
+            "pass_to_pass_empty_vacuous_pass": bool(
+                outcome.get("pass_to_pass_empty_vacuous_pass")
+            ),
+            "rc_nonzero_resolved": bool(outcome.get("rc_nonzero_resolved")),
             "oracle_adapter_kind": str(oracle_adapter_kind),
             "oracle_command_receipts": receipts,
         })
@@ -2113,7 +2161,17 @@ def swebench_mergeability_fixture_runner(
             "oracle_unavailable_reason": str(
                 outcome.get("oracle_unavailable_reason") or ""
             ),
+            "pass_to_pass_empty_vacuous_pass": bool(
+                outcome.get("pass_to_pass_empty_vacuous_pass")
+            ),
+            "rc_nonzero_resolved": bool(outcome.get("rc_nonzero_resolved")),
         })
+        for disclosure_count in ("fail_to_pass_count", "pass_to_pass_count"):
+            if disclosure_count in outcome:
+                oracle_phase_payload["rows"][-1][disclosure_count] = outcome[
+                    disclosure_count
+                ]
+                oracle_phase_records[-1][disclosure_count] = outcome[disclosure_count]
 
     oracle_outputs_path.write_text(
         json.dumps(oracle_phase_payload, sort_keys=True, indent=2),
@@ -2397,7 +2455,16 @@ def swebench_mergeability_replay_runner(
                 "oracle_unavailable_reason": str(
                     oracle_row.get("oracle_unavailable_reason") or ""
                 ),
+                "pass_to_pass_empty_vacuous_pass": bool(
+                    oracle_row.get("pass_to_pass_empty_vacuous_pass")
+                ),
+                "rc_nonzero_resolved": bool(oracle_row.get("rc_nonzero_resolved")),
             }
+            for disclosure_count in ("fail_to_pass_count", "pass_to_pass_count"):
+                if disclosure_count in oracle_row:
+                    combined_oracle_outcomes[key][disclosure_count] = oracle_row[
+                        disclosure_count
+                    ]
 
     combined_substrate = {
         "kind": PUBLIC_STATIC_PATCH_PROBE,
@@ -4484,6 +4551,14 @@ def _load_official_predictions(predictions_path: str | Path) -> dict[str, list[d
         patch_applied = _patch_applied_from_oracle_result(raw)
         if patch_applied is not None:
             candidate["patch_applied"] = patch_applied
+        for key in (
+            "fail_to_pass_count",
+            "pass_to_pass_count",
+            "pass_to_pass_empty_vacuous_pass",
+            "rc_nonzero_resolved",
+        ):
+            if key in raw:
+                candidate[key] = raw[key]
         for key in PRODUCED_BASELINE_RECEIPT_KEYS:
             if key in raw and isinstance(raw[key], Mapping):
                 candidate[key] = dict(raw[key])
@@ -4524,6 +4599,14 @@ def _candidate_corpus_summary_from_predictions(
         1 for candidate in rows if candidate.get("oracle_label") == ORACLE_BAD_LABEL
     )
     unlabeled = len(rows) - n_good - n_bad
+    vacuous_pass_to_pass_count = sum(
+        1
+        for candidate in rows
+        if candidate.get("pass_to_pass_empty_vacuous_pass") is True
+    )
+    rc_nonzero_resolved_count = sum(
+        1 for candidate in rows if candidate.get("rc_nonzero_resolved") is True
+    )
     return {
         "candidate_count": len(rows),
         "n_good": n_good,
@@ -4531,6 +4614,8 @@ def _candidate_corpus_summary_from_predictions(
         "false_accept_denominator": n_bad,
         "far_degenerate": n_bad == 0,
         "unlabeled_count": unlabeled,
+        "vacuous_pass_to_pass_count": vacuous_pass_to_pass_count,
+        "rc_nonzero_resolved_count": rc_nonzero_resolved_count,
     }
 
 
@@ -4575,6 +4660,7 @@ def swebench_mergeability_powered_factorial_runner(
     output_path = Path(output_dir).expanduser().resolve()
     output_path.mkdir(parents=True, exist_ok=True)
     predictions = _load_official_predictions(predictions_file)
+    source_corpus_summary = _candidate_corpus_summary_from_predictions(predictions)
     candidates = _powered_factorial_flatten_predictions(predictions)
     arm_decisions = _powered_factorial_arm_decisions(candidates)
     reviewer_panel_results = _powered_factorial_reviewer_panel_results(candidates)
@@ -4614,6 +4700,14 @@ def swebench_mergeability_powered_factorial_runner(
         "adapter_corpus_root": str(adapter_root),
         "adapter_manifest_path": str(adapter_manifest["adapter_manifest_path"]),
         "adapter_manifest_sha256": adapter_manifest["adapter_manifest_sha256"],
+        "source_disclosure_counts": {
+            "vacuous_pass_to_pass_count": source_corpus_summary[
+                "vacuous_pass_to_pass_count"
+            ],
+            "rc_nonzero_resolved_count": source_corpus_summary[
+                "rc_nonzero_resolved_count"
+            ],
+        },
         "powered_metric_applyable": core_metric_applyable,
         "metric_applyable": False,
         "powered_improvement_claim_allowed": False,
@@ -5038,6 +5132,15 @@ def build_swe_bench_pro_candidate_corpus(
                 field="producer",
             ),
         }
+        for disclosure_key in (
+            "pass_to_pass_empty_vacuous_pass",
+            "rc_nonzero_resolved",
+        ):
+            if outcome.get(disclosure_key) is True:
+                row[disclosure_key] = True
+        for disclosure_count in ("fail_to_pass_count", "pass_to_pass_count"):
+            if disclosure_count in outcome:
+                row[disclosure_count] = outcome[disclosure_count]
         for key in PRODUCED_BASELINE_RECEIPT_KEYS:
             if key in attempt and isinstance(attempt[key], Mapping):
                 row[key] = dict(attempt[key])

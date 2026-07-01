@@ -239,6 +239,63 @@ def test_nonresolving_only_counts_when_patch_applied(tmp_path):
     assert {row["candidate_id"] for row in report["excluded"]} == {"nonapplying"}
 
 
+def test_vacuous_pass_to_pass_disclosure_reaches_corpus_summary(tmp_path):
+    attempts = [
+        _attempt(
+            instance_id="instance_demo__repo-vacuous",
+            candidate_id="vacuous-good",
+            model_patch=_patch("vacuous_good"),
+            origin_kind="dataset_reference_patch",
+            producer_kind="dataset",
+        ),
+        _attempt(
+            instance_id="instance_demo__repo-rc",
+            candidate_id="rc-good",
+            model_patch=_patch("rc_good"),
+            origin_kind="single_agent_solver_attempt",
+            producer_kind="single_agent_solver",
+        ),
+    ]
+
+    predictions_path = tmp_path / "pro-predictions.jsonl"
+    report = build_swe_bench_pro_candidate_corpus(
+        attempts=attempts,
+        output_path=predictions_path,
+        oracle_runner=_oracle({
+            "vacuous-good": {
+                "patch_applied": True,
+                "fail_to_pass_status": "pass",
+                "pass_to_pass_status": "pass",
+                "pass_to_pass_empty_vacuous_pass": True,
+            },
+            "rc-good": {
+                "patch_applied": True,
+                "fail_to_pass_status": "pass",
+                "pass_to_pass_status": "pass",
+                "oracle_adapter_receipt": {"rc_nonzero_resolved": True},
+            },
+        }),
+    )
+
+    rows = {row["candidate_id"]: row for row in report["rows"]}
+    assert rows["vacuous-good"]["pass_to_pass_empty_vacuous_pass"] is True
+    assert rows["rc-good"]["rc_nonzero_resolved"] is True
+    assert report["summary"]["vacuous_pass_to_pass_count"] == 1
+    assert report["summary"]["rc_nonzero_resolved_count"] == 1
+
+    loaded = _load_official_predictions(predictions_path)
+    loaded_rows = {
+        row["candidate_id"]: row
+        for candidates in loaded.values()
+        for row in candidates
+    }
+    assert loaded_rows["vacuous-good"]["pass_to_pass_empty_vacuous_pass"] is True
+    assert loaded_rows["rc-good"]["rc_nonzero_resolved"] is True
+    summary = summarize_swe_bench_pro_candidate_corpus(predictions_path)
+    assert summary["vacuous_pass_to_pass_count"] == 1
+    assert summary["rc_nonzero_resolved_count"] == 1
+
+
 def test_gold_only_corpus_is_completed_but_far_degenerate(tmp_path):
     attempts = [
         _attempt(

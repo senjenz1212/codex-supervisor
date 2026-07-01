@@ -444,7 +444,10 @@ method, positive denominator, populated bounds) are present for the
 evidence is recorded, the `source_predictions_path` is not a fixture,
 synthetic, smoke, or gold-only path, `benchmark_oracle.kind =
 "swe_bench_held_out_test_pass_proxy"` with `maintainer_mergeability_claim_allowed
-= false` and `no_maintainer_mergeability_claim = true`, the powered
+= false` and `no_maintainer_mergeability_claim = true`, the powered report
+includes `source_disclosure_counts` with explicit
+`vacuous_pass_to_pass_count` and `rc_nonzero_resolved_count` values rather
+than silently treating missing disclosure data as zero, the powered
 `evidence_conversion_power_contract` is qualified/report-only/operator-reviewed
 with `policy_mutation_allowed=false`, and every authority flag
 (`metric_applyable`, `improvement_claim_allowed`,

@@ -78,6 +78,7 @@ class BatchConfig:
     allow_live: bool
     prune_docker_between_instances: bool
     docker_prune_command: str
+    phase0_gate_decision_path: Path | None
 
 
 def _json_dumps(payload: Any) -> str:
@@ -179,17 +180,20 @@ def _oracle_gold_runnable(result: Mapping[str, Any]) -> tuple[bool, str, dict[st
         "pass_to_pass_status": str(receipt.get("pass_to_pass_status") or result.get("pass_to_pass_status") or ""),
         "test_command_return_code": receipt.get("test_command_return_code"),
         "tests_count": _oracle_tests_count(result),
+        "rc_nonzero_resolved": False,
     }
     checks = {
         "patch_applied": details["patch_applied"],
         "fail_to_pass_status": details["fail_to_pass_status"] == "pass",
         "pass_to_pass_status": details["pass_to_pass_status"] == "pass",
-        "test_command_return_code": details["test_command_return_code"] == 0,
+        "test_command_return_code_present": details["test_command_return_code"]
+        is not None,
         "tests_non_empty": int(details["tests_count"]) > 0,
     }
     missing = [name for name, ok in checks.items() if not ok]
     if missing:
         return False, "dry_oracle_gold_not_runnable:" + ",".join(missing), details
+    details["rc_nonzero_resolved"] = details["test_command_return_code"] not in (None, 0)
     return True, "", details
 
 
@@ -601,6 +605,11 @@ def _config_manifest(config: BatchConfig, records: Sequence[Mapping[str, Any]]) 
             "allow_live": config.allow_live,
             "prune_docker_between_instances": config.prune_docker_between_instances,
         },
+        "phase0_gate_decision_path": (
+            str(config.phase0_gate_decision_path)
+            if config.phase0_gate_decision_path
+            else ""
+        ),
         "labels": {
             "benchmark_oracle_kind": "swe_bench_held_out_test_pass_proxy",
             "cross_family_status": "operator_asserted_unverified_until_attestation_exists",
@@ -642,6 +651,14 @@ def _parse_args(argv: list[str] | None) -> BatchConfig:
     parser.add_argument("--allow-live", action="store_true")
     parser.add_argument("--prune-docker-between-instances", action="store_true")
     parser.add_argument("--docker-prune-command", default="docker image prune -af")
+    parser.add_argument(
+        "--phase0-gate-decision",
+        default="",
+        help=(
+            "JSON gate artifact required before solver/model spend. It must set "
+            "solver_spend_allowed=true."
+        ),
+    )
     args = parser.parse_args(argv)
     return BatchConfig(
         records_path=Path(args.records).expanduser(),
@@ -669,12 +686,39 @@ def _parse_args(argv: list[str] | None) -> BatchConfig:
         allow_live=args.allow_live,
         prune_docker_between_instances=args.prune_docker_between_instances,
         docker_prune_command=args.docker_prune_command,
+        phase0_gate_decision_path=(
+            Path(args.phase0_gate_decision).expanduser()
+            if args.phase0_gate_decision
+            else None
+        ),
     )
+
+
+def _assert_phase0_solver_spend_allowed(config: BatchConfig) -> None:
+    path = config.phase0_gate_decision_path
+    if path is None:
+        raise RuntimeError(
+            "Phase 0 gate decision is required before solver spend; pass "
+            "--phase0-gate-decision with solver_spend_allowed=true"
+        )
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise RuntimeError(f"could not read Phase 0 gate decision {path}: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Phase 0 gate decision is not valid JSON: {path}") from exc
+    if not isinstance(payload, Mapping) or payload.get("solver_spend_allowed") is not True:
+        raise RuntimeError(
+            "Phase 0 gate decision does not allow solver spend: "
+            f"{path}"
+        )
 
 
 def main(argv: list[str] | None = None) -> int:
     config = _parse_args(argv)
     records = _read_records(config.records_path)
+    if config.run_solver:
+        _assert_phase0_solver_spend_allowed(config)
     config.output_dir.mkdir(parents=True, exist_ok=True)
     os.environ["SWEBENCH_PRO_ORACLE_SCRIPTS_DIR"] = config.scripts_dir
     os.environ["SWEBENCH_PRO_ORACLE_SUBPROCESS_TIMEOUT_S"] = str(config.oracle_timeout_s)

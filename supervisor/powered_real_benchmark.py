@@ -234,6 +234,10 @@ def _check_powered_thresholds(
     if candidate_count < n_good + n_bad:
         reasons.append("candidate_count_less_than_oracle_labeled_total")
 
+    source_disclosure_counts = _mapping(powered_report.get("source_disclosure_counts"))
+    if not source_disclosure_counts:
+        reasons.append("source_disclosure_counts_missing")
+
     return {
         "n_good": n_good,
         "n_bad": n_bad,
@@ -244,6 +248,12 @@ def _check_powered_thresholds(
         "mcnemar_p_value": p_value,
         "alpha": alpha,
         "candidate_count": candidate_count,
+        "vacuous_pass_to_pass_count": _int_value(
+            source_disclosure_counts.get("vacuous_pass_to_pass_count")
+        ),
+        "rc_nonzero_resolved_count": _int_value(
+            source_disclosure_counts.get("rc_nonzero_resolved_count")
+        ),
     }
 
 

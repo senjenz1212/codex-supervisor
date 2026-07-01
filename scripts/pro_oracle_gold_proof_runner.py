@@ -105,8 +105,6 @@ def _context_from_row(row: Mapping[str, Any], *, scripts_dir: str = "") -> dict[
     selected = _pro_test_list(row.get("selected_test_files_to_run"))
     if not fail_to_pass:
         missing.append("fail_to_pass")
-    if not pass_to_pass:
-        missing.append("pass_to_pass")
     if not selected:
         missing.append("selected_test_files_to_run")
     if missing:
@@ -198,14 +196,10 @@ def _manifest(
         blockers.append("pass_to_pass_not_pass")
     if not isinstance(patch_apply, Mapping) or patch_apply.get("patch_applied") is not True:
         blockers.append("patch_apply_not_proven")
-    if not isinstance(test_command, Mapping) or test_command.get("test_command_return_code") != 0:
-        blockers.append("test_command_return_code_nonzero")
     if parsed_test_count <= 0:
         blockers.append("parsed_tests_empty")
     if not fail_to_pass:
         blockers.append("fail_to_pass_empty")
-    if not pass_to_pass:
-        blockers.append("pass_to_pass_empty")
     if not selected:
         blockers.append("selected_tests_empty")
 
@@ -223,6 +217,7 @@ def _manifest(
             "patch_sha256": sha256(str(row.get("patch") or "").encode("utf-8")).hexdigest(),
             "fail_to_pass_count": len(fail_to_pass),
             "pass_to_pass_count": len(pass_to_pass),
+            "pass_to_pass_empty_vacuous_pass": not pass_to_pass,
             "selected_test_count": len(selected),
         },
         "result_summary": {
@@ -232,6 +227,11 @@ def _manifest(
             "test_command_return_code": test_command.get("test_command_return_code")
             if isinstance(test_command, Mapping)
             else None,
+            "rc_nonzero_resolved": (
+                isinstance(test_command, Mapping)
+                and test_command.get("test_command_return_code") not in (None, 0)
+                and not blockers
+            ),
         },
         "parsed_test_count": parsed_test_count,
         "artifacts": _artifact_index(output_dir, artifact_paths),

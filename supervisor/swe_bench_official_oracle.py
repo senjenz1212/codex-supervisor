@@ -635,12 +635,7 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
             source_script_evidence=source_script_evidence,
         )
 
-    missing_oracle_buckets: list[str] = []
     if not fail_to_pass:
-        missing_oracle_buckets.append("fail_to_pass")
-    if not pass_to_pass:
-        missing_oracle_buckets.append("pass_to_pass")
-    if missing_oracle_buckets:
         return _pro_adapter_failure(
             context=context,
             command=run_command,
@@ -648,7 +643,7 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
             stdout=run_result.stdout,
             stderr=run_result.stderr,
             artifact_paths=artifact_paths,
-            reason="pro_oracle_bucket_empty:" + ",".join(missing_oracle_buckets),
+            reason="pro_oracle_bucket_empty:fail_to_pass",
             attempt_stage="scoring",
             docker_image=docker_image,
             docker_platform=docker_platform,
@@ -659,8 +654,14 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
             source_script_evidence=source_script_evidence,
         )
 
+    pass_to_pass_empty_vacuous_pass = not pass_to_pass
     fail_to_pass_status = "pass" if set(fail_to_pass) <= passed_tests else "fail"
     pass_to_pass_status = "pass" if set(pass_to_pass) <= passed_tests else "fail"
+    rc_nonzero_resolved = (
+        test_command_return_code not in (None, 0)
+        and fail_to_pass_status == "pass"
+        and pass_to_pass_status == "pass"
+    )
     receipt = _pro_adapter_receipt(
         context=context,
         command=run_command,
@@ -681,11 +682,19 @@ def run_swe_bench_pro_oracle(context: Mapping[str, Any]) -> dict[str, Any]:
         patch_applied=True,
         test_command_return_code=test_command_return_code,
         source_script_evidence=source_script_evidence,
+        fail_to_pass_count=len(fail_to_pass),
+        pass_to_pass_count=len(pass_to_pass),
+        pass_to_pass_empty_vacuous_pass=pass_to_pass_empty_vacuous_pass,
+        rc_nonzero_resolved=rc_nonzero_resolved,
     )
     return {
         "fail_to_pass_status": fail_to_pass_status,
         "pass_to_pass_status": pass_to_pass_status,
         "patch_applied": True,
+        "fail_to_pass_count": len(fail_to_pass),
+        "pass_to_pass_count": len(pass_to_pass),
+        "pass_to_pass_empty_vacuous_pass": pass_to_pass_empty_vacuous_pass,
+        "rc_nonzero_resolved": rc_nonzero_resolved,
         "oracle_adapter_receipt": receipt,
     }
 
@@ -844,6 +853,10 @@ def _pro_adapter_receipt(
     patch_applied: bool | None = None,
     test_command_return_code: int | None = None,
     source_script_evidence: Mapping[str, Any] | None = None,
+    fail_to_pass_count: int | None = None,
+    pass_to_pass_count: int | None = None,
+    pass_to_pass_empty_vacuous_pass: bool = False,
+    rc_nonzero_resolved: bool = False,
 ) -> dict[str, Any]:
     docker_metadata: dict[str, Any] = {
         "image": docker_image,
@@ -887,6 +900,15 @@ def _pro_adapter_receipt(
         receipt["patch_applied"] = bool(patch_applied)
     if test_command_return_code is not None:
         receipt["test_command_return_code"] = int(test_command_return_code)
+    if fail_to_pass_count is not None:
+        receipt["fail_to_pass_count"] = int(fail_to_pass_count)
+    if pass_to_pass_count is not None:
+        receipt["pass_to_pass_count"] = int(pass_to_pass_count)
+        receipt["pass_to_pass_empty_vacuous_pass"] = bool(
+            pass_to_pass_empty_vacuous_pass
+        )
+    if rc_nonzero_resolved:
+        receipt["rc_nonzero_resolved"] = True
     if oracle_unavailable:
         receipt["oracle_unavailable"] = True
         receipt["unavailable_reason"] = unavailable_reason

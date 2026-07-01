@@ -445,6 +445,73 @@ def test_pro_runner_classifies_fail_to_pass_and_pass_to_pass_independently(
     assert result["pass_to_pass_status"] == expected_pass_to_pass
 
 
+def test_empty_pass_to_pass_is_vacuous_pass_with_disclosure(tmp_path, monkeypatch):
+    monkeypatch.setenv("SWEBENCH_PRO_ORACLE_ARTIFACT_DIR", str(tmp_path / "oracle"))
+    output_payload = {
+        "tests": [
+            {"name": "tests/test_parser.py::test_hidden", "status": "PASSED"},
+        ]
+    }
+    _calls, fake_run = _fake_docker_runner(tmp_path, output_payload)
+    monkeypatch.setattr(official_oracle.subprocess, "run", fake_run)
+    context = _pro_context(tmp_path)
+    context["pass_to_pass"] = []
+
+    result = run_swe_bench_pro_oracle(context)
+
+    assert result["fail_to_pass_status"] == "pass"
+    assert result["pass_to_pass_status"] == "pass"
+    assert result["pass_to_pass_empty_vacuous_pass"] is True
+    assert result["fail_to_pass_count"] == 1
+    assert result["pass_to_pass_count"] == 0
+    assert "oracle_unavailable" not in result
+    receipt = result["oracle_adapter_receipt"]
+    assert receipt["pass_to_pass_empty_vacuous_pass"] is True
+    assert receipt["fail_to_pass_count"] == 1
+    assert receipt["pass_to_pass_count"] == 0
+
+
+def test_empty_fail_to_pass_remains_unavailable(tmp_path, monkeypatch):
+    monkeypatch.setenv("SWEBENCH_PRO_ORACLE_ARTIFACT_DIR", str(tmp_path / "oracle"))
+    output_payload = {
+        "tests": [
+            {"name": "tests/test_parser.py::test_existing", "status": "PASSED"},
+        ]
+    }
+    _calls, fake_run = _fake_docker_runner(tmp_path, output_payload)
+    monkeypatch.setattr(official_oracle.subprocess, "run", fake_run)
+    context = _pro_context(tmp_path)
+    context["fail_to_pass"] = []
+
+    result = run_swe_bench_pro_oracle(context)
+
+    assert result["fail_to_pass_status"] == "unavailable"
+    assert result["pass_to_pass_status"] == "unavailable"
+    assert result["oracle_unavailable"] is True
+    assert result["oracle_unavailable_reason"] == "pro_oracle_bucket_empty:fail_to_pass"
+    assert result["oracle_adapter_receipt"]["unavailable_reason"] == (
+        "pro_oracle_bucket_empty:fail_to_pass"
+    )
+
+
+def test_nonempty_pass_to_pass_regression_still_fails(tmp_path, monkeypatch):
+    monkeypatch.setenv("SWEBENCH_PRO_ORACLE_ARTIFACT_DIR", str(tmp_path / "oracle"))
+    output_payload = {
+        "tests": [
+            {"name": "tests/test_parser.py::test_hidden", "status": "PASSED"},
+            {"name": "tests/test_parser.py::test_existing", "status": "FAILED"},
+        ]
+    }
+    _calls, fake_run = _fake_docker_runner(tmp_path, output_payload)
+    monkeypatch.setattr(official_oracle.subprocess, "run", fake_run)
+
+    result = run_swe_bench_pro_oracle(_pro_context(tmp_path))
+
+    assert result["fail_to_pass_status"] == "pass"
+    assert result["pass_to_pass_status"] == "fail"
+    assert result["pass_to_pass_empty_vacuous_pass"] is False
+
+
 def test_pro_runner_classifies_failed_test_command_when_parser_output_exists(
     tmp_path,
     monkeypatch,
@@ -471,6 +538,35 @@ def test_pro_runner_classifies_failed_test_command_when_parser_output_exists(
     receipt = result["oracle_adapter_receipt"]
     assert receipt["return_code"] == 0
     assert receipt["test_command_return_code"] == 1
+    assert "rc_nonzero_resolved" not in receipt
+
+
+def test_pro_runner_discloses_rc_nonzero_when_parser_statuses_pass(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setenv("SWEBENCH_PRO_ORACLE_ARTIFACT_DIR", str(tmp_path / "oracle"))
+    output_payload = {
+        "tests": [
+            {"name": "tests/test_parser.py::test_hidden", "status": "PASSED"},
+            {"name": "tests/test_parser.py::test_existing", "status": "PASSED"},
+        ]
+    }
+    _calls, fake_run = _fake_docker_runner_with_test_command_receipt(
+        tmp_path,
+        output_payload,
+        test_command_return_code=1,
+    )
+    monkeypatch.setattr(official_oracle.subprocess, "run", fake_run)
+
+    result = run_swe_bench_pro_oracle(_pro_context(tmp_path))
+
+    assert result["fail_to_pass_status"] == "pass"
+    assert result["pass_to_pass_status"] == "pass"
+    assert result["rc_nonzero_resolved"] is True
+    receipt = result["oracle_adapter_receipt"]
+    assert receipt["test_command_return_code"] == 1
+    assert receipt["rc_nonzero_resolved"] is True
 
 
 def test_pro_runner_outcome_feeds_interpret_contract(tmp_path, monkeypatch):
@@ -494,6 +590,10 @@ def test_pro_runner_outcome_feeds_interpret_contract(tmp_path, monkeypatch):
         "oracle_unavailable": False,
         "oracle_unavailable_reason": "",
         "patch_applied": True,
+        "pass_to_pass_empty_vacuous_pass": False,
+        "rc_nonzero_resolved": False,
+        "fail_to_pass_count": 1,
+        "pass_to_pass_count": 1,
     }
     assert receipt["fail_to_pass_status"] == "pass"
     assert interpreted["oracle_accept"] is True
