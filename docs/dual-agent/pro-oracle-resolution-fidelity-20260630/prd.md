@@ -108,16 +108,17 @@ Forbidden outcomes
 
 Public boundary
 
-`_interpret_oracle_outcome`, `build_swe_bench_pro_candidate_corpus`, `summarize_swe_bench_pro_candidate_corpus`, `swebench_mergeability_powered_factorial_runner`, and the powered real benchmark DoD checker.
+`_interpret_oracle_outcome`, `build_swe_bench_pro_candidate_corpus`, `summarize_swe_bench_pro_candidate_corpus`, `swebench_mergeability_powered_factorial_runner`, the powered real benchmark DoD checker, and the batch-driver curation seams `scripts/swebench_pro_batch_driver.py::_oracle_gold_runnable(result)` and `scripts/swebench_pro_batch_driver.py::curate_roster(...)`.
 
 Chosen seam
 
-Copy disclosure fields from raw oracle outcomes and receipts into interpreted outcomes, prediction rows, corpus summary counts, powered report metadata, and DoD evidence.
+Copy disclosure fields from raw oracle outcomes and receipts into interpreted outcomes, prediction rows, corpus summary counts, powered report metadata, DoD evidence, and the batch-driver curated-roster entries and summary.
 
 Allowed outcomes
 
 - Prediction rows carry `pass_to_pass_empty_vacuous_pass` and `rc_nonzero_resolved` when either applies.
 - Corpus summaries and powered reports expose `vacuous_pass_to_pass_count` and `rc_nonzero_resolved_count`.
+- Curated-roster entries expose `dry_oracle.fail_to_pass_count`, `dry_oracle.pass_to_pass_count`, and `dry_oracle.pass_to_pass_empty_vacuous_pass`, and the curated-roster `summary` exposes `vacuous_pass_to_pass_count` and `rc_nonzero_resolved_count` aggregated over curated entries.
 - The DoD checker includes those counts in evidence and still keeps authority flags false.
 
 Forbidden outcomes
