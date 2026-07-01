@@ -78,6 +78,9 @@ def test_curate_roster_excludes_missing_scripts_and_failed_dry_oracle(tmp_path: 
                 "patch_applied": True,
                 "fail_to_pass_status": "pass",
                 "pass_to_pass_status": "pass",
+                "fail_to_pass_count": 1,
+                "pass_to_pass_count": 0,
+                "pass_to_pass_empty_vacuous_pass": True,
                 "test_command_return_code": 0,
                 "artifact_paths": {"output_json": str(output_json)},
             }
@@ -95,8 +98,13 @@ def test_curate_roster_excludes_missing_scripts_and_failed_dry_oracle(tmp_path: 
         "curated_instances": 1,
         "excluded_instances": 2,
         "dry_oracle_run": True,
+        "vacuous_pass_to_pass_count": 1,
+        "rc_nonzero_resolved_count": 0,
     }
     assert [entry["instance_id"] for entry in report["curated"]] == [good]
+    assert report["curated"][0]["dry_oracle"]["fail_to_pass_count"] == 1
+    assert report["curated"][0]["dry_oracle"]["pass_to_pass_count"] == 0
+    assert report["curated"][0]["dry_oracle"]["pass_to_pass_empty_vacuous_pass"] is True
     reasons = {entry["instance_id"]: entry["reason"] for entry in report["excluded"]}
     assert reasons[bad].startswith("dry_oracle_gold_not_runnable")
     assert reasons[missing] == "pro_script_missing"
@@ -114,6 +122,9 @@ def test_rc_nonzero_resolved_gold_is_runnable_with_disclosure(tmp_path: Path) ->
             "patch_applied": True,
             "fail_to_pass_status": "pass",
             "pass_to_pass_status": "pass",
+            "fail_to_pass_count": 1,
+            "pass_to_pass_count": 0,
+            "pass_to_pass_empty_vacuous_pass": True,
             "test_command_return_code": 7,
             "artifact_paths": {"output_json": str(output_json)},
         }
@@ -125,6 +136,9 @@ def test_rc_nonzero_resolved_gold_is_runnable_with_disclosure(tmp_path: Path) ->
     assert reason == ""
     assert details["test_command_return_code"] == 7
     assert details["rc_nonzero_resolved"] is True
+    assert details["fail_to_pass_count"] == 1
+    assert details["pass_to_pass_count"] == 0
+    assert details["pass_to_pass_empty_vacuous_pass"] is True
 
 
 def test_gold_dry_oracle_fails_closed_without_test_command_receipt(
