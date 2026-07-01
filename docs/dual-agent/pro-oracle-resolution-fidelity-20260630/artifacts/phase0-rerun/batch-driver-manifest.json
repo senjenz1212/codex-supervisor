@@ -1,0 +1,43 @@
+{
+  "default_change_allowed": false,
+  "gate_advanced": false,
+  "human_mergeability_claim_allowed": false,
+  "improvement_claim_allowed": false,
+  "input_instance_count": 108,
+  "k": 5,
+  "labels": {
+    "benchmark_oracle_kind": "swe_bench_held_out_test_pass_proxy",
+    "cross_family_status": "operator_asserted_unverified_until_attestation_exists",
+    "report_only": true
+  },
+  "max_budget_usd": 0.0,
+  "metric_applyable": false,
+  "model": "claude-3-5-haiku-20241022",
+  "output_dir": "/home/bokken/codex-swebench-pro-benchmark/runs/powered-scale-20260630T0200Z-resolution-fidelity-rerun2/curation",
+  "phase0_gate_decision_path": "",
+  "phases": {
+    "allow_live": true,
+    "prune_docker_between_instances": true,
+    "run_dry_oracle": true,
+    "run_labeling": false,
+    "run_powered": false,
+    "run_solver": false
+  },
+  "policy_mutated": false,
+  "powered_improvement_claim_allowed": false,
+  "powered_predictions_path": "",
+  "provider": "anthropic_via_unity_litellm",
+  "records_path": "/home/bokken/codex-swebench-pro-benchmark/inputs/pro-public-records-candidate108-no-nodebb-vuls.jsonl",
+  "records_sha256": "e57926b3106d3d50ae52dae06810f6d9b02655071ed40e1b56962808a41e59c2",
+  "runner_command": "",
+  "schema_version": "supervisor-swebench-pro-batch-driver-pin/v1",
+  "scripts_dir": "/home/bokken/codex-swebench-pro-benchmark/repo-main/.scratch/SWE-bench_Pro-os/run_scripts",
+  "solver": "claude-code-litellm-haiku-real-swebench-pro-pilot",
+  "status": "planned",
+  "thresholds": {
+    "alpha": 0.05,
+    "min_bad": 30,
+    "min_discordant": 25,
+    "min_good": 30
+  }
+}

@@ -103,6 +103,64 @@ def test_curate_roster_excludes_missing_scripts_and_failed_dry_oracle(tmp_path: 
     assert report["metric_applyable"] is False
 
 
+def test_rc_nonzero_resolved_gold_is_runnable_with_disclosure(tmp_path: Path) -> None:
+    output_json = tmp_path / "output.json"
+    output_json.write_text(
+        json.dumps({"tests": ["test_file.py::test_fix"]}),
+        encoding="utf-8",
+    )
+    result = {
+        "oracle_adapter_receipt": {
+            "patch_applied": True,
+            "fail_to_pass_status": "pass",
+            "pass_to_pass_status": "pass",
+            "test_command_return_code": 7,
+            "artifact_paths": {"output_json": str(output_json)},
+        }
+    }
+
+    ok, reason, details = batch._oracle_gold_runnable(result)
+
+    assert ok is True
+    assert reason == ""
+    assert details["test_command_return_code"] == 7
+    assert details["rc_nonzero_resolved"] is True
+
+
+@pytest.mark.parametrize(
+    ("receipt_updates", "output_payload", "missing_check"),
+    [
+        ({"patch_applied": False}, {"tests": ["test_file.py::test_fix"]}, "patch_applied"),
+        ({}, {"tests": []}, "tests_non_empty"),
+        ({"fail_to_pass_status": "fail"}, {"tests": ["test_file.py::test_fix"]}, "fail_to_pass_status"),
+        ({"pass_to_pass_status": "unavailable"}, {"tests": ["test_file.py::test_fix"]}, "pass_to_pass_status"),
+    ],
+)
+def test_rc_nonzero_gold_still_fails_closed_without_resolved_status(
+    tmp_path: Path,
+    receipt_updates: dict,
+    output_payload: dict,
+    missing_check: str,
+) -> None:
+    output_json = tmp_path / "output.json"
+    output_json.write_text(json.dumps(output_payload), encoding="utf-8")
+    receipt = {
+        "patch_applied": True,
+        "fail_to_pass_status": "pass",
+        "pass_to_pass_status": "pass",
+        "test_command_return_code": 7,
+        "artifact_paths": {"output_json": str(output_json)},
+    }
+    receipt.update(receipt_updates)
+
+    ok, reason, details = batch._oracle_gold_runnable({"oracle_adapter_receipt": receipt})
+
+    assert ok is False
+    assert reason.startswith("dry_oracle_gold_not_runnable")
+    assert missing_check in reason
+    assert details["rc_nonzero_resolved"] is False
+
+
 def test_batch_manifest_pins_thresholds_and_report_only_labels(tmp_path: Path) -> None:
     records_path = tmp_path / "records.jsonl"
     records_path.write_text(json.dumps(_record("instance_good")) + "\n", encoding="utf-8")
@@ -130,6 +188,7 @@ def test_batch_manifest_pins_thresholds_and_report_only_labels(tmp_path: Path) -
         allow_live=True,
         prune_docker_between_instances=True,
         docker_prune_command="docker image prune -af",
+        phase0_gate_decision_path=None,
     )
 
     manifest = batch._config_manifest(config, [_record("instance_good")])
@@ -147,6 +206,33 @@ def test_batch_manifest_pins_thresholds_and_report_only_labels(tmp_path: Path) -
     )
     assert manifest["human_mergeability_claim_allowed"] is False
     assert manifest["metric_applyable"] is False
+
+
+def test_solver_spend_requires_phase0_gate_decision(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("SWEBENCH_PRO_ORACLE_SCRIPTS_DIR", raising=False)
+    monkeypatch.delenv("SWEBENCH_PRO_ORACLE_SUBPROCESS_TIMEOUT_S", raising=False)
+    records_path = tmp_path / "records.jsonl"
+    instance_id = "instance_good"
+    records_path.write_text(json.dumps(_record(instance_id)) + "\n", encoding="utf-8")
+    scripts_dir = tmp_path / "run_scripts"
+    _write_scripts(scripts_dir, instance_id)
+
+    def fail_if_solver_runs(*_args, **_kwargs):
+        raise AssertionError("solver spend must not start without Phase 0 approval")
+
+    monkeypatch.setattr(batch, "run_solver_batch", fail_if_solver_runs)
+
+    with pytest.raises(RuntimeError, match="Phase 0 gate decision"):
+        batch.main([
+            "--records",
+            str(records_path),
+            "--output-dir",
+            str(tmp_path / "out"),
+            "--swe-bench-pro-scripts-dir",
+            str(scripts_dir),
+            "--allow-live",
+            "--run-solver",
+        ])
 
 
 def test_generator_input_requires_materialized_public_worktree() -> None:

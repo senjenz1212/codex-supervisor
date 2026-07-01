@@ -40,6 +40,10 @@ def _powered_report() -> dict[str, object]:
         ),
         "pro_candidate_count": 120,
         "candidate_count": 120,
+        "source_disclosure_counts": {
+            "vacuous_pass_to_pass_count": 2,
+            "rc_nonzero_resolved_count": 1,
+        },
         "sample_size_sufficiency": {
             "status": "sufficient",
             "n_good": 45,
@@ -218,6 +222,16 @@ def test_artifact_is_report_only_test_pass_proxy():
     assert verdict["authority_flags"] == AUTHORITY_FLAGS
     assert verdict["evidence"]["real_benchmark_claim_allowed"] is True
     assert verdict["evidence"]["policy_mutation_allowed"] is False
+
+
+def test_report_discloses_vacuous_and_rc_nonzero_counts():
+    verdict = assert_powered_real_benchmark_definition_of_done(
+        powered_report=_powered_report(),
+        all_arms_diagnostic_report=_all_arms_report(),
+    )
+
+    assert verdict["evidence"]["vacuous_pass_to_pass_count"] == 2
+    assert verdict["evidence"]["rc_nonzero_resolved_count"] == 1
 
 
 def test_underpowered_artifact_is_rejected():

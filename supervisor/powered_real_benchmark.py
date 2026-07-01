@@ -244,6 +244,20 @@ def _check_powered_thresholds(
         "mcnemar_p_value": p_value,
         "alpha": alpha,
         "candidate_count": candidate_count,
+        "vacuous_pass_to_pass_count": _int_value(
+            _nested(
+                powered_report,
+                "source_disclosure_counts",
+                "vacuous_pass_to_pass_count",
+            )
+        ),
+        "rc_nonzero_resolved_count": _int_value(
+            _nested(
+                powered_report,
+                "source_disclosure_counts",
+                "rc_nonzero_resolved_count",
+            )
+        ),
     }
 
 
