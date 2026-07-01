@@ -178,6 +178,16 @@ def _oracle_gold_runnable(result: Mapping[str, Any]) -> tuple[bool, str, dict[st
         "patch_applied": bool(receipt.get("patch_applied") is True),
         "fail_to_pass_status": str(receipt.get("fail_to_pass_status") or result.get("fail_to_pass_status") or ""),
         "pass_to_pass_status": str(receipt.get("pass_to_pass_status") or result.get("pass_to_pass_status") or ""),
+        "fail_to_pass_count": int(
+            receipt.get("fail_to_pass_count") or result.get("fail_to_pass_count") or 0
+        ),
+        "pass_to_pass_count": int(
+            receipt.get("pass_to_pass_count") or result.get("pass_to_pass_count") or 0
+        ),
+        "pass_to_pass_empty_vacuous_pass": bool(
+            receipt.get("pass_to_pass_empty_vacuous_pass") is True
+            or result.get("pass_to_pass_empty_vacuous_pass") is True
+        ),
         "test_command_return_code": receipt.get("test_command_return_code"),
         "tests_count": _oracle_tests_count(result),
         "rc_nonzero_resolved": False,
@@ -244,6 +254,18 @@ def curate_roster(
         else:
             entry["dry_oracle"] = {"status": "not_run"}
         curated.append(entry)
+    vacuous_pass_to_pass_count = sum(
+        1
+        for entry in curated
+        if isinstance(entry.get("dry_oracle"), Mapping)
+        and entry["dry_oracle"].get("pass_to_pass_empty_vacuous_pass") is True
+    )
+    rc_nonzero_resolved_count = sum(
+        1
+        for entry in curated
+        if isinstance(entry.get("dry_oracle"), Mapping)
+        and entry["dry_oracle"].get("rc_nonzero_resolved") is True
+    )
     return {
         "schema_version": "supervisor-swebench-pro-roster-curation/v1",
         "status": "completed",
@@ -255,6 +277,8 @@ def curate_roster(
             "curated_instances": len(curated),
             "excluded_instances": len(excluded),
             "dry_oracle_run": run_dry_oracle,
+            "vacuous_pass_to_pass_count": vacuous_pass_to_pass_count,
+            "rc_nonzero_resolved_count": rc_nonzero_resolved_count,
         },
         **AUTHORITY_FLAGS,
     }
