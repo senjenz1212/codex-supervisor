@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "receipt_type": "blocked_execution_halt",
+  "task_id": "pro-benchmark-finish-20260630",
+  "phase": "phase_0",
+  "gate": "dry_gold_curation",
+  "status": "halted_invalid",
+  "halt_reason": "disk_exhaustion",
+  "recorded_at": "2026-07-09T00:00:00Z",
+  "source_commit": "ab82138c3454a02f1ca2f5ac941c0963836a2c18",
+  "bokken_job_id": "9044f339-1f2f-46fe-b907-95950213f5ce",
+  "run_root": "/home/bokken/codex-swebench-pro-benchmark/runs/powered-scale-20260630T0200Z/committed-main-20260701T1520Z",
+  "timeline": [
+    {
+      "ts": "2026-07-01T15:20:18Z",
+      "event": "committed_code_phase0_dry_gold_curation_started",
+      "details": {
+        "checkout": "main@ab82138c3454a02f1ca2f5ac941c0963836a2c18",
+        "solver_spend_started": false
+      }
+    },
+    {
+      "ts": "2026-07-02T15:06:57Z",
+      "event": "disk_exhaustion_observed",
+      "details": {
+        "filesystem_used_percent": 100,
+        "free_space_gb_approx": 3
+      }
+    },
+    {
+      "ts": "2026-07-02T15:24:20Z",
+      "event": "safe_docker_image_cleanup_completed",
+      "details": {
+        "active_containers_present": false,
+        "filesystem_used_percent_after_cleanup": 80,
+        "free_space_gb_after_cleanup_approx": 90
+      }
+    },
+    {
+      "ts": "2026-07-02T15:25:19Z",
+      "event": "heartbeat_automation_removed_after_halt",
+      "details": {
+        "automation_id": "monitor-pro-phase0-committed-run"
+      }
+    }
+  ],
+  "disk_telemetry": {
+    "failure_observation": {
+      "filesystem": "/",
+      "used_percent": 100,
+      "free_gb_approx": 3
+    },
+    "post_intervention": {
+      "filesystem": "/",
+      "used_percent": 80,
+      "free_gb_approx": 90
+    },
+    "docker_image_cache": {
+      "reclaimable_before_cleanup_gb_approx": 250,
+      "cleanup_type": "docker image prune",
+      "cleanup_scope": "images"
+    }
+  },
+  "intervention_taken": {
+    "description": "Safe Docker image cleanup after confirming no active oracle containers remained.",
+    "safe_cleanup": true,
+    "active_containers_present": false,
+    "result": "filesystem_recovered_to_80_percent_used_and_about_90_gb_free"
+  },
+  "artifacts_declared_invalid": [
+    "curated-roster.json (0 bytes)",
+    "phase0-gate-decision.json (absent)"
+  ],
+  "model_spend_usd": 0,
+  "solver_spend_started": false,
+  "oracle_spend_started": false,
+  "heartbeat_automation_removed": true,
+  "evidence_disposition": {
+    "curated_roster_usable": false,
+    "phase0_gate_decision_usable": false,
+    "copy_back_safe": false,
+    "prereg_gate_verdict": "no_verdict_invalid_halt"
+  }
+}

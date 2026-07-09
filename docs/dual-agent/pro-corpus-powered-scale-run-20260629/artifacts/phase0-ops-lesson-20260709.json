@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "lesson_id": "phase0-disk-exhaustion-evidence-hardening-20260709",
+  "recorded_at": "2026-07-09T00:00:00Z",
+  "task_class": "benchmark_ops",
+  "gate": "phase_0",
+  "lesson": "all-at-once artifact writes on constrained VMs yield zero-byte evidence on ENOSPC; require atomic writes, per-instance receipts, and a disk floor.",
+  "source_halt_receipt": "docs/dual-agent/pro-corpus-powered-scale-run-20260629/artifacts/phase0-halt-20260709.json",
+  "applies_to": [
+    "SWE-bench Pro Phase 0 dry-gold curation",
+    "long-running benchmark curation on constrained Docker hosts"
+  ],
+  "required_controls": [
+    "atomic tmp-then-rename writes for final artifacts",
+    "per-instance checkpoint receipts",
+    "pre-instance disk floor guard",
+    "image-level Docker prune telemetry"
+  ]
+}
