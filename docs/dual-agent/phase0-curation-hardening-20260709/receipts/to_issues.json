@@ -1,0 +1,16 @@
+{
+  "receipt_id": "skill_run:phase0-curation-hardening-20260709:to_issues",
+  "kind": "skill_run",
+  "skill": "to-issues",
+  "stage": "to_issues",
+  "status": "passed",
+  "artifact": "docs/dual-agent/phase0-curation-hardening-20260709/source/issues.md",
+  "artifacts": [
+    "docs/dual-agent/phase0-curation-hardening-20260709/source/issues.md"
+  ],
+  "claims": [
+    "Issues sliced into vertical tracer bullets covering atomic final artifacts, checkpoint receipts, checkpoint resume, disk floor and prune telemetry, and append-only prereg amendment."
+  ],
+  "sha256": "1322ebf6878c9ec914c9461b37a4755689fb7e01b7b44a915bad21ce70cf6a28",
+  "notes": "Sliced the hardening work into five tracer-bullet issues: atomic final artifacts, checkpoint receipts, checkpoint resume, disk floor and prune telemetry, and append-only prereg amendment."
+}

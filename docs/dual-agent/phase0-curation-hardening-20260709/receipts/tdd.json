@@ -1,0 +1,16 @@
+{
+  "receipt_id": "skill_run:phase0-curation-hardening-20260709:tdd",
+  "kind": "skill_run",
+  "skill": "tdd",
+  "stage": "tdd",
+  "status": "passed",
+  "artifact": "docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md",
+  "artifacts": [
+    "docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md"
+  ],
+  "claims": [
+    "TDD plan names public-boundary RED/GREEN cycles for atomic writes, checkpoints, resume verification, disk-floor exits, image-prune telemetry, prereg amendment validation, and unchanged authority checks."
+  ],
+  "sha256": "a710847bc45bb9af2222c201bfb3f23aa449495ed9cc596f11501f49ee33f425",
+  "notes": "Defined public-boundary RED/GREEN cycles for atomic writes, checkpoints, resume verification, disk-floor exits, image-prune telemetry, prereg amendment validation, and unchanged authority checks."
+}

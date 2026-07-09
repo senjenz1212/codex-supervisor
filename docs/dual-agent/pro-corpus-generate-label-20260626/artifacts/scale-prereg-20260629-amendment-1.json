@@ -1,0 +1,159 @@
+{
+  "schema_version": "supervisor-swebench-pro-powered-scale-prereg-amendment/v1",
+  "task_id": "pro-corpus-powered-scale-run-20260629",
+  "amendment_id": "scale-prereg-20260629-amendment-1",
+  "recorded_at_utc": "2026-07-09T00:00:00Z",
+  "status": "append_only_amendment_before_valid_phase0_results",
+  "reason": "environment robustness after Phase 0 disk-exhaustion halt; zero curation/solver/oracle results observed before amendment",
+  "halt_receipt": "docs/dual-agent/pro-corpus-powered-scale-run-20260629/artifacts/phase0-halt-20260709.json",
+  "original_preregistration": {
+    "path": "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/scale-prereg-20260629.json",
+    "sha256": "701d77177ca1330814da2b30539c8379789fa8d0eba46bdd2a9bb67e78ddd077",
+    "immutability": "byte_identical_after_amendment"
+  },
+  "changed_files": [
+    {
+      "path": "scripts/swebench_pro_batch_driver.py",
+      "old_sha256": "c67e4957e064dab892b0e13015d7b54e2536391d690768d55498722a3dfb98c5",
+      "new_sha256": "43697a1a4a18599906dfc5e420579f0aa4c8522d3a16f1fbc00bdfb08e9fc271",
+      "change_class": "phase0_environment_robustness",
+      "scope": [
+        "same-filesystem atomic JSON artifact writes",
+        "per-instance checkpoint receipts with payload hash verification",
+        "resume from verified checkpoint receipts",
+        "disk-floor clean halt receipt before each instance",
+        "image-level Docker prune telemetry with reclaimed-byte accounting",
+        "disk and image-cache telemetry in checkpoint/provenance receipts"
+      ]
+    },
+    {
+      "path": "tests/test_swebench_pro_batch_driver.py",
+      "old_sha256": "a2f09cd144fb09e3f427ddab4e832d68ba61552e88124db455b97828660747d1",
+      "new_sha256": "68e2f8b7d4d8c0929a0f875755fb1ec967e9d343041cb4637dc245980283a860",
+      "change_class": "phase0_environment_robustness_regression_tests",
+      "scope": [
+        "atomic artifact write interruption behavior",
+        "checkpoint receipt write and ENOSPC halt behavior",
+        "checkpoint resume and tamper rerun behavior",
+        "disk-floor halt/proceed behavior",
+        "image-prune telemetry and default command classification",
+        "append-only amendment validation"
+      ]
+    }
+  ],
+  "pinned_artifact_reference_updates": [
+    {
+      "artifact": "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/batch-driver-pin-20260629.json",
+      "artifact_sha256": "ba6c26788f204bba3dd6d174e4366310606fbb3384595059444f7a88135a5f43",
+      "references": {
+        "pinned_batch_driver.driver_sha256": {
+          "old_sha256": "c67e4957e064dab892b0e13015d7b54e2536391d690768d55498722a3dfb98c5",
+          "new_sha256": "43697a1a4a18599906dfc5e420579f0aa4c8522d3a16f1fbc00bdfb08e9fc271"
+        },
+        "pinned_batch_driver.test_sha256": {
+          "old_sha256": "a2f09cd144fb09e3f427ddab4e832d68ba61552e88124db455b97828660747d1",
+          "new_sha256": "68e2f8b7d4d8c0929a0f875755fb1ec967e9d343041cb4637dc245980283a860"
+        }
+      }
+    }
+  ],
+  "unchanged_core": {
+    "input_pool_sha256": "e57926b3106d3d50ae52dae06810f6d9b02655071ed40e1b56962808a41e59c2",
+    "pinned_solver": {
+      "k": 8,
+      "solver": "claude-code-litellm-haiku-real-swebench-pro-pilot",
+      "model": "claude-3-5-haiku-20241022",
+      "provider": "anthropic_via_unity_litellm",
+      "runner_pin_artifact": "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/solver-runner-pin-claude-code-haiku-20260629.json",
+      "runner_pin_sha256": "08222bf08fef00fde37941e2532e8b673db2cefa37675d30d7ad9c321383642c",
+      "runner_wrapper": "scripts/swebench_pro_claude_code_runner.py",
+      "runner_wrapper_sha256": "efb40d65f2527e8b691d087f1e418b897e52b352e1b675474bb33139bf9f5326"
+    },
+    "phase_gates": {
+      "phase_0_curation": {
+        "mode": "dry_gold_no_model_spend",
+        "oracle_timeout_s": 5400,
+        "prune_docker_between_instances": true,
+        "gate": "Read curated-roster.json. If runnable count or repo spread is too low to plausibly reach the reliability targets, halt and record the blocked/partial evidence before solver spend."
+      },
+      "phase_1_public_worktrees": {
+        "mode": "materialize_public_worktrees",
+        "leak_gate": "On at least three sampled runnable ids, assert the public_worktree_manifest contains none of that instance's FAIL_TO_PASS or selected_test_files_to_run files. One leak invalidates the run and must halt execution."
+      },
+      "phase_2_solver_and_oracle_label": {
+        "mode": "oversampled_solver_plus_gold_backstop",
+        "k": 8,
+        "max_budget_usd": 5.0,
+        "min_good": 30,
+        "min_bad": 30,
+        "oracle_timeout_s": 5400,
+        "gate": "Run all runnable instances. Hand-verify roughly 5 to 10 labels. If n_good < 30 or n_bad < 30, halt and expand instances or raise k before panel."
+      },
+      "phase_3_label_stability": {
+        "mode": "oracle_repeatability_gate",
+        "repeats": 3,
+        "label_stability_script": "scripts/swebench_pro_label_stability.py",
+        "label_stability_script_sha256": "fe761ddf9ac0a02f33f6d67705fe748134627cef55d896e349b0be41fe2932f6",
+        "oracle_timeout_s": 5400,
+        "gate": "Record flake_rate and dropped candidate ids. If post-stability n_good < 30 or n_bad < 30, halt and scale more before panel."
+      },
+      "phase_4_panel_and_powered_factorial": {
+        "mode": "full_configured_reviewer_roster_conservative_aggregation",
+        "reviewer_panel_mode": "configured",
+        "panel_aggregation_mode": "conservative",
+        "min_good": 30,
+        "min_bad": 30,
+        "min_discordant": 25,
+        "alpha": 0.05,
+        "gate": "Confirm discordant_pair_count >= 25 before qualified powered report status; target discordant_pair_count >= 50 for reliability."
+      },
+      "phase_5_honest_report": {
+        "mode": "assemble_and_commit_report_only_evidence",
+        "required_fields": [
+          "actual_n_good",
+          "actual_n_bad",
+          "FAR_TAR_FRR_with_Wilson_confidence_intervals",
+          "discordant_pair_count",
+          "McNemar_p",
+          "flake_rate",
+          "diversity_metric",
+          "cross_family_status",
+          "labeling",
+          "authority_flags",
+          "full_exclusion_log"
+        ]
+      }
+    },
+    "statistical_floors": {
+      "min_good": 30,
+      "min_bad": 30,
+      "min_discordant": 25,
+      "alpha": 0.05
+    },
+    "reliability_targets": {
+      "n_per_arm": 100,
+      "discordant_pairs": 50
+    },
+    "solver_spend_gate": "Phase 0 gate decision must explicitly allow solver_spend_allowed=true before solver/model spend.",
+    "authority_flags": {
+      "metric_applyable": false,
+      "improvement_claim_allowed": false,
+      "powered_improvement_claim_allowed": false,
+      "human_mergeability_claim_allowed": false,
+      "default_change_allowed": false,
+      "policy_mutated": false,
+      "gate_advanced": false
+    },
+    "reporting_labels": {
+      "labeling": "swe_bench_held_out_test_pass_proxy",
+      "forbidden_label": "maintainer_mergeability",
+      "report_only": true,
+      "promotion_forbidden": true,
+      "auto_evolve_forbidden": true
+    }
+  },
+  "model_spend_observed_before_amendment_usd": 0,
+  "solver_spend_started_before_amendment": false,
+  "oracle_results_observed_before_amendment": 0,
+  "curation_results_observed_before_amendment": 0
+}

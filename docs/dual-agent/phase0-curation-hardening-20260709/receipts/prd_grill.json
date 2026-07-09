@@ -1,0 +1,16 @@
+{
+  "receipt_id": "skill_run:phase0-curation-hardening-20260709:prd_grill",
+  "kind": "skill_run",
+  "skill": "grill-with-docs",
+  "stage": "prd_grill",
+  "status": "passed",
+  "artifact": "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings.md",
+  "artifacts": [
+    "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings.md"
+  ],
+  "claims": [
+    "PRD grill findings resolved final-artifact coverage, corrupt checkpoint distrust, clean disk-floor evidence, measurable image pruning, prereg immutability, and unchanged benchmark authority."
+  ],
+  "sha256": "b43dbe55b044e9617bf4edb873a118f7382a4f26b056dedbdbb59160d6e19b7d",
+  "notes": "Resolved PRD grill findings for final-artifact coverage, corrupt checkpoint distrust, clean disk-floor evidence, measurable image pruning, prereg immutability, and unchanged benchmark authority."
+}

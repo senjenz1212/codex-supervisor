@@ -17,16 +17,20 @@ writes a plan/manifest and refuses to spend solver or oracle budget.
 from __future__ import annotations
 
 import argparse
+import errno
 import importlib
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
+from uuid import uuid4
 
 from supervisor.swe_bench_mergeability import (
     SwebenchMergeabilityFixtureRunnerError,
@@ -51,6 +55,10 @@ AUTHORITY_FLAGS = {
 DEFAULT_RUNNER_LABEL = "claude-code-litellm-haiku-real-swebench-pro-pilot"
 DEFAULT_MODEL = "claude-3-5-haiku-20241022"
 DEFAULT_PROVIDER = "anthropic_via_unity_litellm"
+DEFAULT_DISK_FLOOR_GB = 15.0
+DEFAULT_DOCKER_PRUNE_COMMAND = "docker image prune -af"
+CHECKPOINT_SCHEMA_VERSION = "supervisor-swebench-pro-instance-checkpoint/v1"
+BLOCKED_EXECUTION_SCHEMA_VERSION = "supervisor-swebench-pro-blocked-execution/v1"
 
 
 @dataclass(frozen=True)
@@ -78,7 +86,18 @@ class BatchConfig:
     allow_live: bool
     prune_docker_between_instances: bool
     docker_prune_command: str
+    disk_floor_gb: float
+    resume_from_checkpoints: bool
     phase0_gate_decision_path: Path | None
+
+
+class Phase0CleanHalt(RuntimeError):
+    """A deliberate Phase 0 halt with evidence written before exit."""
+
+    def __init__(self, *, reason: str, receipt_path: Path):
+        super().__init__(reason)
+        self.reason = reason
+        self.receipt_path = receipt_path
 
 
 def _json_dumps(payload: Any) -> str:
@@ -111,6 +130,111 @@ def _read_records(path: Path) -> list[dict[str, Any]]:
 
 def _sha256_file(path: Path) -> str:
     return sha256(path.read_bytes()).hexdigest()
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _stable_payload_hash(payload: Mapping[str, Any]) -> str:
+    return sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def _atomic_write_text(
+    path: Path,
+    text: str,
+    *,
+    replace: Callable[[Path, Path], None] | None = None,
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f".{path.name}.{os.getpid()}.{uuid4().hex}.tmp")
+    replace_func = replace or os.replace
+    try:
+        with tmp_path.open("w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        replace_func(tmp_path, path)
+    except Exception:
+        try:
+            tmp_path.unlink()
+        except FileNotFoundError:
+            pass
+        raise
+
+
+def _atomic_write_json(
+    path: Path,
+    payload: Any,
+    *,
+    replace: Callable[[Path, Path], None] | None = None,
+) -> None:
+    _atomic_write_text(path, _json_dumps(payload), replace=replace)
+
+
+def _disk_free_gb(path: Path) -> float:
+    target = path if path.exists() else path.parent
+    usage = shutil.disk_usage(target)
+    return usage.free / 1_000_000_000
+
+
+def _parse_size_to_bytes(value: str) -> int | None:
+    text = value.strip().replace(" ", "")
+    if not text:
+        return None
+    units = [
+        ("TB", 1_000_000_000_000),
+        ("GB", 1_000_000_000),
+        ("MB", 1_000_000),
+        ("KB", 1_000),
+        ("B", 1),
+    ]
+    upper = text.upper()
+    for suffix, multiplier in units:
+        if upper.endswith(suffix):
+            number = upper[: -len(suffix)]
+            try:
+                return int(float(number) * multiplier)
+            except ValueError:
+                return None
+    try:
+        return int(float(text))
+    except ValueError:
+        return None
+
+
+def _docker_image_cache_bytes(cwd: Path) -> int | None:
+    try:
+        completed = subprocess.run(
+            ["docker", "system", "df", "--format", "json"],
+            cwd=cwd,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+    except OSError:
+        return None
+    if completed.returncode != 0:
+        return None
+    for line in completed.stdout.splitlines():
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(row, Mapping):
+            continue
+        row_type = str(row.get("Type") or row.get("type") or "")
+        if row_type.lower() != "images":
+            continue
+        for key in ("Size", "size", "TotalSize", "total_size"):
+            parsed = _parse_size_to_bytes(str(row.get(key) or ""))
+            if parsed is not None:
+                return parsed
+    return None
 
 
 def _record_reference_patch(record: Mapping[str, Any]) -> str:
@@ -207,12 +331,269 @@ def _oracle_gold_runnable(result: Mapping[str, Any]) -> tuple[bool, str, dict[st
     return True, "", details
 
 
+def _checkpoint_path(checkpoints_dir: Path, instance_id: str) -> Path:
+    return checkpoints_dir / f"{_safe_fragment(instance_id)}.json"
+
+
+def _checkpoint_payload(
+    *,
+    instance_id: str,
+    decision: Mapping[str, Any],
+    disk_free_gb: float | None,
+    image_cache_bytes: int | None,
+    prune_receipt: Mapping[str, Any] | None,
+    now: Callable[[], str],
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "schema_version": CHECKPOINT_SCHEMA_VERSION,
+        "instance_id": instance_id,
+        "ts": now(),
+        "decision": dict(decision),
+        "disk_free_gb": disk_free_gb,
+        "image_cache_bytes": image_cache_bytes,
+    }
+    if prune_receipt is not None:
+        payload["docker_prune"] = dict(prune_receipt)
+    payload["payload_sha256"] = _stable_payload_hash(payload)
+    return payload
+
+
+def _verify_checkpoint(payload: Mapping[str, Any]) -> tuple[bool, str]:
+    if payload.get("schema_version") != CHECKPOINT_SCHEMA_VERSION:
+        return False, "schema_version"
+    recorded_hash = str(payload.get("payload_sha256") or "")
+    if not recorded_hash:
+        return False, "payload_sha256_missing"
+    unsigned = dict(payload)
+    unsigned.pop("payload_sha256", None)
+    actual_hash = _stable_payload_hash(unsigned)
+    if actual_hash != recorded_hash:
+        return False, "payload_sha256_mismatch"
+    decision = payload.get("decision")
+    if not isinstance(decision, Mapping):
+        return False, "decision_missing"
+    kind = str(decision.get("kind") or "")
+    if kind not in {"curated", "excluded"}:
+        return False, "decision_kind"
+    return True, ""
+
+
+def _load_checkpoint_receipts(
+    checkpoints_dir: Path,
+) -> tuple[dict[str, Mapping[str, Any]], list[dict[str, str]]]:
+    if not checkpoints_dir.exists():
+        return {}, []
+    valid: dict[str, Mapping[str, Any]] = {}
+    invalid: list[dict[str, str]] = []
+    for path in sorted(checkpoints_dir.glob("*.json")):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            invalid.append({"path": str(path), "reason": type(exc).__name__})
+            continue
+        if not isinstance(payload, Mapping):
+            invalid.append({"path": str(path), "reason": "not_object"})
+            continue
+        ok, reason = _verify_checkpoint(payload)
+        instance_id = str(payload.get("instance_id") or "")
+        if ok and instance_id:
+            valid[instance_id] = payload
+        else:
+            invalid.append({
+                "path": str(path),
+                "instance_id": instance_id,
+                "reason": reason,
+            })
+    return valid, invalid
+
+
+def _checkpoint_decision_to_roster(
+    receipt: Mapping[str, Any],
+) -> tuple[str, dict[str, Any]]:
+    decision = receipt.get("decision")
+    if not isinstance(decision, Mapping):
+        raise ValueError("checkpoint receipt missing decision")
+    kind = str(decision.get("kind") or "")
+    if kind == "curated":
+        entry = decision.get("entry")
+        if not isinstance(entry, Mapping):
+            raise ValueError("curated checkpoint missing entry")
+        return kind, dict(entry)
+    if kind == "excluded":
+        exclusion = decision.get("exclusion")
+        if not isinstance(exclusion, Mapping):
+            raise ValueError("excluded checkpoint missing exclusion")
+        return kind, dict(exclusion)
+    raise ValueError(f"unknown checkpoint decision kind: {kind}")
+
+
+def _is_enospc(exc: BaseException) -> bool:
+    return isinstance(exc, OSError) and exc.errno == errno.ENOSPC
+
+
+def _halt_receipt_path(output_dir: Path) -> Path:
+    return output_dir / "phase0-blocked-execution-receipt.json"
+
+
+def _write_blocked_execution_receipt(
+    *,
+    output_dir: Path,
+    reason: str,
+    disk_free_gb: float | None,
+    disk_floor_gb: float,
+    now: Callable[[], str],
+    details: Mapping[str, Any] | None = None,
+) -> Path:
+    path = _halt_receipt_path(output_dir)
+    receipt = {
+        "schema_version": BLOCKED_EXECUTION_SCHEMA_VERSION,
+        "status": "blocked",
+        "reason": reason,
+        "timeline": [
+            {
+                "ts": now(),
+                "event": "phase0_clean_halt",
+                "reason": reason,
+            }
+        ],
+        "disk_telemetry": {
+            "disk_free_gb": disk_free_gb,
+            "disk_floor_gb": disk_floor_gb,
+        },
+        "intervention_taken": "none; driver halted before spending solver/model budget",
+        "artifacts_declared_invalid": [],
+        "model_spend_usd": 0,
+        "heartbeat_automation_removed": False,
+        "details": dict(details or {}),
+        **AUTHORITY_FLAGS,
+    }
+    _atomic_write_json(path, receipt)
+    return path
+
+
+def _check_disk_floor_or_halt(
+    *,
+    output_dir: Path,
+    disk_floor_gb: float,
+    disk_free_gb: Callable[[Path], float],
+    now: Callable[[], str],
+    instance_id: str,
+) -> float:
+    free_gb = float(disk_free_gb(output_dir))
+    if free_gb < disk_floor_gb:
+        receipt_path = _write_blocked_execution_receipt(
+            output_dir=output_dir,
+            reason="disk_floor_reached",
+            disk_free_gb=free_gb,
+            disk_floor_gb=disk_floor_gb,
+            now=now,
+            details={"instance_id": instance_id},
+        )
+        raise Phase0CleanHalt(reason="disk_floor_reached", receipt_path=receipt_path)
+    return free_gb
+
+
+def _maybe_disk_free(
+    output_dir: Path | None,
+    disk_free_gb: Callable[[Path], float],
+) -> float | None:
+    if output_dir is None:
+        return None
+    try:
+        return float(disk_free_gb(output_dir))
+    except OSError:
+        return None
+
+
+def _write_instance_checkpoint_or_halt(
+    *,
+    checkpoints_dir: Path,
+    output_dir: Path,
+    instance_id: str,
+    decision: Mapping[str, Any],
+    disk_free_gb: float | None,
+    disk_floor_gb: float,
+    image_cache_bytes: int | None,
+    prune_receipt: Mapping[str, Any] | None,
+    now: Callable[[], str],
+) -> None:
+    path = _checkpoint_path(checkpoints_dir, instance_id)
+    payload = _checkpoint_payload(
+        instance_id=instance_id,
+        decision=decision,
+        disk_free_gb=disk_free_gb,
+        image_cache_bytes=image_cache_bytes,
+        prune_receipt=prune_receipt,
+        now=now,
+    )
+    try:
+        _atomic_write_json(path, payload)
+    except OSError as exc:
+        reason = "checkpoint_write_enospc" if _is_enospc(exc) else "checkpoint_write_failed"
+        receipt_path = _write_blocked_execution_receipt(
+            output_dir=output_dir,
+            reason=reason,
+            disk_free_gb=disk_free_gb,
+            disk_floor_gb=disk_floor_gb,
+            now=now,
+            details={
+                "instance_id": instance_id,
+                "checkpoint_path": str(path),
+                "error": str(exc),
+            },
+        )
+        raise Phase0CleanHalt(reason=reason, receipt_path=receipt_path) from exc
+
+
+def _is_image_reclaiming_prune_command(command: str) -> bool:
+    try:
+        parts = shlex.split(command)
+    except ValueError:
+        return False
+    if len(parts) < 3 or parts[0] != "docker":
+        return False
+    if parts[1:3] == ["image", "prune"]:
+        return True
+    if parts[1:3] == ["system", "prune"]:
+        return any(part in {"-a", "--all"} or part.startswith("--all=") for part in parts[3:])
+    if parts[1] == "rmi":
+        return True
+    return False
+
+
+def _maybe_prune_after_instance(
+    *,
+    output_dir: Path | None,
+    prune_docker_between_instances: bool,
+    docker_prune_command: str,
+    image_cache_bytes: Callable[[Path], int | None],
+    prune_runner: Callable[..., Mapping[str, Any]] | None,
+) -> Mapping[str, Any] | None:
+    if not prune_docker_between_instances or output_dir is None:
+        return None
+    runner = prune_runner or _run_prune
+    return runner(
+        docker_prune_command,
+        cwd=output_dir,
+        image_cache_bytes=image_cache_bytes,
+    )
+
+
 def curate_roster(
     records: Sequence[Mapping[str, Any]],
     *,
     scripts_dir: str,
     run_dry_oracle: bool,
     oracle_runner: Callable[[Mapping[str, Any]], Mapping[str, Any]] = run_swe_bench_pro_oracle,
+    output_dir: Path | None = None,
+    resume_from_checkpoints: bool = False,
+    disk_floor_gb: float = 0.0,
+    disk_free_gb: Callable[[Path], float] = _disk_free_gb,
+    image_cache_bytes: Callable[[Path], int | None] = _docker_image_cache_bytes,
+    prune_docker_between_instances: bool = False,
+    docker_prune_command: str = DEFAULT_DOCKER_PRUNE_COMMAND,
+    prune_runner: Callable[..., Mapping[str, Any]] | None = None,
+    now: Callable[[], str] = _utc_now_iso,
 ) -> dict[str, Any]:
     instance_ids = [str(record.get("instance_id") or "") for record in records]
     preflight = preflight_swe_bench_pro_run_scripts(
@@ -222,13 +603,59 @@ def curate_roster(
     missing = set(preflight.get("missing_instance_ids") or [])
     curated: list[dict[str, Any]] = []
     excluded: list[dict[str, Any]] = []
+    checkpoints_dir = output_dir / "checkpoints" if output_dir is not None else None
+    valid_checkpoints: dict[str, Mapping[str, Any]] = {}
+    invalid_checkpoints: list[dict[str, str]] = []
+    resumed_from_checkpoint_count = 0
+    if checkpoints_dir is not None and resume_from_checkpoints:
+        valid_checkpoints, invalid_checkpoints = _load_checkpoint_receipts(checkpoints_dir)
     for record in records:
         instance_id = str(record.get("instance_id") or "")
+        if instance_id in valid_checkpoints:
+            try:
+                kind, checkpoint_entry = _checkpoint_decision_to_roster(
+                    valid_checkpoints[instance_id]
+                )
+            except ValueError as exc:
+                invalid_checkpoints.append({
+                    "instance_id": instance_id,
+                    "reason": str(exc),
+                })
+            else:
+                if kind == "curated":
+                    curated.append(checkpoint_entry)
+                else:
+                    excluded.append(checkpoint_entry)
+                resumed_from_checkpoint_count += 1
+                continue
+        disk_free_before: float | None = None
+        if output_dir is not None and disk_floor_gb > 0:
+            disk_free_before = _check_disk_floor_or_halt(
+                output_dir=output_dir,
+                disk_floor_gb=disk_floor_gb,
+                disk_free_gb=disk_free_gb,
+                now=now,
+                instance_id=instance_id,
+            )
         if instance_id in missing:
-            excluded.append({
+            exclusion = {
                 "instance_id": instance_id,
                 "reason": "pro_script_missing",
-            })
+            }
+            excluded.append(exclusion)
+            decision = {"kind": "excluded", "exclusion": exclusion}
+            if checkpoints_dir is not None:
+                _write_instance_checkpoint_or_halt(
+                    checkpoints_dir=checkpoints_dir,
+                    output_dir=output_dir,
+                    instance_id=instance_id,
+                    decision=decision,
+                    disk_free_gb=disk_free_before,
+                    disk_floor_gb=disk_floor_gb,
+                    image_cache_bytes=image_cache_bytes(output_dir),
+                    prune_receipt=None,
+                    now=now,
+                )
             continue
         entry = {
             "instance_id": instance_id,
@@ -245,15 +672,60 @@ def curate_roster(
                 details = {"message": str(exc)}
             entry["dry_oracle"] = details
             if not ok:
-                excluded.append({
+                exclusion = {
                     "instance_id": instance_id,
                     "reason": reason,
                     "dry_oracle": details,
-                })
+                }
+                excluded.append(exclusion)
+                decision = {"kind": "excluded", "exclusion": exclusion}
+                prune_receipt = _maybe_prune_after_instance(
+                    output_dir=output_dir,
+                    prune_docker_between_instances=prune_docker_between_instances,
+                    docker_prune_command=docker_prune_command,
+                    image_cache_bytes=image_cache_bytes,
+                    prune_runner=prune_runner,
+                )
+                if checkpoints_dir is not None:
+                    _write_instance_checkpoint_or_halt(
+                        checkpoints_dir=checkpoints_dir,
+                        output_dir=output_dir,
+                        instance_id=instance_id,
+                        decision=decision,
+                        disk_free_gb=_maybe_disk_free(output_dir, disk_free_gb),
+                        disk_floor_gb=disk_floor_gb,
+                        image_cache_bytes=(
+                            image_cache_bytes(output_dir) if output_dir is not None else None
+                        ),
+                        prune_receipt=prune_receipt,
+                        now=now,
+                    )
                 continue
         else:
             entry["dry_oracle"] = {"status": "not_run"}
         curated.append(entry)
+        decision = {"kind": "curated", "entry": entry}
+        prune_receipt = _maybe_prune_after_instance(
+            output_dir=output_dir,
+            prune_docker_between_instances=prune_docker_between_instances,
+            docker_prune_command=docker_prune_command,
+            image_cache_bytes=image_cache_bytes,
+            prune_runner=prune_runner,
+        )
+        if checkpoints_dir is not None:
+            _write_instance_checkpoint_or_halt(
+                checkpoints_dir=checkpoints_dir,
+                output_dir=output_dir,
+                instance_id=instance_id,
+                decision=decision,
+                disk_free_gb=_maybe_disk_free(output_dir, disk_free_gb),
+                disk_floor_gb=disk_floor_gb,
+                image_cache_bytes=(
+                    image_cache_bytes(output_dir) if output_dir is not None else None
+                ),
+                prune_receipt=prune_receipt,
+                now=now,
+            )
     vacuous_pass_to_pass_count = sum(
         1
         for entry in curated
@@ -279,6 +751,18 @@ def curate_roster(
             "dry_oracle_run": run_dry_oracle,
             "vacuous_pass_to_pass_count": vacuous_pass_to_pass_count,
             "rc_nonzero_resolved_count": rc_nonzero_resolved_count,
+        },
+        "provenance": {
+            "checkpoint_dir": str(checkpoints_dir) if checkpoints_dir else "",
+            "resume_from_checkpoints": resume_from_checkpoints,
+            "resumed_from_checkpoint_count": resumed_from_checkpoint_count,
+            "invalid_checkpoint_count": len(invalid_checkpoints),
+            "invalid_checkpoints": invalid_checkpoints,
+            "disk_floor_gb": disk_floor_gb,
+            "docker_prune_command": docker_prune_command,
+            "docker_prune_image_reclaiming": _is_image_reclaiming_prune_command(
+                docker_prune_command
+            ),
         },
         **AUTHORITY_FLAGS,
     }
@@ -389,7 +873,13 @@ def _run_solver_for_record(
     }
 
 
-def _run_prune(command: str, *, cwd: Path) -> dict[str, Any]:
+def _run_prune(
+    command: str,
+    *,
+    cwd: Path,
+    image_cache_bytes: Callable[[Path], int | None] = _docker_image_cache_bytes,
+) -> dict[str, Any]:
+    before_bytes = image_cache_bytes(cwd)
     completed = subprocess.run(
         shlex.split(command),
         cwd=cwd,
@@ -397,8 +887,16 @@ def _run_prune(command: str, *, cwd: Path) -> dict[str, Any]:
         capture_output=True,
         check=False,
     )
+    after_bytes = image_cache_bytes(cwd)
+    reclaimed_bytes = None
+    if before_bytes is not None and after_bytes is not None:
+        reclaimed_bytes = max(0, before_bytes - after_bytes)
     return {
         "command": command,
+        "image_reclaiming_command": _is_image_reclaiming_prune_command(command),
+        "image_cache_bytes_before": before_bytes,
+        "image_cache_bytes_after": after_bytes,
+        "reclaimed_bytes": reclaimed_bytes,
         "returncode": completed.returncode,
         "stdout_tail": completed.stdout[-2000:],
         "stderr_tail": completed.stderr[-2000:],
@@ -558,8 +1056,7 @@ def _safe_fragment(value: str) -> str:
 
 
 def _write_json(path: Path, payload: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(_json_dumps(payload), encoding="utf-8")
+    _atomic_write_json(path, payload)
 
 
 def _assert_powered_predictions_ready(path: Path) -> None:
@@ -628,6 +1125,12 @@ def _config_manifest(config: BatchConfig, records: Sequence[Mapping[str, Any]]) 
             "run_powered": config.run_powered,
             "allow_live": config.allow_live,
             "prune_docker_between_instances": config.prune_docker_between_instances,
+            "docker_prune_command": config.docker_prune_command,
+            "docker_prune_image_reclaiming": _is_image_reclaiming_prune_command(
+                config.docker_prune_command
+            ),
+            "disk_floor_gb": config.disk_floor_gb,
+            "resume_from_checkpoints": config.resume_from_checkpoints,
         },
         "phase0_gate_decision_path": (
             str(config.phase0_gate_decision_path)
@@ -674,7 +1177,13 @@ def _parse_args(argv: list[str] | None) -> BatchConfig:
     parser.add_argument("--run-powered", action="store_true")
     parser.add_argument("--allow-live", action="store_true")
     parser.add_argument("--prune-docker-between-instances", action="store_true")
-    parser.add_argument("--docker-prune-command", default="docker image prune -af")
+    parser.add_argument("--docker-prune-command", default=DEFAULT_DOCKER_PRUNE_COMMAND)
+    parser.add_argument("--disk-floor-gb", type=float, default=DEFAULT_DISK_FLOOR_GB)
+    parser.add_argument(
+        "--no-resume-from-checkpoints",
+        action="store_true",
+        help="Disable Phase 0 checkpoint resume and rerun all instances.",
+    )
     parser.add_argument(
         "--phase0-gate-decision",
         default="",
@@ -710,6 +1219,8 @@ def _parse_args(argv: list[str] | None) -> BatchConfig:
         allow_live=args.allow_live,
         prune_docker_between_instances=args.prune_docker_between_instances,
         docker_prune_command=args.docker_prune_command,
+        disk_floor_gb=args.disk_floor_gb,
+        resume_from_checkpoints=not args.no_resume_from_checkpoints,
         phase0_gate_decision_path=(
             Path(args.phase0_gate_decision).expanduser()
             if args.phase0_gate_decision
@@ -753,11 +1264,26 @@ def main(argv: list[str] | None = None) -> int:
     if (config.run_dry_oracle or config.run_solver or config.run_labeling) and not config.allow_live:
         raise RuntimeError("live oracle/solver/labeling phases require --allow-live")
 
-    roster = curate_roster(
-        records,
-        scripts_dir=config.scripts_dir,
-        run_dry_oracle=config.run_dry_oracle,
-    )
+    try:
+        roster = curate_roster(
+            records,
+            scripts_dir=config.scripts_dir,
+            run_dry_oracle=config.run_dry_oracle,
+            output_dir=config.output_dir,
+            resume_from_checkpoints=config.resume_from_checkpoints,
+            disk_floor_gb=config.disk_floor_gb,
+            prune_docker_between_instances=config.prune_docker_between_instances,
+            docker_prune_command=config.docker_prune_command,
+        )
+    except Phase0CleanHalt as exc:
+        summary = {
+            "status": "blocked",
+            "reason": exc.reason,
+            "blocked_execution_receipt": str(exc.receipt_path),
+            **AUTHORITY_FLAGS,
+        }
+        print(_json_dumps(summary), end="")
+        return 2
     _write_json(config.output_dir / "curated-roster.json", roster)
 
     solver_report: dict[str, Any] | None = None

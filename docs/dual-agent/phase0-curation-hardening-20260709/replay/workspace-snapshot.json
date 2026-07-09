@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "388775f4596718da4fcf0560e3594452415546d735719132b3f7c9e94c11a733",
+  "git": {
+    "diff_bytes": 39587,
+    "diff_sha256": "aeda39135bf1e6d40b73ff3beb9d078ebd8b2755444ce0e01b621f5d256cc488",
+    "diff_stat": "scripts/swebench_pro_batch_driver.py    | 552 +++++++++++++++++++++++++++++++-\n tests/test_swebench_pro_batch_driver.py | 341 ++++++++++++++++++++\n 2 files changed, 880 insertions(+), 13 deletions(-)",
+    "head": "0cac37b0",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "0cac37b0",
+    "status_short": "M scripts/swebench_pro_batch_driver.py\n M tests/test_swebench_pro_batch_driver.py\n?? docs/dual-agent/phase0-curation-hardening-20260709/\n?? docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/scale-prereg-20260629-amendment-1.json\n?? docs/pocock-skills-intake-20260709.md"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "9ccde3ae427f9df52bfb4e387f8b6cb35000100ec97a58b150dc26ecec007b8f",
+    "implementation_plan": "ed335db99dd6bce76112e92ba35b37ee74b44cf4e9dd56ef204fdfb95cb0c636",
+    "issues": "1322ebf6878c9ec914c9461b37a4755689fb7e01b7b44a915bad21ce70cf6a28",
+    "prd": "0db1639156713d9f4ad3d22596ba73e16d2f6dd898e54a4522422d75615e273c",
+    "tdd_plan": "a710847bc45bb9af2222c201bfb3f23aa449495ed9cc596f11501f49ee33f425"
+  },
+  "status": "captured"
+}
