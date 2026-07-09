@@ -1,14 +1,14 @@
 {
-  "file_tree_sha256": "388775f4596718da4fcf0560e3594452415546d735719132b3f7c9e94c11a733",
+  "file_tree_sha256": "c8295329e27dab1f9ad22446d5455b1621cbc1103b9cffa795817ad3ade11ad6",
   "git": {
-    "diff_bytes": 39587,
-    "diff_sha256": "aeda39135bf1e6d40b73ff3beb9d078ebd8b2755444ce0e01b621f5d256cc488",
-    "diff_stat": "scripts/swebench_pro_batch_driver.py    | 552 +++++++++++++++++++++++++++++++-\n tests/test_swebench_pro_batch_driver.py | 341 ++++++++++++++++++++\n 2 files changed, 880 insertions(+), 13 deletions(-)",
-    "head": "0cac37b0",
+    "diff_bytes": 1611990,
+    "diff_sha256": "b0a0d01927d995160ceca4bbe2a7cebe4460b307d23b105249c629aa522dc431",
+    "diff_stat": ".../grill-findings.md                              |    1 +\n .../phase0-curation-hardening-20260709/index.md    |    6 +-\n .../interactions.md                                | 1297 +++++++++++++++++++\n .../mast-coverage.md                               |    4 +-\n .../replay/manifest.json                           |  184 ++-\n .../replay/mast-coverage.json                      |   33 +\n .../replay/workspace-snapshot.json                 |   14 +-\n .../transcript.jsonl                               |   31 +\n .../transcript.md                                  | 1344 ++++++++++++++++++++\n .../phase0-curation-hardening-20260709/triage.md   |   28 +-\n 10 files changed, 2877 insertions(+), 65 deletions(-)",
+    "head": "3cf74b8d",
     "head_label": "handoff_cwd_head",
     "head_ref": "HEAD",
-    "head_sha": "0cac37b0",
-    "status_short": "M scripts/swebench_pro_batch_driver.py\n M tests/test_swebench_pro_batch_driver.py\n?? docs/dual-agent/phase0-curation-hardening-20260709/\n?? docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/scale-prereg-20260629-amendment-1.json\n?? docs/pocock-skills-intake-20260709.md"
+    "head_sha": "3cf74b8d",
+    "status_short": "M docs/dual-agent/phase0-curation-hardening-20260709/grill-findings.md\n M docs/dual-agent/phase0-curation-hardening-20260709/index.md\n M docs/dual-agent/phase0-curation-hardening-20260709/interactions.md\n M docs/dual-agent/phase0-curation-hardening-20260709/mast-coverage.md\n M docs/dual-agent/phase0-curation-hardening-20260709/replay/manifest.json\n M docs/dual-agent/phase0-curation-hardening-20260709/replay/mast-coverage.json\n M docs/dual-agent/phase0-curation-hardening-20260709/replay/workspace-snapshot.json\n M docs/dual-agent/phase0-curation-hardening-20260709/transcript.jsonl\n M docs/dual-agent/phase0-curation-hardening-20260709/transcript.md\n M docs/dual-agent/phase0-curation-hardening-20260709/triage.md\n?? docs/pocock-skills-intake-20260709.md"
   },
   "root": "/Users/sam.zhang/Documents/codex-supervisor",
   "root_source": "handoff_cwd",

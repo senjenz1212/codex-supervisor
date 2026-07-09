@@ -130,6 +130,19 @@
           1108808
         ],
         "source": "sequence"
+      },
+      {
+        "details": {
+          "signature": [
+            "outcome_review",
+            "/Users/sam.zhang/Documents/codex-supervisor/.handoff/phase0-curation-hardening-20260709.json"
+          ]
+        },
+        "event_ids": [
+          1108356,
+          1109101
+        ],
+        "source": "sequence"
       }
     ],
     "status": "observed_in_run",
@@ -257,6 +270,26 @@
         "event_ids": [
           1108590,
           1108611
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "independent_reviewer_non_accept: independent-reviewer-1"
+        },
+        "event_ids": [
+          1108803,
+          1109100
+        ],
+        "source": "sequence"
+      },
+      {
+        "details": {
+          "objection": "gate blocked"
+        },
+        "event_ids": [
+          1108813,
+          1109100
         ],
         "source": "sequence"
       }

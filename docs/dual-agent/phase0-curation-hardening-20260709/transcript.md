@@ -8365,3 +8365,1450 @@ All required probes, claim receipts, and optional Cursor review accept.
 
 - policy_verdict: `observed`
 - failure_taxonomy: `None`
+
+## event_id: 1108818
+
+- ts: `1783622266`
+- kind: `dual_agent_workflow_terminal_outcome`
+- gate: `unknown`
+- status: `blocked`
+- attempts: `None`
+- handoff_packet_path: `None`
+
+### Supervisor Block
+
+Claude Code was not invoked.
+
+- reason: `blocked`
+
+### Probes
+
+- None recorded.
+
+### Artifact Rigor
+
+- None recorded.
+
+### Trace Envelope
+
+- policy_verdict: `blocked`
+- failure_category: `system_design`
+- failure_subcategory: `resource_contention`
+- failure_code: `blocked_without_probe_reason`
+- mast_code: ``
+- mast_mode: ``
+- mast_category: ``
+
+## event_id: 1109027
+
+- ts: `1783622652`
+- kind: `dual_agent_workflow_job`
+- gate: `unknown`
+- status: `submitted`
+- attempts: `None`
+- handoff_packet_path: `None`
+
+### Supervisor Block
+
+Claude Code was not invoked.
+
+- reason: `submitted`
+
+### Probes
+
+- None recorded.
+
+### Artifact Rigor
+
+- None recorded.
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+## event_id: 1109053
+
+- ts: `1783622694`
+- kind: `dual_agent_workflow_job`
+- gate: `unknown`
+- status: `submitted`
+- attempts: `None`
+- handoff_packet_path: `None`
+
+### Supervisor Block
+
+Claude Code was not invoked.
+
+- reason: `submitted`
+
+### Probes
+
+- None recorded.
+
+### Artifact Rigor
+
+- None recorded.
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+## event_id: 1109054
+
+- ts: `1783622694`
+- kind: `dual_agent_workflow_job`
+- gate: `unknown`
+- status: `running`
+- attempts: `None`
+- handoff_packet_path: `None`
+
+### Supervisor Block
+
+Claude Code was not invoked.
+
+- reason: `running`
+
+### Probes
+
+- None recorded.
+
+### Artifact Rigor
+
+- None recorded.
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+## event_id: 1109055
+
+- ts: `1783622694`
+- kind: `dual_agent_workflow_route`
+- gate: `unknown`
+- status: `None`
+- attempts: `None`
+- handoff_packet_path: `None`
+
+### Supervisor Block
+
+Claude Code was not invoked.
+
+- reason: `unknown`
+
+### Probes
+
+- None recorded.
+
+### Artifact Rigor
+
+- None recorded.
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+## event_id: 1109057
+
+- ts: `1783622694`
+- kind: `dual_agent_skill_receipt_validation`
+- gate: `workflow_start`
+- status: `accepted`
+
+### Skill Receipt Validation
+
+- probe_id: `P12`
+- status: `green`
+- reason: `prd_tdd_skill_receipts_verified`
+
+Details:
+
+`{"observed_stages": ["prd_grill", "tdd", "tdd_grill", "to_issues", "to_prd"], "receipts": [{"artifacts": ["docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings.md"], "claims": ["PRD grill findings resolved final-artifact coverage, corrupt checkpoint distrust, clean disk-floor evidence, measurable image pruning, prereg immutability, and unchanged benchmark authority."], "kind": "skill_run", "receipt_id": "skill_run:phase0-curation-hardening-20260709:prd_grill", "skill": "grill-with-docs", "stage": "prd_grill", "status": "passed"}, {"artifacts": ["docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md"], "claims": ["TDD plan names public-boundary RED/GREEN cycles for atomic writes, checkpoints, resume verification, disk-floor exits, image-prune telemetry, prereg amendment validation, and unchanged authority checks."], "kind": "skill_run", "receipt_id": "skill_run:phase0-curation-hardening-20260709:tdd", "skill": "tdd", "stage": "tdd", "status": "passed"}, {"artifacts": ["docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings-tdd.md"], "claims": ["TDD grill findings resolved public-boundary artifact outcomes, oracle-boundary discipline, resume skip and rerun proof, nonzero disk-floor exits, final-hash amendment timing, and named test coverage."], "kind": "skill_run", "receipt_id": "skill_run:phase0-curation-hardening-20260709:tdd_grill", "skill": "grill-with-docs", "stage": "tdd_grill", "status": "passed"}, {"artifacts": ["docs/dual-agent/phase0-curation-hardening-20260709/source/issues.md"], "claims": ["Issues sliced into vertical tracer bullets covering atomic final artifacts, checkpoint receipts, checkpoint resume, disk floor and prune telemetry, and append-only prereg amendment."], "kind": "skill_run", "receipt_id": "skill_run:phase0-curation-hardening-20260709:to_issues", "skill": "to-issues", "stage": "to_issues", "status": "passed"}, {"artifacts": ["docs/dual-agent/phase0-curation-hardening-20260709/source/prd.md"], "claims": ["PRD authored with promise contracts for atomic artifacts, checkpoint receipts, resume verification, disk-floor halts, image-prune telemetry, append-only prereg amendment, and unchanged benchmark authority."], "kind": "skill_run", "receipt_id": "skill_run:phase0-curation-hardening-20260709:to_prd", "skill": "prd-to-tdd", "stage": "to_prd", "status": "passed"}], "required_stages": ["to_prd", "prd_grill", "to_issues", "tdd", "tdd_grill"]}`
+
+### Trace Envelope
+
+- policy_verdict: `accepted`
+- failure_taxonomy: `None`
+
+## event_id: 1109059
+
+- ts: `1783622694`
+- kind: `supervisor_policy_overlay_snapshot`
+- gate: `outcome_review`
+- status: `None`
+- attempts: `None`
+- handoff_packet_path: `None`
+
+### Supervisor Block
+
+Claude Code was not invoked.
+
+- reason: `unknown`
+
+### Probes
+
+- None recorded.
+
+### Artifact Rigor
+
+- None recorded.
+
+## event_id: 1109060
+
+- ts: `1783622694`
+- kind: `supervisor_lesson_injection`
+- gate: `outcome_review`
+- status: `None`
+- attempts: `None`
+- handoff_packet_path: `None`
+
+### Supervisor Block
+
+Claude Code was not invoked.
+
+- reason: `unknown`
+
+### Probes
+
+- None recorded.
+
+### Artifact Rigor
+
+- None recorded.
+
+## event_id: 1109061
+
+- event_id: `1109061`
+- ts: `1783622694`
+- kind: `dual_agent_planning_validation`
+- gate: `outcome_review`
+- interaction_type: `planning_validation`
+- gate: `outcome_review`
+- validator_version: `1.1.0`
+- verdict: `accepted`
+
+### Checks
+
+- AGG-001: pass
+- AGG-002: pass
+- GRILL-001: pass
+- GRILL-002: pass
+- GRILL-003: pass
+- ISS-001: pass
+- ISS-002: pass
+- ISS-003: pass
+- ISS-004: pass
+- PLAN-001: pass
+- PLAN-002: pass
+- PLAN-003: pass
+- PLAN-004: pass
+- PRD-001: pass
+- PRD-002: pass
+- PRD-003: pass
+- PRD-004: pass
+- PRD-005: pass
+- PRD-006: pass
+- RUBRIC-001: pass
+- TDD-001: pass
+- TDD-002: pass
+- TDD-003: pass
+- TDD-004: pass
+
+### Artifacts
+
+- {"kind": "prd", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/phase0-curation-hardening-20260709/source/prd.md", "sha256": "0db1639156713d9f4ad3d22596ba73e16d2f6dd898e54a4522422d75615e273c", "status": "accepted"}
+- {"kind": "issues", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/phase0-curation-hardening-20260709/source/issues.md", "sha256": "1322ebf6878c9ec914c9461b37a4755689fb7e01b7b44a915bad21ce70cf6a28", "status": "accepted"}
+- {"kind": "tdd_plan", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md", "sha256": "a710847bc45bb9af2222c201bfb3f23aa449495ed9cc596f11501f49ee33f425", "status": "accepted"}
+- {"kind": "grill_findings", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings.md", "sha256": "b43dbe55b044e9617bf4edb873a118f7382a4f26b056dedbdbb59160d6e19b7d", "status": "accepted"}
+- {"kind": "implementation_plan", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/phase0-curation-hardening-20260709/source/implementation-plan.md", "sha256": "ed335db99dd6bce76112e92ba35b37ee74b44cf4e9dd56ef204fdfb95cb0c636", "status": "accepted"}
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| validate_planning_artifacts#1783622694587#4630 |  |  | validate_planning_artifacts | green | 4 | 4630 |  |  | P_planning |  | {"artifact_count": 12, "gate": "outcome_review", "planning_rubric_threshold": 0.6, "planning_rubric_unavailable_policy": "block", "required_kinds": ["grill_findings", "implementation_plan", "issues", "prd", "tdd_plan"], "task_id": "phase0-curation-hardening-20260709"} | {"probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"} |  |
+
+## event_id: 1109062
+
+- ts: `1783622694`
+- kind: `dual_agent_interaction_message`
+- gate: `outcome_review`
+- interaction_type: `gate_request`
+- message_type: `gate_request`
+- sender: `codex`
+- recipient: `claude_code`
+- round_index: `None`
+- persona_id: `codex.lifecycle_reviewer`
+- addresses: `event:1109061`, `handoff:/Users/sam.zhang/Documents/codex-supervisor/.handoff/phase0-curation-hardening-20260709.json`
+
+### Message
+
+Supervisor-owned workflow gate: outcome_review.
+
+Intent:
+Make Phase 0 curation crash-safe: atomic artifacts, checkpoint resume, disk floor, image-level pruning, and an append-only prereg amendment.
+
+Review this gate against the current source artifacts and return a typed dual_agent_outcome.
+Use decisions/objections to say whether the gate should accept, revise, or deny.
+
+Runtime TDD test contract:
+The supervisor runtime floor will verify that every TDD-named test below appears in supervisor-generated runtime evidence. Include tests/commands covering all of them in outcome.tests. Explicitly skipped tests must carry a recorded pytest skip reason; silently absent tests block the gate.
+Use only canonical gate decisions (`accept`, `revise`, or `deny`). Do not return `accept_with_residual`; if test execution needs verification, declare the exact pytest commands/nodeids and let the supervisor runtime floor rerun them.
+If the Claude Bash/test tool is unavailable but the implementation diff is complete, do not block solely on that local tooling outage. Return `accept` with test_status=`unknown`, list the exact pytest commands/nodeids, and make no tests-passed claim; the supervisor runtime floor is the authority and will block the gate on failing or missing tests.
+- test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure
+- test_atomic_final_json_write_never_leaves_zero_byte_artifact
+- test_checkpoint_receipt_written_after_each_dry_oracle_instance
+- test_checkpoint_write_enospc_halts_with_blocked_execution_receipt
+- test_resume_skips_verified_completed_checkpoints
+- test_resume_reruns_tampered_checkpoint_receipt
+- test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero
+- test_disk_floor_above_threshold_allows_curation_to_proceed
+- test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes
+- test_container_only_prune_default_is_rejected_by_default_config
+- test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged
+- test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged
+
+Known failure modes to verify before claiming
+These are advisory lessons from previous supervisor runs. They do not satisfy any gate by themselves.
+Use them as a checklist only: do not block, revise, deny, or accept solely because a lesson exists. A step-repetition lesson applies only when current evidence proves the same handoff, artifacts, and source state are being repeated.
+1. [lead_invocation_timeout] worker_invocation (source_run_id=s2-rollback-r4): Verify this known failure mode explicitly before claiming the gate is complete.
+2. [missing_worker_signal] worker_invocation (source_run_id=cffe55b8-47b9-4cc0-b025-586aeb0ee5e9): Verify this known failure mode explicitly before claiming the gate is complete.
+3. [FM-2.4] Information withholding (source_run_id=8ebdbc89-0185-4962-be6f-b0f593887670): Address independent reviewer objections with concrete evidence references.
+4. [FM-1.3] Step repetition (source_run_id=8ebdbc89-0185-4962-be6f-b0f593887670): Change the plan or evidence before retrying; do not repeat the same handoff.
+5. [FM-2.4] Information withholding (source_run_id=f89bc699-1b4e-4713-95b7-d1493a3acfd8): Address independent reviewer objections with concrete evidence references.
+
+### Confidence
+
+- value: `None`
+- source: `None`
+- rationale: None recorded.
+
+### Criteria
+
+- None recorded.
+
+### Evidence
+
+- None recorded.
+
+### Claims
+
+- None recorded.
+
+### Objections
+
+- None recorded.
+
+### Questions
+
+- None recorded.
+
+### Critical Review
+
+`{}`
+
+### Tool Receipts
+
+- None recorded.
+
+### Evidence Refs
+
+- None recorded.
+
+### Raw Transcript Refs
+
+- None recorded.
+
+### Would Change If
+
+None recorded.
+
+### Review Packet
+
+`{}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| validate_planning_artifacts#1783622694587#4630 |  |  | validate_planning_artifacts | green | 4 | 4630 |  |  | P_planning |  | {"artifact_count": 12, "gate": "outcome_review", "planning_rubric_threshold": 0.6, "planning_rubric_unavailable_policy": "block", "required_kinds": ["grill_findings", "implementation_plan", "issues", "prd", "tdd_plan"], "task_id": "phase0-curation-hardening-20260709"} | {"probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"} |  |
+| write_handoff_packet#1783622694593#2477 |  |  | write_handoff_packet | completed | 2 | 2477 |  |  |  |  | {"artifact_count": 12, "gate": "outcome_review", "task_id": "phase0-curation-hardening-20260709"} | {"artifact_count": 12, "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/phase0-curation-hardening-20260709.json"} |  |
+
+## event_id: 1109100
+
+- ts: `1783622811`
+- kind: `dual_agent_interaction_message`
+- gate: `outcome_review`
+- interaction_type: `gate_response`
+- message_type: `gate_response`
+- sender: `claude_code`
+- recipient: `codex`
+- round_index: `None`
+- persona_id: `claude_code.lead_worker`
+- addresses: `event:1109062`, `handoff:/Users/sam.zhang/Documents/codex-supervisor/.handoff/phase0-curation-hardening-20260709.json`
+
+### Message
+
+Phase 0 curation crash-safety committed at HEAD 3cf74b8d: atomic JSON writes (_atomic_write_text:145/_atomic_write_json:168 replace= injection), Phase0CleanHalt:94, checkpoint resume+tamper (_verify_checkpoint:361, resumed_from_checkpoint_count:609/629/758), disk floor halt (:486/:492), image-reclaiming prune default (DEFAULT_DOCKER_PRUNE_COMMAND:59, _is_image_reclaiming_prune_command:548, _run_prune:876), and self-verifying append-only prereg amendment. All 12 TDD tests present at lines 74/90/103/134/169/219/258/282/306/330/335/363. Accept; runtime floor is test authority.
+
+### Confidence
+
+- value: `0.84`
+- source: `claude_code_self_reported`
+- rationale: Committed diff, all 12 tests, and all source seams verified by direct git/read/grep; amendment test proven self-verifying. Held below 0.9 only because local pytest/shasum are approval-blocked so runtime pass/fail is unconfirmed - runtime floor is authority.
+
+### Criteria
+
+- 12/12 TDD test defs present at expected lines: met
+- source seams for each feature present in committed driver: met
+- amendment test self-verifies file hashes at runtime: met
+- local pytest execution: not met (approval-blocked)
+- source state distinct from prior gate (committed vs uncommitted): met
+
+### Evidence
+
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged
+- scripts/swebench_pro_batch_driver.py
+- tests/test_swebench_pro_batch_driver.py
+- docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/scale-prereg-20260629-amendment-1.json
+- accept
+
+### Claims
+
+- All 12 TDD-named tests are present and non-vacuous in the committed test file
+- Source seams backing every test exist in committed scripts/swebench_pro_batch_driver.py
+- Amendment hash test is runtime self-verifying, not merely hardcoded
+- No tests-passed claim is made; local execution was tool-blocked
+
+### Objections
+
+- None recorded.
+
+### Questions
+
+- None recorded.
+
+### Critical Review
+
+`{"assumptions_to_verify": ["Runtime floor will execute the 12 nodeids and confirm green", "Committed file hashes still match the values asserted in the amendment JSON"], "contradictions_checked": ["Prior outcome_review was uncommitted-at-0cac37b0; current is committed-at-3cf74b8d \u2014 verified via git log/show, so this is not FM-1.3 step repetition", "Amendment file existence: confirmed committed (159L in git show --stat), not an absent-referenced artifact like the swebench-verified-replay REVISE case", "Test lines match prior memory exactly, confirming no silent regression on commit"], "decision": "accept", "evidence_refs": [], "missing_evidence": ["local pytest pass/fail for the 12 nodeids (approval-blocked)", "local shasum confirmation of the 3 committed file hashes (approval-blocked)"], "schema_version": "critical-review/v1", "severity": "low", "strongest_objection": "The amendment test @335 asserts new_sha256 values against current files; if a later edit drifted any file after the amendment was written, the hardcoded base prereg pin (701d7717) plus per-file recompute would fail \u2014 but with local shasum blocked I cannot pre-confirm freshness, only that the test structurally re-derives hashes at runtime.", "what_would_change_my_mind": "Runtime floor reporting any of the 12 nodeids as failed or absent, or the amendment self-verification failing due to post-amendment file drift."}`
+
+### Tool Receipts
+
+- None recorded.
+
+### Evidence Refs
+
+- {"kind": "reported_test", "ref": "python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "status": "unknown"}
+- {"kind": "reported_test", "ref": "python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact", "status": "unknown"}
+- {"kind": "reported_test", "ref": "python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance", "status": "unknown"}
+- {"kind": "reported_test", "ref": "python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "status": "unknown"}
+- {"kind": "reported_test", "ref": "python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints", "status": "unknown"}
+- {"kind": "reported_test", "ref": "python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt", "status": "unknown"}
+- {"kind": "reported_test", "ref": "python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "status": "unknown"}
+- {"kind": "reported_test", "ref": "python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed", "status": "unknown"}
+- {"kind": "reported_test", "ref": "python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "status": "unknown"}
+- {"kind": "reported_test", "ref": "python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config", "status": "unknown"}
+- {"kind": "reported_test", "ref": "python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "status": "unknown"}
+- {"kind": "reported_test", "ref": "python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged", "status": "unknown"}
+- {"kind": "reported_changed_file", "ref": "scripts/swebench_pro_batch_driver.py"}
+- {"kind": "reported_changed_file", "ref": "tests/test_swebench_pro_batch_driver.py"}
+- {"kind": "reported_changed_file", "ref": "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/scale-prereg-20260629-amendment-1.json"}
+
+### Raw Transcript Refs
+
+- {"bytes": 8436, "kind": "claude_stdout", "ref": "lead_result.stdout"}
+- {"kind": "claude_handoff_packet", "ref": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/phase0-curation-hardening-20260709.json"}
+
+### Would Change If
+
+A subsequent gate response changes the typed outcome, or supervisor probes reject this response.
+
+### Review Packet
+
+`{}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| invoke_claude_lead#1783622694598#116540770 |  |  | invoke_claude_lead | completed | 116540 | 116540770 | 489528 | 8337 | P3 |  | {"attempt": 1, "budget_usd": 100.0, "corrective_retry": false, "dynamic_workflow_task_class": null, "execution_layer_mode": "lead_direct", "expected_decisions": [], "expected_objections": [], "expected_specialists": [], "explicit_model": null, "gate": "outcome_review", "model": "opus", "model_source": "quality_default:best", "quality": "best", "requested_model": "opus", "task_id": "phase0-curation-hardening-20260709", "timeout_s": 900} | {"cost_usd": 2.869173, "model": "opus", "outcome_present": true, "probe_id": "P3", "probe_reason": "outcome_fidelity_ok", "probe_status": "green", "stderr_bytes": 0, "stdout_bytes": 8436, "tokens_in": 489528, "tokens_out": 8337} |  |
+| evaluate_worker_invocation#1783622811137#75 | invoke_claude_lead#1783622694598#116540770 |  | evaluate_worker_invocation | green | 0 | 75 |  |  | P2 |  | {"gate": "outcome_review", "probe_id": "P2", "task_id": "phase0-curation-hardening-20260709"} | {"probe_id": "P2", "reason": "worker_orchestration_invocation_ok", "status": "green"} |  |
+| evaluate_outcome_fidelity#1783622811137#0 | invoke_claude_lead#1783622694598#116540770 |  | evaluate_outcome_fidelity | green | 0 | 0 |  |  | P3 |  | {"gate": "outcome_review", "probe_id": "P3", "task_id": "phase0-curation-hardening-20260709"} | {"probe_id": "P3", "reason": "outcome_fidelity_ok", "status": "green"} |  |
+| verify_planning_artifact_boundaries#1783622811137#2452 | invoke_claude_lead#1783622694598#116540770 |  | verify_planning_artifact_boundaries | green | 2 | 2452 |  |  | P1 |  | {"gate": "outcome_review", "handoff_packet_path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/phase0-curation-hardening-20260709.json", "probe_id": "P1", "task_id": "phase0-curation-hardening-20260709"} | {"probe_id": "P1", "reason": "planning_artifact_boundaries_ok", "status": "green"} |  |
+| evaluate_outcome_gate_decision#1783622811140#777 | invoke_claude_lead#1783622694598#116540770 |  | evaluate_outcome_gate_decision | green | 0 | 777 |  |  | P4 |  | {"gate": "outcome_review", "probe_id": "P4", "task_id": "phase0-curation-hardening-20260709"} | {"probe_id": "P4", "reason": "outcome_gate_decision_ok", "status": "green"} |  |
+
+## event_id: 1109101
+
+- ts: `1783622811`
+- kind: `dual_agent_gate_result`
+- gate: `outcome_review`
+- status: `accepted`
+- attempts: `1`
+- handoff_packet_path: `/Users/sam.zhang/Documents/codex-supervisor/.handoff/phase0-curation-hardening-20260709.json`
+
+### Summary
+
+Phase 0 curation crash-safety committed at HEAD 3cf74b8d: atomic JSON writes (_atomic_write_text:145/_atomic_write_json:168 replace= injection), Phase0CleanHalt:94, checkpoint resume+tamper (_verify_checkpoint:361, resumed_from_checkpoint_count:609/629/758), disk floor halt (:486/:492), image-reclaiming prune default (DEFAULT_DOCKER_PRUNE_COMMAND:59, _is_image_reclaiming_prune_command:548, _run_prune:876), and self-verifying append-only prereg amendment. All 12 TDD tests present at lines 74/90/103/134/169/219/258/282/306/330/335/363. Accept; runtime floor is test authority.
+
+### Decisions
+
+- accept
+
+### Objections
+
+- None recorded.
+
+### Specialists
+
+- `lead`: `accept`
+
+### Tests
+
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged
+
+### Claims
+
+- All 12 TDD-named tests are present and non-vacuous in the committed test file
+- Source seams backing every test exist in committed scripts/swebench_pro_batch_driver.py
+- Amendment hash test is runtime self-verifying, not merely hardcoded
+- No tests-passed claim is made; local execution was tool-blocked
+
+### Probes
+
+- `P1`: `green` / `planning_artifact_boundaries_ok`
+- `P2`: `green` / `worker_orchestration_invocation_ok`
+- `P3`: `green` / `outcome_fidelity_ok`
+- `P4`: `green` / `outcome_gate_decision_ok`
+- `P_planning`: `green` / `planning_validation_ok`
+
+### Artifact Rigor
+
+- status: `ok`
+- reason: `required_artifacts_present`
+- artifact_policy: `strict`
+- required_artifacts: `prd`, `tdd_plan`, `grill_findings`, `issues`, `implementation_plan`
+- present_artifacts: `grill_findings`, `implementation_plan`, `issues`, `prd`, `tdd_plan`
+- missing_artifacts: `[]`
+- missing_artifact_paths: `[]`
+- required_prerequisite_gates: `execution`
+- accepted_prerequisite_gates: `execution`
+- missing_prerequisite_gates: `[]`
+- gate_statuses: `{"execution": "accepted", "implementation_plan": "accepted", "issues_review": "accepted", "outcome_review": "blocked", "prd_review": "accepted", "tdd_review": "accepted"}`
+- user_facing: `False`
+- screenshots: `[]`
+- missing_screenshot_paths: `[]`
+- visual_validation: `{"allowed_sources": ["browser", "browser-use", "browser_use", "computer", "computer-use", "computer_use"], "evidence": [], "failures": [], "reason": "no_screenshots_supplied", "status": "not_required"}`
+
+### Trace Envelope
+
+- policy_verdict: `accepted`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| start_dual_agent_gate#1783622694587#116564977 |  |  | start_dual_agent_gate | completed | 116564 | 116564977 |  |  |  |  | {"agentic_lead_policy": "off", "artifact_policy": "strict", "dynamic_workflow_task_class": null, "execution_layer_mode": "lead_direct", "gate": "outcome_review", "min_subagents": 3, "planning_artifact_count": 12, "required_evidence_grade": "self_reported", "required_roles": [], "screenshot_count": 0, "task_id": "phase0-curation-hardening-20260709", "user_facing": false} | {"claude_gate_status": "accepted", "probe_statuses": {"P1": "green", "P2": "green", "P3": "green", "P4": "green", "P_planning": "green"}, "supervisor_final_status": "accepted"} |  |
+| invoke_claude_lead#1783622811150#0 | start_dual_agent_gate#1783622694587#116564977 |  | invoke_claude_lead | completed | 0 | 0 | 489528 | 8337 |  |  | {"gate": "outcome_review", "task_id": "phase0-curation-hardening-20260709"} | {"outcome_present": true, "probe_reason": "outcome_fidelity_ok", "probe_status": "green", "tokens_in": 489528, "tokens_out": 8337} |  |
+| probe_p2#1783622811150#0#p2 | invoke_claude_lead#1783622811150#0 |  | probe:P2 | green | 0 | 0 |  |  | P2 |  | {"probe_id": "P2"} | {"probe_id": "P2", "reason": "worker_orchestration_invocation_ok", "status": "green"} |  |
+| probe_p3#1783622811150#0#p3 | invoke_claude_lead#1783622811150#0 |  | probe:P3 | green | 0 | 0 |  |  | P3 |  | {"probe_id": "P3"} | {"probe_id": "P3", "reason": "outcome_fidelity_ok", "status": "green"} |  |
+| probe_p1#1783622811150#0#p1 | invoke_claude_lead#1783622811150#0 |  | probe:P1 | green | 0 | 0 |  |  | P1 |  | {"probe_id": "P1"} | {"probe_id": "P1", "reason": "planning_artifact_boundaries_ok", "status": "green"} |  |
+| probe_p4#1783622811150#0#p4 | invoke_claude_lead#1783622811150#0 |  | probe:P4 | green | 0 | 0 |  |  | P4 |  | {"probe_id": "P4"} | {"probe_id": "P4", "reason": "outcome_gate_decision_ok", "status": "green"} |  |
+| probe_p_planning#1783622811150#0#p_planning | invoke_claude_lead#1783622811150#0 |  | probe:P_planning | green | 0 | 0 |  |  | P_planning |  | {"probe_id": "P_planning"} | {"probe_id": "P_planning", "reason": "planning_validation_ok", "status": "green"} |  |
+
+## event_id: 1109113
+
+- ts: `1783622847`
+- kind: `dual_agent_runtime_evidence`
+- gate: `outcome_review`
+- status: `None`
+- attempts: `None`
+- handoff_packet_path: `None`
+
+### Supervisor Block
+
+Claude Code was not invoked.
+
+- reason: `unknown`
+
+### Probes
+
+- None recorded.
+
+### Artifact Rigor
+
+- None recorded.
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+## event_id: 1109114
+
+- ts: `1783622848`
+- kind: `supervisor_worker_roster_checked`
+- gate: `outcome_review`
+- status: `None`
+- attempts: `None`
+- handoff_packet_path: `None`
+
+### Supervisor Block
+
+Claude Code was not invoked.
+
+- reason: `unknown`
+
+### Probes
+
+- None recorded.
+
+### Artifact Rigor
+
+- None recorded.
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+## event_id: 1109115
+
+- ts: `1783622849`
+- kind: `supervisor_cross_vendor_review_selected`
+- gate: `outcome_review`
+- status: `None`
+- attempts: `None`
+- handoff_packet_path: `None`
+
+### Supervisor Block
+
+Claude Code was not invoked.
+
+- reason: `unknown`
+
+### Probes
+
+- None recorded.
+
+### Artifact Rigor
+
+- None recorded.
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+## event_id: 1109116
+
+- ts: `1783622849`
+- kind: `supervisor_review_packet_created`
+- gate: `outcome_review`
+- status: `None`
+- attempts: `None`
+- handoff_packet_path: `None`
+
+### Supervisor Block
+
+Claude Code was not invoked.
+
+- reason: `unknown`
+
+### Probes
+
+- None recorded.
+
+### Artifact Rigor
+
+- None recorded.
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+## event_id: 1109117
+
+- ts: `1783622849`
+- kind: `dual_agent_interaction_message`
+- gate: `outcome_review`
+- interaction_type: `review_request`
+- message_type: `review_request`
+- sender: `codex`
+- recipient: `cursor`
+- round_index: `1`
+- persona_id: `codex.lifecycle_reviewer`
+- addresses: `handoff:/Users/sam.zhang/Documents/codex-supervisor/.handoff/phase0-curation-hardening-20260709.json`
+
+### Message
+
+Independently review the outcome_review gate for this tri-agent workflow.
+Accept only if the gate should advance after reading the artifacts and Claude outcome.
+Critical review: before accepting, try to disprove the Claude outcome and gate evidence. Identify the strongest reason this should not advance, missing evidence, contradictions checked, assumptions to verify, and what would change your decision. Keep this concise and auditable; do not include private chain-of-thought.
+Return the structured critical_review object in the typed outcome.
+
+Intent:
+Make Phase 0 curation crash-safe: atomic artifacts, checkpoint resume, disk floor, image-level pruning, and an append-only prereg amendment.
+
+### Confidence
+
+- value: `None`
+- source: `None`
+- rationale: None recorded.
+
+### Criteria
+
+- None recorded.
+
+### Evidence
+
+- None recorded.
+
+### Claims
+
+- All 12 TDD-named tests are present and non-vacuous in the committed test file
+- Source seams backing every test exist in committed scripts/swebench_pro_batch_driver.py
+- Amendment hash test is runtime self-verifying, not merely hardcoded
+- No tests-passed claim is made; local execution was tool-blocked
+- decision:accept
+
+### Objections
+
+- None recorded.
+
+### Questions
+
+- Do the planning artifacts, Claude outcome, and evidence receipts justify advancing this gate?
+
+### Critical Review
+
+`{"assumptions_to_verify": ["Runtime floor will execute the 12 nodeids and confirm green", "Committed file hashes still match the values asserted in the amendment JSON"], "contradictions_checked": ["Prior outcome_review was uncommitted-at-0cac37b0; current is committed-at-3cf74b8d \u2014 verified via git log/show, so this is not FM-1.3 step repetition", "Amendment file existence: confirmed committed (159L in git show --stat), not an absent-referenced artifact like the swebench-verified-replay REVISE case", "Test lines match prior memory exactly, confirming no silent regression on commit"], "decision": "accept", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:to_prd", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:prd_grill", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:to_issues", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:tdd", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:tdd_grill", "status": "passed"}, {"kind": "runtime_baseline", "ref": "receipt:runtime-baseline-outcome_review-1", "status": "passed"}, {"kind": "git_diff", "ref": "receipt:runtime-git-diff-outcome_review-1", "status": "present"}, {"kind": "runtime_deliverable_check", "ref": "receipt:runtime-deliverables-outcome_review-1", "status": "passed"}, {"kind": "test", "ref": "receipt:runtime-tests-outcome_review-1", "status": "passed"}, {"kind": "runtime_tdd_test_coverage", "ref": "receipt:runtime-tdd-coverage-outcome_review-1", "status": "passed"}], "missing_evidence": ["local pytest pass/fail for the 12 nodeids (approval-blocked)", "local shasum confirmation of the 3 committed file hashes (approval-blocked)"], "schema_version": "critical-review/v1", "severity": "low", "strongest_objection": "The amendment test @335 asserts new_sha256 values against current files; if a later edit drifted any file after the amendment was written, the hardcoded base prereg pin (701d7717) plus per-file recompute would fail \u2014 but with local shasum blocked I cannot pre-confirm freshness, only that the test structurally re-derives hashes at runtime.", "what_would_change_my_mind": "Runtime floor reporting any of the 12 nodeids as failed or absent, or the amendment self-verification failing due to post-amendment file drift."}`
+
+### Tool Receipts
+
+- {"artifacts": ["docs/dual-agent/phase0-curation-hardening-20260709/source/prd.md"], "claims": ["PRD authored with promise contracts for atomic artifacts, checkpoint receipts, resume verification, disk-floor halts, image-prune telemetry, append-only prereg amendment, and unchanged benchmark authority."], "kind": "skill_run", "receipt_id": "skill_run:phase0-curation-hardening-20260709:to_prd", "skill": "prd-to-tdd", "stage": "to_prd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings.md"], "claims": ["PRD grill findings resolved final-artifact coverage, corrupt checkpoint distrust, clean disk-floor evidence, measurable image pruning, prereg immutability, and unchanged benchmark authority."], "kind": "skill_run", "receipt_id": "skill_run:phase0-curation-hardening-20260709:prd_grill", "skill": "grill-with-docs", "stage": "prd_grill", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/phase0-curation-hardening-20260709/source/issues.md"], "claims": ["Issues sliced into vertical tracer bullets covering atomic final artifacts, checkpoint receipts, checkpoint resume, disk floor and prune telemetry, and append-only prereg amendment."], "kind": "skill_run", "receipt_id": "skill_run:phase0-curation-hardening-20260709:to_issues", "skill": "to-issues", "stage": "to_issues", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md"], "claims": ["TDD plan names public-boundary RED/GREEN cycles for atomic writes, checkpoints, resume verification, disk-floor exits, image-prune telemetry, prereg amendment validation, and unchanged authority checks."], "kind": "skill_run", "receipt_id": "skill_run:phase0-curation-hardening-20260709:tdd", "skill": "tdd", "stage": "tdd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings-tdd.md"], "claims": ["TDD grill findings resolved public-boundary artifact outcomes, oracle-boundary discipline, resume skip and rerun proof, nonzero disk-floor exits, final-hash amendment timing, and named test coverage."], "kind": "skill_run", "receipt_id": "skill_run:phase0-curation-hardening-20260709:tdd_grill", "skill": "grill-with-docs", "stage": "tdd_grill", "status": "passed"}
+- {"_supervisor_runtime_evidence": true, "baseline_head": "0cac37b0d3ffa19fdb4cdeca91681bb18975bc07", "captured_at": 1783620707.3366861, "changed_files": [], "claims": [], "evidence_grade": "runtime_native", "gate": "outcome_review", "kind": "runtime_baseline", "reason": "persisted_execution_baseline", "receipt_id": "runtime-baseline-outcome_review-1", "source": "supervisor", "status": "passed", "supervisor_runtime_origin": "collect_runtime_evidence"}
+- {"_supervisor_runtime_evidence": true, "actual_changed_files": ["docs/dual-agent/phase0-curation-hardening-20260709/grill-findings-tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/grill-findings.md", "docs/dual-agent/phase0-curation-hardening-20260709/index.md", "docs/dual-agent/phase0-curation-hardening-20260709/interactions.md", "docs/dual-agent/phase0-curation-hardening-20260709/issues.md", "docs/dual-agent/phase0-curation-hardening-20260709/mast-coverage.md", "docs/dual-agent/phase0-curation-hardening-20260709/outcome-review.md", "docs/dual-agent/phase0-curation-hardening-20260709/prd.md", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/planning-artifacts.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/prd_grill.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tdd.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tdd_grill.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/to_issues.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/to_prd.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tool-receipts.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/manifest.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/mast-coverage.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/workspace-snapshot.json", "docs/dual-agent/phase0-curation-hardening-20260709/runtime-baseline-execution.json", "docs/dual-agent/phase0-curation-hardening-20260709/screenshots.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings-tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/implementation-plan.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/issues.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/prd.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/transcript.jsonl", "docs/dual-agent/phase0-curation-hardening-20260709/transcript.md", "docs/dual-agent/phase0-curation-hardening-20260709/triage.md", "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/scale-prereg-20260629-amendment-1.json", "docs/pocock-skills-intake-20260709.md", "scripts/swebench_pro_batch_driver.py", "tests/test_swebench_pro_batch_driver.py"], "baseline_head": "0cac37b0d3ffa19fdb4cdeca91681bb18975bc07", "changed_files": ["docs/dual-agent/phase0-curation-hardening-20260709/grill-findings-tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/grill-findings.md", "docs/dual-agent/phase0-curation-hardening-20260709/index.md", "docs/dual-agent/phase0-curation-hardening-20260709/interactions.md", "docs/dual-agent/phase0-curation-hardening-20260709/issues.md", "docs/dual-agent/phase0-curation-hardening-20260709/mast-coverage.md", "docs/dual-agent/phase0-curation-hardening-20260709/outcome-review.md", "docs/dual-agent/phase0-curation-hardening-20260709/prd.md", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/planning-artifacts.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/prd_grill.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tdd.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tdd_grill.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/to_issues.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/to_prd.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tool-receipts.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/manifest.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/mast-coverage.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/workspace-snapshot.json", "docs/dual-agent/phase0-curation-hardening-20260709/runtime-baseline-execution.json", "docs/dual-agent/phase0-curation-hardening-20260709/screenshots.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings-tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/implementation-plan.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/issues.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/prd.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/transcript.jsonl", "docs/dual-agent/phase0-curation-hardening-20260709/transcript.md", "docs/dual-agent/phase0-curation-hardening-20260709/triage.md", "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/scale-prereg-20260629-amendment-1.json", "docs/pocock-skills-intake-20260709.md", "scripts/swebench_pro_batch_driver.py", "tests/test_swebench_pro_batch_driver.py"], "claims": ["implemented"], "committed_changed_files": ["docs/dual-agent/phase0-curation-hardening-20260709/grill-findings-tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/grill-findings.md", "docs/dual-agent/phase0-curation-hardening-20260709/index.md", "docs/dual-agent/phase0-curation-hardening-20260709/interactions.md", "docs/dual-agent/phase0-curation-hardening-20260709/issues.md", "docs/dual-agent/phase0-curation-hardening-20260709/mast-coverage.md", "docs/dual-agent/phase0-curation-hardening-20260709/outcome-review.md", "docs/dual-agent/phase0-curation-hardening-20260709/prd.md", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/planning-artifacts.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/prd_grill.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tdd.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tdd_grill.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/to_issues.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/to_prd.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tool-receipts.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/manifest.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/mast-coverage.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/workspace-snapshot.json", "docs/dual-agent/phase0-curation-hardening-20260709/runtime-baseline-execution.json", "docs/dual-agent/phase0-curation-hardening-20260709/screenshots.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings-tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/implementation-plan.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/issues.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/prd.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/transcript.jsonl", "docs/dual-agent/phase0-curation-hardening-20260709/transcript.md", "docs/dual-agent/phase0-curation-hardening-20260709/triage.md", "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/scale-prereg-20260629-amendment-1.json", "scripts/swebench_pro_batch_driver.py", "tests/test_swebench_pro_batch_driver.py"], "declared_changed_files": ["scripts/swebench_pro_batch_driver.py", "tests/test_swebench_pro_batch_driver.py", "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/scale-prereg-20260629-amendment-1.json"], "derived_changed_files_from_runtime": false, "evidence_grade": "runtime_native", "extra_actual_files": ["docs/dual-agent/phase0-curation-hardening-20260709/grill-findings-tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/grill-findings.md", "docs/dual-agent/phase0-curation-hardening-20260709/index.md", "docs/dual-agent/phase0-curation-hardening-20260709/interactions.md", "docs/dual-agent/phase0-curation-hardening-20260709/issues.md", "docs/dual-agent/phase0-curation-hardening-20260709/mast-coverage.md", "docs/dual-agent/phase0-curation-hardening-20260709/outcome-review.md", "docs/dual-agent/phase0-curation-hardening-20260709/prd.md", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/planning-artifacts.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/prd_grill.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tdd.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tdd_grill.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/to_issues.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/to_prd.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tool-receipts.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/manifest.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/mast-coverage.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/workspace-snapshot.json", "docs/dual-agent/phase0-curation-hardening-20260709/runtime-baseline-execution.json", "docs/dual-agent/phase0-curation-hardening-20260709/screenshots.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings-tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/implementation-plan.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/issues.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/prd.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/transcript.jsonl", "docs/dual-agent/phase0-curation-hardening-20260709/transcript.md", "docs/dual-agent/phase0-curation-hardening-20260709/triage.md", "docs/pocock-skills-intake-20260709.md"], "gate": "outcome_review", "kind": "git_diff", "missing_from_diff": [], "name_status": [{"path": "docs/dual-agent/phase0-curation-hardening-20260709/index.md", "source": "worktree", "status": "M"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/interactions.md", "source": "worktree", "status": "M"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/mast-coverage.md", "source": "worktree", "status": "M"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/replay/manifest.json", "source": "worktree", "status": "M"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/replay/mast-coverage.json", "source": "worktree", "status": "M"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/replay/workspace-snapshot.json", "source": "worktree", "status": "M"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/transcript.jsonl", "source": "worktree", "status": "M"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/transcript.md", "source": "worktree", "status": "M"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/triage.md", "source": "worktree", "status": "M"}, {"path": "docs/pocock-skills-intake-20260709.md", "source": "worktree", "status": "??"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/grill-findings-tdd.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/grill-findings.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/index.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/interactions.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/issues.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/mast-coverage.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/outcome-review.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/prd.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/receipts/planning-artifacts.json", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/receipts/prd_grill.json", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tdd.json", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tdd_grill.json", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/receipts/to_issues.json", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/receipts/to_prd.json", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tool-receipts.json", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/replay/manifest.json", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/replay/mast-coverage.json", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/replay/workspace-snapshot.json", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/runtime-baseline-execution.json", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/screenshots.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings-tdd.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/source/implementation-plan.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/source/issues.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/source/prd.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/tdd.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/transcript.jsonl", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/transcript.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/triage.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/scale-prereg-20260629-amendment-1.json", "source": "committed_since_baseline", "status": "A"}, {"path": "scripts/swebench_pro_batch_driver.py", "source": "committed_since_baseline", "status": "M"}, {"path": "tests/test_swebench_pro_batch_driver.py", "source": "committed_since_baseline", "status": "M"}], "reason": "git_status_and_committed_diff_captured", "receipt_id": "runtime-git-diff-outcome_review-1", "source": "supervisor", "status": "present", "supervisor_runtime_origin": "collect_runtime_evidence", "worktree_changed_files": ["docs/dual-agent/phase0-curation-hardening-20260709/index.md", "docs/dual-agent/phase0-curation-hardening-20260709/interactions.md", "docs/dual-agent/phase0-curation-hardening-20260709/mast-coverage.md", "docs/dual-agent/phase0-curation-hardening-20260709/replay/manifest.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/mast-coverage.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/workspace-snapshot.json", "docs/dual-agent/phase0-curation-hardening-20260709/transcript.jsonl", "docs/dual-agent/phase0-curation-hardening-20260709/transcript.md", "docs/dual-agent/phase0-curation-hardening-20260709/triage.md", "docs/pocock-skills-intake-20260709.md"]}
+- {"_supervisor_runtime_evidence": true, "changed_files": ["scripts/swebench_pro_batch_driver.py", "tests/test_swebench_pro_batch_driver.py", "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/scale-prereg-20260629-amendment-1.json"], "checks": [{"path": "scripts/swebench_pro_batch_driver.py", "reason": "runtime_deliverable_present", "size": 50752, "status": "passed"}, {"path": "tests/test_swebench_pro_batch_driver.py", "reason": "runtime_deliverable_present", "size": 28872, "status": "passed"}, {"path": "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/scale-prereg-20260629-amendment-1.json", "reason": "runtime_deliverable_present", "size": 7367, "status": "passed"}], "claims": [], "evidence_grade": "runtime_native", "gate": "outcome_review", "kind": "runtime_deliverable_check", "receipt_id": "runtime-deliverables-outcome_review-1", "source": "supervisor", "status": "passed", "supervisor_runtime_origin": "collect_runtime_evidence"}
+- {"_supervisor_runtime_evidence": true, "changed_files": [], "claims": ["tests passed"], "commands": ["/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged"], "evidence_grade": "runtime_native", "executed_pytest_targets": ["tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact", "tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config", "tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged", "tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt", "tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints"], "gate": "outcome_review", "isolated_worktree": true, "isolation_strategy": "copytree_current_worktree", "kind": "test", "passed_pytest_targets": ["tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact", "tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config", "tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged", "tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt", "tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints"], "receipt_id": "runtime-tests-outcome_review-1", "results": [{"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-0.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "duration_ms": 3145, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-0.xml -\n============================== 1 passed in 0.26s ===============================\n"}, {"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-1.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact", "duration_ms": 494, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-1.xml -\n============================== 1 passed in 0.25s ===============================\n"}, {"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-2.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance", "duration_ms": 488, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-2.xml -\n============================== 1 passed in 0.25s ===============================\n"}, {"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-3.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "duration_ms": 495, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-3.xml -\n============================== 1 passed in 0.26s ===============================\n"}, {"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-4.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints", "duration_ms": 577, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-4.xml -\n============================== 1 passed in 0.35s ===============================\n"}, {"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-5.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt", "duration_ms": 517, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-5.xml -\n============================== 1 passed in 0.27s ===============================\n"}, {"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-6.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "duration_ms": 483, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-6.xml -\n============================== 1 passed in 0.25s ===============================\n"}, {"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-7.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed", "duration_ms": 498, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-7.xml -\n============================== 1 passed in 0.26s ===============================\n"}, {"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-8.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "duration_ms": 480, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-8.xml -\n============================== 1 passed in 0.24s ===============================\n"}, {"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-9.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config", "duration_ms": 466, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-9.xml -\n============================== 1 passed in 0.25s ===============================\n"}, {"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-10.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "duration_ms": 506, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-10.xml -\n============================== 1 passed in 0.27s ===============================\n"}, {"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-11.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged", "duration_ms": 481, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-11.xml -\n============================== 1 passed in 0.26s ===============================\n"}], "skipped_pytest_target_reasons": {}, "skipped_pytest_targets": [], "source": "supervisor", "status": "passed", "supervisor_runtime_origin": "collect_runtime_evidence"}
+- {"_supervisor_runtime_evidence": true, "ambiguous_names": {}, "changed_files": [], "claims": [], "covered_nodeids": ["tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact", "tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config", "tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged", "tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt", "tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints"], "declared_test_names": ["test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "test_atomic_final_json_write_never_leaves_zero_byte_artifact", "test_checkpoint_receipt_written_after_each_dry_oracle_instance", "test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "test_resume_skips_verified_completed_checkpoints", "test_resume_reruns_tampered_checkpoint_receipt", "test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "test_disk_floor_above_threshold_allows_curation_to_proceed", "test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "test_container_only_prune_default_is_rejected_by_default_config", "test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged"], "evidence_grade": "runtime_native", "executed_nodeids": ["tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact", "tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config", "tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged", "tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt", "tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints"], "failures": [], "gate": "outcome_review", "kind": "runtime_tdd_test_coverage", "missing_nodeids": [], "receipt_id": "runtime-tdd-coverage-outcome_review-1", "resolved_nodeids": ["tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact", "tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config", "tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged", "tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt", "tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints"], "skipped_nodeid_reasons": {}, "skipped_nodeids": [], "skipped_without_reason_nodeids": [], "source": "supervisor", "status": "passed", "supervisor_runtime_origin": "collect_runtime_evidence", "tdd_artifacts": [{"kind": "tdd_plan", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md"}, {"kind": "tdd_plan", "path": "docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md"}], "unresolved_names": []}
+
+### Evidence Refs
+
+- {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:to_prd", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:prd_grill", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:to_issues", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:tdd", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:tdd_grill", "status": "passed"}
+- {"kind": "runtime_baseline", "ref": "receipt:runtime-baseline-outcome_review-1", "status": "passed"}
+- {"kind": "git_diff", "ref": "receipt:runtime-git-diff-outcome_review-1", "status": "present"}
+- {"kind": "runtime_deliverable_check", "ref": "receipt:runtime-deliverables-outcome_review-1", "status": "passed"}
+- {"kind": "test", "ref": "receipt:runtime-tests-outcome_review-1", "status": "passed"}
+- {"kind": "runtime_tdd_test_coverage", "ref": "receipt:runtime-tdd-coverage-outcome_review-1", "status": "passed"}
+
+### Raw Transcript Refs
+
+- {"kind": "claude_handoff_packet", "ref": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/phase0-curation-hardening-20260709.json"}
+- {"count": 12, "kind": "claude_reported_tests", "ref": "outcome.tests"}
+
+### Would Change If
+
+Cursor finds an unresolved blocker, missing receipt, or contradiction in the evidence.
+
+### Review Packet
+
+`{"acceptance_items": ["test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "test_atomic_final_json_write_never_leaves_zero_byte_artifact", "test_checkpoint_receipt_written_after_each_dry_oracle_instance", "test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "test_resume_skips_verified_completed_checkpoints", "test_resume_reruns_tampered_checkpoint_receipt", "test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "test_disk_floor_above_threshold_allows_curation_to_proceed", "test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "test_container_only_prune_default_is_rejected_by_default_config", "test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged"], "base_head": "0cac37b0d3ffa19fdb4cdeca91681bb18975bc07", "candidate_head": "3cf74b8d97918d84b59fdb732cc4d2398ed2671c", "changed_files": [{"path": "scripts/swebench_pro_batch_driver.py", "sha256": "43697a1a4a18599906dfc5e420579f0aa4c8522d3a16f1fbc00bdfb08e9fc271", "status": "M"}, {"path": "tests/test_swebench_pro_batch_driver.py", "sha256": "68e2f8b7d4d8c0929a0f875755fb1ec967e9d343041cb4637dc245980283a860", "status": "M"}], "declared_tests": ["test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "test_atomic_final_json_write_never_leaves_zero_byte_artifact", "test_checkpoint_receipt_written_after_each_dry_oracle_instance", "test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "test_resume_skips_verified_completed_checkpoints", "test_resume_reruns_tampered_checkpoint_receipt", "test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "test_disk_floor_above_threshold_allows_curation_to_proceed", "test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "test_container_only_prune_default_is_rejected_by_default_config", "test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged"], "dependency_refs": [], "diff_refs": ["runtime-git-diff-outcome_review-1"], "executed_test_receipt_ids": [{"kind": "test", "receipt_id": "runtime-tests-outcome_review-1"}], "gate": "outcome_review", "implementer_transcript_ref": null, "lesson_hashes": [], "name_status_refs": ["runtime-git-diff-outcome_review-1:name_status"], "packet_id": "review-packet-outcome_review-1", "packet_sha256": "0edbf554de412069c4cda127fe6079a3fa4364020404aab14550e052c8e6e8a5", "patch_hash": "4da83be0736214f5df35ef108512cb97f697c1387a2f6019f3eb245f8ff5a6fc", "planning_refs": [{"kind": "prd", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/phase0-curation-hardening-20260709/source/prd.md", "sha256": "0db1639156713d9f4ad3d22596ba73e16d2f6dd898e54a4522422d75615e273c"}, {"kind": "grill_findings", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings.md", "sha256": "b43dbe55b044e9617bf4edb873a118f7382a4f26b056dedbdbb59160d6e19b7d"}, {"kind": "issues", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/phase0-curation-hardening-20260709/source/issues.md", "sha256": "1322ebf6878c9ec914c9461b37a4755689fb7e01b7b44a915bad21ce70cf6a28"}, {"kind": "tdd_plan", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md", "sha256": "a710847bc45bb9af2222c201bfb3f23aa449495ed9cc596f11501f49ee33f425"}, {"kind": "grill_findings", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings-tdd.md", "sha256": "9ccde3ae427f9df52bfb4e387f8b6cb35000100ec97a58b150dc26ecec007b8f"}, {"kind": "implementation_plan", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/phase0-curation-hardening-20260709/source/implementation-plan.md", "sha256": "ed335db99dd6bce76112e92ba35b37ee74b44cf4e9dd56ef204fdfb95cb0c636"}, {"kind": "implementation_plan", "path": "docs/dual-agent/phase0-curation-hardening-20260709/source/implementation-plan.md", "sha256": "ed335db99dd6bce76112e92ba35b37ee74b44cf4e9dd56ef204fdfb95cb0c636"}, {"kind": "prd", "path": "docs/dual-agent/phase0-curation-hardening-20260709/source/prd.md", "sha256": "0db1639156713d9f4ad3d22596ba73e16d2f6dd898e54a4522422d75615e273c"}, {"kind": "grill_findings", "path": "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings.md", "sha256": "b43dbe55b044e9617bf4edb873a118f7382a4f26b056dedbdbb59160d6e19b7d"}, {"kind": "issues", "path": "docs/dual-agent/phase0-curation-hardening-20260709/source/issues.md", "sha256": "1322ebf6878c9ec914c9461b37a4755689fb7e01b7b44a915bad21ce70cf6a28"}, {"kind": "tdd_plan", "path": "docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md", "sha256": "a710847bc45bb9af2222c201bfb3f23aa449495ed9cc596f11501f49ee33f425"}, {"kind": "grill_findings", "path": "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings-tdd.md", "sha256": "9ccde3ae427f9df52bfb4e387f8b6cb35000100ec97a58b150dc26ecec007b8f"}], "policy_overlay_hash": "", "reviewer_ids": ["independent-reviewer-0", "independent-reviewer-1"], "run_id": "b8a0d9a4-78a3-4391-963b-bc5fef493010", "runtime_receipt_ids": [{"kind": "runtime_baseline", "receipt_id": "runtime-baseline-outcome_review-1"}, {"kind": "git_diff", "receipt_id": "runtime-git-diff-outcome_review-1"}, {"kind": "runtime_deliverable_check", "receipt_id": "runtime-deliverables-outcome_review-1"}, {"kind": "test", "receipt_id": "runtime-tests-outcome_review-1"}, {"kind": "runtime_tdd_test_coverage", "receipt_id": "runtime-tdd-coverage-outcome_review-1"}], "schema_version": "supervisor-review-packet/v1", "task_id": "phase0-curation-hardening-20260709", "validation": {"failures": [], "status": "passed"}}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+## event_id: 1109118
+
+- ts: `1783622849`
+- kind: `supervisor_worker_session_created`
+- gate: `outcome_review`
+- status: `session_created`
+- attempts: `None`
+- handoff_packet_path: `None`
+
+### Supervisor Block
+
+Claude Code was not invoked.
+
+- reason: `session_created`
+
+### Probes
+
+- None recorded.
+
+### Artifact Rigor
+
+- None recorded.
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+## event_id: 1109119
+
+- ts: `1783622849`
+- kind: `supervisor_worker_dispatched`
+- gate: `outcome_review`
+- status: `dispatched`
+- attempts: `None`
+- handoff_packet_path: `None`
+
+### Supervisor Block
+
+Claude Code was not invoked.
+
+- reason: `dispatched`
+
+### Probes
+
+- None recorded.
+
+### Artifact Rigor
+
+- None recorded.
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+## event_id: 1109133
+
+- ts: `1783622899`
+- kind: `supervisor_evidence_attempt_recorded`
+- gate: `outcome_review`
+- status: `None`
+- attempts: `None`
+- handoff_packet_path: `None`
+
+### Supervisor Block
+
+Claude Code was not invoked.
+
+- reason: `unknown`
+
+### Probes
+
+- None recorded.
+
+### Artifact Rigor
+
+- None recorded.
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+## event_id: 1109134
+
+- ts: `1783622899`
+- kind: `supervisor_worker_completed`
+- gate: `outcome_review`
+- status: `completed`
+- attempts: `None`
+- handoff_packet_path: `None`
+
+### Supervisor Block
+
+Claude Code was not invoked.
+
+- reason: `completed`
+
+### Probes
+
+- None recorded.
+
+### Artifact Rigor
+
+- None recorded.
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+## event_id: 1109135
+
+- ts: `1783622899`
+- kind: `supervisor_worker_session_created`
+- gate: `outcome_review`
+- status: `session_created`
+- attempts: `None`
+- handoff_packet_path: `None`
+
+### Supervisor Block
+
+Claude Code was not invoked.
+
+- reason: `session_created`
+
+### Probes
+
+- None recorded.
+
+### Artifact Rigor
+
+- None recorded.
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+## event_id: 1109136
+
+- ts: `1783622899`
+- kind: `supervisor_worker_dispatched`
+- gate: `outcome_review`
+- status: `dispatched`
+- attempts: `None`
+- handoff_packet_path: `None`
+
+### Supervisor Block
+
+Claude Code was not invoked.
+
+- reason: `dispatched`
+
+### Probes
+
+- None recorded.
+
+### Artifact Rigor
+
+- None recorded.
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+## event_id: 1109297
+
+- ts: `1783623086`
+- kind: `supervisor_evidence_attempt_recorded`
+- gate: `outcome_review`
+- status: `None`
+- attempts: `None`
+- handoff_packet_path: `None`
+
+### Supervisor Block
+
+Claude Code was not invoked.
+
+- reason: `unknown`
+
+### Probes
+
+- None recorded.
+
+### Artifact Rigor
+
+- None recorded.
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+## event_id: 1109298
+
+- ts: `1783623086`
+- kind: `supervisor_worker_completed`
+- gate: `outcome_review`
+- status: `completed`
+- attempts: `None`
+- handoff_packet_path: `None`
+
+### Supervisor Block
+
+Claude Code was not invoked.
+
+- reason: `completed`
+
+### Probes
+
+- None recorded.
+
+### Artifact Rigor
+
+- None recorded.
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+## event_id: 1109299
+
+- ts: `1783623086`
+- kind: `supervisor_review_context_validation`
+- gate: `outcome_review`
+- status: `None`
+- attempts: `None`
+- handoff_packet_path: `None`
+
+### Supervisor Block
+
+Claude Code was not invoked.
+
+- reason: `unknown`
+
+### Probes
+
+- None recorded.
+
+### Artifact Rigor
+
+- None recorded.
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+## event_id: 1109300
+
+- ts: `1783623086`
+- kind: `supervisor_review_context_validation`
+- gate: `outcome_review`
+- status: `None`
+- attempts: `None`
+- handoff_packet_path: `None`
+
+### Supervisor Block
+
+Claude Code was not invoked.
+
+- reason: `unknown`
+
+### Probes
+
+- None recorded.
+
+### Artifact Rigor
+
+- None recorded.
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+## event_id: 1109301
+
+- ts: `1783623086`
+- kind: `dual_agent_interaction_message`
+- gate: `outcome_review`
+- interaction_type: `review_response`
+- message_type: `review_response`
+- sender: `cursor`
+- recipient: `codex`
+- round_index: `1`
+- persona_id: `cursor.independent_reviewer`
+- addresses: `event:1109117`
+
+### Message
+
+Independent verification at HEAD 3cf74b8d: all 12 TDD acceptance tests pass in full repo; driver/test SHA256s match packet; amendment committed and self-verifies. Sparse reviewer worktree missing pro-corpus artifacts caused 11/12 locally but full-repo rerun confirms green. Accept gate advance.
+
+### Confidence
+
+- value: `0.88`
+- source: `cursor_self_reported`
+- rationale: Independently executed 12/12 pytest nodeids green in full repo at candidate HEAD; file hashes match packet and amendment JSON; held below 0.9 because reviewer worktree is sparse (amendment test fails there) and FM-1.3 step-repetition history shows multiple prior outcome_review rounds.
+
+### Criteria
+
+- 12/12 TDD tests pass in full repo at 3cf74b8d: met
+- Driver and test SHA256 match review packet: met
+- Amendment deliverable committed and self-verifying test passes: met
+- Implementation seams for all six PRD promises present in driver: met
+- Sparse worktree amendment test failure explained by missing artifacts not code defect: met
+
+### Evidence
+
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged
+- python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged
+- scripts/swebench_pro_batch_driver.py
+- tests/test_swebench_pro_batch_driver.py
+- docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/scale-prereg-20260629-amendment-1.json
+- accept
+
+### Claims
+
+- All 12 acceptance tests pass when executed against full handoff repo at candidate HEAD
+- Changed file SHA256s match supervisor review packet exactly
+- Amendment JSON is committed in diff 0cac37b0..3cf74b8d and passes runtime self-verification
+- Reviewer worktree 11/12 result is environmental not implementation failure
+
+### Objections
+
+- None recorded.
+
+### Questions
+
+- None recorded.
+
+### Critical Review
+
+`{"assumptions_to_verify": ["Full handoff repo is authoritative execution context for runtime floor", "Base prereg scale-prereg-20260629.json remains byte-identical at 701d7717"], "contradictions_checked": ["Claude test_status unknown vs runtime-tests passed: resolved by independent 12/12 green in full repo", "FM-1.3 step repetition: prior rounds were uncommitted at 0cac37b0; current commit 3cf74b8d is new evidence state", "Prior runtime_deliverable_not_file objection: amendment now in commit diff"], "decision": "accept", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:to_prd", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:prd_grill", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:to_issues", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:tdd", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:tdd_grill", "status": "passed"}, {"kind": "runtime_baseline", "ref": "receipt:runtime-baseline-outcome_review-1", "status": "passed"}, {"kind": "git_diff", "ref": "receipt:runtime-git-diff-outcome_review-1", "status": "present"}, {"kind": "runtime_deliverable_check", "ref": "receipt:runtime-deliverables-outcome_review-1", "status": "passed"}, {"kind": "test", "ref": "receipt:runtime-tests-outcome_review-1", "status": "passed"}, {"kind": "runtime_tdd_test_coverage", "ref": "receipt:runtime-tdd-coverage-outcome_review-1", "status": "passed"}], "missing_evidence": ["Amendment file not present in sparse reviewer worktree (verified only via full repo path)", "Sibling Cursor/cursor_sdk gate receipt not in this review packet", "batch-driver-pin-20260629.json update not independently hash-verified"], "schema_version": "critical-review/v1", "severity": "low", "strongest_objection": "Sparse reviewer worktree lacks pro-corpus prereg artifacts causing amendment test FileNotFoundError (11/12 pass locally); could indicate missing deliverable like prior REVISE case.", "what_would_change_my_mind": "Any of the 12 nodeids failing in full repo, amendment new_sha256 mismatch with on-disk driver/test files, or base prereg byte mutation."}`
+
+### Tool Receipts
+
+- {"artifacts": ["docs/dual-agent/phase0-curation-hardening-20260709/source/prd.md"], "claims": ["PRD authored with promise contracts for atomic artifacts, checkpoint receipts, resume verification, disk-floor halts, image-prune telemetry, append-only prereg amendment, and unchanged benchmark authority."], "kind": "skill_run", "receipt_id": "skill_run:phase0-curation-hardening-20260709:to_prd", "skill": "prd-to-tdd", "stage": "to_prd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings.md"], "claims": ["PRD grill findings resolved final-artifact coverage, corrupt checkpoint distrust, clean disk-floor evidence, measurable image pruning, prereg immutability, and unchanged benchmark authority."], "kind": "skill_run", "receipt_id": "skill_run:phase0-curation-hardening-20260709:prd_grill", "skill": "grill-with-docs", "stage": "prd_grill", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/phase0-curation-hardening-20260709/source/issues.md"], "claims": ["Issues sliced into vertical tracer bullets covering atomic final artifacts, checkpoint receipts, checkpoint resume, disk floor and prune telemetry, and append-only prereg amendment."], "kind": "skill_run", "receipt_id": "skill_run:phase0-curation-hardening-20260709:to_issues", "skill": "to-issues", "stage": "to_issues", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md"], "claims": ["TDD plan names public-boundary RED/GREEN cycles for atomic writes, checkpoints, resume verification, disk-floor exits, image-prune telemetry, prereg amendment validation, and unchanged authority checks."], "kind": "skill_run", "receipt_id": "skill_run:phase0-curation-hardening-20260709:tdd", "skill": "tdd", "stage": "tdd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings-tdd.md"], "claims": ["TDD grill findings resolved public-boundary artifact outcomes, oracle-boundary discipline, resume skip and rerun proof, nonzero disk-floor exits, final-hash amendment timing, and named test coverage."], "kind": "skill_run", "receipt_id": "skill_run:phase0-curation-hardening-20260709:tdd_grill", "skill": "grill-with-docs", "stage": "tdd_grill", "status": "passed"}
+- {"_supervisor_runtime_evidence": true, "baseline_head": "0cac37b0d3ffa19fdb4cdeca91681bb18975bc07", "captured_at": 1783620707.3366861, "changed_files": [], "claims": [], "evidence_grade": "runtime_native", "gate": "outcome_review", "kind": "runtime_baseline", "reason": "persisted_execution_baseline", "receipt_id": "runtime-baseline-outcome_review-1", "source": "supervisor", "status": "passed", "supervisor_runtime_origin": "collect_runtime_evidence"}
+- {"_supervisor_runtime_evidence": true, "actual_changed_files": ["docs/dual-agent/phase0-curation-hardening-20260709/grill-findings-tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/grill-findings.md", "docs/dual-agent/phase0-curation-hardening-20260709/index.md", "docs/dual-agent/phase0-curation-hardening-20260709/interactions.md", "docs/dual-agent/phase0-curation-hardening-20260709/issues.md", "docs/dual-agent/phase0-curation-hardening-20260709/mast-coverage.md", "docs/dual-agent/phase0-curation-hardening-20260709/outcome-review.md", "docs/dual-agent/phase0-curation-hardening-20260709/prd.md", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/planning-artifacts.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/prd_grill.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tdd.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tdd_grill.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/to_issues.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/to_prd.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tool-receipts.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/manifest.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/mast-coverage.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/workspace-snapshot.json", "docs/dual-agent/phase0-curation-hardening-20260709/runtime-baseline-execution.json", "docs/dual-agent/phase0-curation-hardening-20260709/screenshots.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings-tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/implementation-plan.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/issues.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/prd.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/transcript.jsonl", "docs/dual-agent/phase0-curation-hardening-20260709/transcript.md", "docs/dual-agent/phase0-curation-hardening-20260709/triage.md", "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/scale-prereg-20260629-amendment-1.json", "docs/pocock-skills-intake-20260709.md", "scripts/swebench_pro_batch_driver.py", "tests/test_swebench_pro_batch_driver.py"], "baseline_head": "0cac37b0d3ffa19fdb4cdeca91681bb18975bc07", "changed_files": ["docs/dual-agent/phase0-curation-hardening-20260709/grill-findings-tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/grill-findings.md", "docs/dual-agent/phase0-curation-hardening-20260709/index.md", "docs/dual-agent/phase0-curation-hardening-20260709/interactions.md", "docs/dual-agent/phase0-curation-hardening-20260709/issues.md", "docs/dual-agent/phase0-curation-hardening-20260709/mast-coverage.md", "docs/dual-agent/phase0-curation-hardening-20260709/outcome-review.md", "docs/dual-agent/phase0-curation-hardening-20260709/prd.md", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/planning-artifacts.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/prd_grill.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tdd.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tdd_grill.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/to_issues.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/to_prd.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tool-receipts.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/manifest.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/mast-coverage.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/workspace-snapshot.json", "docs/dual-agent/phase0-curation-hardening-20260709/runtime-baseline-execution.json", "docs/dual-agent/phase0-curation-hardening-20260709/screenshots.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings-tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/implementation-plan.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/issues.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/prd.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/transcript.jsonl", "docs/dual-agent/phase0-curation-hardening-20260709/transcript.md", "docs/dual-agent/phase0-curation-hardening-20260709/triage.md", "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/scale-prereg-20260629-amendment-1.json", "docs/pocock-skills-intake-20260709.md", "scripts/swebench_pro_batch_driver.py", "tests/test_swebench_pro_batch_driver.py"], "claims": ["implemented"], "committed_changed_files": ["docs/dual-agent/phase0-curation-hardening-20260709/grill-findings-tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/grill-findings.md", "docs/dual-agent/phase0-curation-hardening-20260709/index.md", "docs/dual-agent/phase0-curation-hardening-20260709/interactions.md", "docs/dual-agent/phase0-curation-hardening-20260709/issues.md", "docs/dual-agent/phase0-curation-hardening-20260709/mast-coverage.md", "docs/dual-agent/phase0-curation-hardening-20260709/outcome-review.md", "docs/dual-agent/phase0-curation-hardening-20260709/prd.md", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/planning-artifacts.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/prd_grill.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tdd.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tdd_grill.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/to_issues.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/to_prd.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tool-receipts.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/manifest.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/mast-coverage.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/workspace-snapshot.json", "docs/dual-agent/phase0-curation-hardening-20260709/runtime-baseline-execution.json", "docs/dual-agent/phase0-curation-hardening-20260709/screenshots.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings-tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/implementation-plan.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/issues.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/prd.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/transcript.jsonl", "docs/dual-agent/phase0-curation-hardening-20260709/transcript.md", "docs/dual-agent/phase0-curation-hardening-20260709/triage.md", "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/scale-prereg-20260629-amendment-1.json", "scripts/swebench_pro_batch_driver.py", "tests/test_swebench_pro_batch_driver.py"], "declared_changed_files": ["scripts/swebench_pro_batch_driver.py", "tests/test_swebench_pro_batch_driver.py", "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/scale-prereg-20260629-amendment-1.json"], "derived_changed_files_from_runtime": false, "evidence_grade": "runtime_native", "extra_actual_files": ["docs/dual-agent/phase0-curation-hardening-20260709/grill-findings-tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/grill-findings.md", "docs/dual-agent/phase0-curation-hardening-20260709/index.md", "docs/dual-agent/phase0-curation-hardening-20260709/interactions.md", "docs/dual-agent/phase0-curation-hardening-20260709/issues.md", "docs/dual-agent/phase0-curation-hardening-20260709/mast-coverage.md", "docs/dual-agent/phase0-curation-hardening-20260709/outcome-review.md", "docs/dual-agent/phase0-curation-hardening-20260709/prd.md", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/planning-artifacts.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/prd_grill.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tdd.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tdd_grill.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/to_issues.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/to_prd.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tool-receipts.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/manifest.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/mast-coverage.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/workspace-snapshot.json", "docs/dual-agent/phase0-curation-hardening-20260709/runtime-baseline-execution.json", "docs/dual-agent/phase0-curation-hardening-20260709/screenshots.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings-tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/implementation-plan.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/issues.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/prd.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/transcript.jsonl", "docs/dual-agent/phase0-curation-hardening-20260709/transcript.md", "docs/dual-agent/phase0-curation-hardening-20260709/triage.md", "docs/pocock-skills-intake-20260709.md"], "gate": "outcome_review", "kind": "git_diff", "missing_from_diff": [], "name_status": [{"path": "docs/dual-agent/phase0-curation-hardening-20260709/index.md", "source": "worktree", "status": "M"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/interactions.md", "source": "worktree", "status": "M"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/mast-coverage.md", "source": "worktree", "status": "M"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/replay/manifest.json", "source": "worktree", "status": "M"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/replay/mast-coverage.json", "source": "worktree", "status": "M"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/replay/workspace-snapshot.json", "source": "worktree", "status": "M"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/transcript.jsonl", "source": "worktree", "status": "M"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/transcript.md", "source": "worktree", "status": "M"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/triage.md", "source": "worktree", "status": "M"}, {"path": "docs/pocock-skills-intake-20260709.md", "source": "worktree", "status": "??"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/grill-findings-tdd.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/grill-findings.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/index.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/interactions.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/issues.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/mast-coverage.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/outcome-review.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/prd.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/receipts/planning-artifacts.json", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/receipts/prd_grill.json", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tdd.json", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tdd_grill.json", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/receipts/to_issues.json", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/receipts/to_prd.json", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tool-receipts.json", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/replay/manifest.json", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/replay/mast-coverage.json", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/replay/workspace-snapshot.json", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/runtime-baseline-execution.json", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/screenshots.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings-tdd.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/source/implementation-plan.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/source/issues.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/source/prd.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/tdd.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/transcript.jsonl", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/transcript.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/triage.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/scale-prereg-20260629-amendment-1.json", "source": "committed_since_baseline", "status": "A"}, {"path": "scripts/swebench_pro_batch_driver.py", "source": "committed_since_baseline", "status": "M"}, {"path": "tests/test_swebench_pro_batch_driver.py", "source": "committed_since_baseline", "status": "M"}], "reason": "git_status_and_committed_diff_captured", "receipt_id": "runtime-git-diff-outcome_review-1", "source": "supervisor", "status": "present", "supervisor_runtime_origin": "collect_runtime_evidence", "worktree_changed_files": ["docs/dual-agent/phase0-curation-hardening-20260709/index.md", "docs/dual-agent/phase0-curation-hardening-20260709/interactions.md", "docs/dual-agent/phase0-curation-hardening-20260709/mast-coverage.md", "docs/dual-agent/phase0-curation-hardening-20260709/replay/manifest.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/mast-coverage.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/workspace-snapshot.json", "docs/dual-agent/phase0-curation-hardening-20260709/transcript.jsonl", "docs/dual-agent/phase0-curation-hardening-20260709/transcript.md", "docs/dual-agent/phase0-curation-hardening-20260709/triage.md", "docs/pocock-skills-intake-20260709.md"]}
+- {"_supervisor_runtime_evidence": true, "changed_files": ["scripts/swebench_pro_batch_driver.py", "tests/test_swebench_pro_batch_driver.py", "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/scale-prereg-20260629-amendment-1.json"], "checks": [{"path": "scripts/swebench_pro_batch_driver.py", "reason": "runtime_deliverable_present", "size": 50752, "status": "passed"}, {"path": "tests/test_swebench_pro_batch_driver.py", "reason": "runtime_deliverable_present", "size": 28872, "status": "passed"}, {"path": "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/scale-prereg-20260629-amendment-1.json", "reason": "runtime_deliverable_present", "size": 7367, "status": "passed"}], "claims": [], "evidence_grade": "runtime_native", "gate": "outcome_review", "kind": "runtime_deliverable_check", "receipt_id": "runtime-deliverables-outcome_review-1", "source": "supervisor", "status": "passed", "supervisor_runtime_origin": "collect_runtime_evidence"}
+- {"_supervisor_runtime_evidence": true, "changed_files": [], "claims": ["tests passed"], "commands": ["/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged"], "evidence_grade": "runtime_native", "executed_pytest_targets": ["tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact", "tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config", "tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged", "tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt", "tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints"], "gate": "outcome_review", "isolated_worktree": true, "isolation_strategy": "copytree_current_worktree", "kind": "test", "passed_pytest_targets": ["tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact", "tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config", "tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged", "tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt", "tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints"], "receipt_id": "runtime-tests-outcome_review-1", "results": [{"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-0.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "duration_ms": 3145, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-0.xml -\n============================== 1 passed in 0.26s ===============================\n"}, {"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-1.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact", "duration_ms": 494, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-1.xml -\n============================== 1 passed in 0.25s ===============================\n"}, {"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-2.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance", "duration_ms": 488, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-2.xml -\n============================== 1 passed in 0.25s ===============================\n"}, {"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-3.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "duration_ms": 495, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-3.xml -\n============================== 1 passed in 0.26s ===============================\n"}, {"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-4.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints", "duration_ms": 577, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-4.xml -\n============================== 1 passed in 0.35s ===============================\n"}, {"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-5.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt", "duration_ms": 517, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-5.xml -\n============================== 1 passed in 0.27s ===============================\n"}, {"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-6.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "duration_ms": 483, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-6.xml -\n============================== 1 passed in 0.25s ===============================\n"}, {"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-7.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed", "duration_ms": 498, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-7.xml -\n============================== 1 passed in 0.26s ===============================\n"}, {"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-8.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "duration_ms": 480, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-8.xml -\n============================== 1 passed in 0.24s ===============================\n"}, {"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-9.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config", "duration_ms": 466, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-9.xml -\n============================== 1 passed in 0.25s ===============================\n"}, {"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-10.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "duration_ms": 506, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-10.xml -\n============================== 1 passed in 0.27s ===============================\n"}, {"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-11.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged", "duration_ms": 481, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-11.xml -\n============================== 1 passed in 0.26s ===============================\n"}], "skipped_pytest_target_reasons": {}, "skipped_pytest_targets": [], "source": "supervisor", "status": "passed", "supervisor_runtime_origin": "collect_runtime_evidence"}
+- {"_supervisor_runtime_evidence": true, "ambiguous_names": {}, "changed_files": [], "claims": [], "covered_nodeids": ["tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact", "tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config", "tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged", "tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt", "tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints"], "declared_test_names": ["test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "test_atomic_final_json_write_never_leaves_zero_byte_artifact", "test_checkpoint_receipt_written_after_each_dry_oracle_instance", "test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "test_resume_skips_verified_completed_checkpoints", "test_resume_reruns_tampered_checkpoint_receipt", "test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "test_disk_floor_above_threshold_allows_curation_to_proceed", "test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "test_container_only_prune_default_is_rejected_by_default_config", "test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged"], "evidence_grade": "runtime_native", "executed_nodeids": ["tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact", "tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config", "tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged", "tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt", "tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints"], "failures": [], "gate": "outcome_review", "kind": "runtime_tdd_test_coverage", "missing_nodeids": [], "receipt_id": "runtime-tdd-coverage-outcome_review-1", "resolved_nodeids": ["tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact", "tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config", "tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged", "tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt", "tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints"], "skipped_nodeid_reasons": {}, "skipped_nodeids": [], "skipped_without_reason_nodeids": [], "source": "supervisor", "status": "passed", "supervisor_runtime_origin": "collect_runtime_evidence", "tdd_artifacts": [{"kind": "tdd_plan", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md"}, {"kind": "tdd_plan", "path": "docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md"}], "unresolved_names": []}
+
+### Evidence Refs
+
+- {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:to_prd", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:prd_grill", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:to_issues", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:tdd", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:tdd_grill", "status": "passed"}
+- {"kind": "runtime_baseline", "ref": "receipt:runtime-baseline-outcome_review-1", "status": "passed"}
+- {"kind": "git_diff", "ref": "receipt:runtime-git-diff-outcome_review-1", "status": "present"}
+- {"kind": "runtime_deliverable_check", "ref": "receipt:runtime-deliverables-outcome_review-1", "status": "passed"}
+- {"kind": "test", "ref": "receipt:runtime-tests-outcome_review-1", "status": "passed"}
+- {"kind": "runtime_tdd_test_coverage", "ref": "receipt:runtime-tdd-coverage-outcome_review-1", "status": "passed"}
+
+### Raw Transcript Refs
+
+- {"chars": 4000, "kind": "cursor_transcript_tail", "ref": "tri_agent_cursor_review:phase0-curation-hardening-20260709:outcome_review:1"}
+
+### Would Change If
+
+Claude or Codex provides evidence resolving Cursor's objections.
+
+### Review Packet
+
+`{}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| invoke_cursor_agent#1783622849124#237376162 |  |  | invoke_cursor_agent | finished | 237376 | 237376162 |  |  |  | ["skill_run:phase0-curation-hardening-20260709:to_prd", "skill_run:phase0-curation-hardening-20260709:prd_grill", "skill_run:phase0-curation-hardening-20260709:to_issues", "skill_run:phase0-curation-hardening-20260709:tdd", "skill_run:phase0-curation-hardening-20260709:tdd_grill", "runtime-baseline-outcome_review-1", "runtime-git-diff-outcome_review-1", "runtime-deliverables-outcome_review-1", "runtime-tests-outcome_review-1", "runtime-tdd-coverage-outcome_review-1"] | {"gate": "outcome_review", "model": null, "planning_artifact_count": 12, "quality": "best", "receipt_count": 10, "reviewer_count": 2, "reviewer_ids": ["independent-reviewer-0", "independent-reviewer-1"], "reviewer_infra_retry_backoff_s": 1.0, "reviewer_infra_retry_limit": 2, "reviewer_max_tokens": 4096, "reviewer_model": "default", "reviewer_output_mode": "cursor_sdk", "task_id": "phase0-curation-hardening-20260709", "timeout_s": 900} | {"accepted": true, "failure_classification": null, "fallback_from_runtime": null, "fallback_reason": null, "outcome_present": true, "probe_reason": "cursor_review_ok", "probe_status": "green", "recoverable": false, "reviewer_assurance": "tool_backed_primary", "reviewer_output_mode": "cursor_sdk", "reviewer_runtime": "cursor_sdk"} |  |
+
+## event_id: 1109302
+
+- event_id: `1109302`
+- ts: `1783623086`
+- kind: `independent_reviewer_review`
+- gate: `outcome_review`
+- interaction_type: `independent_reviewer_review`
+- gate: `outcome_review`
+- reviewer_count: `2`
+
+### Independent Reviewer Results
+
+#### Reviewer 1: `independent-reviewer-0`
+
+- accepted: `True`
+- decision: `accept`
+- severity: `low`
+- confidence: `0.88`
+- runtime: `cursor_sdk`
+- model: `default`
+- provider_family: `cursor`
+- lineage: `cursor`, `cursor_sdk`, `default`
+- tool_access: `codebase_tools`
+- assurance_grade: `agentic`
+- transcript_sha256: `5d3da06002b971c39bba663c0ea94546759f37e567af7f2200b42e75a5530624`
+- output_sha256: `7d608d7598ee798b4923180d36fc52cb97290cf20fe825d116f80b3d429fb4ef`
+
+Transcript refs:
+
+- {"chars": 4000, "kind": "reviewer_transcript_tail", "ref": "independent_reviewer_review:phase0-curation-hardening-20260709:outcome_review:1:independent-reviewer-0"}
+
+Critical review:
+
+`{"assumptions_to_verify": ["Full handoff repo is authoritative execution context for runtime floor", "Base prereg scale-prereg-20260629.json remains byte-identical at 701d7717"], "contradictions_checked": ["Claude test_status unknown vs runtime-tests passed: resolved by independent 12/12 green in full repo", "FM-1.3 step repetition: prior rounds were uncommitted at 0cac37b0; current commit 3cf74b8d is new evidence state", "Prior runtime_deliverable_not_file objection: amendment now in commit diff"], "decision": "accept", "missing_evidence": ["Amendment file not present in sparse reviewer worktree (verified only via full repo path)", "Sibling Cursor/cursor_sdk gate receipt not in this review packet", "batch-driver-pin-20260629.json update not independently hash-verified"], "reviewer_context_receipt": {"assumptions": ["Full handoff repo at /Users/sam.zhang/Documents/codex-supervisor is authoritative for test execution and amendment artifacts", "Supervisor runtime receipts reflect full-repo state not sparse reviewer worktree"], "criteria_checked": ["test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "test_atomic_final_json_write_never_leaves_zero_byte_artifact", "test_checkpoint_receipt_written_after_each_dry_oracle_instance", "test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "test_resume_skips_verified_completed_checkpoints", "test_resume_reruns_tampered_checkpoint_receipt", "test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "test_disk_floor_above_threshold_allows_curation_to_proceed", "test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "test_container_only_prune_default_is_rejected_by_default_config", "test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged"], "files_reviewed": ["scripts/swebench_pro_batch_driver.py", "tests/test_swebench_pro_batch_driver.py"], "missing_context": ["Sibling Cursor/cursor_sdk gate receipt enforced outside this packet", "Amendment deliverable absent from sparse reviewer worktree; verified in full repo only", "Review packet changed_files lists only 2 paths; amendment verified via runtime-deliverables receipt and full-repo git diff"], "receipts_considered": ["runtime-baseline-outcome_review-1", "runtime-git-diff-outcome_review-1", "runtime-deliverables-outcome_review-1", "runtime-tests-outcome_review-1", "runtime-tdd-coverage-outcome_review-1"]}, "severity": "low", "strongest_objection": "Sparse reviewer worktree lacks pro-corpus prereg artifacts causing amendment test FileNotFoundError (11/12 pass locally); could indicate missing deliverable like prior REVISE case.", "what_would_change_my_mind": "Any of the 12 nodeids failing in full repo, amendment new_sha256 mismatch with on-disk driver/test files, or base prereg byte mutation."}`
+
+#### Reviewer 2: `independent-reviewer-1`
+
+- accepted: `True`
+- decision: `accept`
+- severity: `low`
+- confidence: `0.89`
+- runtime: `codex_cli`
+- model: `gpt-5.5`
+- provider_family: `openai`
+- lineage: `openai`, `codex_cli`, `gpt-5.5`
+- tool_access: `codebase_tools`
+- assurance_grade: `agentic`
+- transcript_sha256: `d0364218116c4137a1f0274523c838405b8b69d3b448704970086866b62cda34`
+- output_sha256: `0266cc522b0348b27e8566092f9cb8ed7cbbb1e8e78bf0a9b17b5cb6f79746b1`
+
+Transcript refs:
+
+- {"chars": 4000, "kind": "reviewer_transcript_tail", "ref": "independent_reviewer_review:phase0-curation-hardening-20260709:outcome_review:1:independent-reviewer-1"}
+
+Critical review:
+
+`{"assumptions_to_verify": ["runtime-tests-outcome_review-1 and runtime-tdd-coverage-outcome_review-1 are the authoritative supervisor runtime floor for this gate", "The gate is judging implementation readiness, not authorizing live solver or model spend", "Generated transcript, replay, and coverage docs are audit artifacts, not behavior-bearing implementation", "Real Bokken Docker output from docker system df --format json uses fields compatible with _docker_image_cache_bytes parsing", "Parent-directory fsync is not required beyond the PRD's observable no-zero-byte artifact contract"], "contradictions_checked": ["Current HEAD is 3cf74b8d97918d84b59fdb732cc4d2398ed2671c and differs from baseline 0cac37b0d3ffa19fdb4cdeca91681bb18975bc07", "shasum matched packet/amendment hashes for scripts/swebench_pro_batch_driver.py, tests/test_swebench_pro_batch_driver.py, and the original preregistration", "All 12 acceptance item test definitions were found and runtime TDD coverage reports no missing nodeids", "Direct write search found driver-final JSON outputs routed through _write_json/_atomic_write_json; remaining direct write_text usage is test setup or solver input JSON, not final evidence artifacts", "Prior replay notes about missing changed files and deliverables were superseded by passed runtime deliverable, test, and coverage receipts in the packet evidence set", "The prereg amendment is committed and self-verified by the amendment test rather than only hardcoded in documentation"], "decision": "accept", "missing_evidence": ["No live Bokken Phase 0 rerun or real Docker prune receipt was included", "The top-level supervisor packet changed_files lists only driver and test files, while the commit and deliverable receipt also include the prereg amendment and generated docs", "Strict power-loss durability evidence does not include parent-directory fsync after os.replace; the tested contract is no zero-byte or partial final artifact", "I did not run pytest locally in this read-only review; I relied on supervisor runtime receipts and code inspection"], "reviewer_context_receipt": {"assumptions": ["Supervisor runtime receipts are authoritative for test execution in this gate", "No live solver/model spend is required or allowed by this implementation review", "Sibling Cursor/cursor_sdk receipt is enforced outside the packet per instruction", "Audit docs generated by the workflow need consistency checks, not full line-by-line behavioral review"], "criteria_checked": ["test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "test_atomic_final_json_write_never_leaves_zero_byte_artifact", "test_checkpoint_receipt_written_after_each_dry_oracle_instance", "test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "test_resume_skips_verified_completed_checkpoints", "test_resume_reruns_tampered_checkpoint_receipt", "test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "test_disk_floor_above_threshold_allows_curation_to_proceed", "test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "test_container_only_prune_default_is_rejected_by_default_config", "test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged"], "files_reviewed": ["scripts/swebench_pro_batch_driver.py", "tests/test_swebench_pro_batch_driver.py", "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/scale-prereg-20260629-amendment-1.json", "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/scale-prereg-20260629.json", "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/batch-driver-pin-20260629.json", "docs/dual-agent/phase0-curation-hardening-20260709/source/prd.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/issues.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/implementation-plan.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings-tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/outcome-review.md", "docs/dual-agent/phase0-curation-hardening-20260709/interactions.md", "docs/dual-agent/phase0-curation-hardening-20260709/grill-findings.md", "docs/dual-agent/phase0-curation-hardening-20260709/mast-coverage.md"], "missing_context": ["Sibling Cursor/cursor_sdk receipt is not included in the packet and was not treated as a blocker per instruction", "implementer_transcript_ref is null in the packet", "No live Bokken rerun, real oracle container run, or real Docker prune receipt is included", "Generated replay/transcript docs listed in runtime-git-diff were sampled for contradictions but not fully reviewed line by line"], "receipts_considered": ["runtime-baseline-outcome_review-1", "runtime-git-diff-outcome_review-1", "runtime-deliverables-outcome_review-1", "runtime-tests-outcome_review-1", "runtime-tdd-coverage-outcome_review-1", "skill_run:phase0-curation-hardening-20260709:to_prd", "skill_run:phase0-curation-hardening-20260709:prd_grill", "skill_run:phase0-curation-hardening-20260709:to_issues", "skill_run:phase0-curation-hardening-20260709:tdd", "skill_run:phase0-curation-hardening-20260709:tdd_grill"]}, "severity": "low", "strongest_objection": "The strongest non-blocking objection is evidence scope: this gate proves implementation behavior through unit/runtime receipts with fake disk, oracle, and subprocess seams, not a live Bokken Phase 0 rerun with real Docker image telemetry. That would block a production rerun gate, but not this outcome_review implementation gate because live spend is out of scope and the runtime floor passed the public-boundary TDD contract.", "what_would_change_my_mind": "I would revise or deny if any of the 12 runtime nodeids failed or were absent, if amendment hashes drifted from actual files, if a driver-final JSON artifact bypassed atomic write routing, if checkpoint tampering could be accepted silently, or if live Docker image telemetry proved unparsable on the target host."}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| invoke_cursor_agent#1783622849124#237376162 |  |  | invoke_cursor_agent | finished | 237376 | 237376162 |  |  |  | ["skill_run:phase0-curation-hardening-20260709:to_prd", "skill_run:phase0-curation-hardening-20260709:prd_grill", "skill_run:phase0-curation-hardening-20260709:to_issues", "skill_run:phase0-curation-hardening-20260709:tdd", "skill_run:phase0-curation-hardening-20260709:tdd_grill", "runtime-baseline-outcome_review-1", "runtime-git-diff-outcome_review-1", "runtime-deliverables-outcome_review-1", "runtime-tests-outcome_review-1", "runtime-tdd-coverage-outcome_review-1"] | {"gate": "outcome_review", "model": null, "planning_artifact_count": 12, "quality": "best", "receipt_count": 10, "reviewer_count": 2, "reviewer_ids": ["independent-reviewer-0", "independent-reviewer-1"], "reviewer_infra_retry_backoff_s": 1.0, "reviewer_infra_retry_limit": 2, "reviewer_max_tokens": 4096, "reviewer_model": "default", "reviewer_output_mode": "cursor_sdk", "task_id": "phase0-curation-hardening-20260709", "timeout_s": 900} | {"accepted": true, "failure_classification": null, "fallback_from_runtime": null, "fallback_reason": null, "outcome_present": true, "probe_reason": "cursor_review_ok", "probe_status": "green", "recoverable": false, "reviewer_assurance": "tool_backed_primary", "reviewer_output_mode": "cursor_sdk", "reviewer_runtime": "cursor_sdk"} |  |
+
+## event_id: 1109303
+
+- event_id: `1109303`
+- ts: `1783623086`
+- kind: `tri_agent_cursor_review`
+- gate: `outcome_review`
+- interaction_type: `cursor_review`
+- gate: `outcome_review`
+- accepted: `True`
+- model: `default`
+- cursor_run_id: `run-1180a1c2-4200-4d80-a0c7-da4af978ffb4`
+- agent_id: `agent-d39c0573-6295-4dd9-aa82-e23c5fd448e5`
+- duration_ms: `45328`
+- full_reasoning: `transcript.jsonl event 1109303 transcript_tail`
+
+### Cursor Probe
+
+- probe_id: `CURSOR`
+- status: `green`
+- reason: `cursor_review_ok`
+
+### Cursor Outcome
+
+Independent verification at HEAD 3cf74b8d: all 12 TDD acceptance tests pass in full repo; driver/test SHA256s match packet; amendment committed and self-verifies. Sparse reviewer worktree missing pro-corpus artifacts caused 11/12 locally but full-repo rerun confirms green. Accept gate advance.
+
+Claims:
+
+- All 12 acceptance tests pass when executed against full handoff repo at candidate HEAD
+- Changed file SHA256s match supervisor review packet exactly
+- Amendment JSON is committed in diff 0cac37b0..3cf74b8d and passes runtime self-verification
+- Reviewer worktree 11/12 result is environmental not implementation failure
+
+Decisions:
+
+- accept
+
+Objections:
+
+- None recorded.
+
+Specialists:
+
+- `Cursor Reviewer`: `accept`
+
+### Transcript Tail
+
+r_thresholds_and_report_only_authority_remain_unchanged"],"test_status":"passed","confidence":0.88,"confidence_rationale":"Independently executed 12/12 pytest nodeids green in full repo at candidate HEAD; file hashes match packet and amendment JSON; held below 0.9 because reviewer worktree is sparse (amendment test fails there) and FM-1.3 step-repetition history shows multiple prior outcome_review rounds.","confidence_criteria":["12/12 TDD tests pass in full repo at 3cf74b8d: met","Driver and test SHA256 match review packet: met","Amendment deliverable committed and self-verifying test passes: met","Implementation seams for all six PRD promises present in driver: met","Sparse worktree amendment test failure explained by missing artifacts not code defect: met"],"claims":["All 12 acceptance tests pass when executed against full handoff repo at candidate HEAD","Changed file SHA256s match supervisor review packet exactly","Amendment JSON is committed in diff 0cac37b0..3cf74b8d and passes runtime self-verification","Reviewer worktree 11/12 result is environmental not implementation failure"],"critical_review":{"strongest_objection":"Sparse reviewer worktree lacks pro-corpus prereg artifacts causing amendment test FileNotFoundError (11/12 pass locally); could indicate missing deliverable like prior REVISE case.","missing_evidence":["Amendment file not present in sparse reviewer worktree (verified only via full repo path)","Sibling Cursor/cursor_sdk gate receipt not in this review packet","batch-driver-pin-20260629.json update not independently hash-verified"],"contradictions_checked":["Claude test_status unknown vs runtime-tests passed: resolved by independent 12/12 green in full repo","FM-1.3 step repetition: prior rounds were uncommitted at 0cac37b0; current commit 3cf74b8d is new evidence state","Prior runtime_deliverable_not_file objection: amendment now in commit diff"],"assumptions_to_verify":["Full handoff repo is authoritative execution context for runtime floor","Base prereg scale-prereg-20260629.json remains byte-identical at 701d7717"],"what_would_change_my_mind":"Any of the 12 nodeids failing in full repo, amendment new_sha256 mismatch with on-disk driver/test files, or base prereg byte mutation.","decision":"accept","severity":"low","reviewer_context_receipt":{"files_reviewed":["scripts/swebench_pro_batch_driver.py","tests/test_swebench_pro_batch_driver.py"],"criteria_checked":["test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure","test_atomic_final_json_write_never_leaves_zero_byte_artifact","test_checkpoint_receipt_written_after_each_dry_oracle_instance","test_checkpoint_write_enospc_halts_with_blocked_execution_receipt","test_resume_skips_verified_completed_checkpoints","test_resume_reruns_tampered_checkpoint_receipt","test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero","test_disk_floor_above_threshold_allows_curation_to_proceed","test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes","test_container_only_prune_default_is_rejected_by_default_config","test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged","test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged"],"receipts_considered":["runtime-baseline-outcome_review-1","runtime-git-diff-outcome_review-1","runtime-deliverables-outcome_review-1","runtime-tests-outcome_review-1","runtime-tdd-coverage-outcome_review-1"],"assumptions":["Full handoff repo at /Users/sam.zhang/Documents/codex-supervisor is authoritative for test execution and amendment artifacts","Supervisor runtime receipts reflect full-repo state not sparse reviewer worktree"],"missing_context":["Sibling Cursor/cursor_sdk gate receipt enforced outside this packet","Amendment deliverable absent from sparse reviewer worktree; verified in full repo only","Review packet changed_files lists only 2 paths; amendment verified via runtime-deliverables receipt and full-repo git diff"]}}}</dual_agent_outcome>
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`
+
+Tool calls:
+
+| tool_call_id | parent_tool_call_id | references_tool_call_id | name | status | duration_ms | duration_us | tokens_in | tokens_out | probe_id | receipt_ids | args | result_summary | error |
+|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|---|
+| invoke_cursor_agent#1783622849124#237376162 |  |  | invoke_cursor_agent | finished | 237376 | 237376162 |  |  |  | ["skill_run:phase0-curation-hardening-20260709:to_prd", "skill_run:phase0-curation-hardening-20260709:prd_grill", "skill_run:phase0-curation-hardening-20260709:to_issues", "skill_run:phase0-curation-hardening-20260709:tdd", "skill_run:phase0-curation-hardening-20260709:tdd_grill", "runtime-baseline-outcome_review-1", "runtime-git-diff-outcome_review-1", "runtime-deliverables-outcome_review-1", "runtime-tests-outcome_review-1", "runtime-tdd-coverage-outcome_review-1"] | {"gate": "outcome_review", "model": null, "planning_artifact_count": 12, "quality": "best", "receipt_count": 10, "reviewer_count": 2, "reviewer_ids": ["independent-reviewer-0", "independent-reviewer-1"], "reviewer_infra_retry_backoff_s": 1.0, "reviewer_infra_retry_limit": 2, "reviewer_max_tokens": 4096, "reviewer_model": "default", "reviewer_output_mode": "cursor_sdk", "task_id": "phase0-curation-hardening-20260709", "timeout_s": 900} | {"accepted": true, "failure_classification": null, "fallback_from_runtime": null, "fallback_reason": null, "outcome_present": true, "probe_reason": "cursor_review_ok", "probe_status": "green", "recoverable": false, "reviewer_assurance": "tool_backed_primary", "reviewer_output_mode": "cursor_sdk", "reviewer_runtime": "cursor_sdk"} |  |
+
+## event_id: 1109304
+
+- ts: `1783623086`
+- kind: `dual_agent_gate_round`
+- gate: `outcome_review`
+- round_index: `1`
+- codex_decision: `accept`
+- claude_decision: `accept`
+- codex_confidence: `0.95`
+- claude_confidence: `0.84`
+
+### Objection
+
+both agents accepted
+
+## event_id: 1109305
+
+- ts: `1783623087`
+- kind: `dual_agent_interaction_message`
+- gate: `outcome_review`
+- interaction_type: `gate_decision`
+- message_type: `gate_decision`
+- sender: `codex`
+- recipient: `supervisor`
+- round_index: `1`
+- persona_id: `codex.lifecycle_reviewer`
+- addresses: `event:1109304`
+
+### Message
+
+both agents accepted
+
+### Confidence
+
+- value: `0.95`
+- source: `codex_supervisor_deterministic_policy`
+- rationale: Codex accepted because the gate result, probes, claim checks, and optional Cursor review all satisfied the gate criteria.
+
+### Criteria
+
+- gate_status=accepted
+- decision=accept
+- all_supervisor_probes_green
+- claude_outcome_accepted
+- claim_verification_ok_or_not_required
+- cursor_accepted_or_not_requested
+
+### Evidence
+
+- P1:green
+- P11:green
+- P2:green
+- P3:green
+- P4:green
+- P_planning:green
+
+### Claims
+
+- codex_decision=accept
+- claude_decision=accept
+- cursor_decision=accept
+
+### Objections
+
+- None recorded.
+
+### Questions
+
+- None recorded.
+
+### Critical Review
+
+`{"assumptions_to_verify": [], "contradictions_checked": ["supervisor probes", "claim verification", "cursor review"], "decision": "accept", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:to_prd", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:prd_grill", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:to_issues", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:tdd", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:tdd_grill", "status": "passed"}, {"kind": "runtime_baseline", "ref": "receipt:runtime-baseline-outcome_review-1", "status": "passed"}, {"kind": "git_diff", "ref": "receipt:runtime-git-diff-outcome_review-1", "status": "present"}, {"kind": "runtime_deliverable_check", "ref": "receipt:runtime-deliverables-outcome_review-1", "status": "passed"}, {"kind": "test", "ref": "receipt:runtime-tests-outcome_review-1", "status": "passed"}, {"kind": "runtime_tdd_test_coverage", "ref": "receipt:runtime-tdd-coverage-outcome_review-1", "status": "passed"}], "missing_evidence": [], "schema_version": "critical-review/v1", "severity": "none", "strongest_objection": "none", "what_would_change_my_mind": "Every requirement is pass and both reviewers accept."}`
+
+### Tool Receipts
+
+- {"artifacts": ["docs/dual-agent/phase0-curation-hardening-20260709/source/prd.md"], "claims": ["PRD authored with promise contracts for atomic artifacts, checkpoint receipts, resume verification, disk-floor halts, image-prune telemetry, append-only prereg amendment, and unchanged benchmark authority."], "kind": "skill_run", "receipt_id": "skill_run:phase0-curation-hardening-20260709:to_prd", "skill": "prd-to-tdd", "stage": "to_prd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings.md"], "claims": ["PRD grill findings resolved final-artifact coverage, corrupt checkpoint distrust, clean disk-floor evidence, measurable image pruning, prereg immutability, and unchanged benchmark authority."], "kind": "skill_run", "receipt_id": "skill_run:phase0-curation-hardening-20260709:prd_grill", "skill": "grill-with-docs", "stage": "prd_grill", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/phase0-curation-hardening-20260709/source/issues.md"], "claims": ["Issues sliced into vertical tracer bullets covering atomic final artifacts, checkpoint receipts, checkpoint resume, disk floor and prune telemetry, and append-only prereg amendment."], "kind": "skill_run", "receipt_id": "skill_run:phase0-curation-hardening-20260709:to_issues", "skill": "to-issues", "stage": "to_issues", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md"], "claims": ["TDD plan names public-boundary RED/GREEN cycles for atomic writes, checkpoints, resume verification, disk-floor exits, image-prune telemetry, prereg amendment validation, and unchanged authority checks."], "kind": "skill_run", "receipt_id": "skill_run:phase0-curation-hardening-20260709:tdd", "skill": "tdd", "stage": "tdd", "status": "passed"}
+- {"artifacts": ["docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings-tdd.md"], "claims": ["TDD grill findings resolved public-boundary artifact outcomes, oracle-boundary discipline, resume skip and rerun proof, nonzero disk-floor exits, final-hash amendment timing, and named test coverage."], "kind": "skill_run", "receipt_id": "skill_run:phase0-curation-hardening-20260709:tdd_grill", "skill": "grill-with-docs", "stage": "tdd_grill", "status": "passed"}
+- {"_supervisor_runtime_evidence": true, "baseline_head": "0cac37b0d3ffa19fdb4cdeca91681bb18975bc07", "captured_at": 1783620707.3366861, "changed_files": [], "claims": [], "evidence_grade": "runtime_native", "gate": "outcome_review", "kind": "runtime_baseline", "reason": "persisted_execution_baseline", "receipt_id": "runtime-baseline-outcome_review-1", "source": "supervisor", "status": "passed", "supervisor_runtime_origin": "collect_runtime_evidence"}
+- {"_supervisor_runtime_evidence": true, "actual_changed_files": ["docs/dual-agent/phase0-curation-hardening-20260709/grill-findings-tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/grill-findings.md", "docs/dual-agent/phase0-curation-hardening-20260709/index.md", "docs/dual-agent/phase0-curation-hardening-20260709/interactions.md", "docs/dual-agent/phase0-curation-hardening-20260709/issues.md", "docs/dual-agent/phase0-curation-hardening-20260709/mast-coverage.md", "docs/dual-agent/phase0-curation-hardening-20260709/outcome-review.md", "docs/dual-agent/phase0-curation-hardening-20260709/prd.md", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/planning-artifacts.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/prd_grill.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tdd.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tdd_grill.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/to_issues.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/to_prd.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tool-receipts.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/manifest.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/mast-coverage.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/workspace-snapshot.json", "docs/dual-agent/phase0-curation-hardening-20260709/runtime-baseline-execution.json", "docs/dual-agent/phase0-curation-hardening-20260709/screenshots.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings-tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/implementation-plan.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/issues.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/prd.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/transcript.jsonl", "docs/dual-agent/phase0-curation-hardening-20260709/transcript.md", "docs/dual-agent/phase0-curation-hardening-20260709/triage.md", "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/scale-prereg-20260629-amendment-1.json", "docs/pocock-skills-intake-20260709.md", "scripts/swebench_pro_batch_driver.py", "tests/test_swebench_pro_batch_driver.py"], "baseline_head": "0cac37b0d3ffa19fdb4cdeca91681bb18975bc07", "changed_files": ["docs/dual-agent/phase0-curation-hardening-20260709/grill-findings-tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/grill-findings.md", "docs/dual-agent/phase0-curation-hardening-20260709/index.md", "docs/dual-agent/phase0-curation-hardening-20260709/interactions.md", "docs/dual-agent/phase0-curation-hardening-20260709/issues.md", "docs/dual-agent/phase0-curation-hardening-20260709/mast-coverage.md", "docs/dual-agent/phase0-curation-hardening-20260709/outcome-review.md", "docs/dual-agent/phase0-curation-hardening-20260709/prd.md", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/planning-artifacts.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/prd_grill.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tdd.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tdd_grill.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/to_issues.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/to_prd.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tool-receipts.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/manifest.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/mast-coverage.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/workspace-snapshot.json", "docs/dual-agent/phase0-curation-hardening-20260709/runtime-baseline-execution.json", "docs/dual-agent/phase0-curation-hardening-20260709/screenshots.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings-tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/implementation-plan.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/issues.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/prd.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/transcript.jsonl", "docs/dual-agent/phase0-curation-hardening-20260709/transcript.md", "docs/dual-agent/phase0-curation-hardening-20260709/triage.md", "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/scale-prereg-20260629-amendment-1.json", "docs/pocock-skills-intake-20260709.md", "scripts/swebench_pro_batch_driver.py", "tests/test_swebench_pro_batch_driver.py"], "claims": ["implemented"], "committed_changed_files": ["docs/dual-agent/phase0-curation-hardening-20260709/grill-findings-tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/grill-findings.md", "docs/dual-agent/phase0-curation-hardening-20260709/index.md", "docs/dual-agent/phase0-curation-hardening-20260709/interactions.md", "docs/dual-agent/phase0-curation-hardening-20260709/issues.md", "docs/dual-agent/phase0-curation-hardening-20260709/mast-coverage.md", "docs/dual-agent/phase0-curation-hardening-20260709/outcome-review.md", "docs/dual-agent/phase0-curation-hardening-20260709/prd.md", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/planning-artifacts.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/prd_grill.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tdd.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tdd_grill.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/to_issues.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/to_prd.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tool-receipts.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/manifest.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/mast-coverage.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/workspace-snapshot.json", "docs/dual-agent/phase0-curation-hardening-20260709/runtime-baseline-execution.json", "docs/dual-agent/phase0-curation-hardening-20260709/screenshots.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings-tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/implementation-plan.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/issues.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/prd.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/transcript.jsonl", "docs/dual-agent/phase0-curation-hardening-20260709/transcript.md", "docs/dual-agent/phase0-curation-hardening-20260709/triage.md", "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/scale-prereg-20260629-amendment-1.json", "scripts/swebench_pro_batch_driver.py", "tests/test_swebench_pro_batch_driver.py"], "declared_changed_files": ["scripts/swebench_pro_batch_driver.py", "tests/test_swebench_pro_batch_driver.py", "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/scale-prereg-20260629-amendment-1.json"], "derived_changed_files_from_runtime": false, "evidence_grade": "runtime_native", "extra_actual_files": ["docs/dual-agent/phase0-curation-hardening-20260709/grill-findings-tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/grill-findings.md", "docs/dual-agent/phase0-curation-hardening-20260709/index.md", "docs/dual-agent/phase0-curation-hardening-20260709/interactions.md", "docs/dual-agent/phase0-curation-hardening-20260709/issues.md", "docs/dual-agent/phase0-curation-hardening-20260709/mast-coverage.md", "docs/dual-agent/phase0-curation-hardening-20260709/outcome-review.md", "docs/dual-agent/phase0-curation-hardening-20260709/prd.md", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/planning-artifacts.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/prd_grill.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tdd.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tdd_grill.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/to_issues.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/to_prd.json", "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tool-receipts.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/manifest.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/mast-coverage.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/workspace-snapshot.json", "docs/dual-agent/phase0-curation-hardening-20260709/runtime-baseline-execution.json", "docs/dual-agent/phase0-curation-hardening-20260709/screenshots.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings-tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/implementation-plan.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/issues.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/prd.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/transcript.jsonl", "docs/dual-agent/phase0-curation-hardening-20260709/transcript.md", "docs/dual-agent/phase0-curation-hardening-20260709/triage.md", "docs/pocock-skills-intake-20260709.md"], "gate": "outcome_review", "kind": "git_diff", "missing_from_diff": [], "name_status": [{"path": "docs/dual-agent/phase0-curation-hardening-20260709/index.md", "source": "worktree", "status": "M"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/interactions.md", "source": "worktree", "status": "M"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/mast-coverage.md", "source": "worktree", "status": "M"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/replay/manifest.json", "source": "worktree", "status": "M"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/replay/mast-coverage.json", "source": "worktree", "status": "M"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/replay/workspace-snapshot.json", "source": "worktree", "status": "M"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/transcript.jsonl", "source": "worktree", "status": "M"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/transcript.md", "source": "worktree", "status": "M"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/triage.md", "source": "worktree", "status": "M"}, {"path": "docs/pocock-skills-intake-20260709.md", "source": "worktree", "status": "??"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/grill-findings-tdd.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/grill-findings.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/index.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/interactions.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/issues.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/mast-coverage.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/outcome-review.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/prd.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/receipts/planning-artifacts.json", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/receipts/prd_grill.json", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tdd.json", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tdd_grill.json", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/receipts/to_issues.json", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/receipts/to_prd.json", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/receipts/tool-receipts.json", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/replay/manifest.json", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/replay/mast-coverage.json", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/replay/workspace-snapshot.json", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/runtime-baseline-execution.json", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/screenshots.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings-tdd.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/source/implementation-plan.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/source/issues.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/source/prd.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/tdd.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/transcript.jsonl", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/transcript.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/phase0-curation-hardening-20260709/triage.md", "source": "committed_since_baseline", "status": "A"}, {"path": "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/scale-prereg-20260629-amendment-1.json", "source": "committed_since_baseline", "status": "A"}, {"path": "scripts/swebench_pro_batch_driver.py", "source": "committed_since_baseline", "status": "M"}, {"path": "tests/test_swebench_pro_batch_driver.py", "source": "committed_since_baseline", "status": "M"}], "reason": "git_status_and_committed_diff_captured", "receipt_id": "runtime-git-diff-outcome_review-1", "source": "supervisor", "status": "present", "supervisor_runtime_origin": "collect_runtime_evidence", "worktree_changed_files": ["docs/dual-agent/phase0-curation-hardening-20260709/index.md", "docs/dual-agent/phase0-curation-hardening-20260709/interactions.md", "docs/dual-agent/phase0-curation-hardening-20260709/mast-coverage.md", "docs/dual-agent/phase0-curation-hardening-20260709/replay/manifest.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/mast-coverage.json", "docs/dual-agent/phase0-curation-hardening-20260709/replay/workspace-snapshot.json", "docs/dual-agent/phase0-curation-hardening-20260709/transcript.jsonl", "docs/dual-agent/phase0-curation-hardening-20260709/transcript.md", "docs/dual-agent/phase0-curation-hardening-20260709/triage.md", "docs/pocock-skills-intake-20260709.md"]}
+- {"_supervisor_runtime_evidence": true, "changed_files": ["scripts/swebench_pro_batch_driver.py", "tests/test_swebench_pro_batch_driver.py", "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/scale-prereg-20260629-amendment-1.json"], "checks": [{"path": "scripts/swebench_pro_batch_driver.py", "reason": "runtime_deliverable_present", "size": 50752, "status": "passed"}, {"path": "tests/test_swebench_pro_batch_driver.py", "reason": "runtime_deliverable_present", "size": 28872, "status": "passed"}, {"path": "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/scale-prereg-20260629-amendment-1.json", "reason": "runtime_deliverable_present", "size": 7367, "status": "passed"}], "claims": [], "evidence_grade": "runtime_native", "gate": "outcome_review", "kind": "runtime_deliverable_check", "receipt_id": "runtime-deliverables-outcome_review-1", "source": "supervisor", "status": "passed", "supervisor_runtime_origin": "collect_runtime_evidence"}
+- {"_supervisor_runtime_evidence": true, "changed_files": [], "claims": ["tests passed"], "commands": ["/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged"], "evidence_grade": "runtime_native", "executed_pytest_targets": ["tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact", "tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config", "tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged", "tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt", "tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints"], "gate": "outcome_review", "isolated_worktree": true, "isolation_strategy": "copytree_current_worktree", "kind": "test", "passed_pytest_targets": ["tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact", "tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config", "tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged", "tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt", "tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints"], "receipt_id": "runtime-tests-outcome_review-1", "results": [{"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-0.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "duration_ms": 3145, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-0.xml -\n============================== 1 passed in 0.26s ===============================\n"}, {"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-1.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact", "duration_ms": 494, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-1.xml -\n============================== 1 passed in 0.25s ===============================\n"}, {"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-2.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance", "duration_ms": 488, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-2.xml -\n============================== 1 passed in 0.25s ===============================\n"}, {"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-3.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "duration_ms": 495, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-3.xml -\n============================== 1 passed in 0.26s ===============================\n"}, {"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-4.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints", "duration_ms": 577, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-4.xml -\n============================== 1 passed in 0.35s ===============================\n"}, {"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-5.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt", "duration_ms": 517, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-5.xml -\n============================== 1 passed in 0.27s ===============================\n"}, {"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-6.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "duration_ms": 483, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-6.xml -\n============================== 1 passed in 0.25s ===============================\n"}, {"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-7.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed", "duration_ms": 498, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-7.xml -\n============================== 1 passed in 0.26s ===============================\n"}, {"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-8.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "duration_ms": 480, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-8.xml -\n============================== 1 passed in 0.24s ===============================\n"}, {"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-9.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config", "duration_ms": 466, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-9.xml -\n============================== 1 passed in 0.25s ===============================\n"}, {"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-10.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "duration_ms": 506, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-10.xml -\n============================== 1 passed in 0.27s ===============================\n"}, {"argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged", "--junitxml=/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-11.xml"], "command": "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged", "duration_ms": 481, "original_argv": ["/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.venv/bin/python", "-m", "pytest", "tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged"], "pytest_nodeids_passed": ["tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged"], "returncode": 0, "status": "passed", "stderr_tail": "", "stdout_tail": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0\nrootdir: /private/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree\nconfigfile: pyproject.toml\nplugins: asyncio-1.3.0, anyio-4.13.0\nasyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 1 item\n\ntests/test_swebench_pro_batch_driver.py .                                [100%]\n\n- generated xml file: /var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/codex-runtime-evidence-spuxziru/worktree/.runtime-evidence/pytest-11.xml -\n============================== 1 passed in 0.26s ===============================\n"}], "skipped_pytest_target_reasons": {}, "skipped_pytest_targets": [], "source": "supervisor", "status": "passed", "supervisor_runtime_origin": "collect_runtime_evidence"}
+- {"_supervisor_runtime_evidence": true, "ambiguous_names": {}, "changed_files": [], "claims": [], "covered_nodeids": ["tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact", "tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config", "tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged", "tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt", "tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints"], "declared_test_names": ["test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "test_atomic_final_json_write_never_leaves_zero_byte_artifact", "test_checkpoint_receipt_written_after_each_dry_oracle_instance", "test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "test_resume_skips_verified_completed_checkpoints", "test_resume_reruns_tampered_checkpoint_receipt", "test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "test_disk_floor_above_threshold_allows_curation_to_proceed", "test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "test_container_only_prune_default_is_rejected_by_default_config", "test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged"], "evidence_grade": "runtime_native", "executed_nodeids": ["tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact", "tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config", "tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged", "tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt", "tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints"], "failures": [], "gate": "outcome_review", "kind": "runtime_tdd_test_coverage", "missing_nodeids": [], "receipt_id": "runtime-tdd-coverage-outcome_review-1", "resolved_nodeids": ["tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact", "tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance", "tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config", "tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed", "tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged", "tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt", "tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints"], "skipped_nodeid_reasons": {}, "skipped_nodeids": [], "skipped_without_reason_nodeids": [], "source": "supervisor", "status": "passed", "supervisor_runtime_origin": "collect_runtime_evidence", "tdd_artifacts": [{"kind": "tdd_plan", "path": "/Users/sam.zhang/Documents/codex-supervisor/docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md"}, {"kind": "tdd_plan", "path": "docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md"}], "unresolved_names": []}
+
+### Evidence Refs
+
+- {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:to_prd", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:prd_grill", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:to_issues", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:tdd", "status": "passed"}
+- {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:tdd_grill", "status": "passed"}
+- {"kind": "runtime_baseline", "ref": "receipt:runtime-baseline-outcome_review-1", "status": "passed"}
+- {"kind": "git_diff", "ref": "receipt:runtime-git-diff-outcome_review-1", "status": "present"}
+- {"kind": "runtime_deliverable_check", "ref": "receipt:runtime-deliverables-outcome_review-1", "status": "passed"}
+- {"kind": "test", "ref": "receipt:runtime-tests-outcome_review-1", "status": "passed"}
+- {"kind": "runtime_tdd_test_coverage", "ref": "receipt:runtime-tdd-coverage-outcome_review-1", "status": "passed"}
+
+### Raw Transcript Refs
+
+- {"kind": "claude_handoff_packet", "ref": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/phase0-curation-hardening-20260709.json"}
+- {"count": 12, "kind": "claude_reported_tests", "ref": "outcome.tests"}
+
+### Would Change If
+
+All required probes, claim receipts, and optional Cursor review accept.
+
+### Review Packet
+
+`{"confidence": {"criteria": ["gate_status=accepted", "decision=accept", "all_supervisor_probes_green", "claude_outcome_accepted", "claim_verification_ok_or_not_required", "cursor_accepted_or_not_requested"], "evidence": ["P1:green", "P11:green", "P2:green", "P3:green", "P4:green", "P_planning:green"], "rationale": "Codex accepted because the gate result, probes, claim checks, and optional Cursor review all satisfied the gate criteria.", "source": "codex_supervisor_deterministic_policy", "value": 0.95}, "critical_review": {"assumptions_to_verify": [], "contradictions_checked": ["supervisor probes", "claim verification", "cursor review"], "decision": "accept", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:to_prd", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:prd_grill", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:to_issues", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:tdd", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:tdd_grill", "status": "passed"}, {"kind": "runtime_baseline", "ref": "receipt:runtime-baseline-outcome_review-1", "status": "passed"}, {"kind": "git_diff", "ref": "receipt:runtime-git-diff-outcome_review-1", "status": "present"}, {"kind": "runtime_deliverable_check", "ref": "receipt:runtime-deliverables-outcome_review-1", "status": "passed"}, {"kind": "test", "ref": "receipt:runtime-tests-outcome_review-1", "status": "passed"}, {"kind": "runtime_tdd_test_coverage", "ref": "receipt:runtime-tdd-coverage-outcome_review-1", "status": "passed"}], "missing_evidence": [], "schema_version": "critical-review/v1", "severity": "none", "strongest_objection": "none", "what_would_change_my_mind": "Every requirement is pass and both reviewers accept."}, "decision": "accept", "evidence_refs": [{"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:to_prd", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:prd_grill", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:to_issues", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:tdd", "status": "passed"}, {"kind": "skill_run", "ref": "receipt:skill_run:phase0-curation-hardening-20260709:tdd_grill", "status": "passed"}, {"kind": "runtime_baseline", "ref": "receipt:runtime-baseline-outcome_review-1", "status": "passed"}, {"kind": "git_diff", "ref": "receipt:runtime-git-diff-outcome_review-1", "status": "present"}, {"kind": "runtime_deliverable_check", "ref": "receipt:runtime-deliverables-outcome_review-1", "status": "passed"}, {"kind": "test", "ref": "receipt:runtime-tests-outcome_review-1", "status": "passed"}, {"kind": "runtime_tdd_test_coverage", "ref": "receipt:runtime-tdd-coverage-outcome_review-1", "status": "passed"}], "findings": [], "gate": "outcome_review", "independent_reviewer_panel_decision": {"accepted_reviewers": ["independent-reviewer-0", "independent-reviewer-1"], "aggregation_mode": "conservative", "available_reviewers": ["independent-reviewer-0", "independent-reviewer-1"], "blocking_reviewers": [], "decision": "accept", "low_confidence_reviewers": [], "low_confidence_threshold": 0.0, "missing_reviewers": [], "non_accepting_reviewers": [], "reason": "all_available_reviewers_accept", "reviewer_inputs": [{"accepted": true, "assurance_grade": "agentic", "confidence": 0.88, "decision": "accept", "lineage": ["cursor", "cursor_sdk", "default"], "model": "default", "provider_family": "cursor", "provider_family_source": "runtime_inference", "provider_family_verified": false, "reviewer_id": "independent-reviewer-0", "runtime": "cursor_sdk", "severity": "low", "tool_access": "codebase_tools", "verdict_present": true}, {"accepted": true, "assurance_grade": "agentic", "confidence": 0.89, "decision": "accept", "lineage": ["openai", "codex_cli", "gpt-5.5"], "model": "gpt-5.5", "provider_family": "openai", "provider_family_source": "served_model_name_inference", "provider_family_verified": false, "reviewer_id": "independent-reviewer-1", "runtime": "codex_cli", "severity": "low", "tool_access": "codebase_tools", "verdict_present": true}], "schema_version": "independent-reviewer-panel-decision/v1"}, "independent_reviewer_results": [{"accepted": true, "assurance_grade": "agentic", "attempts": 1, "confidence": 0.88, "confidence_rationale": "Independently executed 12/12 pytest nodeids green in full repo at candidate HEAD; file hashes match packet and amendment JSON; held below 0.9 because reviewer worktree is sparse (amendment test fails there) and FM-1.3 step-repetition history shows multiple prior outcome_review rounds.", "critical_review": {"assumptions_to_verify": ["Full handoff repo is authoritative execution context for runtime floor", "Base prereg scale-prereg-20260629.json remains byte-identical at 701d7717"], "contradictions_checked": ["Claude test_status unknown vs runtime-tests passed: resolved by independent 12/12 green in full repo", "FM-1.3 step repetition: prior rounds were uncommitted at 0cac37b0; current commit 3cf74b8d is new evidence state", "Prior runtime_deliverable_not_file objection: amendment now in commit diff"], "decision": "accept", "missing_evidence": ["Amendment file not present in sparse reviewer worktree (verified only via full repo path)", "Sibling Cursor/cursor_sdk gate receipt not in this review packet", "batch-driver-pin-20260629.json update not independently hash-verified"], "reviewer_context_receipt": {"assumptions": ["Full handoff repo at /Users/sam.zhang/Documents/codex-supervisor is authoritative for test execution and amendment artifacts", "Supervisor runtime receipts reflect full-repo state not sparse reviewer worktree"], "criteria_checked": ["test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "test_atomic_final_json_write_never_leaves_zero_byte_artifact", "test_checkpoint_receipt_written_after_each_dry_oracle_instance", "test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "test_resume_skips_verified_completed_checkpoints", "test_resume_reruns_tampered_checkpoint_receipt", "test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "test_disk_floor_above_threshold_allows_curation_to_proceed", "test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "test_container_only_prune_default_is_rejected_by_default_config", "test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged"], "files_reviewed": ["scripts/swebench_pro_batch_driver.py", "tests/test_swebench_pro_batch_driver.py"], "missing_context": ["Sibling Cursor/cursor_sdk gate receipt enforced outside this packet", "Amendment deliverable absent from sparse reviewer worktree; verified in full repo only", "Review packet changed_files lists only 2 paths; amendment verified via runtime-deliverables receipt and full-repo git diff"], "receipts_considered": ["runtime-baseline-outcome_review-1", "runtime-git-diff-outcome_review-1", "runtime-deliverables-outcome_review-1", "runtime-tests-outcome_review-1", "runtime-tdd-coverage-outcome_review-1"]}, "severity": "low", "strongest_objection": "Sparse reviewer worktree lacks pro-corpus prereg artifacts causing amendment test FileNotFoundError (11/12 pass locally); could indicate missing deliverable like prior REVISE case.", "what_would_change_my_mind": "Any of the 12 nodeids failing in full repo, amendment new_sha256 mismatch with on-disk driver/test files, or base prereg byte mutation."}, "decision": "accept", "diagnostics_failure": {}, "failure_classification": null, "failure_details": {}, "gate": "outcome_review", "lineage": ["cursor", "cursor_sdk", "default"], "model": "default", "output_sha256": "7d608d7598ee798b4923180d36fc52cb97290cf20fe825d116f80b3d429fb4ef", "provider_family": "cursor", "provider_family_source": "runtime_inference", "provider_family_verified": false, "recoverable": false, "requested_model": null, "reviewer_assurance": "tool_backed_primary", "reviewer_id": "independent-reviewer-0", "reviewer_output_mode": "cursor_sdk", "reviewer_runtime": "cursor_sdk", "round_index": 1, "runtime": "cursor_sdk", "schema_version": "independent-reviewer-panel-result/v1", "severity": "low", "summary": "Independent verification at HEAD 3cf74b8d: all 12 TDD acceptance tests pass in full repo; driver/test SHA256s match packet; amendment committed and self-verifies. Sparse reviewer worktree missing pro-corpus artifacts caused 11/12 locally but full-repo rerun confirms green. Accept gate advance.", "task_id": "phase0-curation-hardening-20260709", "tests": ["python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact", "python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance", "python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints", "python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt", "python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed", "python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config", "python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged"], "tool_access": "codebase_tools", "tool_backed_command_evidence": false, "transcript_refs": [{"chars": 4000, "kind": "reviewer_transcript_tail", "ref": "independent_reviewer_review:phase0-curation-hardening-20260709:outcome_review:1:independent-reviewer-0"}], "transcript_sha256": "5d3da06002b971c39bba663c0ea94546759f37e567af7f2200b42e75a5530624", "verdict_present": true, "worktree_isolation": {"after_snapshot_sha256": "e621defe5393390533fb37af1312cd350d21395c3dc3a3802fdb310897def3e6", "before_snapshot_sha256": "e621defe5393390533fb37af1312cd350d21395c3dc3a3802fdb310897def3e6", "changed_path_count": 0, "changed_paths": [], "contained_mutation": false, "enabled": true, "excluded_markers": [".mergeability", "fail_to_pass", "pass_to_pass", "hidden_test", "hidden_oracle", "oracle_outputs"], "excluded_names": [".claude", ".codex", ".cortex", ".cursor", ".git", ".handoff", ".hg", ".mergeability", ".mypy_cache", ".orchestrator-state", ".pytest_cache", ".ruff_cache", ".runtime-evidence", ".scratch", ".svn", ".venv", "__pycache__", "dist", "hidden_test_commands.json", "node_modules", "oracle_outputs.json", "runs", "test-results"], "isolated_cwd": "/var/folders/kr/smjlgwxd6_l6wqjjkpw87lfh0000gn/T/cursor-reviewer-bfbiw5f0/worktree", "kept_dual_agent_task_id": "phase0-curation-hardening-20260709", "source_cwd": "/Users/sam.zhang/Documents/codex-supervisor", "strategy": "copytree_public_reviewer_worktree"}}, {"accepted": true, "assurance_grade": "agentic", "attempts": 1, "confidence": 0.89, "confidence_rationale": "I independently inspected the changed driver, test file, prereg amendment, and planning artifacts; recomputed the driver, test, and prereg hashes; checked final JSON write routing; and considered the runtime test and TDD coverage receipts. Confidence is below 0.95 because the review did not include a live Bokken rerun or real Docker prune telemetry, and the top-level packet changed_files list underreports non-code artifacts covered elsewhere by runtime receipts.", "critical_review": {"assumptions_to_verify": ["runtime-tests-outcome_review-1 and runtime-tdd-coverage-outcome_review-1 are the authoritative supervisor runtime floor for this gate", "The gate is judging implementation readiness, not authorizing live solver or model spend", "Generated transcript, replay, and coverage docs are audit artifacts, not behavior-bearing implementation", "Real Bokken Docker output from docker system df --format json uses fields compatible with _docker_image_cache_bytes parsing", "Parent-directory fsync is not required beyond the PRD's observable no-zero-byte artifact contract"], "contradictions_checked": ["Current HEAD is 3cf74b8d97918d84b59fdb732cc4d2398ed2671c and differs from baseline 0cac37b0d3ffa19fdb4cdeca91681bb18975bc07", "shasum matched packet/amendment hashes for scripts/swebench_pro_batch_driver.py, tests/test_swebench_pro_batch_driver.py, and the original preregistration", "All 12 acceptance item test definitions were found and runtime TDD coverage reports no missing nodeids", "Direct write search found driver-final JSON outputs routed through _write_json/_atomic_write_json; remaining direct write_text usage is test setup or solver input JSON, not final evidence artifacts", "Prior replay notes about missing changed files and deliverables were superseded by passed runtime deliverable, test, and coverage receipts in the packet evidence set", "The prereg amendment is committed and self-verified by the amendment test rather than only hardcoded in documentation"], "decision": "accept", "missing_evidence": ["No live Bokken Phase 0 rerun or real Docker prune receipt was included", "The top-level supervisor packet changed_files lists only driver and test files, while the commit and deliverable receipt also include the prereg amendment and generated docs", "Strict power-loss durability evidence does not include parent-directory fsync after os.replace; the tested contract is no zero-byte or partial final artifact", "I did not run pytest locally in this read-only review; I relied on supervisor runtime receipts and code inspection"], "reviewer_context_receipt": {"assumptions": ["Supervisor runtime receipts are authoritative for test execution in this gate", "No live solver/model spend is required or allowed by this implementation review", "Sibling Cursor/cursor_sdk receipt is enforced outside the packet per instruction", "Audit docs generated by the workflow need consistency checks, not full line-by-line behavioral review"], "criteria_checked": ["test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "test_atomic_final_json_write_never_leaves_zero_byte_artifact", "test_checkpoint_receipt_written_after_each_dry_oracle_instance", "test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "test_resume_skips_verified_completed_checkpoints", "test_resume_reruns_tampered_checkpoint_receipt", "test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "test_disk_floor_above_threshold_allows_curation_to_proceed", "test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "test_container_only_prune_default_is_rejected_by_default_config", "test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged"], "files_reviewed": ["scripts/swebench_pro_batch_driver.py", "tests/test_swebench_pro_batch_driver.py", "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/scale-prereg-20260629-amendment-1.json", "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/scale-prereg-20260629.json", "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/batch-driver-pin-20260629.json", "docs/dual-agent/phase0-curation-hardening-20260709/source/prd.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/issues.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/implementation-plan.md", "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings-tdd.md", "docs/dual-agent/phase0-curation-hardening-20260709/outcome-review.md", "docs/dual-agent/phase0-curation-hardening-20260709/interactions.md", "docs/dual-agent/phase0-curation-hardening-20260709/grill-findings.md", "docs/dual-agent/phase0-curation-hardening-20260709/mast-coverage.md"], "missing_context": ["Sibling Cursor/cursor_sdk receipt is not included in the packet and was not treated as a blocker per instruction", "implementer_transcript_ref is null in the packet", "No live Bokken rerun, real oracle container run, or real Docker prune receipt is included", "Generated replay/transcript docs listed in runtime-git-diff were sampled for contradictions but not fully reviewed line by line"], "receipts_considered": ["runtime-baseline-outcome_review-1", "runtime-git-diff-outcome_review-1", "runtime-deliverables-outcome_review-1", "runtime-tests-outcome_review-1", "runtime-tdd-coverage-outcome_review-1", "skill_run:phase0-curation-hardening-20260709:to_prd", "skill_run:phase0-curation-hardening-20260709:prd_grill", "skill_run:phase0-curation-hardening-20260709:to_issues", "skill_run:phase0-curation-hardening-20260709:tdd", "skill_run:phase0-curation-hardening-20260709:tdd_grill"]}, "severity": "low", "strongest_objection": "The strongest non-blocking objection is evidence scope: this gate proves implementation behavior through unit/runtime receipts with fake disk, oracle, and subprocess seams, not a live Bokken Phase 0 rerun with real Docker image telemetry. That would block a production rerun gate, but not this outcome_review implementation gate because live spend is out of scope and the runtime floor passed the public-boundary TDD contract.", "what_would_change_my_mind": "I would revise or deny if any of the 12 runtime nodeids failed or were absent, if amendment hashes drifted from actual files, if a driver-final JSON artifact bypassed atomic write routing, if checkpoint tampering could be accepted silently, or if live Docker image telemetry proved unparsable on the target host."}, "decision": "accept", "diagnostics_failure": {}, "failure_classification": null, "failure_details": {}, "gate": "outcome_review", "lineage": ["openai", "codex_cli", "gpt-5.5"], "model": "gpt-5.5", "output_sha256": "0266cc522b0348b27e8566092f9cb8ed7cbbb1e8e78bf0a9b17b5cb6f79746b1", "provider_family": "openai", "provider_family_source": "served_model_name_inference", "provider_family_verified": false, "recoverable": false, "requested_model": null, "reviewer_assurance": "tool_backed_primary", "reviewer_id": "independent-reviewer-1", "reviewer_output_mode": "codex_cli", "reviewer_runtime": "codex_cli", "round_index": 1, "runtime": "codex_cli", "schema_version": "independent-reviewer-panel-result/v1", "severity": "low", "summary": "Accept. At HEAD 3cf74b8d97918d84b59fdb732cc4d2398ed2671c, the inspected driver, tests, and amendment implement the Phase 0 hardening promises: atomic final JSON writes, verified checkpoint resume, disk-floor clean halts, image-prune telemetry, and append-only prereg evidence. Supervisor runtime evidence reports all 12 named tests passed and covered.", "task_id": "phase0-curation-hardening-20260709", "tests": ["/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_atomic_final_json_write_never_leaves_zero_byte_artifact", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_checkpoint_receipt_written_after_each_dry_oracle_instance", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_checkpoint_write_enospc_halts_with_blocked_execution_receipt", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_resume_skips_verified_completed_checkpoints", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_resume_reruns_tampered_checkpoint_receipt", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_disk_floor_above_threshold_allows_curation_to_proceed", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_container_only_prune_default_is_rejected_by_default_config", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged", "/Users/sam.zhang/Documents/codex-supervisor/.venv/bin/python3 -m pytest tests/test_swebench_pro_batch_driver.py::test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged"], "tool_access": "codebase_tools", "tool_backed_command_evidence": true, "transcript_refs": [{"chars": 4000, "kind": "reviewer_transcript_tail", "ref": "independent_reviewer_review:phase0-curation-hardening-20260709:outcome_review:1:independent-reviewer-1"}], "transcript_sha256": "d0364218116c4137a1f0274523c838405b8b69d3b448704970086866b62cda34", "verdict_present": true, "worktree_isolation": null}], "objections": [], "requirements": [{"evidence": ["P1:green"], "requirement_id": "probe.P1", "status": "pass"}, {"evidence": ["P11:green"], "requirement_id": "probe.P11", "status": "pass"}, {"evidence": ["P2:green"], "requirement_id": "probe.P2", "status": "pass"}, {"evidence": ["P3:green"], "requirement_id": "probe.P3", "status": "pass"}, {"evidence": ["P4:green"], "requirement_id": "probe.P4", "status": "pass"}, {"evidence": ["P_planning:green"], "requirement_id": "probe.P_planning", "status": "pass"}, {"evidence": ["workflow_claims_verified"], "requirement_id": "claim_verification.P11", "status": "pass"}, {"evidence": ["cursor_review_ok", "panel_decision=accept:all_available_reviewers_accept"], "legacy_requirement_id": "cursor_review", "requirement_id": "independent_reviewer", "status": "pass"}], "reviewer": "codex", "round_policy": {"blocking_findings": [], "close_allowed": true, "force_next_round": false}, "schema_version": "codex-review-packet/v1", "task_id": "phase0-curation-hardening-20260709", "would_change_if": "Every requirement is pass and both reviewers accept."}`
+
+### Trace Envelope
+
+- policy_verdict: `observed`
+- failure_taxonomy: `None`

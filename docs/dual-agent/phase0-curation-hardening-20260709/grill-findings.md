@@ -29,3 +29,4 @@ Future duo-agent runs should also create this file through the `prd-to-tdd` skil
 - event_id 1108805 `outcome_review`: Low-sev: amendment hardcodes new_sha256 values for driver/test/prereg; local hashing tools approval-blocked so freshness is verified transitively via the runtime test test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged (line 357 recomputes _sha256_file per changed file), which the supervisor runtime floor reruns.
 - event_id 1108805 `outcome_review`: Low-sev: pytest not runnable locally (approval-blocked); no tests-passed claim made; runtime floor is the test authority.
 - event_id 1108813 `outcome_review`: gate blocked
+- event_id 1109304 `outcome_review`: both agents accepted

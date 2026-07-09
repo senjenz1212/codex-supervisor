@@ -163,7 +163,39 @@
     1108807,
     1108808,
     1108813,
-    1108814
+    1108814,
+    1108818,
+    1109027,
+    1109053,
+    1109054,
+    1109055,
+    1109057,
+    1109059,
+    1109060,
+    1109061,
+    1109062,
+    1109100,
+    1109101,
+    1109113,
+    1109114,
+    1109115,
+    1109116,
+    1109117,
+    1109118,
+    1109119,
+    1109133,
+    1109134,
+    1109135,
+    1109136,
+    1109297,
+    1109298,
+    1109299,
+    1109300,
+    1109301,
+    1109302,
+    1109303,
+    1109304,
+    1109305
   ],
   "event_kinds": [
     "dual_agent_gate_result",
@@ -190,23 +222,8 @@
     "supervisor_worker_session_created",
     "tri_agent_cursor_review"
   ],
-  "events_count": 164,
-  "failure_summary": {
-    "event_id": 1108808,
-    "failure_taxonomy": {
-      "category": "system_design",
-      "code": "blocked_without_probe_reason",
-      "framework": "MAST-inspired",
-      "mast_category": null,
-      "mast_code": null,
-      "mast_mode": null,
-      "probe_id": "",
-      "schema_version": "dual-agent-failure-taxonomy/v1",
-      "source": "dual_agent_gate_result",
-      "subcategory": "resource_contention"
-    },
-    "policy_verdict": "blocked"
-  },
+  "events_count": 196,
+  "failure_summary": null,
   "files": {
     "index": "index.md",
     "interactions": "interactions.md",
@@ -218,7 +235,7 @@
   },
   "handoff_packets": [
     {
-      "content": "{\n  \"cwd\": \"/Users/sam.zhang/Documents/codex-supervisor\",\n  \"execution_layer_policy\": {\n    \"agentic_lead_policy\": {\n      \"min_subagents\": 3,\n      \"policy\": \"off\",\n      \"required_evidence_grade\": \"self_reported\",\n      \"required_roles\": [],\n      \"solo_exception_for_artifact_only_gates\": false\n    },\n    \"allowed_dynamic_workflow_task_classes\": [],\n    \"codex_supervises_final_artifact\": true,\n    \"dynamic_workflow_task_class\": null,\n    \"lead_execution_layer\": \"single_lead_worker\",\n    \"mode\": \"lead_direct\",\n    \"preview_required_gates\": [],\n    \"supervision_layer\": \"codex_plus_lead\"\n  },\n  \"expected_decisions\": [],\n  \"expected_objections\": [],\n  \"expected_specialists\": [],\n  \"gate\": \"outcome_review\",\n  \"injected_lesson_block\": \"Known failure modes to verify before claiming\\nThese are advisory lessons from previous supervisor runs. They do not satisfy any gate by themselves.\\nUse them as a checklist only: do not block, revise, deny, or accept solely because a lesson exists. A step-repetition lesson applies only when current evidence proves the same handoff, artifacts, and source state are being repeated.\\n1. [lead_invocation_timeout] worker_invocation (source_run_id=s2-rollback-r4): Verify this known failure mode explicitly before claiming the gate is complete.\\n2. [missing_worker_signal] worker_invocation (source_run_id=cffe55b8-47b9-4cc0-b025-586aeb0ee5e9): Verify this known failure mode explicitly before claiming the gate is complete.\\n3. [FM-2.4] Information withholding (source_run_id=8ebdbc89-0185-4962-be6f-b0f593887670): Address independent reviewer objections with concrete evidence references.\\n4. [FM-1.3] Step repetition (source_run_id=8ebdbc89-0185-4962-be6f-b0f593887670): Change the plan or evidence before retrying; do not repeat the same handoff.\\n5. [FM-2.4] Information withholding (source_run_id=f89bc699-1b4e-4713-95b7-d1493a3acfd8): Address independent reviewer objections with concrete evidence references.\",\n  \"injected_lesson_block_sha256\": \"88d5df3e93f1437bf5bd20c61a02557b797b7f91c35ac66b4ed845c41922f98e\",\n  \"injected_lesson_ids\": [\n    \"lesson-91a7eff916939ce767f5d0a407412b94ef5ee808902db925571f6c8c64361f6b\",\n    \"lesson-6e3b08262245b3eade5743e9ddb1a92bfb42a34ec49e8b4f2b0792ca1834a590\",\n    \"lesson-833931ec30fbdcacaef5c7df91fae73a71b7ac537110ccf9cab2ec2e80ec6a52\",\n    \"lesson-cd61385380aa0d71d9927ec5c8f719f315a9191aaf387fdc93862d0a6d71f1ef\",\n    \"lesson-715f39df8c3dc22bea09092f80685d87f086d8cdbbf58a0ec008ce0e27d1cb38\"\n  ],\n  \"instruction\": \"Supervisor-owned workflow gate: outcome_review.\\n\\nIntent:\\nMake Phase 0 curation crash-safe: atomic artifacts, checkpoint resume, disk floor, image-level pruning, and an append-only prereg amendment.\\n\\nReview this gate against the current source artifacts and return a typed dual_agent_outcome.\\nUse decisions/objections to say whether the gate should accept, revise, or deny.\\n\\nCorrective context from the previous round:\\nruntime_evidence_failed: runtime_evidence_failed: failures=runtime_changed_files_missing_from_diff, runtime_deliverable_not_file\\n\\nRuntime TDD test contract:\\nThe supervisor runtime floor will verify that every TDD-named test below appears in supervisor-generated runtime evidence. Include tests/commands covering all of them in outcome.tests. Explicitly skipped tests must carry a recorded pytest skip reason; silently absent tests block the gate.\\nUse only canonical gate decisions (`accept`, `revise`, or `deny`). Do not return `accept_with_residual`; if test execution needs verification, declare the exact pytest commands/nodeids and let the supervisor runtime floor rerun them.\\nIf the Claude Bash/test tool is unavailable but the implementation diff is complete, do not block solely on that local tooling outage. Return `accept` with test_status=`unknown`, list the exact pytest commands/nodeids, and make no tests-passed claim; the supervisor runtime floor is the authority and will block the gate on failing or missing tests.\\n- test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure\\n- test_atomic_final_json_write_never_leaves_zero_byte_artifact\\n- test_checkpoint_receipt_written_after_each_dry_oracle_instance\\n- test_checkpoint_write_enospc_halts_with_blocked_execution_receipt\\n- test_resume_skips_verified_completed_checkpoints\\n- test_resume_reruns_tampered_checkpoint_receipt\\n- test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero\\n- test_disk_floor_above_threshold_allows_curation_to_proceed\\n- test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes\\n- test_container_only_prune_default_is_rejected_by_default_config\\n- test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged\\n- test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged\\n\\nKnown failure modes to verify before claiming\\nThese are advisory lessons from previous supervisor runs. They do not satisfy any gate by themselves.\\nUse them as a checklist only: do not block, revise, deny, or accept solely because a lesson exists. A step-repetition lesson applies only when current evidence proves the same handoff, artifacts, and source state are being repeated.\\n1. [lead_invocation_timeout] worker_invocation (source_run_id=s2-rollback-r4): Verify this known failure mode explicitly before claiming the gate is complete.\\n2. [missing_worker_signal] worker_invocation (source_run_id=cffe55b8-47b9-4cc0-b025-586aeb0ee5e9): Verify this known failure mode explicitly before claiming the gate is complete.\\n3. [FM-2.4] Information withholding (source_run_id=8ebdbc89-0185-4962-be6f-b0f593887670): Address independent reviewer objections with concrete evidence references.\\n4. [FM-1.3] Step repetition (source_run_id=8ebdbc89-0185-4962-be6f-b0f593887670): Change the plan or evidence before retrying; do not repeat the same handoff.\\n5. [FM-2.4] Information withholding (source_run_id=f89bc699-1b4e-4713-95b7-d1493a3acfd8): Address independent reviewer objections with concrete evidence references.\",\n  \"lead_skill\": {\n    \"path\": \"/Users/sam.zhang/Documents/codex-supervisor/.claude/skills/lead/SKILL.md\",\n    \"sha256\": \"5660847e0774468d798e1408de08b48b2a0af19d9c13b8d14c2f7118d0b82ce2\",\n    \"version\": \"unversioned\"\n  },\n  \"outcome_validation_policy\": {\n    \"fidelity_failure\": \"abort_to_operator\",\n    \"malformed_outcome\": \"retry_once_with_corrective_packet\",\n    \"subprocess_failure\": \"abort_to_operator\",\n    \"timeout\": \"abort_to_operator\"\n  },\n  \"packet_schema_version\": \"dual-agent-handoff/v1\",\n  \"planning_artifacts\": [\n    {\n      \"kind\": \"prd\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/phase0-curation-hardening-20260709/source/prd.md\",\n      \"sha256\": \"0db1639156713d9f4ad3d22596ba73e16d2f6dd898e54a4522422d75615e273c\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings.md\",\n      \"sha256\": \"b43dbe55b044e9617bf4edb873a118f7382a4f26b056dedbdbb59160d6e19b7d\"\n    },\n    {\n      \"kind\": \"issues\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/phase0-curation-hardening-20260709/source/issues.md\",\n      \"sha256\": \"1322ebf6878c9ec914c9461b37a4755689fb7e01b7b44a915bad21ce70cf6a28\"\n    },\n    {\n      \"kind\": \"tdd_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md\",\n      \"sha256\": \"a710847bc45bb9af2222c201bfb3f23aa449495ed9cc596f11501f49ee33f425\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings-tdd.md\",\n      \"sha256\": \"9ccde3ae427f9df52bfb4e387f8b6cb35000100ec97a58b150dc26ecec007b8f\"\n    },\n    {\n      \"kind\": \"implementation_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/phase0-curation-hardening-20260709/source/implementation-plan.md\",\n      \"sha256\": \"ed335db99dd6bce76112e92ba35b37ee74b44cf4e9dd56ef204fdfb95cb0c636\"\n    },\n    {\n      \"kind\": \"implementation_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/phase0-curation-hardening-20260709/source/implementation-plan.md\",\n      \"sha256\": \"ed335db99dd6bce76112e92ba35b37ee74b44cf4e9dd56ef204fdfb95cb0c636\"\n    },\n    {\n      \"kind\": \"prd\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/phase0-curation-hardening-20260709/source/prd.md\",\n      \"sha256\": \"0db1639156713d9f4ad3d22596ba73e16d2f6dd898e54a4522422d75615e273c\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings.md\",\n      \"sha256\": \"b43dbe55b044e9617bf4edb873a118f7382a4f26b056dedbdbb59160d6e19b7d\"\n    },\n    {\n      \"kind\": \"issues\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/phase0-curation-hardening-20260709/source/issues.md\",\n      \"sha256\": \"1322ebf6878c9ec914c9461b37a4755689fb7e01b7b44a915bad21ce70cf6a28\"\n    },\n    {\n      \"kind\": \"tdd_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md\",\n      \"sha256\": \"a710847bc45bb9af2222c201bfb3f23aa449495ed9cc596f11501f49ee33f425\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings-tdd.md\",\n      \"sha256\": \"9ccde3ae427f9df52bfb4e387f8b6cb35000100ec97a58b150dc26ecec007b8f\"\n    }\n  ],\n  \"policy_overlay_block\": \"\",\n  \"policy_overlay_block_sha256\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\n  \"policy_overlay_hash\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\n  \"policy_proposal_id\": \"\",\n  \"suggested_skills\": [\n    \"/lead\"\n  ],\n  \"task_id\": \"phase0-curation-hardening-20260709\"\n}\n",
+      "content": "{\n  \"cwd\": \"/Users/sam.zhang/Documents/codex-supervisor\",\n  \"execution_layer_policy\": {\n    \"agentic_lead_policy\": {\n      \"min_subagents\": 3,\n      \"policy\": \"off\",\n      \"required_evidence_grade\": \"self_reported\",\n      \"required_roles\": [],\n      \"solo_exception_for_artifact_only_gates\": false\n    },\n    \"allowed_dynamic_workflow_task_classes\": [],\n    \"codex_supervises_final_artifact\": true,\n    \"dynamic_workflow_task_class\": null,\n    \"lead_execution_layer\": \"single_lead_worker\",\n    \"mode\": \"lead_direct\",\n    \"preview_required_gates\": [],\n    \"supervision_layer\": \"codex_plus_lead\"\n  },\n  \"expected_decisions\": [],\n  \"expected_objections\": [],\n  \"expected_specialists\": [],\n  \"gate\": \"outcome_review\",\n  \"injected_lesson_block\": \"Known failure modes to verify before claiming\\nThese are advisory lessons from previous supervisor runs. They do not satisfy any gate by themselves.\\nUse them as a checklist only: do not block, revise, deny, or accept solely because a lesson exists. A step-repetition lesson applies only when current evidence proves the same handoff, artifacts, and source state are being repeated.\\n1. [lead_invocation_timeout] worker_invocation (source_run_id=s2-rollback-r4): Verify this known failure mode explicitly before claiming the gate is complete.\\n2. [missing_worker_signal] worker_invocation (source_run_id=cffe55b8-47b9-4cc0-b025-586aeb0ee5e9): Verify this known failure mode explicitly before claiming the gate is complete.\\n3. [FM-2.4] Information withholding (source_run_id=8ebdbc89-0185-4962-be6f-b0f593887670): Address independent reviewer objections with concrete evidence references.\\n4. [FM-1.3] Step repetition (source_run_id=8ebdbc89-0185-4962-be6f-b0f593887670): Change the plan or evidence before retrying; do not repeat the same handoff.\\n5. [FM-2.4] Information withholding (source_run_id=f89bc699-1b4e-4713-95b7-d1493a3acfd8): Address independent reviewer objections with concrete evidence references.\",\n  \"injected_lesson_block_sha256\": \"88d5df3e93f1437bf5bd20c61a02557b797b7f91c35ac66b4ed845c41922f98e\",\n  \"injected_lesson_ids\": [\n    \"lesson-91a7eff916939ce767f5d0a407412b94ef5ee808902db925571f6c8c64361f6b\",\n    \"lesson-6e3b08262245b3eade5743e9ddb1a92bfb42a34ec49e8b4f2b0792ca1834a590\",\n    \"lesson-833931ec30fbdcacaef5c7df91fae73a71b7ac537110ccf9cab2ec2e80ec6a52\",\n    \"lesson-cd61385380aa0d71d9927ec5c8f719f315a9191aaf387fdc93862d0a6d71f1ef\",\n    \"lesson-715f39df8c3dc22bea09092f80685d87f086d8cdbbf58a0ec008ce0e27d1cb38\"\n  ],\n  \"instruction\": \"Supervisor-owned workflow gate: outcome_review.\\n\\nIntent:\\nMake Phase 0 curation crash-safe: atomic artifacts, checkpoint resume, disk floor, image-level pruning, and an append-only prereg amendment.\\n\\nReview this gate against the current source artifacts and return a typed dual_agent_outcome.\\nUse decisions/objections to say whether the gate should accept, revise, or deny.\\n\\nRuntime TDD test contract:\\nThe supervisor runtime floor will verify that every TDD-named test below appears in supervisor-generated runtime evidence. Include tests/commands covering all of them in outcome.tests. Explicitly skipped tests must carry a recorded pytest skip reason; silently absent tests block the gate.\\nUse only canonical gate decisions (`accept`, `revise`, or `deny`). Do not return `accept_with_residual`; if test execution needs verification, declare the exact pytest commands/nodeids and let the supervisor runtime floor rerun them.\\nIf the Claude Bash/test tool is unavailable but the implementation diff is complete, do not block solely on that local tooling outage. Return `accept` with test_status=`unknown`, list the exact pytest commands/nodeids, and make no tests-passed claim; the supervisor runtime floor is the authority and will block the gate on failing or missing tests.\\n- test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure\\n- test_atomic_final_json_write_never_leaves_zero_byte_artifact\\n- test_checkpoint_receipt_written_after_each_dry_oracle_instance\\n- test_checkpoint_write_enospc_halts_with_blocked_execution_receipt\\n- test_resume_skips_verified_completed_checkpoints\\n- test_resume_reruns_tampered_checkpoint_receipt\\n- test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero\\n- test_disk_floor_above_threshold_allows_curation_to_proceed\\n- test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes\\n- test_container_only_prune_default_is_rejected_by_default_config\\n- test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged\\n- test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged\\n\\nKnown failure modes to verify before claiming\\nThese are advisory lessons from previous supervisor runs. They do not satisfy any gate by themselves.\\nUse them as a checklist only: do not block, revise, deny, or accept solely because a lesson exists. A step-repetition lesson applies only when current evidence proves the same handoff, artifacts, and source state are being repeated.\\n1. [lead_invocation_timeout] worker_invocation (source_run_id=s2-rollback-r4): Verify this known failure mode explicitly before claiming the gate is complete.\\n2. [missing_worker_signal] worker_invocation (source_run_id=cffe55b8-47b9-4cc0-b025-586aeb0ee5e9): Verify this known failure mode explicitly before claiming the gate is complete.\\n3. [FM-2.4] Information withholding (source_run_id=8ebdbc89-0185-4962-be6f-b0f593887670): Address independent reviewer objections with concrete evidence references.\\n4. [FM-1.3] Step repetition (source_run_id=8ebdbc89-0185-4962-be6f-b0f593887670): Change the plan or evidence before retrying; do not repeat the same handoff.\\n5. [FM-2.4] Information withholding (source_run_id=f89bc699-1b4e-4713-95b7-d1493a3acfd8): Address independent reviewer objections with concrete evidence references.\",\n  \"lead_skill\": {\n    \"path\": \"/Users/sam.zhang/Documents/codex-supervisor/.claude/skills/lead/SKILL.md\",\n    \"sha256\": \"5660847e0774468d798e1408de08b48b2a0af19d9c13b8d14c2f7118d0b82ce2\",\n    \"version\": \"unversioned\"\n  },\n  \"outcome_validation_policy\": {\n    \"fidelity_failure\": \"abort_to_operator\",\n    \"malformed_outcome\": \"retry_once_with_corrective_packet\",\n    \"subprocess_failure\": \"abort_to_operator\",\n    \"timeout\": \"abort_to_operator\"\n  },\n  \"packet_schema_version\": \"dual-agent-handoff/v1\",\n  \"planning_artifacts\": [\n    {\n      \"kind\": \"prd\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/phase0-curation-hardening-20260709/source/prd.md\",\n      \"sha256\": \"0db1639156713d9f4ad3d22596ba73e16d2f6dd898e54a4522422d75615e273c\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings.md\",\n      \"sha256\": \"b43dbe55b044e9617bf4edb873a118f7382a4f26b056dedbdbb59160d6e19b7d\"\n    },\n    {\n      \"kind\": \"issues\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/phase0-curation-hardening-20260709/source/issues.md\",\n      \"sha256\": \"1322ebf6878c9ec914c9461b37a4755689fb7e01b7b44a915bad21ce70cf6a28\"\n    },\n    {\n      \"kind\": \"tdd_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md\",\n      \"sha256\": \"a710847bc45bb9af2222c201bfb3f23aa449495ed9cc596f11501f49ee33f425\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings-tdd.md\",\n      \"sha256\": \"9ccde3ae427f9df52bfb4e387f8b6cb35000100ec97a58b150dc26ecec007b8f\"\n    },\n    {\n      \"kind\": \"implementation_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/phase0-curation-hardening-20260709/source/implementation-plan.md\",\n      \"sha256\": \"ed335db99dd6bce76112e92ba35b37ee74b44cf4e9dd56ef204fdfb95cb0c636\"\n    },\n    {\n      \"kind\": \"implementation_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/phase0-curation-hardening-20260709/source/implementation-plan.md\",\n      \"sha256\": \"ed335db99dd6bce76112e92ba35b37ee74b44cf4e9dd56ef204fdfb95cb0c636\"\n    },\n    {\n      \"kind\": \"prd\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/phase0-curation-hardening-20260709/source/prd.md\",\n      \"sha256\": \"0db1639156713d9f4ad3d22596ba73e16d2f6dd898e54a4522422d75615e273c\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings.md\",\n      \"sha256\": \"b43dbe55b044e9617bf4edb873a118f7382a4f26b056dedbdbb59160d6e19b7d\"\n    },\n    {\n      \"kind\": \"issues\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/phase0-curation-hardening-20260709/source/issues.md\",\n      \"sha256\": \"1322ebf6878c9ec914c9461b37a4755689fb7e01b7b44a915bad21ce70cf6a28\"\n    },\n    {\n      \"kind\": \"tdd_plan\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md\",\n      \"sha256\": \"a710847bc45bb9af2222c201bfb3f23aa449495ed9cc596f11501f49ee33f425\"\n    },\n    {\n      \"kind\": \"grill_findings\",\n      \"mutable_by_worker\": false,\n      \"path\": \"docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings-tdd.md\",\n      \"sha256\": \"9ccde3ae427f9df52bfb4e387f8b6cb35000100ec97a58b150dc26ecec007b8f\"\n    }\n  ],\n  \"policy_overlay_block\": \"\",\n  \"policy_overlay_block_sha256\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\n  \"policy_overlay_hash\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\n  \"policy_proposal_id\": \"\",\n  \"suggested_skills\": [\n    \"/lead\"\n  ],\n  \"task_id\": \"phase0-curation-hardening-20260709\"\n}\n",
       "event_ids": [
         1107332,
         1107608,
@@ -232,10 +249,11 @@
         1108592,
         1108612,
         1108805,
-        1108808
+        1108808,
+        1109101
       ],
       "path": "/Users/sam.zhang/Documents/codex-supervisor/.handoff/phase0-curation-hardening-20260709.json",
-      "sha256": "cc04ea91e04d621833daa3ec3603cd031414aed54c0f0f235dd1a390fc05f8da",
+      "sha256": "2d396e1418e4c981391f96eb03f12c8f417034d9d84f293e177b865991934daf",
       "status": "captured"
     }
   ],
@@ -371,6 +389,19 @@
             1108808
           ],
           "source": "sequence"
+        },
+        {
+          "details": {
+            "signature": [
+              "outcome_review",
+              "/Users/sam.zhang/Documents/codex-supervisor/.handoff/phase0-curation-hardening-20260709.json"
+            ]
+          },
+          "event_ids": [
+            1108356,
+            1109101
+          ],
+          "source": "sequence"
         }
       ],
       "status": "observed_in_run",
@@ -498,6 +529,26 @@
           "event_ids": [
             1108590,
             1108611
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "independent_reviewer_non_accept: independent-reviewer-1"
+          },
+          "event_ids": [
+            1108803,
+            1109100
+          ],
+          "source": "sequence"
+        },
+        {
+          "details": {
+            "objection": "gate blocked"
+          },
+          "event_ids": [
+            1108813,
+            1109100
           ],
           "source": "sequence"
         }
@@ -780,34 +831,94 @@
       "schema_version": "dual-agent-failure-taxonomy/v1",
       "source": "event_sequence",
       "subcategory": "step_repetition"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "independent_reviewer_non_accept: independent-reviewer-1"
+      },
+      "event_ids": [
+        1108803,
+        1109100
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "inter_agent_misalignment",
+      "code": "objection_unaddressed_ignored_critique",
+      "details": {
+        "objection": "gate blocked"
+      },
+      "event_ids": [
+        1108813,
+        1109100
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Inter-Agent Misalignment",
+      "mast_code": "FM-2.5",
+      "mast_mode": "Ignored other agent input",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "ignored_input"
+    },
+    {
+      "category": "specification_issues",
+      "code": "repeated_gate_duplicate_round",
+      "details": {
+        "signature": [
+          "outcome_review",
+          "/Users/sam.zhang/Documents/codex-supervisor/.handoff/phase0-curation-hardening-20260709.json"
+        ]
+      },
+      "event_ids": [
+        1108356,
+        1109101
+      ],
+      "framework": "MAST-inspired",
+      "mast_category": "Specification Issues",
+      "mast_code": "FM-1.3",
+      "mast_mode": "Step repetition",
+      "probe_id": "",
+      "schema_version": "dual-agent-failure-taxonomy/v1",
+      "source": "event_sequence",
+      "subcategory": "step_repetition"
     }
   ],
   "state": {
-    "events_count_at_capture": 164,
+    "events_count_at_capture": 196,
     "first_event_id": 1107280,
-    "last_event_id": 1108814,
-    "transcript_jsonl_sha256": "d2d52191c0f189c1e86512ce9f8815eed2018724f9e5a4e603699d451f579e65"
+    "last_event_id": 1109305,
+    "transcript_jsonl_sha256": "e21b029b3e73dd9298688c0a89ff6972b0fa031fef6fc63a5e1a624e7d789528"
   },
   "task_id": "phase0-curation-hardening-20260709",
   "tool_call_totals": {
-    "total_cost_usd": 63.796252,
-    "total_duration_ms": 3944285,
-    "total_duration_us": 3944311392,
-    "total_tokens_in": 19837716,
-    "total_tokens_out": 195962,
-    "unique_tool_calls": 131
+    "total_cost_usd": 69.534598,
+    "total_duration_ms": 4414773,
+    "total_duration_us": 4414803712,
+    "total_tokens_in": 20816772,
+    "total_tokens_out": 212636,
+    "unique_tool_calls": 147
   },
   "workspace_snapshot": {
-    "file_tree_sha256": "388775f4596718da4fcf0560e3594452415546d735719132b3f7c9e94c11a733",
+    "file_tree_sha256": "c8295329e27dab1f9ad22446d5455b1621cbc1103b9cffa795817ad3ade11ad6",
     "git": {
-      "diff_bytes": 39587,
-      "diff_sha256": "aeda39135bf1e6d40b73ff3beb9d078ebd8b2755444ce0e01b621f5d256cc488",
-      "diff_stat": "scripts/swebench_pro_batch_driver.py    | 552 +++++++++++++++++++++++++++++++-\n tests/test_swebench_pro_batch_driver.py | 341 ++++++++++++++++++++\n 2 files changed, 880 insertions(+), 13 deletions(-)",
-      "head": "0cac37b0",
+      "diff_bytes": 1611990,
+      "diff_sha256": "b0a0d01927d995160ceca4bbe2a7cebe4460b307d23b105249c629aa522dc431",
+      "diff_stat": ".../grill-findings.md                              |    1 +\n .../phase0-curation-hardening-20260709/index.md    |    6 +-\n .../interactions.md                                | 1297 +++++++++++++++++++\n .../mast-coverage.md                               |    4 +-\n .../replay/manifest.json                           |  184 ++-\n .../replay/mast-coverage.json                      |   33 +\n .../replay/workspace-snapshot.json                 |   14 +-\n .../transcript.jsonl                               |   31 +\n .../transcript.md                                  | 1344 ++++++++++++++++++++\n .../phase0-curation-hardening-20260709/triage.md   |   28 +-\n 10 files changed, 2877 insertions(+), 65 deletions(-)",
+      "head": "3cf74b8d",
       "head_label": "handoff_cwd_head",
       "head_ref": "HEAD",
-      "head_sha": "0cac37b0",
-      "status_short": "M scripts/swebench_pro_batch_driver.py\n M tests/test_swebench_pro_batch_driver.py\n?? docs/dual-agent/phase0-curation-hardening-20260709/\n?? docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/scale-prereg-20260629-amendment-1.json\n?? docs/pocock-skills-intake-20260709.md"
+      "head_sha": "3cf74b8d",
+      "status_short": "M docs/dual-agent/phase0-curation-hardening-20260709/grill-findings.md\n M docs/dual-agent/phase0-curation-hardening-20260709/index.md\n M docs/dual-agent/phase0-curation-hardening-20260709/interactions.md\n M docs/dual-agent/phase0-curation-hardening-20260709/mast-coverage.md\n M docs/dual-agent/phase0-curation-hardening-20260709/replay/manifest.json\n M docs/dual-agent/phase0-curation-hardening-20260709/replay/mast-coverage.json\n M docs/dual-agent/phase0-curation-hardening-20260709/replay/workspace-snapshot.json\n M docs/dual-agent/phase0-curation-hardening-20260709/transcript.jsonl\n M docs/dual-agent/phase0-curation-hardening-20260709/transcript.md\n M docs/dual-agent/phase0-curation-hardening-20260709/triage.md\n?? docs/pocock-skills-intake-20260709.md"
     },
     "root": "/Users/sam.zhang/Documents/codex-supervisor",
     "root_source": "handoff_cwd",

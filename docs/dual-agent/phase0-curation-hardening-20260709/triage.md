@@ -2,27 +2,23 @@
 
 - run_id: `b8a0d9a4-78a3-4391-963b-bc5fef493010`
 - task_id: `phase0-curation-hardening-20260709`
-- final_event_id: `1108808`
-- policy_verdict: `blocked`
-- claude_gate_status: `blocked`
-- supervisor_final_status: `blocked`
+- final_event_id: `1109101`
+- policy_verdict: `observed`
+- claude_gate_status: `accepted`
+- supervisor_final_status: `accepted`
 
 ## Run Totals
 
-- unique_tool_calls: `131`
-- total_duration_ms: `3944285`
-- total_duration_us: `3944311392`
-- total_tokens_in: `19837716`
-- total_tokens_out: `195962`
-- total_cost_usd: `63.796252`
+- unique_tool_calls: `147`
+- total_duration_ms: `4414773`
+- total_duration_us: `4414803712`
+- total_tokens_in: `20816772`
+- total_tokens_out: `212636`
+- total_cost_usd: `69.534598`
 
 ## Root Cause
 
-- failure_code: `blocked_without_probe_reason`
-- failure_category: `system_design`
-- failure_subcategory: `resource_contention`
-- mast_code: ``
-- mast_mode: ``
+- No blocking failure taxonomy recorded.
 
 ## Blocking Details
 
@@ -54,4 +50,4 @@
 
 ## Next Safe Action
 
-Inspect the failure event, resolve the named taxonomy blocker, then rerun the blocked gate.
+Inspect the latest gate result and replay manifest before advancing.
