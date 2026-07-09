@@ -186,6 +186,12 @@ def test_resume_skips_verified_completed_checkpoints(tmp_path: Path) -> None:
             "rc_nonzero_resolved": False,
         },
     }
+    fingerprint = batch._invocation_fingerprint(
+        run_dry_oracle=True,
+        scripts_dir=str(scripts_dir),
+        docker_prune_command=batch.DEFAULT_DOCKER_PRUNE_COMMAND,
+        prune_docker_between_instances=False,
+    )
     checkpoint = batch._checkpoint_payload(
         instance_id="instance_1",
         decision={"kind": "curated", "entry": checkpoint_entry},
@@ -193,6 +199,7 @@ def test_resume_skips_verified_completed_checkpoints(tmp_path: Path) -> None:
         image_cache_bytes=500,
         prune_receipt=None,
         now=lambda: "2026-07-09T00:00:00Z",
+        invocation_fingerprint=fingerprint,
     )
     batch._atomic_write_json(output_dir / "checkpoints" / "instance_1.json", checkpoint)
     seen: list[str] = []
@@ -357,6 +364,108 @@ def test_run_prune_returns_receipt_when_docker_binary_missing(
     assert receipt["returncode"] is None
     assert receipt["reclaimed_bytes"] is None
     assert "FileNotFoundError" in receipt["stderr_tail"]
+
+
+def test_run_prune_returns_invocation_error_for_malformed_command(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("subprocess.run must not be invoked for a bad command")
+
+    monkeypatch.setattr(batch.subprocess, "run", fail_if_called)
+
+    receipt = batch._run_prune(
+        'docker image prune "unterminated',
+        cwd=tmp_path,
+        image_cache_bytes=lambda _path: 100,
+    )
+
+    assert receipt["invocation_error"] is True
+    assert receipt["returncode"] is None
+    assert receipt["reclaimed_bytes"] is None
+    assert "ValueError" in receipt["stderr_tail"]
+
+
+def test_nested_halt_receipt_write_failure_still_raises_clean_halt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scripts_dir = tmp_path / "run_scripts"
+    _write_scripts(scripts_dir, "instance_1")
+    output_dir = tmp_path / "out"
+
+    def always_enospc(_path: Path, _payload, **_kwargs) -> None:
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    monkeypatch.setattr(batch, "_atomic_write_json", always_enospc)
+
+    with pytest.raises(batch.Phase0CleanHalt) as exc_info:
+        batch.curate_roster(
+            [_record("instance_1")],
+            scripts_dir=str(scripts_dir),
+            run_dry_oracle=True,
+            oracle_runner=_passing_oracle(tmp_path / "output.json"),
+            output_dir=output_dir,
+            disk_floor_gb=15.0,
+            disk_free_gb=lambda _path: 100.0,
+            now=lambda: "2026-07-09T00:00:00Z",
+        )
+
+    assert exc_info.value.reason == "checkpoint_write_enospc"
+    assert exc_info.value.receipt_path == output_dir / "phase0-blocked-execution-receipt.json"
+
+
+def test_resume_invalidates_checkpoints_with_mismatched_invocation_fingerprint(
+    tmp_path: Path,
+) -> None:
+    scripts_dir = tmp_path / "run_scripts"
+    _write_scripts(scripts_dir, "instance_1")
+    output_dir = tmp_path / "out"
+    other_scripts = str(tmp_path / "other_scripts")
+    fingerprint = batch._invocation_fingerprint(
+        run_dry_oracle=True,
+        scripts_dir=other_scripts,
+        docker_prune_command=batch.DEFAULT_DOCKER_PRUNE_COMMAND,
+        prune_docker_between_instances=False,
+    )
+    checkpoint_entry = {
+        "instance_id": "instance_1",
+        "record": _record("instance_1"),
+        "run_scripts_status": "present",
+        "dry_oracle": {"status": "not_run"},
+    }
+    checkpoint = batch._checkpoint_payload(
+        instance_id="instance_1",
+        decision={"kind": "curated", "entry": checkpoint_entry},
+        disk_free_gb=90.0,
+        image_cache_bytes=500,
+        prune_receipt=None,
+        now=lambda: "2026-07-09T00:00:00Z",
+        invocation_fingerprint=fingerprint,
+    )
+    batch._atomic_write_json(output_dir / "checkpoints" / "instance_1.json", checkpoint)
+    seen: list[str] = []
+    passing_oracle = _passing_oracle(tmp_path / "output.json")
+
+    def fake_oracle(context):
+        seen.append(context["instance_id"])
+        return passing_oracle(context)
+
+    report = batch.curate_roster(
+        [_record("instance_1")],
+        scripts_dir=str(scripts_dir),
+        run_dry_oracle=True,
+        oracle_runner=fake_oracle,
+        output_dir=output_dir,
+        resume_from_checkpoints=True,
+    )
+
+    assert seen == ["instance_1"]
+    assert report["provenance"]["resumed_from_checkpoint_count"] == 0
+    assert report["provenance"]["invalid_checkpoint_count"] >= 1
+    reasons = [item.get("reason") for item in report["provenance"]["invalid_checkpoints"]]
+    assert "invocation_fingerprint_mismatch" in reasons
 
 
 def test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged() -> None:

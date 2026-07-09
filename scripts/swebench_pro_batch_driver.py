@@ -335,6 +335,21 @@ def _checkpoint_path(checkpoints_dir: Path, instance_id: str) -> Path:
     return checkpoints_dir / f"{_safe_fragment(instance_id)}.json"
 
 
+def _invocation_fingerprint(
+    *,
+    run_dry_oracle: bool,
+    scripts_dir: str,
+    docker_prune_command: str,
+    prune_docker_between_instances: bool,
+) -> dict[str, Any]:
+    return {
+        "run_dry_oracle": bool(run_dry_oracle),
+        "scripts_dir": str(scripts_dir),
+        "docker_prune_command": str(docker_prune_command),
+        "prune_docker_between_instances": bool(prune_docker_between_instances),
+    }
+
+
 def _checkpoint_payload(
     *,
     instance_id: str,
@@ -343,6 +358,7 @@ def _checkpoint_payload(
     image_cache_bytes: int | None,
     prune_receipt: Mapping[str, Any] | None,
     now: Callable[[], str],
+    invocation_fingerprint: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "schema_version": CHECKPOINT_SCHEMA_VERSION,
@@ -354,6 +370,8 @@ def _checkpoint_payload(
     }
     if prune_receipt is not None:
         payload["docker_prune"] = dict(prune_receipt)
+    if invocation_fingerprint is not None:
+        payload["invocation_fingerprint"] = dict(invocation_fingerprint)
     payload["payload_sha256"] = _stable_payload_hash(payload)
     return payload
 
@@ -516,6 +534,7 @@ def _write_instance_checkpoint_or_halt(
     image_cache_bytes: int | None,
     prune_receipt: Mapping[str, Any] | None,
     now: Callable[[], str],
+    invocation_fingerprint: Mapping[str, Any] | None = None,
 ) -> None:
     path = _checkpoint_path(checkpoints_dir, instance_id)
     payload = _checkpoint_payload(
@@ -525,23 +544,27 @@ def _write_instance_checkpoint_or_halt(
         image_cache_bytes=image_cache_bytes,
         prune_receipt=prune_receipt,
         now=now,
+        invocation_fingerprint=invocation_fingerprint,
     )
     try:
         _atomic_write_json(path, payload)
     except OSError as exc:
         reason = "checkpoint_write_enospc" if _is_enospc(exc) else "checkpoint_write_failed"
-        receipt_path = _write_blocked_execution_receipt(
-            output_dir=output_dir,
-            reason=reason,
-            disk_free_gb=disk_free_gb,
-            disk_floor_gb=disk_floor_gb,
-            now=now,
-            details={
-                "instance_id": instance_id,
-                "checkpoint_path": str(path),
-                "error": str(exc),
-            },
-        )
+        try:
+            receipt_path = _write_blocked_execution_receipt(
+                output_dir=output_dir,
+                reason=reason,
+                disk_free_gb=disk_free_gb,
+                disk_floor_gb=disk_floor_gb,
+                now=now,
+                details={
+                    "instance_id": instance_id,
+                    "checkpoint_path": str(path),
+                    "error": str(exc),
+                },
+            )
+        except OSError:
+            receipt_path = _halt_receipt_path(output_dir)
         raise Phase0CleanHalt(reason=reason, receipt_path=receipt_path) from exc
 
 
@@ -609,11 +632,28 @@ def curate_roster(
     curated: list[dict[str, Any]] = []
     excluded: list[dict[str, Any]] = []
     checkpoints_dir = output_dir / "checkpoints" if output_dir is not None else None
+    invocation_fingerprint = _invocation_fingerprint(
+        run_dry_oracle=run_dry_oracle,
+        scripts_dir=scripts_dir,
+        docker_prune_command=docker_prune_command,
+        prune_docker_between_instances=prune_docker_between_instances,
+    )
     valid_checkpoints: dict[str, Mapping[str, Any]] = {}
     invalid_checkpoints: list[dict[str, str]] = []
     resumed_from_checkpoint_count = 0
     if checkpoints_dir is not None and resume_from_checkpoints:
         valid_checkpoints, invalid_checkpoints = _load_checkpoint_receipts(checkpoints_dir)
+        mismatched: list[str] = []
+        for cid, payload in list(valid_checkpoints.items()):
+            recorded = payload.get("invocation_fingerprint")
+            if recorded != invocation_fingerprint:
+                invalid_checkpoints.append({
+                    "instance_id": cid,
+                    "reason": "invocation_fingerprint_mismatch",
+                })
+                mismatched.append(cid)
+        for cid in mismatched:
+            valid_checkpoints.pop(cid, None)
     for record in records:
         instance_id = str(record.get("instance_id") or "")
         if instance_id in valid_checkpoints:
@@ -660,6 +700,7 @@ def curate_roster(
                     image_cache_bytes=image_cache_bytes(output_dir),
                     prune_receipt=None,
                     now=now,
+                    invocation_fingerprint=invocation_fingerprint,
                 )
             continue
         entry = {
@@ -704,6 +745,7 @@ def curate_roster(
                         ),
                         prune_receipt=prune_receipt,
                         now=now,
+                        invocation_fingerprint=invocation_fingerprint,
                     )
                 continue
         else:
@@ -730,6 +772,7 @@ def curate_roster(
                 ),
                 prune_receipt=prune_receipt,
                 now=now,
+                invocation_fingerprint=invocation_fingerprint,
             )
     vacuous_pass_to_pass_count = sum(
         1
@@ -886,8 +929,22 @@ def _run_prune(
 ) -> dict[str, Any]:
     before_bytes = image_cache_bytes(cwd)
     try:
+        argv = shlex.split(command)
+    except ValueError as exc:
+        return {
+            "command": command,
+            "image_reclaiming_command": _is_image_reclaiming_prune_command(command),
+            "image_cache_bytes_before": before_bytes,
+            "image_cache_bytes_after": before_bytes,
+            "reclaimed_bytes": None,
+            "returncode": None,
+            "stdout_tail": "",
+            "stderr_tail": f"{type(exc).__name__}: {exc}"[-2000:],
+            "invocation_error": True,
+        }
+    try:
         completed = subprocess.run(
-            shlex.split(command),
+            argv,
             cwd=cwd,
             text=True,
             capture_output=True,

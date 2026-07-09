@@ -15,7 +15,7 @@
     {
       "path": "scripts/swebench_pro_batch_driver.py",
       "old_sha256": "c67e4957e064dab892b0e13015d7b54e2536391d690768d55498722a3dfb98c5",
-      "new_sha256": "3e99b66f8db47d736583b2848f446a9e927c731228cb98b264e87791d5bc86d5",
+      "new_sha256": "10da0493581563ac66ee7909f7be058c694f07d5f2754425ad721f3d53774d05",
       "change_class": "phase0_environment_robustness",
       "scope": [
         "same-filesystem atomic JSON artifact writes",
@@ -24,13 +24,16 @@
         "disk-floor clean halt receipt before each instance",
         "image-level Docker prune telemetry with reclaimed-byte accounting",
         "disk and image-cache telemetry in checkpoint/provenance receipts",
-        "prune subprocess OSError caught into non-fatal receipt with invocation_error flag"
+        "prune subprocess OSError caught into non-fatal receipt with invocation_error flag",
+        "prune command shlex.ValueError caught into non-fatal receipt with invocation_error flag",
+        "checkpoint halt-receipt write failure still raises Phase0CleanHalt",
+        "resume invalidates checkpoints whose invocation fingerprint differs from current run"
       ]
     },
     {
       "path": "tests/test_swebench_pro_batch_driver.py",
       "old_sha256": "a2f09cd144fb09e3f427ddab4e832d68ba61552e88124db455b97828660747d1",
-      "new_sha256": "3aba34de0ac404391f7e23da376e446e4f0b6dc5a5dd449ca70b9433f144bf64",
+      "new_sha256": "284b2360df4db3cb30b6941728b2dc554be7f99fbb08494e9fd9dace24ddcf9c",
       "change_class": "phase0_environment_robustness_regression_tests",
       "scope": [
         "atomic artifact write interruption behavior",
@@ -39,7 +42,10 @@
         "disk-floor halt/proceed behavior",
         "image-prune telemetry and default command classification",
         "append-only amendment validation",
-        "prune-receipt missing-docker-binary regression"
+        "prune-receipt missing-docker-binary regression",
+        "prune-receipt malformed-command shlex ValueError regression",
+        "nested halt-receipt write failure still raises Phase0CleanHalt regression",
+        "invocation-fingerprint mismatch invalidates resumed checkpoints regression"
       ]
     }
   ],
@@ -50,11 +56,11 @@
       "references": {
         "pinned_batch_driver.driver_sha256": {
           "old_sha256": "c67e4957e064dab892b0e13015d7b54e2536391d690768d55498722a3dfb98c5",
-          "new_sha256": "3e99b66f8db47d736583b2848f446a9e927c731228cb98b264e87791d5bc86d5"
+          "new_sha256": "10da0493581563ac66ee7909f7be058c694f07d5f2754425ad721f3d53774d05"
         },
         "pinned_batch_driver.test_sha256": {
           "old_sha256": "a2f09cd144fb09e3f427ddab4e832d68ba61552e88124db455b97828660747d1",
-          "new_sha256": "3aba34de0ac404391f7e23da376e446e4f0b6dc5a5dd449ca70b9433f144bf64"
+          "new_sha256": "284b2360df4db3cb30b6941728b2dc554be7f99fbb08494e9fd9dace24ddcf9c"
         }
       }
     }
