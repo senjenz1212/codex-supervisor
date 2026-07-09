@@ -403,6 +403,45 @@ authority flag on the report (`metric_applyable`,
 invoke any benchmark-to-policy promotion bridge and the all-arms diagnostic
 remains a separate report-only mode.
 
+## swe_bench_pro_batch_driver_curation
+
+Drive the SWE-bench Pro Phase 0 curation seam through
+`scripts.swebench_pro_batch_driver.curate_roster(...)` and its CLI-shaped
+`main(...)`. Tests must inject fake oracle callbacks, fake disk telemetry, and
+fake Docker `system df`/`image prune` subprocess output below the public
+boundary, and must not call live Docker, the Pro oracle, the solver, or any
+model provider. The driver must route every final JSON artifact
+(`batch-driver-manifest.json`, `curated-roster.json`, per-instance
+`checkpoints/<safe-instance-id>.json`, and
+`phase0-blocked-execution-receipt.json`) through a same-filesystem
+tmp-then-rename atomic write so a mid-write crash never leaves a zero-byte
+target; write a hash-verified checkpoint receipt
+(`supervisor-swebench-pro-instance-checkpoint/v1`) after each curated instance
+with instance id, decision, `disk_free_gb`, image-cache telemetry, prune
+receipt, invocation fingerprint, and payload hash; on rerun reuse only
+checkpoints whose payload hash and invocation fingerprint still match the
+current run (`--no-resume-from-checkpoints` disables resume) and record
+resumed and invalid counts under roster `provenance`; before each instance
+compare free disk to `--disk-floor-gb` (default 15 GB) and on breach emit a
+`supervisor-swebench-pro-blocked-execution/v1` halt receipt at
+`<output-dir>/phase0-blocked-execution-receipt.json` and exit `2` before any
+oracle work; keep `--docker-prune-command` operator-configurable with the
+default `docker image prune -af`, classify container-only defaults as not
+image-reclaiming, and record command, `image_reclaiming_command`, before/after
+image-cache bytes, reclaimed bytes when measurable, and an `invocation_error`
+flag when Docker is missing or the command is malformed instead of raising;
+refuse `--run-solver`/`--run-labeling`/`--run-powered` without `--allow-live`
+and refuse solver spend without a `--phase0-gate-decision` artifact whose
+`solver_spend_allowed=true`; and keep every authority flag
+(`metric_applyable`, `improvement_claim_allowed`,
+`powered_improvement_claim_allowed`, `human_mergeability_claim_allowed`,
+`default_change_allowed`, `policy_mutated`, `gate_advanced`) false on the
+manifest, roster, checkpoints, and halt receipt while preserving inclusion
+predicates, statistical floors, oracle timeout, solver pins, and report-only
+labels. The append-only preregistration amendment beside the frozen
+`scale-prereg-20260629.json` must record the original bytes-unchanged SHA-256
+and the actual old/new SHA-256s of every touched pinned file.
+
 ## swe_bench_pro_label_stability_wrapper
 
 Repeat the SWE-bench Pro oracle `N` times per already-labeled prediction row
