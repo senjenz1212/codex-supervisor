@@ -880,13 +880,26 @@ def _run_prune(
     image_cache_bytes: Callable[[Path], int | None] = _docker_image_cache_bytes,
 ) -> dict[str, Any]:
     before_bytes = image_cache_bytes(cwd)
-    completed = subprocess.run(
-        shlex.split(command),
-        cwd=cwd,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
+    try:
+        completed = subprocess.run(
+            shlex.split(command),
+            cwd=cwd,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+    except OSError as exc:
+        return {
+            "command": command,
+            "image_reclaiming_command": _is_image_reclaiming_prune_command(command),
+            "image_cache_bytes_before": before_bytes,
+            "image_cache_bytes_after": before_bytes,
+            "reclaimed_bytes": None,
+            "returncode": None,
+            "stdout_tail": "",
+            "stderr_tail": f"{type(exc).__name__}: {exc}"[-2000:],
+            "invocation_error": True,
+        }
     after_bytes = image_cache_bytes(cwd)
     reclaimed_bytes = None
     if before_bytes is not None and after_bytes is not None:

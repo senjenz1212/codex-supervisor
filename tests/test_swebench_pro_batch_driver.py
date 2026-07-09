@@ -332,6 +332,28 @@ def test_container_only_prune_default_is_rejected_by_default_config() -> None:
     assert batch._is_image_reclaiming_prune_command("docker container prune -f") is False
 
 
+def test_run_prune_returns_receipt_when_docker_binary_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_run(*_args, **_kwargs):
+        raise FileNotFoundError(2, "No such file or directory", "docker")
+
+    monkeypatch.setattr(batch.subprocess, "run", fake_run)
+
+    receipt = batch._run_prune(
+        batch.DEFAULT_DOCKER_PRUNE_COMMAND,
+        cwd=tmp_path,
+        image_cache_bytes=lambda _path: None,
+    )
+
+    assert receipt["command"] == batch.DEFAULT_DOCKER_PRUNE_COMMAND
+    assert receipt["invocation_error"] is True
+    assert receipt["returncode"] is None
+    assert receipt["reclaimed_bytes"] is None
+    assert "FileNotFoundError" in receipt["stderr_tail"]
+
+
 def test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged() -> None:
     root = Path(__file__).resolve().parents[1]
     prereg_path = (
