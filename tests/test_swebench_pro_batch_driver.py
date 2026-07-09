@@ -330,6 +330,11 @@ def test_default_docker_prune_command_reclaims_images_and_records_reclaimed_byte
 def test_container_only_prune_default_is_rejected_by_default_config() -> None:
     assert batch._is_image_reclaiming_prune_command(batch.DEFAULT_DOCKER_PRUNE_COMMAND) is True
     assert batch._is_image_reclaiming_prune_command("docker container prune -f") is False
+    assert batch._is_image_reclaiming_prune_command("docker system prune -af") is True
+    assert batch._is_image_reclaiming_prune_command("docker system prune -fa") is True
+    assert batch._is_image_reclaiming_prune_command("docker system prune -f") is False
+    assert batch._is_image_reclaiming_prune_command("docker system prune --all") is True
+    assert batch._is_image_reclaiming_prune_command("docker system prune --all=true") is True
 
 
 def test_run_prune_returns_receipt_when_docker_binary_missing(

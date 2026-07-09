@@ -15,7 +15,7 @@
     {
       "path": "scripts/swebench_pro_batch_driver.py",
       "old_sha256": "c67e4957e064dab892b0e13015d7b54e2536391d690768d55498722a3dfb98c5",
-      "new_sha256": "d0c43b289da7adbb2be93f0f42c5466982c744d2a205fd296b18e97e6fe5116f",
+      "new_sha256": "3e99b66f8db47d736583b2848f446a9e927c731228cb98b264e87791d5bc86d5",
       "change_class": "phase0_environment_robustness",
       "scope": [
         "same-filesystem atomic JSON artifact writes",
@@ -30,7 +30,7 @@
     {
       "path": "tests/test_swebench_pro_batch_driver.py",
       "old_sha256": "a2f09cd144fb09e3f427ddab4e832d68ba61552e88124db455b97828660747d1",
-      "new_sha256": "312f3263070772a0556a324027266840527437450eae8b5e2ddb51955aef9b8e",
+      "new_sha256": "3aba34de0ac404391f7e23da376e446e4f0b6dc5a5dd449ca70b9433f144bf64",
       "change_class": "phase0_environment_robustness_regression_tests",
       "scope": [
         "atomic artifact write interruption behavior",
@@ -50,11 +50,11 @@
       "references": {
         "pinned_batch_driver.driver_sha256": {
           "old_sha256": "c67e4957e064dab892b0e13015d7b54e2536391d690768d55498722a3dfb98c5",
-          "new_sha256": "d0c43b289da7adbb2be93f0f42c5466982c744d2a205fd296b18e97e6fe5116f"
+          "new_sha256": "3e99b66f8db47d736583b2848f446a9e927c731228cb98b264e87791d5bc86d5"
         },
         "pinned_batch_driver.test_sha256": {
           "old_sha256": "a2f09cd144fb09e3f427ddab4e832d68ba61552e88124db455b97828660747d1",
-          "new_sha256": "312f3263070772a0556a324027266840527437450eae8b5e2ddb51955aef9b8e"
+          "new_sha256": "3aba34de0ac404391f7e23da376e446e4f0b6dc5a5dd449ca70b9433f144bf64"
         }
       }
     }

@@ -555,7 +555,12 @@ def _is_image_reclaiming_prune_command(command: str) -> bool:
     if parts[1:3] == ["image", "prune"]:
         return True
     if parts[1:3] == ["system", "prune"]:
-        return any(part in {"-a", "--all"} or part.startswith("--all=") for part in parts[3:])
+        def _has_all_flag(part: str) -> bool:
+            if part in {"-a", "--all"} or part.startswith("--all="):
+                return True
+            return part.startswith("-") and not part.startswith("--") and "a" in part[1:]
+
+        return any(_has_all_flag(part) for part in parts[3:])
     if parts[1] == "rmi":
         return True
     return False
