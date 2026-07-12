@@ -1,0 +1,67 @@
+[
+  {
+    "receipt_id": "skill_run:phase0-curation-hardening-20260709:to_prd",
+    "kind": "skill_run",
+    "skill": "prd-to-tdd",
+    "stage": "to_prd",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/phase0-curation-hardening-20260709/source/prd.md"
+    ],
+    "claims": [
+      "PRD authored with promise contracts for atomic artifacts, checkpoint receipts, resume verification, disk-floor halts, image-prune telemetry, append-only prereg amendment, and unchanged benchmark authority."
+    ]
+  },
+  {
+    "receipt_id": "skill_run:phase0-curation-hardening-20260709:prd_grill",
+    "kind": "skill_run",
+    "skill": "grill-with-docs",
+    "stage": "prd_grill",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings.md"
+    ],
+    "claims": [
+      "PRD grill findings resolved final-artifact coverage, corrupt checkpoint distrust, clean disk-floor evidence, measurable image pruning, prereg immutability, and unchanged benchmark authority."
+    ]
+  },
+  {
+    "receipt_id": "skill_run:phase0-curation-hardening-20260709:to_issues",
+    "kind": "skill_run",
+    "skill": "to-issues",
+    "stage": "to_issues",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/phase0-curation-hardening-20260709/source/issues.md"
+    ],
+    "claims": [
+      "Issues sliced into vertical tracer bullets covering atomic final artifacts, checkpoint receipts, checkpoint resume, disk floor and prune telemetry, and append-only prereg amendment."
+    ]
+  },
+  {
+    "receipt_id": "skill_run:phase0-curation-hardening-20260709:tdd",
+    "kind": "skill_run",
+    "skill": "tdd",
+    "stage": "tdd",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/phase0-curation-hardening-20260709/source/tdd.md"
+    ],
+    "claims": [
+      "TDD plan names public-boundary RED/GREEN cycles for atomic writes, checkpoints, resume verification, disk-floor exits, image-prune telemetry, prereg amendment validation, and unchanged authority checks."
+    ]
+  },
+  {
+    "receipt_id": "skill_run:phase0-curation-hardening-20260709:tdd_grill",
+    "kind": "skill_run",
+    "skill": "grill-with-docs",
+    "stage": "tdd_grill",
+    "status": "passed",
+    "artifacts": [
+      "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings-tdd.md"
+    ],
+    "claims": [
+      "TDD grill findings resolved public-boundary artifact outcomes, oracle-boundary discipline, resume skip and rerun proof, nonzero disk-floor exits, final-hash amendment timing, and named test coverage."
+    ]
+  }
+]

@@ -1,0 +1,23 @@
+{
+  "file_tree_sha256": "c8295329e27dab1f9ad22446d5455b1621cbc1103b9cffa795817ad3ade11ad6",
+  "git": {
+    "diff_bytes": 1611990,
+    "diff_sha256": "b0a0d01927d995160ceca4bbe2a7cebe4460b307d23b105249c629aa522dc431",
+    "diff_stat": ".../grill-findings.md                              |    1 +\n .../phase0-curation-hardening-20260709/index.md    |    6 +-\n .../interactions.md                                | 1297 +++++++++++++++++++\n .../mast-coverage.md                               |    4 +-\n .../replay/manifest.json                           |  184 ++-\n .../replay/mast-coverage.json                      |   33 +\n .../replay/workspace-snapshot.json                 |   14 +-\n .../transcript.jsonl                               |   31 +\n .../transcript.md                                  | 1344 ++++++++++++++++++++\n .../phase0-curation-hardening-20260709/triage.md   |   28 +-\n 10 files changed, 2877 insertions(+), 65 deletions(-)",
+    "head": "3cf74b8d",
+    "head_label": "handoff_cwd_head",
+    "head_ref": "HEAD",
+    "head_sha": "3cf74b8d",
+    "status_short": "M docs/dual-agent/phase0-curation-hardening-20260709/grill-findings.md\n M docs/dual-agent/phase0-curation-hardening-20260709/index.md\n M docs/dual-agent/phase0-curation-hardening-20260709/interactions.md\n M docs/dual-agent/phase0-curation-hardening-20260709/mast-coverage.md\n M docs/dual-agent/phase0-curation-hardening-20260709/replay/manifest.json\n M docs/dual-agent/phase0-curation-hardening-20260709/replay/mast-coverage.json\n M docs/dual-agent/phase0-curation-hardening-20260709/replay/workspace-snapshot.json\n M docs/dual-agent/phase0-curation-hardening-20260709/transcript.jsonl\n M docs/dual-agent/phase0-curation-hardening-20260709/transcript.md\n M docs/dual-agent/phase0-curation-hardening-20260709/triage.md\n?? docs/pocock-skills-intake-20260709.md"
+  },
+  "root": "/Users/sam.zhang/Documents/codex-supervisor",
+  "root_source": "handoff_cwd",
+  "source_artifact_hashes": {
+    "grill_findings": "9ccde3ae427f9df52bfb4e387f8b6cb35000100ec97a58b150dc26ecec007b8f",
+    "implementation_plan": "ed335db99dd6bce76112e92ba35b37ee74b44cf4e9dd56ef204fdfb95cb0c636",
+    "issues": "1322ebf6878c9ec914c9461b37a4755689fb7e01b7b44a915bad21ce70cf6a28",
+    "prd": "0db1639156713d9f4ad3d22596ba73e16d2f6dd898e54a4522422d75615e273c",
+    "tdd_plan": "a710847bc45bb9af2222c201bfb3f23aa449495ed9cc596f11501f49ee33f425"
+  },
+  "status": "captured"
+}

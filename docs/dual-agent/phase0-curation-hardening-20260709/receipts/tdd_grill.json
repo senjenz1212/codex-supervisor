@@ -1,0 +1,16 @@
+{
+  "receipt_id": "skill_run:phase0-curation-hardening-20260709:tdd_grill",
+  "kind": "skill_run",
+  "skill": "grill-with-docs",
+  "stage": "tdd_grill",
+  "status": "passed",
+  "artifact": "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings-tdd.md",
+  "artifacts": [
+    "docs/dual-agent/phase0-curation-hardening-20260709/source/grill-findings-tdd.md"
+  ],
+  "claims": [
+    "TDD grill findings resolved public-boundary artifact outcomes, oracle-boundary discipline, resume skip and rerun proof, nonzero disk-floor exits, final-hash amendment timing, and named test coverage."
+  ],
+  "sha256": "9ccde3ae427f9df52bfb4e387f8b6cb35000100ec97a58b150dc26ecec007b8f",
+  "notes": "Resolved TDD grill findings for public-boundary artifact outcomes, oracle-boundary discipline, resume skip and rerun proof, nonzero disk-floor exits, final-hash amendment timing, and named test coverage."
+}

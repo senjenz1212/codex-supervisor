@@ -1,0 +1,16 @@
+{
+  "receipt_id": "skill_run:phase0-curation-hardening-20260709:to_prd",
+  "kind": "skill_run",
+  "skill": "prd-to-tdd",
+  "stage": "to_prd",
+  "status": "passed",
+  "artifact": "docs/dual-agent/phase0-curation-hardening-20260709/source/prd.md",
+  "artifacts": [
+    "docs/dual-agent/phase0-curation-hardening-20260709/source/prd.md"
+  ],
+  "claims": [
+    "PRD authored with promise contracts for atomic artifacts, checkpoint receipts, resume verification, disk-floor halts, image-prune telemetry, append-only prereg amendment, and unchanged benchmark authority."
+  ],
+  "sha256": "0db1639156713d9f4ad3d22596ba73e16d2f6dd898e54a4522422d75615e273c",
+  "notes": "Created PRD promise contracts for atomic final artifacts, per-instance checkpoints, resume verification, disk-floor halt receipts, image-prune telemetry, append-only prereg amendment, and unchanged benchmark authority."
+}

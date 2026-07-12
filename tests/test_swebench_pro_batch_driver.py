@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import errno
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -48,6 +50,479 @@ def _write_scripts(root: Path, instance_id: str) -> None:
     instance_dir.mkdir(parents=True)
     (instance_dir / "run_script.sh").write_text("#!/bin/sh\n", encoding="utf-8")
     (instance_dir / "parser.py").write_text("print('ok')\n", encoding="utf-8")
+
+
+def _passing_oracle(output_json: Path):
+    output_json.write_text(json.dumps({"tests": ["test_file.py::test_fix"]}), encoding="utf-8")
+
+    def fake_oracle(context):
+        return {
+            "oracle_adapter_receipt": {
+                "patch_applied": True,
+                "fail_to_pass_status": "pass",
+                "pass_to_pass_status": "pass",
+                "fail_to_pass_count": 1,
+                "pass_to_pass_count": 1,
+                "test_command_return_code": 0,
+                "artifact_paths": {"output_json": str(output_json)},
+            }
+        }
+
+    return fake_oracle
+
+
+def test_atomic_final_json_write_preserves_previous_artifact_on_mid_write_failure(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "curated-roster.json"
+    batch._atomic_write_json(target, {"status": "previous"})
+
+    def fail_before_replace(_tmp: Path, _target: Path) -> None:
+        raise RuntimeError("interrupt before rename")
+
+    with pytest.raises(RuntimeError, match="interrupt before rename"):
+        batch._atomic_write_json(target, {"status": "new"}, replace=fail_before_replace)
+
+    assert json.loads(target.read_text(encoding="utf-8")) == {"status": "previous"}
+    assert target.stat().st_size > 0
+
+
+def test_atomic_final_json_write_never_leaves_zero_byte_artifact(tmp_path: Path) -> None:
+    target = tmp_path / "phase0-gate-decision.json"
+
+    def fail_before_replace(_tmp: Path, _target: Path) -> None:
+        raise RuntimeError("interrupt before rename")
+
+    with pytest.raises(RuntimeError, match="interrupt before rename"):
+        batch._atomic_write_json(target, {"status": "new"}, replace=fail_before_replace)
+
+    assert not target.exists()
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_checkpoint_receipt_written_after_each_dry_oracle_instance(
+    tmp_path: Path,
+) -> None:
+    scripts_dir = tmp_path / "run_scripts"
+    for instance_id in ("instance_1", "instance_2"):
+        _write_scripts(scripts_dir, instance_id)
+    output_dir = tmp_path / "out"
+
+    report = batch.curate_roster(
+        [_record("instance_1"), _record("instance_2")],
+        scripts_dir=str(scripts_dir),
+        run_dry_oracle=True,
+        oracle_runner=_passing_oracle(tmp_path / "output.json"),
+        output_dir=output_dir,
+        image_cache_bytes=lambda _path: 1234,
+        now=lambda: "2026-07-09T00:00:00Z",
+    )
+
+    checkpoint_paths = sorted((output_dir / "checkpoints").glob("*.json"))
+    assert len(checkpoint_paths) == 2
+    for path in checkpoint_paths:
+        receipt = json.loads(path.read_text(encoding="utf-8"))
+        ok, reason = batch._verify_checkpoint(receipt)
+        assert ok is True, reason
+        assert receipt["disk_free_gb"] > 0
+        assert receipt["image_cache_bytes"] == 1234
+        assert receipt["decision"]["kind"] == "curated"
+        assert receipt["decision"]["entry"]["dry_oracle"]["fail_to_pass_count"] == 1
+    assert report["summary"]["curated_instances"] == 2
+
+
+def test_checkpoint_write_enospc_halts_with_blocked_execution_receipt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scripts_dir = tmp_path / "run_scripts"
+    _write_scripts(scripts_dir, "instance_1")
+    output_dir = tmp_path / "out"
+    original_write = batch._atomic_write_json
+
+    def fail_checkpoint(path: Path, payload, **kwargs) -> None:
+        if path.parent.name == "checkpoints":
+            raise OSError(errno.ENOSPC, "No space left on device")
+        original_write(path, payload, **kwargs)
+
+    monkeypatch.setattr(batch, "_atomic_write_json", fail_checkpoint)
+
+    with pytest.raises(batch.Phase0CleanHalt) as exc_info:
+        batch.curate_roster(
+            [_record("instance_1")],
+            scripts_dir=str(scripts_dir),
+            run_dry_oracle=True,
+            oracle_runner=_passing_oracle(tmp_path / "output.json"),
+            output_dir=output_dir,
+            disk_floor_gb=15.0,
+            disk_free_gb=lambda _path: 100.0,
+            now=lambda: "2026-07-09T00:00:00Z",
+        )
+
+    assert exc_info.value.reason == "checkpoint_write_enospc"
+    receipt = json.loads((output_dir / "phase0-blocked-execution-receipt.json").read_text())
+    assert receipt["reason"] == "checkpoint_write_enospc"
+    assert receipt["model_spend_usd"] == 0
+    assert not (output_dir / "curated-roster.json").exists()
+
+
+def test_resume_skips_verified_completed_checkpoints(tmp_path: Path) -> None:
+    scripts_dir = tmp_path / "run_scripts"
+    for instance_id in ("instance_1", "instance_2"):
+        _write_scripts(scripts_dir, instance_id)
+    output_dir = tmp_path / "out"
+    checkpoint_entry = {
+        "instance_id": "instance_1",
+        "record": _record("instance_1"),
+        "run_scripts_status": "present",
+        "dry_oracle": {
+            "patch_applied": True,
+            "fail_to_pass_status": "pass",
+            "pass_to_pass_status": "pass",
+            "fail_to_pass_count": 1,
+            "pass_to_pass_count": 1,
+            "test_command_return_code": 0,
+            "tests_count": 1,
+            "rc_nonzero_resolved": False,
+        },
+    }
+    fingerprint = batch._invocation_fingerprint(
+        run_dry_oracle=True,
+        scripts_dir=str(scripts_dir),
+        docker_prune_command=batch.DEFAULT_DOCKER_PRUNE_COMMAND,
+        prune_docker_between_instances=False,
+    )
+    checkpoint = batch._checkpoint_payload(
+        instance_id="instance_1",
+        decision={"kind": "curated", "entry": checkpoint_entry},
+        disk_free_gb=90.0,
+        image_cache_bytes=500,
+        prune_receipt=None,
+        now=lambda: "2026-07-09T00:00:00Z",
+        invocation_fingerprint=fingerprint,
+    )
+    batch._atomic_write_json(output_dir / "checkpoints" / "instance_1.json", checkpoint)
+    seen: list[str] = []
+    passing_oracle = _passing_oracle(tmp_path / "output.json")
+
+    def fake_oracle(context):
+        seen.append(context["instance_id"])
+        return passing_oracle(context)
+
+    report = batch.curate_roster(
+        [_record("instance_1"), _record("instance_2")],
+        scripts_dir=str(scripts_dir),
+        run_dry_oracle=True,
+        oracle_runner=fake_oracle,
+        output_dir=output_dir,
+        resume_from_checkpoints=True,
+    )
+
+    assert seen == ["instance_2"]
+    assert report["summary"]["curated_instances"] == 2
+    assert report["provenance"]["resumed_from_checkpoint_count"] == 1
+
+
+def test_resume_reruns_tampered_checkpoint_receipt(tmp_path: Path) -> None:
+    scripts_dir = tmp_path / "run_scripts"
+    _write_scripts(scripts_dir, "instance_1")
+    output_dir = tmp_path / "out"
+    checkpoint = batch._checkpoint_payload(
+        instance_id="instance_1",
+        decision={
+            "kind": "excluded",
+            "exclusion": {"instance_id": "instance_1", "reason": "old"},
+        },
+        disk_free_gb=90.0,
+        image_cache_bytes=500,
+        prune_receipt=None,
+        now=lambda: "2026-07-09T00:00:00Z",
+    )
+    checkpoint["decision"]["exclusion"]["reason"] = "tampered"
+    batch._atomic_write_json(output_dir / "checkpoints" / "instance_1.json", checkpoint)
+    seen: list[str] = []
+    passing_oracle = _passing_oracle(tmp_path / "output.json")
+
+    def fake_oracle(context):
+        seen.append(context["instance_id"])
+        return passing_oracle(context)
+
+    report = batch.curate_roster(
+        [_record("instance_1")],
+        scripts_dir=str(scripts_dir),
+        run_dry_oracle=True,
+        oracle_runner=fake_oracle,
+        output_dir=output_dir,
+        resume_from_checkpoints=True,
+    )
+
+    assert seen == ["instance_1"]
+    assert report["summary"]["curated_instances"] == 1
+    assert report["provenance"]["invalid_checkpoint_count"] == 1
+    assert report["provenance"]["resumed_from_checkpoint_count"] == 0
+
+
+def test_disk_floor_breach_writes_halt_receipt_and_exits_nonzero(tmp_path: Path) -> None:
+    scripts_dir = tmp_path / "run_scripts"
+    _write_scripts(scripts_dir, "instance_1")
+    output_dir = tmp_path / "out"
+
+    with pytest.raises(batch.Phase0CleanHalt) as exc_info:
+        batch.curate_roster(
+            [_record("instance_1")],
+            scripts_dir=str(scripts_dir),
+            run_dry_oracle=True,
+            oracle_runner=_passing_oracle(tmp_path / "output.json"),
+            output_dir=output_dir,
+            disk_floor_gb=15.0,
+            disk_free_gb=lambda _path: 14.5,
+            now=lambda: "2026-07-09T00:00:00Z",
+        )
+
+    assert exc_info.value.reason == "disk_floor_reached"
+    receipt = json.loads((output_dir / "phase0-blocked-execution-receipt.json").read_text())
+    assert receipt["reason"] == "disk_floor_reached"
+    assert receipt["disk_telemetry"]["disk_free_gb"] == 14.5
+    assert not (output_dir / "curated-roster.json").exists()
+
+
+def test_disk_floor_above_threshold_allows_curation_to_proceed(tmp_path: Path) -> None:
+    scripts_dir = tmp_path / "run_scripts"
+    _write_scripts(scripts_dir, "instance_1")
+    seen: list[str] = []
+    passing_oracle = _passing_oracle(tmp_path / "output.json")
+
+    def fake_oracle(context):
+        seen.append(context["instance_id"])
+        return passing_oracle(context)
+
+    report = batch.curate_roster(
+        [_record("instance_1")],
+        scripts_dir=str(scripts_dir),
+        run_dry_oracle=True,
+        oracle_runner=fake_oracle,
+        output_dir=tmp_path / "out",
+        disk_floor_gb=15.0,
+        disk_free_gb=lambda _path: 16.0,
+    )
+
+    assert seen == ["instance_1"]
+    assert report["summary"]["curated_instances"] == 1
+
+
+def test_default_docker_prune_command_reclaims_images_and_records_reclaimed_bytes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sizes = iter([10_000, 2_500])
+
+    def fake_run(*_args, **_kwargs):
+        return SimpleNamespace(returncode=0, stdout="deleted image layers", stderr="")
+
+    monkeypatch.setattr(batch.subprocess, "run", fake_run)
+
+    receipt = batch._run_prune(
+        batch.DEFAULT_DOCKER_PRUNE_COMMAND,
+        cwd=tmp_path,
+        image_cache_bytes=lambda _path: next(sizes),
+    )
+
+    assert receipt["command"] == "docker image prune -af"
+    assert receipt["image_reclaiming_command"] is True
+    assert receipt["image_cache_bytes_before"] == 10_000
+    assert receipt["image_cache_bytes_after"] == 2_500
+    assert receipt["reclaimed_bytes"] == 7_500
+
+
+def test_container_only_prune_default_is_rejected_by_default_config() -> None:
+    assert batch._is_image_reclaiming_prune_command(batch.DEFAULT_DOCKER_PRUNE_COMMAND) is True
+    assert batch._is_image_reclaiming_prune_command("docker container prune -f") is False
+    assert batch._is_image_reclaiming_prune_command("docker system prune -af") is True
+    assert batch._is_image_reclaiming_prune_command("docker system prune -fa") is True
+    assert batch._is_image_reclaiming_prune_command("docker system prune -f") is False
+    assert batch._is_image_reclaiming_prune_command("docker system prune --all") is True
+    assert batch._is_image_reclaiming_prune_command("docker system prune --all=true") is True
+
+
+def test_run_prune_returns_receipt_when_docker_binary_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_run(*_args, **_kwargs):
+        raise FileNotFoundError(2, "No such file or directory", "docker")
+
+    monkeypatch.setattr(batch.subprocess, "run", fake_run)
+
+    receipt = batch._run_prune(
+        batch.DEFAULT_DOCKER_PRUNE_COMMAND,
+        cwd=tmp_path,
+        image_cache_bytes=lambda _path: None,
+    )
+
+    assert receipt["command"] == batch.DEFAULT_DOCKER_PRUNE_COMMAND
+    assert receipt["invocation_error"] is True
+    assert receipt["returncode"] is None
+    assert receipt["reclaimed_bytes"] is None
+    assert "FileNotFoundError" in receipt["stderr_tail"]
+
+
+def test_run_prune_returns_invocation_error_for_malformed_command(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("subprocess.run must not be invoked for a bad command")
+
+    monkeypatch.setattr(batch.subprocess, "run", fail_if_called)
+
+    receipt = batch._run_prune(
+        'docker image prune "unterminated',
+        cwd=tmp_path,
+        image_cache_bytes=lambda _path: 100,
+    )
+
+    assert receipt["invocation_error"] is True
+    assert receipt["returncode"] is None
+    assert receipt["reclaimed_bytes"] is None
+    assert "ValueError" in receipt["stderr_tail"]
+
+
+def test_nested_halt_receipt_write_failure_still_raises_clean_halt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scripts_dir = tmp_path / "run_scripts"
+    _write_scripts(scripts_dir, "instance_1")
+    output_dir = tmp_path / "out"
+
+    def always_enospc(_path: Path, _payload, **_kwargs) -> None:
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    monkeypatch.setattr(batch, "_atomic_write_json", always_enospc)
+
+    with pytest.raises(batch.Phase0CleanHalt) as exc_info:
+        batch.curate_roster(
+            [_record("instance_1")],
+            scripts_dir=str(scripts_dir),
+            run_dry_oracle=True,
+            oracle_runner=_passing_oracle(tmp_path / "output.json"),
+            output_dir=output_dir,
+            disk_floor_gb=15.0,
+            disk_free_gb=lambda _path: 100.0,
+            now=lambda: "2026-07-09T00:00:00Z",
+        )
+
+    assert exc_info.value.reason == "checkpoint_write_enospc"
+    assert exc_info.value.receipt_path == output_dir / "phase0-blocked-execution-receipt.json"
+
+
+def test_resume_invalidates_checkpoints_with_mismatched_invocation_fingerprint(
+    tmp_path: Path,
+) -> None:
+    scripts_dir = tmp_path / "run_scripts"
+    _write_scripts(scripts_dir, "instance_1")
+    output_dir = tmp_path / "out"
+    other_scripts = str(tmp_path / "other_scripts")
+    fingerprint = batch._invocation_fingerprint(
+        run_dry_oracle=True,
+        scripts_dir=other_scripts,
+        docker_prune_command=batch.DEFAULT_DOCKER_PRUNE_COMMAND,
+        prune_docker_between_instances=False,
+    )
+    checkpoint_entry = {
+        "instance_id": "instance_1",
+        "record": _record("instance_1"),
+        "run_scripts_status": "present",
+        "dry_oracle": {"status": "not_run"},
+    }
+    checkpoint = batch._checkpoint_payload(
+        instance_id="instance_1",
+        decision={"kind": "curated", "entry": checkpoint_entry},
+        disk_free_gb=90.0,
+        image_cache_bytes=500,
+        prune_receipt=None,
+        now=lambda: "2026-07-09T00:00:00Z",
+        invocation_fingerprint=fingerprint,
+    )
+    batch._atomic_write_json(output_dir / "checkpoints" / "instance_1.json", checkpoint)
+    seen: list[str] = []
+    passing_oracle = _passing_oracle(tmp_path / "output.json")
+
+    def fake_oracle(context):
+        seen.append(context["instance_id"])
+        return passing_oracle(context)
+
+    report = batch.curate_roster(
+        [_record("instance_1")],
+        scripts_dir=str(scripts_dir),
+        run_dry_oracle=True,
+        oracle_runner=fake_oracle,
+        output_dir=output_dir,
+        resume_from_checkpoints=True,
+    )
+
+    assert seen == ["instance_1"]
+    assert report["provenance"]["resumed_from_checkpoint_count"] == 0
+    assert report["provenance"]["invalid_checkpoint_count"] >= 1
+    reasons = [item.get("reason") for item in report["provenance"]["invalid_checkpoints"]]
+    assert "invocation_fingerprint_mismatch" in reasons
+
+
+def test_prereg_amendment_hashes_match_actual_files_and_original_prereg_unchanged() -> None:
+    root = Path(__file__).resolve().parents[1]
+    prereg_path = (
+        root
+        / "docs/dual-agent/pro-corpus-generate-label-20260626/artifacts/scale-prereg-20260629.json"
+    )
+    amendment_path = prereg_path.with_name("scale-prereg-20260629-amendment-1.json")
+    prereg = json.loads(prereg_path.read_text(encoding="utf-8"))
+    amendment = json.loads(amendment_path.read_text(encoding="utf-8"))
+
+    assert batch._sha256_file(prereg_path) == "701d77177ca1330814da2b30539c8379789fa8d0eba46bdd2a9bb67e78ddd077"
+    assert amendment["original_preregistration"]["path"] == str(prereg_path.relative_to(root))
+    assert amendment["original_preregistration"]["sha256"] == batch._sha256_file(prereg_path)
+    changed_by_path = {
+        item["path"]: item
+        for item in amendment["changed_files"]
+    }
+    driver_change = changed_by_path["scripts/swebench_pro_batch_driver.py"]
+    assert driver_change["old_sha256"] == prereg["pinned_solver"]["batch_driver_sha256"]
+    for path_text, item in changed_by_path.items():
+        actual_path = root / path_text
+        assert actual_path.exists()
+        assert item["new_sha256"] == batch._sha256_file(actual_path)
+    unchanged_core = amendment["unchanged_core"]
+    assert unchanged_core["authority_flags"] == prereg["authority_flags"]
+    assert unchanged_core["phase_gates"] == prereg["phase_plan"]
+
+
+def test_existing_batch_driver_thresholds_and_report_only_authority_remain_unchanged(
+    tmp_path: Path,
+) -> None:
+    records_path = tmp_path / "records.jsonl"
+    records_path.write_text(json.dumps(_record("instance_good")) + "\n", encoding="utf-8")
+    config = batch._parse_args([
+        "--records",
+        str(records_path),
+        "--output-dir",
+        str(tmp_path / "out"),
+        "--swe-bench-pro-scripts-dir",
+        "/tmp/run_scripts",
+    ])
+
+    manifest = batch._config_manifest(config, [_record("instance_good")])
+
+    assert manifest["thresholds"] == {
+        "min_good": 30,
+        "min_bad": 30,
+        "min_discordant": 25,
+        "alpha": 0.05,
+    }
+    for key, value in batch.AUTHORITY_FLAGS.items():
+        assert manifest[key] is value
+    assert manifest["phases"]["disk_floor_gb"] == 15.0
+    assert manifest["phases"]["docker_prune_image_reclaiming"] is True
+    assert manifest["labels"]["report_only"] is True
 
 
 def test_curate_roster_excludes_missing_scripts_and_failed_dry_oracle(tmp_path: Path) -> None:
@@ -228,6 +703,8 @@ def test_batch_manifest_pins_thresholds_and_report_only_labels(tmp_path: Path) -
         allow_live=True,
         prune_docker_between_instances=True,
         docker_prune_command="docker image prune -af",
+        disk_floor_gb=15.0,
+        resume_from_checkpoints=True,
         phase0_gate_decision_path=None,
     )
 
