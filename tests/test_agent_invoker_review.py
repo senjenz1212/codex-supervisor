@@ -45,6 +45,21 @@ def test_agent_invoker_imports_without_claude_agent_sdk(monkeypatch):
     assert module.AgentInvoker is not None
 
 
+def test_real_claude_agent_options_accepts_effort_and_env():
+    sdk = pytest.importorskip("claude_agent_sdk")
+
+    options = sdk.ClaudeAgentOptions(
+        system_prompt="probe",
+        model="claude-fable-5",
+        max_turns=1,
+        effort="high",
+        env={"ANTHROPIC_API_KEY": "probe-key"},
+    )
+
+    assert options.effort == "high"
+    assert options.env["ANTHROPIC_API_KEY"] == "probe-key"
+
+
 class _FakeOptions:
     seen = None
 

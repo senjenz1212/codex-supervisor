@@ -823,3 +823,51 @@ def test_primary_fable_route_ignores_stale_opus_override(tmp_path, monkeypatch):
     env = calls[0]["env"]
     assert "ANTHROPIC_DEFAULT_OPUS_MODEL" not in env
     assert "CLAUDE_CODE_EXTRA_BODY" not in env
+
+
+def test_opus_route_clamps_stale_non_opus_pin_to_safe_override(tmp_path, monkeypatch):
+    monkeypatch.setenv("CODEX_SUPERVISOR_PLANNING_OPUS_MODEL", "claude-fable-5")
+    calls: list[dict[str, object]] = []
+    stdout = json.dumps({"result": _outcome_block()})
+
+    def fake_runner(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append({"argv": argv, **kwargs})
+        return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
+
+    request = LeadInvocationRequest(
+        task_id="slice0-lead",
+        gate="prd_review",
+        instruction="Review the PRD artifacts.",
+        cwd=tmp_path,
+        model="opus",
+    )
+
+    invoke_claude_lead(request, runner=fake_runner)
+
+    env = calls[0]["env"]
+    assert env["ANTHROPIC_DEFAULT_OPUS_MODEL"] == "claude-opus-4-6"
+    assert env["CLAUDE_CODE_EXTRA_BODY"] == json.dumps(CLAUDE_OPUS_SAFE_OVERRIDE_EXTRA_BODY)
+
+
+def test_execution_gate_clamps_stale_non_opus_pin_to_safe_override(tmp_path, monkeypatch):
+    monkeypatch.setenv("CODEX_SUPERVISOR_EXECUTION_OPUS_MODEL", "claude-fable-5")
+    calls: list[dict[str, object]] = []
+    stdout = json.dumps({"result": _outcome_block()})
+
+    def fake_runner(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append({"argv": argv, **kwargs})
+        return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
+
+    request = LeadInvocationRequest(
+        task_id="slice0-lead",
+        gate="execution",
+        instruction="Implement the slice and run targeted tests.",
+        cwd=tmp_path,
+        model="opus",
+    )
+
+    invoke_claude_lead(request, runner=fake_runner)
+
+    env = calls[0]["env"]
+    assert env["ANTHROPIC_DEFAULT_OPUS_MODEL"] == "claude-opus-4-6"
+    assert env["CLAUDE_CODE_EXTRA_BODY"] == json.dumps(CLAUDE_OPUS_SAFE_OVERRIDE_EXTRA_BODY)

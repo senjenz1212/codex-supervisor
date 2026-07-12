@@ -776,10 +776,18 @@ def _underlying_opus_model_for_gate(gate: str) -> str | None:
     may override either via env; an empty override means "no pin".
     """
     if gate == "execution":
-        override = os.environ.get("CODEX_SUPERVISOR_EXECUTION_OPUS_MODEL", "").strip()
+        override = _opus_pin_override("CODEX_SUPERVISOR_EXECUTION_OPUS_MODEL")
         return override or None
-    override = os.environ.get("CODEX_SUPERVISOR_PLANNING_OPUS_MODEL", "").strip()
+    override = _opus_pin_override("CODEX_SUPERVISOR_PLANNING_OPUS_MODEL")
     return override or CLAUDE_OPUS_UNDERLYING_MODEL
+
+
+def _opus_pin_override(env_key: str) -> str:
+    """Read an operator opus pin, clamping non-opus values to the safe pin."""
+    value = os.environ.get(env_key, "").strip()
+    if value and not value.startswith("claude-opus-"):
+        return CLAUDE_OPUS_SAFE_OVERRIDE_MODEL
+    return value
 
 
 def _opus_extra_body_for_pin(pin: str | None) -> dict[str, Any]:

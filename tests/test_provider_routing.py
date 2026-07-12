@@ -80,6 +80,19 @@ def test_configure_direct_anthropic_process_env_preserves_other_providers(
         configure_direct_anthropic_process_env()
 
 
+def test_direct_anthropic_env_prefers_explicit_source_key(monkeypatch) -> None:
+    try:
+        configure_direct_anthropic_process_env(api_key="daemon-key")
+
+        explicit = direct_anthropic_env({"ANTHROPIC_API_KEY": "request-key"})
+        ambient = direct_anthropic_env({})
+
+        assert explicit["ANTHROPIC_API_KEY"] == "request-key"
+        assert ambient["ANTHROPIC_API_KEY"] == "daemon-key"
+    finally:
+        configure_direct_anthropic_process_env()
+
+
 def test_anthropic_model_detection_is_narrow() -> None:
     assert is_anthropic_model("claude-fable-5")
     assert is_anthropic_model("anthropic/claude-fable-5")

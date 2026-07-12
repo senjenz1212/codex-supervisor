@@ -85,7 +85,7 @@ def direct_anthropic_env(
     selected_api_key = (
         api_key
         if api_key is not None
-        else _direct_anthropic_api_key or source_api_key
+        else source_api_key or _direct_anthropic_api_key
     )
     if selected_api_key:
         env["ANTHROPIC_API_KEY"] = selected_api_key
