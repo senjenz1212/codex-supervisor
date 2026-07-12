@@ -410,11 +410,19 @@ OpenAI by default.
 ## Provider Routing
 
 Anthropic lanes use Anthropic's direct API. Keep `ANTHROPIC_BASE_URL` and
-`ANTHROPIC_AUTH_TOKEN` unset:
+`ANTHROPIC_AUTH_TOKEN` unset. For interactive development, the direct key can
+be supplied through `ANTHROPIC_API_KEY`:
 
 ```bash
 ANTHROPIC_API_KEY=...
 ```
+
+For an always-on service, avoid putting the key in the daemon's exec
+environment. The macOS launch wrapper can read it from Keychain and pass it
+through an inherited anonymous file descriptor named by
+`CODEX_SUPERVISOR_ANTHROPIC_API_KEY_FD`. The daemon consumes that descriptor,
+captures the key privately for Claude child environments, and removes
+Anthropic credentials and proxy selectors from its process environment.
 
 Supervisor defaults Claude work to `claude-fable-5`. Routine critique and
 conversation use medium effort; substantial planning, execution, recovery, and

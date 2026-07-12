@@ -633,7 +633,7 @@ def test_run_litellm_structured_calls_openai_schema_gateway(tmp_path: Path, monk
     }
     completion_kwargs = captured["completion_kwargs"]
     assert completion_kwargs["model"] == "gemini-test"
-    assert completion_kwargs["temperature"] == 0
+    assert "temperature" not in completion_kwargs
     assert completion_kwargs["max_tokens"] == 1234
     assert completion_kwargs["timeout"] == 600
     assert completion_kwargs["response_format"]["type"] == "json_schema"

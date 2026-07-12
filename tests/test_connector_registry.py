@@ -93,6 +93,8 @@ def test_connector_registry_merges_claude_desktop_and_local_servers(tmp_path):
 
 
 def test_telegram_runtime_builds_options_with_connector_mcp_servers(tmp_path):
+    from supervisor.provider_routing import configure_direct_anthropic_process_env
+
     cfg = _cfg(tmp_path, connectors={
         "enabled": True,
         "mcp_servers": {
@@ -104,7 +106,11 @@ def test_telegram_runtime_builds_options_with_connector_mcp_servers(tmp_path):
     state = State(str(tmp_path / "state.db"))
     runtime = ClaudeAgentSupervisorRuntime(cfg, state)
 
-    options = runtime._build_options(SupervisorToolAPI(state))
+    configure_direct_anthropic_process_env(api_key="direct-key")
+    try:
+        options = runtime._build_options(SupervisorToolAPI(state))
+    finally:
+        configure_direct_anthropic_process_env()
 
     assert sorted(options.mcp_servers) == ["slack", "supervisor"]
     assert "mcp__supervisor__list_runs" in options.allowed_tools
@@ -117,6 +123,7 @@ def test_telegram_runtime_builds_options_with_connector_mcp_servers(tmp_path):
     assert "mcp__slack__search" in options.allowed_tools
     assert "mcp__slack__send_message" in options.disallowed_tools
     assert options.permission_mode == "dontAsk"
+    assert options.env["ANTHROPIC_API_KEY"] == "direct-key"
 
 
 def test_telegram_runtime_resumes_only_valid_claude_session_ids(tmp_path):

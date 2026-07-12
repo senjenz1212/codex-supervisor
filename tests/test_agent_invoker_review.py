@@ -79,36 +79,46 @@ class _FakeClient:
 @pytest.mark.asyncio
 async def test_review_updates_invoker_uses_read_only_grounding_tools(monkeypatch, tmp_path):
     import supervisor.agent_invoker as agent_invoker
+    from supervisor.provider_routing import configure_direct_anthropic_process_env
 
     monkeypatch.setattr(agent_invoker, "ClaudeAgentOptions", _FakeOptions)
     monkeypatch.setattr(agent_invoker, "ClaudeSDKClient", _FakeClient)
+    monkeypatch.setenv("OPENAI_API_KEY", "litellm-key")
+    configure_direct_anthropic_process_env(api_key="direct-key")
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://proxy.example")
 
-    state = State(str(tmp_path / "state.db"))
-    invoker = agent_invoker.AgentInvoker(
-        _cfg(tmp_path),
-        state,
-        Path("skills"),
-        codex_mcp_server=object(),
-        telegram_mcp_server=object(),
-    )
+    try:
+        state = State(str(tmp_path / "state.db"))
+        invoker = agent_invoker.AgentInvoker(
+            _cfg(tmp_path),
+            state,
+            Path("skills"),
+            codex_mcp_server=object(),
+            telegram_mcp_server=object(),
+        )
 
-    await invoker._handle(Decision(
-        kind="review_updates",
-        run_id="run-vela",
-        payload={"event_id": 21},
-    ))
+        await invoker._handle(Decision(
+            kind="review_updates",
+            run_id="run-vela",
+            payload={"event_id": 21},
+        ))
 
-    assert _FakeOptions.seen is not None
-    allowed = _FakeOptions.seen.allowed_tools
-    assert "mcp__codex__read_workspace_snapshot" in allowed
-    assert "mcp__codex__read_workspace_file" in allowed
-    assert "mcp__telegram__send_message" in allowed
-    assert "mcp__codex__inject_steering" not in allowed
-    assert "mcp__telegram__ask_user" not in allowed
-    assert _FakeOptions.seen.effort == "high"
+        assert _FakeOptions.seen is not None
+        allowed = _FakeOptions.seen.allowed_tools
+        assert "mcp__codex__read_workspace_snapshot" in allowed
+        assert "mcp__codex__read_workspace_file" in allowed
+        assert "mcp__telegram__send_message" in allowed
+        assert "mcp__codex__inject_steering" not in allowed
+        assert "mcp__telegram__ask_user" not in allowed
+        assert _FakeOptions.seen.effort == "high"
+        assert _FakeOptions.seen.env["ANTHROPIC_API_KEY"] == "direct-key"
+        assert "ANTHROPIC_BASE_URL" not in _FakeOptions.seen.env
+        assert _FakeOptions.seen.env["OPENAI_API_KEY"] == "litellm-key"
 
-    verdict = state._conn.execute(
-        "SELECT phase, model, output_json FROM verdicts WHERE run_id='run-vela'"
-    ).fetchone()
-    assert verdict["phase"] == "review_updates"
-    assert verdict["model"] == "claude-fable-5"
+        verdict = state._conn.execute(
+            "SELECT phase, model, output_json FROM verdicts WHERE run_id='run-vela'"
+        ).fetchone()
+        assert verdict["phase"] == "review_updates"
+        assert verdict["model"] == "claude-fable-5"
+    finally:
+        configure_direct_anthropic_process_env()

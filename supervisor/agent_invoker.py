@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import Config
+from .provider_routing import direct_anthropic_env
 from .state import State, Decision
 
 log = logging.getLogger(__name__)
@@ -67,6 +68,7 @@ class AgentInvoker:
             },
             allowed_tools=self._allowed_tools_for(d.kind),
             effort=self._effort_for(d.kind),
+            env=direct_anthropic_env(),
         )
 
         user_message = self._format_decision(d)

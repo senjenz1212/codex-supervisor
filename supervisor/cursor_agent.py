@@ -1018,7 +1018,6 @@ def _run_litellm_structured(request: CursorInvocationRequest) -> tuple[str, dict
                 "schema": _structured_outcome_json_schema(),
             },
         },
-        temperature=0,
         max_tokens=max(1, int(request.reviewer_max_tokens)),
         timeout=request_timeout,
     )

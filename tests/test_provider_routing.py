@@ -3,10 +3,35 @@ from __future__ import annotations
 import os
 
 from supervisor.provider_routing import (
+    DIRECT_ANTHROPIC_API_KEY_FD_ENV,
     configure_direct_anthropic_process_env,
     direct_anthropic_env,
     is_anthropic_model,
+    read_direct_anthropic_api_key_fd,
 )
+
+
+def test_direct_anthropic_key_can_be_read_from_anonymous_fd(monkeypatch) -> None:
+    read_fd, write_fd = os.pipe()
+    try:
+        os.write(write_fd, b"direct-key\n")
+    finally:
+        os.close(write_fd)
+    monkeypatch.setenv(DIRECT_ANTHROPIC_API_KEY_FD_ENV, str(read_fd))
+
+    assert read_direct_anthropic_api_key_fd() == "direct-key"
+    assert DIRECT_ANTHROPIC_API_KEY_FD_ENV not in os.environ
+
+
+def test_direct_anthropic_key_fd_rejects_invalid_descriptor(monkeypatch) -> None:
+    monkeypatch.setenv(DIRECT_ANTHROPIC_API_KEY_FD_ENV, "not-an-fd")
+
+    try:
+        read_direct_anthropic_api_key_fd()
+    except RuntimeError as exc:
+        assert DIRECT_ANTHROPIC_API_KEY_FD_ENV in str(exc)
+    else:
+        raise AssertionError("invalid key descriptors must fail closed")
 
 
 def test_direct_anthropic_env_scrubs_proxy_and_oauth_routes() -> None:
@@ -36,16 +61,23 @@ def test_direct_anthropic_env_scrubs_proxy_and_oauth_routes() -> None:
 def test_configure_direct_anthropic_process_env_preserves_other_providers(
     monkeypatch,
 ) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "ambient-direct-key")
     monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://proxy.example")
     monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "proxy-token")
     monkeypatch.setenv("OPENAI_API_KEY", "litellm-key")
 
-    configure_direct_anthropic_process_env(api_key="direct-key")
+    try:
+        configure_direct_anthropic_process_env(api_key="direct-key")
+        child_env = direct_anthropic_env()
 
-    assert os.environ["ANTHROPIC_API_KEY"] == "direct-key"
-    assert "ANTHROPIC_BASE_URL" not in os.environ
-    assert "ANTHROPIC_AUTH_TOKEN" not in os.environ
-    assert os.environ["OPENAI_API_KEY"] == "litellm-key"
+        assert "ANTHROPIC_API_KEY" not in os.environ
+        assert "ANTHROPIC_BASE_URL" not in os.environ
+        assert "ANTHROPIC_AUTH_TOKEN" not in os.environ
+        assert os.environ["OPENAI_API_KEY"] == "litellm-key"
+        assert child_env["ANTHROPIC_API_KEY"] == "direct-key"
+        assert child_env["OPENAI_API_KEY"] == "litellm-key"
+    finally:
+        configure_direct_anthropic_process_env()
 
 
 def test_anthropic_model_detection_is_narrow() -> None:
@@ -62,5 +94,8 @@ def test_anthropic_model_detection_is_narrow() -> None:
     assert is_anthropic_model("vertex_ai/claude-fable-5")
     assert not is_anthropic_model("gpt-5.5")
     assert not is_anthropic_model("gemini-3.1-pro-preview")
+    assert not is_anthropic_model("my-claude-compatible-model")
+    assert not is_anthropic_model("notclaude")
+    assert not is_anthropic_model("claudette")
     assert not is_anthropic_model("")
     assert not is_anthropic_model(None)

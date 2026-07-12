@@ -12,6 +12,7 @@ from .connectors import (
     external_mcp_servers,
 )
 from .config import Config
+from .provider_routing import direct_anthropic_env
 from .redaction import redact, redact_for_telegram
 from .state import State
 from .supervisor_tools import SupervisorToolAPI
@@ -159,6 +160,7 @@ class ClaudeAgentSupervisorRuntime:
             max_turns=1,
             permission_mode="dontAsk",
             effort="medium",
+            env=direct_anthropic_env(),
         )
         outputs: list[str] = []
         async with ClaudeSDKClient(options=options) as client:
@@ -198,6 +200,7 @@ class ClaudeAgentSupervisorRuntime:
             disallowed_tools=connector_disallowed_tools(self.cfg),
             permission_mode="dontAsk",
             effort="medium",
+            env=direct_anthropic_env(),
         )
         return options
 

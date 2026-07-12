@@ -9,6 +9,8 @@ Subsystems (all run as concurrent asyncio tasks where supported by target):
   - AgentInvoker     — consumes the decisions queue, runs Agent SDK sessions
   - AutoResearch     — runs activated experiments and due P11 audits
 """
+# ruff: noqa: E402
+
 from __future__ import annotations
 import asyncio
 import logging
@@ -24,7 +26,10 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 from supervisor.config import Config
-from supervisor.provider_routing import configure_direct_anthropic_process_env
+from supervisor.provider_routing import (
+    configure_direct_anthropic_process_env,
+    read_direct_anthropic_api_key_fd,
+)
 from supervisor.state import State
 from supervisor.drift_detector import DriftDetector
 from supervisor.hook_server import build_app, serve
@@ -61,12 +66,17 @@ async def main() -> int:
 
     state = State(cfg.supervisor.state_db)
 
+    inherited_anthropic_key = read_direct_anthropic_api_key_fd()
     anthropic_key = (
         cfg.models.anthropic_api_key
+        or inherited_anthropic_key
         or os.environ.get("ANTHROPIC_API_KEY", "")
     )
     configure_direct_anthropic_process_env(api_key=anthropic_key or None)
     anthropic = AsyncAnthropic(api_key=anthropic_key) if anthropic_key else None
+    cfg.models.anthropic_api_key = ""
+    inherited_anthropic_key = ""
+    anthropic_key = ""
 
     openai_key = cfg.models.openai_api_key or os.environ.get("OPENAI_API_KEY", "")
     openai_base_url = cfg.models.openai_base_url or os.environ.get("OPENAI_BASE_URL", "")

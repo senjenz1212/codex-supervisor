@@ -137,7 +137,9 @@ models:
   # API keys are optional for hook audit, rollout ingest, Telegram, /status,
   # and deterministic replay. Live L2/L3/L4 model decisions need them.
   # Anthropic uses the direct API. Keep ANTHROPIC_BASE_URL and
-  # ANTHROPIC_AUTH_TOKEN unset so a LiteLLM route cannot be inherited.
+  # ANTHROPIC_AUTH_TOKEN unset so a LiteLLM route cannot be inherited. The
+  # environment placeholder is convenient for interactive use; service
+  # launchers can instead provide CODEX_SUPERVISOR_ANTHROPIC_API_KEY_FD.
   anthropic_api_key: ${ANTHROPIC_API_KEY}
   realtime_critique_model: claude-fable-5
   drift_l3_model: claude-fable-5
