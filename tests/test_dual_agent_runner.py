@@ -23,7 +23,7 @@ from supervisor.dual_agent_runner import (
     send_stale_paused_digests,
     write_replay_fixture_family,
 )
-from supervisor.dual_agent_lead import OutcomeValidationPolicy, PlanningArtifact, compute_file_sha256
+from supervisor.dual_agent_lead import PlanningArtifact, compute_file_sha256
 from supervisor.state import State
 
 

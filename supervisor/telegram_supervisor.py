@@ -113,8 +113,7 @@ class ClaudeAgentSupervisorRuntime:
         tool_api: SupervisorToolAPI,
         conversation_context: dict[str, Any],
     ) -> dict[str, Any]:
-        from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
-        from mcp_tools.supervisor_tools import build_supervisor_mcp_server
+        from claude_agent_sdk import ClaudeSDKClient
 
         options = self._build_options(tool_api, conversation_context=conversation_context)
         outputs: list[str] = []

@@ -4,7 +4,6 @@ Each invocation is bounded (max_turns), runs to completion, and terminates.
 This is what gives us predictable cost — the agent doesn't loop forever.
 """
 from __future__ import annotations
-import asyncio
 import json
 import logging
 from pathlib import Path
