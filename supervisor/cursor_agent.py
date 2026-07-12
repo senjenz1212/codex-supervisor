@@ -24,6 +24,7 @@ from urllib.parse import urlparse
 from .dual_agent import Outcome, ProbeResult, evaluate_outcome_fidelity, outcome_accepts
 from .dual_agent_lead import GateName, ModelQuality, PlanningArtifact
 from .agent_mailbox import critical_review_prompt
+from .provider_routing import is_anthropic_model
 
 CursorFailureClassification = Literal[
     "reviewer_contract_unmet",
@@ -32,7 +33,7 @@ CursorFailureClassification = Literal[
 ]
 ReviewerOutputMode = Literal["litellm_structured", "cursor_sdk"]
 ReviewerWorktreeIsolation = Literal["copy", "none"]
-DEFAULT_STRUCTURED_REVIEWER_MODEL = "claude-opus-4-6"
+DEFAULT_STRUCTURED_REVIEWER_MODEL = "gpt-5.5"
 DEFAULT_STRUCTURED_REVIEWER_MAX_TOKENS = 4096
 DEFAULT_CURSOR_SDK_MODEL = "default"
 CURSOR_REVIEWER_WORKTREE_EXCLUDED_NAMES = frozenset({
@@ -151,11 +152,18 @@ def select_reviewer_model(
     reviewer_model: str | None = None,
     cursor_model: str | None = None,
 ) -> str:
-    if reviewer_model:
-        return reviewer_model
     if reviewer_output_mode == "cursor_sdk":
-        return select_cursor_model(quality=quality, explicit_model=cursor_model)
-    return DEFAULT_STRUCTURED_REVIEWER_MODEL
+        return reviewer_model or select_cursor_model(
+            quality=quality,
+            explicit_model=cursor_model,
+        )
+    model = reviewer_model or DEFAULT_STRUCTURED_REVIEWER_MODEL
+    if is_anthropic_model(model):
+        raise ValueError(
+            "Claude reviewers cannot use litellm_structured; "
+            "route Claude through Anthropic directly"
+        )
+    return model
 
 
 def build_cursor_prompt(request: CursorInvocationRequest, *, compact: bool = False) -> str:
@@ -255,6 +263,20 @@ def invoke_cursor_agent(
     *,
     status_runner: StatusRunner = subprocess.run,
 ) -> CursorInvocationResult:
+    if request.reviewer_output_mode != "cursor_sdk":
+        try:
+            select_reviewer_model(
+                quality=request.quality,
+                reviewer_output_mode=request.reviewer_output_mode,
+                reviewer_model=request.reviewer_model,
+                cursor_model=request.model,
+            )
+        except ValueError as e:
+            return _reviewer_model_policy_result(
+                message=str(e),
+                reviewer_model=request.reviewer_model,
+                reviewer_output_mode=request.reviewer_output_mode,
+            )
     guard_source_worktree = (
         request.reviewer_output_mode != "cursor_sdk"
         or request.reviewer_worktree_isolation == "none"
@@ -996,7 +1018,6 @@ def _run_litellm_structured(request: CursorInvocationRequest) -> tuple[str, dict
                 "schema": _structured_outcome_json_schema(),
             },
         },
-        temperature=0,
         max_tokens=max(1, int(request.reviewer_max_tokens)),
         timeout=request_timeout,
     )
@@ -1304,6 +1325,41 @@ def _cursor_access_denied_result(
         reviewer_runtime=reviewer_output_mode,
         reviewer_assurance="unavailable",
         diagnostics={"access_denied": sanitized_details},
+    )
+
+
+def _reviewer_model_policy_result(
+    *,
+    message: str,
+    reviewer_model: str | None,
+    reviewer_output_mode: str | None,
+) -> CursorInvocationResult:
+    details = {
+        "original_reason": "reviewer_model_policy_violation",
+        "attempts": 1,
+        "retry_reasons": [],
+        "recoverable": False,
+        "error": message,
+        "reviewer_model": reviewer_model,
+        "reviewer_output_mode": reviewer_output_mode,
+    }
+    return CursorInvocationResult(
+        probe=ProbeResult(
+            "CURSOR",
+            "red",
+            "reviewer_model_policy_violation",
+            details,
+        ),
+        outcome=None,
+        transcript="",
+        failure_classification="reviewer_model_policy_violation",
+        recoverable=False,
+        attempts=1,
+        retry_reasons=(),
+        reviewer_output_mode=reviewer_output_mode,
+        reviewer_runtime=reviewer_output_mode,
+        reviewer_assurance="unavailable",
+        diagnostics={"failure": details},
     )
 
 

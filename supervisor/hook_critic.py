@@ -10,6 +10,7 @@ import logging
 from typing import Any
 
 from .config import Config
+from .provider_routing import direct_anthropic_env
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +47,8 @@ class ClaudeAgentSDKHookCritic:
             model=self.cfg.models.realtime_critique_model,
             max_turns=2,
             allowed_tools=[],
+            effort="medium",
+            env=direct_anthropic_env(),
         )
         user_message = json.dumps({
             "target": hook_event.source_target,

@@ -28,42 +28,33 @@ from supervisor.dual_agent import (
 from supervisor.state import State
 
 
-def test_p0_credential_boundary_checks_gateway_precedence_and_redaction():
+def test_p0_credential_boundary_checks_direct_route_and_redaction():
     redaction_fixture = json.loads(Path(
         "tests/fixtures/dual_agent/p0_env_probe/expected_redactions.json"
     ).read_text())
     result = evaluate_credential_boundary(CredentialProbeInput(
-        explicit_env={
-            "ANTHROPIC_BASE_URL": "https://uai-litellm.internal.unity.com",
-            "ANTHROPIC_AUTH_TOKEN": "sk-ant-explicit-secret",
-        },
-        ambient_env={
-            "ANTHROPIC_BASE_URL": "https://api.anthropic.com",
-            "ANTHROPIC_AUTH_TOKEN": "sk-ant-ambient-secret",
-        },
-        reported_request_host="uai-litellm.internal.unity.com",
-        intended_gateway_host="https://uai-litellm.internal.unity.com",
+        explicit_env={"ANTHROPIC_API_KEY": "sk-ant-explicit-secret"},
+        ambient_env={"ANTHROPIC_API_KEY": "sk-ant-ambient-secret"},
+        reported_request_host="api.anthropic.com",
+        intended_gateway_host="https://api.anthropic.com",
         public_artifacts={
-            "stderr": "ANTHROPIC_AUTH_TOKEN=sk-ant-explicit-secret",
+            "stderr": "ANTHROPIC_API_KEY=sk-ant-explicit-secret",
             "outcome": "Authorization: Bearer secret-token",
         },
-        required_env_keys=("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN"),
+        required_env_keys=("ANTHROPIC_API_KEY",),
     ))
 
     assert result.ok
-    assert result.details["effective_keys"] == [
-        "ANTHROPIC_AUTH_TOKEN",
-        "ANTHROPIC_BASE_URL",
-    ]
+    assert result.details["effective_keys"] == ["ANTHROPIC_API_KEY"]
     assert redaction_fixture["must_not_publish"]
 
 
-def test_p0_fails_when_successful_model_call_hits_wrong_gateway():
+def test_p0_fails_when_successful_model_call_hits_proxy_instead_of_anthropic():
     result = evaluate_credential_boundary(CredentialProbeInput(
-        explicit_env={"ANTHROPIC_BASE_URL": "https://uai-litellm.internal.unity.com"},
-        ambient_env={"ANTHROPIC_BASE_URL": "https://api.anthropic.com"},
-        reported_request_host="api.anthropic.com",
-        intended_gateway_host="uai-litellm.internal.unity.com",
+        explicit_env={"ANTHROPIC_API_KEY": "direct-key"},
+        ambient_env={},
+        reported_request_host="uai-litellm.internal.unity.com",
+        intended_gateway_host="api.anthropic.com",
         public_artifacts={},
     ))
 
@@ -74,15 +65,32 @@ def test_p0_fails_when_successful_model_call_hits_wrong_gateway():
 def test_p0_fails_without_required_spawn_env_evidence():
     result = evaluate_credential_boundary(CredentialProbeInput(
         explicit_env={},
-        ambient_env={"ANTHROPIC_BASE_URL": "https://uai-litellm.internal.unity.com"},
-        reported_request_host="uai-litellm.internal.unity.com",
-        intended_gateway_host="uai-litellm.internal.unity.com",
+        ambient_env={"ANTHROPIC_API_KEY": "ambient-direct-key"},
+        reported_request_host="api.anthropic.com",
+        intended_gateway_host="api.anthropic.com",
         public_artifacts={},
     ))
 
     assert not result.ok
     assert result.reason == "missing_required_env"
-    assert result.details["missing"] == ["ANTHROPIC_BASE_URL"]
+    assert result.details["missing"] == ["ANTHROPIC_API_KEY"]
+
+
+def test_p0_fails_when_anthropic_proxy_environment_is_present():
+    result = evaluate_credential_boundary(CredentialProbeInput(
+        explicit_env={
+            "ANTHROPIC_API_KEY": "direct-key",
+            "ANTHROPIC_BASE_URL": "https://uai-litellm.internal.unity.com",
+        },
+        ambient_env={},
+        reported_request_host="api.anthropic.com",
+        intended_gateway_host="api.anthropic.com",
+        public_artifacts={},
+    ))
+
+    assert not result.ok
+    assert result.reason == "forbidden_route_env"
+    assert result.details["present"] == ["ANTHROPIC_BASE_URL"]
 
 
 def test_p1_worktree_boundary_requires_expected_cwd_and_no_offlimits_touch(tmp_path):
@@ -710,10 +718,10 @@ def test_p11_claim_verification_flags_unverified_agent_claims():
 def test_hard_stop_summary_blocks_until_all_required_probes_are_green():
     results = [
         evaluate_credential_boundary(CredentialProbeInput(
-            explicit_env={"ANTHROPIC_BASE_URL": "https://uai-litellm.internal.unity.com"},
+            explicit_env={"ANTHROPIC_API_KEY": "direct-key"},
             ambient_env={},
-            reported_request_host="uai-litellm.internal.unity.com",
-            intended_gateway_host="uai-litellm.internal.unity.com",
+            reported_request_host="api.anthropic.com",
+            intended_gateway_host="api.anthropic.com",
             public_artifacts={},
         )),
     ]

@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
+from .provider_routing import ANTHROPIC_PROXY_ENV_KEYS
 from .redaction import redact, redact_for_telegram
 from .state import State
 
@@ -82,7 +83,8 @@ class CredentialProbeInput:
     reported_request_host: str
     intended_gateway_host: str
     public_artifacts: dict[str, Any]
-    required_env_keys: tuple[str, ...] = ("ANTHROPIC_BASE_URL",)
+    required_env_keys: tuple[str, ...] = ("ANTHROPIC_API_KEY",)
+    forbidden_env_keys: tuple[str, ...] = ANTHROPIC_PROXY_ENV_KEYS
 
 
 def evaluate_credential_boundary(probe: CredentialProbeInput) -> ProbeResult:
@@ -100,6 +102,18 @@ def evaluate_credential_boundary(probe: CredentialProbeInput) -> ProbeResult:
             "red",
             "missing_required_env",
             {"missing": missing_required},
+        )
+
+    forbidden_present = [
+        key for key in probe.forbidden_env_keys
+        if effective.get(key)
+    ]
+    if forbidden_present:
+        return ProbeResult(
+            "P0",
+            "red",
+            "forbidden_route_env",
+            {"present": forbidden_present},
         )
 
     intended_host = _host(probe.intended_gateway_host)

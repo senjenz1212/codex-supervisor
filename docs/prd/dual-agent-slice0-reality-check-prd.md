@@ -102,9 +102,13 @@ Fixture:
 
 Pass criteria:
 
-- Spawn wrapper passes required env keys to Claude Code.
+- Spawn wrapper passes required env keys to Claude Code (`ANTHROPIC_API_KEY`
+  for Anthropic lanes) and carries none of the forbidden proxy, OAuth, Bedrock,
+  Vertex, Foundry, Mantle, or gateway route selectors listed in
+  `supervisor.provider_routing.ANTHROPIC_PROXY_ENV_KEYS`.
 - The first outbound model request is proven to target the intended gateway
-  host, for example Unity LiteLLM instead of direct Anthropic when configured.
+  host: direct Anthropic for Anthropic lanes, Unity LiteLLM for
+  OpenAI-compatible lanes.
 - Env precedence is deterministic: explicit supervisor spawn env wins over
   ambient shell env unless the config says otherwise.
 - Operator-facing summaries, SQLite rows, and Telegram text contain no obvious

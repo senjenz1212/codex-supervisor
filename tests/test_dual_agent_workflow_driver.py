@@ -2538,7 +2538,7 @@ def _cursor_access_denied_runner(request) -> CursorInvocationResult:
 
 
 @pytest.mark.asyncio
-async def test_workflow_invokes_cursor_sdk_reviewer_after_claude_accept_by_default(
+async def test_workflow_invokes_litellm_reviewer_after_claude_accept_by_default(
     tmp_path,
 ):
     requests = []
@@ -2552,9 +2552,9 @@ async def test_workflow_invokes_cursor_sdk_reviewer_after_claude_accept_by_defau
             run_id="run-cursor",
             status="finished",
             model=request.reviewer_model,
-            reviewer_runtime="cursor_sdk",
+            reviewer_runtime=request.reviewer_output_mode,
             reviewer_output_mode=request.reviewer_output_mode,
-            reviewer_assurance="tool_backed_primary",
+            reviewer_assurance="structured_text_only",
         )
 
     server, _state = _server(tmp_path, cursor_runner=fake_cursor_runner)
@@ -2563,24 +2563,24 @@ async def test_workflow_invokes_cursor_sdk_reviewer_after_claude_accept_by_defau
         cwd=str(tmp_path),
         task_id="workflow-1",
         run_id="workflow-run",
-        intent="Default reviewer should be Cursor SDK and downstream of Claude.",
+        intent="Default reviewer should use LiteLLM and remain downstream of Claude.",
         max_rounds_per_gate=1,
         cursor_review=True,
         tool_receipts=_tool_receipts(),
     ))
 
     assert result["status"] == "accepted"
-    assert result["workflow_route"]["reviewer_model"] == "default"
-    assert result["workflow_route"]["reviewer_output_mode"] == "cursor_sdk"
+    assert result["workflow_route"]["reviewer_model"] == "gpt-5.5"
+    assert result["workflow_route"]["reviewer_output_mode"] == "litellm_structured"
     assert result["workflow_route"]["reviewer_max_tokens"] == 4096
     assert requests
-    assert all(request.reviewer_model == "default" for request in requests)
-    assert all(request.reviewer_output_mode == "cursor_sdk" for request in requests)
+    assert all(request.reviewer_model == "gpt-5.5" for request in requests)
+    assert all(request.reviewer_output_mode == "litellm_structured" for request in requests)
     assert all(request.claude_outcome is not None for request in requests)
     cursor_payload = result["final_gate_result"]["cursor_review"]
-    assert cursor_payload["reviewer_runtime"] == "cursor_sdk"
-    assert cursor_payload["reviewer_output_mode"] == "cursor_sdk"
-    assert cursor_payload["reviewer_assurance"] == "tool_backed_primary"
+    assert cursor_payload["reviewer_runtime"] == "litellm_structured"
+    assert cursor_payload["reviewer_output_mode"] == "litellm_structured"
+    assert cursor_payload["reviewer_assurance"] == "structured_text_only"
     assert result["final_gate_result"]["independent_reviewer"] == cursor_payload
 
 
@@ -6732,7 +6732,7 @@ async def test_run_dual_agent_workflow_panel_blocks_important_reviewer_revise(tm
     assert blocked[0]["status"] == "blocked"
     assert blocked[0]["reason"] == "reviewer_non_accept"
     assert blocked[0]["purpose"] == "review"
-    assert blocked[0]["provider_family"] == "cursor"
+    assert blocked[0]["provider_family"] == "openai"
     assert blocked[0]["runtime"] == "cursor_sdk"
     assert blocked[0]["model"] == "composer-2.5"
     assert blocked[0]["worktree_ref"] == str(tmp_path)

@@ -8,6 +8,8 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 import supervisor.cursor_agent as cursor_agent
 from supervisor.cursor_agent import (
     CursorInvocationRequest,
@@ -176,7 +178,7 @@ def test_select_reviewer_defaults_to_cursor_sdk_primary():
             quality="best",
             reviewer_output_mode="litellm_structured",
         )
-        == "claude-opus-4-6"
+        == "gpt-5.5"
     )
     assert (
         select_reviewer_model(
@@ -186,6 +188,36 @@ def test_select_reviewer_defaults_to_cursor_sdk_primary():
         )
         == "custom-reviewer"
     )
+    with pytest.raises(ValueError, match="Claude reviewers cannot use"):
+        select_reviewer_model(
+            quality="best",
+            reviewer_output_mode="litellm_structured",
+            reviewer_model="claude-fable-5",
+        )
+
+
+def test_invoke_cursor_agent_fails_fast_on_claude_structured_reviewer(tmp_path: Path):
+    request = CursorInvocationRequest(
+        task_id="tri-agent",
+        gate="tdd_review",
+        instruction="Review the TDD plan.",
+        cwd=tmp_path,
+        reviewer_output_mode="litellm_structured",
+        reviewer_model="claude-fable-5",
+        contract_retry_limit=3,
+    )
+
+    def _unexpected_runner(*args, **kwargs):
+        raise AssertionError("policy violation must fail before any subprocess call")
+
+    result = invoke_cursor_agent(request, status_runner=_unexpected_runner)
+
+    assert result.probe.status == "red"
+    assert result.probe.reason == "reviewer_model_policy_violation"
+    assert result.failure_classification == "reviewer_model_policy_violation"
+    assert result.recoverable is False
+    assert result.attempts == 1
+    assert "Claude reviewers cannot use" in result.probe.details["error"]
 
 
 def _complete_cursor_outcome(task_id: str = "tri-agent", *, decision: str = "accept") -> Outcome:
@@ -219,7 +251,7 @@ def _litellm_metadata(*, finish_reason: str = "stop") -> dict[str, object]:
         "agent_id": None,
         "run_id": "chatcmpl-1",
         "status": "finished",
-        "model": "claude-opus-4-6",
+        "model": "gpt-5.5",
         "reviewer_runtime": "litellm_structured",
         "reviewer_output_mode": "litellm_structured",
         "duration_ms": None,
@@ -601,7 +633,7 @@ def test_run_litellm_structured_calls_openai_schema_gateway(tmp_path: Path, monk
     }
     completion_kwargs = captured["completion_kwargs"]
     assert completion_kwargs["model"] == "gemini-test"
-    assert completion_kwargs["temperature"] == 0
+    assert "temperature" not in completion_kwargs
     assert completion_kwargs["max_tokens"] == 1234
     assert completion_kwargs["timeout"] == 600
     assert completion_kwargs["response_format"]["type"] == "json_schema"
@@ -667,7 +699,7 @@ def test_structured_litellm_reviewer_returns_fidelity_passing_outcome(
 
     assert result.probe.ok
     assert cursor_accepts(result)
-    assert result.model == "claude-opus-4-6"
+    assert result.model == "gpt-5.5"
     assert result.reviewer_runtime == "litellm_structured"
     assert result.reviewer_output_mode == "litellm_structured"
 

@@ -12,6 +12,7 @@ from .connectors import (
     external_mcp_servers,
 )
 from .config import Config
+from .provider_routing import direct_anthropic_env
 from .redaction import redact, redact_for_telegram
 from .state import State
 from .supervisor_tools import SupervisorToolAPI
@@ -113,8 +114,7 @@ class ClaudeAgentSupervisorRuntime:
         tool_api: SupervisorToolAPI,
         conversation_context: dict[str, Any],
     ) -> dict[str, Any]:
-        from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
-        from mcp_tools.supervisor_tools import build_supervisor_mcp_server
+        from claude_agent_sdk import ClaudeSDKClient
 
         options = self._build_options(tool_api, conversation_context=conversation_context)
         outputs: list[str] = []
@@ -159,6 +159,8 @@ class ClaudeAgentSupervisorRuntime:
             model=self.model,
             max_turns=1,
             permission_mode="dontAsk",
+            effort="medium",
+            env=direct_anthropic_env(),
         )
         outputs: list[str] = []
         async with ClaudeSDKClient(options=options) as client:
@@ -197,6 +199,8 @@ class ClaudeAgentSupervisorRuntime:
             allowed_tools=connector_allowed_tools(self.cfg),
             disallowed_tools=connector_disallowed_tools(self.cfg),
             permission_mode="dontAsk",
+            effort="medium",
+            env=direct_anthropic_env(),
         )
         return options
 

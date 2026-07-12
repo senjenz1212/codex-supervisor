@@ -20,14 +20,19 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .dual_agent import Outcome, ProbeResult, evaluate_outcome_fidelity
 from .agent_mailbox import critical_review_prompt
+from .provider_routing import (
+    COMPLEX_ANTHROPIC_EFFORT,
+    DEFAULT_ANTHROPIC_EFFORT,
+    DEFAULT_ANTHROPIC_MODEL,
+    direct_anthropic_env,
+)
 
 
 HANDOFF_PACKET_SCHEMA_VERSION = "dual-agent-handoff/v1"
+CLAUDE_PRIMARY_MODEL = DEFAULT_ANTHROPIC_MODEL
 CLAUDE_OPUS_ULTIMATE_MODEL = "opus"
 CLAUDE_OPUS_UNDERLYING_MODEL = "claude-opus-4-8"
-CLAUDE_OPUS_LEGACY_FABLE_MODEL = "claude-fable-5"
 CLAUDE_OPUS_SAFE_OVERRIDE_MODEL = "claude-opus-4-6"
-CLAUDE_BALANCED_MODEL = "sonnet"
 CLAUDE_CHEAP_MODEL = "haiku"
 CLAUDE_OPUS_ULTIMATE_EXTRA_BODY = {
     "thinking": {"type": "adaptive"},
@@ -106,6 +111,15 @@ DEFAULT_DYNAMIC_WORKFLOW_PREVIEW_GATES: tuple[str, ...] = (
     "throwaway_worktree_comparison_recorded",
 )
 
+HIGH_EFFORT_GATES: frozenset[str] = frozenset({
+    "prd_review",
+    "issues_review",
+    "tdd_review",
+    "implementation_plan",
+    "execution",
+    "outcome_review",
+})
+
 
 @dataclass(frozen=True)
 class LeadInvocationRequest:
@@ -123,7 +137,7 @@ class LeadInvocationRequest:
     cli_command: str = "claude"
     permission_mode: str = "bypassPermissions"
     tools: str = "default"
-    effort: ClaudeEffort = "max"
+    effort: ClaudeEffort | None = None
     execution_layer_mode: ExecutionLayerMode = "lead_direct"
     dynamic_workflow_task_class: DynamicWorkflowTaskClass | None = None
     agentic_lead_policy: AgenticLeadPolicyMode = "off"
@@ -253,9 +267,22 @@ def select_lead_model(
         return explicit_model
     if quality == "cheap":
         return CLAUDE_CHEAP_MODEL
-    if quality == "balanced":
-        return CLAUDE_BALANCED_MODEL
-    return CLAUDE_OPUS_ULTIMATE_MODEL
+    return CLAUDE_PRIMARY_MODEL
+
+
+def select_lead_effort(
+    gate: GateName,
+    *,
+    quality: ModelQuality,
+    explicit_effort: ClaudeEffort | None = None,
+) -> ClaudeEffort:
+    if explicit_effort:
+        return explicit_effort
+    if quality == "cheap":
+        return "low"
+    if gate in HIGH_EFFORT_GATES:
+        return COMPLEX_ANTHROPIC_EFFORT
+    return DEFAULT_ANTHROPIC_EFFORT
 
 
 def build_lead_prompt(request: LeadInvocationRequest) -> str:
@@ -512,7 +539,14 @@ def build_claude_lead_command(request: LeadInvocationRequest) -> list[str]:
         _permission_mode_for_request(request),
     ]
     if not _uses_adaptive_opus_effort(model):
-        command.extend(["--effort", request.effort])
+        command.extend([
+            "--effort",
+            select_lead_effort(
+                request.gate,
+                quality=request.quality,
+                explicit_effort=request.effort,
+            ),
+        ])
     command.extend(["--tools", request.tools])
     allowed_tools = _allowed_tools_for_request(request)
     if allowed_tools:
@@ -573,6 +607,7 @@ def invoke_claude_lead(
     requested_model = _command_value(command, "--model")
     env = dict(os.environ)
     env.update(request.explicit_env)
+    env = direct_anthropic_env(env)
     if requested_model is not None and _uses_adaptive_opus_effort(requested_model):
         # r-2026-06-10 (write-canary evidence matrix; through-stack event
         # 660691): the pinned claude-opus-4-8 underlying route breaks headless
@@ -595,6 +630,9 @@ def invoke_claude_lead(
         else:
             env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = pin
         env["CLAUDE_CODE_EXTRA_BODY"] = json.dumps(_opus_extra_body_for_pin(pin))
+    else:
+        env.pop("ANTHROPIC_DEFAULT_OPUS_MODEL", None)
+        env.pop("CLAUDE_CODE_EXTRA_BODY", None)
     try:
         proc = runner(
             command,
@@ -738,14 +776,16 @@ def _underlying_opus_model_for_gate(gate: str) -> str | None:
     may override either via env; an empty override means "no pin".
     """
     if gate == "execution":
-        override = os.environ.get("CODEX_SUPERVISOR_EXECUTION_OPUS_MODEL", "").strip()
-        return _canonical_underlying_opus_pin(override) or None
-    override = os.environ.get("CODEX_SUPERVISOR_PLANNING_OPUS_MODEL", "").strip()
-    return _canonical_underlying_opus_pin(override) or CLAUDE_OPUS_UNDERLYING_MODEL
+        override = _opus_pin_override("CODEX_SUPERVISOR_EXECUTION_OPUS_MODEL")
+        return override or None
+    override = _opus_pin_override("CODEX_SUPERVISOR_PLANNING_OPUS_MODEL")
+    return override or CLAUDE_OPUS_UNDERLYING_MODEL
 
 
-def _canonical_underlying_opus_pin(value: str) -> str:
-    if value == CLAUDE_OPUS_LEGACY_FABLE_MODEL:
+def _opus_pin_override(env_key: str) -> str:
+    """Read an operator opus pin, clamping non-opus values to the safe pin."""
+    value = os.environ.get(env_key, "").strip()
+    if value and not value.startswith("claude-opus-"):
         return CLAUDE_OPUS_SAFE_OVERRIDE_MODEL
     return value
 

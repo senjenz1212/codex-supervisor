@@ -63,7 +63,9 @@ supervisor:
   stall_threshold_s: 90
   nudge_cooldown_s: 300
   reviewer_unavailable_policy: escalate
-  reviewer_model: claude-opus-4-6
+  # Structured reviewers use non-Anthropic models through LiteLLM. Claude
+  # reviewers must use a direct Anthropic runtime instead.
+  reviewer_model: gpt-5.5
   reviewer_output_mode: litellm_structured
   reviewer_max_tokens: 4096
   # Permissive by default: clean reviewer accepts still advance until eval data
@@ -134,14 +136,17 @@ modes:
 models:
   # API keys are optional for hook audit, rollout ingest, Telegram, /status,
   # and deterministic replay. Live L2/L3/L4 model decisions need them.
+  # Anthropic uses the direct API. Keep ANTHROPIC_BASE_URL and
+  # ANTHROPIC_AUTH_TOKEN unset so a LiteLLM route cannot be inherited. The
+  # environment placeholder is convenient for interactive use; service
+  # launchers can instead provide CODEX_SUPERVISOR_ANTHROPIC_API_KEY_FD.
   anthropic_api_key: ${ANTHROPIC_API_KEY}
-  anthropic_auth_token: ${ANTHROPIC_AUTH_TOKEN}
-  anthropic_base_url: ${ANTHROPIC_BASE_URL}
-  realtime_critique_model: claude-haiku-4-5-20251001
-  drift_l3_model: claude-haiku-4-5-20251001
-  drift_l4_model: claude-opus-4-8
-  post_run_eval_model: claude-opus-4-8
+  realtime_critique_model: claude-fable-5
+  drift_l3_model: claude-fable-5
+  drift_l4_model: claude-fable-5
+  post_run_eval_model: claude-fable-5
 
+  # OpenAI and other OpenAI-compatible models continue through LiteLLM.
   openai_api_key: ${OPENAI_API_KEY}
   openai_base_url: ${OPENAI_BASE_URL}
   embedding_model: text-embedding-3-small

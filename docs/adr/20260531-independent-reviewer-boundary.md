@@ -4,7 +4,7 @@ Date: 2026-05-31
 
 ## Status
 
-Accepted
+Accepted; default runtime amended 2026-07-11 (see Amendment)
 
 ## Context
 
@@ -37,3 +37,13 @@ The default path now exercises Cursor SDK instead of Gemini/LiteLLM. Operators
 without `CURSOR_API_KEY` will see reviewer-unavailable recovery rather than an
 implicit Gemini review. This is noisier, but honest: the system no longer
 pretends a text-only model had codebase-agent capabilities.
+
+## Amendment (2026-07-11)
+
+The direct-Anthropic routing change amends the default: `reviewer_output_mode`
+now defaults to `litellm_structured` with a non-Anthropic reviewer model
+(default `gpt-5.5`), keeping the independent structured reviewer on Unity
+LiteLLM while Claude lanes route directly through Anthropic. Configuration that
+pairs `litellm_structured` with a `claude-*` model is rejected. `cursor_sdk`
+remains available as an explicit higher-assurance mode, and the runtime
+provenance fields from this ADR are unchanged.

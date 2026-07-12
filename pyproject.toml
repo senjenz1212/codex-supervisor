@@ -21,7 +21,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-agent = ["claude-agent-sdk>=0.1.0"]
+agent = ["claude-agent-sdk>=0.1.36"]
 cursor = ["cursor-sdk"]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.24"]
 postgres = ["alembic>=1.13", "psycopg[binary]>=3.2", "sqlalchemy>=2.0"]

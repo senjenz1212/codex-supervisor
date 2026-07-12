@@ -23,7 +23,7 @@ from supervisor.dual_agent_runner import (
     send_stale_paused_digests,
     write_replay_fixture_family,
 )
-from supervisor.dual_agent_lead import OutcomeValidationPolicy, PlanningArtifact, compute_file_sha256
+from supervisor.dual_agent_lead import PlanningArtifact, compute_file_sha256
 from supervisor.state import State
 
 
@@ -446,8 +446,8 @@ def test_gate_runner_records_direct_interaction_persona_addresses_and_tool_calls
         assert "result_summary" in call
     assert response["trace_envelope"]["tool_calls"][0]["duration_ms"] >= 0
     assert response["trace_envelope"]["tool_calls"][0]["args"]["task_id"] == "gate-1"
-    assert response["trace_envelope"]["tool_calls"][0]["args"]["model"] == "opus"
-    assert response["trace_envelope"]["tool_calls"][0]["args"]["requested_model"] == "opus"
+    assert response["trace_envelope"]["tool_calls"][0]["args"]["model"] == "claude-fable-5"
+    assert response["trace_envelope"]["tool_calls"][0]["args"]["requested_model"] == "claude-fable-5"
     assert response["trace_envelope"]["tool_calls"][0]["args"]["model_source"] == "quality_default:best"
     assert response["trace_envelope"]["tool_calls"][0]["args"]["execution_layer_mode"] == "lead_direct"
     assert response["trace_envelope"]["tool_calls"][0]["args"]["dynamic_workflow_task_class"] is None

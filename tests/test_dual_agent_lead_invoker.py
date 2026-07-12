@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import json
 import subprocess
-from pathlib import Path
 
 import pytest
 
 from supervisor.dual_agent_lead import (
     HANDOFF_PACKET_SCHEMA_VERSION,
+    CLAUDE_PRIMARY_MODEL,
     CLAUDE_OPUS_SAFE_OVERRIDE_EXTRA_BODY,
     CLAUDE_OPUS_ULTIMATE_EXTRA_BODY,
     CLAUDE_OPUS_UNDERLYING_MODEL,
@@ -20,6 +20,7 @@ from supervisor.dual_agent_lead import (
     compute_file_sha256,
     invoke_claude_lead,
     verify_planning_artifact_boundaries,
+    select_lead_effort,
     select_lead_model,
     write_handoff_packet,
 )
@@ -71,8 +72,8 @@ def test_build_lead_command_uses_non_bare_claude_so_slash_lead_can_resolve(tmp_p
     assert "do not use null for specialist decisions" in prompt
     assert "--bare" not in argv
     assert argv[:2] == ["claude", "--no-session-persistence"]
-    assert argv[argv.index("--model") + 1] == "opus"
-    assert "--effort" not in argv
+    assert argv[argv.index("--model") + 1] == "claude-fable-5"
+    assert argv[argv.index("--effort") + 1] == "high"
     assert argv[argv.index("--permission-mode") + 1] == "bypassPermissions"
     assert argv[argv.index("--tools") + 1] == "default"
     assert argv[argv.index("-p") + 1] == prompt
@@ -100,22 +101,26 @@ def test_lead_invocation_defaults_to_same_worktree_tool_access(tmp_path):
     assert isinstance(argv, list)
     assert argv[argv.index("--tools") + 1] == "default"
     assert argv[argv.index("--permission-mode") + 1] == "bypassPermissions"
-    assert "--effort" not in argv
+    assert argv[argv.index("--effort") + 1] == "high"
     assert calls[0]["cwd"] == str(tmp_path)
-    assert calls[0]["env"]["ANTHROPIC_DEFAULT_OPUS_MODEL"] == CLAUDE_OPUS_UNDERLYING_MODEL
-    assert calls[0]["env"]["CLAUDE_CODE_EXTRA_BODY"] == json.dumps(CLAUDE_OPUS_ULTIMATE_EXTRA_BODY)
+    assert "ANTHROPIC_DEFAULT_OPUS_MODEL" not in calls[0]["env"]
+    assert "CLAUDE_CODE_EXTRA_BODY" not in calls[0]["env"]
 
 
 def test_select_lead_model_prefers_best_models_for_all_best_quality_work():
-    assert select_lead_model("prd_review", quality="best") == "opus"
-    assert select_lead_model("outcome_review", quality="best") == "opus"
-    assert select_lead_model("execution", quality="best") == "opus"
-    assert select_lead_model("prd_review", quality="balanced") == "sonnet"
+    assert select_lead_model("prd_review", quality="best") == CLAUDE_PRIMARY_MODEL
+    assert select_lead_model("outcome_review", quality="best") == CLAUDE_PRIMARY_MODEL
+    assert select_lead_model("execution", quality="best") == CLAUDE_PRIMARY_MODEL
+    assert select_lead_model("prd_review", quality="balanced") == CLAUDE_PRIMARY_MODEL
     assert select_lead_model("prd_review", quality="cheap") == "haiku"
     assert select_lead_model("prd_review", quality="best", explicit_model="sonnet") == "sonnet"
+    assert select_lead_effort("intent", quality="best") == "medium"
+    assert select_lead_effort("prd_review", quality="best") == "high"
+    assert select_lead_effort("execution", quality="balanced") == "high"
+    assert select_lead_effort("prd_review", quality="cheap") == "low"
 
 
-def test_invoke_claude_lead_parses_json_output_and_validates_outcome(tmp_path):
+def test_invoke_claude_lead_parses_json_output_and_scrubs_proxy_route(tmp_path):
     calls: list[dict[str, object]] = []
     stdout = json.dumps({
         "result": "lead prose\n" + _outcome_block(),
@@ -147,7 +152,11 @@ def test_invoke_claude_lead_parses_json_output_and_validates_outcome(tmp_path):
         expected_specialists=("Planner",),
         expected_decisions=("keep the gate narrow",),
         expected_objections=(),
-        explicit_env={"ANTHROPIC_BASE_URL": "https://uai-litellm.internal.unity.com"},
+        explicit_env={
+            "ANTHROPIC_BASE_URL": "https://uai-litellm.internal.unity.com",
+            "ANTHROPIC_AUTH_TOKEN": "proxy-token",
+            "CLAUDE_CODE_OAUTH_TOKEN": "oauth-token",
+        },
     )
 
     result = invoke_claude_lead(request, runner=fake_runner)
@@ -168,9 +177,11 @@ def test_invoke_claude_lead_parses_json_output_and_validates_outcome(tmp_path):
     assert calls[0]["cwd"] == str(tmp_path)
     assert calls[0]["capture_output"] is True
     assert calls[0]["text"] is True
-    assert calls[0]["env"]["ANTHROPIC_BASE_URL"] == "https://uai-litellm.internal.unity.com"
-    assert calls[0]["env"]["ANTHROPIC_DEFAULT_OPUS_MODEL"] == CLAUDE_OPUS_UNDERLYING_MODEL
-    assert calls[0]["env"]["CLAUDE_CODE_EXTRA_BODY"] == json.dumps(CLAUDE_OPUS_ULTIMATE_EXTRA_BODY)
+    assert "ANTHROPIC_BASE_URL" not in calls[0]["env"]
+    assert "ANTHROPIC_AUTH_TOKEN" not in calls[0]["env"]
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in calls[0]["env"]
+    assert "ANTHROPIC_DEFAULT_OPUS_MODEL" not in calls[0]["env"]
+    assert "CLAUDE_CODE_EXTRA_BODY" not in calls[0]["env"]
 
 
 def test_non_opus_ultimate_model_keeps_cli_effort_flag(tmp_path):
@@ -202,6 +213,7 @@ def test_opus_ultimate_extra_body_overrides_stale_environment_value(tmp_path):
         gate="outcome_review",
         instruction="Review the implementation.",
         cwd=tmp_path,
+        model="opus",
         explicit_env={"CLAUDE_CODE_EXTRA_BODY": '{"thinking":{"type":"old"}}'},
     )
 
@@ -234,7 +246,7 @@ def test_invoke_claude_lead_uses_requested_model_when_stdout_omits_model(tmp_pat
     result = invoke_claude_lead(request, runner=fake_runner)
 
     assert result.probe.ok
-    assert result.model == "opus"
+    assert result.model == "claude-fable-5"
 
 
 def test_invoke_claude_lead_reports_subprocess_failure(tmp_path):
@@ -720,6 +732,7 @@ def test_execution_gate_drops_broken_opus_pin_and_keeps_extra_body(tmp_path, mon
         gate="execution",
         instruction="Implement the slice and run targeted tests.",
         cwd=tmp_path,
+        model="opus",
     )
 
     result = invoke_claude_lead(request, runner=fake_runner)
@@ -748,6 +761,7 @@ def test_execution_gate_honors_explicit_execution_model_override(tmp_path, monke
         gate="execution",
         instruction="Implement the slice and run targeted tests.",
         cwd=tmp_path,
+        model="opus",
     )
 
     invoke_claude_lead(request, runner=fake_runner)
@@ -773,6 +787,7 @@ def test_planning_gate_honors_planning_model_override(tmp_path, monkeypatch):
         gate="prd_review",
         instruction="Review the PRD artifacts.",
         cwd=tmp_path,
+        model="opus",
     )
 
     invoke_claude_lead(request, runner=fake_runner)
@@ -782,7 +797,35 @@ def test_planning_gate_honors_planning_model_override(tmp_path, monkeypatch):
     assert env["CLAUDE_CODE_EXTRA_BODY"] == json.dumps(CLAUDE_OPUS_SAFE_OVERRIDE_EXTRA_BODY)
 
 
-def test_planning_gate_rewrites_retired_fable_override(tmp_path, monkeypatch):
+def test_primary_fable_route_ignores_stale_opus_override(tmp_path, monkeypatch):
+    monkeypatch.setenv("CODEX_SUPERVISOR_PLANNING_OPUS_MODEL", "claude-fable-5")
+    monkeypatch.setenv("ANTHROPIC_DEFAULT_OPUS_MODEL", "claude-opus-4-6")
+    monkeypatch.setenv("CLAUDE_CODE_EXTRA_BODY", '{"thinking":{"type":"old"}}')
+    calls: list[dict[str, object]] = []
+    stdout = json.dumps({"result": _outcome_block()})
+
+    def fake_runner(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append({"argv": argv, **kwargs})
+        return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
+
+    request = LeadInvocationRequest(
+        task_id="slice0-lead",
+        gate="prd_review",
+        instruction="Review the PRD artifacts.",
+        cwd=tmp_path,
+    )
+
+    invoke_claude_lead(request, runner=fake_runner)
+
+    argv = calls[0]["argv"]
+    assert argv[argv.index("--model") + 1] == "claude-fable-5"
+    assert argv[argv.index("--effort") + 1] == "high"
+    env = calls[0]["env"]
+    assert "ANTHROPIC_DEFAULT_OPUS_MODEL" not in env
+    assert "CLAUDE_CODE_EXTRA_BODY" not in env
+
+
+def test_opus_route_clamps_stale_non_opus_pin_to_safe_override(tmp_path, monkeypatch):
     monkeypatch.setenv("CODEX_SUPERVISOR_PLANNING_OPUS_MODEL", "claude-fable-5")
     calls: list[dict[str, object]] = []
     stdout = json.dumps({"result": _outcome_block()})
@@ -796,6 +839,31 @@ def test_planning_gate_rewrites_retired_fable_override(tmp_path, monkeypatch):
         gate="prd_review",
         instruction="Review the PRD artifacts.",
         cwd=tmp_path,
+        model="opus",
+    )
+
+    invoke_claude_lead(request, runner=fake_runner)
+
+    env = calls[0]["env"]
+    assert env["ANTHROPIC_DEFAULT_OPUS_MODEL"] == "claude-opus-4-6"
+    assert env["CLAUDE_CODE_EXTRA_BODY"] == json.dumps(CLAUDE_OPUS_SAFE_OVERRIDE_EXTRA_BODY)
+
+
+def test_execution_gate_clamps_stale_non_opus_pin_to_safe_override(tmp_path, monkeypatch):
+    monkeypatch.setenv("CODEX_SUPERVISOR_EXECUTION_OPUS_MODEL", "claude-fable-5")
+    calls: list[dict[str, object]] = []
+    stdout = json.dumps({"result": _outcome_block()})
+
+    def fake_runner(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append({"argv": argv, **kwargs})
+        return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
+
+    request = LeadInvocationRequest(
+        task_id="slice0-lead",
+        gate="execution",
+        instruction="Implement the slice and run targeted tests.",
+        cwd=tmp_path,
+        model="opus",
     )
 
     invoke_claude_lead(request, runner=fake_runner)
