@@ -263,6 +263,20 @@ def invoke_cursor_agent(
     *,
     status_runner: StatusRunner = subprocess.run,
 ) -> CursorInvocationResult:
+    if request.reviewer_output_mode != "cursor_sdk":
+        try:
+            select_reviewer_model(
+                quality=request.quality,
+                reviewer_output_mode=request.reviewer_output_mode,
+                reviewer_model=request.reviewer_model,
+                cursor_model=request.model,
+            )
+        except ValueError as e:
+            return _reviewer_model_policy_result(
+                message=str(e),
+                reviewer_model=request.reviewer_model,
+                reviewer_output_mode=request.reviewer_output_mode,
+            )
     guard_source_worktree = (
         request.reviewer_output_mode != "cursor_sdk"
         or request.reviewer_worktree_isolation == "none"
@@ -1312,6 +1326,41 @@ def _cursor_access_denied_result(
         reviewer_runtime=reviewer_output_mode,
         reviewer_assurance="unavailable",
         diagnostics={"access_denied": sanitized_details},
+    )
+
+
+def _reviewer_model_policy_result(
+    *,
+    message: str,
+    reviewer_model: str | None,
+    reviewer_output_mode: str | None,
+) -> CursorInvocationResult:
+    details = {
+        "original_reason": "reviewer_model_policy_violation",
+        "attempts": 1,
+        "retry_reasons": [],
+        "recoverable": False,
+        "error": message,
+        "reviewer_model": reviewer_model,
+        "reviewer_output_mode": reviewer_output_mode,
+    }
+    return CursorInvocationResult(
+        probe=ProbeResult(
+            "CURSOR",
+            "red",
+            "reviewer_model_policy_violation",
+            details,
+        ),
+        outcome=None,
+        transcript="",
+        failure_classification="reviewer_model_policy_violation",
+        recoverable=False,
+        attempts=1,
+        retry_reasons=(),
+        reviewer_output_mode=reviewer_output_mode,
+        reviewer_runtime=reviewer_output_mode,
+        reviewer_assurance="unavailable",
+        diagnostics={"failure": details},
     )
 
 

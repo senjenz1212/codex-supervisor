@@ -196,6 +196,30 @@ def test_select_reviewer_defaults_to_cursor_sdk_primary():
         )
 
 
+def test_invoke_cursor_agent_fails_fast_on_claude_structured_reviewer(tmp_path: Path):
+    request = CursorInvocationRequest(
+        task_id="tri-agent",
+        gate="tdd_review",
+        instruction="Review the TDD plan.",
+        cwd=tmp_path,
+        reviewer_output_mode="litellm_structured",
+        reviewer_model="claude-fable-5",
+        contract_retry_limit=3,
+    )
+
+    def _unexpected_runner(*args, **kwargs):
+        raise AssertionError("policy violation must fail before any subprocess call")
+
+    result = invoke_cursor_agent(request, status_runner=_unexpected_runner)
+
+    assert result.probe.status == "red"
+    assert result.probe.reason == "reviewer_model_policy_violation"
+    assert result.failure_classification == "reviewer_model_policy_violation"
+    assert result.recoverable is False
+    assert result.attempts == 1
+    assert "Claude reviewers cannot use" in result.probe.details["error"]
+
+
 def _complete_cursor_outcome(task_id: str = "tri-agent", *, decision: str = "accept") -> Outcome:
     return Outcome(
         task_id=task_id,

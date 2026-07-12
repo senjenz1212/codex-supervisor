@@ -777,13 +777,9 @@ def _underlying_opus_model_for_gate(gate: str) -> str | None:
     """
     if gate == "execution":
         override = os.environ.get("CODEX_SUPERVISOR_EXECUTION_OPUS_MODEL", "").strip()
-        return _canonical_underlying_opus_pin(override) or None
+        return override or None
     override = os.environ.get("CODEX_SUPERVISOR_PLANNING_OPUS_MODEL", "").strip()
-    return _canonical_underlying_opus_pin(override) or CLAUDE_OPUS_UNDERLYING_MODEL
-
-
-def _canonical_underlying_opus_pin(value: str) -> str:
-    return value
+    return override or CLAUDE_OPUS_UNDERLYING_MODEL
 
 
 def _opus_extra_body_for_pin(pin: str | None) -> dict[str, Any]:

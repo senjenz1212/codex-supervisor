@@ -31,10 +31,17 @@ ANTHROPIC_PROXY_ENV_KEYS: tuple[str, ...] = (
 
 def is_anthropic_model(model: str | None) -> bool:
     value = str(model or "").strip().lower()
+    if not value:
+        return False
+    if value in {"claude", "fable", "opus", "sonnet", "haiku"}:
+        return True
+    if value.startswith("anthropic/"):
+        return True
+    bare = value.split("/", 1)[1] if "/" in value else value
     return (
-        value in {"claude", "fable", "opus", "sonnet", "haiku"}
-        or value.startswith("claude-")
-        or value.startswith("anthropic/")
+        "claude" in bare
+        or bare.startswith("anthropic.")
+        or ".anthropic." in bare
     )
 
 
