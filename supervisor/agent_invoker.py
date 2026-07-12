@@ -67,6 +67,7 @@ class AgentInvoker:
                 "telegram": self.telegram_mcp,
             },
             allowed_tools=self._allowed_tools_for(d.kind),
+            effort=self._effort_for(d.kind),
         )
 
         user_message = self._format_decision(d)
@@ -95,6 +96,12 @@ class AgentInvoker:
         if kind in ("evaluate_run", "review_updates"):
             return self.cfg.models.post_run_eval_model
         return self.cfg.models.drift_l4_model
+
+    @staticmethod
+    def _effort_for(kind: str) -> str:
+        if kind in {"evaluate_run", "plan_recovery", "review_updates"}:
+            return "high"
+        return "medium"
 
     @staticmethod
     def _allowed_tools_for(kind: str) -> list[str]:

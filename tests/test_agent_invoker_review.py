@@ -14,10 +14,10 @@ def _cfg(tmp_path) -> Config:
         "orchestrator": {"run_registry_dir": str(tmp_path / "runs")},
         "supervisor": {"state_db": str(tmp_path / "state.db")},
         "models": {
-            "realtime_critique_model": "claude-haiku-4-5",
-            "drift_l3_model": "claude-haiku-4-5",
-            "drift_l4_model": "claude-sonnet-4-6",
-            "post_run_eval_model": "claude-opus-4-7",
+            "realtime_critique_model": "claude-fable-5",
+            "drift_l3_model": "claude-fable-5",
+            "drift_l4_model": "claude-fable-5",
+            "post_run_eval_model": "claude-fable-5",
             "embedding_model": "text-embedding-3-small",
         },
         "telegram": {"bot_token": "fake", "chat_id": "42"},
@@ -105,9 +105,10 @@ async def test_review_updates_invoker_uses_read_only_grounding_tools(monkeypatch
     assert "mcp__telegram__send_message" in allowed
     assert "mcp__codex__inject_steering" not in allowed
     assert "mcp__telegram__ask_user" not in allowed
+    assert _FakeOptions.seen.effort == "high"
 
     verdict = state._conn.execute(
         "SELECT phase, model, output_json FROM verdicts WHERE run_id='run-vela'"
     ).fetchone()
     assert verdict["phase"] == "review_updates"
-    assert verdict["model"] == "claude-opus-4-7"
+    assert verdict["model"] == "claude-fable-5"

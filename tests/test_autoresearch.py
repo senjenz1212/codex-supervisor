@@ -1535,10 +1535,11 @@ def test_autoresearch_report_only_invariants_survive_quality_success():
     assert report["report_only"]["operator_review_required"] is True
 
 
-def test_autoresearch_cursor_reviewer_defaults_remain_compatible():
+def test_autoresearch_structured_reviewer_defaults_remain_report_only():
     cfg = SupervisorCfg(state_db=":memory:")
     validation = validate_attempt(experiment=_experiment(), attempt=_attempt()).to_payload()
 
-    assert cfg.reviewer_output_mode == "cursor_sdk"
+    assert cfg.reviewer_output_mode == "litellm_structured"
+    assert cfg.reviewer_model == "gpt-5.5"
     assert validation["policy_mutated"] is False
     assert validation["default_change_allowed"] is False

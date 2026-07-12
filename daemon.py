@@ -24,6 +24,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 from supervisor.config import Config
+from supervisor.provider_routing import configure_direct_anthropic_process_env
 from supervisor.state import State
 from supervisor.drift_detector import DriftDetector
 from supervisor.hook_server import build_app, serve
@@ -62,18 +63,10 @@ async def main() -> int:
 
     anthropic_key = (
         cfg.models.anthropic_api_key
-        or cfg.models.anthropic_auth_token
         or os.environ.get("ANTHROPIC_API_KEY", "")
-        or os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
     )
-    anthropic_base_url = (
-        cfg.models.anthropic_base_url
-        or os.environ.get("ANTHROPIC_BASE_URL", "")
-    )
-    anthropic_kwargs = {"api_key": anthropic_key}
-    if anthropic_base_url:
-        anthropic_kwargs["base_url"] = anthropic_base_url
-    anthropic = AsyncAnthropic(**anthropic_kwargs) if anthropic_key else None
+    configure_direct_anthropic_process_env(api_key=anthropic_key or None)
+    anthropic = AsyncAnthropic(api_key=anthropic_key) if anthropic_key else None
 
     openai_key = cfg.models.openai_api_key or os.environ.get("OPENAI_API_KEY", "")
     openai_base_url = cfg.models.openai_base_url or os.environ.get("OPENAI_BASE_URL", "")

@@ -11,10 +11,10 @@ supervisor:
   state_db: /tmp/test-supervisor/state.db
 
 models:
-  realtime_critique_model: claude-haiku-4-5-20251001
-  drift_l3_model: claude-haiku-4-5-20251001
-  drift_l4_model: claude-sonnet-4-6
-  post_run_eval_model: claude-sonnet-4-6
+  realtime_critique_model: claude-fable-5
+  drift_l3_model: claude-fable-5
+  drift_l4_model: claude-fable-5
+  post_run_eval_model: claude-fable-5
   embedding_model: text-embedding-3-small
 
 telegram:

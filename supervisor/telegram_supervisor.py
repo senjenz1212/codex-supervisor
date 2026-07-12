@@ -159,6 +159,7 @@ class ClaudeAgentSupervisorRuntime:
             model=self.model,
             max_turns=1,
             permission_mode="dontAsk",
+            effort="medium",
         )
         outputs: list[str] = []
         async with ClaudeSDKClient(options=options) as client:
@@ -197,6 +198,7 @@ class ClaudeAgentSupervisorRuntime:
             allowed_tools=connector_allowed_tools(self.cfg),
             disallowed_tools=connector_disallowed_tools(self.cfg),
             permission_mode="dontAsk",
+            effort="medium",
         )
         return options
 

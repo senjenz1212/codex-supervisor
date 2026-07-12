@@ -12,6 +12,8 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from .provider_routing import DEFAULT_ANTHROPIC_MODEL, is_anthropic_model
+
 
 _ENV_RE = re.compile(r"\$\{([A-Z0-9_]+)\}")
 PLANNING_RUBRIC_MIN_THRESHOLD = 0.2
@@ -130,13 +132,25 @@ class SupervisorCfg(BaseModel):
     stall_threshold_s: int = 90
     nudge_cooldown_s: int = 300
     reviewer_unavailable_policy: Literal["block", "escalate", "proceed_degraded"] = "escalate"
-    reviewer_model: str = "claude-opus-4-6"
-    reviewer_output_mode: Literal["litellm_structured", "cursor_sdk"] = "cursor_sdk"
+    reviewer_model: str = "gpt-5.5"
+    reviewer_output_mode: Literal["litellm_structured", "cursor_sdk"] = "litellm_structured"
     reviewer_max_tokens: int = 4096
     reviewer_infra_retry_limit: int = 2
     reviewer_infra_retry_backoff_s: float = 1.0
     reviewer_low_confidence_threshold: float = 0.0
     reviewer_panel_calibration_path: str = ""
+
+    @model_validator(mode="after")
+    def _reject_anthropic_model_on_litellm_reviewer(self) -> "SupervisorCfg":
+        if (
+            self.reviewer_output_mode == "litellm_structured"
+            and is_anthropic_model(self.reviewer_model)
+        ):
+            raise ValueError(
+                "Claude reviewers must use Anthropic directly; "
+                "litellm_structured is reserved for non-Anthropic models"
+            )
+        return self
 
 
 class AgenticLeadCfg(BaseModel):
@@ -202,12 +216,21 @@ class ModelsCfg(BaseModel):
     anthropic_base_url: str = ""
     openai_api_key: str = ""
     openai_base_url: str = ""
-    realtime_critique_model: str
-    drift_l3_model: str
-    drift_l4_model: str
-    post_run_eval_model: str
+    realtime_critique_model: str = DEFAULT_ANTHROPIC_MODEL
+    drift_l3_model: str = DEFAULT_ANTHROPIC_MODEL
+    drift_l4_model: str = DEFAULT_ANTHROPIC_MODEL
+    post_run_eval_model: str = DEFAULT_ANTHROPIC_MODEL
     embedding_model: str
     local_fallback: LocalFallbackCfg = Field(default_factory=LocalFallbackCfg)
+
+    @model_validator(mode="after")
+    def _reject_legacy_anthropic_proxy_fields(self) -> "ModelsCfg":
+        if self.anthropic_auth_token or self.anthropic_base_url:
+            raise ValueError(
+                "Anthropic must use the direct API through anthropic_api_key; "
+                "anthropic_auth_token and anthropic_base_url are not allowed"
+            )
+        return self
 
 
 class TelegramCfg(BaseModel):

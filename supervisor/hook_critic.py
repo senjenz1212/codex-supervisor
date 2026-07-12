@@ -46,6 +46,7 @@ class ClaudeAgentSDKHookCritic:
             model=self.cfg.models.realtime_critique_model,
             max_turns=2,
             allowed_tools=[],
+            effort="medium",
         )
         user_message = json.dumps({
             "target": hook_event.source_target,

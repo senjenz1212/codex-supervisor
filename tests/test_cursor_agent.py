@@ -8,6 +8,8 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 import supervisor.cursor_agent as cursor_agent
 from supervisor.cursor_agent import (
     CursorInvocationRequest,
@@ -176,7 +178,7 @@ def test_select_reviewer_defaults_to_cursor_sdk_primary():
             quality="best",
             reviewer_output_mode="litellm_structured",
         )
-        == "claude-opus-4-6"
+        == "gpt-5.5"
     )
     assert (
         select_reviewer_model(
@@ -186,6 +188,12 @@ def test_select_reviewer_defaults_to_cursor_sdk_primary():
         )
         == "custom-reviewer"
     )
+    with pytest.raises(ValueError, match="Claude reviewers cannot use"):
+        select_reviewer_model(
+            quality="best",
+            reviewer_output_mode="litellm_structured",
+            reviewer_model="claude-fable-5",
+        )
 
 
 def _complete_cursor_outcome(task_id: str = "tri-agent", *, decision: str = "accept") -> Outcome:
@@ -219,7 +227,7 @@ def _litellm_metadata(*, finish_reason: str = "stop") -> dict[str, object]:
         "agent_id": None,
         "run_id": "chatcmpl-1",
         "status": "finished",
-        "model": "claude-opus-4-6",
+        "model": "gpt-5.5",
         "reviewer_runtime": "litellm_structured",
         "reviewer_output_mode": "litellm_structured",
         "duration_ms": None,
@@ -667,7 +675,7 @@ def test_structured_litellm_reviewer_returns_fidelity_passing_outcome(
 
     assert result.probe.ok
     assert cursor_accepts(result)
-    assert result.model == "claude-opus-4-6"
+    assert result.model == "gpt-5.5"
     assert result.reviewer_runtime == "litellm_structured"
     assert result.reviewer_output_mode == "litellm_structured"
 

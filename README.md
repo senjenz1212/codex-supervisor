@@ -407,16 +407,31 @@ python -m supervisor.replay \
 Replay must not call Telegram, target agents, subprocesses, Anthropic, or
 OpenAI by default.
 
-## Unity LiteLLM
+## Provider Routing
 
-Set these in `~/.codex-supervisor/secrets.env`:
+Anthropic lanes use Anthropic's direct API. Keep `ANTHROPIC_BASE_URL` and
+`ANTHROPIC_AUTH_TOKEN` unset:
 
 ```bash
-ANTHROPIC_BASE_URL=https://uai-litellm.internal.unity.com
-ANTHROPIC_AUTH_TOKEN=...
+ANTHROPIC_API_KEY=...
+```
+
+Supervisor defaults Claude work to `claude-fable-5`. Routine critique and
+conversation use medium effort; substantial planning, execution, recovery, and
+outcome review use high effort. Claude Code subprocesses scrub inherited
+Anthropic proxy and OAuth variables before launch.
+
+OpenAI and other OpenAI-compatible lanes continue through Unity LiteLLM. Set
+these in `~/.codex-supervisor/secrets.env`:
+
+```bash
 OPENAI_BASE_URL=https://uai-litellm.internal.unity.com/v1
 OPENAI_API_KEY=...
 ```
+
+`litellm_structured` reviewers must use a non-Anthropic model such as
+`gpt-5.5`; configuration that pairs that runtime with a `claude-*` model is
+rejected.
 
 ## Claude Desktop MCP Connectors
 

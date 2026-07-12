@@ -12,6 +12,8 @@ Forbidden outcomes guarded against:
 from __future__ import annotations
 from pathlib import Path
 
+import pytest
+
 FIXTURE = Path(__file__).parent / "fixtures" / "config_claude_code_minimal.yaml"
 
 
@@ -44,6 +46,15 @@ def test_agentic_lead_defaults_to_allowed_with_three_subagents():
 
     assert cfg.agentic_lead.policy == "allowed"
     assert cfg.agentic_lead.min_subagents == 3
+
+
+def test_non_anthropic_reviewer_defaults_to_litellm() -> None:
+    from supervisor.config import Config
+
+    cfg = Config.load(str(FIXTURE))
+
+    assert cfg.supervisor.reviewer_model == "gpt-5.5"
+    assert cfg.supervisor.reviewer_output_mode == "litellm_structured"
 
 
 def test_planning_rubric_threshold_cannot_be_configured_to_zero(tmp_path):
@@ -110,30 +121,59 @@ def test_codex_target_defaults_resume_extra_args_for_launchd(tmp_path):
     assert cfg.target.codex.resume_timeout_s >= 60
 
 
-def test_unity_litellm_model_env_fields_are_loaded(monkeypatch, tmp_path):
-    """Supervisor model config must support Unity LiteLLM's Anthropic and
-    OpenAI-compatible gateway env vars."""
-    monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://uai-litellm.internal.unity.com")
-    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "secret-anthropic")
+def test_direct_anthropic_and_litellm_openai_env_fields_are_loaded(monkeypatch, tmp_path):
+    """Claude uses a direct key while OpenAI-compatible models retain LiteLLM."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "secret-anthropic")
     monkeypatch.setenv("OPENAI_BASE_URL", "https://uai-litellm.internal.unity.com/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "secret-openai")
 
-    p = tmp_path / "unity-litellm.yaml"
+    p = tmp_path / "provider-routing.yaml"
     p.write_text(FIXTURE.read_text().replace(
         "models:\n",
         "models:\n"
-        "  anthropic_base_url: ${ANTHROPIC_BASE_URL}\n"
-        "  anthropic_auth_token: ${ANTHROPIC_AUTH_TOKEN}\n"
+        "  anthropic_api_key: ${ANTHROPIC_API_KEY}\n"
         "  openai_base_url: ${OPENAI_BASE_URL}\n"
         "  openai_api_key: ${OPENAI_API_KEY}\n"
     ))
 
     from supervisor.config import Config
     cfg = Config.load(str(p))
-    assert cfg.models.anthropic_base_url == "https://uai-litellm.internal.unity.com"
-    assert cfg.models.anthropic_auth_token == "secret-anthropic"
+    assert cfg.models.anthropic_api_key == "secret-anthropic"
+    assert cfg.models.anthropic_base_url == ""
+    assert cfg.models.anthropic_auth_token == ""
     assert cfg.models.openai_base_url == "https://uai-litellm.internal.unity.com/v1"
     assert cfg.models.openai_api_key == "secret-openai"
+
+
+def test_anthropic_proxy_fields_are_rejected(tmp_path):
+    p = tmp_path / "legacy-anthropic-proxy.yaml"
+    p.write_text(FIXTURE.read_text().replace(
+        "models:\n",
+        "models:\n"
+        "  anthropic_base_url: https://uai-litellm.internal.unity.com\n"
+        "  anthropic_auth_token: legacy-proxy-token\n"
+    ))
+
+    from supervisor.config import Config
+
+    with pytest.raises(ValueError, match="Anthropic must use the direct API"):
+        Config.load(str(p))
+
+
+def test_litellm_structured_reviewer_rejects_claude_model(tmp_path):
+    p = tmp_path / "claude-through-litellm.yaml"
+    p.write_text(FIXTURE.read_text().replace(
+        "supervisor:\n  state_db: /tmp/test-supervisor/state.db\n",
+        "supervisor:\n"
+        "  state_db: /tmp/test-supervisor/state.db\n"
+        "  reviewer_output_mode: litellm_structured\n"
+        "  reviewer_model: claude-fable-5\n"
+    ))
+
+    from supervisor.config import Config
+
+    with pytest.raises(ValueError, match="Claude reviewers must use Anthropic directly"):
+        Config.load(str(p))
 
 
 def test_yaml_bare_off_mode_is_normalized_to_string_off(tmp_path):
