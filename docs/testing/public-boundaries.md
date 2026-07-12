@@ -7,6 +7,17 @@ Tests for PRD promises must start at one of these boundaries.
 Load a supervisor config file and construct the selected target adapter without
 starting the daemon.
 
+## provider_routing
+
+Build Claude spawn environments through `supervisor.provider_routing`
+(`direct_anthropic_env`, `configure_direct_anthropic_process_env`,
+`read_direct_anthropic_api_key_fd`, `is_anthropic_model`). Tests must prove
+Anthropic proxy/OAuth/gateway route selectors are scrubbed, an explicit
+`ANTHROPIC_API_KEY` wins over the daemon-captured key, the direct key can be
+consumed from an inherited anonymous file descriptor, non-Anthropic provider
+variables are preserved, and Anthropic-model detection stays narrow. Tests must
+not read live credentials or call live Anthropic.
+
 ## target_adapter_conformance
 
 Run the shared adapter conformance suite against a target adapter implementation
@@ -92,8 +103,9 @@ live Telegram, Slack, target agents, or model APIs.
 ## agent_invoker
 
 Submit a queued supervisor decision to the bounded Claude Agent SDK invoker with
-fake MCP servers and verify the selected skill, model, allowed tools, persisted
-verdict, and Telegram-facing result. Tests at this boundary may fake the SDK
+fake MCP servers and verify the selected skill, model, task-dependent effort,
+direct-Anthropic spawn environment, allowed tools, persisted verdict, and
+Telegram-facing result. Tests at this boundary may fake the SDK
 below the invoker, but must not skip skill selection or tool allowlisting.
 
 ## codex_app_server_status_sync

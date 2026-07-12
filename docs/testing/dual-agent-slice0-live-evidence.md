@@ -1,5 +1,12 @@
 # Dual-Agent Slice 0 Live Evidence
 
+Note (2026-07-11): entries below are dated records. Observations of Claude
+Code routing through Unity LiteLLM (`ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN`)
+and of the wrapper defaulting to `opus` with `--effort max` predate the
+direct-Anthropic routing change: Claude lanes now use the direct Anthropic API
+with `claude-fable-5` and gate-dependent effort, and proxy/OAuth route
+selectors are scrubbed from spawn environments (see README "Provider Routing").
+
 ## 2026-05-23 Minimal Claude Code Spawn
 
 Command shape:
