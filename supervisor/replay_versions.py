@@ -5,6 +5,7 @@ from typing import Any
 
 
 CURRENT_SCHEMA_VERSIONS: dict[str, str] = {
+    "execution_provenance": "dual-agent-execution-provenance/v1",
     "manifest": "dual-agent-replay-manifest/v1",
     "trace_envelope": "dual-agent-trace-envelope/v1",
     "failure_taxonomy": "dual-agent-failure-taxonomy/v1",
@@ -60,7 +61,11 @@ def check_replay_schema_versions(manifest: dict[str, Any]) -> dict[str, Any]:
     ]
     return {
         "schema_version": "dual-agent-replay-version-check/v1",
-        "status": "incompatible" if unknown_versions else "compatible",
+        "status": (
+            "incompatible"
+            if unknown_versions or missing_current or migrations_required
+            else "compatible"
+        ),
         "current_versions": dict(CURRENT_SCHEMA_VERSIONS),
         "observed_versions": {str(key): str(value) for key, value in versions.items()},
         "migrations_required": migrations_required,

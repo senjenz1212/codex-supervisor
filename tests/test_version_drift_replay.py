@@ -3,9 +3,23 @@ from __future__ import annotations
 from supervisor.replay_versions import check_replay_schema_versions
 
 
+def test_replay_schema_versions_reject_missing_schema_declaration():
+    result = check_replay_schema_versions({})
+
+    assert result["status"] == "incompatible"
+    assert result["missing_current_schemas"] == [
+        "execution_provenance",
+        "failure_taxonomy",
+        "interaction",
+        "manifest",
+        "trace_envelope",
+    ]
+
+
 def test_replay_schema_versions_accept_current_manifest_versions():
     result = check_replay_schema_versions({
         "schema_versions": {
+            "execution_provenance": "dual-agent-execution-provenance/v1",
             "manifest": "dual-agent-replay-manifest/v1",
             "trace_envelope": "dual-agent-trace-envelope/v1",
             "failure_taxonomy": "dual-agent-failure-taxonomy/v1",
@@ -20,6 +34,7 @@ def test_replay_schema_versions_accept_current_manifest_versions():
 def test_replay_schema_versions_accept_real_exported_manifest_keys():
     result = check_replay_schema_versions({
         "schema_versions": {
+            "execution_provenance": "dual-agent-execution-provenance/v1",
             "replay_manifest": "dual-agent-replay-manifest/v1",
             "trace_envelope": "dual-agent-trace-envelope/v1",
             "failure_taxonomy": "dual-agent-failure-taxonomy/v1",
@@ -31,9 +46,10 @@ def test_replay_schema_versions_accept_real_exported_manifest_keys():
     assert result["unknown_versions"] == []
 
 
-def test_replay_schema_versions_map_known_forward_migration():
+def test_replay_schema_versions_reject_unapplied_known_migration():
     result = check_replay_schema_versions({
         "schema_versions": {
+            "execution_provenance": "dual-agent-execution-provenance/v1",
             "manifest": "dual-agent-replay-manifest/v0",
             "trace_envelope": "dual-agent-trace-envelope/v1",
             "failure_taxonomy": "dual-agent-failure-taxonomy/v1",
@@ -41,7 +57,7 @@ def test_replay_schema_versions_map_known_forward_migration():
         }
     })
 
-    assert result["status"] == "compatible"
+    assert result["status"] == "incompatible"
     assert result["migrations_required"] == [{
         "schema": "manifest",
         "from": "dual-agent-replay-manifest/v0",
