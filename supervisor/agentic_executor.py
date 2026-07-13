@@ -12,6 +12,7 @@ from typing import Any, Callable
 from .agentic_workers import (
     AgenticWorkerSpec,
     cleanup_orphaned_agentic_workers,
+    run_agentic_claude_subprocess,
     run_agentic_worker_fanout,
 )
 from .dual_agent_lead import ModelQuality, select_lead_model
@@ -232,8 +233,10 @@ def plan_agentic_worker_roster(
         quality=quality,
     )
     try:
-        proc = runner(
+        proc = run_agentic_claude_subprocess(
+            runner,
             command,
+            inherit_env=False,
             cwd=str(Path(cwd)),
             capture_output=True,
             text=True,

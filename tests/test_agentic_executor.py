@@ -7,9 +7,80 @@ from pathlib import Path
 from supervisor.agentic_executor import (
     AgenticWorkerRosterItem,
     _extract_roster_payload,
+    plan_agentic_worker_roster,
     produce_agentic_worker_receipts,
     validate_agentic_worker_roster,
 )
+from supervisor.provider_routing import (
+    ANTHROPIC_PROXY_ENV_KEYS,
+    configure_direct_anthropic_process_env,
+)
+
+
+def test_agentic_roster_planner_uses_scrubbed_direct_anthropic_env(
+    monkeypatch,
+    tmp_path: Path,
+):
+    ambient_secrets = {
+        **{key: f"secret-{key}" for key in ANTHROPIC_PROXY_ENV_KEYS},
+        "OPENAI_API_KEY": "openai-key",
+        "OPENAI_BASE_URL": "https://litellm.example/v1",
+        "LITELLM_API_KEY": "litellm-key",
+        "LITELLM_MASTER_KEY": "litellm-master-key",
+        "CODEX_API_KEY": "codex-key",
+        "CODEX_HOME": "/secret/codex-home",
+        "GITHUB_TOKEN": "github-token",
+        "UNRELATED_SECRET": "must-not-leak",
+    }
+    monkeypatch.setenv("PATH", "/safe/bin")
+    monkeypatch.setenv("HOME", "/safe/home")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "ambient-key")
+    configure_direct_anthropic_process_env(api_key="direct-key")
+    for key, value in ambient_secrets.items():
+        monkeypatch.setenv(key, value)
+    runner_kwargs: dict[str, object] = {}
+
+    def fake_planner(argv, **kwargs):
+        runner_kwargs.update(kwargs)
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout='{"workers":[]}',
+            stderr="",
+        )
+
+    try:
+        production = plan_agentic_worker_roster(
+            cwd=tmp_path,
+            task_id="workflow-1",
+            run_id="workflow-run",
+            intent="Plan isolated workers.",
+            min_subagents=0,
+            required_roles=[],
+            timeout_s=60,
+            budget_usd=0.25,
+            quality="best",
+            runner=fake_planner,
+        )
+    finally:
+        configure_direct_anthropic_process_env()
+
+    assert production.status == "passed"
+    child_env = runner_kwargs["env"]
+    assert isinstance(child_env, dict)
+    assert child_env["ANTHROPIC_API_KEY"] == "direct-key"
+    assert child_env["PATH"] == "/safe/bin"
+    assert child_env["HOME"] == "/safe/home"
+    assert set(child_env).isdisjoint(ambient_secrets)
+    assert set(child_env) <= {
+        "ANTHROPIC_API_KEY",
+        "HOME",
+        "LANG",
+        "LC_ALL",
+        "LC_CTYPE",
+        "PATH",
+        "TMPDIR",
+    }
 
 
 def test_agentic_roster_validation_rejects_over_budget_or_timeout_before_launch(tmp_path: Path):

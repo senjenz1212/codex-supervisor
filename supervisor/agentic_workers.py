@@ -12,10 +12,22 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any, Callable
 
+from .provider_routing import direct_anthropic_env
+
 
 PidProbe = Callable[[int], bool]
 Terminator = Callable[[int, int], None]
 WorkerRunner = Callable[..., subprocess.CompletedProcess[str]]
+# Keep this allowlist intentionally small: every added key crosses the child
+# credential boundary.
+_SAFE_AGENTIC_ENV_KEYS = (
+    "HOME",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "PATH",
+    "TMPDIR",
+)
 
 
 @dataclass(frozen=True)
@@ -46,6 +58,30 @@ def worker_runtime_ref(*, cwd: str | Path, task_id: str, worker_id: str) -> str:
     safe_task = _safe_segment(task_id)
     safe_worker = _safe_segment(worker_id)
     return str(Path(".handoff") / "agentic-workers" / safe_task / safe_worker / "runtime.json")
+
+
+def run_agentic_claude_subprocess(
+    runner: WorkerRunner,
+    argv: list[str],
+    *,
+    inherit_env: bool,
+    **kwargs: Any,
+) -> subprocess.CompletedProcess[str]:
+    """Run Claude without exposing the supervisor's ambient credentials."""
+    if inherit_env is not False:
+        raise ValueError("agentic Claude subprocesses must not inherit ambient env")
+    source = {
+        key: os.environ[key]
+        for key in _SAFE_AGENTIC_ENV_KEYS
+        if key in os.environ
+    }
+    if "ANTHROPIC_API_KEY" in os.environ:
+        source["ANTHROPIC_API_KEY"] = os.environ["ANTHROPIC_API_KEY"]
+    return runner(
+        argv,
+        env=direct_anthropic_env(source),
+        **kwargs,
+    )
 
 
 def run_agentic_worker(
@@ -87,8 +123,10 @@ def run_agentic_worker(
     )
 
     try:
-        completed = runner(
+        completed = run_agentic_claude_subprocess(
+            runner,
             list(spec.command),
+            inherit_env=False,
             cwd=str(cwd_path),
             capture_output=True,
             text=True,
