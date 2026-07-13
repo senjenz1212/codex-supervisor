@@ -431,14 +431,18 @@ def bind_workflow_target_session(
             return existing
         raise KeyError(f"pending workflow registration not found: {workflow_run_id}")
 
-    existing = _read_registration_file(registry_root, actual_path)
-    if (
-        existing is not None
-        and str(existing.get("workflow_run_id") or "") != str(workflow_run_id)
-    ):
-        raise RuntimeError(
-            "target session sidecar is already bound to another workflow"
-        )
+    sidecar_present = actual_path.is_file() or actual_path.is_symlink()
+    if sidecar_present:
+        existing = _read_registration_file(registry_root, actual_path)
+        if existing is None:
+            raise RuntimeError(
+                "target session sidecar exists but is unreadable; "
+                "treating it as bound"
+            )
+        if str(existing.get("workflow_run_id") or "") != str(workflow_run_id):
+            raise RuntimeError(
+                "target session sidecar is already bound to another workflow"
+            )
     resolved_rollout_path = (
         str(rollout_path)
         if rollout_path
@@ -459,11 +463,6 @@ def bind_workflow_target_session(
         raise RuntimeError(
             "workflow run is not pending and is already bound to another session"
         )
-    state.bind_run_session(
-        run_id=str(workflow_run_id),
-        session_id=normalized_target_session_id,
-        rollout_path=resolved_rollout_path,
-    )
     bound_at = int(time.time())
     metadata = {
         **pending,
@@ -479,7 +478,38 @@ def bind_workflow_target_session(
         metadata["launch_id"] = str(launch_id)
     if launch_receipt_path:
         metadata["launch_receipt_path"] = str(launch_receipt_path)
-    _atomic_write_json(actual_path, metadata)
+    claimed = False
+    if not sidecar_present:
+        try:
+            _exclusive_write_json(actual_path, metadata)
+        except FileExistsError as exc:
+            racing = _read_registration_file(registry_root, actual_path)
+            if (
+                racing is None
+                or str(racing.get("workflow_run_id") or "")
+                != str(workflow_run_id)
+            ):
+                raise RuntimeError(
+                    "target session sidecar is already bound to another "
+                    "workflow"
+                ) from exc
+        else:
+            claimed = True
+    try:
+        state.bind_run_session(
+            run_id=str(workflow_run_id),
+            session_id=normalized_target_session_id,
+            rollout_path=resolved_rollout_path,
+        )
+    except Exception:
+        if claimed:
+            try:
+                actual_path.unlink()
+            except FileNotFoundError:
+                pass
+        raise
+    if not claimed:
+        _atomic_write_json(actual_path, metadata)
     try:
         pending_path.unlink()
     except FileNotFoundError:
@@ -758,13 +788,28 @@ def _exclusive_write_json(path: Path, payload: Mapping[str, Any]) -> None:
 def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
     temp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     try:
-        temp.write_text(
-            json.dumps(payload, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
+        with temp.open("w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
         os.replace(temp, path)
+        _fsync_directory(path.parent)
     finally:
         try:
             temp.unlink()
         except FileNotFoundError:
             pass
+
+
+def _fsync_directory(directory: Path) -> None:
+    try:
+        descriptor = os.open(directory, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(descriptor)
+    except OSError:
+        pass
+    finally:
+        os.close(descriptor)

@@ -310,11 +310,98 @@ class StructuredReviewerAdapter:
                 "reviewer_output_mode": "model_client_structured",
             },
         )
+        retry_limit = max(0, int(request.reviewer_infra_retry_limit or 0))
+        backoff_base_s = max(
+            0.0,
+            float(request.reviewer_infra_retry_backoff_s or 0.0),
+        )
+        failed_attempts: list[dict[str, Any]] = []
+        retry_backoff_s: list[float] = []
+        retry_reasons: list[str] = []
         response: ModelResponse | None = None
-        try:
-            response = _run_awaitable_blocking(
-                lambda: self.model_client.complete(model_request)
+        attempt = 1
+        for attempt_index in range(retry_limit + 1):
+            attempt = attempt_index + 1
+            try:
+                response = _run_awaitable_blocking(
+                    lambda: self.model_client.complete(model_request),
+                    timeout_s=float(request.timeout_s),
+                )
+                break
+            except asyncio.CancelledError:
+                raise
+            except (StructuredModelResponseError, ValidationError) as exc:
+                return _failure_result(
+                    probe_id="STRUCTURED_REVIEWER",
+                    classification="reviewer_contract_unmet",
+                    reason="structured_reviewer_contract_unmet",
+                    reviewer_runtime=runtime,
+                    reviewer_output_mode="model_client_structured",
+                    duration_ms=_duration_ms(started),
+                    diagnostics={
+                        **diagnostics,
+                        "failure": {
+                            "reason": "structured_reviewer_contract_unmet",
+                            "error_type": type(exc).__name__,
+                            "error": str(exc),
+                        },
+                    },
+                    attempts=attempt,
+                    retry_reasons=tuple(
+                        (*retry_reasons, "structured_reviewer_contract_unmet")
+                    ),
+                )
+            except Exception as exc:
+                reason = (
+                    "structured_reviewer_timeout"
+                    if isinstance(exc, TimeoutError)
+                    else "structured_reviewer_invocation_failed"
+                )
+                failed_attempts.append({
+                    "attempt": attempt,
+                    "reason": reason,
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                })
+                retry_reasons.append(reason)
+                if attempt_index >= retry_limit:
+                    return _failure_result(
+                        probe_id="STRUCTURED_REVIEWER",
+                        classification="reviewer_infrastructure_unavailable",
+                        reason=reason,
+                        reviewer_runtime=runtime,
+                        reviewer_output_mode="model_client_structured",
+                        duration_ms=_duration_ms(started),
+                        diagnostics={
+                            **diagnostics,
+                            "failure": failed_attempts[-1],
+                            "infrastructure_retries": _retry_diagnostics(
+                                retry_limit=retry_limit,
+                                attempt_count=attempt,
+                                exhausted=True,
+                                attempts=failed_attempts,
+                                backoff_s=retry_backoff_s,
+                            ),
+                        },
+                        attempts=attempt,
+                        retry_reasons=tuple(retry_reasons),
+                    )
+                delay_s = backoff_base_s * (2 ** attempt_index)
+                retry_backoff_s.append(delay_s)
+                if delay_s:
+                    time.sleep(delay_s)
+
+        if response is None:  # pragma: no cover - loop always returns or breaks.
+            raise RuntimeError("structured reviewer produced no model response")
+        if failed_attempts:
+            diagnostics["infrastructure_retries"] = _retry_diagnostics(
+                retry_limit=retry_limit,
+                attempt_count=attempt,
+                exhausted=False,
+                attempts=failed_attempts,
+                backoff_s=retry_backoff_s,
             )
+        try:
             outcome = parse_structured_response(response.text, Outcome)
         except (StructuredModelResponseError, ValidationError) as exc:
             return _failure_result(
@@ -332,27 +419,11 @@ class StructuredReviewerAdapter:
                         "error": str(exc),
                     },
                 },
+                attempts=attempt,
+                retry_reasons=tuple(
+                    (*retry_reasons, "structured_reviewer_contract_unmet")
+                ),
             )
-        except Exception as exc:
-            return _failure_result(
-                probe_id="STRUCTURED_REVIEWER",
-                classification="reviewer_infrastructure_unavailable",
-                reason="structured_reviewer_invocation_failed",
-                reviewer_runtime=runtime,
-                reviewer_output_mode="model_client_structured",
-                duration_ms=_duration_ms(started),
-                diagnostics={
-                    **diagnostics,
-                    "failure": {
-                        "reason": "structured_reviewer_invocation_failed",
-                        "error_type": type(exc).__name__,
-                        "error": str(exc),
-                    },
-                },
-            )
-
-        if response is None:  # pragma: no cover - success always sets it.
-            raise RuntimeError("structured reviewer produced no model response")
         diagnostics["model_response"] = {
             "resolved_model": response.resolved_model,
             "provider": response.provider,
@@ -376,6 +447,8 @@ class StructuredReviewerAdapter:
                 reviewer_output_mode="model_client_structured",
                 duration_ms=_duration_ms(started),
                 diagnostics=diagnostics,
+                attempts=attempt,
+                retry_reasons=tuple((*retry_reasons, probe.reason)),
             )
 
         return CursorInvocationResult(
@@ -394,6 +467,8 @@ class StructuredReviewerAdapter:
             duration_ms=_duration_ms(started),
             reviewer_assurance="structured_text_only",
             diagnostics=diagnostics,
+            attempts=attempt,
+            retry_reasons=tuple(retry_reasons),
         )
 
 
@@ -776,14 +851,23 @@ def _outcome_transcript(outcome: Outcome) -> str:
     )
 
 
-def _run_awaitable_blocking(factory: Callable[[], Awaitable[T]]) -> T:
+def _run_awaitable_blocking(
+    factory: Callable[[], Awaitable[T]],
+    *,
+    timeout_s: float | None = None,
+) -> T:
     """Run an async model client safely from the synchronous reviewer API."""
+
+    async def _invoke() -> T:
+        if timeout_s is None:
+            return await factory()
+        return await asyncio.wait_for(factory(), timeout_s)
 
     with ThreadPoolExecutor(
         max_workers=1,
         thread_name_prefix="structured-reviewer",
     ) as pool:
-        return pool.submit(lambda: asyncio.run(factory())).result()
+        return pool.submit(lambda: asyncio.run(_invoke())).result()
 
 
 def _duration_ms(started: float) -> int:

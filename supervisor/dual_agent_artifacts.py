@@ -619,7 +619,7 @@ def _load_acceptance_snapshot(
     if sha256(content).hexdigest() != expected_sha256:
         return None
     try:
-        snapshot = json.loads(content.decode("ascii"))
+        snapshot = json.loads(content.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
         return None
     if (

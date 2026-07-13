@@ -305,11 +305,7 @@ def plan_agentic_worker_roster(
         )
         _validate_planner_execution(execution, task=task)
     except asyncio.CancelledError:
-        return AgenticWorkerProduction(
-            status="blocked",
-            blocking_findings=[{"reason": "agentic_roster_planner_cancelled"}],
-            planner={"returncode": None},
-        )
+        raise
     except TimeoutError:
         return AgenticWorkerProduction(
             status="blocked",

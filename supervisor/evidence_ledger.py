@@ -33,6 +33,10 @@ from .trace_envelope import stamp_trace_envelope
 
 
 EVENT_HASH_SCHEMA_VERSION = "evidence-ledger-event/v2"
+REDACTION_RULES_VERSION = "supervisor-redaction-rules/v1"
+REDACTION_RULES_BY_VERSION: dict[str, Callable[[Any], Any]] = {
+    REDACTION_RULES_VERSION: redact,
+}
 EVENT_IDENTITY_SCHEMA_VERSION = "evidence-ledger-event-identity/v1"
 EVENT_IDENTITY_CHAIN_SCOPE = "event-id-chain/v1"
 EVENT_IDENTITY_HEAD_SCOPE = "head-event/v1"
@@ -670,7 +674,10 @@ def _verify_event_chain(
                 detail="event payload_json is not canonically encoded",
             )
         payload = decoded_payload.payload
-        if redact(payload) != payload:
+        if not any(
+            rules(payload) == payload
+            for rules in REDACTION_RULES_BY_VERSION.values()
+        ):
             return failure(
                 "payload_not_redacted",
                 event_id=event_id,
@@ -2036,6 +2043,8 @@ __all__ = [
     "LEGACY_IMPORT_GENESIS",
     "LEGACY_RAW_PAYLOAD_COMMITMENT_SCHEMA_VERSION",
     "NATIVE_GENESIS",
+    "REDACTION_RULES_BY_VERSION",
+    "REDACTION_RULES_VERSION",
     "artifact_manifest_hash",
     "artifact_manifest_hash_for_payload",
     "build_artifact_manifest",

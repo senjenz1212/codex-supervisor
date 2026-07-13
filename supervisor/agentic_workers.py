@@ -137,7 +137,31 @@ def run_agentic_worker(
             )
         )
         _validate_runtime_execution(execution, task=task)
-    except (Exception, asyncio.CancelledError) as exc:
+    except asyncio.CancelledError:
+        _write_worker_file(
+            cwd_path,
+            runtime_path,
+            json.dumps(
+                {
+                    "schema_version": "agentic-worker-runtime/v1",
+                    "task_id": spec.task_id,
+                    "worker_id": spec.worker_id,
+                    "role": spec.role,
+                    "pid": None,
+                    "status": "cancelled",
+                    "started_at_s": started_at_s,
+                    "ended_at_s": now(),
+                    "timeout_s": spec.timeout_s,
+                    "budget_usd": spec.budget_usd,
+                    "requested_model": spec.model,
+                    "log_ref": worker_log_ref(cwd=cwd_path, task_id=spec.task_id, worker_id=spec.worker_id),
+                },
+                sort_keys=True,
+                indent=2,
+            ) + "\n",
+        )
+        raise
+    except Exception as exc:
         execution = _failed_runtime_execution(
             task,
             exc=exc,

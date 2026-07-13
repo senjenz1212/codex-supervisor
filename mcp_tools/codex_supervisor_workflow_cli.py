@@ -258,6 +258,15 @@ def main(argv: list[str] | None = None) -> int:
     exit_code = 2 if args.fail_on_blocked and result.get("status") != "accepted" else 0
     output_path = Path(args.output).expanduser() if args.output else None
 
+    persist_detached_workflow_terminal_outcome(
+        request_payload=request,
+        result=result,
+        state=state,
+        output_path=output_path,
+        returncode=exit_code,
+        error="" if exit_code == 0 else "workflow_not_accepted",
+    )
+
     if output_path is not None:
         write_json(output_path, result)
     print(json.dumps(result, indent=2, sort_keys=True))

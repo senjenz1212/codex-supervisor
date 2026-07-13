@@ -212,7 +212,7 @@ HARNESS_V1_TRACE_TASK_RE = re.compile(
     r"harness-v1|program-001|integrity-a|integrity-b|obs-001|replay-001|"
     r"trace-001|ledger-001|grade-001|runtime-001|task-001|exp-001|"
     r"tracer-001|pilot-001|confirm-001|opt-001|deploy-001|scale-001"
-    r")(?:-|$)",
+    r")(?:(?:-[a-z0-9]+)*-\d{8})?$",
     re.IGNORECASE,
 )
 STRICT_ARTIFACT_REQUIREMENTS = {
@@ -3518,18 +3518,18 @@ class CodexSupervisorMcpAPI:
                 else PENDING_SESSION_SOURCE
             )
         )
-        registration = register_submitted_workflow(
-            state=self.state,
-            registry_dir=self.cfg.orchestrator.run_registry_dir,
-            workflow_run_id=effective_run_id,
-            target_session_id=effective_target_session_id,
-            task_id=effective_task_id,
-            task=effective_intent,
-            target_kind=self.cfg.target.kind,
-            cwd=effective_cwd,
-            session_id_source=effective_session_id_source,
-        )
         if created:
+            registration = register_submitted_workflow(
+                state=self.state,
+                registry_dir=self.cfg.orchestrator.run_registry_dir,
+                workflow_run_id=effective_run_id,
+                target_session_id=effective_target_session_id,
+                task_id=effective_task_id,
+                task=effective_intent,
+                target_kind=self.cfg.target.kind,
+                cwd=effective_cwd,
+                session_id_source=effective_session_id_source,
+            )
             self.state.write_event(
                 run_id=effective_run_id,
                 source="supervisor",
@@ -4283,7 +4283,12 @@ class CodexSupervisorMcpAPI:
             return {"status": "failed", "reason": "codex_binary_not_found", "argv": _redacted_prompt_argv(argv)}
         result = execution.result
         binding = None
-        if launch_receipt is not None:
+        discovered_session_id = str(result.session_id or "").strip()
+        session_discovered = bool(
+            discovered_session_id
+            and discovered_session_id != str(result.run_id or "").strip()
+        )
+        if launch_receipt is not None and session_discovered:
             binding = consume_launch_receipt(
                 state=self.state,
                 registry_dir=self.cfg.orchestrator.run_registry_dir,

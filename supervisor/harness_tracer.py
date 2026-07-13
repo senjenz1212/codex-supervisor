@@ -2294,7 +2294,7 @@ def _sha256_json(value: Any) -> str:
             sort_keys=True,
             separators=(",", ":"),
             ensure_ascii=True,
-            default=str,
+            allow_nan=False,
         ).encode("utf-8")
     )
 

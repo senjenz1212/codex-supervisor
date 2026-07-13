@@ -11,6 +11,7 @@ import json
 import os
 import secrets
 import subprocess
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -646,6 +647,23 @@ def _required_planning_kinds(spec: DualAgentGateSpec) -> tuple[str, ...]:
     return required_planning_kinds_for_gate(spec.gate)
 
 
+class _CancellationGuardedState:
+    """Delegate to the real state, but stop persisting gate events once the
+    awaiting coroutine has been cancelled while the gate thread still runs."""
+
+    def __init__(self, state: State, cancelled: threading.Event) -> None:
+        self._state = state
+        self._cancelled = cancelled
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._state, name)
+
+    def write_event(self, *args: Any, **kwargs: Any) -> int | None:
+        if self._cancelled.is_set():
+            return None
+        return self._state.write_event(*args, **kwargs)
+
+
 async def run_dual_agent_gate_with_escalation(
     spec: DualAgentGateSpec,
     *,
@@ -654,13 +672,18 @@ async def run_dual_agent_gate_with_escalation(
     runner: Runner = subprocess.run,
     runtime_runner: RuntimeTaskRunner | None = None,
 ) -> DualAgentGateResult:
-    result = await asyncio.to_thread(
-        run_dual_agent_gate,
-        spec,
-        runner=runner,
-        runtime_runner=runtime_runner,
-        state=state,
-    )
+    cancelled = threading.Event()
+    try:
+        result = await asyncio.to_thread(
+            run_dual_agent_gate,
+            spec,
+            runner=runner,
+            runtime_runner=runtime_runner,
+            state=_CancellationGuardedState(state, cancelled),
+        )
+    except asyncio.CancelledError:
+        cancelled.set()
+        raise
     if result.status == "accepted":
         return result
     escalation = await _maybe_request_validation_escalation(

@@ -854,6 +854,11 @@ class TraceGraph:
         (NodeType.TEST, EdgeType.TESTS, NodeType.REQ),
         (NodeType.REQ, EdgeType.IMPLEMENTS, NodeType.OBJ),
     )
+    _PROMOTION_RUN_LAYER_INDEX = next(
+        index
+        for index, step in enumerate(_PROMOTION_PATH)
+        if step[0] is NodeType.RUN
+    )
 
     def __init__(
         self,
@@ -956,11 +961,7 @@ class TraceGraph:
             raise TracePathNotFound(
                 f"trace start must be PROMOTION, got {promotion.node_type.value}"
             )
-        dependency_path = self._find_promotion_path(
-            promotion,
-            step_index=0,
-            seen=frozenset(),
-        )
+        dependency_path = self._find_promotion_path(promotion)
         if dependency_path is None:
             raise TracePathNotFound(
                 f"no objective closure path for {promotion.canonical_key}"
@@ -1104,13 +1105,12 @@ class TraceGraph:
                             expected_binding=validation_binding,
                         )
                     )
-                if node.identity in authoritative_decisions:
-                    hard_findings.extend(
-                        self._decision_grade_findings(
-                            node,
-                            validator=grade_validator,
-                        )
+                hard_findings.extend(
+                    self._decision_grade_findings(
+                        node,
+                        validator=grade_validator,
                     )
+                )
             elif node_type is NodeType.PROMOTION:
                 decisions = self._outgoing_edges(
                     node.identity,
@@ -1124,12 +1124,10 @@ class TraceGraph:
                         message="promotion has no authorizing DEC node",
                     ))
                 else:
-                    promotion_paths = self._find_promotion_paths(
-                        node.identity,
-                        step_index=0,
-                        seen=frozenset(),
+                    promotion_layers = self._promotion_path_layers(
+                        node.identity
                     )
-                    if not promotion_paths:
+                    if promotion_layers is None:
                         findings.append(ClosureFinding(
                             rule=ClosureRule.NODE_REACHES_OBJECTIVE,
                             node=node.identity,
@@ -1141,10 +1139,10 @@ class TraceGraph:
                     else:
                         unpinned_runs = sorted({
                             identity.canonical_key
-                            for path in promotion_paths
-                            for identity in path
-                            if identity.node_type is NodeType.RUN
-                            and not self._by_identity[identity].pinned
+                            for identity in promotion_layers[
+                                self._PROMOTION_RUN_LAYER_INDEX
+                            ]
+                            if not self._by_identity[identity].pinned
                         })
                         if unpinned_runs:
                             findings.append(ClosureFinding(
@@ -1430,50 +1428,58 @@ class TraceGraph:
 
     def _find_promotion_path(
         self,
-        current: TraceIdentity,
-        *,
-        step_index: int,
-        seen: frozenset[TraceIdentity],
+        promotion: TraceIdentity,
     ) -> tuple[TraceIdentity, ...] | None:
-        paths = self._find_promotion_paths(
-            current,
-            step_index=step_index,
-            seen=seen,
-        )
-        return paths[0] if paths else None
+        layers = self._promotion_path_layers(promotion)
+        if layers is None:
+            return None
+        path = [promotion]
+        for step_index, (_, relation, expected_target) in enumerate(
+            self._PROMOTION_PATH
+        ):
+            viable_next = layers[step_index + 1]
+            path.append(next(
+                edge.target
+                for edge in self._outgoing.get(path[-1], ())
+                if edge.relation is relation
+                and edge.target.node_type is expected_target
+                and edge.target in viable_next
+            ))
+        return tuple(path)
 
-    def _find_promotion_paths(
+    def _promotion_path_layers(
         self,
-        current: TraceIdentity,
-        *,
-        step_index: int,
-        seen: frozenset[TraceIdentity],
-    ) -> tuple[tuple[TraceIdentity, ...], ...]:
-        if step_index == len(self._PROMOTION_PATH):
-            return ((current,),)
-        expected_source, relation, expected_target = self._PROMOTION_PATH[
-            step_index
-        ]
-        if current.node_type is not expected_source or current in seen:
-            return ()
-        candidates = [
-            edge.target
-            for edge in self._outgoing.get(current, ())
-            if edge.relation is relation
-            and edge.target.node_type is expected_target
-        ]
-        paths: list[tuple[TraceIdentity, ...]] = []
-        for target in candidates:
-            suffixes = self._find_promotion_paths(
-                target,
-                step_index=step_index + 1,
-                seen=seen | {current},
-            )
-            paths.extend(
-                (current, *suffix)
-                for suffix in suffixes
-            )
-        return tuple(paths)
+        promotion: TraceIdentity,
+    ) -> tuple[frozenset[TraceIdentity], ...] | None:
+        if promotion.node_type is not self._PROMOTION_PATH[0][0]:
+            return None
+        layers: list[set[TraceIdentity]] = [{promotion}]
+        for _, relation, expected_target in self._PROMOTION_PATH:
+            next_layer = {
+                edge.target
+                for identity in layers[-1]
+                for edge in self._outgoing.get(identity, ())
+                if edge.relation is relation
+                and edge.target.node_type is expected_target
+            }
+            if not next_layer:
+                return None
+            layers.append(next_layer)
+        for step_index in range(len(self._PROMOTION_PATH) - 1, -1, -1):
+            _, relation, _ = self._PROMOTION_PATH[step_index]
+            viable_next = layers[step_index + 1]
+            layers[step_index] = {
+                identity
+                for identity in layers[step_index]
+                if any(
+                    edge.relation is relation
+                    and edge.target in viable_next
+                    for edge in self._outgoing.get(identity, ())
+                )
+            }
+            if not layers[step_index]:
+                return None
+        return tuple(frozenset(layer) for layer in layers)
 
     def _incoming_edges(
         self,

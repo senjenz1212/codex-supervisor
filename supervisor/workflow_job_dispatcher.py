@@ -150,9 +150,14 @@ class WorkflowJobDispatcher:
         for terminal_row in (
             self.state.list_terminal_dual_agent_workflow_jobs_pending_reap()
         ):
+            if not terminal_row["worker_containment_id"]:
+                continue
             termination = self._terminate_row_worker(terminal_row)
             if termination["safe_to_finalize"]:
-                self._record_worker_reaped(terminal_row, termination)
+                try:
+                    self._record_worker_reaped(terminal_row, termination)
+                except RuntimeError:
+                    continue
                 reaped.append(str(terminal_row["job_id"]))
             else:
                 cleanup_retry_pending.append(str(terminal_row["job_id"]))
@@ -707,13 +712,16 @@ class WorkflowJobDispatcher:
             and expected_started_at is None
             and process is None
         ):
-            return {
-                "status": "worker_identity_missing_refused_termination",
-                "safe_to_finalize": False,
-                "pid": pid,
-                "pgid": expected_pgid,
-                "descendant_pids": [],
-            }
+            if not recorded_containment_id:
+                return {
+                    "status": "worker_identity_missing_refused_termination",
+                    "safe_to_finalize": False,
+                    "pid": pid,
+                    "pgid": expected_pgid,
+                    "descendant_pids": [],
+                }
+            if self._process_containment_id(pid) != recorded_containment_id:
+                root_pid_reused = True
 
         containment_id = (
             recorded_containment_id

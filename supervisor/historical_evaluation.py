@@ -455,7 +455,7 @@ class HistoricalEvaluationService:
             HistoricalOperation.REPLAY: replay_executor,
         }
         self._claim_stale_after_s = claim_stale_after_s
-        self._locks: dict[str, asyncio.Lock] = {}
+        self._locks: dict[str, tuple[asyncio.Lock, int]] = {}
         self._locks_guard = threading.Lock()
 
     async def rerun(
@@ -481,9 +481,12 @@ class HistoricalEvaluationService:
         request: HistoricalOperationRequest,
     ) -> HistoricalOperationReceipt:
         self._require_authoritative_state()
-        lock = self._operation_lock(request.operation_id)
-        async with lock:
-            return await self._execute_once(request)
+        lock = self._acquire_operation_lock(request.operation_id)
+        try:
+            async with lock:
+                return await self._execute_once(request)
+        finally:
+            self._release_operation_lock(request.operation_id)
 
     async def _execute_once(
         self,
@@ -642,9 +645,21 @@ class HistoricalEvaluationService:
             receipt_hash=receipt_hash,
         )
 
-    def _operation_lock(self, operation_id: str) -> asyncio.Lock:
+    def _acquire_operation_lock(self, operation_id: str) -> asyncio.Lock:
         with self._locks_guard:
-            return self._locks.setdefault(operation_id, asyncio.Lock())
+            entry = self._locks.get(operation_id)
+            lock = entry[0] if entry is not None else asyncio.Lock()
+            holders = entry[1] if entry is not None else 0
+            self._locks[operation_id] = (lock, holders + 1)
+            return lock
+
+    def _release_operation_lock(self, operation_id: str) -> None:
+        with self._locks_guard:
+            lock, holders = self._locks[operation_id]
+            if holders <= 1:
+                del self._locks[operation_id]
+            else:
+                self._locks[operation_id] = (lock, holders - 1)
 
     def _claim_is_stale(self, claim: Mapping[str, Any]) -> bool:
         try:
@@ -822,6 +837,7 @@ class HistoricalEvaluationService:
             )
             if not page:
                 break
+            page_floor = after
             for event in page:
                 after = max(after, int(event.get("event_id") or 0))
                 kind = str(event.get("kind") or "")
@@ -878,6 +894,11 @@ class HistoricalEvaluationService:
                     raise HistoricalEvidenceError(
                         f"unsupported historical operation event kind: {kind}"
                     )
+            if after <= page_floor:
+                raise HistoricalEvidenceError(
+                    "historical operation event pagination did not advance "
+                    "past event ids already read"
+                )
             if len(page) < 200:
                 break
         if len(requested_events) > 1:

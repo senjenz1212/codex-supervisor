@@ -296,6 +296,7 @@ def run_sampled_p11_false_accept_audit(
             trend_rows=trend_rows,
         )
 
+    reportable_checkout = _reportable_recorded_checkout(recorded_checkout)
     updated_rows: list[dict[str, Any]] = []
     for gate, items in sorted(by_gate.items()):
         false_accepts = [item for item in items if item["false_accept"]]
@@ -308,7 +309,7 @@ def run_sampled_p11_false_accept_audit(
             audit_details={
                 "source": "sampled_p11_audit",
                 "operation": operation,
-                "recorded_checkout": recorded_checkout,
+                "recorded_checkout": reportable_checkout,
                 "observational_only": True,
                 "sample_event_ids": [item["event_id"] for item in items],
                 "false_accept_event_ids": [item["event_id"] for item in false_accepts],
@@ -326,7 +327,7 @@ def run_sampled_p11_false_accept_audit(
         "run_id": run_id,
         "task_id": resolved_task_id,
         "cwd": str(source_cwd),
-        "recorded_checkout": recorded_checkout,
+        "recorded_checkout": reportable_checkout,
         "sample_size": denominator,
         "false_accept_count": false_accept_count,
         "false_accept_denominator": denominator,
@@ -934,6 +935,33 @@ def _manifest_pin_from_events(
     return matches[-1] if matches else None
 
 
+def _reportable_recorded_checkout(
+    recorded_checkout: dict[str, Any],
+) -> dict[str, Any]:
+    snapshot = recorded_checkout.get("immutable_snapshot")
+    if not isinstance(snapshot, dict):
+        return dict(recorded_checkout)
+    entries = snapshot.get("entries")
+    reportable_entries = (
+        [
+            {
+                key: value
+                for key, value in entry.items()
+                if key != "content_base64"
+            }
+            if isinstance(entry, dict)
+            else entry
+            for entry in entries
+        ]
+        if isinstance(entries, list)
+        else entries
+    )
+    return {
+        **recorded_checkout,
+        "immutable_snapshot": {**snapshot, "entries": reportable_entries},
+    }
+
+
 @contextlib.contextmanager
 def _materialized_recorded_checkout(
     recorded_checkout: dict[str, Any],
@@ -971,14 +999,35 @@ def _materialized_recorded_checkout(
             )
         yield checkout
     finally:
+        cleanup_error: RecordedCheckoutError | None = None
         if added:
-            runner(
+            removal = runner(
                 ["git", "worktree", "remove", "--force", str(checkout)],
                 cwd=str(repo),
                 capture_output=True,
                 text=True,
             )
+            if removal.returncode != 0:
+                shutil.rmtree(temp_parent, ignore_errors=True)
+                prune = runner(
+                    ["git", "worktree", "prune"],
+                    cwd=str(repo),
+                    capture_output=True,
+                    text=True,
+                )
+                if prune.returncode != 0:
+                    cleanup_error = RecordedCheckoutError(
+                        "recorded_checkout_cleanup_failed",
+                        details={
+                            "repo": str(repo),
+                            "checkout": str(checkout),
+                            "remove_stderr": removal.stderr.strip(),
+                            "prune_stderr": prune.stderr.strip(),
+                        },
+                    )
         shutil.rmtree(temp_parent, ignore_errors=True)
+        if cleanup_error is not None:
+            raise cleanup_error
 
 
 def _apply_immutable_snapshot(

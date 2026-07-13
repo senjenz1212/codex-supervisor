@@ -462,6 +462,54 @@ def test_structured_reviewer_fails_closed_when_model_client_rejects_output(
     assert result.recoverable
 
 
+def test_structured_reviewer_enforces_timeout_and_retries_before_failing(
+    tmp_path: Path,
+) -> None:
+    class _HangingModelClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def complete(self, request: ModelRequest):
+            self.calls += 1
+            await asyncio.sleep(60)
+
+    client = _HangingModelClient()
+    reviewer = StructuredReviewerAdapter(
+        spec=ReviewerSpec(
+            reviewer_id="structured-reviewer",
+            runtime="model_client_structured",
+            model="fixture-model",
+        ),
+        model_client=client,
+    )
+
+    result = reviewer.review(
+        CursorInvocationRequest(
+            task_id="neutral-structured-review",
+            gate="outcome_review",
+            instruction="Review.",
+            cwd=tmp_path,
+            timeout_s=1,
+            reviewer_infra_retry_limit=1,
+            reviewer_infra_retry_backoff_s=0.0,
+        )
+    )
+
+    assert client.calls == 2
+    assert not result.probe.ok
+    assert result.failure_classification == "reviewer_infrastructure_unavailable"
+    assert result.attempts == 2
+    assert result.retry_reasons == (
+        "structured_reviewer_timeout",
+        "structured_reviewer_timeout",
+    )
+    retries = result.diagnostics["infrastructure_retries"]
+    assert retries["retry_limit"] == 1
+    assert retries["attempt_count"] == 2
+    assert retries["exhausted"]
+    assert retries["backoff_s"] == [0.0]
+
+
 def test_configured_reviewers_accepts_neutral_adapters_and_runner_injection(
     tmp_path: Path,
 ) -> None:

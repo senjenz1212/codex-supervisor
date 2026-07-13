@@ -1702,31 +1702,6 @@ class SqliteExperimentStore:
         _assert_assignment_write_matches(existing, assignment)
         return existing
 
-    def count_assignments_in_stratum(
-        self,
-        experiment_id: str,
-        stratum_id: str,
-    ) -> int:
-        count = 0
-        rows = self._conn.execute(
-            """SELECT block_json FROM experiment_assignments
-               WHERE experiment_id=?""",
-            (experiment_id,),
-        ).fetchall()
-        for row in rows:
-            try:
-                block = json.loads(row["block_json"])
-            except json.JSONDecodeError as exc:
-                raise ValueError(
-                    "persisted assignment block is invalid"
-                ) from exc
-            if (
-                isinstance(block, MappingABC)
-                and block.get("stratum_id") == stratum_id
-            ):
-                count += 1
-        return count
-
     def get_assignment(
         self,
         experiment_id: str,
@@ -3129,6 +3104,13 @@ class ExperimentKernel:
                         transition_payload=outcome.to_dict(),
                     )
                 except Exception as exc:
+                    appended_revision = None
+                    graded_frozen_result_hash = ""
+                    if stage == "terminal_persistence":
+                        appended_revision = outcome.grade_revision
+                        graded_frozen_result_hash = (
+                            outcome.frozen_result_hash
+                        )
                     outcome = _post_launch_failure(
                         arm=arm,
                         task=task,
@@ -3149,7 +3131,36 @@ class ExperimentKernel:
                         removed_paths=removed_paths,
                         execution_receipt=validated_receipt,
                     )
-                    if stage != "gradebook":
+                    if appended_revision is not None:
+                        revision = self.gradebook.regrade(
+                            run=RunEnvelopeRef(
+                                run_id=appended_revision.run_id,
+                                run_envelope_hash=(
+                                    appended_revision.run_envelope_hash
+                                ),
+                                frozen_result_hash=(
+                                    graded_frozen_result_hash
+                                ),
+                            ),
+                            grade=outcome.grade,
+                            verifier_config_hash=_verifier_config_hash(
+                                task,
+                                verifier_version=(
+                                    outcome.grade.verifier_version
+                                ),
+                            ),
+                            supersedes_grade_id=(
+                                appended_revision.grade_id
+                            ),
+                            reason="terminal_persistence_failure",
+                        )
+                        outcome = replace(
+                            outcome,
+                            grade_revision=(
+                                GradeRevisionRef.from_revision(revision)
+                            ),
+                        )
+                    elif stage != "gradebook":
                         outcome = (
                             self._with_failure_grade_revision_best_effort(
                                 experiment=experiment,
@@ -3477,6 +3488,7 @@ def _blind_frozen_result_with_audit(
                 f"materialization::{value}".encode("utf-8")
             ).hexdigest()
         else:
+            _reject_arm_identity_scalar(value, path=path)
             metadata[key] = value
     opaque_execution_id = hashlib.sha256(
         (
@@ -4132,51 +4144,6 @@ def _post_launch_failure(
         token_usage=token_usage,
         attempt_records=attempt_records,
         failure_classification=failure_classification,
-        error=f"{type(exc).__name__}: {exc}",
-    )
-
-
-def _verification_failure(
-    *,
-    arm: Arm,
-    task: TaskSpec,
-    verifier_version: str,
-    execution: ArmExecution,
-    receipt: ArmExecutionReceipt,
-    blinded_result: FrozenTaskResult,
-    removed_paths: tuple[str, ...],
-    exc: Exception,
-) -> ArmOutcome:
-    token_usage = dict(receipt.token_usage)
-    attempt_records = tuple(dict(record) for record in receipt.attempt_records)
-    grade = Grade(
-        verifier_id=task.verifier_id,
-        verifier_version=verifier_version,
-        verifier_hash=task.verifier_hash,
-        frozen_result_hash=blinded_result.result_hash,
-        passed=False,
-        score=0.0,
-        evidence={
-            "intention_to_treat": True,
-            "exception_type": type(exc).__name__,
-            "error": str(exc),
-        },
-        failure_classification="verifier_failure",
-    )
-    return ArmOutcome(
-        arm=arm,
-        status="failed",
-        grade=grade,
-        attempts=receipt.attempts,
-        cost_usd=receipt.cost_usd,
-        latency_ms=receipt.latency_ms,
-        frozen_result_hash=blinded_result.result_hash,
-        original_frozen_result_hash=execution.frozen_result.result_hash,
-        blinding_removed_paths=removed_paths,
-        execution_receipt=receipt,
-        token_usage=token_usage,
-        attempt_records=attempt_records,
-        failure_classification="verifier_failure",
         error=f"{type(exc).__name__}: {exc}",
     )
 

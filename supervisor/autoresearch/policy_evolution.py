@@ -248,11 +248,10 @@ def create_policy_evolution_proposals(
         proposals.append(proposal)
         assert state is not None
         assert run_id
-        proposal_event_id = state.write_event(
+        proposal_event_id = _journal_policy_proposal_created(
+            state,
             run_id=run_id,
-            source="autoresearch",
-            kind="autoresearch_policy_proposal_created",
-            payload=proposal,
+            proposal=proposal,
         )
         proposal["proposal_event_id"] = proposal_event_id
     return proposals
@@ -376,11 +375,10 @@ def derive_policy_evolution_proposals_from_report(
         proposals.append(proposal)
         assert state is not None
         assert run_id
-        proposal_event_id = state.write_event(
+        proposal_event_id = _journal_policy_proposal_created(
+            state,
             run_id=run_id,
-            source="autoresearch",
-            kind="autoresearch_policy_proposal_created",
-            payload=proposal,
+            proposal=proposal,
         )
         proposal["proposal_event_id"] = proposal_event_id
     return proposals
@@ -1592,7 +1590,17 @@ def _recorded_report_authorization(
         for event in events
         if event.get("kind") == "autoresearch_report_emitted"
     ]
-    if len(report_events) != 1:
+    if not report_events:
+        return (
+            {},
+            "exactly one recorded report authority event is required",
+        )
+    first_payload = report_events[0].get("payload")
+    if any(
+        event.get("payload") != first_payload
+        or event.get("source") != report_events[0].get("source")
+        for event in report_events[1:]
+    ):
         return (
             {},
             "exactly one recorded report authority event is required",
@@ -1626,6 +1634,46 @@ def _recorded_report_authorization(
         "event_id": int(event["event_id"]),
         "event_hash": event_hash,
     }, None
+
+
+def _recorded_identical_proposal_event_id(
+    state: EventJournal,
+    *,
+    run_id: str,
+    proposal: Mapping[str, Any],
+) -> int | None:
+    proposal_hash = sha256_json(dict(proposal))
+    for event in _read_all_run_events(state, run_id=run_id):
+        payload = event.get("payload")
+        if (
+            event.get("kind") == "autoresearch_policy_proposal_created"
+            and event.get("source") == "autoresearch"
+            and isinstance(payload, Mapping)
+            and sha256_json(dict(payload)) == proposal_hash
+        ):
+            return int(event["event_id"])
+    return None
+
+
+def _journal_policy_proposal_created(
+    state: EventJournal,
+    *,
+    run_id: str,
+    proposal: Mapping[str, Any],
+) -> int:
+    existing_event_id = _recorded_identical_proposal_event_id(
+        state,
+        run_id=run_id,
+        proposal=proposal,
+    )
+    if existing_event_id is not None:
+        return existing_event_id
+    return state.write_event(
+        run_id=run_id,
+        source="autoresearch",
+        kind="autoresearch_policy_proposal_created",
+        payload=proposal,
+    )
 
 
 def _recorded_policy_proposal(

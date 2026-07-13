@@ -1958,8 +1958,13 @@ class State:
                     run_id=run_id,
                     source="quality_trends",
                     kind=QUALITY_TREND_PROJECTION_EVENT,
-                    payload=quality_trend_projection_event_payload(
-                        projection_row
+                    payload=self._event_payload(
+                        run_id=run_id,
+                        source="quality_trends",
+                        kind=QUALITY_TREND_PROJECTION_EVENT,
+                        payload=quality_trend_projection_event_payload(
+                            projection_row
+                        ),
                     ),
                 )
                 self._conn.commit()
@@ -2063,8 +2068,13 @@ class State:
                         run_id=run_id,
                         source="quality_trends",
                         kind=QUALITY_TREND_PROJECTION_EVENT,
-                        payload=quality_trend_projection_event_payload(
-                            projection_row
+                        payload=self._event_payload(
+                            run_id=run_id,
+                            source="quality_trends",
+                            kind=QUALITY_TREND_PROJECTION_EVENT,
+                            payload=quality_trend_projection_event_payload(
+                                projection_row
+                            ),
                         ),
                     )
                 self._conn.commit()
@@ -3713,6 +3723,7 @@ class State:
                     source="dual_agent",
                     kind="dual_agent_workflow_worker_reaped",
                     payload=payload,
+                    ts=reaped_at,
                 )
                 self._conn.commit()
                 self._coordinate_committed_event(

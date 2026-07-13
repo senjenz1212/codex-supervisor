@@ -876,7 +876,7 @@ def _backfill_event_ledger_single_pass(conn: sqlite3.Connection) -> None:
                    ) AS affected
                 ON affected.run_id = e.run_id
              ORDER BY e.run_id ASC, e.event_id ASC"""
-    )
+    ).fetchall()
     current_run_id: str | None = None
     event_sequence = 0
     previous_event_hash: str | None = None

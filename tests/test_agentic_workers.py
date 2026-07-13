@@ -287,30 +287,35 @@ def test_agentic_worker_runtime_fanout_preserves_failure_cancellation_and_timeou
     )
 
 
-def test_agentic_worker_runtime_runner_cancellation_still_writes_bounded_receipt(
+def test_agentic_worker_runtime_runner_cancellation_records_then_reraises(
     tmp_path: Path,
 ):
     def cancelled_runtime_runner(task: AgentTask) -> RuntimeExecution:
         raise asyncio.CancelledError
 
-    receipt = run_agentic_worker(
-        AgenticWorkerSpec(
-            task_id="workflow-1",
-            worker_id="cancelled",
-            role="independent_reviewer",
-            command=(),
-            cwd=tmp_path,
-            instruction="Review.",
-            model="runtime-model",
-            timeout_s=10,
-        ),
-        runtime_runner=cancelled_runtime_runner,
-    )
+    with pytest.raises(asyncio.CancelledError):
+        run_agentic_worker(
+            AgenticWorkerSpec(
+                task_id="workflow-1",
+                worker_id="cancelled",
+                role="independent_reviewer",
+                command=(),
+                cwd=tmp_path,
+                instruction="Review.",
+                model="runtime-model",
+                timeout_s=10,
+            ),
+            runtime_runner=cancelled_runtime_runner,
+        )
 
-    assert receipt["status"] == "cancelled"
-    assert receipt["runtime_status"] == "cancelled"
-    assert (tmp_path / receipt["output_ref"]).is_file()
-    assert (tmp_path / receipt["transcript_ref"]).is_file()
+    runtime_ref = worker_runtime_ref(
+        cwd=tmp_path,
+        task_id="workflow-1",
+        worker_id="cancelled",
+    )
+    record = json.loads((tmp_path / runtime_ref).read_text(encoding="utf-8"))
+    assert record["status"] == "cancelled"
+    assert record["ended_at_s"] >= record["started_at_s"]
 
 
 def test_agentic_worker_spawn_uses_scrubbed_direct_anthropic_env(

@@ -12,6 +12,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import shutil
 import sys
 import time
@@ -30,6 +31,7 @@ from .process_containment import (
 )
 RUN_RESULT_SCHEMA_VERSION = "supervisor-agent-run-result/v1"
 _MACOS_SANDBOX_EXEC = Path("/usr/bin/sandbox-exec")
+_SUBPROCESS_STREAM_LIMIT = 32 * 1024 * 1024
 _WORKSPACE_ONLY_ISOLATION_MODE = "workspace_only"
 _PROCESS_ENV_KEYS = frozenset({
     "HOME",
@@ -60,9 +62,16 @@ _SUPERVISOR_LAUNCH_ENV_KEYS = frozenset({
     "SUPERVISOR_WORKFLOW_TASK_ID",
     "SUPERVISOR_TARGET_KIND",
 })
+_ISOLATION_NAMESPACE_ENV_KEYS = frozenset({
+    "XDG_CONFIG_HOME",
+    "XDG_CACHE_HOME",
+    "SUPERVISOR_MEMORY_ROOT",
+    "SUPERVISOR_LESSON_ROOT",
+})
 _CLAUDE_ENV_KEYS = frozenset({
     *_PROCESS_ENV_KEYS,
     *_SUPERVISOR_LAUNCH_ENV_KEYS,
+    *_ISOLATION_NAMESPACE_ENV_KEYS,
     "ANTHROPIC_API_KEY",
     "ANTHROPIC_DEFAULT_OPUS_MODEL",
     "CLAUDE_CODE_EXTRA_BODY",
@@ -71,6 +80,7 @@ _CLAUDE_ENV_KEYS = frozenset({
 _CODEX_ENV_KEYS = frozenset({
     *_PROCESS_ENV_KEYS,
     *_SUPERVISOR_LAUNCH_ENV_KEYS,
+    *_ISOLATION_NAMESPACE_ENV_KEYS,
     "CODEX_HOME",
     "CODEX_API_KEY",
     "OPENAI_API_KEY",
@@ -807,9 +817,7 @@ class CodexRuntime(CommandAgentRuntime):
             "-m",
             task.model,
         ]
-        reasoning_effort = str(
-            task.metadata.get("reasoning_effort") or ""
-        ).strip()
+        reasoning_effort = _validated_reasoning_effort(task.metadata)
         if reasoning_effort:
             argv.extend(
                 ("-c", f'reasoning_effort="{reasoning_effort}"')
@@ -837,15 +845,36 @@ class CodexRuntime(CommandAgentRuntime):
             "-m",
             task.model,
         ]
-        reasoning_effort = str(
-            task.metadata.get("reasoning_effort") or ""
-        ).strip()
+        reasoning_effort = _validated_reasoning_effort(task.metadata)
         if reasoning_effort:
             argv.extend(
                 ("-c", f'reasoning_effort="{reasoning_effort}"')
             )
         argv.extend((session_id, instruction))
         return tuple(argv)
+
+
+_REASONING_EFFORT_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def _validated_reasoning_effort(metadata: Mapping[str, Any]) -> str:
+    reasoning_effort = str(metadata.get("reasoning_effort") or "").strip()
+    if reasoning_effort and not _REASONING_EFFORT_PATTERN.fullmatch(
+        reasoning_effort
+    ):
+        raise ValueError(
+            "reasoning_effort must match ^[A-Za-z0-9_-]+$: "
+            f"{reasoning_effort!r}"
+        )
+    return reasoning_effort
+
+
+_CLAUDE_EXTRA_ARG_DENYLIST = frozenset({
+    "--permission-mode",
+    "--dangerously-skip-permissions",
+    "--add-dir",
+    "--settings",
+})
 
 
 def _claude_cli_controls(task: AgentTask) -> list[str]:
@@ -906,11 +935,19 @@ def _claude_cli_controls(task: AgentTask) -> list[str]:
         raw_extra_args,
         (str, bytes),
     ):
-        argv.extend(
+        extra_args = [
             str(value)
             for value in raw_extra_args
             if str(value).strip()
-        )
+        ]
+        for value in extra_args:
+            flag = value.split("=", 1)[0].strip()
+            if flag in _CLAUDE_EXTRA_ARG_DENYLIST:
+                raise ValueError(
+                    "extra_args may not override permission or isolation "
+                    f"controls: {value!r}"
+                )
+        argv.extend(extra_args)
     return argv
 
 
@@ -929,6 +966,24 @@ class _SubprocessToken:
     deadline: float
     done: asyncio.Task[int]
     cancel_requested: bool = False
+
+
+class _AsyncioProcessPoller:
+    """Watcher-safe ``poll()`` view of an asyncio subprocess."""
+
+    def __init__(self, process: asyncio.subprocess.Process) -> None:
+        self._process = process
+
+    def poll(self) -> int | None:
+        return self._process.returncode
+
+
+async def _read_stream_line(stream: asyncio.StreamReader) -> bytes:
+    while True:
+        try:
+            return await stream.readline()
+        except (asyncio.LimitOverrunError, ValueError):
+            continue
 
 
 def _subprocess_identity(pid: int) -> tuple[int, float | None]:
@@ -988,6 +1043,7 @@ class SubprocessRuntimeTransport:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             start_new_session=True,
+            limit=_SUBPROCESS_STREAM_LIMIT,
         )
         process_group_id, process_started_at = _subprocess_identity(process.pid)
         token = _SubprocessToken(
@@ -1042,6 +1098,7 @@ class SubprocessRuntimeTransport:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             start_new_session=True,
+            limit=_SUBPROCESS_STREAM_LIMIT,
         )
         process_group_id, process_started_at = _subprocess_identity(process.pid)
         resumed = _SubprocessToken(
@@ -1080,6 +1137,7 @@ class SubprocessRuntimeTransport:
             expected_root_started_at=item.process_started_at,
             expected_process_group_id=item.process_group_id,
             containment_id=item.containment_id,
+            process=_AsyncioProcessPoller(item.process),
             term_timeout_s=5.0,
             kill_timeout_s=5.0,
         )
@@ -1224,6 +1282,14 @@ class SubprocessRuntimeTransport:
             await self._terminate_process(item)
             await pump_task
             return 124
+        except BaseException:
+            pump_task.cancel()
+            try:
+                await pump_task
+            except BaseException:
+                pass
+            await self._terminate_process(item)
+            raise
         finally:
             await item.queue.put(None)
 
@@ -1237,7 +1303,7 @@ class SubprocessRuntimeTransport:
     async def _pump_stdout(self, item: _SubprocessToken) -> None:
         if item.process.stdout is None:
             return
-        while line := await item.process.stdout.readline():
+        while line := await _read_stream_line(item.process.stdout):
             text = line.decode("utf-8", errors="replace")
             item.stdout.append(text)
             raw = _parse_runtime_line(text)
@@ -1247,7 +1313,7 @@ class SubprocessRuntimeTransport:
     async def _pump_stderr(self, item: _SubprocessToken) -> None:
         if item.process.stderr is None:
             return
-        while line := await item.process.stderr.readline():
+        while line := await _read_stream_line(item.process.stderr):
             item.stderr.append(line.decode("utf-8", errors="replace"))
 
     def _get(self, token: str) -> _SubprocessToken:

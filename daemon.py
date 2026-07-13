@@ -162,18 +162,30 @@ async def main() -> int:
     )
     hook_critic = None
     if cfg.supervisor.hook_critique_strategy == "model_first":
-        if anthropic is None:
-            log.warning(
-                "hook_critique_strategy=model_first but direct Anthropic is not "
-                "configured; falling back to deterministic hook rules."
-            )
-        else:
-            from supervisor.hook_critic import ModelClientHookCritic
+        from supervisor.hook_critic import ModelClientHookCritic
+        if anthropic is not None:
             hook_critic = ModelClientHookCritic(
                 cfg,
                 model_client=AnthropicModelClient(anthropic),
             )
             log.info("hook critique strategy: model_first via ModelClient")
+        else:
+            try:
+                import claude_agent_sdk  # noqa: F401
+            except ModuleNotFoundError:
+                log.warning(
+                    "hook_critique_strategy=model_first but neither direct "
+                    "Anthropic nor the Claude Agent SDK is available; falling "
+                    "back to deterministic hook rules."
+                )
+            else:
+                hook_critic = ModelClientHookCritic(
+                    cfg,
+                    model_client=ClaudeAgentSdkModelClient(),
+                )
+                log.info(
+                    "hook critique strategy: model_first via Claude Agent SDK"
+                )
     if notifier is not None:
         try:
             from supervisor.agent_runtime import ClaudeCodeRuntime
@@ -185,11 +197,11 @@ async def main() -> int:
             from mcp_tools.codex_tools import build_codex_mcp_server
             from mcp_tools.telegram_tools import build_telegram_mcp_server
 
+            decision_transport = ClaudeAgentSdkTransport()
+            decision_transport.preflight()
             codex_mcp = build_codex_mcp_server(cfg, state)
             telegram_mcp = build_telegram_mcp_server(cfg, state)
             skills_dir = HERE / "skills"
-            decision_transport = ClaudeAgentSdkTransport()
-            decision_transport.preflight()
             invoker = AgentInvoker(
                 cfg,
                 state,

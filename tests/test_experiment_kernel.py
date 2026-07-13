@@ -1608,6 +1608,23 @@ def test_blinding_fails_closed_when_required_patch_contains_arm_identity() -> No
         blind_frozen_result(frozen)
 
 
+def test_blinding_fails_closed_when_allowlisted_metadata_leaks_arm() -> None:
+    frozen = FrozenTaskResult.create(
+        task_id="task-1",
+        task_family="generic",
+        task_spec_hash="task-spec",
+        run_result_hash="run-1",
+        patch="patch",
+        output="done",
+        metadata={"instance_id": "compute-matched-direct-run-3"},
+    )
+
+    with pytest.raises(
+        ValueError, match="arm identity leakage at metadata.instance_id"
+    ):
+        blind_frozen_result(frozen)
+
+
 @pytest.mark.asyncio
 async def test_executor_frozen_result_hash_must_match_its_contents(
     tmp_path: Path,
@@ -2098,6 +2115,49 @@ async def test_retry_after_task_persistence_error_reuses_terminal_arms(
     assert tuple(executor.calls) == first_calls
     assert len(first_calls) == 3
     assert all(outcome.status == "completed" for outcome in result.outcomes)
+
+
+@pytest.mark.asyncio
+async def test_terminal_persistence_failure_supersedes_passing_grade(
+    tmp_path: Path,
+) -> None:
+    class FailingCompletedFinishStore(SqliteExperimentStore):
+        def finish_arm_attempt(self, *args: Any, **kwargs: Any):
+            if kwargs.get("state") == "completed":
+                raise RuntimeError("terminal persistence unavailable")
+            return super().finish_arm_attempt(*args, **kwargs)
+
+    store = FailingCompletedFinishStore(tmp_path / "terminal-failure.db")
+    kernel = ExperimentKernel(
+        store=store,
+        executor=RecordingExecutor(store),
+    )
+
+    result = await kernel.run_task(
+        _experiment(),
+        _task_spec(),
+        RecordingVerifier(),
+    )
+
+    for outcome in result.outcomes:
+        assert outcome.status == "failed"
+        assert (
+            outcome.failure_classification
+            == "post_launch_persistence_failure"
+        )
+        assert outcome.grade_revision is not None
+        assert outcome.grade_revision.revision_number == 2
+        assert outcome.grade_revision.supersedes_grade_id is not None
+        root = kernel.gradebook.get_revision(
+            outcome.grade_revision.supersedes_grade_id
+        )
+        history = kernel.gradebook.list_revisions(root.run_envelope)
+        assert [item.grade_id for item in history] == [
+            outcome.grade_revision.supersedes_grade_id,
+            outcome.grade_revision.grade_id,
+        ]
+        assert history[0].passed is True
+        assert history[-1].passed is False
 
 
 @pytest.mark.asyncio

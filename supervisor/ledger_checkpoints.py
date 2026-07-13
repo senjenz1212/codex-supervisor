@@ -264,6 +264,11 @@ class FilesystemTrustedCheckpointPinStore:
                     run_fd,
                     expected_run_id=str(normalized["run_id"]),
                 )
+                if any(
+                    canonical_json_bytes(existing) == value
+                    for existing in existing_pins
+                ):
+                    return
                 if existing_pins:
                     latest = existing_pins[-1]
                     latest_count = int(latest["event_count"])
@@ -1349,14 +1354,10 @@ class LedgerCheckpointCoordinator:
             ):
                 return None
 
-            rows = self._load_verified_rows(
+            rows, row_verification = self._load_verified_rows(
                 normalized_run_id,
                 event_id=event_id,
                 events_loader=events_loader,
-            )
-            row_verification = verify_event_chain_structure(
-                rows,
-                expected_run_id=normalized_run_id,
             )
             event_identity_hash = (
                 row_verification.head_event_identity_hash
@@ -1520,7 +1521,7 @@ class LedgerCheckpointCoordinator:
         *,
         event_id: Any,
         events_loader: Callable[[], Sequence[Mapping[str, Any] | Any]],
-    ) -> list[Mapping[str, Any] | Any]:
+    ) -> tuple[list[Mapping[str, Any] | Any], LedgerVerification]:
         try:
             rows = list(events_loader())
         except Exception as exc:
@@ -1551,7 +1552,7 @@ class LedgerCheckpointCoordinator:
                     "the event that triggered checkpointing is missing"
                 ),
             )
-        return rows
+        return rows, verification
 
     def _load_and_verify_checkpoints(
         self,
@@ -1832,16 +1833,11 @@ def verify_authoritative_event_chain(
     except CheckpointIntegrityError as exc:
         return failure("checkpoint_store_invalid", str(exc))
     if not checkpoints:
-        if trusted_identity is not None:
-            return failure(
-                "checkpoint_rollback_detected",
-                "the externally pinned latest checkpoint is missing locally",
-                expected_head_hash=trusted_identity["head_event_hash"],
-                truncation_checked=True,
-            )
         return failure(
-            "checkpoint_missing",
-            "authoritative verification requires a persisted external checkpoint",
+            "checkpoint_rollback_detected",
+            "the externally pinned latest checkpoint is missing locally",
+            expected_head_hash=trusted_identity["head_event_hash"],
+            truncation_checked=True,
         )
 
     verified: list[tuple[PersistedLedgerCheckpoint, CheckpointVerification]] = []

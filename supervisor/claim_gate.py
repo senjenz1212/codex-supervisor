@@ -7,14 +7,24 @@ from datetime import datetime, timezone
 from enum import Enum
 from hashlib import sha256
 import hmac
-import itertools
 import json
 import math
 from pathlib import Path
 import re
+from types import SimpleNamespace
 from typing import Any, Protocol
 from urllib.parse import urlsplit
 
+from .efficacy_analysis import (
+    MAX_CONFIRMATION_ALPHA,
+    MAX_PREREGISTERED_B_WIN_RATE,
+    MIN_CONFIRMATION_POWER,
+    MIN_PREREGISTERED_B_WIN_RATE,
+    PilotEstimate,
+    derive_confirmation_plan,
+    exact_discordant_pairs_required,
+    exact_mcnemar_p_value,
+)
 from .evidence_ledger import LedgerVerification
 from .task_environment import canonical_task_identity
 from .trace_graph import (
@@ -110,13 +120,16 @@ TrustedExternalAuthorities = Mapping[
     VerifierAttestationVerifier
     | Callable[[bytes, Mapping[str, Any]], bool],
 ]
-_EXPERIMENT_ARMS = (
-    "production_baseline",
-    "supervisor",
-    "compute_matched_direct",
-)
-_EXPERIMENT_ARM_ORDERS = tuple(itertools.permutations(_EXPERIMENT_ARMS))
 _MAX_POWER_DISCORDANT_PAIRS = 10_000
+_ASSIGNMENT_DERIVED_BLOCK_KEYS = frozenset({
+    "assignment_method",
+    "experiment_spec_hash",
+    "treatment_set_hash",
+    "stratum_position",
+    "permuted_block_index",
+    "permuted_block_position",
+})
+_FROZEN_ROSTER_ASSIGNMENT_METHOD = "frozen-roster-six-order/v1"
 
 
 class ClaimLevel(str, Enum):
@@ -603,7 +616,7 @@ class ClaimGate:
             "claim_gate": {
                 "schema_version": CLAIM_GATE_SCHEMA_VERSION,
                 "max_claim_level": level.value if level is not None else None,
-                "evidence_bundle_sha256": _sha256_json(evidence),
+                "evidence_bundle_sha256": _sha256_canonical_json(evidence),
                 "derived_fields": list(MANAGED_CLAIM_FIELDS),
                 "managed_field_paths": list(MANAGED_CLAIM_FIELDS),
             },
@@ -674,7 +687,7 @@ class ClaimGate:
         governed["claim_gate"] = {
             "schema_version": CLAIM_GATE_SCHEMA_VERSION,
             "max_claim_level": level.value if level is not None else None,
-            "evidence_bundle_sha256": _sha256_json(evidence),
+            "evidence_bundle_sha256": _sha256_canonical_json(evidence),
             "derived_fields": list(MANAGED_CLAIM_FIELDS),
             "managed_field_paths": managed_paths,
         }
@@ -797,7 +810,7 @@ class ClaimGate:
                 "ClaimGate receipt max_claim_level does not match "
                 "recomputed evidence support"
             )
-        expected_evidence_hash = _sha256_json(evidence)
+        expected_evidence_hash = _sha256_canonical_json(evidence)
         declared_evidence_hash = str(
             receipt.get("evidence_bundle_sha256") or ""
         )
@@ -2876,33 +2889,36 @@ def _parse_assignment_evidence(
         assignment_id = _normalized_sha256(record.get("assignment_id"))
         if assignment_id is None:
             raise ValueError("assignment_id must be a sha256 HMAC output")
+        if _required_text(
+            record.get("experiment_id"),
+            field="assignment.experiment_id",
+        ) != experiment_id:
+            raise ValueError("assignment record experiment_id mismatch")
+        if _required_text(
+            record.get("assignment_version"),
+            field="assignment.assignment_version",
+        ) != assignment_version:
+            raise ValueError("assignment record version mismatch")
+        (
+            expected_block,
+            expected_digest,
+            expected_order,
+        ) = _expected_kernel_assignment(
+            record,
+            experiment_id=experiment_id,
+            assignment_version=assignment_version,
+            hmac_key=hmac_key,
+            task_identity=task_identity,
+        )
         block = _required_mapping(
             record.get("block"),
             field="assignment.block",
         )
-        message = "||".join(
-            (
-                experiment_id,
-                canonical_task_id,
-                assignment_version,
-                _canonical_json(block),
+        if dict(block) != expected_block:
+            raise ValueError(
+                "assignment block does not match kernel derivation"
             )
-        )
-        if (
-            _normalized_sha256(
-                record.get("assignment_message_sha256")
-            )
-            != sha256(message.encode("utf-8")).hexdigest()
-        ):
-            raise ValueError("assignment message hash mismatch")
-        if not hmac.compare_digest(
-            assignment_id,
-            hmac.new(
-                hmac_key,
-                message.encode("utf-8"),
-                sha256,
-            ).hexdigest(),
-        ):
+        if not hmac.compare_digest(assignment_id, expected_digest):
             raise ValueError(
                 "assignment id does not match deterministic HMAC"
             )
@@ -2914,16 +2930,9 @@ def _parse_assignment_evidence(
             _required_text(value, field="assignment.order item")
             for value in order_values
         )
-        if len(order) != len(_EXPERIMENT_ARMS) or set(order) != set(
-            _EXPERIMENT_ARMS
-        ):
-            raise ValueError("assignment order is not an A/B/C permutation")
-        expected_order = _EXPERIMENT_ARM_ORDERS[
-            int(assignment_id[:16], 16) % len(_EXPERIMENT_ARM_ORDERS)
-        ]
         if order != expected_order:
             raise ValueError(
-                "assignment order does not match randomized assignment id"
+                "assignment order does not match kernel derivation"
             )
         assigned_at_ms = _required_positive_int(
             record.get("assigned_at_ms"),
@@ -2954,6 +2963,97 @@ def _parse_assignment_evidence(
     if not assignments:
         raise ValueError("assignment evidence is empty")
     return assignments
+
+
+def _expected_kernel_assignment(
+    record: Mapping[str, Any],
+    *,
+    experiment_id: str,
+    assignment_version: str,
+    hmac_key: bytes,
+    task_identity: Mapping[str, Any],
+) -> tuple[dict[str, str], str, tuple[str, ...]]:
+    from . import experiment_kernel
+
+    block = _required_mapping(record.get("block"), field="assignment.block")
+    if any(
+        not isinstance(key, str) or not isinstance(value, str)
+        for key, value in block.items()
+    ):
+        raise ValueError("assignment block must map strings to strings")
+    stratum = {
+        key: value
+        for key, value in block.items()
+        if key not in _ASSIGNMENT_DERIVED_BLOCK_KEYS
+    }
+    if stratum.get("stratum_id") != experiment_kernel._sha256_json({
+        key: value
+        for key, value in stratum.items()
+        if key != "stratum_id"
+    }):
+        raise ValueError("assignment stratum identity mismatch")
+    raw_position = block.get("stratum_position")
+    if not isinstance(raw_position, str) or not re.fullmatch(
+        r"0|[1-9][0-9]*",
+        raw_position,
+    ):
+        raise ValueError("assignment stratum position is invalid")
+    stratum_position = int(raw_position)
+    raw_treatments = _required_mapping(
+        record.get("treatment_hashes"),
+        field="assignment.treatment_hashes",
+    )
+    treatment_hashes: dict[Any, str] = {}
+    for arm in experiment_kernel.Arm:
+        digest = _normalized_sha256(raw_treatments.get(arm.value))
+        if digest is None:
+            raise ValueError(
+                "assignment treatment hashes must be sha256 digests"
+            )
+        treatment_hashes[arm] = digest
+    if len(raw_treatments) != len(treatment_hashes) or len(
+        set(treatment_hashes.values())
+    ) != len(treatment_hashes):
+        raise ValueError(
+            "assignment must bind one distinct treatment hash per arm"
+        )
+    frozen_roster = (
+        block.get("assignment_method") == _FROZEN_ROSTER_ASSIGNMENT_METHOD
+    )
+    experiment = SimpleNamespace(
+        experiment_id=experiment_id,
+        assignment_version=assignment_version,
+        hmac_key=hmac_key,
+        spec_hash=str(block.get("experiment_spec_hash") or ""),
+        treatment_hashes=treatment_hashes,
+        metadata={"assignment_roster": ()} if frozen_roster else {},
+    )
+    if not frozen_roster and (
+        stratum_position
+        != experiment_kernel._deterministic_stratum_position(
+            experiment,
+            task_identity,
+            stratum=stratum,
+        )
+    ):
+        raise ValueError(
+            "assignment stratum position does not match deterministic rank"
+        )
+    (
+        expected_block,
+        expected_digest,
+        expected_order,
+    ) = experiment_kernel._derive_assignment(
+        experiment,
+        task_identity,
+        stratum=stratum,
+        stratum_position=stratum_position,
+    )
+    return (
+        dict(expected_block),
+        expected_digest,
+        tuple(arm.value for arm in expected_order),
+    )
 
 
 def _validate_pilot_confirmation_lineage(
@@ -3099,7 +3199,7 @@ def _validate_pilot_confirmation_lineage(
         )
         (
             pilot_b_win_rate,
-            pilot_discordance_rate,
+            pilot_discordant_task_count,
         ) = _validated_pilot_estimates(
             analysis=pilot_analysis,
             assignments_document=documents["pilot_assignments"],
@@ -3127,6 +3227,28 @@ def _validate_pilot_confirmation_lineage(
         target_power = _required_number(
             power.get("target_power"),
             field="design target power",
+        )
+        confirmation_plan = derive_confirmation_plan(
+            PilotEstimate(
+                task_count=len(pilot_roster_tasks),
+                discordant_task_count=pilot_discordant_task_count,
+                verifier_flake_count=0,
+                infrastructure_failure_count=0,
+                mean_cost_by_arm={"A": 0.0, "B": 0.0, "C": 0.0},
+                mean_latency_ms_by_arm={"A": 0.0, "B": 0.0, "C": 0.0},
+                mean_risk_cost_by_arm={"A": 0.0, "B": 0.0, "C": 0.0},
+                task_ids=tuple(pilot_roster_tasks),
+                canonical_task_ids=tuple(pilot_roster_tasks.values()),
+            ),
+            alternative_b_win_rate=_required_number(
+                power.get("alternative_b_win_rate"),
+                field="design alternative B win rate",
+            ),
+            alpha=_required_number(
+                power.get("alpha"),
+                field="design power alpha",
+            ),
+            power=target_power,
         )
         if not (
             _normalized_sha256(
@@ -3162,22 +3284,23 @@ def _validate_pilot_confirmation_lineage(
             )
             and math.isclose(
                 _required_number(
-                    power.get("alternative_b_win_rate"),
-                    field="design alternative B win rate",
-                ),
-                pilot_b_win_rate,
-                rel_tol=0.0,
-                abs_tol=1e-15,
-            )
-            and math.isclose(
-                _required_number(
                     power.get("expected_discordance_rate"),
                     field="design expected discordance rate",
                 ),
-                pilot_discordance_rate,
+                confirmation_plan.conservative_discordance_rate,
                 rel_tol=0.0,
                 abs_tol=1e-15,
             )
+            and _required_positive_int(
+                power.get("required_discordant_pairs"),
+                field="design required discordant pairs",
+            )
+            == confirmation_plan.required_discordant_pairs
+            and _required_positive_int(
+                power.get("required_task_count"),
+                field="design required task count",
+            )
+            == confirmation_plan.total_unique_tasks
         ):
             return False
 
@@ -3317,7 +3440,7 @@ def _validated_pilot_estimates(
     roster: Mapping[str, str],
     roster_sha256: Any,
     experiment_id: str,
-) -> tuple[float, float]:
+) -> tuple[float, int]:
     if (
         assignments_document.get("schema_version")
         != PILOT_ASSIGNMENTS_SCHEMA_VERSION
@@ -3499,7 +3622,7 @@ def _validated_pilot_estimates(
         )
     ):
         raise ValueError("pilot estimates do not match authoritative rows")
-    return b_win_rate, discordance_rate
+    return b_win_rate, discordant
 
 
 def _parse_grade_evidence(
@@ -4398,33 +4521,29 @@ def _validate_powered_design(
     except ValueError:
         return False
     if not (
-        0.0 < alpha <= 0.05
-        and 0.90 <= target_power < 1.0
-        and 0.5 < alternative_b_win_rate < 1.0
+        0.0 < alpha <= MAX_CONFIRMATION_ALPHA
+        and MIN_CONFIRMATION_POWER <= target_power < 1.0
+        and MIN_PREREGISTERED_B_WIN_RATE
+        <= alternative_b_win_rate
+        <= MAX_PREREGISTERED_B_WIN_RATE
         and 0.0 < expected_discordance_rate <= 1.0
         and required_discordant_pairs <= _MAX_POWER_DISCORDANT_PAIRS
     ):
         return False
-    achieved_power = _exact_mcnemar_power(
-        discordant_pairs=required_discordant_pairs,
-        b_win_rate=alternative_b_win_rate,
-        alpha=alpha,
-    )
-    prior_power = (
-        _exact_mcnemar_power(
-            discordant_pairs=required_discordant_pairs - 1,
-            b_win_rate=alternative_b_win_rate,
+    try:
+        expected_discordant_pairs = exact_discordant_pairs_required(
+            win_rate=alternative_b_win_rate,
             alpha=alpha,
+            power=target_power,
+            max_pairs=_MAX_POWER_DISCORDANT_PAIRS,
         )
-        if required_discordant_pairs > 1
-        else 0.0
-    )
+    except ValueError:
+        return False
     expected_task_count = math.ceil(
         required_discordant_pairs / expected_discordance_rate
     )
     return (
-        achieved_power + 1e-12 >= target_power
-        and prior_power + 1e-12 < target_power
+        required_discordant_pairs == expected_discordant_pairs
         and required_task_count == expected_task_count
         and task_count >= required_task_count
         and discordant_pairs >= required_discordant_pairs
@@ -4481,7 +4600,7 @@ def _validate_positive_paired_result(
         )
     except ValueError:
         return False
-    expected_p_value = _exact_mcnemar_p_value(
+    expected_p_value = exact_mcnemar_p_value(
         n10=counts["n10"],
         n01=counts["n01"],
     )
@@ -4510,78 +4629,6 @@ def _validate_positive_paired_result(
         )
         and 0.0 <= declared_p_value <= declared_alpha
     )
-
-
-def _exact_mcnemar_p_value(*, n10: int, n01: int) -> float:
-    discordant = n10 + n01
-    if discordant == 0:
-        return 1.0
-    smaller = min(n10, n01)
-    log_two = math.log(2.0)
-    lower_tail = sum(
-        math.exp(
-            math.lgamma(discordant + 1)
-            - math.lgamma(successes + 1)
-            - math.lgamma(discordant - successes + 1)
-            - discordant * log_two
-        )
-        for successes in range(smaller + 1)
-    )
-    return min(1.0, 2.0 * lower_tail)
-
-
-def _exact_mcnemar_power(
-    *,
-    discordant_pairs: int,
-    b_win_rate: float,
-    alpha: float,
-) -> float:
-    if discordant_pairs <= 0:
-        return 0.0
-    lower_tail = 0.0
-    lower_critical = -1
-    for b_wins in range(discordant_pairs // 2 + 1):
-        lower_tail += _binomial_probability(
-            total=discordant_pairs,
-            successes=b_wins,
-            probability=0.5,
-        )
-        if min(1.0, 2.0 * lower_tail) <= alpha:
-            lower_critical = b_wins
-        else:
-            break
-    if lower_critical < 0:
-        return 0.0
-    achieved = sum(
-        _binomial_probability(
-            total=discordant_pairs,
-            successes=b_wins,
-            probability=b_win_rate,
-        )
-        for b_wins in range(discordant_pairs + 1)
-        if (
-            b_wins <= lower_critical
-            or b_wins >= discordant_pairs - lower_critical
-        )
-    )
-    return min(1.0, achieved)
-
-
-def _binomial_probability(
-    *,
-    total: int,
-    successes: int,
-    probability: float,
-) -> float:
-    failures = total - successes
-    log_probability = (
-        math.lgamma(total + 1)
-        - math.lgamma(successes + 1)
-        - math.lgamma(failures + 1)
-        + successes * math.log(probability)
-        + failures * math.log1p(-probability)
-    )
-    return math.exp(log_probability)
 
 
 def _evidence_context(
@@ -5001,7 +5048,8 @@ def _iter_text_values(
         if identity in seen:
             return
         seen.add(identity)
-        for nested in value.values():
+        for key, nested in value.items():
+            yield from _iter_text_values(key, seen=seen)
             yield from _iter_text_values(nested, seen=seen)
         return
     if _is_sequence(value):
@@ -5038,11 +5086,3 @@ def _level_text(level: ClaimLevel | None) -> str:
     return level.value if level is not None else "no claim level"
 
 
-def _sha256_json(value: Any) -> str:
-    payload = json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        default=str,
-    ).encode("utf-8")
-    return sha256(payload).hexdigest()

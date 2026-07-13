@@ -88,10 +88,13 @@ def scan_containment(
     """Find all same-user processes that inherited ``containment_id``.
 
     A complete scan is required before a caller may claim that the containment
-    is empty. Access-denied results fail closed when the process is already
-    known to belong to the containment or is structurally descended from a
-    known process. Unrelated same-user processes may deny environment access on
-    macOS and are not evidence that this containment is incomplete.
+    is empty. Access-denied results fail closed when the process cannot be
+    ruled out: it is already known to belong to the containment, structurally
+    descended from a known process, or started at or after the containment
+    root, so a re-parented descendant that denies environment reads degrades
+    the proof instead of silently passing. Same-user processes that predate
+    the root may deny environment access on macOS and are not evidence that
+    this containment is incomplete.
     """
     normalized = str(containment_id).strip()
     if not normalized:
@@ -152,14 +155,14 @@ def scan_containment(
         except (psutil.NoSuchProcess, psutil.ZombieProcess, ProcessLookupError):
             continue
         except psutil.AccessDenied:
-            if _is_structurally_related(
+            if earliest is not None or _is_structurally_related(
                 int(process.pid),
                 parent_by_pid=parent_by_pid,
                 known_pids=known_pids,
             ):
                 errors.append(f"access_denied:{process.pid}")
         except (OSError, ValueError) as exc:
-            if _is_structurally_related(
+            if earliest is not None or _is_structurally_related(
                 int(process.pid),
                 parent_by_pid=parent_by_pid,
                 known_pids=known_pids,

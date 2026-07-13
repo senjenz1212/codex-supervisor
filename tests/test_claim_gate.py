@@ -3,19 +3,26 @@ from __future__ import annotations
 from collections.abc import Callable
 from hashlib import sha256
 import hmac
-import itertools
 import json
+import math
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
 
+from supervisor import experiment_kernel
 from supervisor.claim_gate import (
     ClaimGate as _ClaimGate,
     ClaimLevel,
     UnsupportedClaimError,
     external_authority_attestation_payload,
     independent_verifier_attestation_payload,
+)
+from supervisor.efficacy_analysis import (
+    _normal_quantile,
+    _wilson_interval,
+    exact_discordant_pairs_required,
 )
 from supervisor.evidence_ledger import LedgerVerification
 from supervisor.grade_revisions import GradeBook, RunEnvelopeRef
@@ -612,12 +619,8 @@ def _write_pilot_confirmation_lineage(
             "completed_at_ms": 300,
             "task_rows": pilot_rows,
             "estimates": {
-                "alternative_b_win_rate": powered_design["power"][
-                    "alternative_b_win_rate"
-                ],
-                "expected_discordance_rate": powered_design["power"][
-                    "expected_discordance_rate"
-                ],
+                "alternative_b_win_rate": 9 / 10,
+                "expected_discordance_rate": 1.0,
             },
         },
     )
@@ -743,9 +746,8 @@ def _outcome_bundle(evidence_root: Path) -> dict[str, object]:
 def _causal_bundle(
     evidence_root: Path,
     *,
-    task_count: int = 12,
+    task_count: int | None = None,
     target_power: float = 0.80,
-    required_discordant_pairs: int = 12,
     closed_trace: bool = False,
     ledger_verifications: dict[str, LedgerVerification] | None = None,
     study_lineage: bool = False,
@@ -767,6 +769,21 @@ def _causal_bundle(
     assignment_hmac_key = sha256(
         b"claim-gate-fixture-assignment-key"
     ).digest()
+    required_discordant_pairs = exact_discordant_pairs_required(
+        win_rate=0.75,
+        alpha=0.05,
+        power=target_power,
+    )
+    conservative_discordance_rate = _wilson_interval(
+        10,
+        10,
+        _normal_quantile(0.975),
+    )[0]
+    required_task_count = math.ceil(
+        required_discordant_pairs / conservative_discordance_rate
+    )
+    if task_count is None:
+        task_count = required_task_count
     powered_design = {
         "paired": True,
         "assignment_unit": "task",
@@ -776,21 +793,34 @@ def _causal_bundle(
             "method": "exact_mcnemar",
             "alpha": 0.05,
             "target_power": target_power,
-            "alternative_b_win_rate": 0.90,
-            "expected_discordance_rate": 1.0,
+            "alternative_b_win_rate": 0.75,
+            "expected_discordance_rate": conservative_discordance_rate,
             "required_discordant_pairs": required_discordant_pairs,
-            "required_task_count": required_discordant_pairs,
+            "required_task_count": required_task_count,
         },
     }
     powered_design_sha256 = _sha256_json(powered_design)
-    arm_orders = tuple(
-        itertools.permutations(
-            (
-                "production_baseline",
-                "supervisor",
-                "compute_matched_direct",
-            )
-        )
+    treatment_hashes = {
+        arm: _sha256_text(f"treatment:{arm.value}")
+        for arm in experiment_kernel.Arm
+    }
+    stratum_fields = {
+        "canonical_repo_id": "example/repository",
+        "task_family": "claim-gate",
+        "task_class": "claim-gate",
+        "model": "fixture-model",
+    }
+    stratum = {
+        **stratum_fields,
+        "stratum_id": experiment_kernel._sha256_json(stratum_fields),
+    }
+    experiment_spec = SimpleNamespace(
+        experiment_id=experiment_id,
+        assignment_version=assignment_version,
+        hmac_key=assignment_hmac_key,
+        spec_hash=_sha256_text("fixture-experiment-spec"),
+        treatment_hashes=treatment_hashes,
+        metadata={},
     )
     assignments: list[dict[str, object]] = []
     grades: list[dict[str, object]] = []
@@ -803,40 +833,38 @@ def _causal_bundle(
         task_id = f"{task_prefix}-{index:02d}"
         task_identity = _task_identity(task_id)
         canonical_task_id = canonical_task_identity(task_identity)
-        block = {
-            "model": "fixture-model",
-            "powered_design_sha256": powered_design_sha256,
-            "repo": "example/repository",
-            "task_family": "claim-gate",
-        }
-        assignment_message = "||".join(
-            (
-                experiment_id,
-                canonical_task_id,
-                assignment_version,
-                json.dumps(block, sort_keys=True, separators=(",", ":")),
+        stratum_position = (
+            experiment_kernel._deterministic_stratum_position(
+                experiment_spec,
+                task_identity,
+                stratum=stratum,
             )
         )
-        assignment_id = hmac.new(
-            assignment_hmac_key,
-            assignment_message.encode("utf-8"),
-            sha256,
-        ).hexdigest()
-        order = arm_orders[int(assignment_id[:16], 16) % len(arm_orders)]
+        block, assignment_id, order = (
+            experiment_kernel._derive_assignment(
+                experiment_spec,
+                task_identity,
+                stratum=stratum,
+                stratum_position=stratum_position,
+            )
+        )
         assigned_at_ms = 1_000 + index * 10
         persisted_at_ms = assigned_at_ms + 1
         first_execution_started_at_ms = persisted_at_ms + 1
         assignments.append(
             {
+                "experiment_id": experiment_id,
                 "task_id": task_id,
                 "task_identity": task_identity,
                 "canonical_task_id": canonical_task_id,
+                "assignment_version": assignment_version,
                 "assignment_id": assignment_id,
+                "order": [arm.value for arm in order],
                 "block": block,
-                "assignment_message_sha256": _sha256_text(
-                    assignment_message
-                ),
-                "order": list(order),
+                "treatment_hashes": {
+                    arm.value: digest
+                    for arm, digest in treatment_hashes.items()
+                },
                 "assigned_at_ms": assigned_at_ms,
                 "persisted_at_ms": persisted_at_ms,
                 "first_execution_started_at_ms": (
@@ -1246,9 +1274,7 @@ def _authoritative_causal_bundle(
     grade_authority = gradebook or GradeBook(":memory:")
     bundle = _causal_bundle(
         evidence_root,
-        task_count=15,
         target_power=0.90,
-        required_discordant_pairs=15,
         closed_trace=True,
         ledger_verifications=authoritative_verifications,
         study_lineage=True,
@@ -1383,6 +1409,17 @@ def _portable_authoritative_bundle(
     return bundle, ledger_resolver
 
 
+def _authoritative_task_count() -> int:
+    return math.ceil(
+        exact_discordant_pairs_required(
+            win_rate=0.75,
+            alpha=0.05,
+            power=0.90,
+        )
+        / _wilson_interval(10, 10, _normal_quantile(0.975))[0]
+    )
+
+
 def _roi_authoritative_bundle(
     evidence_root: Path,
     *,
@@ -1392,6 +1429,7 @@ def _roi_authoritative_bundle(
     _FixtureAuthority,
 ]:
     bundle, ledger_resolver = _portable_authoritative_bundle(evidence_root)
+    causal_task_count = _authoritative_task_count()
     causal_evidence = bundle["randomized_powered_b_vs_c"]
     assert isinstance(causal_evidence, dict)
     if cheaper_harness:
@@ -1491,8 +1529,8 @@ def _roi_authoritative_bundle(
         baseline_cost = 10.0
         supervisor_cost = 25.0
     incremental_cost = supervisor_cost - baseline_cost
-    cost_per_incremental_success = incremental_cost / 15
-    incremental_value = 30.0
+    cost_per_incremental_success = incremental_cost / causal_task_count
+    incremental_value = 2.0 * causal_task_count
     net_value = incremental_value - incremental_cost
     business_value_protocol = _write_json_artifact(
         evidence_root,
@@ -1506,7 +1544,7 @@ def _roi_authoritative_bundle(
             "currency": "USD",
             "value_per_success_usd": 2.0,
             "decision_rule": "net_value_gt_zero",
-            "decision_horizon_task_count": 15,
+            "decision_horizon_task_count": causal_task_count,
             "frozen": True,
             "valuation_basis": {
                 "kind": "approved_business_case",
@@ -1530,7 +1568,7 @@ def _roi_authoritative_bundle(
             ),
             "measurement_started_at_ms": 1_002,
             "measurement_completed_at_ms": 2_000,
-            "task_count": 15,
+            "task_count": causal_task_count,
             "components": cost_components,
             "totals": {
                 "baseline_cost_usd": baseline_cost,
@@ -1551,15 +1589,15 @@ def _roi_authoritative_bundle(
                 "cost_provenance": cost_provenance,
             },
             "measurement": {
-                "task_count": 15,
+                "task_count": causal_task_count,
                 "baseline_successes": 0,
-                "supervisor_successes": 15,
+                "supervisor_successes": causal_task_count,
                 "baseline_cost_usd": baseline_cost,
                 "supervisor_cost_usd": supervisor_cost,
                 "value_per_success_usd": 2.0,
             },
             "result": {
-                "incremental_successes": 15,
+                "incremental_successes": causal_task_count,
                 "incremental_cost_usd": incremental_cost,
                 "cost_per_incremental_success_usd": (
                     cost_per_incremental_success
@@ -2455,9 +2493,7 @@ def test_edge_free_trace_cannot_raise_l3_even_with_90_percent_power(
 ) -> None:
     bundle = _causal_bundle(
         tmp_path,
-        task_count=15,
         target_power=0.90,
-        required_discordant_pairs=15,
     )
 
     assert (
@@ -2486,9 +2522,7 @@ def test_self_attested_ledger_records_cannot_raise_l3(
 ) -> None:
     bundle = _causal_bundle(
         tmp_path,
-        task_count=15,
         target_power=0.90,
-        required_discordant_pairs=15,
         closed_trace=True,
     )
 

@@ -56,6 +56,8 @@ _RUNTIME_STATE_FILENAMES = frozenset({
     "state.sqlite3",
     "trace.db",
 })
+_WORKSPACE_OVERLAY_MAX_CONTENT_BYTES = 1024 * 1024
+
 _RUNTIME_STATE_SUFFIXES = (".db", ".sqlite", ".sqlite3")
 _RUNTIME_STATE_SIDECAR_SUFFIXES = ("-journal", "-shm", "-wal")
 _RUNTIME_STATE_DIRECTORIES = frozenset({
@@ -1779,36 +1781,6 @@ def _git_output(root: Path, *args: str) -> str:
     return completed.stdout.strip() if completed.returncode == 0 else ""
 
 
-def _public_file_tree_sha256(
-    root: Path,
-    *,
-    excluded_roots: tuple[Path, ...] = (),
-) -> str:
-    digest = sha256()
-    paths = _git_visible_paths(root)
-    if paths is None:
-        paths = sorted(root.rglob("*"))
-    for path in paths:
-        if (
-            not path.is_file()
-            or _excluded_snapshot_path(
-                path,
-                root,
-                excluded_roots=excluded_roots,
-            )
-        ):
-            continue
-        relative = path.relative_to(root).as_posix()
-        data = path.read_bytes()
-        digest.update(relative.encode())
-        digest.update(b"\0")
-        digest.update(str(len(data)).encode())
-        digest.update(b"\0")
-        digest.update(sha256(data).hexdigest().encode())
-        digest.update(b"\n")
-    return digest.hexdigest()
-
-
 def _workspace_content_sha256(
     root: Path,
     *,
@@ -1827,34 +1799,6 @@ def _workspace_content_sha256(
     })
 
 
-def _git_visible_paths(root: Path) -> list[Path] | None:
-    try:
-        completed = subprocess.run(
-            [
-                "git",
-                "ls-files",
-                "-z",
-                "--cached",
-                "--modified",
-                "--others",
-                "--exclude-standard",
-            ],
-            cwd=root,
-            check=False,
-            capture_output=True,
-            timeout=10,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    if completed.returncode != 0:
-        return None
-    return sorted(
-        root / raw.decode("utf-8", errors="replace")
-        for raw in completed.stdout.split(b"\0")
-        if raw
-    )
-
-
 def _source_artifact_hashes(
     root: Path,
     handoff: dict[str, Any],
@@ -1862,6 +1806,7 @@ def _source_artifact_hashes(
     artifacts = handoff.get("planning_artifacts")
     if not isinstance(artifacts, list):
         return {}
+    root_resolved = root.expanduser().resolve()
     hashes: dict[str, str] = {}
     for artifact in artifacts:
         if not isinstance(artifact, dict):
@@ -1870,11 +1815,22 @@ def _source_artifact_hashes(
         path_text = str(artifact.get("path") or "").strip()
         if not kind or not path_text:
             continue
-        path = root / path_text
+        candidate = Path(path_text).expanduser()
+        if not candidate.is_absolute():
+            candidate = root_resolved / candidate
+        try:
+            path = candidate.resolve()
+            path.relative_to(root_resolved)
+        except ValueError:
+            raise ValueError(
+                "planning artifact path escapes workspace root: "
+                f"{path_text!r}"
+            ) from None
+        except OSError:
+            continue
         if (
-            path.exists()
-            and path.is_file()
-            and not _excluded_snapshot_path(path, root)
+            path.is_file()
+            and not _excluded_snapshot_path(path, root_resolved)
         ):
             hashes[kind] = sha256(path.read_bytes()).hexdigest()
         elif _is_sha256(artifact.get("sha256")):
@@ -1906,17 +1862,24 @@ def _workspace_overlay_entry(path: Path, *, root: Path) -> dict[str, Any]:
             "kind": "symlink",
             "target": path.readlink().as_posix(),
         }
-    if not path.exists():
+    try:
+        data = path.read_bytes()
+        mode = path.stat().st_mode & 0o777
+    except FileNotFoundError:
         return {"path": relative, "kind": "deleted"}
-    data = path.read_bytes()
-    return {
+    entry: dict[str, Any] = {
         "path": relative,
         "kind": "file",
-        "mode": path.stat().st_mode & 0o777,
+        "mode": mode,
         "size": len(data),
         "sha256": sha256(data).hexdigest(),
-        "content_base64": base64.b64encode(data).decode("ascii"),
     }
+    if len(data) > _WORKSPACE_OVERLAY_MAX_CONTENT_BYTES:
+        entry["content_omitted"] = "size_limit_exceeded"
+        entry["content_limit_bytes"] = _WORKSPACE_OVERLAY_MAX_CONTENT_BYTES
+    else:
+        entry["content_base64"] = base64.b64encode(data).decode("ascii")
+    return entry
 
 
 def _excluded_snapshot_path(
@@ -2052,7 +2015,7 @@ def _canonical_sha256(payload: Any) -> str:
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=True,
-        default=str,
+        allow_nan=False,
     ).encode("ascii")
     return sha256(encoded).hexdigest()
 

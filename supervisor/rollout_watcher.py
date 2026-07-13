@@ -101,20 +101,26 @@ _KIND_ALIASES: dict[str, str] = {
 }
 
 _TERMINAL_STATUSES: dict[str, str] = {
+    "turn.failed": "failed",
     "run.completed": "completed",
     "run.failed": "failed",
     "run.cancelled": "cancelled",
 }
 
 _QUARANTINE_SCHEMA = "supervisor-rollout-quarantine/v1"
+_QUARANTINE_CHUNKED_SCHEMA = "supervisor-rollout-quarantine/v2"
 _QUARANTINE_DIRNAME = ".rollout-quarantine"
+DEFAULT_QUARANTINE_MAX_BYTES = 64 * 1024 * 1024
+DEFAULT_QUARANTINE_MAX_AGE_S = 7 * 24 * 3600
 
 
 class RolloutWatcher:
     def __init__(self, sessions_root: str, registry_dir: str, state: State,
                  on_event: Callable[[str, dict], Awaitable[None]] | None = None,
                  startup_backfill_s: int = 300,
-                 sweep_interval_s: int = 10):
+                 sweep_interval_s: int = 10,
+                 quarantine_max_bytes: int = DEFAULT_QUARANTINE_MAX_BYTES,
+                 quarantine_max_age_s: int = DEFAULT_QUARANTINE_MAX_AGE_S):
         self.sessions_root = Path(sessions_root)
         self.registry_dir = Path(registry_dir).expanduser()
         self.state = state
@@ -124,6 +130,9 @@ class RolloutWatcher:
         self.started_at = time.time()
         self.startup_backfill_s = startup_backfill_s
         self.sweep_interval_s = sweep_interval_s
+        self.quarantine_max_bytes = max(1, int(quarantine_max_bytes))
+        self.quarantine_max_age_s = max(1, int(quarantine_max_age_s))
+        self._quarantine_spans: dict[Path, tuple[int, int]] = {}
 
     async def run(self) -> None:
         """Main loop. Watch the sessions root recursively, drain any growth on change."""
@@ -281,17 +290,19 @@ class RolloutWatcher:
             captured_cwd=captured_cwd,
         )
         if run_id is None:
-            self._write_quarantine(
+            quarantined_end = self._write_quarantine(
                 path=path,
                 session_id=session_id,
                 start_offset=start,
                 raw_lines=lines,
                 captured_cwd=captured_cwd,
             )
-            # Keep both cursors pinned until a real workflow/session join exists.
-            # The quarantine sidecar is the durable copy used if the source file
-            # disappears before registration.
-            self.offsets[path] = start
+            # The durable cursor stays pinned until a real workflow/session
+            # join exists; the quarantine sidecar is the durable copy used if
+            # the source file disappears before registration. The in-memory
+            # cursor advances past already-quarantined bytes so each drain
+            # appends only new growth.
+            self.offsets[path] = max(start, quarantined_end)
             return
 
         await self._ingest_lines(
@@ -537,24 +548,22 @@ class RolloutWatcher:
         if not root.is_dir():
             return
         for quarantine_path in sorted(root.glob("*.json")):
-            quarantine = self._load_quarantine(quarantine_path)
-            if quarantine is None:
+            header = self._load_quarantine_header(quarantine_path)
+            if header is None:
+                self._drop_undecodable_quarantine(quarantine_path)
                 continue
-            path = Path(quarantine["rollout_path"])
+            path = Path(header["rollout_path"])
             lock = self._drain_locks.setdefault(path, asyncio.Lock())
             async with lock:
                 await self._replay_quarantine(quarantine_path)
 
     async def _replay_quarantine(self, quarantine_path: Path) -> bool:
-        quarantine = self._load_quarantine(quarantine_path)
-        if quarantine is None:
+        header = self._load_quarantine_header(quarantine_path)
+        if header is None:
             return False
-        path = Path(quarantine["rollout_path"])
-        session_id = str(quarantine["session_id"])
-        start_offset = int(quarantine["start_offset"])
-        end_offset = int(quarantine["end_offset"])
-        raw_bytes = quarantine["raw_bytes"]
-        captured_cwd = quarantine.get("captured_cwd")
+        path = Path(header["rollout_path"])
+        session_id = str(header["session_id"])
+        captured_cwd = header.get("captured_cwd")
         registration, run_id = self._resolve_run(
             session_id,
             path,
@@ -565,7 +574,14 @@ class RolloutWatcher:
             ),
         )
         if run_id is None:
+            self._enforce_quarantine_age_cap(quarantine_path, header=header)
             return False
+        quarantine = self._load_quarantine(quarantine_path)
+        if quarantine is None:
+            return False
+        start_offset = int(quarantine["start_offset"])
+        end_offset = int(quarantine["end_offset"])
+        raw_bytes = quarantine["raw_bytes"]
 
         durable_offset = self.state.get_tail_offset(str(path))
         if durable_offset >= end_offset:
@@ -650,39 +666,110 @@ class RolloutWatcher:
         start_offset: int,
         raw_lines: list[bytes],
         captured_cwd: str | None,
-    ) -> None:
+    ) -> int:
+        """Durably quarantine unjoined bytes; returns the quarantined end offset.
+
+        The sidecar is chunked JSONL: one header line followed by append-only
+        base64 chunk lines, so steady growth never rewrites already-persisted
+        bytes.
+        """
         raw_bytes = b"".join(raw_lines)
         end_offset = start_offset + len(raw_bytes)
-        payload = {
-            "schema_version": _QUARANTINE_SCHEMA,
-            "rollout_path": str(path),
-            "session_id": session_id,
-            "start_offset": start_offset,
-            "end_offset": end_offset,
-            "raw_bytes_b64": base64.b64encode(raw_bytes).decode("ascii"),
-            "captured_cwd": captured_cwd,
-            "updated_at": int(time.time()),
-        }
         quarantine_path = self._quarantine_path(path)
         quarantine_path.parent.mkdir(parents=True, exist_ok=True)
         existing = (
-            self._load_quarantine(quarantine_path)
+            self._read_quarantine_records(quarantine_path)
             if quarantine_path.is_file()
             else None
         )
+        existing_start: int | None = None
+        existing_end: int | None = None
+        if existing is not None:
+            existing_header, existing_chunks = existing
+            existing_start = int(existing_header["start_offset"])
+            existing_end = (
+                int(existing_chunks[-1]["end_offset"])
+                if existing_chunks
+                else existing_start
+            )
+            if existing_start <= start_offset and existing_end >= end_offset:
+                return existing_end
+        retained_start = (
+            existing_start
+            if existing_start is not None and existing_start <= start_offset
+            else start_offset
+        )
+        if end_offset - retained_start > self.quarantine_max_bytes:
+            self._drop_quarantine(
+                quarantine_path,
+                rollout_path=path,
+                session_id=session_id,
+                reason="quarantine_size_cap_exceeded",
+                start_offset=retained_start,
+                end_offset=end_offset,
+            )
+            return end_offset
         if (
             existing is not None
-            and int(existing["start_offset"]) <= start_offset
-            and int(existing["end_offset"]) >= end_offset
+            and existing_header.get("schema_version")
+            == _QUARANTINE_CHUNKED_SCHEMA
+            and existing_start is not None
+            and existing_end is not None
+            and existing_start <= start_offset <= existing_end < end_offset
         ):
-            return
+            chunk_bytes = raw_bytes[existing_end - start_offset:]
+            self._append_quarantine_chunk(
+                quarantine_path,
+                end_offset=end_offset,
+                chunk_bytes=chunk_bytes,
+            )
+            self._quarantine_spans[quarantine_path] = (
+                existing_start,
+                end_offset,
+            )
+            return end_offset
+
+        header = {
+            "schema_version": _QUARANTINE_CHUNKED_SCHEMA,
+            "rollout_path": str(path),
+            "session_id": session_id,
+            "start_offset": start_offset,
+            "captured_cwd": captured_cwd,
+            "created_at": int(time.time()),
+        }
+        chunks: list[dict[str, Any]] = []
+        chunk_start = start_offset
+        if (
+            existing is not None
+            and existing_start is not None
+            and existing_end is not None
+            and existing_start <= start_offset <= existing_end
+        ):
+            header["start_offset"] = existing_start
+            header["captured_cwd"] = (
+                existing_header.get("captured_cwd") or captured_cwd
+            )
+            created_at = existing_header.get("created_at")
+            if created_at:
+                header["created_at"] = int(created_at)
+            chunks.extend(existing_chunks)
+            chunk_start = existing_end
+        chunks.append({
+            "end_offset": end_offset,
+            "raw_bytes_b64": base64.b64encode(
+                raw_bytes[chunk_start - start_offset:]
+            ).decode("ascii"),
+        })
         temp_path = quarantine_path.with_name(
             f".{quarantine_path.name}.{uuid.uuid4().hex}.tmp"
         )
         try:
             with temp_path.open("w", encoding="utf-8") as f:
-                json.dump(payload, f, sort_keys=True, separators=(",", ":"))
+                json.dump(header, f, sort_keys=True, separators=(",", ":"))
                 f.write("\n")
+                for chunk in chunks:
+                    json.dump(chunk, f, sort_keys=True, separators=(",", ":"))
+                    f.write("\n")
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(temp_path, quarantine_path)
@@ -700,26 +787,79 @@ class RolloutWatcher:
                 temp_path.unlink()
             except FileNotFoundError:
                 pass
+        self._quarantine_spans[quarantine_path] = (
+            int(header["start_offset"]),
+            end_offset,
+        )
+        return end_offset
 
-    def _load_quarantine(self, quarantine_path: Path) -> dict[str, Any] | None:
+    def _append_quarantine_chunk(
+        self,
+        quarantine_path: Path,
+        *,
+        end_offset: int,
+        chunk_bytes: bytes,
+    ) -> None:
+        record = json.dumps(
+            {
+                "end_offset": end_offset,
+                "raw_bytes_b64": base64.b64encode(chunk_bytes).decode("ascii"),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        with quarantine_path.open("ab") as f:
+            f.write(record.encode("ascii") + b"\n")
+            f.flush()
+            os.fsync(f.fileno())
+
+    def _read_quarantine_records(
+        self,
+        quarantine_path: Path,
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]] | None:
         try:
             resolved_root = self._quarantine_root().resolve()
             resolved_path = quarantine_path.resolve(strict=True)
             resolved_path.relative_to(resolved_root)
-            payload = json.loads(resolved_path.read_text(encoding="utf-8"))
-            if (
-                not isinstance(payload, dict)
-                or payload.get("schema_version") != _QUARANTINE_SCHEMA
-            ):
+            lines = resolved_path.read_text(encoding="utf-8").splitlines()
+            if not lines:
                 return None
-            rollout_path = str(payload["rollout_path"])
-            session_id = str(payload["session_id"])
-            start_offset = int(payload["start_offset"])
-            end_offset = int(payload["end_offset"])
-            raw_bytes = base64.b64decode(
-                str(payload["raw_bytes_b64"]),
-                validate=True,
-            )
+            first = json.loads(lines[0])
+            if not isinstance(first, dict):
+                return None
+            if first.get("schema_version") == _QUARANTINE_SCHEMA:
+                header = {
+                    "schema_version": _QUARANTINE_SCHEMA,
+                    "rollout_path": str(first["rollout_path"]),
+                    "session_id": str(first["session_id"]),
+                    "start_offset": int(first["start_offset"]),
+                    "captured_cwd": first.get("captured_cwd"),
+                    "created_at": int(first.get("updated_at") or 0),
+                }
+                chunks: list[dict[str, Any]] = [{
+                    "end_offset": int(first["end_offset"]),
+                    "raw_bytes_b64": str(first["raw_bytes_b64"]),
+                }]
+            elif first.get("schema_version") == _QUARANTINE_CHUNKED_SCHEMA:
+                header = {
+                    "schema_version": _QUARANTINE_CHUNKED_SCHEMA,
+                    "rollout_path": str(first["rollout_path"]),
+                    "session_id": str(first["session_id"]),
+                    "start_offset": int(first["start_offset"]),
+                    "captured_cwd": first.get("captured_cwd"),
+                    "created_at": int(first.get("created_at") or 0),
+                }
+                chunks = []
+                for line in lines[1:]:
+                    record = json.loads(line)
+                    if not isinstance(record, dict):
+                        return None
+                    chunks.append({
+                        "end_offset": int(record["end_offset"]),
+                        "raw_bytes_b64": str(record["raw_bytes_b64"]),
+                    })
+            else:
+                return None
         except (
             OSError,
             ValueError,
@@ -729,15 +869,17 @@ class RolloutWatcher:
         ) as e:
             log.warning("bad rollout quarantine %s: %s", quarantine_path, e)
             return None
-        if (
-            not rollout_path
-            or not session_id
-            or start_offset < 0
-            or end_offset < start_offset
-            or len(raw_bytes) != end_offset - start_offset
-            or (raw_bytes and not raw_bytes.endswith(b"\n"))
-        ):
+        rollout_path = str(header["rollout_path"])
+        session_id = str(header["session_id"])
+        start_offset = int(header["start_offset"])
+        if not rollout_path or not session_id or start_offset < 0:
             return None
+        previous_end = start_offset
+        for chunk in chunks:
+            end_offset = int(chunk["end_offset"])
+            if end_offset <= previous_end:
+                return None
+            previous_end = end_offset
         rollout = Path(rollout_path)
         if (
             self._session_id_from_path(rollout) != session_id
@@ -745,16 +887,120 @@ class RolloutWatcher:
             != quarantine_path.resolve(strict=False)
         ):
             return None
+        self._quarantine_spans[quarantine_path] = (start_offset, previous_end)
+        return header, chunks
+
+    def _load_quarantine_header(
+        self,
+        quarantine_path: Path,
+    ) -> dict[str, Any] | None:
+        records = self._read_quarantine_records(quarantine_path)
+        if records is None:
+            return None
+        return records[0]
+
+    def _load_quarantine(self, quarantine_path: Path) -> dict[str, Any] | None:
+        records = self._read_quarantine_records(quarantine_path)
+        if records is None:
+            return None
+        header, chunks = records
+        start_offset = int(header["start_offset"])
+        previous_end = start_offset
+        pieces: list[bytes] = []
+        try:
+            for chunk in chunks:
+                end_offset = int(chunk["end_offset"])
+                piece = base64.b64decode(
+                    str(chunk["raw_bytes_b64"]),
+                    validate=True,
+                )
+                if len(piece) != end_offset - previous_end:
+                    return None
+                pieces.append(piece)
+                previous_end = end_offset
+        except (ValueError, TypeError) as e:
+            log.warning("bad rollout quarantine %s: %s", quarantine_path, e)
+            return None
+        raw_bytes = b"".join(pieces)
+        if not raw_bytes or not raw_bytes.endswith(b"\n"):
+            return None
         return {
-            **payload,
-            "rollout_path": rollout_path,
-            "session_id": session_id,
+            **header,
+            "rollout_path": str(header["rollout_path"]),
+            "session_id": str(header["session_id"]),
             "start_offset": start_offset,
-            "end_offset": end_offset,
+            "end_offset": previous_end,
             "raw_bytes": raw_bytes,
         }
 
+    def _enforce_quarantine_age_cap(
+        self,
+        quarantine_path: Path,
+        *,
+        header: dict[str, Any],
+    ) -> None:
+        created_at = int(header.get("created_at") or 0)
+        if not created_at:
+            return
+        if int(time.time()) - created_at <= self.quarantine_max_age_s:
+            return
+        span = self._quarantine_spans.get(quarantine_path)
+        if span is None:
+            return
+        self._drop_quarantine(
+            quarantine_path,
+            rollout_path=Path(str(header["rollout_path"])),
+            session_id=str(header["session_id"]),
+            reason="quarantine_age_cap_exceeded",
+            start_offset=span[0],
+            end_offset=span[1],
+        )
+
+    def _drop_undecodable_quarantine(self, quarantine_path: Path) -> None:
+        try:
+            age = time.time() - quarantine_path.stat().st_mtime
+        except OSError:
+            return
+        if age <= self.quarantine_max_age_s:
+            return
+        self._record_health(
+            subsystem="rollout_watcher.quarantine",
+            status="degraded",
+            reason="quarantine_dropped_undecodable",
+            details={"quarantine_path": str(quarantine_path)},
+        )
+        self._delete_quarantine(quarantine_path)
+
+    def _drop_quarantine(
+        self,
+        quarantine_path: Path,
+        *,
+        rollout_path: Path,
+        session_id: str,
+        reason: str,
+        start_offset: int,
+        end_offset: int,
+    ) -> None:
+        self._record_health(
+            subsystem="rollout_watcher.quarantine",
+            status="degraded",
+            reason=reason,
+            details={
+                "path": str(rollout_path),
+                "session_id": session_id,
+                "quarantine_path": str(quarantine_path),
+                "dropped_start_offset": int(start_offset),
+                "dropped_end_offset": int(end_offset),
+            },
+        )
+        if int(end_offset) > self.state.get_tail_offset(str(rollout_path)):
+            self.state.set_tail_offset(str(rollout_path), int(end_offset))
+        if self.offsets.get(rollout_path, 0) < int(end_offset):
+            self.offsets[rollout_path] = int(end_offset)
+        self._delete_quarantine(quarantine_path)
+
     def _delete_quarantine(self, quarantine_path: Path) -> None:
+        self._quarantine_spans.pop(quarantine_path, None)
         try:
             quarantine_path.unlink()
         except FileNotFoundError:

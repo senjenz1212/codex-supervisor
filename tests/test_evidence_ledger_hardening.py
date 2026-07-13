@@ -681,8 +681,19 @@ def test_filesystem_trusted_pin_store_rejects_rollback_and_fork(tmp_path):
     assert pins.get(latest_identity) == latest_identity
     assert pins.latest("ledger-run") == latest_identity
 
+    pins.pin(first_identity)
+    assert pins.get(first_identity) == first_identity
+    assert pins.latest("ledger-run") == latest_identity
+
+    early_checkpoints = LedgerCheckpointStore(tmp_path / "early-checkpoints")
+    early = _append_checkpoint(
+        early_checkpoints,
+        events[:1],
+        key,
+        created_at=99,
+    )
     with pytest.raises(CheckpointIntegrityError, match="rollback"):
-        pins.pin(first_identity)
+        pins.pin(checkpoint_identity(early.checkpoint))
 
     forked = dict(latest_identity)
     forked["head_event_id"] = 999

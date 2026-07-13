@@ -23,6 +23,7 @@ from .cursor_agent import (
     _outcome_block_contract,
 )
 from .dual_agent import ProbeResult, evaluate_outcome_fidelity
+from .redaction import redact
 
 
 CodexRunner = Callable[..., subprocess.CompletedProcess[str]]
@@ -122,12 +123,13 @@ class CodexCliReviewer:
 
             raw_stdout = completed.stdout or ""
             raw_stderr = completed.stderr or ""
+            safe_stderr = redact(raw_stderr)
             metadata = _parse_codex_cli_jsonl(raw_stdout)
             transcript = "\n\n".join(
                 item
                 for item in (
                     raw_stdout,
-                    f"[stderr]\n{raw_stderr}" if raw_stderr else "",
+                    f"[stderr]\n{safe_stderr}" if safe_stderr else "",
                     "[agent_messages]\n" + "\n".join(metadata["agent_messages"])
                     if metadata["agent_messages"]
                     else "",
@@ -138,7 +140,7 @@ class CodexCliReviewer:
                 reason = "codex_cli_nonzero_exit"
                 details = {
                     "returncode": completed.returncode,
-                    "stderr_tail": raw_stderr[-2000:],
+                    "stderr_tail": safe_stderr[-2000:],
                 }
                 failed_attempts.append({
                     "attempt": attempt,

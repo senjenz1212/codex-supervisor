@@ -113,12 +113,19 @@ def normalise_overlay_target(path: str | Path, *, repo_root: str | Path) -> str:
         raise PolicyOverlayError("policy overlay target path is required")
     candidate = Path(raw).expanduser()
     if candidate.is_absolute():
-        try:
-            raw = Path(os.path.abspath(candidate)).relative_to(
-                repo_root_path
-            ).as_posix()
-        except ValueError as exc:
-            raise PolicyOverlayError(f"policy overlay target is outside repo root: {path}") from exc
+        for resolved in (
+            Path(os.path.abspath(candidate)),
+            Path(os.path.realpath(candidate)),
+        ):
+            try:
+                raw = resolved.relative_to(repo_root_path).as_posix()
+                break
+            except ValueError:
+                continue
+        else:
+            raise PolicyOverlayError(
+                f"policy overlay target is outside repo root: {path}"
+            )
     parts: list[str] = []
     for part in raw.split("/"):
         if part in {"", "."}:

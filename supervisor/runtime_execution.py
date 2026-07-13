@@ -65,14 +65,36 @@ def execute_agent_task_blocking(
     synchronous caller itself is reached from an already-running async loop.
     """
 
+    loop_state: dict[str, object] = {}
+
+    async def _execute() -> RuntimeExecution:
+        loop_state["loop"] = asyncio.get_running_loop()
+        loop_state["task"] = asyncio.current_task()
+        return await execute_agent_task(runtime, task)
+
     with ThreadPoolExecutor(
         max_workers=1,
         thread_name_prefix="agent-runtime-execution",
     ) as pool:
-        return pool.submit(
-            asyncio.run,
-            execute_agent_task(runtime, task),
-        ).result()
+        future = pool.submit(asyncio.run, _execute())
+        try:
+            return future.result()
+        except KeyboardInterrupt:
+            future.cancel()
+            loop = loop_state.get("loop")
+            inner_task = loop_state.get("task")
+            if isinstance(loop, asyncio.AbstractEventLoop) and isinstance(
+                inner_task, asyncio.Task
+            ):
+                try:
+                    loop.call_soon_threadsafe(inner_task.cancel)
+                except RuntimeError:
+                    pass
+            try:
+                future.result()
+            except BaseException:
+                pass
+            raise
 
 
 def runtime_task_runner(factory: RuntimeFactory) -> RuntimeTaskRunner:

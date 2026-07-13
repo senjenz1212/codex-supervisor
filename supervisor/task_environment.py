@@ -467,12 +467,20 @@ class GenericRepositoryTask:
         workspace.parent.mkdir(parents=True, exist_ok=False)
         await asyncio.to_thread(
             _run,
-            ("git", "clone", "--no-hardlinks", "--quiet", spec.repo, str(workspace)),
+            (
+                "git",
+                "clone",
+                "--no-hardlinks",
+                "--quiet",
+                "--",
+                spec.repo,
+                str(workspace),
+            ),
             None,
         )
         await asyncio.to_thread(
             _run,
-            ("git", "checkout", "--quiet", "--detach", spec.revision),
+            ("git", "checkout", "--quiet", "--detach", spec.revision, "--"),
             workspace,
         )
         resolved_revision = (
@@ -556,6 +564,8 @@ class GenericRepositoryTask:
             raise ValueError("task spec missing pinned fields: " + ", ".join(missing))
         if not _is_git_commit(spec.revision):
             raise ValueError("task spec revision must be a full immutable Git commit")
+        if str(spec.repo).strip().startswith("-"):
+            raise ValueError("task spec repo must not begin with '-'")
         for field_name, value in (
             ("dataset_hash", spec.dataset_hash),
             ("split_hash", spec.split_hash),
@@ -748,7 +758,7 @@ class UnityTestFrameworkVerifier:
         metadata = dict(frozen_result.metadata)
         repo = str(metadata.get("repo") or "").strip()
         revision = str(metadata.get("revision") or "").strip().lower()
-        if not repo or not _is_git_commit(revision):
+        if not repo or repo.startswith("-") or not _is_git_commit(revision):
             return _unity_infrastructure_result(
                 "frozen_result_missing_pinned_repository",
             )
@@ -769,13 +779,21 @@ class UnityTestFrameworkVerifier:
                         "clone",
                         "--no-hardlinks",
                         "--quiet",
+                        "--",
                         repo,
                         str(project),
                     ),
                     None,
                 )
                 _run(
-                    ("git", "checkout", "--quiet", "--detach", revision),
+                    (
+                        "git",
+                        "checkout",
+                        "--quiet",
+                        "--detach",
+                        revision,
+                        "--",
+                    ),
                     project,
                 )
                 if frozen_result.patch:
@@ -956,19 +974,39 @@ def _collect_repository_patch(workspace: Path, base_revision: str) -> str:
         )
 
 
+_RUN_BASE_ENV_KEYS = (
+    "PATH",
+    "HOME",
+    "TMPDIR",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+)
+_RUN_TIMEOUT_S = 600.0
+
+
 def _run(
     argv: tuple[str, ...],
     cwd: Path | None,
     *,
     env: Mapping[str, str] | None = None,
 ) -> str:
+    run_env = {
+        key: os.environ[key]
+        for key in _RUN_BASE_ENV_KEYS
+        if key in os.environ
+    }
+    run_env["GIT_TERMINAL_PROMPT"] = "0"
+    if env is not None:
+        run_env.update(env)
     return subprocess.run(
         argv,
         cwd=cwd,
-        env=None if env is None else {**os.environ, **env},
+        env=run_env,
         text=True,
         capture_output=True,
         check=True,
+        timeout=_RUN_TIMEOUT_S,
     ).stdout
 
 
