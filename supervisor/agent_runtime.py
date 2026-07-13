@@ -28,15 +28,68 @@ from .process_containment import (
     new_containment_id,
     terminate_containment,
 )
-from .provider_routing import (
-    direct_anthropic_runtime_env,
-    without_anthropic_env,
-)
-
-
 RUN_RESULT_SCHEMA_VERSION = "supervisor-agent-run-result/v1"
 _MACOS_SANDBOX_EXEC = Path("/usr/bin/sandbox-exec")
 _WORKSPACE_ONLY_ISOLATION_MODE = "workspace_only"
+_PROCESS_ENV_KEYS = frozenset({
+    "HOME",
+    "PATH",
+    "SHELL",
+    "USER",
+    "LOGNAME",
+    "TMPDIR",
+    "TMP",
+    "TEMP",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TERM",
+    "COLORTERM",
+    "NO_COLOR",
+    "FORCE_COLOR",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "REQUESTS_CA_BUNDLE",
+    "CURL_CA_BUNDLE",
+    "NODE_EXTRA_CA_CERTS",
+})
+_SUPERVISOR_LAUNCH_ENV_KEYS = frozenset({
+    "SUPERVISOR_LAUNCH_ID",
+    "SUPERVISOR_LAUNCH_NONCE",
+    "SUPERVISOR_WORKFLOW_RUN_ID",
+    "SUPERVISOR_WORKFLOW_TASK_ID",
+    "SUPERVISOR_TARGET_KIND",
+})
+_CLAUDE_ENV_KEYS = frozenset({
+    *_PROCESS_ENV_KEYS,
+    *_SUPERVISOR_LAUNCH_ENV_KEYS,
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL",
+    "CLAUDE_CODE_EXTRA_BODY",
+    "CLAUDE_CONFIG_DIR",
+})
+_CODEX_ENV_KEYS = frozenset({
+    *_PROCESS_ENV_KEYS,
+    *_SUPERVISOR_LAUNCH_ENV_KEYS,
+    "CODEX_HOME",
+    "CODEX_API_KEY",
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "OPENAI_ORG_ID",
+    "OPENAI_ORGANIZATION",
+    "OPENAI_PROJECT_ID",
+})
+_CLAUDE_OPUS_ULTIMATE_MODEL = "opus"
+_CLAUDE_OPUS_UNDERLYING_MODEL = "claude-opus-4-8"
+_CLAUDE_OPUS_SAFE_OVERRIDE_MODEL = "claude-opus-4-6"
+_CLAUDE_OPUS_ULTIMATE_EXTRA_BODY = {
+    "thinking": {"type": "adaptive"},
+    "output_config": {"effort": "xhigh"},
+}
+_CLAUDE_OPUS_SAFE_OVERRIDE_EXTRA_BODY = {
+    "thinking": {"type": "adaptive"},
+    "output_config": {"effort": "max"},
+}
 
 
 @dataclass(frozen=True)
@@ -47,7 +100,7 @@ class AgentTask:
     model: str
     timeout_s: float = 900
     env: Mapping[str, str] = field(default_factory=dict)
-    inherit_env: bool = True
+    inherit_env: bool = False
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
 
@@ -325,6 +378,22 @@ class CommandAgentRuntime:
         self._events[run_id] = []
         self._generation_event_offsets[run_id] = 0
         self._session_ids[run_id] = run_id
+        transport_capabilities: Mapping[str, bool] = {}
+        capability_provider = getattr(
+            self._transport,
+            "runtime_capabilities",
+            None,
+        )
+        if callable(capability_provider):
+            provided = capability_provider()
+            if not isinstance(provided, Mapping):
+                raise ValueError(
+                    "runtime transport capabilities must be a mapping"
+                )
+            transport_capabilities = {
+                str(key): bool(value)
+                for key, value in provided.items()
+            }
         return AgentRunHandle(
             run_id=run_id,
             task_id=task.task_id,
@@ -332,15 +401,23 @@ class CommandAgentRuntime:
             session_id=run_id,
             capabilities={
                 **dict(self.capabilities),
+                **transport_capabilities,
                 "filesystem_isolation": supports_isolation,
             },
         )
 
     async def resume(self, handle: AgentRunHandle, instruction: str) -> None:
         task = self._task_for(handle)
+        token = self._token_for(handle)
+        active_probe = getattr(self._transport, "is_active", None)
+        if callable(active_probe) and bool(active_probe(token)):
+            raise RuntimeError(
+                "cannot resume while the previous runtime generation is active"
+            )
+        await self._synchronize_completed_generation(handle)
         session_id = self._session_ids.get(handle.run_id, handle.session_id)
         await self._transport.resume(
-            self._token_for(handle),
+            token,
             argv=self._resume_argv(task, session_id=session_id, instruction=instruction),
             cwd=Path(task.cwd).resolve(),
             env=self._runtime_env(task),
@@ -367,20 +444,9 @@ class CommandAgentRuntime:
     async def collect(self, handle: AgentRunHandle) -> AgentRunResult:
         task = self._task_for(handle)
         transport_result = await self._transport.collect(self._token_for(handle))
+        self._merge_transport_events(handle, transport_result)
         events = self._events[handle.run_id]
-        # Streaming consumes a prefix of raw transport events. Merge by position
-        # rather than equality so legitimately repeated events remain intact.
-        streamed_count = min(len(events), len(transport_result.raw_events))
-        events.extend(
-            normalize_runtime_event(raw)
-            for raw in transport_result.raw_events[streamed_count:]
-        )
         session_id = self._session_ids.get(handle.run_id, handle.session_id)
-        for raw in transport_result.raw_events:
-            discovered = _session_id(raw)
-            if discovered:
-                session_id = discovered
-        self._session_ids[handle.run_id] = session_id
         generation_start = self._generation_event_offsets.get(handle.run_id, 0)
         status = _terminal_status(
             events[generation_start:],
@@ -438,6 +504,34 @@ class CommandAgentRuntime:
             metadata=result_payload["metadata"],
         )
 
+    async def _synchronize_completed_generation(
+        self,
+        handle: AgentRunHandle,
+    ) -> None:
+        result = await self._transport.collect(self._token_for(handle))
+        self._merge_transport_events(handle, result)
+
+    def _merge_transport_events(
+        self,
+        handle: AgentRunHandle,
+        transport_result: RuntimeTransportResult,
+    ) -> None:
+        events = self._events[handle.run_id]
+        # Streaming consumes a prefix of raw transport events. Merge by
+        # position rather than equality so legitimately repeated events remain
+        # intact.
+        streamed_count = min(len(events), len(transport_result.raw_events))
+        events.extend(
+            normalize_runtime_event(raw)
+            for raw in transport_result.raw_events[streamed_count:]
+        )
+        session_id = self._session_ids.get(handle.run_id, handle.session_id)
+        for raw in transport_result.raw_events:
+            discovered = _session_id(raw)
+            if discovered:
+                session_id = discovered
+        self._session_ids[handle.run_id] = session_id
+
     def _task_for(self, handle: AgentRunHandle) -> AgentTask:
         try:
             return self._tasks[handle.run_id]
@@ -451,7 +545,15 @@ class CommandAgentRuntime:
             raise KeyError(f"unknown runtime handle: {handle.run_id}") from exc
 
     def _runtime_env(self, task: AgentTask) -> dict[str, str]:
-        inherited = dict(os.environ) if task.inherit_env else {}
+        inherited = (
+            dict(os.environ)
+            if task.inherit_env
+            else {
+                key: value
+                for key, value in os.environ.items()
+                if key in _PROCESS_ENV_KEYS
+            }
+        )
         return {
             **inherited,
             **{str(k): str(v) for k, v in task.env.items()},
@@ -475,6 +577,90 @@ class CommandAgentRuntime:
         raise NotImplementedError
 
 
+def _allowlisted_environment(
+    source: Mapping[str, str],
+    *,
+    allowed_keys: frozenset[str],
+) -> dict[str, str]:
+    """Copy only runtime necessities and credentials for one provider edge."""
+
+    return {
+        str(key): str(value)
+        for key, value in source.items()
+        if key in allowed_keys and str(value)
+    }
+
+
+def _direct_anthropic_runtime_env(
+    source: Mapping[str, str],
+    *,
+    requested_model: str,
+    lead_gate: str,
+) -> dict[str, str]:
+    """Build the least-privilege Claude child environment.
+
+    Operator-only routing controls are consumed here and never forwarded. The
+    resulting mapping is also safe when the caller accidentally supplied a
+    complete daemon environment.
+    """
+
+    routed = {str(key): str(value) for key, value in source.items()}
+    if _uses_adaptive_opus_effort(requested_model) and lead_gate:
+        pin = _underlying_opus_model_for_gate(routed, lead_gate)
+        if pin is None:
+            routed.pop("ANTHROPIC_DEFAULT_OPUS_MODEL", None)
+        else:
+            routed["ANTHROPIC_DEFAULT_OPUS_MODEL"] = pin
+        routed["CLAUDE_CODE_EXTRA_BODY"] = json.dumps(
+            _opus_extra_body_for_pin(pin),
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    elif not _uses_adaptive_opus_effort(requested_model):
+        routed.pop("ANTHROPIC_DEFAULT_OPUS_MODEL", None)
+        routed.pop("CLAUDE_CODE_EXTRA_BODY", None)
+    return _allowlisted_environment(
+        routed,
+        allowed_keys=_CLAUDE_ENV_KEYS,
+    )
+
+
+def _uses_adaptive_opus_effort(model: str) -> bool:
+    return (
+        model == _CLAUDE_OPUS_ULTIMATE_MODEL
+        or model == _CLAUDE_OPUS_UNDERLYING_MODEL
+        or model.startswith(f"{_CLAUDE_OPUS_UNDERLYING_MODEL}-")
+    )
+
+
+def _underlying_opus_model_for_gate(
+    source: Mapping[str, str],
+    gate: str,
+) -> str | None:
+    if gate == "execution":
+        override = _opus_pin_override(
+            source.get("CODEX_SUPERVISOR_EXECUTION_OPUS_MODEL")
+        )
+        return override or None
+    override = _opus_pin_override(
+        source.get("CODEX_SUPERVISOR_PLANNING_OPUS_MODEL")
+    )
+    return override or _CLAUDE_OPUS_UNDERLYING_MODEL
+
+
+def _opus_pin_override(value: str | None) -> str:
+    selected = str(value or "").strip()
+    if selected and not selected.startswith("claude-opus-"):
+        return _CLAUDE_OPUS_SAFE_OVERRIDE_MODEL
+    return selected
+
+
+def _opus_extra_body_for_pin(pin: str | None) -> dict[str, object]:
+    if pin and pin.startswith(_CLAUDE_OPUS_SAFE_OVERRIDE_MODEL):
+        return _CLAUDE_OPUS_SAFE_OVERRIDE_EXTRA_BODY
+    return _CLAUDE_OPUS_ULTIMATE_EXTRA_BODY
+
+
 class ClaudeCodeRuntime(CommandAgentRuntime):
     kind = "claude_code"
     capabilities = {
@@ -495,15 +681,16 @@ class ClaudeCodeRuntime(CommandAgentRuntime):
         super().__init__(transport=transport, binary=binary)
 
     def _runtime_env(self, task: AgentTask) -> dict[str, str]:
+        candidate = super()._runtime_env(task)
         lead_invocation = task.metadata.get("lead_invocation")
         lead_gate = (
             str(lead_invocation.get("gate") or "")
             if isinstance(lead_invocation, Mapping)
             else ""
         )
-        return direct_anthropic_runtime_env(
-            super()._runtime_env(task),
-            requested_model=task.model,
+        return _direct_anthropic_runtime_env(
+            candidate,
+            requested_model=str(task.model),
             lead_gate=lead_gate,
         )
 
@@ -605,7 +792,10 @@ class CodexRuntime(CommandAgentRuntime):
         super().__init__(transport=transport, binary=binary)
 
     def _runtime_env(self, task: AgentTask) -> dict[str, str]:
-        return without_anthropic_env(super()._runtime_env(task))
+        return _allowlisted_environment(
+            super()._runtime_env(task),
+            allowed_keys=_CODEX_ENV_KEYS,
+        )
 
     def _start_argv(self, task: AgentTask) -> tuple[str, ...]:
         argv = [
@@ -770,6 +960,9 @@ class SubprocessRuntimeTransport:
             and _MACOS_SANDBOX_EXEC.is_file()
             and os.access(_MACOS_SANDBOX_EXEC, os.X_OK)
         )
+
+    def is_active(self, token: str) -> bool:
+        return not self._get(token).done.done()
 
     async def start(
         self,
@@ -1102,7 +1295,7 @@ def normalize_runtime_event(raw: Mapping[str, Any]) -> RuntimeEvent:
         "message": "agent.message",
         "turn.completed": "turn.completed",
         "turn.failed": "turn.failed",
-        "task_complete": "run.completed",
+        "task_complete": "turn.completed",
         "thread.completed": "run.completed",
         "session_end": "run.completed",
         "run.completed": "run.completed",

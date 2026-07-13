@@ -413,14 +413,17 @@ class RecordingVerifier:
         assert "arm" not in frozen_result.metadata
         assert "assignment_id" not in frozen_result.metadata
         assert frozen_result.metadata == {
-            "nested": {"safe": [{}, {"public": "ok"}]},
-            "public_evidence": "ok",
             "repo": "repo",
             "canonical_repo_id": "example/repo",
             "revision": "1" * 40,
             "instance_id": "task-1",
             "canonical_task_id": _task_spec().canonical_task_id,
+            "verification_execution_id": (
+                frozen_result.run_result_hash
+            ),
         }
+        assert len(frozen_result.run_result_hash) == 64
+        assert frozen_result.output == ""
         return Grade(
             verifier_id=self.verifier_id,
             verifier_version=self.verifier_version,
@@ -429,6 +432,31 @@ class RecordingVerifier:
             passed=True,
             score=1.0,
             evidence={"hidden": True},
+        )
+
+
+def _assert_terminal_itt_failure(
+    result,
+    *,
+    error_match: str,
+    classification: str | None = None,
+) -> None:
+    failed = [
+        outcome
+        for outcome in result.outcomes
+        if outcome.status == "failed"
+    ]
+    assert failed
+    assert any(error_match in outcome.error for outcome in failed)
+    assert all(
+        outcome.grade.passed is False
+        and outcome.grade.evidence["intention_to_treat"] is True
+        for outcome in failed
+    )
+    if classification is not None:
+        assert all(
+            outcome.failure_classification == classification
+            for outcome in failed
         )
 
 
@@ -619,8 +647,9 @@ async def test_verifier_is_blinded_and_arm_identity_is_joined_after_grading(
         assert set(outcome.blinding_removed_paths) == {
             "metadata.arm",
             "metadata.assignment_id",
-            "metadata.nested.treatment",
-            "metadata.nested.safe[0].harness_arm",
+            "metadata.nested",
+            "metadata.public_evidence",
+            "output",
         }
 
 
@@ -826,11 +855,16 @@ async def test_grade_must_match_blinded_result_and_task_verifier_pins(
 ) -> None:
     store = SqliteExperimentStore(tmp_path / f"{match}.db")
 
-    with pytest.raises(ValueError, match=match):
-        await ExperimentKernel(
-            store=store,
-            executor=RecordingExecutor(store),
-        ).run_task(_experiment(), _task_spec(), verifier)
+    result = await ExperimentKernel(
+        store=store,
+        executor=RecordingExecutor(store),
+    ).run_task(_experiment(), _task_spec(), verifier)
+
+    _assert_terminal_itt_failure(
+        result,
+        error_match=match,
+        classification="grade_binding_failure",
+    )
 
 
 @pytest.mark.asyncio
@@ -907,11 +941,16 @@ async def test_kernel_rejects_executor_verifier_identity_substitution(
                 ),
             )
 
-    with pytest.raises(ValueError, match="persisted TaskSpec"):
-        await ExperimentKernel(
-            store=store,
-            executor=SubstitutingExecutor(store),
-        ).run_task(_experiment(), _task_spec(), RecordingVerifier())
+    result = await ExperimentKernel(
+        store=store,
+        executor=SubstitutingExecutor(store),
+    ).run_task(_experiment(), _task_spec(), RecordingVerifier())
+
+    _assert_terminal_itt_failure(
+        result,
+        error_match="persisted TaskSpec",
+        classification="post_launch_frozen_result_failure",
+    )
 
 
 @pytest.mark.asyncio
@@ -925,11 +964,16 @@ async def test_kernel_requires_typed_execution_receipt(
             execution = await super().execute(**kwargs)
             return replace(execution, receipt=None, metadata={})
 
-    with pytest.raises(ValueError, match="typed execution receipt"):
-        await ExperimentKernel(
-            store=store,
-            executor=UnreceiptedExecutor(store),
-        ).run_task(_experiment(), _task_spec(), RecordingVerifier())
+    result = await ExperimentKernel(
+        store=store,
+        executor=UnreceiptedExecutor(store),
+    ).run_task(_experiment(), _task_spec(), RecordingVerifier())
+
+    _assert_terminal_itt_failure(
+        result,
+        error_match="typed execution receipt",
+        classification="post_launch_receipt_failure",
+    )
 
 
 @pytest.mark.asyncio
@@ -973,7 +1017,10 @@ async def test_explicit_hermetic_tracer_may_rebind_fixture_annotation(
 
         async def verify(self, frozen_result: FrozenTaskResult) -> Grade:
             assert "harness_arm" not in frozen_result.metadata
-            assert frozen_result.metadata["fixture_annotation"] == "recorded"
+            assert "fixture_annotation" not in frozen_result.metadata
+            assert len(
+                frozen_result.metadata["verification_execution_id"]
+            ) == 64
             return Grade(
                 verifier_id=self.verifier_id,
                 verifier_version=self.verifier_version,
@@ -1035,11 +1082,97 @@ async def test_kernel_rejects_execution_receipt_binding_substitution(
                 ),
             )
 
-    with pytest.raises(ValueError, match=message):
-        await ExperimentKernel(
-            store=store,
-            executor=MisboundExecutor(store),
-        ).run_task(_experiment(), _task_spec(), RecordingVerifier())
+    result = await ExperimentKernel(
+        store=store,
+        executor=MisboundExecutor(store),
+    ).run_task(_experiment(), _task_spec(), RecordingVerifier())
+
+    _assert_terminal_itt_failure(
+        result,
+        error_match=message,
+        classification="post_launch_receipt_failure",
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("launch_surface", ["launch_metadata", "runtime_plan"])
+async def test_kernel_rejects_treatment_hash_mismatch_with_launched_plan(
+    tmp_path: Path,
+    launch_surface: str,
+) -> None:
+    store = SqliteExperimentStore(
+        tmp_path / f"launch-treatment-{launch_surface}.db"
+    )
+
+    class MismatchedLaunchExecutor(RecordingExecutor):
+        async def execute(self, **kwargs: Any) -> ArmExecution:
+            execution = await super().execute(**kwargs)
+            return replace(
+                execution,
+                metadata={
+                    **dict(execution.metadata),
+                    launch_surface: {
+                        **dict(execution.metadata[launch_surface]),
+                        "treatment_hash": "0" * 64,
+                    },
+                },
+            )
+
+    result = await ExperimentKernel(
+        store=store,
+        executor=MismatchedLaunchExecutor(store),
+    ).run_task(_experiment(), _task_spec(), RecordingVerifier())
+
+    _assert_terminal_itt_failure(
+        result,
+        error_match="treatment_hash",
+        classification="post_launch_receipt_failure",
+    )
+
+
+@pytest.mark.asyncio
+async def test_kernel_independently_rejects_mismatched_b_c_compute_hashes(
+    tmp_path: Path,
+) -> None:
+    store = SqliteExperimentStore(tmp_path / "compute-hash-mismatch.db")
+
+    class MismatchedComputeExecutor(RecordingExecutor):
+        async def execute(self, **kwargs: Any) -> ArmExecution:
+            execution = await super().execute(**kwargs)
+            if kwargs["arm"] is not Arm.C:
+                return execution
+            assert execution.receipt is not None
+            mismatched_hash = "f" * 64
+            receipt = replace(
+                execution.receipt,
+                compute_resource_hash=mismatched_hash,
+            )
+            return replace(
+                execution,
+                receipt=receipt,
+                metadata={
+                    **dict(execution.metadata),
+                    "runtime_plan": {
+                        **dict(execution.metadata["runtime_plan"]),
+                        "compute_resource_hash": mismatched_hash,
+                    },
+                    "launch_metadata": {
+                        **dict(execution.metadata["launch_metadata"]),
+                        "compute_resource_hash": mismatched_hash,
+                    },
+                },
+            )
+
+    result = await ExperimentKernel(
+        store=store,
+        executor=MismatchedComputeExecutor(store),
+    ).run_task(_experiment(), _task_spec(), RecordingVerifier())
+
+    _assert_terminal_itt_failure(
+        result,
+        error_match="compute/resource hashes must match",
+        classification="post_launch_receipt_failure",
+    )
 
 
 @pytest.mark.asyncio
@@ -1184,11 +1317,16 @@ async def test_kernel_rejects_shared_execution_and_isolation_identity(
                 )
             return replace(execution, receipt=receipt)
 
-    with pytest.raises(ValueError, match=f"shared {identity_field}"):
-        await ExperimentKernel(
-            store=store,
-            executor=SharedIdentityExecutor(store),
-        ).run_task(_experiment(), _task_spec(), RecordingVerifier())
+    result = await ExperimentKernel(
+        store=store,
+        executor=SharedIdentityExecutor(store),
+    ).run_task(_experiment(), _task_spec(), RecordingVerifier())
+
+    _assert_terminal_itt_failure(
+        result,
+        error_match=f"shared {identity_field}",
+        classification="post_launch_receipt_failure",
+    )
 
 
 @pytest.mark.asyncio
@@ -1293,11 +1431,16 @@ async def test_kernel_rejects_impossible_execution_accounting(
                 receipt=replace(receipt, latency_ms=-1),
             )
 
-    with pytest.raises(ValueError, match=message):
-        await ExperimentKernel(
-            store=store,
-            executor=ImpossibleAccountingExecutor(store),
-        ).run_task(_experiment(), _task_spec(), RecordingVerifier())
+    result = await ExperimentKernel(
+        store=store,
+        executor=ImpossibleAccountingExecutor(store),
+    ).run_task(_experiment(), _task_spec(), RecordingVerifier())
+
+    _assert_terminal_itt_failure(
+        result,
+        error_match=message,
+        classification="post_launch_receipt_failure",
+    )
 
 
 @pytest.mark.asyncio
@@ -1310,11 +1453,16 @@ async def test_non_operational_receipt_cannot_masquerade_as_operational(
         metadata={"execution_mode": "operational"},
     )
 
-    with pytest.raises(ValueError, match="mode does not match"):
-        await ExperimentKernel(
-            store=store,
-            executor=RecordingExecutor(store),
-        ).run_task(operational, _task_spec(), RecordingVerifier())
+    result = await ExperimentKernel(
+        store=store,
+        executor=RecordingExecutor(store),
+    ).run_task(operational, _task_spec(), RecordingVerifier())
+
+    _assert_terminal_itt_failure(
+        result,
+        error_match="mode does not match",
+        classification="post_launch_receipt_failure",
+    )
 
 
 class LeakingExecutor(RecordingExecutor):
@@ -1354,16 +1502,23 @@ class LeakingExecutor(RecordingExecutor):
 
 
 @pytest.mark.asyncio
-async def test_output_level_arm_identity_leakage_is_rejected(
+async def test_output_level_arm_identity_is_not_forwarded_to_verifier(
     tmp_path: Path,
 ) -> None:
     store = SqliteExperimentStore(tmp_path / "leak.db")
+    verifier = RecordingVerifier()
 
-    with pytest.raises(ValueError, match="arm identity leakage"):
-        await ExperimentKernel(
-            store=store,
-            executor=LeakingExecutor(store),
-        ).run_task(_experiment(), _task_spec(), RecordingVerifier())
+    result = await ExperimentKernel(
+        store=store,
+        executor=LeakingExecutor(store),
+    ).run_task(_experiment(), _task_spec(), verifier)
+
+    assert all(outcome.status == "completed" for outcome in result.outcomes)
+    assert all(item.output == "" for item in verifier.received)
+    assert all(
+        "candidate selected" not in json.dumps(item.to_dict())
+        for item in verifier.received
+    )
 
 
 @pytest.mark.parametrize("mutation", ["update", "delete"])
@@ -1461,7 +1616,7 @@ def test_concurrent_transition_appends_preserve_one_linear_hash_chain(
     )
 
 
-def test_blinding_rejects_identity_hidden_under_non_identity_key() -> None:
+def test_blinding_drops_non_allowlisted_metadata_and_uses_opaque_id() -> None:
     frozen = FrozenTaskResult.create(
         task_id="task-1",
         task_family="generic",
@@ -1472,8 +1627,14 @@ def test_blinding_rejects_identity_hidden_under_non_identity_key() -> None:
         metadata={"candidate_label": Arm.C.value},
     )
 
-    with pytest.raises(ValueError, match="arm identity leakage"):
-        blind_frozen_result(frozen)
+    blinded = blind_frozen_result(frozen)
+
+    assert "candidate_label" not in blinded.metadata
+    assert blinded.run_result_hash != frozen.run_result_hash
+    assert blinded.metadata["verification_execution_id"] == (
+        blinded.run_result_hash
+    )
+    assert blinded.output == ""
 
 
 @pytest.mark.parametrize(
@@ -1487,7 +1648,7 @@ def test_blinding_rejects_identity_hidden_under_non_identity_key() -> None:
         "runtime selected supervisor",
     ],
 )
-def test_blinding_rejects_encoded_or_free_text_arm_identity(
+def test_blinding_drops_encoded_or_free_text_from_unstructured_metadata(
     leaking_value: str,
 ) -> None:
     frozen = FrozenTaskResult.create(
@@ -1498,6 +1659,23 @@ def test_blinding_rejects_encoded_or_free_text_arm_identity(
         patch="patch",
         output="done",
         metadata={"public_evidence": leaking_value},
+    )
+
+    blinded = blind_frozen_result(frozen)
+
+    assert "public_evidence" not in blinded.metadata
+    assert leaking_value not in json.dumps(blinded.to_dict())
+
+
+def test_blinding_fails_closed_when_required_patch_contains_arm_identity() -> None:
+    frozen = FrozenTaskResult.create(
+        task_id="task-1",
+        task_family="generic",
+        task_spec_hash="task-spec",
+        run_result_hash="run-1",
+        patch="# candidate executed under arm C",
+        output="done",
+        metadata={},
     )
 
     with pytest.raises(ValueError, match="arm identity leakage"):
@@ -1538,11 +1716,16 @@ async def test_executor_frozen_result_hash_must_match_its_contents(
                 ),
             )
 
-    with pytest.raises(ValueError, match="FrozenTaskResult result_hash"):
-        await ExperimentKernel(
-            store=store,
-            executor=TamperingExecutor(store),
-        ).run_task(_experiment(), _task_spec(), RecordingVerifier())
+    result = await ExperimentKernel(
+        store=store,
+        executor=TamperingExecutor(store),
+    ).run_task(_experiment(), _task_spec(), RecordingVerifier())
+
+    _assert_terminal_itt_failure(
+        result,
+        error_match="FrozenTaskResult result_hash",
+        classification="post_launch_frozen_result_failure",
+    )
 
 
 def test_primary_comparison_cannot_move_off_compute_matched_c() -> None:
@@ -1613,7 +1796,16 @@ def test_reviewer_packets_blind_primary_and_adjudicate_only_persisted_reviews(
         "problem_statement": "fix",
     }
     assert primary["diff"]["patch"] == diff
-    assert primary["tests"]["receipt"] == tests
+    test_receipt = primary["tests"]["receipt"]
+    assert test_receipt["schema_version"] == (
+        "supervisor-blinded-test-receipt/v1"
+    )
+    assert "stdout" not in test_receipt
+    assert "stderr" not in test_receipt
+    assert "command" not in test_receipt
+    assert test_receipt["stdout_bytes"] == len(
+        tests["stdout"].encode("utf-8")
+    )
     assert len(primary["packet_hash"]) == 64
     assert adjudicator["lead_outcome"] == lead_outcome
     assert [
@@ -1635,26 +1827,28 @@ def test_reviewer_packets_blind_primary_and_adjudicate_only_persisted_reviews(
         {"leadVerdict": "b" * 64},
     ],
 )
-def test_primary_reviewer_packet_rejects_recursive_lead_outcome_fields(
+def test_primary_reviewer_packet_hashes_unrestricted_result_file_paths(
     result_files: dict[str, str],
 ) -> None:
-    with pytest.raises(ValueError, match="lead outcome"):
-        build_primary_reviewer_packet(
-            task={"task_id": "task-1", "problem": "fix"},
-            diff="diff --git a/a.py b/a.py\n",
-            tests=_raw_tests(result_files=result_files),
-        )
+    packet = build_primary_reviewer_packet(
+        task={"task_id": "task-1", "problem": "fix"},
+        diff="diff --git a/a.py b/a.py\n",
+        tests=_raw_tests(result_files=result_files),
+    )
+
+    serialized = json.dumps(packet.to_dict())
+    assert all(path not in serialized for path in result_files)
 
 
-def test_primary_reviewer_packet_rejects_semantic_lead_outcome_leak() -> None:
-    with pytest.raises(ValueError, match="lead outcome"):
-        build_primary_reviewer_packet(
-            task={"task_id": "task-1", "problem": "fix"},
-            diff="diff --git a/a.py b/a.py\n",
-            tests=_raw_tests(
-                stdout="The lead reviewer rejected this candidate."
-            ),
-        )
+def test_primary_reviewer_packet_hashes_unrestricted_test_output() -> None:
+    leaked = "The lead reviewer rejected this candidate."
+    packet = build_primary_reviewer_packet(
+        task={"task_id": "task-1", "problem": "fix"},
+        diff="diff --git a/a.py b/a.py\n",
+        tests=_raw_tests(stdout=leaked),
+    )
+
+    assert leaked not in json.dumps(packet.to_dict())
 
 
 def test_primary_reviewer_packet_rejects_free_text_test_summary() -> None:
@@ -1677,7 +1871,7 @@ def test_primary_reviewer_packet_validation_rejects_tampered_raw_artifacts() -> 
         **tampered["tests"],
         "receipt": {
             **tampered["tests"]["receipt"],
-            "stdout": "forged result",
+            "stdout_sha256": "0" * 64,
         },
     }
 
@@ -1822,6 +2016,210 @@ async def test_execution_failure_preserves_structured_attempt_usage(
         assert outcome.token_usage == {"tokens_in": 80, "tokens_out": 20}
         assert len(outcome.attempt_records) == 2
         assert outcome.failure_classification == "budget_exhausted"
+
+
+@pytest.mark.asyncio
+async def test_post_launch_receipt_failure_is_durable_with_observed_usage(
+    tmp_path: Path,
+) -> None:
+    store = SqliteExperimentStore(tmp_path / "durable-receipt-failure.db")
+
+    class InvalidReceiptExecutor(RecordingExecutor):
+        async def execute(self, **kwargs: Any) -> ArmExecution:
+            execution = await super().execute(**kwargs)
+            assert execution.receipt is not None
+            return replace(
+                execution,
+                receipt=replace(
+                    execution.receipt,
+                    assignment_id="wrong-assignment",
+                ),
+            )
+
+    result = await ExperimentKernel(
+        store=store,
+        executor=InvalidReceiptExecutor(store),
+    ).run_task(_experiment(), _task_spec(), RecordingVerifier())
+
+    assert all(outcome.status == "failed" for outcome in result.outcomes)
+    assert all(outcome.attempts == 1 for outcome in result.outcomes)
+    assert all(outcome.cost_usd == 0.25 for outcome in result.outcomes)
+    assert all(
+        outcome.token_usage == {"tokens_in": 10, "tokens_out": 5}
+        for outcome in result.outcomes
+    )
+    events = store.get_arm_state_events("exp-1", "task-1")
+    for arm in Arm:
+        assert [
+            event["state"]
+            for event in events
+            if event["arm"] == arm.value
+        ] == ["started", "observed", "failed"]
+
+
+@pytest.mark.asyncio
+async def test_resume_never_reexecutes_a_started_paid_arm(
+    tmp_path: Path,
+) -> None:
+    store = SqliteExperimentStore(tmp_path / "resume-paid-arm.db")
+    executor = RecordingExecutor(store)
+    kernel = ExperimentKernel(store=store, executor=executor)
+    experiment = _experiment()
+    task = _task_spec()
+    assignment = kernel.assign(experiment, task)
+    paid_arm = assignment.order[0]
+    prefix = f"block.0.arm.{paid_arm.value}"
+    store.start_arm_attempt(
+        experiment_id="exp-1",
+        task_id="task-1",
+        block_attempt=0,
+        arm=paid_arm,
+        payload={
+            "assignment_id": assignment.assignment_id,
+            "block_attempt": 0,
+            "budget": experiment.arm_budgets[paid_arm].to_dict(),
+            "treatment_hash": assignment.treatment_hashes[paid_arm],
+        },
+        transition_idempotency_key=f"{prefix}.started",
+    )
+    store.observe_arm_execution(
+        experiment_id="exp-1",
+        task_id="task-1",
+        block_attempt=0,
+        arm=paid_arm,
+        payload={
+            "attempts": 2,
+            "cost_usd": 0.75,
+            "latency_ms": 321,
+            "token_usage": {"tokens_in": 80, "tokens_out": 20},
+            "attempt_records": [
+                {
+                    "attempt_index": 0,
+                    "cost_usd": 0.25,
+                    "latency_ms": 100,
+                    "token_usage": {
+                        "tokens_in": 30,
+                        "tokens_out": 10,
+                    },
+                },
+                {
+                    "attempt_index": 1,
+                    "cost_usd": 0.5,
+                    "latency_ms": 221,
+                    "token_usage": {
+                        "tokens_in": 50,
+                        "tokens_out": 10,
+                    },
+                },
+            ],
+            "execution_id": "paid-execution",
+            "result_id": "",
+            "original_frozen_result_hash": "",
+        },
+    )
+
+    result = await kernel.run_task(
+        experiment,
+        task,
+        RecordingVerifier(),
+    )
+    outcomes = {outcome.arm: outcome for outcome in result.outcomes}
+
+    assert paid_arm not in executor.calls
+    assert executor.calls == list(assignment.order[1:])
+    assert outcomes[paid_arm].failure_classification == (
+        "interrupted_after_launch"
+    )
+    assert outcomes[paid_arm].attempts == 2
+    assert outcomes[paid_arm].cost_usd == 0.75
+    assert outcomes[paid_arm].token_usage == {
+        "tokens_in": 80,
+        "tokens_out": 20,
+    }
+
+
+@pytest.mark.asyncio
+async def test_retry_after_task_persistence_error_reuses_terminal_arms(
+    tmp_path: Path,
+) -> None:
+    class FailingCompleteStore(SqliteExperimentStore):
+        fail_once = True
+
+        def complete_task(self, *args: Any, **kwargs: Any):
+            if self.fail_once:
+                self.fail_once = False
+                raise RuntimeError("task result persistence unavailable")
+            return super().complete_task(*args, **kwargs)
+
+    store = FailingCompleteStore(tmp_path / "resume-terminal-arms.db")
+    executor = RecordingExecutor(store)
+    kernel = ExperimentKernel(store=store, executor=executor)
+
+    with pytest.raises(RuntimeError, match="task result persistence"):
+        await kernel.run_task(
+            _experiment(),
+            _task_spec(),
+            RecordingVerifier(),
+        )
+    first_calls = tuple(executor.calls)
+
+    result = await kernel.run_task(
+        _experiment(),
+        _task_spec(),
+        RecordingVerifier(),
+    )
+
+    assert tuple(executor.calls) == first_calls
+    assert len(first_calls) == 3
+    assert all(outcome.status == "completed" for outcome in result.outcomes)
+
+
+@pytest.mark.asyncio
+async def test_gradebook_and_frozen_result_persistence_errors_become_itt(
+    tmp_path: Path,
+) -> None:
+    class FailingGradeBook:
+        def append_grade(self, **_kwargs: Any):
+            raise RuntimeError("grade ledger unavailable")
+
+    grade_store = SqliteExperimentStore(tmp_path / "gradebook-failure.db")
+    grade_result = await ExperimentKernel(
+        store=grade_store,
+        executor=RecordingExecutor(grade_store),
+        gradebook=FailingGradeBook(),
+    ).run_task(_experiment(), _task_spec(), RecordingVerifier())
+    assert all(
+        outcome.failure_classification == "gradebook_failure"
+        and outcome.cost_usd == 0.25
+        and outcome.grade_revision is None
+        for outcome in grade_result.outcomes
+    )
+
+    class FailingFrozenStore(SqliteExperimentStore):
+        fail_once = True
+
+        def put_frozen_result(self, **kwargs: Any):
+            if self.fail_once:
+                self.fail_once = False
+                raise RuntimeError("frozen result persistence unavailable")
+            return super().put_frozen_result(**kwargs)
+
+    frozen_store = FailingFrozenStore(tmp_path / "frozen-persistence.db")
+    frozen_result = await ExperimentKernel(
+        store=frozen_store,
+        executor=RecordingExecutor(frozen_store),
+    ).run_task(_experiment(), _task_spec(), RecordingVerifier())
+
+    failures = [
+        outcome
+        for outcome in frozen_result.outcomes
+        if outcome.status == "failed"
+    ]
+    assert len(failures) == 1
+    assert failures[0].failure_classification == (
+        "post_launch_persistence_failure"
+    )
+    assert failures[0].cost_usd == 0.25
 
 
 @pytest.mark.asyncio

@@ -2867,26 +2867,31 @@ def _sqlite_snapshot_connection(
                 finally:
                     connection.close()
         finally:
-            if alias_dir_fd is not None:
+            try:
                 try:
-                    _clear_sqlite_alias_directory(
-                        alias_dir_fd,
-                        logical_name=logical_name,
-                    )
+                    if alias_dir_fd is not None:
+                        _clear_sqlite_alias_directory(
+                            alias_dir_fd,
+                            logical_name=logical_name,
+                        )
                 finally:
-                    os.close(alias_dir_fd)
-            if alias_dir_name is not None:
+                    if alias_dir_fd is not None:
+                        os.close(alias_dir_fd)
+            finally:
                 try:
-                    os.rmdir(alias_dir_name, dir_fd=parent_fd)
-                except FileNotFoundError:
-                    pass
-                except OSError as exc:
-                    raise EvidenceCommitIntegrityError(
-                        "SQLite snapshot alias directory could not be "
-                        f"removed safely for {logical_name}: {exc}"
-                    ) from exc
-            for descriptor in pinned.values():
-                os.close(descriptor)
+                    if alias_dir_name is not None:
+                        try:
+                            os.rmdir(alias_dir_name, dir_fd=parent_fd)
+                        except FileNotFoundError:
+                            pass
+                        except OSError as exc:
+                            raise EvidenceCommitIntegrityError(
+                                "SQLite snapshot alias directory could not be "
+                                f"removed safely for {logical_name}: {exc}"
+                            ) from exc
+                finally:
+                    for descriptor in pinned.values():
+                        os.close(descriptor)
 
 
 def _open_sqlite_regular_file_at(

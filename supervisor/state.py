@@ -11,13 +11,17 @@ NOT mutate the stored snapshot.
 """
 from __future__ import annotations
 import asyncio
+import base64
+import hashlib
 import json
+import os
 import sqlite3
 import threading
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Mapping
+from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
 from .evidence_ledger import (
     NATIVE_GENESIS,
@@ -426,6 +430,47 @@ CREATE TABLE IF NOT EXISTS tail_offsets (
   updated_at    INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS source_line_ingestions (
+  source_line_id TEXT PRIMARY KEY,
+  path           TEXT NOT NULL,
+  start_offset   INTEGER NOT NULL,
+  end_offset     INTEGER NOT NULL,
+  raw_sha256     TEXT NOT NULL,
+  run_id         TEXT NOT NULL,
+  source         TEXT NOT NULL,
+  status         TEXT NOT NULL CHECK(status IN ('ingested', 'ignored', 'dead_letter')),
+  event_ids_json TEXT NOT NULL,
+  raw_line_b64   TEXT,
+  error_json     TEXT,
+  created_at     INTEGER NOT NULL,
+  UNIQUE(path, start_offset, end_offset)
+);
+CREATE INDEX IF NOT EXISTS idx_source_line_ingestions_run
+  ON source_line_ingestions(run_id, created_at);
+
+CREATE TABLE IF NOT EXISTS decision_outbox (
+  decision_id      TEXT PRIMARY KEY,
+  idempotency_key  TEXT NOT NULL UNIQUE,
+  kind             TEXT NOT NULL,
+  run_id           TEXT NOT NULL,
+  payload_json     TEXT NOT NULL,
+  status           TEXT NOT NULL CHECK(
+    status IN ('pending', 'leased', 'acked', 'dead_letter')
+  ),
+  attempts         INTEGER NOT NULL DEFAULT 0,
+  available_at     REAL NOT NULL,
+  lease_token      TEXT,
+  leased_by        TEXT,
+  lease_expires_at REAL,
+  last_error       TEXT,
+  created_at       REAL NOT NULL,
+  updated_at       REAL NOT NULL,
+  acked_at         REAL,
+  dead_lettered_at REAL
+);
+CREATE INDEX IF NOT EXISTS idx_decision_outbox_dispatch
+  ON decision_outbox(status, available_at, lease_expires_at, created_at);
+
 CREATE TABLE IF NOT EXISTS supervisor_turns (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
   chat_id           TEXT,
@@ -639,6 +684,39 @@ class Decision:
     kind: str
     run_id: str
     payload: dict[str, Any] = field(default_factory=dict)
+    decision_id: str = ""
+    lease_token: str = ""
+    attempt_count: int = 0
+
+
+@dataclass(frozen=True)
+class SourceLineIngestion:
+    source_line_id: str
+    event_ids: tuple[int, ...]
+    inserted: bool
+    status: str
+
+
+class _DecisionOutboxView:
+    """Compatibility view for callers that inspected the old asyncio queue."""
+
+    def __init__(self, state: State) -> None:
+        self._state = state
+
+    def get_nowait(self) -> Decision:
+        decision = self._state.claim_decision(
+            worker_id="legacy-queue-view",
+            lease_s=300,
+        )
+        if decision is None:
+            raise asyncio.QueueEmpty
+        return decision
+
+    def qsize(self) -> int:
+        return self._state.available_decision_count()
+
+    def empty(self) -> bool:
+        return self.qsize() == 0
 
 
 def _merge_never_touch(supplied: tuple[str, ...]) -> tuple[str, ...]:
@@ -793,7 +871,11 @@ class State:
         self._conn.commit()
         self._lock = asyncio.Lock()
         self._write_lock = threading.RLock()
-        self.decisions: asyncio.Queue[Decision] = asyncio.Queue()
+        self._decision_wakeup = asyncio.Event()
+        self._decision_worker_id = (
+            f"state-{os.getpid()}-{uuid.uuid4().hex}"
+        )
+        self.decisions = _DecisionOutboxView(self)
         self.reconcile_event_checkpoints()
 
     @property
@@ -1271,6 +1353,200 @@ class State:
             except Exception:
                 self._conn.rollback()
                 raise
+
+    def ingest_source_line(
+        self,
+        *,
+        run_id: str,
+        source: str,
+        path: str,
+        start_offset: int,
+        end_offset: int,
+        raw_line: bytes,
+        events: Sequence[tuple[str, dict[str, Any]]] = (),
+        terminal_status: str | None = None,
+        terminal_event_kind: str | None = None,
+        decision: Decision | None = None,
+        dead_letter: Mapping[str, Any] | None = None,
+    ) -> SourceLineIngestion:
+        """Commit one source line as an indivisible, replay-safe unit.
+
+        All normalized events from the line, the durable tail offset, optional
+        run closure, and optional outbox decision share one SQLite transaction.
+        A malformed line is stored as a durable dead letter in the same table
+        before its offset advances.
+        """
+
+        normalized_path = str(path)
+        normalized_source = str(source)
+        line_start = int(start_offset)
+        line_end = int(end_offset)
+        if line_start < 0 or line_end <= line_start:
+            raise ValueError("source line offsets must describe a non-empty line")
+        if len(raw_line) != line_end - line_start:
+            raise ValueError("source line byte length does not match offsets")
+        raw_sha256 = hashlib.sha256(raw_line).hexdigest()
+        source_line_id = hashlib.sha256(
+            (
+                f"supervisor-source-line/v1\0{normalized_path}\0"
+                f"{line_start}\0{line_end}\0{raw_sha256}"
+            ).encode("utf-8")
+        ).hexdigest()
+        if dead_letter is not None and events:
+            raise ValueError("dead-letter source lines cannot contain events")
+        if (terminal_status is None) != (terminal_event_kind is None):
+            raise ValueError(
+                "terminal status and terminal event kind must be supplied together"
+            )
+        if decision is not None and terminal_status is None:
+            raise ValueError("source-line decisions require a terminal transition")
+
+        event_ids: list[int] = []
+        status = (
+            "dead_letter"
+            if dead_letter is not None
+            else "ingested" if events else "ignored"
+        )
+        with self._write_lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                existing = self._conn.execute(
+                    """SELECT source_line_id, raw_sha256, run_id, source,
+                              status, event_ids_json
+                         FROM source_line_ingestions
+                        WHERE path=? AND start_offset=? AND end_offset=?""",
+                    (normalized_path, line_start, line_end),
+                ).fetchone()
+                if existing is not None:
+                    if (
+                        str(existing["source_line_id"]) != source_line_id
+                        or str(existing["raw_sha256"]) != raw_sha256
+                        or str(existing["run_id"]) != str(run_id)
+                        or str(existing["source"]) != normalized_source
+                    ):
+                        raise RuntimeError(
+                            "source line identity changed after durable ingestion"
+                        )
+                    event_ids = [
+                        int(value)
+                        for value in json.loads(existing["event_ids_json"])
+                    ]
+                    self._set_tail_offset_unlocked(
+                        normalized_path,
+                        max(
+                            line_end,
+                            self._tail_offset_unlocked(normalized_path),
+                        ),
+                    )
+                    self._conn.commit()
+                    result = SourceLineIngestion(
+                        source_line_id=source_line_id,
+                        event_ids=tuple(event_ids),
+                        inserted=False,
+                        status=str(existing["status"]),
+                    )
+                else:
+                    durable_offset = self._tail_offset_unlocked(normalized_path)
+                    if durable_offset != line_start:
+                        raise RuntimeError(
+                            "source line offset is not the durable next offset: "
+                            f"path={normalized_path!r} expected={durable_offset} "
+                            f"observed={line_start}"
+                        )
+                    for kind, payload in events:
+                        assert_generic_event_kind_allowed(kind)
+                        assert_public_event_kind_allowed(kind)
+                        event_payload = self._event_payload(
+                            run_id=run_id,
+                            source=normalized_source,
+                            kind=kind,
+                            payload=payload,
+                        )
+                        event_ids.append(
+                            self._insert_event_unlocked(
+                                run_id=run_id,
+                                source=normalized_source,
+                                kind=kind,
+                                payload=event_payload,
+                            )
+                        )
+                    if terminal_status is not None:
+                        changed = self._conn.execute(
+                            """UPDATE runs
+                                  SET ended_at=?, status=?
+                                WHERE run_id=? AND status='running'""",
+                            (int(time.time()), terminal_status, run_id),
+                        ).rowcount
+                        if changed and decision is not None:
+                            self._enqueue_decision_unlocked(
+                                decision,
+                                idempotency_key=(
+                                    f"terminal-evaluation:{run_id}"
+                                ),
+                            )
+                    self._conn.execute(
+                        """INSERT INTO source_line_ingestions(
+                             source_line_id, path, start_offset, end_offset,
+                             raw_sha256, run_id, source, status,
+                             event_ids_json, raw_line_b64, error_json, created_at)
+                           VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (
+                            source_line_id,
+                            normalized_path,
+                            line_start,
+                            line_end,
+                            raw_sha256,
+                            str(run_id),
+                            normalized_source,
+                            status,
+                            json.dumps(event_ids, separators=(",", ":")),
+                            (
+                                base64.b64encode(raw_line).decode("ascii")
+                                if dead_letter is not None
+                                else None
+                            ),
+                            (
+                                json.dumps(
+                                    dict(dead_letter),
+                                    sort_keys=True,
+                                    separators=(",", ":"),
+                                    ensure_ascii=True,
+                                    default=str,
+                                )
+                                if dead_letter is not None
+                                else None
+                            ),
+                            int(time.time()),
+                        ),
+                    )
+                    self._set_tail_offset_unlocked(normalized_path, line_end)
+                    self._conn.commit()
+                    result = SourceLineIngestion(
+                        source_line_id=source_line_id,
+                        event_ids=tuple(event_ids),
+                        inserted=True,
+                        status=status,
+                    )
+            except Exception:
+                self._conn.rollback()
+                raise
+
+        for event_id, (kind, _payload) in zip(event_ids, events):
+            self._coordinate_committed_event(
+                run_id=run_id,
+                event_id=event_id,
+                event_kind=kind,
+            )
+        if decision is not None:
+            self._decision_wakeup.set()
+        return result
+
+    def _tail_offset_unlocked(self, path: str) -> int:
+        row = self._conn.execute(
+            "SELECT byte_offset FROM tail_offsets WHERE path=?",
+            (path,),
+        ).fetchone()
+        return int(row["byte_offset"]) if row is not None else 0
 
     def recent_events(self, run_id: str, n: int = 20) -> list[dict]:
         cur = self._conn.execute(
@@ -4419,9 +4695,332 @@ class State:
         row = self._conn.execute("PRAGMA journal_mode").fetchone()
         return (row[0] if row else "").lower()
 
-    # --- decisions queue ---
-    async def enqueue_decision(self, d: Decision) -> None:
-        await self.decisions.put(d)
+    # --- durable decision outbox ---
+    def _decision_idempotency_key(self, decision: Decision) -> str:
+        canonical = json.dumps(
+            {
+                "kind": str(decision.kind),
+                "run_id": str(decision.run_id),
+                "payload": decision.payload,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            default=str,
+        )
+        return hashlib.sha256(
+            f"supervisor-decision/v1\0{canonical}".encode("utf-8")
+        ).hexdigest()
 
-    async def next_decision(self) -> Decision:
-        return await self.decisions.get()
+    def _enqueue_decision_unlocked(
+        self,
+        decision: Decision,
+        *,
+        idempotency_key: str | None = None,
+        available_at: float | None = None,
+    ) -> str:
+        key = str(
+            idempotency_key or self._decision_idempotency_key(decision)
+        )
+        now = time.time()
+        decision_id = str(decision.decision_id or uuid.uuid4().hex)
+        self._conn.execute(
+            """INSERT INTO decision_outbox(
+                 decision_id, idempotency_key, kind, run_id, payload_json,
+                 status, attempts, available_at, created_at, updated_at)
+               VALUES(?, ?, ?, ?, ?, 'pending', 0, ?, ?, ?)
+               ON CONFLICT(idempotency_key) DO NOTHING""",
+            (
+                decision_id,
+                key,
+                str(decision.kind),
+                str(decision.run_id),
+                json.dumps(
+                    redact(decision.payload),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=True,
+                    default=str,
+                ),
+                now if available_at is None else float(available_at),
+                now,
+                now,
+            ),
+        )
+        row = self._conn.execute(
+            """SELECT decision_id
+                 FROM decision_outbox
+                WHERE idempotency_key=?""",
+            (key,),
+        ).fetchone()
+        if row is None:
+            raise RuntimeError("decision outbox insert disappeared")
+        return str(row["decision_id"])
+
+    async def enqueue_decision(
+        self,
+        d: Decision,
+        *,
+        idempotency_key: str | None = None,
+        available_at: float | None = None,
+    ) -> str:
+        with self._write_lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                decision_id = self._enqueue_decision_unlocked(
+                    d,
+                    idempotency_key=idempotency_key,
+                    available_at=available_at,
+                )
+                self._conn.commit()
+            except Exception:
+                self._conn.rollback()
+                raise
+        self._decision_wakeup.set()
+        return decision_id
+
+    def claim_decision(
+        self,
+        *,
+        worker_id: str,
+        lease_s: float = 60.0,
+        now: float | None = None,
+    ) -> Decision | None:
+        timestamp = time.time() if now is None else float(now)
+        lease_seconds = max(0.001, float(lease_s))
+        lease_token = uuid.uuid4().hex
+        with self._write_lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                row = self._conn.execute(
+                    """SELECT decision_id
+                         FROM decision_outbox
+                        WHERE (
+                              status='pending'
+                              AND available_at <= ?
+                            )
+                           OR (
+                              status='leased'
+                              AND lease_expires_at IS NOT NULL
+                              AND lease_expires_at <= ?
+                            )
+                        ORDER BY available_at ASC, created_at ASC, decision_id ASC
+                        LIMIT 1""",
+                    (timestamp, timestamp),
+                ).fetchone()
+                if row is None:
+                    self._conn.commit()
+                    return None
+                updated = self._conn.execute(
+                    """UPDATE decision_outbox
+                          SET status='leased',
+                              attempts=attempts + 1,
+                              lease_token=?,
+                              leased_by=?,
+                              lease_expires_at=?,
+                              updated_at=?
+                        WHERE decision_id=?
+                          AND (
+                                (status='pending' AND available_at <= ?)
+                             OR (
+                                status='leased'
+                                AND lease_expires_at IS NOT NULL
+                                AND lease_expires_at <= ?
+                             )
+                          )""",
+                    (
+                        lease_token,
+                        str(worker_id),
+                        timestamp + lease_seconds,
+                        timestamp,
+                        str(row["decision_id"]),
+                        timestamp,
+                        timestamp,
+                    ),
+                ).rowcount
+                if updated != 1:
+                    self._conn.rollback()
+                    return None
+                claimed = self._conn.execute(
+                    """SELECT decision_id, kind, run_id, payload_json,
+                              lease_token, attempts
+                         FROM decision_outbox
+                        WHERE decision_id=?""",
+                    (str(row["decision_id"]),),
+                ).fetchone()
+                self._conn.commit()
+            except Exception:
+                self._conn.rollback()
+                raise
+        if claimed is None:
+            return None
+        return Decision(
+            kind=str(claimed["kind"]),
+            run_id=str(claimed["run_id"]),
+            payload=json.loads(str(claimed["payload_json"])),
+            decision_id=str(claimed["decision_id"]),
+            lease_token=str(claimed["lease_token"]),
+            attempt_count=int(claimed["attempts"]),
+        )
+
+    async def next_decision(
+        self,
+        *,
+        lease_s: float = 60.0,
+    ) -> Decision:
+        while True:
+            decision = self.claim_decision(
+                worker_id=self._decision_worker_id,
+                lease_s=lease_s,
+            )
+            if decision is not None:
+                return decision
+            self._decision_wakeup.clear()
+            try:
+                await asyncio.wait_for(
+                    self._decision_wakeup.wait(),
+                    timeout=0.25,
+                )
+            except asyncio.TimeoutError:
+                pass
+
+    def ack_decision(
+        self,
+        decision: Decision,
+        *,
+        now: float | None = None,
+    ) -> bool:
+        timestamp = time.time() if now is None else float(now)
+        with self._write_lock:
+            changed = self._conn.execute(
+                """UPDATE decision_outbox
+                      SET status='acked',
+                          lease_token=NULL,
+                          leased_by=NULL,
+                          lease_expires_at=NULL,
+                          updated_at=?,
+                          acked_at=?
+                    WHERE decision_id=?
+                      AND status='leased'
+                      AND lease_token=?""",
+                (
+                    timestamp,
+                    timestamp,
+                    str(decision.decision_id),
+                    str(decision.lease_token),
+                ),
+            ).rowcount
+            self._conn.commit()
+        return changed == 1
+
+    def retry_decision(
+        self,
+        decision: Decision,
+        *,
+        error: str,
+        delay_s: float,
+        now: float | None = None,
+    ) -> bool:
+        timestamp = time.time() if now is None else float(now)
+        available_at = timestamp + max(0.0, float(delay_s))
+        with self._write_lock:
+            changed = self._conn.execute(
+                """UPDATE decision_outbox
+                      SET status='pending',
+                          available_at=?,
+                          lease_token=NULL,
+                          leased_by=NULL,
+                          lease_expires_at=NULL,
+                          last_error=?,
+                          updated_at=?
+                    WHERE decision_id=?
+                      AND status='leased'
+                      AND lease_token=?""",
+                (
+                    available_at,
+                    str(error)[:4000],
+                    timestamp,
+                    str(decision.decision_id),
+                    str(decision.lease_token),
+                ),
+            ).rowcount
+            self._conn.commit()
+        if changed:
+            self._decision_wakeup.set()
+        return changed == 1
+
+    def dead_letter_decision(
+        self,
+        decision: Decision,
+        *,
+        error: str,
+        now: float | None = None,
+    ) -> bool:
+        timestamp = time.time() if now is None else float(now)
+        with self._write_lock:
+            changed = self._conn.execute(
+                """UPDATE decision_outbox
+                      SET status='dead_letter',
+                          lease_token=NULL,
+                          leased_by=NULL,
+                          lease_expires_at=NULL,
+                          last_error=?,
+                          updated_at=?,
+                          dead_lettered_at=?
+                    WHERE decision_id=?
+                      AND status='leased'
+                      AND lease_token=?""",
+                (
+                    str(error)[:4000],
+                    timestamp,
+                    timestamp,
+                    str(decision.decision_id),
+                    str(decision.lease_token),
+                ),
+            ).rowcount
+            self._conn.commit()
+        return changed == 1
+
+    def available_decision_count(
+        self,
+        *,
+        now: float | None = None,
+    ) -> int:
+        timestamp = time.time() if now is None else float(now)
+        row = self._conn.execute(
+            """SELECT COUNT(*) AS count
+                 FROM decision_outbox
+                WHERE (status='pending' AND available_at <= ?)
+                   OR (
+                      status='leased'
+                      AND lease_expires_at IS NOT NULL
+                      AND lease_expires_at <= ?
+                   )""",
+            (timestamp, timestamp),
+        ).fetchone()
+        return int(row["count"]) if row is not None else 0
+
+    def list_decision_outbox(
+        self,
+        *,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        if status is None:
+            rows = self._conn.execute(
+                """SELECT * FROM decision_outbox
+                   ORDER BY created_at ASC, decision_id ASC"""
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                """SELECT * FROM decision_outbox
+                    WHERE status=?
+                   ORDER BY created_at ASC, decision_id ASC""",
+                (str(status),),
+            ).fetchall()
+        return [
+            {
+                **dict(row),
+                "payload": json.loads(str(row["payload_json"])),
+            }
+            for row in rows
+        ]

@@ -16,6 +16,7 @@ from typing import Any, Protocol
 from urllib.parse import urlsplit
 
 from .evidence_ledger import LedgerVerification
+from .task_environment import canonical_task_identity
 from .trace_graph import (
     EdgeType,
     NodeType,
@@ -25,7 +26,6 @@ from .trace_graph import (
     TraceIdentity,
     TraceNode,
 )
-from .task_environment import canonical_task_identity
 
 
 CLAIM_GATE_SCHEMA_VERSION = "supervisor-claim-gate/v1"
@@ -992,6 +992,25 @@ class ClaimGate:
             if isinstance(result, Mapping)
             else None
         )
+        manifest_descriptor = (
+            result.get("experiment_manifest")
+            if isinstance(result, Mapping)
+            else None
+        )
+        manifest = (
+            context.resolve_json(
+                manifest_descriptor.get("ref"),
+                manifest_descriptor.get("sha256"),
+            )
+            if (
+                isinstance(manifest_descriptor, Mapping)
+                and context.verifies_external_attestation(
+                    evidence_kind="experiment_evidence_manifest",
+                    descriptor=manifest_descriptor,
+                )
+            )
+            else None
+        )
         return (
             isinstance(result, Mapping)
             and normalized_comparison == "b_vs_c"
@@ -999,7 +1018,16 @@ class ClaimGate:
             and result.get("powered") is True
             and result.get("supports_improvement") is True
             and isinstance(analysis, Mapping)
-            and _validate_b_vs_c_analysis(analysis, context=context)
+            and isinstance(manifest, Mapping)
+            and _validate_b_vs_c_analysis(
+                analysis,
+                analysis_descriptor={
+                    "ref": result.get("analysis_ref"),
+                    "sha256": result.get("analysis_sha256"),
+                },
+                manifest=manifest,
+                context=context,
+            )
         )
 
     @staticmethod
@@ -1076,10 +1104,23 @@ class ClaimGate:
             if isinstance(causal_evidence, Mapping)
             else None
         )
+        roi_authority_descriptor = (
+            {
+                "ref": operating_cost.get("analysis_ref"),
+                "sha256": operating_cost.get("analysis_sha256"),
+                "attestation": operating_cost.get("attestation"),
+            }
+            if isinstance(operating_cost, Mapping)
+            else {}
+        )
         return (
             isinstance(operating_cost, Mapping)
             and operating_cost.get("measured") is True
             and operating_cost.get("supports_positive_roi") is True
+            and context.verifies_external_attestation(
+                evidence_kind="roi_analysis",
+                descriptor=roi_authority_descriptor,
+            )
             and isinstance(roi_analysis, Mapping)
             and isinstance(causal_analysis, Mapping)
             and _validate_positive_roi_analysis(
@@ -1101,6 +1142,25 @@ class ClaimGate:
         *,
         context: _EvidenceContext,
     ) -> bool:
+        authority_descriptor = evidence_bundle.get(
+            "auto_improvement_authority_manifest"
+        )
+        authority_manifest = (
+            context.resolve_json(
+                authority_descriptor.get("ref"),
+                authority_descriptor.get("sha256"),
+            )
+            if (
+                isinstance(authority_descriptor, Mapping)
+                and context.verifies_external_attestation(
+                    evidence_kind="auto_improvement_authority_manifest",
+                    descriptor=authority_descriptor,
+                )
+            )
+            else None
+        )
+        if not isinstance(authority_manifest, Mapping):
+            return False
         receipt_specs = (
             ("frozen_control", "frozen"),
             ("sealed_holdout", "sealed"),
@@ -1126,15 +1186,24 @@ class ClaimGate:
                 return False
             descriptors[key] = descriptor
             receipts[key] = receipt
-        return _validate_auto_improvement_receipts(
-            receipts,
-            descriptors=descriptors,
+        return (
+            _validate_auto_improvement_authority_manifest(
+                authority_manifest,
+                descriptors=descriptors,
+                receipts=receipts,
+            )
+            and _validate_auto_improvement_receipts(
+                receipts,
+                descriptors=descriptors,
+            )
         )
 
 
 def _validate_b_vs_c_analysis(
     analysis: Mapping[str, Any],
     *,
+    analysis_descriptor: Mapping[str, Any],
+    manifest: Mapping[str, Any],
     context: _EvidenceContext,
 ) -> bool:
     try:
@@ -1178,11 +1247,6 @@ def _validate_b_vs_c_analysis(
             descriptors[name] = descriptor
             documents[name] = document
 
-        assignments = _parse_assignment_evidence(
-            documents["assignments"],
-            experiment_id=experiment_id,
-            powered_design_sha256=_sha256_canonical_json(design),
-        )
         study_descriptor = _required_mapping(
             lineage.get("study"),
             field="lineage.study",
@@ -1193,6 +1257,29 @@ def _validate_b_vs_c_analysis(
             study_descriptor.get("ref"),
             study_descriptor.get("sha256"),
         )
+        descriptors["study"] = study_descriptor
+        manifest_evidence = _parse_experiment_evidence_manifest(
+            manifest,
+            experiment_id=experiment_id,
+            analysis=analysis,
+            analysis_descriptor=analysis_descriptor,
+            descriptors=descriptors,
+            context=context,
+        )
+        assignments = _parse_assignment_evidence(
+            documents["assignments"],
+            experiment_id=experiment_id,
+            powered_design_sha256=_sha256_canonical_json(design),
+        )
+        if (
+            set(assignments) != set(manifest_evidence.roster)
+            or any(
+                assignment.canonical_task_id
+                != manifest_evidence.roster[task_id]
+                for task_id, assignment in assignments.items()
+            )
+        ):
+            return False
         if (
             not isinstance(study, Mapping)
             or not _validate_pilot_confirmation_lineage(
@@ -1200,6 +1287,7 @@ def _validate_b_vs_c_analysis(
                 experiment_id=experiment_id,
                 design=design,
                 assignments=assignments,
+                confirmation_roster=manifest_evidence.roster,
                 context=context,
             )
         ):
@@ -1208,7 +1296,24 @@ def _validate_b_vs_c_analysis(
             documents["grades"],
             experiment_id=experiment_id,
         )
+        if not _grades_are_current_in_authoritative_gradebook(
+            grades,
+            grade_authority=context.grade_authority,
+        ):
+            return False
         verifier = _parse_verifier_evidence(documents["verifier"])
+        if verifier != manifest_evidence.verifier:
+            return False
+        if {
+            (
+                grade.task_id,
+                grade.arm,
+                grade.grade_id,
+                grade.revision_hash,
+            )
+            for grade in grades.values()
+        } != set(manifest_evidence.current_grade_revisions):
+            return False
         if not _ledger_covers_grade_runs(
             documents["ledger"],
             experiment_id=experiment_id,
@@ -1217,6 +1322,10 @@ def _validate_b_vs_c_analysis(
             ),
             grade_artifact_sha256=descriptors["grades"].get("sha256"),
             grades=grades,
+            assignments=assignments,
+            expected_event_payloads=(
+                manifest_evidence.ledger_event_payloads
+            ),
             context=context,
         ):
             return False
@@ -1226,6 +1335,13 @@ def _validate_b_vs_c_analysis(
             assignments=assignments,
             grades=grades,
             verifier=verifier,
+            expected_decision_canonical_key=(
+                manifest_evidence.trace_decision_canonical_key
+            ),
+            expected_decision_revision_hash=(
+                manifest_evidence.trace_decision_revision_hash
+            ),
+            grade_authority=context.grade_authority,
         ):
             return False
 
@@ -1234,6 +1350,7 @@ def _validate_b_vs_c_analysis(
             assignments=assignments,
             grades=grades,
             verifier=verifier,
+            frozen_results=manifest_evidence.frozen_results,
         )
         if paired_rows is None:
             return False
@@ -1318,10 +1435,33 @@ def _validate_strata_replication_analysis(
                 descriptor.get("analysis_ref"),
                 study_hash,
             )
+            study_manifest_descriptor = descriptor.get(
+                "experiment_manifest"
+            )
+            study_manifest = (
+                context.resolve_json(
+                    study_manifest_descriptor.get("ref"),
+                    study_manifest_descriptor.get("sha256"),
+                )
+                if (
+                    isinstance(study_manifest_descriptor, Mapping)
+                    and context.verifies_external_attestation(
+                        evidence_kind="experiment_evidence_manifest",
+                        descriptor=study_manifest_descriptor,
+                    )
+                )
+                else None
+            )
             if (
                 not isinstance(study_analysis, Mapping)
+                or not isinstance(study_manifest, Mapping)
                 or not _validate_b_vs_c_analysis(
                     study_analysis,
+                    analysis_descriptor={
+                        "ref": descriptor.get("analysis_ref"),
+                        "sha256": study_hash,
+                    },
+                    manifest=study_manifest,
                     context=context,
                 )
             ):
@@ -1411,6 +1551,307 @@ def _validate_strata_replication_analysis(
         return False
 
 
+def _parse_experiment_evidence_manifest(
+    manifest: Mapping[str, Any],
+    *,
+    experiment_id: str,
+    analysis: Mapping[str, Any],
+    analysis_descriptor: Mapping[str, Any],
+    descriptors: Mapping[str, Mapping[str, Any]],
+    context: _EvidenceContext,
+) -> _ExperimentManifestEvidence:
+    if (
+        manifest.get("schema_version")
+        != EXPERIMENT_EVIDENCE_MANIFEST_SCHEMA_VERSION
+        or _required_text(
+            manifest.get("experiment_id"),
+            field="manifest experiment_id",
+        )
+        != experiment_id
+    ):
+        raise ValueError("experiment evidence manifest identity mismatch")
+
+    artifact_bindings = _required_mapping(
+        manifest.get("artifacts"),
+        field="manifest artifacts",
+    )
+    expected_artifact_names = {
+        "analysis",
+        "assignments",
+        "grades",
+        "trace",
+        "ledger",
+        "verifier",
+        "study",
+    }
+    if set(artifact_bindings) != expected_artifact_names:
+        raise ValueError(
+            "manifest must bind the complete experiment artifact set"
+        )
+    expected_descriptors = {
+        **descriptors,
+        "analysis": analysis_descriptor,
+    }
+    for name in expected_artifact_names:
+        bound = _required_mapping(
+            artifact_bindings.get(name),
+            field=f"manifest artifact {name}",
+        )
+        expected = expected_descriptors.get(name)
+        if (
+            expected is None
+            or not _is_hashed_artifact(bound)
+            or str(bound.get("ref") or "").strip()
+            != str(expected.get("ref") or "").strip()
+            or _normalized_sha256(bound.get("sha256"))
+            != _normalized_sha256(expected.get("sha256"))
+        ):
+            raise ValueError(
+                f"manifest artifact binding mismatch for {name}"
+            )
+
+    analysis_hashes = _required_mapping(
+        manifest.get("analysis_hashes"),
+        field="manifest analysis_hashes",
+    )
+    if (
+        _normalized_sha256(analysis_hashes.get("analysis_sha256"))
+        != _normalized_sha256(analysis_descriptor.get("sha256"))
+        or _normalized_sha256(analysis_hashes.get("design_sha256"))
+        != _sha256_canonical_json(
+            _required_mapping(analysis.get("design"), field="design")
+        )
+        or _normalized_sha256(analysis_hashes.get("task_rows_sha256"))
+        != _sha256_canonical_json(
+            _required_sequence(
+                analysis.get("task_rows"),
+                field="task_rows",
+            )
+        )
+        or _normalized_sha256(analysis_hashes.get("result_sha256"))
+        != _sha256_canonical_json(
+            _required_mapping(analysis.get("result"), field="result")
+        )
+    ):
+        raise ValueError("manifest analysis hashes do not match analysis")
+
+    roster_records = _required_sequence(
+        manifest.get("frozen_roster"),
+        field="manifest frozen_roster",
+    )
+    roster: dict[str, str] = {}
+    canonical_ids: set[str] = set()
+    for raw_record in roster_records:
+        record = _required_mapping(
+            raw_record,
+            field="manifest roster task",
+        )
+        task_id = _required_text(
+            record.get("task_id"),
+            field="manifest roster task_id",
+        )
+        task_identity = _required_mapping(
+            record.get("task_identity"),
+            field="manifest roster task_identity",
+        )
+        canonical_task_id = canonical_task_identity(task_identity)
+        if (
+            _normalized_sha256(record.get("canonical_task_id"))
+            != canonical_task_id
+            or task_id in roster
+            or canonical_task_id in canonical_ids
+        ):
+            raise ValueError(
+                "manifest roster contains a duplicate or aliased task"
+            )
+        roster[task_id] = canonical_task_id
+        canonical_ids.add(canonical_task_id)
+    if not roster:
+        raise ValueError("manifest frozen_roster is empty")
+
+    raw_frozen_results = _required_sequence(
+        manifest.get("frozen_results"),
+        field="manifest frozen_results",
+    )
+    frozen_results: dict[
+        tuple[str, str],
+        _FrozenResultEvidence,
+    ] = {}
+    terminal_statuses = {
+        "completed",
+        "failed",
+        "cancelled",
+        "timed_out",
+    }
+    for raw_result in raw_frozen_results:
+        record = _required_mapping(
+            raw_result,
+            field="manifest frozen result",
+        )
+        task_id = _required_text(
+            record.get("task_id"),
+            field="manifest result task_id",
+        )
+        arm = _required_text(
+            record.get("arm"),
+            field="manifest result arm",
+        )
+        key = (task_id, arm)
+        status = _normalized_token(record.get("status"))
+        passed = record.get("passed")
+        if (
+            task_id not in roster
+            or arm not in {"supervisor", "compute_matched_direct"}
+            or key in frozen_results
+            or _normalized_sha256(record.get("canonical_task_id"))
+            != roster[task_id]
+            or status not in terminal_statuses
+            or not isinstance(passed, bool)
+            or (status != "completed" and passed)
+        ):
+            raise ValueError("manifest frozen result is invalid")
+        frozen_results[key] = _FrozenResultEvidence(
+            task_id=task_id,
+            canonical_task_id=roster[task_id],
+            assignment_id=_required_sha256(
+                record.get("assignment_id"),
+                field="manifest result assignment_id",
+            ),
+            arm=arm,
+            run_id=_required_text(
+                record.get("run_id"),
+                field="manifest result run_id",
+            ),
+            status=status,
+            frozen_result_hash=_required_sha256(
+                record.get("frozen_result_hash"),
+                field="manifest result frozen_result_hash",
+            ),
+            passed=passed,
+        )
+    expected_result_keys = {
+        (task_id, arm)
+        for task_id in roster
+        for arm in ("supervisor", "compute_matched_direct")
+    }
+    if set(frozen_results) != expected_result_keys:
+        raise ValueError(
+            "manifest frozen results must contain complete B/C ITT outcomes"
+        )
+
+    raw_current_grades = _required_sequence(
+        manifest.get("current_grade_revisions"),
+        field="manifest current_grade_revisions",
+    )
+    current_grades: set[tuple[str, str, str, str]] = set()
+    for raw_grade in raw_current_grades:
+        record = _required_mapping(
+            raw_grade,
+            field="manifest current grade",
+        )
+        key = (
+            _required_text(
+                record.get("task_id"),
+                field="manifest grade task_id",
+            ),
+            _required_text(
+                record.get("arm"),
+                field="manifest grade arm",
+            ),
+            _required_text(
+                record.get("grade_id"),
+                field="manifest grade_id",
+            ),
+            _required_sha256(
+                record.get("revision_hash"),
+                field="manifest grade revision_hash",
+            ),
+        )
+        if key in current_grades:
+            raise ValueError("manifest contains duplicate current grades")
+        current_grades.add(key)
+    if len(current_grades) != len(expected_result_keys):
+        raise ValueError("manifest current grade set is incomplete")
+
+    verifier_record = _required_mapping(
+        manifest.get("verifier_implementation"),
+        field="manifest verifier_implementation",
+    )
+    verifier = _VerifierEvidence(
+        verifier_id=_required_text(
+            verifier_record.get("verifier_id"),
+            field="manifest verifier_id",
+        ),
+        verifier_version=_required_text(
+            verifier_record.get("verifier_version"),
+            field="manifest verifier_version",
+        ),
+        verifier_config_hash=_required_sha256(
+            verifier_record.get("verifier_config_hash"),
+            field="manifest verifier config hash",
+        ),
+        verifier_implementation_hash=_required_sha256(
+            verifier_record.get("verifier_implementation_hash"),
+            field="manifest verifier implementation hash",
+        ),
+    )
+
+    trace_decision = _required_mapping(
+        manifest.get("trace_decision"),
+        field="manifest trace_decision",
+    )
+    trace_decision_canonical_key = _required_text(
+        trace_decision.get("canonical_key"),
+        field="manifest trace decision canonical_key",
+    )
+    trace_decision_revision_hash = _required_sha256(
+        trace_decision.get("revision_hash"),
+        field="manifest trace decision revision_hash",
+    )
+
+    raw_event_payloads = _required_sequence(
+        manifest.get("ledger_event_payloads"),
+        field="manifest ledger_event_payloads",
+    )
+    event_payloads: list[Mapping[str, Any]] = []
+    event_keys: set[tuple[str, str]] = set()
+    for raw_event in raw_event_payloads:
+        event = _required_mapping(
+            raw_event,
+            field="manifest ledger event payload",
+        )
+        run_id = _required_text(
+            event.get("run_id"),
+            field="manifest event run_id",
+        )
+        event_id = _required_text(
+            event.get("event_id"),
+            field="manifest event_id",
+        )
+        if (
+            (run_id, event_id) in event_keys
+            or not _is_hashed_artifact(event)
+            or not context.matches(event.get("ref"), event.get("sha256"))
+        ):
+            raise ValueError("manifest ledger event payload is invalid")
+        event_keys.add((run_id, event_id))
+        event_payloads.append(dict(event))
+    if len(event_payloads) != len(expected_result_keys):
+        raise ValueError(
+            "manifest must bind one exact ledger head payload per B/C run"
+        )
+
+    return _ExperimentManifestEvidence(
+        roster=roster,
+        frozen_results=frozen_results,
+        current_grade_revisions=frozenset(current_grades),
+        verifier=verifier,
+        trace_decision_canonical_key=trace_decision_canonical_key,
+        trace_decision_revision_hash=trace_decision_revision_hash,
+        ledger_event_payloads=tuple(event_payloads),
+    )
+
+
 def _analysis_task_ids(analysis: Mapping[str, Any]) -> set[str]:
     rows = _required_sequence(
         analysis.get("task_rows"),
@@ -1419,9 +1860,9 @@ def _analysis_task_ids(analysis: Mapping[str, Any]) -> set[str]:
     task_ids: set[str] = set()
     for raw_row in rows:
         row = _required_mapping(raw_row, field="analysis task row")
-        task_id = _required_text(
-            row.get("task_id"),
-            field="analysis task_id",
+        task_id = _required_sha256(
+            row.get("canonical_task_id"),
+            field="analysis canonical_task_id",
         )
         if task_id in task_ids:
             raise ValueError("duplicate analysis task_id")
@@ -1633,7 +2074,6 @@ def _validate_positive_roi_analysis(
                 rel_tol=1e-12,
                 abs_tol=1e-12,
             )
-            and supervisor_cost >= baseline_cost
         ):
             return False
 
@@ -1650,15 +2090,15 @@ def _validate_positive_roi_analysis(
             result.get("incremental_successes"),
             field="ROI incremental_successes",
         )
-        declared_incremental_cost = _required_nonnegative_number(
+        declared_incremental_cost = _required_number(
             result.get("incremental_cost_usd"),
             field="ROI incremental_cost_usd",
         )
-        declared_cost_per_success = _required_nonnegative_number(
+        declared_cost_per_success = _required_number(
             result.get("cost_per_incremental_success_usd"),
             field="ROI cost_per_incremental_success_usd",
         )
-        declared_break_even = _required_nonnegative_number(
+        declared_break_even = _required_number(
             result.get("break_even_value_per_success_usd"),
             field="ROI break_even_value_per_success_usd",
         )
@@ -1975,6 +2415,48 @@ def _recomputed_component_cost(
             f"{component_name} reported cost does not recompute"
         )
     return recomputed
+
+
+def _validate_auto_improvement_authority_manifest(
+    manifest: Mapping[str, Any],
+    *,
+    descriptors: Mapping[str, Mapping[str, Any]],
+    receipts: Mapping[str, Mapping[str, Any]],
+) -> bool:
+    try:
+        if (
+            manifest.get("schema_version")
+            != AUTO_IMPROVEMENT_AUTHORITY_MANIFEST_SCHEMA_VERSION
+        ):
+            return False
+        change_id = _required_text(
+            manifest.get("change_id"),
+            field="auto-improvement authority change_id",
+        )
+        receipt_hashes = _required_mapping(
+            manifest.get("receipt_hashes"),
+            field="auto-improvement authority receipt_hashes",
+        )
+        if set(receipt_hashes) != set(descriptors):
+            return False
+        return (
+            set(receipts) == set(descriptors)
+            and all(
+                _required_text(
+                    receipt.get("change_id"),
+                    field=f"{name} authority change_id",
+                )
+                == change_id
+                for name, receipt in receipts.items()
+            )
+            and all(
+                _normalized_sha256(receipt_hashes.get(name))
+                == _normalized_sha256(descriptor.get("sha256"))
+                for name, descriptor in descriptors.items()
+            )
+        )
+    except (TypeError, ValueError):
+        return False
 
 
 def _validate_auto_improvement_receipts(
@@ -2375,6 +2857,22 @@ def _parse_assignment_evidence(
         )
         if task_id in assignments:
             raise ValueError("duplicate assignment task")
+        task_identity = _required_mapping(
+            record.get("task_identity"),
+            field="assignment.task_identity",
+        )
+        canonical_task_id = canonical_task_identity(task_identity)
+        if (
+            _normalized_sha256(record.get("canonical_task_id"))
+            != canonical_task_id
+            or any(
+                existing.canonical_task_id == canonical_task_id
+                for existing in assignments.values()
+            )
+        ):
+            raise ValueError(
+                "assignment canonical task identity is missing or aliased"
+            )
         assignment_id = _normalized_sha256(record.get("assignment_id"))
         if assignment_id is None:
             raise ValueError("assignment_id must be a sha256 HMAC output")
@@ -2385,7 +2883,7 @@ def _parse_assignment_evidence(
         message = "||".join(
             (
                 experiment_id,
-                task_id,
+                canonical_task_id,
                 assignment_version,
                 _canonical_json(block),
             )
@@ -2449,6 +2947,7 @@ def _parse_assignment_evidence(
             )
         assignments[task_id] = _AssignmentEvidence(
             task_id=task_id,
+            canonical_task_id=canonical_task_id,
             assignment_id=assignment_id,
             first_execution_started_at_ms=first_execution_started_at_ms,
         )
@@ -2463,6 +2962,7 @@ def _validate_pilot_confirmation_lineage(
     experiment_id: str,
     design: Mapping[str, Any],
     assignments: Mapping[str, _AssignmentEvidence],
+    confirmation_roster: Mapping[str, str],
     context: _EvidenceContext,
 ) -> bool:
     try:
@@ -2491,7 +2991,13 @@ def _validate_pilot_confirmation_lineage(
             (
                 "pilot",
                 pilot,
-                ("protocol", "roster", "analysis"),
+                (
+                    "protocol",
+                    "roster",
+                    "assignments",
+                    "terminal_outcomes",
+                    "analysis",
+                ),
             ),
             (
                 "confirmation",
@@ -2573,23 +3079,37 @@ def _validate_pilot_confirmation_lineage(
             != _normalized_sha256(
                 descriptors["pilot_roster"].get("sha256")
             )
+            or _normalized_sha256(
+                pilot_analysis.get("assignments_sha256")
+            )
+            != _normalized_sha256(
+                descriptors["pilot_assignments"].get("sha256")
+            )
+            or _normalized_sha256(
+                pilot_analysis.get("terminal_outcomes_sha256")
+            )
+            != _normalized_sha256(
+                descriptors["pilot_terminal_outcomes"].get("sha256")
+            )
         ):
             return False
         pilot_completed_at_ms = _required_positive_int(
             pilot_analysis.get("completed_at_ms"),
             field="pilot analysis completed_at_ms",
         )
-        pilot_estimates = _required_mapping(
-            pilot_analysis.get("estimates"),
-            field="pilot analysis estimates",
-        )
-        pilot_b_win_rate = _required_number(
-            pilot_estimates.get("alternative_b_win_rate"),
-            field="pilot alternative B win rate",
-        )
-        pilot_discordance_rate = _required_number(
-            pilot_estimates.get("expected_discordance_rate"),
-            field="pilot expected discordance rate",
+        (
+            pilot_b_win_rate,
+            pilot_discordance_rate,
+        ) = _validated_pilot_estimates(
+            analysis=pilot_analysis,
+            assignments_document=documents["pilot_assignments"],
+            assignments_sha256=descriptors["pilot_assignments"].get(
+                "sha256"
+            ),
+            outcomes_document=documents["pilot_terminal_outcomes"],
+            roster=pilot_roster_tasks,
+            roster_sha256=descriptors["pilot_roster"].get("sha256"),
+            experiment_id=pilot_id,
         )
 
         confirmation_protocol = documents["confirmation_protocol"]
@@ -2661,9 +3181,9 @@ def _validate_pilot_confirmation_lineage(
         ):
             return False
 
-        confirmation_roster = documents["confirmation_roster"]
+        confirmation_roster_document = documents["confirmation_roster"]
         confirmation_roster_tasks = _validated_roster_tasks(
-            confirmation_roster,
+            confirmation_roster_document,
             phase="confirmation",
             experiment_id=confirmation_id,
             protocol_sha256=descriptors["confirmation_protocol"].get(
@@ -2671,7 +3191,7 @@ def _validate_pilot_confirmation_lineage(
             ),
         )
         confirmation_roster_frozen_at_ms = _required_positive_int(
-            confirmation_roster.get("frozen_at_ms"),
+            confirmation_roster_document.get("frozen_at_ms"),
             field="confirmation roster frozen_at_ms",
         )
         first_execution_started_at_ms = min(
@@ -2685,8 +3205,16 @@ def _validate_pilot_confirmation_lineage(
             < confirmation_registered_at_ms
             <= confirmation_roster_frozen_at_ms
             < first_execution_started_at_ms
-            and pilot_roster_tasks.isdisjoint(confirmation_roster_tasks)
-            and confirmation_roster_tasks == set(assignments)
+            and set(pilot_roster_tasks.values()).isdisjoint(
+                confirmation_roster_tasks.values()
+            )
+            and confirmation_roster_tasks == confirmation_roster
+            and set(confirmation_roster_tasks) == set(assignments)
+            and all(
+                confirmation_roster_tasks[task_id]
+                == assignment.canonical_task_id
+                for task_id, assignment in assignments.items()
+            )
             and _normalized_sha256(
                 derivation.get("pilot_analysis_sha256")
             )
@@ -2729,7 +3257,7 @@ def _validated_roster_tasks(
     phase: str,
     experiment_id: str,
     protocol_sha256: Any,
-) -> set[str]:
+) -> dict[str, str]:
     if (
         document.get("schema_version")
         != EXPERIMENT_ROSTER_SCHEMA_VERSION
@@ -2744,20 +3272,234 @@ def _validated_roster_tasks(
         != _normalized_sha256(protocol_sha256)
     ):
         raise ValueError(f"{phase} roster identity mismatch")
-    raw_task_ids = _required_sequence(
-        document.get("task_ids"),
-        field=f"{phase} roster task_ids",
+    raw_tasks = _required_sequence(
+        document.get("tasks"),
+        field=f"{phase} roster tasks",
     )
-    task_ids = [
-        _required_text(
-            task_id,
+    tasks: dict[str, str] = {}
+    canonical_ids: set[str] = set()
+    for raw_task in raw_tasks:
+        task = _required_mapping(
+            raw_task,
+            field=f"{phase} roster task",
+        )
+        task_id = _required_text(
+            task.get("task_id"),
             field=f"{phase} roster task_id",
         )
-        for task_id in raw_task_ids
-    ]
-    if not task_ids or len(task_ids) != len(set(task_ids)):
-        raise ValueError(f"{phase} roster tasks must be unique and non-empty")
-    return set(task_ids)
+        task_identity = _required_mapping(
+            task.get("task_identity"),
+            field=f"{phase} roster task_identity",
+        )
+        canonical_task_id = canonical_task_identity(task_identity)
+        if (
+            task_id in tasks
+            or canonical_task_id in canonical_ids
+            or _normalized_sha256(task.get("canonical_task_id"))
+            != canonical_task_id
+        ):
+            raise ValueError(
+                f"{phase} roster tasks must be canonical, unique, and non-empty"
+            )
+        tasks[task_id] = canonical_task_id
+        canonical_ids.add(canonical_task_id)
+    if not tasks:
+        raise ValueError(f"{phase} roster tasks must be non-empty")
+    return tasks
+
+
+def _validated_pilot_estimates(
+    *,
+    analysis: Mapping[str, Any],
+    assignments_document: Mapping[str, Any],
+    assignments_sha256: Any,
+    outcomes_document: Mapping[str, Any],
+    roster: Mapping[str, str],
+    roster_sha256: Any,
+    experiment_id: str,
+) -> tuple[float, float]:
+    if (
+        assignments_document.get("schema_version")
+        != PILOT_ASSIGNMENTS_SCHEMA_VERSION
+        or _required_text(
+            assignments_document.get("experiment_id"),
+            field="pilot assignments experiment_id",
+        )
+        != experiment_id
+        or _normalized_sha256(
+            assignments_document.get("roster_sha256")
+        )
+        != _normalized_sha256(roster_sha256)
+    ):
+        raise ValueError("pilot assignments are not roster-bound")
+    raw_assignments = _required_sequence(
+        assignments_document.get("assignments"),
+        field="pilot assignments",
+    )
+    assignments: dict[str, str] = {}
+    for raw_assignment in raw_assignments:
+        record = _required_mapping(
+            raw_assignment,
+            field="pilot assignment",
+        )
+        task_id = _required_text(
+            record.get("task_id"),
+            field="pilot assignment task_id",
+        )
+        if (
+            task_id not in roster
+            or task_id in assignments
+            or _normalized_sha256(record.get("canonical_task_id"))
+            != roster[task_id]
+        ):
+            raise ValueError("pilot assignment task identity mismatch")
+        assignments[task_id] = _required_sha256(
+            record.get("assignment_id"),
+            field="pilot assignment_id",
+        )
+    if set(assignments) != set(roster):
+        raise ValueError("pilot assignments omit frozen roster tasks")
+
+    if (
+        outcomes_document.get("schema_version")
+        != PILOT_TERMINAL_OUTCOMES_SCHEMA_VERSION
+        or _required_text(
+            outcomes_document.get("experiment_id"),
+            field="pilot outcomes experiment_id",
+        )
+        != experiment_id
+        or _normalized_sha256(
+            outcomes_document.get("assignments_sha256")
+        )
+        != _normalized_sha256(assignments_sha256)
+    ):
+        raise ValueError("pilot terminal outcomes are not assignment-bound")
+    raw_outcomes = _required_sequence(
+        outcomes_document.get("outcomes"),
+        field="pilot terminal outcomes",
+    )
+    outcomes: dict[tuple[str, str], bool] = {}
+    terminal_statuses = {
+        "completed",
+        "failed",
+        "cancelled",
+        "timed_out",
+    }
+    for raw_outcome in raw_outcomes:
+        record = _required_mapping(
+            raw_outcome,
+            field="pilot terminal outcome",
+        )
+        task_id = _required_text(
+            record.get("task_id"),
+            field="pilot outcome task_id",
+        )
+        arm = _required_text(
+            record.get("arm"),
+            field="pilot outcome arm",
+        )
+        key = (task_id, arm)
+        passed = record.get("passed")
+        status = _normalized_token(record.get("status"))
+        if (
+            task_id not in roster
+            or arm not in {"supervisor", "compute_matched_direct"}
+            or key in outcomes
+            or _normalized_sha256(record.get("canonical_task_id"))
+            != roster[task_id]
+            or _normalized_sha256(record.get("assignment_id"))
+            != assignments[task_id]
+            or status not in terminal_statuses
+            or not isinstance(passed, bool)
+            or (status != "completed" and passed)
+        ):
+            raise ValueError("pilot terminal outcome is invalid")
+        outcomes[key] = passed
+    expected_outcomes = {
+        (task_id, arm)
+        for task_id in roster
+        for arm in ("supervisor", "compute_matched_direct")
+    }
+    if set(outcomes) != expected_outcomes:
+        raise ValueError("pilot terminal outcomes are incomplete")
+
+    raw_rows = _required_sequence(
+        analysis.get("task_rows"),
+        field="pilot task_rows",
+    )
+    observed_tasks: set[str] = set()
+    b_wins = 0
+    discordant = 0
+    for raw_row in raw_rows:
+        row = _required_mapping(raw_row, field="pilot task row")
+        if any("attempt" in str(key).casefold() for key in row):
+            raise ValueError("pilot analysis cannot use attempt-level rows")
+        task_id = _required_text(
+            row.get("task_id"),
+            field="pilot row task_id",
+        )
+        task_identity = _required_mapping(
+            row.get("task_identity"),
+            field="pilot row task_identity",
+        )
+        if (
+            task_id not in roster
+            or task_id in observed_tasks
+            or canonical_task_identity(task_identity) != roster[task_id]
+            or _normalized_sha256(row.get("assignment_id"))
+            != assignments[task_id]
+        ):
+            raise ValueError("pilot analysis row identity mismatch")
+        b_pass = row.get("b_pass")
+        c_pass = row.get("c_pass")
+        if (
+            not isinstance(b_pass, bool)
+            or not isinstance(c_pass, bool)
+            or b_pass
+            is not outcomes[(task_id, "supervisor")]
+            or c_pass
+            is not outcomes[(task_id, "compute_matched_direct")]
+        ):
+            raise ValueError(
+                "pilot analysis row disagrees with terminal outcomes"
+            )
+        observed_tasks.add(task_id)
+        if b_pass != c_pass:
+            discordant += 1
+            if b_pass:
+                b_wins += 1
+    if observed_tasks != set(roster) or discordant <= 0:
+        raise ValueError(
+            "pilot analysis must include complete authoritative ITT rows"
+        )
+    b_win_rate = b_wins / discordant
+    discordance_rate = discordant / len(roster)
+    estimates = _required_mapping(
+        analysis.get("estimates"),
+        field="pilot analysis estimates",
+    )
+    if not (
+        math.isclose(
+            _required_number(
+                estimates.get("alternative_b_win_rate"),
+                field="pilot alternative B win rate",
+            ),
+            b_win_rate,
+            rel_tol=0.0,
+            abs_tol=1e-15,
+        )
+        and math.isclose(
+            _required_number(
+                estimates.get("expected_discordance_rate"),
+                field="pilot expected discordance rate",
+            ),
+            discordance_rate,
+            rel_tol=0.0,
+            abs_tol=1e-15,
+        )
+    ):
+        raise ValueError("pilot estimates do not match authoritative rows")
+    return b_win_rate, discordance_rate
 
 
 def _parse_grade_evidence(
@@ -2876,10 +3618,44 @@ def _parse_grade_evidence(
             verifier_implementation_hash=verifier_implementation_hash,
             passed=passed,
             recorded_at_ms=recorded_at_ms,
+            revision_document=dict(grade),
         )
     if not grades:
         raise ValueError("grade evidence is empty")
     return grades
+
+
+def _grades_are_current_in_authoritative_gradebook(
+    grades: Mapping[tuple[str, str], _GradeEvidence],
+    *,
+    grade_authority: Any,
+) -> bool:
+    try:
+        from .grade_revisions import DecisionGradeCitation, GradeBook
+
+        if not isinstance(grade_authority, GradeBook):
+            return False
+        for grade in grades.values():
+            authoritative = grade_authority.get_revision(grade.grade_id)
+            if (
+                authoritative.revision_hash != grade.revision_hash
+                or _canonical_json(authoritative.to_dict())
+                != _canonical_json(grade.revision_document)
+            ):
+                return False
+            validation = grade_authority.validate_decision(
+                (
+                    DecisionGradeCitation(
+                        grade_id=grade.grade_id,
+                        revision_hash=grade.revision_hash,
+                    ),
+                )
+            )
+            if validation.accepted is not True:
+                return False
+        return True
+    except Exception:
+        return False
 
 
 def _parse_verifier_evidence(
@@ -2926,6 +3702,8 @@ def _ledger_covers_grade_runs(
     assignment_artifact_sha256: Any,
     grade_artifact_sha256: Any,
     grades: Mapping[tuple[str, str], _GradeEvidence],
+    assignments: Mapping[str, _AssignmentEvidence],
+    expected_event_payloads: Sequence[Mapping[str, Any]],
     context: _EvidenceContext,
 ) -> bool:
     if document.get("schema_version") != LEDGER_VERIFICATIONS_SCHEMA_VERSION:
@@ -2944,6 +3722,14 @@ def _ledger_covers_grade_runs(
     if not _is_sequence(raw_runs):
         return False
     expected_run_ids = {grade.run_id for grade in grades.values()}
+    expected_events_by_run: dict[str, Mapping[str, Any]] = {}
+    for event in expected_event_payloads:
+        run_id = str(event.get("run_id") or "").strip()
+        if not run_id or run_id in expected_events_by_run:
+            return False
+        expected_events_by_run[run_id] = event
+    if set(expected_events_by_run) != expected_run_ids:
+        return False
     observed_run_ids: set[str] = set()
     for raw_run in raw_runs:
         if not isinstance(raw_run, Mapping):
@@ -2955,9 +3741,87 @@ def _ledger_covers_grade_runs(
             raw_run.get("expected_head_hash")
         )
         recorded_verification = raw_run.get("verification")
+        event_descriptor = raw_run.get("head_event_payload")
+        expected_event = expected_events_by_run.get(run_id)
         if (
             expected_head_hash is None
             or not isinstance(recorded_verification, Mapping)
+            or not isinstance(event_descriptor, Mapping)
+            or not isinstance(expected_event, Mapping)
+            or str(event_descriptor.get("ref") or "").strip()
+            != str(expected_event.get("ref") or "").strip()
+            or _normalized_sha256(event_descriptor.get("sha256"))
+            != _normalized_sha256(expected_event.get("sha256"))
+            or str(event_descriptor.get("event_id") or "").strip()
+            != str(expected_event.get("event_id") or "").strip()
+            or expected_head_hash
+            != _normalized_sha256(event_descriptor.get("sha256"))
+        ):
+            return False
+        event_payload = context.resolve_json(
+            event_descriptor.get("ref"),
+            event_descriptor.get("sha256"),
+        )
+        grade = next(
+            (
+                candidate
+                for candidate in grades.values()
+                if candidate.run_id == run_id
+            ),
+            None,
+        )
+        assignment = (
+            assignments.get(grade.task_id)
+            if grade is not None
+            else None
+        )
+        if (
+            not isinstance(event_payload, Mapping)
+            or grade is None
+            or assignment is None
+            or event_payload.get("schema_version")
+            != "supervisor-experiment-ledger-event/v1"
+            or _required_text(
+                event_payload.get("experiment_id"),
+                field="ledger event experiment_id",
+            )
+            != experiment_id
+            or _required_text(
+                event_payload.get("run_id"),
+                field="ledger event run_id",
+            )
+            != run_id
+            or _required_text(
+                event_payload.get("task_id"),
+                field="ledger event task_id",
+            )
+            != grade.task_id
+            or _normalized_sha256(
+                event_payload.get("canonical_task_id")
+            )
+            != assignment.canonical_task_id
+            or _normalized_sha256(
+                event_payload.get("assignment_id")
+            )
+            != assignment.assignment_id
+            or _required_text(
+                event_payload.get("arm"),
+                field="ledger event arm",
+            )
+            != grade.arm
+            or _normalized_sha256(
+                event_payload.get("frozen_result_hash")
+            )
+            != grade.frozen_result_hash
+            or _required_text(
+                event_payload.get("grade_id"),
+                field="ledger event grade_id",
+            )
+            != grade.grade_id
+            or _normalized_sha256(
+                event_payload.get("grade_revision_hash")
+            )
+            != grade.revision_hash
         ):
             return False
         authoritative = context.authoritative_ledger_verification(
@@ -2979,6 +3843,8 @@ def _ledger_covers_grade_runs(
             and authoritative.run_id == run_id
             and authoritative.event_count > 0
             and authoritative.head_event_id is not None
+            and authoritative.head_event_id
+            == str(event_descriptor.get("event_id") or "").strip()
             and authoritative.head_event_hash == expected_head_hash
             and authoritative.expected_head_hash == expected_head_hash
             and authoritative.truncation_checked
@@ -2999,10 +3865,16 @@ def _trace_covers_analysis_lineage(
     assignments: Mapping[str, _AssignmentEvidence],
     grades: Mapping[tuple[str, str], _GradeEvidence],
     verifier: _VerifierEvidence,
+    expected_decision_canonical_key: str,
+    expected_decision_revision_hash: str,
+    grade_authority: Any,
 ) -> bool:
     try:
         graph = _trace_graph_from_document(document)
-        closure = graph.validate_closure(now=datetime.now(timezone.utc))
+        closure = graph.validate_closure(
+            now=datetime.now(timezone.utc),
+            decision_grade_validator=grade_authority,
+        )
     except (KeyError, TraceGraphError, TypeError, ValueError):
         return False
     if not closure.ok:
@@ -3139,6 +4011,27 @@ def _trace_covers_analysis_lineage(
         )
     }
     if not authorizing_analysis_ids:
+        return False
+    authorizing_decisions = {
+        edge.source
+        for edge in graph.edges
+        if edge.relation is EdgeType.DERIVED_FROM
+        and edge.target in authorizing_analysis_ids
+        and edge.source.node_type is NodeType.DEC
+        and any(
+            promotion_edge.relation is EdgeType.PROMOTES
+            and promotion_edge.target == edge.source
+            and promotion_edge.source.node_type is NodeType.PROMOTION
+            for promotion_edge in graph.edges
+        )
+    }
+    if (
+        len(authorizing_decisions) != 1
+        or next(iter(authorizing_decisions)).canonical_key
+        != expected_decision_canonical_key
+        or next(iter(authorizing_decisions)).revision_hash
+        != expected_decision_revision_hash
+    ):
         return False
 
     for grade in grades.values():
@@ -3344,6 +4237,10 @@ def _validate_paired_task_rows(
     assignments: Mapping[str, _AssignmentEvidence],
     grades: Mapping[tuple[str, str], _GradeEvidence],
     verifier: _VerifierEvidence,
+    frozen_results: Mapping[
+        tuple[str, str],
+        _FrozenResultEvidence,
+    ],
 ) -> list[tuple[bool, bool]] | None:
     paired_rows: list[tuple[bool, bool]] = []
     observed_tasks: set[str] = set()
@@ -3363,6 +4260,8 @@ def _validate_paired_task_rows(
             assignment is None
             or _normalized_sha256(raw_row.get("assignment_id"))
             != assignment.assignment_id
+            or _normalized_sha256(raw_row.get("canonical_task_id"))
+            != assignment.canonical_task_id
         ):
             return None
         b_grade = grades.get((task_id, "supervisor"))
@@ -3370,6 +4269,20 @@ def _validate_paired_task_rows(
         if b_grade is None or c_grade is None:
             return None
         for prefix, grade in (("b", b_grade), ("c", c_grade)):
+            frozen_result = frozen_results.get(
+                (task_id, grade.arm)
+            )
+            if (
+                frozen_result is None
+                or frozen_result.canonical_task_id
+                != assignment.canonical_task_id
+                or frozen_result.assignment_id != assignment.assignment_id
+                or frozen_result.run_id != grade.run_id
+                or frozen_result.frozen_result_hash
+                != grade.frozen_result_hash
+                or frozen_result.passed is not grade.passed
+            ):
+                return None
             if str(raw_row.get(f"{prefix}_grade_id") or "").strip() != (
                 grade.grade_id
             ):
@@ -3412,6 +4325,7 @@ def _validate_paired_task_rows(
         not paired_rows
         or observed_tasks != set(assignments)
         or expected_grade_keys != set(grades)
+        or expected_grade_keys != set(frozen_results)
     ):
         return None
     return paired_rows

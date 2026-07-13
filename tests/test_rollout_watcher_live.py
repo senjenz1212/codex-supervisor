@@ -174,7 +174,7 @@ async def test_rollout_watcher_sweep_drains_known_file_growth_without_watch_even
 
     assert state._conn.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 1
     row = state._conn.execute("SELECT kind, payload_json FROM events").fetchone()
-    assert row["kind"] == "task_complete"
+    assert row["kind"] == "turn.completed"
     assert "missed append" in row["payload_json"]
     assert state.get_tail_offset(str(rollout)) == rollout.stat().st_size
 

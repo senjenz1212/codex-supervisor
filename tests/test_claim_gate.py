@@ -14,9 +14,12 @@ from supervisor.claim_gate import (
     ClaimGate as _ClaimGate,
     ClaimLevel,
     UnsupportedClaimError,
+    external_authority_attestation_payload,
     independent_verifier_attestation_payload,
 )
 from supervisor.evidence_ledger import LedgerVerification
+from supervisor.grade_revisions import GradeBook, RunEnvelopeRef
+from supervisor.task_environment import Grade, canonical_task_identity
 from supervisor.trace_graph import (
     EdgeType,
     NodeType,
@@ -31,6 +34,8 @@ from supervisor.trace_graph import (
 _PRODUCER_PRINCIPAL_ID = "claim-gate-fixture-producer"
 _VERIFIER_PRINCIPAL_ID = "claim-gate-fixture-verifier"
 _VERIFIER_ATTESTATION_KEY = b"claim-gate-fixture-verifier-key"
+_EXTERNAL_AUTHORITY_ID = "claim-gate-fixture-external-authority"
+_EXTERNAL_AUTHORITY_KEY = b"claim-gate-fixture-external-authority-key"
 
 
 class _HmacVerifierAttestor:
@@ -46,52 +51,99 @@ class _HmacVerifierAttestor:
         )
 
 
+class _HmacExternalAuthority:
+    def verify(self, payload: bytes, signature: dict[str, object]) -> bool:
+        expected = hmac.new(
+            _EXTERNAL_AUTHORITY_KEY,
+            payload,
+            sha256,
+        ).hexdigest()
+        return hmac.compare_digest(
+            str(signature.get("hmac_sha256") or ""),
+            expected,
+        )
+
+
 _TRUSTED_VERIFIER_ATTESTORS = {
     _VERIFIER_PRINCIPAL_ID: _HmacVerifierAttestor(),
 }
+_TRUSTED_EXTERNAL_AUTHORITIES = {
+    _EXTERNAL_AUTHORITY_ID: _HmacExternalAuthority(),
+}
+
+
+class _FixtureAuthority:
+    def __init__(
+        self,
+        *,
+        ledger_verifications: dict[str, LedgerVerification],
+        gradebook: GradeBook,
+    ) -> None:
+        self.ledger_verifications = ledger_verifications
+        self.gradebook = gradebook
+
+    def __call__(
+        self,
+        run_id: str,
+        expected_head_hash: str,
+    ) -> LedgerVerification | None:
+        verification = self.ledger_verifications.get(run_id)
+        if (
+            verification is None
+            or verification.head_event_hash != expected_head_hash
+        ):
+            return None
+        return verification
 
 
 class ClaimGate(_ClaimGate):
     """Exercise ClaimGate with the fixture trust store unless overridden."""
 
-    @classmethod
-    def max_claim_level(cls, *args, **kwargs):
+    @staticmethod
+    def _authority_defaults(kwargs):
         kwargs.setdefault(
             "trusted_verifier_attestors",
             _TRUSTED_VERIFIER_ATTESTORS,
         )
+        kwargs.setdefault(
+            "trusted_external_authorities",
+            _TRUSTED_EXTERNAL_AUTHORITIES,
+        )
+        ledger_authority = kwargs.get("ledger_verification_resolver")
+        if isinstance(ledger_authority, _FixtureAuthority):
+            kwargs.setdefault(
+                "grade_authority",
+                ledger_authority.gradebook,
+            )
+
+    @classmethod
+    def max_claim_level(cls, *args, **kwargs):
+        cls._authority_defaults(kwargs)
         return super().max_claim_level(*args, **kwargs)
 
     @classmethod
     def derived_claim_flags(cls, *args, **kwargs):
-        kwargs.setdefault(
-            "trusted_verifier_attestors",
-            _TRUSTED_VERIFIER_ATTESTORS,
-        )
+        cls._authority_defaults(kwargs)
         return super().derived_claim_flags(*args, **kwargs)
 
     @classmethod
     def derive_report(cls, *args, **kwargs):
-        kwargs.setdefault(
-            "trusted_verifier_attestors",
-            _TRUSTED_VERIFIER_ATTESTORS,
-        )
+        cls._authority_defaults(kwargs)
         return super().derive_report(*args, **kwargs)
 
     @classmethod
+    def govern_report(cls, *args, **kwargs):
+        cls._authority_defaults(kwargs)
+        return super().govern_report(*args, **kwargs)
+
+    @classmethod
     def validate_report(cls, *args, **kwargs):
-        kwargs.setdefault(
-            "trusted_verifier_attestors",
-            _TRUSTED_VERIFIER_ATTESTORS,
-        )
+        cls._authority_defaults(kwargs)
         return super().validate_report(*args, **kwargs)
 
     @classmethod
     def validate_derived_report(cls, *args, **kwargs):
-        kwargs.setdefault(
-            "trusted_verifier_attestors",
-            _TRUSTED_VERIFIER_ATTESTORS,
-        )
+        cls._authority_defaults(kwargs)
         return super().validate_derived_report(*args, **kwargs)
 
 
@@ -141,6 +193,45 @@ def _sha256_json(value: object) -> str:
     ).hexdigest()
 
 
+def _task_identity(task_id: str) -> dict[str, str]:
+    return {
+        "repo": "https://github.com/example/repository.git",
+        "canonical_repo_id": (
+            "https://github.com/example/repository.git"
+        ),
+        "revision": "1" * 40,
+        "dataset_hash": "2" * 64,
+        "split_hash": "3" * 64,
+        "canonical_task_key": task_id,
+    }
+
+
+def _externally_attested_descriptor(
+    descriptor: dict[str, str],
+    *,
+    evidence_kind: str,
+) -> dict[str, object]:
+    payload = external_authority_attestation_payload(
+        evidence_kind=evidence_kind,
+        authority_id=_EXTERNAL_AUTHORITY_ID,
+        reference=descriptor["ref"],
+        sha256_digest=descriptor["sha256"],
+    )
+    return {
+        **descriptor,
+        "attestation": {
+            "authority_id": _EXTERNAL_AUTHORITY_ID,
+            "signature": {
+                "hmac_sha256": hmac.new(
+                    _EXTERNAL_AUTHORITY_KEY,
+                    payload,
+                    sha256,
+                ).hexdigest(),
+            },
+        },
+    }
+
+
 def _attested_hidden_verifier(
     result: dict[str, str],
     *,
@@ -180,9 +271,12 @@ def _claim_gate_kwargs(
 ) -> dict[str, object]:
     kwargs: dict[str, object] = {
         "trusted_verifier_attestors": _TRUSTED_VERIFIER_ATTESTORS,
+        "trusted_external_authorities": _TRUSTED_EXTERNAL_AUTHORITIES,
     }
     if ledger_resolver is not None:
         kwargs["ledger_verification_resolver"] = ledger_resolver
+    if isinstance(ledger_resolver, _FixtureAuthority):
+        kwargs["grade_authority"] = ledger_resolver.gradebook
     return kwargs
 
 
@@ -253,7 +347,19 @@ def _closed_trace_document(
     decision = node(
         NodeType.DEC,
         "DEC-B-VS-C-CLAIM-AUTHORITY",
-        attributes={"experiment_id": experiment_id},
+        attributes={
+            "experiment_id": experiment_id,
+            "grade_citations": [
+                {
+                    "grade_id": grade_record["grade"]["grade_id"],
+                    "revision_hash": (
+                        grade_record["grade"]["revision_hash"]
+                    ),
+                    "acknowledged_invalidation_hashes": [],
+                }
+                for grade_record in grades
+            ],
+        },
     )
     promotion = node(
         NodeType.PROMOTION,
@@ -282,6 +388,7 @@ def _closed_trace_document(
             f"ASN-{task_id}",
             attributes={
                 "task_id": task_id,
+                "canonical_task_id": assignment["canonical_task_id"],
                 "assignment_id": assignment["assignment_id"],
             },
         )
@@ -391,6 +498,20 @@ def _write_pilot_confirmation_lineage(
             "registered_at_ms": 100,
         },
     )
+    pilot_task_ids = [
+        f"{pilot_task_prefix}-{index:02d}"
+        for index in range(10)
+    ]
+    pilot_tasks = [
+        {
+            "task_id": task_id,
+            "task_identity": _task_identity(task_id),
+            "canonical_task_id": canonical_task_identity(
+                _task_identity(task_id)
+            ),
+        }
+        for task_id in pilot_task_ids
+    ]
     pilot_roster = _write_json_artifact(
         evidence_root,
         _artifact_ref(artifact_namespace, "pilot-roster.json"),
@@ -400,10 +521,80 @@ def _write_pilot_confirmation_lineage(
             "experiment_id": pilot_id,
             "protocol_sha256": pilot_protocol["sha256"],
             "frozen_at_ms": 200,
-            "task_ids": [
-                f"{pilot_task_prefix}-{index:02d}"
-                for index in range(5)
-            ],
+            "tasks": pilot_tasks,
+        },
+    )
+    pilot_assignment_records = [
+        {
+            "task_id": task_id,
+            "canonical_task_id": canonical_task_identity(
+                _task_identity(task_id)
+            ),
+            "assignment_id": _sha256_text(
+                f"pilot-assignment:{pilot_id}:{task_id}"
+            ),
+        }
+        for task_id in pilot_task_ids
+    ]
+    pilot_assignments = _write_json_artifact(
+        evidence_root,
+        _artifact_ref(artifact_namespace, "pilot-assignments.json"),
+        {
+            "schema_version": "supervisor-pilot-assignments/v1",
+            "experiment_id": pilot_id,
+            "roster_sha256": pilot_roster["sha256"],
+            "frozen_at_ms": 220,
+            "assignments": pilot_assignment_records,
+        },
+    )
+    pilot_outcomes: list[dict[str, object]] = []
+    pilot_rows: list[dict[str, object]] = []
+    for index, assignment in enumerate(pilot_assignment_records):
+        task_id = str(assignment["task_id"])
+        b_pass = index < 9
+        c_pass = not b_pass
+        for arm, passed in (
+            ("supervisor", b_pass),
+            ("compute_matched_direct", c_pass),
+        ):
+            pilot_outcomes.append(
+                {
+                    "task_id": task_id,
+                    "canonical_task_id": assignment[
+                        "canonical_task_id"
+                    ],
+                    "assignment_id": assignment["assignment_id"],
+                    "arm": arm,
+                    "status": "completed",
+                    "passed": passed,
+                }
+            )
+        pilot_rows.append(
+            {
+                "task_id": task_id,
+                "task_identity": _task_identity(task_id),
+                "canonical_task_id": assignment[
+                    "canonical_task_id"
+                ],
+                "assignment_id": assignment["assignment_id"],
+                "b_pass": b_pass,
+                "c_pass": c_pass,
+            }
+        )
+    pilot_terminal_outcomes = _write_json_artifact(
+        evidence_root,
+        _artifact_ref(
+            artifact_namespace,
+            "pilot-terminal-outcomes.json",
+        ),
+        {
+            "schema_version": (
+                "supervisor-pilot-terminal-outcomes/v1"
+            ),
+            "experiment_id": pilot_id,
+            "assignments_sha256": pilot_assignments["sha256"],
+            "frozen_at_ms": 280,
+            "outcomes": pilot_outcomes,
         },
     )
     pilot_analysis = _write_json_artifact(
@@ -414,7 +605,12 @@ def _write_pilot_confirmation_lineage(
             "experiment_id": pilot_id,
             "protocol_sha256": pilot_protocol["sha256"],
             "roster_sha256": pilot_roster["sha256"],
+            "assignments_sha256": pilot_assignments["sha256"],
+            "terminal_outcomes_sha256": (
+                pilot_terminal_outcomes["sha256"]
+            ),
             "completed_at_ms": 300,
+            "task_rows": pilot_rows,
             "estimates": {
                 "alternative_b_win_rate": powered_design["power"][
                     "alternative_b_win_rate"
@@ -450,7 +646,16 @@ def _write_pilot_confirmation_lineage(
             "experiment_id": experiment_id,
             "protocol_sha256": confirmation_protocol["sha256"],
             "frozen_at_ms": 500,
-            "task_ids": confirmation_task_ids,
+            "tasks": [
+                {
+                    "task_id": task_id,
+                    "task_identity": _task_identity(task_id),
+                    "canonical_task_id": canonical_task_identity(
+                        _task_identity(task_id)
+                    ),
+                }
+                for task_id in confirmation_task_ids
+            ],
         },
     )
     return _write_json_artifact(
@@ -465,6 +670,8 @@ def _write_pilot_confirmation_lineage(
                 "experiment_id": pilot_id,
                 "protocol": pilot_protocol,
                 "roster": pilot_roster,
+                "assignments": pilot_assignments,
+                "terminal_outcomes": pilot_terminal_outcomes,
                 "analysis": pilot_analysis,
             },
             "confirmation": {
@@ -546,8 +753,10 @@ def _causal_bundle(
     artifact_namespace: str = "",
     task_prefix: str = "causal-task",
     replication_context: dict[str, object] | None = None,
+    gradebook: GradeBook | None = None,
 ) -> dict[str, object]:
     bundle = _outcome_bundle(evidence_root)
+    grade_authority = gradebook or GradeBook(":memory:")
     assignment_version = "fixture-v1"
     verifier_id = "hidden-verifier/v1"
     verifier_version = "1.0"
@@ -585,11 +794,15 @@ def _causal_bundle(
     )
     assignments: list[dict[str, object]] = []
     grades: list[dict[str, object]] = []
+    frozen_results: list[dict[str, object]] = []
     task_rows: list[dict[str, object]] = []
     trace_nodes: list[dict[str, object]] = []
     ledger_runs: list[dict[str, object]] = []
+    ledger_event_payloads: list[dict[str, object]] = []
     for index in range(task_count):
         task_id = f"{task_prefix}-{index:02d}"
+        task_identity = _task_identity(task_id)
+        canonical_task_id = canonical_task_identity(task_identity)
         block = {
             "model": "fixture-model",
             "powered_design_sha256": powered_design_sha256,
@@ -599,7 +812,7 @@ def _causal_bundle(
         assignment_message = "||".join(
             (
                 experiment_id,
-                task_id,
+                canonical_task_id,
                 assignment_version,
                 json.dumps(block, sort_keys=True, separators=(",", ":")),
             )
@@ -616,6 +829,8 @@ def _causal_bundle(
         assignments.append(
             {
                 "task_id": task_id,
+                "task_identity": task_identity,
+                "canonical_task_id": canonical_task_id,
                 "assignment_id": assignment_id,
                 "block": block,
                 "assignment_message_sha256": _sha256_text(
@@ -649,6 +864,7 @@ def _causal_bundle(
 
         row: dict[str, object] = {
             "task_id": task_id,
+            "canonical_task_id": canonical_task_id,
             "assignment_id": assignment_id,
         }
         for arm_index, (arm, passed) in enumerate(
@@ -668,30 +884,29 @@ def _causal_bundle(
                     f"frozen-result:{task_id}:{arm}"
                 ),
             }
-            grade_id = f"grade-{task_id}-{arm_key}"
-            grade_payload = {
-                "schema_version": "supervisor-grade-revision/v1",
-                "grade_id": grade_id,
-                "revision_number": 1,
-                "run_envelope": run_envelope,
-                "verifier": {
-                    "id": verifier_id,
-                    "version": verifier_version,
-                    "config_hash": verifier_config_hash,
-                    "implementation_hash": verifier_implementation_hash,
-                },
-                "passed": passed,
-                "score": 1.0 if passed else 0.0,
-                "evidence": {"fixture": "hidden-verifier"},
-                "failure_classification": "" if passed else "verified_failure",
-                "flake_classification": "",
-                "supersedes_grade_id": None,
-                "recorded_at_ms": first_execution_started_at_ms + arm_index + 1,
-            }
-            grade = {
-                **grade_payload,
-                "revision_hash": _sha256_json(grade_payload),
-            }
+            grade_revision = grade_authority.append_grade(
+                run=RunEnvelopeRef(**run_envelope),
+                grade=Grade(
+                    verifier_id=verifier_id,
+                    verifier_version=verifier_version,
+                    verifier_hash=verifier_implementation_hash,
+                    frozen_result_hash=str(
+                        run_envelope["frozen_result_hash"]
+                    ),
+                    passed=passed,
+                    score=1.0 if passed else 0.0,
+                    evidence={"fixture": "hidden-verifier"},
+                    failure_classification=(
+                        "" if passed else "verified_failure"
+                    ),
+                ),
+                verifier_config_hash=verifier_config_hash,
+                verifier_implementation_hash=(
+                    verifier_implementation_hash
+                ),
+            )
+            grade = grade_revision.to_dict()
+            grade_id = grade_revision.grade_id
             grades.append(
                 {
                     "task_id": task_id,
@@ -702,6 +917,20 @@ def _causal_bundle(
             row[f"{arm_key}_grade_id"] = grade_id
             row[f"{arm_key}_grade_revision_hash"] = grade["revision_hash"]
             row[f"{arm_key}_pass"] = passed
+            frozen_results.append(
+                {
+                    "task_id": task_id,
+                    "canonical_task_id": canonical_task_id,
+                    "assignment_id": assignment_id,
+                    "arm": arm,
+                    "run_id": run_id,
+                    "status": "completed",
+                    "frozen_result_hash": run_envelope[
+                        "frozen_result_hash"
+                    ],
+                    "passed": passed,
+                }
+            )
             trace_nodes.append(
                 {
                     "identity": {
@@ -725,14 +954,42 @@ def _causal_bundle(
                     },
                 }
             )
-            head_event_hash = _sha256_text(
-                f"ledger-head:{task_id}:{arm}"
+            event_id = f"event-{task_id}-{arm_key}-3"
+            event_payload = _write_json_artifact(
+                evidence_root,
+                _artifact_ref(
+                    artifact_namespace,
+                    f"ledger-head-{index:02d}-{arm_key}.json",
+                ),
+                {
+                    "schema_version": (
+                        "supervisor-experiment-ledger-event/v1"
+                    ),
+                    "experiment_id": experiment_id,
+                    "run_id": run_id,
+                    "task_id": task_id,
+                    "canonical_task_id": canonical_task_id,
+                    "assignment_id": assignment_id,
+                    "arm": arm,
+                    "frozen_result_hash": run_envelope[
+                        "frozen_result_hash"
+                    ],
+                    "grade_id": grade_id,
+                    "grade_revision_hash": grade["revision_hash"],
+                },
             )
+            event_descriptor = {
+                "run_id": run_id,
+                "event_id": event_id,
+                **event_payload,
+            }
+            ledger_event_payloads.append(event_descriptor)
+            head_event_hash = event_payload["sha256"]
             verification = LedgerVerification(
                 valid=True,
                 run_id=run_id,
                 event_count=3,
-                head_event_id=f"event-{task_id}-{arm_key}-3",
+                head_event_id=event_id,
                 head_event_hash=head_event_hash,
                 expected_head_hash=head_event_hash,
                 truncation_checked=True,
@@ -749,6 +1006,7 @@ def _causal_bundle(
                     "run_id": run_id,
                     "expected_head_hash": head_event_hash,
                     "verification": verification.to_dict(),
+                    "head_event_payload": event_descriptor,
                 }
             )
         task_rows.append(row)
@@ -781,28 +1039,29 @@ def _causal_bundle(
             "grades": grades,
         },
     )
+    trace_document = (
+        _closed_trace_document(
+            experiment_id=experiment_id,
+            assignments=assignments,
+            grades=grades,
+            verifier_id=verifier_id,
+            verifier_implementation_hash=(
+                verifier_implementation_hash
+            ),
+        )
+        if closed_trace
+        else {
+            "schema_version": "supervisor-trace-graph/v1",
+            "edge_direction": "source_record_to_prerequisite",
+            "nodes": trace_nodes,
+            "edges": [],
+            "waivers": [],
+        }
+    )
     trace_artifact = _write_json_artifact(
         evidence_root,
         _artifact_ref(artifact_namespace, "b-vs-c-trace.json"),
-        (
-            _closed_trace_document(
-                experiment_id=experiment_id,
-                assignments=assignments,
-                grades=grades,
-                verifier_id=verifier_id,
-                verifier_implementation_hash=(
-                    verifier_implementation_hash
-                ),
-            )
-            if closed_trace
-            else {
-                "schema_version": "supervisor-trace-graph/v1",
-                "edge_direction": "source_record_to_prerequisite",
-                "nodes": trace_nodes,
-                "edges": [],
-                "waivers": [],
-            }
-        ),
+        trace_document,
     )
     ledger_artifact = _write_json_artifact(
         evidence_root,
@@ -880,7 +1139,7 @@ def _causal_bundle(
         _artifact_ref(artifact_namespace, "b-vs-c-analysis.json"),
         analysis_document,
     )
-    bundle["randomized_powered_b_vs_c"] = {
+    causal_evidence: dict[str, object] = {
         "comparison": "B_vs_C",
         "randomized": True,
         "powered": True,
@@ -888,6 +1147,81 @@ def _causal_bundle(
         "analysis_ref": analysis["ref"],
         "analysis_sha256": analysis["sha256"],
     }
+    if study_lineage:
+        decision_nodes = [
+            node
+            for node in trace_document["nodes"]
+            if node["identity"]["node_type"] == "DEC"
+        ]
+        assert len(decision_nodes) == 1
+        decision_identity = decision_nodes[0]["identity"]
+        manifest = _write_json_artifact(
+            evidence_root,
+            _artifact_ref(
+                artifact_namespace,
+                "experiment-evidence-manifest.json",
+            ),
+            {
+                "schema_version": (
+                    "supervisor-experiment-evidence-manifest/v1"
+                ),
+                "experiment_id": experiment_id,
+                "artifacts": {
+                    "analysis": analysis,
+                    **analysis_lineage,
+                },
+                "analysis_hashes": {
+                    "analysis_sha256": analysis["sha256"],
+                    "design_sha256": _sha256_json(powered_design),
+                    "task_rows_sha256": _sha256_json(task_rows),
+                    "result_sha256": _sha256_json(
+                        analysis_document["result"]
+                    ),
+                },
+                "frozen_roster": [
+                    {
+                        "task_id": assignment["task_id"],
+                        "task_identity": assignment["task_identity"],
+                        "canonical_task_id": assignment[
+                            "canonical_task_id"
+                        ],
+                    }
+                    for assignment in assignments
+                ],
+                "frozen_results": frozen_results,
+                "current_grade_revisions": [
+                    {
+                        "task_id": grade_record["task_id"],
+                        "arm": grade_record["arm"],
+                        "grade_id": grade_record["grade"]["grade_id"],
+                        "revision_hash": grade_record["grade"][
+                            "revision_hash"
+                        ],
+                    }
+                    for grade_record in grades
+                ],
+                "verifier_implementation": {
+                    "verifier_id": verifier_id,
+                    "verifier_version": verifier_version,
+                    "verifier_config_hash": verifier_config_hash,
+                    "verifier_implementation_hash": (
+                        verifier_implementation_hash
+                    ),
+                },
+                "trace_decision": {
+                    "canonical_key": decision_identity["canonical_key"],
+                    "revision_hash": decision_identity["revision_hash"],
+                },
+                "ledger_event_payloads": ledger_event_payloads,
+            },
+        )
+        causal_evidence["experiment_manifest"] = (
+            _externally_attested_descriptor(
+                manifest,
+                evidence_kind="experiment_evidence_manifest",
+            )
+        )
+    bundle["randomized_powered_b_vs_c"] = causal_evidence
     return bundle
 
 
@@ -895,19 +1229,21 @@ def _authoritative_causal_bundle(
     evidence_root: Path,
     *,
     ledger_verifications: dict[str, LedgerVerification] | None = None,
+    gradebook: GradeBook | None = None,
     experiment_id: str = "claim-gate-causal-fixture",
     artifact_namespace: str = "",
     task_prefix: str = "causal-task",
     replication_context: dict[str, object] | None = None,
 ) -> tuple[
     dict[str, object],
-    Callable[[str, str], LedgerVerification | None],
+    _FixtureAuthority,
 ]:
     authoritative_verifications = (
         ledger_verifications
         if ledger_verifications is not None
         else {}
     )
+    grade_authority = gradebook or GradeBook(":memory:")
     bundle = _causal_bundle(
         evidence_root,
         task_count=15,
@@ -920,33 +1256,26 @@ def _authoritative_causal_bundle(
         artifact_namespace=artifact_namespace,
         task_prefix=task_prefix,
         replication_context=replication_context,
+        gradebook=grade_authority,
     )
-
-    def resolve(
-        run_id: str,
-        expected_head_hash: str,
-    ) -> LedgerVerification | None:
-        verification = authoritative_verifications.get(run_id)
-        if (
-            verification is None
-            or verification.head_event_hash != expected_head_hash
-        ):
-            return None
-        return verification
-
-    return bundle, resolve
+    return bundle, _FixtureAuthority(
+        ledger_verifications=authoritative_verifications,
+        gradebook=grade_authority,
+    )
 
 
 def _portable_authoritative_bundle(
     evidence_root: Path,
 ) -> tuple[
     dict[str, object],
-    Callable[[str, str], LedgerVerification | None],
+    _FixtureAuthority,
 ]:
     ledger_verifications: dict[str, LedgerVerification] = {}
+    gradebook = GradeBook(":memory:")
     bundle, ledger_resolver = _authoritative_causal_bundle(
         evidence_root,
         ledger_verifications=ledger_verifications,
+        gradebook=gradebook,
     )
     causal_evidence = bundle["randomized_powered_b_vs_c"]
     assert isinstance(causal_evidence, dict)
@@ -976,6 +1305,7 @@ def _portable_authoritative_bundle(
         study_bundle, _ = _authoritative_causal_bundle(
             evidence_root,
             ledger_verifications=ledger_verifications,
+            gradebook=gradebook,
             experiment_id=f"claim-gate-replication-{index}",
             artifact_namespace=namespace,
             task_prefix=f"replication-{index}-task",
@@ -987,6 +1317,9 @@ def _portable_authoritative_bundle(
             {
                 "analysis_ref": study_evidence["analysis_ref"],
                 "analysis_sha256": study_evidence["analysis_sha256"],
+                "experiment_manifest": study_evidence[
+                    "experiment_manifest"
+                ],
             }
         )
     replication = _write_json_artifact(
@@ -1052,13 +1385,115 @@ def _portable_authoritative_bundle(
 
 def _roi_authoritative_bundle(
     evidence_root: Path,
+    *,
+    cheaper_harness: bool = False,
 ) -> tuple[
     dict[str, object],
-    Callable[[str, str], LedgerVerification | None],
+    _FixtureAuthority,
 ]:
     bundle, ledger_resolver = _portable_authoritative_bundle(evidence_root)
     causal_evidence = bundle["randomized_powered_b_vs_c"]
     assert isinstance(causal_evidence, dict)
+    if cheaper_harness:
+        cost_components = {
+            "compute": {
+                "method": "token_usage_pricing",
+                "baseline": {
+                    "input_tokens": 2_000_000,
+                    "output_tokens": 500_000,
+                    "input_usd_per_million": 4.0,
+                    "output_usd_per_million": 8.0,
+                    "reported_cost_usd": 12.0,
+                },
+                "supervisor": {
+                    "input_tokens": 1_000_000,
+                    "output_tokens": 0,
+                    "input_usd_per_million": 4.0,
+                    "output_usd_per_million": 8.0,
+                    "reported_cost_usd": 4.0,
+                },
+            },
+            "latency": {
+                "method": "elapsed_seconds_value",
+                "baseline": {
+                    "elapsed_seconds": 7_200.0,
+                    "usd_per_hour": 5.0,
+                    "reported_cost_usd": 10.0,
+                },
+                "supervisor": {
+                    "elapsed_seconds": 3_600.0,
+                    "usd_per_hour": 5.0,
+                    "reported_cost_usd": 5.0,
+                },
+            },
+            "risk": {
+                "method": "expected_loss",
+                "baseline": {
+                    "probability": 0.10,
+                    "impact_usd": 30.0,
+                    "reported_cost_usd": 3.0,
+                },
+                "supervisor": {
+                    "probability": 0.10,
+                    "impact_usd": 10.0,
+                    "reported_cost_usd": 1.0,
+                },
+            },
+        }
+        baseline_cost = 25.0
+        supervisor_cost = 10.0
+    else:
+        cost_components = {
+            "compute": {
+                "method": "token_usage_pricing",
+                "baseline": {
+                    "input_tokens": 1_000_000,
+                    "output_tokens": 0,
+                    "input_usd_per_million": 4.0,
+                    "output_usd_per_million": 8.0,
+                    "reported_cost_usd": 4.0,
+                },
+                "supervisor": {
+                    "input_tokens": 2_000_000,
+                    "output_tokens": 500_000,
+                    "input_usd_per_million": 4.0,
+                    "output_usd_per_million": 8.0,
+                    "reported_cost_usd": 12.0,
+                },
+            },
+            "latency": {
+                "method": "elapsed_seconds_value",
+                "baseline": {
+                    "elapsed_seconds": 3_600.0,
+                    "usd_per_hour": 5.0,
+                    "reported_cost_usd": 5.0,
+                },
+                "supervisor": {
+                    "elapsed_seconds": 7_200.0,
+                    "usd_per_hour": 5.0,
+                    "reported_cost_usd": 10.0,
+                },
+            },
+            "risk": {
+                "method": "expected_loss",
+                "baseline": {
+                    "probability": 0.10,
+                    "impact_usd": 10.0,
+                    "reported_cost_usd": 1.0,
+                },
+                "supervisor": {
+                    "probability": 0.10,
+                    "impact_usd": 30.0,
+                    "reported_cost_usd": 3.0,
+                },
+            },
+        }
+        baseline_cost = 10.0
+        supervisor_cost = 25.0
+    incremental_cost = supervisor_cost - baseline_cost
+    cost_per_incremental_success = incremental_cost / 15
+    incremental_value = 30.0
+    net_value = incremental_value - incremental_cost
     business_value_protocol = _write_json_artifact(
         evidence_root,
         "artifacts/business-value-protocol.json",
@@ -1096,55 +1531,11 @@ def _roi_authoritative_bundle(
             "measurement_started_at_ms": 1_002,
             "measurement_completed_at_ms": 2_000,
             "task_count": 15,
-            "components": {
-                "compute": {
-                    "method": "token_usage_pricing",
-                    "baseline": {
-                        "input_tokens": 1_000_000,
-                        "output_tokens": 0,
-                        "input_usd_per_million": 4.0,
-                        "output_usd_per_million": 8.0,
-                        "reported_cost_usd": 4.0,
-                    },
-                    "supervisor": {
-                        "input_tokens": 2_000_000,
-                        "output_tokens": 500_000,
-                        "input_usd_per_million": 4.0,
-                        "output_usd_per_million": 8.0,
-                        "reported_cost_usd": 12.0,
-                    },
-                },
-                "latency": {
-                    "method": "elapsed_seconds_value",
-                    "baseline": {
-                        "elapsed_seconds": 3_600.0,
-                        "usd_per_hour": 5.0,
-                        "reported_cost_usd": 5.0,
-                    },
-                    "supervisor": {
-                        "elapsed_seconds": 7_200.0,
-                        "usd_per_hour": 5.0,
-                        "reported_cost_usd": 10.0,
-                    },
-                },
-                "risk": {
-                    "method": "expected_loss",
-                    "baseline": {
-                        "probability": 0.10,
-                        "impact_usd": 10.0,
-                        "reported_cost_usd": 1.0,
-                    },
-                    "supervisor": {
-                        "probability": 0.10,
-                        "impact_usd": 30.0,
-                        "reported_cost_usd": 3.0,
-                    },
-                },
-            },
+            "components": cost_components,
             "totals": {
-                "baseline_cost_usd": 10.0,
-                "supervisor_cost_usd": 25.0,
-                "incremental_cost_usd": 15.0,
+                "baseline_cost_usd": baseline_cost,
+                "supervisor_cost_usd": supervisor_cost,
+                "incremental_cost_usd": incremental_cost,
             },
         },
     )
@@ -1163,27 +1554,36 @@ def _roi_authoritative_bundle(
                 "task_count": 15,
                 "baseline_successes": 0,
                 "supervisor_successes": 15,
-                "baseline_cost_usd": 10.0,
-                "supervisor_cost_usd": 25.0,
+                "baseline_cost_usd": baseline_cost,
+                "supervisor_cost_usd": supervisor_cost,
                 "value_per_success_usd": 2.0,
             },
             "result": {
                 "incremental_successes": 15,
-                "incremental_cost_usd": 15.0,
-                "cost_per_incremental_success_usd": 1.0,
-                "break_even_value_per_success_usd": 1.0,
-                "incremental_value_usd": 30.0,
-                "net_value_usd": 15.0,
+                "incremental_cost_usd": incremental_cost,
+                "cost_per_incremental_success_usd": (
+                    cost_per_incremental_success
+                ),
+                "break_even_value_per_success_usd": (
+                    cost_per_incremental_success
+                ),
+                "incremental_value_usd": incremental_value,
+                "net_value_usd": net_value,
                 "positive_roi": True,
             },
         },
     )
+    roi_authority = _externally_attested_descriptor(
+        roi_analysis,
+        evidence_kind="roi_analysis",
+    )
     bundle["operating_cost"] = {
         "measured": True,
-        "cost_usd": 25.0,
+        "cost_usd": supervisor_cost,
         "supports_positive_roi": True,
-        "analysis_ref": roi_analysis["ref"],
-        "analysis_sha256": roi_analysis["sha256"],
+        "analysis_ref": roi_authority["ref"],
+        "analysis_sha256": roi_authority["sha256"],
+        "attestation": roi_authority["attestation"],
     }
     return bundle, ledger_resolver
 
@@ -1192,7 +1592,7 @@ def _auto_improvement_authoritative_bundle(
     evidence_root: Path,
 ) -> tuple[
     dict[str, object],
-    Callable[[str, str], LedgerVerification | None],
+    _FixtureAuthority,
 ]:
     bundle, ledger_resolver = _roi_authoritative_bundle(evidence_root)
     change_id = "policy-change-fixture-v1"
@@ -1313,6 +1713,33 @@ def _auto_improvement_authoritative_bundle(
                 **rollback_receipt,
             },
         }
+    )
+    authority_manifest = _write_json_artifact(
+        evidence_root,
+        "artifacts/auto-improvement-authority-manifest.json",
+        {
+            "schema_version": (
+                "supervisor-auto-improvement-authority-manifest/v1"
+            ),
+            "change_id": change_id,
+            "receipt_hashes": {
+                name: descriptor["sha256"]
+                for name, descriptor in (
+                    ("frozen_control", frozen_control),
+                    ("sealed_holdout", sealed_holdout),
+                    ("shadow_result", shadow_result),
+                    ("human_approval", human_approval),
+                    ("canary", canary),
+                    ("rollback_receipt", rollback_receipt),
+                )
+            },
+        },
+    )
+    bundle["auto_improvement_authority_manifest"] = (
+        _externally_attested_descriptor(
+            authority_manifest,
+            evidence_kind="auto_improvement_authority_manifest",
+        )
     )
     return bundle, ledger_resolver
 
@@ -1508,6 +1935,32 @@ def _rewrite_auto_improvement_receipt(
     )
 
 
+def _rewrite_auto_improvement_authority_manifest(
+    evidence_root: Path,
+    bundle: dict[str, object],
+    mutate: Callable[[dict[str, object]], None],
+    *,
+    resign: bool,
+) -> None:
+    descriptor = bundle["auto_improvement_authority_manifest"]
+    assert isinstance(descriptor, dict)
+    path = evidence_root / str(descriptor["ref"])
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    mutate(manifest)
+    content = json.dumps(
+        manifest,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    path.write_bytes(content)
+    descriptor["sha256"] = sha256(content).hexdigest()
+    if resign:
+        _resign_external_descriptor(
+            descriptor,
+            evidence_kind="auto_improvement_authority_manifest",
+        )
+
+
 def _rewrite_analysis(
     evidence_root: Path,
     bundle: dict[str, object],
@@ -1527,6 +1980,189 @@ def _rewrite_analysis(
     ).encode("utf-8")
     path.write_bytes(content)
     result["analysis_sha256"] = sha256(content).hexdigest()
+
+
+def _resign_external_descriptor(
+    descriptor: dict[str, object],
+    *,
+    evidence_kind: str,
+) -> None:
+    signed = _externally_attested_descriptor(
+        {
+            "ref": str(descriptor["ref"]),
+            "sha256": str(descriptor["sha256"]),
+        },
+        evidence_kind=evidence_kind,
+    )
+    descriptor["attestation"] = signed["attestation"]
+
+
+def _rewrite_experiment_manifest(
+    evidence_root: Path,
+    bundle: dict[str, object],
+    mutate: Callable[[dict[str, object]], None],
+    *,
+    resign: bool,
+) -> None:
+    result = bundle["randomized_powered_b_vs_c"]
+    assert isinstance(result, dict)
+    descriptor = result["experiment_manifest"]
+    assert isinstance(descriptor, dict)
+    path = evidence_root / str(descriptor["ref"])
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    mutate(manifest)
+    content = json.dumps(
+        manifest,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    path.write_bytes(content)
+    descriptor["sha256"] = sha256(content).hexdigest()
+    if resign:
+        _resign_external_descriptor(
+            descriptor,
+            evidence_kind="experiment_evidence_manifest",
+        )
+
+
+def _refresh_experiment_manifest(
+    evidence_root: Path,
+    bundle: dict[str, object],
+) -> None:
+    result = bundle["randomized_powered_b_vs_c"]
+    assert isinstance(result, dict)
+    analysis_descriptor = {
+        "ref": str(result["analysis_ref"]),
+        "sha256": str(result["analysis_sha256"]),
+    }
+    analysis_path = evidence_root / analysis_descriptor["ref"]
+    analysis = json.loads(analysis_path.read_text(encoding="utf-8"))
+
+    def refresh(manifest: dict[str, object]) -> None:
+        lineage = analysis["lineage"]
+        assert isinstance(lineage, dict)
+        manifest["artifacts"] = {
+            "analysis": analysis_descriptor,
+            **{
+                name: lineage[name]
+                for name in (
+                    "assignments",
+                    "grades",
+                    "trace",
+                    "ledger",
+                    "verifier",
+                    "study",
+                )
+            },
+        }
+        manifest["analysis_hashes"] = {
+            "analysis_sha256": analysis_descriptor["sha256"],
+            "design_sha256": _sha256_json(analysis["design"]),
+            "task_rows_sha256": _sha256_json(analysis["task_rows"]),
+            "result_sha256": _sha256_json(analysis["result"]),
+        }
+
+    _rewrite_experiment_manifest(
+        evidence_root,
+        bundle,
+        refresh,
+        resign=True,
+    )
+
+
+def _rewrite_pilot_analysis(
+    evidence_root: Path,
+    bundle: dict[str, object],
+    mutate: Callable[[dict[str, object]], None],
+) -> None:
+    result = bundle["randomized_powered_b_vs_c"]
+    assert isinstance(result, dict)
+    analysis_path = evidence_root / str(result["analysis_ref"])
+    analysis = json.loads(analysis_path.read_text(encoding="utf-8"))
+    study_descriptor = analysis["lineage"]["study"]
+    study_path = evidence_root / study_descriptor["ref"]
+    study = json.loads(study_path.read_text(encoding="utf-8"))
+
+    pilot_analysis_descriptor = study["pilot"]["analysis"]
+    pilot_analysis_path = (
+        evidence_root / pilot_analysis_descriptor["ref"]
+    )
+    pilot_analysis = json.loads(
+        pilot_analysis_path.read_text(encoding="utf-8")
+    )
+    mutate(pilot_analysis)
+    pilot_content = json.dumps(
+        pilot_analysis,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    pilot_analysis_path.write_bytes(pilot_content)
+    pilot_analysis_descriptor["sha256"] = sha256(
+        pilot_content
+    ).hexdigest()
+
+    confirmation_protocol_descriptor = study["confirmation"]["protocol"]
+    confirmation_protocol_path = (
+        evidence_root / confirmation_protocol_descriptor["ref"]
+    )
+    confirmation_protocol = json.loads(
+        confirmation_protocol_path.read_text(encoding="utf-8")
+    )
+    confirmation_protocol["pilot_analysis_sha256"] = (
+        pilot_analysis_descriptor["sha256"]
+    )
+    confirmation_protocol_content = json.dumps(
+        confirmation_protocol,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    confirmation_protocol_path.write_bytes(confirmation_protocol_content)
+    confirmation_protocol_descriptor["sha256"] = sha256(
+        confirmation_protocol_content
+    ).hexdigest()
+
+    confirmation_roster_descriptor = study["confirmation"]["roster"]
+    confirmation_roster_path = (
+        evidence_root / confirmation_roster_descriptor["ref"]
+    )
+    confirmation_roster = json.loads(
+        confirmation_roster_path.read_text(encoding="utf-8")
+    )
+    confirmation_roster["protocol_sha256"] = (
+        confirmation_protocol_descriptor["sha256"]
+    )
+    confirmation_roster_content = json.dumps(
+        confirmation_roster,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    confirmation_roster_path.write_bytes(confirmation_roster_content)
+    confirmation_roster_descriptor["sha256"] = sha256(
+        confirmation_roster_content
+    ).hexdigest()
+
+    study["derivation"]["pilot_analysis_sha256"] = (
+        pilot_analysis_descriptor["sha256"]
+    )
+    study["derivation"]["confirmation_protocol_sha256"] = (
+        confirmation_protocol_descriptor["sha256"]
+    )
+    study_content = json.dumps(
+        study,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    study_path.write_bytes(study_content)
+    study_descriptor["sha256"] = sha256(study_content).hexdigest()
+
+    analysis_content = json.dumps(
+        analysis,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    analysis_path.write_bytes(analysis_content)
+    result["analysis_sha256"] = sha256(analysis_content).hexdigest()
+    _refresh_experiment_manifest(evidence_root, bundle)
 
 
 def _rewrite_lineage_document(
@@ -1909,15 +2545,24 @@ def test_pilot_and_confirmation_rosters_must_be_disjoint_and_bound(
     tmp_path: Path,
 ) -> None:
     bundle, ledger_resolver = _authoritative_causal_bundle(tmp_path)
+
+    def alias_pilot_task(roster: dict[str, object]) -> None:
+        tasks = roster["tasks"]
+        assert isinstance(tasks, list)
+        first_task = tasks[0]
+        assert isinstance(first_task, dict)
+        pilot_identity = _task_identity("pilot-task-00")
+        first_task["task_identity"] = pilot_identity
+        first_task["canonical_task_id"] = canonical_task_identity(
+            pilot_identity
+        )
+
     _rewrite_study_artifact(
         tmp_path,
         bundle,
         phase="confirmation",
         artifact_name="roster",
-        mutate=lambda roster: roster["task_ids"].__setitem__(
-            0,
-            "pilot-task-00",
-        ),
+        mutate=alias_pilot_task,
     )
 
     assert (

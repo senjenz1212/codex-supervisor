@@ -71,7 +71,7 @@ def _captured_rollout(
 
 
 @pytest.mark.asyncio
-async def test_captured_nested_codex_rollout_normalizes_and_reaches_terminal(tmp_path):
+async def test_captured_nested_codex_rollout_reaches_turn_terminal_only(tmp_path):
     session_id = "019f52a1-1111-7222-8333-444444444444"
     sessions_root, registry_dir, rollout = _captured_rollout(
         tmp_path=tmp_path,
@@ -97,7 +97,7 @@ async def test_captured_nested_codex_rollout_normalizes_and_reaches_terminal(tmp
 
     run = state.get_run_by_session(session_id)
     assert run is not None
-    assert run["status"] == "completed"
+    assert run["status"] == "running"
     assert [
         row["kind"]
         for row in state._conn.execute(
@@ -112,17 +112,11 @@ async def test_captured_nested_codex_rollout_normalizes_and_reaches_terminal(tmp
         "tool.completed",
         "turn.completed",
     ]
-    decision = state.decisions.get_nowait()
-    assert decision.kind == "evaluate_run"
-    assert decision.run_id == run["run_id"]
-    assert decision.payload == {
-        "final_status": "completed",
-        "final_event_kind": "turn.completed",
-    }
+    assert state.decisions.empty()
 
 
 @pytest.mark.asyncio
-async def test_captured_nested_claude_rollout_normalizes_and_reaches_terminal(tmp_path):
+async def test_captured_nested_claude_rollout_reaches_turn_terminal_only(tmp_path):
     session_id = "bc5fde4c-1a70-4286-94fc-82e3be648008"
     sessions_root, registry_dir, rollout = _captured_rollout(
         tmp_path=tmp_path,
@@ -148,7 +142,7 @@ async def test_captured_nested_claude_rollout_normalizes_and_reaches_terminal(tm
 
     run = state.get_run_by_session(session_id)
     assert run is not None
-    assert run["status"] == "completed"
+    assert run["status"] == "running"
     assert [
         row["kind"]
         for row in state._conn.execute(
@@ -183,10 +177,7 @@ async def test_captured_nested_claude_rollout_normalizes_and_reaches_terminal(tm
         "I will inspect the repository.",
         "The repository inspection completed.",
     ]
-    decision = state.decisions.get_nowait()
-    assert decision.kind == "evaluate_run"
-    assert decision.run_id == run["run_id"]
-    assert decision.payload["final_event_kind"] == "turn.completed"
+    assert state.decisions.empty()
 
 
 @pytest.mark.asyncio
@@ -493,7 +484,7 @@ async def test_unjoined_rollout_is_quarantined_then_replayed_after_registration(
     run = state.get_run(workflow_run_id)
     assert run is not None
     assert run["session_id"] == target_session_id
-    assert run["status"] == "completed"
+    assert run["status"] == "running"
     rollout_events = state._conn.execute(
         """SELECT run_id, kind, payload_json
              FROM events
@@ -522,14 +513,7 @@ async def test_unjoined_rollout_is_quarantined_then_replayed_after_registration(
     assert state._conn.execute(
         "SELECT COUNT(*) FROM events WHERE source='rollout'"
     ).fetchone()[0] == len(rollout_events)
-    assert state.decisions.qsize() == 1
-    decision = state.decisions.get_nowait()
-    assert decision.kind == "evaluate_run"
-    assert decision.run_id == workflow_run_id
-    assert decision.payload == {
-        "final_status": "completed",
-        "final_event_kind": "turn.completed",
-    }
+    assert state.decisions.empty()
 
 
 def test_submission_explicit_target_session_overrides_environment(tmp_path, monkeypatch):
@@ -753,7 +737,7 @@ async def test_goal_abandonment_inside_allowed_files_opens_semantic_adjudication
             },
             "turn.completed",
         ),
-        ({"type": "session.idle", "payload": {"sessionID": "ses_1"}}, "run.completed"),
+        ({"type": "session.idle", "payload": {"sessionID": "ses_1"}}, "turn.completed"),
         ({"type": "session.error", "payload": {"sessionID": "ses_1"}}, "run.failed"),
     ],
 )

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from supervisor.agent_runtime import AgentRunHandle
+from supervisor.agent_runtime import AgentRunHandle, AgentRunResult
 from supervisor.config import Config
 from supervisor.state import Decision, State
 
@@ -92,6 +92,120 @@ class _FakeClient:
             content = [Block()]
 
         yield Msg()
+
+
+class _SuccessfulRuntime:
+    kind = "successful"
+
+    def __init__(self) -> None:
+        self.tasks = []
+
+    async def start(self, task):
+        self.tasks.append(task)
+        return AgentRunHandle(
+            run_id="runtime-run",
+            task_id=task.task_id,
+            runtime=self.kind,
+            session_id="runtime-session",
+            capabilities={"cancel": True},
+        )
+
+    async def resume(self, handle, instruction):
+        raise AssertionError("resume not expected")
+
+    async def cancel(self, handle):
+        return None
+
+    async def stream(self, handle):
+        if False:
+            yield
+
+    async def collect(self, handle):
+        return AgentRunResult(
+            run_id=handle.run_id,
+            task_id=handle.task_id,
+            runtime=handle.runtime,
+            session_id=handle.session_id,
+            status="completed",
+            output="done",
+            events=(),
+            started_at_ms=1,
+            ended_at_ms=2,
+            cost_usd=0.0,
+            resolved_model="claude-served",
+            result_hash="result-hash",
+            model_provenance="test",
+        )
+
+
+@pytest.mark.asyncio
+async def test_agent_invoker_defaults_to_isolated_env_and_acks_outbox(
+    tmp_path: Path,
+) -> None:
+    skills = tmp_path / "skills"
+    skills.mkdir()
+    (skills / "evaluate-run.md").write_text("Evaluate.", encoding="utf-8")
+    state = State(str(tmp_path / "state.db"))
+    await state.enqueue_decision(
+        Decision(kind="evaluate_run", run_id="run-outbox")
+    )
+    runtime = _SuccessfulRuntime()
+    invoker = __import__(
+        "supervisor.agent_invoker",
+        fromlist=["AgentInvoker"],
+    ).AgentInvoker(
+        _cfg(tmp_path),
+        state,
+        skills,
+        codex_mcp_server=object(),
+        telegram_mcp_server=object(),
+        agent_runtime=runtime,
+    )
+
+    await invoker.run_once()
+
+    assert runtime.tasks[0].inherit_env is False
+    assert state.list_decision_outbox()[0]["status"] == "acked"
+
+
+@pytest.mark.asyncio
+async def test_agent_invoker_retries_then_dead_letters_failed_decision(
+    tmp_path: Path,
+) -> None:
+    class FailingRuntime(_SuccessfulRuntime):
+        async def start(self, task):
+            self.tasks.append(task)
+            raise RuntimeError("provider unavailable")
+
+    skills = tmp_path / "skills"
+    skills.mkdir()
+    (skills / "evaluate-run.md").write_text("Evaluate.", encoding="utf-8")
+    state = State(str(tmp_path / "state.db"))
+    await state.enqueue_decision(
+        Decision(kind="evaluate_run", run_id="run-outbox-failure")
+    )
+    invoker = __import__(
+        "supervisor.agent_invoker",
+        fromlist=["AgentInvoker"],
+    ).AgentInvoker(
+        _cfg(tmp_path),
+        state,
+        skills,
+        codex_mcp_server=object(),
+        telegram_mcp_server=object(),
+        agent_runtime=FailingRuntime(),
+        max_decision_attempts=2,
+        retry_base_delay_s=0,
+    )
+
+    await invoker.run_once()
+    assert state.list_decision_outbox()[0]["status"] == "pending"
+    await invoker.run_once()
+
+    row = state.list_decision_outbox()[0]
+    assert row["status"] == "dead_letter"
+    assert row["attempts"] == 2
+    assert "provider unavailable" in row["last_error"]
 
 
 @pytest.mark.asyncio
@@ -189,6 +303,7 @@ async def test_review_updates_invoker_uses_read_only_grounding_tools(monkeypatch
             agent_runtime=ClaudeCodeRuntime(
                 transport=ClaudeAgentSdkTransport(
                     sdk_loader=lambda: (_FakeClient, _FakeOptions),
+                    allow_uncontained_test_transport=True,
                 )
             ),
             agent_environment=direct_anthropic_env(),

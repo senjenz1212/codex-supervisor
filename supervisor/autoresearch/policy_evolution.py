@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import difflib
+import json
+import os
 import posixpath
 from dataclasses import dataclass
 from hashlib import sha256
@@ -21,9 +23,13 @@ from ..policy_overlay import (
     POLICY_OVERLAY_PATH,
     PolicyOverlayError,
     assert_repo_local_path,
+    commit_staged_repo_file_no_follow,
+    create_repo_file_no_follow,
+    list_repo_directory_no_follow,
     normalise_overlay_target,
+    read_repo_file_no_follow,
     remove_repo_file_no_follow,
-    write_repo_file_no_follow,
+    repo_root_lock_no_follow,
 )
 
 
@@ -32,6 +38,13 @@ POLICY_APPROVAL_SCHEMA_VERSION = "supervisor-autoresearch-policy-approval/v1"
 POLICY_DENIAL_SCHEMA_VERSION = "supervisor-autoresearch-policy-denial/v1"
 POLICY_ROLLBACK_SCHEMA_VERSION = "supervisor-autoresearch-policy-rollback/v1"
 POLICY_DERIVATION_SCHEMA_VERSION = "supervisor-autoresearch-policy-derivation/v1"
+POLICY_TRANSACTION_SCHEMA_VERSION = (
+    "supervisor-autoresearch-policy-transaction/v1"
+)
+POLICY_TRANSACTION_STATE_SCHEMA_VERSION = (
+    "supervisor-autoresearch-policy-transaction-state/v1"
+)
+POLICY_TRANSACTION_ROOT = ".handoff/policy-transactions"
 REPLAY_CORPUS_EVALUATOR_REF = "supervisor/autoresearch/evaluators/replay_corpus.py"
 BENCHMARK_PROMOTION_EXPERIMENT_ID = "auto-evolve-benchmark-promotion"
 BENCHMARK_PROMOTION_METRIC_NAME = "benchmark_evidence_conversion"
@@ -47,6 +60,16 @@ RESERVED_OPERATOR_IDENTITIES = frozenset({
 
 class EventWriter(Protocol):
     def write_event(self, *, run_id: str, source: str, kind: str, payload: dict[str, Any]) -> int:
+        ...
+
+
+class EventJournal(EventWriter, Protocol):
+    def read_events_since(
+        self,
+        run_id: str,
+        after_event_id: int | None = 0,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
         ...
 
 
@@ -85,12 +108,8 @@ def create_policy_evolution_proposals(
     claim_evidence_bundle: Mapping[str, Any] | None = None,
     claim_evidence_root: str | Path | None = None,
     claim_evidence_resolver: EvidenceResolver | None = None,
-    ledger_verification_resolver: (
-        LedgerVerificationResolver | None
-    ) = None,
-    trusted_verifier_attestors: (
-        TrustedVerifierAttestors | None
-    ) = None,
+    ledger_verification_resolver: LedgerVerificationResolver | None = None,
+    trusted_verifier_attestors: TrustedVerifierAttestors | None = None,
 ) -> list[dict[str, Any]]:
     """Create non-mutating stability proposals from clean accepted AutoResearch records.
 
@@ -147,12 +166,8 @@ def derive_policy_evolution_proposals_from_report(
     claim_evidence_bundle: Mapping[str, Any] | None = None,
     claim_evidence_root: str | Path | None = None,
     claim_evidence_resolver: EvidenceResolver | None = None,
-    ledger_verification_resolver: (
-        LedgerVerificationResolver | None
-    ) = None,
-    trusted_verifier_attestors: (
-        TrustedVerifierAttestors | None
-    ) = None,
+    ledger_verification_resolver: LedgerVerificationResolver | None = None,
+    trusted_verifier_attestors: TrustedVerifierAttestors | None = None,
 ) -> list[dict[str, Any]]:
     """Draft overlay proposals directly from accepted AutoResearch report records.
 
@@ -251,12 +266,8 @@ def report_contains_derivable_policy_record(
     claim_evidence_bundle: Mapping[str, Any] | None = None,
     claim_evidence_root: str | Path | None = None,
     claim_evidence_resolver: EvidenceResolver | None = None,
-    ledger_verification_resolver: (
-        LedgerVerificationResolver | None
-    ) = None,
-    trusted_verifier_attestors: (
-        TrustedVerifierAttestors | None
-    ) = None,
+    ledger_verification_resolver: LedgerVerificationResolver | None = None,
+    trusted_verifier_attestors: TrustedVerifierAttestors | None = None,
 ) -> bool:
     repo_root_path = Path(repo_root).expanduser().resolve()
     if _report_applyability_error(
@@ -285,66 +296,105 @@ def report_contains_derivable_policy_record(
 def approve_policy_proposal(
     proposal: Mapping[str, Any],
     *,
-    state: EventWriter,
+    state: EventJournal,
     run_id: str,
     repo_root: str | Path,
     approver: str,
     approval_channel: str,
     rollback_root: str | Path = ".handoff/policy-rollbacks",
 ) -> dict[str, Any]:
-    """Apply exactly the proposal's recorded candidate artifacts after approval."""
+    """Audit an approval intent before publishing the exact candidate bytes."""
     _require_operator(approver=approver, approval_channel=approval_channel)
+    _require_event_journal(state)
     repo_root_path = Path(repo_root).expanduser().resolve()
     rollback_root_rel = _normalise_relative_path(str(rollback_root), repo_root=repo_root_path)
     proposal_id = str(proposal.get("proposal_id") or "")
     if not proposal_id:
         raise PolicyEvolutionError("proposal_id is required")
-    changes = _proposal_changes(proposal)
-    prepared_changes: list[dict[str, Any]] = []
-    for change in changes:
-        target_rel = _normalise_relative_path(str(change["target_path"]), repo_root=repo_root_path)
-        _require_policy_overlay_target(target_rel, repo_root=repo_root_path)
-        candidate_rel = _normalise_relative_path(str(change["candidate_ref"]), repo_root=repo_root_path)
-        target_path = repo_root_path / target_rel
-        candidate_path = repo_root_path / candidate_rel
-        before_hash = str(change["before_hash"])
-        after_hash = str(change["after_hash"])
-        target_existed = target_path.exists()
-        current_bytes = target_path.read_bytes() if target_existed else b""
-        current_hash = _sha256_bytes(current_bytes)
-        if current_hash != before_hash:
-            raise PolicyEvolutionError(
-                f"current artifact hash mismatch for {target_rel}: "
-                f"expected {before_hash}, observed {current_hash}"
+    with repo_root_lock_no_follow(
+        repo_root_path,
+        label="policy transaction",
+    ):
+        _recover_policy_transactions_locked(state=state, repo_root=repo_root_path)
+        _safe_repo_path(
+            repo_root_path / rollback_root_rel,
+            repo_root=repo_root_path,
+            label="policy rollback root",
+        )
+        prepared_changes: list[dict[str, Any]] = []
+        seen_targets: set[str] = set()
+        for index, change in enumerate(_proposal_changes(proposal)):
+            target_rel = _normalise_relative_path(
+                str(change["target_path"]),
+                repo_root=repo_root_path,
             )
-        if not candidate_path.exists() or not candidate_path.is_file():
-            raise PolicyEvolutionError(f"candidate artifact missing: {candidate_rel}")
-        candidate_bytes = candidate_path.read_bytes()
-        candidate_hash = _sha256_bytes(candidate_bytes)
-        if candidate_hash != after_hash:
-            raise PolicyEvolutionError(
-                f"candidate artifact hash mismatch for {candidate_rel}: "
-                f"expected {after_hash}, observed {candidate_hash}"
+            _require_policy_overlay_target(target_rel, repo_root=repo_root_path)
+            if target_rel in seen_targets:
+                raise PolicyEvolutionError(
+                    f"proposal contains duplicate target: {target_rel}"
+                )
+            seen_targets.add(target_rel)
+            candidate_rel = _normalise_relative_path(
+                str(change["candidate_ref"]),
+                repo_root=repo_root_path,
             )
-        prepared_changes.append({
-            "target_rel": target_rel,
-            "candidate_rel": candidate_rel,
-            "target_path": target_path,
-            "before_hash": before_hash,
-            "after_hash": after_hash,
-            "target_existed": target_existed,
-            "current_bytes": current_bytes,
-            "candidate_bytes": candidate_bytes,
-            "repo_root": repo_root_path,
-        })
+            before_hash = str(change["before_hash"])
+            after_hash = str(change["after_hash"])
+            current = _read_repo_bytes(
+                target_rel,
+                repo_root=repo_root_path,
+                label="policy overlay target",
+                missing_ok=True,
+            )
+            target_existed = current is not None
+            current_bytes = current or b""
+            current_hash = _sha256_bytes(current_bytes)
+            if current_hash != before_hash:
+                raise PolicyEvolutionError(
+                    f"current artifact hash mismatch for {target_rel}: "
+                    f"expected {before_hash}, observed {current_hash}"
+                )
+            candidate_bytes = _read_repo_bytes(
+                candidate_rel,
+                repo_root=repo_root_path,
+                label="policy candidate artifact",
+                missing_ok=True,
+            )
+            if candidate_bytes is None:
+                raise PolicyEvolutionError(
+                    f"candidate artifact missing: {candidate_rel}"
+                )
+            candidate_hash = _sha256_bytes(candidate_bytes)
+            if candidate_hash != after_hash:
+                raise PolicyEvolutionError(
+                    f"candidate artifact hash mismatch for {candidate_rel}: "
+                    f"expected {after_hash}, observed {candidate_hash}"
+                )
+            prepared_changes.append({
+                "index": index,
+                "target_rel": target_rel,
+                "candidate_rel": candidate_rel,
+                "before_hash": before_hash,
+                "after_hash": after_hash,
+                "before_exists": target_existed,
+                "after_exists": True,
+                "before_bytes": current_bytes,
+                "after_bytes": candidate_bytes,
+            })
 
-    rollback_files: list[dict[str, Any]] = []
-    applied_changes: list[dict[str, Any]] = []
-
-    try:
+        transaction_id = _policy_transaction_id(
+            operation="approval",
+            run_id=run_id,
+            proposal_id=proposal_id,
+            approver=approver,
+            approval_channel=approval_channel,
+            reason="",
+            changes=prepared_changes,
+        )
+        rollback_files: list[dict[str, Any]] = []
+        applied_changes: list[dict[str, Any]] = []
         for change in prepared_changes:
             target_rel = change["target_rel"]
-            target_path = change["target_path"]
             before_hash = change["before_hash"]
             after_hash = change["after_hash"]
             backup_rel = _rollback_backup_ref(
@@ -352,68 +402,93 @@ def approve_policy_proposal(
                 proposal_id=proposal_id,
                 target_path=target_rel,
             )
-            backup_path = repo_root_path / backup_rel
-            _write_repo_bytes(
-                backup_path,
-                change["current_bytes"],
-                repo_root=repo_root_path,
-                label="policy rollback backup",
+            change["backup_ref"] = backup_rel
+            change["stage_ref"] = _transaction_stage_ref(
+                target_rel=target_rel,
+                transaction_id=transaction_id,
+                index=int(change["index"]),
             )
-
-            _write_repo_bytes(
-                target_path,
-                change["candidate_bytes"],
-                repo_root=repo_root_path,
-                label="policy overlay target",
-            )
-            observed_after_hash = _sha256_bytes(target_path.read_bytes())
-            if observed_after_hash != after_hash:
-                raise PolicyEvolutionError(
-                    f"applied artifact hash mismatch for {target_rel}: "
-                    f"expected {after_hash}, observed {observed_after_hash}"
-                )
             rollback_files.append({
                 "target_path": target_rel,
                 "backup_ref": backup_rel,
                 "before_hash": before_hash,
                 "after_hash": after_hash,
+                "before_exists": bool(change["before_exists"]),
+                "after_exists": True,
             })
             applied_changes.append({
                 "target_path": target_rel,
                 "candidate_ref": change["candidate_rel"],
                 "before_hash": before_hash,
                 "after_hash": after_hash,
+                "before_exists": bool(change["before_exists"]),
+                "after_exists": True,
             })
-    except Exception:
-        _restore_prepared_targets(prepared_changes)
-        raise
 
-    rollback_pointer = {
-        "schema_version": POLICY_ROLLBACK_SCHEMA_VERSION,
-        "proposal_id": proposal_id,
-        "files": rollback_files,
-    }
-    first_change = applied_changes[0]
-    payload = {
-        "schema_version": POLICY_APPROVAL_SCHEMA_VERSION,
-        "proposal_id": proposal_id,
-        "status": "approved_applied",
-        "approver": str(approver),
-        "approval_channel": str(approval_channel),
-        "before_hash": first_change["before_hash"],
-        "after_hash": first_change["after_hash"],
-        "changes": applied_changes,
-        "rollback_pointer": rollback_pointer,
-        **_authority_invariants(operator_approved=True),
-    }
-    payload["event_sha256"] = sha256_json({key: value for key, value in payload.items() if key != "event_sha256"})
-    state.write_event(
-        run_id=run_id,
-        source="autoresearch",
-        kind="autoresearch_policy_proposal_approved",
-        payload=payload,
-    )
-    return payload
+        rollback_pointer = {
+            "schema_version": POLICY_ROLLBACK_SCHEMA_VERSION,
+            "proposal_id": proposal_id,
+            "files": rollback_files,
+        }
+        first_change = applied_changes[0]
+        payload_base = {
+            "schema_version": POLICY_APPROVAL_SCHEMA_VERSION,
+            "proposal_id": proposal_id,
+            "status": "approved_applied",
+            "approver": str(approver),
+            "approval_channel": str(approval_channel),
+            "before_hash": first_change["before_hash"],
+            "after_hash": first_change["after_hash"],
+            "changes": applied_changes,
+            "rollback_pointer": rollback_pointer,
+            **_authority_invariants(operator_approved=True),
+        }
+        manifest, payload = _build_policy_transaction_manifest(
+            operation="approval",
+            transaction_id=transaction_id,
+            run_id=run_id,
+            proposal_id=proposal_id,
+            audit_kind="autoresearch_policy_proposal_approved",
+            payload_base=payload_base,
+            changes=prepared_changes,
+        )
+        _prepare_policy_transaction(
+            manifest=manifest,
+            changes=prepared_changes,
+            repo_root=repo_root_path,
+        )
+        _policy_transaction_fault("prepare", manifest)
+        event_id = _ensure_transaction_audit(
+            state=state,
+            manifest=manifest,
+            payload=payload,
+        )
+        _append_transaction_state(
+            manifest,
+            state_name="audit_committed",
+            repo_root=repo_root_path,
+            details={"event_id": event_id},
+        )
+        _policy_transaction_fault("audit", manifest)
+        _commit_policy_transaction(
+            manifest=manifest,
+            repo_root=repo_root_path,
+        )
+        _append_transaction_state(
+            manifest,
+            state_name="filesystem_committed",
+            repo_root=repo_root_path,
+            details={},
+        )
+        _policy_transaction_fault("write", manifest)
+        _append_transaction_state(
+            manifest,
+            state_name="finalized",
+            repo_root=repo_root_path,
+            details={},
+        )
+        _policy_transaction_fault("finalize", manifest)
+        return payload
 
 
 def deny_policy_proposal(
@@ -449,84 +524,200 @@ def deny_policy_proposal(
 def rollback_policy_proposal(
     rollback_pointer: Mapping[str, Any],
     *,
-    state: EventWriter,
+    state: EventJournal,
     run_id: str,
     repo_root: str | Path,
     approver: str,
     approval_channel: str,
     reason: str = "",
 ) -> dict[str, Any]:
-    """Restore previous artifact bytes through a recorded rollback pointer."""
+    """Audit a rollback intent before restoring the recorded prior bytes."""
     _require_operator(approver=approver, approval_channel=approval_channel)
+    _require_event_journal(state)
     repo_root_path = Path(repo_root).expanduser().resolve()
-    files = rollback_pointer.get("files") if isinstance(rollback_pointer.get("files"), list) else []
-    if not files:
-        raise PolicyEvolutionError("rollback pointer has no files")
-    prepared_restores: list[dict[str, Any]] = []
-    for item in files:
-        if not isinstance(item, Mapping):
-            raise PolicyEvolutionError("rollback file entry must be an object")
-        target_rel = _normalise_relative_path(str(item.get("target_path") or ""), repo_root=repo_root_path)
-        _require_policy_overlay_target(target_rel, repo_root=repo_root_path)
-        backup_rel = _normalise_relative_path(str(item.get("backup_ref") or ""), repo_root=repo_root_path)
-        expected_hash = str(item.get("before_hash") or "")
-        backup_path = _safe_repo_path(
-            repo_root_path / backup_rel,
-            repo_root=repo_root_path,
-            label="policy rollback backup",
+    proposal_id = str(rollback_pointer.get("proposal_id") or "")
+    with repo_root_lock_no_follow(
+        repo_root_path,
+        label="policy transaction",
+    ):
+        _recover_policy_transactions_locked(state=state, repo_root=repo_root_path)
+        files = (
+            rollback_pointer.get("files")
+            if isinstance(rollback_pointer.get("files"), list)
+            else []
         )
-        if not backup_path.exists() or not backup_path.is_file():
-            raise PolicyEvolutionError(f"rollback backup missing: {backup_rel}")
-        backup_bytes = backup_path.read_bytes()
-        observed_hash = _sha256_bytes(backup_bytes)
-        if observed_hash != expected_hash:
-            raise PolicyEvolutionError(
-                f"rollback backup hash mismatch for {backup_rel}: "
-                f"expected {expected_hash}, observed {observed_hash}"
+        if not files:
+            raise PolicyEvolutionError("rollback pointer has no files")
+        prepared_restores: list[dict[str, Any]] = []
+        seen_targets: set[str] = set()
+        for index, item in enumerate(files):
+            if not isinstance(item, Mapping):
+                raise PolicyEvolutionError(
+                    "rollback file entry must be an object"
+                )
+            target_rel = _normalise_relative_path(
+                str(item.get("target_path") or ""),
+                repo_root=repo_root_path,
             )
-        prepared_restores.append({
-            "target_rel": target_rel,
-            "backup_bytes": backup_bytes,
-            "expected_hash": expected_hash,
-        })
+            _require_policy_overlay_target(target_rel, repo_root=repo_root_path)
+            if target_rel in seen_targets:
+                raise PolicyEvolutionError(
+                    f"rollback pointer contains duplicate target: {target_rel}"
+                )
+            seen_targets.add(target_rel)
+            backup_rel = _normalise_relative_path(
+                str(item.get("backup_ref") or ""),
+                repo_root=repo_root_path,
+            )
+            before_hash = str(item.get("before_hash") or "")
+            after_hash = str(item.get("after_hash") or "")
+            before_exists = bool(item.get("before_exists", True))
+            after_exists = bool(item.get("after_exists", True))
+            backup_bytes = _read_repo_bytes(
+                backup_rel,
+                repo_root=repo_root_path,
+                label="policy rollback backup",
+                missing_ok=True,
+            )
+            if backup_bytes is None:
+                raise PolicyEvolutionError(
+                    f"rollback backup missing: {backup_rel}"
+                )
+            observed_hash = _sha256_bytes(backup_bytes)
+            if observed_hash != before_hash:
+                raise PolicyEvolutionError(
+                    f"rollback backup hash mismatch for {backup_rel}: "
+                    f"expected {before_hash}, observed {observed_hash}"
+                )
+            current = _read_repo_bytes(
+                target_rel,
+                repo_root=repo_root_path,
+                label="policy overlay target",
+                missing_ok=True,
+            )
+            current_exists = current is not None
+            current_hash = _sha256_bytes(current or b"")
+            if current_exists != after_exists or current_hash != after_hash:
+                raise PolicyEvolutionError(
+                    f"rollback target compare-and-set mismatch for "
+                    f"{target_rel}: expected exists={after_exists} "
+                    f"hash={after_hash}, observed exists={current_exists} "
+                    f"hash={current_hash}"
+                )
+            prepared_restores.append({
+                "index": index,
+                "target_rel": target_rel,
+                "backup_ref": backup_rel,
+                "before_hash": after_hash,
+                "after_hash": before_hash,
+                "before_exists": after_exists,
+                "after_exists": before_exists,
+                "before_bytes": current or b"",
+                "after_bytes": backup_bytes,
+            })
 
-    restored: list[dict[str, Any]] = []
-    for prepared in prepared_restores:
-        target_rel = str(prepared["target_rel"])
-        target_path = repo_root_path / target_rel
-        backup_bytes = bytes(prepared["backup_bytes"])
-        expected_hash = str(prepared["expected_hash"])
-        _write_repo_bytes(
-            target_path,
-            backup_bytes,
-            repo_root=repo_root_path,
-            label="policy overlay target",
+        transaction_id = _policy_transaction_id(
+            operation="rollback",
+            run_id=run_id,
+            proposal_id=proposal_id,
+            approver=approver,
+            approval_channel=approval_channel,
+            reason=str(reason or "").strip(),
+            changes=prepared_restores,
         )
-        restored.append({
-            "target_path": target_rel,
-            "restored_hash": _sha256_bytes(target_path.read_bytes()),
-            "expected_hash": expected_hash,
-        })
+        restored: list[dict[str, Any]] = []
+        for prepared in prepared_restores:
+            prepared["stage_ref"] = (
+                _transaction_stage_ref(
+                    target_rel=str(prepared["target_rel"]),
+                    transaction_id=transaction_id,
+                    index=int(prepared["index"]),
+                )
+                if prepared["after_exists"]
+                else None
+            )
+            restored.append({
+                "target_path": str(prepared["target_rel"]),
+                "restored_hash": str(prepared["after_hash"]),
+                "expected_hash": str(prepared["after_hash"]),
+                "restored_exists": bool(prepared["after_exists"]),
+            })
 
-    payload = {
-        "schema_version": POLICY_ROLLBACK_SCHEMA_VERSION,
-        "proposal_id": str(rollback_pointer.get("proposal_id") or ""),
-        "status": "rolled_back",
-        "approver": str(approver),
-        "approval_channel": str(approval_channel),
-        "reason": str(reason or "").strip(),
-        "restored": restored,
-        "rollback_pointer": dict(rollback_pointer),
-        **_authority_invariants(operator_approved=True),
-    }
-    payload["event_sha256"] = sha256_json({key: value for key, value in payload.items() if key != "event_sha256"})
-    state.write_event(
-        run_id=run_id,
-        source="autoresearch",
-        kind="autoresearch_policy_proposal_rolled_back",
-        payload=payload,
-    )
-    return payload
+        payload_base = {
+            "schema_version": POLICY_ROLLBACK_SCHEMA_VERSION,
+            "proposal_id": proposal_id,
+            "status": "rolled_back",
+            "approver": str(approver),
+            "approval_channel": str(approval_channel),
+            "reason": str(reason or "").strip(),
+            "restored": restored,
+            "rollback_pointer": dict(rollback_pointer),
+            **_authority_invariants(operator_approved=True),
+        }
+        manifest, payload = _build_policy_transaction_manifest(
+            operation="rollback",
+            transaction_id=transaction_id,
+            run_id=run_id,
+            proposal_id=proposal_id,
+            audit_kind="autoresearch_policy_proposal_rolled_back",
+            payload_base=payload_base,
+            changes=prepared_restores,
+        )
+        _prepare_policy_transaction(
+            manifest=manifest,
+            changes=prepared_restores,
+            repo_root=repo_root_path,
+        )
+        _policy_transaction_fault("prepare", manifest)
+        event_id = _ensure_transaction_audit(
+            state=state,
+            manifest=manifest,
+            payload=payload,
+        )
+        _append_transaction_state(
+            manifest,
+            state_name="audit_committed",
+            repo_root=repo_root_path,
+            details={"event_id": event_id},
+        )
+        _policy_transaction_fault("audit", manifest)
+        _commit_policy_transaction(
+            manifest=manifest,
+            repo_root=repo_root_path,
+        )
+        _append_transaction_state(
+            manifest,
+            state_name="filesystem_committed",
+            repo_root=repo_root_path,
+            details={},
+        )
+        _policy_transaction_fault("write", manifest)
+        _append_transaction_state(
+            manifest,
+            state_name="finalized",
+            repo_root=repo_root_path,
+            details={},
+        )
+        _policy_transaction_fault("finalize", manifest)
+        return payload
+
+
+def recover_policy_transactions(
+    *,
+    state: EventJournal,
+    repo_root: str | Path,
+) -> list[dict[str, Any]]:
+    """Deterministically finish or abort every durable policy transaction."""
+    _require_event_journal(state)
+    repo_root_path = Path(repo_root).expanduser().resolve()
+    with repo_root_lock_no_follow(
+        repo_root_path,
+        label="policy transaction",
+    ):
+        return _recover_policy_transactions_locked(
+            state=state,
+            repo_root=repo_root_path,
+        )
 
 
 def _build_policy_proposal(
@@ -547,12 +738,21 @@ def _build_policy_proposal(
             raise PolicyEvolutionError(
                 f"candidate artifact {candidate_rel} is not listed in accepted attempt changed_files"
             )
-        target = repo_root / target_rel
-        candidate = repo_root / candidate_rel
-        if not candidate.exists() or not candidate.is_file():
+        before_bytes = _read_repo_bytes(
+            target_rel,
+            repo_root=repo_root,
+            label="policy overlay target",
+            missing_ok=True,
+        )
+        after_bytes = _read_repo_bytes(
+            candidate_rel,
+            repo_root=repo_root,
+            label="policy candidate artifact",
+            missing_ok=True,
+        )
+        if after_bytes is None:
             raise PolicyEvolutionError(f"candidate artifact missing: {candidate_rel}")
-        before_bytes = target.read_bytes() if target.exists() else b""
-        after_bytes = candidate.read_bytes()
+        before_bytes = before_bytes or b""
         before_text = before_bytes.decode("utf-8")
         after_text = after_bytes.decode("utf-8")
         changes.append({
@@ -698,10 +898,7 @@ def _claim_gate_report_authority_error(
             trusted_verifier_attestors=trusted_verifier_attestors,
         )
     except ClaimGateError as exc:
-        return (
-            "report ClaimGate authority validation failed: "
-            f"{exc}"
-        )
+        return f"report ClaimGate authority validation failed: {exc}"
     if (
         level is None
         or tuple(ClaimLevel).index(level)
@@ -1047,7 +1244,9 @@ def _normalise_relative_path(value: str, *, repo_root: Path) -> str:
     candidate = Path(raw).expanduser()
     if candidate.is_absolute():
         try:
-            raw = candidate.resolve(strict=False).relative_to(repo_root).as_posix()
+            raw = Path(os.path.abspath(candidate)).relative_to(
+                repo_root
+            ).as_posix()
         except ValueError as exc:
             raise PolicyEvolutionError(f"path is outside repo root: {value}") from exc
     parts: list[str] = []
@@ -1071,28 +1270,22 @@ def _artifact_kind(path: str) -> str:
     return "prompt"
 
 
-def _restore_prepared_targets(prepared_changes: list[dict[str, Any]]) -> None:
-    for change in prepared_changes:
-        target_path = change["target_path"]
-        if change["target_existed"]:
-            _write_repo_bytes(
-                target_path,
-                change["current_bytes"],
-                repo_root=change["repo_root"],
-                label="policy overlay target",
-            )
-        else:
-            remove_repo_file_no_follow(
-                target_path,
-                repo_root=change["repo_root"],
-                label="policy overlay target",
-                missing_ok=True,
-            )
-
-
 def _rollback_backup_ref(*, rollback_root_rel: str, proposal_id: str, target_path: str) -> str:
+    proposal_slug = "".join(
+        character
+        if character.isalnum() or character in {"-", "_", "."}
+        else "_"
+        for character in str(proposal_id)
+    ).strip("._")[:48]
+    proposal_component = (
+        f"{proposal_slug or 'proposal'}-"
+        f"{sha256(str(proposal_id).encode('utf-8')).hexdigest()[:12]}"
+    )
     safe_target = target_path.replace("/", "__")
-    return f"{rollback_root_rel.rstrip('/')}/{proposal_id}/{safe_target}.before"
+    return (
+        f"{rollback_root_rel.rstrip('/')}/{proposal_component}/"
+        f"{safe_target}.before"
+    )
 
 
 def _sha256_bytes(value: bytes) -> str:
@@ -1106,6 +1299,31 @@ def _require_policy_overlay_target(path: str, *, repo_root: Path) -> None:
         raise PolicyEvolutionError(str(exc)) from exc
 
 
+def _require_event_journal(state: EventWriter) -> None:
+    if not callable(getattr(state, "read_events_since", None)):
+        raise PolicyEvolutionError(
+            "policy transactions require an append-only readable event journal"
+        )
+
+
+def _read_repo_bytes(
+    path: str | Path,
+    *,
+    repo_root: Path,
+    label: str,
+    missing_ok: bool,
+) -> bytes | None:
+    try:
+        return read_repo_file_no_follow(
+            path,
+            repo_root=repo_root,
+            label=label,
+            missing_ok=missing_ok,
+        )
+    except PolicyOverlayError as exc:
+        raise PolicyEvolutionError(str(exc)) from exc
+
+
 def _safe_repo_path(
     path: str | Path,
     *,
@@ -1113,12 +1331,16 @@ def _safe_repo_path(
     label: str,
 ) -> Path:
     try:
-        return assert_repo_local_path(path, repo_root=repo_root, label=label)
+        return assert_repo_local_path(
+            path,
+            repo_root=repo_root,
+            label=label,
+        )
     except PolicyOverlayError as exc:
         raise PolicyEvolutionError(str(exc)) from exc
 
 
-def _write_repo_bytes(
+def _create_repo_bytes(
     path: str | Path,
     data: bytes,
     *,
@@ -1126,11 +1348,742 @@ def _write_repo_bytes(
     label: str,
 ) -> Path:
     try:
-        return write_repo_file_no_follow(
+        return create_repo_file_no_follow(
             path,
             data,
             repo_root=repo_root,
             label=label,
+            exist_ok_same=True,
         )
     except PolicyOverlayError as exc:
         raise PolicyEvolutionError(str(exc)) from exc
+
+
+def _policy_transaction_id(
+    *,
+    operation: str,
+    run_id: str,
+    proposal_id: str,
+    approver: str,
+    approval_channel: str,
+    reason: str,
+    changes: list[dict[str, Any]],
+) -> str:
+    return sha256_json({
+        "schema_version": POLICY_TRANSACTION_SCHEMA_VERSION,
+        "operation": operation,
+        "run_id": str(run_id),
+        "proposal_id": str(proposal_id),
+        "approver": str(approver),
+        "approval_channel": str(approval_channel),
+        "reason": str(reason),
+        "changes": [
+            {
+                "target_path": str(change["target_rel"]),
+                "source_ref": str(
+                    change.get("candidate_rel")
+                    or change.get("backup_ref")
+                    or ""
+                ),
+                "before_hash": str(change["before_hash"]),
+                "after_hash": str(change["after_hash"]),
+                "before_exists": bool(change["before_exists"]),
+                "after_exists": bool(change["after_exists"]),
+            }
+            for change in changes
+        ],
+    })
+
+
+def _transaction_dir(transaction_id: str) -> str:
+    normalized = str(transaction_id).strip().lower()
+    if len(normalized) != 64 or any(
+        character not in "0123456789abcdef"
+        for character in normalized
+    ):
+        raise PolicyEvolutionError("invalid policy transaction id")
+    return f"{POLICY_TRANSACTION_ROOT}/{normalized}"
+
+
+def _transaction_stage_ref(
+    *,
+    target_rel: str,
+    transaction_id: str,
+    index: int,
+) -> str:
+    target = Path(target_rel)
+    filename = (
+        f".policy-transaction-{transaction_id[:24]}-{int(index)}.stage"
+    )
+    parent = target.parent.as_posix()
+    return filename if parent == "." else f"{parent}/{filename}"
+
+
+def _build_policy_transaction_manifest(
+    *,
+    operation: str,
+    transaction_id: str,
+    run_id: str,
+    proposal_id: str,
+    audit_kind: str,
+    payload_base: Mapping[str, Any],
+    changes: list[dict[str, Any]],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    transaction_dir = _transaction_dir(transaction_id)
+    manifest_changes: list[dict[str, Any]] = []
+    for change in changes:
+        index = int(change["index"])
+        manifest_changes.append({
+            "index": index,
+            "target_path": str(change["target_rel"]),
+            "source_ref": str(
+                change.get("candidate_rel")
+                or change.get("backup_ref")
+                or ""
+            ),
+            "backup_ref": str(change.get("backup_ref") or ""),
+            "stage_ref": (
+                str(change.get("stage_ref"))
+                if change.get("stage_ref") is not None
+                else None
+            ),
+            "before_blob_ref": (
+                f"{transaction_dir}/change-{index}.before"
+            ),
+            "after_blob_ref": (
+                f"{transaction_dir}/change-{index}.after"
+            ),
+            "before_hash": str(change["before_hash"]),
+            "after_hash": str(change["after_hash"]),
+            "before_exists": bool(change["before_exists"]),
+            "after_exists": bool(change["after_exists"]),
+        })
+    manifest_body = {
+        "schema_version": POLICY_TRANSACTION_SCHEMA_VERSION,
+        "transaction_id": transaction_id,
+        "operation": operation,
+        "run_id": str(run_id),
+        "proposal_id": str(proposal_id),
+        "audit_kind": audit_kind,
+        "audit_payload_base": dict(payload_base),
+        "changes": manifest_changes,
+    }
+    manifest_hash = sha256_json(manifest_body)
+    manifest = {
+        **manifest_body,
+        "manifest_sha256": manifest_hash,
+    }
+    payload = {
+        **dict(payload_base),
+        "transaction_protocol": POLICY_TRANSACTION_SCHEMA_VERSION,
+        "transaction_id": transaction_id,
+        "journal_manifest_sha256": manifest_hash,
+        "audit_committed_before_filesystem": True,
+        "recovery_required_until_finalized": True,
+    }
+    payload["event_sha256"] = sha256_json({
+        key: value
+        for key, value in payload.items()
+        if key != "event_sha256"
+    })
+    return manifest, payload
+
+
+def _prepare_policy_transaction(
+    *,
+    manifest: Mapping[str, Any],
+    changes: list[dict[str, Any]],
+    repo_root: Path,
+) -> None:
+    transaction_dir = _transaction_dir(str(manifest["transaction_id"]))
+    _create_repo_bytes(
+        f"{transaction_dir}/manifest.json",
+        _canonical_json_bytes(manifest),
+        repo_root=repo_root,
+        label="policy transaction manifest",
+    )
+    by_index = {int(change["index"]): change for change in changes}
+    for manifest_change in manifest["changes"]:
+        index = int(manifest_change["index"])
+        change = by_index[index]
+        before_bytes = bytes(change["before_bytes"])
+        after_bytes = bytes(change["after_bytes"])
+        if _sha256_bytes(before_bytes) != str(manifest_change["before_hash"]):
+            raise PolicyEvolutionError(
+                "policy transaction before bytes do not match manifest"
+            )
+        if _sha256_bytes(after_bytes) != str(manifest_change["after_hash"]):
+            raise PolicyEvolutionError(
+                "policy transaction after bytes do not match manifest"
+            )
+        _create_repo_bytes(
+            str(manifest_change["before_blob_ref"]),
+            before_bytes,
+            repo_root=repo_root,
+            label="policy transaction before blob",
+        )
+        _create_repo_bytes(
+            str(manifest_change["after_blob_ref"]),
+            after_bytes,
+            repo_root=repo_root,
+            label="policy transaction after blob",
+        )
+        backup_ref = str(manifest_change.get("backup_ref") or "")
+        if backup_ref and manifest.get("operation") == "approval":
+            _create_repo_bytes(
+                backup_ref,
+                before_bytes,
+                repo_root=repo_root,
+                label="policy rollback backup",
+            )
+        stage_ref = manifest_change.get("stage_ref")
+        if bool(manifest_change["after_exists"]):
+            if not stage_ref:
+                raise PolicyEvolutionError(
+                    "policy transaction stage ref is required"
+                )
+            _create_repo_bytes(
+                str(stage_ref),
+                after_bytes,
+                repo_root=repo_root,
+                label="policy transaction staged artifact",
+            )
+    _verify_prepared_transaction_artifacts(
+        manifest,
+        repo_root=repo_root,
+    )
+    _append_transaction_state(
+        manifest,
+        state_name="prepared",
+        repo_root=repo_root,
+        details={},
+    )
+
+
+_TRANSACTION_STATE_FILENAMES = {
+    "prepared": "10-prepared.json",
+    "audit_committed": "20-audit-committed.json",
+    "filesystem_committed": "30-filesystem-committed.json",
+    "finalized": "40-finalized.json",
+    "aborted": "90-aborted.json",
+}
+
+
+def _append_transaction_state(
+    manifest: Mapping[str, Any],
+    *,
+    state_name: str,
+    repo_root: Path,
+    details: Mapping[str, Any],
+) -> None:
+    filename = _TRANSACTION_STATE_FILENAMES.get(state_name)
+    if filename is None:
+        raise PolicyEvolutionError(
+            f"unknown policy transaction state: {state_name}"
+        )
+    transaction_id = str(manifest["transaction_id"])
+    payload = {
+        "schema_version": POLICY_TRANSACTION_STATE_SCHEMA_VERSION,
+        "transaction_id": transaction_id,
+        "manifest_sha256": str(manifest["manifest_sha256"]),
+        "state": state_name,
+        "details": dict(details),
+    }
+    _create_repo_bytes(
+        f"{_transaction_dir(transaction_id)}/{filename}",
+        _canonical_json_bytes(payload),
+        repo_root=repo_root,
+        label=f"policy transaction {state_name} state",
+    )
+
+
+def _transaction_state_exists(
+    manifest: Mapping[str, Any],
+    *,
+    state_name: str,
+    repo_root: Path,
+) -> bool:
+    filename = _TRANSACTION_STATE_FILENAMES[state_name]
+    transaction_id = str(manifest["transaction_id"])
+    raw = _read_repo_bytes(
+        f"{_transaction_dir(transaction_id)}/{filename}",
+        repo_root=repo_root,
+        label=f"policy transaction {state_name} state",
+        missing_ok=True,
+    )
+    if raw is None:
+        return False
+    record = _decode_json_mapping(
+        raw,
+        label=f"policy transaction {state_name} state",
+    )
+    if (
+        record.get("schema_version")
+        != POLICY_TRANSACTION_STATE_SCHEMA_VERSION
+        or record.get("transaction_id") != transaction_id
+        or record.get("manifest_sha256")
+        != manifest.get("manifest_sha256")
+        or record.get("state") != state_name
+    ):
+        raise PolicyEvolutionError(
+            f"policy transaction {state_name} state is invalid"
+        )
+    return True
+
+
+def _ensure_transaction_audit(
+    *,
+    state: EventJournal,
+    manifest: Mapping[str, Any],
+    payload: Mapping[str, Any],
+) -> int:
+    matches = _matching_transaction_audits(state=state, manifest=manifest)
+    if len(matches) > 1:
+        raise PolicyEvolutionError(
+            "duplicate append-only policy transaction audit events"
+        )
+    if matches:
+        return int(matches[0]["event_id"])
+    try:
+        event_id = state.write_event(
+            run_id=str(manifest["run_id"]),
+            source="autoresearch",
+            kind=str(manifest["audit_kind"]),
+            payload=dict(payload),
+        )
+    except Exception:
+        matches = _matching_transaction_audits(
+            state=state,
+            manifest=manifest,
+        )
+        if len(matches) == 1:
+            return int(matches[0]["event_id"])
+        raise
+    matches = _matching_transaction_audits(state=state, manifest=manifest)
+    if len(matches) != 1:
+        raise PolicyEvolutionError(
+            "policy transaction audit event was not durably observable"
+        )
+    if int(matches[0]["event_id"]) != int(event_id):
+        raise PolicyEvolutionError(
+            "policy transaction audit event id mismatch"
+        )
+    return int(event_id)
+
+
+def _matching_transaction_audits(
+    *,
+    state: EventJournal,
+    manifest: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    expected_payload = _transaction_payload_from_manifest(manifest)
+    matches: list[dict[str, Any]] = []
+    cursor = 0
+    while True:
+        events = state.read_events_since(
+            str(manifest["run_id"]),
+            after_event_id=cursor,
+            limit=500,
+        )
+        if not events:
+            break
+        for event in events:
+            cursor = max(cursor, int(event.get("event_id") or 0))
+            if (
+                event.get("source") != "autoresearch"
+                or event.get("kind") != manifest.get("audit_kind")
+            ):
+                continue
+            payload = event.get("payload")
+            if not isinstance(payload, Mapping):
+                continue
+            if payload.get("transaction_id") != manifest.get(
+                "transaction_id"
+            ):
+                continue
+            if dict(payload) != expected_payload:
+                raise PolicyEvolutionError(
+                    "policy transaction audit payload does not match "
+                    "the durable journal"
+                )
+            matches.append(dict(event))
+        if len(events) < 500:
+            break
+    return matches
+
+
+def _transaction_payload_from_manifest(
+    manifest: Mapping[str, Any],
+) -> dict[str, Any]:
+    payload = {
+        **dict(manifest["audit_payload_base"]),
+        "transaction_protocol": POLICY_TRANSACTION_SCHEMA_VERSION,
+        "transaction_id": str(manifest["transaction_id"]),
+        "journal_manifest_sha256": str(manifest["manifest_sha256"]),
+        "audit_committed_before_filesystem": True,
+        "recovery_required_until_finalized": True,
+    }
+    payload["event_sha256"] = sha256_json({
+        key: value
+        for key, value in payload.items()
+        if key != "event_sha256"
+    })
+    return payload
+
+
+def _commit_policy_transaction(
+    *,
+    manifest: Mapping[str, Any],
+    repo_root: Path,
+) -> None:
+    for change in manifest["changes"]:
+        target_rel = str(change["target_path"])
+        stage_ref = change.get("stage_ref")
+        if bool(change["after_exists"]) and stage_ref:
+            staged = _read_repo_bytes(
+                str(stage_ref),
+                repo_root=repo_root,
+                label="policy transaction staged artifact",
+                missing_ok=True,
+            )
+            current = _read_repo_bytes(
+                target_rel,
+                repo_root=repo_root,
+                label="policy overlay target",
+                missing_ok=True,
+            )
+            current_exists = current is not None
+            current_hash = _sha256_bytes(current or b"")
+            if staged is None and not (
+                current_exists is True
+                and current_hash == str(change["after_hash"])
+            ):
+                after_bytes = _read_required_transaction_blob(
+                    change,
+                    blob_kind="after",
+                    repo_root=repo_root,
+                )
+                _create_repo_bytes(
+                    str(stage_ref),
+                    after_bytes,
+                    repo_root=repo_root,
+                    label="policy transaction staged artifact",
+                )
+        try:
+            commit_staged_repo_file_no_follow(
+                target_rel,
+                str(stage_ref) if stage_ref is not None else None,
+                repo_root=repo_root,
+                expected_hash=str(change["before_hash"]),
+                expected_exists=bool(change["before_exists"]),
+                desired_hash=str(change["after_hash"]),
+                desired_exists=bool(change["after_exists"]),
+                label="policy overlay target",
+            )
+        except PolicyOverlayError as exc:
+            raise PolicyEvolutionError(str(exc)) from exc
+    _verify_transaction_state(
+        manifest,
+        repo_root=repo_root,
+        desired=True,
+    )
+
+
+def _verify_prepared_transaction_artifacts(
+    manifest: Mapping[str, Any],
+    *,
+    repo_root: Path,
+) -> None:
+    for change in manifest["changes"]:
+        before_bytes = _read_required_transaction_blob(
+            change,
+            blob_kind="before",
+            repo_root=repo_root,
+        )
+        after_bytes = _read_required_transaction_blob(
+            change,
+            blob_kind="after",
+            repo_root=repo_root,
+        )
+        backup_ref = str(change.get("backup_ref") or "")
+        if backup_ref and manifest.get("operation") == "approval":
+            backup = _read_repo_bytes(
+                backup_ref,
+                repo_root=repo_root,
+                label="policy rollback backup",
+                missing_ok=False,
+            )
+            if backup != before_bytes:
+                raise PolicyEvolutionError(
+                    "policy rollback backup does not match transaction "
+                    "before bytes"
+                )
+        stage_ref = change.get("stage_ref")
+        if bool(change["after_exists"]):
+            if not stage_ref:
+                raise PolicyEvolutionError(
+                    "policy transaction stage ref is required"
+                )
+            stage = _read_repo_bytes(
+                str(stage_ref),
+                repo_root=repo_root,
+                label="policy transaction staged artifact",
+                missing_ok=False,
+            )
+            if stage != after_bytes:
+                raise PolicyEvolutionError(
+                    "policy transaction staged artifact does not match "
+                    "transaction after bytes"
+                )
+
+
+def _recover_policy_transactions_locked(
+    *,
+    state: EventJournal,
+    repo_root: Path,
+) -> list[dict[str, Any]]:
+    try:
+        entries = list_repo_directory_no_follow(
+            POLICY_TRANSACTION_ROOT,
+            repo_root=repo_root,
+            label="policy transaction journal",
+            missing_ok=True,
+        )
+    except PolicyOverlayError as exc:
+        raise PolicyEvolutionError(str(exc)) from exc
+    results: list[dict[str, Any]] = []
+    for entry in entries:
+        manifest = _load_transaction_manifest(
+            transaction_id=entry,
+            repo_root=repo_root,
+        )
+        transaction_id = str(manifest["transaction_id"])
+        if _transaction_state_exists(
+            manifest,
+            state_name="finalized",
+            repo_root=repo_root,
+        ):
+            audits = _matching_transaction_audits(
+                state=state,
+                manifest=manifest,
+            )
+            if len(audits) != 1:
+                raise PolicyEvolutionError(
+                    "finalized policy transaction lacks exactly one "
+                    "matching audit event"
+                )
+            results.append({
+                "transaction_id": transaction_id,
+                "status": "already_finalized",
+            })
+            continue
+        if _transaction_state_exists(
+            manifest,
+            state_name="aborted",
+            repo_root=repo_root,
+        ):
+            results.append({
+                "transaction_id": transaction_id,
+                "status": "already_aborted",
+            })
+            continue
+
+        audits = _matching_transaction_audits(
+            state=state,
+            manifest=manifest,
+        )
+        if len(audits) > 1:
+            raise PolicyEvolutionError(
+                "duplicate append-only policy transaction audit events"
+            )
+        if not audits:
+            _verify_transaction_state(
+                manifest,
+                repo_root=repo_root,
+                desired=False,
+            )
+            _remove_transaction_stages(
+                manifest,
+                repo_root=repo_root,
+            )
+            _append_transaction_state(
+                manifest,
+                state_name="aborted",
+                repo_root=repo_root,
+                details={"reason": "audit_not_committed"},
+            )
+            results.append({
+                "transaction_id": transaction_id,
+                "status": "aborted_before_audit",
+            })
+            continue
+
+        _append_transaction_state(
+            manifest,
+            state_name="audit_committed",
+            repo_root=repo_root,
+            details={"event_id": int(audits[0]["event_id"])},
+        )
+        _commit_policy_transaction(
+            manifest=manifest,
+            repo_root=repo_root,
+        )
+        _append_transaction_state(
+            manifest,
+            state_name="filesystem_committed",
+            repo_root=repo_root,
+            details={},
+        )
+        _append_transaction_state(
+            manifest,
+            state_name="finalized",
+            repo_root=repo_root,
+            details={"recovered": True},
+        )
+        results.append({
+            "transaction_id": transaction_id,
+            "status": "recovered_finalized",
+        })
+    return results
+
+
+def _load_transaction_manifest(
+    *,
+    transaction_id: str,
+    repo_root: Path,
+) -> dict[str, Any]:
+    transaction_dir = _transaction_dir(transaction_id)
+    raw = _read_repo_bytes(
+        f"{transaction_dir}/manifest.json",
+        repo_root=repo_root,
+        label="policy transaction manifest",
+        missing_ok=False,
+    )
+    assert raw is not None
+    manifest = _decode_json_mapping(
+        raw,
+        label="policy transaction manifest",
+    )
+    manifest_hash = str(manifest.get("manifest_sha256") or "")
+    body = {
+        key: value
+        for key, value in manifest.items()
+        if key != "manifest_sha256"
+    }
+    if (
+        manifest.get("schema_version") != POLICY_TRANSACTION_SCHEMA_VERSION
+        or manifest.get("transaction_id") != transaction_id
+        or sha256_json(body) != manifest_hash
+        or not isinstance(manifest.get("changes"), list)
+        or not isinstance(manifest.get("audit_payload_base"), Mapping)
+    ):
+        raise PolicyEvolutionError(
+            "policy transaction manifest failed integrity validation"
+        )
+    return manifest
+
+
+def _verify_transaction_state(
+    manifest: Mapping[str, Any],
+    *,
+    repo_root: Path,
+    desired: bool,
+) -> None:
+    for change in manifest["changes"]:
+        target = _read_repo_bytes(
+            str(change["target_path"]),
+            repo_root=repo_root,
+            label="policy overlay target",
+            missing_ok=True,
+        )
+        observed_exists = target is not None
+        observed_hash = _sha256_bytes(target or b"")
+        expected_exists = bool(
+            change["after_exists"] if desired else change["before_exists"]
+        )
+        expected_hash = str(
+            change["after_hash"] if desired else change["before_hash"]
+        )
+        if (
+            observed_exists != expected_exists
+            or observed_hash != expected_hash
+        ):
+            state_name = "desired" if desired else "pre-transaction"
+            raise PolicyEvolutionError(
+                f"policy transaction target is not in {state_name} state: "
+                f"{change['target_path']}; expected exists={expected_exists} "
+                f"hash={expected_hash}, observed exists={observed_exists} "
+                f"hash={observed_hash}"
+            )
+
+
+def _remove_transaction_stages(
+    manifest: Mapping[str, Any],
+    *,
+    repo_root: Path,
+) -> None:
+    for change in manifest["changes"]:
+        stage_ref = change.get("stage_ref")
+        if not stage_ref:
+            continue
+        try:
+            remove_repo_file_no_follow(
+                str(stage_ref),
+                repo_root=repo_root,
+                label="policy transaction staged artifact",
+                missing_ok=True,
+            )
+        except PolicyOverlayError as exc:
+            raise PolicyEvolutionError(str(exc)) from exc
+
+
+def _read_required_transaction_blob(
+    change: Mapping[str, Any],
+    *,
+    blob_kind: str,
+    repo_root: Path,
+) -> bytes:
+    ref = str(change[f"{blob_kind}_blob_ref"])
+    data = _read_repo_bytes(
+        ref,
+        repo_root=repo_root,
+        label=f"policy transaction {blob_kind} blob",
+        missing_ok=False,
+    )
+    assert data is not None
+    expected_hash = str(change[f"{blob_kind}_hash"])
+    observed_hash = _sha256_bytes(data)
+    if observed_hash != expected_hash:
+        raise PolicyEvolutionError(
+            f"policy transaction {blob_kind} blob hash mismatch: "
+            f"expected {expected_hash}, observed {observed_hash}"
+        )
+    return data
+
+
+def _decode_json_mapping(data: bytes, *, label: str) -> dict[str, Any]:
+    try:
+        decoded = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise PolicyEvolutionError(f"{label} is not valid JSON") from exc
+    if not isinstance(decoded, dict):
+        raise PolicyEvolutionError(f"{label} must be a JSON object")
+    return decoded
+
+
+def _canonical_json_bytes(value: Mapping[str, Any]) -> bytes:
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+
+
+def _policy_transaction_fault(
+    boundary: str,
+    manifest: Mapping[str, Any],
+) -> None:
+    """Test seam for simulating process death after a durable boundary."""
+    del boundary, manifest

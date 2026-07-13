@@ -4,6 +4,7 @@ Each invocation is bounded (max_turns), runs to completion, and terminates.
 This is what gives us predictable cost — the agent doesn't loop forever.
 """
 from __future__ import annotations
+import asyncio
 import json
 import logging
 from collections.abc import Mapping
@@ -30,7 +31,9 @@ class AgentInvoker:
                  *,
                  agent_runtime: AgentRuntime,
                  agent_environment: Mapping[str, str] | None = None,
-                 inherit_agent_environment: bool = True):
+                 inherit_agent_environment: bool = False,
+                 max_decision_attempts: int = 5,
+                 retry_base_delay_s: float = 5.0):
         self.cfg = cfg
         self.state = state
         self.skills_dir = skills_dir
@@ -39,15 +42,63 @@ class AgentInvoker:
         self.agent_runtime = agent_runtime
         self.agent_environment = dict(agent_environment or {})
         self.inherit_agent_environment = bool(inherit_agent_environment)
+        self.max_decision_attempts = max(1, int(max_decision_attempts))
+        self.retry_base_delay_s = max(0.0, float(retry_base_delay_s))
 
     async def run(self) -> None:
         log.info("AgentInvoker: starting decision loop")
         while True:
-            decision = await self.state.next_decision()
-            try:
-                await self._handle(decision)
-            except Exception as e:
-                log.exception("decision %s failed: %s", decision.kind, e)
+            await self.run_once()
+
+    async def run_once(self) -> None:
+        """Dispatch one leased decision and durably settle its outbox row."""
+
+        decision = await self.state.next_decision()
+        try:
+            await self._handle(decision)
+        except asyncio.CancelledError:
+            self.state.retry_decision(
+                decision,
+                error="dispatcher_cancelled",
+                delay_s=0,
+            )
+            raise
+        except Exception as exc:
+            if decision.attempt_count >= self.max_decision_attempts:
+                self.state.dead_letter_decision(
+                    decision,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+                log.exception(
+                    "decision %s dead-lettered after %s attempts: %s",
+                    decision.kind,
+                    decision.attempt_count,
+                    exc,
+                )
+                return
+            delay_s = min(
+                300.0,
+                self.retry_base_delay_s
+                * (2 ** max(0, decision.attempt_count - 1)),
+            )
+            self.state.retry_decision(
+                decision,
+                error=f"{type(exc).__name__}: {exc}",
+                delay_s=delay_s,
+            )
+            log.exception(
+                "decision %s attempt %s failed; retrying in %.3fs: %s",
+                decision.kind,
+                decision.attempt_count,
+                delay_s,
+                exc,
+            )
+            return
+        if not self.state.ack_decision(decision):
+            raise RuntimeError(
+                "decision completed but its durable lease could not be acked: "
+                f"{decision.decision_id}"
+            )
 
     async def _handle(self, d: Decision) -> None:
         skill_name = SKILL_FOR_DECISION.get(d.kind)

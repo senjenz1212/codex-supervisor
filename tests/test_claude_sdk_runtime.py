@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import os
+import sys
 from pathlib import Path
 
 import pytest
 
 from supervisor.agent_runtime import AgentTask, ClaudeCodeRuntime
-from supervisor.claude_sdk_runtime import ClaudeAgentSdkTransport
+from supervisor.claude_sdk_runtime import (
+    ClaudeAgentSdkContainmentError,
+    ClaudeAgentSdkPreflightError,
+    ClaudeAgentSdkTransport,
+    MissingClaudeAgentSdk,
+)
 
 
 class FakeOptions:
@@ -88,6 +96,164 @@ class CleanupBlockingClient(HangingClient):
         return False
 
 
+def test_claude_sdk_dependency_is_loaded_during_preflight() -> None:
+    def missing_loader():
+        raise ModuleNotFoundError(
+            "No module named 'claude_agent_sdk'",
+            name="claude_agent_sdk",
+        )
+
+    with pytest.raises(MissingClaudeAgentSdk):
+        ClaudeAgentSdkTransport(sdk_loader=missing_loader)
+
+
+def test_claude_sdk_preflight_rejects_missing_required_capabilities() -> None:
+    class IncompleteOptions:
+        def __init__(self, model):
+            self.model = model
+
+    with pytest.raises(
+        ClaudeAgentSdkPreflightError,
+        match="lacks required runtime capabilities",
+    ):
+        ClaudeAgentSdkTransport(
+            sdk_loader=lambda: (FakeClient, IncompleteOptions),
+            allow_uncontained_test_transport=True,
+        )
+
+
+def test_uncontained_fake_sdk_transport_never_claims_safe_cancellation() -> None:
+    transport = ClaudeAgentSdkTransport(
+        sdk_loader=lambda: (FakeClient, FakeOptions),
+        allow_uncontained_test_transport=True,
+    )
+
+    capabilities = transport.preflight()
+
+    assert capabilities.production_ready is False
+    assert capabilities.environment_isolation is False
+    assert capabilities.process_containment is False
+    assert capabilities.safe_cancellation is False
+
+
+@pytest.mark.asyncio
+async def test_contained_sdk_cancellation_fails_if_launcher_never_attests(
+    tmp_path: Path,
+) -> None:
+    class IgnoringClient(FakeClient):
+        entered: asyncio.Event | None = None
+
+        async def __aenter__(self):
+            assert self.entered is not None
+            self.entered.set()
+            return self
+
+        async def query(self, message):
+            await asyncio.Future()
+
+    fake_cli = tmp_path / "claude"
+    fake_cli.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    fake_cli.chmod(0o700)
+    IgnoringClient.entered = asyncio.Event()
+    transport = ClaudeAgentSdkTransport(
+        sdk_loader=lambda: (IgnoringClient, FakeOptions),
+        claude_cli_path=fake_cli,
+    )
+    token = await transport.start(
+        run_id="sdk-unattested-cancel",
+        argv=("claude", "-p", "review", "--model", "claude-test"),
+        cwd=tmp_path,
+        env={"ANTHROPIC_API_KEY": "direct"},
+        timeout_s=30,
+        metadata={},
+    )
+    await asyncio.wait_for(IgnoringClient.entered.wait(), timeout=1)
+
+    with pytest.raises(
+        ClaudeAgentSdkContainmentError,
+        match="without launcher attestation",
+    ):
+        await transport.cancel(token)
+
+
+@pytest.mark.asyncio
+async def test_contained_sdk_launcher_scrubs_sdk_inherited_host_credentials(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    class SpawningClient(FakeClient):
+        async def __aenter__(self):
+            self.process = await asyncio.create_subprocess_exec(
+                str(self.options.cli_path),
+                cwd=str(self.options.cwd),
+                env={**os.environ, **self.options.env},
+            )
+            await self.process.wait()
+            return self
+
+        async def receive_response(self):
+            class Block:
+                text = "done"
+
+            class Message:
+                content = [Block()]
+                model = "claude-served"
+
+            yield Message()
+
+    capture_dir = tmp_path / "capture"
+    capture_dir.mkdir()
+    fake_cli = tmp_path / "claude"
+    fake_cli.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os\n"
+        "from pathlib import Path\n"
+        "Path(os.environ['CLAUDE_CONFIG_DIR'], 'env.json').write_text("
+        "json.dumps(dict(os.environ), sort_keys=True), encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    fake_cli.chmod(0o700)
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "aws-secret")
+    monkeypatch.setenv("GITHUB_TOKEN", "github-secret")
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-secret")
+    runtime = ClaudeCodeRuntime(
+        transport=ClaudeAgentSdkTransport(
+            sdk_loader=lambda: (SpawningClient, FakeOptions),
+            claude_cli_path=fake_cli,
+        )
+    )
+
+    handle = await runtime.start(
+        AgentTask(
+            task_id="sdk-env-isolation",
+            instruction="review",
+            cwd=tmp_path,
+            model="claude-test",
+            inherit_env=True,
+            env={
+                "ANTHROPIC_API_KEY": "direct-key",
+                "CLAUDE_CONFIG_DIR": str(capture_dir),
+            },
+        )
+    )
+    result = await runtime.collect(handle)
+
+    assert result.status == "completed"
+    assert handle.capabilities["safe_process_cancellation"] is True
+    observed = json.loads(
+        (capture_dir / "env.json").read_text(encoding="utf-8")
+    )
+    assert observed["ANTHROPIC_API_KEY"] == "direct-key"
+    assert observed["CLAUDE_CONFIG_DIR"] == str(capture_dir)
+    for forbidden in (
+        "AWS_SECRET_ACCESS_KEY",
+        "GITHUB_TOKEN",
+        "OPENAI_API_KEY",
+        "CODEX_SUPERVISOR_SDK_LAUNCH_CONFIG",
+    ):
+        assert forbidden not in observed
+
+
 @pytest.mark.asyncio
 async def test_claude_sdk_is_confined_to_a_runtime_transport(
     tmp_path: Path,
@@ -95,6 +261,7 @@ async def test_claude_sdk_is_confined_to_a_runtime_transport(
     runtime = ClaudeCodeRuntime(
         transport=ClaudeAgentSdkTransport(
             sdk_loader=lambda: (FakeClient, FakeOptions),
+            allow_uncontained_test_transport=True,
         )
     )
     handle = await runtime.start(
@@ -133,10 +300,14 @@ async def test_claude_sdk_is_confined_to_a_runtime_transport(
         "run.completed",
     ]
     assert handle.capabilities["filesystem_isolation"] is False
+    assert handle.capabilities["cancel"] is False
+    assert handle.capabilities["safe_process_cancellation"] is False
     assert FakeOptions.seen.model == "claude-test"
     assert FakeOptions.seen.system_prompt == "system"
     assert FakeOptions.seen.cwd == tmp_path.resolve()
-    assert FakeOptions.seen.env == {"ANTHROPIC_API_KEY": "direct"}
+    assert FakeOptions.seen.env["ANTHROPIC_API_KEY"] == "direct"
+    assert "OPENAI_API_KEY" not in FakeOptions.seen.env
+    assert "GITHUB_TOKEN" not in FakeOptions.seen.env
     assert FakeOptions.seen.max_budget_usd == 0.5
 
 
@@ -148,6 +319,7 @@ async def test_claude_sdk_timeout_budget_starts_when_runtime_starts(
     HangingClient.query_started = asyncio.Event()
     transport = ClaudeAgentSdkTransport(
         sdk_loader=lambda: (HangingClient, FakeOptions),
+        allow_uncontained_test_transport=True,
     )
     token = await transport.start(
         run_id="sdk-timeout-from-start",
@@ -177,6 +349,7 @@ async def test_claude_sdk_collect_propagates_caller_cancellation(
     HangingClient.query_started = asyncio.Event()
     transport = ClaudeAgentSdkTransport(
         sdk_loader=lambda: (HangingClient, FakeOptions),
+        allow_uncontained_test_transport=True,
     )
     token = await transport.start(
         run_id="sdk-collect-caller-cancelled",
@@ -213,6 +386,7 @@ async def test_claude_sdk_collect_waits_for_cleanup_before_propagating(
     CleanupBlockingClient.cleanup_finished = asyncio.Event()
     transport = ClaudeAgentSdkTransport(
         sdk_loader=lambda: (CleanupBlockingClient, FakeOptions),
+        allow_uncontained_test_transport=True,
     )
     token = await transport.start(
         run_id="sdk-collect-cancellation-cleanup",
@@ -260,6 +434,7 @@ async def test_claude_sdk_resume_rejects_overlapping_execution(
     HangingClient.query_started = asyncio.Event()
     transport = ClaudeAgentSdkTransport(
         sdk_loader=lambda: (HangingClient, FakeOptions),
+        allow_uncontained_test_transport=True,
     )
     token = await transport.start(
         run_id="sdk-overlapping-resume",
@@ -325,6 +500,7 @@ async def test_claude_sdk_resume_stream_starts_at_the_resumed_generation(
     SequencedClient.generation = 0
     transport = ClaudeAgentSdkTransport(
         sdk_loader=lambda: (SequencedClient, FakeOptions),
+        allow_uncontained_test_transport=True,
     )
     token = await transport.start(
         run_id="sdk-resume-stream-generation",

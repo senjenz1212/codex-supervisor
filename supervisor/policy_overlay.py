@@ -1,14 +1,24 @@
 """Whitelisted live policy overlay for supervisor auto-evolution."""
 from __future__ import annotations
 
+import errno
 import os
+import secrets
+import stat
+import threading
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Iterator, Mapping
 
 import yaml
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Unix is the supported runtime.
+    fcntl = None
 
 
 POLICY_OVERLAY_SCHEMA_VERSION = "supervisor-policy-overlay/v1"
@@ -97,14 +107,16 @@ class PolicyOverlaySnapshot:
 
 def normalise_overlay_target(path: str | Path, *, repo_root: str | Path) -> str:
     """Return a repo-relative path and reject non-overlay policy targets."""
-    repo_root_path = Path(repo_root).expanduser().resolve()
+    repo_root_path = _real_repo_root(repo_root)
     raw = str(path or "").strip().replace("\\", "/")
     if not raw:
         raise PolicyOverlayError("policy overlay target path is required")
     candidate = Path(raw).expanduser()
     if candidate.is_absolute():
         try:
-            raw = candidate.resolve(strict=False).relative_to(repo_root_path).as_posix()
+            raw = Path(os.path.abspath(candidate)).relative_to(
+                repo_root_path
+            ).as_posix()
         except ValueError as exc:
             raise PolicyOverlayError(f"policy overlay target is outside repo root: {path}") from exc
     parts: list[str] = []
@@ -127,33 +139,246 @@ def normalise_overlay_target(path: str | Path, *, repo_root: str | Path) -> str:
     return rel
 
 
+_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+_DIRECTORY = getattr(os, "O_DIRECTORY", 0)
+_CLOEXEC = getattr(os, "O_CLOEXEC", 0)
+_DIRECTORY_FLAGS = os.O_RDONLY | _NOFOLLOW | _DIRECTORY | _CLOEXEC
+_READ_FLAGS = os.O_RDONLY | _NOFOLLOW | _CLOEXEC
+_CREATE_FLAGS = (
+    os.O_WRONLY
+    | os.O_CREAT
+    | os.O_EXCL
+    | _NOFOLLOW
+    | _CLOEXEC
+)
+_POLICY_PROCESS_LOCK = threading.RLock()
+
+
 def assert_repo_local_path(
     path: str | Path,
     *,
     repo_root: str | Path,
     label: str = "path",
 ) -> Path:
-    """Return an absolute repo-local path after rejecting every symlink component."""
-    root = Path(os.path.realpath(Path(repo_root).expanduser()))
-    candidate = Path(path).expanduser()
-    if not candidate.is_absolute():
-        candidate = root / candidate
-    candidate = Path(os.path.abspath(candidate))
-    try:
-        relative = candidate.relative_to(root)
-    except ValueError as exc:
-        raise PolicyOverlayError(f"{label} is outside repo root: {path}") from exc
+    """Return a lexical repo-local path after rejecting existing links."""
+    root, candidate, relative = _repo_relative_path(
+        path,
+        repo_root=repo_root,
+        label=label,
+    )
     current = root
-    for component in relative.parts:
+    for index, component in enumerate(relative.parts):
         current /= component
-        if current.is_symlink():
-            raise PolicyOverlayError(f"{label} contains a symlink component: {current}")
-    resolved = Path(os.path.realpath(candidate))
-    try:
-        resolved.relative_to(root)
-    except ValueError as exc:
-        raise PolicyOverlayError(f"{label} resolves outside repo root: {path}") from exc
+        try:
+            metadata = os.lstat(current)
+        except FileNotFoundError:
+            break
+        except OSError as exc:
+            raise PolicyOverlayError(
+                f"{label} could not be inspected safely: {current}: {exc}"
+            ) from exc
+        if stat.S_ISLNK(metadata.st_mode):
+            raise PolicyOverlayError(
+                f"{label} contains a symlink component: {current}"
+            )
+        if index < len(relative.parts) - 1 and not stat.S_ISDIR(
+            metadata.st_mode
+        ):
+            raise PolicyOverlayError(
+                f"{label} contains a non-directory component: {current}"
+            )
     return candidate
+
+
+@contextmanager
+def repo_root_lock_no_follow(
+    repo_root: str | Path,
+    *,
+    label: str = "repository",
+) -> Iterator[None]:
+    """Serialize policy transactions without creating an attacker path."""
+    if fcntl is None:
+        raise PolicyOverlayError(
+            f"{label} cross-process filesystem locking is unavailable"
+        )
+    _POLICY_PROCESS_LOCK.acquire()
+    try:
+        root = _real_repo_root(repo_root)
+        try:
+            descriptor = os.open(root, _DIRECTORY_FLAGS)
+        except OSError as exc:
+            raise _secure_open_error(label=f"{label} root", error=exc) from exc
+        try:
+            while True:
+                try:
+                    fcntl.flock(descriptor, fcntl.LOCK_EX)
+                    break
+                except OSError as exc:
+                    if exc.errno == errno.EINTR:
+                        continue
+                    raise PolicyOverlayError(
+                        f"{label} cross-process lock failed: {exc}"
+                    ) from exc
+            try:
+                yield
+            finally:
+                while True:
+                    try:
+                        fcntl.flock(descriptor, fcntl.LOCK_UN)
+                        break
+                    except OSError as exc:
+                        if exc.errno == errno.EINTR:
+                            continue
+                        raise PolicyOverlayError(
+                            f"{label} cross-process unlock failed: {exc}"
+                        ) from exc
+        finally:
+            os.close(descriptor)
+    finally:
+        _POLICY_PROCESS_LOCK.release()
+
+
+def read_repo_file_no_follow(
+    path: str | Path,
+    *,
+    repo_root: str | Path,
+    label: str = "path",
+    missing_ok: bool = False,
+    max_bytes: int | None = None,
+) -> bytes | None:
+    """Read one regular repo-local file without following any links."""
+    opened = _open_repo_parent(
+        path,
+        repo_root=repo_root,
+        label=label,
+        create=False,
+        missing_ok=missing_ok,
+    )
+    if opened is None:
+        return None
+    _target, parent_fd, name = opened
+    try:
+        return _read_regular_file_at(
+            parent_fd,
+            name,
+            label=label,
+            missing_ok=missing_ok,
+            max_bytes=max_bytes,
+        )
+    finally:
+        os.close(parent_fd)
+
+
+def create_repo_file_no_follow(
+    path: str | Path,
+    data: bytes,
+    *,
+    repo_root: str | Path,
+    label: str = "path",
+    exist_ok_same: bool = False,
+) -> Path:
+    """Crash-atomically create one regular file without replacing an entry."""
+    target, parent_fd, name = _require_open_repo_parent(
+        path,
+        repo_root=repo_root,
+        label=label,
+        create=True,
+    )
+    temporary_name = (
+        f".policy-create-{sha256(name.encode('utf-8')).hexdigest()[:16]}-"
+        f"{os.getpid()}-{secrets.token_hex(16)}"
+    )
+    temporary_created = False
+    try:
+        existing = _read_regular_file_at(
+            parent_fd,
+            name,
+            label=label,
+            missing_ok=True,
+        )
+        if existing is not None:
+            if exist_ok_same and existing == data:
+                return target
+            raise PolicyOverlayError(
+                f"{label} already exists with different content: {target}"
+            )
+        try:
+            descriptor = os.open(
+                temporary_name,
+                _CREATE_FLAGS,
+                0o600,
+                dir_fd=parent_fd,
+            )
+        except OSError as exc:
+            raise _secure_open_error(
+                label=f"{label} temporary file",
+                error=exc,
+            ) from exc
+        temporary_created = True
+        try:
+            _write_all(descriptor, data, label=label)
+            os.fsync(descriptor)
+        except OSError as exc:
+            raise PolicyOverlayError(
+                f"{label} durable write failed: {target}: {exc}"
+            ) from exc
+        finally:
+            os.close(descriptor)
+        try:
+            os.link(
+                temporary_name,
+                name,
+                src_dir_fd=parent_fd,
+                dst_dir_fd=parent_fd,
+                follow_symlinks=False,
+            )
+        except FileExistsError:
+            existing = _read_regular_file_at(
+                parent_fd,
+                name,
+                label=label,
+                missing_ok=False,
+            )
+            if not (exist_ok_same and existing == data):
+                raise PolicyOverlayError(
+                    f"{label} already exists with different content: {target}"
+                )
+        except OSError as exc:
+            raise _secure_open_error(label=label, error=exc) from exc
+        else:
+            try:
+                os.unlink(temporary_name, dir_fd=parent_fd)
+            except OSError as exc:
+                try:
+                    os.unlink(name, dir_fd=parent_fd)
+                except OSError:
+                    pass
+                raise _secure_open_error(
+                    label=f"{label} temporary publication",
+                    error=exc,
+                ) from exc
+            temporary_created = False
+        _fsync_directory(parent_fd, label=label)
+        observed = _read_regular_file_at(
+            parent_fd,
+            name,
+            label=label,
+            missing_ok=False,
+        )
+        if observed != data:
+            raise PolicyOverlayError(
+                f"{label} post-create content mismatch: {target}"
+            )
+        return target
+    finally:
+        if temporary_created:
+            try:
+                os.unlink(temporary_name, dir_fd=parent_fd)
+            except FileNotFoundError:
+                pass
+            except OSError:
+                pass
+        os.close(parent_fd)
 
 
 def write_repo_file_no_follow(
@@ -163,60 +388,183 @@ def write_repo_file_no_follow(
     repo_root: str | Path,
     label: str = "path",
 ) -> Path:
-    """Write bytes under repo_root without following symlinks in any component."""
-    target = assert_repo_local_path(path, repo_root=repo_root, label=label)
-    root = Path(os.path.realpath(Path(repo_root).expanduser()))
-    relative = target.relative_to(root)
-    if not relative.parts:
-        raise PolicyOverlayError(f"{label} must name a file inside repo root")
-    directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-    no_follow = getattr(os, "O_NOFOLLOW", 0)
-    directory_fd = os.open(root, directory_flags)
+    """Atomically replace bytes without following links or truncating aliases."""
+    target, parent_fd, name = _require_open_repo_parent(
+        path,
+        repo_root=repo_root,
+        label=label,
+        create=True,
+    )
+    temporary_name = f".policy-write-{os.getpid()}-{secrets.token_hex(16)}"
     try:
-        for component in relative.parts[:-1]:
-            try:
-                next_fd = os.open(
-                    component,
-                    directory_flags | no_follow,
-                    dir_fd=directory_fd,
-                )
-            except FileNotFoundError:
-                os.mkdir(component, mode=0o700, dir_fd=directory_fd)
-                next_fd = os.open(
-                    component,
-                    directory_flags | no_follow,
-                    dir_fd=directory_fd,
-                )
-            os.close(directory_fd)
-            directory_fd = next_fd
+        _reject_unsafe_existing_entry(parent_fd, name, label=label)
         try:
-            file_fd = os.open(
-                relative.parts[-1],
-                os.O_WRONLY | os.O_CREAT | os.O_TRUNC | no_follow,
+            descriptor = os.open(
+                temporary_name,
+                _CREATE_FLAGS,
                 0o600,
-                dir_fd=directory_fd,
+                dir_fd=parent_fd,
             )
         except OSError as exc:
-            raise PolicyOverlayError(
-                f"{label} refused symlink-safe write: {target}"
+            raise _secure_open_error(
+                label=f"{label} temporary file",
+                error=exc,
             ) from exc
         try:
-            remaining = memoryview(data)
-            while remaining:
-                written = os.write(file_fd, remaining)
-                if written <= 0:
-                    raise OSError(f"short write for {target}")
-                remaining = remaining[written:]
-            os.fsync(file_fd)
+            _write_all(descriptor, data, label=label)
+            os.fsync(descriptor)
+        except OSError as exc:
+            raise PolicyOverlayError(
+                f"{label} durable write failed: {target}: {exc}"
+            ) from exc
         finally:
-            os.close(file_fd)
-    except OSError as exc:
-        raise PolicyOverlayError(
-            f"{label} refused symlink-safe write: {target}"
-        ) from exc
+            os.close(descriptor)
+        try:
+            os.replace(
+                temporary_name,
+                name,
+                src_dir_fd=parent_fd,
+                dst_dir_fd=parent_fd,
+            )
+        except OSError as exc:
+            raise _secure_open_error(label=label, error=exc) from exc
+        _fsync_directory(parent_fd, label=label)
+        return target
     finally:
-        os.close(directory_fd)
-    return target
+        try:
+            os.unlink(temporary_name, dir_fd=parent_fd)
+        except (FileNotFoundError, OSError):
+            pass
+        os.close(parent_fd)
+
+
+def commit_staged_repo_file_no_follow(
+    target_path: str | Path,
+    staged_path: str | Path | None,
+    *,
+    repo_root: str | Path,
+    expected_hash: str,
+    expected_exists: bool,
+    desired_hash: str,
+    desired_exists: bool,
+    label: str = "path",
+) -> Path:
+    """Publish a staged sibling through an existence-and-hash CAS."""
+    target, parent_fd, target_name = _require_open_repo_parent(
+        target_path,
+        repo_root=repo_root,
+        label=label,
+        create=False,
+    )
+    try:
+        current = _read_regular_file_at(
+            parent_fd,
+            target_name,
+            label=label,
+            missing_ok=True,
+        )
+        current_exists = current is not None
+        current_hash = sha256(current or b"").hexdigest()
+        if current_exists == desired_exists and current_hash == desired_hash:
+            if staged_path is not None:
+                _remove_staged_sibling(
+                    parent_fd,
+                    target_path=target,
+                    staged_path=staged_path,
+                    repo_root=repo_root,
+                    label=label,
+                )
+            return target
+        if (
+            current_exists != bool(expected_exists)
+            or current_hash != str(expected_hash)
+        ):
+            raise PolicyOverlayError(
+                f"{label} compare-and-set mismatch for {target}: "
+                f"expected exists={bool(expected_exists)} hash={expected_hash}, "
+                f"observed exists={current_exists} hash={current_hash}"
+            )
+
+        if desired_exists:
+            if staged_path is None:
+                raise PolicyOverlayError(
+                    f"{label} staged artifact is required for publication"
+                )
+            staged_target, staged_parent_fd, staged_name = (
+                _require_open_repo_parent(
+                    staged_path,
+                    repo_root=repo_root,
+                    label=f"{label} staged artifact",
+                    create=False,
+                )
+            )
+            try:
+                target_root, _, target_relative = _repo_relative_path(
+                    target,
+                    repo_root=repo_root,
+                    label=label,
+                )
+                staged_root, _, staged_relative = _repo_relative_path(
+                    staged_target,
+                    repo_root=repo_root,
+                    label=f"{label} staged artifact",
+                )
+                if (
+                    target_root != staged_root
+                    or target_relative.parent != staged_relative.parent
+                ):
+                    raise PolicyOverlayError(
+                        f"{label} staged artifact must be a target sibling"
+                    )
+                staged_bytes = _read_regular_file_at(
+                    staged_parent_fd,
+                    staged_name,
+                    label=f"{label} staged artifact",
+                    missing_ok=False,
+                )
+                staged_hash = sha256(staged_bytes or b"").hexdigest()
+                if staged_hash != desired_hash:
+                    raise PolicyOverlayError(
+                        f"{label} staged artifact hash mismatch: "
+                        f"expected {desired_hash}, observed {staged_hash}"
+                    )
+                try:
+                    os.replace(
+                        staged_name,
+                        target_name,
+                        src_dir_fd=staged_parent_fd,
+                        dst_dir_fd=parent_fd,
+                    )
+                except OSError as exc:
+                    raise _secure_open_error(label=label, error=exc) from exc
+            finally:
+                os.close(staged_parent_fd)
+        else:
+            try:
+                os.unlink(target_name, dir_fd=parent_fd)
+            except OSError as exc:
+                raise _secure_open_error(label=label, error=exc) from exc
+        _fsync_directory(parent_fd, label=label)
+        observed = _read_regular_file_at(
+            parent_fd,
+            target_name,
+            label=label,
+            missing_ok=True,
+        )
+        observed_exists = observed is not None
+        observed_hash = sha256(observed or b"").hexdigest()
+        if (
+            observed_exists != bool(desired_exists)
+            or observed_hash != desired_hash
+        ):
+            raise PolicyOverlayError(
+                f"{label} post-commit hash mismatch for {target}: "
+                f"expected exists={bool(desired_exists)} hash={desired_hash}, "
+                f"observed exists={observed_exists} hash={observed_hash}"
+            )
+        return target
+    finally:
+        os.close(parent_fd)
 
 
 def remove_repo_file_no_follow(
@@ -226,47 +574,357 @@ def remove_repo_file_no_follow(
     label: str = "path",
     missing_ok: bool = True,
 ) -> bool:
-    """Remove one repo-local file without following a swapped parent symlink."""
-    target = assert_repo_local_path(path, repo_root=repo_root, label=label)
-    root = Path(os.path.realpath(Path(repo_root).expanduser()))
-    relative = target.relative_to(root)
-    if not relative.parts:
-        raise PolicyOverlayError(f"{label} must name a file inside repo root")
-    directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-    no_follow = getattr(os, "O_NOFOLLOW", 0)
-    directory_fd = os.open(root, directory_flags)
+    """Remove one regular file without following a swapped parent or target."""
+    opened = _open_repo_parent(
+        path,
+        repo_root=repo_root,
+        label=label,
+        create=False,
+        missing_ok=missing_ok,
+    )
+    if opened is None:
+        return False
+    _target, parent_fd, name = opened
     try:
-        for component in relative.parts[:-1]:
-            try:
-                next_fd = os.open(
-                    component,
-                    directory_flags | no_follow,
-                    dir_fd=directory_fd,
-                )
-            except FileNotFoundError:
-                if missing_ok:
-                    return False
-                raise
-            os.close(directory_fd)
-            directory_fd = next_fd
+        metadata = _entry_metadata_at(
+            parent_fd,
+            name,
+            label=label,
+            missing_ok=missing_ok,
+        )
+        if metadata is None:
+            return False
+        _require_regular_single_link(metadata, label=label)
         try:
-            os.unlink(relative.parts[-1], dir_fd=directory_fd)
+            os.unlink(name, dir_fd=parent_fd)
         except FileNotFoundError:
             if missing_ok:
                 return False
             raise
+        except OSError as exc:
+            raise _secure_open_error(label=label, error=exc) from exc
+        _fsync_directory(parent_fd, label=label)
+        return True
+    finally:
+        os.close(parent_fd)
+
+
+def list_repo_directory_no_follow(
+    path: str | Path,
+    *,
+    repo_root: str | Path,
+    label: str = "directory",
+    missing_ok: bool = False,
+) -> tuple[str, ...]:
+    """List one repo-local directory through no-follow descriptors."""
+    root, _candidate, relative = _repo_relative_path(
+        path,
+        repo_root=repo_root,
+        label=label,
+    )
+    try:
+        descriptor = os.open(root, _DIRECTORY_FLAGS)
+    except OSError as exc:
+        raise _secure_open_error(label=f"{label} root", error=exc) from exc
+    try:
+        for component in relative.parts:
+            try:
+                child = os.open(
+                    component,
+                    _DIRECTORY_FLAGS,
+                    dir_fd=descriptor,
+                )
+            except FileNotFoundError:
+                if missing_ok:
+                    return ()
+                raise PolicyOverlayError(f"{label} is missing: {path}")
+            except OSError as exc:
+                raise _secure_open_error(label=label, error=exc) from exc
+            os.close(descriptor)
+            descriptor = child
+        try:
+            return tuple(sorted(os.listdir(descriptor)))
+        except OSError as exc:
+            raise PolicyOverlayError(
+                f"{label} could not be listed safely: {exc}"
+            ) from exc
+    finally:
+        os.close(descriptor)
+
+
+def _real_repo_root(repo_root: str | Path) -> Path:
+    if not _NOFOLLOW or not _DIRECTORY:
+        raise PolicyOverlayError(
+            "secure no-follow filesystem operations are unavailable"
+        )
+    return Path(
+        os.path.realpath(
+            os.path.abspath(os.path.expanduser(os.fspath(repo_root)))
+        )
+    )
+
+
+def _repo_relative_path(
+    path: str | Path,
+    *,
+    repo_root: str | Path,
+    label: str,
+) -> tuple[Path, Path, Path]:
+    root = _real_repo_root(repo_root)
+    raw = Path(os.path.expanduser(os.fspath(path)))
+    candidate = raw if raw.is_absolute() else root / raw
+    candidate = Path(os.path.abspath(candidate))
+    try:
+        relative = candidate.relative_to(root)
+    except ValueError as exc:
+        raise PolicyOverlayError(f"{label} is outside repo root: {path}") from exc
+    if not relative.parts:
+        raise PolicyOverlayError(f"{label} must name a path inside repo root")
+    return root, candidate, relative
+
+
+def _secure_open_error(*, label: str, error: OSError) -> PolicyOverlayError:
+    if error.errno in {errno.ELOOP, errno.ENOTDIR}:
+        return PolicyOverlayError(
+            f"{label} contains a symlink or non-directory path component"
+        )
+    if error.errno == errno.ENOENT:
+        return PolicyOverlayError(f"{label} is missing")
+    return PolicyOverlayError(f"{label} could not be opened safely: {error}")
+
+
+def _open_repo_parent(
+    path: str | Path,
+    *,
+    repo_root: str | Path,
+    label: str,
+    create: bool,
+    missing_ok: bool,
+) -> tuple[Path, int, str] | None:
+    root, target, relative = _repo_relative_path(
+        path,
+        repo_root=repo_root,
+        label=label,
+    )
+    try:
+        current_fd = os.open(root, _DIRECTORY_FLAGS)
+    except OSError as exc:
+        raise _secure_open_error(label=f"{label} root", error=exc) from exc
+    try:
+        for component in relative.parts[:-1]:
+            if create:
+                try:
+                    os.mkdir(component, mode=0o700, dir_fd=current_fd)
+                except FileExistsError:
+                    pass
+                except OSError as exc:
+                    raise _secure_open_error(label=label, error=exc) from exc
+                else:
+                    _fsync_directory(
+                        current_fd,
+                        label=f"{label} parent creation",
+                    )
+            try:
+                child_fd = os.open(
+                    component,
+                    _DIRECTORY_FLAGS,
+                    dir_fd=current_fd,
+                )
+            except FileNotFoundError:
+                if missing_ok:
+                    os.close(current_fd)
+                    return None
+                raise PolicyOverlayError(f"{label} is missing: {target}")
+            except OSError as exc:
+                raise _secure_open_error(label=label, error=exc) from exc
+            os.close(current_fd)
+            current_fd = child_fd
+        return target, current_fd, relative.parts[-1]
+    except BaseException:
+        try:
+            os.close(current_fd)
+        except OSError:
+            pass
+        raise
+
+
+def _require_open_repo_parent(
+    path: str | Path,
+    *,
+    repo_root: str | Path,
+    label: str,
+    create: bool,
+) -> tuple[Path, int, str]:
+    opened = _open_repo_parent(
+        path,
+        repo_root=repo_root,
+        label=label,
+        create=create,
+        missing_ok=False,
+    )
+    assert opened is not None
+    return opened
+
+
+def _entry_metadata_at(
+    parent_fd: int,
+    name: str,
+    *,
+    label: str,
+    missing_ok: bool,
+) -> os.stat_result | None:
+    try:
+        return os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        if missing_ok:
+            return None
+        raise PolicyOverlayError(f"{label} is missing")
+    except OSError as exc:
+        raise _secure_open_error(label=label, error=exc) from exc
+
+
+def _require_regular_single_link(
+    metadata: os.stat_result,
+    *,
+    label: str,
+) -> None:
+    if stat.S_ISLNK(metadata.st_mode):
+        raise PolicyOverlayError(f"{label} is a symlink")
+    if not stat.S_ISREG(metadata.st_mode):
+        raise PolicyOverlayError(f"{label} is not a regular file")
+    if metadata.st_nlink != 1:
+        raise PolicyOverlayError(f"{label} has unexpected hard links")
+
+
+def _reject_unsafe_existing_entry(
+    parent_fd: int,
+    name: str,
+    *,
+    label: str,
+) -> None:
+    metadata = _entry_metadata_at(
+        parent_fd,
+        name,
+        label=label,
+        missing_ok=True,
+    )
+    if metadata is not None:
+        _require_regular_single_link(metadata, label=label)
+
+
+def _read_regular_file_at(
+    parent_fd: int,
+    name: str,
+    *,
+    label: str,
+    missing_ok: bool,
+    max_bytes: int | None = None,
+) -> bytes | None:
+    try:
+        descriptor = os.open(name, _READ_FLAGS, dir_fd=parent_fd)
+    except FileNotFoundError:
+        if missing_ok:
+            return None
+        raise PolicyOverlayError(f"{label} is missing")
+    except OSError as exc:
+        raise _secure_open_error(label=label, error=exc) from exc
+    try:
+        metadata = os.fstat(descriptor)
+        _require_regular_single_link(metadata, label=label)
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            try:
+                chunk = os.read(descriptor, 1024 * 1024)
+            except OSError as exc:
+                raise PolicyOverlayError(
+                    f"{label} could not be read safely: {exc}"
+                ) from exc
+            if not chunk:
+                return b"".join(chunks)
+            total += len(chunk)
+            if max_bytes is not None and total > max_bytes:
+                raise PolicyOverlayError(
+                    f"{label} exceeds the maximum allowed size"
+                )
+            chunks.append(chunk)
+    finally:
+        os.close(descriptor)
+
+
+def _write_all(descriptor: int, data: bytes, *, label: str) -> None:
+    remaining = memoryview(data)
+    while remaining:
+        written = os.write(descriptor, remaining)
+        if written <= 0:
+            raise OSError(f"{label} write made no progress")
+        remaining = remaining[written:]
+
+
+def _fsync_directory(descriptor: int, *, label: str) -> None:
+    try:
+        os.fsync(descriptor)
     except OSError as exc:
         raise PolicyOverlayError(
-            f"{label} refused symlink-safe removal: {target}"
+            f"{label} directory fsync failed: {exc}"
         ) from exc
-    finally:
-        os.close(directory_fd)
-    return True
+
+
+def _remove_staged_sibling(
+    parent_fd: int,
+    *,
+    target_path: Path,
+    staged_path: str | Path,
+    repo_root: str | Path,
+    label: str,
+) -> None:
+    target_root, _, target_relative = _repo_relative_path(
+        target_path,
+        repo_root=repo_root,
+        label=label,
+    )
+    staged_root, _, staged_relative = _repo_relative_path(
+        staged_path,
+        repo_root=repo_root,
+        label=f"{label} staged artifact",
+    )
+    if (
+        target_root != staged_root
+        or target_relative.parent != staged_relative.parent
+    ):
+        raise PolicyOverlayError(
+            f"{label} staged artifact must be a target sibling"
+        )
+    metadata = _entry_metadata_at(
+        parent_fd,
+        staged_relative.name,
+        label=f"{label} staged artifact",
+        missing_ok=True,
+    )
+    if metadata is None:
+        return
+    _require_regular_single_link(
+        metadata,
+        label=f"{label} staged artifact",
+    )
+    try:
+        os.unlink(staged_relative.name, dir_fd=parent_fd)
+    except OSError as exc:
+        raise _secure_open_error(
+            label=f"{label} staged artifact",
+            error=exc,
+        ) from exc
+    _fsync_directory(parent_fd, label=f"{label} staged cleanup")
 
 
 def load_policy_overlay(repo_root: str | Path) -> PolicyOverlaySnapshot:
-    path = Path(repo_root).expanduser().resolve() / POLICY_OVERLAY_PATH
-    if not path.exists():
+    data = read_repo_file_no_follow(
+        POLICY_OVERLAY_PATH,
+        repo_root=repo_root,
+        label="policy overlay",
+        missing_ok=True,
+    )
+    if data is None:
         return PolicyOverlaySnapshot(
             path=POLICY_OVERLAY_PATH,
             exists=False,
@@ -279,9 +937,6 @@ def load_policy_overlay(repo_root: str | Path) -> PolicyOverlaySnapshot:
             rubric_thresholds={},
             raw={},
         )
-    if not path.is_file():
-        raise PolicyOverlayError(f"policy overlay path is not a file: {POLICY_OVERLAY_PATH}")
-    data = path.read_bytes()
     loaded = yaml.safe_load(data.decode("utf-8")) or {}
     if not isinstance(loaded, dict):
         raise PolicyOverlayError("policy overlay must be a mapping")

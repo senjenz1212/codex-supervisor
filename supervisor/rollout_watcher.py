@@ -25,7 +25,7 @@ from watchfiles import awatch, Change
 from .run_registry import (
     load_session_registration,
 )
-from .state import State
+from .state import Decision, State
 from .runtime_health import record_subsystem_health
 from .target.types import ScopeContract
 
@@ -61,7 +61,7 @@ _KIND_ALIASES: dict[str, str] = {
     "session_completed": "run.completed",
     "session_end": "run.completed",
     "session_ended": "run.completed",
-    "session_idle": "run.completed",
+    "session_idle": "turn.completed",
     "thread_completed": "run.completed",
     "run_failed": "run.failed",
     "session_error": "run.failed",
@@ -101,8 +101,6 @@ _KIND_ALIASES: dict[str, str] = {
 }
 
 _TERMINAL_STATUSES: dict[str, str] = {
-    "turn.completed": "completed",
-    "turn.failed": "failed",
     "run.completed": "completed",
     "run.failed": "failed",
     "run.cancelled": "cancelled",
@@ -363,33 +361,85 @@ class RolloutWatcher:
         # advanced past them.
         parsed_offset = start_offset
         for raw_line in lines:
+            line_start = parsed_offset
             parsed_offset += len(raw_line)
             line = raw_line.decode("utf-8", errors="replace").strip()
             if not line:
+                self.state.ingest_source_line(
+                    run_id=run_id,
+                    source="rollout",
+                    path=str(path),
+                    start_offset=line_start,
+                    end_offset=parsed_offset,
+                    raw_line=raw_line,
+                )
                 self.offsets[path] = parsed_offset
-                self.state.set_tail_offset(str(path), parsed_offset)
                 continue
             try:
                 event = json.loads(line)
             except json.JSONDecodeError as e:
-                self.offsets[path] = parsed_offset
-                self._record_health(
+                ingestion = self.state.ingest_source_line(
                     run_id=run_id,
-                    subsystem="rollout_watcher.parse",
-                    status="degraded",
-                    reason="json_decode_exception",
-                    details={
-                        "path": str(path),
-                        "byte_offset": parsed_offset,
+                    source="rollout",
+                    path=str(path),
+                    start_offset=line_start,
+                    end_offset=parsed_offset,
+                    raw_line=raw_line,
+                    dead_letter={
+                        "reason": "json_decode_exception",
                         "exception_type": type(e).__name__,
                         "error": str(e),
                     },
-                    tail_path=str(path),
-                    tail_offset=parsed_offset,
                 )
+                self.offsets[path] = parsed_offset
+                if ingestion.inserted:
+                    self._record_health(
+                        run_id=run_id,
+                        subsystem="rollout_watcher.parse",
+                        status="degraded",
+                        reason="json_decode_exception",
+                        details={
+                            "path": str(path),
+                            "byte_offset": parsed_offset,
+                            "exception_type": type(e).__name__,
+                            "error": str(e),
+                        },
+                        tail_path=str(path),
+                        tail_offset=parsed_offset,
+                    )
+                continue
+            if not isinstance(event, dict):
+                ingestion = self.state.ingest_source_line(
+                    run_id=run_id,
+                    source="rollout",
+                    path=str(path),
+                    start_offset=line_start,
+                    end_offset=parsed_offset,
+                    raw_line=raw_line,
+                    dead_letter={
+                        "reason": "invalid_event_shape",
+                        "observed_type": type(event).__name__,
+                    },
+                )
+                self.offsets[path] = parsed_offset
+                if ingestion.inserted:
+                    self._record_health(
+                        run_id=run_id,
+                        subsystem="rollout_watcher.parse",
+                        status="degraded",
+                        reason="invalid_event_shape",
+                        details={
+                            "path": str(path),
+                            "byte_offset": parsed_offset,
+                            "observed_type": type(event).__name__,
+                        },
+                        tail_path=str(path),
+                        tail_offset=parsed_offset,
+                    )
                 continue
             kinds = self._extract_kinds(event)
-            for kind_index, kind in enumerate(kinds):
+            normalized_events: list[tuple[str, dict[str, Any]]] = []
+            for kind in kinds:
                 event_payload = dict(event)
                 if len(kinds) > 1:
                     event_payload["normalized_from_shared_entry"] = True
@@ -400,23 +450,51 @@ class RolloutWatcher:
                     task_id = registration.get("task_id")
                     if task_id:
                         event_payload.setdefault("task_id", str(task_id))
-                if kind_index == len(kinds) - 1:
-                    event_id = self.state.write_event_and_tail_offset(
-                        run_id=run_id,
-                        source="rollout",
-                        kind=kind,
-                        payload=event_payload,
-                        path=str(path),
-                        byte_offset=parsed_offset,
-                    )
-                    self.offsets[path] = parsed_offset
-                else:
-                    event_id = self.state.write_event(
-                        run_id=run_id,
-                        source="rollout",
-                        kind=kind,
-                        payload=event_payload,
-                    )
+                normalized_events.append((kind, event_payload))
+            terminal_kind = next(
+                (
+                    kind
+                    for kind, _payload in reversed(normalized_events)
+                    if kind in _TERMINAL_STATUSES
+                ),
+                None,
+            )
+            terminal_status = (
+                _TERMINAL_STATUSES[terminal_kind]
+                if terminal_kind is not None
+                else None
+            )
+            decision = (
+                Decision(
+                    kind="evaluate_run",
+                    run_id=run_id,
+                    payload={
+                        "final_status": terminal_status,
+                        "final_event_kind": terminal_kind,
+                    },
+                )
+                if terminal_kind is not None
+                else None
+            )
+            ingestion = self.state.ingest_source_line(
+                run_id=run_id,
+                source="rollout",
+                path=str(path),
+                start_offset=line_start,
+                end_offset=parsed_offset,
+                raw_line=raw_line,
+                events=normalized_events,
+                terminal_status=terminal_status,
+                terminal_event_kind=terminal_kind,
+                decision=decision,
+            )
+            self.offsets[path] = parsed_offset
+            if not ingestion.inserted:
+                continue
+            for event_id, (kind, event_payload) in zip(
+                ingestion.event_ids,
+                normalized_events,
+            ):
                 if self.on_event:
                     try:
                         # Keep the callback shape compatible with consumers that
@@ -453,19 +531,6 @@ class RolloutWatcher:
                                 "error": str(e),
                             },
                         )
-                # Terminal events end the run and trigger post-run evaluation.
-                status = _TERMINAL_STATUSES.get(kind)
-                if status is not None:
-                    run = self.state.get_run(run_id)
-                    if run is not None and run["status"] != "running":
-                        continue
-                    self.state.end_run(run_id, status)
-                    from .state import Decision
-                    await self.state.enqueue_decision(Decision(
-                        kind="evaluate_run",
-                        run_id=run_id,
-                        payload={"final_status": status, "final_event_kind": kind},
-                    ))
 
     async def _replay_quarantines_once(self) -> None:
         root = self._quarantine_root()
@@ -842,7 +907,7 @@ class RolloutWatcher:
                 or payload.get("status")
             )
             if status == "idle":
-                return "run.completed"
+                return "turn.completed"
             if status == "busy":
                 return "turn.started"
 
@@ -874,12 +939,12 @@ class RolloutWatcher:
             if canonical == "message" and _canonical_raw_kind(payload.get("role")) == "assistant":
                 return "agent.message"
 
-        # Top-level lifecycle names from Codex CLI/OpenCode are real source
-        # events, unlike the flattened watcher fixtures retained for v0.2.
+        # Canonicalize both captured provider events and legacy flattened
+        # fixtures. The raw source shape remains in payload_json.
+        mapped = _KIND_ALIASES.get(_canonical_raw_kind(top_kind))
+        if mapped:
+            return mapped
         if "." in top_kind:
-            mapped = _KIND_ALIASES.get(_canonical_raw_kind(top_kind))
-            if mapped:
-                return mapped
             if top_kind in _NORMALIZED_KINDS:
                 return top_kind
         if top_kind == "session_meta":

@@ -117,16 +117,21 @@ async def main() -> int:
     if notifier is not None:
         try:
             from supervisor.agent_runtime import ClaudeCodeRuntime
-            from supervisor.claude_sdk_runtime import ClaudeAgentSdkTransport
+            from supervisor.claude_sdk_runtime import (
+                ClaudeAgentSdkPreflightError,
+                ClaudeAgentSdkTransport,
+            )
             from supervisor.telegram_supervisor import (
                 ClaudeAgentSupervisorRuntime,
                 TelegramChatSupervisor,
             )
+            chat_transport = ClaudeAgentSdkTransport()
+            chat_transport.preflight()
             chat_runtime = ClaudeAgentSupervisorRuntime(
                 cfg,
                 state,
                 agent_runtime=ClaudeCodeRuntime(
-                    transport=ClaudeAgentSdkTransport(),
+                    transport=chat_transport,
                 ),
                 summary_client=ClaudeAgentSdkModelClient(),
                 agent_environment=direct_anthropic_env(),
@@ -139,12 +144,12 @@ async def main() -> int:
                 target_adapter=target_adapter,
                 telegram_sender=notifier.approval_sender(),
             )
-        except ModuleNotFoundError as e:
-            if e.name != "claude_agent_sdk":
-                raise
+        except ClaudeAgentSdkPreflightError as e:
             log.warning(
-                "claude_agent_sdk not installed; Telegram slash commands still run "
-                "but conversational supervisor chat is disabled."
+                "Claude Agent SDK capability preflight failed; Telegram slash "
+                "commands still run but conversational supervisor chat is "
+                "disabled: %s",
+                e,
             )
     telegram_poller = (
         TelegramPoller(
@@ -173,13 +178,18 @@ async def main() -> int:
         try:
             from supervisor.agent_runtime import ClaudeCodeRuntime
             from supervisor.agent_invoker import AgentInvoker
-            from supervisor.claude_sdk_runtime import ClaudeAgentSdkTransport
+            from supervisor.claude_sdk_runtime import (
+                ClaudeAgentSdkPreflightError,
+                ClaudeAgentSdkTransport,
+            )
             from mcp_tools.codex_tools import build_codex_mcp_server
             from mcp_tools.telegram_tools import build_telegram_mcp_server
 
             codex_mcp = build_codex_mcp_server(cfg, state)
             telegram_mcp = build_telegram_mcp_server(cfg, state)
             skills_dir = HERE / "skills"
+            decision_transport = ClaudeAgentSdkTransport()
+            decision_transport.preflight()
             invoker = AgentInvoker(
                 cfg,
                 state,
@@ -187,17 +197,16 @@ async def main() -> int:
                 codex_mcp,
                 telegram_mcp,
                 agent_runtime=ClaudeCodeRuntime(
-                    transport=ClaudeAgentSdkTransport(),
+                    transport=decision_transport,
                 ),
                 agent_environment=direct_anthropic_env(),
                 inherit_agent_environment=False,
             )
-        except ModuleNotFoundError as e:
-            if e.name != "claude_agent_sdk":
-                raise
+        except ClaudeAgentSdkPreflightError as e:
             log.warning(
-                "claude_agent_sdk not installed; decision runtime disabled. "
-                "Telegram polling still runs when configured."
+                "Claude Agent SDK capability preflight failed; decision runtime "
+                "is disabled while Telegram polling remains configured: %s",
+                e,
             )
     else:
         log.warning(

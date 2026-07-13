@@ -22,6 +22,7 @@ from supervisor.agent_runtime import (
     CodexRuntime,
     RuntimeTransportResult,
     SubprocessRuntimeTransport,
+    normalize_runtime_event,
 )
 from supervisor.runtime_cleanup import cancel_runtime_after_failure
 from supervisor.runtime_execution import runtime_task_runner
@@ -64,6 +65,23 @@ def test_experiment_and_task_core_do_not_import_provider_sdks() -> None:
                         f"{relative_path}:{node.lineno} imports {module}"
                     )
     assert violations == []
+
+
+def test_agent_tasks_default_to_no_environment_inheritance(tmp_path: Path) -> None:
+    task = AgentTask(
+        task_id="isolated-default",
+        instruction="Run",
+        cwd=tmp_path,
+        model="test-model",
+    )
+
+    assert task.inherit_env is False
+
+
+def test_task_complete_is_turn_terminal_not_run_terminal() -> None:
+    assert normalize_runtime_event(
+        {"type": "task_complete"}
+    ).kind == "turn.completed"
 
 
 class RecordingTransport:
@@ -777,6 +795,42 @@ async def test_resumed_status_uses_only_the_current_generation(
 
 
 @pytest.mark.asyncio
+async def test_resume_without_prior_collect_excludes_historical_terminal(
+    tmp_path: Path,
+) -> None:
+    transport = GenerationRecordingTransport(
+        generations=[
+            _generation("historical", "run.failed"),
+            _generation("current", "run.completed"),
+        ],
+        returncodes=[1, 0],
+    )
+    runtime = CodexRuntime(transport=transport)
+    handle = await runtime.start(
+        AgentTask(
+            task_id="resume-without-first-collect",
+            instruction="Start",
+            cwd=tmp_path,
+            model="gpt-test",
+        )
+    )
+
+    await runtime.resume(handle, "Continue")
+    result = await runtime.collect(handle)
+
+    assert result.status == "completed"
+    assert result.output == "historical\ncurrent"
+    assert [event.kind for event in result.events] == [
+        "run.started",
+        "agent.message",
+        "run.failed",
+        "run.started",
+        "agent.message",
+        "run.completed",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_claude_runtime_keeps_only_direct_anthropic_and_safe_opus_env(
     tmp_path: Path,
 ) -> None:
@@ -826,6 +880,42 @@ async def test_claude_runtime_keeps_only_direct_anthropic_and_safe_opus_env(
     assert "GITHUB_TOKEN" not in child_env
     assert "ARBITRARY_SECRET" not in child_env
     assert "CODEX_SUPERVISOR_PLANNING_OPUS_MODEL" not in child_env
+
+
+@pytest.mark.asyncio
+async def test_codex_runtime_never_forwards_unrelated_host_credentials(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "authorized-openai-key")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-secret")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "aws-secret")
+    monkeypatch.setenv("GITHUB_TOKEN", "github-secret")
+    monkeypatch.setenv("NPM_TOKEN", "npm-secret")
+    monkeypatch.setenv("SLACK_BOT_TOKEN", "slack-secret")
+    transport = RecordingTransport()
+    runtime = CodexRuntime(transport=transport)
+
+    await runtime.start(
+        AgentTask(
+            task_id="codex-hostile-ambient-env",
+            instruction="Implement the task.",
+            cwd=tmp_path,
+            model="gpt-test",
+            inherit_env=True,
+        )
+    )
+
+    child_env = transport.started[0]["env"]
+    assert child_env["OPENAI_API_KEY"] == "authorized-openai-key"
+    for forbidden in (
+        "ANTHROPIC_API_KEY",
+        "AWS_SECRET_ACCESS_KEY",
+        "GITHUB_TOKEN",
+        "NPM_TOKEN",
+        "SLACK_BOT_TOKEN",
+    ):
+        assert forbidden not in child_env
 
 
 @pytest.mark.asyncio
