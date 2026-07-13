@@ -147,6 +147,7 @@ from supervisor.autoresearch.policy_evolution import (
     create_policy_evolution_proposals,
     derive_policy_evolution_proposals_from_report,
     deny_policy_proposal,
+    ensure_recorded_policy_report,
     rollback_policy_proposal,
 )
 from supervisor.autoresearch.generator import (
@@ -3084,6 +3085,12 @@ class CodexSupervisorMcpAPI:
             if claim_authority is not None
             else {}
         )
+        if claim_authority is not None:
+            ensure_recorded_policy_report(
+                report,
+                state=self.state,
+                run_id=str(run_id or ""),
+            )
         if candidate_changes is not None:
             proposals = create_policy_evolution_proposals(
                 report,
@@ -3194,6 +3201,7 @@ class CodexSupervisorMcpAPI:
         *,
         proposal: dict[str, Any] | None = None,
         proposal_path: str | None = None,
+        proposal_event_id: int | None = None,
         repo_root: str,
         run_id: str,
         approver: str,
@@ -3202,15 +3210,20 @@ class CodexSupervisorMcpAPI:
     ) -> dict[str, Any]:
         """Apply exactly one recorded policy proposal after explicit operator approval."""
         repo_root_path = Path(repo_root).expanduser().resolve()
-        proposal_payload = _proposal_payload(
-            proposal=proposal,
-            proposal_path=proposal_path,
-            repo_root=repo_root_path,
+        proposal_payload = (
+            _proposal_payload(
+                proposal=proposal,
+                proposal_path=proposal_path,
+                repo_root=repo_root_path,
+            )
+            if proposal is not None or proposal_path is not None
+            else None
         )
         approval = approve_policy_proposal(
             proposal_payload,
             state=self.state,
             run_id=run_id,
+            proposal_event_id=proposal_event_id,
             repo_root=repo_root_path,
             approver=approver,
             approval_channel=approval_channel,
@@ -5424,11 +5437,13 @@ def build_codex_supervisor_mcp_server(
         approval_channel: str,
         proposal: dict[str, Any] | None = None,
         proposal_path: str | None = None,
+        proposal_event_id: int | None = None,
         rollback_root: str = ".handoff/policy-rollbacks",
     ) -> dict[str, Any]:
         return tool_api.approve_autoresearch_policy_proposal(
             proposal=proposal,
             proposal_path=proposal_path,
+            proposal_event_id=proposal_event_id,
             repo_root=repo_root,
             run_id=run_id,
             approver=approver,

@@ -53,23 +53,26 @@ def main() -> int:
     )
     result_ref = (output_dir / f"{result.task_id}-{result.candidate_id}.json").as_posix()
     receipt = result_receipt(result, result_ref=result_ref)
-    print(json.dumps({
+    metrics = {
+        "mergeability_score": float(result.final_score),
+        "blocker_status": result.blocker_status,
+        "hidden_test_status": result.hidden_test_status,
+        "reverse_test_status": result.reverse_test_status,
+        "scope_status": result.scope_status,
+        "lint_build_status": result.lint_build_status,
+    }
+    payload = {
         "metric_name": args.metric_name,
         "metric_value": float(result.final_score),
-        "metrics": {
-            "mergeability_score": float(result.final_score),
-            "blocker_status": result.blocker_status,
-            "hidden_test_status": result.hidden_test_status,
-            "reverse_test_status": result.reverse_test_status,
-            "scope_status": result.scope_status,
-            "lint_build_status": result.lint_build_status,
-        },
+        "metrics": metrics,
         "evidence_refs": [f"mergeability_result:{result_ref}"],
-        "receipts": [receipt],
-        "runtime_native_receipt": receipt,
         "cost_usd": 0.0,
         "trial_index": args.trial_index,
-    }, sort_keys=True))
+    }
+    if control_kind != "determinism":
+        payload["receipts"] = [receipt]
+        payload["runtime_native_receipt"] = receipt
+    print(json.dumps(payload, sort_keys=True))
     return 0
 
 

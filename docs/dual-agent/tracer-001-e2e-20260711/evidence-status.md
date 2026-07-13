@@ -64,19 +64,7 @@ The test does **not** run or claim:
 
 ## Wider Worktree Gate Status
 
-The shared worktree is under concurrent development and its broader related
-suites are not currently all green:
-
-- `tests/test_arm_executor.py` reported **7 passed** after its concurrent
-  implementation landed;
-- the remaining runtime/task/experiment/grade/ledger/trace sweep reported
-  **68 passed, 1 failed**; the failure is a concurrent expectation mismatch
-  between `tests/test_grade_revisions.py` and the unowned `Grade` constructor,
-  which now rejects an empty verifier version before `GradeBook` is called;
-- `tests/test_claim_gate.py` reported **10 passed, 5 failed** because the
-  concurrently edited, unowned `supervisor/claim_gate.py` references an
-  undefined `_strict_json_loads`.
-
-Those failures were not modified or masked by TRACER-001. The dedicated
-hermetic tracer test is green, while the repository-wide component gate
-remains blocked on those unowned concurrent changes.
+The earlier concurrent-worktree failures recorded by this slice were resolved
+in the integrated Harness v1 branch. Repository-wide verification is recorded
+separately in `docs/program/harness-v1/verification-20260713.md` so this
+slice-local receipt remains focused on what the hermetic tracer itself proves.

@@ -1283,47 +1283,6 @@ class TraceGraph:
                     ),
                 ),
             )
-        expected_grade_citations = self._decision_supporting_grade_citations(
-            decision
-        )
-        observed_grade_citations: list[tuple[str, str]] = []
-        for citation in raw_citations:
-            grade_id = str(citation.get("grade_id") or "").strip()
-            revision_hash = str(citation.get("revision_hash") or "").strip()
-            if (
-                not grade_id
-                or not _SHA256_RE.fullmatch(revision_hash)
-            ):
-                return (
-                    ClosureFinding(
-                        rule=(
-                            ClosureRule.DECISION_GRADE_CITATIONS_CURRENT
-                        ),
-                        node=decision.identity,
-                        message=(
-                            "decision grade citations must pin non-empty "
-                            "grade_id and canonical revision_hash values"
-                        ),
-                    ),
-                )
-            observed_grade_citations.append((grade_id, revision_hash))
-        if (
-            len(observed_grade_citations)
-            != len(set(observed_grade_citations))
-            or set(observed_grade_citations) != expected_grade_citations
-        ):
-            return (
-                ClosureFinding(
-                    rule=(
-                        ClosureRule.DECISION_GRADE_CITATIONS_CURRENT
-                    ),
-                    node=decision.identity,
-                    message=(
-                        "decision grade citations must exactly cover every "
-                        "GRADE revision on its authorizing analysis path"
-                    ),
-                ),
-            )
         if validator is None:
             return (
                 ClosureFinding(
@@ -1395,19 +1354,45 @@ class TraceGraph:
                     ),
                 ),
             )
-        if validation.accepted:
-            return ()
-        return (
-            ClosureFinding(
-                rule=ClosureRule.DECISION_GRADE_CITATIONS_CURRENT,
-                node=decision.identity,
-                message=(
-                    "decision cites a superseded, invalidated, or otherwise "
-                    "unacceptable grade revision: "
-                    f"{_canonical_json(validation.to_dict())}"
+        if not validation.accepted:
+            return (
+                ClosureFinding(
+                    rule=ClosureRule.DECISION_GRADE_CITATIONS_CURRENT,
+                    node=decision.identity,
+                    message=(
+                        "decision cites a superseded, invalidated, or otherwise "
+                        "unacceptable grade revision: "
+                        f"{_canonical_json(validation.to_dict())}"
+                    ),
                 ),
-            ),
+            )
+        effective_citations = [
+            (
+                citation.resolution_grade_id or citation.grade_id,
+                citation.resolution_revision_hash or citation.revision_hash,
+            )
+            for citation in gradebook_citations
+        ]
+        expected_grade_citations = self._decision_supporting_grade_citations(
+            decision
         )
+        if (
+            len(effective_citations) != len(set(effective_citations))
+            or set(effective_citations) != expected_grade_citations
+        ):
+            return (
+                ClosureFinding(
+                    rule=(
+                        ClosureRule.DECISION_GRADE_CITATIONS_CURRENT
+                    ),
+                    node=decision.identity,
+                    message=(
+                        "decision grade citations must exactly cover every "
+                        "GRADE revision on its authorizing analysis path"
+                    ),
+                ),
+            )
+        return ()
 
     def _decision_supporting_grade_citations(
         self,

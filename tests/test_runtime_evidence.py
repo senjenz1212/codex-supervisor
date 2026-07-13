@@ -163,6 +163,163 @@ def test_validation_copy_ignores_cortex_runtime_workspaces(tmp_path: Path) -> No
         shutil.rmtree(workspace["temp_parent"], ignore_errors=True)
 
 
+def test_validation_copy_excludes_virtualenv_build_cache_and_runtime_state(
+    tmp_path: Path,
+) -> None:
+    _init_git_repo(tmp_path)
+    _write_test(tmp_path / "src" / "app.py", "VALUE = 1\n")
+    _write_test(tmp_path / "tests" / "test_app.py", "def test_app():\n    assert True\n")
+    subprocess.run(
+        ["git", "add", "src/app.py", "tests/test_app.py"],
+        cwd=tmp_path,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "add source"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    _write_test(tmp_path / ".venv" / "bin" / "python", "project interpreter\n")
+    excluded_artifacts = (
+        ".venv-review/bin/python",
+        "venv/bin/python",
+        ".tox/py/bin/python",
+        ".nox/tests/bin/python",
+        ".cache/tool/cache.bin",
+        ".pytest_cache/v/cache/nodeids",
+        ".mypy_cache/3.12/cache.json",
+        ".ruff_cache/cache.db",
+        "__pycache__/app.pyc",
+        "node_modules/pkg/index.js",
+        "build/package.whl",
+        "dist/package.whl",
+        ".handoff/workflow-jobs/run/result.json",
+        ".codex-supervisor/state.db",
+        ".scratch/run/output.json",
+        ".runtime-evidence/pytest-0.xml",
+        ".orchestrator-state/run.json",
+        "runs/run-1/result.json",
+        "test-results/results.xml",
+    )
+    for relative in excluded_artifacts:
+        _write_test(tmp_path / relative, "generated\n")
+
+    workspace = _prepare_validation_copy(tmp_path)
+    validation_cwd = Path(workspace["validation_cwd"])
+
+    try:
+        assert (validation_cwd / "src" / "app.py").exists()
+        assert (validation_cwd / "tests" / "test_app.py").exists()
+        assert (validation_cwd / ".venv").is_symlink()
+        for relative in excluded_artifacts:
+            assert not (validation_cwd / relative).exists(), relative
+    finally:
+        import shutil
+
+        shutil.rmtree(workspace["temp_parent"], ignore_errors=True)
+
+
+def test_validation_copy_respects_repository_ignored_paths(tmp_path: Path) -> None:
+    _init_git_repo(tmp_path)
+    _write_test(tmp_path / ".gitignore", "custom-generated/\n")
+    _write_test(tmp_path / "src" / "app.py", "VALUE = 1\n")
+    _write_test(tmp_path / "custom-generated" / "large.bin", "generated\n")
+    subprocess.run(
+        ["git", "add", ".gitignore", "src/app.py"],
+        cwd=tmp_path,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "add source"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    workspace = _prepare_validation_copy(tmp_path)
+    validation_cwd = Path(workspace["validation_cwd"])
+
+    try:
+        assert (validation_cwd / "src" / "app.py").exists()
+        assert not (validation_cwd / "custom-generated").exists()
+    finally:
+        import shutil
+
+        shutil.rmtree(workspace["temp_parent"], ignore_errors=True)
+
+
+def test_validation_copy_preserves_tracked_generated_name_paths(
+    tmp_path: Path,
+) -> None:
+    _init_git_repo(tmp_path)
+    tracked_paths = (
+        "build/build.py",
+        "dist/package_metadata.py",
+        "runs/runtime.py",
+        ".handoff/contract.json",
+        ".cortex/runtime_workspaces/source/adapter.py",
+    )
+    for relative in tracked_paths:
+        _write_test(tmp_path / relative, f"# tracked: {relative}\n")
+    subprocess.run(
+        ["git", "add", *tracked_paths],
+        cwd=tmp_path,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "track generated-name source paths"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    workspace = _prepare_validation_copy(tmp_path)
+    validation_cwd = Path(workspace["validation_cwd"])
+
+    try:
+        for relative in tracked_paths:
+            assert (validation_cwd / relative).is_file(), relative
+    finally:
+        import shutil
+
+        shutil.rmtree(workspace["temp_parent"], ignore_errors=True)
+
+
+def test_validation_copy_preserves_broad_source_names_without_git_metadata(
+    tmp_path: Path,
+) -> None:
+    preserved_paths = (
+        "build/build.py",
+        "dist/package_metadata.py",
+        "runs/runtime.py",
+        ".handoff/contract.json",
+    )
+    for relative in preserved_paths:
+        _write_test(tmp_path / relative, f"# source: {relative}\n")
+    _write_test(tmp_path / ".cache" / "tool" / "cache.bin", "cache\n")
+    _write_test(
+        tmp_path / "node_modules" / "pkg" / "index.js",
+        "generated\n",
+    )
+
+    workspace = _prepare_validation_copy(tmp_path)
+    validation_cwd = Path(workspace["validation_cwd"])
+
+    try:
+        for relative in preserved_paths:
+            assert (validation_cwd / relative).is_file(), relative
+        assert not (validation_cwd / ".cache").exists()
+        assert not (validation_cwd / "node_modules").exists()
+    finally:
+        import shutil
+
+        shutil.rmtree(workspace["temp_parent"], ignore_errors=True)
+
+
 def test_runtime_evidence_derives_changed_files_from_committed_diff(tmp_path: Path) -> None:
     subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True, text=True)
     subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)

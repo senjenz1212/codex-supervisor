@@ -408,6 +408,47 @@ def test_closure_uses_injected_validator_to_reject_superseded_grade_citation():
     )
 
 
+def test_closure_accepts_stale_grade_resolved_to_analysis_path_revision():
+    gradebook, old_grade = _gradebook_revision(passed=False, version="1.0")
+    _, current_grade = _gradebook_revision(
+        gradebook=gradebook,
+        supersedes_grade_id=old_grade.grade_id,
+        passed=True,
+        version="2.0",
+    )
+    invalidations = gradebook.list_invalidations(old_grade.grade_id)
+    graph, nodes = _closed_graph(
+        gradebook=gradebook,
+        grade_revision=current_grade,
+    )
+    binding = _binding()
+    graph = _bind_decision(
+        graph,
+        nodes,
+        binding,
+        grade_citations=[
+            {
+                "grade_id": old_grade.grade_id,
+                "revision_hash": old_grade.revision_hash,
+                "acknowledged_invalidation_hashes": [
+                    invalidation.invalidation_hash
+                    for invalidation in invalidations
+                ],
+                "resolution_grade_id": current_grade.grade_id,
+                "resolution_revision_hash": current_grade.revision_hash,
+            }
+        ],
+    )
+
+    result = graph.validate_closure(
+        now=datetime(2026, 7, 12, 12, 0, tzinfo=timezone.utc),
+        expected_binding=binding,
+        decision_grade_validator=gradebook,
+    )
+
+    assert result.ok, result.to_dict()
+
+
 def test_trace_edge_rejects_relation_with_semantically_invalid_endpoints():
     claim = _node(NodeType.CLAIM, "CLAIM-INVALID-EDGE-001", 101)
     objective = _node(NodeType.OBJ, "OBJ-INVALID-EDGE-001", 102)

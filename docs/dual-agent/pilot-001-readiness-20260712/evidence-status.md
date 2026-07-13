@@ -6,19 +6,19 @@
 
 ## Blocking Conditions
 
-1. TRACER-001 has no integrated test or external generic/Unity run.
-2. Runtime migration is incomplete; direct provider call sites remain.
-3. The current branch contains concurrent uncommitted source/test changes and
-   is not a commit-pinned pilot execution tree.
-4. The latest cross-slice component gate reports 48 passed and 2 failed:
-   `test_ledger_checkpoint_is_signed_and_externally_anchorable` and
-   `test_sqlite_and_postgres_event_schemas_share_ledger_fields_and_guards`.
+1. TRACER-001 closes only a hermetic fixture graph; it is not an external
+   task-efficacy run.
+2. The live Claude Code, Codex, and Unity receipts are compatibility smokes,
+   not isolated A/B/C coding outcomes.
+3. No official live SWE-bench verifier receipt exists for the generic task
+   family, and no independent verifier principal is pinned for a pilot.
+4. No production external ledger anchor and trusted signing-key receipt exists.
 5. No frozen disjoint pilot roster, pilot task count, arm ceilings, assignment
    manifest, model/runtime/container/verifier pins, or stop rule exists.
 6. No named budget/credential authorization or external runtime/verifier
    availability receipt exists.
-7. No required external reviewer acceptance or truthful skill receipts exist
-   for a pilot launch.
+7. Policy evolution intentionally remains fail-closed without validated L3
+   ClaimGate authority; pilot data cannot authorize mutation.
 
 ## What Existing Tests Prove
 

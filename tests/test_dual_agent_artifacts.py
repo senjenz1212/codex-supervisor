@@ -1381,6 +1381,239 @@ def test_repeated_export_excludes_its_own_output_from_workspace_snapshot(tmp_pat
     )
 
 
+def test_acceptance_snapshot_excludes_preexisting_task_artifacts(tmp_path):
+    task_id = "trusted-task"
+    safe_task_id = task_id
+    state = _state(tmp_path)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(
+        ["git", "init"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=repo,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test User"],
+        cwd=repo,
+        check=True,
+    )
+    (repo / "README.md").write_text("baseline\n", encoding="utf-8")
+    tracked_fixture = repo / "tests" / "fixtures" / "state.db"
+    tracked_fixture.parent.mkdir(parents=True)
+    tracked_fixture.write_bytes(b"immutable tracked fixture")
+    subprocess.run(
+        ["git", "add", "README.md", "tests/fixtures/state.db"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "baseline"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    tracked_fixture.write_bytes(b"modified tracked fixture")
+
+    output_dir = repo / "docs" / "dual-agent" / safe_task_id
+    source = output_dir / "source" / "prd.md"
+    source.parent.mkdir(parents=True)
+    source.write_text("# PRD\n\nAccepted input.\n", encoding="utf-8")
+    stale_replay = output_dir / "replay" / "workspace-snapshot.json"
+    stale_replay.parent.mkdir(parents=True)
+    stale_replay.write_text("recursive-marker\n" * 1000, encoding="utf-8")
+    custom_replay = repo / "custom-export" / "replay"
+    custom_replay.mkdir(parents=True)
+    (custom_replay / "workspace-snapshot.json").write_text(
+        "custom-recursive-marker\n" * 1000,
+        encoding="utf-8",
+    )
+    (custom_replay / "source.py").write_text(
+        "VALUE = 'must remain visible'\n",
+        encoding="utf-8",
+    )
+    (custom_replay / "manifest.json").write_text(
+        '{"workspace_snapshot":"embedded"}\n',
+        encoding="utf-8",
+    )
+    unrelated_source = repo / "docs" / "unrelated" / "source.py"
+    unrelated_source.parent.mkdir(parents=True)
+    unrelated_source.write_text("VALUE = 1\n", encoding="utf-8")
+    sibling_source = (
+        repo
+        / "docs"
+        / "dual-agent"
+        / "sibling-task"
+        / "source.py"
+    )
+    sibling_source.parent.mkdir(parents=True)
+    sibling_source.write_text("VALUE = 2\n", encoding="utf-8")
+    (repo / "state.db").write_bytes(b"runtime database")
+    (repo / "state.db-wal").write_bytes(b"runtime wal")
+    (repo / "state.db-shm").write_bytes(b"runtime shm")
+    (repo / "autoresearch-state.db").write_bytes(b"runtime autoresearch database")
+    (repo / "experiments.db").write_bytes(b"runtime experiment database")
+    handoff = repo / ".handoff" / "task.json"
+    handoff.parent.mkdir()
+    handoff.write_text(
+        json.dumps({
+            "task_id": "sibling-task",
+            "cwd": str(repo),
+            "planning_artifacts": [{
+                "kind": "prd",
+                "path": f"docs/dual-agent/{safe_task_id}/source/prd.md",
+                "sha256": sha256(source.read_bytes()).hexdigest(),
+            }],
+        }),
+        encoding="utf-8",
+    )
+    _insert_event(
+        state,
+        kind="dual_agent_gate_result",
+        payload={
+            **_result_payload(
+                task_id=task_id,
+                gate="outcome_review",
+                summary="Outcome accepted.",
+                decisions=["accept"],
+            ),
+            "handoff_packet_path": str(handoff),
+        },
+    )
+
+    result = export_dual_agent_run_artifacts(
+        state,
+        run_id="run-1",
+        task_id=task_id,
+        output_dir=output_dir,
+    )
+    snapshot = json.loads(
+        (result.output_dir / "replay" / "workspace-snapshot.json").read_text()
+    )
+
+    assert snapshot["source_artifact_hashes"]["prd"] == sha256(
+        source.read_bytes()
+    ).hexdigest()
+    snapshot_paths = {
+        entry["path"]
+        for entry in snapshot["immutable_snapshot"]["entries"]
+    }
+    assert f"docs/dual-agent/{safe_task_id}/source/prd.md" in snapshot_paths
+    assert f"docs/dual-agent/{safe_task_id}/replay/workspace-snapshot.json" not in snapshot_paths
+    assert "custom-export/replay/source.py" in snapshot_paths
+    assert "docs/unrelated/source.py" in snapshot_paths
+    assert "docs/dual-agent/sibling-task/source.py" in snapshot_paths
+    assert "tests/fixtures/state.db" in snapshot_paths
+    assert snapshot_paths.isdisjoint({
+        "state.db",
+        "state.db-wal",
+        "state.db-shm",
+        "autoresearch-state.db",
+        "experiments.db",
+    })
+
+
+def test_posthoc_snapshot_preserves_declared_planning_artifact_bytes(
+    tmp_path,
+):
+    state = _state(tmp_path)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(
+        ["git", "init"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=repo,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test User"],
+        cwd=repo,
+        check=True,
+    )
+    (repo / "README.md").write_text("baseline\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "add", "README.md"],
+        cwd=repo,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "baseline"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    output_dir = repo / "docs" / "dual-agent" / "task-1"
+    source = output_dir / "source" / "prd.md"
+    source.parent.mkdir(parents=True)
+    source.write_text("# PRD\n\nPosthoc input.\n", encoding="utf-8")
+    handoff = repo / ".handoff" / "task-1.json"
+    handoff.parent.mkdir()
+    handoff.write_text(
+        json.dumps({
+            "task_id": "task-1",
+            "cwd": str(repo),
+            "planning_artifacts": [{
+                "kind": "prd",
+                "path": "docs/dual-agent/task-1/source/prd.md",
+                "sha256": sha256(source.read_bytes()).hexdigest(),
+            }],
+        }),
+        encoding="utf-8",
+    )
+    _insert_event(
+        state,
+        kind="dual_agent_gate_result",
+        payload={
+            **_result_payload(
+                gate="outcome_review",
+                status="blocked",
+                summary="Outcome blocked.",
+                decisions=["revise"],
+            ),
+            "handoff_packet_path": str(handoff),
+        },
+    )
+
+    result = export_dual_agent_run_artifacts(
+        state,
+        run_id="run-1",
+        task_id="task-1",
+        output_dir=output_dir,
+    )
+    snapshot = json.loads(
+        (
+            result.output_dir
+            / "replay"
+            / "workspace-snapshot.json"
+        ).read_text(encoding="utf-8")
+    )
+
+    assert snapshot["capture_source"] == "posthoc_diagnostic"
+    [entry] = [
+        item
+        for item in snapshot["immutable_snapshot"]["entries"]
+        if item["path"]
+        == "docs/dual-agent/task-1/source/prd.md"
+    ]
+    assert base64.b64decode(entry["content_base64"]) == source.read_bytes()
+
+
 def test_workspace_snapshot_hash_ignores_runtime_cache_dirs(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()

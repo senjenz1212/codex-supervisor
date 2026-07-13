@@ -422,6 +422,7 @@ def _server(
     notifier=None,
     cursor_runner=None,
     codex_runner=None,
+    reviewer_adapters=None,
     no_mistakes_runner=None,
     runtime_materialize: bool = True,
 ):
@@ -473,6 +474,7 @@ def _server(
         codex_runtime_runner=_codex_runtime_runner_from_subprocess_runner(
             codex_runner or _accepting_codex_reviewer_runner
         ),
+        reviewer_adapters=reviewer_adapters,
         cursor_runner=cursor_runner or _accepting_cursor_runner,
         no_mistakes_runner=no_mistakes_runner,
         notifier=notifier,
@@ -1003,10 +1005,10 @@ def _write_reviewer_panel_calibration(
         ),
         ReviewerSpec(
             reviewer_id="independent-reviewer-1",
-            runtime="codex_cli",
+            runtime="codex",
             model="gpt-5.5",
             provider_family="openai",
-            lineage=("openai", "codex_cli", "gpt-5.5"),
+            lineage=("openai", "codex", "gpt-5.5"),
             tool_access="codebase_tools",
             assurance_grade="agentic",
         ),
@@ -1040,11 +1042,11 @@ def _write_reviewer_panel_calibration(
             "severity": "important" if decision == "revise" else "none",
             "confidence": 0.9,
             "verdict_present": True,
-            "runtime": "cursor_sdk" if reviewer_id.endswith("-0") else "codex_cli",
+            "runtime": "cursor_sdk" if reviewer_id.endswith("-0") else "codex",
             "model": "composer-2.5" if reviewer_id.endswith("-0") else "gpt-5.5",
             "provider_family": "cursor" if reviewer_id.endswith("-0") else "openai",
             "lineage": ["cursor", "cursor_sdk", "composer-2.5"]
-            if reviewer_id.endswith("-0") else ["openai", "codex_cli", "gpt-5.5"],
+            if reviewer_id.endswith("-0") else ["openai", "codex", "gpt-5.5"],
             "tool_access": "codebase_tools",
             "assurance_grade": "agentic",
             "source_kind": "workflow_transcript_event",
@@ -2167,6 +2169,7 @@ def _cursor_review_result(
 def _codex_reviewer_jsonl(
     task_id: str,
     *,
+    specialist_name: str = "Cursor Reviewer",
     decision: str = "accept",
     severity: str | None = None,
     confidence: float = 0.93,
@@ -2183,7 +2186,7 @@ def _codex_reviewer_jsonl(
     outcome = Outcome(
         task_id=task_id,
         summary="Codex CLI independently reviewed the gate.",
-        specialists=[{"name": "Cursor Reviewer", "decision": decision}],
+        specialists=[{"name": specialist_name, "decision": decision}],
         decisions=[decision],
         objections=[] if decision == "accept" else [objection],
         changed_files=[],
@@ -5225,6 +5228,9 @@ async def test_run_dual_agent_workflow_can_pass_dynamic_workflow_preview_policy(
         mcp_cls=_FakeMCP,
         runner=fake_runner,
         codex_runner=_accepting_codex_reviewer_runner,
+        codex_runtime_runner=_codex_runtime_runner_from_subprocess_runner(
+            _accepting_codex_reviewer_runner
+        ),
         cursor_runner=_accepting_cursor_runner,
     )
 
@@ -5277,6 +5283,9 @@ async def test_run_dual_agent_workflow_blocks_dynamic_preview_with_forged_replay
         mcp_cls=_FakeMCP,
         runner=fake_runner,
         codex_runner=_accepting_codex_reviewer_runner,
+        codex_runtime_runner=_codex_runtime_runner_from_subprocess_runner(
+            _accepting_codex_reviewer_runner
+        ),
         cursor_runner=_accepting_cursor_runner,
     )
 
@@ -5369,6 +5378,9 @@ async def test_agentic_required_blocks_solo_execution_before_lead(tmp_path):
         mcp_cls=_FakeMCP,
         runner=fake_runner,
         codex_runner=_accepting_codex_reviewer_runner,
+        codex_runtime_runner=_codex_runtime_runner_from_subprocess_runner(
+            _accepting_codex_reviewer_runner
+        ),
         cursor_runner=_accepting_cursor_runner,
     )
 
@@ -5436,6 +5448,9 @@ async def test_run_dual_agent_workflow_required_policy_still_blocks_without_exec
         mcp_cls=_FakeMCP,
         runner=fake_runner,
         codex_runner=_accepting_codex_reviewer_runner,
+        codex_runtime_runner=_codex_runtime_runner_from_subprocess_runner(
+            _accepting_codex_reviewer_runner
+        ),
         cursor_runner=_accepting_cursor_runner,
     )
 
@@ -5535,6 +5550,9 @@ async def test_run_dual_agent_workflow_required_policy_spawns_agentic_workers_an
         mcp_cls=_FakeMCP,
         runner=fake_runner,
         codex_runner=_accepting_codex_reviewer_runner,
+        codex_runtime_runner=_codex_runtime_runner_from_subprocess_runner(
+            _accepting_codex_reviewer_runner
+        ),
         cursor_runner=_accepting_cursor_runner,
     )
 
@@ -5642,6 +5660,9 @@ async def test_run_dual_agent_workflow_hydrates_durable_agentic_worker_receipts_
         mcp_cls=_FakeMCP,
         runner=fake_runner,
         codex_runner=_accepting_codex_reviewer_runner,
+        codex_runtime_runner=_codex_runtime_runner_from_subprocess_runner(
+            _accepting_codex_reviewer_runner
+        ),
         cursor_runner=_accepting_cursor_runner,
     )
 
@@ -5718,6 +5739,9 @@ async def test_run_dual_agent_workflow_allowed_policy_runs_producer_without_bloc
         mcp_cls=_FakeMCP,
         runner=fake_runner,
         codex_runner=_accepting_codex_reviewer_runner,
+        codex_runtime_runner=_codex_runtime_runner_from_subprocess_runner(
+            _accepting_codex_reviewer_runner
+        ),
         cursor_runner=_accepting_cursor_runner,
     )
 
@@ -5786,6 +5810,9 @@ async def test_dynamic_reviewer_synthesis_blocks_on_critical_disagreement(tmp_pa
         mcp_cls=_FakeMCP,
         runner=fake_runner,
         codex_runner=_accepting_codex_reviewer_runner,
+        codex_runtime_runner=_codex_runtime_runner_from_subprocess_runner(
+            _accepting_codex_reviewer_runner
+        ),
         cursor_runner=_accepting_cursor_runner,
     )
 
@@ -5884,6 +5911,9 @@ async def test_run_dual_agent_workflow_blocks_auto_seeded_planning_stubs(tmp_pat
         mcp_cls=_FakeMCP,
         runner=fake_runner,
         codex_runner=_accepting_codex_reviewer_runner,
+        codex_runtime_runner=_codex_runtime_runner_from_subprocess_runner(
+            _accepting_codex_reviewer_runner
+        ),
         cursor_runner=_accepting_cursor_runner,
     )
 
@@ -6161,6 +6191,7 @@ def test_review_packet_changed_files_use_actual_name_status_not_declared_claim(t
 @pytest.mark.asyncio
 async def test_roster_preflight_filters_missing_codex_cli_before_dispatch(tmp_path, monkeypatch):
     import mcp_tools.codex_supervisor_stdio as stdio
+    from supervisor.reviewer_registry import configured_reviewers
 
     cursor_calls = []
 
@@ -6177,10 +6208,17 @@ async def test_roster_preflight_filters_missing_codex_cli_before_dispatch(tmp_pa
         return f"/usr/bin/{command}"
 
     monkeypatch.setattr(stdio.shutil, "which", missing_codex)
+    reviewer_adapters = configured_reviewers(
+        reviewer_output_mode="cursor_sdk",
+        reviewer_model="composer-2.5",
+        runner=fake_cursor_runner,
+        codex_runner=subprocess.run,
+    )
     server, state = _server(
         tmp_path,
         cursor_runner=fake_cursor_runner,
         codex_runner=subprocess.run,
+        reviewer_adapters=reviewer_adapters,
     )
 
     result = await _maybe_await(_run_dual_agent_workflow_direct(server,
@@ -6346,7 +6384,7 @@ async def test_workflow_exposes_independent_reviewer_results_and_dual_writes_eve
     assert reviewer["output_sha256"]
     codex_reviewer = panel[1]
     assert codex_reviewer["reviewer_id"] == "independent-reviewer-1"
-    assert codex_reviewer["runtime"] == "codex_cli"
+    assert codex_reviewer["runtime"] == "codex"
     assert codex_reviewer["model"] == "gpt-5.5"
     assert codex_reviewer["provider_family"] == "openai"
     assert codex_reviewer["tool_access"] == "codebase_tools"
@@ -6508,7 +6546,10 @@ def test_codex_cli_reviewer_parses_typed_outcome_with_hashes(tmp_path):
         return subprocess.CompletedProcess(
             argv,
             0,
-            stdout=_codex_reviewer_jsonl("workflow-1"),
+            stdout=_codex_reviewer_jsonl(
+                "workflow-1",
+                specialist_name="independent-reviewer-1",
+            ),
             stderr="",
         )
 
@@ -6565,7 +6606,10 @@ def test_codex_cli_reviewer_retries_recoverable_infra_failure_then_succeeds(tmp_
         return subprocess.CompletedProcess(
             argv,
             0,
-            stdout=_codex_reviewer_jsonl("workflow-1"),
+            stdout=_codex_reviewer_jsonl(
+                "workflow-1",
+                specialist_name="independent-reviewer-1",
+            ),
             stderr="",
         )
 
@@ -6615,7 +6659,11 @@ def test_codex_cli_reviewer_without_command_evidence_is_not_agentic(tmp_path):
         return subprocess.CompletedProcess(
             argv,
             0,
-            stdout=_codex_reviewer_jsonl("workflow-1", include_command=False),
+            stdout=_codex_reviewer_jsonl(
+                "workflow-1",
+                specialist_name="independent-reviewer-1",
+                include_command=False,
+            ),
             stderr="",
         )
 
@@ -7952,6 +8000,9 @@ async def test_run_dual_agent_workflow_retries_malformed_outcome_once(tmp_path):
         mcp_cls=_FakeMCP,
         runner=fake_runner,
         codex_runner=_accepting_codex_reviewer_runner,
+        codex_runtime_runner=_codex_runtime_runner_from_subprocess_runner(
+            _accepting_codex_reviewer_runner
+        ),
         cursor_runner=_accepting_cursor_runner,
     )
 
@@ -8043,6 +8094,9 @@ async def test_run_dual_agent_workflow_can_rerun_after_corrective_input(tmp_path
         mcp_cls=_FakeMCP,
         runner=fake_runner,
         codex_runner=_accepting_codex_reviewer_runner,
+        codex_runtime_runner=_codex_runtime_runner_from_subprocess_runner(
+            _accepting_codex_reviewer_runner
+        ),
         cursor_runner=_accepting_cursor_runner,
     )
 
@@ -8140,6 +8194,9 @@ async def test_run_dual_agent_workflow_resumes_after_transport_loss_from_pending
         mcp_cls=_FakeMCP,
         runner=fake_runner,
         codex_runner=_accepting_codex_reviewer_runner,
+        codex_runtime_runner=_codex_runtime_runner_from_subprocess_runner(
+            _accepting_codex_reviewer_runner
+        ),
         cursor_runner=_accepting_cursor_runner,
     )
 

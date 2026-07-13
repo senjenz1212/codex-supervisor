@@ -90,10 +90,13 @@ async def test_hermetic_tracer_closes_the_full_matrix_and_refuses_l2_and_above(
             execution.outcome.blinded_frozen_result_hash
         )
         assert set(execution.outcome.blinding_removed_paths) == {
-            "metadata.harness_arm",
             "metadata.assignment_id",
-            "metadata.experiment.treatment",
-            "metadata.experiment.treatment_hash",
+            "metadata.evaluation_scope",
+            "metadata.experiment",
+            "metadata.harness_arm",
+            "metadata.reserved_from",
+            "metadata.tracer_mode",
+            "output",
         }
         assert execution.outcome.grade.frozen_result_hash == (
             execution.blinded_result.result_hash

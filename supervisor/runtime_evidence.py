@@ -26,6 +26,38 @@ _SECRET_ENV_KEY_RE = re.compile(
     r"(api[_-]?key|token|secret|password|credential|auth|private[_-]?key)",
     re.IGNORECASE,
 )
+_RUNTIME_VALIDATION_EXCLUDED_NAMES = frozenset({
+    ".cache",
+    ".codex-supervisor",
+    ".git",
+    ".handoff",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".orchestrator-state",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".runtime-evidence",
+    ".scratch",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "node_modules",
+    "runs",
+    "test-results",
+    "venv",
+})
+_RUNTIME_VALIDATION_PRESERVE_WITHOUT_GIT = frozenset({
+    ".handoff",
+    "build",
+    "dist",
+    "runs",
+    "test-results",
+})
+_RUNTIME_VALIDATION_VIRTUALENV_PREFIXES = (".venv-", "venv-")
 
 
 @dataclass(frozen=True)
@@ -1015,26 +1047,127 @@ def _pytest_environment_unavailable(completed: subprocess.CompletedProcess[str])
     )
 
 
+def _git_ignored_validation_paths(
+    cwd: Path,
+) -> frozenset[str] | None:
+    try:
+        completed = subprocess.run(
+            [
+                "git",
+                "ls-files",
+                "--others",
+                "--ignored",
+                "--exclude-standard",
+                "--directory",
+                "-z",
+            ],
+            cwd=str(cwd),
+            shell=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    if completed.returncode != 0:
+        return None
+    return frozenset(
+        Path(raw.rstrip("/")).as_posix()
+        for raw in completed.stdout.split("\0")
+        if raw and not Path(raw.rstrip("/")).is_absolute()
+    )
+
+
+def _git_tracked_validation_paths(
+    cwd: Path,
+) -> frozenset[str] | None:
+    try:
+        completed = subprocess.run(
+            ["git", "ls-files", "-z"],
+            cwd=str(cwd),
+            shell=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if completed.returncode != 0:
+        return None
+    tracked: set[str] = set()
+    for raw in completed.stdout.split("\0"):
+        if not raw:
+            continue
+        path = Path(raw)
+        if path.is_absolute():
+            continue
+        tracked.add(path.as_posix())
+        tracked.update(
+            parent.as_posix()
+            for parent in path.parents
+            if parent != Path(".")
+        )
+    return frozenset(tracked)
+
+
 def _prepare_validation_copy(cwd: Path) -> dict[str, Any]:
+    source_root = cwd.expanduser().resolve()
     temp_parent = Path(tempfile.mkdtemp(prefix="codex-runtime-evidence-"))
     validation_cwd = temp_parent / "worktree"
+    git_ignored_paths = _git_ignored_validation_paths(source_root)
+    git_tracked_paths = _git_tracked_validation_paths(source_root)
 
     def ignore(_directory: str, names: list[str]) -> set[str]:
-        ignored = {
-            ".git",
-            ".mypy_cache",
-            ".pytest_cache",
-            ".ruff_cache",
-            ".venv",
-            "__pycache__",
-            "node_modules",
+        relative_directory = Path(_directory).relative_to(source_root)
+        candidates = {
+            name: (relative_directory / name).as_posix()
+            for name in names
         }
+        ignored = {
+            name
+            for name, relative in candidates.items()
+            if name in _RUNTIME_VALIDATION_EXCLUDED_NAMES
+            and (
+                (
+                    git_tracked_paths is not None
+                    and relative not in git_tracked_paths
+                )
+                or (
+                    git_tracked_paths is None
+                    and name
+                    not in _RUNTIME_VALIDATION_PRESERVE_WITHOUT_GIT
+                )
+            )
+        }
+        ignored.update(
+            name
+            for name, relative in candidates.items()
+            if name.startswith(_RUNTIME_VALIDATION_VIRTUALENV_PREFIXES)
+            and (
+                git_tracked_paths is None
+                or relative not in git_tracked_paths
+            )
+        )
+        if git_ignored_paths is not None:
+            ignored.update(
+                name
+                for name, relative in candidates.items()
+                if relative in git_ignored_paths
+            )
         if Path(_directory).name == ".cortex":
-            ignored.add("runtime_workspaces")
+            runtime_workspaces = candidates.get("runtime_workspaces")
+            if (
+                runtime_workspaces is not None
+                and (
+                    git_tracked_paths is None
+                    or runtime_workspaces not in git_tracked_paths
+                )
+            ):
+                ignored.add("runtime_workspaces")
         return {name for name in names if name in ignored}
 
-    shutil.copytree(cwd, validation_cwd, ignore=ignore)
-    source_venv = cwd / ".venv"
+    shutil.copytree(source_root, validation_cwd, ignore=ignore)
+    source_venv = source_root / ".venv"
     if source_venv.exists():
         try:
             os.symlink(source_venv, validation_cwd / ".venv", target_is_directory=True)

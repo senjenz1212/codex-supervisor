@@ -390,7 +390,10 @@ def _proposal_from_run_events(state: State, *, run_id: str, proposal_id: str) ->
             continue
         payload = event["payload"]
         if isinstance(payload, dict) and str(payload.get("proposal_id") or "") == proposal_id:
-            return payload
+            return {
+                **payload,
+                "proposal_event_id": int(event["event_id"]),
+            }
     raise AxiUsageError(f"policy proposal not found in run {run_id}: {proposal_id}")
 
 

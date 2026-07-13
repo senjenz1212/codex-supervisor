@@ -83,8 +83,19 @@ def build_autoresearch_report(
         ledger_verification_resolver=ledger_verification_resolver,
         trusted_verifier_attestors=trusted_verifier_attestors,
     )
-    governed["report_sha256"] = sha256_json(_without_report_sha(governed))
+    governed["report_sha256"] = autoresearch_report_sha256(governed)
     return governed
+
+
+def autoresearch_report_sha256(
+    report: Mapping[str, Any],
+) -> str:
+    """Hash the immutable report body used by events and policy proposals."""
+    body = dict(report)
+    body.pop("report_sha256", None)
+    body.pop("event_ids", None)
+    body.pop("derived_policy_proposals", None)
+    return sha256_json(body)
 
 
 def _iqr(sorted_trials: list[float]) -> float:
@@ -120,9 +131,3 @@ def _recommendation(records: list[dict]) -> dict:
         "reason": "all_attempts_validated_report_only",
         "operator_review_required": True,
     }
-
-
-def _without_report_sha(payload: dict) -> dict:
-    clone = dict(payload)
-    clone.pop("report_sha256", None)
-    return clone

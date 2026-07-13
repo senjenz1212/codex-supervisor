@@ -29,10 +29,10 @@ _PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+"),
      r"\1[REDACTED_BEARER]"),
     # Anthropic-style API keys: sk-ant-...
-    (re.compile(r"sk-ant-[A-Za-z0-9_\-]{6,}"),
+    (re.compile(r"(?<![A-Za-z0-9])sk-ant-[A-Za-z0-9_\-]{6,}"),
      "[REDACTED_API_KEY]"),
     # OpenAI-style keys: sk-... and sk-proj-...
-    (re.compile(r"sk-(?:proj-)?[A-Za-z0-9_\-]{6,}"),
+    (re.compile(r"(?<![A-Za-z0-9])sk-(?:proj-)?[A-Za-z0-9_\-]{6,}"),
      "[REDACTED_API_KEY]"),
     # GitHub personal access tokens.
     (re.compile(r"gh[pousr]_[A-Za-z0-9]{16,}"),

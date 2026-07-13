@@ -15,8 +15,10 @@ from supervisor.autoresearch.policy_evolution import (
     approve_policy_proposal,
     create_policy_evolution_proposals,
     derive_policy_evolution_proposals_from_report,
+    ensure_recorded_policy_report,
     report_contains_derivable_policy_record,
 )
+from supervisor.autoresearch.report import autoresearch_report_sha256
 from supervisor.autoresearch.schema import AutoresearchExperiment
 from supervisor.claim_gate import ClaimGate
 from supervisor.state import State
@@ -90,9 +92,8 @@ def _quality_controls() -> dict:
 
 
 def _report(*records: dict) -> dict:
-    return {
+    report = {
         "schema_version": "supervisor-autoresearch-summary/v1",
-        "report_sha256": "report-sha",
         "default_change_allowed": False,
         "report_only": {
             "default_change_allowed": False,
@@ -101,6 +102,8 @@ def _report(*records: dict) -> dict:
         },
         "records": list(records),
     }
+    report["report_sha256"] = autoresearch_report_sha256(report)
+    return report
 
 
 def _claim_gate_authorize_report(
@@ -114,6 +117,9 @@ def _claim_gate_authorize_report(
         evidence,
         evidence_root=evidence_root,
         **_claim_gate_kwargs(ledger_resolver),
+    )
+    authorized["report_sha256"] = autoresearch_report_sha256(
+        authorized
     )
     return authorized, {
         "claim_evidence_bundle": evidence,
@@ -295,9 +301,19 @@ def test_benchmark_report_not_on_derivation_path(tmp_path):
 def test_adoption_requires_named_operator(tmp_path):
     state = State(str(tmp_path / "state.db"))
     _write_policy_files(tmp_path)
+    candidate = tmp_path / "candidates/policy-overlay.yaml"
     report, claim_authority = _claim_gate_authorize_report(
-        _report(_applyable_record()),
+        _report(_applyable_record(
+            artifact_hashes={
+                "candidates/policy-overlay.yaml": _sha(candidate),
+            },
+        )),
         evidence_root=tmp_path / "claim-authority",
+    )
+    ensure_recorded_policy_report(
+        report,
+        state=state,
+        run_id="policy-run",
     )
     [proposal] = derive_policy_evolution_proposals_from_report(
         report,

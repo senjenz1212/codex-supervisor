@@ -283,9 +283,13 @@ def test_evidence_commit_accepts_stale_grade_with_exact_current_resolution(
         ),
         edges=fixture.request.trace_graph.edges,
     )
-    closure = graph.validate_closure(
-        now=fixture.request.closure_time
-    )
+    gradebook_path = fixture.committer_arguments["gradebook_path"]
+    assert isinstance(gradebook_path, Path)
+    with GradeBook(gradebook_path) as gradebook:
+        closure = graph.validate_closure(
+            now=fixture.request.closure_time,
+            decision_grade_validator=gradebook,
+        )
     trace_content = canonical_json_bytes({
         "graph": graph.to_dict(),
         "closure": closure.to_dict(),
@@ -978,7 +982,11 @@ def _build_fixture(tmp_path: Path) -> _Fixture:
         invalidations=invalidations,
     )
     closure_time = datetime(2026, 7, 12, 12, 0, tzinfo=timezone.utc)
-    closure = graph.validate_closure(now=closure_time)
+    with GradeBook(gradebook_path) as gradebook:
+        closure = graph.validate_closure(
+            now=closure_time,
+            decision_grade_validator=gradebook,
+        )
     assert closure.ok
 
     event_clock = 100

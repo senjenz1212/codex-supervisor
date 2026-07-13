@@ -2,10 +2,16 @@
 
 ## Status
 
-**Partial. Runtime contracts exist; repository-wide provider migration is not
-complete.**
+**Operational compatibility demonstrated for Claude Code and Codex; coding
+efficacy and provenance parity remain unproven.**
 
 ## Current Repository Evidence
+
+Focused contract tests cover the provider-neutral runtime/model seams. In
+addition, the sanitized operational receipts
+`compatibility-claude-code-20260713.json` and
+`compatibility-codex-20260713.json` record successful no-tool executions with
+the same output hash through the two live CLIs.
 
 Focused command:
 
@@ -15,28 +21,24 @@ Focused command:
   tests/test_claude_sdk_runtime.py tests/test_agent_invoker_review.py
 ```
 
-Observed result: **10 passed**.
-
 This proves common result schemas with fake transports, runtime-level
 resume/cancel calls, structured model-response validation, Claude SDK loading
-inside its transport, and `AgentInvoker` seam usage.
+inside its transport, and `AgentInvoker` seam usage. The operational receipts
+add CLI reachability and output-schema compatibility evidence; they do not
+measure coding quality.
 
 ## Open Evidence Gaps
 
-- `supervisor/drift_detector.py` still imports Anthropic and OpenAI clients.
-- `supervisor/hook_critic.py` and `supervisor/telegram_supervisor.py` still
-  construct Claude SDK clients.
-- `supervisor/cursor_agent.py` still imports Cursor SDK and OpenAI clients in
-  provider-specific paths.
-- `supervisor/agentic_executor.py` still constructs Claude CLI execution.
-- No grep/AST regression currently proves all core model calls use
-  `AgentRuntime`/`ModelClient`.
-- No real Claude Code or Codex task was run by this documentation task.
-- No cancellation-with-descendant proof, external review, skill receipt, or
-  commit was produced here.
+- Provider-specific imports remain in explicit edge modules; guard tests
+  prohibit them in provider-neutral core experiment modules.
+- The Codex operational receipt did not expose resolved-model or cost
+  provenance, so provenance parity is not established.
+- The live task was deliberately a no-tool `OK` smoke, not a real coding task.
+- Runtime compatibility does not prove isolated A/B/C execution, outcome
+  improvement, or portability.
 
 ## Claim Boundary
 
-The current evidence supports provider-neutral interface behavior in focused
-tests. It does not support the claim that every model call is routed through
-the seam or that both live runtimes execute equivalent tasks successfully.
+The evidence supports provider-neutral contract behavior and basic live CLI
+compatibility. It does not support a causal, ROI, portability, or
+auto-improvement claim.

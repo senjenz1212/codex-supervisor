@@ -116,3 +116,10 @@ def test_redaction_leaves_a_marker():
     from supervisor.redaction import redact_for_telegram
     out = redact_for_telegram("ANTHROPIC_API_KEY=sk-ant-12345")
     assert "[REDACTED" in out, "redaction must leave a marker so reviewers see what happened"
+
+
+def test_redaction_does_not_corrupt_identifiers_containing_sk_prefix():
+    from supervisor.redaction import redact_for_telegram
+
+    identifier = "task-policy-1"
+    assert redact_for_telegram(identifier) == identifier

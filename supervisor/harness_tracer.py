@@ -1220,9 +1220,11 @@ async def run_hermetic_harness_tracer(
         raise RuntimeError("hermetic tracer execution matrix is incomplete")
 
     trace_graph, promotion = _build_trace_graph(executions)
-    trace_closure = trace_graph.validate_closure(
-        now=datetime(2026, 7, 12, 12, 0, tzinfo=timezone.utc)
-    )
+    with GradeBook(gradebook_path) as gradebook:
+        trace_closure = trace_graph.validate_closure(
+            now=datetime(2026, 7, 12, 12, 0, tzinfo=timezone.utc),
+            decision_grade_validator=gradebook,
+        )
     if not trace_closure.ok:
         raise RuntimeError(
             "hermetic tracer trace graph did not close: "

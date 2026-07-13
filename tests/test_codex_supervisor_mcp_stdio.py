@@ -7,6 +7,7 @@ import subprocess
 import sys
 import threading
 import time
+from hashlib import sha256
 try:
     import tomllib
 except ModuleNotFoundError:  # Python 3.10 support
@@ -74,19 +75,7 @@ def _claim_gate_authorize_policy_report(
     *,
     authority: PolicyClaimAuthority,
 ) -> dict:
-    authorized = ClaimGate.derive_report(
-        report,
-        authority.evidence_bundle,
-        evidence_root=authority.evidence_root,
-        evidence_resolver=authority.evidence_resolver,
-        ledger_verification_resolver=(
-            authority.ledger_verification_resolver
-        ),
-        trusted_verifier_attestors=(
-            authority.trusted_verifier_attestors
-        ),
-    )
-    return authorized
+    return authority.derive_report(report)
 
 
 def _policy_claim_authority(evidence_root: Path) -> PolicyClaimAuthority:
@@ -98,8 +87,12 @@ def _policy_claim_authority(evidence_root: Path) -> PolicyClaimAuthority:
         ledger_verification_resolver=claim_gate_kwargs.get(
             "ledger_verification_resolver"
         ),
+        grade_authority=claim_gate_kwargs.get("grade_authority"),
         trusted_verifier_attestors=claim_gate_kwargs.get(
             "trusted_verifier_attestors"
+        ),
+        trusted_external_authorities=claim_gate_kwargs.get(
+            "trusted_external_authorities"
         ),
     )
 
@@ -940,6 +933,11 @@ async def test_autoresearch_policy_evolution_tools_apply_only_after_operator_app
                         ),
                         "evaluator_run_hash": "evaluator-run-hash",
                         "changed_files": ["candidates/policy-overlay.yaml"],
+                        "artifact_hashes": {
+                            "candidates/policy-overlay.yaml": sha256(
+                                candidate.read_bytes()
+                            ).hexdigest(),
+                        },
                         "evaluator_quality": _evaluator_quality_controls(),
                         "gaming_flags": [],
                         "validation_errors": [],
@@ -990,7 +988,7 @@ async def test_autoresearch_policy_evolution_tools_apply_only_after_operator_app
     assert target.read_text(encoding="utf-8") == "before prompt\n"
 
     approval = await _maybe_await(server.tools["approve_autoresearch_policy_proposal"](
-        proposal=proposal,
+        proposal_event_id=proposal["proposal_event_id"],
         repo_root=str(tmp_path),
         run_id="policy-run",
         approver="sam.zhang",
@@ -1016,6 +1014,7 @@ async def test_autoresearch_policy_evolution_tools_apply_only_after_operator_app
 
     events = state.read_events_since("policy-run", after_event_id=0, limit=10)
     assert [event["kind"] for event in events] == [
+        "autoresearch_report_emitted",
         "autoresearch_policy_proposal_created",
         "autoresearch_policy_proposal_denied",
         "autoresearch_policy_proposal_approved",
@@ -1080,6 +1079,11 @@ async def test_autoresearch_policy_proposal_tool_derives_from_report_without_can
                         ),
                         "evaluator_run_hash": "evaluator-run-hash",
                         "changed_files": ["candidates/policy-overlay.yaml"],
+                        "artifact_hashes": {
+                            "candidates/policy-overlay.yaml": sha256(
+                                candidate.read_bytes()
+                            ).hexdigest(),
+                        },
                         "policy_candidate_changes": {
                             ".supervisor/policy-overlay.yaml": (
                                 "candidates/policy-overlay.yaml"

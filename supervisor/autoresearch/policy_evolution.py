@@ -10,6 +10,7 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any, Mapping, Protocol
 
+from .report import autoresearch_report_sha256
 from .schema import sha256_json
 from ..claim_gate import (
     ClaimGate,
@@ -17,6 +18,7 @@ from ..claim_gate import (
     ClaimLevel,
     EvidenceResolver,
     LedgerVerificationResolver,
+    TrustedExternalAuthorities,
     TrustedVerifierAttestors,
 )
 from ..policy_overlay import (
@@ -72,6 +74,9 @@ class EventJournal(EventWriter, Protocol):
     ) -> list[dict[str, Any]]:
         ...
 
+    def verify_event_ledger_structure(self, run_id: str) -> Any:
+        ...
+
 
 class PolicyEvolutionError(PolicyOverlayError):
     """Raised when an operator-approved policy change cannot be applied safely."""
@@ -86,6 +91,27 @@ class PolicyClaimAuthority:
     evidence_resolver: EvidenceResolver | None = None
     ledger_verification_resolver: LedgerVerificationResolver | None = None
     trusted_verifier_attestors: TrustedVerifierAttestors | None = None
+    grade_authority: Any | None = None
+    trusted_external_authorities: TrustedExternalAuthorities | None = None
+
+    def derive_report(self, report: Mapping[str, Any]) -> dict[str, Any]:
+        """Bind a report to the exact authorities used for policy validation."""
+        derived = ClaimGate.derive_report(
+            report,
+            self.evidence_bundle,
+            evidence_root=self.evidence_root,
+            evidence_resolver=self.evidence_resolver,
+            ledger_verification_resolver=(
+                self.ledger_verification_resolver
+            ),
+            grade_authority=self.grade_authority,
+            trusted_verifier_attestors=self.trusted_verifier_attestors,
+            trusted_external_authorities=(
+                self.trusted_external_authorities
+            ),
+        )
+        derived["report_sha256"] = autoresearch_report_sha256(derived)
+        return derived
 
     def validation_kwargs(self) -> dict[str, Any]:
         return {
@@ -93,8 +119,68 @@ class PolicyClaimAuthority:
             "claim_evidence_root": self.evidence_root,
             "claim_evidence_resolver": self.evidence_resolver,
             "ledger_verification_resolver": self.ledger_verification_resolver,
+            "grade_authority": self.grade_authority,
             "trusted_verifier_attestors": self.trusted_verifier_attestors,
+            "trusted_external_authorities": self.trusted_external_authorities,
         }
+
+
+def ensure_recorded_policy_report(
+    report: Mapping[str, Any],
+    *,
+    state: EventJournal,
+    run_id: str,
+) -> int:
+    """Idempotently bind one canonical AutoResearch report to a run ledger."""
+    _require_event_journal(state)
+    normalized_run_id = str(run_id or "").strip()
+    if not normalized_run_id:
+        raise PolicyEvolutionError(
+            "run_id is required to record policy report authority"
+        )
+    report_hash_error = _report_hash_error(report)
+    if report_hash_error is not None:
+        raise PolicyEvolutionError(report_hash_error)
+    claim_gate = report.get("claim_gate")
+    if not isinstance(claim_gate, Mapping):
+        raise PolicyEvolutionError(
+            "report ClaimGate receipt is required for policy derivation"
+        )
+    ledger_error = _ledger_structure_error(
+        state,
+        run_id=normalized_run_id,
+    )
+    if ledger_error is not None:
+        raise PolicyEvolutionError(ledger_error)
+    report_events = [
+        event
+        for event in _read_all_run_events(
+            state,
+            run_id=normalized_run_id,
+        )
+        if event.get("kind") == "autoresearch_report_emitted"
+    ]
+    if report_events:
+        authorization, authorization_error = (
+            _recorded_report_authorization(
+                report,
+                state=state,
+                run_id=normalized_run_id,
+            )
+        )
+        if authorization_error is not None:
+            raise PolicyEvolutionError(authorization_error)
+        return int(authorization["event_id"])
+    return state.write_event(
+        run_id=normalized_run_id,
+        source="autoresearch",
+        kind="autoresearch_report_emitted",
+        payload={
+            "schema_version": "supervisor-autoresearch/v1",
+            "report_sha256": str(report["report_sha256"]),
+            "claim_gate": dict(claim_gate),
+        },
+    )
 
 
 def create_policy_evolution_proposals(
@@ -103,13 +189,15 @@ def create_policy_evolution_proposals(
     repo_root: str | Path,
     candidate_changes: Mapping[str, str],
     affected_gates: tuple[str, ...] | list[str],
-    state: EventWriter | None = None,
+    state: EventJournal | None = None,
     run_id: str | None = None,
     claim_evidence_bundle: Mapping[str, Any] | None = None,
     claim_evidence_root: str | Path | None = None,
     claim_evidence_resolver: EvidenceResolver | None = None,
     ledger_verification_resolver: LedgerVerificationResolver | None = None,
+    grade_authority: Any | None = None,
     trusted_verifier_attestors: TrustedVerifierAttestors | None = None,
+    trusted_external_authorities: TrustedExternalAuthorities | None = None,
 ) -> list[dict[str, Any]]:
     """Create non-mutating stability proposals from clean accepted AutoResearch records.
 
@@ -130,8 +218,19 @@ def create_policy_evolution_proposals(
         claim_evidence_root=claim_evidence_root,
         claim_evidence_resolver=claim_evidence_resolver,
         ledger_verification_resolver=ledger_verification_resolver,
+        grade_authority=grade_authority,
         trusted_verifier_attestors=trusted_verifier_attestors,
+        trusted_external_authorities=trusted_external_authorities,
     ) is not None:
+        return []
+    report_authorization, report_authorization_error = (
+        _recorded_report_authorization(
+            report,
+            state=state,
+            run_id=run_id,
+        )
+    )
+    if report_authorization_error is not None:
         return []
     proposals: list[dict[str, Any]] = []
     records = report.get("records") if isinstance(report.get("records"), list) else []
@@ -144,15 +243,18 @@ def create_policy_evolution_proposals(
             repo_root=repo_root_path,
             candidate_changes=changes,
             affected_gates=tuple(str(gate) for gate in affected_gates),
+            report_authorization=report_authorization,
         )
         proposals.append(proposal)
-        if state is not None and run_id:
-            state.write_event(
-                run_id=run_id,
-                source="autoresearch",
-                kind="autoresearch_policy_proposal_created",
-                payload=proposal,
-            )
+        assert state is not None
+        assert run_id
+        proposal_event_id = state.write_event(
+            run_id=run_id,
+            source="autoresearch",
+            kind="autoresearch_policy_proposal_created",
+            payload=proposal,
+        )
+        proposal["proposal_event_id"] = proposal_event_id
     return proposals
 
 
@@ -161,13 +263,15 @@ def derive_policy_evolution_proposals_from_report(
     *,
     repo_root: str | Path,
     affected_gates: tuple[str, ...] | list[str],
-    state: EventWriter | None = None,
+    state: EventJournal | None = None,
     run_id: str | None = None,
     claim_evidence_bundle: Mapping[str, Any] | None = None,
     claim_evidence_root: str | Path | None = None,
     claim_evidence_resolver: EvidenceResolver | None = None,
     ledger_verification_resolver: LedgerVerificationResolver | None = None,
+    grade_authority: Any | None = None,
     trusted_verifier_attestors: TrustedVerifierAttestors | None = None,
+    trusted_external_authorities: TrustedExternalAuthorities | None = None,
 ) -> list[dict[str, Any]]:
     """Draft overlay proposals directly from accepted AutoResearch report records.
 
@@ -184,7 +288,9 @@ def derive_policy_evolution_proposals_from_report(
         claim_evidence_root=claim_evidence_root,
         claim_evidence_resolver=claim_evidence_resolver,
         ledger_verification_resolver=ledger_verification_resolver,
+        grade_authority=grade_authority,
         trusted_verifier_attestors=trusted_verifier_attestors,
+        trusted_external_authorities=trusted_external_authorities,
     )
     if report_applyability_error is not None:
         for record in records:
@@ -195,6 +301,24 @@ def derive_policy_evolution_proposals_from_report(
                     report=report,
                     record=record,
                     reason=report_applyability_error,
+                )
+        return []
+    report_authorization, report_authorization_error = (
+        _recorded_report_authorization(
+            report,
+            state=state,
+            run_id=run_id,
+        )
+    )
+    if report_authorization_error is not None:
+        for record in records:
+            if isinstance(record, Mapping):
+                _write_derivation_skipped(
+                    state=state,
+                    run_id=run_id,
+                    report=report,
+                    record=record,
+                    reason=report_authorization_error,
                 )
         return []
     proposals: list[dict[str, Any]] = []
@@ -222,6 +346,7 @@ def derive_policy_evolution_proposals_from_report(
                 repo_root=repo_root_path,
                 candidate_changes=((POLICY_OVERLAY_PATH, candidate_ref),),
                 affected_gates=gates,
+                report_authorization=report_authorization,
             )
         except PolicyEvolutionError as exc:
             _write_derivation_skipped(
@@ -249,13 +374,15 @@ def derive_policy_evolution_proposals_from_report(
             key: value for key, value in proposal.items() if key != "proposal_sha256"
         })
         proposals.append(proposal)
-        if state is not None and run_id:
-            state.write_event(
-                run_id=run_id,
-                source="autoresearch",
-                kind="autoresearch_policy_proposal_created",
-                payload=proposal,
-            )
+        assert state is not None
+        assert run_id
+        proposal_event_id = state.write_event(
+            run_id=run_id,
+            source="autoresearch",
+            kind="autoresearch_policy_proposal_created",
+            payload=proposal,
+        )
+        proposal["proposal_event_id"] = proposal_event_id
     return proposals
 
 
@@ -263,11 +390,15 @@ def report_contains_derivable_policy_record(
     report: Mapping[str, Any],
     *,
     repo_root: str | Path,
+    state: EventJournal | None = None,
+    run_id: str | None = None,
     claim_evidence_bundle: Mapping[str, Any] | None = None,
     claim_evidence_root: str | Path | None = None,
     claim_evidence_resolver: EvidenceResolver | None = None,
     ledger_verification_resolver: LedgerVerificationResolver | None = None,
+    grade_authority: Any | None = None,
     trusted_verifier_attestors: TrustedVerifierAttestors | None = None,
+    trusted_external_authorities: TrustedExternalAuthorities | None = None,
 ) -> bool:
     repo_root_path = Path(repo_root).expanduser().resolve()
     if _report_applyability_error(
@@ -276,8 +407,19 @@ def report_contains_derivable_policy_record(
         claim_evidence_root=claim_evidence_root,
         claim_evidence_resolver=claim_evidence_resolver,
         ledger_verification_resolver=ledger_verification_resolver,
+        grade_authority=grade_authority,
         trusted_verifier_attestors=trusted_verifier_attestors,
+        trusted_external_authorities=trusted_external_authorities,
     ) is not None:
+        return False
+    _report_authorization, report_authorization_error = (
+        _recorded_report_authorization(
+            report,
+            state=state,
+            run_id=run_id,
+        )
+    )
+    if report_authorization_error is not None:
         return False
     records = report.get("records") if isinstance(report.get("records"), list) else []
     for record in records:
@@ -294,10 +436,11 @@ def report_contains_derivable_policy_record(
 
 
 def approve_policy_proposal(
-    proposal: Mapping[str, Any],
+    proposal: Mapping[str, Any] | None = None,
     *,
     state: EventJournal,
     run_id: str,
+    proposal_event_id: int | None = None,
     repo_root: str | Path,
     approver: str,
     approval_channel: str,
@@ -306,6 +449,12 @@ def approve_policy_proposal(
     """Audit an approval intent before publishing the exact candidate bytes."""
     _require_operator(approver=approver, approval_channel=approval_channel)
     _require_event_journal(state)
+    proposal = _recorded_policy_proposal(
+        state=state,
+        run_id=run_id,
+        proposal=proposal,
+        proposal_event_id=proposal_event_id,
+    )
     repo_root_path = Path(repo_root).expanduser().resolve()
     rollback_root_rel = _normalise_relative_path(str(rollback_root), repo_root=repo_root_path)
     proposal_id = str(proposal.get("proposal_id") or "")
@@ -727,8 +876,14 @@ def _build_policy_proposal(
     repo_root: Path,
     candidate_changes: tuple[tuple[str, str], ...],
     affected_gates: tuple[str, ...],
+    report_authorization: Mapping[str, Any],
 ) -> dict[str, Any]:
     changed_files = {str(path) for path in record.get("changed_files", ())}
+    artifact_hashes = (
+        record.get("artifact_hashes")
+        if isinstance(record.get("artifact_hashes"), Mapping)
+        else {}
+    )
     changes: list[dict[str, Any]] = []
     for target_path, candidate_ref in candidate_changes:
         target_rel = _normalise_relative_path(target_path, repo_root=repo_root)
@@ -752,6 +907,21 @@ def _build_policy_proposal(
         )
         if after_bytes is None:
             raise PolicyEvolutionError(f"candidate artifact missing: {candidate_rel}")
+        authorized_after_hash = str(
+            artifact_hashes.get(candidate_rel) or ""
+        ).strip().lower()
+        if not _is_sha256(authorized_after_hash):
+            raise PolicyEvolutionError(
+                "accepted report must bind the candidate artifact hash for "
+                f"{candidate_rel}"
+            )
+        observed_after_hash = _sha256_bytes(after_bytes)
+        if observed_after_hash != authorized_after_hash:
+            raise PolicyEvolutionError(
+                "candidate artifact does not match the authorized artifact "
+                f"hash for {candidate_rel}: expected "
+                f"{authorized_after_hash}, observed {observed_after_hash}"
+            )
         before_bytes = before_bytes or b""
         before_text = before_bytes.decode("utf-8")
         after_text = after_bytes.decode("utf-8")
@@ -760,7 +930,7 @@ def _build_policy_proposal(
             "candidate_ref": candidate_rel,
             "artifact_kind": _artifact_kind(target_rel),
             "before_hash": _sha256_bytes(before_bytes),
-            "after_hash": _sha256_bytes(after_bytes),
+            "after_hash": authorized_after_hash,
             "diff": "".join(difflib.unified_diff(
                 before_text.splitlines(keepends=True),
                 after_text.splitlines(keepends=True),
@@ -796,6 +966,10 @@ def _build_policy_proposal(
         "attempt_id": str(record.get("attempt_id") or ""),
         "affected_gates": list(affected_gates),
         "evaluator_evidence": evaluator_evidence,
+        "claim_authority": _claim_authority_binding(
+            report,
+            report_authorization=report_authorization,
+        ),
         "changes": changes,
         **_authority_invariants(operator_approved=False),
     }
@@ -803,6 +977,35 @@ def _build_policy_proposal(
         key: value for key, value in proposal.items() if key != "proposal_sha256"
     })
     return proposal
+
+
+def _claim_authority_binding(
+    report: Mapping[str, Any],
+    *,
+    report_authorization: Mapping[str, Any],
+) -> dict[str, Any]:
+    receipt = (
+        report.get("claim_gate")
+        if isinstance(report.get("claim_gate"), Mapping)
+        else {}
+    )
+    return {
+        "schema_version": "supervisor-policy-claim-authority/v1",
+        "report_sha256": str(report.get("report_sha256") or ""),
+        "claim_gate_schema_version": str(
+            receipt.get("schema_version") or ""
+        ),
+        "max_claim_level": receipt.get("max_claim_level"),
+        "evidence_bundle_sha256": str(
+            receipt.get("evidence_bundle_sha256") or ""
+        ),
+        "report_event_id": int(
+            report_authorization.get("event_id") or 0
+        ),
+        "report_event_hash": str(
+            report_authorization.get("event_hash") or ""
+        ),
+    }
 
 
 def _record_is_applyable(record: Mapping[str, Any]) -> bool:
@@ -816,8 +1019,13 @@ def _report_applyability_error(
     claim_evidence_root: str | Path | None,
     claim_evidence_resolver: EvidenceResolver | None,
     ledger_verification_resolver: LedgerVerificationResolver | None,
+    grade_authority: Any | None,
     trusted_verifier_attestors: TrustedVerifierAttestors | None,
+    trusted_external_authorities: TrustedExternalAuthorities | None,
 ) -> str | None:
+    report_hash_error = _report_hash_error(report)
+    if report_hash_error is not None:
+        return report_hash_error
     if report.get("metric_applyable") is False:
         return "report metric_applyable must not be false for policy derivation"
     authority_error = _claim_gate_report_authority_error(
@@ -826,13 +1034,26 @@ def _report_applyability_error(
         claim_evidence_root=claim_evidence_root,
         claim_evidence_resolver=claim_evidence_resolver,
         ledger_verification_resolver=ledger_verification_resolver,
+        grade_authority=grade_authority,
         trusted_verifier_attestors=trusted_verifier_attestors,
+        trusted_external_authorities=trusted_external_authorities,
     )
     if authority_error is not None:
         return authority_error
     gaming_flags = list(report.get("gaming_flags") or [])
     if gaming_flags:
         return "report gaming flags present: " + ", ".join(str(flag) for flag in gaming_flags)
+    return None
+
+
+def _report_hash_error(report: Mapping[str, Any]) -> str | None:
+    declared = str(report.get("report_sha256") or "").strip().lower()
+    if not declared:
+        return "report_sha256 is required for policy derivation"
+    if declared != autoresearch_report_sha256(report):
+        return (
+            "report_sha256 does not match canonical report contents"
+        )
     return None
 
 
@@ -881,7 +1102,9 @@ def _claim_gate_report_authority_error(
     claim_evidence_root: str | Path | None,
     claim_evidence_resolver: EvidenceResolver | None,
     ledger_verification_resolver: LedgerVerificationResolver | None,
+    grade_authority: Any | None,
     trusted_verifier_attestors: TrustedVerifierAttestors | None,
+    trusted_external_authorities: TrustedExternalAuthorities | None,
 ) -> str | None:
     if not isinstance(claim_evidence_bundle, Mapping):
         return (
@@ -895,7 +1118,9 @@ def _claim_gate_report_authority_error(
             evidence_root=claim_evidence_root,
             evidence_resolver=claim_evidence_resolver,
             ledger_verification_resolver=ledger_verification_resolver,
+            grade_authority=grade_authority,
             trusted_verifier_attestors=trusted_verifier_attestors,
+            trusted_external_authorities=trusted_external_authorities,
         )
     except ClaimGateError as exc:
         return f"report ClaimGate authority validation failed: {exc}"
@@ -1292,6 +1517,268 @@ def _sha256_bytes(value: bytes) -> str:
     return sha256(value).hexdigest()
 
 
+def _is_sha256(value: str) -> bool:
+    normalized = str(value or "").strip().lower()
+    if len(normalized) != 64:
+        return False
+    try:
+        bytes.fromhex(normalized)
+    except ValueError:
+        return False
+    return True
+
+
+def _read_all_run_events(
+    state: EventJournal,
+    *,
+    run_id: str,
+) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    cursor = 0
+    while True:
+        page = state.read_events_since(
+            run_id,
+            after_event_id=cursor,
+            limit=1000,
+        )
+        if not page:
+            break
+        events.extend(page)
+        cursor = int(page[-1]["event_id"])
+        if len(page) < 1000:
+            break
+    return events
+
+
+def _ledger_structure_error(
+    state: EventJournal,
+    *,
+    run_id: str,
+) -> str | None:
+    try:
+        verification = state.verify_event_ledger_structure(run_id)
+    except Exception as exc:
+        return f"event ledger structure verification failed: {exc}"
+    if getattr(verification, "valid", None) is not True:
+        return "event ledger structure is invalid"
+    return None
+
+
+def _recorded_report_authorization(
+    report: Mapping[str, Any],
+    *,
+    state: EventJournal | None,
+    run_id: str | None,
+) -> tuple[dict[str, Any], str | None]:
+    if state is None or not str(run_id or "").strip():
+        return {}, "recorded report authority event is required"
+    try:
+        _require_event_journal(state)
+    except PolicyEvolutionError as exc:
+        return {}, str(exc)
+    normalized_run_id = str(run_id)
+    ledger_error = _ledger_structure_error(
+        state,
+        run_id=normalized_run_id,
+    )
+    if ledger_error is not None:
+        return {}, ledger_error
+    events = _read_all_run_events(
+        state,
+        run_id=normalized_run_id,
+    )
+    report_events = [
+        event
+        for event in events
+        if event.get("kind") == "autoresearch_report_emitted"
+    ]
+    if len(report_events) != 1:
+        return (
+            {},
+            "exactly one recorded report authority event is required",
+        )
+    event = report_events[0]
+    payload = event.get("payload")
+    if (
+        event.get("source") != "autoresearch"
+        or not isinstance(payload, Mapping)
+        or payload.get("schema_version") != "supervisor-autoresearch/v1"
+    ):
+        return {}, "recorded report authority event is invalid"
+    report_hash = str(report.get("report_sha256") or "").strip().lower()
+    if str(payload.get("report_sha256") or "").strip().lower() != report_hash:
+        return {}, "recorded report authority hash does not match report"
+    report_claim_gate = report.get("claim_gate")
+    event_claim_gate = payload.get("claim_gate")
+    if (
+        not isinstance(report_claim_gate, Mapping)
+        or not isinstance(event_claim_gate, Mapping)
+        or dict(event_claim_gate) != dict(report_claim_gate)
+    ):
+        return (
+            {},
+            "recorded report authority ClaimGate receipt does not match report",
+        )
+    event_hash = str(event.get("event_hash") or "").strip().lower()
+    if not _is_sha256(event_hash):
+        return {}, "recorded report authority event hash is invalid"
+    return {
+        "event_id": int(event["event_id"]),
+        "event_hash": event_hash,
+    }, None
+
+
+def _recorded_policy_proposal(
+    *,
+    state: EventJournal,
+    run_id: str,
+    proposal: Mapping[str, Any] | None,
+    proposal_event_id: int | None,
+) -> dict[str, Any]:
+    event_id_value = proposal_event_id
+    if event_id_value is None and isinstance(proposal, Mapping):
+        raw_event_id = proposal.get("proposal_event_id")
+        if raw_event_id not in (None, ""):
+            event_id_value = int(raw_event_id)
+    if event_id_value is None or int(event_id_value) <= 0:
+        raise PolicyEvolutionError(
+            "recorded proposal event id is required"
+        )
+    ledger_error = _ledger_structure_error(state, run_id=run_id)
+    if ledger_error is not None:
+        raise PolicyEvolutionError(ledger_error)
+    events = _read_all_run_events(state, run_id=run_id)
+    selected = [
+        event
+        for event in events
+        if int(event.get("event_id") or 0) == int(event_id_value)
+    ]
+    if len(selected) != 1:
+        raise PolicyEvolutionError(
+            "recorded proposal event was not found in the specified run"
+        )
+    event = selected[0]
+    payload = event.get("payload")
+    if (
+        event.get("source") != "autoresearch"
+        or event.get("kind") != "autoresearch_policy_proposal_created"
+        or not isinstance(payload, Mapping)
+    ):
+        raise PolicyEvolutionError("recorded proposal event is invalid")
+    recorded = dict(payload)
+    proposal_id = str(recorded.get("proposal_id") or "").strip()
+    duplicate_events = [
+        candidate
+        for candidate in events
+        if (
+            candidate.get("kind")
+            == "autoresearch_policy_proposal_created"
+            and isinstance(candidate.get("payload"), Mapping)
+            and str(
+                candidate["payload"].get("proposal_id") or ""
+            ).strip()
+            == proposal_id
+        )
+    ]
+    if not proposal_id or len(duplicate_events) != 1:
+        raise PolicyEvolutionError(
+            "recorded proposal event identity is missing or duplicated"
+        )
+    declared_hash = str(
+        recorded.get("proposal_sha256") or ""
+    ).strip().lower()
+    body = {
+        key: value
+        for key, value in recorded.items()
+        if key != "proposal_sha256"
+    }
+    if (
+        not _is_sha256(declared_hash)
+        or sha256_json(body) != declared_hash
+    ):
+        raise PolicyEvolutionError(
+            "recorded proposal event hash is invalid"
+        )
+    if (
+        recorded.get("schema_version")
+        != POLICY_PROPOSAL_SCHEMA_VERSION
+        or recorded.get("source")
+        not in {"autoresearch", "autoresearch_deriver"}
+        or recorded.get("status") not in {"proposed", "draft"}
+    ):
+        raise PolicyEvolutionError(
+            "recorded proposal schema, source, or status is invalid"
+        )
+    if (
+        recorded.get("requires_operator_approval") is not True
+        or recorded.get("operator_approved") is not False
+        or recorded.get("automatic_policy_mutation") is not False
+        or recorded.get("default_change_allowed") is not False
+    ):
+        raise PolicyEvolutionError(
+            "recorded proposal authority invariants are invalid"
+        )
+    claim_authority = recorded.get("claim_authority")
+    if not isinstance(claim_authority, Mapping):
+        raise PolicyEvolutionError(
+            "recorded proposal claim authority is missing"
+        )
+    report_event_id = int(
+        claim_authority.get("report_event_id") or 0
+    )
+    report_event_hash = str(
+        claim_authority.get("report_event_hash") or ""
+    ).strip().lower()
+    report_events = [
+        candidate
+        for candidate in events
+        if int(candidate.get("event_id") or 0) == report_event_id
+    ]
+    if len(report_events) != 1:
+        raise PolicyEvolutionError(
+            "recorded proposal report authority event is missing"
+        )
+    report_event = report_events[0]
+    report_payload = report_event.get("payload")
+    if (
+        report_event_id >= int(event_id_value)
+        or report_event.get("source") != "autoresearch"
+        or report_event.get("kind") != "autoresearch_report_emitted"
+        or str(report_event.get("event_hash") or "").strip().lower()
+        != report_event_hash
+        or not isinstance(report_payload, Mapping)
+        or str(report_payload.get("report_sha256") or "").strip().lower()
+        != str(claim_authority.get("report_sha256") or "").strip().lower()
+    ):
+        raise PolicyEvolutionError(
+            "recorded proposal report authority binding is invalid"
+        )
+    report_claim_gate = report_payload.get("claim_gate")
+    if (
+        not isinstance(report_claim_gate, Mapping)
+        or report_claim_gate.get("schema_version")
+        != claim_authority.get("claim_gate_schema_version")
+        or report_claim_gate.get("max_claim_level")
+        != claim_authority.get("max_claim_level")
+        or report_claim_gate.get("evidence_bundle_sha256")
+        != claim_authority.get("evidence_bundle_sha256")
+    ):
+        raise PolicyEvolutionError(
+            "recorded proposal ClaimGate authority binding is invalid"
+        )
+    if isinstance(proposal, Mapping):
+        supplied = {
+            key: value
+            for key, value in proposal.items()
+            if key != "proposal_event_id"
+        }
+        if supplied != recorded:
+            raise PolicyEvolutionError(
+                "caller proposal bytes do not match the recorded proposal event"
+            )
+    return recorded
+
+
 def _require_policy_overlay_target(path: str, *, repo_root: Path) -> None:
     try:
         normalise_overlay_target(path, repo_root=repo_root)
@@ -1300,7 +1787,12 @@ def _require_policy_overlay_target(path: str, *, repo_root: Path) -> None:
 
 
 def _require_event_journal(state: EventWriter) -> None:
-    if not callable(getattr(state, "read_events_since", None)):
+    if (
+        not callable(getattr(state, "read_events_since", None))
+        or not callable(
+            getattr(state, "verify_event_ledger_structure", None)
+        )
+    ):
         raise PolicyEvolutionError(
             "policy transactions require an append-only readable event journal"
         )

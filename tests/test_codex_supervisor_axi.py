@@ -17,6 +17,7 @@ from supervisor.autoresearch.generator import (
 from supervisor.config import Config
 from supervisor.state import State
 from supervisor.workflow_job_dispatcher import WorkflowJobDispatcher
+from tests.policy_evolution_test_support import record_test_policy_proposal
 
 
 def _config_path(tmp_path: Path) -> Path:
@@ -400,11 +401,10 @@ def test_axi_policy_approve_proposal_applies_hashes_and_rollback_pointer(capsys,
         "automatic_policy_mutation": False,
         "gate_advanced": False,
     }
-    state.write_event(
+    proposal = record_test_policy_proposal(
+        state,
         run_id="policy-run",
-        source="autoresearch",
-        kind="autoresearch_policy_proposal_created",
-        payload=proposal,
+        proposal=proposal,
     )
 
     assert axi.main([

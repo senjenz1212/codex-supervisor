@@ -760,6 +760,58 @@ def _run_single_quality_control(
     return record
 
 
+_DETERMINISM_PROJECTION_SCHEMA_VERSION = (
+    "supervisor-autoresearch-evaluator-determinism-projection/v1"
+)
+# Evaluators may expose a convenience projection, but they do not control the
+# bytes that Supervisor hashes for determinism.
+_DETERMINISM_PROJECTION_EXCLUDED_PATHS = (
+    ("determinism_payload",),
+)
+
+
+def _canonical_determinism_projection(
+    trial_payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Build the supervisor-owned semantic output used for repeat hashing."""
+    return {
+        "schema_version": _DETERMINISM_PROJECTION_SCHEMA_VERSION,
+        "evaluator_output": _project_determinism_value(trial_payload, path=()),
+    }
+
+
+def _project_determinism_value(value: Any, *, path: tuple[str, ...]) -> Any:
+    if isinstance(value, Mapping):
+        projected: dict[str, Any] = {}
+        for raw_key, child_value in value.items():
+            key = str(raw_key)
+            child_path = (*path, key)
+            if _is_excluded_determinism_path(child_path):
+                continue
+            projected[key] = _project_determinism_value(
+                child_value,
+                path=child_path,
+            )
+        return projected
+    if isinstance(value, list):
+        return [
+            _project_determinism_value(child_value, path=(*path, "*"))
+            for child_value in value
+        ]
+    return value
+
+
+def _is_excluded_determinism_path(path: tuple[str, ...]) -> bool:
+    return any(
+        len(path) == len(excluded_path)
+        and all(
+            excluded_part == "*" or excluded_part == actual_part
+            for actual_part, excluded_part in zip(path, excluded_path)
+        )
+        for excluded_path in _DETERMINISM_PROJECTION_EXCLUDED_PATHS
+    )
+
+
 def _run_determinism_quality_check(
     *,
     experiment: AutoresearchExperiment,
@@ -802,11 +854,16 @@ def _run_determinism_quality_check(
             records.append({"run_index": index, "error": str(exc)})
             output_hashes.append(f"error:{index}:{sha256(str(exc).encode('utf-8')).hexdigest()}")
             continue
-        normalized_hash = sha256(stable_json_dumps(trial_payload).encode("utf-8")).hexdigest()
+        determinism_projection = _canonical_determinism_projection(trial_payload)
+        normalized_hash = sha256(
+            stable_json_dumps(determinism_projection).encode("utf-8")
+        ).hexdigest()
         output_hashes.append(normalized_hash)
         records.append({
             "run_index": index,
             "output_hash": normalized_hash,
+            "hash_source": "supervisor_canonical_projection",
+            "projection_schema_version": _DETERMINISM_PROJECTION_SCHEMA_VERSION,
             "stdout_sha256": stdout_hash,
             "stderr_sha256": stderr_hash,
             "duration_s": duration_s,
@@ -818,6 +875,11 @@ def _run_determinism_quality_check(
         "supervisor_runtime_origin": "run_evaluator_quality_controls",
         "candidate_ref": control_candidate["candidate_ref"],
         "candidate_hash": control_candidate["candidate_hash"],
+        "projection_schema_version": _DETERMINISM_PROJECTION_SCHEMA_VERSION,
+        "projection_excluded_paths": [
+            ".".join(path)
+            for path in _DETERMINISM_PROJECTION_EXCLUDED_PATHS
+        ],
         "output_hashes": output_hashes,
         "records": records,
         "verified": len(output_hashes) >= 2 and len(set(output_hashes)) == 1,

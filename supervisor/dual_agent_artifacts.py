@@ -23,6 +23,21 @@ from .run_manifest import (
 from .state import State
 from .trace_envelope import TRACE_ENVELOPE_SCHEMA_VERSION, ensure_tool_call_timing
 
+_RUNTIME_STATE_FILENAMES = frozenset({
+    "experiments.db",
+    "grades.db",
+    "state.db",
+    "state.sqlite",
+    "state.sqlite3",
+    "trace.db",
+})
+_RUNTIME_STATE_SUFFIXES = (".db", ".sqlite", ".sqlite3")
+_RUNTIME_STATE_SIDECAR_SUFFIXES = ("-journal", "-shm", "-wal")
+_RUNTIME_STATE_DIRECTORIES = frozenset({
+    ".codex-supervisor",
+    ".orchestrator-state",
+})
+
 
 @dataclass(frozen=True)
 class DualAgentArtifactExport:
@@ -548,10 +563,12 @@ def _workspace_snapshot_manifest(
         root,
         output_dir=output_dir,
     )
+    source_artifact_paths = _source_artifact_paths(root, handoff)
     immutable_snapshot = build_workspace_overlay(
         root,
         base_commit=head,
         excluded_roots=excluded_roots,
+        included_paths=source_artifact_paths,
     )
     return {
         "status": "captured",
@@ -734,6 +751,35 @@ def _source_artifact_hashes(root: Path, handoff: dict[str, Any]) -> dict[str, st
     return hashes
 
 
+def _source_artifact_paths(
+    root: Path,
+    handoff: dict[str, Any],
+) -> tuple[str, ...]:
+    artifacts = (
+        handoff.get("planning_artifacts")
+        if isinstance(handoff, dict)
+        else []
+    )
+    if not isinstance(artifacts, list):
+        return ()
+    root_resolved = root.expanduser().resolve()
+    paths: list[str] = []
+    for artifact in artifacts:
+        if not isinstance(artifact, dict):
+            continue
+        path_text = _clean_text(artifact.get("path"))
+        if not path_text or Path(path_text).is_absolute():
+            continue
+        try:
+            (root_resolved / path_text).resolve().relative_to(
+                root_resolved
+            )
+        except (OSError, ValueError):
+            continue
+        paths.append(path_text)
+    return tuple(paths)
+
+
 def _excluded_snapshot_path(
     path: Path,
     root: Path,
@@ -752,8 +798,10 @@ def _excluded_snapshot_path(
         ".git",
         ".venv",
         ".claude",
+        ".codex-supervisor",
         ".cortex",
         ".handoff",
+        ".orchestrator-state",
         "node_modules",
         "__pycache__",
         ".pytest_cache",
@@ -762,9 +810,36 @@ def _excluded_snapshot_path(
     }:
         return True
     name = path.name.lower()
+    if _is_runtime_state_snapshot_path(relative):
+        return True
     if name.startswith(".env") or name.endswith((".pem", ".key", ".p12", ".pfx")):
         return True
     return any(token in name for token in ("secret", "credential", "token"))
+
+
+def _is_runtime_state_snapshot_path(relative: Path) -> bool:
+    name = relative.name.lower()
+    base_name = name
+    for suffix in _RUNTIME_STATE_SIDECAR_SUFFIXES:
+        if base_name.endswith(suffix):
+            base_name = base_name[: -len(suffix)]
+            break
+    runtime_name = (
+        base_name in _RUNTIME_STATE_FILENAMES
+        or any(
+            base_name.endswith(f"-state{suffix}")
+            for suffix in _RUNTIME_STATE_SUFFIXES
+        )
+    )
+    if not runtime_name:
+        return False
+    return (
+        len(relative.parts) == 1
+        or any(
+            part.lower() in _RUNTIME_STATE_DIRECTORIES
+            for part in relative.parts[:-1]
+        )
+    )
 
 
 def _interactions_markdown(run_id: str, task_id: str, events: list[dict[str, Any]]) -> str:

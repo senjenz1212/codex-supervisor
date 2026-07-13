@@ -5,6 +5,7 @@ import base64
 import binascii
 import json
 import os
+import re
 import subprocess
 from hashlib import sha256
 from pathlib import Path
@@ -47,6 +48,20 @@ _BOUND_REFERENCE_PREFIXES = (
     "provider-response:",
     "receipt:",
 )
+_RUNTIME_STATE_FILENAMES = frozenset({
+    "experiments.db",
+    "grades.db",
+    "state.db",
+    "state.sqlite",
+    "state.sqlite3",
+    "trace.db",
+})
+_RUNTIME_STATE_SUFFIXES = (".db", ".sqlite", ".sqlite3")
+_RUNTIME_STATE_SIDECAR_SUFFIXES = ("-journal", "-shm", "-wal")
+_RUNTIME_STATE_DIRECTORIES = frozenset({
+    ".codex-supervisor",
+    ".orchestrator-state",
+})
 
 
 def capture_acceptance_evidence(payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -89,6 +104,9 @@ def capture_acceptance_evidence(payload: dict[str, Any]) -> dict[str, Any] | Non
     if not isinstance(handoff, dict):
         handoff = {}
     root_text = str(handoff.get("cwd") or "").strip()
+    task_id = str(
+        payload.get("task_id") or handoff.get("task_id") or ""
+    ).strip()
     workspace_snapshot = (
         {
             "status": "not_found",
@@ -100,6 +118,10 @@ def capture_acceptance_evidence(payload: dict[str, Any]) -> dict[str, Any] | Non
             Path(root_text),
             handoff=handoff,
             capture_source="accepted_gate_event",
+            excluded_roots=_acceptance_artifact_roots(
+                Path(root_text),
+                task_id=task_id,
+            ),
         )
     )
     snapshot_payload = {
@@ -143,6 +165,24 @@ def capture_acceptance_evidence(payload: dict[str, Any]) -> dict[str, Any] | Non
     return evidence
 
 
+def _acceptance_artifact_roots(
+    root: Path,
+    *,
+    task_id: str,
+) -> tuple[Path, ...]:
+    safe_task_id = re.sub(r"[^A-Za-z0-9._-]+", "-", task_id).strip("-")
+    if safe_task_id in {"", ".", ".."}:
+        safe_task_id = "dual-agent-task"
+    root_resolved = root.expanduser().resolve()
+    artifact_root = root_resolved / "docs" / "dual-agent"
+    candidate = artifact_root / safe_task_id
+    try:
+        candidate.relative_to(artifact_root)
+    except ValueError:
+        return ()
+    return (candidate,)
+
+
 def capture_workspace_snapshot(
     root: Path,
     *,
@@ -163,10 +203,12 @@ def capture_workspace_snapshot(
     diff = _git_output(root, "diff", "--no-ext-diff", "HEAD")
     diff_stat = _git_output(root, "diff", "--stat", "--no-ext-diff", "HEAD")
     normalized_exclusions = _normalize_relative_exclusions(root, excluded_roots)
+    source_artifact_paths = _source_artifact_paths(root, handoff or {})
     immutable_snapshot = build_workspace_overlay(
         root,
         base_commit=head,
         excluded_roots=normalized_exclusions,
+        included_paths=source_artifact_paths,
     )
     return {
         "status": "captured" if head else "unavailable",
@@ -471,10 +513,12 @@ def build_workspace_overlay(
     *,
     base_commit: str,
     excluded_roots: Iterable[str | Path] = (),
+    included_paths: Iterable[str | Path] = (),
 ) -> dict[str, Any]:
     """Capture the public worktree delta needed to reconstruct a dirty run."""
     changed_paths = _git_changed_paths(root)
     exclusions = _normalize_relative_exclusions(root, excluded_roots)
+    inclusions = _normalize_relative_exclusions(root, included_paths)
     if changed_paths is None or not base_commit:
         payload = {
             "schema_version": "dual-agent-workspace-overlay/v1",
@@ -494,6 +538,7 @@ def build_workspace_overlay(
             path,
             root,
             excluded_roots=exclusions,
+            included_paths=inclusions,
         ):
             excluded_paths.append(relative.as_posix())
             continue
@@ -1837,6 +1882,22 @@ def _source_artifact_hashes(
     return hashes
 
 
+def _source_artifact_paths(
+    root: Path,
+    handoff: Mapping[str, Any],
+) -> tuple[Path, ...]:
+    artifacts = handoff.get("planning_artifacts")
+    if not isinstance(artifacts, list):
+        return ()
+    paths = [
+        str(artifact.get("path") or "").strip()
+        for artifact in artifacts
+        if isinstance(artifact, Mapping)
+        and str(artifact.get("path") or "").strip()
+    ]
+    return _normalize_relative_exclusions(root, paths)
+
+
 def _workspace_overlay_entry(path: Path, *, root: Path) -> dict[str, Any]:
     relative = path.relative_to(root).as_posix()
     if path.is_symlink():
@@ -1863,12 +1924,14 @@ def _excluded_snapshot_path(
     root: Path,
     *,
     excluded_roots: tuple[Path, ...] = (),
+    included_paths: tuple[Path, ...] = (),
 ) -> bool:
     relative = path.relative_to(root)
+    explicitly_included = relative in included_paths
     if any(
         relative == excluded or excluded in relative.parents
         for excluded in excluded_roots
-    ):
+    ) and not explicitly_included:
         return True
     parts = set(relative.parts)
     if parts & {
@@ -1876,8 +1939,10 @@ def _excluded_snapshot_path(
         ".venv",
         ".claude",
         ".codex",
+        ".codex-supervisor",
         ".cortex",
         ".handoff",
+        ".orchestrator-state",
         ".scratch",
         "node_modules",
         "__pycache__",
@@ -1887,9 +1952,36 @@ def _excluded_snapshot_path(
     }:
         return True
     name = path.name.lower()
+    if _is_runtime_state_snapshot_path(relative):
+        return True
     if name.startswith(".env") or name.endswith((".pem", ".key", ".p12", ".pfx")):
         return True
     return any(token in name for token in ("secret", "credential", "token"))
+
+
+def _is_runtime_state_snapshot_path(relative: Path) -> bool:
+    name = relative.name.lower()
+    base_name = name
+    for suffix in _RUNTIME_STATE_SIDECAR_SUFFIXES:
+        if base_name.endswith(suffix):
+            base_name = base_name[: -len(suffix)]
+            break
+    runtime_name = (
+        base_name in _RUNTIME_STATE_FILENAMES
+        or any(
+            base_name.endswith(f"-state{suffix}")
+            for suffix in _RUNTIME_STATE_SUFFIXES
+        )
+    )
+    if not runtime_name:
+        return False
+    return (
+        len(relative.parts) == 1
+        or any(
+            part.lower() in _RUNTIME_STATE_DIRECTORIES
+            for part in relative.parts[:-1]
+        )
+    )
 
 
 def _normalize_relative_exclusions(

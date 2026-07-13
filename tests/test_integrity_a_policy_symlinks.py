@@ -12,6 +12,7 @@ from supervisor.policy_overlay import (
     remove_repo_file_no_follow,
 )
 from supervisor.state import State
+from tests.policy_evolution_test_support import record_test_policy_proposal
 
 
 def test_normalise_overlay_target_rejects_symlinked_parent_directory(tmp_path):
@@ -55,6 +56,11 @@ def test_policy_approval_rejects_symlinked_backup_directory_before_writing(tmp_p
         }],
     }
     state = State(str(tmp_path / "state.db"))
+    proposal = record_test_policy_proposal(
+        state,
+        run_id="policy-run",
+        proposal=proposal,
+    )
 
     with pytest.raises(PolicyOverlayError, match="symlink"):
         approve_policy_proposal(
@@ -68,7 +74,17 @@ def test_policy_approval_rejects_symlinked_backup_directory_before_writing(tmp_p
 
     assert target.read_bytes() == original_bytes
     assert list(outside.iterdir()) == []
-    assert state.read_events_since("policy-run", after_event_id=0, limit=20) == []
+    assert [
+        event["kind"]
+        for event in state.read_events_since(
+            "policy-run",
+            after_event_id=0,
+            limit=20,
+        )
+    ] == [
+        "autoresearch_report_emitted",
+        "autoresearch_policy_proposal_created",
+    ]
 
 
 def test_policy_approval_rejects_symlinked_overlay_file_before_writing(tmp_path):
@@ -98,6 +114,11 @@ def test_policy_approval_rejects_symlinked_overlay_file_before_writing(tmp_path)
         }],
     }
     state = State(str(tmp_path / "state.db"))
+    proposal = record_test_policy_proposal(
+        state,
+        run_id="policy-run",
+        proposal=proposal,
+    )
 
     with pytest.raises(PolicyOverlayError, match="symlink"):
         approve_policy_proposal(
@@ -111,7 +132,17 @@ def test_policy_approval_rejects_symlinked_overlay_file_before_writing(tmp_path)
 
     assert outside_target.read_bytes() == original_bytes
     assert not (repo_root / ".handoff").exists()
-    assert state.read_events_since("policy-run", after_event_id=0, limit=20) == []
+    assert [
+        event["kind"]
+        for event in state.read_events_since(
+            "policy-run",
+            after_event_id=0,
+            limit=20,
+        )
+    ] == [
+        "autoresearch_report_emitted",
+        "autoresearch_policy_proposal_created",
+    ]
 
 
 def test_symlink_swap_cannot_redirect_cleanup_unlink_outside_repo(tmp_path):

@@ -4,6 +4,7 @@ import sys
 from hashlib import sha256
 
 from supervisor.run_manifest import (
+    _acceptance_artifact_roots,
     build_execution_provenance,
     execution_provenance_issues,
 )
@@ -38,6 +39,18 @@ def _canonical_tool_contract(name: str, content: bytes) -> dict:
         "capture_source": "execution_time",
         "source": "runtime_tool_registry",
     }
+
+
+def test_acceptance_artifact_root_rejects_parent_component(tmp_path):
+    assert _acceptance_artifact_roots(
+        tmp_path,
+        task_id="..",
+    ) == (
+        tmp_path.resolve()
+        / "docs"
+        / "dual-agent"
+        / "dual-agent-task",
+    )
 
 
 def test_observed_call_shape_cannot_stand_in_for_canonical_tool_contract():

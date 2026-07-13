@@ -6,10 +6,11 @@ import time
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 
 from .durable_jobs import resolve_evaluator_defaults
 from .orchestrator import run_autoresearch_fixture
+from .policy_evolution import PolicyClaimAuthority
 from .schema import AutoresearchAttempt, AutoresearchExperiment, sha256_json
 from .validation import DEFAULT_IMMUTABLE_PATHS
 
@@ -17,6 +18,10 @@ from .validation import DEFAULT_IMMUTABLE_PATHS
 AUTORESEARCH_DRAFT_SCHEMA_VERSION = "supervisor-autoresearch-experiment-draft/v1"
 AUTORESEARCH_ACTIVATION_SCHEMA_VERSION = "supervisor-autoresearch-experiment-activation/v1"
 AUTORESEARCH_RUNNER_SCHEMA_VERSION = "supervisor-autoresearch-auto-runner/v1"
+PolicyClaimAuthorityResolver = Callable[
+    [Mapping[str, Any], Path],
+    PolicyClaimAuthority | None,
+]
 RESERVED_OPERATOR_IDENTITIES = frozenset({
     "codex-supervisor-axi",
     "codex-supervisor",
@@ -283,6 +288,9 @@ def run_runnable_autoresearch_experiments(
     run_id_prefix: str,
     max_runnable_per_week: int | None = None,
     now: int | None = None,
+    policy_claim_authority_resolver: (
+        PolicyClaimAuthorityResolver | None
+    ) = None,
 ) -> list[dict[str, Any]]:
     """Run activated experiments through the existing durable evaluator lane."""
     timestamp = int(time.time()) if now is None else int(now)
@@ -295,6 +303,7 @@ def run_runnable_autoresearch_experiments(
     if remaining <= 0:
         return []
 
+    repo_root_path = Path(repo_root).expanduser().resolve()
     output_root_path = Path(output_root).expanduser().resolve()
     results: list[dict[str, Any]] = []
     for row in state.list_autoresearch_experiment_queue(status="runnable", limit=remaining):
@@ -317,13 +326,27 @@ def run_runnable_autoresearch_experiments(
             started_at=timestamp,
         )
         try:
+            policy_claim_authority = (
+                policy_claim_authority_resolver(row, repo_root_path)
+                if policy_claim_authority_resolver is not None
+                else None
+            )
+            if policy_claim_authority is not None and not isinstance(
+                policy_claim_authority,
+                PolicyClaimAuthority,
+            ):
+                raise TypeError(
+                    "policy_claim_authority_resolver must return "
+                    "PolicyClaimAuthority or None"
+                )
             report = run_autoresearch_fixture(
                 fixture_path=fixture_path,
                 state=state,
                 run_id=run_id,
-                repo_root=repo_root,
+                repo_root=repo_root_path,
                 output_dir=run_dir,
                 execution_mode="live",
+                policy_claim_authority=policy_claim_authority,
             )
             report_path = run_dir / "report.json"
             report_hash = sha256(report_path.read_bytes()).hexdigest() if report_path.exists() else ""

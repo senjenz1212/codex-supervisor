@@ -639,7 +639,11 @@ class EvidenceCommitter:
             field="result_json",
         )
         graph = request.trace_graph
-        closure = graph.validate_closure(now=request.closure_time)
+        with GradeBook(self.gradebook_path) as gradebook:
+            closure = graph.validate_closure(
+                now=request.closure_time,
+                decision_grade_validator=gradebook,
+            )
         if not closure.ok:
             raise EvidenceCommitIntegrityError(
                 "completed evidence trace graph no longer closes"
@@ -1070,7 +1074,11 @@ class EvidenceCommitter:
             raise EvidenceCommitIntegrityError(
                 "persisted TraceGraphStore bytes differ from requested graph"
             )
-        closure = graph.validate_closure(now=request.closure_time)
+        with GradeBook(self.gradebook_path) as gradebook:
+            closure = graph.validate_closure(
+                now=request.closure_time,
+                decision_grade_validator=gradebook,
+            )
         if not closure.ok:
             raise EvidenceCommitIntegrityError(
                 "persisted trace graph does not close: "

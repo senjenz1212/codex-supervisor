@@ -2,7 +2,8 @@
 
 ## Status
 
-**Core adapters locally tested; operational plugins not yet proven.**
+**Core adapters locally tested; one Unity EditMode compatibility run recorded;
+official SWE-bench execution remains unproven.**
 
 ## Current Repository Evidence
 
@@ -12,6 +13,12 @@
 - applyable untracked text and binary patches without index mutation;
 - hidden-root exclusion before freeze; and
 - delegation to the official SWE-bench oracle seam.
+
+The sanitized receipt
+`compatibility-unity-6000.3.10f1-20260713.json` records one successful Unity
+6000.3.10f1 EditMode execution through the Unity Test Framework verifier seam.
+It pins the Unity executable, project revision, result, patch, hidden tree, and
+frozen-result hashes.
 
 Focused command:
 
@@ -25,16 +32,15 @@ from unit tests.
 ## Not Yet Proven
 
 - No real SWE-bench official container/harness run was executed here.
-- No Unity Editor/Test Framework run was executed here.
-- The Unity adapter currently proves project identity and callback isolation,
-  not full Unity execution.
+- One Unity Editor/Test Framework compatibility run exists, but it is a
+  one-test smoke and not a representative Unity benchmark.
 - Recorded image, OS, architecture, network, and resource pins are not shown by
   these tests to be enforced at runtime.
-- No cross-arm cleanup stress test, symlink leak test, external review, skill
-  receipt, or commit was produced.
+- No powered cross-runtime or cross-task-family efficacy result exists.
 
 ## Claim Boundary
 
 Local tests support adapter schemas, patch completeness, and basic hidden-test
-separation. They do not prove official external grading, Unity compatibility,
-or end-to-end task-family parity.
+separation; the Unity receipt adds narrow operational compatibility. They do
+not prove official SWE-bench grading, task-family parity, or outcome
+improvement.
