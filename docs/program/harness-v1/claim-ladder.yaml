@@ -1,0 +1,199 @@
+schema_version: harness-v1-claim-ladder/v2
+evaluation: cumulative_fail_closed
+unsupported_level: null
+
+managed_outputs:
+  improvement_claim_allowed:
+    minimum_level: L3
+  powered_improvement_claim_allowed:
+    minimum_level: L3
+
+levels:
+  - id: L0
+    ordinal: 0
+    name: Integrity
+    claim: Evidence identity and artifact integrity are pinned.
+    predicate:
+      all:
+        - non_empty_mapping: pins
+        - sha256_mapping: hashes
+        - hashed_artifact_sequence: artifacts
+
+  - id: L1
+    ordinal: 1
+    name: Process
+    claim: A traceable detector observed the governed process.
+    inherits: L0
+    predicate:
+      record: traceable_detector
+      required:
+        detector_id: non_empty
+        trace_ref: non_empty
+        trace_sha256: sha256
+
+  - id: L2
+    ordinal: 2
+    name: Outcome
+    claim: An independent hidden verifier evaluated the frozen result.
+    inherits: L1
+    predicate:
+      record: independent_hidden_verifier
+      required:
+        verifier_id: non_empty
+        independent: true
+        hidden: true
+        result_ref: non_empty
+        result_sha256: sha256
+
+  - id: L3
+    ordinal: 3
+    name: Causal
+    claim: A randomized powered B-vs-C result supports improvement.
+    inherits: L2
+    predicate:
+      record: randomized_powered_b_vs_c
+      required:
+        comparison: B_vs_C
+        randomized: true
+        powered: true
+        supports_improvement: true
+        analysis_ref: non_empty
+        analysis_sha256: sha256
+      resolved_analysis:
+        schema_version: supervisor-b-vs-c-analysis/v1
+        validation:
+          - pilot_and_confirmation_are_disjoint_and_hash_bound
+          - randomized_assignments_are_recomputed
+          - immutable_grade_and_ledger_lineage_is_authoritative
+          - trace_graph_closes_without_waivers
+          - exact_power_and_mcnemar_result_are_recomputed
+
+  - id: L4
+    ordinal: 4
+    name: Portable
+    claim: The causal improvement semantically replicates across distinct strata.
+    inherits: L3
+    predicate:
+      record: strata_replication
+      required:
+        replicated: true
+        strata: declared_exactly_from_studies
+        model_families: declared_exactly_from_studies
+        analysis_ref: non_empty
+        analysis_sha256: sha256
+      resolved_analysis:
+        schema_version: supervisor-strata-replication-analysis/v1
+        source_binding: source_causal_analysis_sha256
+        studies:
+          minimum_count: 3
+          each:
+            analysis_ref: non_empty
+            analysis_sha256: sha256
+            schema_version: supervisor-b-vs-c-analysis/v1
+            full_l3_validation: required
+            experiment_id: distinct
+            task_ids: disjoint
+            replication_context:
+              stratum: non_empty
+              model_family: non_empty
+              model_version: pinned_not_floating
+              seen_by_optimizer: boolean
+        derived_requirements:
+          strata: at_least_two_distinct
+          model_families: at_least_three_distinct
+          optimizer_unseen_model_family: at_least_one
+          result: exactly_matches_derived_studies
+
+  - id: L5
+    ordinal: 5
+    name: ROI
+    claim: Preregistered business value exceeds complete incremental cost.
+    inherits: L4
+    predicate:
+      record: operating_cost
+      required:
+        measured: true
+        cost_usd: non_negative_number
+        supports_positive_roi: true
+        analysis_ref: non_empty
+        analysis_sha256: sha256
+      resolved_analysis:
+        schema_version: supervisor-roi-analysis/v2
+        causal_binding: causal_analysis_sha256
+        business_value_protocol:
+          schema_version: supervisor-business-value-protocol/v1
+          frozen: true
+          registered_before_first_execution: true
+          metric: independent_hidden_verifier_pass
+          currency: USD
+          decision_rule: net_value_gt_zero
+          decision_horizon: equals_causal_task_count
+          valuation_basis: named_approved_business_case
+        incremental_cost_provenance:
+          schema_version: supervisor-incremental-cost-provenance/v1
+          measurement_window: covers_execution_and_is_ordered
+          task_count: equals_causal_task_count
+          required_components:
+            compute: recompute_token_usage_pricing
+            latency: recompute_elapsed_time_value
+            risk: recompute_expected_loss
+          totals: exactly_sum_all_components
+        result:
+          successes: recomputed_from_causal_result
+          value: taken_from_preregistered_protocol
+          cost: taken_from_complete_cost_provenance
+          positive_roi: net_value_strictly_positive
+
+  - id: L6
+    ordinal: 6
+    name: Auto-improvement
+    claim: One candidate passed linked shadow, approval, canary, and rollback controls.
+    inherits: L5
+    predicate:
+      all_records:
+        frozen_control:
+          schema_version: supervisor-frozen-control-receipt/v1
+          state: frozen
+          control_and_candidate_policy_hashes: distinct
+        sealed_holdout:
+          schema_version: supervisor-sealed-holdout-receipt/v1
+          state: sealed
+          access_log: sha256
+          lifecycle: sealed_before_open_before_evaluation_complete
+        shadow_result:
+          schema_version: supervisor-shadow-result/v1
+          links:
+            - frozen_control
+            - sealed_holdout
+          requirements:
+            - candidate_not_worse_than_control
+            - zero_guardrail_regressions
+            - holdout_timestamps_match
+        rollback_receipt:
+          schema_version: supervisor-rollback-receipt/v1
+          links:
+            - frozen_control
+          requirements:
+            - restores_frozen_control
+            - tested_after_shadow
+            - positive_restore_time
+        human_approval:
+          schema_version: supervisor-human-approval-receipt/v1
+          approver_type: human
+          named_identity_and_role: required
+          links:
+            - shadow_result
+            - sealed_holdout
+            - rollback_receipt
+          timing: after_shadow_and_rollback
+        canary:
+          schema_version: supervisor-canary-result/v1
+          links:
+            - shadow_result
+            - human_approval
+            - rollback_receipt
+          requirements:
+            - traffic_fraction_strictly_between_zero_and_one
+            - candidate_not_worse_than_control
+            - zero_guardrail_regressions
+            - deployed_after_approval

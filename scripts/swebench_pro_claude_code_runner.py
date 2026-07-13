@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Pinned Claude Code runner for SWE-bench Pro single-agent attempts.
+"""Pinned Claude Code runtime adapter for SWE-bench Pro attempts.
 
 The parent solver invokes this script inside one isolated public worktree per
-attempt. This script renders the public packet into a pinned prompt, runs Claude
-Code through the configured LiteLLM route, and writes the attempt metadata JSON
-expected by ``supervisor.swe_bench_solver``. Diff capture stays in the parent
-solver so this wrapper does not need to inspect or serialize patches.
+attempt. This script renders the public packet into a pinned prompt, executes it
+through the provider-neutral ``AgentRuntime`` lifecycle, and writes the attempt
+metadata JSON expected by ``supervisor.swe_bench_solver``. Diff capture stays in
+the parent solver so this wrapper does not inspect or serialize patches.
 """
 from __future__ import annotations
 
@@ -18,12 +18,13 @@ import sys
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, Mapping, Sequence
-from urllib.parse import urlparse
+
+from supervisor.agent_runtime import AgentTask, ClaudeCodeRuntime
+from supervisor.runtime_execution import execute_agent_task_blocking
 
 
 PUBLIC_PACKET_ENV = "SWEBENCH_SOLVER_PUBLIC_PACKET"
 ATTEMPT_OUTPUT_ENV = "SWEBENCH_SOLVER_ATTEMPT_OUTPUT"
-DEFAULT_LITELLM_BASE_URL = "https://uai-litellm.internal.unity.com"
 DECISION_RE = re.compile(r"SWEBENCH_SOLVER_DECISION:\s*(accept|reject)\b", re.I)
 
 
@@ -55,26 +56,17 @@ def render_prompt(template: str, packet: Mapping[str, Any]) -> str:
     return rendered
 
 
-def _route_host(base_url: str) -> str:
-    parsed = urlparse(base_url)
-    return parsed.netloc or parsed.path
-
-
-def _claude_env(base_url: str, token_env: str) -> dict[str, str]:
+def _direct_claude_env(api_key_env: str) -> dict[str, str]:
     env = dict(os.environ)
-    env["ANTHROPIC_BASE_URL"] = base_url
-    token = env.get(token_env, "")
-    if not token:
-        return env
-    for key in ("ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"):
-        existing = env.get(key, "")
-        if existing and existing != token:
-            raise ValueError(
-                f"refusing to run Claude Code: pre-existing {key} disagrees with "
-                f"pinned LiteLLM token from {token_env}; unset {key} before invoking "
-                "this runner so the pinned route secret is used"
-            )
-        env[key] = token
+    api_key = str(env.get(api_key_env) or "").strip()
+    if not api_key:
+        raise ValueError(
+            f"refusing to run Claude Code without direct Anthropic credential "
+            f"{api_key_env}"
+        )
+    env["ANTHROPIC_API_KEY"] = api_key
+    env.pop("ANTHROPIC_AUTH_TOKEN", None)
+    env.pop("ANTHROPIC_BASE_URL", None)
     return env
 
 
@@ -102,35 +94,6 @@ def _decision_from_result(result_text: str) -> bool:
     return matches[-1].lower() == "accept"
 
 
-def build_claude_command(
-    *,
-    claude_bin: str,
-    model: str,
-    max_budget_usd: float,
-    permission_mode: str,
-    prompt: str,
-    extra_args: Sequence[str] = (),
-) -> list[str]:
-    return [
-        claude_bin,
-        "--bare",
-        "--print",
-        "--output-format",
-        "json",
-        "--no-session-persistence",
-        "--tools",
-        "default",
-        "--permission-mode",
-        permission_mode,
-        "--model",
-        model,
-        "--max-budget-usd",
-        f"{max_budget_usd:.6f}",
-        *extra_args,
-        prompt,
-    ]
-
-
 def _build_attempt_output(
     *,
     packet: Mapping[str, Any],
@@ -140,7 +103,7 @@ def _build_attempt_output(
     model: str,
     provider: str,
     runner_label: str,
-    route_base_url: str,
+    credential_env: str,
     claude_version: str,
 ) -> dict[str, Any]:
     instance_id = str(packet.get("instance_id") or "instance")
@@ -157,10 +120,12 @@ def _build_attempt_output(
         "cost_usd": float(claude_payload.get("total_cost_usd") or 0.0),
         "token_usage": _normalise_usage(claude_payload),
         "route": {
-            "kind": "anthropic_compatible_litellm",
-            "base_url": route_base_url,
-            "host": _route_host(route_base_url),
-            "secret_env": "SWEBENCH_SOLVER_LITELLM_AUTH_TOKEN",
+            "kind": "anthropic_direct",
+            "credential_env": credential_env,
+            "proxy_fields_removed": [
+                "ANTHROPIC_AUTH_TOKEN",
+                "ANTHROPIC_BASE_URL",
+            ],
         },
         "claude_code": {
             "version": claude_version,
@@ -187,22 +152,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--model", default=os.environ.get("SWEBENCH_SOLVER_MODEL", ""))
     parser.add_argument(
         "--provider",
-        default=os.environ.get("SWEBENCH_SOLVER_PROVIDER", "anthropic_via_unity_litellm"),
+        default=os.environ.get("SWEBENCH_SOLVER_PROVIDER", "anthropic_direct"),
     )
     parser.add_argument(
         "--runner-label",
-        default=os.environ.get("SWEBENCH_SOLVER_SOLVER", "claude-code-litellm-haiku"),
+        default=os.environ.get("SWEBENCH_SOLVER_SOLVER", "claude-code-direct-haiku"),
     )
     parser.add_argument(
-        "--litellm-base-url",
-        default=os.environ.get("SWEBENCH_SOLVER_LITELLM_BASE_URL", DEFAULT_LITELLM_BASE_URL),
-    )
-    parser.add_argument(
-        "--litellm-token-env",
-        default="SWEBENCH_SOLVER_LITELLM_AUTH_TOKEN",
+        "--anthropic-api-key-env",
+        default="ANTHROPIC_API_KEY",
     )
     parser.add_argument("--max-budget-usd", type=float, default=0.2)
     parser.add_argument("--permission-mode", default="bypassPermissions")
+    parser.add_argument("--timeout-s", type=float, default=900.0)
     parser.add_argument("--claude-extra-arg", action="append", default=[])
     args = parser.parse_args(argv)
 
@@ -212,39 +174,56 @@ def main(argv: list[str] | None = None) -> int:
     template = Path(args.prompt_template).read_text(encoding="utf-8")
     prompt = render_prompt(template, packet)
     prompt_hash = sha256(prompt.encode("utf-8")).hexdigest()
-    command = build_claude_command(
-        claude_bin=args.claude_bin,
-        model=args.model,
-        max_budget_usd=args.max_budget_usd,
-        permission_mode=args.permission_mode,
-        prompt=prompt,
-        extra_args=args.claude_extra_arg,
+    env = _direct_claude_env(args.anthropic_api_key_env)
+    execution = execute_agent_task_blocking(
+        ClaudeCodeRuntime(binary=args.claude_bin),
+        AgentTask(
+            task_id=(
+                "swebench-pro-"
+                f"{packet.get('instance_id') or 'instance'}-"
+                f"{packet.get('attempt_index') or 'attempt'}"
+            ),
+            instruction=prompt,
+            cwd=Path.cwd(),
+            model=args.model,
+            timeout_s=max(0.001, float(args.timeout_s)),
+            env=env,
+            inherit_env=False,
+            metadata={
+                "bare": True,
+                "no_session_persistence": True,
+                "tools": "default",
+                "permission_mode": args.permission_mode,
+                "max_budget_usd": float(args.max_budget_usd),
+                "extra_args": tuple(args.claude_extra_arg),
+                "result_metadata": {
+                    "runner_label": args.runner_label,
+                    "route_kind": "anthropic_direct",
+                },
+            },
+        ),
     )
-    env = _claude_env(args.litellm_base_url, args.litellm_token_env)
-    result = subprocess.run(
-        command,
-        text=True,
-        capture_output=True,
-        check=False,
-        env=env,
-    )
-    if result.returncode != 0:
-        sys.stderr.write(result.stderr or result.stdout)
-        return result.returncode
-    payload = json.loads(result.stdout)
-    if not isinstance(payload, dict):
-        raise ValueError("Claude JSON output must be an object")
-    result_text = str(payload.get("result") or "")
+    result = execution.result
+    if result.status != "completed":
+        sys.stderr.write(
+            str(result.metadata.get("stderr") or result.output or result.status)
+        )
+        return 1
+    result_text = result.output
     accept = _decision_from_result(result_text)
     output = _build_attempt_output(
         packet=packet,
-        claude_payload=payload,
+        claude_payload={
+            "model": result.resolved_model or args.model,
+            "total_cost_usd": result.cost_usd,
+            "usage": dict(result.token_usage),
+        },
         prompt_sha256=prompt_hash,
         accept=accept,
         model=args.model,
         provider=args.provider,
         runner_label=args.runner_label,
-        route_base_url=args.litellm_base_url,
+        credential_env=args.anthropic_api_key_env,
         claude_version=_claude_version(args.claude_bin),
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)

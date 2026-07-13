@@ -1,0 +1,28 @@
+{
+  "claim_boundary": {
+    "benchmark_improvement": false,
+    "causal_efficacy": false,
+    "operational_compatibility_only": true,
+    "portability": false,
+    "roi": false
+  },
+  "failed": 0,
+  "frozen_result_hash": "6c2363c6340fbf48e5565830a62e7c3d4aec4dc113f01cafd35a5e6095744d35",
+  "grade_passed": true,
+  "grade_score": 1.0,
+  "hidden_tree_hash": "b5b88a1a65c1c1a8b491d8cab0b975c6004656aeff6de60e1d947a79f96130a0",
+  "passed": 1,
+  "patch_hash": "505aae372079fbb389479ab51f42c6eaad9afe66237cc95b0decb3494e0b6544",
+  "results_sha256": "5f73dfe2b57aa35e66d8254ac042cb4927b70ec88680f8c51570267719b6bbd1",
+  "returncode": 0,
+  "revision": "4cfb4380369fe7232f7d6e3d0c3fa4d59c8a7402",
+  "runner": "unity_test_framework_cli",
+  "schema_version": "harness-v1-sanitized-unity-compatibility/v1",
+  "skipped": 0,
+  "source_receipt_sha256": "f7c5504e1311f51c081f6c42a0b84d702dae0acf88dba9bb7552ac278d130b49",
+  "test_platform": "EditMode",
+  "total": 1,
+  "unity_executable_sha256": "8ea985f9f1aa7eb2e67102d394be1e63b529d14ccda0bd16884ee545798cbb2f",
+  "unity_version": "6000.3.10f1",
+  "verifier_version": "6000.3.10f1+utf-1.6.0"
+}

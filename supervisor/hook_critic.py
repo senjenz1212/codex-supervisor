@@ -1,4 +1,4 @@
-"""Model-first hook critique via Claude Agent SDK.
+"""Model-first hook critique through the provider-neutral ModelClient seam.
 
 This is intentionally a tiny adapter around the optional SDK. The hook server
 depends only on the `.critique(...)` method so tests can pass fakes, and so the
@@ -10,7 +10,7 @@ import logging
 from typing import Any
 
 from .config import Config
-from .provider_routing import direct_anthropic_env
+from .model_client import ModelClient, ModelMessage, ModelRequest
 
 log = logging.getLogger(__name__)
 
@@ -32,24 +32,21 @@ Return JSON only:
 """
 
 
-class ClaudeAgentSDKHookCritic:
-    """Use Claude Agent SDK for every hook decision."""
+class ModelClientHookCritic:
+    """Use an injected model client for every hook decision."""
 
-    def __init__(self, cfg: Config, *, timeout_s: float = 20.0):
+    def __init__(
+        self,
+        cfg: Config,
+        *,
+        model_client: ModelClient,
+        timeout_s: float = 20.0,
+    ):
         self.cfg = cfg
+        self.model_client = model_client
         self.timeout_s = timeout_s
 
     async def critique(self, hook_event, *, raw_payload: dict[str, Any]) -> dict[str, Any]:
-        from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
-
-        options = ClaudeAgentOptions(
-            system_prompt=HOOK_CRITIQUE_PROMPT,
-            model=self.cfg.models.realtime_critique_model,
-            max_turns=2,
-            allowed_tools=[],
-            effort="medium",
-            env=direct_anthropic_env(),
-        )
         user_message = json.dumps({
             "target": hook_event.source_target,
             "hook_kind": hook_event.hook_kind,
@@ -58,18 +55,19 @@ class ClaudeAgentSDKHookCritic:
             "tool_args": hook_event.tool_args,
             "raw_payload": raw_payload,
         }, indent=2, default=str)[:12000]
-
-        outputs: list[str] = []
-        async with ClaudeSDKClient(options=options) as client:
-            await client.query(user_message)
-            async for msg in client.receive_response():
-                if hasattr(msg, "content"):
-                    for block in getattr(msg, "content", []) or []:
-                        text = getattr(block, "text", None)
-                        if text:
-                            outputs.append(text)
-
-        return _parse_verdict("\n".join(outputs))
+        response = await self.model_client.complete(
+            ModelRequest(
+                model=self.cfg.models.realtime_critique_model,
+                messages=(
+                    ModelMessage("system", HOOK_CRITIQUE_PROMPT),
+                    ModelMessage("user", user_message),
+                ),
+                max_tokens=512,
+                temperature=0.0,
+                metadata={"max_turns": 2, "effort": "medium"},
+            )
+        )
+        return _parse_verdict(response.text)
 
 
 def _parse_verdict(text: str) -> dict[str, Any]:

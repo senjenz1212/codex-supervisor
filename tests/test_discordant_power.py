@@ -8,6 +8,7 @@ import pytest
 from supervisor.autoresearch.policy_evolution import (
     derive_policy_evolution_proposals_from_report,
 )
+from supervisor.claim_gate import ClaimGate
 from supervisor.mergeability_bench import (
     build_mergeability_corpus_manifest,
     run_powered_factorial_mergeability_evaluation,
@@ -110,6 +111,11 @@ def test_all_concordant_rows_report_underpowered(tmp_path):
     assert report["gate_advanced"] is False
     assert report["promotion_guardrails"]["policy_mutation_allowed"] is False
     assert report["recommendation"]["applyable_policy_proposal"] is False
+    assert all(
+        arm["improvement_claim_allowed"] is False
+        for arm in report["arms"].values()
+    )
+    assert ClaimGate.validate_derived_report(report) is None
     assert derive_policy_evolution_proposals_from_report(
         report,
         repo_root=Path.cwd(),

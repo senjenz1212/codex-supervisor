@@ -4,6 +4,8 @@ import json
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 
+import pytest
+
 from supervisor.state import State
 
 
@@ -119,37 +121,83 @@ def test_read_events_since_starts_from_beginning_and_empty_tail(tmp_path):
     assert state.read_events_since("tail-run", after_event_id=0, limit=0) == []
 
 
-def test_read_events_since_tolerates_non_contiguous_event_ids(tmp_path):
+def test_event_rows_reject_update_and_delete(tmp_path):
     state = State(str(tmp_path / "state.db"))
-    first_id = state.write_event(
+    event_id = state.write_event(
         run_id="tail-run",
         source="rollout",
         kind="event_msg",
         payload={"type": "first"},
     )
-    gap_id = state.write_event(
-        run_id="tail-run",
-        source="rollout",
-        kind="event_msg",
-        payload={"type": "gap"},
-    )
-    later_id = state.write_event(
-        run_id="tail-run",
-        source="rollout",
-        kind="event_msg",
-        payload={"type": "later"},
-    )
-    state._conn.execute(
-        "DELETE FROM events WHERE run_id=? AND event_id=?",
-        ("tail-run", gap_id),
-    )
-    state._conn.commit()
 
-    tail = state.read_events_since("tail-run", after_event_id=first_id, limit=10)
+    with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+        state._conn.execute(
+            "UPDATE events SET kind='tampered' WHERE event_id=?",
+            (event_id,),
+        )
+    state._conn.rollback()
+    with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+        state._conn.execute(
+            "DELETE FROM events WHERE event_id=?",
+            (event_id,),
+        )
+    state._conn.rollback()
 
-    assert gap_id not in [event["event_id"] for event in tail]
-    assert [event["event_id"] for event in tail] == [later_id]
-    assert tail[0]["payload"]["type"] == "later"
+    assert state.verify_event_ledger_structure("tail-run").valid is True
+
+
+def test_insert_or_replace_cannot_replace_an_immutable_event(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    event_id = state.write_event(
+        run_id="replace-run",
+        source="test",
+        kind="event_msg",
+        payload={"value": "original"},
+        ts=101,
+    )
+    row = state._conn.execute(
+        """SELECT event_id, run_id, event_sequence, ts, source, kind,
+                  payload_json, previous_event_hash, event_hash,
+                  canonical_payload_hash, artifact_manifest_hash,
+                  ledger_genesis_kind
+             FROM events
+            WHERE event_id=?""",
+        (event_id,),
+    ).fetchone()
+    assert state._conn.execute(
+        "PRAGMA recursive_triggers"
+    ).fetchone()[0] == 1
+    state._conn.execute("PRAGMA recursive_triggers=OFF")
+
+    with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+        state._conn.execute(
+            """INSERT OR REPLACE INTO events(
+                 event_id, run_id, event_sequence, ts, source, kind,
+                 payload_json, previous_event_hash, event_hash,
+                 canonical_payload_hash, artifact_manifest_hash,
+                 ledger_genesis_kind)
+               VALUES(?, ?, ?, ?, 'tampered', ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                row["event_id"],
+                row["run_id"],
+                row["event_sequence"],
+                row["ts"],
+                row["kind"],
+                row["payload_json"],
+                row["previous_event_hash"],
+                row["event_hash"],
+                row["canonical_payload_hash"],
+                row["artifact_manifest_hash"],
+                row["ledger_genesis_kind"],
+            ),
+        )
+
+    persisted = state._conn.execute(
+        "SELECT source, payload_json FROM events WHERE event_id=?",
+        (event_id,),
+    ).fetchone()
+    assert persisted["source"] == "test"
+    assert json.loads(persisted["payload_json"]) == {"value": "original"}
 
 
 def test_events_run_event_index_exists_and_serves_tail_query(tmp_path):
@@ -213,9 +261,11 @@ def test_state_constructor_adds_tail_index_to_existing_database(tmp_path):
     }
     assert "idx_events_run" in index_names
     assert "idx_events_run_event" in index_names
-    assert state.read_events_since("tail-run", after_event_id=0, limit=10)[0]["payload"][
-        "type"
-    ] == "seed"
+    assert "idx_events_event_hash" in index_names
+    [event] = state.read_events_since("tail-run", after_event_id=0, limit=10)
+    assert event["payload"]["type"] == "seed"
+    assert event["ledger_genesis_kind"] == "legacy-import"
+    assert state.verify_event_ledger_structure("tail-run").valid is True
 
 
 def test_event_tail_consumer_catches_up_after_disconnect_once(tmp_path):

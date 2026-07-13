@@ -4,6 +4,14 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
+
+from supervisor.agent_runtime import (
+    AgentRunHandle,
+    AgentRunResult,
+    AgentTask,
+    RuntimeEvent,
+)
 from supervisor.agentic_executor import (
     AgenticWorkerRosterItem,
     _extract_roster_payload,
@@ -15,6 +23,189 @@ from supervisor.provider_routing import (
     ANTHROPIC_PROXY_ENV_KEYS,
     configure_direct_anthropic_process_env,
 )
+from supervisor.runtime_execution import RuntimeExecution
+
+
+def _planner_or_worker_execution(
+    task: AgentTask,
+    *,
+    runtime: str,
+    output: str,
+    status: str = "completed",
+) -> RuntimeExecution:
+    kind = {
+        "completed": "run.completed",
+        "cancelled": "run.cancelled",
+    }.get(status, "run.failed")
+    event = RuntimeEvent(
+        kind=kind,
+        payload={"type": kind},
+        ts_ms=2,
+    )
+    execution_kind = str(task.metadata["agentic_execution"]["kind"])
+    subject_id = str(
+        task.metadata.get("worker_id")
+        or task.metadata["agentic_execution"]["run_id"]
+    )
+    handle = AgentRunHandle(
+        run_id=f"run-{execution_kind}-{subject_id}",
+        task_id=task.task_id,
+        runtime=runtime,
+        session_id=f"session-{execution_kind}-{subject_id}",
+        capabilities={"cancel": True, "stream": True},
+    )
+    result = AgentRunResult(
+        run_id=handle.run_id,
+        task_id=task.task_id,
+        runtime=runtime,
+        session_id=handle.session_id,
+        status=status,
+        output=output,
+        events=(event,),
+        started_at_ms=1,
+        ended_at_ms=2,
+        cost_usd=0.2,
+        resolved_model=f"{runtime}-resolved-model",
+        result_hash="e" * 64,
+        token_usage={
+            "input_tokens": 13,
+            "output_tokens": 5,
+            "tokens_in": 13,
+            "tokens_out": 5,
+        },
+        model_provenance="fake.runtime",
+        cost_provenance="fake.runtime",
+        token_provenance="fake.runtime",
+        metadata={
+            "returncode": 0 if status == "completed" else 1,
+            "environment": {
+                "OPENAI_API_KEY": "must-not-persist",
+                "ANTHROPIC_API_KEY": "must-not-persist",
+            },
+        },
+    )
+    return RuntimeExecution(handle=handle, events=(event,), result=result)
+
+
+@pytest.mark.parametrize("runtime", ["claude_code", "codex"])
+def test_agentic_roster_planner_runtime_runner_has_provider_parity(
+    monkeypatch,
+    tmp_path: Path,
+    runtime: str,
+):
+    monkeypatch.setenv("OPENAI_API_KEY", "ambient-openai-secret")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "ambient-anthropic-secret")
+    seen_tasks: list[AgentTask] = []
+
+    def fake_runtime_runner(task: AgentTask) -> RuntimeExecution:
+        seen_tasks.append(task)
+        return _planner_or_worker_execution(
+            task,
+            runtime=runtime,
+            output='{"workers":[]}',
+        )
+
+    production = plan_agentic_worker_roster(
+        cwd=tmp_path,
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Plan isolated workers.",
+        min_subagents=0,
+        required_roles=[],
+        timeout_s=60,
+        budget_usd=0.25,
+        quality="best",
+        runtime_runner=fake_runtime_runner,
+        runtime_model=f"{runtime}-requested-model",
+    )
+
+    assert production.status == "passed"
+    assert len(seen_tasks) == 1
+    task = seen_tasks[0]
+    assert task.inherit_env is False
+    assert dict(task.env) == {}
+    assert task.model == f"{runtime}-requested-model"
+    assert task.metadata["agentic_execution"]["kind"] == "planner"
+    assert production.planner["runtime"] == runtime
+    assert production.planner["session_id"].startswith("session-planner-")
+    assert production.planner["resolved_model"] == f"{runtime}-resolved-model"
+    assert production.planner["cost_usd"] == 0.2
+    assert production.planner["token_usage"]["tokens_out"] == 5
+    assert production.planner["result_hash"] == "e" * 64
+    assert "must-not-persist" not in json.dumps(production.planner)
+
+
+def test_produce_agentic_worker_receipts_runs_planner_and_fanout_via_runtime(
+    tmp_path: Path,
+):
+    roster = {
+        "workers": [
+            {
+                "worker_id": "audit-1",
+                "role": "codebase_audit",
+                "prompt": "Inspect implementation boundaries.",
+                "timeout_s": 30,
+                "budget_usd": 0.1,
+            },
+            {
+                "worker_id": "review-1",
+                "role": "independent_reviewer",
+                "prompt": "Review runtime evidence.",
+                "timeout_s": 30,
+                "budget_usd": 0.1,
+            },
+        ]
+    }
+    seen_tasks: list[AgentTask] = []
+
+    def fake_runtime_runner(task: AgentTask) -> RuntimeExecution:
+        seen_tasks.append(task)
+        kind = task.metadata["agentic_execution"]["kind"]
+        output = json.dumps(roster) if kind == "planner" else "worker complete"
+        return _planner_or_worker_execution(
+            task,
+            runtime="codex",
+            output=output,
+        )
+
+    production = produce_agentic_worker_receipts(
+        cwd=tmp_path,
+        task_id="workflow-1",
+        run_id="workflow-run",
+        intent="Plan and execute two isolated workers.",
+        agentic_policy={
+            "agentic_lead_policy": "required",
+            "min_subagents": 2,
+            "required_roles": ["codebase_audit", "independent_reviewer"],
+        },
+        existing_receipts=[],
+        timeout_s=60,
+        budget_usd=0.25,
+        runtime_runner=fake_runtime_runner,
+        runtime_model="codex-requested-model",
+    )
+
+    assert production.status == "passed"
+    assert len(seen_tasks) == 3
+    assert [
+        task.metadata["agentic_execution"]["kind"]
+        for task in seen_tasks
+    ].count("planner") == 1
+    assert {
+        task.metadata["worker_id"]
+        for task in seen_tasks
+        if task.metadata["agentic_execution"]["kind"] == "worker"
+    } == {"audit-1", "review-1"}
+    assert [receipt["worker_id"] for receipt in production.receipts] == [
+        "audit-1",
+        "review-1",
+    ]
+    assert all(receipt["runtime"] == "codex" for receipt in production.receipts)
+    assert all(
+        receipt["session_id"].startswith("session-worker-")
+        for receipt in production.receipts
+    )
+    assert all(receipt["result_hash"] == "e" * 64 for receipt in production.receipts)
 
 
 def test_agentic_roster_planner_uses_scrubbed_direct_anthropic_env(

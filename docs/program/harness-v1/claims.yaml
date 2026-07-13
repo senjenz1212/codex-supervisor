@@ -1,0 +1,51 @@
+schema_version: harness-v1-claims/v1
+unknown_claim_policy: reject
+
+claims:
+  - id: CLAIM-HARNESS-L0-INTEGRITY
+    required_level: L0
+    canonical_text: Evidence integrity is pinned.
+    patterns:
+      - '\bevidence integrity is pinned\b'
+
+  - id: CLAIM-HARNESS-L1-PROCESS
+    required_level: L1
+    canonical_text: Process violations are traceably detected.
+    patterns:
+      - '\bprocess violations are traceably detected\b'
+
+  - id: CLAIM-HARNESS-L2-OUTCOME
+    required_level: L2
+    canonical_text: Outcomes pass an independent hidden verifier.
+    patterns:
+      - '\boutcomes pass an independent hidden verifier\b'
+
+  - id: CLAIM-HARNESS-L3-CAUSAL-IMPROVEMENT
+    required_level: L3
+    canonical_text: Supervisor improves outcomes.
+    patterns:
+      - '\bsupervisor improves outcomes\b'
+      - '\bsupervision improves outcomes\b'
+      - '\bharness improves outcomes\b'
+      - '\bsupervisor causes better outcomes\b'
+
+  - id: CLAIM-HARNESS-L4-PORTABLE-IMPROVEMENT
+    required_level: L4
+    canonical_text: Improvement generalizes across strata.
+    patterns:
+      - '\bimprovement generalizes across strata\b'
+      - '\bportable improvement\b'
+
+  - id: CLAIM-HARNESS-L5-POSITIVE-ROI
+    required_level: L5
+    canonical_text: The supervisor has positive ROI.
+    patterns:
+      - '\bpositive roi\b'
+      - '\bpays for itself\b'
+
+  - id: CLAIM-HARNESS-L6-SAFE-AUTO-IMPROVEMENT
+    required_level: L6
+    canonical_text: The system safely auto-improves.
+    patterns:
+      - '\bsafe auto[- ]improvement\b'
+      - '\bsafely auto[- ]improves\b'

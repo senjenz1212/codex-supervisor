@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10 support
+    import tomli as tomllib
 from hashlib import sha256
 from pathlib import Path
 
@@ -118,6 +121,34 @@ def test_axi_submit_status_share_idempotency_and_sanitize_receipts(capsys, tmp_p
     assert status["result"] is None
 
 
+def test_axi_rejects_no_trace_closure_for_harness_v1_task(capsys, tmp_path):
+    config = _config_path(tmp_path)
+
+    exit_code = axi.main([
+        "--config",
+        str(config),
+        "--json",
+        "submit",
+        "--cwd",
+        str(tmp_path),
+        "--task-id",
+        "trace-001-graph-20260711",
+        "--run-id",
+        "trace-001-downgrade-run",
+        "--intent",
+        "Attempt a trace closure downgrade.",
+        "--no-trace-closure-required",
+    ])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 1
+    assert "harness-v1 tasks cannot disable trace closure" in (
+        payload["error"]["message"]
+    )
+    state = State(str(tmp_path / "state.db"))
+    assert state.list_dual_agent_workflow_jobs(active_only=True) == []
+
+
 def test_axi_submit_then_detached_dispatcher_writes_request_and_spawns(capsys, tmp_path):
     config = _config_path(tmp_path)
 
@@ -152,6 +183,7 @@ def test_axi_submit_then_detached_dispatcher_writes_request_and_spawns(capsys, t
         dispatcher_id="dispatcher-test",
         popen=FakePopen,
         pid_alive=lambda pid: True,
+        process_identity_probe=lambda pid: (pid, 100.0),
     )
     dispatch = dispatcher.run_once(job_id=submit["job_id"])
 

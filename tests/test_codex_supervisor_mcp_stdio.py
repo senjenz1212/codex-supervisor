@@ -1,17 +1,31 @@
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
 import subprocess
 import sys
-import tomllib
+import threading
+import time
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10 support
+    import tomli as tomllib
 from pathlib import Path
 
 import pytest
 
 from supervisor.config import Config
+from supervisor.agent_runtime import AgentRunHandle, AgentRunResult, AgentTask
+from supervisor.autoresearch.policy_evolution import PolicyClaimAuthority
+from supervisor.claim_gate import ClaimGate
+from supervisor.runtime_execution import RuntimeExecution
 from supervisor.state import State
 from supervisor.target.types import ScopeContract
+from tests.test_claim_gate import (
+    _authoritative_causal_bundle,
+    _claim_gate_kwargs,
+)
 
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "planning_validator"
@@ -55,6 +69,41 @@ def _evaluator_quality_controls() -> dict:
     }
 
 
+def _claim_gate_authorize_policy_report(
+    report: dict,
+    *,
+    authority: PolicyClaimAuthority,
+) -> dict:
+    authorized = ClaimGate.derive_report(
+        report,
+        authority.evidence_bundle,
+        evidence_root=authority.evidence_root,
+        evidence_resolver=authority.evidence_resolver,
+        ledger_verification_resolver=(
+            authority.ledger_verification_resolver
+        ),
+        trusted_verifier_attestors=(
+            authority.trusted_verifier_attestors
+        ),
+    )
+    return authorized
+
+
+def _policy_claim_authority(evidence_root: Path) -> PolicyClaimAuthority:
+    evidence, ledger_resolver = _authoritative_causal_bundle(evidence_root)
+    claim_gate_kwargs = _claim_gate_kwargs(ledger_resolver)
+    return PolicyClaimAuthority(
+        evidence_bundle=evidence,
+        evidence_root=evidence_root,
+        ledger_verification_resolver=claim_gate_kwargs.get(
+            "ledger_verification_resolver"
+        ),
+        trusted_verifier_attestors=claim_gate_kwargs.get(
+            "trusted_verifier_attestors"
+        ),
+    )
+
+
 def _cfg(tmp_path) -> Config:
     return Config(**{
         "target": {
@@ -75,6 +124,106 @@ def _cfg(tmp_path) -> Config:
         },
         "telegram": {"bot_token": "fake", "chat_id": "42"},
     })
+
+
+def test_harness_v1_execution_gate_requires_pinned_trace_closure(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
+
+    api = CodexSupervisorMcpAPI(
+        _cfg(tmp_path),
+        State(str(tmp_path / "state.db")),
+    )
+    spec = api._gate_spec(
+        task_id="runtime-001-seams-20260711",
+        run_id="run-trace-default",
+        gate="execution",
+        instruction="Execute only with a closed trace.",
+        cwd=str(tmp_path),
+        expected_specialists=None,
+        expected_decisions=None,
+        expected_objections=None,
+        quality="best",
+        model=None,
+        budget_usd=1.0,
+        timeout_s=30,
+        execution_layer_mode="lead_direct",
+        dynamic_workflow_task_class=None,
+        agentic_policy={
+            "agentic_lead_policy": "off",
+            "min_subagents": 0,
+            "required_roles": (),
+            "solo_exception_for_artifact_only_gates": False,
+            "required_evidence_grade": "self_reported",
+        },
+        planning_artifacts=None,
+    )
+
+    assert spec.trace_closure_required is True
+    assert spec.trace_graph is None
+    assert spec.trace_now is not None
+
+
+def test_harness_v1_workflow_rejects_explicit_trace_closure_downgrade(
+    tmp_path,
+):
+    from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
+
+    state = State(str(tmp_path / "state.db"))
+    api = CodexSupervisorMcpAPI(_cfg(tmp_path), state)
+
+    with pytest.raises(
+        ValueError,
+        match="harness-v1 tasks cannot disable trace closure",
+    ):
+        api.submit_dual_agent_workflow_job(
+            cwd=str(tmp_path),
+            task_id="trace-001-graph-20260711",
+            run_id="run-trace-downgrade",
+            intent="Attempt to disable canonical trace closure.",
+            trace_closure_required=False,
+        )
+
+    assert state.list_dual_agent_workflow_jobs(active_only=True) == []
+
+
+def test_trace_graph_store_requires_sha256_pin(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
+    from supervisor.trace_graph import TraceGraphStore
+
+    trace_path = tmp_path / "trace.db"
+    with TraceGraphStore(trace_path):
+        pass
+    api = CodexSupervisorMcpAPI(
+        _cfg(tmp_path),
+        State(str(tmp_path / "state.db")),
+    )
+
+    with pytest.raises(ValueError, match="explicit sha256 pin"):
+        api._gate_spec(
+            task_id="runtime-001-seams-20260711",
+            run_id="run-trace-unpinned",
+            gate="execution",
+            instruction="Execute only with a pinned trace.",
+            cwd=str(tmp_path),
+            expected_specialists=None,
+            expected_decisions=None,
+            expected_objections=None,
+            quality="best",
+            model=None,
+            budget_usd=1.0,
+            timeout_s=30,
+            execution_layer_mode="lead_direct",
+            dynamic_workflow_task_class=None,
+            agentic_policy={
+                "agentic_lead_policy": "off",
+                "min_subagents": 0,
+                "required_roles": (),
+                "solo_exception_for_artifact_only_gates": False,
+                "required_evidence_grade": "self_reported",
+            },
+            planning_artifacts=None,
+            trace_graph_store_path=str(trace_path),
+        )
 
 
 def test_codex_supervisor_mcp_stdio_tools_call_keeps_protocol_stream_clean(tmp_path):
@@ -195,6 +344,65 @@ def _tiny_png() -> bytes:
         b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02"
         b"\x00\x00\x00\x90wS\xde"
     )
+
+
+def test_injected_cursor_runner_does_not_build_ambient_reviewer_client(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import mcp_tools.codex_supervisor_stdio as stdio
+
+    builds: list[Config | None] = []
+
+    def fake_builder(cfg: Config | None):
+        builds.append(cfg)
+        return object()
+
+    def fake_cursor_runner(request):
+        raise AssertionError("constructor test must not invoke the cursor runner")
+
+    monkeypatch.setenv("OPENAI_API_KEY", "ambient-key-must-not-be-consumed")
+    monkeypatch.setattr(stdio, "_build_reviewer_model_client", fake_builder)
+
+    api = stdio.CodexSupervisorMcpAPI(
+        _cfg(tmp_path),
+        State(str(tmp_path / "state.db")),
+        cursor_runner=fake_cursor_runner,
+    )
+
+    assert builds == []
+    assert api.reviewer_model_client is None
+    assert api.cursor_runner is fake_cursor_runner
+
+
+def test_explicit_reviewer_model_client_wins_with_injected_cursor_runner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import mcp_tools.codex_supervisor_stdio as stdio
+
+    def builder_must_not_run(cfg: Config | None):
+        raise AssertionError("explicit reviewer_model_client must win")
+
+    def fake_cursor_runner(request):
+        raise AssertionError("constructor test must not invoke the cursor runner")
+
+    explicit_client = object()
+    monkeypatch.setattr(
+        stdio,
+        "_build_reviewer_model_client",
+        builder_must_not_run,
+    )
+
+    api = stdio.CodexSupervisorMcpAPI(
+        _cfg(tmp_path),
+        State(str(tmp_path / "state.db")),
+        reviewer_model_client=explicit_client,
+        cursor_runner=fake_cursor_runner,
+    )
+
+    assert api.reviewer_model_client is explicit_client
+    assert api.cursor_runner is fake_cursor_runner
 
 
 def _write_planning_artifacts(tmp_path: Path, *, include_implementation_plan: bool = True) -> list[dict]:
@@ -389,15 +597,318 @@ async def test_codex_supervisor_mcp_exposes_dual_agent_gate_tools(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_mcp_gate_uses_runtime_lead_and_persists_runtime_provenance(
+    tmp_path: Path,
+) -> None:
+    from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
+
+    state = State(str(tmp_path / "state.db"))
+    state.register_run(
+        run_id="run-runtime-lead",
+        session_id="session-runtime-lead",
+        rollout_path=str(tmp_path / "rollout.jsonl"),
+        task="Runtime-backed gate",
+        scope=ScopeContract(allowed_paths=(".",)),
+        target_kind="codex",
+    )
+    runtime_tasks: list[AgentTask] = []
+
+    def legacy_runner_must_not_run(*args, **kwargs):
+        raise AssertionError("runtime-backed MCP gate invoked the legacy runner")
+
+    def fake_runtime_runner(task: AgentTask) -> RuntimeExecution:
+        runtime_tasks.append(task)
+        handle = AgentRunHandle(
+            run_id="runtime-lead-run",
+            task_id=task.task_id,
+            runtime="claude_code",
+            session_id="runtime-lead-session",
+            capabilities={"cancel": True, "stream": True},
+        )
+        result = AgentRunResult(
+            run_id=handle.run_id,
+            task_id=task.task_id,
+            runtime=handle.runtime,
+            session_id=handle.session_id,
+            status="completed",
+            output=_outcome_block(task.task_id),
+            events=(),
+            started_at_ms=100,
+            ended_at_ms=125,
+            cost_usd=0.031,
+            resolved_model="claude-runtime-model",
+            result_hash="a" * 64,
+            token_usage={"tokens_in": 40, "tokens_out": 20},
+            model_provenance="fake_runtime.model",
+            cost_provenance="fake_runtime.cost",
+            token_provenance="fake_runtime.usage",
+            metadata={"returncode": 0, "stderr": ""},
+        )
+        return RuntimeExecution(handle=handle, events=(), result=result)
+
+    server = build_codex_supervisor_mcp_server(
+        _cfg(tmp_path),
+        state,
+        mcp_cls=_FakeMCP,
+        runner=legacy_runner_must_not_run,
+        lead_runtime_runner=fake_runtime_runner,
+    )
+
+    result = await _maybe_await(
+        server.tools["start_dual_agent_gate"](
+            task_id="gate-runtime-lead",
+            run_id="run-runtime-lead",
+            gate="prd_review",
+            instruction="Run through the neutral runtime.",
+            cwd=str(tmp_path),
+            expected_specialists=["Planner"],
+            expected_decisions=["accept plan"],
+            expected_objections=[],
+            planning_artifacts=_write_planning_artifacts(tmp_path),
+        )
+    )
+
+    assert result["status"] == "accepted"
+    assert len(runtime_tasks) == 1
+    runtime_call = next(
+        call
+        for call in result["tool_calls"]
+        if call["name"] == "invoke_runtime_lead"
+    )
+    assert runtime_call["runtime"] == "claude_code"
+    assert runtime_call["runtime_result_hash"] == "a" * 64
+    assert runtime_call["model_provenance"] == "fake_runtime.model"
+    assert runtime_call["cost_provenance"] == "fake_runtime.cost"
+    assert runtime_call["token_provenance"] == "fake_runtime.usage"
+
+    gate_event = next(
+        row
+        for row in state.read_dual_agent_gate_events("run-runtime-lead")
+        if row["kind"] == "dual_agent_gate_result"
+    )
+    persisted = json.loads(gate_event["payload_json"])
+    persisted_call = next(
+        call
+        for call in persisted["tool_calls"]
+        if call["name"] == "invoke_runtime_lead"
+    )
+    assert persisted_call["runtime_result_hash"] == "a" * 64
+
+
+@pytest.mark.asyncio
+async def test_mcp_gate_persists_each_runtime_retry_and_aggregate_usage(
+    tmp_path: Path,
+) -> None:
+    from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
+
+    state = State(str(tmp_path / "state.db"))
+    state.register_run(
+        run_id="run-runtime-retry",
+        session_id="session-runtime-retry",
+        rollout_path=str(tmp_path / "rollout.jsonl"),
+        task="Runtime retry provenance",
+        scope=ScopeContract(allowed_paths=(".",)),
+        target_kind="codex",
+    )
+    runtime_tasks: list[AgentTask] = []
+
+    def fake_runtime_runner(task: AgentTask) -> RuntimeExecution:
+        runtime_tasks.append(task)
+        attempt = len(runtime_tasks)
+        handle = AgentRunHandle(
+            run_id=f"runtime-retry-{attempt}",
+            task_id=task.task_id,
+            runtime="claude_code",
+            session_id=f"runtime-retry-session-{attempt}",
+            capabilities={"cancel": True, "stream": True},
+        )
+        output = (
+            "<dual_agent_outcome>{bad}</dual_agent_outcome>"
+            if attempt == 1
+            else _outcome_block(task.task_id)
+        )
+        result = AgentRunResult(
+            run_id=handle.run_id,
+            task_id=task.task_id,
+            runtime=handle.runtime,
+            session_id=handle.session_id,
+            status="completed",
+            output=output,
+            events=(),
+            started_at_ms=attempt * 100,
+            ended_at_ms=(attempt * 100) + 25,
+            cost_usd=attempt / 100,
+            resolved_model=f"claude-runtime-model-{attempt}",
+            result_hash=str(attempt) * 64,
+            token_usage={
+                "tokens_in": attempt * 10,
+                "tokens_out": attempt * 5,
+            },
+            model_provenance=f"fake_runtime.model.{attempt}",
+            cost_provenance=f"fake_runtime.cost.{attempt}",
+            token_provenance=f"fake_runtime.usage.{attempt}",
+            metadata={"returncode": 0, "stderr": ""},
+        )
+        return RuntimeExecution(handle=handle, events=(), result=result)
+
+    server = build_codex_supervisor_mcp_server(
+        _cfg(tmp_path),
+        state,
+        mcp_cls=_FakeMCP,
+        lead_runtime_runner=fake_runtime_runner,
+    )
+
+    result = await _maybe_await(
+        server.tools["start_dual_agent_gate"](
+            task_id="gate-runtime-retry",
+            run_id="run-runtime-retry",
+            gate="prd_review",
+            instruction="Run through the neutral runtime.",
+            cwd=str(tmp_path),
+            expected_specialists=["Planner"],
+            expected_decisions=["accept plan"],
+            expected_objections=[],
+            planning_artifacts=_write_planning_artifacts(tmp_path),
+        )
+    )
+
+    runtime_calls = [
+        call
+        for call in result["tool_calls"]
+        if call["name"] == "invoke_runtime_lead"
+    ]
+    assert [call["runtime_result_hash"] for call in runtime_calls] == [
+        "1" * 64,
+        "2" * 64,
+    ]
+    assert [call["cost_usd"] for call in runtime_calls] == [0.01, 0.02]
+    gate_call = result["tool_calls"][0]
+    assert gate_call["result_summary"]["lead_attempt_count"] == 2
+    assert gate_call["result_summary"]["lead_total_cost_usd"] == pytest.approx(
+        0.03
+    )
+    assert gate_call["result_summary"]["lead_tokens_in"] == 30
+    assert gate_call["result_summary"]["lead_tokens_out"] == 15
+
+    gate_event = next(
+        row
+        for row in state.read_dual_agent_gate_events("run-runtime-retry")
+        if row["kind"] == "dual_agent_gate_result"
+    )
+    persisted = json.loads(gate_event["payload_json"])
+    persisted_runtime_calls = [
+        call
+        for call in persisted["tool_calls"]
+        if call["name"] == "invoke_runtime_lead"
+    ]
+    assert [call["runtime_run_id"] for call in persisted_runtime_calls] == [
+        "runtime-retry-1",
+        "runtime-retry-2",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_async_mcp_gate_does_not_block_the_event_loop(
+    tmp_path: Path,
+) -> None:
+    from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
+
+    state = State(str(tmp_path / "state.db"))
+    state.register_run(
+        run_id="run-responsive-gate",
+        session_id="session-responsive-gate",
+        rollout_path=str(tmp_path / "rollout.jsonl"),
+        task="Responsive runtime gate",
+        scope=ScopeContract(allowed_paths=(".",)),
+        target_kind="codex",
+    )
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow_runtime_runner(task: AgentTask) -> RuntimeExecution:
+        started.set()
+        if not release.wait(timeout=1):
+            raise TimeoutError("test did not release the fake runtime")
+        handle = AgentRunHandle(
+            run_id="responsive-runtime",
+            task_id=task.task_id,
+            runtime="claude_code",
+            session_id="responsive-runtime-session",
+            capabilities={"cancel": True, "stream": True},
+        )
+        result = AgentRunResult(
+            run_id=handle.run_id,
+            task_id=task.task_id,
+            runtime=handle.runtime,
+            session_id=handle.session_id,
+            status="completed",
+            output=_outcome_block(task.task_id),
+            events=(),
+            started_at_ms=100,
+            ended_at_ms=125,
+            cost_usd=0.0,
+            resolved_model="claude-runtime-model",
+            result_hash="f" * 64,
+            token_usage={},
+            metadata={"returncode": 0, "stderr": ""},
+        )
+        return RuntimeExecution(handle=handle, events=(), result=result)
+
+    server = build_codex_supervisor_mcp_server(
+        _cfg(tmp_path),
+        state,
+        mcp_cls=_FakeMCP,
+        lead_runtime_runner=slow_runtime_runner,
+    )
+    timer = threading.Timer(0.3, release.set)
+    timer.start()
+    loop = asyncio.get_running_loop()
+    began = loop.time()
+    gate_task = asyncio.create_task(
+        _maybe_await(
+            server.tools["start_dual_agent_gate"](
+                task_id="gate-responsive",
+                run_id="run-responsive-gate",
+                gate="prd_review",
+                instruction="Run without blocking other MCP requests.",
+                cwd=str(tmp_path),
+                expected_specialists=["Planner"],
+                expected_decisions=["accept plan"],
+                expected_objections=[],
+                planning_artifacts=_write_planning_artifacts(tmp_path),
+            )
+        )
+    )
+    try:
+        await asyncio.sleep(0.03)
+        heartbeat_elapsed = loop.time() - began
+        assert heartbeat_elapsed < 0.15
+        assert started.is_set()
+        release.set()
+        result = await gate_task
+    finally:
+        release.set()
+        timer.cancel()
+
+    assert result["status"] == "accepted"
+
+
+@pytest.mark.asyncio
 async def test_autoresearch_policy_evolution_tools_apply_only_after_operator_approval(tmp_path):
     from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
     from supervisor.autoresearch.policy_evolution import PolicyEvolutionError
 
     state = State(str(tmp_path / "state.db"))
+    claim_authority = _policy_claim_authority(
+        tmp_path / "claim-authority-explicit"
+    )
     server = build_codex_supervisor_mcp_server(
         _cfg(tmp_path),
         state,
         mcp_cls=_FakeMCP,
+        policy_claim_authority_resolver=(
+            lambda _report, _repo_root: claim_authority
+        ),
     )
     target = tmp_path / ".supervisor" / "policy-overlay.yaml"
     candidate = tmp_path / "candidates" / "policy-overlay.yaml"
@@ -406,33 +917,44 @@ async def test_autoresearch_policy_evolution_tools_apply_only_after_operator_app
     target.write_text("before prompt\n", encoding="utf-8")
     candidate.write_text("after prompt\n", encoding="utf-8")
     report_path = tmp_path / "autoresearch-report.json"
-    report_path.write_text(json.dumps({
-        "schema_version": "supervisor-autoresearch-summary/v1",
-        "report_sha256": "report-sha",
-        "records": [{
-            "experiment_id": "exp-policy-1",
-            "task_id": "task-policy-1",
-            "attempt_id": "attempt-policy-1",
-            "validation_status": "accepted",
-            "recommendation": "candidate needs operator approval",
-            "metric_name": "reviewer_evidence_score",
-            "metric_trials": [0.74, 0.82, 0.86],
-            "metric_median": 0.82,
-            "metric_iqr": 0.12,
-            "metric_source": "evaluator_execution",
-            "evaluator_run_ref": "docs/dual-agent/run/evaluator-runs/attempt-policy-1.json",
-            "evaluator_run_hash": "evaluator-run-hash",
-            "changed_files": ["candidates/policy-overlay.yaml"],
-            "evaluator_quality": _evaluator_quality_controls(),
-            "gaming_flags": [],
-            "validation_errors": [],
-            "cost_usd": 0.19,
-            "wall_clock_s": 12.5,
-            "default_change_allowed": False,
-            "policy_mutated": False,
-            "gate_advanced": False,
-        }],
-    }), encoding="utf-8")
+    report_path.write_text(
+        json.dumps(
+            _claim_gate_authorize_policy_report(
+                {
+                    "schema_version": "supervisor-autoresearch-summary/v1",
+                    "report_sha256": "report-sha",
+                    "records": [{
+                        "experiment_id": "exp-policy-1",
+                        "task_id": "task-policy-1",
+                        "attempt_id": "attempt-policy-1",
+                        "validation_status": "accepted",
+                        "recommendation": "candidate needs operator approval",
+                        "metric_name": "reviewer_evidence_score",
+                        "metric_trials": [0.74, 0.82, 0.86],
+                        "metric_median": 0.82,
+                        "metric_iqr": 0.12,
+                        "metric_source": "evaluator_execution",
+                        "evaluator_run_ref": (
+                            "docs/dual-agent/run/evaluator-runs/"
+                            "attempt-policy-1.json"
+                        ),
+                        "evaluator_run_hash": "evaluator-run-hash",
+                        "changed_files": ["candidates/policy-overlay.yaml"],
+                        "evaluator_quality": _evaluator_quality_controls(),
+                        "gaming_flags": [],
+                        "validation_errors": [],
+                        "cost_usd": 0.19,
+                        "wall_clock_s": 12.5,
+                        "default_change_allowed": False,
+                        "policy_mutated": False,
+                        "gate_advanced": False,
+                    }],
+                },
+                authority=claim_authority,
+            )
+        ),
+        encoding="utf-8",
+    )
 
     created = await _maybe_await(server.tools["create_autoresearch_policy_proposals"](
         report_path=str(report_path),
@@ -506,10 +1028,16 @@ async def test_autoresearch_policy_proposal_tool_derives_from_report_without_can
     from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
 
     state = State(str(tmp_path / "state.db"))
+    claim_authority = _policy_claim_authority(
+        tmp_path / "claim-authority-derived"
+    )
     server = build_codex_supervisor_mcp_server(
         _cfg(tmp_path),
         state,
         mcp_cls=_FakeMCP,
+        policy_claim_authority_resolver=(
+            lambda _report, _repo_root: claim_authority
+        ),
     )
     target = tmp_path / ".supervisor" / "policy-overlay.yaml"
     candidate = tmp_path / "candidates" / "policy-overlay.yaml"
@@ -518,47 +1046,60 @@ async def test_autoresearch_policy_proposal_tool_derives_from_report_without_can
     target.write_text("before prompt\n", encoding="utf-8")
     candidate.write_text("after prompt\n", encoding="utf-8")
     report_path = tmp_path / "autoresearch-report.json"
-    report_path.write_text(json.dumps({
-        "schema_version": "supervisor-autoresearch-summary/v1",
-        "report_sha256": "report-sha",
-        "records": [{
-            "experiment_id": "exp-policy-1",
-            "task_id": "task-policy-1",
-            "attempt_id": "attempt-policy-1",
-            "validation_status": "accepted",
-            "recommendation": "candidate needs operator approval",
-            "metric_name": "reviewer_evidence_score",
-            "metric_trials": [0.74, 0.82, 0.86],
-            "metric_median": 0.82,
-            "metric_iqr": 0.12,
-            "metric_before": 0.7,
-            "metric_after": 0.82,
-            "metric_delta": 0.12,
-            "empty_floor_comparison": {
-                "metric_source": "evaluator_execution",
-                "empty_floor_metric": 0.7,
-                "candidate_metric": 0.82,
-                "metric_delta": 0.12,
-                "k_trials": 3,
-            },
-            "quality_unstable_across_trials": True,
-            "metric_source": "evaluator_execution",
-            "evaluator_run_ref": "docs/dual-agent/run/evaluator-runs/attempt-policy-1.json",
-            "evaluator_run_hash": "evaluator-run-hash",
-            "changed_files": ["candidates/policy-overlay.yaml"],
-            "policy_candidate_changes": {
-                ".supervisor/policy-overlay.yaml": "candidates/policy-overlay.yaml",
-            },
-            "evaluator_quality": _evaluator_quality_controls(),
-            "gaming_flags": [],
-            "validation_errors": [],
-            "cost_usd": 0.19,
-            "wall_clock_s": 12.5,
-            "default_change_allowed": False,
-            "policy_mutated": False,
-            "gate_advanced": False,
-        }],
-    }), encoding="utf-8")
+    report_path.write_text(
+        json.dumps(
+            _claim_gate_authorize_policy_report(
+                {
+                    "schema_version": "supervisor-autoresearch-summary/v1",
+                    "report_sha256": "report-sha",
+                    "records": [{
+                        "experiment_id": "exp-policy-1",
+                        "task_id": "task-policy-1",
+                        "attempt_id": "attempt-policy-1",
+                        "validation_status": "accepted",
+                        "recommendation": "candidate needs operator approval",
+                        "metric_name": "reviewer_evidence_score",
+                        "metric_trials": [0.74, 0.82, 0.86],
+                        "metric_median": 0.82,
+                        "metric_iqr": 0.12,
+                        "metric_before": 0.7,
+                        "metric_after": 0.82,
+                        "metric_delta": 0.12,
+                        "empty_floor_comparison": {
+                            "metric_source": "evaluator_execution",
+                            "empty_floor_metric": 0.7,
+                            "candidate_metric": 0.82,
+                            "metric_delta": 0.12,
+                            "k_trials": 3,
+                        },
+                        "quality_unstable_across_trials": True,
+                        "metric_source": "evaluator_execution",
+                        "evaluator_run_ref": (
+                            "docs/dual-agent/run/evaluator-runs/"
+                            "attempt-policy-1.json"
+                        ),
+                        "evaluator_run_hash": "evaluator-run-hash",
+                        "changed_files": ["candidates/policy-overlay.yaml"],
+                        "policy_candidate_changes": {
+                            ".supervisor/policy-overlay.yaml": (
+                                "candidates/policy-overlay.yaml"
+                            ),
+                        },
+                        "evaluator_quality": _evaluator_quality_controls(),
+                        "gaming_flags": [],
+                        "validation_errors": [],
+                        "cost_usd": 0.19,
+                        "wall_clock_s": 12.5,
+                        "default_change_allowed": False,
+                        "policy_mutated": False,
+                        "gate_advanced": False,
+                    }],
+                },
+                authority=claim_authority,
+            )
+        ),
+        encoding="utf-8",
+    )
 
     created = await _maybe_await(server.tools["create_autoresearch_policy_proposals"](
         report_path=str(report_path),
@@ -1612,16 +2153,41 @@ async def test_codex_supervisor_mcp_records_rounds_checks_budget_and_polls_resum
 def test_codex_supervisor_mcp_start_codex_session_can_dry_run_or_execute_with_runner(tmp_path):
     from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
 
-    calls = []
+    calls: list[AgentTask] = []
 
-    def fake_codex_runner(argv, **kwargs):
-        calls.append({"argv": argv, "kwargs": kwargs})
-        return subprocess.CompletedProcess(argv, 0, stdout='{"type":"turn.completed"}\n', stderr="")
+    def fake_codex_runtime_runner(task: AgentTask) -> RuntimeExecution:
+        calls.append(task)
+        handle = AgentRunHandle(
+            run_id="codex-runtime-run",
+            task_id=task.task_id,
+            runtime="codex",
+            session_id="codex-runtime-session",
+            capabilities={"cancel": True, "stream": True},
+        )
+        result = AgentRunResult(
+            run_id=handle.run_id,
+            task_id=task.task_id,
+            runtime=handle.runtime,
+            session_id=handle.session_id,
+            status="completed",
+            output="done",
+            events=(),
+            started_at_ms=100,
+            ended_at_ms=120,
+            cost_usd=0.0,
+            resolved_model="gpt-5.5",
+            result_hash="codex-result-hash",
+            token_usage={"tokens_in": 3, "tokens_out": 1},
+            model_provenance="fake.model",
+            token_provenance="fake.usage",
+            metadata={"returncode": 0, "stderr": ""},
+        )
+        return RuntimeExecution(handle=handle, events=(), result=result)
 
     api = CodexSupervisorMcpAPI(
         _cfg(tmp_path),
         State(str(tmp_path / "state.db")),
-        codex_runner=fake_codex_runner,
+        codex_runtime_runner=fake_codex_runtime_runner,
     )
 
     dry_run = api.start_codex_session(
@@ -1640,10 +2206,11 @@ def test_codex_supervisor_mcp_start_codex_session_can_dry_run_or_execute_with_ru
     assert dry_run["argv"][:2] == ["codex", "exec"]
     assert dry_run["argv"][dry_run["argv"].index("-m") + 1] == "gpt-5.5"
     assert 'reasoning_effort="xhigh"' in dry_run["argv"]
-    assert calls[0]["argv"][:2] == ["codex", "exec"]
-    assert calls[0]["argv"][calls[0]["argv"].index("-m") + 1] == "gpt-5.5"
-    assert 'reasoning_effort="xhigh"' in calls[0]["argv"]
+    assert calls[0].model == "gpt-5.5"
+    assert calls[0].metadata["reasoning_effort"] == "xhigh"
     assert executed["status"] == "completed"
+    assert executed["runtime"] == "codex"
+    assert executed["result_hash"] == "codex-result-hash"
 
 
 def test_codex_supervisor_mcp_console_script_is_registered():

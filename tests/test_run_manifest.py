@@ -2,12 +2,42 @@ from __future__ import annotations
 
 import sys
 from hashlib import sha256
-from pathlib import Path
 
 from supervisor.run_manifest import (
     build_execution_provenance,
     execution_provenance_issues,
 )
+
+
+def _runtime_component_receipt(
+    category: str,
+    component_id: str,
+    *,
+    content: bytes | None = None,
+    digest: str | None = None,
+) -> dict:
+    receipt = {
+        "category": category,
+        "component_id": component_id,
+        "sha256": digest or sha256(content or b"").hexdigest(),
+        "receipt_ref": f"receipt://runtime-component/{category}/{component_id}",
+        "capture_source": "execution_time",
+        "source": "runtime_component_receipt",
+    }
+    if content is not None:
+        receipt["canonical_bytes"] = content
+    return receipt
+
+
+def _canonical_tool_contract(name: str, content: bytes) -> dict:
+    return {
+        "tool_name": name,
+        "canonical_bytes": content,
+        "sha256": sha256(content).hexdigest(),
+        "receipt_ref": f"receipt://tool-contract/{name}",
+        "capture_source": "execution_time",
+        "source": "runtime_tool_registry",
+    }
 
 
 def test_observed_call_shape_cannot_stand_in_for_canonical_tool_contract():
@@ -32,7 +62,7 @@ def test_observed_call_shape_cannot_stand_in_for_canonical_tool_contract():
     assert "tool_contracts" in provenance["missing_component_categories"]
     assert provenance["missing_tool_contracts"] == ["mutate_repository"]
     [contract] = provenance["component_hashes"]["tool_contracts"]
-    assert len(contract["sha256"]) == 64
+    assert contract["sha256"] == ""
     assert contract["details"]["status"] == "not_recorded"
 
 
@@ -53,6 +83,8 @@ def test_canonical_tool_contract_digest_mismatch_fails_closed():
             "tool_name": "mutate_repository",
             "canonical_bytes": contract_bytes,
             "sha256": "0" * 64,
+            "receipt_ref": "receipt://tool-contract/mutate_repository",
+            "capture_source": "execution_time",
             "source": "runtime_tool_registry",
         }],
         workspace_snapshot={"root": "/recorded/workspace"},
@@ -68,12 +100,7 @@ def test_canonical_tool_contract_digest_mismatch_fails_closed():
 
 def test_tool_contract_hash_comes_from_canonical_bytes_not_observed_fields():
     contract_bytes = b'{"name":"mutate_repository","inputSchema":{"type":"object"}}'
-    contract = {
-        "tool_name": "mutate_repository",
-        "canonical_bytes": contract_bytes,
-        "sha256": sha256(contract_bytes).hexdigest(),
-        "source": "runtime_tool_registry",
-    }
+    contract = _canonical_tool_contract("mutate_repository", contract_bytes)
 
     def build(args, result_summary):
         return build_execution_provenance(
@@ -157,7 +184,9 @@ def test_provider_model_resolution_input_supersedes_a_route_alias():
             "provider_family": "provider",
             "requested_model": "default",
             "resolved_model": "provider/model-v1-20260713",
-            "provider_response_source": "transport.response.model",
+            "provider_response_receipt_ref": (
+                "receipt://provider-response/executor-0"
+            ),
         }],
         workspace_snapshot={"root": "/recorded/workspace"},
     )
@@ -165,10 +194,46 @@ def test_provider_model_resolution_input_supersedes_a_route_alias():
     [lane] = provenance["model_resolutions"]
     assert lane["requested_model"] == "default"
     assert lane["resolved_model"] == "provider/model-v1-20260713"
-    assert lane["provider_response_source"] == "transport.response.model"
+    assert (
+        lane["provider_response_source"]
+        == "receipt://provider-response/executor-0"
+    )
     assert lane["resolution_source"] == "response_model"
     assert lane["exact_model_identity"] is True
     assert provenance["unresolved_model_lanes"] == []
+
+
+def test_provider_model_resolution_without_bound_response_receipt_stays_unresolved():
+    provenance = build_execution_provenance(
+        events=[{
+            "event_id": 4,
+            "gate": "execution",
+            "kind": "supervisor_worker_completed",
+            "payload": {
+                "worker_id": "executor-0",
+                "runtime": "custom",
+                "provider_family": "provider",
+                "requested_model": "default",
+                "model": "default",
+            },
+        }],
+        provider_model_resolutions=[{
+            "event_id": 4,
+            "gate": "execution",
+            "lane": "executor-0",
+            "runtime": "custom",
+            "provider_family": "provider",
+            "requested_model": "default",
+            "resolved_model": "provider/model-v1-20260713",
+        }],
+        workspace_snapshot={"root": "/recorded/workspace"},
+    )
+
+    [lane] = provenance["model_resolutions"]
+    assert lane["provider_response_source"] == ""
+    assert lane["resolution_source"] != "response_model"
+    assert lane["exact_model_identity"] is False
+    assert provenance["unresolved_model_lanes"] == [lane["lane_id"]]
 
 
 def test_default_model_route_is_resolved_but_missing_components_stay_incomplete():
@@ -275,10 +340,145 @@ def test_unresolved_workspace_image_cli_and_evaluator_keep_manifest_incomplete(
     assert provenance["workspace_issues"] == ["workspace_snapshot_not_captured"]
 
 
+def test_one_runtime_component_receipt_cannot_mask_an_unrecorded_used_component():
+    provenance = build_execution_provenance(
+        events=[{
+            "event_id": 1,
+            "gate": "execution",
+            "kind": "agent.message",
+            "payload": {
+                "prompt": "Execute both tools.",
+                "trace_envelope": {
+                    "tool_calls": [
+                        {
+                            "name": "invoke_recorded_runtime",
+                            "args": {"runtime": "custom"},
+                        },
+                        {
+                            "name": "invoke_unrecorded_runtime",
+                            "args": {"runtime": "custom"},
+                        },
+                    ],
+                },
+            },
+        }],
+        runtime_component_receipts=[
+            _runtime_component_receipt(
+                "cli",
+                "cli:invoke_recorded_runtime",
+                content=b"recorded runtime bytes",
+            ),
+        ],
+        workspace_snapshot={"root": "/recorded/workspace"},
+    )
+
+    cli_components = {
+        item["component_id"]: item
+        for item in provenance["component_hashes"]["cli"]
+    }
+    assert cli_components["cli:invoke_recorded_runtime"]["details"]["status"] == (
+        "verified"
+    )
+    assert cli_components["cli:invoke_unrecorded_runtime"]["details"]["status"] == (
+        "not_recorded"
+    )
+    assert "cli" in provenance["missing_component_categories"]
+
+
+def test_cli_and_evaluator_claims_are_not_rehashed_or_trusted_at_export():
+    provenance = build_execution_provenance(
+        events=[{
+            "event_id": 1,
+            "gate": "execution",
+            "kind": "agent.message",
+            "payload": {
+                "prompt": "Run and evaluate.",
+                "trace_envelope": {
+                    "tool_calls": [
+                        {
+                            "name": "invoke_custom",
+                            "args": {
+                                "runtime": "custom",
+                                "cli_command": sys.executable,
+                                "executable_sha256": "a" * 64,
+                            },
+                        },
+                        {
+                            "name": "verify_result",
+                            "args": {
+                                "evaluator_sha256": "b" * 64,
+                            },
+                        },
+                    ],
+                },
+            },
+        }],
+        workspace_snapshot={"root": "/recorded/workspace"},
+    )
+
+    [cli] = provenance["component_hashes"]["cli"]
+    [evaluator] = provenance["component_hashes"]["evaluators"]
+    assert cli["sha256"] == ""
+    assert cli["details"]["status"] == "not_recorded"
+    assert evaluator["sha256"] == ""
+    assert evaluator["details"]["status"] == "not_recorded"
+    assert {"cli", "evaluators"} <= set(
+        provenance["missing_component_categories"]
+    )
+
+
+def test_bound_execution_time_cli_and_evaluator_digests_are_accepted():
+    provenance = build_execution_provenance(
+        events=[{
+            "event_id": 1,
+            "gate": "execution",
+            "kind": "agent.message",
+            "payload": {
+                "prompt": "Run and evaluate.",
+                "trace_envelope": {
+                    "tool_calls": [
+                        {
+                            "name": "invoke_custom",
+                            "args": {"runtime": "custom"},
+                        },
+                        {
+                            "name": "verify_result",
+                            "args": {},
+                        },
+                    ],
+                },
+            },
+        }],
+        runtime_component_receipts=[
+            _runtime_component_receipt(
+                "cli",
+                "cli:invoke_custom",
+                digest="a" * 64,
+            ),
+            _runtime_component_receipt(
+                "evaluators",
+                "evaluator:verify_result",
+                digest="b" * 64,
+            ),
+        ],
+        workspace_snapshot={"root": "/recorded/workspace"},
+    )
+
+    [cli] = provenance["component_hashes"]["cli"]
+    [evaluator] = provenance["component_hashes"]["evaluators"]
+    assert cli["sha256"] == "a" * 64
+    assert cli["details"]["status"] == "verified"
+    assert cli["details"]["digest_only"] is True
+    assert evaluator["sha256"] == "b" * 64
+    assert evaluator["details"]["status"] == "verified"
+    assert evaluator["details"]["digest_only"] is True
+    assert "cli" not in provenance["missing_component_categories"]
+    assert "evaluators" not in provenance["missing_component_categories"]
+
+
 def test_manifest_is_complete_only_when_bytes_models_and_workspace_are_pinned(
     tmp_path,
 ):
-    executable_hash = sha256(Path(sys.executable).read_bytes()).hexdigest()
     tool_contract_bytes = {
         "invoke_custom": (
             b'{"name":"invoke_custom","inputSchema":{"type":"object"}}'
@@ -306,12 +506,12 @@ def test_manifest_is_complete_only_when_bytes_models_and_workspace_are_pinned(
                             "name": "invoke_custom",
                             "args": {
                                 "runtime": "custom",
-                                "cli_command": sys.executable,
+                                "cli_command": "custom-cli",
                             },
                         },
                         {
                             "name": "verify_result",
-                            "args": {"verifier_hash": "c" * 64},
+                            "args": {},
                         },
                     ],
                 },
@@ -325,16 +525,30 @@ def test_manifest_is_complete_only_when_bytes_models_and_workspace_are_pinned(
             "provider_family": "provider",
             "requested_model": "provider/model-v1",
             "resolved_model": "provider/model-v1-20260713",
-            "provider_response_source": "transport.response.model",
+            "provider_response_receipt_ref": (
+                "receipt://provider-response/agent-message"
+            ),
         }],
         canonical_tool_contracts=[
-            {
-                "tool_name": name,
-                "canonical_bytes": canonical_bytes,
-                "sha256": sha256(canonical_bytes).hexdigest(),
-                "source": "runtime_tool_registry",
-            }
+            _canonical_tool_contract(name, canonical_bytes)
             for name, canonical_bytes in tool_contract_bytes.items()
+        ],
+        runtime_component_receipts=[
+            _runtime_component_receipt(
+                "containers",
+                "container:container_digest",
+                digest="b" * 64,
+            ),
+            _runtime_component_receipt(
+                "cli",
+                "cli:invoke_custom",
+                content=b"custom cli executable bytes",
+            ),
+            _runtime_component_receipt(
+                "evaluators",
+                "evaluator:verify_result",
+                content=b"verify result evaluator bytes",
+            ),
         ],
         workspace_snapshot={
             "status": "captured",
@@ -349,7 +563,6 @@ def test_manifest_is_complete_only_when_bytes_models_and_workspace_are_pinned(
         },
     )
 
-    assert executable_hash
     assert provenance["status"] == "complete"
     assert provenance["missing_component_categories"] == []
     assert provenance["missing_tool_contracts"] == []

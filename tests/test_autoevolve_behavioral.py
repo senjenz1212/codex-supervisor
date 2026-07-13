@@ -18,7 +18,9 @@ from supervisor.autoresearch.policy_evolution import (
     report_contains_derivable_policy_record,
 )
 from supervisor.autoresearch.schema import AutoresearchExperiment
+from supervisor.claim_gate import ClaimGate
 from supervisor.state import State
+from tests.test_claim_gate import _authoritative_causal_bundle, _claim_gate_kwargs
 
 
 BASE_OVERLAY = (
@@ -98,6 +100,25 @@ def _report(*records: dict) -> dict:
             "operator_review_required": True,
         },
         "records": list(records),
+    }
+
+
+def _claim_gate_authorize_report(
+    report: dict,
+    *,
+    evidence_root: Path,
+) -> tuple[dict, dict[str, object]]:
+    evidence, ledger_resolver = _authoritative_causal_bundle(evidence_root)
+    authorized = ClaimGate.derive_report(
+        report,
+        evidence,
+        evidence_root=evidence_root,
+        **_claim_gate_kwargs(ledger_resolver),
+    )
+    return authorized, {
+        "claim_evidence_bundle": evidence,
+        "claim_evidence_root": evidence_root,
+        **_claim_gate_kwargs(ledger_resolver),
     }
 
 
@@ -274,12 +295,17 @@ def test_benchmark_report_not_on_derivation_path(tmp_path):
 def test_adoption_requires_named_operator(tmp_path):
     state = State(str(tmp_path / "state.db"))
     _write_policy_files(tmp_path)
-    [proposal] = derive_policy_evolution_proposals_from_report(
+    report, claim_authority = _claim_gate_authorize_report(
         _report(_applyable_record()),
+        evidence_root=tmp_path / "claim-authority",
+    )
+    [proposal] = derive_policy_evolution_proposals_from_report(
+        report,
         repo_root=tmp_path,
         affected_gates=("outcome_review",),
         state=state,
         run_id="policy-run",
+        **claim_authority,
     )
     assert proposal["requires_operator_approval"] is True
     assert proposal["automatic_policy_mutation"] is False

@@ -1,67 +1,48 @@
-"""Claude Code `/lead` invocation boundary for dual-agent gates.
+"""Provider-neutral lead invocation boundary for dual-agent gates.
 
 The deterministic Slice 0 validators live in `supervisor.dual_agent`. This
-module is the thin process boundary that turns a gate request into a Claude
-Code command, captures the result, and adapts the transcript back into those
-validators. Tests inject a fake runner; live probes can use the default runner.
+module turns a gate request into an ``AgentTask`` and adapts the resulting
+``AgentRunResult`` back into those validators. A legacy Claude subprocess edge
+remains available for existing fake-runner tests and unmigrated callers.
 """
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 from hashlib import sha256
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Literal
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .dual_agent import Outcome, ProbeResult, evaluate_outcome_fidelity
 from .agent_mailbox import critical_review_prompt
+from .agent_runtime import AgentRunResult, AgentTask
+from .dual_agent_legacy_claude import (
+    CLAUDE_CHEAP_MODEL as CLAUDE_CHEAP_MODEL,
+    CLAUDE_OPUS_SAFE_OVERRIDE_EXTRA_BODY as CLAUDE_OPUS_SAFE_OVERRIDE_EXTRA_BODY,
+    CLAUDE_OPUS_ULTIMATE_EXTRA_BODY as CLAUDE_OPUS_ULTIMATE_EXTRA_BODY,
+    CLAUDE_OPUS_ULTIMATE_MODEL as CLAUDE_OPUS_ULTIMATE_MODEL,
+    CLAUDE_OPUS_UNDERLYING_MODEL as CLAUDE_OPUS_UNDERLYING_MODEL,
+    CLAUDE_PRIMARY_MODEL as CLAUDE_PRIMARY_MODEL,
+    REPORT_ONLY_EXECUTION_ALLOWED_TOOLS,
+    REPORT_ONLY_EXECUTION_PERMISSION_MODE,
+    Runner,
+    build_legacy_claude_command,
+    build_legacy_claude_environment,
+    run_legacy_claude,
+    uses_adaptive_opus_effort,
+)
 from .provider_routing import (
     COMPLEX_ANTHROPIC_EFFORT,
     DEFAULT_ANTHROPIC_EFFORT,
-    DEFAULT_ANTHROPIC_MODEL,
-    direct_anthropic_env,
 )
+from .runtime_execution import RuntimeTaskRunner
 
 
 HANDOFF_PACKET_SCHEMA_VERSION = "dual-agent-handoff/v1"
-CLAUDE_PRIMARY_MODEL = DEFAULT_ANTHROPIC_MODEL
-CLAUDE_OPUS_ULTIMATE_MODEL = "opus"
-CLAUDE_OPUS_UNDERLYING_MODEL = "claude-opus-4-8"
-CLAUDE_OPUS_SAFE_OVERRIDE_MODEL = "claude-opus-4-6"
-CLAUDE_CHEAP_MODEL = "haiku"
-CLAUDE_OPUS_ULTIMATE_EXTRA_BODY = {
-    "thinking": {"type": "adaptive"},
-    "output_config": {"effort": "xhigh"},
-}
-CLAUDE_OPUS_SAFE_OVERRIDE_EXTRA_BODY = {
-    "thinking": {"type": "adaptive"},
-    "output_config": {"effort": "max"},
-}
-REPORT_ONLY_EXECUTION_ALLOWED_TOOLS: tuple[str, ...] = (
-    "Read",
-    "Grep",
-    "Glob",
-    "LS",
-    "Edit",
-    "MultiEdit",
-    "Write",
-    "Bash(git status*)",
-    "Bash(git diff*)",
-    "Bash(*.venv/bin/python -m pytest*)",
-    "Bash(python -m pytest*)",
-    "Bash(python3 -m pytest*)",
-    "Bash(*.venv/bin/python -m cortex.vela_eval.runner*)",
-    "Bash(python -m cortex.vela_eval.runner*)",
-    "Bash(python3 -m cortex.vela_eval.runner*)",
-    "Bash(curl http://127.0.0.1:5173*)",
-    "Bash(curl http://localhost:5173*)",
-)
-REPORT_ONLY_EXECUTION_PERMISSION_MODE = "dontAsk"
 
 GateName = Literal[
     "intent",
@@ -171,9 +152,15 @@ class LeadInvocationResult:
     tokens_in: int | None = None
     tokens_out: int | None = None
     token_usage: dict[str, Any] = field(default_factory=dict)
-
-
-Runner = Callable[..., subprocess.CompletedProcess[str]]
+    runtime: str | None = None
+    runtime_run_id: str | None = None
+    runtime_session_id: str | None = None
+    runtime_result_hash: str | None = None
+    runtime_duration_ms: int | None = None
+    model_provenance: str = ""
+    cost_provenance: str = ""
+    token_provenance: str = ""
+    agent_run_result: AgentRunResult | None = None
 
 
 class PlanningArtifact(BaseModel):
@@ -327,8 +314,17 @@ def build_lead_prompt(request: LeadInvocationRequest) -> str:
             "replace gate review, outcome validation, receipts, or the final Codex-supervised artifact. "
             "Use it only for fan-out execution work and report the preview gates in the outcome claims.\n"
         )
+    corrective_retry = "Corrective retry:" in request.instruction
     implementation_contract = ""
-    if request.gate == "execution":
+    if request.gate == "execution" and corrective_retry:
+        implementation_contract = (
+            "\nCORRECTIVE REPORT CONTRACT (execution retry): The prior execution "
+            "attempt already performed the implementation work. Do not make further "
+            "file changes, rerun mutation steps, or repeat completed implementation. "
+            "Inspect the current worktree only if needed to reconstruct the truthful "
+            "outcome, then return the corrected required outcome block.\n"
+        )
+    elif request.gate == "execution":
         implementation_contract = (
             "\nIMPLEMENTATION CONTRACT (execution gate): You are the IMPLEMENTER, not a reviewer. "
             "Edit real worktree files to satisfy the accepted PRD / issues / TDD / "
@@ -365,6 +361,11 @@ def build_lead_prompt(request: LeadInvocationRequest) -> str:
             "authoritative context; do not rely on this inline prompt to restate the full "
             "operator request."
         )
+        if corrective_retry:
+            corrective_start = request.instruction.index("Corrective retry:")
+            instruction_block += (
+                "\n\n" + request.instruction[corrective_start:].strip()
+            )
     return (
         f"/lead Gate mode: {request.gate}. Task id: {request.task_id}.\n"
         f"{instruction_block}\n\n"
@@ -524,34 +525,67 @@ def build_claude_lead_command(request: LeadInvocationRequest) -> list[str]:
         quality=request.quality,
         explicit_model=request.model,
     )
-    command = [
-        request.cli_command,
-        "--no-session-persistence",
-        "-p",
-        build_lead_prompt(request),
-        "--output-format",
-        "json",
-        "--model",
-        model,
-        "--max-budget-usd",
-        _format_budget(request.budget_usd),
-        "--permission-mode",
-        _permission_mode_for_request(request),
-    ]
-    if not _uses_adaptive_opus_effort(model):
-        command.extend([
-            "--effort",
-            select_lead_effort(
-                request.gate,
-                quality=request.quality,
-                explicit_effort=request.effort,
-            ),
-        ])
-    command.extend(["--tools", request.tools])
+    effort = (
+        None
+        if uses_adaptive_opus_effort(model)
+        else select_lead_effort(
+            request.gate,
+            quality=request.quality,
+            explicit_effort=request.effort,
+        )
+    )
+    return build_legacy_claude_command(
+        cli_command=request.cli_command,
+        prompt=build_lead_prompt(request),
+        model=model,
+        budget_usd=request.budget_usd,
+        permission_mode=_permission_mode_for_request(request),
+        effort=effort,
+        tools=request.tools,
+        allowed_tools=_allowed_tools_for_request(request),
+    )
+
+
+def build_lead_agent_task(request: LeadInvocationRequest) -> AgentTask:
+    """Translate one lead request into the provider-neutral runtime contract."""
+
+    model = select_lead_model(
+        request.gate,
+        quality=request.quality,
+        explicit_model=request.model,
+    )
+    metadata: dict[str, Any] = {
+        "lead_invocation": {
+            "task_id": request.task_id,
+            "gate": request.gate,
+            "quality": request.quality,
+            "execution_layer_mode": request.execution_layer_mode,
+        },
+        "permission_mode": _permission_mode_for_request(request),
+        "max_budget_usd": float(request.budget_usd),
+        "result_metadata": {
+            "lead_task_id": request.task_id,
+            "lead_gate": request.gate,
+        },
+    }
+    if not uses_adaptive_opus_effort(model):
+        metadata["effort"] = select_lead_effort(
+            request.gate,
+            quality=request.quality,
+            explicit_effort=request.effort,
+        )
     allowed_tools = _allowed_tools_for_request(request)
     if allowed_tools:
-        command.extend(["--allowedTools", *allowed_tools])
-    return command
+        metadata["allowed_tools"] = list(allowed_tools)
+    return AgentTask(
+        task_id=request.task_id,
+        instruction=build_lead_prompt(request),
+        cwd=Path(request.cwd),
+        model=model,
+        timeout_s=request.timeout_s,
+        env=dict(request.explicit_env),
+        metadata=metadata,
+    )
 
 
 def _allowed_tools_for_request(request: LeadInvocationRequest) -> tuple[str, ...]:
@@ -598,49 +632,180 @@ def _is_report_only_execution_request(request: LeadInvocationRequest) -> bool:
     )
 
 
+def invoke_lead(
+    request: LeadInvocationRequest,
+    *,
+    runner: Runner = subprocess.run,
+    runtime_runner: RuntimeTaskRunner | None = None,
+) -> LeadInvocationResult:
+    """Invoke a lead through ``AgentRuntime`` or the legacy Claude edge."""
+
+    if runtime_runner is not None:
+        return _invoke_runtime_lead(request, runtime_runner=runtime_runner)
+    return _invoke_legacy_claude_lead(request, runner=runner)
+
+
 def invoke_claude_lead(
     request: LeadInvocationRequest,
     *,
     runner: Runner = subprocess.run,
+    runtime_runner: RuntimeTaskRunner | None = None,
+) -> LeadInvocationResult:
+    """Backward-compatible alias for the provider-neutral lead invoker."""
+
+    return invoke_lead(
+        request,
+        runner=runner,
+        runtime_runner=runtime_runner,
+    )
+
+
+def _invoke_runtime_lead(
+    request: LeadInvocationRequest,
+    *,
+    runtime_runner: RuntimeTaskRunner,
+) -> LeadInvocationResult:
+    task = build_lead_agent_task(request)
+    try:
+        execution = runtime_runner(task)
+        result = execution.result
+        if not isinstance(result, AgentRunResult):
+            raise TypeError(
+                "runtime runner must return RuntimeExecution with AgentRunResult"
+            )
+    except (subprocess.TimeoutExpired, TimeoutError) as exc:
+        stdout = _coerce_text(getattr(exc, "stdout", None))
+        stderr = _coerce_text(getattr(exc, "stderr", None))
+        return LeadInvocationResult(
+            probe=ProbeResult(
+                "P2",
+                "red",
+                "lead_invocation_timeout",
+                {"timeout_s": request.timeout_s},
+            ),
+            outcome=None,
+            command=[],
+            stdout=stdout,
+            stderr=stderr,
+            stdout_bytes=len(stdout.encode()),
+            stderr_bytes=len(stderr.encode()),
+            transcript="",
+            model=task.model,
+        )
+    except Exception as exc:
+        return LeadInvocationResult(
+            probe=ProbeResult(
+                "P2",
+                "red",
+                "lead_invocation_failed",
+                {
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                },
+            ),
+            outcome=None,
+            command=[],
+            stdout="",
+            stderr="",
+            stdout_bytes=0,
+            stderr_bytes=0,
+            transcript="",
+            model=task.model,
+        )
+
+    stdout = _coerce_text(result.output)
+    stderr_value = result.metadata.get("stderr")
+    stderr = _coerce_text(
+        stderr_value if isinstance(stderr_value, (str, bytes)) else None
+    )
+    stdout_bytes = len(stdout.encode())
+    stderr_bytes = len(stderr.encode())
+    token_usage = dict(result.token_usage)
+    common = {
+        "command": [],
+        "stdout": stdout,
+        "stderr": stderr,
+        "stdout_bytes": stdout_bytes,
+        "stderr_bytes": stderr_bytes,
+        "model": result.resolved_model or task.model,
+        "cost_usd": result.cost_usd,
+        "tokens_in": _int_from_mapping(token_usage, "tokens_in"),
+        "tokens_out": _int_from_mapping(token_usage, "tokens_out"),
+        "token_usage": token_usage,
+        "runtime": result.runtime,
+        "runtime_run_id": result.run_id,
+        "runtime_session_id": result.session_id,
+        "runtime_result_hash": result.result_hash,
+        "runtime_duration_ms": result.duration_ms,
+        "model_provenance": result.model_provenance,
+        "cost_provenance": result.cost_provenance,
+        "token_provenance": result.token_provenance,
+        "agent_run_result": result,
+    }
+    if result.status != "completed":
+        returncode = _int_token(result.metadata.get("returncode"))
+        details: dict[str, Any] = {
+            "runtime": result.runtime,
+            "runtime_status": result.status,
+            "run_id": result.run_id,
+        }
+        if returncode is not None:
+            details["returncode"] = returncode
+        if stderr:
+            details["stderr_tail"] = stderr[-2000:]
+        if stdout:
+            details["stdout_tail"] = stdout[-2000:]
+        if result.status == "cancelled":
+            reason = "lead_invocation_cancelled"
+        elif result.status in {"timeout", "timed_out"} or returncode == 124:
+            reason = "lead_invocation_timeout"
+            details["timeout_s"] = request.timeout_s
+        else:
+            reason = "lead_invocation_failed"
+        return LeadInvocationResult(
+            probe=ProbeResult("P2", "red", reason, details),
+            outcome=None,
+            transcript="",
+            **common,
+        )
+
+    probe, outcome = evaluate_outcome_fidelity(
+        stdout,
+        expected_specialists=request.expected_specialists,
+        expected_decisions=request.expected_decisions,
+        expected_objections=request.expected_objections,
+    )
+    return LeadInvocationResult(
+        probe=probe,
+        outcome=outcome,
+        transcript=stdout,
+        **common,
+    )
+
+
+def _invoke_legacy_claude_lead(
+    request: LeadInvocationRequest,
+    *,
+    runner: Runner,
 ) -> LeadInvocationResult:
     command = build_claude_lead_command(request)
-    requested_model = _command_value(command, "--model")
-    env = dict(os.environ)
-    env.update(request.explicit_env)
-    env = direct_anthropic_env(env)
-    if requested_model is not None and _uses_adaptive_opus_effort(requested_model):
-        # r-2026-06-10 (write-canary evidence matrix; through-stack event
-        # 660691): the pinned claude-opus-4-8 underlying route breaks headless
-        # bypassPermissions — Edit/Write/Bash fall into the interactive prompt
-        # flow and auto-deny ("you haven't granted it yet"). Direct A/B
-        # canaries: the default opus route writes fine, with or without the
-        # extra body; ANTHROPIC_DEFAULT_OPUS_MODEL=claude-opus-4-8 denies
-        # either way. Execution gates must write, so by default they drop the
-        # pin and use the CLI's default opus route (we POP any inherited pin —
-        # the parent daemon/shell or secrets.env may carry a stale value);
-        # read-only planning/review gates keep a pin for quality. Both pins
-        # are operator-overridable via env (verify any new pin with the
-        # direct write canary BEFORE trusting it — that is how 4-8 was
-        # caught): CODEX_SUPERVISOR_EXECUTION_OPUS_MODEL (empty = default
-        # route) and CODEX_SUPERVISOR_PLANNING_OPUS_MODEL (default
-        # claude-opus-4-8; e.g. claude-opus-4-6 after live canary).
-        pin = _underlying_opus_model_for_gate(request.gate)
-        if pin is None:
-            env.pop("ANTHROPIC_DEFAULT_OPUS_MODEL", None)
-        else:
-            env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = pin
-        env["CLAUDE_CODE_EXTRA_BODY"] = json.dumps(_opus_extra_body_for_pin(pin))
-    else:
-        env.pop("ANTHROPIC_DEFAULT_OPUS_MODEL", None)
-        env.pop("CLAUDE_CODE_EXTRA_BODY", None)
+    requested_model = select_lead_model(
+        request.gate,
+        quality=request.quality,
+        explicit_model=request.model,
+    )
+    env = build_legacy_claude_environment(
+        explicit_env=request.explicit_env,
+        requested_model=requested_model,
+        gate=request.gate,
+    )
     try:
-        proc = runner(
+        proc = run_legacy_claude(
             command,
-            cwd=str(Path(request.cwd)),
+            cwd=request.cwd,
             env=env,
-            capture_output=True,
-            text=True,
-            timeout=request.timeout_s,
+            timeout_s=request.timeout_s,
+            runner=runner,
         )
     except subprocess.TimeoutExpired as e:
         stdout = _coerce_text(e.stdout)
@@ -709,6 +874,21 @@ def invoke_claude_lead(
         )
 
     payload_probe, transcript, model, cost_usd, token_usage = _extract_claude_json_payload(stdout)
+    model_provenance = (
+        "legacy_claude_json.model"
+        if model is not None
+        else "lead_request.model"
+    )
+    cost_provenance = (
+        "legacy_claude_json.cost"
+        if cost_usd is not None
+        else ""
+    )
+    token_provenance = (
+        "legacy_claude_json.usage"
+        if token_usage
+        else ""
+    )
     if payload_probe is not None:
         return LeadInvocationResult(
             probe=payload_probe,
@@ -724,6 +904,9 @@ def invoke_claude_lead(
             tokens_in=_int_from_mapping(token_usage, "tokens_in"),
             tokens_out=_int_from_mapping(token_usage, "tokens_out"),
             token_usage=token_usage,
+            model_provenance=model_provenance,
+            cost_provenance=cost_provenance,
+            token_provenance=token_provenance,
         )
     probe, outcome = evaluate_outcome_fidelity(
         transcript,
@@ -745,56 +928,10 @@ def invoke_claude_lead(
         tokens_in=_int_from_mapping(token_usage, "tokens_in"),
         tokens_out=_int_from_mapping(token_usage, "tokens_out"),
         token_usage=token_usage,
+        model_provenance=model_provenance,
+        cost_provenance=cost_provenance,
+        token_provenance=token_provenance,
     )
-
-
-def _command_value(command: list[str], flag: str) -> str | None:
-    try:
-        index = command.index(flag)
-    except ValueError:
-        return None
-    try:
-        return command[index + 1]
-    except IndexError:
-        return None
-
-
-def _uses_adaptive_opus_effort(model: str) -> bool:
-    return (
-        model == CLAUDE_OPUS_ULTIMATE_MODEL
-        or model == CLAUDE_OPUS_UNDERLYING_MODEL
-        or model.startswith(f"{CLAUDE_OPUS_UNDERLYING_MODEL}-")
-    )
-
-
-def _underlying_opus_model_for_gate(gate: str) -> str | None:
-    """Resolve the ANTHROPIC_DEFAULT_OPUS_MODEL pin for one gate.
-
-    Execution gates default to None (no pin: the CLI's default opus route is
-    the only one verified to honor headless bypassPermissions, 2026-06-10).
-    Planning/review gates default to CLAUDE_OPUS_UNDERLYING_MODEL. Operators
-    may override either via env; an empty override means "no pin".
-    """
-    if gate == "execution":
-        override = _opus_pin_override("CODEX_SUPERVISOR_EXECUTION_OPUS_MODEL")
-        return override or None
-    override = _opus_pin_override("CODEX_SUPERVISOR_PLANNING_OPUS_MODEL")
-    return override or CLAUDE_OPUS_UNDERLYING_MODEL
-
-
-def _opus_pin_override(env_key: str) -> str:
-    """Read an operator opus pin, clamping non-opus values to the safe pin."""
-    value = os.environ.get(env_key, "").strip()
-    if value and not value.startswith("claude-opus-"):
-        return CLAUDE_OPUS_SAFE_OVERRIDE_MODEL
-    return value
-
-
-def _opus_extra_body_for_pin(pin: str | None) -> dict[str, Any]:
-    """Return a Claude extra body compatible with the selected Opus route."""
-    if pin and pin.startswith(CLAUDE_OPUS_SAFE_OVERRIDE_MODEL):
-        return CLAUDE_OPUS_SAFE_OVERRIDE_EXTRA_BODY
-    return CLAUDE_OPUS_ULTIMATE_EXTRA_BODY
 
 
 def _extract_claude_json_payload(
@@ -980,9 +1117,3 @@ def _coerce_text(value: str | bytes | None) -> str:
     if isinstance(value, bytes):
         return value.decode(errors="replace")
     return value
-
-
-def _format_budget(value: float) -> str:
-    if value == int(value):
-        return str(int(value))
-    return str(value)

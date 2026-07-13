@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from supervisor.claim_gate import ClaimGate
 from supervisor.config import AgenticLeadCfg
 from supervisor.mergeability_bench import _copy_public_fixture_tree
 from supervisor.swe_bench_eval import (
@@ -2907,6 +2908,18 @@ def test_aeb0_missing_cli_prerequisites_write_blocked_artifact(tmp_path):
     assert report["metrics_unavailable_reasons"] == [
         "missing_cli_prerequisite:allow_dataset_fetch"
     ]
+    assert ClaimGate.validate_derived_report(report) is None
+    report_body = {
+        key: value for key, value in report.items() if key != "report_sha256"
+    }
+    assert report["report_sha256"] == sha256(
+        json.dumps(
+            report_body,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
     _assert_diagnostic_report_only(report)
 
 

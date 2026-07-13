@@ -3,20 +3,31 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Barrier
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import pytest
 
 from supervisor.postgres_state import (
     POSTGRES_CLAIM_AVAILABLE_JOBS_SQL,
+    POSTGRES_CLAIM_WORKFLOW_JOB_FOR_REAP_SQL,
+    POSTGRES_ALEMBIC_HEAD,
+    POSTGRES_EVENT_IMMUTABILITY_SQL,
     POSTGRES_LOCK_ORDER,
     POSTGRES_SCHEMA_SQL,
     PostgresState,
 )
 from supervisor.dual_agent_workflow import workflow_resume_prompt
+from supervisor.evidence_committer import HmacCheckpointAuthority
+from supervisor.ledger_checkpoints import (
+    FilesystemTrustedCheckpointPinStore,
+    LedgerCheckpointStore,
+    checkpoint_identity,
+)
 from supervisor.quality_trends import query_quality_trends, record_quality_trends_for_run, record_transport_incident
 from supervisor.state import State, is_postgres_state_dsn
 
@@ -47,6 +58,105 @@ def test_state_postgres_url_routes_to_postgres_lane(monkeypatch):
     assert is_postgres_state_dsn("postgresql://localhost/codex_supervisor")
 
 
+def test_state_forwards_checkpoint_coordinator_to_postgres_lane(monkeypatch):
+    captured = {}
+    coordinator = object()
+
+    def fake_init(self, dsn, *args, **kwargs):
+        self.dsn = dsn
+        captured.update(kwargs)
+
+    monkeypatch.setattr(PostgresState, "__init__", fake_init)
+
+    state = State(
+        "postgresql://localhost/codex_supervisor",
+        ledger_checkpoint_coordinator=coordinator,
+    )
+
+    assert isinstance(state, PostgresState)
+    assert captured["ledger_checkpoint_coordinator"] is coordinator
+
+
+def test_postgres_ledger_verification_matches_sqlite_assurance_levels(tmp_path):
+    sqlite = State(str(tmp_path / "state.db"))
+    for index in range(2):
+        sqlite.write_event(
+            run_id="parity-run",
+            source="test",
+            kind="event_msg",
+            payload={"index": index},
+            ts=100 + index,
+        )
+    events = sqlite.read_events_since(
+        "parity-run",
+        after_event_id=0,
+        limit=10,
+    )
+
+    class _Result:
+        def fetchall(self):
+            return events
+
+    class _Connection:
+        def execute(self, _statement, _params=None):
+            return _Result()
+
+    postgres = PostgresState.__new__(PostgresState)
+    postgres._conn = _Connection()
+    authority = HmacCheckpointAuthority(
+        key_id="parity-key",
+        key=b"parity-checkpoint-key",
+    )
+    checkpoints = LedgerCheckpointStore(tmp_path / "checkpoints")
+    pins = FilesystemTrustedCheckpointPinStore(tmp_path / "trusted-pins")
+    persisted = sqlite.checkpoint_event_ledger(
+        "parity-run",
+        checkpoint_store=checkpoints,
+        signer=authority,
+        verifier=authority,
+        created_at=1234,
+    )
+    pins.pin(checkpoint_identity(persisted.checkpoint))
+    trusted_head = pins.latest("parity-run")
+
+    sqlite_structural = sqlite.verify_event_ledger_structure("parity-run")
+    postgres_structural = postgres.verify_event_ledger_structure("parity-run")
+    sqlite_release = sqlite.verify_event_ledger("parity-run")
+    postgres_release = postgres.verify_event_ledger("parity-run")
+    sqlite_authoritative = sqlite.verify_event_ledger(
+        "parity-run",
+        checkpoint_store=checkpoints,
+        verifier=authority,
+        trusted_latest_checkpoint=trusted_head,
+    )
+    postgres_authoritative = postgres.verify_event_ledger(
+        "parity-run",
+        checkpoint_store=checkpoints,
+        verifier=authority,
+        trusted_latest_checkpoint=trusted_head,
+    )
+
+    assert postgres_structural.to_dict() == sqlite_structural.to_dict()
+    assert postgres_release.to_dict() == sqlite_release.to_dict()
+    assert postgres_authoritative.to_dict() == sqlite_authoritative.to_dict()
+    assert postgres_structural.valid is True
+    assert postgres_release.valid is False
+    assert postgres_release.failure_code == "trusted_head_required"
+    assert postgres_authoritative.valid is True
+    assert postgres_authoritative.authoritative_head_verified is True
+
+    events = events[:-1]
+    postgres_truncated = postgres.verify_event_ledger(
+        "parity-run",
+        checkpoint_store=checkpoints,
+        verifier=authority,
+        trusted_latest_checkpoint=trusted_head,
+    )
+    assert postgres_truncated.valid is False
+    assert postgres_truncated.failure_code == "checkpoint_event_count_mismatch"
+    assert postgres_truncated.authoritative_head_verified is False
+
+
 def test_postgres_claim_sql_uses_fenced_skip_locked_cte():
     normalized = re.sub(r"\s+", " ", POSTGRES_CLAIM_AVAILABLE_JOBS_SQL.strip())
 
@@ -58,10 +168,101 @@ def test_postgres_claim_sql_uses_fenced_skip_locked_cte():
     assert "WHERE j.id = c.id" in normalized
 
 
+def test_postgres_reap_claim_sql_is_full_snapshot_cas():
+    normalized = re.sub(
+        r"\s+",
+        " ",
+        POSTGRES_CLAIM_WORKFLOW_JOB_FOR_REAP_SQL.strip(),
+    )
+
+    assert normalized.startswith(
+        "UPDATE dual_agent_workflow_jobs AS j SET leased_by = %(reaper_id)s"
+    )
+    for comparison in (
+        "j.leased_by IS NOT DISTINCT FROM %(expected_leased_by)s",
+        "j.lease_expires_at IS NOT DISTINCT FROM %(expected_lease_expires_at)s",
+        "j.heartbeat_at IS NOT DISTINCT FROM %(expected_heartbeat_at)s",
+        "j.pid IS NOT DISTINCT FROM %(expected_pid)s",
+        "j.worker_pgid IS NOT DISTINCT FROM %(expected_worker_pgid)s",
+        "j.worker_started_at IS NOT DISTINCT FROM %(expected_worker_started_at)s",
+        "j.worker_containment_id IS NOT DISTINCT FROM %(expected_worker_containment_id)s",
+    ):
+        assert comparison in normalized
+    assert "j.recovery_point = 'spawned'" in normalized
+    assert "j.status = 'running'" in normalized
+    assert "j.terminal_outcome_json IS NULL" in normalized
+    assert "j.worker_reaped_at IS NULL" in normalized
+    assert normalized.endswith("RETURNING j.*")
+
+    class _Result:
+        def fetchone(self):
+            return {"job_id": "job", "leased_by": "reaper:dispatcher"}
+
+    class _Transaction:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    class _Connection:
+        def __init__(self):
+            self.statement = ""
+            self.params = {}
+
+        def transaction(self):
+            return _Transaction()
+
+        def execute(self, statement, params=None):
+            self.statement = str(statement)
+            self.params = dict(params or {})
+            return _Result()
+
+    connection = _Connection()
+    state = PostgresState.__new__(PostgresState)
+    state._conn = connection
+    state._write_lock = threading.RLock()
+
+    claimed = state.claim_dual_agent_workflow_job_for_reap(
+        job_id="job",
+        reaper_id="reaper:dispatcher",
+        lease_ttl_s=60,
+        now=1000,
+        expected_leased_by="worker:41010",
+        expected_lease_expires_at=999,
+        expected_heartbeat_at=998,
+        expected_pid=41010,
+        expected_worker_pgid=41011,
+        expected_worker_started_at=123.5,
+        expected_worker_containment_id="containment-1",
+    )
+
+    assert claimed == {"job_id": "job", "leased_by": "reaper:dispatcher"}
+    assert connection.statement == POSTGRES_CLAIM_WORKFLOW_JOB_FOR_REAP_SQL
+    assert connection.params == {
+        "job_id": "job",
+        "reaper_id": "reaper:dispatcher",
+        "claim_expires_at": 1060,
+        "now": 1000,
+        "expected_leased_by": "worker:41010",
+        "expected_lease_expires_at": 999,
+        "expected_heartbeat_at": 998,
+        "expected_pid": 41010,
+        "expected_worker_pgid": 41011,
+        "expected_worker_started_at": 123.5,
+        "expected_worker_containment_id": "containment-1",
+    }
+
+
 def test_postgres_schema_carries_idempotency_and_partitioned_catch_up():
     assert "event_stream_sequences" in POSTGRES_SCHEMA_SQL
+    assert "event_sequence BIGINT NOT NULL" in POSTGRES_SCHEMA_SQL
     assert "previous_event_id BIGINT" in POSTGRES_SCHEMA_SQL
+    assert "event_hash TEXT NOT NULL" in POSTGRES_SCHEMA_SQL
     assert "CONSTRAINT events_run_event_unique UNIQUE(run_id, event_id)" in POSTGRES_SCHEMA_SQL
+    assert "CONSTRAINT events_run_sequence_unique UNIQUE(run_id, event_sequence)" in POSTGRES_SCHEMA_SQL
+    assert "quality_trend_audits_counts_valid" in POSTGRES_SCHEMA_SQL
+    assert "quality_trend_audits_rate_exact" in POSTGRES_SCHEMA_SQL
     assert "dual_agent_workflows" in POSTGRES_SCHEMA_SQL
     assert "dual_agent_workflow_steps" in POSTGRES_SCHEMA_SQL
     assert "UNIQUE(run_id, task_id, gate)" in POSTGRES_SCHEMA_SQL
@@ -69,6 +270,122 @@ def test_postgres_schema_carries_idempotency_and_partitioned_catch_up():
     assert "WHERE idempotency_token IS NOT NULL AND recovery_point != 'terminal'" in POSTGRES_SCHEMA_SQL
     assert "idx_dual_agent_workflow_jobs_dispatchable" in POSTGRES_SCHEMA_SQL
     assert "ON dual_agent_workflow_jobs(priority, created_at, id)" in POSTGRES_SCHEMA_SQL
+
+
+def test_postgres_historical_reservation_does_not_read_terminal_variables():
+    row = {
+        "operation_id": "historical-reserve",
+        "request_hash": "a" * 64,
+        "operation": "replay",
+        "status": "running",
+        "terminal_event_id": None,
+        "created_at": 1,
+        "updated_at": 1,
+    }
+
+    class _Result:
+        def fetchone(self):
+            return row
+
+    class _Transaction:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    class _Connection:
+        def __init__(self):
+            self.statements = []
+
+        def transaction(self):
+            return _Transaction()
+
+        def execute(self, statement, _params=None):
+            self.statements.append(str(statement))
+            return _Result()
+
+    connection = _Connection()
+    state = PostgresState.__new__(PostgresState)
+    state._conn = connection
+    state._write_lock = threading.RLock()
+
+    claimed, reserved = state.reserve_historical_operation(
+        operation_id=row["operation_id"],
+        request_hash=row["request_hash"],
+        operation=row["operation"],
+    )
+
+    assert reserved is True
+    assert claimed == row
+    assert len(connection.statements) == 1
+    assert "INSERT INTO historical_operation_claims" in connection.statements[0]
+
+
+def test_postgres_historical_completion_validates_source_and_request_link():
+    operation_id = "historical-complete"
+    request_hash = "b" * 64
+    requested_event_id = 1
+    terminal_event_id = 2
+
+    class _Result:
+        def __init__(self, row):
+            self._row = row
+
+        def fetchone(self):
+            return self._row
+
+    class _Transaction:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    class _Connection:
+        def transaction(self):
+            return _Transaction()
+
+        def execute(self, statement, _params=None):
+            sql = " ".join(str(statement).split())
+            if "FROM historical_operation_claims" in sql:
+                return _Result(
+                    {
+                        "request_hash": request_hash,
+                        "operation": "replay",
+                    }
+                )
+            if "FROM events" in sql and "event_id=%s" in sql:
+                event_id = int((_params or (None, 0))[1])
+                if event_id == terminal_event_id:
+                    return _Result(
+                        {
+                            "source": "untrusted_component",
+                            "kind": "historical_operation.completed",
+                            "payload_json": {
+                                "operation_id": operation_id,
+                                "operation": "replay",
+                                "request_hash": request_hash,
+                                "requested_event_id": requested_event_id,
+                            },
+                        }
+                    )
+            raise AssertionError(f"unexpected SQL: {sql}")
+
+    state = PostgresState.__new__(PostgresState)
+    state._conn = _Connection()
+    state._write_lock = threading.RLock()
+
+    with pytest.raises(
+        RuntimeError,
+        match="requires its matching ledger event",
+    ):
+        state.complete_historical_operation(
+            operation_id=operation_id,
+            request_hash=request_hash,
+            status="completed",
+            terminal_event_id=terminal_event_id,
+        )
 
 
 def test_alembic_migration_and_make_target_exist():
@@ -126,13 +443,24 @@ def test_postgres_inline_schema_and_alembic_migration_stay_structurally_equivale
     migration_tables = set(re.findall(r"CREATE TABLE IF NOT EXISTS ([a-z_]+)", migration))
     inline_indexes = set(re.findall(r"CREATE (?:UNIQUE )?INDEX IF NOT EXISTS ([a-z_]+)", POSTGRES_SCHEMA_SQL))
     migration_indexes = set(re.findall(r"CREATE (?:UNIQUE )?INDEX IF NOT EXISTS ([a-z_]+)", migration))
+    inline = POSTGRES_SCHEMA_SQL + "\n" + POSTGRES_EVENT_IMMUTABILITY_SQL
 
     assert migration_tables == inline_tables
     assert migration_indexes == inline_indexes
     for required_snippet in (
         "CONSTRAINT events_run_event_unique UNIQUE(run_id, event_id)",
+        "events_run_sequence_unique",
+        "events_sequence_positive",
+        "events_genesis_hash_shape",
         "CONSTRAINT events_previous_id_shape CHECK",
         "event_id > 1 AND previous_event_id = event_id - 1",
+        "quality_trend_audits_counts_valid",
+        "quality_trend_audits_rate_exact",
+        "dual_agent_workflow_jobs_terminal_freeze",
+        "dual_agent_workflow_jobs_terminal_no_delete",
+        "dual_agent_workflow_jobs_no_truncate",
+        "dual_agent_workflow_jobs_worker_reaped_once",
+        "quality_trend_audits_no_truncate",
         "UNIQUE(run_id, task_id, gate)",
         "idx_dual_agent_workflow_jobs_active_idempotency_token",
         "WHERE idempotency_token IS NOT NULL AND recovery_point != 'terminal'",
@@ -149,8 +477,97 @@ def test_postgres_inline_schema_and_alembic_migration_stay_structurally_equivale
         "UNIQUE(run_id, gate)",
         "signal_key TEXT NOT NULL UNIQUE",
     ):
-        assert required_snippet in POSTGRES_SCHEMA_SQL
+        assert required_snippet in inline
         assert required_snippet in migration
+
+
+def test_postgres_migrations_lock_before_inspection_in_runtime_write_order():
+    ledger_migration = Path(
+        "migrations/versions/20260712_0001_evidence_ledger.py"
+    ).read_text(encoding="utf-8")
+    identity_migration = Path(
+        "migrations/versions/20260712_0002_workflow_process_identity.py"
+    ).read_text(encoding="utf-8")
+
+    lock_markers = (
+        "LOCK TABLE supervisor_quality_trends IN SHARE MODE",
+        "LOCK TABLE quality_trend_audits IN SHARE ROW EXCLUSIVE MODE",
+        "LOCK TABLE event_stream_sequences IN SHARE ROW EXCLUSIVE MODE",
+        "LOCK TABLE events IN SHARE ROW EXCLUSIVE MODE",
+    )
+    positions = [ledger_migration.index(marker) for marker in lock_markers]
+    assert positions == sorted(positions)
+    assert positions[-1] < ledger_migration.index(
+        "SELECT global_id, event_id, run_id"
+    )
+
+    lock_position = identity_migration.index(
+        "LOCK TABLE dual_agent_workflow_jobs IN SHARE ROW EXCLUSIVE MODE"
+    )
+    quiescence_position = identity_migration.index(
+        "SELECT job_id, pid"
+    )
+    assert lock_position < quiescence_position
+    assert "CREATE TRIGGER events_no_truncate" in identity_migration
+    assert (
+        "CREATE TRIGGER quality_trend_audits_no_truncate"
+        in identity_migration
+    )
+    assert (
+        "CREATE TRIGGER dual_agent_workflow_jobs_no_truncate"
+        in identity_migration
+    )
+
+
+def test_postgres_startup_refuses_to_rewrite_existing_unmigrated_schema():
+    class _Result:
+        def __init__(self, row=None):
+            self._row = row
+
+        def fetchone(self):
+            return self._row
+
+        def fetchall(self):
+            return []
+
+    class _Transaction:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    class _Connection:
+        def __init__(self):
+            self.statements: list[str] = []
+
+        def transaction(self):
+            return _Transaction()
+
+        def execute(self, statement, _params=None):
+            text = str(statement)
+            self.statements.append(text)
+            if "to_regclass('events')" in text:
+                return _Result(
+                    {
+                        "events_table": "events",
+                        "alembic_table": None,
+                    }
+                )
+            return _Result()
+
+    connection = _Connection()
+    state = PostgresState.__new__(PostgresState)
+    state._conn = connection
+    state._write_lock = threading.RLock()
+    state._Jsonb = lambda value: value
+
+    with pytest.raises(RuntimeError, match="make migrate"):
+        state.apply_schema()
+
+    assert POSTGRES_ALEMBIC_HEAD == "20260712_0003"
+    assert not any("UPDATE events" in sql for sql in connection.statements)
+    assert not any("DROP TRIGGER" in sql for sql in connection.statements)
 
 
 def test_alembic_lessons_revision_upgrades_from_applied_base(monkeypatch):
@@ -176,12 +593,238 @@ def test_alembic_lessons_revision_upgrades_from_applied_base(monkeypatch):
             row = conn.execute("SELECT to_regclass('supervisor_lessons') AS table_name").fetchone()
             assert row[0] is None
 
+        command.upgrade(cfg, "20260610_0004")
+        with psycopg.connect(dsn_with_schema) as conn:
+            conn.execute(
+                """INSERT INTO supervisor_quality_trends(
+                     run_id, task_id, task_class, gate, accepted,
+                     first_pass_accepted, revision_rounds,
+                     time_to_accepted_outcome_s, p11_audit_sample_size,
+                     false_accept_count, false_accept_denominator,
+                     false_accept_rate, details_json, computed_at)
+                   VALUES(
+                     'legacy-audit-run', 'legacy-task', 'source_change',
+                     'outcome_review', TRUE, TRUE, 0, 1.0,
+                     3, 1, 3, 0.3333333333333333,
+                     '{"p11_audit":{"source":"legacy"}}'::jsonb, 123
+                   )"""
+            )
+            conn.execute(
+                """INSERT INTO events(
+                     run_id, event_id, previous_event_id, ts,
+                     source, kind, payload_json)
+                   VALUES
+                     ('legacy-run-a', 1, NULL, 101, 'test', 'event_msg',
+                      '{"index":1}'::jsonb),
+                     ('legacy-run-b', 1, NULL, 102, 'test', 'event_msg',
+                      '{"index":1}'::jsonb),
+                     ('legacy-run-a', 2, 1, 103, 'test', 'event_msg',
+                      '{"index":2}'::jsonb)"""
+            )
+            conn.execute(
+                """INSERT INTO event_stream_sequences(run_id, last_event_id)
+                   VALUES('legacy-run-a', 2), ('legacy-run-b', 1)"""
+            )
+            conn.commit()
+
         command.upgrade(cfg, "head")
         with psycopg.connect(dsn_with_schema) as conn:
             row = conn.execute("SELECT to_regclass('supervisor_lessons') AS table_name").fetchone()
             assert row[0] == "supervisor_lessons"
             row = conn.execute("SELECT to_regclass('supervisor_quality_trends') AS table_name").fetchone()
             assert row[0] == "supervisor_quality_trends"
+            audit = conn.execute(
+                """SELECT sample_size, false_accept_count,
+                          false_accept_denominator, false_accept_rate,
+                          audit_details_json, computed_at
+                     FROM quality_trend_audits
+                    WHERE run_id='legacy-audit-run'
+                      AND gate='outcome_review'"""
+            ).fetchone()
+            assert audit[0:3] == (3, 1, 3)
+            assert audit[3] == pytest.approx(1 / 3)
+            assert audit[4] == {"source": "legacy"}
+            assert audit[5] == 123
+        migrated = PostgresState(dsn_with_schema, apply_schema=False)
+        try:
+            run_a = migrated.read_events_since(
+                "legacy-run-a",
+                after_event_id=0,
+                limit=10,
+            )
+            run_b = migrated.read_events_since(
+                "legacy-run-b",
+                after_event_id=0,
+                limit=10,
+            )
+            assert [event["event_sequence"] for event in run_a] == [1, 2]
+            assert [event["event_sequence"] for event in run_b] == [1]
+            assert run_a[0]["ledger_genesis_kind"] == "legacy-import"
+            assert run_b[0]["ledger_genesis_kind"] == "legacy-import"
+            assert (
+                migrated.verify_event_ledger_structure("legacy-run-a").valid
+                is True
+            )
+            assert (
+                migrated.verify_event_ledger_structure("legacy-run-b").valid
+                is True
+            )
+        finally:
+            migrated.close()
+    finally:
+        with psycopg.connect(dsn) as conn:
+            conn.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
+            conn.commit()
+
+
+def test_alembic_ledger_migration_rejects_forged_prepopulated_hashes(
+    monkeypatch,
+):
+    dsn = os.environ.get("CODEX_SUPERVISOR_POSTGRES_TEST_DSN", "").strip()
+    if not dsn:
+        pytest.skip("CODEX_SUPERVISOR_POSTGRES_TEST_DSN is not set")
+    psycopg = pytest.importorskip("psycopg")
+    command = pytest.importorskip("alembic.command")
+    alembic_config = pytest.importorskip("alembic.config")
+
+    schema = f"cs_forged_ledger_{uuid.uuid4().hex}"
+    dsn_with_schema = _dsn_with_search_path(dsn, schema)
+    with psycopg.connect(dsn) as conn:
+        conn.execute(f"CREATE SCHEMA {schema}")
+        conn.commit()
+    try:
+        cfg = alembic_config.Config("alembic.ini")
+        monkeypatch.setenv("DATABASE_URL", dsn_with_schema)
+        monkeypatch.delenv("POSTGRES_DSN", raising=False)
+        command.upgrade(cfg, "20260610_0004")
+
+        forged_hash = "f" * 64
+        with psycopg.connect(dsn_with_schema) as conn:
+            for statement in (
+                "ALTER TABLE events ADD COLUMN event_sequence BIGINT",
+                "ALTER TABLE events ADD COLUMN previous_event_hash TEXT",
+                "ALTER TABLE events ADD COLUMN event_hash TEXT",
+                "ALTER TABLE events ADD COLUMN canonical_payload_hash TEXT",
+                "ALTER TABLE events ADD COLUMN artifact_manifest_hash TEXT",
+                "ALTER TABLE events ADD COLUMN ledger_genesis_kind TEXT",
+            ):
+                conn.execute(statement)
+            conn.execute(
+                """INSERT INTO events(
+                     run_id, event_id, previous_event_id, event_sequence,
+                     ts, source, kind, payload_json, previous_event_hash,
+                     event_hash, canonical_payload_hash,
+                     artifact_manifest_hash, ledger_genesis_kind)
+                   VALUES(
+                     'forged-run', 1, NULL, 1, 101, 'test', 'event_msg',
+                     '{"value":1}'::jsonb, NULL, %s, %s, %s,
+                     'legacy-import'
+                   )""",
+                (forged_hash, forged_hash, forged_hash),
+            )
+            conn.execute(
+                """INSERT INTO event_stream_sequences(run_id, last_event_id)
+                   VALUES('forged-run', 1)"""
+            )
+            conn.commit()
+
+        with pytest.raises(
+            RuntimeError,
+            match="conflicting pre-populated event ledger metadata",
+        ):
+            command.upgrade(cfg, "20260712_0001")
+
+        with psycopg.connect(dsn_with_schema) as conn:
+            assert conn.execute(
+                "SELECT version_num FROM alembic_version"
+            ).fetchone()[0] == "20260610_0004"
+            assert conn.execute(
+                "SELECT event_hash FROM events WHERE run_id='forged-run'"
+            ).fetchone()[0] == forged_hash
+    finally:
+        with psycopg.connect(dsn) as conn:
+            conn.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
+            conn.commit()
+
+
+def test_alembic_audit_backfill_rejects_conflicting_immutable_history(
+    monkeypatch,
+):
+    dsn = os.environ.get("CODEX_SUPERVISOR_POSTGRES_TEST_DSN", "").strip()
+    if not dsn:
+        pytest.skip("CODEX_SUPERVISOR_POSTGRES_TEST_DSN is not set")
+    psycopg = pytest.importorskip("psycopg")
+    command = pytest.importorskip("alembic.command")
+    alembic_config = pytest.importorskip("alembic.config")
+
+    schema = f"cs_audit_conflict_{uuid.uuid4().hex}"
+    dsn_with_schema = _dsn_with_search_path(dsn, schema)
+    with psycopg.connect(dsn) as conn:
+        conn.execute(f"CREATE SCHEMA {schema}")
+        conn.commit()
+    try:
+        cfg = alembic_config.Config("alembic.ini")
+        monkeypatch.setenv("DATABASE_URL", dsn_with_schema)
+        monkeypatch.delenv("POSTGRES_DSN", raising=False)
+        command.upgrade(cfg, "20260610_0004")
+
+        with psycopg.connect(dsn_with_schema) as conn:
+            conn.execute(
+                """INSERT INTO supervisor_quality_trends(
+                     run_id, task_id, task_class, gate, accepted,
+                     first_pass_accepted, revision_rounds,
+                     time_to_accepted_outcome_s, p11_audit_sample_size,
+                     false_accept_count, false_accept_denominator,
+                     false_accept_rate, details_json, computed_at)
+                   VALUES(
+                     'audit-run', 'task', 'source_change', 'outcome_review',
+                     TRUE, TRUE, 0, 1.0, 3, 1, 3,
+                     0.3333333333333333,
+                     '{"p11_audit":{"source":"trend"}}'::jsonb, 123
+                   )"""
+            )
+            conn.execute(
+                """CREATE TABLE quality_trend_audits (
+                     run_id TEXT NOT NULL,
+                     gate TEXT NOT NULL,
+                     sample_size INTEGER NOT NULL,
+                     false_accept_count INTEGER NOT NULL,
+                     false_accept_denominator INTEGER NOT NULL,
+                     false_accept_rate DOUBLE PRECISION NOT NULL,
+                     audit_details_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+                     computed_at BIGINT NOT NULL,
+                     PRIMARY KEY(run_id, gate, computed_at)
+                   )"""
+            )
+            conn.execute(
+                """INSERT INTO quality_trend_audits(
+                     run_id, gate, sample_size, false_accept_count,
+                     false_accept_denominator, false_accept_rate,
+                     audit_details_json, computed_at)
+                   VALUES(
+                     'audit-run', 'outcome_review', 4, 0, 4, 0.0,
+                     '{"source":"existing"}'::jsonb, 123
+                   )"""
+            )
+            conn.commit()
+
+        with pytest.raises(
+            RuntimeError,
+            match="conflicting immutable quality audit history",
+        ):
+            command.upgrade(cfg, "20260712_0001")
+
+        with psycopg.connect(dsn_with_schema) as conn:
+            assert conn.execute(
+                "SELECT version_num FROM alembic_version"
+            ).fetchone()[0] == "20260610_0004"
+            assert conn.execute(
+                """SELECT sample_size, audit_details_json
+                     FROM quality_trend_audits
+                    WHERE run_id='audit-run'
+                      AND gate='outcome_review'
+                      AND computed_at=123"""
+            ).fetchone() == (4, {"source": "existing"})
     finally:
         with psycopg.connect(dsn) as conn:
             conn.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
@@ -273,13 +916,222 @@ def test_postgres_partitioned_per_run_catch_up(postgres_state):
     assert postgres_state.latest_event_id("run-a") == 2
     assert postgres_state.latest_event_id("run-b") == 1
     assert [
-        (event["event_id"], event["previous_event_id"], event["payload"]["index"])
+        (
+            event["run_id"],
+            event["event_id"],
+            event["event_sequence"],
+            event["previous_event_id"],
+            event["payload"]["index"],
+        )
         for event in postgres_state.read_events_since("run-a", after_event_id=0, limit=10)
-    ] == [(1, None, 1), (2, 1, 2)]
+    ] == [
+        ("run-a", 1, 1, None, 1),
+        ("run-a", 2, 2, 1, 2),
+    ]
     assert [
         event["event_id"]
         for event in postgres_state.read_events_since("run-b", after_event_id=0, limit=10)
     ] == [1]
+
+
+def test_postgres_event_stream_rejects_truncate(postgres_state):
+    postgres_state.write_event(
+        run_id="truncate-guard",
+        source="test",
+        kind="event_msg",
+        payload={"value": 1},
+    )
+
+    with pytest.raises(
+        postgres_state._errors.RaiseException,
+        match="events are append-only",
+    ):
+        with postgres_state._conn.transaction():
+            postgres_state._conn.execute("TRUNCATE events")
+
+    assert len(postgres_state.read_events_since("truncate-guard")) == 1
+
+
+def test_postgres_immutable_audits_and_workflow_jobs_reject_truncate(
+    postgres_state,
+    tmp_path,
+):
+    postgres_state.upsert_quality_trend_row(
+        run_id="truncate-audit",
+        task_id="task",
+        task_class="generic",
+        gate="outcome_review",
+        accepted=True,
+        first_pass_accepted=True,
+        revision_rounds=0,
+        time_to_accepted_outcome_s=1.0,
+    )
+    postgres_state.update_quality_trend_audit(
+        run_id="truncate-audit",
+        gate="outcome_review",
+        sample_size=1,
+        false_accept_count=0,
+        false_accept_denominator=1,
+    )
+    _reserve_job(
+        postgres_state,
+        tmp_path,
+        job_id="truncate-job",
+        token="truncate-job-token",
+    )
+
+    with pytest.raises(
+        postgres_state._errors.RaiseException,
+        match="quality trend audits are immutable",
+    ):
+        with postgres_state._conn.transaction():
+            postgres_state._conn.execute("TRUNCATE quality_trend_audits")
+    with pytest.raises(
+        postgres_state._errors.RaiseException,
+        match="workflow jobs are immutable evidence",
+    ):
+        with postgres_state._conn.transaction():
+            postgres_state._conn.execute("TRUNCATE dual_agent_workflow_jobs")
+
+    assert len(
+        postgres_state.list_quality_trend_audits(
+            run_id="truncate-audit",
+            gate="outcome_review",
+        )
+    ) == 1
+    assert postgres_state.get_dual_agent_workflow_job(
+        job_id="truncate-job"
+    ) is not None
+
+
+def test_postgres_generic_job_update_cannot_forge_worker_reap_proof(
+    postgres_state,
+    tmp_path,
+):
+    row, created = _reserve_job(
+        postgres_state,
+        tmp_path,
+        job_id="postgres-no-forged-reap",
+        token="postgres-no-forged-reap-token",
+    )
+    assert created is True
+
+    with pytest.raises(
+        RuntimeError,
+        match="containment-verified reap API",
+    ):
+        postgres_state.update_dual_agent_workflow_job(
+            job_id=row["job_id"],
+            worker_reaped_at=200,
+        )
+
+    stored = postgres_state.get_dual_agent_workflow_job(
+        job_id=row["job_id"],
+    )
+    assert stored["worker_reaped_at"] is None
+
+
+def test_postgres_historical_claim_requires_authorized_linked_terminal(
+    postgres_state,
+):
+    operation_id = "historical-postgres-linked"
+    request_hash = "c" * 64
+    row, reserved = postgres_state.reserve_historical_operation(
+        operation_id=operation_id,
+        request_hash=request_hash,
+        operation="replay",
+    )
+    assert reserved is True
+    assert row["status"] == "running"
+
+    with pytest.raises(
+        ValueError,
+        match="historical operation events require the dedicated writer",
+    ):
+        postgres_state.write_event(
+            run_id=operation_id,
+            source="historical_evaluation",
+            kind="historical_operation.completed",
+            payload={"request_hash": request_hash},
+        )
+
+    requested_event_id = (
+        postgres_state.write_historical_operation_event(
+        run_id=operation_id,
+        kind="historical_operation.requested",
+        payload={
+            "operation_id": operation_id,
+            "request_hash": request_hash,
+            "request": {"operation": "replay"},
+        },
+        )
+    )
+    terminal_event_id = (
+        postgres_state.write_historical_operation_event(
+        run_id=operation_id,
+        kind="historical_operation.completed",
+        payload={
+            "operation_id": operation_id,
+            "operation": "replay",
+            "request_hash": request_hash,
+            "requested_event_id": requested_event_id,
+        },
+        )
+    )
+
+    assert postgres_state.complete_historical_operation(
+        operation_id=operation_id,
+        request_hash=request_hash,
+        status="completed",
+        terminal_event_id=terminal_event_id,
+    ) == 1
+    assert postgres_state.complete_historical_operation(
+        operation_id=operation_id,
+        request_hash=request_hash,
+        status="completed",
+        terminal_event_id=terminal_event_id,
+    ) == 0
+
+
+def test_postgres_reapplying_schema_preserves_native_event_hashes(postgres_state):
+    postgres_state.write_event(
+        run_id="stable-native-run",
+        source="test",
+        kind="event_msg",
+        payload={"index": 1},
+        ts=101,
+    )
+    postgres_state.write_event(
+        run_id="stable-native-run",
+        source="test",
+        kind="event_msg",
+        payload={"index": 2},
+        ts=102,
+    )
+    before = postgres_state.read_events_since(
+        "stable-native-run",
+        after_event_id=0,
+        limit=10,
+    )
+
+    reopened = PostgresState(
+        postgres_state.dsn,
+        schema=postgres_state.schema,
+    )
+    try:
+        after = reopened.read_events_since(
+            "stable-native-run",
+            after_event_id=0,
+            limit=10,
+        )
+    finally:
+        reopened.close()
+
+    assert [event["ledger_genesis_kind"] for event in before] == [
+        "native",
+        None,
+    ]
+    assert after == before
 
 
 def test_postgres_gate_event_rows_keep_sqlite_payload_shape(postgres_state):
@@ -448,6 +1300,101 @@ def test_postgres_trends_details_and_incident_aggregation_match_sqlite(postgres_
     assert aggregated["details"]["transport_incidents"]["by_era"]["axi"] == 1
 
 
+def test_postgres_quality_audit_revisions_serialize_and_reject_impossible_counts(
+    postgres_state,
+):
+    postgres_state.upsert_quality_trend_row(
+        run_id="audit-run",
+        task_id="audit-task",
+        task_class="source_change",
+        gate="outcome_review",
+        accepted=True,
+        first_pass_accepted=True,
+        revision_rounds=0,
+        time_to_accepted_outcome_s=1.0,
+        details={},
+    )
+    barrier = Barrier(2)
+    revisions = (
+        {
+            "sample_size": 2,
+            "false_accept_count": 1,
+            "false_accept_denominator": 2,
+            "audit_details": {"revision": "first"},
+        },
+        {
+            "sample_size": 4,
+            "false_accept_count": 0,
+            "false_accept_denominator": 4,
+            "audit_details": {"revision": "second"},
+        },
+    )
+
+    def revise(index: int) -> dict:
+        state = PostgresState(
+            postgres_state.dsn,
+            schema=postgres_state.schema,
+            apply_schema=False,
+        )
+        try:
+            barrier.wait()
+            result = state.update_quality_trend_audit(
+                run_id="audit-run",
+                gate="outcome_review",
+                **revisions[index],
+            )
+            assert result is not None
+            return result
+        finally:
+            state.close()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(revise, range(2)))
+
+    audits = postgres_state.list_quality_trend_audits(
+        run_id="audit-run",
+        gate="outcome_review",
+    )
+    assert len(results) == 2
+    assert len(audits) == 2
+    assert audits[0]["computed_at"] < audits[1]["computed_at"]
+    assert {
+        audit["audit_details"]["revision"] for audit in audits
+    } == {"first", "second"}
+    [projection] = postgres_state.list_quality_trend_rows(
+        task_class="source_change",
+        gate="outcome_review",
+    )
+    latest = audits[-1]
+    assert projection["computed_at"] == latest["computed_at"]
+    assert projection["p11_audit_sample_size"] == latest["sample_size"]
+    assert projection["false_accept_count"] == latest["false_accept_count"]
+    assert (
+        projection["false_accept_denominator"]
+        == latest["false_accept_denominator"]
+    )
+    assert projection["details"]["p11_audit"] == latest["audit_details"]
+
+    with pytest.raises(ValueError, match="invalid quality audit counts"):
+        postgres_state.update_quality_trend_audit(
+            run_id="audit-run",
+            gate="outcome_review",
+            sample_size=2,
+            false_accept_count=3,
+            false_accept_denominator=2,
+        )
+    with pytest.raises(postgres_state._errors.CheckViolation):
+        postgres_state._conn.execute(
+            """INSERT INTO quality_trend_audits(
+                 run_id, gate, sample_size, false_accept_count,
+                 false_accept_denominator, false_accept_rate,
+                 audit_details_json, computed_at)
+               VALUES(
+                 'audit-run', 'outcome_review', 2, 3, 2, 1.5, '{}'::jsonb, 1
+               )"""
+        )
+
+
 def test_postgres_multi_writer_double_submit_creates_one_job(postgres_state, tmp_path):
     dsn = postgres_state.dsn
     schema = postgres_state.schema
@@ -509,6 +1456,116 @@ def test_postgres_reserve_replays_terminal_token(postgres_state, tmp_path):
     assert replayed["recovery_point"] == "terminal"
 
 
+def test_postgres_terminal_completion_is_cas_bound_and_frozen(
+    postgres_state,
+    tmp_path,
+):
+    row, created = _reserve_job(
+        postgres_state,
+        tmp_path,
+        job_id="job-terminal-cas",
+        token="terminal-cas-token",
+    )
+    assert created is True
+    outcome = {
+        "status": "accepted",
+        "run_id": "run",
+        "task_id": "task",
+        "evidence": ["original"],
+    }
+
+    event_id = postgres_state.complete_dual_agent_workflow_job(
+        job_id=row["job_id"],
+        status="accepted",
+        terminal_status="accepted",
+        terminal_outcome=outcome,
+        returncode=0,
+    )
+    assert postgres_state.complete_dual_agent_workflow_job(
+        job_id=row["job_id"],
+        status="accepted",
+        terminal_status="accepted",
+        terminal_outcome=outcome,
+        returncode=0,
+    ) == 0
+
+    [event] = postgres_state.read_events_since(
+        "run",
+        after_event_id=0,
+        limit=10,
+    )
+    assert event["event_id"] == event_id
+    assert event["run_id"] == "run"
+    assert event["event_sequence"] == 1
+    assert event["kind"] == "dual_agent_workflow_terminal_outcome"
+    assert event["payload"]["terminal_record"]["terminal_outcome"] == outcome
+    assert len(event["payload"]["terminal_record_sha256"]) == 64
+
+    with pytest.raises(RuntimeError, match="terminal outcome discrepancy"):
+        postgres_state.complete_dual_agent_workflow_job(
+            job_id=row["job_id"],
+            status="blocked",
+            terminal_status="blocked",
+            terminal_outcome={
+                "status": "blocked",
+                "run_id": "run",
+                "task_id": "task",
+                "evidence": ["conflicting"],
+            },
+            error="conflicting completion",
+        )
+    with pytest.raises(RuntimeError, match="terminal workflow job is immutable"):
+        postgres_state.clear_dual_agent_workflow_job_lease(
+            job_id=row["job_id"],
+            error="late dispatcher error",
+        )
+    with pytest.raises(RuntimeError, match="terminal workflow job is immutable"):
+        postgres_state.park_dual_agent_workflow_job(
+            job_id=row["job_id"],
+            reason="late park",
+        )
+    with pytest.raises(
+        postgres_state._errors.RaiseException,
+        match="terminal workflow job fields are immutable",
+    ):
+        postgres_state._conn.execute(
+            """UPDATE dual_agent_workflow_jobs
+                  SET status='blocked'
+                WHERE job_id=%s""",
+            (row["job_id"],),
+        )
+    with pytest.raises(
+        postgres_state._errors.RaiseException,
+        match="terminal workflow job is immutable",
+    ):
+        postgres_state._conn.execute(
+            """DELETE FROM dual_agent_workflow_jobs
+                WHERE job_id=%s""",
+            (row["job_id"],),
+        )
+
+    stored = postgres_state.get_dual_agent_workflow_job(job_id=row["job_id"])
+    assert stored["status"] == "accepted"
+    assert stored["terminal_status"] == "accepted"
+    assert stored["terminal_outcome_json"] == json.dumps(
+        outcome,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    )
+    assert stored["returncode"] == 0
+    assert stored["error"] is None
+    events = postgres_state.read_events_since(
+        "run",
+        after_event_id=0,
+        limit=10,
+    )
+    assert [event["kind"] for event in events] == [
+        "dual_agent_workflow_terminal_outcome",
+        "dual_agent_workflow_terminal_discrepancy",
+    ]
+
+
 def test_postgres_recovery_point_claim_is_compare_and_set(postgres_state, tmp_path):
     row, created = _reserve_job(
         postgres_state,
@@ -550,6 +1607,112 @@ def test_postgres_recovery_point_claim_is_compare_and_set(postgres_state, tmp_pa
 
     assert reclaimed is not None
     assert reclaimed["recovery_claim_token"] == "claim-3"
+
+
+def test_postgres_reap_claim_loses_to_heartbeat_and_other_reaper(
+    postgres_state,
+    tmp_path,
+):
+    def seed_spawned(job_id: str, pid: int) -> dict:
+        job_dir = tmp_path / ".handoff" / "workflow-jobs" / job_id
+        postgres_state.upsert_dual_agent_workflow_job(
+            job_id=job_id,
+            run_id=f"run-{job_id}",
+            task_id=f"task-{job_id}",
+            cwd=str(tmp_path),
+            status="running",
+            pid=pid,
+            worker_pgid=pid,
+            worker_started_at=float(pid),
+            worker_containment_id=f"containment-{job_id}",
+            request_path=str(job_dir / "request.json"),
+            result_path=str(job_dir / "result.json"),
+            log_path=str(job_dir / "worker.log"),
+            recovery_point="spawned",
+        )
+        postgres_state.update_dual_agent_workflow_job(
+            job_id=job_id,
+            leased_by=f"worker:{pid}",
+            lease_expires_at=999,
+            heartbeat_at=999,
+        )
+        row = postgres_state.get_dual_agent_workflow_job(job_id=job_id)
+        assert row is not None
+        return row
+
+    heartbeat_snapshot = seed_spawned("heartbeat-reap-race", 41020)
+    assert postgres_state.heartbeat_dual_agent_workflow_job(
+        job_id="heartbeat-reap-race",
+        leased_by="worker:41020",
+        lease_ttl_s=60,
+        now=1000,
+    )
+    denied = postgres_state.claim_dual_agent_workflow_job_for_reap(
+        job_id="heartbeat-reap-race",
+        reaper_id="reaper:heartbeat-race",
+        lease_ttl_s=60,
+        now=1000,
+        expected_leased_by=heartbeat_snapshot["leased_by"],
+        expected_lease_expires_at=heartbeat_snapshot["lease_expires_at"],
+        expected_heartbeat_at=heartbeat_snapshot["heartbeat_at"],
+        expected_pid=heartbeat_snapshot["pid"],
+        expected_worker_pgid=heartbeat_snapshot["worker_pgid"],
+        expected_worker_started_at=heartbeat_snapshot["worker_started_at"],
+        expected_worker_containment_id=heartbeat_snapshot[
+            "worker_containment_id"
+        ],
+    )
+    assert denied is None
+
+    stale_snapshot = seed_spawned("two-reaper-race", 41021)
+    barrier = Barrier(2)
+
+    def claim(index: int) -> dict | None:
+        state = PostgresState(
+            postgres_state.dsn,
+            schema=postgres_state.schema,
+            apply_schema=False,
+        )
+        try:
+            barrier.wait(timeout=5)
+            return state.claim_dual_agent_workflow_job_for_reap(
+                job_id="two-reaper-race",
+                reaper_id=f"reaper:postgres-{index}",
+                lease_ttl_s=60,
+                now=1000,
+                expected_leased_by=stale_snapshot["leased_by"],
+                expected_lease_expires_at=stale_snapshot[
+                    "lease_expires_at"
+                ],
+                expected_heartbeat_at=stale_snapshot["heartbeat_at"],
+                expected_pid=stale_snapshot["pid"],
+                expected_worker_pgid=stale_snapshot["worker_pgid"],
+                expected_worker_started_at=stale_snapshot[
+                    "worker_started_at"
+                ],
+                expected_worker_containment_id=stale_snapshot[
+                    "worker_containment_id"
+                ],
+            )
+        finally:
+            state.close()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        claims = list(pool.map(claim, range(2)))
+
+    winners = [claim for claim in claims if claim is not None]
+    assert len(winners) == 1
+    assert winners[0]["leased_by"] in {
+        "reaper:postgres-0",
+        "reaper:postgres-1",
+    }
+    stored = postgres_state.get_dual_agent_workflow_job(
+        job_id="two-reaper-race"
+    )
+    assert stored is not None
+    assert stored["leased_by"] == winners[0]["leased_by"]
+    assert stored["lease_expires_at"] == 1060
+    assert stored["heartbeat_at"] == 1000
 
 
 def test_postgres_concurrent_skip_locked_claimers_get_disjoint_jobs(postgres_state, tmp_path):

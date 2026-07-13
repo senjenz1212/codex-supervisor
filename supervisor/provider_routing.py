@@ -1,6 +1,7 @@
 """Provider routing policy shared by Supervisor model boundaries."""
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Mapping
 from typing import Literal
@@ -28,6 +29,57 @@ ANTHROPIC_PROXY_ENV_KEYS: tuple[str, ...] = (
     "CLAUDE_CODE_USE_MANTLE",
     "CLAUDE_CODE_USE_VERTEX",
 )
+
+DIRECT_ANTHROPIC_SAFE_CONTROL_ENV_KEYS: tuple[str, ...] = (
+    "ANTHROPIC_DEFAULT_OPUS_MODEL",
+    "CLAUDE_CODE_EXTRA_BODY",
+)
+
+ANTHROPIC_OPERATOR_CONTROL_ENV_KEYS: tuple[str, ...] = (
+    "CODEX_SUPERVISOR_EXECUTION_OPUS_MODEL",
+    "CODEX_SUPERVISOR_PLANNING_OPUS_MODEL",
+)
+
+# Child processes receive only execution essentials plus the one provider key
+# they are authorized to use.  In particular, credentials for OpenAI, GitHub,
+# cloud providers, package registries, and arbitrary supervisor integrations
+# must never cross into a Claude child merely because they exist in the daemon.
+DIRECT_ANTHROPIC_CHILD_ENV_KEYS: tuple[str, ...] = (
+    "HOME",
+    "PATH",
+    "SHELL",
+    "USER",
+    "LOGNAME",
+    "TMPDIR",
+    "TMP",
+    "TEMP",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TERM",
+    "COLORTERM",
+    "NO_COLOR",
+    "FORCE_COLOR",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "REQUESTS_CA_BUNDLE",
+    "CURL_CA_BUNDLE",
+    "NODE_EXTRA_CA_CERTS",
+    "CLAUDE_CONFIG_DIR",
+    *DIRECT_ANTHROPIC_SAFE_CONTROL_ENV_KEYS,
+)
+
+_CLAUDE_OPUS_ULTIMATE_MODEL = "opus"
+_CLAUDE_OPUS_UNDERLYING_MODEL = "claude-opus-4-8"
+_CLAUDE_OPUS_SAFE_OVERRIDE_MODEL = "claude-opus-4-6"
+_CLAUDE_OPUS_ULTIMATE_EXTRA_BODY = {
+    "thinking": {"type": "adaptive"},
+    "output_config": {"effort": "xhigh"},
+}
+_CLAUDE_OPUS_SAFE_OVERRIDE_EXTRA_BODY = {
+    "thinking": {"type": "adaptive"},
+    "output_config": {"effort": "max"},
+}
 
 _direct_anthropic_api_key: str | None = None
 
@@ -77,11 +129,14 @@ def direct_anthropic_env(
     *,
     api_key: str | None = None,
 ) -> dict[str, str]:
-    """Return an environment that cannot inherit an Anthropic proxy route."""
-    env = dict(os.environ if source is None else source)
-    source_api_key = env.pop("ANTHROPIC_API_KEY", None)
-    for key in ANTHROPIC_PROXY_ENV_KEYS:
-        env.pop(key, None)
+    """Return a least-privilege environment for a direct Anthropic child."""
+    source_env = dict(os.environ if source is None else source)
+    source_api_key = source_env.get("ANTHROPIC_API_KEY")
+    env = {
+        key: source_env[key]
+        for key in DIRECT_ANTHROPIC_CHILD_ENV_KEYS
+        if source_env.get(key)
+    }
     selected_api_key = (
         api_key
         if api_key is not None
@@ -92,6 +147,51 @@ def direct_anthropic_env(
     return env
 
 
+def direct_anthropic_runtime_env(
+    source: Mapping[str, str],
+    *,
+    requested_model: str,
+    lead_gate: str = "",
+) -> dict[str, str]:
+    """Build a direct Claude child environment with lead-route parity.
+
+    Lead tasks carry their gate in provider-neutral metadata.  That is enough
+    to reproduce the established planning-versus-execution Opus controls
+    without forwarding operator configuration or unrelated credentials into
+    the child process.
+    """
+
+    routed = {str(key): str(value) for key, value in source.items()}
+    if _uses_adaptive_opus_effort(requested_model) and lead_gate:
+        pin = _underlying_opus_model_for_gate(routed, lead_gate)
+        if pin is None:
+            routed.pop("ANTHROPIC_DEFAULT_OPUS_MODEL", None)
+        else:
+            routed["ANTHROPIC_DEFAULT_OPUS_MODEL"] = pin
+        routed["CLAUDE_CODE_EXTRA_BODY"] = json.dumps(
+            _opus_extra_body_for_pin(pin)
+        )
+    elif not _uses_adaptive_opus_effort(requested_model):
+        for key in DIRECT_ANTHROPIC_SAFE_CONTROL_ENV_KEYS:
+            routed.pop(key, None)
+    return direct_anthropic_env(routed)
+
+
+def without_anthropic_env(source: Mapping[str, str]) -> dict[str, str]:
+    """Remove Anthropic credentials and controls from another provider edge."""
+
+    blocked = {
+        DIRECT_ANTHROPIC_API_KEY_FD_ENV,
+        *ANTHROPIC_OPERATOR_CONTROL_ENV_KEYS,
+    }
+    return {
+        str(key): str(value)
+        for key, value in source.items()
+        if key not in blocked
+        and not key.startswith(("ANTHROPIC_", "CLAUDE_CODE_"))
+    }
+
+
 def configure_direct_anthropic_process_env(*, api_key: str | None = None) -> None:
     """Capture the direct key and remove Anthropic routing from the daemon env."""
     global _direct_anthropic_api_key
@@ -100,3 +200,39 @@ def configure_direct_anthropic_process_env(*, api_key: str | None = None) -> Non
     os.environ.pop("ANTHROPIC_API_KEY", None)
     for key in ANTHROPIC_PROXY_ENV_KEYS:
         os.environ.pop(key, None)
+
+
+def _uses_adaptive_opus_effort(model: str) -> bool:
+    return (
+        model == _CLAUDE_OPUS_ULTIMATE_MODEL
+        or model == _CLAUDE_OPUS_UNDERLYING_MODEL
+        or model.startswith(f"{_CLAUDE_OPUS_UNDERLYING_MODEL}-")
+    )
+
+
+def _underlying_opus_model_for_gate(
+    source: Mapping[str, str],
+    gate: str,
+) -> str | None:
+    if gate == "execution":
+        override = _opus_pin_override(
+            source.get("CODEX_SUPERVISOR_EXECUTION_OPUS_MODEL")
+        )
+        return override or None
+    override = _opus_pin_override(
+        source.get("CODEX_SUPERVISOR_PLANNING_OPUS_MODEL")
+    )
+    return override or _CLAUDE_OPUS_UNDERLYING_MODEL
+
+
+def _opus_pin_override(value: str | None) -> str:
+    selected = str(value or "").strip()
+    if selected and not selected.startswith("claude-opus-"):
+        return _CLAUDE_OPUS_SAFE_OVERRIDE_MODEL
+    return selected
+
+
+def _opus_extra_body_for_pin(pin: str | None) -> dict[str, object]:
+    if pin and pin.startswith(_CLAUDE_OPUS_SAFE_OVERRIDE_MODEL):
+        return _CLAUDE_OPUS_SAFE_OVERRIDE_EXTRA_BODY
+    return _CLAUDE_OPUS_ULTIMATE_EXTRA_BODY

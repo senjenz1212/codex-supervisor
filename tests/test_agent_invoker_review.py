@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import asyncio
+import json
 from pathlib import Path
 
 import pytest
 
+from supervisor.agent_runtime import AgentRunHandle
 from supervisor.config import Config
 from supervisor.state import Decision, State
 
@@ -92,12 +95,85 @@ class _FakeClient:
 
 
 @pytest.mark.asyncio
+async def test_agent_invoker_cancels_runtime_when_caller_is_cancelled(
+    tmp_path: Path,
+) -> None:
+    class BlockingRuntime:
+        kind = "blocking"
+
+        def __init__(self):
+            self.streaming = asyncio.Event()
+            self.cancelled: list[str] = []
+
+        async def start(self, task):
+            return AgentRunHandle(
+                run_id="runtime-run",
+                task_id=task.task_id,
+                runtime=self.kind,
+                session_id="runtime-session",
+                capabilities={},
+            )
+
+        async def resume(self, handle, instruction):
+            raise AssertionError("resume not expected")
+
+        async def cancel(self, handle):
+            self.cancelled.append(handle.run_id)
+
+        async def stream(self, handle):
+            self.streaming.set()
+            await asyncio.Future()
+            yield  # pragma: no cover
+
+        async def collect(self, handle):
+            raise AssertionError("collect not expected after cancellation")
+
+    skills = tmp_path / "skills"
+    skills.mkdir()
+    (skills / "review-updates.md").write_text(
+        "Review updates.",
+        encoding="utf-8",
+    )
+    runtime = BlockingRuntime()
+    invoker = __import__(
+        "supervisor.agent_invoker",
+        fromlist=["AgentInvoker"],
+    ).AgentInvoker(
+        _cfg(tmp_path),
+        State(str(tmp_path / "cancel.db")),
+        skills,
+        codex_mcp_server=object(),
+        telegram_mcp_server=object(),
+        agent_runtime=runtime,
+    )
+    task = asyncio.create_task(
+        invoker._handle(
+            Decision(
+                kind="review_updates",
+                run_id="run-cancel",
+                payload={},
+            )
+        )
+    )
+    await asyncio.wait_for(runtime.streaming.wait(), timeout=1)
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert runtime.cancelled == ["runtime-run"]
+
+
+@pytest.mark.asyncio
 async def test_review_updates_invoker_uses_read_only_grounding_tools(monkeypatch, tmp_path):
     import supervisor.agent_invoker as agent_invoker
-    from supervisor.provider_routing import configure_direct_anthropic_process_env
+    from supervisor.agent_runtime import ClaudeCodeRuntime
+    from supervisor.claude_sdk_runtime import ClaudeAgentSdkTransport
+    from supervisor.provider_routing import (
+        configure_direct_anthropic_process_env,
+        direct_anthropic_env,
+    )
 
-    monkeypatch.setattr(agent_invoker, "ClaudeAgentOptions", _FakeOptions)
-    monkeypatch.setattr(agent_invoker, "ClaudeSDKClient", _FakeClient)
     monkeypatch.setenv("OPENAI_API_KEY", "litellm-key")
     configure_direct_anthropic_process_env(api_key="direct-key")
     monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://proxy.example")
@@ -110,6 +186,13 @@ async def test_review_updates_invoker_uses_read_only_grounding_tools(monkeypatch
             Path("skills"),
             codex_mcp_server=object(),
             telegram_mcp_server=object(),
+            agent_runtime=ClaudeCodeRuntime(
+                transport=ClaudeAgentSdkTransport(
+                    sdk_loader=lambda: (_FakeClient, _FakeOptions),
+                )
+            ),
+            agent_environment=direct_anthropic_env(),
+            inherit_agent_environment=False,
         )
 
         await invoker._handle(Decision(
@@ -128,12 +211,19 @@ async def test_review_updates_invoker_uses_read_only_grounding_tools(monkeypatch
         assert _FakeOptions.seen.effort == "high"
         assert _FakeOptions.seen.env["ANTHROPIC_API_KEY"] == "direct-key"
         assert "ANTHROPIC_BASE_URL" not in _FakeOptions.seen.env
-        assert _FakeOptions.seen.env["OPENAI_API_KEY"] == "litellm-key"
+        assert "OPENAI_API_KEY" not in _FakeOptions.seen.env
 
         verdict = state._conn.execute(
             "SELECT phase, model, output_json FROM verdicts WHERE run_id='run-vela'"
         ).fetchone()
         assert verdict["phase"] == "review_updates"
         assert verdict["model"] == "claude-fable-5"
+        verdict_output = json.loads(verdict["output_json"])
+        assert verdict_output["requested_model"] == "claude-fable-5"
+        assert verdict_output["resolved_model"] is None
+        assert verdict_output["model_provenance"] == "requested_model_fallback"
+        assert verdict_output["agent_outputs"] == [
+            '{"review_sent": true, "grounding": "workspace"}'
+        ]
     finally:
         configure_direct_anthropic_process_env()

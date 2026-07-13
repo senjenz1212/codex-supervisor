@@ -123,6 +123,41 @@ class OrchestratorCfg(BaseModel):
     run_registry_dir: str
 
 
+class LedgerCheckpointsCfg(BaseModel):
+    """Composition settings for externally anchored ledger checkpoints."""
+
+    mode: Literal["diagnostic_only", "authoritative"] = "diagnostic_only"
+    max_events_between_checkpoints: int = Field(default=100, ge=1, le=1_000_000)
+    checkpoint_store_path: str = (
+        "~/.codex-supervisor/ledger-checkpoints"
+    )
+    runtime_provider: str = ""
+
+    @model_validator(mode="after")
+    def _require_authoritative_provider(self) -> "LedgerCheckpointsCfg":
+        if self.mode == "authoritative" and not self.runtime_provider.strip():
+            raise ValueError(
+                "authoritative ledger checkpoints require runtime_provider"
+            )
+        return self
+
+
+class HistoricalEvaluationCfg(BaseModel):
+    """Plugin boundary for audited rerun, regrade, and replay execution."""
+
+    enabled: bool = False
+    runtime_provider: str = ""
+    claim_stale_after_s: int = Field(default=86_400, ge=1)
+
+    @model_validator(mode="after")
+    def _require_enabled_provider(self) -> "HistoricalEvaluationCfg":
+        if self.enabled and not self.runtime_provider.strip():
+            raise ValueError(
+                "enabled historical evaluation requires runtime_provider"
+            )
+        return self
+
+
 class SupervisorCfg(BaseModel):
     state_db: str
     hook_server_port: int = 9001
@@ -139,6 +174,12 @@ class SupervisorCfg(BaseModel):
     reviewer_infra_retry_backoff_s: float = 1.0
     reviewer_low_confidence_threshold: float = 0.0
     reviewer_panel_calibration_path: str = ""
+    ledger_checkpoints: LedgerCheckpointsCfg = Field(
+        default_factory=LedgerCheckpointsCfg
+    )
+    historical_evaluation: HistoricalEvaluationCfg = Field(
+        default_factory=HistoricalEvaluationCfg
+    )
 
     @model_validator(mode="after")
     def _reject_anthropic_model_on_litellm_reviewer(self) -> "SupervisorCfg":
@@ -316,6 +357,12 @@ class Config(BaseModel):
             )
         cfg.orchestrator.run_registry_dir = _expanduser(cfg.orchestrator.run_registry_dir) or cfg.orchestrator.run_registry_dir
         cfg.supervisor.state_db = _expanduser(cfg.supervisor.state_db) or cfg.supervisor.state_db
+        cfg.supervisor.ledger_checkpoints.checkpoint_store_path = (
+            _expanduser(
+                cfg.supervisor.ledger_checkpoints.checkpoint_store_path
+            )
+            or cfg.supervisor.ledger_checkpoints.checkpoint_store_path
+        )
         cfg.connectors.claude_desktop_config_path = (
             _expanduser(cfg.connectors.claude_desktop_config_path)
             or cfg.connectors.claude_desktop_config_path

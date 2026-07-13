@@ -5,16 +5,46 @@ import asyncio
 import json
 import threading
 import time
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, Mapping
 
+from .evidence_ledger import (
+    NATIVE_GENESIS,
+    LedgerVerification,
+    build_ledger_fields,
+    prepare_event_payload,
+    verify_event_chain,
+    verify_event_chain_structure,
+)
 from .redaction import redact
-from .state import TERMINAL_WORKFLOW_JOB_STATUSES, canonical_terminal_outcome_json
-from .trace_envelope import stamp_trace_envelope
+from .quality_projection import (
+    QUALITY_TREND_PROJECTION_EVENT,
+    assert_generic_event_kind_allowed,
+    canonical_quality_trend_projection_row,
+    quality_trend_projection_event_payload,
+    rebuild_quality_trend_projection,
+)
+from .state import (
+    HISTORICAL_OPERATION_EVENT_SOURCE,
+    TERMINAL_WORKFLOW_JOB_STATUSES,
+    assert_historical_operation_event_source,
+    assert_public_event_kind_allowed,
+    assert_terminal_workflow_job_mutation_allowed,
+    canonical_terminal_completion_record,
+    canonical_terminal_completion_semantics,
+    canonical_terminal_outcome_json,
+    terminal_completion_conflict_sha256,
+    terminal_completion_record_sha256,
+    validate_terminal_completion,
+    validate_quality_audit_counts,
+)
 from .lessons import canonical_lesson_id, canonical_lesson_key
+
+if TYPE_CHECKING:
+    from .ledger_checkpoints import LedgerCheckpointCoordinator
 
 
 POSTGRES_LOCK_ORDER = "priority ASC, created_at ASC, id ASC"
+POSTGRES_ALEMBIC_HEAD = "20260712_0003"
 
 POSTGRES_CLAIM_AVAILABLE_JOBS_SQL = f"""
 WITH c AS MATERIALIZED (
@@ -45,6 +75,30 @@ UPDATE dual_agent_workflow_jobs AS j
  RETURNING j.*
 """
 
+POSTGRES_CLAIM_WORKFLOW_JOB_FOR_REAP_SQL = """
+UPDATE dual_agent_workflow_jobs AS j
+   SET leased_by = %(reaper_id)s,
+       lease_expires_at = %(claim_expires_at)s,
+       heartbeat_at = %(now)s,
+       updated_at = %(now)s
+ WHERE j.job_id = %(job_id)s
+   AND j.recovery_point = 'spawned'
+   AND j.status = 'running'
+   AND j.terminal_outcome_json IS NULL
+   AND j.worker_reaped_at IS NULL
+   AND j.leased_by IS NOT DISTINCT FROM %(expected_leased_by)s
+   AND j.lease_expires_at
+       IS NOT DISTINCT FROM %(expected_lease_expires_at)s
+   AND j.heartbeat_at IS NOT DISTINCT FROM %(expected_heartbeat_at)s
+   AND j.pid IS NOT DISTINCT FROM %(expected_pid)s
+   AND j.worker_pgid IS NOT DISTINCT FROM %(expected_worker_pgid)s
+   AND j.worker_started_at
+       IS NOT DISTINCT FROM %(expected_worker_started_at)s
+   AND j.worker_containment_id
+       IS NOT DISTINCT FROM %(expected_worker_containment_id)s
+ RETURNING j.*
+"""
+
 POSTGRES_SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
   version INTEGER PRIMARY KEY,
@@ -61,15 +115,27 @@ CREATE TABLE IF NOT EXISTS events (
   global_id BIGSERIAL PRIMARY KEY,
   run_id TEXT NOT NULL,
   event_id BIGINT NOT NULL,
+  event_sequence BIGINT NOT NULL,
   previous_event_id BIGINT,
   ts BIGINT NOT NULL,
   source TEXT NOT NULL,
   kind TEXT NOT NULL,
   payload_json JSONB NOT NULL,
+  previous_event_hash TEXT,
+  event_hash TEXT NOT NULL,
+  canonical_payload_hash TEXT NOT NULL,
+  artifact_manifest_hash TEXT NOT NULL,
+  ledger_genesis_kind TEXT,
   CONSTRAINT events_run_event_unique UNIQUE(run_id, event_id),
+  CONSTRAINT events_run_sequence_unique UNIQUE(run_id, event_sequence),
+  CONSTRAINT events_sequence_positive CHECK (event_sequence > 0),
   CONSTRAINT events_previous_id_shape CHECK (
        (event_id = 1 AND previous_event_id IS NULL)
     OR (event_id > 1 AND previous_event_id = event_id - 1)
+  ),
+  CONSTRAINT events_genesis_hash_shape CHECK (
+       (previous_event_hash IS NULL AND ledger_genesis_kind IN ('native', 'legacy-import'))
+    OR (previous_event_hash IS NOT NULL AND ledger_genesis_kind IS NULL)
   )
 );
 CREATE INDEX IF NOT EXISTS idx_events_run_event ON events(run_id, event_id);
@@ -113,6 +179,20 @@ CREATE TABLE IF NOT EXISTS dual_agent_workflow_steps (
 CREATE INDEX IF NOT EXISTS idx_dual_agent_workflow_steps_task
   ON dual_agent_workflow_steps(run_id, task_id, gate);
 
+CREATE TABLE IF NOT EXISTS historical_operation_claims (
+  operation_id TEXT PRIMARY KEY,
+  request_hash TEXT NOT NULL,
+  operation TEXT NOT NULL
+    CHECK(operation IN ('rerun', 'regrade', 'replay')),
+  status TEXT NOT NULL
+    CHECK(status IN ('running', 'completed', 'failed')),
+  terminal_event_id BIGINT,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_historical_operation_claims_status
+  ON historical_operation_claims(status, updated_at);
+
 CREATE TABLE IF NOT EXISTS dual_agent_workflow_jobs (
   id BIGSERIAL UNIQUE,
   job_id TEXT PRIMARY KEY,
@@ -121,6 +201,10 @@ CREATE TABLE IF NOT EXISTS dual_agent_workflow_jobs (
   cwd TEXT NOT NULL,
   status TEXT NOT NULL,
   pid INTEGER,
+  worker_pgid INTEGER,
+  worker_started_at DOUBLE PRECISION,
+  worker_containment_id TEXT,
+  worker_reaped_at BIGINT,
   request_path TEXT NOT NULL,
   result_path TEXT NOT NULL,
   log_path TEXT NOT NULL,
@@ -197,6 +281,36 @@ CREATE TABLE IF NOT EXISTS supervisor_quality_trends (
 CREATE INDEX IF NOT EXISTS idx_supervisor_quality_trends_task_gate
   ON supervisor_quality_trends(task_class, gate, computed_at);
 
+CREATE TABLE IF NOT EXISTS quality_trend_audits (
+  run_id TEXT NOT NULL,
+  gate TEXT NOT NULL,
+  sample_size INTEGER NOT NULL,
+  false_accept_count INTEGER NOT NULL,
+  false_accept_denominator INTEGER NOT NULL,
+  false_accept_rate DOUBLE PRECISION NOT NULL,
+  audit_details_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  computed_at BIGINT NOT NULL,
+  PRIMARY KEY(run_id, gate, computed_at),
+  CONSTRAINT quality_trend_audits_counts_valid CHECK (
+       sample_size >= 0
+   AND false_accept_count >= 0
+   AND false_accept_denominator >= 0
+   AND false_accept_count <= false_accept_denominator
+   AND false_accept_denominator <= sample_size
+   AND false_accept_rate >= 0.0
+   AND false_accept_rate <= 1.0
+  ),
+  CONSTRAINT quality_trend_audits_rate_exact CHECK (
+    false_accept_rate = CASE
+      WHEN false_accept_denominator = 0 THEN 0.0
+      ELSE false_accept_count::double precision
+           / false_accept_denominator::double precision
+    END
+  )
+);
+CREATE INDEX IF NOT EXISTS idx_quality_trend_audits_run_gate
+  ON quality_trend_audits(run_id, gate, computed_at);
+
 CREATE TABLE IF NOT EXISTS supervisor_autoresearch_experiments (
   experiment_id TEXT PRIMARY KEY,
   signal_key TEXT NOT NULL UNIQUE,
@@ -221,6 +335,223 @@ CREATE TABLE IF NOT EXISTS supervisor_autoresearch_experiments (
 );
 CREATE INDEX IF NOT EXISTS idx_supervisor_autoresearch_experiments_status
   ON supervisor_autoresearch_experiments(status, updated_at);
+
+ALTER TABLE events ADD COLUMN IF NOT EXISTS previous_event_hash TEXT;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS event_hash TEXT;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS canonical_payload_hash TEXT;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS artifact_manifest_hash TEXT;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS ledger_genesis_kind TEXT;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS event_sequence BIGINT;
+ALTER TABLE dual_agent_workflow_jobs
+  ADD COLUMN IF NOT EXISTS worker_pgid INTEGER;
+ALTER TABLE dual_agent_workflow_jobs
+  ADD COLUMN IF NOT EXISTS worker_started_at DOUBLE PRECISION;
+ALTER TABLE dual_agent_workflow_jobs
+  ADD COLUMN IF NOT EXISTS worker_containment_id TEXT;
+ALTER TABLE dual_agent_workflow_jobs
+  ADD COLUMN IF NOT EXISTS worker_reaped_at BIGINT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_events_event_hash ON events(event_hash);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_events_run_sequence
+  ON events(run_id, event_sequence);
+"""
+
+
+POSTGRES_EVENT_IMMUTABILITY_SQL = """
+ALTER TABLE events ALTER COLUMN event_sequence SET NOT NULL;
+ALTER TABLE events ALTER COLUMN event_hash SET NOT NULL;
+ALTER TABLE events ALTER COLUMN canonical_payload_hash SET NOT NULL;
+ALTER TABLE events ALTER COLUMN artifact_manifest_hash SET NOT NULL;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_constraint
+     WHERE conname = 'events_run_sequence_unique'
+       AND conrelid = 'events'::regclass
+  ) THEN
+    ALTER TABLE events
+      ADD CONSTRAINT events_run_sequence_unique
+      UNIQUE(run_id, event_sequence);
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_constraint
+     WHERE conname = 'events_sequence_positive'
+       AND conrelid = 'events'::regclass
+  ) THEN
+    ALTER TABLE events
+      ADD CONSTRAINT events_sequence_positive
+      CHECK(event_sequence > 0);
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_constraint
+     WHERE conname = 'quality_trend_audits_counts_valid'
+       AND conrelid = 'quality_trend_audits'::regclass
+  ) THEN
+    ALTER TABLE quality_trend_audits
+      ADD CONSTRAINT quality_trend_audits_counts_valid CHECK (
+           sample_size >= 0
+       AND false_accept_count >= 0
+       AND false_accept_denominator >= 0
+       AND false_accept_count <= false_accept_denominator
+       AND false_accept_denominator <= sample_size
+       AND false_accept_rate >= 0.0
+       AND false_accept_rate <= 1.0
+      );
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_constraint
+     WHERE conname = 'quality_trend_audits_rate_exact'
+       AND conrelid = 'quality_trend_audits'::regclass
+  ) THEN
+    ALTER TABLE quality_trend_audits
+      ADD CONSTRAINT quality_trend_audits_rate_exact CHECK (
+        false_accept_rate = CASE
+          WHEN false_accept_denominator = 0 THEN 0.0
+          ELSE false_accept_count::double precision
+               / false_accept_denominator::double precision
+        END
+      );
+  END IF;
+END;
+$$;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_constraint
+     WHERE conname = 'events_genesis_hash_shape'
+       AND conrelid = 'events'::regclass
+  ) THEN
+    ALTER TABLE events
+      ADD CONSTRAINT events_genesis_hash_shape CHECK (
+           (previous_event_hash IS NULL AND ledger_genesis_kind IN ('native', 'legacy-import'))
+        OR (previous_event_hash IS NOT NULL AND ledger_genesis_kind IS NULL)
+      );
+  END IF;
+END;
+$$;
+CREATE OR REPLACE FUNCTION reject_event_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RAISE EXCEPTION 'events are append-only';
+END;
+$$;
+DROP TRIGGER IF EXISTS events_no_update ON events;
+CREATE TRIGGER events_no_update
+BEFORE UPDATE ON events
+FOR EACH ROW EXECUTE FUNCTION reject_event_mutation();
+DROP TRIGGER IF EXISTS events_no_delete ON events;
+CREATE TRIGGER events_no_delete
+BEFORE DELETE ON events
+FOR EACH ROW EXECUTE FUNCTION reject_event_mutation();
+DROP TRIGGER IF EXISTS events_no_truncate ON events;
+CREATE TRIGGER events_no_truncate
+BEFORE TRUNCATE ON events
+FOR EACH STATEMENT EXECUTE FUNCTION reject_event_mutation();
+CREATE OR REPLACE FUNCTION reject_quality_trend_audit_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RAISE EXCEPTION 'quality trend audits are immutable';
+END;
+$$;
+DROP TRIGGER IF EXISTS quality_trend_audits_no_update ON quality_trend_audits;
+CREATE TRIGGER quality_trend_audits_no_update
+BEFORE UPDATE ON quality_trend_audits
+FOR EACH ROW EXECUTE FUNCTION reject_quality_trend_audit_mutation();
+DROP TRIGGER IF EXISTS quality_trend_audits_no_delete ON quality_trend_audits;
+CREATE TRIGGER quality_trend_audits_no_delete
+BEFORE DELETE ON quality_trend_audits
+FOR EACH ROW EXECUTE FUNCTION reject_quality_trend_audit_mutation();
+DROP TRIGGER IF EXISTS quality_trend_audits_no_truncate ON quality_trend_audits;
+CREATE TRIGGER quality_trend_audits_no_truncate
+BEFORE TRUNCATE ON quality_trend_audits
+FOR EACH STATEMENT EXECUTE FUNCTION reject_quality_trend_audit_mutation();
+CREATE OR REPLACE FUNCTION reject_terminal_workflow_job_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF TG_OP = 'TRUNCATE' THEN
+    RAISE EXCEPTION 'workflow jobs are immutable evidence';
+  END IF;
+  IF TG_OP = 'DELETE' THEN
+    IF OLD.terminal_outcome_json IS NOT NULL
+       OR OLD.recovery_point = 'terminal'
+       OR OLD.status IN (
+            'accepted', 'blocked', 'cancelled', 'completed',
+            'denied', 'failed'
+          )
+    THEN
+      RAISE EXCEPTION 'terminal workflow job is immutable';
+    END IF;
+    RETURN OLD;
+  END IF;
+  IF OLD.terminal_outcome_json IS NOT NULL
+     AND (
+          NEW.job_id IS DISTINCT FROM OLD.job_id
+       OR NEW.run_id IS DISTINCT FROM OLD.run_id
+       OR NEW.task_id IS DISTINCT FROM OLD.task_id
+       OR NEW.result_path IS DISTINCT FROM OLD.result_path
+       OR NEW.status IS DISTINCT FROM OLD.status
+       OR NEW.recovery_point IS DISTINCT FROM OLD.recovery_point
+       OR NEW.terminal_status IS DISTINCT FROM OLD.terminal_status
+       OR NEW.terminal_outcome_json IS DISTINCT FROM OLD.terminal_outcome_json
+       OR NEW.terminal_outcome_recorded_at
+            IS DISTINCT FROM OLD.terminal_outcome_recorded_at
+       OR NEW.returncode IS DISTINCT FROM OLD.returncode
+       OR NEW.error IS DISTINCT FROM OLD.error
+       OR NEW.pid IS DISTINCT FROM OLD.pid
+       OR NEW.worker_pgid IS DISTINCT FROM OLD.worker_pgid
+       OR NEW.worker_started_at IS DISTINCT FROM OLD.worker_started_at
+       OR NEW.worker_containment_id
+            IS DISTINCT FROM OLD.worker_containment_id
+     )
+  THEN
+    RAISE EXCEPTION 'terminal workflow job fields are immutable';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS dual_agent_workflow_jobs_terminal_freeze
+  ON dual_agent_workflow_jobs;
+CREATE TRIGGER dual_agent_workflow_jobs_terminal_freeze
+BEFORE UPDATE ON dual_agent_workflow_jobs
+FOR EACH ROW EXECUTE FUNCTION reject_terminal_workflow_job_mutation();
+DROP TRIGGER IF EXISTS dual_agent_workflow_jobs_terminal_no_delete
+  ON dual_agent_workflow_jobs;
+CREATE TRIGGER dual_agent_workflow_jobs_terminal_no_delete
+BEFORE DELETE ON dual_agent_workflow_jobs
+FOR EACH ROW EXECUTE FUNCTION reject_terminal_workflow_job_mutation();
+DROP TRIGGER IF EXISTS dual_agent_workflow_jobs_no_truncate
+  ON dual_agent_workflow_jobs;
+CREATE TRIGGER dual_agent_workflow_jobs_no_truncate
+BEFORE TRUNCATE ON dual_agent_workflow_jobs
+FOR EACH STATEMENT EXECUTE FUNCTION reject_terminal_workflow_job_mutation();
+CREATE OR REPLACE FUNCTION reject_worker_reaped_at_rewrite()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF OLD.worker_reaped_at IS NOT NULL
+     AND NEW.worker_reaped_at IS DISTINCT FROM OLD.worker_reaped_at
+  THEN
+    RAISE EXCEPTION 'worker_reaped_at is immutable once recorded';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS dual_agent_workflow_jobs_worker_reaped_once
+  ON dual_agent_workflow_jobs;
+CREATE TRIGGER dual_agent_workflow_jobs_worker_reaped_once
+BEFORE UPDATE ON dual_agent_workflow_jobs
+FOR EACH ROW EXECUTE FUNCTION reject_worker_reaped_at_rewrite();
 """
 
 
@@ -240,16 +571,63 @@ def _load_psycopg() -> tuple[Any, Any, Any]:
 
 
 def _split_sql_script(script: str) -> list[str]:
-    return [statement.strip() for statement in script.split(";") if statement.strip()]
+    statements: list[str] = []
+    current: list[str] = []
+    single_quoted = False
+    double_quoted = False
+    dollar_tag: str | None = None
+    index = 0
+    while index < len(script):
+        if dollar_tag is not None:
+            if script.startswith(dollar_tag, index):
+                current.append(dollar_tag)
+                index += len(dollar_tag)
+                dollar_tag = None
+                continue
+            current.append(script[index])
+            index += 1
+            continue
+
+        character = script[index]
+        if not single_quoted and not double_quoted and character == "$":
+            end = script.find("$", index + 1)
+            if end != -1:
+                candidate = script[index : end + 1]
+                tag_body = candidate[1:-1]
+                if not tag_body or tag_body.replace("_", "").isalnum():
+                    dollar_tag = candidate
+                    current.append(candidate)
+                    index = end + 1
+                    continue
+        if character == "'" and not double_quoted:
+            if single_quoted and index + 1 < len(script) and script[index + 1] == "'":
+                current.extend(("'", "'"))
+                index += 2
+                continue
+            single_quoted = not single_quoted
+        elif character == '"' and not single_quoted:
+            double_quoted = not double_quoted
+        if character == ";" and not single_quoted and not double_quoted:
+            statement = "".join(current).strip()
+            if statement:
+                statements.append(statement)
+            current = []
+        else:
+            current.append(character)
+        index += 1
+    statement = "".join(current).strip()
+    if statement:
+        statements.append(statement)
+    return statements
 
 
 def _event_payload(*, run_id: str, source: str, kind: str, payload: dict[str, Any]) -> dict[str, Any]:
-    return redact(stamp_trace_envelope(
+    return prepare_event_payload(
         run_id=run_id,
         source=source,
         kind=kind,
         payload=payload,
-    ))
+    )
 
 
 def _as_payload(value: Any) -> dict[str, Any]:
@@ -325,6 +703,22 @@ def _quality_trend_summary_to_dict(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _quality_trend_audit_row_to_dict(row: dict[str, Any]) -> dict[str, Any]:
+    payload = dict(row)
+    for key in (
+        "sample_size",
+        "false_accept_count",
+        "false_accept_denominator",
+        "computed_at",
+    ):
+        payload[key] = int(payload.get(key) or 0)
+    payload["false_accept_rate"] = float(payload.get("false_accept_rate") or 0.0)
+    payload["audit_details"] = _as_payload(
+        payload.pop("audit_details_json", {})
+    )
+    return payload
+
+
 def _split_group_concat(value: Any) -> list[str]:
     return sorted({item for item in str(value or "").split(",") if item})
 
@@ -356,6 +750,9 @@ class PostgresState:
         schema: str | None = None,
         apply_schema: bool = True,
         connect: Any | None = None,
+        ledger_checkpoint_coordinator: (
+            LedgerCheckpointCoordinator | None
+        ) = None,
     ) -> None:
         psycopg, sql, row_helpers = _load_psycopg()
         dict_row, Jsonb = row_helpers
@@ -365,6 +762,7 @@ class PostgresState:
         self._Jsonb = Jsonb
         self._sql = sql
         self._errors = psycopg.errors
+        self._ledger_checkpoint_coordinator = ledger_checkpoint_coordinator
         self._conn = (connect or psycopg.connect)(dsn, row_factory=dict_row)
         self._conn.autocommit = True
         self._write_lock = threading.RLock()
@@ -374,11 +772,60 @@ class PostgresState:
             self._conn.execute(sql.SQL("SET search_path TO {}").format(sql.Identifier(schema)))
         if apply_schema:
             self.apply_schema()
+        self.reconcile_event_checkpoints()
+
+    @property
+    def event_ledger_assurance(self) -> str:
+        if getattr(self, "_ledger_checkpoint_coordinator", None) is None:
+            return "diagnostic-only"
+        return self._ledger_checkpoint_coordinator.assurance
 
     def apply_schema(self) -> None:
         with self._write_lock:
             with self._conn.transaction():
+                schema_state = self._conn.execute(
+                    """SELECT to_regclass('events') AS events_table,
+                              to_regclass('alembic_version')
+                                AS alembic_table"""
+                ).fetchone()
+                events_table = (
+                    schema_state["events_table"]
+                    if isinstance(schema_state, Mapping)
+                    else schema_state[0]
+                )
+                alembic_table = (
+                    schema_state["alembic_table"]
+                    if isinstance(schema_state, Mapping)
+                    else schema_state[1]
+                )
+                existing_alembic_version: str | None = None
+                if alembic_table is not None:
+                    version_row = self._conn.execute(
+                        "SELECT version_num FROM alembic_version"
+                    ).fetchone()
+                    if version_row is not None:
+                        existing_alembic_version = str(
+                            version_row["version_num"]
+                            if isinstance(version_row, Mapping)
+                            else version_row[0]
+                        )
+                if events_table is not None and alembic_table is None:
+                    raise RuntimeError(
+                        "existing Postgres schema is not Alembic-managed; "
+                        "run `make migrate` before starting Supervisor"
+                    )
+                if (
+                    alembic_table is not None
+                    and existing_alembic_version != POSTGRES_ALEMBIC_HEAD
+                ):
+                    raise RuntimeError(
+                        "Postgres schema is not at Alembic head "
+                        f"{POSTGRES_ALEMBIC_HEAD}; run `make migrate` "
+                        "before starting Supervisor"
+                    )
                 for statement in _split_sql_script(POSTGRES_SCHEMA_SQL):
+                    self._conn.execute(statement)
+                for statement in _split_sql_script(POSTGRES_EVENT_IMMUTABILITY_SQL):
                     self._conn.execute(statement)
                 self._conn.execute(
                     """INSERT INTO schema_migrations(version, name, applied_at)
@@ -386,12 +833,34 @@ class PostgresState:
                        ON CONFLICT(version) DO NOTHING""",
                     (int(time.time()),),
                 )
+                self._conn.execute(
+                    """INSERT INTO schema_migrations(version, name, applied_at)
+                       VALUES(2, 'postgres.tamper_evident_event_ledger', %s)
+                       ON CONFLICT(version) DO NOTHING""",
+                    (int(time.time()),),
+                )
+                if alembic_table is None:
+                    self._conn.execute(
+                        """CREATE TABLE alembic_version (
+                             version_num VARCHAR(32) NOT NULL,
+                             CONSTRAINT alembic_version_pkc
+                               PRIMARY KEY(version_num)
+                           )"""
+                    )
+                    self._conn.execute(
+                        """INSERT INTO alembic_version(version_num)
+                           VALUES(%s)""",
+                        (POSTGRES_ALEMBIC_HEAD,),
+                    )
 
     def close(self) -> None:
         self._conn.close()
 
     # --- events ---
-    def _next_stream_event_id(self, run_id: str) -> tuple[int, int | None]:
+    def _next_stream_event_id(
+        self,
+        run_id: str,
+    ) -> tuple[int, int | None, int, str | None]:
         row = self._conn.execute(
             """INSERT INTO event_stream_sequences(run_id, last_event_id)
                VALUES(%s, 1)
@@ -404,33 +873,254 @@ class PostgresState:
             raise RuntimeError("failed to allocate Postgres event stream id")
         event_id = int(row["last_event_id"])
         previous_id = event_id - 1 if event_id > 1 else None
-        return event_id, previous_id
+        previous = self._conn.execute(
+            """SELECT event_sequence, event_hash
+                 FROM events
+                WHERE run_id=%s
+                ORDER BY event_sequence DESC
+                LIMIT 1""",
+            (run_id,),
+        ).fetchone()
+        event_sequence = (
+            int(previous["event_sequence"]) + 1
+            if previous is not None
+            else 1
+        )
+        previous_hash = (
+            str(previous["event_hash"])
+            if previous is not None and previous["event_hash"] is not None
+            else None
+        )
+        if previous_id is not None and previous_hash is None:
+            raise RuntimeError(
+                "event stream predecessor is missing or unhashed: "
+                f"run_id={run_id} event_id={previous_id}"
+            )
+        return event_id, previous_id, event_sequence, previous_hash
 
-    def write_event(self, *, run_id: str, source: str, kind: str, payload: dict[str, Any]) -> int:
+    def _insert_event_unlocked(
+        self,
+        *,
+        run_id: str,
+        source: str,
+        kind: str,
+        payload: dict[str, Any],
+        ts: int | None = None,
+    ) -> int:
+        (
+            event_id,
+            previous_id,
+            event_sequence,
+            previous_hash,
+        ) = self._next_stream_event_id(run_id)
+        event_ts = int(time.time()) if ts is None else int(ts)
+        event_payload = _event_payload(
+            run_id=run_id,
+            source=source,
+            kind=kind,
+            payload=payload,
+        )
+        fields = build_ledger_fields(
+            run_id=run_id,
+            event_sequence=event_sequence,
+            ts=event_ts,
+            source=source,
+            kind=kind,
+            payload=event_payload,
+            previous_event_hash=previous_hash,
+            ledger_genesis_kind=NATIVE_GENESIS if previous_hash is None else None,
+        )
+        self._conn.execute(
+            """INSERT INTO events(
+                 run_id, event_id, event_sequence, previous_event_id, ts,
+                 source, kind, payload_json,
+                 previous_event_hash, event_hash, canonical_payload_hash,
+                 artifact_manifest_hash, ledger_genesis_kind)
+               VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (
+                run_id,
+                event_id,
+                event_sequence,
+                previous_id,
+                event_ts,
+                source,
+                kind,
+                self._Jsonb(event_payload),
+                fields.previous_event_hash,
+                fields.event_hash,
+                fields.canonical_payload_hash,
+                fields.artifact_manifest_hash,
+                fields.ledger_genesis_kind,
+            ),
+        )
+        return event_id
+
+    def _event_ledger_rows(self, run_id: str) -> list[dict[str, Any]]:
+        return list(
+            self._conn.execute(
+                """SELECT event_id, run_id, event_sequence, ts, source, kind,
+                          payload_json,
+                          previous_event_hash, event_hash,
+                          canonical_payload_hash, artifact_manifest_hash,
+                          ledger_genesis_kind
+                     FROM events
+                    WHERE run_id=%s
+                    ORDER BY event_id ASC""",
+                (run_id,),
+            ).fetchall()
+        )
+
+    def _coordinate_committed_event(
+        self,
+        *,
+        run_id: str,
+        event_id: int,
+        event_kind: str,
+    ) -> None:
+        coordinator = getattr(
+            self,
+            "_ledger_checkpoint_coordinator",
+            None,
+        )
+        if coordinator is None or event_id <= 0:
+            return
+        event = self._conn.execute(
+            """SELECT event_id, event_sequence
+                 FROM events
+                WHERE run_id=%s AND event_id=%s""",
+            (run_id, event_id),
+        ).fetchone()
+        if event is None:
+            raise RuntimeError(
+                "committed event disappeared before checkpoint coordination"
+            )
+        coordinator.coordinate_event(
+            run_id=run_id,
+            event_id=int(event["event_id"]),
+            event_count=int(event["event_sequence"]),
+            event_kind=event_kind,
+            events_loader=lambda: self._event_ledger_rows(run_id),
+        )
+
+    def ensure_event_checkpoint(
+        self,
+        *,
+        run_id: str,
+        event_id: int,
+        event_kind: str,
+    ) -> None:
+        """Retry idempotent checkpoint publication for an existing event."""
+        with self._write_lock:
+            self._coordinate_committed_event(
+                run_id=run_id,
+                event_id=int(event_id),
+                event_kind=event_kind,
+            )
+
+    def reconcile_event_checkpoints(
+        self,
+        *,
+        run_id: str | None = None,
+    ) -> int:
+        """Recover external checkpoint publication from committed events."""
+        coordinator = getattr(
+            self,
+            "_ledger_checkpoint_coordinator",
+            None,
+        )
+        if coordinator is None:
+            return 0
+        with self._write_lock:
+            if run_id is None:
+                rows = self._conn.execute(
+                    """SELECT run_id, event_id, kind
+                         FROM events
+                        ORDER BY run_id ASC, event_sequence ASC"""
+                ).fetchall()
+            else:
+                rows = self._conn.execute(
+                    """SELECT run_id, event_id, kind
+                         FROM events
+                        WHERE run_id=%s
+                        ORDER BY event_sequence ASC""",
+                    (str(run_id),),
+                ).fetchall()
+            for row in rows:
+                self._coordinate_committed_event(
+                    run_id=str(row["run_id"]),
+                    event_id=int(row["event_id"]),
+                    event_kind=str(row["kind"]),
+                )
+            return len(rows)
+
+    def write_event(
+        self,
+        *,
+        run_id: str,
+        source: str,
+        kind: str,
+        payload: dict[str, Any],
+        ts: int | None = None,
+    ) -> int:
+        assert_generic_event_kind_allowed(kind)
+        assert_public_event_kind_allowed(kind)
+        return self._write_event_internal(
+            run_id=run_id,
+            source=source,
+            kind=kind,
+            payload=payload,
+            ts=ts,
+        )
+
+    def write_historical_operation_event(
+        self,
+        *,
+        run_id: str,
+        kind: str,
+        payload: dict[str, Any],
+        ts: int | None = None,
+    ) -> int:
+        if not str(kind).startswith("historical_operation."):
+            raise ValueError(
+                "dedicated historical writer only accepts historical events"
+            )
+        return self._write_event_internal(
+            run_id=run_id,
+            source=HISTORICAL_OPERATION_EVENT_SOURCE,
+            kind=kind,
+            payload=payload,
+            ts=ts,
+        )
+
+    def _write_event_internal(
+        self,
+        *,
+        run_id: str,
+        source: str,
+        kind: str,
+        payload: dict[str, Any],
+        ts: int | None,
+    ) -> int:
+        assert_generic_event_kind_allowed(kind)
+        assert_historical_operation_event_source(
+            source=source,
+            kind=kind,
+        )
         with self._write_lock:
             with self._conn.transaction():
-                event_id, previous_id = self._next_stream_event_id(run_id)
-                event_payload = _event_payload(
+                event_id = self._insert_event_unlocked(
                     run_id=run_id,
                     source=source,
                     kind=kind,
                     payload=payload,
+                    ts=ts,
                 )
-                self._conn.execute(
-                    """INSERT INTO events(
-                         run_id, event_id, previous_event_id, ts, source, kind, payload_json)
-                       VALUES(%s, %s, %s, %s, %s, %s, %s)""",
-                    (
-                        run_id,
-                        event_id,
-                        previous_id,
-                        int(time.time()),
-                        source,
-                        kind,
-                        self._Jsonb(event_payload),
-                    ),
-                )
-                return event_id
+            self._coordinate_committed_event(
+                run_id=run_id,
+                event_id=event_id,
+                event_kind=kind,
+            )
+            return event_id
 
     def write_event_and_tail_offset(
         self,
@@ -441,23 +1131,20 @@ class PostgresState:
         payload: dict[str, Any],
         path: str,
         byte_offset: int,
+        ts: int | None = None,
     ) -> int:
+        assert_generic_event_kind_allowed(kind)
+        assert_public_event_kind_allowed(kind)
         with self._write_lock:
             with self._conn.transaction():
-                event_id, previous_id = self._next_stream_event_id(run_id)
-                event_payload = _event_payload(
+                event_id = self._insert_event_unlocked(
                     run_id=run_id,
                     source=source,
                     kind=kind,
                     payload=payload,
+                    ts=ts,
                 )
                 now = int(time.time())
-                self._conn.execute(
-                    """INSERT INTO events(
-                         run_id, event_id, previous_event_id, ts, source, kind, payload_json)
-                       VALUES(%s, %s, %s, %s, %s, %s, %s)""",
-                    (run_id, event_id, previous_id, now, source, kind, self._Jsonb(event_payload)),
-                )
                 self._conn.execute(
                     """INSERT INTO tail_offsets(path, byte_offset, updated_at)
                        VALUES(%s, %s, %s)
@@ -466,7 +1153,12 @@ class PostgresState:
                              updated_at=EXCLUDED.updated_at""",
                     (path, int(byte_offset), now),
                 )
-                return event_id
+            self._coordinate_committed_event(
+                run_id=run_id,
+                event_id=event_id,
+                event_kind=kind,
+            )
+            return event_id
 
     def read_events_since(
         self,
@@ -478,7 +1170,10 @@ class PostgresState:
         if page_limit <= 0:
             return []
         rows = self._conn.execute(
-            """SELECT event_id, previous_event_id, ts, source, kind, payload_json
+            """SELECT event_id, event_sequence, previous_event_id, run_id, ts,
+                      source, kind, payload_json, previous_event_hash, event_hash,
+                      canonical_payload_hash, artifact_manifest_hash,
+                      ledger_genesis_kind
                FROM events
                WHERE run_id=%s AND event_id > %s
                ORDER BY event_id ASC
@@ -488,6 +1183,8 @@ class PostgresState:
         return [
             {
                 "event_id": int(row["event_id"]),
+                "run_id": row["run_id"],
+                "event_sequence": int(row["event_sequence"]),
                 "previous_event_id": (
                     None if row["previous_event_id"] is None else int(row["previous_event_id"])
                 ),
@@ -495,9 +1192,127 @@ class PostgresState:
                 "source": row["source"],
                 "kind": row["kind"],
                 "payload": _as_payload(row["payload_json"]),
+                "previous_event_hash": row["previous_event_hash"],
+                "event_hash": row["event_hash"],
+                "canonical_payload_hash": row["canonical_payload_hash"],
+                "artifact_manifest_hash": row["artifact_manifest_hash"],
+                "ledger_genesis_kind": row["ledger_genesis_kind"],
             }
             for row in rows
         ]
+
+    def verify_event_ledger(
+        self,
+        run_id: str,
+        *,
+        checkpoint_store: Any | None = None,
+        verifier: Any | None = None,
+        trusted_latest_checkpoint: Mapping[str, Any] | None = None,
+    ) -> LedgerVerification:
+        """Verify release evidence against an externally pinned signed head."""
+        rows = self._event_ledger_rows(run_id)
+        if (
+            checkpoint_store is None
+            and verifier is None
+            and trusted_latest_checkpoint is None
+            and getattr(
+                self,
+                "_ledger_checkpoint_coordinator",
+                None,
+            )
+            is not None
+        ):
+            return self._ledger_checkpoint_coordinator.verify(
+                rows,
+                expected_run_id=run_id,
+            )
+        if (
+            checkpoint_store is None
+            or verifier is None
+        ):
+            return verify_event_chain(
+                rows,
+                expected_run_id=run_id,
+            )
+        from .ledger_checkpoints import verify_authoritative_event_chain
+
+        return verify_authoritative_event_chain(
+            rows,
+            expected_run_id=run_id,
+            checkpoint_store=checkpoint_store,
+            verifier=verifier,
+            trusted_latest_checkpoint=trusted_latest_checkpoint,
+        )
+
+    def verify_event_ledger_structure(
+        self,
+        run_id: str,
+    ) -> LedgerVerification:
+        """Verify the observed local prefix without claiming tail completeness."""
+        rows = self._conn.execute(
+            """SELECT event_id, run_id, event_sequence, ts, source, kind,
+                      payload_json,
+                      previous_event_hash, event_hash,
+                      canonical_payload_hash, artifact_manifest_hash,
+                      ledger_genesis_kind
+                 FROM events
+                WHERE run_id=%s
+                ORDER BY event_id ASC""",
+            (run_id,),
+        ).fetchall()
+        return verify_event_chain_structure(
+            rows,
+            expected_run_id=run_id,
+        )
+
+    def checkpoint_event_ledger(
+        self,
+        run_id: str,
+        *,
+        checkpoint_store: Any,
+        signer: Any,
+        verifier: Any,
+        created_at: int | None = None,
+    ) -> Any:
+        verification = self.verify_event_ledger_structure(run_id)
+        if (
+            not verification.valid
+            or verification.event_count <= 0
+            or verification.head_event_id is None
+            or verification.head_event_hash is None
+        ):
+            raise RuntimeError(
+                "cannot checkpoint an empty or invalid event ledger"
+            )
+        return checkpoint_store.append_signed_head(
+            run_id=run_id,
+            head_event_id=verification.head_event_id,
+            head_event_hash=verification.head_event_hash,
+            event_count=verification.event_count,
+            signer=signer,
+            verifier=verifier,
+            created_at=(
+                int(time.time())
+                if created_at is None
+                else int(created_at)
+            ),
+        )
+
+    def verify_event_ledger_authoritatively(
+        self,
+        run_id: str,
+        *,
+        checkpoint_store: Any,
+        verifier: Any,
+        trusted_latest_checkpoint: dict[str, Any] | None = None,
+    ) -> LedgerVerification:
+        """Compatibility alias for the release-grade verification boundary."""
+        return self.verify_event_ledger(
+            run_id,
+            checkpoint_store=checkpoint_store,
+            verifier=verifier,
+            trusted_latest_checkpoint=trusted_latest_checkpoint,
+        )
 
     def recent_events(self, run_id: str, n: int = 20) -> list[dict[str, Any]]:
         rows = self._conn.execute(
@@ -719,6 +1534,7 @@ class PostgresState:
         computed_at: int | None = None,
     ) -> dict[str, Any]:
         now = int(time.time()) if computed_at is None else int(computed_at)
+        event_id = 0
         with self._write_lock:
             with self._conn.transaction():
                 row = self._conn.execute(
@@ -755,9 +1571,26 @@ class PostgresState:
                         now,
                     ),
                 ).fetchone()
+                if row is not None:
+                    projection_row = _quality_trend_row_to_dict(dict(row))
+                    projection_row.pop("id", None)
+                    event_id = self._insert_event_unlocked(
+                        run_id=run_id,
+                        source="quality_trends",
+                        kind=QUALITY_TREND_PROJECTION_EVENT,
+                        payload=quality_trend_projection_event_payload(
+                            projection_row
+                        ),
+                    )
                 if row is None:
                     raise RuntimeError("quality trend row was not persisted")
-                return _quality_trend_row_to_dict(dict(row))
+                result = _quality_trend_row_to_dict(dict(row))
+            self._coordinate_committed_event(
+                run_id=run_id,
+                event_id=event_id,
+                event_kind=QUALITY_TREND_PROJECTION_EVENT,
+            )
+            return result
 
     def update_quality_trend_audit(
         self,
@@ -769,21 +1602,55 @@ class PostgresState:
         false_accept_denominator: int,
         audit_details: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
-        denominator = max(0, int(false_accept_denominator))
-        false_count = max(0, int(false_accept_count))
-        rate = false_count / denominator if denominator else 0.0
+        sample, false_count, denominator, rate = validate_quality_audit_counts(
+            sample_size=sample_size,
+            false_accept_count=false_accept_count,
+            false_accept_denominator=false_accept_denominator,
+        )
+        event_id = 0
         with self._write_lock:
             with self._conn.transaction():
                 existing = self._conn.execute(
                     """SELECT details_json
                        FROM supervisor_quality_trends
-                       WHERE run_id=%s AND gate=%s""",
+                       WHERE run_id=%s AND gate=%s
+                       FOR UPDATE""",
                     (run_id, gate),
                 ).fetchone()
                 if existing is None:
                     return None
                 details = _as_payload(existing["details_json"])
-                details["p11_audit"] = redact(audit_details or {})
+                safe_audit_details = redact(audit_details or {})
+                details["p11_audit"] = safe_audit_details
+                latest = self._conn.execute(
+                    """SELECT computed_at
+                         FROM quality_trend_audits
+                        WHERE run_id=%s AND gate=%s
+                        ORDER BY computed_at DESC
+                        LIMIT 1""",
+                    (run_id, gate),
+                ).fetchone()
+                latest_computed_at = (
+                    int(latest["computed_at"]) if latest is not None else -1
+                )
+                computed_at = max(int(time.time()), latest_computed_at + 1)
+                self._conn.execute(
+                    """INSERT INTO quality_trend_audits(
+                         run_id, gate, sample_size, false_accept_count,
+                         false_accept_denominator, false_accept_rate,
+                         audit_details_json, computed_at)
+                       VALUES(%s, %s, %s, %s, %s, %s, %s, %s)""",
+                    (
+                        run_id,
+                        gate,
+                        sample,
+                        false_count,
+                        denominator,
+                        rate,
+                        self._Jsonb(safe_audit_details),
+                        computed_at,
+                    ),
+                )
                 row = self._conn.execute(
                     """UPDATE supervisor_quality_trends
                           SET p11_audit_sample_size=%s,
@@ -795,17 +1662,65 @@ class PostgresState:
                         WHERE run_id=%s AND gate=%s
                         RETURNING *""",
                     (
-                        int(sample_size),
+                        sample,
                         false_count,
                         denominator,
                         rate,
                         self._Jsonb(details),
-                        int(time.time()),
+                        computed_at,
                         run_id,
                         gate,
                     ),
                 ).fetchone()
-                return _quality_trend_row_to_dict(dict(row)) if row is not None else None
+                if row is not None:
+                    projection_row = _quality_trend_row_to_dict(dict(row))
+                    projection_row.pop("id", None)
+                    event_id = self._insert_event_unlocked(
+                        run_id=run_id,
+                        source="quality_trends",
+                        kind=QUALITY_TREND_PROJECTION_EVENT,
+                        payload=quality_trend_projection_event_payload(
+                            projection_row
+                        ),
+                    )
+                result = (
+                    _quality_trend_row_to_dict(dict(row))
+                    if row is not None
+                    else None
+                )
+            self._coordinate_committed_event(
+                run_id=run_id,
+                event_id=event_id,
+                event_kind=QUALITY_TREND_PROJECTION_EVENT,
+            )
+            return result
+
+    def list_quality_trend_audits(
+        self,
+        *,
+        run_id: str | None = None,
+        gate: str | None = None,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if run_id:
+            clauses.append("run_id=%s")
+            params.append(run_id)
+        if gate:
+            clauses.append("gate=%s")
+            params.append(gate)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = self._conn.execute(
+            f"""SELECT *
+                  FROM quality_trend_audits
+                  {where}
+                 ORDER BY computed_at ASC, run_id ASC, gate ASC""",
+            tuple(params),
+        ).fetchall()
+        return [
+            _quality_trend_audit_row_to_dict(dict(row))
+            for row in rows
+        ]
 
     def query_quality_trends(
         self,
@@ -872,6 +1787,151 @@ class PostgresState:
             tuple(params),
         ).fetchall()
         return [_quality_trend_row_to_dict(dict(row)) for row in rows]
+
+    def quality_trend_projection_snapshot(self) -> list[dict[str, Any]]:
+        snapshot: list[dict[str, Any]] = []
+        for row in self.list_quality_trend_rows():
+            normalized = dict(row)
+            normalized.pop("id", None)
+            snapshot.append(
+                canonical_quality_trend_projection_row(normalized)
+            )
+        return sorted(
+            snapshot,
+            key=lambda item: (item["run_id"], item["gate"]),
+        )
+
+    def rebuild_quality_trend_projection_from_ledger(
+        self,
+        *,
+        replace: bool = False,
+        checkpoint_store: Any | None = None,
+        verifier: Any | None = None,
+        trusted_checkpoint_pins: (
+            Mapping[str, Mapping[str, Any]] | None
+        ) = None,
+    ) -> list[dict[str, Any]]:
+        if (
+            checkpoint_store is None
+            or verifier is None
+            or trusted_checkpoint_pins is None
+        ):
+            raise RuntimeError(
+                "quality trend projection rebuild requires authoritative "
+                "checkpoint pins"
+            )
+        from .ledger_checkpoints import verify_authoritative_event_chain
+
+        with self._write_lock:
+            with self._conn.transaction():
+                run_rows = self._conn.execute(
+                    """SELECT DISTINCT run_id
+                         FROM events
+                        WHERE kind=%s
+                        ORDER BY run_id ASC""",
+                    (QUALITY_TREND_PROJECTION_EVENT,),
+                ).fetchall()
+                events: list[dict[str, Any]] = []
+                for run_row in run_rows:
+                    run_id = str(run_row["run_id"])
+                    self._conn.execute(
+                        """SELECT last_event_id
+                             FROM event_stream_sequences
+                            WHERE run_id=%s
+                            FOR UPDATE""",
+                        (run_id,),
+                    ).fetchone()
+                    rows = self._conn.execute(
+                        """SELECT event_id, run_id, event_sequence, ts,
+                                  source, kind, payload_json,
+                                  previous_event_hash, event_hash,
+                                  canonical_payload_hash,
+                                  artifact_manifest_hash,
+                                  ledger_genesis_kind
+                             FROM events
+                            WHERE run_id=%s
+                            ORDER BY event_sequence ASC""",
+                        (run_id,),
+                    ).fetchall()
+                    trusted = trusted_checkpoint_pins.get(run_id)
+                    verification = verify_authoritative_event_chain(
+                        rows,
+                        expected_run_id=run_id,
+                        checkpoint_store=checkpoint_store,
+                        verifier=verifier,
+                        trusted_latest_checkpoint=trusted,
+                    )
+                    if not verification.valid:
+                        raise RuntimeError(
+                            "quality trend ledger verification failed for "
+                            f"{run_id}: {verification.failure_code}"
+                        )
+                    events.extend(
+                        {
+                            "run_id": run_id,
+                            "source": row["source"],
+                            "kind": row["kind"],
+                            "payload": _as_payload(
+                                row["payload_json"]
+                            ),
+                        }
+                        for row in rows
+                    )
+                rebuilt = rebuild_quality_trend_projection(events)
+                current = self.quality_trend_projection_snapshot()
+                rebuilt_keys = {
+                    (str(row["run_id"]), str(row["gate"]))
+                    for row in rebuilt
+                }
+                current_keys = {
+                    (str(row["run_id"]), str(row["gate"]))
+                    for row in current
+                }
+                if current_keys and rebuilt_keys != current_keys:
+                    raise RuntimeError(
+                        "quality trend ledger coverage is incomplete; "
+                        "refusing projection rebuild"
+                    )
+                if replace:
+                    self._conn.execute(
+                        "DELETE FROM supervisor_quality_trends"
+                    )
+                    for row in rebuilt:
+                        self._conn.execute(
+                            """INSERT INTO supervisor_quality_trends(
+                                 run_id, task_id, task_class, gate, accepted,
+                                 first_pass_accepted, revision_rounds,
+                                 time_to_accepted_outcome_s,
+                                 p11_audit_sample_size, false_accept_count,
+                                 false_accept_denominator, false_accept_rate,
+                                 policy_overlay_hash, policy_proposal_id,
+                                 details_json, computed_at)
+                               VALUES(%s, %s, %s, %s, %s, %s, %s, %s,
+                                      %s, %s, %s, %s, %s, %s, %s, %s)""",
+                            (
+                                row["run_id"],
+                                row["task_id"],
+                                row["task_class"],
+                                row["gate"],
+                                row["accepted"],
+                                row["first_pass_accepted"],
+                                row["revision_rounds"],
+                                row["time_to_accepted_outcome_s"],
+                                row["p11_audit_sample_size"],
+                                row["false_accept_count"],
+                                row["false_accept_denominator"],
+                                row["false_accept_rate"],
+                                row["policy_overlay_hash"],
+                                row["policy_proposal_id"],
+                                self._Jsonb(row["details"]),
+                                row["computed_at"],
+                            ),
+                        )
+        return (
+            self.quality_trend_projection_snapshot()
+            if replace
+            else rebuilt
+        )
 
     def list_p11_audit_candidate_run_ids(self, *, limit: int = 50) -> list[str]:
         rows = self._conn.execute(
@@ -1327,6 +2387,182 @@ class PostgresState:
             (run_id, task_id),
         ).fetchall())
 
+    # --- historical evaluation operation coordination ---
+    def reserve_historical_operation(
+        self,
+        *,
+        operation_id: str,
+        request_hash: str,
+        operation: str,
+    ) -> tuple[dict[str, Any], bool]:
+        now = int(time.time())
+        with self._write_lock:
+            with self._conn.transaction():
+                row = self._conn.execute(
+                    """INSERT INTO historical_operation_claims(
+                         operation_id, request_hash, operation, status,
+                         terminal_event_id, created_at, updated_at)
+                       VALUES(%s, %s, %s, 'running', NULL, %s, %s)
+                       ON CONFLICT(operation_id) DO NOTHING
+                       RETURNING *""",
+                    (
+                        operation_id,
+                        request_hash,
+                        operation,
+                        now,
+                        now,
+                    ),
+                ).fetchone()
+                if row is not None:
+                    return dict(row), True
+                existing = self._conn.execute(
+                    """SELECT * FROM historical_operation_claims
+                       WHERE operation_id=%s""",
+                    (operation_id,),
+                ).fetchone()
+                if existing is None:
+                    raise RuntimeError(
+                        "historical operation idempotency conflict had no "
+                        "visible row"
+                    )
+                return dict(existing), False
+
+    def complete_historical_operation(
+        self,
+        *,
+        operation_id: str,
+        request_hash: str,
+        status: str,
+        terminal_event_id: int,
+    ) -> int:
+        if status not in {"completed", "failed"}:
+            raise ValueError(
+                "historical operation terminal status must be completed or failed"
+            )
+        now = int(time.time())
+        with self._write_lock:
+            with self._conn.transaction():
+                claim = self._conn.execute(
+                    """SELECT request_hash, operation
+                         FROM historical_operation_claims
+                        WHERE operation_id=%s""",
+                    (operation_id,),
+                ).fetchone()
+                if claim is None:
+                    raise KeyError(
+                        f"historical operation not found: {operation_id}"
+                    )
+                expected_kind = f"historical_operation.{status}"
+                event = self._conn.execute(
+                    """SELECT source, kind, payload_json
+                         FROM events
+                        WHERE run_id=%s AND event_id=%s""",
+                    (operation_id, int(terminal_event_id)),
+                ).fetchone()
+                if (
+                    event is None
+                    or str(event["source"])
+                    != HISTORICAL_OPERATION_EVENT_SOURCE
+                    or str(event["kind"]) != expected_kind
+                ):
+                    raise RuntimeError(
+                        "historical operation terminal claim requires its "
+                        "matching ledger event"
+                    )
+                payload = _as_payload(event["payload_json"])
+                if str(payload.get("request_hash") or "") != request_hash:
+                    raise RuntimeError(
+                        "historical operation terminal event request hash "
+                        "does not match its claim"
+                    )
+                if (
+                    str(payload.get("operation_id") or "")
+                    != operation_id
+                    or str(payload.get("operation") or "")
+                    != str(claim["operation"])
+                ):
+                    raise RuntimeError(
+                        "historical operation terminal event identity "
+                        "does not match its claim"
+                    )
+                try:
+                    requested_event_id = int(
+                        payload.get("requested_event_id")
+                    )
+                except (TypeError, ValueError) as exc:
+                    raise RuntimeError(
+                        "historical operation terminal requested event "
+                        "linkage is invalid"
+                    ) from exc
+                requested = self._conn.execute(
+                    """SELECT source, kind, payload_json
+                         FROM events
+                        WHERE run_id=%s AND event_id=%s""",
+                    (operation_id, requested_event_id),
+                ).fetchone()
+                if (
+                    requested is None
+                    or requested_event_id >= int(terminal_event_id)
+                    or str(requested["source"])
+                    != HISTORICAL_OPERATION_EVENT_SOURCE
+                    or str(requested["kind"])
+                    != "historical_operation.requested"
+                ):
+                    raise RuntimeError(
+                        "historical operation terminal requested event "
+                        "linkage is invalid"
+                    )
+                requested_payload = _as_payload(
+                    requested["payload_json"]
+                )
+                if (
+                    str(requested_payload.get("operation_id") or "")
+                    != operation_id
+                    or str(requested_payload.get("request_hash") or "")
+                    != request_hash
+                ):
+                    raise RuntimeError(
+                        "historical operation terminal requested event "
+                        "linkage is invalid"
+                    )
+                row = self._conn.execute(
+                    """UPDATE historical_operation_claims
+                          SET status=%s, terminal_event_id=%s, updated_at=%s
+                        WHERE operation_id=%s
+                          AND request_hash=%s
+                          AND status='running'
+                      RETURNING *""",
+                    (
+                        status,
+                        int(terminal_event_id),
+                        now,
+                        operation_id,
+                        request_hash,
+                    ),
+                ).fetchone()
+                if row is not None:
+                    return 1
+                existing = self._conn.execute(
+                    """SELECT * FROM historical_operation_claims
+                       WHERE operation_id=%s""",
+                    (operation_id,),
+                ).fetchone()
+                if existing is None:
+                    raise KeyError(
+                        f"historical operation not found: {operation_id}"
+                    )
+                if (
+                    str(existing["request_hash"]) == request_hash
+                    and str(existing["status"]) == status
+                    and int(existing["terminal_event_id"] or 0)
+                    == int(terminal_event_id)
+                ):
+                    return 0
+                raise RuntimeError(
+                    "historical operation terminal compare-and-set failed: "
+                    f"{operation_id}"
+                )
+
     # --- workflow jobs ---
     def reserve_dual_agent_workflow_job(
         self,
@@ -1420,6 +2656,9 @@ class PostgresState:
         request_payload_json: str | None = None,
         config_path: str | None = None,
         pid: int | None = None,
+        worker_pgid: int | None = None,
+        worker_started_at: float | None = None,
+        worker_containment_id: str | None = None,
         returncode: int | None = None,
         error: str | None = None,
     ) -> None:
@@ -1431,16 +2670,45 @@ class PostgresState:
         )
         with self._write_lock:
             with self._conn.transaction():
+                existing = self._conn.execute(
+                    """SELECT *
+                         FROM dual_agent_workflow_jobs
+                        WHERE job_id=%s
+                        FOR UPDATE""",
+                    (job_id,),
+                ).fetchone()
+                assert_terminal_workflow_job_mutation_allowed(
+                    existing,
+                    attempted={
+                        "job_id": job_id,
+                        "run_id": run_id,
+                        "task_id": task_id,
+                        "result_path": result_path,
+                        "status": status,
+                        "pid": pid,
+                        "worker_pgid": worker_pgid,
+                        "worker_started_at": worker_started_at,
+                        "worker_containment_id": worker_containment_id,
+                        "recovery_point": recovery_point_value,
+                        "returncode": returncode,
+                        "error": error,
+                    },
+                )
                 self._conn.execute(
                     """INSERT INTO dual_agent_workflow_jobs(
-                         job_id, run_id, task_id, cwd, status, pid, request_path,
+                         job_id, run_id, task_id, cwd, status, pid,
+                         worker_pgid, worker_started_at,
+                         worker_containment_id, request_path,
                          result_path, log_path, idempotency_token, recovery_point,
                          request_payload_json, config_path, returncode, error,
                          created_at, updated_at)
-                       VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                       VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                        ON CONFLICT(job_id) DO UPDATE SET
                          status=EXCLUDED.status,
                          pid=EXCLUDED.pid,
+                         worker_pgid=EXCLUDED.worker_pgid,
+                         worker_started_at=EXCLUDED.worker_started_at,
+                         worker_containment_id=EXCLUDED.worker_containment_id,
                          idempotency_token=COALESCE(EXCLUDED.idempotency_token, dual_agent_workflow_jobs.idempotency_token),
                          recovery_point=EXCLUDED.recovery_point,
                          recovery_claim_token=NULL,
@@ -1457,6 +2725,9 @@ class PostgresState:
                         cwd,
                         status,
                         pid,
+                        worker_pgid,
+                        worker_started_at,
+                        worker_containment_id,
                         request_path,
                         result_path,
                         log_path,
@@ -1472,6 +2743,11 @@ class PostgresState:
                 )
 
     def update_dual_agent_workflow_job(self, *, job_id: str, **kwargs: Any) -> None:
+        if kwargs.get("worker_reaped_at") is not None:
+            raise RuntimeError(
+                "worker_reaped_at may only be recorded through a "
+                "containment-verified reap API"
+            )
         now = int(time.time())
         assignments = ["updated_at=%s"]
         params: list[Any] = [now]
@@ -1480,6 +2756,9 @@ class PostgresState:
         for key in (
             "status",
             "pid",
+            "worker_pgid",
+            "worker_started_at",
+            "worker_containment_id",
             "returncode",
             "error",
             "recovery_point",
@@ -1505,6 +2784,30 @@ class PostgresState:
         params.append(job_id)
         with self._write_lock:
             with self._conn.transaction():
+                existing = self._conn.execute(
+                    """SELECT *
+                         FROM dual_agent_workflow_jobs
+                        WHERE job_id=%s
+                        FOR UPDATE""",
+                    (job_id,),
+                ).fetchone()
+                attempted: dict[str, Any] = {}
+                for field in (
+                    "status",
+                    "pid",
+                    "worker_pgid",
+                    "worker_started_at",
+                    "worker_containment_id",
+                    "returncode",
+                    "error",
+                    "recovery_point",
+                ):
+                    if field in kwargs and kwargs[field] is not None:
+                        attempted[field] = kwargs[field]
+                assert_terminal_workflow_job_mutation_allowed(
+                    existing,
+                    attempted=attempted,
+                )
                 self._conn.execute(
                     f"""UPDATE dual_agent_workflow_jobs
                            SET {", ".join(assignments)}
@@ -1596,6 +2899,17 @@ class PostgresState:
         params.append(job_id)
         with self._write_lock:
             with self._conn.transaction():
+                existing = self._conn.execute(
+                    """SELECT *
+                         FROM dual_agent_workflow_jobs
+                        WHERE job_id=%s
+                        FOR UPDATE""",
+                    (job_id,),
+                ).fetchone()
+                assert_terminal_workflow_job_mutation_allowed(
+                    existing,
+                    attempted={} if error is None else {"error": error},
+                )
                 return self._conn.execute(
                     f"""UPDATE dual_agent_workflow_jobs
                            SET {", ".join(assignments)}
@@ -1629,10 +2943,63 @@ class PostgresState:
                 )
                 return cursor.rowcount == 1
 
+    def claim_dual_agent_workflow_job_for_reap(
+        self,
+        *,
+        job_id: str,
+        reaper_id: str,
+        lease_ttl_s: int,
+        now: int,
+        expected_leased_by: Any,
+        expected_lease_expires_at: Any,
+        expected_heartbeat_at: Any,
+        expected_pid: Any,
+        expected_worker_pgid: Any,
+        expected_worker_started_at: Any,
+        expected_worker_containment_id: Any,
+    ) -> dict[str, Any] | None:
+        now_value = int(now)
+        claim_expires_at = now_value + max(1, int(lease_ttl_s))
+        with self._write_lock:
+            with self._conn.transaction():
+                return self._conn.execute(
+                    POSTGRES_CLAIM_WORKFLOW_JOB_FOR_REAP_SQL,
+                    {
+                        "job_id": job_id,
+                        "reaper_id": reaper_id,
+                        "claim_expires_at": claim_expires_at,
+                        "now": now_value,
+                        "expected_leased_by": expected_leased_by,
+                        "expected_lease_expires_at": (
+                            expected_lease_expires_at
+                        ),
+                        "expected_heartbeat_at": expected_heartbeat_at,
+                        "expected_pid": expected_pid,
+                        "expected_worker_pgid": expected_worker_pgid,
+                        "expected_worker_started_at": (
+                            expected_worker_started_at
+                        ),
+                        "expected_worker_containment_id": (
+                            expected_worker_containment_id
+                        ),
+                    },
+                ).fetchone()
+
     def park_dual_agent_workflow_job(self, *, job_id: str, reason: str) -> dict[str, Any] | None:
         now = int(time.time())
         with self._write_lock:
             with self._conn.transaction():
+                existing = self._conn.execute(
+                    """SELECT *
+                         FROM dual_agent_workflow_jobs
+                        WHERE job_id=%s
+                        FOR UPDATE""",
+                    (job_id,),
+                ).fetchone()
+                assert_terminal_workflow_job_mutation_allowed(
+                    existing,
+                    attempted={"status": "parked", "error": reason},
+                )
                 return self._conn.execute(
                     """UPDATE dual_agent_workflow_jobs
                           SET status='parked',
@@ -1658,6 +3025,110 @@ class PostgresState:
                  AND status!='parked'
                ORDER BY updated_at ASC, job_id ASC"""
         ).fetchall())
+
+    def list_terminal_dual_agent_workflow_jobs_pending_reap(
+        self,
+    ) -> list[dict[str, Any]]:
+        return list(
+            self._conn.execute(
+                """SELECT *
+                     FROM dual_agent_workflow_jobs
+                    WHERE terminal_outcome_json IS NOT NULL
+                      AND pid IS NOT NULL
+                      AND worker_reaped_at IS NULL
+                    ORDER BY updated_at ASC, job_id ASC"""
+            ).fetchall()
+        )
+
+    def record_dual_agent_workflow_worker_reaped(
+        self,
+        *,
+        job_id: str,
+        worker_reaped_at: int,
+        termination: dict[str, Any],
+    ) -> int:
+        reaped_at = int(worker_reaped_at)
+        if (
+            not isinstance(termination, dict)
+            or termination.get("safe_to_finalize") is not True
+        ):
+            raise RuntimeError(
+                "worker reap requires a successful containment termination proof"
+            )
+        run_id = ""
+        event_id = 0
+        with self._write_lock:
+            with self._conn.transaction():
+                row = self._conn.execute(
+                    """SELECT job_id, run_id, task_id, pid, worker_pgid,
+                              worker_started_at, worker_containment_id,
+                              worker_reaped_at
+                         FROM dual_agent_workflow_jobs
+                        WHERE job_id=%s
+                        FOR UPDATE""",
+                    (job_id,),
+                ).fetchone()
+                if row is None:
+                    raise KeyError(f"workflow job not found: {job_id}")
+                if row["pid"] is None:
+                    raise RuntimeError(
+                        "cannot record a worker reap for an in-process job"
+                    )
+                if row["worker_reaped_at"] is not None:
+                    if int(row["worker_reaped_at"]) != reaped_at:
+                        raise RuntimeError(
+                            "worker_reaped_at is immutable once recorded"
+                        )
+                    return 0
+                expected_containment = str(
+                    row["worker_containment_id"] or ""
+                )
+                if (
+                    not expected_containment
+                    or str(termination.get("containment_id") or "")
+                    != expected_containment
+                ):
+                    raise RuntimeError(
+                        "worker reap containment identity mismatch"
+                    )
+                cursor = self._conn.execute(
+                    """UPDATE dual_agent_workflow_jobs
+                          SET worker_reaped_at=%s,
+                              updated_at=%s
+                        WHERE job_id=%s
+                          AND worker_reaped_at IS NULL""",
+                    (reaped_at, int(time.time()), job_id),
+                )
+                if cursor.rowcount != 1:
+                    raise RuntimeError(
+                        f"worker reap compare-and-set failed: {job_id}"
+                    )
+                run_id = str(row["run_id"])
+                event_id = self._insert_event_unlocked(
+                    run_id=run_id,
+                    source="dual_agent",
+                    kind="dual_agent_workflow_worker_reaped",
+                    payload={
+                        "job_id": job_id,
+                        "task_id": row["task_id"],
+                        "pid": row["pid"],
+                        "worker_pgid": row["worker_pgid"],
+                        "worker_started_at": row["worker_started_at"],
+                        "worker_containment_id": row[
+                            "worker_containment_id"
+                        ],
+                        "worker_reaped_at": reaped_at,
+                        "termination": termination,
+                        "transport_recovery": "detached_cli_worker",
+                    },
+                    ts=reaped_at,
+                )
+            self._coordinate_committed_event(
+                run_id=run_id,
+                event_id=event_id,
+                event_kind="dual_agent_workflow_worker_reaped",
+            )
+            return event_id
 
     def claim_dual_agent_workflow_job_recovery_point(
         self,
@@ -1705,80 +3176,348 @@ class PostgresState:
         terminal_status: str | None = None,
         returncode: int | None = None,
         error: str | None = None,
+        worker_reaped_at: int | None = None,
+        termination: dict[str, Any] | None = None,
     ) -> int:
         if not isinstance(terminal_outcome, dict) or not terminal_outcome:
             raise ValueError("terminal_outcome must be a non-empty dict")
         now = int(time.time())
-        terminal_status_value = str(terminal_status or terminal_outcome.get("status") or status)
-        outcome_json = canonical_terminal_outcome_json(terminal_outcome)
+        event_id = 0
+        discrepancy = False
         with self._write_lock:
             with self._conn.transaction():
                 row = self._conn.execute(
-                    "SELECT run_id, task_id, result_path FROM dual_agent_workflow_jobs WHERE job_id=%s",
+                    """SELECT job_id, run_id, task_id, result_path, status,
+                              pid, worker_pgid, worker_started_at,
+                              worker_containment_id, worker_reaped_at,
+                              recovery_point, terminal_status,
+                              terminal_outcome_json, terminal_outcome_recorded_at,
+                              returncode, error
+                         FROM dual_agent_workflow_jobs
+                        WHERE job_id=%s
+                        FOR UPDATE""",
                     (job_id,),
                 ).fetchone()
                 if row is None:
                     raise KeyError(f"workflow job not found: {job_id}")
-                self._conn.execute(
-                    """UPDATE dual_agent_workflow_jobs
-                          SET status=%s,
-                              recovery_point='terminal',
-                              recovery_claim_token=NULL,
-                              recovery_claimed_at=NULL,
-                              leased_by=NULL,
-                              lease_expires_at=NULL,
-                              heartbeat_at=NULL,
-                              terminal_status=%s,
-                              terminal_outcome_json=%s,
-                              terminal_outcome_recorded_at=%s,
-                              returncode=%s,
-                              error=%s,
-                              updated_at=%s
-                        WHERE job_id=%s""",
-                    (
-                        status,
-                        terminal_status_value,
-                        outcome_json,
-                        now,
-                        returncode,
-                        error,
-                        now,
-                        job_id,
-                    ),
+                existing_outcome_json = row["terminal_outcome_json"]
+                persisted_reaped_at = row["worker_reaped_at"]
+                reaped_at_value = (
+                    int(persisted_reaped_at)
+                    if persisted_reaped_at is not None
+                    else (
+                        int(worker_reaped_at)
+                        if worker_reaped_at is not None
+                        else None
+                    )
                 )
-                event_id, previous_id = self._next_stream_event_id(row["run_id"])
-                event_payload = _event_payload(
-                    run_id=row["run_id"],
-                    source="dual_agent",
-                    kind="dual_agent_workflow_terminal_outcome",
-                    payload={
-                        "job_id": job_id,
-                        "task_id": row["task_id"],
-                        "status": status,
-                        "terminal_status": terminal_status_value,
-                        "result_path": row["result_path"],
-                        "transport_recovery": "detached_cli_worker",
-                    },
+                if (
+                    persisted_reaped_at is not None
+                    and worker_reaped_at is not None
+                    and int(persisted_reaped_at) != int(worker_reaped_at)
+                ):
+                    raise RuntimeError(
+                        "worker_reaped_at is immutable once recorded"
+                    )
+                if row["pid"] is not None and existing_outcome_json is None:
+                    if reaped_at_value is None:
+                        raise RuntimeError(
+                            "worker reap must be recorded atomically before "
+                            "terminal publication"
+                        )
+                    if persisted_reaped_at is None:
+                        if (
+                            not isinstance(termination, dict)
+                            or termination.get("safe_to_finalize") is not True
+                        ):
+                            raise RuntimeError(
+                                "worker reap requires a successful containment "
+                                "termination proof"
+                            )
+                        expected_containment = str(
+                            row["worker_containment_id"] or ""
+                        )
+                        observed_containment = str(
+                            termination.get("containment_id") or ""
+                        )
+                        if (
+                            not expected_containment
+                            or observed_containment != expected_containment
+                        ):
+                            raise RuntimeError(
+                                "worker reap containment identity mismatch"
+                            )
+                elif row["pid"] is None and worker_reaped_at is not None:
+                    raise RuntimeError(
+                        "cannot record a worker reap for an in-process job"
+                    )
+                validation_error: str | None = None
+                try:
+                    terminal_status_value = validate_terminal_completion(
+                        job_id=job_id,
+                        run_id=row["run_id"],
+                        task_id=row["task_id"],
+                        status=status,
+                        terminal_status=terminal_status,
+                        terminal_outcome=terminal_outcome,
+                    )
+                except ValueError as exc:
+                    if existing_outcome_json is None:
+                        raise
+                    validation_error = str(exc)
+                    terminal_status_value = str(
+                        terminal_status
+                        or terminal_outcome.get("status")
+                        or status
+                    ).strip()
+                outcome_json = canonical_terminal_outcome_json(terminal_outcome)
+                if existing_outcome_json is not None:
+                    existing_semantics = canonical_terminal_completion_semantics(
+                        job_id=row["job_id"],
+                        run_id=row["run_id"],
+                        task_id=row["task_id"],
+                        result_path=row["result_path"],
+                        status=row["status"],
+                        terminal_status=row["terminal_status"],
+                        terminal_outcome_json=str(existing_outcome_json),
+                        returncode=row["returncode"],
+                        error=row["error"],
+                    )
+                    incoming_semantics = canonical_terminal_completion_semantics(
+                        job_id=job_id,
+                        run_id=row["run_id"],
+                        task_id=row["task_id"],
+                        result_path=row["result_path"],
+                        status=status,
+                        terminal_status=terminal_status_value,
+                        terminal_outcome_json=outcome_json,
+                        returncode=returncode,
+                        error=error,
+                    )
+                    if (
+                        validation_error is None
+                        and existing_semantics == incoming_semantics
+                    ):
+                        terminal_event = self._conn.execute(
+                            """SELECT event_id
+                                 FROM events
+                                WHERE run_id=%s
+                                  AND kind='dual_agent_workflow_terminal_outcome'
+                                  AND payload_json->>'job_id'=%s
+                                ORDER BY event_id DESC
+                                LIMIT 1""",
+                            (str(row["run_id"]), job_id),
+                        ).fetchone()
+                        if terminal_event is not None:
+                            self._coordinate_committed_event(
+                                run_id=str(row["run_id"]),
+                                event_id=int(terminal_event["event_id"]),
+                                event_kind=(
+                                    "dual_agent_workflow_terminal_outcome"
+                                ),
+                            )
+                        return 0
+                    conflict_sha256 = terminal_completion_conflict_sha256(
+                        original=existing_semantics,
+                        conflicting=incoming_semantics,
+                        validation_error=validation_error,
+                    )
+                    original_record = canonical_terminal_completion_record(
+                        job_id=row["job_id"],
+                        run_id=row["run_id"],
+                        task_id=row["task_id"],
+                        result_path=row["result_path"],
+                        status=row["status"],
+                        recovery_point=row["recovery_point"],
+                        terminal_status=row["terminal_status"],
+                        terminal_outcome_json=str(existing_outcome_json),
+                        terminal_outcome_recorded_at=row[
+                            "terminal_outcome_recorded_at"
+                        ],
+                        returncode=row["returncode"],
+                        error=row["error"],
+                    )
+                    conflicting_record = canonical_terminal_completion_record(
+                        job_id=job_id,
+                        run_id=row["run_id"],
+                        task_id=row["task_id"],
+                        result_path=row["result_path"],
+                        status=status,
+                        recovery_point="terminal",
+                        terminal_status=terminal_status_value,
+                        terminal_outcome_json=outcome_json,
+                        terminal_outcome_recorded_at=now,
+                        returncode=returncode,
+                        error=error,
+                    )
+                    discrepancy_payload = {
+                            "job_id": job_id,
+                            "task_id": row["task_id"],
+                            "result_path": row["result_path"],
+                            "original_status": row["status"],
+                            "original_terminal_status": row["terminal_status"],
+                            "original_terminal_outcome": json.loads(
+                                str(existing_outcome_json)
+                            ),
+                            "original_returncode": row["returncode"],
+                            "original_error": row["error"],
+                            "conflicting_status": status,
+                            "conflicting_terminal_status": terminal_status_value,
+                            "conflicting_terminal_outcome": json.loads(outcome_json),
+                            "conflicting_returncode": returncode,
+                            "conflicting_error": error,
+                            "conflicting_validation_error": validation_error,
+                            "conflict_sha256": conflict_sha256,
+                            "original_terminal_record": original_record,
+                            "original_terminal_record_sha256": (
+                                terminal_completion_record_sha256(original_record)
+                            ),
+                            "conflicting_terminal_record": conflicting_record,
+                            "conflicting_terminal_record_sha256": (
+                                terminal_completion_record_sha256(
+                                    conflicting_record
+                                )
+                            ),
+                            "transport_recovery": "detached_cli_worker",
+                    }
+                    existing_discrepancy = self._conn.execute(
+                        """SELECT event_id
+                             FROM events
+                            WHERE run_id=%s
+                              AND kind='dual_agent_workflow_terminal_discrepancy'
+                              AND payload_json->>'conflict_sha256'=%s
+                            LIMIT 1""",
+                        (str(row["run_id"]), conflict_sha256),
+                    ).fetchone()
+                    if existing_discrepancy is None:
+                        event_id = self._insert_event_unlocked(
+                            run_id=str(row["run_id"]),
+                            source="dual_agent",
+                            kind="dual_agent_workflow_terminal_discrepancy",
+                            payload=discrepancy_payload,
+                            ts=now,
+                        )
+                    else:
+                        event_id = int(existing_discrepancy["event_id"])
+                    discrepancy = True
+                else:
+                    cursor = self._conn.execute(
+                        """UPDATE dual_agent_workflow_jobs
+                              SET status=%s,
+                                  recovery_point='terminal',
+                                  recovery_claim_token=NULL,
+                                  recovery_claimed_at=NULL,
+                                  leased_by=NULL,
+                                  lease_expires_at=NULL,
+                                  heartbeat_at=NULL,
+                                  worker_reaped_at=%s,
+                                  terminal_status=%s,
+                                  terminal_outcome_json=%s,
+                                  terminal_outcome_recorded_at=%s,
+                                  returncode=%s,
+                                  error=%s,
+                                  updated_at=%s
+                            WHERE job_id=%s
+                              AND terminal_outcome_json IS NULL""",
+                        (
+                            status,
+                            reaped_at_value,
+                            terminal_status_value,
+                            outcome_json,
+                            now,
+                            returncode,
+                            error,
+                            now,
+                            job_id,
+                        ),
+                    )
+                    if cursor.rowcount != 1:
+                        raise RuntimeError(
+                            "workflow job terminal completion compare-and-set "
+                            f"failed: {job_id}"
+                        )
+                    terminal_record = canonical_terminal_completion_record(
+                        job_id=job_id,
+                        run_id=row["run_id"],
+                        task_id=row["task_id"],
+                        result_path=row["result_path"],
+                        status=status,
+                        recovery_point="terminal",
+                        terminal_status=terminal_status_value,
+                        terminal_outcome_json=outcome_json,
+                        terminal_outcome_recorded_at=now,
+                        returncode=returncode,
+                        error=error,
+                    )
+                    if (
+                        row["pid"] is not None
+                        and persisted_reaped_at is None
+                        and reaped_at_value is not None
+                    ):
+                        self._insert_event_unlocked(
+                            run_id=str(row["run_id"]),
+                            source="dual_agent",
+                            kind="dual_agent_workflow_worker_reaped",
+                            payload={
+                                "job_id": job_id,
+                                "task_id": row["task_id"],
+                                "pid": row["pid"],
+                                "worker_pgid": row["worker_pgid"],
+                                "worker_started_at": row[
+                                    "worker_started_at"
+                                ],
+                                "worker_containment_id": row[
+                                    "worker_containment_id"
+                                ],
+                                "worker_reaped_at": reaped_at_value,
+                                "termination": termination,
+                                "transport_recovery": (
+                                    "detached_cli_worker"
+                                ),
+                            },
+                            ts=now,
+                        )
+                    event_id = self._insert_event_unlocked(
+                        run_id=str(row["run_id"]),
+                        source="dual_agent",
+                        kind="dual_agent_workflow_terminal_outcome",
+                        payload={
+                            "job_id": job_id,
+                            "task_id": row["task_id"],
+                            "status": status,
+                            "terminal_status": terminal_status_value,
+                            "result_path": row["result_path"],
+                            "terminal_record": terminal_record,
+                            "terminal_record_sha256": (
+                                terminal_completion_record_sha256(
+                                    terminal_record
+                                )
+                            ),
+                            "transport_recovery": "detached_cli_worker",
+                        },
+                        ts=now,
+                    )
+                committed_run_id = str(row["run_id"])
+                committed_event_kind = (
+                    "dual_agent_workflow_terminal_discrepancy"
+                    if discrepancy
+                    else "dual_agent_workflow_terminal_outcome"
                 )
-                self._conn.execute(
-                    """INSERT INTO events(
-                         run_id, event_id, previous_event_id, ts, source, kind, payload_json)
-                       VALUES(%s, %s, %s, %s, %s, %s, %s)""",
-                    (
-                        row["run_id"],
-                        event_id,
-                        previous_id,
-                        now,
-                        "dual_agent",
-                        "dual_agent_workflow_terminal_outcome",
-                        self._Jsonb(event_payload),
-                    ),
-                )
-                return event_id
+        self._coordinate_committed_event(
+            run_id=committed_run_id,
+            event_id=event_id,
+            event_kind=committed_event_kind,
+        )
+        if discrepancy:
+            raise RuntimeError(
+                f"workflow job terminal outcome discrepancy: {job_id}"
+            )
+        return event_id
 
 
 __all__ = [
     "POSTGRES_CLAIM_AVAILABLE_JOBS_SQL",
+    "POSTGRES_CLAIM_WORKFLOW_JOB_FOR_REAP_SQL",
     "POSTGRES_LOCK_ORDER",
     "POSTGRES_SCHEMA_SQL",
     "PostgresState",

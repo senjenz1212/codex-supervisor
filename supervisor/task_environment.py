@@ -448,6 +448,7 @@ class VerifierAdapter(Protocol):
     verifier_id: str
     verifier_version: str
     verifier_hash: str
+    protected_paths: tuple[str, ...]
 
     async def verify(self, frozen_result: FrozenTaskResult) -> Grade:
         ...
@@ -595,6 +596,7 @@ class UnityRepositoryTask(GenericRepositoryTask):
 
 class SweBenchVerifier:
     verifier_id = "official-swebench"
+    protected_paths: tuple[str, ...] = ()
 
     def __init__(
         self,
@@ -621,7 +623,10 @@ class SweBenchVerifier:
         receipt = await asyncio.to_thread(self._oracle_runner, context)
         fail_to_pass = str(receipt.get("fail_to_pass_status") or "")
         pass_to_pass = str(receipt.get("pass_to_pass_status") or "")
-        passed = fail_to_pass == "passed" and pass_to_pass == "passed"
+        passed = (
+            _official_oracle_status_passed(fail_to_pass)
+            and _official_oracle_status_passed(pass_to_pass)
+        )
         unavailable = bool(receipt.get("oracle_unavailable"))
         return Grade(
             verifier_id=self.verifier_id,
@@ -691,6 +696,12 @@ class UnityTestFrameworkVerifier:
             raise ValueError(
                 "Unity verifier requires runner or pinned unity_executable"
             )
+
+    @property
+    def protected_paths(self) -> tuple[str, ...]:
+        """Paths that must never be visible to an agent runtime."""
+
+        return (str(self._hidden_root),)
 
     async def verify(self, frozen_result: FrozenTaskResult) -> Grade:
         if self._runner is not None:
@@ -907,6 +918,17 @@ def default_task_platform() -> tuple[str, str]:
     if os_name == "darwin":
         os_name = "macos"
     return platform.machine(), os_name
+
+
+def _official_oracle_status_passed(value: str) -> bool:
+    """Preserve the official oracle's ``pass`` vocabulary.
+
+    Older captured fixtures used ``passed``.  Accepting that legacy spelling
+    keeps replay compatibility, while the production oracle's canonical
+    ``pass`` value remains authoritative.
+    """
+
+    return str(value or "").strip().casefold() in {"pass", "passed"}
 
 
 def _collect_repository_patch(workspace: Path, base_revision: str) -> str:

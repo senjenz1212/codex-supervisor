@@ -34,6 +34,16 @@ codex-supervisor-workflow-dispatcher = "supervisor.workflow_job_dispatcher:main"
 codex-supervisor-axi = "mcp_tools.codex_supervisor_axi:main"
 codex-supervisor-swebench-mergeability-replay = "supervisor.swe_bench_mergeability_cli:main"
 
+[tool.pytest.ini_options]
+# Captured benchmark repositories under docs/ contain their own upstream test
+# trees. They are immutable evidence inputs, not codex-supervisor tests, and
+# collecting them can execute third-party setup.py files during discovery.
+testpaths = ["tests"]
+# Repository fixtures under tests/ may intentionally contain upstream
+# test_*.py files used as hidden-verifier inputs. They are exercised by the
+# owning Supervisor tests, not collected as this project's own suite.
+norecursedirs = ["fixtures"]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["supervisor*", "mcp_tools*"]

@@ -1,8 +1,18 @@
 from __future__ import annotations
 
+import asyncio
+import json
 from pathlib import Path
 import subprocess
 
+import pytest
+
+from supervisor.agent_runtime import (
+    AgentRunHandle,
+    AgentRunResult,
+    AgentTask,
+    RuntimeEvent,
+)
 from supervisor.agentic_workers import (
     AgenticWorkerSpec,
     cleanup_agentic_workers_for_task,
@@ -16,6 +26,291 @@ from supervisor.agentic_workers import (
 )
 from supervisor.dynamic_workflow_receipts import verify_dynamic_workflow_receipts
 from supervisor.provider_routing import ANTHROPIC_PROXY_ENV_KEYS
+from supervisor.runtime_execution import RuntimeExecution
+
+
+def _runtime_execution(
+    task: AgentTask,
+    *,
+    runtime: str,
+    status: str = "completed",
+    output: str = "runtime output",
+    failure_reason: str = "",
+) -> RuntimeExecution:
+    event_kind = {
+        "completed": "run.completed",
+        "cancelled": "run.cancelled",
+    }.get(status, "run.failed")
+    event_payload = {"type": event_kind}
+    if failure_reason:
+        event_payload["reason"] = failure_reason
+        event_payload["error"] = failure_reason
+    event = RuntimeEvent(
+        kind=event_kind,
+        payload=event_payload,
+        ts_ms=2,
+    )
+    handle = AgentRunHandle(
+        run_id=f"run-{task.metadata['worker_id']}",
+        task_id=task.task_id,
+        runtime=runtime,
+        session_id=f"session-{task.metadata['worker_id']}",
+        capabilities={"cancel": True, "stream": True},
+    )
+    result = AgentRunResult(
+        run_id=handle.run_id,
+        task_id=task.task_id,
+        runtime=runtime,
+        session_id=handle.session_id,
+        status=status,
+        output=output,
+        events=(event,),
+        started_at_ms=1,
+        ended_at_ms=2,
+        cost_usd=0.125,
+        resolved_model=f"{runtime}-model-v1",
+        result_hash="d" * 64,
+        token_usage={
+            "input_tokens": 11,
+            "output_tokens": 7,
+            "tokens_in": 11,
+            "tokens_out": 7,
+        },
+        model_provenance="fake.runtime",
+        cost_provenance="fake.runtime",
+        token_provenance="fake.runtime",
+        metadata={
+            "returncode": 0 if status == "completed" else 1,
+            "environment": {
+                "OPENAI_API_KEY": "must-not-persist",
+                "ANTHROPIC_API_KEY": "must-not-persist",
+            },
+        },
+    )
+    return RuntimeExecution(handle=handle, events=(event,), result=result)
+
+
+@pytest.mark.parametrize("runtime", ["claude_code", "codex"])
+def test_agentic_worker_runtime_runner_has_provider_parity_and_normalized_receipt(
+    monkeypatch,
+    tmp_path: Path,
+    runtime: str,
+):
+    monkeypatch.setenv("OPENAI_API_KEY", "ambient-openai-secret")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "ambient-anthropic-secret")
+    seen_tasks: list[AgentTask] = []
+
+    def fake_runtime_runner(task: AgentTask) -> RuntimeExecution:
+        seen_tasks.append(task)
+        return _runtime_execution(task, runtime=runtime)
+
+    receipt = run_agentic_worker(
+        AgenticWorkerSpec(
+            task_id="workflow-1",
+            worker_id="audit-1",
+            role="codebase_audit",
+            command=(),
+            cwd=tmp_path,
+            instruction="Inspect the implementation without writing files.",
+            model=f"{runtime}-requested-model",
+            timeout_s=30,
+            budget_usd=0.25,
+        ),
+        runtime_runner=fake_runtime_runner,
+    )
+
+    assert len(seen_tasks) == 1
+    task = seen_tasks[0]
+    assert task.inherit_env is False
+    assert dict(task.env) == {}
+    assert task.timeout_s == 30
+    assert task.metadata["worker_id"] == "audit-1"
+    assert receipt["status"] == "passed"
+    assert receipt["agent_runtime"] == runtime
+    assert receipt["runtime"] == runtime
+    assert receipt["runtime_run_id"] == "run-audit-1"
+    assert receipt["session_id"] == "session-audit-1"
+    assert receipt["resolved_model"] == f"{runtime}-model-v1"
+    assert receipt["cost_usd"] == 0.125
+    assert receipt["token_usage"]["tokens_in"] == 11
+    assert receipt["result_hash"] == "d" * 64
+
+    output = json.loads(
+        (tmp_path / receipt["output_ref"]).read_text(encoding="utf-8")
+    )
+    assert output["agent_run_result"]["runtime"] == runtime
+    assert output["agent_run_result"]["result_hash"] == "d" * 64
+    assert "must-not-persist" not in json.dumps(output)
+
+
+def test_agentic_worker_fanout_runtime_factory_creates_fresh_runtime_per_worker(
+    tmp_path: Path,
+):
+    created: list["_FactoryRuntime"] = []
+    started_tasks: list[AgentTask] = []
+
+    class _FactoryRuntime:
+        kind = "codex"
+
+        def __init__(self) -> None:
+            self.task: AgentTask | None = None
+
+        async def start(self, task: AgentTask) -> AgentRunHandle:
+            self.task = task
+            started_tasks.append(task)
+            return AgentRunHandle(
+                run_id=f"run-{task.metadata['worker_id']}",
+                task_id=task.task_id,
+                runtime=self.kind,
+                session_id=f"session-{task.metadata['worker_id']}",
+                capabilities={"cancel": True, "stream": True},
+            )
+
+        async def resume(
+            self,
+            handle: AgentRunHandle,
+            instruction: str,
+        ) -> None:
+            raise AssertionError("fan-out workers must not resume sessions")
+
+        async def cancel(self, handle: AgentRunHandle) -> None:
+            return None
+
+        async def stream(self, handle: AgentRunHandle):
+            yield RuntimeEvent(
+                kind="run.completed",
+                payload={"type": "run.completed"},
+                ts_ms=2,
+            )
+
+        async def collect(self, handle: AgentRunHandle) -> AgentRunResult:
+            assert self.task is not None
+            return _runtime_execution(
+                self.task,
+                runtime=self.kind,
+            ).result
+
+    def runtime_factory() -> _FactoryRuntime:
+        runtime = _FactoryRuntime()
+        created.append(runtime)
+        return runtime
+
+    receipts = run_agentic_worker_fanout(
+        [
+            AgenticWorkerSpec(
+                task_id="workflow-1",
+                worker_id="audit",
+                role="codebase_audit",
+                command=(),
+                cwd=tmp_path,
+                instruction="Audit.",
+                model="codex-model",
+            ),
+            AgenticWorkerSpec(
+                task_id="workflow-1",
+                worker_id="review",
+                role="independent_reviewer",
+                command=(),
+                cwd=tmp_path,
+                instruction="Review.",
+                model="codex-model",
+            ),
+        ],
+        runtime_factory=runtime_factory,
+    )
+
+    assert len(created) == 2
+    assert {task.metadata["worker_id"] for task in started_tasks} == {
+        "audit",
+        "review",
+    }
+    assert [receipt["worker_id"] for receipt in receipts] == [
+        "audit",
+        "review",
+    ]
+    assert [receipt["runtime"] for receipt in receipts] == ["codex", "codex"]
+
+
+def test_agentic_worker_runtime_fanout_preserves_failure_cancellation_and_timeout(
+    tmp_path: Path,
+):
+    runtime_status = {
+        "ok": ("completed", ""),
+        "failed": ("failed", "provider failure"),
+        "cancelled": ("cancelled", ""),
+        "timeout": ("failed", "timeout"),
+    }
+
+    def fake_runtime_runner(task: AgentTask) -> RuntimeExecution:
+        status, reason = runtime_status[str(task.metadata["worker_id"])]
+        return _runtime_execution(
+            task,
+            runtime="claude_code",
+            status=status,
+            output=f"{task.metadata['worker_id']} output",
+            failure_reason=reason,
+        )
+
+    receipts = run_agentic_worker_fanout(
+        [
+            AgenticWorkerSpec(
+                task_id="workflow-1",
+                worker_id=worker_id,
+                role=worker_id,
+                command=(),
+                cwd=tmp_path,
+                instruction=f"Run {worker_id}.",
+                model="claude-model",
+                timeout_s=10,
+            )
+            for worker_id in ("ok", "failed", "cancelled", "timeout")
+        ],
+        runtime_runner=fake_runtime_runner,
+    )
+
+    assert [receipt["worker_id"] for receipt in receipts] == [
+        "ok",
+        "failed",
+        "cancelled",
+        "timeout",
+    ]
+    assert [receipt["status"] for receipt in receipts] == [
+        "passed",
+        "failed",
+        "cancelled",
+        "timeout",
+    ]
+    assert all((tmp_path / receipt["output_ref"]).is_file() for receipt in receipts)
+    assert all(
+        (tmp_path / receipt["transcript_ref"]).is_file()
+        for receipt in receipts
+    )
+
+
+def test_agentic_worker_runtime_runner_cancellation_still_writes_bounded_receipt(
+    tmp_path: Path,
+):
+    def cancelled_runtime_runner(task: AgentTask) -> RuntimeExecution:
+        raise asyncio.CancelledError
+
+    receipt = run_agentic_worker(
+        AgenticWorkerSpec(
+            task_id="workflow-1",
+            worker_id="cancelled",
+            role="independent_reviewer",
+            command=(),
+            cwd=tmp_path,
+            instruction="Review.",
+            model="runtime-model",
+            timeout_s=10,
+        ),
+        runtime_runner=cancelled_runtime_runner,
+    )
+
+    assert receipt["status"] == "cancelled"
+    assert receipt["runtime_status"] == "cancelled"
+    assert (tmp_path / receipt["output_ref"]).is_file()
+    assert (tmp_path / receipt["transcript_ref"]).is_file()
 
 
 def test_agentic_worker_spawn_uses_scrubbed_direct_anthropic_env(

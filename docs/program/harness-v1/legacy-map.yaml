@@ -1,0 +1,64 @@
+schema_version: harness-v1-legacy-map/v1
+policy: reference_only_do_not_rewrite_history
+
+entries:
+  - legacy_id: LEGACY-PRD-AGENT-SUPERVISOR
+    path: docs/prd/agent-supervisor-prd.md
+    maps_to:
+      - OBJ-HARNESS-001
+      - REQ-HARNESS-SUPERVISION
+    kind: product_requirements
+    evidence_authority: none
+    note: Product intent and terminology; not runtime evidence.
+
+  - legacy_id: LEGACY-ADR-INDEPENDENT-REVIEWER
+    path: docs/adr/20260601-independent-reviewer-panel-boundary.md
+    maps_to:
+      - ADR-HARNESS-INDEPENDENT-REVIEWER
+      - REQ-HARNESS-L2-ISOLATION
+    kind: architecture_decision
+    evidence_authority: none
+    note: Defines a reviewer seam but does not prove hidden-verifier outcomes.
+
+  - legacy_id: LEGACY-MERGEABILITY-CALIBRATION
+    path: docs/dual-agent/mergeability-bench-calibration-pilot-20260618/outcome-review.md
+    maps_to:
+      - ART-HARNESS-FIXTURE-CALIBRATION
+      - CLAIM-HARNESS-L1-PROCESS
+    kind: historical_report
+    evidence_authority: candidate_L1_only
+    note: Fixture calibration and process evidence; not outcome improvement.
+
+  - legacy_id: LEGACY-MERGEABILITY-DISCORDANT-POWER
+    path: docs/dual-agent/mergeability-discordant-power-20260626/translation-audit.md
+    maps_to:
+      - ANL-HARNESS-DISCORDANT-POWER
+    kind: historical_analysis
+    evidence_authority: design_input_only
+    note: Power arithmetic for paired decisions; not a randomized B-vs-C efficacy run.
+
+  - legacy_id: LEGACY-POWERED-REAL-BENCHMARK
+    path: docs/dual-agent/powered-real-benchmark-run-20260626/translation-audit.md
+    maps_to:
+      - ART-HARNESS-POWERED-REPORT-ONLY
+    kind: historical_report
+    evidence_authority: below_L3
+    note: Report-only mergeability evidence over a shared candidate pool.
+
+  - legacy_id: LEGACY-AUTO-EVOLVE-BRIDGE
+    path: docs/dual-agent/auto-evolve-benchmark-promotion-bridge-20260625/aeb0-real-posthoc-verification.md
+    maps_to:
+      - ART-HARNESS-AUTO-EVOLVE-BRIDGE
+      - REQ-HARNESS-REPORT-ONLY
+    kind: historical_verification
+    evidence_authority: below_L3
+    note: Evidence-conversion plumbing; cannot authorize improvement or policy mutation.
+
+  - legacy_id: LEGACY-HARNESS-V1-EXECUTION-PLAN
+    path: docs/harness-v1-execution-plan-and-prompts-20260711.md
+    maps_to:
+      - OBJ-HARNESS-001
+      - ROADMAP-HARNESS-V1
+    kind: execution_plan
+    evidence_authority: none
+    note: Source plan for the current program graph.

@@ -18,6 +18,7 @@ from supervisor.autoresearch.policy_evolution import (
 from supervisor.autoresearch.report import build_autoresearch_report
 from supervisor.autoresearch.schema import AutoresearchAttempt, AutoresearchExperiment
 from supervisor.autoresearch.validation import validate_attempt
+from supervisor.claim_gate import ClaimGate
 from supervisor import mergeability_bench as mergeability_bench_module
 from supervisor.cursor_agent import CursorInvocationRequest, CursorInvocationResult
 from supervisor.dual_agent import Outcome, ProbeResult, SpecialistRecord
@@ -4586,6 +4587,33 @@ def _accepting_panel_options(reviewer_count: int = 2):
         for i in range(reviewer_count)
     )
     return ConfiguredReviewerPanelOptions(reviewers=reviewers), reviewers
+
+
+def test_bounded_panel_cli_summary_carries_valid_claim_gate_receipt(
+    monkeypatch,
+    capsys,
+):
+    report = ClaimGate.govern_report({
+        "candidate_count": 2,
+        "report_label": "calibration",
+        "metric_applyable": False,
+        "bounded_runner": {"completed_candidate_count": 2},
+    })
+    monkeypatch.setattr(
+        mergeability_bench_module,
+        "run_bounded_parallel_panel_corpus",
+        lambda **_kwargs: report,
+    )
+
+    exit_code = mergeability_bench_module._bounded_panel_runner_main([
+        "--bench-root",
+        str(BENCH_ROOT),
+    ])
+
+    assert exit_code == 0
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["bounded_runner"]["completed_candidate_count"] == 2
+    assert ClaimGate.validate_derived_report(summary) is None
 
 
 def test_full_corpus_runner_executes_fake_configured_reviewers_with_bounded_parallelism(tmp_path):

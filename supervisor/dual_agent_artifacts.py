@@ -7,12 +7,18 @@ import subprocess
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 from .failure_taxonomy import (
     FAILURE_TAXONOMY_VERSION,
     detect_sequence_failures,
     mast_coverage_matrix,
+)
+from .run_manifest import (
+    EXECUTION_PROVENANCE_SCHEMA_VERSION,
+    build_execution_provenance,
+    build_workspace_overlay,
+    execution_provenance_issues,
 )
 from .state import State
 from .trace_envelope import TRACE_ENVELOPE_SCHEMA_VERSION, ensure_tool_call_timing
@@ -42,6 +48,10 @@ def export_dual_agent_run_artifacts(
     task_id: str,
     output_dir: str | Path,
     screenshots: tuple[ScreenshotArtifact, ...] = (),
+    require_complete_provenance: bool = False,
+    provider_model_resolutions: Iterable[dict[str, Any]] = (),
+    canonical_tool_contracts: Iterable[dict[str, Any]] = (),
+    runtime_component_receipts: Iterable[dict[str, Any]] = (),
 ) -> DualAgentArtifactExport:
     events = _read_task_events(state, run_id=run_id, task_id=task_id)
     out_dir = Path(output_dir)
@@ -70,7 +80,10 @@ def export_dual_agent_run_artifacts(
     screenshot_files = _copy_screenshots(out_dir, screenshots)
     files[12].parent.mkdir(parents=True, exist_ok=True)
     transcript_jsonl = _transcript_jsonl(events)
-    workspace_snapshot = _workspace_snapshot_manifest(events)
+    workspace_snapshot = _workspace_snapshot_manifest(
+        events,
+        output_dir=out_dir,
+    )
     mast_coverage = mast_coverage_matrix(events)
     files[0].write_text(_index_markdown(run_id, task_id, by_gate), encoding="utf-8")
     files[1].write_text(_triage_markdown(run_id, task_id, events), encoding="utf-8")
@@ -87,21 +100,23 @@ def export_dual_agent_run_artifacts(
     files[9].write_text(_transcript_markdown(run_id, task_id, events), encoding="utf-8")
     files[10].write_text(transcript_jsonl, encoding="utf-8")
     files[11].write_text(_mast_coverage_markdown(mast_coverage), encoding="utf-8")
-    files[12].write_text(
-        json.dumps(
-            _replay_manifest(
-                run_id=run_id,
-                task_id=task_id,
-                events=events,
-                transcript_jsonl=transcript_jsonl,
-                workspace_snapshot=workspace_snapshot,
-                mast_coverage=mast_coverage,
-            ),
-            indent=2,
-            sort_keys=True,
-        ) + "\n",
-        encoding="utf-8",
+    replay_manifest = _replay_manifest(
+        run_id=run_id,
+        task_id=task_id,
+        events=events,
+        transcript_jsonl=transcript_jsonl,
+        workspace_snapshot=workspace_snapshot,
+        mast_coverage=mast_coverage,
+        provider_model_resolutions=provider_model_resolutions,
+        canonical_tool_contracts=canonical_tool_contracts,
+        runtime_component_receipts=runtime_component_receipts,
     )
+    replay_manifest_text = json.dumps(
+        replay_manifest,
+        indent=2,
+        sort_keys=True,
+    ) + "\n"
+    files[12].write_text(replay_manifest_text, encoding="utf-8")
     files[13].write_text(
         json.dumps(workspace_snapshot, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -110,8 +125,36 @@ def export_dual_agent_run_artifacts(
         json.dumps(mast_coverage, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    manifest_sha256 = sha256(replay_manifest_text.encode("utf-8")).hexdigest()
+    state.write_event(
+        run_id=run_id,
+        source="dual_agent",
+        kind="dual_agent_replay_manifest_recorded",
+        payload={
+            "schema_version": "dual-agent-replay-manifest-record/v1",
+            "run_id": run_id,
+            "task_id": task_id,
+            "manifest_path": str(files[12].expanduser().resolve()),
+            "manifest_sha256": manifest_sha256,
+            "execution_provenance_status": replay_manifest[
+                "execution_provenance"
+            ]["status"],
+            "workspace_capture_source": workspace_snapshot.get("capture_source"),
+        },
+    )
+    provenance_issues = execution_provenance_issues(
+        replay_manifest.get("execution_provenance")
+    )
     return DualAgentArtifactExport(
-        status="ok",
+        status=(
+            "incomplete"
+            if (
+                require_complete_provenance
+                and _has_accepted_gate_result(events)
+                and provenance_issues
+            )
+            else "ok"
+        ),
         output_dir=out_dir,
         files=(
             *files,
@@ -163,6 +206,20 @@ def _events_by_gate(events: list[dict[str, Any]]) -> dict[str, tuple[dict[str, A
     for event in events:
         grouped.setdefault(event["gate"], []).append(event)
     return {gate: tuple(items) for gate, items in grouped.items()}
+
+
+def _has_accepted_gate_result(events: list[dict[str, Any]]) -> bool:
+    for event in events:
+        if event["kind"] != "dual_agent_gate_result":
+            continue
+        payload = event["payload"]
+        for key in ("supervisor_final_status", "status", "claude_gate_status"):
+            value = str(payload.get(key) or "").strip().lower()
+            if value:
+                if value in {"accept", "accepted"}:
+                    return True
+                break
+    return False
 
 
 def _index_markdown(
@@ -334,8 +391,20 @@ def _replay_manifest(
     transcript_jsonl: str,
     workspace_snapshot: dict[str, Any],
     mast_coverage: list[dict[str, Any]],
+    provider_model_resolutions: Iterable[dict[str, Any]] = (),
+    canonical_tool_contracts: Iterable[dict[str, Any]] = (),
+    runtime_component_receipts: Iterable[dict[str, Any]] = (),
 ) -> dict[str, Any]:
     event_ids = [int(event["event_id"]) for event in events]
+    handoff_packets = _handoff_packet_manifest(events)
+    execution_provenance = build_execution_provenance(
+        events=events,
+        workspace_snapshot=workspace_snapshot,
+        handoff_packets=handoff_packets,
+        provider_model_resolutions=provider_model_resolutions,
+        canonical_tool_contracts=canonical_tool_contracts,
+        runtime_component_receipts=runtime_component_receipts,
+    )
     return {
         "schema_version": "dual-agent-replay-manifest/v1",
         "run_id": run_id,
@@ -353,6 +422,7 @@ def _replay_manifest(
             "failure_taxonomy": FAILURE_TAXONOMY_VERSION,
             "agent_interaction": "dual-agent-interaction/v1",
             "replay_manifest": "dual-agent-replay-manifest/v1",
+            "execution_provenance": EXECUTION_PROVENANCE_SCHEMA_VERSION,
         },
         "files": {
             "index": "index.md",
@@ -364,8 +434,11 @@ def _replay_manifest(
             "workspace_snapshot": "replay/workspace-snapshot.json",
         },
         "event_kinds": sorted({str(event["kind"]) for event in events}),
-        "handoff_packets": _handoff_packet_manifest(events),
+        "handoff_packets": handoff_packets,
         "workspace_snapshot": workspace_snapshot,
+        "execution_provenance": execution_provenance,
+        "model_resolutions": execution_provenance["model_resolutions"],
+        "component_hashes": execution_provenance["component_hashes"],
         "failure_summary": _run_failure_summary(events),
         "sequence_failures": detect_sequence_failures(events),
         "mast_coverage": mast_coverage,
@@ -375,19 +448,40 @@ def _replay_manifest(
 
 def _handoff_packet_manifest(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     by_path: dict[str, list[int]] = {}
+    captured_by_path: dict[str, dict[str, Any]] = {}
     for event in events:
         payload = event["payload"]
         path = payload.get("handoff_packet_path")
         if not path:
             continue
-        by_path.setdefault(str(path), []).append(int(event["event_id"]))
+        path_text = str(path)
+        by_path.setdefault(path_text, []).append(int(event["event_id"]))
+        acceptance = _load_acceptance_snapshot(payload)
+        packet = (
+            acceptance.get("handoff_packet")
+            if isinstance(acceptance, dict)
+            and isinstance(acceptance.get("handoff_packet"), dict)
+            else None
+        )
+        if packet is not None and str(packet.get("path") or "") == path_text:
+            captured_by_path[path_text] = dict(packet)
 
     packets: list[dict[str, Any]] = []
     for path_text, event_ids in sorted(by_path.items()):
+        captured = captured_by_path.get(path_text)
+        if captured is not None:
+            packets.append({
+                **captured,
+                "path": path_text,
+                "event_ids": event_ids,
+                "capture_source": "accepted_gate_event",
+            })
+            continue
         path = Path(path_text).expanduser()
         item: dict[str, Any] = {
             "path": path_text,
             "event_ids": event_ids,
+            "capture_source": "posthoc_diagnostic",
         }
         if path.exists() and path.is_file():
             content = path.read_text(encoding="utf-8", errors="replace")
@@ -406,23 +500,64 @@ def _handoff_packet_manifest(events: list[dict[str, Any]]) -> list[dict[str, Any
     return packets
 
 
-def _workspace_snapshot_manifest(events: list[dict[str, Any]]) -> dict[str, Any]:
+def _workspace_snapshot_manifest(
+    events: list[dict[str, Any]],
+    *,
+    output_dir: Path,
+) -> dict[str, Any]:
+    for event in reversed(events):
+        payload = event["payload"]
+        raw_acceptance = payload.get("acceptance_evidence")
+        acceptance = _load_acceptance_snapshot(payload)
+        snapshot = (
+            acceptance.get("workspace_snapshot")
+            if isinstance(acceptance, dict)
+            and isinstance(acceptance.get("workspace_snapshot"), dict)
+            else None
+        )
+        if snapshot is not None:
+            return dict(snapshot)
+        if isinstance(raw_acceptance, dict):
+            return {
+                "status": "acceptance_snapshot_invalid",
+                "capture_source": "accepted_gate_event",
+                "snapshot_ref": raw_acceptance.get("snapshot_ref"),
+            }
+
     handoff = _first_handoff_content(events)
     root_text = _clean_text(handoff.get("cwd")) if isinstance(handoff, dict) else ""
     if not root_text:
-        return {"status": "not_found", "reason": "handoff_cwd_missing"}
+        return {
+            "status": "not_found",
+            "capture_source": "posthoc_diagnostic",
+            "reason": "handoff_cwd_missing",
+        }
     root = Path(root_text).expanduser()
     if not root.exists() or not root.is_dir():
-        return {"status": "missing_at_export", "root": root_text}
+        return {
+            "status": "missing_at_export",
+            "capture_source": "posthoc_diagnostic",
+            "root": root_text,
+        }
 
     status_short = _run_git(root, "status", "--short")
     diff = _run_git(root, "diff", "--no-ext-diff") or ""
-    head = _run_git(root, "rev-parse", "--short", "HEAD")
+    head = _run_git(root, "rev-parse", "HEAD")
     diff_stat = _run_git(root, "diff", "--stat", "--no-ext-diff")
+    excluded_roots = _workspace_snapshot_excluded_roots(
+        root,
+        output_dir=output_dir,
+    )
+    immutable_snapshot = build_workspace_overlay(
+        root,
+        base_commit=head,
+        excluded_roots=excluded_roots,
+    )
     return {
         "status": "captured",
         "root": str(root),
         "root_source": "handoff_cwd",
+        "capture_source": "posthoc_diagnostic",
         "git": {
             "head": head,
             "head_sha": head,
@@ -433,9 +568,50 @@ def _workspace_snapshot_manifest(events: list[dict[str, Any]]) -> dict[str, Any]
             "diff_bytes": len(diff.encode()),
             "diff_stat": diff_stat,
         },
-        "file_tree_sha256": _file_tree_sha256(root),
+        "file_tree_sha256": _file_tree_sha256(
+            root,
+            excluded_roots=excluded_roots,
+        ),
         "source_artifact_hashes": _source_artifact_hashes(root, handoff),
+        "immutable_snapshot": immutable_snapshot,
     }
+
+
+def _load_acceptance_snapshot(
+    payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    acceptance = payload.get("acceptance_evidence")
+    if not isinstance(acceptance, dict):
+        return None
+    if (
+        isinstance(acceptance.get("handoff_packet"), dict)
+        and isinstance(acceptance.get("workspace_snapshot"), dict)
+    ):
+        return acceptance
+    snapshot_ref = str(acceptance.get("snapshot_ref") or "").strip()
+    expected_sha256 = str(
+        acceptance.get("snapshot_sha256") or ""
+    ).strip().lower().removeprefix("sha256:")
+    if not snapshot_ref or len(expected_sha256) != 64:
+        return None
+    path = Path(snapshot_ref).expanduser()
+    try:
+        content = path.read_bytes()
+    except OSError:
+        return None
+    if sha256(content).hexdigest() != expected_sha256:
+        return None
+    try:
+        snapshot = json.loads(content.decode("ascii"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if (
+        not isinstance(snapshot, dict)
+        or snapshot.get("schema_version")
+        != "dual-agent-acceptance-snapshot/v1"
+    ):
+        return None
+    return snapshot
 
 
 def _first_handoff_content(events: list[dict[str, Any]]) -> dict[str, Any]:
@@ -472,10 +648,32 @@ def _run_git(root: Path, *args: str) -> str:
     return completed.stdout.strip()
 
 
-def _file_tree_sha256(root: Path) -> str:
+def _workspace_snapshot_excluded_roots(
+    root: Path,
+    *,
+    output_dir: Path,
+) -> tuple[Path, ...]:
+    try:
+        relative = output_dir.expanduser().resolve().relative_to(
+            root.expanduser().resolve()
+        )
+    except (OSError, ValueError):
+        return ()
+    return (relative,) if relative.parts else ()
+
+
+def _file_tree_sha256(
+    root: Path,
+    *,
+    excluded_roots: tuple[Path, ...] = (),
+) -> str:
     digest = sha256()
     for path in _snapshot_file_paths(root):
-        if not path.is_file() or _excluded_snapshot_path(path, root):
+        if not path.is_file() or _excluded_snapshot_path(
+            path,
+            root,
+            excluded_roots=excluded_roots,
+        ):
             continue
         rel = path.relative_to(root).as_posix()
         data = path.read_bytes()
@@ -536,14 +734,26 @@ def _source_artifact_hashes(root: Path, handoff: dict[str, Any]) -> dict[str, st
     return hashes
 
 
-def _excluded_snapshot_path(path: Path, root: Path) -> bool:
+def _excluded_snapshot_path(
+    path: Path,
+    root: Path,
+    *,
+    excluded_roots: tuple[Path, ...] = (),
+) -> bool:
     rel = path.relative_to(root).as_posix()
-    parts = set(rel.split("/"))
+    relative = Path(rel)
+    if any(
+        relative == excluded or excluded in relative.parents
+        for excluded in excluded_roots
+    ):
+        return True
+    parts = set(relative.parts)
     if parts & {
         ".git",
         ".venv",
         ".claude",
         ".cortex",
+        ".handoff",
         "node_modules",
         "__pycache__",
         ".pytest_cache",
@@ -636,7 +846,7 @@ def _interaction_event_markdown(index: int, event: dict[str, Any]) -> str:
             "",
             f"- event_id: `{event['event_id']}`",
             f"- ts: `{event['ts']}`",
-            f"- interaction_type: `round`",
+            "- interaction_type: `round`",
             f"- round_index: `{round_payload.get('round_index')}`",
             "",
             "### Codex -> Claude Code",
@@ -690,7 +900,7 @@ def _interaction_event_markdown(index: int, event: dict[str, Any]) -> str:
             "",
             f"- event_id: `{event['event_id']}`",
             f"- ts: `{event['ts']}`",
-            f"- interaction_type: `gate_result`",
+            "- interaction_type: `gate_result`",
             f"- status: `{payload.get('status')}`",
             f"- attempts: `{payload.get('attempts')}`",
             "",
@@ -710,7 +920,7 @@ def _interaction_event_markdown(index: int, event: dict[str, Any]) -> str:
         "",
         f"- event_id: `{event['event_id']}`",
         f"- ts: `{event['ts']}`",
-        f"- interaction_type: `gate_result`",
+        "- interaction_type: `gate_result`",
         f"- status: `{payload.get('status')}`",
         f"- attempts: `{payload.get('attempts')}`",
         "",

@@ -3,7 +3,6 @@ from __future__ import annotations
 import ast
 import dataclasses
 import inspect
-import json
 from pathlib import Path
 from typing import get_args
 
@@ -12,7 +11,7 @@ import pytest
 from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI, _gate_result_payload
 from supervisor.dual_agent import ProbeResult
 from supervisor.dual_agent_runner import DualAgentGateResult
-from supervisor.state import SCHEMA, State
+from supervisor.state import State
 
 
 def _state(tmp_path) -> State:
@@ -24,7 +23,7 @@ def _insert_event(
     *,
     run_id: str = "run-1",
     kind: str = "dual_agent_gate_round",
-    payload: dict | str = None,
+    payload: dict | str | None = None,
     ts: int = 1000,
 ) -> int:
     if payload is None:
@@ -40,13 +39,43 @@ def _insert_event(
                 "objection": None,
             },
         }
-    payload_json = payload if isinstance(payload, str) else json.dumps(payload)
-    cur = state._conn.execute(
-        "INSERT INTO events(run_id, ts, source, kind, payload_json) VALUES(?, ?, ?, ?, ?)",
-        (run_id, ts, "test", kind, payload_json),
+    if isinstance(payload, str):
+        event_id = state.write_event(
+            run_id=run_id,
+            source="test",
+            kind=kind,
+            payload={"test_fixture": "corrupt-parser-boundary"},
+            ts=ts,
+        )
+        corrupt_payloads = getattr(state, "_test_corrupt_event_payloads", None)
+        if corrupt_payloads is None:
+            corrupt_payloads = {}
+            setattr(state, "_test_corrupt_event_payloads", corrupt_payloads)
+            original_reader = state.read_dual_agent_gate_events
+
+            def read_with_corrupt_fixture(read_run_id: str):
+                rows = original_reader(read_run_id)
+                rendered = []
+                for row in rows:
+                    replacement = corrupt_payloads.get(int(row["event_id"]))
+                    if replacement is None:
+                        rendered.append(row)
+                        continue
+                    corrupt_row = dict(row)
+                    corrupt_row["payload_json"] = replacement
+                    rendered.append(corrupt_row)
+                return rendered
+
+            state.read_dual_agent_gate_events = read_with_corrupt_fixture  # type: ignore[method-assign]
+        corrupt_payloads[event_id] = payload
+        return event_id
+    return state.write_event(
+        run_id=run_id,
+        source="test",
+        kind=kind,
+        payload=payload,
+        ts=ts,
     )
-    state._conn.commit()
-    return int(cur.lastrowid)
 
 
 def _round_payload(
@@ -520,7 +549,13 @@ def test_stale_and_active_round_use_events_ts_epoch_seconds_boundary(tmp_path, n
 
     result = _snapshot(state, now_s=now_s)
 
-    assert "ts            INTEGER NOT NULL" in SCHEMA
+    ts_column = next(
+        row
+        for row in state._conn.execute("PRAGMA table_info(events)").fetchall()
+        if row["name"] == "ts"
+    )
+    assert ts_column["type"] == "INTEGER"
+    assert ts_column["notnull"] == 1
     assert result.liveness == expected
 
 

@@ -132,9 +132,11 @@ def test_new_mcp_and_cli_verbs_do_not_drive_dispatcher_or_spawn_workers(monkeypa
         "approve",
         "--run-id",
         "policy-run",
-        "--proposal-id",
-        "ARP-guard",
-        "--repo-root",
-        str(tmp_path),
-    ]) == 0
+            "--proposal-id",
+            "ARP-guard",
+            "--approver",
+            "operator@example.com",
+            "--repo-root",
+            str(tmp_path),
+        ]) == 0
     json.loads(capsys.readouterr().out)

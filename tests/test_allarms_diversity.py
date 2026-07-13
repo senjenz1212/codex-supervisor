@@ -19,10 +19,14 @@ def _arm_summary(*, false_accept_rate: float = 0.0, true_accept_rate: float = 1.
 
 
 def _reviewer_result(reviewer_id: str, decision: str, *, runtime: str, model: str) -> dict:
+    provider_family = "openai" if model.startswith("gpt-") else "google"
     return {
         "reviewer_id": reviewer_id,
         "runtime": runtime,
         "model": model,
+        "provider_family": provider_family,
+        "provider_family_verified": True,
+        "provider_family_source": "response_model",
         "verdict_present": True,
         "available": True,
         "decision": decision,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import os
 import subprocess
@@ -33,12 +34,13 @@ def _insert_event(
     payload: dict,
     ts: int = 1000,
 ) -> int:
-    cur = state._conn.execute(
-        "INSERT INTO events(run_id, ts, source, kind, payload_json) VALUES(?, ?, ?, ?, ?)",
-        (run_id, ts, "dual_agent", kind, json.dumps(payload)),
+    return state.write_event(
+        run_id=run_id,
+        source="dual_agent",
+        kind=kind,
+        payload=payload,
+        ts=ts,
     )
-    state._conn.commit()
-    return int(cur.lastrowid)
 
 
 def _round_payload(
@@ -842,6 +844,94 @@ def test_export_dual_agent_run_artifacts_writes_replay_manifest_with_handoff_con
     assert manifest["handoff_packets"][0]["content"] == handoff.read_text(encoding="utf-8")
     assert len(manifest["handoff_packets"][0]["sha256"]) == 64
     assert check_replay_schema_versions(manifest)["status"] == "compatible"
+    [manifest_event] = [
+        event
+        for event in state.read_events_since("run-1", after_event_id=0, limit=100)
+        if event["kind"] == "dual_agent_replay_manifest_recorded"
+    ]
+    assert manifest_event["payload"]["run_id"] == "run-1"
+    assert manifest_event["payload"]["task_id"] == "task-1"
+    assert manifest_event["payload"]["manifest_sha256"] == sha256(
+        (result.output_dir / "replay" / "manifest.json").read_bytes()
+    ).hexdigest()
+
+
+def test_replay_manifest_records_resolved_models_and_component_hashes(tmp_path):
+    state = _state(tmp_path)
+    _insert_event(
+        state,
+        kind="dual_agent_interaction_message",
+        payload={
+            "task_id": "task-1",
+            "gate": "tdd_review",
+            "message_type": "gate_request",
+            "content": "Review the TDD plan against the recorded contract.",
+            "trace_envelope": {
+                "schema_version": "dual-agent-trace-envelope/v1",
+                "run_id": "run-1",
+                "task_id": "task-1",
+                "gate": "tdd_review",
+                "source": "dual_agent",
+                "event_kind": "dual_agent_interaction_message",
+                "policy_verdict": "observed",
+                "failure_taxonomy": None,
+                "tool_calls": [
+                    {
+                        "name": "invoke_cursor_reviewer",
+                        "args": {
+                            "requested_model": "default",
+                            "model_source": "quality_default:best",
+                            "runtime": "cursor_sdk",
+                            "cli_command": "cursor-agent",
+                        },
+                        "model": "composer-2.5",
+                        "result_summary": {"model": "composer-2.5"},
+                    },
+                    {
+                        "name": "evaluate_outcome_fidelity",
+                        "args": {"probe_id": "P3"},
+                        "result_summary": {"status": "green"},
+                    },
+                ],
+                "artifacts": [],
+                "claims": [],
+                "receipts": [],
+            },
+        },
+    )
+
+    result = export_dual_agent_run_artifacts(
+        state,
+        run_id="run-1",
+        task_id="task-1",
+        output_dir=tmp_path / "docs" / "dual-agent" / "task-1",
+    )
+
+    manifest = json.loads((result.output_dir / "replay" / "manifest.json").read_text())
+    [lane] = manifest["model_resolutions"]
+    assert lane["requested_model"] == "default"
+    assert lane["resolved_model"] == "composer-2.5"
+    assert lane["resolution_source"] == "response_model"
+    provenance = manifest["execution_provenance"]
+    assert provenance["status"] == "incomplete"
+    assert provenance["unresolved_model_lanes"] == []
+    assert "containers" in provenance["missing_component_categories"]
+    assert provenance["workspace_issues"]
+    assert set(manifest["component_hashes"]) == {
+        "prompts",
+        "tool_contracts",
+        "containers",
+        "cli",
+        "evaluators",
+    }
+    for components in manifest["component_hashes"].values():
+        assert components
+        assert all(
+            len(component["sha256"]) == 64
+            if component["details"]["status"] == "verified"
+            else component["sha256"] == ""
+            for component in components
+        )
 
 
 def test_export_dual_agent_run_artifacts_writes_workspace_snapshot_manifest(tmp_path):
@@ -924,6 +1014,371 @@ def test_export_dual_agent_run_artifacts_writes_workspace_snapshot_manifest(tmp_
     assert snapshot["source_artifact_hashes"]["prd"] == sha256(
         prd.read_text(encoding="utf-8").encode()
     ).hexdigest()
+
+
+def test_workspace_snapshot_captures_hashed_immutable_overlay_for_dirty_tree(tmp_path):
+    state = _state(tmp_path)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo, check=True)
+    (repo / "README.md").write_text("baseline\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "commit", "-m", "baseline"], cwd=repo, check=True, capture_output=True, text=True)
+    recorded_head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    (repo / "README.md").write_text("historical result\n", encoding="utf-8")
+    (repo / "new.txt").write_text("captured untracked file\n", encoding="utf-8")
+    handoff = repo / ".handoff" / "task-1.json"
+    handoff.parent.mkdir()
+    handoff.write_text(json.dumps({"cwd": str(repo), "planning_artifacts": []}))
+    _insert_event(
+        state,
+        kind="dual_agent_gate_result",
+        payload={
+            **_result_payload(
+                gate="outcome_review",
+                summary="Outcome accepted.",
+                decisions=["accept"],
+            ),
+            "handoff_packet_path": str(handoff),
+        },
+    )
+
+    result = export_dual_agent_run_artifacts(
+        state,
+        run_id="run-1",
+        task_id="task-1",
+        output_dir=tmp_path / "docs" / "dual-agent" / "task-1",
+    )
+
+    manifest = json.loads((result.output_dir / "replay" / "manifest.json").read_text())
+    snapshot = manifest["workspace_snapshot"]
+    overlay = snapshot["immutable_snapshot"]
+    assert snapshot["git"]["head_sha"] == recorded_head
+    assert len(snapshot["git"]["head_sha"]) == 40
+    assert overlay["schema_version"] == "dual-agent-workspace-overlay/v1"
+    assert overlay["status"] == "captured"
+    assert overlay["base_commit"] == recorded_head
+    assert len(overlay["sha256"]) == 64
+    assert {entry["path"] for entry in overlay["entries"]} >= {
+        "README.md",
+        "new.txt",
+    }
+
+
+def test_export_uses_acceptance_time_handoff_and_workspace_after_later_mutation(tmp_path):
+    state = _state(tmp_path)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo, check=True)
+    (repo / "README.md").write_text("baseline\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "commit", "-m", "baseline"], cwd=repo, check=True, capture_output=True, text=True)
+    (repo / "README.md").write_text("accepted bytes\n", encoding="utf-8")
+    handoff = repo / ".handoff" / "task-1.json"
+    handoff.parent.mkdir()
+    accepted_handoff = json.dumps({
+        "task_id": "task-1",
+        "cwd": str(repo),
+        "planning_artifacts": [],
+    })
+    handoff.write_text(accepted_handoff, encoding="utf-8")
+    _insert_event(
+        state,
+        kind="dual_agent_gate_result",
+        payload={
+            **_result_payload(
+                gate="outcome_review",
+                summary="Outcome accepted.",
+                decisions=["accept"],
+            ),
+            "handoff_packet_path": str(handoff),
+        },
+    )
+
+    (repo / "README.md").write_text("mutated after acceptance\n", encoding="utf-8")
+    handoff.write_text(
+        json.dumps({"task_id": "task-1", "cwd": str(tmp_path / "wrong-repo")}),
+        encoding="utf-8",
+    )
+
+    result = export_dual_agent_run_artifacts(
+        state,
+        run_id="run-1",
+        task_id="task-1",
+        output_dir=tmp_path / "docs" / "dual-agent" / "task-1",
+    )
+    manifest = json.loads((result.output_dir / "replay" / "manifest.json").read_text())
+
+    assert manifest["handoff_packets"][0]["content"] == accepted_handoff
+    snapshot = manifest["workspace_snapshot"]
+    assert snapshot["capture_source"] == "accepted_gate_event"
+    readme_entry = next(
+        entry
+        for entry in snapshot["immutable_snapshot"]["entries"]
+        if entry["path"] == "README.md"
+    )
+    assert base64.b64decode(readme_entry["content_base64"]) == b"accepted bytes\n"
+
+
+def test_release_grade_export_reports_incomplete_provenance(tmp_path):
+    state = _state(tmp_path)
+    _insert_event(
+        state,
+        kind="dual_agent_gate_result",
+        payload=_result_payload(
+            gate="outcome_review",
+            summary="Outcome accepted without replay provenance.",
+            decisions=["accept"],
+        ),
+    )
+
+    result = export_dual_agent_run_artifacts(
+        state,
+        run_id="run-1",
+        task_id="task-1",
+        output_dir=tmp_path / "docs" / "dual-agent" / "task-1",
+        require_complete_provenance=True,
+    )
+
+    assert result.status == "incomplete"
+    manifest = json.loads((result.output_dir / "replay" / "manifest.json").read_text())
+    assert manifest["execution_provenance"]["status"] == "incomplete"
+
+
+def test_release_grade_export_carries_runtime_receipts_to_complete_manifest(
+    tmp_path,
+):
+    state = _state(tmp_path)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    handoff = repo / ".handoff" / "task-1.json"
+    handoff.parent.mkdir()
+    handoff_content = json.dumps({
+        "task_id": "task-1",
+        "cwd": str(repo),
+        "planning_artifacts": [],
+    })
+    handoff.write_text(handoff_content, encoding="utf-8")
+    interaction_event_id = _insert_event(
+        state,
+        kind="dual_agent_interaction_message",
+        payload={
+            "task_id": "task-1",
+            "gate": "outcome_review",
+            "message_type": "gate_request",
+            "content": "Review the execution-time provenance.",
+            "requested_model": "default",
+            "model": "default",
+            "runtime": "custom",
+            "provider_family": "provider",
+            "container_digest": "b" * 64,
+            "trace_envelope": {
+                "tool_calls": [
+                    {
+                        "name": "invoke_custom",
+                        "args": {
+                            "runtime": "custom",
+                            "cli_command": "custom-cli",
+                        },
+                    },
+                    {
+                        "name": "verify_result",
+                        "args": {},
+                    },
+                ],
+            },
+        },
+    )
+    _insert_event(
+        state,
+        kind="dual_agent_gate_result",
+        payload={
+            **_result_payload(
+                gate="outcome_review",
+                summary="Outcome accepted with runtime receipts.",
+                decisions=["accept"],
+            ),
+            "handoff_packet_path": str(handoff),
+            "acceptance_evidence": {
+                "handoff_packet": {
+                    "path": str(handoff),
+                    "status": "captured",
+                    "sha256": sha256(handoff_content.encode()).hexdigest(),
+                    "content": handoff_content,
+                },
+                "workspace_snapshot": {
+                    "status": "captured",
+                    "capture_source": "accepted_gate_event",
+                    "root": str(repo),
+                    "git": {"head_sha": "a" * 40},
+                    "file_tree_sha256": "d" * 64,
+                    "immutable_snapshot": {
+                        "status": "captured",
+                        "sha256": "e" * 64,
+                    },
+                },
+            },
+        },
+        ts=1001,
+    )
+    contract_bytes = {
+        name: json.dumps(
+            {"name": name, "inputSchema": {"type": "object"}},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        for name in ("invoke_custom", "verify_result")
+    }
+
+    result = export_dual_agent_run_artifacts(
+        state,
+        run_id="run-1",
+        task_id="task-1",
+        output_dir=tmp_path / "docs" / "dual-agent" / "task-1",
+        require_complete_provenance=True,
+        provider_model_resolutions=[{
+            "event_id": interaction_event_id,
+            "gate": "outcome_review",
+            "lane": "dual_agent_interaction_message",
+            "runtime": "custom",
+            "provider_family": "provider",
+            "requested_model": "default",
+            "resolved_model": "provider/model-v1-20260713",
+            "provider_response_receipt_ref": (
+                "receipt://provider-response/run-1/outcome-review"
+            ),
+        }],
+        canonical_tool_contracts=[
+            {
+                "tool_name": name,
+                "canonical_bytes": content,
+                "sha256": sha256(content).hexdigest(),
+                "receipt_ref": f"receipt://tool-contract/{name}",
+                "capture_source": "execution_time",
+                "source": "runtime_tool_registry",
+            }
+            for name, content in contract_bytes.items()
+        ],
+        runtime_component_receipts=[
+            {
+                "category": "containers",
+                "component_id": "container:container_digest",
+                "sha256": "b" * 64,
+                "receipt_ref": "receipt://runtime-component/container/main",
+                "capture_source": "execution_time",
+                "source": "runtime_component_receipt",
+            },
+            {
+                "category": "cli",
+                "component_id": "cli:invoke_custom",
+                "canonical_bytes": b"custom cli executable bytes",
+                "sha256": sha256(
+                    b"custom cli executable bytes"
+                ).hexdigest(),
+                "receipt_ref": "receipt://runtime-component/cli/custom",
+                "capture_source": "execution_time",
+                "source": "runtime_component_receipt",
+            },
+            {
+                "category": "evaluators",
+                "component_id": "evaluator:verify_result",
+                "canonical_bytes": b"verify result evaluator bytes",
+                "sha256": sha256(
+                    b"verify result evaluator bytes"
+                ).hexdigest(),
+                "receipt_ref": (
+                    "receipt://runtime-component/evaluator/verify-result"
+                ),
+                "capture_source": "execution_time",
+                "source": "runtime_component_receipt",
+            },
+        ],
+    )
+
+    manifest = json.loads(
+        (result.output_dir / "replay" / "manifest.json").read_text()
+    )
+    provenance = manifest["execution_provenance"]
+    assert result.status == "ok"
+    assert provenance["status"] == "complete"
+    assert provenance["missing_component_categories"] == []
+    assert provenance["unresolved_model_lanes"] == []
+    assert provenance["model_resolutions"][0][
+        "provider_response_source"
+    ].startswith("receipt://provider-response/")
+    assert {
+        component["details"]["receipt_ref"]
+        for category in ("containers", "cli", "evaluators")
+        for component in provenance["component_hashes"][category]
+    } == {
+        "receipt://runtime-component/container/main",
+        "receipt://runtime-component/cli/custom",
+        "receipt://runtime-component/evaluator/verify-result",
+    }
+
+
+def test_repeated_export_excludes_its_own_output_from_workspace_snapshot(tmp_path):
+    state = _state(tmp_path)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo, check=True)
+    (repo / "README.md").write_text("baseline\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "commit", "-m", "baseline"], cwd=repo, check=True, capture_output=True, text=True)
+    (repo / "README.md").write_text("changed\n", encoding="utf-8")
+    handoff = repo / ".handoff" / "task-1.json"
+    handoff.parent.mkdir()
+    handoff.write_text(json.dumps({"cwd": str(repo), "planning_artifacts": []}))
+    _insert_event(
+        state,
+        kind="dual_agent_gate_result",
+        payload={
+            **_result_payload(
+                gate="outcome_review",
+                summary="Outcome accepted.",
+                decisions=["accept"],
+            ),
+            "handoff_packet_path": str(handoff),
+        },
+    )
+    output_dir = repo / "docs" / "dual-agent" / "task-1"
+
+    first = export_dual_agent_run_artifacts(
+        state,
+        run_id="run-1",
+        task_id="task-1",
+        output_dir=output_dir,
+    )
+    first_snapshot = json.loads(
+        (first.output_dir / "replay" / "workspace-snapshot.json").read_text()
+    )
+    second = export_dual_agent_run_artifacts(
+        state,
+        run_id="run-1",
+        task_id="task-1",
+        output_dir=output_dir,
+    )
+    second_snapshot = json.loads(
+        (second.output_dir / "replay" / "workspace-snapshot.json").read_text()
+    )
+
+    assert second_snapshot["file_tree_sha256"] == first_snapshot["file_tree_sha256"]
+    assert all(
+        not entry["path"].startswith("docs/dual-agent/task-1/")
+        for entry in second_snapshot["immutable_snapshot"]["entries"]
+    )
 
 
 def test_workspace_snapshot_hash_ignores_runtime_cache_dirs(tmp_path):
@@ -1691,7 +2146,7 @@ async def test_codex_supervisor_mcp_exports_artifacts_and_accepts_planning_artif
 
     assert result["status"] == "accepted"
     assert result["probes"]["P1"]["status"] == "green"
-    assert exported["status"] == "ok"
+    assert exported["status"] == "incomplete"
     assert "docs/dual-agent/gate-1/prd.md" in exported["files"]
     assert "docs/dual-agent/gate-1/screenshots.md" in exported["files"]
     assert "docs/dual-agent/gate-1/screenshots/01-desktop.png" in exported["files"]

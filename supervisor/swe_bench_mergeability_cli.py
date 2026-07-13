@@ -20,6 +20,8 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
+from .claim_gate import ClaimGate, ClaimGateError
+from .agent_runtime import CodexRuntime
 from .mergeability_bench import (
     SUPERVISOR_CONFIGURED_PANEL_LITELLM_MODEL_DEFAULT,
     SUPERVISOR_CONFIGURED_PANEL_LITELLM_PROVIDER_FAMILY_DEFAULT,
@@ -36,6 +38,7 @@ from .swe_bench_mergeability import (
     swebench_mergeability_replay_runner,
     write_swebench_official_all_arms_blocked_artifact,
 )
+from .runtime_execution import runtime_task_runner
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -150,6 +153,7 @@ def main(argv: list[str] | None = None) -> int:
                 litellm_provider_family=args.litellm_provider_family or None,
                 panel_aggregation_mode=args.panel_aggregation_mode,
                 review_cwd=Path.cwd(),
+                runtime_runner=runtime_task_runner(CodexRuntime),
             )
         )
 
@@ -170,7 +174,8 @@ def main(argv: list[str] | None = None) -> int:
                 alpha=args.alpha,
                 timeout_s=args.timeout_s,
             )
-            summary = {
+            ClaimGate.validate_derived_report(report)
+            summary = ClaimGate.govern_report({
                 "status": "reported",
                 "report": report.get("report_path")
                 or str(Path(args.output_dir) / "powered_factorial_report.json"),
@@ -182,7 +187,7 @@ def main(argv: list[str] | None = None) -> int:
                 "evidence_conversion_power_contract": report.get(
                     "evidence_conversion_power_contract"
                 ),
-            }
+            })
             print(json.dumps(summary, indent=2, sort_keys=True))
             return 0
         if args.official_replay or args.official_all_arms_diagnostic:
@@ -338,16 +343,21 @@ def main(argv: list[str] | None = None) -> int:
                 reviewer_panel_mode=reviewer_panel_mode,
                 timeout_s=args.timeout_s,
             )
-    except SwebenchMergeabilityFixtureRunnerError as exc:
+    except (SwebenchMergeabilityFixtureRunnerError, ClaimGateError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
 
+    try:
+        ClaimGate.validate_derived_report(report)
+    except ClaimGateError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     bridge = report.get("bridge_report") or {}
     metrics_suppressed = bool(
         report.get("status") == "unavailable"
         or bridge.get("metrics_suppressed")
     )
-    summary = {
+    summary = ClaimGate.govern_report({
         "status": "reported" if report.get("status") != "unavailable" else "unavailable",
         "report": report.get("report_path") or str(Path(args.output_dir) / "live_report.json"),
         "report_sha256": report["report_sha256"],
@@ -380,11 +390,7 @@ def main(argv: list[str] | None = None) -> int:
             bridge.get("matched_true_accept_status"),
         ),
         "metric_applyable": bool(report.get("metric_applyable") or bridge.get("metric_applyable")),
-        "improvement_claim_allowed": bool(
-            report.get("improvement_claim_allowed")
-            or bridge.get("improvement_claim_allowed")
-        ),
-    }
+    })
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
 

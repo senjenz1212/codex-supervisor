@@ -44,31 +44,16 @@ class _Tripwire:
         raise AssertionError(f"DriftDetector must not access {self._name}.{attr}")
 
 
-class _FakeEmbeddingData:
-    def __init__(self, embedding):
-        self.embedding = embedding
-
-
-class _FakeEmbeddingResponse:
-    def __init__(self):
-        self.data = [
-            _FakeEmbeddingData([1.0, 0.0]),
-            _FakeEmbeddingData([1.0, 0.0]),
-        ]
-
-
-class _FakeEmbeddings:
+class _FakeOpenAI:
     def __init__(self):
         self.inputs = None
 
-    async def create(self, *, model, input):
-        self.inputs = input
-        return _FakeEmbeddingResponse()
-
-
-class _FakeOpenAI:
-    def __init__(self):
-        self.embeddings = _FakeEmbeddings()
+    async def embed(self, *, model, texts):
+        self.inputs = list(texts)
+        return [
+            [1.0, 0.0],
+            [1.0, 0.0],
+        ]
 
 
 @pytest.mark.asyncio
@@ -213,7 +198,7 @@ async def test_drift_detector_l2_uses_intent_summaries_not_raw_messages(tmp_path
     run = state.active_runs()[0]
     await detector._check_one(run)
 
-    embedded = fake_oai.embeddings.inputs
+    embedded = fake_oai.inputs
     assert embedded is not None
     assert embedded[0] == "Refactor auth/login"
     assert "Agent is editing billing files." in embedded[1]

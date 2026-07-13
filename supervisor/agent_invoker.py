@@ -6,22 +6,15 @@ This is what gives us predictable cost — the agent doesn't loop forever.
 from __future__ import annotations
 import json
 import logging
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
 
+from .agent_runtime import AgentRuntime, AgentTask
 from .config import Config
-from .provider_routing import direct_anthropic_env
+from .runtime_cleanup import cancel_runtime_after_failure
 from .state import State, Decision
 
 log = logging.getLogger(__name__)
-
-ClaudeSDKClient: Any | None = None
-ClaudeAgentOptions: Any | None = None
-
-
-class MissingClaudeAgentSdk(RuntimeError):
-    """Raised when the optional Claude Agent SDK is needed but unavailable."""
-
 
 SKILL_FOR_DECISION = {
     "adjudicate_drift": "drift-watch",
@@ -33,12 +26,19 @@ SKILL_FOR_DECISION = {
 
 class AgentInvoker:
     def __init__(self, cfg: Config, state: State, skills_dir: Path,
-                 codex_mcp_server, telegram_mcp_server):
+                 codex_mcp_server, telegram_mcp_server,
+                 *,
+                 agent_runtime: AgentRuntime,
+                 agent_environment: Mapping[str, str] | None = None,
+                 inherit_agent_environment: bool = True):
         self.cfg = cfg
         self.state = state
         self.skills_dir = skills_dir
         self.codex_mcp = codex_mcp_server
         self.telegram_mcp = telegram_mcp_server
+        self.agent_runtime = agent_runtime
+        self.agent_environment = dict(agent_environment or {})
+        self.inherit_agent_environment = bool(inherit_agent_environment)
 
     async def run(self) -> None:
         log.info("AgentInvoker: starting decision loop")
@@ -57,39 +57,74 @@ class AgentInvoker:
         skill_text = (self.skills_dir / f"{skill_name}.md").read_text()
 
         model = self._model_for(d.kind)
-        client_cls, options_cls = _load_claude_agent_sdk()
-        options = options_cls(
-            system_prompt=skill_text,
-            model=model,
-            max_turns=12,
-            mcp_servers={
-                "codex": self.codex_mcp,
-                "telegram": self.telegram_mcp,
-            },
-            allowed_tools=self._allowed_tools_for(d.kind),
-            effort=self._effort_for(d.kind),
-            env=direct_anthropic_env(),
-        )
-
         user_message = self._format_decision(d)
         log.info("invoking agent: kind=%s run=%s skill=%s",
                  d.kind, d.run_id, skill_name)
-
-        async with client_cls(options=options) as client:
-            await client.query(user_message)
+        handle = await self.agent_runtime.start(AgentTask(
+            task_id=f"{d.run_id}:{d.kind}",
+            instruction=user_message,
+            cwd=Path.cwd(),
+            model=model,
+            timeout_s=900,
+            env=self.agent_environment,
+            inherit_env=self.inherit_agent_environment,
+            metadata={
+                "system_prompt": skill_text,
+                "max_turns": 12,
+                "mcp_servers": {
+                    "codex": self.codex_mcp,
+                    "telegram": self.telegram_mcp,
+                },
+                "allowed_tools": self._allowed_tools_for(d.kind),
+                "effort": self._effort_for(d.kind),
+                "result_metadata": {
+                    "decision_kind": d.kind,
+                    "source_run_id": d.run_id,
+                },
+            },
+        ))
+        try:
             outputs: list[str] = []
-            async for msg in client.receive_response():
-                if hasattr(msg, "content"):
-                    for block in getattr(msg, "content", []) or []:
-                        text = getattr(block, "text", None)
-                        if text:
-                            outputs.append(text)
+            async for event in self.agent_runtime.stream(handle):
+                if event.kind != "agent.message":
+                    continue
+                text = event.payload.get("message")
+                if text:
+                    outputs.append(str(text))
+            result = await self.agent_runtime.collect(handle)
+            if result.status != "completed":
+                raise RuntimeError(
+                    f"decision runtime ended {result.status}: "
+                    f"{result.metadata.get('stderr') or result.output}"
+                )
+            if not outputs and result.output:
+                outputs.append(result.output)
 
-        self.state.write_verdict(
-            run_id=d.run_id, phase=d.kind, layer="L4" if d.kind == "adjudicate_drift" else None,
-            model=model, output={"agent_outputs": outputs},
-            latency_ms=0,
-        )
+            verdict_model = result.resolved_model or model
+            self.state.write_verdict(
+                run_id=d.run_id, phase=d.kind,
+                layer="L4" if d.kind == "adjudicate_drift" else None,
+                model=verdict_model,
+                output={
+                    "agent_outputs": outputs,
+                    "runtime": result.runtime,
+                    "runtime_run_id": result.run_id,
+                    "result_hash": result.result_hash,
+                    "requested_model": model,
+                    "resolved_model": result.resolved_model or None,
+                    "model_provenance": (
+                        result.model_provenance or "requested_model_fallback"
+                    ),
+                },
+                latency_ms=0,
+            )
+        except BaseException:
+            await cancel_runtime_after_failure(
+                self.agent_runtime,
+                handle,
+                logger=log,
+            )
+            raise
 
     def _model_for(self, kind: str) -> str:
         if kind == "adjudicate_drift":
@@ -132,24 +167,3 @@ class AgentInvoker:
             f"Follow the procedure in your system prompt. Use your MCP tools as needed. "
             f"End your response with a single JSON block summarizing the action you took."
         )
-
-
-def _load_claude_agent_sdk() -> tuple[Any, Any]:
-    global ClaudeSDKClient, ClaudeAgentOptions
-    if ClaudeSDKClient is not None and ClaudeAgentOptions is not None:
-        return ClaudeSDKClient, ClaudeAgentOptions
-    try:
-        from claude_agent_sdk import (  # type: ignore[import-not-found]
-            ClaudeAgentOptions as _ClaudeAgentOptions,
-            ClaudeSDKClient as _ClaudeSDKClient,
-        )
-    except ModuleNotFoundError as e:
-        if e.name == "claude_agent_sdk":
-            raise MissingClaudeAgentSdk(
-                "claude_agent_sdk is optional; install codex-supervisor[agent] "
-                "to run AgentInvoker decisions."
-            ) from e
-        raise
-    ClaudeSDKClient = _ClaudeSDKClient
-    ClaudeAgentOptions = _ClaudeAgentOptions
-    return ClaudeSDKClient, ClaudeAgentOptions

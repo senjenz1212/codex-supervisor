@@ -18,6 +18,13 @@ import pytest
 from supervisor.config import Config
 from supervisor.cursor_agent import CursorInvocationRequest, CursorInvocationResult
 from supervisor.dual_agent import Outcome, ProbeResult
+from supervisor.agent_runtime import (
+    AgentRunHandle,
+    AgentRunResult,
+    AgentTask,
+    RuntimeEvent,
+    normalize_runtime_event,
+)
 from supervisor.dual_agent_workflow import (
     cursor_review_gates_for_workflow,
     select_workflow_route,
@@ -27,6 +34,7 @@ from supervisor.dual_agent_workflow import (
 )
 from supervisor.dual_agent_lead import DEFAULT_DYNAMIC_WORKFLOW_PREVIEW_GATES
 from supervisor.receipt_provenance import mark_supervisor_runtime_receipt
+from supervisor.runtime_execution import RuntimeExecution
 from supervisor.state import State
 
 
@@ -462,11 +470,108 @@ def _server(
         mcp_cls=_FakeMCP,
         runner=fake_runner,
         codex_runner=codex_runner or _accepting_codex_reviewer_runner,
+        codex_runtime_runner=_codex_runtime_runner_from_subprocess_runner(
+            codex_runner or _accepting_codex_reviewer_runner
+        ),
         cursor_runner=cursor_runner or _accepting_cursor_runner,
         no_mistakes_runner=no_mistakes_runner,
         notifier=notifier,
     )
     return server, state
+
+
+def _codex_runtime_runner_from_subprocess_runner(runner):
+    """Adapt the legacy injected reviewer runner to the AgentRuntime contract.
+
+    Workflow-driver tests deliberately use hermetic replay runners. Production
+    still composes the real ``CodexRuntime``; this adapter keeps the test seam
+    explicit now that independent reviewers execute through ``AgentRuntime``.
+    """
+
+    def run(task: AgentTask) -> RuntimeExecution:
+        started_at_ms = int(time.time() * 1000)
+        argv = [
+            "codex",
+            "exec",
+            "--json",
+            "-C",
+            str(task.cwd),
+            "-m",
+            task.model,
+            task.instruction,
+        ]
+        completed = runner(
+            argv,
+            cwd=str(task.cwd),
+            timeout=task.timeout_s,
+            capture_output=True,
+            text=True,
+        )
+        raw_events: list[dict] = []
+        events: list[RuntimeEvent] = []
+        session_id = ""
+        for line in str(completed.stdout or "").splitlines():
+            try:
+                raw = json.loads(line)
+            except json.JSONDecodeError:
+                raw = {"type": "agent_message", "message": line}
+            if not isinstance(raw, dict):
+                continue
+            raw_events.append(raw)
+            session_id = session_id or str(
+                raw.get("thread_id")
+                or raw.get("session_id")
+                or ""
+            ).strip()
+            events.append(normalize_runtime_event(raw))
+        output = "\n".join(
+            str(event.payload.get("item", {}).get("text") or "").strip()
+            for event in events
+            if event.kind == "agent.message"
+            and isinstance(event.payload.get("item"), dict)
+            and str(event.payload.get("item", {}).get("text") or "").strip()
+        )
+        if not output:
+            output = str(completed.stdout or "")
+        ended_at_ms = int(time.time() * 1000)
+        run_id = session_id or f"codex-test-{sha256(output.encode()).hexdigest()[:16]}"
+        handle = AgentRunHandle(
+            run_id=run_id,
+            task_id=task.task_id,
+            runtime="codex",
+            session_id=run_id,
+            capabilities={"resume": True, "cancel": True, "stream": True},
+        )
+        result = AgentRunResult(
+            run_id=run_id,
+            task_id=task.task_id,
+            runtime="codex",
+            session_id=run_id,
+            status="completed" if completed.returncode == 0 else "failed",
+            output=output,
+            events=tuple(events),
+            started_at_ms=started_at_ms,
+            ended_at_ms=ended_at_ms,
+            cost_usd=0.0,
+            resolved_model=task.model,
+            result_hash=sha256(output.encode("utf-8")).hexdigest(),
+            token_usage={"tokens_in": 1, "tokens_out": 1},
+            model_provenance="test_fixture.requested_model",
+            cost_provenance="test_fixture.zero_cost",
+            token_provenance="test_fixture.synthetic_usage",
+            metadata={
+                "returncode": completed.returncode,
+                "stderr": str(completed.stderr or ""),
+                "raw_event_count": len(raw_events),
+            },
+        )
+        return RuntimeExecution(
+            handle=handle,
+            events=tuple(events),
+            result=result,
+        )
+
+    return run
 
 
 def _materialize_runtime_evidence_fixture(
@@ -2078,7 +2183,7 @@ def _codex_reviewer_jsonl(
     outcome = Outcome(
         task_id=task_id,
         summary="Codex CLI independently reviewed the gate.",
-        specialists=[{"name": "independent-reviewer-1", "decision": decision}],
+        specialists=[{"name": "Cursor Reviewer", "decision": decision}],
         decisions=[decision],
         objections=[] if decision == "accept" else [objection],
         changed_files=[],
@@ -2875,6 +2980,9 @@ async def test_workflow_cli_payload_runs_same_supervisor_api(tmp_path):
         state=state,
         runner=fake_runner,
         codex_runner=_accepting_codex_reviewer_runner,
+        codex_runtime_runner=_codex_runtime_runner_from_subprocess_runner(
+            _accepting_codex_reviewer_runner
+        ),
         cursor_runner=_accepting_cursor_runner,
     )
 
@@ -2952,6 +3060,7 @@ async def test_submit_dual_agent_workflow_job_reserves_and_poll_is_read_only(mon
         dispatcher_id="dispatcher-test",
         popen=FakePopen,
         pid_alive=lambda pid: True,
+        process_identity_probe=lambda pid: (pid, 100.0),
     )
     dispatch = dispatcher.run_once(job_id=result["job_id"])
 
@@ -3473,6 +3582,7 @@ def test_dispatcher_claims_reserved_job_and_spawns_worker(monkeypatch, tmp_path)
         dispatcher_id="dispatcher-test",
         popen=FakePopen,
         pid_alive=lambda pid: True,
+        process_identity_probe=lambda pid: (pid, 100.0),
         now=lambda: 1000,
         jitter=lambda _delay: 0,
     )
@@ -3516,6 +3626,7 @@ def test_dispatcher_restarts_from_request_written(monkeypatch, tmp_path):
         dispatcher_id="dispatcher-test",
         popen=FakePopen,
         pid_alive=lambda pid: True,
+        process_identity_probe=lambda pid: (pid, 100.0),
         now=lambda: 1000,
         jitter=lambda _delay: 0,
     )
@@ -3617,6 +3728,7 @@ def test_dispatcher_reaper_reclaims_expired_pre_spawn_lease(tmp_path):
         dispatcher_id="dispatcher-test",
         popen=FakePopen,
         pid_alive=lambda pid: True,
+        process_identity_probe=lambda pid: (pid, 100.0),
         now=lambda: 1000,
     )
 
@@ -3646,6 +3758,9 @@ def test_dispatcher_reaper_fails_dead_spawned_worker(tmp_path):
         job_id="job-dispatcher",
         status="running",
         pid=43210,
+        worker_pgid=43210,
+        worker_started_at=100.0,
+        worker_containment_id="test-dead-worker-containment",
         recovery_point="spawned",
         leased_by="worker:43210",
         lease_expires_at=2000,
@@ -3939,7 +4054,11 @@ def test_dispatcher_cli_once_runs_reaper_and_dispatch(monkeypatch, capsys, tmp_p
             return {"status": "spawned", "job_id": "job-new"}
 
     monkeypatch.setattr(dispatcher_module.Config, "load", lambda path: FakeConfig())
-    monkeypatch.setattr(dispatcher_module, "State", FakeState)
+    monkeypatch.setattr(
+        dispatcher_module,
+        "build_state",
+        lambda _cfg: FakeState(_cfg.supervisor.state_db),
+    )
     monkeypatch.setattr(dispatcher_module, "WorkflowJobDispatcher", FakeDispatcher)
 
     exit_code = dispatcher_module.main([
@@ -3993,7 +4112,11 @@ def test_dispatcher_cli_once_can_target_job_id(monkeypatch, capsys, tmp_path):
             return {"status": "spawned", "job_id": job_id}
 
     monkeypatch.setattr(dispatcher_module.Config, "load", lambda path: FakeConfig())
-    monkeypatch.setattr(dispatcher_module, "State", FakeState)
+    monkeypatch.setattr(
+        dispatcher_module,
+        "build_state",
+        lambda _cfg: FakeState(_cfg.supervisor.state_db),
+    )
     monkeypatch.setattr(dispatcher_module, "WorkflowJobDispatcher", FakeDispatcher)
 
     exit_code = dispatcher_module.main([
@@ -4033,7 +4156,11 @@ def test_dispatcher_cli_without_once_runs_long_lived_loop(monkeypatch, capsys, t
             constructed["run_forever_interval_s"] = interval_s
 
     monkeypatch.setattr(dispatcher_module.Config, "load", lambda path: FakeConfig())
-    monkeypatch.setattr(dispatcher_module, "State", FakeState)
+    monkeypatch.setattr(
+        dispatcher_module,
+        "build_state",
+        lambda _cfg: FakeState(_cfg.supervisor.state_db),
+    )
     monkeypatch.setattr(dispatcher_module, "WorkflowJobDispatcher", FakeDispatcher)
 
     exit_code = dispatcher_module.main([
@@ -4524,6 +4651,7 @@ async def test_dispatcher_restart_completes_dead_worker_result_and_catch_up_repo
         dispatcher_id="dispatcher-before-kill",
         popen=FakePopen,
         pid_alive=lambda pid: True,
+        process_identity_probe=lambda pid: (pid, 100.0),
         now=lambda: 1000,
         lease_ttl_s=1,
     )
@@ -4624,6 +4752,9 @@ async def test_poll_dual_agent_workflow_job_leaves_result_file_recovery_to_dispa
         cwd=str(tmp_path),
         status="running",
         pid=987654,
+        worker_pgid=987654,
+        worker_started_at=100.0,
+        worker_containment_id="test-result-recovery-containment",
         request_path=str(request_path),
         result_path=str(result_path),
         log_path=str(log_path),
@@ -4687,7 +4818,7 @@ async def test_poll_dual_agent_workflow_job_reads_ledger_result_when_result_file
         task_id="workflow-1",
         cwd=str(tmp_path),
         status="running",
-        pid=987654,
+        pid=None,
         request_path=str(request_path),
         result_path=str(result_path),
         log_path=str(log_path),
@@ -5040,6 +5171,9 @@ async def test_run_dual_agent_workflow_passes_budget_to_each_lead_gate(tmp_path)
         mcp_cls=_FakeMCP,
         runner=fake_runner,
         codex_runner=_accepting_codex_reviewer_runner,
+        codex_runtime_runner=_codex_runtime_runner_from_subprocess_runner(
+            _accepting_codex_reviewer_runner
+        ),
         cursor_runner=_accepting_cursor_runner,
     )
 
@@ -7000,7 +7134,11 @@ async def test_independent_reviewer_adjudication_event_and_transcript_export(tmp
         output_dir=str(output_dir),
         screenshots=[],
     ))
-    assert export["status"] == "ok"
+    # Earlier gates in this blocked workflow were accepted without the exact
+    # runtime/component provenance required by the hardened replay manifest.
+    # Artifact export still succeeds, but it must not mislabel that evidence
+    # bundle as release-complete.
+    assert export["status"] == "incomplete"
     interactions = (output_dir / "interactions.md").read_text(encoding="utf-8")
     raw_transcript = (output_dir / "transcript.md").read_text(encoding="utf-8")
     for text in (interactions, raw_transcript):

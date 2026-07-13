@@ -374,6 +374,22 @@ def test_unity_verifier_rejects_symlinks_in_hidden_test_tree(
         )
 
 
+def test_unity_verifier_declares_hidden_root_as_protected(
+    tmp_path: Path,
+) -> None:
+    hidden_root = tmp_path / "hidden"
+    hidden_root.mkdir()
+
+    verifier = UnityTestFrameworkVerifier(
+        verifier_id="unity-hidden",
+        verifier_version="1",
+        hidden_root=hidden_root,
+        runner=lambda _frozen, _hidden: {"passed": True},
+    )
+
+    assert verifier.protected_paths == (str(hidden_root.resolve()),)
+
+
 @pytest.mark.asyncio
 async def test_swebench_verifier_delegates_to_official_oracle_without_rewrite(
     tmp_path: Path,
@@ -383,8 +399,8 @@ async def test_swebench_verifier_delegates_to_official_oracle_without_rewrite(
     def official_oracle(context):
         observed.append(dict(context))
         return {
-            "fail_to_pass_status": "passed",
-            "pass_to_pass_status": "passed",
+            "fail_to_pass_status": "pass",
+            "pass_to_pass_status": "pass",
             "oracle_adapter_receipt": {"official": True},
         }
 
@@ -407,6 +423,43 @@ async def test_swebench_verifier_delegates_to_official_oracle_without_rewrite(
     assert grade.score == 1.0
     assert observed[0]["model_patch"] == frozen.patch
     assert grade.evidence["oracle_adapter_receipt"] == {"official": True}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "expected_passed"),
+    [
+        ("pass", True),
+        ("passed", True),
+        ("fail", False),
+        ("unavailable", False),
+    ],
+)
+async def test_swebench_verifier_preserves_official_status_semantics(
+    status: str,
+    expected_passed: bool,
+) -> None:
+    frozen = FrozenTaskResult.create(
+        task_id="swe-task",
+        task_family="swebench",
+        task_spec_hash="spec-sha",
+        run_result_hash="run-sha",
+        patch="diff --git a/a b/a\n",
+        output="done",
+        metadata={"instance_id": "repo__issue-1"},
+    )
+
+    grade = await SweBenchVerifier(
+        verifier_version="swebench-4.1",
+        verifier_hash="official-harness-sha",
+        oracle_runner=lambda _context: {
+            "fail_to_pass_status": status,
+            "pass_to_pass_status": status,
+        },
+    ).verify(frozen)
+
+    assert grade.passed is expected_passed
+    assert grade.score == (1.0 if expected_passed else 0.0)
 
 
 @pytest.mark.asyncio

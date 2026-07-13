@@ -20,6 +20,7 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
+from .claim_gate import ClaimGate
 from .mergeability_bench import (
     ConfiguredReviewerPanelOptions,
     MERGEABILITY_CANDIDATE_SCHEMA_VERSION,
@@ -40,14 +41,12 @@ from .mergeability_bench import (
     _per_reviewer_acceptance_arms,
     _producer_family_from_row,
     _public_input_oracle_refs,
-    _rate,
     _reviewer_oracle_error_overlap,
     _reviewer_cross_family_claim_status,
     _reviewer_provenance_report,
     _resolve_powered_baseline_decision,
     _run_command,
     _summarize_acceptance_arm,
-    _wilson_interval,
     build_configured_reviewer_panel,
     run_powered_factorial_mergeability_evaluation,
 )
@@ -56,6 +55,9 @@ from .swe_bench_official_oracle import (
     run_swe_bench_pro_oracle,
     swe_bench_pro_oracle_scripts_dir,
 )
+
+
+_REPORT_ONLY_CLAIM_FLAGS = ClaimGate.derived_claim_flags()
 
 
 SWEBENCH_PRO_BRIDGE_REPORT_SCHEMA_VERSION = (
@@ -787,7 +789,9 @@ def swebench_pro_mergeability_bridge_report(
         "per_row_unavailable_arms": unavailable_arms_per_row,
         "per_row_results": rows,
         "metric_applyable": False,
-        "improvement_claim_allowed": False,
+        "improvement_claim_allowed": _REPORT_ONLY_CLAIM_FLAGS[
+            "improvement_claim_allowed"
+        ],
         "default_change_allowed": False,
         "policy_mutated": False,
         "gate_advanced": False,
@@ -840,6 +844,7 @@ def swebench_pro_mergeability_bridge_report(
             }
             for arm in ARM_NAMES
         }
+    report = ClaimGate.govern_report(report)
     report["report_sha256"] = _sha256_json(
         {key: value for key, value in report.items() if key != "report_sha256"}
     )
@@ -1327,7 +1332,7 @@ def _ensure_no_oracle_artifacts_yet(
     refs: list[str] = []
     oracle_outputs_path = output_dir / "oracle_outputs.json"
     if oracle_outputs_path.exists():
-        refs.append(f"oracle_outputs.json:exists_before_freeze")
+        refs.append("oracle_outputs.json:exists_before_freeze")
     for protected in protected_paths:
         candidate_dir = worktree / protected.rstrip("/")
         if candidate_dir.exists():
@@ -2509,7 +2514,9 @@ def swebench_mergeability_replay_runner(
         "instance_reports": instance_reports,
         "bridge_report": bridge_report,
         "metric_applyable": False,
-        "improvement_claim_allowed": False,
+        "improvement_claim_allowed": _REPORT_ONLY_CLAIM_FLAGS[
+            "improvement_claim_allowed"
+        ],
         "default_change_allowed": False,
         "policy_mutated": False,
         "gate_advanced": False,
@@ -2517,6 +2524,7 @@ def swebench_mergeability_replay_runner(
         "live_fetch_used": False,
         "live_generation_used": False,
     }
+    report = ClaimGate.govern_report(report)
     report["report_sha256"] = _sha256_json({
         key: value for key, value in report.items() if key != "report_sha256"
     })
@@ -2850,12 +2858,11 @@ def swebench_mergeability_official_replay_runner(
         "replay_report": replay_report_for_output,
         "bridge_report": replay_report_for_output["bridge_report"],
         "metric_applyable": False,
-        "improvement_claim_allowed": False,
+        **_REPORT_ONLY_CLAIM_FLAGS,
         "default_change_allowed": False,
         "policy_mutated": False,
         "gate_advanced": False,
         "plumbing_smoke_only": True,
-        "powered_improvement_claim_allowed": False,
         "human_mergeability_claim_allowed": False,
         "smoke_caveats": [
             "swebench_verified_is_test_pass_proxy_not_human_mergeability",
@@ -2863,6 +2870,7 @@ def swebench_mergeability_official_replay_runner(
         ],
         "wall_clock_s": round(time.monotonic() - started, 6),
     }
+    report = ClaimGate.govern_report(report)
     report["report_sha256"] = _sha256_json({
         key: value for key, value in report.items() if key != "report_sha256"
     })
@@ -2947,6 +2955,7 @@ def swebench_mergeability_official_all_arms_diagnostic_runner(
     )
     report_path = output_path / "official_all_arms_diagnostic_report.json"
     report["report_path"] = str(report_path)
+    report = ClaimGate.govern_report(report)
     report["report_sha256"] = _sha256_json({
         key: value for key, value in report.items() if key != "report_sha256"
     })
@@ -2985,7 +2994,9 @@ def _official_all_arms_leak_unavailable_official_report(
             }],
         },
         "metric_applyable": False,
-        "improvement_claim_allowed": False,
+        "improvement_claim_allowed": _REPORT_ONLY_CLAIM_FLAGS[
+            "improvement_claim_allowed"
+        ],
         "default_change_allowed": False,
         "policy_mutated": False,
         "gate_advanced": False,
@@ -3139,6 +3150,7 @@ def write_swebench_official_all_arms_blocked_artifact(
     }
     report_path = output_path / "official_all_arms_diagnostic_report.json"
     report["report_path"] = str(report_path)
+    report = ClaimGate.govern_report(report)
     report["report_sha256"] = _sha256_json({
         key: value for key, value in report.items() if key != "report_sha256"
     })
@@ -3436,8 +3448,7 @@ def _official_all_arms_attempt_stage(official_report: Mapping[str, Any]) -> str:
 def _aeb0_authority_flags() -> dict[str, bool]:
     return {
         "metric_applyable": False,
-        "improvement_claim_allowed": False,
-        "powered_improvement_claim_allowed": False,
+        **_REPORT_ONLY_CLAIM_FLAGS,
         "human_mergeability_claim_allowed": False,
         "default_change_allowed": False,
         "policy_mutated": False,
@@ -4026,7 +4037,9 @@ def _unavailable_official_bridge_report(
         "metrics_suppressed": True,
         "metrics_unavailable_reasons": list(unavailable_reasons),
         "metric_applyable": False,
-        "improvement_claim_allowed": False,
+        "improvement_claim_allowed": _REPORT_ONLY_CLAIM_FLAGS[
+            "improvement_claim_allowed"
+        ],
         "default_change_allowed": False,
         "policy_mutated": False,
         "gate_advanced": False,
@@ -4710,9 +4723,8 @@ def swebench_mergeability_powered_factorial_runner(
         },
         "powered_metric_applyable": core_metric_applyable,
         "metric_applyable": False,
-        "powered_improvement_claim_allowed": False,
+        **_REPORT_ONLY_CLAIM_FLAGS,
         "human_mergeability_claim_allowed": False,
-        "improvement_claim_allowed": False,
         "default_change_allowed": False,
         "policy_mutated": False,
         "gate_advanced": False,
@@ -4721,6 +4733,7 @@ def swebench_mergeability_powered_factorial_runner(
         report,
         thresholds=thresholds,
     )
+    report = ClaimGate.govern_report(report)
     report["report_sha256"] = _sha256_json({
         key: value for key, value in report.items() if key != "report_sha256"
     })
@@ -5150,7 +5163,7 @@ def build_swe_bench_pro_candidate_corpus(
         encoding="utf-8",
     )
     summary = _candidate_corpus_summary_from_predictions({"generated": rows})
-    return {
+    return ClaimGate.govern_report({
         "schema_version": "supervisor-swebench-pro-candidate-corpus-report/v1",
         "status": "completed" if rows else "unavailable",
         "output_path": str(path),
@@ -5158,13 +5171,12 @@ def build_swe_bench_pro_candidate_corpus(
         "excluded": excluded,
         "summary": summary,
         "metric_applyable": False,
-        "improvement_claim_allowed": False,
-        "powered_improvement_claim_allowed": False,
+        **_REPORT_ONLY_CLAIM_FLAGS,
         "human_mergeability_claim_allowed": False,
         "default_change_allowed": False,
         "policy_mutated": False,
         "gate_advanced": False,
-    }
+    })
 
 
 def _default_official_dataset_loader(*, dataset: str, split: str) -> Sequence[Mapping[str, Any]]:
@@ -5391,6 +5403,7 @@ def swebench_mergeability_official_live_runner(
                     arm_config=arm_config,
                     gaming_flags=("budget_exceeded",),
                 )
+                report = ClaimGate.govern_report(report)
                 _write_official_live_report(output_path, report)
                 return report
 
@@ -5482,13 +5495,16 @@ def swebench_mergeability_official_live_runner(
         "bridge_report": official_replay_report["bridge_report"],
         "evaluator_hash": official_replay_report["report_sha256"],
         "metric_applyable": False,
-        "improvement_claim_allowed": False,
+        "improvement_claim_allowed": _REPORT_ONLY_CLAIM_FLAGS[
+            "improvement_claim_allowed"
+        ],
         "default_change_allowed": False,
         "policy_mutated": False,
         "gate_advanced": False,
         "gaming_flags": [],
         "wall_clock_s": round(time.monotonic() - started, 6),
     }
+    report = ClaimGate.govern_report(report)
     report["report_sha256"] = _sha256_json({
         key: value for key, value in report.items() if key != "report_sha256"
     })
@@ -5587,7 +5603,9 @@ def _official_live_unavailable_report(
             6,
         ),
         "metric_applyable": False,
-        "improvement_claim_allowed": False,
+        "improvement_claim_allowed": _REPORT_ONLY_CLAIM_FLAGS[
+            "improvement_claim_allowed"
+        ],
         "default_change_allowed": False,
         "policy_mutated": False,
         "gate_advanced": False,
@@ -5723,6 +5741,7 @@ def swebench_mergeability_live_runner(
                     arm_config=arm_config,
                     gaming_flags=("budget_exceeded",),
                 )
+                report = ClaimGate.govern_report(report)
                 _write_live_report(output_path, report)
                 return report
 
@@ -5816,13 +5835,16 @@ def swebench_mergeability_live_runner(
         "replay_report": replay_report,
         "bridge_report": replay_report["bridge_report"],
         "metric_applyable": False,
-        "improvement_claim_allowed": False,
+        "improvement_claim_allowed": _REPORT_ONLY_CLAIM_FLAGS[
+            "improvement_claim_allowed"
+        ],
         "default_change_allowed": False,
         "policy_mutated": False,
         "gate_advanced": False,
         "gaming_flags": [],
         "wall_clock_s": round(time.monotonic() - started, 6),
     }
+    report = ClaimGate.govern_report(report)
     report["report_sha256"] = _sha256_json({
         key: value for key, value in report.items() if key != "report_sha256"
     })
@@ -6153,7 +6175,9 @@ def _live_unavailable_report(
             6,
         ),
         "metric_applyable": False,
-        "improvement_claim_allowed": False,
+        "improvement_claim_allowed": _REPORT_ONLY_CLAIM_FLAGS[
+            "improvement_claim_allowed"
+        ],
         "default_change_allowed": False,
         "policy_mutated": False,
         "gate_advanced": False,

@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -1222,6 +1223,37 @@ def test_cursor_sdk_timeout_classifies_as_reviewer_infrastructure_unavailable(
     assert result.failure_classification == "reviewer_infrastructure_unavailable"
     assert result.reviewer_assurance == "unavailable"
     assert result.diagnostics["fallback"]["attempted"] is False
+
+
+def test_cursor_sdk_fails_closed_before_invocation_off_main_thread(
+    tmp_path: Path,
+    monkeypatch,
+):
+    calls = 0
+
+    def must_not_run(_request: CursorInvocationRequest):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("off-main Cursor SDK invocation must not start")
+
+    monkeypatch.setattr(cursor_agent, "_run_cursor_sdk", must_not_run)
+    request = CursorInvocationRequest(
+        task_id="threaded-cursor-review",
+        gate="outcome_review",
+        instruction="Review.",
+        cwd=tmp_path,
+        timeout_s=30,
+        reviewer_infra_retry_limit=0,
+        contract_retry_limit=0,
+    )
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        result = pool.submit(invoke_cursor_agent, request).result(timeout=2)
+
+    assert calls == 0
+    assert result.probe.reason == "reviewer_infrastructure_unavailable"
+    assert result.probe.details["original_reason"] == "cursor_sdk_timeout"
+    assert result.failure_classification == "reviewer_infrastructure_unavailable"
 
 
 def test_cursor_sdk_access_denied_does_not_retry_or_fallback(tmp_path: Path, monkeypatch):

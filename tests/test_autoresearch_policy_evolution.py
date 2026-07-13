@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from hashlib import sha256
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import pytest
 
@@ -10,16 +11,21 @@ from supervisor.autoresearch.orchestrator import run_autoresearch_fixture
 from supervisor.autoresearch.policy_evolution import (
     PolicyEvolutionError,
     approve_policy_proposal,
-    create_policy_evolution_proposals,
+    create_policy_evolution_proposals as _create_policy_evolution_proposals,
     deny_policy_proposal,
-    derive_policy_evolution_proposals_from_report,
-    report_contains_derivable_policy_record,
+    derive_policy_evolution_proposals_from_report as _derive_policy_evolution_proposals_from_report,
+    report_contains_derivable_policy_record as _report_contains_derivable_policy_record,
     rollback_policy_proposal,
 )
 from supervisor.autoresearch.report import build_autoresearch_report
 from supervisor.autoresearch.schema import AutoresearchAttempt, AutoresearchExperiment
 from supervisor.autoresearch.validation import validate_attempt
+from supervisor.claim_gate import ClaimGate
 from supervisor.state import State
+from tests.test_claim_gate import (
+    _authoritative_causal_bundle,
+    _claim_gate_kwargs,
+)
 
 
 BASE_OVERLAY = (
@@ -34,6 +40,55 @@ AFTER_OVERLAY = (
     "  outcome_review:\n"
     "    - Verify runtime-native evidence before accepting.\n"
 )
+
+_POLICY_AUTHORITY_TEMP: TemporaryDirectory[str] | None = None
+_POLICY_AUTHORITY_ROOT: Path | None = None
+_POLICY_AUTHORITY_BUNDLE: dict | None = None
+_POLICY_AUTHORITY_KWARGS: dict[str, object] | None = None
+
+
+def _policy_authority() -> tuple[dict, dict[str, object]]:
+    global _POLICY_AUTHORITY_TEMP
+    global _POLICY_AUTHORITY_ROOT
+    global _POLICY_AUTHORITY_BUNDLE
+    global _POLICY_AUTHORITY_KWARGS
+    if _POLICY_AUTHORITY_BUNDLE is None:
+        _POLICY_AUTHORITY_TEMP = TemporaryDirectory(
+            prefix="policy-evolution-claim-authority-"
+        )
+        _POLICY_AUTHORITY_ROOT = Path(_POLICY_AUTHORITY_TEMP.name)
+        evidence, ledger_resolver = _authoritative_causal_bundle(
+            _POLICY_AUTHORITY_ROOT
+        )
+        _POLICY_AUTHORITY_BUNDLE = evidence
+        _POLICY_AUTHORITY_KWARGS = {
+            "claim_evidence_bundle": evidence,
+            "claim_evidence_root": _POLICY_AUTHORITY_ROOT,
+            **_claim_gate_kwargs(ledger_resolver),
+        }
+    assert _POLICY_AUTHORITY_KWARGS is not None
+    return _POLICY_AUTHORITY_BUNDLE, dict(_POLICY_AUTHORITY_KWARGS)
+
+
+def create_policy_evolution_proposals(*args, **kwargs):
+    _, authority = _policy_authority()
+    for key, value in authority.items():
+        kwargs.setdefault(key, value)
+    return _create_policy_evolution_proposals(*args, **kwargs)
+
+
+def derive_policy_evolution_proposals_from_report(*args, **kwargs):
+    _, authority = _policy_authority()
+    for key, value in authority.items():
+        kwargs.setdefault(key, value)
+    return _derive_policy_evolution_proposals_from_report(*args, **kwargs)
+
+
+def report_contains_derivable_policy_record(*args, **kwargs):
+    _, authority = _policy_authority()
+    for key, value in authority.items():
+        kwargs.setdefault(key, value)
+    return _report_contains_derivable_policy_record(*args, **kwargs)
 
 
 def _write(root: Path, rel: str, text: str) -> Path:
@@ -156,7 +211,7 @@ def _record(**overrides) -> dict:
 
 
 def _report(*records: dict) -> dict:
-    return {
+    return _claim_gate_authorize_report({
         "schema_version": "supervisor-autoresearch-summary/v1",
         "report_sha256": "report-sha",
         "default_change_allowed": False,
@@ -166,7 +221,7 @@ def _report(*records: dict) -> dict:
             "operator_review_required": True,
         },
         "records": list(records),
-    }
+    })
 
 
 def _derived_record(**overrides) -> dict:
@@ -180,6 +235,26 @@ def _derived_record(**overrides) -> dict:
     )
     record.update(overrides)
     return record
+
+
+def _claim_gate_authorize_report(
+    report: dict,
+    *,
+    evidence_root: Path | None = None,
+) -> dict:
+    del evidence_root
+    evidence, authority = _policy_authority()
+    claim_gate_kwargs = {
+        key: value
+        for key, value in authority.items()
+        if key not in {"claim_evidence_bundle", "claim_evidence_root"}
+    }
+    return ClaimGate.derive_report(
+        report,
+        evidence,
+        evidence_root=authority["claim_evidence_root"],
+        **claim_gate_kwargs,
+    )
 
 
 def _proposal_fixture(root: Path) -> tuple[State, Path, Path, dict]:
@@ -434,6 +509,10 @@ def test_validation_report_pipeline_derives_policy_proposal_without_operator_aut
     )
     report = build_autoresearch_report([validation])
     report["report_ref"] = "docs/dual-agent/autoresearch/report.json"
+    report = _claim_gate_authorize_report(
+        report,
+        evidence_root=tmp_path,
+    )
 
     [proposal] = derive_policy_evolution_proposals_from_report(
         report,
@@ -511,7 +590,19 @@ def test_autoresearch_report_acceptance_auto_derives_overlay_proposal(tmp_path):
     )
 
     assert report["records"][0]["validation_status"] == "accepted"
-    assert report["derived_policy_proposals"][0]["status"] == "draft"
+    assert report["derived_policy_proposals"] == []
+    authorized_report = _claim_gate_authorize_report(
+        report,
+        evidence_root=tmp_path,
+    )
+    [derived_proposal] = derive_policy_evolution_proposals_from_report(
+        authorized_report,
+        repo_root=tmp_path,
+        affected_gates=("outcome_review",),
+        state=state,
+        run_id="autoresearch-run",
+    )
+    assert derived_proposal["status"] == "draft"
     events = state.read_events_since("autoresearch-run", after_event_id=0, limit=50)
     kinds = [event["kind"] for event in events]
     assert kinds.count("autoresearch_report_emitted") == 1
@@ -560,6 +651,10 @@ def test_validation_report_derives_from_direct_policy_overlay_candidate_ref(tmp_
     report = build_autoresearch_report([
         validate_attempt(experiment=experiment, attempt=attempt, repo_root=tmp_path)
     ])
+    report = _claim_gate_authorize_report(
+        report,
+        evidence_root=tmp_path,
+    )
 
     [proposal] = derive_policy_evolution_proposals_from_report(
         report,
@@ -962,19 +1057,27 @@ def test_approval_rejects_tampered_candidate_after_hash(tmp_path):
 
 
 def test_approval_rejects_post_write_hash_mismatch(tmp_path, monkeypatch):
+    from supervisor.autoresearch import policy_evolution as policy_evolution_module
+
     state, target, _candidate, proposal = _proposal_fixture(tmp_path)
-    original_write_bytes = Path.write_bytes
+    original_write = policy_evolution_module._write_repo_bytes
     target_path = target.resolve()
     corrupted_once = False
 
-    def corrupt_target_write(path: Path, data: bytes) -> int:
+    def corrupt_target_write(path, data, *, repo_root, label):
         nonlocal corrupted_once
-        if path.resolve() == target_path and not corrupted_once:
+        written_path = original_write(
+            path,
+            data,
+            repo_root=repo_root,
+            label=label,
+        )
+        if Path(path).resolve() == target_path and not corrupted_once:
             corrupted_once = True
-            return original_write_bytes(path, b"corrupted write\n")
-        return original_write_bytes(path, data)
+            Path(path).write_bytes(b"corrupted write\n")
+        return written_path
 
-    monkeypatch.setattr(Path, "write_bytes", corrupt_target_write)
+    monkeypatch.setattr(policy_evolution_module, "_write_repo_bytes", corrupt_target_write)
 
     with pytest.raises(PolicyEvolutionError, match="applied artifact hash mismatch"):
         approve_policy_proposal(
@@ -1248,11 +1351,10 @@ def test_paired_acceptance_report_oracle_coupling_blocks_policy_derivation(tmp_p
     assert non_applyable_proposals == []
     assert report_contains_derivable_policy_record(non_applyable_report, repo_root=tmp_path) is False
 
-    no_claim_record = _derived_record(
-        attempt_id="oracle-coupled-no-claim",
-        improvement_claim_allowed=False,
+    no_claim_report = _report(
+        _derived_record(attempt_id="oracle-coupled-no-claim")
     )
-    no_claim_report = _report(no_claim_record)
+    no_claim_report["records"][0]["improvement_claim_allowed"] = False
     no_claim_proposals = derive_policy_evolution_proposals_from_report(
         no_claim_report,
         repo_root=tmp_path,
@@ -1277,3 +1379,68 @@ def test_paired_acceptance_report_oracle_coupling_blocks_policy_derivation(tmp_p
     )
     assert oracle_coupled_proposals == []
     assert report_contains_derivable_policy_record(oracle_coupled_report, repo_root=tmp_path) is False
+
+
+def test_missing_claim_gate_authority_blocks_policy_derivation(tmp_path):
+    state = State(str(tmp_path / "state.db"))
+    _write(tmp_path, ".supervisor/policy-overlay.yaml", BASE_OVERLAY)
+    _write(tmp_path, "candidates/policy-overlay.yaml", AFTER_OVERLAY)
+    report = _report(_derived_record(attempt_id="missing-claim-authority"))
+    report.pop("improvement_claim_allowed")
+    report.pop("powered_improvement_claim_allowed")
+    report.pop("claim_gate")
+    for record in report["records"]:
+        record.pop("improvement_claim_allowed", None)
+        record.pop("powered_improvement_claim_allowed", None)
+
+    assert derive_policy_evolution_proposals_from_report(
+        report,
+        repo_root=tmp_path,
+        affected_gates=("outcome_review",),
+        state=state,
+        run_id="policy-run",
+    ) == []
+    assert report_contains_derivable_policy_record(
+        report,
+        repo_root=tmp_path,
+    ) is False
+    assert create_policy_evolution_proposals(
+        report,
+        repo_root=tmp_path,
+        candidate_changes={
+            ".supervisor/policy-overlay.yaml": (
+                "candidates/policy-overlay.yaml"
+            )
+        },
+        affected_gates=("outcome_review",),
+    ) == []
+
+    record_manual_flag = _report(
+        _derived_record(attempt_id="record-manual-claim-authority")
+    )
+    record_manual_flag["records"][0][
+        "powered_improvement_claim_allowed"
+    ] = True
+    assert derive_policy_evolution_proposals_from_report(
+        record_manual_flag,
+        repo_root=tmp_path,
+        affected_gates=("outcome_review",),
+    ) == []
+
+
+def test_forged_sha_looking_l3_receipt_cannot_derive_policy_proposal(
+    tmp_path: Path,
+) -> None:
+    _write(tmp_path, ".supervisor/policy-overlay.yaml", BASE_OVERLAY)
+    _write(tmp_path, "candidates/policy-overlay.yaml", AFTER_OVERLAY)
+    forged_report = _report(
+        _derived_record(attempt_id="forged-claim-gate-receipt")
+    )
+    forged_report["claim_gate"]["max_claim_level"] = "L3"
+    forged_report["claim_gate"]["evidence_bundle_sha256"] = "a" * 64
+
+    assert derive_policy_evolution_proposals_from_report(
+        forged_report,
+        repo_root=tmp_path,
+        affected_gates=("outcome_review",),
+    ) == []

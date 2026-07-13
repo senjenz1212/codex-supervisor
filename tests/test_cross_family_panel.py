@@ -71,12 +71,23 @@ def _reviewer(
     model: str = "fixture-model",
     decision: str = "accept",
 ) -> dict:
+    provider_family_verified = provider_family not in {
+        "",
+        "unknown",
+        "openai_compatible",
+    }
     return {
         "reviewer_id": reviewer_id,
         "runtime": runtime,
         "reviewer_runtime": runtime,
         "model": model,
         "provider_family": provider_family,
+        "provider_family_verified": provider_family_verified,
+        "provider_family_source": (
+            "response_metadata"
+            if provider_family_verified
+            else "operator_config"
+        ),
         "verdict_present": True,
         "decision": decision,
         "accepted": decision == "accept",

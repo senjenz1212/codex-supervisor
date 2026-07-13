@@ -725,13 +725,14 @@ def _result_diagnostics(result: CursorInvocationResult) -> dict[str, Any]:
 @contextlib.contextmanager
 def _cursor_sdk_timeout(timeout_s: int):
     seconds = max(1, int(timeout_s))
-    if (
-        threading.current_thread() is not threading.main_thread()
-        or not hasattr(signal, "SIGALRM")
-        or not hasattr(signal, "setitimer")
-    ):
-        yield
-        return
+    if threading.current_thread() is not threading.main_thread():
+        raise CursorSdkTimeoutError(
+            "cursor_sdk_timeout cannot be enforced outside the main thread"
+        )
+    if not hasattr(signal, "SIGALRM") or not hasattr(signal, "setitimer"):
+        raise CursorSdkTimeoutError(
+            "cursor_sdk_timeout is unsupported on this platform"
+        )
 
     previous_handler = signal.getsignal(signal.SIGALRM)
     previous_timer = signal.getitimer(signal.ITIMER_REAL)

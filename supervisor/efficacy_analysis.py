@@ -7,7 +7,179 @@ import math
 import re
 from dataclasses import dataclass
 from statistics import fmean
-from typing import Any, Iterable, Mapping
+from types import MappingProxyType
+from typing import Any, Callable, Iterable, Mapping
+
+from .task_environment import canonical_task_identity
+
+MIN_CONFIRMATION_POWER = 0.90
+MIN_PREREGISTERED_B_WIN_RATE = 0.55
+MAX_PREREGISTERED_B_WIN_RATE = 0.75
+MAX_CONFIRMATION_ALPHA = 0.05
+FROZEN_ITT_SNAPSHOT_SCHEMA_VERSION = "supervisor-frozen-itt-snapshot/v1"
+_ITT_ARMS = ("B", "C")
+_TERMINAL_OUTCOME_STATUSES = frozenset({
+    "completed",
+    "failed",
+    "cancelled",
+    "timed_out",
+})
+
+
+@dataclass(frozen=True)
+class FrozenITTAssignment:
+    task_id: str
+    canonical_task_id: str
+    assignment_id: str
+
+    def __post_init__(self) -> None:
+        task_id = str(self.task_id).strip()
+        canonical_task_id = str(self.canonical_task_id).strip().lower()
+        assignment_id = str(self.assignment_id).strip().lower()
+        if not task_id:
+            raise ValueError("authoritative assignment task_id is required")
+        if not re.fullmatch(r"[0-9a-f]{64}", canonical_task_id):
+            raise ValueError(
+                "authoritative assignment canonical_task_id must be sha256"
+            )
+        if not re.fullmatch(r"[0-9a-f]{64}", assignment_id):
+            raise ValueError(
+                "authoritative assignment assignment_id must be sha256"
+            )
+        object.__setattr__(self, "task_id", task_id)
+        object.__setattr__(self, "canonical_task_id", canonical_task_id)
+        object.__setattr__(self, "assignment_id", assignment_id)
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "task_id": self.task_id,
+            "canonical_task_id": self.canonical_task_id,
+            "assignment_id": self.assignment_id,
+        }
+
+
+@dataclass(frozen=True)
+class FrozenTerminalOutcome:
+    task_id: str
+    canonical_task_id: str
+    assignment_id: str
+    arm: str
+    status: str
+    passed: bool
+
+    def __post_init__(self) -> None:
+        task_id = str(self.task_id).strip()
+        canonical_task_id = str(self.canonical_task_id).strip().lower()
+        assignment_id = str(self.assignment_id).strip().lower()
+        arm = str(self.arm).strip().upper()
+        status = str(self.status).strip().casefold()
+        if not task_id:
+            raise ValueError("authoritative terminal outcome task_id is required")
+        if not re.fullmatch(r"[0-9a-f]{64}", canonical_task_id):
+            raise ValueError(
+                "authoritative outcome canonical_task_id must be sha256"
+            )
+        if not re.fullmatch(r"[0-9a-f]{64}", assignment_id):
+            raise ValueError(
+                "authoritative outcome assignment_id must be sha256"
+            )
+        if arm not in _ITT_ARMS:
+            raise ValueError("authoritative outcome arm must be B or C")
+        if not status:
+            raise ValueError("authoritative outcome status is required")
+        if not isinstance(self.passed, bool):
+            raise ValueError("authoritative outcome passed must be a bool")
+        object.__setattr__(self, "task_id", task_id)
+        object.__setattr__(self, "canonical_task_id", canonical_task_id)
+        object.__setattr__(self, "assignment_id", assignment_id)
+        object.__setattr__(self, "arm", arm)
+        object.__setattr__(self, "status", status)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "task_id": self.task_id,
+            "canonical_task_id": self.canonical_task_id,
+            "assignment_id": self.assignment_id,
+            "arm": self.arm,
+            "status": self.status,
+            "passed": self.passed,
+        }
+
+
+@dataclass(frozen=True)
+class FrozenITTSnapshot:
+    experiment_id: str
+    assignments: tuple[FrozenITTAssignment, ...]
+    terminal_outcomes: tuple[FrozenTerminalOutcome, ...]
+    frozen_at_ms: int
+    snapshot_hash: str
+    schema_version: str = FROZEN_ITT_SNAPSHOT_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        experiment_id = str(self.experiment_id).strip()
+        if not experiment_id:
+            raise ValueError("authoritative ITT experiment_id is required")
+        if (
+            isinstance(self.frozen_at_ms, bool)
+            or not isinstance(self.frozen_at_ms, int)
+            or self.frozen_at_ms <= 0
+        ):
+            raise ValueError("authoritative ITT frozen_at_ms must be positive")
+        if self.schema_version != FROZEN_ITT_SNAPSHOT_SCHEMA_VERSION:
+            raise ValueError("unsupported authoritative ITT snapshot schema")
+        digest = str(self.snapshot_hash).strip().lower()
+        if not re.fullmatch(r"[0-9a-f]{64}", digest):
+            raise ValueError("authoritative ITT snapshot_hash must be sha256")
+        object.__setattr__(self, "experiment_id", experiment_id)
+        object.__setattr__(self, "assignments", tuple(self.assignments))
+        object.__setattr__(
+            self,
+            "terminal_outcomes",
+            tuple(self.terminal_outcomes),
+        )
+        object.__setattr__(self, "snapshot_hash", digest)
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        experiment_id: str,
+        assignments: Iterable[FrozenITTAssignment],
+        terminal_outcomes: Iterable[FrozenTerminalOutcome],
+        frozen_at_ms: int,
+    ) -> "FrozenITTSnapshot":
+        exact_assignments = tuple(assignments)
+        exact_outcomes = tuple(terminal_outcomes)
+        payload = _frozen_itt_snapshot_payload(
+            experiment_id=str(experiment_id).strip(),
+            assignments=exact_assignments,
+            terminal_outcomes=exact_outcomes,
+            frozen_at_ms=frozen_at_ms,
+        )
+        return cls(
+            experiment_id=str(experiment_id).strip(),
+            assignments=exact_assignments,
+            terminal_outcomes=exact_outcomes,
+            frozen_at_ms=frozen_at_ms,
+            snapshot_hash=_sha256_json(payload),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            **_frozen_itt_snapshot_payload(
+                experiment_id=self.experiment_id,
+                assignments=self.assignments,
+                terminal_outcomes=self.terminal_outcomes,
+                frozen_at_ms=self.frozen_at_ms,
+            ),
+            "snapshot_hash": self.snapshot_hash,
+        }
+
+
+AuthoritativeITTSnapshotResolver = Callable[
+    [str],
+    FrozenITTSnapshot | None,
+]
 
 
 @dataclass(frozen=True)
@@ -47,7 +219,57 @@ class PilotEstimate:
     infrastructure_failure_count: int
     mean_cost_by_arm: Mapping[str, float]
     mean_latency_ms_by_arm: Mapping[str, float]
+    mean_risk_cost_by_arm: Mapping[str, float]
     task_ids: tuple[str, ...]
+    canonical_task_ids: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if (
+            isinstance(self.task_count, bool)
+            or self.task_count <= 0
+            or not 0 <= self.discordant_task_count <= self.task_count
+            or not 0 <= self.verifier_flake_count <= self.task_count
+            or not 0 <= self.infrastructure_failure_count <= self.task_count
+        ):
+            raise ValueError("pilot aggregate counts are invalid")
+        if (
+            len(self.task_ids) != self.task_count
+            or len(set(self.task_ids)) != self.task_count
+        ):
+            raise ValueError("pilot task_ids must be unique and complete")
+        if (
+            len(self.canonical_task_ids) != self.task_count
+            or len(set(self.canonical_task_ids)) != self.task_count
+            or any(
+                not re.fullmatch(r"[0-9a-f]{64}", task_id)
+                for task_id in self.canonical_task_ids
+            )
+        ):
+            raise ValueError(
+                "pilot canonical_task_ids must be unique canonical digests"
+            )
+        for field_name in (
+            "mean_cost_by_arm",
+            "mean_latency_ms_by_arm",
+            "mean_risk_cost_by_arm",
+        ):
+            raw = getattr(self, field_name)
+            if set(raw) != {"A", "B", "C"}:
+                raise ValueError(
+                    f"{field_name} must define exactly A, B, and C"
+                )
+            normalized = {
+                arm: _nonnegative_number(
+                    value,
+                    field_name=f"{field_name}.{arm}",
+                )
+                for arm, value in raw.items()
+            }
+            object.__setattr__(
+                self,
+                field_name,
+                MappingProxyType(normalized),
+            )
 
     @property
     def discordance_rate(self) -> float:
@@ -65,7 +287,10 @@ class PilotEstimate:
 @dataclass(frozen=True)
 class ConfirmationPlan:
     pilot_task_count: int
+    pilot_task_set_hash: str
     pilot_discordance_rate: float
+    conservative_discordance_rate: float
+    discordance_bound_method: str
     alternative_b_win_rate: float
     alpha: float
     power: float
@@ -77,7 +302,12 @@ class ConfirmationPlan:
     def to_dict(self) -> dict[str, Any]:
         return {
             "pilot_task_count": self.pilot_task_count,
+            "pilot_task_set_hash": self.pilot_task_set_hash,
             "pilot_discordance_rate": self.pilot_discordance_rate,
+            "conservative_discordance_rate": (
+                self.conservative_discordance_rate
+            ),
+            "discordance_bound_method": self.discordance_bound_method,
             "alternative_b_win_rate": self.alternative_b_win_rate,
             "alpha": self.alpha,
             "power": self.power,
@@ -102,11 +332,15 @@ class HarnessROI:
 def analyze_paired_outcomes(
     rows: Iterable[Mapping[str, Any]],
     *,
+    experiment_id: str,
+    authoritative_snapshot_resolver: AuthoritativeITTSnapshotResolver,
     confidence: float = 0.95,
 ) -> PairedAnalysis:
-    materialized, _ = _validate_paired_rows(
+    materialized, _, _ = _validate_paired_rows(
         rows,
         empty_error="paired analysis requires at least one unique task",
+        experiment_id=experiment_id,
+        authoritative_snapshot_resolver=authoritative_snapshot_resolver,
     )
     return _analyze_validated_paired_outcomes(
         materialized,
@@ -253,16 +487,57 @@ def derive_confirmation_plan(
         raise ValueError(
             "pilot must observe at least one discordant unique task before sizing"
         )
+    if (
+        len(pilot.task_ids) != pilot.task_count
+        or len(pilot.canonical_task_ids) != pilot.task_count
+        or len(set(pilot.canonical_task_ids)) != pilot.task_count
+    ):
+        raise ValueError(
+            "pilot task roster must contain one unique canonical identity "
+            "per task"
+        )
+    if (
+        not MIN_PREREGISTERED_B_WIN_RATE
+        <= alternative_b_win_rate
+        <= MAX_PREREGISTERED_B_WIN_RATE
+    ):
+        raise ValueError(
+            "alternative_b_win_rate must stay within the preregistered "
+            f"[{MIN_PREREGISTERED_B_WIN_RATE:.2f}, "
+            f"{MAX_PREREGISTERED_B_WIN_RATE:.2f}] range"
+        )
+    if not 0.0 < alpha <= MAX_CONFIRMATION_ALPHA:
+        raise ValueError(
+            f"confirmation alpha must be in (0, {MAX_CONFIRMATION_ALPHA:.2f}]"
+        )
+    if not MIN_CONFIRMATION_POWER <= power < 1.0:
+        raise ValueError(
+            f"confirmation power must be at least {MIN_CONFIRMATION_POWER:.2f}"
+        )
     required = exact_discordant_pairs_required(
         win_rate=alternative_b_win_rate,
         alpha=alpha,
         power=power,
     )
-    total_tasks = math.ceil(required / pilot.discordance_rate)
+    conservative_discordance_rate = _wilson_interval(
+        pilot.discordant_task_count,
+        pilot.task_count,
+        _normal_quantile(0.975),
+    )[0]
+    if conservative_discordance_rate <= 0.0:
+        raise ValueError(
+            "pilot discordance lower confidence bound is zero; "
+            "confirmation size is not identifiable"
+        )
+    total_tasks = math.ceil(required / conservative_discordance_rate)
     payload = {
         "pilot_task_count": pilot.task_count,
-        "pilot_task_ids_hash": _sha256_json(sorted(pilot.task_ids)),
+        "pilot_task_set_hash": _sha256_json(
+            sorted(pilot.canonical_task_ids)
+        ),
         "pilot_discordance_rate": pilot.discordance_rate,
+        "conservative_discordance_rate": conservative_discordance_rate,
+        "discordance_bound_method": "wilson-lower-95",
         "alternative_b_win_rate": alternative_b_win_rate,
         "alpha": alpha,
         "power": power,
@@ -275,7 +550,10 @@ def derive_confirmation_plan(
             key: payload[key]
             for key in (
                 "pilot_task_count",
+                "pilot_task_set_hash",
                 "pilot_discordance_rate",
+                "conservative_discordance_rate",
+                "discordance_bound_method",
                 "alternative_b_win_rate",
                 "alpha",
                 "power",
@@ -289,13 +567,32 @@ def derive_confirmation_plan(
 
 
 def require_disjoint_task_sets(
-    pilot_task_ids: Iterable[str],
-    confirmation_task_ids: Iterable[str],
+    pilot_tasks: Iterable[Any],
+    confirmation_tasks: Iterable[Any],
 ) -> None:
-    overlap = sorted(set(pilot_task_ids) & set(confirmation_task_ids))
+    pilot_task_id_list = [
+        canonical_task_identity(task) for task in pilot_tasks
+    ]
+    confirmation_task_id_list = [
+        canonical_task_identity(task) for task in confirmation_tasks
+    ]
+    if len(pilot_task_id_list) != len(set(pilot_task_id_list)):
+        raise ValueError(
+            "pilot task set contains canonical task aliases"
+        )
+    if len(confirmation_task_id_list) != len(
+        set(confirmation_task_id_list)
+    ):
+        raise ValueError(
+            "confirmation task set contains canonical task aliases"
+        )
+    pilot_task_ids = set(pilot_task_id_list)
+    confirmation_task_ids = set(confirmation_task_id_list)
+    overlap = sorted(pilot_task_ids & confirmation_task_ids)
     if overlap:
         raise ValueError(
-            "pilot/confirmation task overlap: " + ", ".join(overlap[:10])
+            "pilot/confirmation canonical task overlap: "
+            + ", ".join(overlap[:10])
         )
 
 
@@ -310,9 +607,29 @@ def compute_harness_roi(
     expected_risk_cost_per_task: float,
     value_per_verified_success: float,
 ) -> HarnessROI:
-    if task_count <= 0:
+    if (
+        isinstance(task_count, bool)
+        or not isinstance(task_count, int)
+        or task_count <= 0
+    ):
         raise ValueError("task_count must be positive")
-    if value_per_verified_success <= 0:
+    success_b = _bounded_rate(success_b, field_name="success_b")
+    success_c = _bounded_rate(success_c, field_name="success_c")
+    cost_b = _nonnegative_number(cost_b, field_name="cost_b")
+    cost_c = _nonnegative_number(cost_c, field_name="cost_c")
+    latency_cost_per_task = _nonnegative_number(
+        latency_cost_per_task,
+        field_name="latency_cost_per_task",
+    )
+    expected_risk_cost_per_task = _nonnegative_number(
+        expected_risk_cost_per_task,
+        field_name="expected_risk_cost_per_task",
+    )
+    value_per_verified_success = _finite_number(
+        value_per_verified_success,
+        field_name="value_per_verified_success",
+    )
+    if value_per_verified_success <= 0.0:
         raise ValueError("value_per_verified_success must be positive")
     delta = success_b - success_c
     successes = task_count * delta
@@ -347,23 +664,48 @@ def compute_harness_roi(
 
 def estimate_pilot(
     rows: Iterable[Mapping[str, Any]],
+    *,
+    experiment_id: str,
+    authoritative_snapshot_resolver: AuthoritativeITTSnapshotResolver,
 ) -> PilotEstimate:
-    materialized, task_ids = _validate_paired_rows(
+    materialized, task_ids, canonical_task_ids = _validate_paired_rows(
         rows,
         empty_error="pilot requires unique task rows",
+        experiment_id=experiment_id,
+        authoritative_snapshot_resolver=authoritative_snapshot_resolver,
     )
     paired = _analyze_validated_paired_outcomes(
         materialized,
         confidence=0.95,
     )
-    costs: dict[str, list[float]] = {"A": [], "B": [], "C": []}
-    latencies: dict[str, list[float]] = {"A": [], "B": [], "C": []}
+    operating_values: dict[str, dict[str, list[float]]] = {
+        metric: {"A": [], "B": [], "C": []}
+        for metric in ("cost", "latency_ms", "risk_cost")
+    }
     for row in materialized:
-        for arm in costs:
-            costs[arm].append(float(row.get(f"cost_{arm.lower()}") or 0.0))
-            latencies[arm].append(
-                float(row.get(f"latency_ms_{arm.lower()}") or 0.0)
-            )
+        for metric, values_by_arm in operating_values.items():
+            for arm, values in values_by_arm.items():
+                field_name = f"{metric}_{arm.lower()}"
+                if field_name not in row:
+                    raise ValueError(
+                        f"pilot row {row['task_id']} is missing {field_name}"
+                    )
+                raw_value = row[field_name]
+                if isinstance(raw_value, bool):
+                    raise ValueError(
+                        f"{field_name} must be finite and non-negative"
+                    )
+                try:
+                    value = float(raw_value)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(
+                        f"{field_name} must be finite and non-negative"
+                    ) from exc
+                if not math.isfinite(value) or value < 0:
+                    raise ValueError(
+                        f"{field_name} must be finite and non-negative"
+                    )
+                values.append(value)
     return PilotEstimate(
         task_count=len(materialized),
         discordant_task_count=paired.discordant_pairs,
@@ -374,12 +716,19 @@ def estimate_pilot(
             1 for row in materialized if bool(row.get("infrastructure_failure"))
         ),
         mean_cost_by_arm={
-            arm: fmean(values) for arm, values in costs.items()
+            arm: fmean(values)
+            for arm, values in operating_values["cost"].items()
         },
         mean_latency_ms_by_arm={
-            arm: fmean(values) for arm, values in latencies.items()
+            arm: fmean(values)
+            for arm, values in operating_values["latency_ms"].items()
+        },
+        mean_risk_cost_by_arm={
+            arm: fmean(values)
+            for arm, values in operating_values["risk_cost"].items()
         },
         task_ids=task_ids,
+        canonical_task_ids=canonical_task_ids,
     )
 
 
@@ -387,13 +736,21 @@ def _validate_paired_rows(
     rows: Iterable[Mapping[str, Any]],
     *,
     empty_error: str,
-) -> tuple[list[Mapping[str, Any]], tuple[str, ...]]:
+    experiment_id: str,
+    authoritative_snapshot_resolver: AuthoritativeITTSnapshotResolver,
+) -> tuple[list[Mapping[str, Any]], tuple[str, ...], tuple[str, ...]]:
     materialized = list(rows)
     if not materialized:
         raise ValueError(empty_error)
+    assignments, outcomes = _resolve_authoritative_itt(
+        experiment_id=experiment_id,
+        authoritative_snapshot_resolver=authoritative_snapshot_resolver,
+    )
 
     task_ids: list[str] = []
+    canonical_task_ids: list[str] = []
     seen_task_ids: set[str] = set()
+    seen_canonical_task_ids: set[str] = set()
     for index, row in enumerate(materialized):
         if not isinstance(row, Mapping):
             raise ValueError(f"paired row {index} must be a mapping")
@@ -422,6 +779,11 @@ def _validate_paired_rows(
             )
         seen_task_ids.add(task_id)
         task_ids.append(task_id)
+        assignment = assignments.get(task_id)
+        if assignment is None:
+            raise ValueError(
+                f"paired row is not in authoritative assignments: {task_id}"
+            )
 
         for outcome_field in ("b_pass", "c_pass"):
             if outcome_field not in row:
@@ -430,6 +792,27 @@ def _validate_paired_rows(
                 )
             if not isinstance(row[outcome_field], bool):
                 raise ValueError(f"{outcome_field} must be a bool")
+        task_identity = row.get("task_identity")
+        if not isinstance(task_identity, Mapping):
+            raise ValueError(
+                "paired rows require a task_identity mapping"
+            )
+        canonical_task_id = canonical_task_identity(task_identity)
+        if canonical_task_id != assignment.canonical_task_id:
+            raise ValueError(
+                f"paired row canonical task identity mismatch for {task_id}"
+            )
+        assignment_id = str(row.get("assignment_id") or "").strip().lower()
+        if assignment_id != assignment.assignment_id:
+            raise ValueError(
+                f"paired row assignment_id mismatch for {task_id}"
+            )
+        if canonical_task_id in seen_canonical_task_ids:
+            raise ValueError(
+                "paired rows require one canonical task identity per row"
+            )
+        seen_canonical_task_ids.add(canonical_task_id)
+        canonical_task_ids.append(canonical_task_id)
         for classification_field in (
             "verifier_flake",
             "infrastructure_failure",
@@ -439,8 +822,159 @@ def _validate_paired_rows(
                 and not isinstance(row[classification_field], bool)
             ):
                 raise ValueError(f"{classification_field} must be a bool")
+        for prefix, arm in (("b", "B"), ("c", "C")):
+            outcome = outcomes[(task_id, arm)]
+            if row[f"{prefix}_pass"] is not outcome.passed:
+                raise ValueError(
+                    f"paired row {prefix}_pass disagrees with authoritative "
+                    f"terminal outcome for {task_id}"
+                )
 
-    return materialized, tuple(task_ids)
+    observed_task_ids = set(task_ids)
+    expected_task_ids = set(assignments)
+    omitted = sorted(expected_task_ids - observed_task_ids)
+    extra = sorted(observed_task_ids - expected_task_ids)
+    if omitted or extra:
+        details = []
+        if omitted:
+            details.append("omitted=" + ",".join(omitted[:10]))
+        if extra:
+            details.append("extra=" + ",".join(extra[:10]))
+        raise ValueError(
+            "paired rows must exactly reconcile the authoritative ITT roster: "
+            + "; ".join(details)
+        )
+
+    return materialized, tuple(task_ids), tuple(canonical_task_ids)
+
+
+def _resolve_authoritative_itt(
+    *,
+    experiment_id: str,
+    authoritative_snapshot_resolver: AuthoritativeITTSnapshotResolver,
+) -> tuple[
+    dict[str, FrozenITTAssignment],
+    dict[tuple[str, str], FrozenTerminalOutcome],
+]:
+    normalized_experiment_id = str(experiment_id).strip()
+    if not normalized_experiment_id:
+        raise ValueError("experiment_id is required for authoritative ITT")
+    if not callable(authoritative_snapshot_resolver):
+        raise ValueError(
+            "an authoritative ITT snapshot resolver is required"
+        )
+    try:
+        snapshot = authoritative_snapshot_resolver(
+            normalized_experiment_id
+        )
+    except Exception as exc:
+        raise ValueError(
+            "authoritative ITT snapshot resolution failed"
+        ) from exc
+    if not isinstance(snapshot, FrozenITTSnapshot):
+        raise ValueError("authoritative ITT snapshot is unavailable")
+    if snapshot.experiment_id != normalized_experiment_id:
+        raise ValueError("authoritative ITT experiment_id mismatch")
+    expected_hash = _sha256_json(
+        _frozen_itt_snapshot_payload(
+            experiment_id=snapshot.experiment_id,
+            assignments=snapshot.assignments,
+            terminal_outcomes=snapshot.terminal_outcomes,
+            frozen_at_ms=snapshot.frozen_at_ms,
+        )
+    )
+    if snapshot.snapshot_hash != expected_hash:
+        raise ValueError("authoritative ITT snapshot hash mismatch")
+
+    assignments: dict[str, FrozenITTAssignment] = {}
+    canonical_task_ids: set[str] = set()
+    assignment_ids: set[str] = set()
+    for assignment in snapshot.assignments:
+        if not isinstance(assignment, FrozenITTAssignment):
+            raise ValueError(
+                "authoritative ITT assignments must be frozen records"
+            )
+        if assignment.task_id in assignments:
+            raise ValueError("duplicate authoritative assignment task")
+        if assignment.canonical_task_id in canonical_task_ids:
+            raise ValueError(
+                "authoritative assignments contain aliased canonical tasks"
+            )
+        if assignment.assignment_id in assignment_ids:
+            raise ValueError("duplicate authoritative assignment_id")
+        assignments[assignment.task_id] = assignment
+        canonical_task_ids.add(assignment.canonical_task_id)
+        assignment_ids.add(assignment.assignment_id)
+    if not assignments:
+        raise ValueError("authoritative ITT assignments are empty")
+
+    outcomes: dict[tuple[str, str], FrozenTerminalOutcome] = {}
+    for outcome in snapshot.terminal_outcomes:
+        if not isinstance(outcome, FrozenTerminalOutcome):
+            raise ValueError(
+                "authoritative ITT outcomes must be frozen records"
+            )
+        key = (outcome.task_id, outcome.arm)
+        if key in outcomes:
+            raise ValueError("duplicate authoritative terminal outcome")
+        assignment = assignments.get(outcome.task_id)
+        if assignment is None:
+            raise ValueError(
+                "authoritative outcome references an extra task"
+            )
+        if (
+            outcome.canonical_task_id
+            != assignment.canonical_task_id
+            or outcome.assignment_id != assignment.assignment_id
+        ):
+            raise ValueError(
+                "authoritative outcome assignment identity mismatch"
+            )
+        if outcome.status not in _TERMINAL_OUTCOME_STATUSES:
+            raise ValueError(
+                "authoritative ITT contains an unterminated task outcome"
+            )
+        if outcome.status != "completed" and outcome.passed:
+            raise ValueError(
+                "non-completed authoritative outcome cannot pass"
+            )
+        outcomes[key] = outcome
+
+    expected_outcome_keys = {
+        (task_id, arm)
+        for task_id in assignments
+        for arm in _ITT_ARMS
+    }
+    missing_outcomes = sorted(expected_outcome_keys - set(outcomes))
+    extra_outcomes = sorted(set(outcomes) - expected_outcome_keys)
+    if missing_outcomes or extra_outcomes:
+        raise ValueError(
+            "authoritative ITT requires exactly one terminal B and C "
+            "outcome for every assignment"
+        )
+    return assignments, outcomes
+
+
+def _frozen_itt_snapshot_payload(
+    *,
+    experiment_id: str,
+    assignments: Iterable[FrozenITTAssignment],
+    terminal_outcomes: Iterable[FrozenTerminalOutcome],
+    frozen_at_ms: int,
+) -> dict[str, Any]:
+    return {
+        "schema_version": FROZEN_ITT_SNAPSHOT_SCHEMA_VERSION,
+        "experiment_id": experiment_id,
+        "assignments": [
+            assignment.to_dict()
+            for assignment in assignments
+        ],
+        "terminal_outcomes": [
+            outcome.to_dict()
+            for outcome in terminal_outcomes
+        ],
+        "frozen_at_ms": frozen_at_ms,
+    }
 
 
 def _is_attempt_field(key: str) -> bool:
@@ -451,6 +985,32 @@ def _is_attempt_field(key: str) -> bool:
         snake_case.casefold(),
     ).strip("_")
     return bool({"attempt", "attempts"} & set(normalized.split("_")))
+
+
+def _finite_number(value: Any, *, field_name: str) -> float:
+    if isinstance(value, bool):
+        raise ValueError(f"{field_name} must be a finite number")
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_name} must be a finite number") from exc
+    if not math.isfinite(numeric):
+        raise ValueError(f"{field_name} must be a finite number")
+    return numeric
+
+
+def _bounded_rate(value: Any, *, field_name: str) -> float:
+    numeric = _finite_number(value, field_name=field_name)
+    if not 0.0 <= numeric <= 1.0:
+        raise ValueError(f"{field_name} must be between 0 and 1")
+    return numeric
+
+
+def _nonnegative_number(value: Any, *, field_name: str) -> float:
+    numeric = _finite_number(value, field_name=field_name)
+    if numeric < 0.0:
+        raise ValueError(f"{field_name} must be non-negative")
+    return numeric
 
 
 def _wilson_interval(successes: int, total: int, z: float) -> tuple[float, float]:

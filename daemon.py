@@ -28,9 +28,20 @@ sys.path.insert(0, str(HERE))
 from supervisor.config import Config
 from supervisor.provider_routing import (
     configure_direct_anthropic_process_env,
+    direct_anthropic_env,
     read_direct_anthropic_api_key_fd,
 )
+from supervisor.provider_clients import (
+    AnthropicModelClient,
+    ClaudeAgentSdkModelClient,
+    OpenAIEmbeddingClient,
+)
 from supervisor.state import State
+from supervisor.state_factory import (
+    DAEMON_REQUIRED_STATE_METHODS,
+    build_state,
+    require_state_capabilities,
+)
 from supervisor.drift_detector import DriftDetector
 from supervisor.hook_server import build_app, serve
 from supervisor.runtime_health import run_fatal_subsystem, run_restartable_subsystem
@@ -64,7 +75,12 @@ async def main() -> int:
     target_kind = target_adapter.kind
     log.info("starting codex-supervisor target=%s (config=%s)", target_kind, cfg_path)
 
-    state = State(cfg.supervisor.state_db)
+    state = build_state(cfg)
+    require_state_capabilities(
+        state,
+        required_methods=DAEMON_REQUIRED_STATE_METHODS,
+        profile="daemon observability and control",
+    )
 
     inherited_anthropic_key = read_direct_anthropic_api_key_fd()
     anthropic_key = (
@@ -100,10 +116,26 @@ async def main() -> int:
     chat_supervisor = None
     if notifier is not None:
         try:
-            from supervisor.telegram_supervisor import TelegramChatSupervisor
+            from supervisor.agent_runtime import ClaudeCodeRuntime
+            from supervisor.claude_sdk_runtime import ClaudeAgentSdkTransport
+            from supervisor.telegram_supervisor import (
+                ClaudeAgentSupervisorRuntime,
+                TelegramChatSupervisor,
+            )
+            chat_runtime = ClaudeAgentSupervisorRuntime(
+                cfg,
+                state,
+                agent_runtime=ClaudeCodeRuntime(
+                    transport=ClaudeAgentSdkTransport(),
+                ),
+                summary_client=ClaudeAgentSdkModelClient(),
+                agent_environment=direct_anthropic_env(),
+                inherit_agent_environment=False,
+            )
             chat_supervisor = TelegramChatSupervisor(
                 cfg,
                 state,
+                runtime=chat_runtime,
                 target_adapter=target_adapter,
                 telegram_sender=notifier.approval_sender(),
             )
@@ -125,28 +157,41 @@ async def main() -> int:
     )
     hook_critic = None
     if cfg.supervisor.hook_critique_strategy == "model_first":
-        try:
-            import claude_agent_sdk  # noqa: F401
-            from supervisor.hook_critic import ClaudeAgentSDKHookCritic
-            hook_critic = ClaudeAgentSDKHookCritic(cfg)
-            log.info("hook critique strategy: model_first via Claude Agent SDK")
-        except ModuleNotFoundError as e:
-            if e.name != "claude_agent_sdk":
-                raise
+        if anthropic is None:
             log.warning(
-                "hook_critique_strategy=model_first but claude_agent_sdk is not "
-                "installed; falling back to deterministic hook rules."
+                "hook_critique_strategy=model_first but direct Anthropic is not "
+                "configured; falling back to deterministic hook rules."
             )
+        else:
+            from supervisor.hook_critic import ModelClientHookCritic
+            hook_critic = ModelClientHookCritic(
+                cfg,
+                model_client=AnthropicModelClient(anthropic),
+            )
+            log.info("hook critique strategy: model_first via ModelClient")
     if notifier is not None:
         try:
+            from supervisor.agent_runtime import ClaudeCodeRuntime
             from supervisor.agent_invoker import AgentInvoker
+            from supervisor.claude_sdk_runtime import ClaudeAgentSdkTransport
             from mcp_tools.codex_tools import build_codex_mcp_server
             from mcp_tools.telegram_tools import build_telegram_mcp_server
 
             codex_mcp = build_codex_mcp_server(cfg, state)
             telegram_mcp = build_telegram_mcp_server(cfg, state)
             skills_dir = HERE / "skills"
-            invoker = AgentInvoker(cfg, state, skills_dir, codex_mcp, telegram_mcp)
+            invoker = AgentInvoker(
+                cfg,
+                state,
+                skills_dir,
+                codex_mcp,
+                telegram_mcp,
+                agent_runtime=ClaudeCodeRuntime(
+                    transport=ClaudeAgentSdkTransport(),
+                ),
+                agent_environment=direct_anthropic_env(),
+                inherit_agent_environment=False,
+            )
         except ModuleNotFoundError as e:
             if e.name != "claude_agent_sdk":
                 raise
@@ -160,7 +205,12 @@ async def main() -> int:
             "decision loop are disabled. Hook audit and rollout monitoring still run."
         )
 
-    drift_detector = DriftDetector(cfg, state, anthropic, oai)
+    drift_detector = DriftDetector(
+        cfg,
+        state,
+        model_client=AnthropicModelClient(anthropic) if anthropic is not None else None,
+        embedding_client=OpenAIEmbeddingClient(oai) if oai is not None else None,
+    )
     autoresearch_runner = AutoResearchRunnerTask(cfg, state, repo_root=HERE)
     weekly_p11_audit = WeeklyP11AuditTask(cfg, state)
 
@@ -175,7 +225,6 @@ async def main() -> int:
         cfg,
         state,
         target_adapter=target_adapter,
-        anthropic=anthropic,
         telegram_notifier=notifier,
         hook_critic=hook_critic,
         on_hook_seen=process_monitor.mark_hook_seen if process_monitor else None,

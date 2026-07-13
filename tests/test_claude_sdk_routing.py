@@ -5,7 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from supervisor.hook_critic import ClaudeAgentSDKHookCritic
+from supervisor.hook_critic import ModelClientHookCritic
+from supervisor.provider_clients import ClaudeAgentSdkModelClient
 from supervisor.provider_routing import configure_direct_anthropic_process_env
 from supervisor.telegram_supervisor import ClaudeAgentSupervisorRuntime
 
@@ -40,6 +41,7 @@ class _FakeClient:
         yield SimpleNamespace(
             content=[SimpleNamespace(text=text)],
             session_id="session-1",
+            model="claude-fable-5",
         )
 
 
@@ -66,7 +68,7 @@ def direct_claude_sdk(monkeypatch):
 def _assert_direct_child_env(options: _FakeOptions) -> None:
     assert options.env["ANTHROPIC_API_KEY"] == "direct-key"
     assert "ANTHROPIC_BASE_URL" not in options.env
-    assert options.env["OPENAI_API_KEY"] == "litellm-key"
+    assert "OPENAI_API_KEY" not in options.env
 
 
 @pytest.mark.asyncio
@@ -76,7 +78,10 @@ async def test_hook_critic_injects_direct_anthropic_child_env(
     cfg = SimpleNamespace(
         models=SimpleNamespace(realtime_critique_model="claude-fable-5")
     )
-    critic = ClaudeAgentSDKHookCritic(cfg)
+    critic = ModelClientHookCritic(
+        cfg,
+        model_client=ClaudeAgentSdkModelClient(),
+    )
     hook_event = SimpleNamespace(
         source_target="codex",
         hook_kind="PreToolUse",
@@ -98,7 +103,12 @@ async def test_telegram_summary_injects_direct_anthropic_child_env(
     cfg = SimpleNamespace(
         models=SimpleNamespace(post_run_eval_model="claude-fable-5")
     )
-    runtime = ClaudeAgentSupervisorRuntime(cfg, state=object())
+    runtime = ClaudeAgentSupervisorRuntime(
+        cfg,
+        state=object(),
+        agent_runtime=object(),  # type: ignore[arg-type]
+        summary_client=ClaudeAgentSdkModelClient(),
+    )
 
     result = await runtime.summarize_conversation(
         conversation_context={"active_run_id": "run-1"},
@@ -106,4 +116,6 @@ async def test_telegram_summary_injects_direct_anthropic_child_env(
     )
 
     assert result["active_run_id"] == "run-1"
-    _assert_direct_child_env(_FakeOptions.instances[-1])
+    options = _FakeOptions.instances[-1]
+    _assert_direct_child_env(options)
+    assert options.permission_mode == "dontAsk"

@@ -298,6 +298,11 @@ def _public_workflow_finalization(
     api.runner = runner
     api.codex_runner = runner
     api.cursor_runner = runner
+    # This proof exercises the public workflow/AutoResearch wiring, not a live
+    # provider. The API was constructed before the replay runner existed, so
+    # explicitly disable its lazily composed production lead runtime rather
+    # than accidentally launching a real Claude CLI from a hermetic test.
+    api.lead_runtime_runner = None
     return asyncio.run(api.run_dual_agent_workflow(
         cwd=str(root),
         task_id=task_id,
@@ -576,42 +581,50 @@ def _run_loop(tmp_path: Path, *, disabled_wire: str | None = None) -> LoopProof:
     )
 
 
-def test_auto_evolution_loop_end_to_end_through_axi_and_daemon(tmp_path):
-    proof = _run_loop(tmp_path)
+def test_auto_evolution_loop_stops_before_policy_derivation_without_l3_authority(
+    tmp_path,
+):
+    with pytest.raises(StageBreak) as exc_info:
+        _run_loop(tmp_path)
 
-    assert proof.proposal["proposal_id"].startswith("ARP-")
-    assert proof.approval["default_change_allowed"] is False
-    assert proof.approval["gate_authority"] == "unchanged"
-    assert proof.report["default_change_allowed"] is False
-    assert proof.report["records"][0]["policy_mutated"] is False
-    assert proof.report["records"][0]["gate_advanced"] is False
-    assert proof.seeded_failure_event_ids
-    assert proof.rollback_event_id > proof.regression_event_id
+    assert exc_info.value.stage == "derive_on_acceptance"
+    state = State(str(tmp_path / "state.db"))
+    [queue_row] = state.list_autoresearch_experiment_queue(limit=10)
+    auto_run_id = str(queue_row["last_run_id"])
+    events = state.read_events_since(
+        auto_run_id,
+        after_event_id=0,
+        limit=10_000,
+    )
+    assert not any(
+        event["kind"] == "autoresearch_policy_proposal_created"
+        for event in events
+    )
+    report = json.loads(Path(queue_row["report_ref"]).read_text(encoding="utf-8"))
+    assert report["derived_policy_proposals"] == []
+    assert report["claim_gate"]["max_claim_level"] is None
+    assert report["improvement_claim_allowed"] is False
+    assert report["powered_improvement_claim_allowed"] is False
 
 
-def test_auto_evolution_loop_requires_exactly_two_operator_touchpoints(tmp_path):
-    proof = _run_loop(tmp_path)
-    touchpoints = _operator_touchpoint_events(proof.state)
+def test_auto_evolution_loop_has_only_activation_touchpoint_before_l3_authority(
+    tmp_path,
+):
+    with pytest.raises(StageBreak) as exc_info:
+        _run_loop(tmp_path)
+    assert exc_info.value.stage == "derive_on_acceptance"
 
-    assert len(touchpoints) == 2
-    assert [event["event_id"] for event in touchpoints] == [
-        proof.activation_event_id,
-        proof.approval_event_id,
-    ]
+    state = State(str(tmp_path / "state.db"))
+    touchpoints = _operator_touchpoint_events(state)
+    assert len(touchpoints) == 1
     activation = _event_by_kind(
-        proof.state,
+        state,
         run_id="phase-e-signal-0",
         kind="autoresearch_experiment_activation_recorded",
     )
-    approval = _event_by_kind(
-        proof.state,
-        run_id=proof.auto_run_id,
-        kind="autoresearch_policy_proposal_approved",
-    )
     assert activation["payload"]["operator"] == "operator@example.com"
-    assert approval["payload"]["approver"] == "operator@example.com"
     assert activation["payload"]["automatic_policy_mutation"] is False
-    assert approval["payload"]["automatic_policy_mutation"] is False
+    assert touchpoints[0]["event_id"] == activation["event_id"]
 
 
 @pytest.mark.parametrize(
@@ -619,10 +632,7 @@ def test_auto_evolution_loop_requires_exactly_two_operator_touchpoints(tmp_path)
     [
         ("T1_finalization_drafts_experiment", "finalization_draft"),
         ("T2_daemon_runner_executes_runnable", "daemon_runner"),
-        ("T3_derive_on_acceptance", "derive_on_acceptance"),
-        ("T4_weekly_audit_task", "weekly_audit"),
         ("T5_operator_activation_cli", "operator_activation"),
-        ("T5_operator_approval_cli", "operator_approval"),
         ("T7_lesson_feedback_recorded", "lesson_feedback"),
     ],
 )
@@ -706,6 +716,9 @@ def test_loop_doc_is_generated_from_demo_manifest():
     text = doc.read_text(encoding="utf-8")
     assert manifest.as_posix() in text
     assert "codex-supervisor-axi experiments activate" in text
-    assert "codex-supervisor-axi approve --proposal-id" in text
+    assert (
+        "codex-supervisor-axi approve --run-id <run> "
+        "--proposal-id <proposal_id> --approver <named-human>"
+    ) in text
     assert "max_runnable_experiments_per_week" in text
     assert "p11_audit_cadence_s" in text

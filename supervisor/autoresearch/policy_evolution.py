@@ -3,12 +3,28 @@ from __future__ import annotations
 
 import difflib
 import posixpath
+from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, Mapping, Protocol
 
 from .schema import sha256_json
-from ..policy_overlay import POLICY_OVERLAY_PATH, PolicyOverlayError, normalise_overlay_target
+from ..claim_gate import (
+    ClaimGate,
+    ClaimGateError,
+    ClaimLevel,
+    EvidenceResolver,
+    LedgerVerificationResolver,
+    TrustedVerifierAttestors,
+)
+from ..policy_overlay import (
+    POLICY_OVERLAY_PATH,
+    PolicyOverlayError,
+    assert_repo_local_path,
+    normalise_overlay_target,
+    remove_repo_file_no_follow,
+    write_repo_file_no_follow,
+)
 
 
 POLICY_PROPOSAL_SCHEMA_VERSION = "supervisor-autoresearch-policy-proposal/v1"
@@ -34,8 +50,28 @@ class EventWriter(Protocol):
         ...
 
 
-class PolicyEvolutionError(RuntimeError):
+class PolicyEvolutionError(PolicyOverlayError):
     """Raised when an operator-approved policy change cannot be applied safely."""
+
+
+@dataclass(frozen=True)
+class PolicyClaimAuthority:
+    """Trust-owned evidence context for policy proposal derivation."""
+
+    evidence_bundle: Mapping[str, Any]
+    evidence_root: str | Path | None = None
+    evidence_resolver: EvidenceResolver | None = None
+    ledger_verification_resolver: LedgerVerificationResolver | None = None
+    trusted_verifier_attestors: TrustedVerifierAttestors | None = None
+
+    def validation_kwargs(self) -> dict[str, Any]:
+        return {
+            "claim_evidence_bundle": self.evidence_bundle,
+            "claim_evidence_root": self.evidence_root,
+            "claim_evidence_resolver": self.evidence_resolver,
+            "ledger_verification_resolver": self.ledger_verification_resolver,
+            "trusted_verifier_attestors": self.trusted_verifier_attestors,
+        }
 
 
 def create_policy_evolution_proposals(
@@ -46,6 +82,15 @@ def create_policy_evolution_proposals(
     affected_gates: tuple[str, ...] | list[str],
     state: EventWriter | None = None,
     run_id: str | None = None,
+    claim_evidence_bundle: Mapping[str, Any] | None = None,
+    claim_evidence_root: str | Path | None = None,
+    claim_evidence_resolver: EvidenceResolver | None = None,
+    ledger_verification_resolver: (
+        LedgerVerificationResolver | None
+    ) = None,
+    trusted_verifier_attestors: (
+        TrustedVerifierAttestors | None
+    ) = None,
 ) -> list[dict[str, Any]]:
     """Create non-mutating stability proposals from clean accepted AutoResearch records.
 
@@ -60,7 +105,14 @@ def create_policy_evolution_proposals(
     )
     if not changes:
         return []
-    if _report_applyability_error(report) is not None:
+    if _report_applyability_error(
+        report,
+        claim_evidence_bundle=claim_evidence_bundle,
+        claim_evidence_root=claim_evidence_root,
+        claim_evidence_resolver=claim_evidence_resolver,
+        ledger_verification_resolver=ledger_verification_resolver,
+        trusted_verifier_attestors=trusted_verifier_attestors,
+    ) is not None:
         return []
     proposals: list[dict[str, Any]] = []
     records = report.get("records") if isinstance(report.get("records"), list) else []
@@ -92,6 +144,15 @@ def derive_policy_evolution_proposals_from_report(
     affected_gates: tuple[str, ...] | list[str],
     state: EventWriter | None = None,
     run_id: str | None = None,
+    claim_evidence_bundle: Mapping[str, Any] | None = None,
+    claim_evidence_root: str | Path | None = None,
+    claim_evidence_resolver: EvidenceResolver | None = None,
+    ledger_verification_resolver: (
+        LedgerVerificationResolver | None
+    ) = None,
+    trusted_verifier_attestors: (
+        TrustedVerifierAttestors | None
+    ) = None,
 ) -> list[dict[str, Any]]:
     """Draft overlay proposals directly from accepted AutoResearch report records.
 
@@ -102,7 +163,14 @@ def derive_policy_evolution_proposals_from_report(
     repo_root_path = Path(repo_root).expanduser().resolve()
     gates = tuple(str(gate) for gate in affected_gates)
     records = report.get("records") if isinstance(report.get("records"), list) else []
-    report_applyability_error = _report_applyability_error(report)
+    report_applyability_error = _report_applyability_error(
+        report,
+        claim_evidence_bundle=claim_evidence_bundle,
+        claim_evidence_root=claim_evidence_root,
+        claim_evidence_resolver=claim_evidence_resolver,
+        ledger_verification_resolver=ledger_verification_resolver,
+        trusted_verifier_attestors=trusted_verifier_attestors,
+    )
     if report_applyability_error is not None:
         for record in records:
             if isinstance(record, Mapping):
@@ -180,9 +248,25 @@ def report_contains_derivable_policy_record(
     report: Mapping[str, Any],
     *,
     repo_root: str | Path,
+    claim_evidence_bundle: Mapping[str, Any] | None = None,
+    claim_evidence_root: str | Path | None = None,
+    claim_evidence_resolver: EvidenceResolver | None = None,
+    ledger_verification_resolver: (
+        LedgerVerificationResolver | None
+    ) = None,
+    trusted_verifier_attestors: (
+        TrustedVerifierAttestors | None
+    ) = None,
 ) -> bool:
     repo_root_path = Path(repo_root).expanduser().resolve()
-    if _report_applyability_error(report) is not None:
+    if _report_applyability_error(
+        report,
+        claim_evidence_bundle=claim_evidence_bundle,
+        claim_evidence_root=claim_evidence_root,
+        claim_evidence_resolver=claim_evidence_resolver,
+        ledger_verification_resolver=ledger_verification_resolver,
+        trusted_verifier_attestors=trusted_verifier_attestors,
+    ) is not None:
         return False
     records = report.get("records") if isinstance(report.get("records"), list) else []
     for record in records:
@@ -212,7 +296,6 @@ def approve_policy_proposal(
     _require_operator(approver=approver, approval_channel=approval_channel)
     repo_root_path = Path(repo_root).expanduser().resolve()
     rollback_root_rel = _normalise_relative_path(str(rollback_root), repo_root=repo_root_path)
-    rollback_root_path = repo_root_path / rollback_root_rel
     proposal_id = str(proposal.get("proposal_id") or "")
     if not proposal_id:
         raise PolicyEvolutionError("proposal_id is required")
@@ -252,6 +335,7 @@ def approve_policy_proposal(
             "target_existed": target_existed,
             "current_bytes": current_bytes,
             "candidate_bytes": candidate_bytes,
+            "repo_root": repo_root_path,
         })
 
     rollback_files: list[dict[str, Any]] = []
@@ -269,11 +353,19 @@ def approve_policy_proposal(
                 target_path=target_rel,
             )
             backup_path = repo_root_path / backup_rel
-            backup_path.parent.mkdir(parents=True, exist_ok=True)
-            backup_path.write_bytes(change["current_bytes"])
+            _write_repo_bytes(
+                backup_path,
+                change["current_bytes"],
+                repo_root=repo_root_path,
+                label="policy rollback backup",
+            )
 
-            target_path.parent.mkdir(parents=True, exist_ok=True)
-            target_path.write_bytes(change["candidate_bytes"])
+            _write_repo_bytes(
+                target_path,
+                change["candidate_bytes"],
+                repo_root=repo_root_path,
+                label="policy overlay target",
+            )
             observed_after_hash = _sha256_bytes(target_path.read_bytes())
             if observed_after_hash != after_hash:
                 raise PolicyEvolutionError(
@@ -378,7 +470,11 @@ def rollback_policy_proposal(
         _require_policy_overlay_target(target_rel, repo_root=repo_root_path)
         backup_rel = _normalise_relative_path(str(item.get("backup_ref") or ""), repo_root=repo_root_path)
         expected_hash = str(item.get("before_hash") or "")
-        backup_path = repo_root_path / backup_rel
+        backup_path = _safe_repo_path(
+            repo_root_path / backup_rel,
+            repo_root=repo_root_path,
+            label="policy rollback backup",
+        )
         if not backup_path.exists() or not backup_path.is_file():
             raise PolicyEvolutionError(f"rollback backup missing: {backup_rel}")
         backup_bytes = backup_path.read_bytes()
@@ -400,8 +496,12 @@ def rollback_policy_proposal(
         target_path = repo_root_path / target_rel
         backup_bytes = bytes(prepared["backup_bytes"])
         expected_hash = str(prepared["expected_hash"])
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        target_path.write_bytes(backup_bytes)
+        _write_repo_bytes(
+            target_path,
+            backup_bytes,
+            repo_root=repo_root_path,
+            label="policy overlay target",
+        )
         restored.append({
             "target_path": target_rel,
             "restored_hash": _sha256_bytes(target_path.read_bytes()),
@@ -509,11 +609,27 @@ def _record_is_applyable(record: Mapping[str, Any]) -> bool:
     return _record_applyability_error(record) is None
 
 
-def _report_applyability_error(report: Mapping[str, Any]) -> str | None:
+def _report_applyability_error(
+    report: Mapping[str, Any],
+    *,
+    claim_evidence_bundle: Mapping[str, Any] | None,
+    claim_evidence_root: str | Path | None,
+    claim_evidence_resolver: EvidenceResolver | None,
+    ledger_verification_resolver: LedgerVerificationResolver | None,
+    trusted_verifier_attestors: TrustedVerifierAttestors | None,
+) -> str | None:
     if report.get("metric_applyable") is False:
         return "report metric_applyable must not be false for policy derivation"
-    if report.get("improvement_claim_allowed") is False:
-        return "report improvement_claim_allowed must not be false for policy derivation"
+    authority_error = _claim_gate_report_authority_error(
+        report,
+        claim_evidence_bundle=claim_evidence_bundle,
+        claim_evidence_root=claim_evidence_root,
+        claim_evidence_resolver=claim_evidence_resolver,
+        ledger_verification_resolver=ledger_verification_resolver,
+        trusted_verifier_attestors=trusted_verifier_attestors,
+    )
+    if authority_error is not None:
+        return authority_error
     gaming_flags = list(report.get("gaming_flags") or [])
     if gaming_flags:
         return "report gaming flags present: " + ", ".join(str(flag) for flag in gaming_flags)
@@ -540,8 +656,6 @@ def _record_applyability_error(record: Mapping[str, Any]) -> str | None:
         return "accepted validation status is required for policy derivation"
     if record.get("metric_applyable") is False:
         return "metric_applyable must not be false for policy derivation"
-    if record.get("improvement_claim_allowed") is False:
-        return "improvement_claim_allowed must not be false for policy derivation"
     gaming_flags = list(record.get("gaming_flags") or [])
     if gaming_flags:
         return "gaming flags present: " + ", ".join(str(flag) for flag in gaming_flags)
@@ -558,6 +672,46 @@ def _record_applyability_error(record: Mapping[str, Any]) -> str | None:
     if record.get("gate_advanced") is not False:
         return "gate_advanced must remain false"
     return _record_quality_control_error(record)
+
+
+def _claim_gate_report_authority_error(
+    report: Mapping[str, Any],
+    *,
+    claim_evidence_bundle: Mapping[str, Any] | None,
+    claim_evidence_root: str | Path | None,
+    claim_evidence_resolver: EvidenceResolver | None,
+    ledger_verification_resolver: LedgerVerificationResolver | None,
+    trusted_verifier_attestors: TrustedVerifierAttestors | None,
+) -> str | None:
+    if not isinstance(claim_evidence_bundle, Mapping):
+        return (
+            "report ClaimGate evidence bundle is required for "
+            "policy derivation"
+        )
+    try:
+        level = ClaimGate.validate_derived_report(
+            report,
+            claim_evidence_bundle,
+            evidence_root=claim_evidence_root,
+            evidence_resolver=claim_evidence_resolver,
+            ledger_verification_resolver=ledger_verification_resolver,
+            trusted_verifier_attestors=trusted_verifier_attestors,
+        )
+    except ClaimGateError as exc:
+        return (
+            "report ClaimGate authority validation failed: "
+            f"{exc}"
+        )
+    if (
+        level is None
+        or tuple(ClaimLevel).index(level)
+        < tuple(ClaimLevel).index(ClaimLevel.L3)
+    ):
+        return (
+            "report ClaimGate authority must support at least L3 for "
+            "policy derivation"
+        )
+    return None
 
 
 def _record_is_benchmark_promotion(record: Mapping[str, Any]) -> bool:
@@ -921,10 +1075,19 @@ def _restore_prepared_targets(prepared_changes: list[dict[str, Any]]) -> None:
     for change in prepared_changes:
         target_path = change["target_path"]
         if change["target_existed"]:
-            target_path.parent.mkdir(parents=True, exist_ok=True)
-            target_path.write_bytes(change["current_bytes"])
+            _write_repo_bytes(
+                target_path,
+                change["current_bytes"],
+                repo_root=change["repo_root"],
+                label="policy overlay target",
+            )
         else:
-            target_path.unlink(missing_ok=True)
+            remove_repo_file_no_follow(
+                target_path,
+                repo_root=change["repo_root"],
+                label="policy overlay target",
+                missing_ok=True,
+            )
 
 
 def _rollback_backup_ref(*, rollback_root_rel: str, proposal_id: str, target_path: str) -> str:
@@ -939,5 +1102,35 @@ def _sha256_bytes(value: bytes) -> str:
 def _require_policy_overlay_target(path: str, *, repo_root: Path) -> None:
     try:
         normalise_overlay_target(path, repo_root=repo_root)
+    except PolicyOverlayError as exc:
+        raise PolicyEvolutionError(str(exc)) from exc
+
+
+def _safe_repo_path(
+    path: str | Path,
+    *,
+    repo_root: Path,
+    label: str,
+) -> Path:
+    try:
+        return assert_repo_local_path(path, repo_root=repo_root, label=label)
+    except PolicyOverlayError as exc:
+        raise PolicyEvolutionError(str(exc)) from exc
+
+
+def _write_repo_bytes(
+    path: str | Path,
+    data: bytes,
+    *,
+    repo_root: Path,
+    label: str,
+) -> Path:
+    try:
+        return write_repo_file_no_follow(
+            path,
+            data,
+            repo_root=repo_root,
+            label=label,
+        )
     except PolicyOverlayError as exc:
         raise PolicyEvolutionError(str(exc)) from exc

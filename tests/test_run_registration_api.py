@@ -9,10 +9,8 @@ Forbidden outcomes guarded against:
   - "Live config rewrites old scope."
 """
 from __future__ import annotations
+from concurrent.futures import ThreadPoolExecutor
 import json
-from pathlib import Path
-
-import pytest
 
 from supervisor.state import State
 from supervisor.target.types import ScopeContract
@@ -67,3 +65,32 @@ def test_register_run_writes_immutable_snapshot(tmp_path):
     assert stored2 == stored, (
         "run snapshot changed after re-registration — forbidden by P5"
     )
+
+
+def test_register_run_is_idempotent_under_concurrent_submission(tmp_path):
+    state = State(str(tmp_path / "concurrent-snap.db"))
+    scope = ScopeContract(allowed_paths=("src/",))
+
+    def register_once(index: int) -> None:
+        state.register_run(
+            run_id="run-concurrent",
+            session_id=f"session-{index}",
+            rollout_path=f"/tmp/{index}.jsonl",
+            task="Concurrent registration",
+            scope=scope,
+            config_snapshot={"submission": index},
+        )
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(register_once, range(32)))
+
+    snapshot_count = state._conn.execute(
+        "SELECT COUNT(*) FROM run_snapshots WHERE run_id=?",
+        ("run-concurrent",),
+    ).fetchone()[0]
+    run_count = state._conn.execute(
+        "SELECT COUNT(*) FROM runs WHERE run_id=?",
+        ("run-concurrent",),
+    ).fetchone()[0]
+    assert snapshot_count == 1
+    assert run_count == 1

@@ -16,13 +16,13 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 from scripts.swebench_pro_batch_driver import _augment_attempt_with_oracle_context
+from supervisor.claim_gate import ClaimGate
 from supervisor.swe_bench_official_oracle import run_swe_bench_pro_oracle
 
 
 AUTHORITY_FLAGS = {
     "metric_applyable": False,
-    "improvement_claim_allowed": False,
-    "powered_improvement_claim_allowed": False,
+    **ClaimGate.derived_claim_flags(),
     "human_mergeability_claim_allowed": False,
     "default_change_allowed": False,
     "policy_mutated": False,
@@ -412,7 +412,7 @@ def build_flake_report(
         dropped_reasons[reason] = dropped_reasons.get(reason, 0) + 1
     unstable_count = dropped_reasons.get("unstable_label", 0)
     unavailable_count = len(dropped) - unstable_count
-    return {
+    return ClaimGate.govern_report({
         "schema_version": "supervisor-swebench-pro-label-stability/v1",
         "status": "completed" if stable_predictions else "unavailable",
         "repeats": repeats,
@@ -444,7 +444,7 @@ def build_flake_report(
             "gate": "label_stability_filter",
         },
         **AUTHORITY_FLAGS,
-    }
+    })
 
 
 def run_label_stability(

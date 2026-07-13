@@ -1,24 +1,35 @@
 """Inline supervisor-owned agentic worker production."""
 from __future__ import annotations
 
+import asyncio
 import json
 import re
-import subprocess
 import time
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+from .agent_runtime import AgentRunResult, AgentTask
+from .agentic_legacy_provider_edge import (
+    LegacyRunner,
+    execute_legacy_agent_task,
+)
 from .agentic_workers import (
     AgenticWorkerSpec,
     cleanup_orphaned_agentic_workers,
-    run_agentic_claude_subprocess,
     run_agentic_worker_fanout,
 )
 from .dual_agent_lead import ModelQuality, select_lead_model
+from .runtime_execution import (
+    RuntimeExecution,
+    RuntimeFactory,
+    RuntimeTaskRunner,
+    runtime_task_runner,
+)
 
 
-Runner = Callable[..., subprocess.CompletedProcess[str]]
+Runner = LegacyRunner
 FanoutRunner = Callable[[list[AgenticWorkerSpec]], list[dict[str, Any]]]
 CleanupRunner = Callable[..., dict[str, Any]]
 
@@ -76,7 +87,11 @@ def produce_agentic_worker_receipts(
     timeout_s: int,
     budget_usd: float,
     quality: ModelQuality = "best",
-    runner: Runner = subprocess.run,
+    runtime_runner: RuntimeTaskRunner | None = None,
+    runtime_factory: RuntimeFactory | None = None,
+    runtime_model: str | None = None,
+    runtime_env: Mapping[str, str] | None = None,
+    runner: Runner | None = None,
     fanout_runner: FanoutRunner | None = None,
     cleanup_runner: CleanupRunner = cleanup_orphaned_agentic_workers,
     now_s: Callable[[], float] = time.time,
@@ -116,6 +131,20 @@ def produce_agentic_worker_receipts(
             },
         )
 
+    task_runner = _resolve_runtime_runner(
+        runtime_runner=runtime_runner,
+        runtime_factory=runtime_factory,
+    )
+    if task_runner is not None and runner is not None:
+        raise ValueError(
+            "choose a runtime runner/factory or the legacy subprocess runner"
+        )
+    if task_runner is None and runner is None:
+        raise ValueError(
+            "agentic worker production requires a runtime runner/factory; "
+            "pass runner= only for the explicit legacy fallback"
+        )
+
     planner_result = plan_agentic_worker_roster(
         cwd=cwd,
         task_id=task_id,
@@ -127,6 +156,9 @@ def produce_agentic_worker_receipts(
         budget_usd=budget_usd,
         quality=quality,
         runner=runner,
+        runtime_runner=task_runner,
+        runtime_model=runtime_model,
+        runtime_env=runtime_env,
     )
     if planner_result.status != "passed":
         return planner_result
@@ -157,13 +189,19 @@ def produce_agentic_worker_receipts(
             cwd=cwd,
             task_id=task_id,
             quality=quality,
+            runtime_model=runtime_model,
+            runtime_env=runtime_env,
         )
         for item in pending_roster_items
     ]
     receipts = (
         list(fanout_runner(specs))
         if fanout_runner is not None
-        else list(run_agentic_worker_fanout(specs, runner=runner))
+        else list(run_agentic_worker_fanout(
+            specs,
+            runtime_runner=task_runner,
+            runner=runner,
+        ))
     )
     for index, receipt in enumerate(receipts):
         worker_id = str(receipt.get("worker_id") or specs[index].worker_id)
@@ -176,7 +214,11 @@ def produce_agentic_worker_receipts(
         receipt.setdefault("agent_id", specs[index].agent_id or worker_id)
 
     cleanup = None
-    if any(str(receipt.get("status") or "").lower() in {"timeout", "failed", "error"} for receipt in receipts):
+    if any(
+        str(receipt.get("status") or "").lower()
+        in {"timeout", "failed", "error", "cancelled", "canceled"}
+        for receipt in receipts
+    ):
         cleanup = cleanup_runner(
             cwd=cwd,
             task_id=task_id,
@@ -219,10 +261,28 @@ def plan_agentic_worker_roster(
     timeout_s: int,
     budget_usd: float,
     quality: ModelQuality,
-    runner: Runner,
+    runtime_runner: RuntimeTaskRunner | None = None,
+    runtime_factory: RuntimeFactory | None = None,
+    runtime_model: str | None = None,
+    runtime_env: Mapping[str, str] | None = None,
+    runner: Runner | None = None,
 ) -> AgenticWorkerProduction:
     """Ask the lead to return a bounded worker roster, without spawning workers."""
-    command = _planner_command(
+    task_runner = _resolve_runtime_runner(
+        runtime_runner=runtime_runner,
+        runtime_factory=runtime_factory,
+    )
+    if task_runner is not None and runner is not None:
+        raise ValueError(
+            "choose a runtime runner/factory or the legacy subprocess runner"
+        )
+    if task_runner is None and runner is None:
+        raise ValueError(
+            "agentic roster planning requires a runtime runner/factory; "
+            "pass runner= only for the explicit legacy fallback"
+        )
+    task = _planner_task(
+        cwd=cwd,
         task_id=task_id,
         run_id=run_id,
         intent=intent,
@@ -231,43 +291,76 @@ def plan_agentic_worker_roster(
         timeout_s=timeout_s,
         budget_usd=budget_usd,
         quality=quality,
+        runtime_model=runtime_model,
+        runtime_env=runtime_env,
     )
     try:
-        proc = run_agentic_claude_subprocess(
-            runner,
-            command,
-            inherit_env=False,
-            cwd=str(Path(cwd)),
-            capture_output=True,
-            text=True,
-            timeout=min(max(30, int(timeout_s)), 180),
-            check=False,
+        execution = (
+            task_runner(task)
+            if task_runner is not None
+            else execute_legacy_agent_task(
+                task,
+                runner=runner,
+            )
         )
-    except subprocess.TimeoutExpired:
+        _validate_planner_execution(execution, task=task)
+    except asyncio.CancelledError:
+        return AgenticWorkerProduction(
+            status="blocked",
+            blocking_findings=[{"reason": "agentic_roster_planner_cancelled"}],
+            planner={"returncode": None},
+        )
+    except TimeoutError:
         return AgenticWorkerProduction(
             status="blocked",
             blocking_findings=[{"reason": "agentic_roster_planner_timeout"}],
-            planner={"command": command, "returncode": None},
+            planner={"returncode": None},
         )
-    except OSError as e:
+    except Exception as exc:
         return AgenticWorkerProduction(
             status="blocked",
-            blocking_findings=[{"reason": "agentic_roster_planner_failed", "error": str(e)}],
-            planner={"command": command, "returncode": None},
+            blocking_findings=[{
+                "reason": "agentic_roster_planner_failed",
+                "error": f"{type(exc).__name__}: {exc}",
+            }],
+            planner={"returncode": None},
         )
 
-    stdout = str(proc.stdout or "")
-    stderr = str(proc.stderr or "")
-    planner = {
-        "command": command,
-        "returncode": proc.returncode,
-        "stdout_bytes": len(stdout.encode()),
-        "stderr_bytes": len(stderr.encode()),
-    }
-    if proc.returncode != 0:
+    result = execution.result
+    stdout = str(result.output or "")
+    planner = _planner_result_metadata(result)
+    if str(result.status or "").strip().lower() in {"cancelled", "canceled"}:
         return AgenticWorkerProduction(
             status="blocked",
-            blocking_findings=[{"reason": "agentic_roster_planner_nonzero", "returncode": proc.returncode}],
+            blocking_findings=[{"reason": "agentic_roster_planner_cancelled"}],
+            planner=planner,
+        )
+    if _runtime_timed_out(result):
+        return AgenticWorkerProduction(
+            status="blocked",
+            blocking_findings=[{"reason": "agentic_roster_planner_timeout"}],
+            planner=planner,
+        )
+    if str(result.status or "").strip().lower() not in {
+        "completed",
+        "passed",
+        "success",
+        "succeeded",
+    }:
+        returncode = _int_or_none(result.metadata.get("returncode"))
+        if returncode not in {None, 0}:
+            finding = {
+                "reason": "agentic_roster_planner_nonzero",
+                "returncode": returncode,
+            }
+        else:
+            finding = {
+                "reason": "agentic_roster_planner_failed",
+                "error": _runtime_error(result),
+            }
+        return AgenticWorkerProduction(
+            status="blocked",
+            blocking_findings=[finding],
             planner=planner,
         )
     roster_payload = _extract_roster_payload(stdout)
@@ -348,8 +441,117 @@ def validate_agentic_worker_roster(
     return findings
 
 
-def _planner_command(
+def _resolve_runtime_runner(
     *,
+    runtime_runner: RuntimeTaskRunner | None,
+    runtime_factory: RuntimeFactory | None,
+) -> RuntimeTaskRunner | None:
+    if runtime_runner is not None and runtime_factory is not None:
+        raise ValueError("provide runtime_runner or runtime_factory, not both")
+    if runtime_runner is not None:
+        return runtime_runner
+    if runtime_factory is not None:
+        return runtime_task_runner(runtime_factory)
+    return None
+
+
+def _validate_planner_execution(
+    execution: RuntimeExecution,
+    *,
+    task: AgentTask,
+) -> None:
+    if not isinstance(execution, RuntimeExecution):
+        raise TypeError("runtime runner must return RuntimeExecution")
+    result = execution.result
+    if execution.handle.task_id != task.task_id or result.task_id != task.task_id:
+        raise ValueError(
+            "runtime planner task_id does not match its AgentTask"
+        )
+    if execution.handle.run_id != result.run_id:
+        raise ValueError("runtime planner result run_id does not match its handle")
+    for field_name, value in (
+        ("runtime", result.runtime),
+        ("run_id", result.run_id),
+        ("session_id", result.session_id),
+        ("result_hash", result.result_hash),
+    ):
+        if not str(value or "").strip():
+            raise ValueError(f"runtime planner result {field_name} is empty")
+
+
+def _planner_result_metadata(result: AgentRunResult) -> dict[str, Any]:
+    stderr = str(result.metadata.get("stderr") or "")
+    return {
+        "returncode": _int_or_none(result.metadata.get("returncode")),
+        "stdout_bytes": len(result.output.encode()),
+        "stderr_bytes": len(stderr.encode()),
+        "runtime": result.runtime,
+        "runtime_run_id": result.run_id,
+        "session_id": result.session_id,
+        "runtime_status": result.status,
+        "resolved_model": result.resolved_model,
+        "cost_usd": float(result.cost_usd),
+        "token_usage": dict(result.token_usage),
+        "result_hash": result.result_hash,
+        "model_provenance": result.model_provenance,
+        "cost_provenance": result.cost_provenance,
+        "token_provenance": result.token_provenance,
+        "agent_run_result": _agent_run_result_payload(result),
+    }
+
+
+def _agent_run_result_payload(result: AgentRunResult) -> dict[str, Any]:
+    payload = result.to_dict()
+    payload["metadata"] = {
+        key: result.metadata[key]
+        for key in ("returncode", "failure_reason")
+        if key in result.metadata
+    }
+    return payload
+
+
+def _runtime_timed_out(result: AgentRunResult) -> bool:
+    if str(result.status or "").strip().lower() == "timeout":
+        return True
+    if _int_or_none(result.metadata.get("returncode")) == 124:
+        return True
+    values = [
+        result.metadata.get("failure_reason"),
+        result.metadata.get("error"),
+    ]
+    for event in result.events:
+        values.extend((
+            event.payload.get("reason"),
+            event.payload.get("error"),
+        ))
+    return any(
+        "timeout" in str(value or "").strip().lower()
+        for value in values
+    )
+
+
+def _runtime_error(result: AgentRunResult) -> str:
+    for value in (
+        result.metadata.get("error"),
+        result.metadata.get("stderr"),
+        *(
+            item
+            for event in reversed(result.events)
+            for item in (
+                event.payload.get("error"),
+                event.payload.get("reason"),
+            )
+        ),
+    ):
+        text = str(value or "").strip()
+        if text:
+            return text
+    return f"runtime ended with status={result.status}"
+
+
+def _planner_task(
+    *,
+    cwd: str | Path,
     task_id: str,
     run_id: str,
     intent: str,
@@ -358,9 +560,66 @@ def _planner_command(
     timeout_s: int,
     budget_usd: float,
     quality: ModelQuality,
-) -> list[str]:
-    model = select_lead_model("execution", quality=quality)
-    prompt = (
+    runtime_model: str | None,
+    runtime_env: Mapping[str, str] | None,
+) -> AgentTask:
+    model = str(runtime_model or "").strip() or select_lead_model(
+        "execution",
+        quality=quality,
+    )
+    return AgentTask(
+        task_id=f"{task_id}::agentic-planner::{run_id}",
+        instruction=_planner_instruction(
+            task_id=task_id,
+            run_id=run_id,
+            intent=intent,
+            min_subagents=min_subagents,
+            required_roles=required_roles,
+            timeout_s=timeout_s,
+            budget_usd=budget_usd,
+        ),
+        cwd=Path(cwd).resolve(),
+        model=model,
+        timeout_s=min(max(30, int(timeout_s)), 180),
+        env={
+            str(key): str(value)
+            for key, value in (runtime_env or {}).items()
+        },
+        inherit_env=False,
+        metadata={
+            "agentic_execution": {
+                "kind": "planner",
+                "task_id": task_id,
+                "run_id": run_id,
+            },
+            "permission_mode": "plan",
+            "allowed_tools": ["Read", "Grep", "Glob", "Bash"],
+            "disallowed_tools": [
+                "Edit",
+                "Write",
+                "MultiEdit",
+                "NotebookEdit",
+            ],
+            "max_budget_usd": (
+                min(float(budget_usd), 1.0)
+                if budget_usd > 0
+                else 0.25
+            ),
+        },
+    )
+
+
+def _planner_instruction(
+    *,
+    task_id: str,
+    run_id: str,
+    intent: str,
+    min_subagents: int,
+    required_roles: list[str],
+    timeout_s: int,
+    budget_usd: float,
+) -> str:
+    return (
         f"/lead Agentic worker roster planning. Task id: {task_id}. Run id: {run_id}.\n"
         "Plan read-only helper workers for Codex to spawn. Do not edit files and do not spawn workers yourself.\n"
         f"Intent:\n{intent.strip()}\n\n"
@@ -373,22 +632,6 @@ def _planner_command(
         "\"tool_pins\":[\"rg\",\"sed\"],\"prompt\":\"specific read-only task\","
         "\"timeout_s\":300,\"budget_usd\":1.0}]}."
     )
-    return [
-        "claude",
-        "--no-session-persistence",
-        "-p",
-        prompt,
-        "--output-format",
-        "json",
-        "--model",
-        model,
-        "--max-budget-usd",
-        _format_budget(min(float(budget_usd), 1.0) if budget_usd > 0 else 0.25),
-        "--permission-mode",
-        "plan",
-        "--tools",
-        "Read,Grep,Glob,Bash",
-    ]
 
 
 def _worker_spec(
@@ -397,49 +640,53 @@ def _worker_spec(
     cwd: str | Path,
     task_id: str,
     quality: ModelQuality,
+    runtime_model: str | None,
+    runtime_env: Mapping[str, str] | None,
 ) -> AgenticWorkerSpec:
+    model = str(runtime_model or "").strip() or select_lead_model(
+        "execution",
+        quality=quality,
+    )
     return AgenticWorkerSpec(
         task_id=task_id,
         worker_id=item.worker_id,
         role=item.role,
+        command=(),
+        cwd=cwd,
+        instruction=_worker_instruction(item, task_id=task_id),
+        model=model,
         persona_id=item.persona_id,
-        agent_runtime="claude_code",
+        agent_runtime="runtime",
         agent_id=item.worker_id,
         permission_mode="readOnly",
         tool_pins=item.tool_pins,
         timeout_s=int(item.timeout_s),
         budget_usd=float(item.budget_usd),
-        cwd=cwd,
-        command=tuple(_worker_command(item, task_id=task_id, quality=quality)),
+        runtime_env=dict(runtime_env or {}),
+        runtime_metadata={
+            "permission_mode": "plan",
+            "allowed_tools": ["Read", "Grep", "Glob", "Bash"],
+            "disallowed_tools": [
+                "Edit",
+                "Write",
+                "MultiEdit",
+                "NotebookEdit",
+            ],
+        },
     )
 
 
-def _worker_command(item: AgenticWorkerRosterItem, *, task_id: str, quality: ModelQuality) -> list[str]:
-    model = select_lead_model("execution", quality=quality)
-    prompt = (
+def _worker_instruction(
+    item: AgenticWorkerRosterItem,
+    *,
+    task_id: str,
+) -> str:
+    return (
         f"Read-only agentic worker for task {task_id}. Role: {item.role}.\n"
         "Do not edit files, write source, or launch subagents. Use read-only inspection only.\n"
         f"Scoped prompt:\n{item.prompt.strip()}\n\n"
         "Return concise findings and mention exact files or commands inspected."
     )
-    return [
-        "claude",
-        "--no-session-persistence",
-        "-p",
-        prompt,
-        "--output-format",
-        "json",
-        "--model",
-        model,
-        "--max-budget-usd",
-        _format_budget(float(item.budget_usd)),
-        "--permission-mode",
-        "plan",
-        "--tools",
-        "Read,Grep,Glob,Bash",
-        "--disallowedTools",
-        "Edit,Write,MultiEdit,NotebookEdit",
-    ]
 
 
 def _extract_roster_payload(stdout: str) -> dict[str, Any] | None:
@@ -602,12 +849,15 @@ def _int_or_default(value: Any, default: int) -> int:
         return default
 
 
+def _int_or_none(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _float_or_default(value: Any, default: float) -> float:
     try:
         return float(value)
     except (TypeError, ValueError):
         return default
-
-
-def _format_budget(value: float) -> str:
-    return f"{max(0.01, float(value)):.2f}"

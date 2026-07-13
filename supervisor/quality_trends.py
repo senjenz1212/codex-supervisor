@@ -1,19 +1,66 @@
 """Ledger-derived quality trend metrics for supervised workflows."""
 from __future__ import annotations
 
+import base64
+import contextlib
 import json
+import shutil
 import subprocess
+import tempfile
 import time
 from collections import defaultdict
+from hashlib import sha256
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
+from .historical_evaluation import HistoricalOperation
 from .policy_overlay import draft_policy_regression_rollbacks_for_trend_rows
+from .replay_versions import check_replay_schema_versions
+from .run_manifest import execution_provenance_issues
 from .runtime_evidence import RuntimeEvidenceResult, capture_runtime_baseline, collect_runtime_evidence
 
 ACCEPTED_STATUSES = {"accepted", "accept"}
 AUDIT_GATES = ("execution", "outcome_review")
 AXI_CUTOVER_TS = 1781049600
+
+
+def historical_operation_contract(
+    operation: HistoricalOperation | str,
+) -> dict[str, str]:
+    kind = HistoricalOperation(operation)
+    contracts = {
+        HistoricalOperation.RERUN: {
+            "kind": "rerun",
+            "input_policy": "recorded_task",
+            "execution_policy": "execute_agent_again",
+            "result_policy": "new_execution_result",
+        },
+        HistoricalOperation.REGRADE: {
+            "kind": "regrade",
+            "input_policy": "captured_result",
+            "execution_policy": "recorded_checkout_verifier",
+            "result_policy": "new_grade",
+        },
+        HistoricalOperation.REPLAY: {
+            "kind": "replay",
+            "input_policy": "frozen_inputs",
+            "execution_policy": "deterministic_recompute",
+            "result_policy": "replayed_decision",
+        },
+    }
+    return dict(contracts[kind])
+
+
+class RecordedCheckoutError(RuntimeError):
+    def __init__(
+        self,
+        reason: str,
+        *,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.details = details or {}
 
 
 def record_transport_incident(
@@ -165,6 +212,7 @@ def run_sampled_p11_false_accept_audit(
     runner: Any = subprocess.run,
 ) -> dict[str, Any]:
     """Re-verify sampled accepted execution/outcome receipts against current git state."""
+    operation = historical_operation_contract(HistoricalOperation.REGRADE)
     trend_rows = record_quality_trends_for_run(
         state,
         run_id=run_id,
@@ -174,7 +222,29 @@ def run_sampled_p11_false_accept_audit(
     events = _decode_events(state.read_dual_agent_gate_events(run_id))
     route = _latest_payload(events, "dual_agent_workflow_route")
     resolved_task_id = _resolve_task_id(events, explicit=task_id, route=route)
-    cwd = _workflow_cwd(state, run_id=run_id, task_id=resolved_task_id, route=route)
+    source_cwd = _workflow_cwd(
+        state,
+        run_id=run_id,
+        task_id=resolved_task_id,
+        route=route,
+    )
+    try:
+        recorded_checkout = _recorded_checkout_from_manifest(
+            state=state,
+            run_id=run_id,
+            source_cwd=source_cwd,
+            task_id=resolved_task_id,
+            route=route,
+        )
+    except RecordedCheckoutError as exc:
+        return _incompatible_historical_audit(
+            run_id=run_id,
+            task_id=resolved_task_id,
+            source_cwd=source_cwd,
+            reason=exc.reason,
+            details=exc.details,
+            trend_rows=trend_rows,
+        )
 
     accepted_gate_events = [
         event for event in events
@@ -185,32 +255,46 @@ def run_sampled_p11_false_accept_audit(
 
     audited: list[dict[str, Any]] = []
     by_gate: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for event in accepted_gate_events:
-        payload = event["payload"]
-        gate = str(payload.get("gate") or "unknown")
-        baseline = _runtime_baseline_for_gate(events, gate=gate) or capture_runtime_baseline(
-            cwd,
+    try:
+        with _materialized_recorded_checkout(
+            recorded_checkout,
             runner=runner,
-        )
-        outcome_payload = payload.get("outcome") if isinstance(payload.get("outcome"), dict) else {}
-        result = collect_runtime_evidence(
-            cwd=cwd,
-            task_id=resolved_task_id,
+        ) as verification_cwd:
+            for event in accepted_gate_events:
+                payload = event["payload"]
+                gate = str(payload.get("gate") or "unknown")
+                baseline = _runtime_baseline_for_gate(events, gate=gate) or capture_runtime_baseline(
+                    verification_cwd,
+                    runner=runner,
+                )
+                outcome_payload = payload.get("outcome") if isinstance(payload.get("outcome"), dict) else {}
+                result = collect_runtime_evidence(
+                    cwd=verification_cwd,
+                    task_id=resolved_task_id,
+                    run_id=run_id,
+                    gate=gate,
+                    round_index=_attempts(payload) or 1,
+                    baseline=baseline,
+                    outcome_payload=outcome_payload,
+                    test_timeout_s=test_timeout_s,
+                    runner=runner,
+                )
+                item = _audit_item(
+                    event,
+                    result,
+                    runtime_floor_present=_runtime_floor_present_for_gate_event(events, event),
+                )
+                audited.append(item)
+                by_gate[gate].append(item)
+    except RecordedCheckoutError as exc:
+        return _incompatible_historical_audit(
             run_id=run_id,
-            gate=gate,
-            round_index=_attempts(payload) or 1,
-            baseline=baseline,
-            outcome_payload=outcome_payload,
-            test_timeout_s=test_timeout_s,
-            runner=runner,
+            task_id=resolved_task_id,
+            source_cwd=source_cwd,
+            reason=exc.reason,
+            details=exc.details,
+            trend_rows=trend_rows,
         )
-        item = _audit_item(
-            event,
-            result,
-            runtime_floor_present=_runtime_floor_present_for_gate_event(events, event),
-        )
-        audited.append(item)
-        by_gate[gate].append(item)
 
     updated_rows: list[dict[str, Any]] = []
     for gate, items in sorted(by_gate.items()):
@@ -223,6 +307,8 @@ def run_sampled_p11_false_accept_audit(
             false_accept_denominator=len(items),
             audit_details={
                 "source": "sampled_p11_audit",
+                "operation": operation,
+                "recorded_checkout": recorded_checkout,
                 "observational_only": True,
                 "sample_event_ids": [item["event_id"] for item in items],
                 "false_accept_event_ids": [item["event_id"] for item in false_accepts],
@@ -235,9 +321,12 @@ def run_sampled_p11_false_accept_audit(
     denominator = len(audited)
     false_accept_count = sum(1 for item in audited if item["false_accept"])
     return {
+        "status": "audited",
+        "operation": operation,
         "run_id": run_id,
         "task_id": resolved_task_id,
-        "cwd": str(cwd),
+        "cwd": str(source_cwd),
+        "recorded_checkout": recorded_checkout,
         "sample_size": denominator,
         "false_accept_count": false_accept_count,
         "false_accept_denominator": denominator,
@@ -451,27 +540,30 @@ def run_weekly_p11_audit_if_due(
         task_class=task_class,
         **audit_kwargs,
     )
-    try:
-        audit = {
-            **audit,
-            "policy_regression_rollbacks": draft_policy_regression_rollbacks_for_trend_rows(
-                state,
-                run_id=run_id,
-                trend_rows=list(audit.get("updated_trend_rows") or []),
-                **(policy_regression_kwargs or {}),
-            ),
-        }
-    except Exception as exc:
-        audit = {
-            **audit,
-            "policy_regression_rollbacks": [{
-                "status": "failed",
-                "reason": type(exc).__name__,
-                "message": str(exc),
-                "observational_only": True,
-                "gate_authority": "unchanged",
-            }],
-        }
+    if audit.get("status") == "audited":
+        try:
+            audit = {
+                **audit,
+                "policy_regression_rollbacks": draft_policy_regression_rollbacks_for_trend_rows(
+                    state,
+                    run_id=run_id,
+                    trend_rows=list(audit.get("updated_trend_rows") or []),
+                    **(policy_regression_kwargs or {}),
+                ),
+            }
+        except Exception as exc:
+            audit = {
+                **audit,
+                "policy_regression_rollbacks": [{
+                    "status": "failed",
+                    "reason": type(exc).__name__,
+                    "message": str(exc),
+                    "observational_only": True,
+                    "gate_authority": "unchanged",
+                }],
+            }
+    else:
+        audit = {**audit, "policy_regression_rollbacks": []}
     event_id = state.write_event(
         run_id=run_id,
         source="supervisor",
@@ -484,7 +576,7 @@ def run_weekly_p11_audit_if_due(
             "gate_authority": "unchanged",
         },
     )
-    return {**audit, "status": "audited", "schedule_event_id": event_id}
+    return {**audit, "schedule_event_id": event_id}
 
 
 def _decode_events(rows: list[Any]) -> list[dict[str, Any]]:
@@ -605,6 +697,478 @@ def _workflow_cwd(
     if route.get("cwd"):
         return Path(str(route["cwd"])).expanduser().resolve()
     return Path.cwd().resolve()
+
+
+def _recorded_checkout_from_manifest(
+    *,
+    state: Any,
+    run_id: str,
+    source_cwd: Path,
+    task_id: str,
+    route: dict[str, Any],
+) -> dict[str, Any]:
+    manifest_ref = str(
+        route.get("replay_manifest_path")
+        or route.get("run_manifest_path")
+        or ""
+    ).strip()
+    manifest_path = (
+        Path(manifest_ref).expanduser()
+        if manifest_ref
+        else source_cwd / "docs" / "dual-agent" / _safe_task_id(task_id) / "replay" / "manifest.json"
+    )
+    if not manifest_path.is_absolute():
+        manifest_path = source_cwd / manifest_path
+    manifest_path = manifest_path.resolve()
+    if not manifest_path.is_file():
+        raise RecordedCheckoutError(
+            "recorded_checkout_missing",
+            details={"manifest_path": str(manifest_path)},
+        )
+    try:
+        manifest_bytes = manifest_path.read_bytes()
+        manifest = json.loads(manifest_bytes.decode("utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RecordedCheckoutError(
+            "recorded_manifest_invalid",
+            details={
+                "manifest_path": str(manifest_path),
+                "error": str(exc),
+            },
+        ) from exc
+    if not isinstance(manifest, dict):
+        raise RecordedCheckoutError(
+            "recorded_manifest_invalid",
+            details={"manifest_path": str(manifest_path)},
+        )
+    expected_manifest_sha256 = str(
+        route.get("replay_manifest_sha256")
+        or route.get("run_manifest_sha256")
+        or ""
+    ).strip().lower().removeprefix("sha256:")
+    pin_source = "workflow_route"
+    if not expected_manifest_sha256:
+        pin = _manifest_pin_from_events(
+            state,
+            run_id=run_id,
+            task_id=task_id,
+            manifest_path=manifest_path,
+        )
+        if pin is not None:
+            expected_manifest_sha256 = pin["manifest_sha256"]
+            pin_source = "replay_manifest_record_event"
+    if not expected_manifest_sha256:
+        raise RecordedCheckoutError(
+            "recorded_manifest_unpinned",
+            details={"manifest_path": str(manifest_path)},
+        )
+    actual_manifest_sha256 = sha256(manifest_bytes).hexdigest()
+    if expected_manifest_sha256 != actual_manifest_sha256:
+        raise RecordedCheckoutError(
+            "recorded_manifest_digest_mismatch",
+            details={
+                "manifest_path": str(manifest_path),
+                "expected_sha256": expected_manifest_sha256,
+                "computed_sha256": actual_manifest_sha256,
+                "pin_source": pin_source,
+            },
+        )
+    if str(manifest.get("run_id") or "") != run_id:
+        raise RecordedCheckoutError(
+            "recorded_manifest_run_mismatch",
+            details={
+                "manifest_path": str(manifest_path),
+                "expected_run_id": run_id,
+                "manifest_run_id": manifest.get("run_id"),
+            },
+        )
+    if str(manifest.get("task_id") or "") != task_id:
+        raise RecordedCheckoutError(
+            "recorded_manifest_task_mismatch",
+            details={
+                "manifest_path": str(manifest_path),
+                "expected_task_id": task_id,
+                "manifest_task_id": manifest.get("task_id"),
+            },
+        )
+    compatibility = check_replay_schema_versions(manifest)
+    if compatibility["status"] != "compatible":
+        raise RecordedCheckoutError(
+            "recorded_manifest_schema_incompatible",
+            details={
+                "manifest_path": str(manifest_path),
+                "compatibility": compatibility,
+            },
+        )
+    provenance_issues = execution_provenance_issues(
+        manifest.get("execution_provenance")
+    )
+    if provenance_issues:
+        raise RecordedCheckoutError(
+            "recorded_manifest_provenance_incomplete",
+            details={
+                "manifest_path": str(manifest_path),
+                "issues": provenance_issues,
+            },
+        )
+    snapshot = (
+        manifest.get("workspace_snapshot")
+        if isinstance(manifest.get("workspace_snapshot"), dict)
+        else {}
+    )
+    git_snapshot = (
+        snapshot.get("git")
+        if isinstance(snapshot.get("git"), dict)
+        else {}
+    )
+    commit = str(
+        git_snapshot.get("commit_sha")
+        or git_snapshot.get("head_sha")
+        or git_snapshot.get("head")
+        or ""
+    ).strip()
+    repo_text = _recorded_repo_location(snapshot)
+    if not repo_text:
+        raise RecordedCheckoutError(
+            "recorded_checkout_missing",
+            details={
+                "manifest_path": str(manifest_path),
+                "missing_field": "workspace_snapshot.root",
+            },
+        )
+    repo_path = Path(repo_text).expanduser()
+    repo = (
+        repo_path.resolve()
+        if repo_path.is_absolute()
+        else (manifest_path.parent / repo_path).resolve()
+    )
+    if not commit:
+        raise RecordedCheckoutError(
+            "recorded_checkout_missing",
+            details={"manifest_path": str(manifest_path)},
+        )
+    dirty = bool(str(git_snapshot.get("status_short") or "").strip()) or int(
+        git_snapshot.get("diff_bytes") or 0
+    ) > 0
+    immutable_snapshot = (
+        snapshot.get("immutable_snapshot")
+        if isinstance(snapshot.get("immutable_snapshot"), dict)
+        else None
+    )
+    if dirty and immutable_snapshot is None:
+        raise RecordedCheckoutError(
+            "recorded_snapshot_required",
+            details={
+                "manifest_path": str(manifest_path),
+                "commit": commit,
+                "status_short": str(git_snapshot.get("status_short") or ""),
+                "diff_bytes": int(git_snapshot.get("diff_bytes") or 0),
+            },
+        )
+    return {
+        "kind": "git_commit",
+        "repo": str(repo),
+        "commit": commit,
+        "manifest_path": str(manifest_path),
+        "manifest_sha256": actual_manifest_sha256,
+        "manifest_pin_source": pin_source,
+        "manifest_schema_status": compatibility["status"],
+        "immutable_snapshot": immutable_snapshot,
+    }
+
+
+def _recorded_repo_location(snapshot: dict[str, Any]) -> str:
+    for key in ("root", "repository_root", "repo", "checkout_root"):
+        value = str(snapshot.get(key) or "").strip()
+        if value:
+            return value
+    repository = snapshot.get("repository")
+    if isinstance(repository, dict):
+        for key in ("root", "path", "location"):
+            value = str(repository.get(key) or "").strip()
+            if value:
+                return value
+    return ""
+
+
+def _manifest_pin_from_events(
+    state: Any,
+    *,
+    run_id: str,
+    task_id: str,
+    manifest_path: Path,
+) -> dict[str, str] | None:
+    reader = getattr(state, "read_events_since", None)
+    if reader is None:
+        return None
+    latest_event_id = getattr(state, "latest_event_id", None)
+    limit = (
+        max(1, int(latest_event_id(run_id)))
+        if callable(latest_event_id)
+        else 100_000
+    )
+    expected_path = manifest_path.expanduser().resolve()
+    matches: list[dict[str, str]] = []
+    for event in reader(run_id, after_event_id=0, limit=limit):
+        if event.get("kind") != "dual_agent_replay_manifest_recorded":
+            continue
+        payload = event.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        if (
+            str(payload.get("run_id") or "") != run_id
+            or str(payload.get("task_id") or "") != task_id
+        ):
+            continue
+        try:
+            recorded_path = Path(
+                str(payload.get("manifest_path") or "")
+            ).expanduser().resolve()
+        except (OSError, RuntimeError):
+            continue
+        digest = str(payload.get("manifest_sha256") or "").lower().removeprefix(
+            "sha256:"
+        )
+        if recorded_path == expected_path and len(digest) == 64:
+            matches.append({"manifest_sha256": digest})
+    return matches[-1] if matches else None
+
+
+@contextlib.contextmanager
+def _materialized_recorded_checkout(
+    recorded_checkout: dict[str, Any],
+    *,
+    runner: Any,
+) -> Iterator[Path]:
+    repo = Path(str(recorded_checkout["repo"])).expanduser().resolve()
+    commit = str(recorded_checkout["commit"])
+    temp_parent = Path(tempfile.mkdtemp(prefix="supervisor-recorded-checkout-"))
+    checkout = temp_parent / "worktree"
+    added = False
+    try:
+        completed = runner(
+            ["git", "worktree", "add", "--detach", str(checkout), commit],
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+        )
+        if completed.returncode != 0:
+            raise RecordedCheckoutError(
+                "recorded_commit_unavailable",
+                details={
+                    "repo": str(repo),
+                    "commit": commit,
+                    "stderr": completed.stderr.strip(),
+                },
+            )
+        added = True
+        immutable_snapshot = recorded_checkout.get("immutable_snapshot")
+        if isinstance(immutable_snapshot, dict):
+            _apply_immutable_snapshot(
+                checkout,
+                immutable_snapshot,
+                recorded_commit=commit,
+            )
+        yield checkout
+    finally:
+        if added:
+            runner(
+                ["git", "worktree", "remove", "--force", str(checkout)],
+                cwd=str(repo),
+                capture_output=True,
+                text=True,
+            )
+        shutil.rmtree(temp_parent, ignore_errors=True)
+
+
+def _apply_immutable_snapshot(
+    checkout: Path,
+    snapshot: dict[str, Any],
+    *,
+    recorded_commit: str,
+) -> None:
+    schema_version = str(snapshot.get("schema_version") or "")
+    if schema_version != "dual-agent-workspace-overlay/v1":
+        raise RecordedCheckoutError(
+            "recorded_snapshot_schema_incompatible",
+            details={"schema_version": schema_version},
+        )
+    if str(snapshot.get("status") or "") != "captured":
+        raise RecordedCheckoutError(
+            "recorded_snapshot_unavailable",
+            details={"status": snapshot.get("status")},
+        )
+    if str(snapshot.get("base_commit") or "") != recorded_commit:
+        raise RecordedCheckoutError(
+            "recorded_snapshot_commit_mismatch",
+            details={
+                "recorded_commit": recorded_commit,
+                "snapshot_base_commit": snapshot.get("base_commit"),
+            },
+        )
+    supplied_hash = str(snapshot.get("sha256") or "")
+    canonical_payload = {
+        key: value
+        for key, value in snapshot.items()
+        if key != "sha256"
+    }
+    computed_hash = _canonical_payload_sha256(canonical_payload)
+    if not supplied_hash or supplied_hash != computed_hash:
+        raise RecordedCheckoutError(
+            "recorded_snapshot_hash_mismatch",
+            details={
+                "expected_sha256": supplied_hash,
+                "computed_sha256": computed_hash,
+            },
+        )
+    entries = snapshot.get("entries")
+    if not isinstance(entries, list):
+        raise RecordedCheckoutError("recorded_snapshot_entries_invalid")
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise RecordedCheckoutError("recorded_snapshot_entries_invalid")
+        _apply_snapshot_entry(checkout, entry)
+
+
+def _apply_snapshot_entry(checkout: Path, entry: dict[str, Any]) -> None:
+    relative = Path(str(entry.get("path") or ""))
+    if (
+        not relative.parts
+        or relative.is_absolute()
+        or ".." in relative.parts
+    ):
+        raise RecordedCheckoutError(
+            "recorded_snapshot_path_invalid",
+            details={"path": str(entry.get("path") or "")},
+        )
+    target = checkout / relative
+    _assert_snapshot_target_inside_checkout(checkout, target)
+    kind = str(entry.get("kind") or "")
+    if kind == "deleted":
+        if target.is_symlink() or target.is_file():
+            target.unlink()
+        elif target.is_dir():
+            shutil.rmtree(target)
+        return
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    _assert_snapshot_target_inside_checkout(checkout, target)
+    if target.is_symlink():
+        target.unlink()
+    if kind == "symlink":
+        link_target = Path(str(entry.get("target") or ""))
+        if link_target.is_absolute():
+            raise RecordedCheckoutError(
+                "recorded_snapshot_symlink_escape",
+                details={"path": relative.as_posix(), "target": str(link_target)},
+            )
+        resolved_link = (target.parent / link_target).resolve()
+        if not resolved_link.is_relative_to(checkout.resolve()):
+            raise RecordedCheckoutError(
+                "recorded_snapshot_symlink_escape",
+                details={"path": relative.as_posix(), "target": str(link_target)},
+            )
+        target.symlink_to(link_target)
+        return
+    if kind != "file":
+        raise RecordedCheckoutError(
+            "recorded_snapshot_entry_kind_unknown",
+            details={"path": relative.as_posix(), "kind": kind},
+        )
+    try:
+        data = base64.b64decode(
+            str(entry.get("content_base64") or ""),
+            validate=True,
+        )
+    except (ValueError, TypeError) as exc:
+        raise RecordedCheckoutError(
+            "recorded_snapshot_content_invalid",
+            details={"path": relative.as_posix()},
+        ) from exc
+    expected_hash = str(entry.get("sha256") or "")
+    actual_hash = sha256(data).hexdigest()
+    if not expected_hash or expected_hash != actual_hash:
+        raise RecordedCheckoutError(
+            "recorded_snapshot_content_hash_mismatch",
+            details={
+                "path": relative.as_posix(),
+                "expected_sha256": expected_hash,
+                "computed_sha256": actual_hash,
+            },
+        )
+    if target.exists() and target.is_dir():
+        shutil.rmtree(target)
+    target.write_bytes(data)
+    try:
+        target.chmod(int(entry.get("mode") or 0o644))
+    except (OSError, TypeError, ValueError):
+        pass
+
+
+def _assert_snapshot_target_inside_checkout(checkout: Path, target: Path) -> None:
+    root = checkout.resolve()
+    current = target.parent
+    while current != checkout and current.is_relative_to(checkout):
+        if current.is_symlink():
+            raise RecordedCheckoutError(
+                "recorded_snapshot_symlink_escape",
+                details={"path": str(target.relative_to(checkout))},
+            )
+        current = current.parent
+    resolved_parent = target.parent.resolve()
+    if not resolved_parent.is_relative_to(root):
+        raise RecordedCheckoutError(
+            "recorded_snapshot_path_escape",
+            details={"path": str(target)},
+        )
+
+
+def _canonical_payload_sha256(payload: Any) -> str:
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        default=str,
+    ).encode("ascii")
+    return sha256(encoded).hexdigest()
+
+
+def _safe_task_id(value: str) -> str:
+    import re
+
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "-", value).strip("-")
+    return safe or "dual-agent-task"
+
+
+def _incompatible_historical_audit(
+    *,
+    run_id: str,
+    task_id: str,
+    source_cwd: Path,
+    reason: str,
+    details: dict[str, Any],
+    trend_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "status": "incompatible",
+        "operation": historical_operation_contract(HistoricalOperation.REGRADE),
+        "reason": reason,
+        "details": details,
+        "run_id": run_id,
+        "task_id": task_id,
+        "cwd": str(source_cwd),
+        "recorded_checkout": None,
+        "sample_size": 0,
+        "false_accept_count": 0,
+        "false_accept_denominator": 0,
+        "false_accept_rate": 0.0,
+        "audited": [],
+        "updated_trend_rows": [],
+        "trend_rows_recorded": trend_rows,
+        "observational_only": True,
+        "gate_authority": "unchanged",
+    }
 
 
 def _row_get(row: Any, key: str) -> Any:

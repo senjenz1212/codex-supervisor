@@ -1,6 +1,7 @@
 """Whitelisted live policy overlay for supervisor auto-evolution."""
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass
 from hashlib import sha256
@@ -118,7 +119,149 @@ def normalise_overlay_target(path: str | Path, *, repo_root: str | Path) -> str:
         raise PolicyOverlayError(
             f"policy evolution may only target {POLICY_OVERLAY_PATH}; observed {rel}"
         )
+    assert_repo_local_path(
+        repo_root_path / rel,
+        repo_root=repo_root_path,
+        label="policy overlay target",
+    )
     return rel
+
+
+def assert_repo_local_path(
+    path: str | Path,
+    *,
+    repo_root: str | Path,
+    label: str = "path",
+) -> Path:
+    """Return an absolute repo-local path after rejecting every symlink component."""
+    root = Path(os.path.realpath(Path(repo_root).expanduser()))
+    candidate = Path(path).expanduser()
+    if not candidate.is_absolute():
+        candidate = root / candidate
+    candidate = Path(os.path.abspath(candidate))
+    try:
+        relative = candidate.relative_to(root)
+    except ValueError as exc:
+        raise PolicyOverlayError(f"{label} is outside repo root: {path}") from exc
+    current = root
+    for component in relative.parts:
+        current /= component
+        if current.is_symlink():
+            raise PolicyOverlayError(f"{label} contains a symlink component: {current}")
+    resolved = Path(os.path.realpath(candidate))
+    try:
+        resolved.relative_to(root)
+    except ValueError as exc:
+        raise PolicyOverlayError(f"{label} resolves outside repo root: {path}") from exc
+    return candidate
+
+
+def write_repo_file_no_follow(
+    path: str | Path,
+    data: bytes,
+    *,
+    repo_root: str | Path,
+    label: str = "path",
+) -> Path:
+    """Write bytes under repo_root without following symlinks in any component."""
+    target = assert_repo_local_path(path, repo_root=repo_root, label=label)
+    root = Path(os.path.realpath(Path(repo_root).expanduser()))
+    relative = target.relative_to(root)
+    if not relative.parts:
+        raise PolicyOverlayError(f"{label} must name a file inside repo root")
+    directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    no_follow = getattr(os, "O_NOFOLLOW", 0)
+    directory_fd = os.open(root, directory_flags)
+    try:
+        for component in relative.parts[:-1]:
+            try:
+                next_fd = os.open(
+                    component,
+                    directory_flags | no_follow,
+                    dir_fd=directory_fd,
+                )
+            except FileNotFoundError:
+                os.mkdir(component, mode=0o700, dir_fd=directory_fd)
+                next_fd = os.open(
+                    component,
+                    directory_flags | no_follow,
+                    dir_fd=directory_fd,
+                )
+            os.close(directory_fd)
+            directory_fd = next_fd
+        try:
+            file_fd = os.open(
+                relative.parts[-1],
+                os.O_WRONLY | os.O_CREAT | os.O_TRUNC | no_follow,
+                0o600,
+                dir_fd=directory_fd,
+            )
+        except OSError as exc:
+            raise PolicyOverlayError(
+                f"{label} refused symlink-safe write: {target}"
+            ) from exc
+        try:
+            remaining = memoryview(data)
+            while remaining:
+                written = os.write(file_fd, remaining)
+                if written <= 0:
+                    raise OSError(f"short write for {target}")
+                remaining = remaining[written:]
+            os.fsync(file_fd)
+        finally:
+            os.close(file_fd)
+    except OSError as exc:
+        raise PolicyOverlayError(
+            f"{label} refused symlink-safe write: {target}"
+        ) from exc
+    finally:
+        os.close(directory_fd)
+    return target
+
+
+def remove_repo_file_no_follow(
+    path: str | Path,
+    *,
+    repo_root: str | Path,
+    label: str = "path",
+    missing_ok: bool = True,
+) -> bool:
+    """Remove one repo-local file without following a swapped parent symlink."""
+    target = assert_repo_local_path(path, repo_root=repo_root, label=label)
+    root = Path(os.path.realpath(Path(repo_root).expanduser()))
+    relative = target.relative_to(root)
+    if not relative.parts:
+        raise PolicyOverlayError(f"{label} must name a file inside repo root")
+    directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    no_follow = getattr(os, "O_NOFOLLOW", 0)
+    directory_fd = os.open(root, directory_flags)
+    try:
+        for component in relative.parts[:-1]:
+            try:
+                next_fd = os.open(
+                    component,
+                    directory_flags | no_follow,
+                    dir_fd=directory_fd,
+                )
+            except FileNotFoundError:
+                if missing_ok:
+                    return False
+                raise
+            os.close(directory_fd)
+            directory_fd = next_fd
+        try:
+            os.unlink(relative.parts[-1], dir_fd=directory_fd)
+        except FileNotFoundError:
+            if missing_ok:
+                return False
+            raise
+    except OSError as exc:
+        raise PolicyOverlayError(
+            f"{label} refused symlink-safe removal: {target}"
+        ) from exc
+    finally:
+        os.close(directory_fd)
+    return True
 
 
 def load_policy_overlay(repo_root: str | Path) -> PolicyOverlaySnapshot:

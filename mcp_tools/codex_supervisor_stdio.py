@@ -7,6 +7,7 @@ server through its external MCP configuration and receives ordinary MCP tools.
 from __future__ import annotations
 
 import argparse
+import asyncio
 from datetime import datetime, timezone
 import hashlib
 import importlib.util
@@ -18,7 +19,7 @@ import shutil
 import subprocess
 import time
 import uuid
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
@@ -42,11 +43,16 @@ from supervisor.cursor_agent import (
     invoke_cursor_agent,
 )
 from supervisor.reviewer_registry import (
+    ReviewerAdapter,
     adjudicate_reviewer_panel,
     configured_reviewers,
     evaluate_reviewer_panel,
     independent_reviewer_results_from_review_results,
     load_reviewer_panel_calibration,
+)
+from supervisor.reviewer_neutral import (
+    RuntimeReviewerAdapter,
+    StructuredReviewerAdapter,
 )
 from supervisor.dual_agent import GateRound, ProbeResult, evaluate_deadlock_budget
 from supervisor.dual_agent_artifacts import (
@@ -55,7 +61,6 @@ from supervisor.dual_agent_artifacts import (
     export_dual_agent_run_artifacts,
 )
 from supervisor.dual_agent_workflow import (
-    WORKFLOW_GATES,
     claude_accepts,
     cursor_review_gates_for_workflow,
     ensure_workflow_source_artifacts,
@@ -112,7 +117,6 @@ from supervisor.worker_dispatch_ledger import (
     build_evidence_attempt_payload,
     build_roster_payload,
     compute_attempt_id,
-    provider_family_for,
     select_cross_vendor_reviewer,
 )
 from supervisor.lessons import (
@@ -133,8 +137,12 @@ from supervisor.no_mistakes import (
     build_no_mistakes_command,
     run_no_mistakes_validation,
 )
-from supervisor.planning_validator import _tdd_test_names
+from supervisor.planning_validator import (
+    _tdd_test_names,
+    build_trace_closure_binding,
+)
 from supervisor.autoresearch.policy_evolution import (
+    PolicyClaimAuthority,
     approve_policy_proposal,
     create_policy_evolution_proposals,
     derive_policy_evolution_proposals_from_report,
@@ -155,17 +163,57 @@ from supervisor.dual_agent_runner import (
     run_dual_agent_gate,
     run_dual_agent_gate_with_escalation,
 )
-from supervisor.dual_agent_lead import GateName, PlanningArtifact
+from supervisor.dual_agent_lead import (
+    GateName,
+    PlanningArtifact,
+    compute_file_sha256,
+)
+from supervisor.agent_runtime import AgentTask, ClaudeCodeRuntime, CodexRuntime
+from supervisor.model_client import ModelClient
+from supervisor.provider_clients import OpenAICompatibleModelClient
+from supervisor.provider_routing import direct_anthropic_env
 from supervisor.redaction import redact
+from supervisor.run_registry import (
+    DEFAULT_LAUNCH_RECEIPT_TTL_S,
+    PENDING_SESSION_SOURCE,
+    consume_launch_receipt,
+    register_submitted_workflow,
+    reserve_launch_receipt,
+    resolve_target_session_id,
+)
+from supervisor.runtime_execution import (
+    RuntimeTaskRunner,
+    execute_agent_task_blocking,
+    runtime_task_runner,
+)
 from supervisor.state import State
+from supervisor.state_factory import build_state
+from supervisor.trace_graph import (
+    DecisionGradeValidator,
+    TraceGraph,
+    TraceGraphError,
+    TraceGraphStore,
+)
 from supervisor.trace_envelope import ensure_tool_call_timing, stamp_trace_envelope, timed_tool_call
 from supervisor.telegram import TelegramNotifier, telegram_enabled
 
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
+PolicyClaimAuthorityResolver = Callable[
+    [Mapping[str, Any], Path],
+    PolicyClaimAuthority | None,
+]
 DEFAULT_CODEX_MODEL = "gpt-5.5"
 DEFAULT_CODEX_REASONING_EFFORT = "xhigh"
 STRICT_ARTIFACT_GATES = {"implementation_plan", "execution", "outcome_review"}
+HARNESS_V1_TRACE_TASK_RE = re.compile(
+    r"^(?:"
+    r"harness-v1|program-001|integrity-a|integrity-b|obs-001|replay-001|"
+    r"trace-001|ledger-001|grade-001|runtime-001|task-001|exp-001|"
+    r"tracer-001|pilot-001|confirm-001|opt-001|deploy-001|scale-001"
+    r")(?:-|$)",
+    re.IGNORECASE,
+)
 STRICT_ARTIFACT_REQUIREMENTS = {
     "prd_review": ("prd",),
     "issues_review": ("prd", "issues", "grill_findings"),
@@ -313,6 +361,97 @@ def _runtime_baseline_for_gate(
     return fallback
 
 
+def _build_reviewer_model_client(cfg: Config | None) -> ModelClient | None:
+    """Build the structured reviewer edge at the MCP composition root."""
+
+    models = getattr(cfg, "models", None)
+    api_key = (
+        str(getattr(models, "openai_api_key", "") or "").strip()
+        or os.environ.get("OPENAI_API_KEY", "").strip()
+    )
+    if not api_key:
+        return None
+    base_url = (
+        str(getattr(models, "openai_base_url", "") or "").strip()
+        or os.environ.get("OPENAI_BASE_URL", "").strip()
+    )
+    from openai import AsyncOpenAI
+
+    kwargs: dict[str, Any] = {"api_key": api_key}
+    if base_url:
+        kwargs["base_url"] = base_url
+    return OpenAICompatibleModelClient(
+        AsyncOpenAI(**kwargs),
+        provider="openai_compatible",
+    )
+
+
+def _is_harness_v1_trace_task(task_id: str) -> bool:
+    return (
+        HARNESS_V1_TRACE_TASK_RE.match(str(task_id or "").strip())
+        is not None
+    )
+
+
+def _reject_trace_closure_downgrade(
+    *,
+    task_id: str,
+    trace_closure_required: bool | None,
+) -> None:
+    if (
+        trace_closure_required is False
+        and _is_harness_v1_trace_task(task_id)
+    ):
+        raise ValueError(
+            "harness-v1 tasks cannot disable trace closure"
+        )
+
+
+def _harness_trace_closure_required(*, task_id: str, gate: str) -> bool:
+    return (
+        str(gate) in {"execution", "outcome_review"}
+        and _is_harness_v1_trace_task(task_id)
+    )
+
+
+def _load_pinned_trace_graph(
+    *,
+    cwd: str | Path,
+    trace_graph_store_path: str | None,
+    trace_graph_store_sha256: str | None,
+) -> TraceGraph | None:
+    raw_path = str(trace_graph_store_path or "").strip()
+    if not raw_path:
+        return None
+    repo_root = Path(cwd).expanduser().resolve()
+    path = _resolve_repo_path(repo_root, raw_path)
+    try:
+        path.relative_to(repo_root)
+    except ValueError as exc:
+        raise ValueError(
+            "trace graph store must resolve inside the workflow cwd"
+        ) from exc
+    if not path.is_file() or path.is_symlink():
+        raise ValueError(
+            "trace graph store must be an existing regular non-symlink file"
+        )
+    expected_sha256 = str(trace_graph_store_sha256 or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{64}", expected_sha256):
+        raise ValueError(
+            "trace graph store requires an explicit sha256 pin"
+        )
+    actual_sha256 = compute_file_sha256(path)
+    if actual_sha256 != expected_sha256:
+        raise ValueError(
+            "trace graph store sha256 differs from the submitted pin"
+        )
+    try:
+        with TraceGraphStore(path) as store:
+            return store.load()
+    except (OSError, TraceGraphError) as exc:
+        raise ValueError(f"unable to load pinned trace graph store: {exc}") from exc
+
+
 class CodexSupervisorMcpAPI:
     def __init__(
         self,
@@ -321,17 +460,101 @@ class CodexSupervisorMcpAPI:
         *,
         runner: Runner = subprocess.run,
         codex_runner: Runner = subprocess.run,
+        codex_runtime_factory: Callable[[], CodexRuntime] | None = None,
+        codex_runtime_runner: RuntimeTaskRunner | None = None,
+        lead_runtime_runner: RuntimeTaskRunner | None = None,
+        reviewer_adapters: (
+            list[ReviewerAdapter] | tuple[ReviewerAdapter, ...] | None
+        ) = None,
+        reviewer_model_client: ModelClient | None = None,
         cursor_runner: CursorRunner | None = None,
         no_mistakes_runner: Runner = subprocess.run,
         notifier: Any | None = None,
+        policy_claim_authority_resolver: (
+            PolicyClaimAuthorityResolver | None
+        ) = None,
+        trace_decision_grade_validator: (
+            DecisionGradeValidator | None
+        ) = None,
     ) -> None:
         self.cfg = cfg
         self.state = state
         self.runner = runner
         self.codex_runner = codex_runner
+        target_cfg = getattr(cfg, "target", None)
+        codex_cfg = (
+            target_cfg.codex
+            if target_cfg and target_cfg.codex
+            else None
+        )
+        codex_cli = (
+            codex_cfg.cli_command
+            if codex_cfg is not None
+            else "codex"
+        )
+        self.codex_runtime_factory = (
+            codex_runtime_factory
+            or (lambda: CodexRuntime(binary=codex_cli))
+        )
+        self.codex_runtime_runner = (
+            codex_runtime_runner
+            or runtime_task_runner(self.codex_runtime_factory)
+        )
+        claude_cfg = (
+            target_cfg.claude_code
+            if target_cfg and target_cfg.claude_code
+            else None
+        )
+        claude_cli = (
+            claude_cfg.cli_command
+            if claude_cfg is not None
+            else "claude"
+        )
+        if lead_runtime_runner is not None:
+            self.lead_runtime_runner = lead_runtime_runner
+        elif runner is subprocess.run:
+            def _run_lead_runtime(task: AgentTask):
+                environment = direct_anthropic_env({
+                    **os.environ,
+                    **dict(task.env),
+                })
+                return execute_agent_task_blocking(
+                    ClaudeCodeRuntime(binary=claude_cli),
+                    replace(
+                        task,
+                        env=environment,
+                        inherit_env=False,
+                    ),
+                )
+
+            self.lead_runtime_runner = _run_lead_runtime
+        else:
+            # Preserve injected legacy subprocess runners used by replay/tests;
+            # production composition uses the AgentRuntime path above.
+            self.lead_runtime_runner = None
+        self.reviewer_adapters = (
+            tuple(reviewer_adapters)
+            if reviewer_adapters is not None
+            else None
+        )
+        if reviewer_model_client is not None:
+            self.reviewer_model_client = reviewer_model_client
+        elif cursor_runner is None and reviewer_adapters is None:
+            # Only production composition may derive a structured reviewer
+            # client from ambient configuration. Injected test/replay seams
+            # must remain hermetic and must never consume OPENAI_API_KEY.
+            self.reviewer_model_client = _build_reviewer_model_client(cfg)
+        else:
+            self.reviewer_model_client = None
         self.cursor_runner = cursor_runner or invoke_cursor_agent
         self.no_mistakes_runner = no_mistakes_runner
         self.notifier = notifier
+        self.policy_claim_authority_resolver = (
+            policy_claim_authority_resolver
+        )
+        self.trace_decision_grade_validator = (
+            trace_decision_grade_validator
+        )
 
     async def start_dual_agent_gate(
         self,
@@ -375,8 +598,15 @@ class CodexSupervisorMcpAPI:
         policy_overlay_task_class_hash: str = "",
         planning_rubric_threshold: float | None = None,
         planning_rubric_unavailable_policy: str | None = None,
+        trace_closure_required: bool | None = None,
+        trace_graph_store_path: str | None = None,
+        trace_graph_store_sha256: str | None = None,
         sanitize_tool_receipts: bool = True,
     ) -> dict[str, Any]:
+        _reject_trace_closure_downgrade(
+            task_id=task_id,
+            trace_closure_required=trace_closure_required,
+        )
         execution_layer_mode = _canonical_execution_layer_mode(execution_layer_mode)
         dynamic_workflow_task_class = _canonical_dynamic_workflow_task_class(dynamic_workflow_task_class)
         agentic_policy = _agentic_lead_policy_config(
@@ -472,6 +702,9 @@ class CodexSupervisorMcpAPI:
             policy_overlay_task_class_hash=policy_overlay_task_class_hash,
             planning_rubric_threshold=planning_rubric_threshold,
             planning_rubric_unavailable_policy=planning_rubric_unavailable_policy,
+            trace_closure_required=trace_closure_required,
+            trace_graph_store_path=trace_graph_store_path,
+            trace_graph_store_sha256=trace_graph_store_sha256,
         )
         notifier = self._notifier()
         with timed_tool_call(
@@ -489,6 +722,7 @@ class CodexSupervisorMcpAPI:
                 "min_subagents": agentic_policy["min_subagents"],
                 "required_roles": agentic_policy["required_roles"],
                 "required_evidence_grade": agentic_policy["required_evidence_grade"],
+                "trace_closure_required": spec.trace_closure_required,
             },
         ) as gate_tool_call:
             if notifier is not None:
@@ -497,9 +731,16 @@ class CodexSupervisorMcpAPI:
                     state=self.state,
                     notifier=notifier,
                     runner=self.runner,
+                    runtime_runner=self.lead_runtime_runner,
                 )
             else:
-                result = run_dual_agent_gate(spec, runner=self.runner, state=self.state)
+                result = await asyncio.to_thread(
+                    run_dual_agent_gate,
+                    spec,
+                    runner=self.runner,
+                    runtime_runner=self.lead_runtime_runner,
+                    state=self.state,
+                )
         gate_tool_call.update({
             "status": "completed",
             "attempts": result.attempts,
@@ -560,7 +801,14 @@ class CodexSupervisorMcpAPI:
         required_planning_kinds: list[str] | None = None,
         planning_rubric_threshold: float | None = None,
         planning_rubric_unavailable_policy: str | None = None,
+        trace_closure_required: bool | None = None,
+        trace_graph_store_path: str | None = None,
+        trace_graph_store_sha256: str | None = None,
     ) -> dict[str, Any]:
+        _reject_trace_closure_downgrade(
+            task_id=task_id,
+            trace_closure_required=trace_closure_required,
+        )
         execution_layer_mode = _canonical_execution_layer_mode(execution_layer_mode)
         dynamic_workflow_task_class = _canonical_dynamic_workflow_task_class(dynamic_workflow_task_class)
         agentic_policy = _agentic_lead_policy_config(
@@ -633,8 +881,16 @@ class CodexSupervisorMcpAPI:
             dynamic_workflow_task_class=dynamic_workflow_task_class,  # type: ignore[arg-type]
             agentic_policy=agentic_policy,
             planning_artifacts=planning_artifacts,
+            trace_closure_required=trace_closure_required,
+            trace_graph_store_path=trace_graph_store_path,
+            trace_graph_store_sha256=trace_graph_store_sha256,
         )
-        results = resume_pending_gates([spec], state=self.state, runner=self.runner)
+        results = resume_pending_gates(
+            [spec],
+            state=self.state,
+            runner=self.runner,
+            runtime_runner=self.lead_runtime_runner,
+        )
         if not results:
             return {"status": "no_signal", "task_id": task_id, "run_id": run_id}
         payload = _gate_result_payload(results[0])
@@ -694,7 +950,14 @@ class CodexSupervisorMcpAPI:
         no_mistakes_policy: str | None = None,
         no_mistakes_skip_steps: list[str] | None = None,
         no_mistakes_timeout_s: int | None = None,
+        trace_closure_required: bool | None = None,
+        trace_graph_store_path: str | None = None,
+        trace_graph_store_sha256: str | None = None,
     ) -> dict[str, Any]:
+        _reject_trace_closure_downgrade(
+            task_id=task_id,
+            trace_closure_required=trace_closure_required,
+        )
         execution_layer_mode = _canonical_execution_layer_mode(execution_layer_mode)
         dynamic_workflow_task_class = _canonical_dynamic_workflow_task_class(dynamic_workflow_task_class)
         agentic_policy = _agentic_lead_policy_config(
@@ -920,7 +1183,11 @@ class CodexSupervisorMcpAPI:
                     timeout_s=timeout_s,
                     budget_usd=budget_usd,
                     quality=quality,  # type: ignore[arg-type]
-                    runner=self.runner,
+                    **(
+                        {"runtime_runner": self.lead_runtime_runner}
+                        if self.lead_runtime_runner is not None
+                        else {"runner": self.runner}
+                    ),
                 )
             agentic_tool_call.update({
                 "status": agentic_worker_production.status,
@@ -1397,6 +1664,9 @@ class CodexSupervisorMcpAPI:
                         gate=gate,
                         task_complexity=str(workflow_route["task_complexity"]),
                     ),
+                    trace_closure_required=trace_closure_required,
+                    trace_graph_store_path=trace_graph_store_path,
+                    trace_graph_store_sha256=trace_graph_store_sha256,
                     sanitize_tool_receipts=False,
                 )
                 final_payload = payload
@@ -1492,6 +1762,9 @@ class CodexSupervisorMcpAPI:
                         reviewer_model=reviewer_model_value,
                         runner=self.cursor_runner,
                         codex_runner=self.codex_runner,
+                        reviewer_adapters=self.reviewer_adapters,
+                        runtime_runner=self.codex_runtime_runner,
+                        model_client=self.reviewer_model_client,
                     )
                     roster = _reviewer_roster_preflight(
                         task_id=task_id,
@@ -2793,6 +3066,24 @@ class CodexSupervisorMcpAPI:
         """Create operator-reviewable policy proposals from an accepted AutoResearch report."""
         repo_root_path = Path(repo_root).expanduser().resolve()
         report = _read_json_mapping(_resolve_repo_path(repo_root_path, report_path))
+        claim_authority = (
+            self.policy_claim_authority_resolver(report, repo_root_path)
+            if self.policy_claim_authority_resolver is not None
+            else None
+        )
+        if claim_authority is not None and not isinstance(
+            claim_authority,
+            PolicyClaimAuthority,
+        ):
+            raise TypeError(
+                "policy_claim_authority_resolver must return "
+                "PolicyClaimAuthority or None"
+            )
+        authority_kwargs = (
+            claim_authority.validation_kwargs()
+            if claim_authority is not None
+            else {}
+        )
         if candidate_changes is not None:
             proposals = create_policy_evolution_proposals(
                 report,
@@ -2801,6 +3092,7 @@ class CodexSupervisorMcpAPI:
                 affected_gates=affected_gates,
                 state=self.state,
                 run_id=run_id,
+                **authority_kwargs,
             )
             mode = "explicit_candidate_changes"
         else:
@@ -2810,6 +3102,7 @@ class CodexSupervisorMcpAPI:
                 affected_gates=affected_gates,
                 state=self.state,
                 run_id=run_id,
+                **authority_kwargs,
             )
             mode = "report_derived"
         return redact({
@@ -2989,6 +3282,7 @@ class CodexSupervisorMcpAPI:
         task_id: str,
         run_id: str,
         intent: str,
+        target_session_id: str | None = None,
         user_facing: bool = False,
         visual_evidence_policy: str = "auto",
         max_rounds_per_gate: int = 5,
@@ -3025,7 +3319,14 @@ class CodexSupervisorMcpAPI:
         no_mistakes_timeout_s: int | None = None,
         config_path: str | None = None,
         client_token: str | None = None,
+        trace_closure_required: bool | None = None,
+        trace_graph_store_path: str | None = None,
+        trace_graph_store_sha256: str | None = None,
     ) -> dict[str, Any]:
+        _reject_trace_closure_downgrade(
+            task_id=task_id,
+            trace_closure_required=trace_closure_required,
+        )
         execution_layer_mode = _canonical_execution_layer_mode(execution_layer_mode)
         dynamic_workflow_task_class = _canonical_dynamic_workflow_task_class(dynamic_workflow_task_class)
         agentic_policy = _agentic_lead_policy_config(
@@ -3078,6 +3379,11 @@ class CodexSupervisorMcpAPI:
             timeout_s=no_mistakes_timeout_s,
         )
         cwd_path = Path(cwd).expanduser().resolve()
+        target_session_id, session_id_source = resolve_target_session_id(
+            workflow_run_id=run_id,
+            target_kind=self.cfg.target.kind,
+            explicit_session_id=target_session_id,
+        )
         receipt_payloads = _normalise_receipt_payloads(tool_receipts or [])
         submit_visual_policy = workflow_visual_evidence_policy(
             intent=intent,
@@ -3108,6 +3414,7 @@ class CodexSupervisorMcpAPI:
             "cwd": str(cwd_path),
             "task_id": task_id,
             "run_id": run_id,
+            "target_session_id": target_session_id,
             "intent": intent,
             "user_facing": user_facing,
             "visual_evidence_policy": visual_evidence_policy,
@@ -3145,6 +3452,9 @@ class CodexSupervisorMcpAPI:
             "no_mistakes_policy": no_mistakes_config.policy,
             "no_mistakes_skip_steps": list(no_mistakes_config.skip_steps),
             "no_mistakes_timeout_s": no_mistakes_config.timeout_s,
+            "trace_closure_required": trace_closure_required,
+            "trace_graph_store_path": trace_graph_store_path,
+            "trace_graph_store_sha256": trace_graph_store_sha256,
         }
         idempotency_token = _workflow_job_idempotency_token(
             run_id=run_id,
@@ -3170,7 +3480,49 @@ class CodexSupervisorMcpAPI:
             request_payload_json=request_payload_json,
             config_path=str(Path(config_path or "~/.codex-supervisor/config.yaml").expanduser()),
         )
+        try:
+            reserved_request = json.loads(reserved_job["request_payload_json"] or "{}")
+        except (TypeError, json.JSONDecodeError):
+            reserved_request = {}
+        if not isinstance(reserved_request, dict):
+            reserved_request = {}
+        effective_run_id = str(reserved_job["run_id"] or run_id)
+        effective_task_id = str(reserved_job["task_id"] or task_id)
+        if "target_session_id" in reserved_request:
+            effective_target_session_id = str(
+                reserved_request.get("target_session_id") or ""
+            ).strip()
+        else:
+            effective_target_session_id = str(target_session_id or "").strip()
+        effective_intent = str(reserved_request.get("intent") or intent)
+        effective_cwd = str(reserved_request.get("cwd") or cwd_path)
+        effective_session_id_source = (
+            session_id_source
+            if created
+            else (
+                "reserved_request"
+                if effective_target_session_id
+                else PENDING_SESSION_SOURCE
+            )
+        )
+        registration = register_submitted_workflow(
+            state=self.state,
+            registry_dir=self.cfg.orchestrator.run_registry_dir,
+            workflow_run_id=effective_run_id,
+            target_session_id=effective_target_session_id,
+            task_id=effective_task_id,
+            task=effective_intent,
+            target_kind=self.cfg.target.kind,
+            cwd=effective_cwd,
+            session_id_source=effective_session_id_source,
+        )
         if created:
+            self.state.write_event(
+                run_id=effective_run_id,
+                source="supervisor",
+                kind="workflow_run_registered",
+                payload=registration.event_payload(job_id=reserved_job["job_id"]),
+            )
             self._write_receipt_provenance_downgrade_events(
                 run_id=run_id,
                 task_id=task_id,
@@ -3192,19 +3544,23 @@ class CodexSupervisorMcpAPI:
                     "transport_recovery": "detached_cli_worker",
                 },
             )
-            return self._workflow_job_response(reserved_job)
+            response = self._workflow_job_response(reserved_job)
+            response["target_session_id"] = effective_target_session_id
+            return response
         if not created:
             record_transport_incident(
                 self.state,
-                run_id=run_id,
-                task_id=task_id,
+                run_id=effective_run_id,
+                task_id=effective_task_id,
                 job_id=reserved_job["job_id"],
                 client_token=client_token,
                 incident_type="same_client_token_reattach",
                 interface="mcp",
                 details={"status": reserved_job["status"], "recovery_point": reserved_job["recovery_point"]},
             )
-            return self._workflow_job_response(reserved_job, reattached=True)
+            response = self._workflow_job_response(reserved_job, reattached=True)
+            response["target_session_id"] = effective_target_session_id
+            return response
 
         raise RuntimeError("unreachable workflow job reservation state")
 
@@ -3810,6 +4166,7 @@ class CodexSupervisorMcpAPI:
             run_id=run_id,
             task_id=task_id,
             output_dir=target_dir,
+            require_complete_provenance=True,
             screenshots=tuple(
                 artifact
                 for artifact in (
@@ -3837,25 +4194,73 @@ class CodexSupervisorMcpAPI:
         reasoning_effort: str = DEFAULT_CODEX_REASONING_EFFORT,
         execute: bool = False,
         timeout_s: int = 600,
+        workflow_run_id: str | None = None,
+        task_id: str | None = None,
     ) -> dict[str, Any]:
-        codex_cfg = self.cfg.target.codex if self.cfg.target and self.cfg.target.codex else None
-        cli = codex_cfg.cli_command if codex_cfg is not None else "codex"
-        argv = [cli, "exec", "--json", "-C", str(Path(cwd).expanduser())]
-        argv.extend(["-m", model or DEFAULT_CODEX_MODEL])
-        if reasoning_effort:
-            argv.extend(["-c", f'reasoning_effort="{reasoning_effort}"'])
-        argv.append(prompt)
-        if not execute:
-            return {"status": "dry_run", "argv": _redacted_prompt_argv(argv)}
-        try:
-            completed = self.codex_runner(
-                argv,
-                capture_output=True,
-                text=True,
-                timeout=max(1, int(timeout_s)),
-                cwd=str(Path(cwd).expanduser()),
+        normalized_workflow_run_id = str(workflow_run_id or "").strip()
+        normalized_task_id = str(task_id or "").strip()
+        if bool(normalized_workflow_run_id) != bool(normalized_task_id):
+            raise ValueError(
+                "workflow_run_id and task_id must be provided together"
             )
-        except subprocess.TimeoutExpired:
+        cwd_path = Path(cwd).expanduser().resolve()
+        agent_task = AgentTask(
+            task_id=f"codex-session-{uuid.uuid4()}",
+            instruction=prompt,
+            cwd=cwd_path,
+            model=model or DEFAULT_CODEX_MODEL,
+            timeout_s=max(1, int(timeout_s)),
+            metadata={
+                "reasoning_effort": reasoning_effort,
+                "result_metadata": {
+                    "entrypoint": "codex_supervisor_mcp.start_codex_session",
+                },
+            },
+        )
+        preview_runtime = self.codex_runtime_factory()
+        argv = list(preview_runtime.preview_start_argv(agent_task))
+        if not execute:
+            return {
+                "status": "dry_run",
+                "runtime": preview_runtime.kind,
+                "task_id": agent_task.task_id,
+                "argv": _redacted_prompt_argv(argv),
+            }
+        launch_receipt = None
+        if normalized_workflow_run_id:
+            launch_receipt = reserve_launch_receipt(
+                state=self.state,
+                registry_dir=self.cfg.orchestrator.run_registry_dir,
+                workflow_run_id=normalized_workflow_run_id,
+                task_id=normalized_task_id,
+                target_kind=preview_runtime.kind,
+                cwd=cwd_path,
+                ttl_s=max(
+                    DEFAULT_LAUNCH_RECEIPT_TTL_S,
+                    max(1, int(timeout_s)) + 60,
+                ),
+            )
+            agent_task = replace(
+                agent_task,
+                env={
+                    **dict(agent_task.env),
+                    **launch_receipt.launch_environment(),
+                },
+                metadata={
+                    **dict(agent_task.metadata),
+                    "launch_receipt": {
+                        "schema_version": "supervisor-launch-receipt/v1",
+                        "launch_id": launch_receipt.launch_id,
+                        "workflow_run_id": normalized_workflow_run_id,
+                        "task_id": normalized_task_id,
+                        "target_kind": preview_runtime.kind,
+                        "expires_at": launch_receipt.expires_at,
+                    },
+                },
+            )
+        try:
+            execution = self.codex_runtime_runner(agent_task)
+        except (subprocess.TimeoutExpired, TimeoutError):
             return {
                 "status": "timeout",
                 "argv": _redacted_prompt_argv(argv),
@@ -3863,13 +4268,54 @@ class CodexSupervisorMcpAPI:
             }
         except FileNotFoundError:
             return {"status": "failed", "reason": "codex_binary_not_found", "argv": _redacted_prompt_argv(argv)}
-        status = "completed" if completed.returncode == 0 else "failed"
+        result = execution.result
+        binding = None
+        if launch_receipt is not None:
+            binding = consume_launch_receipt(
+                state=self.state,
+                registry_dir=self.cfg.orchestrator.run_registry_dir,
+                launch_id=launch_receipt.launch_id,
+                nonce=launch_receipt.nonce,
+                workflow_run_id=normalized_workflow_run_id,
+                task_id=normalized_task_id,
+                target_kind=result.runtime,
+                target_session_id=result.session_id,
+                cwd=cwd_path,
+            )
+        returncode = result.metadata.get("returncode")
+        status = (
+            "timeout"
+            if returncode == 124
+            else result.status
+        )
         return redact({
             "status": status,
-            "returncode": completed.returncode,
+            "returncode": returncode,
             "argv": _redacted_prompt_argv(argv),
-            "stdout_tail": (completed.stdout or "")[-4000:],
-            "stderr_tail": (completed.stderr or "")[-4000:],
+            "stdout_tail": result.output[-4000:],
+            "stderr_tail": str(
+                result.metadata.get("stderr") or ""
+            )[-4000:],
+            "runtime": result.runtime,
+            "run_id": result.run_id,
+            "session_id": result.session_id,
+            "result_hash": result.result_hash,
+            "resolved_model": result.resolved_model,
+            "model_provenance": result.model_provenance,
+            "cost_usd": result.cost_usd,
+            "cost_provenance": result.cost_provenance,
+            "token_usage": dict(result.token_usage),
+            "token_provenance": result.token_provenance,
+            **(
+                {
+                    "workflow_run_id": normalized_workflow_run_id,
+                    "workflow_task_id": normalized_task_id,
+                    "launch_id": launch_receipt.launch_id,
+                    "session_registration_ref": binding["registry_path"],
+                }
+                if launch_receipt is not None and binding is not None
+                else {}
+            ),
         })
 
     async def _emit_workflow_milestone(
@@ -4425,7 +4871,44 @@ class CodexSupervisorMcpAPI:
         policy_overlay_task_class_hash: str = "",
         planning_rubric_threshold: float | None = None,
         planning_rubric_unavailable_policy: str | None = None,
+        trace_closure_required: bool | None = None,
+        trace_graph_store_path: str | None = None,
+        trace_graph_store_sha256: str | None = None,
     ) -> DualAgentGateSpec:
+        _reject_trace_closure_downgrade(
+            task_id=task_id,
+            trace_closure_required=trace_closure_required,
+        )
+        effective_trace_closure_required = (
+            _harness_trace_closure_required(task_id=task_id, gate=str(gate))
+            if trace_closure_required is None
+            else bool(trace_closure_required)
+        )
+        parsed_planning_artifacts = tuple(
+            artifact
+            for artifact in (
+                _maybe_artifact(item)
+                for item in (planning_artifacts or [])
+            )
+            if artifact is not None
+        )
+        trace_graph = _load_pinned_trace_graph(
+            cwd=cwd,
+            trace_graph_store_path=trace_graph_store_path,
+            trace_graph_store_sha256=trace_graph_store_sha256,
+        )
+        if trace_graph is not None:
+            trace_graph = trace_graph.bind_validation(
+                expected_binding=build_trace_closure_binding(
+                    task_id=task_id,
+                    run_id=run_id,
+                    gate=str(gate),
+                    planning_artifacts=parsed_planning_artifacts,
+                ),
+                decision_grade_validator=(
+                    self.trace_decision_grade_validator
+                ),
+            )
         return DualAgentGateSpec(
             task_id=task_id,
             run_id=run_id,
@@ -4470,14 +4953,14 @@ class CodexSupervisorMcpAPI:
             planning_rubric_unavailable_policy=(
                 str(planning_rubric_unavailable_policy or self.cfg.planning_rubric.unavailable_policy)
             ),
-            planning_artifacts=tuple(
-                artifact
-                for artifact in (
-                    _maybe_artifact(item)
-                    for item in (planning_artifacts or [])
-                )
-                if artifact is not None
+            trace_closure_required=effective_trace_closure_required,
+            trace_graph=trace_graph,
+            trace_now=(
+                datetime.now(timezone.utc)
+                if effective_trace_closure_required or trace_graph is not None
+                else None
             ),
+            planning_artifacts=parsed_planning_artifacts,
         )
 
     def _record_reviewer_unavailable_recovery(
@@ -4618,9 +5101,22 @@ def build_codex_supervisor_mcp_server(
     mcp_cls: Any | None = None,
     runner: Runner = subprocess.run,
     codex_runner: Runner = subprocess.run,
+    codex_runtime_factory: Callable[[], CodexRuntime] | None = None,
+    codex_runtime_runner: RuntimeTaskRunner | None = None,
+    lead_runtime_runner: RuntimeTaskRunner | None = None,
+    reviewer_adapters: (
+        list[ReviewerAdapter] | tuple[ReviewerAdapter, ...] | None
+    ) = None,
+    reviewer_model_client: ModelClient | None = None,
     cursor_runner: CursorRunner | None = None,
     no_mistakes_runner: Runner = subprocess.run,
     notifier: Any | None = None,
+    policy_claim_authority_resolver: (
+        PolicyClaimAuthorityResolver | None
+    ) = None,
+    trace_decision_grade_validator: (
+        DecisionGradeValidator | None
+    ) = None,
 ) -> Any:
     if mcp_cls is None:
         from mcp.server.fastmcp import FastMCP
@@ -4631,9 +5127,16 @@ def build_codex_supervisor_mcp_server(
         state,
         runner=runner,
         codex_runner=codex_runner,
+        codex_runtime_factory=codex_runtime_factory,
+        codex_runtime_runner=codex_runtime_runner,
+        lead_runtime_runner=lead_runtime_runner,
+        reviewer_adapters=reviewer_adapters,
+        reviewer_model_client=reviewer_model_client,
         cursor_runner=cursor_runner,
         no_mistakes_runner=no_mistakes_runner,
         notifier=notifier,
+        policy_claim_authority_resolver=policy_claim_authority_resolver,
+        trace_decision_grade_validator=trace_decision_grade_validator,
     )
     _configure_mcp_transport_logging()
     try:
@@ -4676,6 +5179,9 @@ def build_codex_supervisor_mcp_server(
         policy_overlay_task_class_hash: str = "",
         planning_rubric_threshold: float | None = None,
         planning_rubric_unavailable_policy: str | None = None,
+        trace_closure_required: bool | None = None,
+        trace_graph_store_path: str | None = None,
+        trace_graph_store_sha256: str | None = None,
     ) -> dict[str, Any]:
         return await tool_api.start_dual_agent_gate(
             task_id=task_id,
@@ -4710,6 +5216,9 @@ def build_codex_supervisor_mcp_server(
             policy_overlay_task_class_hash=policy_overlay_task_class_hash,
             planning_rubric_threshold=planning_rubric_threshold,
             planning_rubric_unavailable_policy=planning_rubric_unavailable_policy,
+            trace_closure_required=trace_closure_required,
+            trace_graph_store_path=trace_graph_store_path,
+            trace_graph_store_sha256=trace_graph_store_sha256,
         )
 
     @mcp.tool()
@@ -4738,6 +5247,9 @@ def build_codex_supervisor_mcp_server(
         artifact_policy: str = "strict",
         user_facing: bool = False,
         screenshots: list[dict[str, Any]] | None = None,
+        trace_closure_required: bool | None = None,
+        trace_graph_store_path: str | None = None,
+        trace_graph_store_sha256: str | None = None,
     ) -> dict[str, Any]:
         return tool_api.poll_resume_signal(
             task_id=task_id,
@@ -4764,6 +5276,9 @@ def build_codex_supervisor_mcp_server(
             artifact_policy=artifact_policy,
             user_facing=user_facing,
             screenshots=screenshots,
+            trace_closure_required=trace_closure_required,
+            trace_graph_store_path=trace_graph_store_path,
+            trace_graph_store_sha256=trace_graph_store_sha256,
         )
 
     @mcp.tool()
@@ -4967,6 +5482,7 @@ def build_codex_supervisor_mcp_server(
         task_id: str,
         run_id: str,
         intent: str,
+        target_session_id: str | None = None,
         user_facing: bool = False,
         visual_evidence_policy: str = "auto",
         max_rounds_per_gate: int = 5,
@@ -5003,12 +5519,16 @@ def build_codex_supervisor_mcp_server(
         no_mistakes_timeout_s: int | None = None,
         config_path: str | None = None,
         client_token: str | None = None,
+        trace_closure_required: bool | None = None,
+        trace_graph_store_path: str | None = None,
+        trace_graph_store_sha256: str | None = None,
     ) -> dict[str, Any]:
         payload = tool_api.submit_dual_agent_workflow_job(
             cwd=cwd,
             task_id=task_id,
             run_id=run_id,
             intent=intent,
+            target_session_id=target_session_id,
             user_facing=user_facing,
             visual_evidence_policy=visual_evidence_policy,
             max_rounds_per_gate=max_rounds_per_gate,
@@ -5045,6 +5565,9 @@ def build_codex_supervisor_mcp_server(
             no_mistakes_timeout_s=no_mistakes_timeout_s,
             config_path=config_path,
             client_token=client_token,
+            trace_closure_required=trace_closure_required,
+            trace_graph_store_path=trace_graph_store_path,
+            trace_graph_store_sha256=trace_graph_store_sha256,
         )
         payload["compatibility_tool"] = "run_dual_agent_workflow"
         payload["execution_model"] = "detached_dispatcher_only"
@@ -5063,6 +5586,7 @@ def build_codex_supervisor_mcp_server(
         task_id: str,
         run_id: str,
         intent: str,
+        target_session_id: str | None = None,
         user_facing: bool = False,
         visual_evidence_policy: str = "auto",
         max_rounds_per_gate: int = 5,
@@ -5099,12 +5623,16 @@ def build_codex_supervisor_mcp_server(
         no_mistakes_timeout_s: int | None = None,
         config_path: str | None = None,
         client_token: str | None = None,
+        trace_closure_required: bool | None = None,
+        trace_graph_store_path: str | None = None,
+        trace_graph_store_sha256: str | None = None,
     ) -> dict[str, Any]:
         return tool_api.submit_dual_agent_workflow_job(
             cwd=cwd,
             task_id=task_id,
             run_id=run_id,
             intent=intent,
+            target_session_id=target_session_id,
             user_facing=user_facing,
             visual_evidence_policy=visual_evidence_policy,
             max_rounds_per_gate=max_rounds_per_gate,
@@ -5141,6 +5669,9 @@ def build_codex_supervisor_mcp_server(
             no_mistakes_timeout_s=no_mistakes_timeout_s,
             config_path=config_path,
             client_token=client_token,
+            trace_closure_required=trace_closure_required,
+            trace_graph_store_path=trace_graph_store_path,
+            trace_graph_store_sha256=trace_graph_store_sha256,
         )
 
     @mcp.tool()
@@ -5171,6 +5702,8 @@ def build_codex_supervisor_mcp_server(
         reasoning_effort: str = DEFAULT_CODEX_REASONING_EFFORT,
         execute: bool = False,
         timeout_s: int = 600,
+        workflow_run_id: str | None = None,
+        task_id: str | None = None,
     ) -> dict[str, Any]:
         return tool_api.start_codex_session(
             prompt=prompt,
@@ -5179,6 +5712,8 @@ def build_codex_supervisor_mcp_server(
             reasoning_effort=reasoning_effort,
             execute=execute,
             timeout_s=timeout_s,
+            workflow_run_id=workflow_run_id,
+            task_id=task_id,
         )
 
     return mcp
@@ -5193,7 +5728,7 @@ def main(argv: list[str] | None = None) -> None:
     )
     args = parser.parse_args(argv)
     cfg = Config.load(args.config)
-    state = State(cfg.supervisor.state_db)
+    state = build_state(cfg)
     server = build_codex_supervisor_mcp_server(cfg, state)
     server.run(transport="stdio")
 
@@ -5257,13 +5792,36 @@ def _gate_result_tool_calls(
             key: value.status for key, value in result.probes.items()
         },
     })
+    recorded_calls = [
+        dict(recorded)
+        for recorded in result.tool_calls
+    ]
+    if recorded_calls:
+        result_summary = dict(call.get("result_summary") or {})
+        result_summary.update(_lead_attempt_usage(recorded_calls))
+        call["result_summary"] = result_summary
     gate_call = ensure_tool_call_timing(call)
     gate_tool_call_id = gate_call.get("tool_call_id")
     calls: list[dict[str, Any]] = [gate_call]
+    if recorded_calls:
+        for recorded in recorded_calls:
+            if (
+                str(recorded.get("name") or "").startswith("invoke_")
+                and not recorded.get("parent_tool_call_id")
+            ):
+                recorded["parent_tool_call_id"] = gate_tool_call_id
+            calls.append(ensure_tool_call_timing(recorded))
+        return calls
+
     lead_tool_call_id: str | None = None
     if result.lead_result is not None:
+        runtime_backed = result.lead_result.runtime is not None
         lead_call = ensure_tool_call_timing({
-            "name": "invoke_claude_lead",
+            "name": (
+                "invoke_runtime_lead"
+                if runtime_backed
+                else "invoke_claude_lead"
+            ),
             "status": "completed" if result.probes.get("P2", result.lead_result.probe).ok else "failed",
             "attempts": result.attempts,
             "parent_tool_call_id": gate_tool_call_id,
@@ -5276,12 +5834,22 @@ def _gate_result_tool_calls(
             "tokens_in": result.lead_result.tokens_in,
             "tokens_out": result.lead_result.tokens_out,
             "token_usage": result.lead_result.token_usage,
+            "runtime": result.lead_result.runtime,
+            "runtime_run_id": result.lead_result.runtime_run_id,
+            "runtime_session_id": result.lead_result.runtime_session_id,
+            "runtime_result_hash": result.lead_result.runtime_result_hash,
+            "runtime_duration_ms": result.lead_result.runtime_duration_ms,
+            "model_provenance": result.lead_result.model_provenance,
+            "cost_provenance": result.lead_result.cost_provenance,
+            "token_provenance": result.lead_result.token_provenance,
             "stdout_bytes": result.lead_result.stdout_bytes,
             "stderr_bytes": result.lead_result.stderr_bytes,
             "result_summary": {
                 "probe_status": result.lead_result.probe.status,
                 "probe_reason": result.lead_result.probe.reason,
                 "outcome_present": result.outcome is not None,
+                "runtime": result.lead_result.runtime,
+                "runtime_result_hash": result.lead_result.runtime_result_hash,
                 "tokens_in": result.lead_result.tokens_in,
                 "tokens_out": result.lead_result.tokens_out,
             },
@@ -5303,6 +5871,29 @@ def _gate_result_tool_calls(
             },
         }))
     return calls
+
+
+def _lead_attempt_usage(tool_calls: list[dict[str, Any]]) -> dict[str, Any]:
+    lead_calls = [
+        call
+        for call in tool_calls
+        if call.get("name") in {"invoke_runtime_lead", "invoke_claude_lead"}
+    ]
+    return {
+        "lead_attempt_count": len(lead_calls),
+        "lead_total_cost_usd": sum(
+            float(call.get("cost_usd") or 0.0)
+            for call in lead_calls
+        ),
+        "lead_tokens_in": sum(
+            int(call.get("tokens_in") or 0)
+            for call in lead_calls
+        ),
+        "lead_tokens_out": sum(
+            int(call.get("tokens_out") or 0)
+            for call in lead_calls
+        ),
+    }
 
 
 def _artifact_blocked_payload(
@@ -6528,6 +7119,10 @@ def _reviewer_boot_status(
 ) -> tuple[bool, str, str | None]:
     spec = reviewer.spec
     runtime = str(spec.runtime or "").lower()
+    if isinstance(reviewer, RuntimeReviewerAdapter):
+        return True, "runtime_adapter_configured", None
+    if isinstance(reviewer, StructuredReviewerAdapter):
+        return True, "model_client_configured", None
     if runtime == "codex_cli":
         command = str(getattr(reviewer, "command", "") or "codex")
         if _uses_real_subprocess_runner(codex_runner):

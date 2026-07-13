@@ -7,7 +7,7 @@ import logging
 import math
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Mapping
@@ -24,9 +24,11 @@ from .experiment_kernel import (
     ArmExecutionReceipt,
     ExecutionEnvironmentAttestation,
     IsolationAttestation,
+    TreatmentDescriptor,
 )
 from .runtime_cleanup import cancel_runtime_after_failure
 from .task_environment import (
+    FrozenTaskResult,
     TaskEnvironmentAdapter,
     TaskSpec,
     canonical_task_identity,
@@ -55,7 +57,7 @@ class RuntimeArmPlan:
     """Pinned runtime policy for one experiment arm."""
 
     model: str
-    instruction_prefix: str
+    treatment: TreatmentDescriptor
     container_digest: str = ""
     network_policy: str = ""
     resource_limits: Mapping[str, Any] = field(default_factory=dict)
@@ -70,6 +72,10 @@ class RuntimeArmPlan:
     def __post_init__(self) -> None:
         if not str(self.model).strip():
             raise ValueError("runtime arm plan model must be non-empty")
+        if not isinstance(self.treatment, TreatmentDescriptor):
+            raise ValueError(
+                "runtime arm plan treatment must be a TreatmentDescriptor"
+            )
         if self.network_policy and self.network_policy not in {
             "disabled",
             "restricted",
@@ -149,12 +155,7 @@ class RuntimeArmPlan:
         object.__setattr__(self, "tools", tools)
 
     def instruction(self, task: TaskSpec) -> str:
-        prefix = self.instruction_prefix.strip()
-        return (
-            f"{prefix}\n\n{task.problem_statement.strip()}"
-            if prefix
-            else task.problem_statement.strip()
-        )
+        return self.treatment.render_instruction(task.problem_statement)
 
 
 class RepositoryArmExecutor:
@@ -180,6 +181,21 @@ class RepositoryArmExecutor:
             arm: _plan_fingerprint(self.runtimes[arm], self.plans[arm])
             for arm in Arm
         }
+        treatment_hashes = {
+            arm: self.plans[arm].treatment.treatment_hash
+            for arm in Arm
+        }
+        if len(set(treatment_hashes.values())) != len(Arm):
+            raise ValueError(
+                "A/B/C runtime treatment hashes must all differ"
+            )
+        self._compute_resource_fingerprints = {
+            arm: _compute_resource_fingerprint(
+                self.runtimes[arm],
+                self.plans[arm],
+            )
+            for arm in Arm
+        }
         self._runtime_identity_owners: dict[
             tuple[str, str, str],
             tuple[str, int],
@@ -188,11 +204,55 @@ class RepositoryArmExecutor:
             str,
             dict[Arm, Mapping[str, Any]],
         ] = {}
-        if self._plan_fingerprints[Arm.B] != self._plan_fingerprints[Arm.C]:
+        self._verifier_denied_paths: dict[str, tuple[str, ...]] = {}
+        if (
+            self._compute_resource_fingerprints[Arm.B]
+            != self._compute_resource_fingerprints[Arm.C]
+        ):
             raise ValueError(
                 "arms B and C must have identical runtime/model/container/"
                 "network/resource plans"
             )
+
+    def bind_verifier(self, *, task: TaskSpec, verifier: Any) -> None:
+        """Bind verifier-owned hidden paths before any arm starts.
+
+        Hidden material belongs to the verifier boundary, not to individual
+        call sites.  The experiment kernel invokes this hook before execution
+        so every arm receives the same deny policy automatically.
+        """
+
+        raw_paths = getattr(verifier, "protected_paths", ())
+        if callable(raw_paths):
+            raw_paths = raw_paths()
+        if isinstance(raw_paths, (str, bytes)) or not isinstance(
+            raw_paths,
+            (list, tuple),
+        ):
+            raise ValueError(
+                "verifier protected_paths must be a path sequence"
+            )
+        resolved: list[str] = []
+        seen: set[str] = set()
+        for raw_path in raw_paths:
+            text = str(raw_path or "").strip()
+            if not text:
+                raise ValueError(
+                    "verifier protected_paths cannot contain empty paths"
+                )
+            path = str(Path(text).expanduser().resolve(strict=False))
+            if path in seen:
+                continue
+            seen.add(path)
+            resolved.append(path)
+        task_hash = task.spec_hash
+        paths = tuple(resolved)
+        existing = self._verifier_denied_paths.get(task_hash)
+        if existing is not None and existing != paths:
+            raise ValueError(
+                "verifier protected paths changed after task binding"
+            )
+        self._verifier_denied_paths[task_hash] = paths
 
     async def execute(
         self,
@@ -203,9 +263,13 @@ class RepositoryArmExecutor:
         assignment_id: str,
     ) -> ArmExecution:
         self._assert_plans_frozen()
-        runtime_manifests = self._runtime_manifests_for_task(task)
+        effective_plans = self._effective_plans_for_task(task)
+        runtime_manifests = self._runtime_manifests_for_task(
+            task,
+            plans=effective_plans,
+        )
         runtime = self.runtimes[arm]
-        plan = self.plans[arm]
+        plan = effective_plans[arm]
         runtime_manifest = runtime_manifests[arm]
         execution_plan = _effective_execution_plan(
             runtime=runtime,
@@ -275,6 +339,16 @@ class RepositoryArmExecutor:
                     "experiment": {
                         "arm": arm.value,
                         "assignment_id": assignment_id,
+                        "treatment_hash": plan.treatment.treatment_hash,
+                        "arm_adapter": plan.treatment.arm_adapter,
+                        "entrypoint": plan.treatment.entrypoint,
+                        "treatment_descriptor": plan.treatment.to_dict(),
+                        "plan_fingerprint": execution_plan[
+                            "plan_fingerprint"
+                        ],
+                        "compute_resource_hash": execution_plan[
+                            "compute_resource_hash"
+                        ],
                         "attempt_index": attempt_index,
                         "execution_id": execution_id,
                         "execution_task_id": execution_task_id,
@@ -405,6 +479,12 @@ class RepositoryArmExecutor:
                     run_result_hash=run_result.result_hash,
                     output=run_result.output,
                 )
+                frozen = _bind_frozen_result_to_launch(
+                    frozen,
+                    arm=arm,
+                    assignment_id=assignment_id,
+                    treatment_hash=plan.treatment.treatment_hash,
+                )
                 if not frozen.patch.strip():
                     raise ArmExecutionError(
                         "arm produced an empty patch",
@@ -463,6 +543,13 @@ class RepositoryArmExecutor:
                     canonical_task_id=canonical_task_identity(task),
                     task_spec_hash=task.spec_hash,
                     arm=arm,
+                    treatment_hash=plan.treatment.treatment_hash,
+                    plan_fingerprint=execution_plan[
+                        "plan_fingerprint"
+                    ],
+                    compute_resource_hash=execution_plan[
+                        "compute_resource_hash"
+                    ],
                     frozen_result_hash=frozen.result_hash,
                     attempts=attempts,
                     cost_usd=total_cost,
@@ -493,6 +580,21 @@ class RepositoryArmExecutor:
                         "token_usage": dict(total_token_usage),
                         "attempt_records": tuple(attempt_records),
                         "runtime_plan": execution_plan,
+                        "launch_metadata": {
+                            "arm": arm.value,
+                            "assignment_id": assignment_id,
+                            "treatment_hash": (
+                                plan.treatment.treatment_hash
+                            ),
+                            "plan_fingerprint": execution_plan[
+                                "plan_fingerprint"
+                            ],
+                            "compute_resource_hash": execution_plan[
+                                "compute_resource_hash"
+                            ],
+                            "arm_adapter": plan.treatment.arm_adapter,
+                            "entrypoint": plan.treatment.entrypoint,
+                        },
                         "runtime_manifest": dict(runtime_manifest),
                         "execution_environment_attestation": (
                             environment_attestation.to_dict()
@@ -636,14 +738,45 @@ class RepositoryArmExecutor:
         if current != self._plan_fingerprints:
             raise RuntimeError("runtime arm plan changed after executor construction")
 
+    def _effective_plans_for_task(
+        self,
+        task: TaskSpec,
+    ) -> dict[Arm, RuntimeArmPlan]:
+        verifier_paths = self._verifier_denied_paths.get(task.spec_hash, ())
+        effective: dict[Arm, RuntimeArmPlan] = {}
+        for arm, plan in self.plans.items():
+            denied_paths = tuple(
+                dict.fromkeys(
+                    (
+                        *(
+                            str(
+                                Path(path)
+                                .expanduser()
+                                .resolve(strict=False)
+                            )
+                            for path in plan.denied_paths
+                        ),
+                        *verifier_paths,
+                    )
+                )
+            )
+            effective[arm] = (
+                plan
+                if denied_paths == plan.denied_paths
+                else replace(plan, denied_paths=denied_paths)
+            )
+        return effective
+
     def _runtime_manifests_for_task(
         self,
         task: TaskSpec,
+        *,
+        plans: Mapping[Arm, RuntimeArmPlan],
     ) -> dict[Arm, Mapping[str, Any]]:
         manifests = {
             arm: _runtime_manifest(
                 self.runtimes[arm],
-                plan=self.plans[arm],
+                plan=plans[arm],
                 task=task,
                 cwd=Path(task.repo),
             )
@@ -653,7 +786,7 @@ class RepositoryArmExecutor:
             arm: _canonical_hash({
                 "runtime_manifest": dict(manifests[arm]),
                 "frozen_plan": _compute_match_plan(
-                    self.plans[arm],
+                    plans[arm],
                     task=task,
                 ),
             })
@@ -677,6 +810,33 @@ class RepositoryArmExecutor:
         else:
             self._task_runtime_manifests[task_hash] = dict(manifests)
         return manifests
+
+
+def _bind_frozen_result_to_launch(
+    frozen: FrozenTaskResult,
+    *,
+    arm: Arm,
+    assignment_id: str,
+    treatment_hash: str,
+) -> FrozenTaskResult:
+    return FrozenTaskResult.create(
+        task_id=frozen.task_id,
+        task_family=frozen.task_family,
+        task_spec_hash=frozen.task_spec_hash,
+        run_result_hash=frozen.run_result_hash,
+        patch=frozen.patch,
+        output=frozen.output,
+        metadata={
+            **dict(frozen.metadata),
+            "harness_arm": arm.value,
+            "assignment_id": assignment_id,
+            "experiment": {
+                "treatment": arm.value,
+                "treatment_hash": treatment_hash,
+            },
+        },
+        frozen_at_ms=frozen.frozen_at_ms,
+    )
 
 
 def _create_isolation_roots(
@@ -765,6 +925,7 @@ def _plan_fingerprint(
 ) -> str:
     payload = {
         "runtime": _runtime_identity(runtime),
+        "treatment": plan.treatment.to_dict(),
         "model": plan.model,
         "container_digest": plan.container_digest,
         "network_policy": plan.network_policy,
@@ -778,6 +939,26 @@ def _plan_fingerprint(
         "operational": bool(plan.operational),
     }
     return _canonical_hash(payload)
+
+
+def _compute_resource_fingerprint(
+    runtime: AgentRuntime,
+    plan: RuntimeArmPlan,
+) -> str:
+    return _canonical_hash({
+        "runtime": _runtime_identity(runtime),
+        "model": plan.model,
+        "container_digest": plan.container_digest,
+        "network_policy": plan.network_policy,
+        "resource_limits": dict(plan.resource_limits),
+        "environment": dict(plan.environment),
+        "runtime_metadata": dict(plan.runtime_metadata),
+        "inherit_env": bool(plan.inherit_env),
+        "denied_paths": list(plan.denied_paths),
+        "tools": list(plan.tools),
+        "execution_mode": plan.execution_mode,
+        "operational": bool(plan.operational),
+    })
 
 
 def _runtime_identity(runtime: AgentRuntime) -> Mapping[str, str]:
@@ -1029,7 +1210,9 @@ def _execution_environment_attestation(
             "backend": str(getattr(runtime, "kind", "") or "fixture"),
             "execution_id": execution_id,
             "task_spec_hash": task.spec_hash,
-            "execution_plan_hash": execution_plan["plan_hash"],
+            "execution_plan_hash": execution_plan[
+                "compute_resource_hash"
+            ],
         }
         attestation = ExecutionEnvironmentAttestation(
             attestation_id=_canonical_hash(body),
@@ -1140,20 +1323,27 @@ def _effective_execution_plan(
             "max_retries": int(budget.max_retries),
         }
     )
-    payload = {
+    compute_payload = {
         "runtime": runtime_kind,
+        "runtime_identity": _runtime_identity(runtime),
         "model": plan.model,
         "container_digest": container_digest,
         "architecture": task.architecture,
         "os_name": task.os_name,
         "network_policy": network_policy,
         "resource_limits": resource_limits,
+        "environment": dict(plan.environment),
+        "runtime_metadata": dict(plan.runtime_metadata),
+        "denied_paths": list(plan.denied_paths),
+        "inherit_env": bool(plan.inherit_env),
         "tools": list(plan.tools),
         "execution_mode": plan.execution_mode,
     }
     return {
-        **payload,
-        "plan_hash": _canonical_hash(payload),
+        **compute_payload,
+        "compute_resource_hash": _canonical_hash(compute_payload),
+        "treatment_hash": plan.treatment.treatment_hash,
+        "plan_fingerprint": _plan_fingerprint(runtime, plan),
     }
 
 

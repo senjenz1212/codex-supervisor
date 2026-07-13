@@ -17,7 +17,12 @@ from supervisor.agent_runtime import (
     RuntimeEvent,
 )
 from supervisor.arm_executor import RepositoryArmExecutor, RuntimeArmPlan
-from supervisor.experiment_kernel import Arm, ArmBudget, ArmExecutionError
+from supervisor.experiment_kernel import (
+    Arm,
+    ArmBudget,
+    ArmExecutionError,
+    TreatmentDescriptor,
+)
 from supervisor.task_environment import (
     GenericRepositoryTask,
     TaskSpec,
@@ -129,8 +134,36 @@ def _task(repo: Path, revision: str) -> TaskSpec:
     )
 
 
-def _plan(**kwargs) -> RuntimeArmPlan:
-    return RuntimeArmPlan(execution_mode="hermetic", **kwargs)
+def _plan(
+    *,
+    arm: Arm,
+    instruction_prefix: str,
+    treatment_config: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> RuntimeArmPlan:
+    execution_mode = str(kwargs.pop("execution_mode", "hermetic"))
+    return RuntimeArmPlan(
+        treatment=TreatmentDescriptor(
+            arm_adapter={
+                Arm.A: "production-baseline",
+                Arm.B: "supervisor-orchestration",
+                Arm.C: "compute-matched-direct",
+            }[arm],
+            entrypoint={
+                Arm.A: "baseline.execute",
+                Arm.B: "supervisor.execute",
+                Arm.C: "direct.execute",
+            }[arm],
+            instruction_template=(
+                f"{instruction_prefix}\n\n{{problem_statement}}"
+            ),
+            treatment_config=treatment_config or {
+                "test_arm": arm.value,
+            },
+        ),
+        execution_mode=execution_mode,
+        **kwargs,
+    )
 
 
 def _manifest(
@@ -254,6 +287,7 @@ async def test_repository_arm_executor_uses_fresh_checkout_and_freezes_patch(
     runtimes = {arm: DeterministicRuntime() for arm in Arm}
     plans = {
         arm: _plan(
+            arm=arm,
             model="deterministic-v1",
             instruction_prefix=f"{arm.value} policy",
             denied_paths=(str(tmp_path / "hidden"),),
@@ -294,6 +328,199 @@ async def test_repository_arm_executor_uses_fresh_checkout_and_freezes_patch(
         str((tmp_path / "hidden").resolve())
     ]
     assert _git(repo, "status", "--short") == ""
+
+
+@pytest.mark.asyncio
+async def test_repository_arm_executor_auto_binds_verifier_protected_paths(
+    tmp_path: Path,
+) -> None:
+    repo, revision = _repo(tmp_path)
+    runtimes = {arm: DeterministicRuntime() for arm in Arm}
+    caller_denied = tmp_path / "caller-denied"
+    verifier_hidden = tmp_path / "verifier-hidden"
+    caller_denied.mkdir()
+    verifier_hidden.mkdir()
+    plans = {
+        arm: _plan(
+            arm=arm,
+            model="deterministic-v1",
+            instruction_prefix=f"{arm.value} policy",
+            denied_paths=(str(caller_denied),),
+        )
+        for arm in Arm
+    }
+    executor = RepositoryArmExecutor(
+        task_environment=GenericRepositoryTask(work_root=tmp_path / "work"),
+        runtimes=runtimes,
+        plans=plans,
+    )
+    task = _task(repo, revision)
+    verifier = type(
+        "ProtectedVerifier",
+        (),
+        {"protected_paths": (str(verifier_hidden),)},
+    )()
+
+    executor.bind_verifier(task=task, verifier=verifier)
+    await executor.execute(
+        arm=Arm.A,
+        task=task,
+        budget=ArmBudget(
+            max_tokens=1000,
+            max_cost_usd=1.0,
+            timeout_s=30,
+            max_retries=0,
+        ),
+        assignment_id="assignment-protected-paths",
+    )
+
+    deny_paths = runtimes[Arm.A].started_tasks[0].metadata[
+        "filesystem_isolation"
+    ]["deny_paths"]
+    assert deny_paths == [
+        str(caller_denied.resolve()),
+        str(verifier_hidden.resolve()),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_executor_binds_distinct_treatments_to_compute_matched_launches(
+    tmp_path: Path,
+) -> None:
+    repo, revision = _repo(tmp_path)
+    runtimes = {arm: DeterministicRuntime() for arm in Arm}
+    plans = {
+        arm: _plan(
+            arm=arm,
+            model="deterministic-v1",
+            instruction_prefix=f"{arm.value} policy",
+        )
+        for arm in Arm
+    }
+    executor = RepositoryArmExecutor(
+        task_environment=GenericRepositoryTask(work_root=tmp_path / "work"),
+        runtimes=runtimes,
+        plans=plans,
+    )
+    budget = ArmBudget(
+        max_tokens=1000,
+        max_cost_usd=1.0,
+        timeout_s=30,
+        max_retries=0,
+    )
+
+    executions = {
+        arm: await executor.execute(
+            arm=arm,
+            task=_task(repo, revision),
+            budget=budget,
+            assignment_id="assignment-treatment-binding",
+        )
+        for arm in (Arm.B, Arm.C)
+    }
+    receipts = {
+        arm: executions[arm].receipt
+        for arm in (Arm.B, Arm.C)
+    }
+
+    assert all(receipt is not None for receipt in receipts.values())
+    assert receipts[Arm.B].treatment_hash != receipts[Arm.C].treatment_hash
+    assert (
+        receipts[Arm.B].compute_resource_hash
+        == receipts[Arm.C].compute_resource_hash
+    )
+    for arm in (Arm.B, Arm.C):
+        receipt = receipts[arm]
+        launch = executions[arm].metadata["launch_metadata"]
+        runtime_task = runtimes[arm].started_tasks[0]
+        assert receipt.treatment_hash == plans[arm].treatment.treatment_hash
+        assert launch["treatment_hash"] == receipt.treatment_hash
+        assert launch["plan_fingerprint"] == receipt.plan_fingerprint
+        assert (
+            runtime_task.metadata["experiment"]["treatment_hash"]
+            == receipt.treatment_hash
+        )
+
+
+def test_repository_arm_executor_rejects_duplicate_treatment_hashes(
+    tmp_path: Path,
+) -> None:
+    duplicate = TreatmentDescriptor(
+        arm_adapter="same-adapter",
+        entrypoint="same.execute",
+        instruction_template="Same.\n\n{problem_statement}",
+        treatment_config={"mode": "same"},
+    )
+    plans = {
+        arm: RuntimeArmPlan(
+            model="deterministic-v1",
+            treatment=duplicate,
+            execution_mode="hermetic",
+        )
+        for arm in Arm
+    }
+
+    with pytest.raises(ValueError, match="treatment hashes must all differ"):
+        RepositoryArmExecutor(
+            task_environment=GenericRepositoryTask(work_root=tmp_path / "work"),
+            runtimes={arm: DeterministicRuntime() for arm in Arm},
+            plans=plans,
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mutation", ["instruction", "treatment_config"])
+async def test_executor_rejects_treatment_plan_mutation_after_construction(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    repo, revision = _repo(tmp_path)
+    runtime = DeterministicRuntime()
+    plans = {
+        arm: _plan(
+            arm=arm,
+            model="deterministic-v1",
+            instruction_prefix=arm.value,
+        )
+        for arm in Arm
+    }
+    executor = RepositoryArmExecutor(
+        task_environment=GenericRepositoryTask(work_root=tmp_path / "work"),
+        runtimes={arm: runtime for arm in Arm},
+        plans=plans,
+    )
+    original = plans[Arm.B].treatment
+    mutated = TreatmentDescriptor(
+        arm_adapter=original.arm_adapter,
+        entrypoint=original.entrypoint,
+        instruction_template=(
+            "Changed instruction.\n\n{problem_statement}"
+            if mutation == "instruction"
+            else original.instruction_template
+        ),
+        treatment_config=(
+            {"test_arm": Arm.B.value, "review_passes": 2}
+            if mutation == "treatment_config"
+            else dict(original.treatment_config)
+        ),
+    )
+    executor.plans[Arm.B] = replace(
+        plans[Arm.B],
+        treatment=mutated,
+    )
+
+    with pytest.raises(RuntimeError, match="plan changed"):
+        await executor.execute(
+            arm=Arm.B,
+            task=_task(repo, revision),
+            budget=ArmBudget(
+                max_tokens=100,
+                max_cost_usd=1.0,
+                timeout_s=30,
+                max_retries=0,
+            ),
+            assignment_id="assignment-mutated-plan",
+        )
 
 
 @pytest.mark.asyncio
@@ -343,6 +570,7 @@ async def test_repository_arm_executor_cancels_runtime_before_teardown_on_caller
         runtimes={arm: runtime for arm in Arm},
         plans={
             arm: _plan(
+                arm=arm,
                 model="deterministic-v1",
                 instruction_prefix=arm.value,
                 denied_paths=(str(tmp_path / "hidden"),),
@@ -385,6 +613,7 @@ async def test_repository_arm_executor_isolates_every_arm_identity_and_state_roo
         runtimes=runtimes,
         plans={
             arm: _plan(
+                arm=arm,
                 model="deterministic-v1",
                 instruction_prefix=arm.value,
                 denied_paths=(str(tmp_path / "hidden"),),
@@ -462,6 +691,7 @@ async def test_repository_arm_executor_rejects_reused_cross_arm_session(
         runtimes={arm: runtime for arm in Arm},
         plans={
             arm: _plan(
+                arm=arm,
                 model="deterministic-v1",
                 instruction_prefix=arm.value,
                 denied_paths=(str(tmp_path / "hidden"),),
@@ -517,6 +747,7 @@ async def test_repository_arm_executor_retries_inside_the_same_arm(tmp_path):
         runtimes={arm: runtime for arm in Arm},
         plans={
             arm: _plan(
+                arm=arm,
                 model="deterministic-v1",
                 instruction_prefix=arm.value,
             )
@@ -565,8 +796,9 @@ def test_repository_arm_executor_rejects_mismatched_b_c_execution_plans(
         "network_policy": "disabled",
         "resource_limits": {"memory_mb": 1024},
     }
-    plans = {arm: _plan(**common) for arm in Arm}
+    plans = {arm: _plan(arm=arm, **common) for arm in Arm}
     plans[Arm.C] = _plan(
+        arm=Arm.C,
         **{
             **common,
             changed_field: changed_value,
@@ -605,6 +837,7 @@ async def test_repository_arm_executor_treats_empty_patch_as_itt_failure(
         runtimes={arm: runtime for arm in Arm},
         plans={
             arm: _plan(
+                arm=arm,
                 model="deterministic-v1",
                 instruction_prefix=arm.value,
             )
@@ -637,6 +870,7 @@ def test_repository_arm_executor_rejects_mismatched_b_c_runtimes(
 
     plans = {
         arm: _plan(
+            arm=arm,
             model="deterministic-v1",
             instruction_prefix=arm.value,
         )
@@ -668,6 +902,7 @@ async def test_repository_arm_executor_rejects_hidden_b_c_provider_routes(
         runtimes=runtimes,
         plans={
             arm: _plan(
+                arm=arm,
                 model="deterministic-v1",
                 instruction_prefix=arm.value,
                 tools=("shell",),
@@ -710,7 +945,8 @@ async def test_operational_executor_requires_complete_runtime_manifest(
         task_environment=GenericRepositoryTask(work_root=tmp_path / "work"),
         runtimes={arm: runtime for arm in Arm},
         plans={
-            arm: RuntimeArmPlan(
+            arm: _plan(
+                arm=arm,
                 model="deterministic-v1",
                 instruction_prefix=arm.value,
                 execution_mode="operational",
@@ -744,7 +980,8 @@ async def test_operational_executor_persists_backend_environment_attestation(
         task_environment=GenericRepositoryTask(work_root=tmp_path / "work"),
         runtimes={arm: runtime for arm in Arm},
         plans={
-            arm: RuntimeArmPlan(
+            arm: _plan(
+                arm=arm,
                 model="deterministic-v1",
                 instruction_prefix=arm.value,
                 execution_mode="operational",
@@ -801,7 +1038,8 @@ async def test_operational_executor_fails_closed_on_unattested_pins(
         task_environment=GenericRepositoryTask(work_root=tmp_path / "work"),
         runtimes={arm: runtime for arm in Arm},
         plans={
-            arm: RuntimeArmPlan(
+            arm: _plan(
+                arm=arm,
                 model="deterministic-v1",
                 instruction_prefix=arm.value,
                 execution_mode="operational",
@@ -860,6 +1098,7 @@ async def test_budget_exhaustion_preserves_failure_usage_without_paid_retry(
         runtimes={arm: runtime for arm in Arm},
         plans={
             arm: _plan(
+                arm=arm,
                 model="deterministic-v1",
                 instruction_prefix=arm.value,
                 denied_paths=(str(tmp_path / "hidden"),),
@@ -934,6 +1173,7 @@ async def test_completed_run_over_budget_fails_without_retry(
         runtimes={arm: runtime for arm in Arm},
         plans={
             arm: _plan(
+                arm=arm,
                 model="deterministic-v1",
                 instruction_prefix=arm.value,
                 denied_paths=(str(tmp_path / "hidden"),),
@@ -980,6 +1220,7 @@ async def test_arm_time_ceiling_is_cumulative_and_prevents_retry(
         runtimes={arm: runtime for arm in Arm},
         plans={
             arm: _plan(
+                arm=arm,
                 model="deterministic-v1",
                 instruction_prefix=arm.value,
                 denied_paths=(str(tmp_path / "hidden"),),

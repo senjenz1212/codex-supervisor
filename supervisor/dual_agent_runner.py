@@ -6,14 +6,16 @@ stops on the first blocked gate. Live process calls remain injectable.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import secrets
 import subprocess
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from .dual_agent import (
     GateRound,
@@ -44,7 +46,7 @@ from .dual_agent_lead import (
     Runner,
     compute_file_sha256,
     handoff_packet_path,
-    invoke_claude_lead,
+    invoke_lead,
     select_lead_model,
     verify_planning_artifact_boundaries,
     write_handoff_packet,
@@ -54,6 +56,8 @@ from .planning_validator import (
     required_planning_kinds_for_gate,
     validate_planning_artifacts,
 )
+from .trace_graph import TraceGraph
+from .runtime_execution import RuntimeTaskRunner
 from .state import State
 from .trace_envelope import ensure_tool_call_timing, timed_tool_call
 
@@ -125,6 +129,10 @@ class DualAgentGateSpec:
     policy_overlay_task_class_hash: str = ""
     planning_rubric_threshold: float = 0.6
     planning_rubric_unavailable_policy: str = "block"
+    trace_closure_required: bool = False
+    trace_graph: TraceGraph | None = None
+    trace_now: datetime | None = None
+    trace_waiver_keys: Mapping[str, bytes | str] | None = None
 
 
 @dataclass(frozen=True)
@@ -138,6 +146,7 @@ class DualAgentGateResult:
     outcome: Outcome | None = None
     attempts: int = 0
     escalation: DeadlockEscalation | ValidationEscalation | None = None
+    tool_calls: tuple[dict[str, Any], ...] = ()
 
 
 def build_lead_replay_stdout(
@@ -191,6 +200,7 @@ def run_dual_agent_gate(
     spec: DualAgentGateSpec,
     *,
     runner: Runner = subprocess.run,
+    runtime_runner: RuntimeTaskRunner | None = None,
     state: State | None = None,
 ) -> DualAgentGateResult:
     packet_path = handoff_packet_path(spec.cwd, spec.task_id)
@@ -223,6 +233,10 @@ def run_dual_agent_gate(
                 gate=spec.gate,
                 rubric_threshold=spec.planning_rubric_threshold,
                 rubric_unavailable_policy=spec.planning_rubric_unavailable_policy,  # type: ignore[arg-type]
+                trace_closure_required=spec.trace_closure_required,
+                trace_graph=spec.trace_graph,
+                trace_now=spec.trace_now,
+                trace_waiver_keys=spec.trace_waiver_keys,
             )
         planning_probe = planning_validation_probe(planning_result, task_id=spec.task_id)
         planning_event_id: int | None = None
@@ -257,7 +271,14 @@ def run_dual_agent_gate(
                         recipient="codex",
                         message_type="gate_blocked_before_worker",
                         persona_id="supervisor.planning_validator",
-                        content="Planning validation blocked the gate before Claude Code /lead was invoked.",
+                        content=(
+                            "Planning validation blocked the gate before the "
+                            + (
+                                "runtime lead was invoked."
+                                if runtime_runner is not None
+                                else "Claude Code /lead was invoked."
+                            )
+                        ),
                         addresses=_addresses(
                             f"event:{planning_event_id}" if planning_event_id is not None else "",
                         ),
@@ -322,7 +343,11 @@ def run_dual_agent_gate(
                     task_id=spec.task_id,
                     gate=spec.gate,
                     sender="codex",
-                    recipient="claude_code",
+                    recipient=(
+                        "lead_runtime"
+                        if runtime_runner is not None
+                        else "claude_code"
+                    ),
                     message_type="gate_request",
                     persona_id="codex.lifecycle_reviewer",
                     content=spec.instruction,
@@ -353,11 +378,20 @@ def run_dual_agent_gate(
                 ).to_event_payload(),
             )
         lead_tool_calls: list[dict[str, Any]] = []
+        lead_invocation_name = (
+            "invoke_runtime_lead"
+            if runtime_runner is not None
+            else "invoke_claude_lead"
+        )
         with timed_tool_call(
-            "invoke_claude_lead",
+            lead_invocation_name,
             args=_lead_invocation_args(spec, attempts=1),
         ) as lead_tool_call:
-            lead_result = invoke_claude_lead(request, runner=runner)
+            lead_result = invoke_lead(
+                request,
+                runner=runner,
+                runtime_runner=runtime_runner,
+            )
         lead_tool_call.update(_lead_invocation_tool_fields(lead_result, attempts=1))
         lead_tool_calls.append(ensure_tool_call_timing(lead_tool_call))
         attempts = 1
@@ -374,10 +408,14 @@ def run_dual_agent_gate(
                 ),
             )
             with timed_tool_call(
-                "invoke_claude_lead",
+                lead_invocation_name,
                 args=_lead_invocation_args(spec, attempts=2, corrective_retry=True),
             ) as retry_tool_call:
-                lead_result = invoke_claude_lead(corrective, runner=runner)
+                lead_result = invoke_lead(
+                    corrective,
+                    runner=runner,
+                    runtime_runner=runtime_runner,
+                )
             attempts = 2
             retry_tool_call.update(_lead_invocation_tool_fields(lead_result, attempts=2))
             lead_tool_calls.append(ensure_tool_call_timing(retry_tool_call))
@@ -443,6 +481,11 @@ def run_dual_agent_gate(
         ]
 
         if state is not None:
+            lead_source = (
+                "lead_runtime"
+                if lead_result.runtime is not None
+                else "claude_code"
+            )
             outcome_payload = (
                 lead_result.outcome.model_dump()
                 if lead_result.outcome is not None else None
@@ -454,10 +497,10 @@ def run_dual_agent_gate(
                 payload=AgentMailboxMessage(
                     task_id=spec.task_id,
                     gate=spec.gate,
-                    sender="claude_code",
+                    sender=lead_source,
                     recipient="codex",
                     message_type="gate_response",
-                    persona_id="claude_code.lead_worker",
+                    persona_id=f"{lead_source}.lead_worker",
                     content=(
                         lead_result.outcome.summary
                         if lead_result.outcome is not None
@@ -469,7 +512,7 @@ def run_dual_agent_gate(
                     ),
                     confidence=outcome_confidence_report(
                         outcome_payload,
-                        source="claude_code",
+                        source=lead_source,
                     ),
                     claims=tuple(
                         str(item)
@@ -510,12 +553,20 @@ def run_dual_agent_gate(
                     ]),
                     raw_transcript_refs=(
                         {
-                            "kind": "claude_stdout",
+                            "kind": (
+                                "runtime_output"
+                                if lead_result.runtime is not None
+                                else "claude_stdout"
+                            ),
                             "ref": "lead_result.stdout",
                             "bytes": lead_result.stdout_bytes,
                         },
                         {
-                            "kind": "claude_handoff_packet",
+                            "kind": (
+                                "runtime_handoff_packet"
+                                if lead_result.runtime is not None
+                                else "claude_handoff_packet"
+                            ),
                             "ref": str(packet_path),
                         },
                     ),
@@ -536,6 +587,13 @@ def run_dual_agent_gate(
                         "attempts": attempts,
                         "model": lead_result.model,
                         "cost_usd": lead_result.cost_usd,
+                        "runtime": lead_result.runtime,
+                        "runtime_run_id": lead_result.runtime_run_id,
+                        "runtime_session_id": lead_result.runtime_session_id,
+                        "runtime_result_hash": lead_result.runtime_result_hash,
+                        "model_provenance": lead_result.model_provenance,
+                        "cost_provenance": lead_result.cost_provenance,
+                        "token_provenance": lead_result.token_provenance,
                         "outcome": outcome_payload,
                         "tool_calls": _lead_response_tool_calls(
                             lead_result=lead_result,
@@ -557,6 +615,7 @@ def run_dual_agent_gate(
             lead_result=lead_result,
             outcome=lead_result.outcome,
             attempts=attempts,
+            tool_calls=tuple(response_tool_calls),
         )
     finally:
         _release_handoff_lock(lock_path)
@@ -566,10 +625,15 @@ def run_dual_agent_gates(
     specs: list[DualAgentGateSpec],
     *,
     runner: Runner = subprocess.run,
+    runtime_runner: RuntimeTaskRunner | None = None,
 ) -> list[DualAgentGateResult]:
     results: list[DualAgentGateResult] = []
     for spec in specs:
-        result = run_dual_agent_gate(spec, runner=runner)
+        result = run_dual_agent_gate(
+            spec,
+            runner=runner,
+            runtime_runner=runtime_runner,
+        )
         results.append(result)
         if result.status != "accepted":
             break
@@ -588,8 +652,15 @@ async def run_dual_agent_gate_with_escalation(
     state: State,
     notifier: Any,
     runner: Runner = subprocess.run,
+    runtime_runner: RuntimeTaskRunner | None = None,
 ) -> DualAgentGateResult:
-    result = run_dual_agent_gate(spec, runner=runner, state=state)
+    result = await asyncio.to_thread(
+        run_dual_agent_gate,
+        spec,
+        runner=runner,
+        runtime_runner=runtime_runner,
+        state=state,
+    )
     if result.status == "accepted":
         return result
     escalation = await _maybe_request_validation_escalation(
@@ -608,6 +679,7 @@ async def run_dual_agent_gate_with_escalation(
         outcome=result.outcome,
         attempts=result.attempts,
         escalation=escalation,
+        tool_calls=result.tool_calls,
     )
 
 
@@ -623,6 +695,7 @@ def resume_pending_gates(
     *,
     state: State,
     runner: Runner = subprocess.run,
+    runtime_runner: RuntimeTaskRunner | None = None,
 ) -> list[DualAgentGateResult]:
     results: list[DualAgentGateResult] = []
     for spec in specs:
@@ -639,7 +712,12 @@ def resume_pending_gates(
             )
         if signal is None:
             continue
-        results.append(run_dual_agent_gate(spec, runner=runner, state=state))
+        results.append(run_dual_agent_gate(
+            spec,
+            runner=runner,
+            runtime_runner=runtime_runner,
+            state=state,
+        ))
     return results
 
 
@@ -967,6 +1045,14 @@ def _lead_invocation_tool_fields(
         "tokens_in": lead_result.tokens_in,
         "tokens_out": lead_result.tokens_out,
         "token_usage": lead_result.token_usage,
+        "runtime": lead_result.runtime,
+        "runtime_run_id": lead_result.runtime_run_id,
+        "runtime_session_id": lead_result.runtime_session_id,
+        "runtime_result_hash": lead_result.runtime_result_hash,
+        "runtime_duration_ms": lead_result.runtime_duration_ms,
+        "model_provenance": lead_result.model_provenance,
+        "cost_provenance": lead_result.cost_provenance,
+        "token_provenance": lead_result.token_provenance,
         "stdout_bytes": lead_result.stdout_bytes,
         "stderr_bytes": lead_result.stderr_bytes,
         "result_summary": {
@@ -978,6 +1064,12 @@ def _lead_invocation_tool_fields(
             "cost_usd": lead_result.cost_usd,
             "tokens_in": lead_result.tokens_in,
             "tokens_out": lead_result.tokens_out,
+            "runtime": lead_result.runtime,
+            "runtime_run_id": lead_result.runtime_run_id,
+            "runtime_result_hash": lead_result.runtime_result_hash,
+            "model_provenance": lead_result.model_provenance,
+            "cost_provenance": lead_result.cost_provenance,
+            "token_provenance": lead_result.token_provenance,
             "stdout_bytes": lead_result.stdout_bytes,
             "stderr_bytes": lead_result.stderr_bytes,
         },
@@ -994,7 +1086,11 @@ def _lead_response_tool_calls(
     if tool_calls is not None:
         return [ensure_tool_call_timing(call) for call in tool_calls]
     lead_call = ensure_tool_call_timing({
-            "name": "invoke_claude_lead",
+            "name": (
+                "invoke_runtime_lead"
+                if lead_result.runtime is not None
+                else "invoke_claude_lead"
+            ),
             "status": "completed" if probes["P2"].ok else "failed",
             "attempts": attempts,
             "model": lead_result.model,
@@ -1002,6 +1098,14 @@ def _lead_response_tool_calls(
             "tokens_in": lead_result.tokens_in,
             "tokens_out": lead_result.tokens_out,
             "token_usage": lead_result.token_usage,
+            "runtime": lead_result.runtime,
+            "runtime_run_id": lead_result.runtime_run_id,
+            "runtime_session_id": lead_result.runtime_session_id,
+            "runtime_result_hash": lead_result.runtime_result_hash,
+            "runtime_duration_ms": lead_result.runtime_duration_ms,
+            "model_provenance": lead_result.model_provenance,
+            "cost_provenance": lead_result.cost_provenance,
+            "token_provenance": lead_result.token_provenance,
             "stdout_bytes": lead_result.stdout_bytes,
             "stderr_bytes": lead_result.stderr_bytes,
         })
@@ -1276,7 +1380,11 @@ def _validation_failure_policy(
     if p2 is not None and not p2.ok:
         if p2.reason == "lead_invocation_timeout":
             return "timeout", p2
-        if p2.reason in {"lead_invocation_failed", "claude_json_schema_drift"}:
+        if p2.reason in {
+            "lead_invocation_cancelled",
+            "lead_invocation_failed",
+            "claude_json_schema_drift",
+        }:
             return "subprocess_failure", p2
     if p3 is not None and not p3.ok:
         if p3.reason == "outcome_signal_loss":

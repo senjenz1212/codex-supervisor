@@ -75,6 +75,22 @@ supervisor:
   # accepts are dependence/severity weighted; when absent, the panel falls back
   # to conservative aggregation.
   reviewer_panel_calibration_path: ""
+  ledger_checkpoints:
+    # Diagnostic mode verifies local structure only and cannot support release
+    # or improvement claims. Authoritative mode fails startup unless the
+    # provider returns externally managed signing and rollback-independent pins.
+    mode: diagnostic_only
+    max_events_between_checkpoints: 100
+    checkpoint_store_path: ~/.codex-supervisor/ledger-checkpoints
+    # Operator plugin in module:callable form. It must return CheckpointRuntime.
+    runtime_provider: ""
+  historical_evaluation:
+    # Disabled until an operator supplies model/task-specific executors. The
+    # plugin must resolve pinned evidence and implement distinct rerun,
+    # regrade, and deterministic replay operations.
+    enabled: false
+    runtime_provider: ""
+    claim_stale_after_s: 86400
 
 durable_execution:
   # Report-only spike lane. The default runtime remains the hand-rolled

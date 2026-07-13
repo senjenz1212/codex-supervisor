@@ -18,7 +18,7 @@
     },
     {
       "path": "docs/LOOP.md",
-      "sha256": "86852da4f10b2730f397557290a2ef15c43723ade24c9cab1d96128634da9ae6"
+      "sha256": "e4dfe883e5692c8285be925b0e79976346eadd2fb10fb5b36248cab2a4e2a62d"
     }
   ],
   "default_change_allowed": false,
@@ -918,7 +918,7 @@
     },
     {
       "event_id": 23,
-      "verb": "codex-supervisor-axi approve --proposal-id <proposal_id>"
+      "verb": "codex-supervisor-axi approve --run-id <run> --proposal-id <proposal_id> --approver <named-human>"
     }
   ],
   "overlay_after_hash": "bd27d04477e0bdc6628802a68a395a9fdb86dd74a6bc31564fa935fe99eb7a16",

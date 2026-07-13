@@ -24,11 +24,13 @@ from supervisor.experiment_kernel import (
     ExperimentSpec,
     IsolationAttestation,
     SqliteExperimentStore,
+    TreatmentDescriptor,
     blind_frozen_result,
     build_adjudicator_packet,
     build_primary_reviewer_packet,
     validate_primary_reviewer_packet,
 )
+from supervisor.pilot_readiness import PilotReadinessError
 from supervisor.task_environment import FrozenTaskResult, Grade, TaskSpec
 
 
@@ -60,6 +62,7 @@ def _task_spec(
 def _experiment(
     *,
     assignment_roster: tuple[str, ...] | None = None,
+    treatments: dict[Arm, TreatmentDescriptor] | None = None,
 ) -> ExperimentSpec:
     matched = ArmBudget(
         max_tokens=1000,
@@ -81,6 +84,7 @@ def _experiment(
             Arm.B: matched,
             Arm.C: matched,
         },
+        treatments=treatments or _treatments(),
         metadata={
             "execution_mode": "hermetic",
             **(
@@ -90,6 +94,38 @@ def _experiment(
             ),
         },
     )
+
+
+def _treatments() -> dict[Arm, TreatmentDescriptor]:
+    return {
+        Arm.A: TreatmentDescriptor(
+            arm_adapter="production-baseline",
+            entrypoint="baseline.execute",
+            instruction_template=(
+                "Use the production baseline path.\n\n{problem_statement}"
+            ),
+            treatment_config={"orchestration": "none", "baseline": True},
+        ),
+        Arm.B: TreatmentDescriptor(
+            arm_adapter="supervisor-orchestration",
+            entrypoint="supervisor.execute",
+            instruction_template=(
+                "Use supervisor orchestration.\n\n{problem_statement}"
+            ),
+            treatment_config={
+                "orchestration": "supervisor",
+                "review_passes": 1,
+            },
+        ),
+        Arm.C: TreatmentDescriptor(
+            arm_adapter="compute-matched-direct",
+            entrypoint="direct.execute",
+            instruction_template=(
+                "Use the compute-matched direct path.\n\n{problem_statement}"
+            ),
+            treatment_config={"orchestration": "none", "compute_matched": True},
+        ),
+    }
 
 
 @pytest.mark.parametrize(
@@ -116,6 +152,57 @@ def test_arm_budget_rejects_non_typed_accounting_limits(
 
     with pytest.raises(ValueError, match=message):
         ArmBudget(**values)
+
+
+def test_experiment_rejects_duplicate_treatment_hashes() -> None:
+    duplicate = TreatmentDescriptor(
+        arm_adapter="same-adapter",
+        entrypoint="same.execute",
+        instruction_template="Same instructions.\n\n{problem_statement}",
+        treatment_config={"mode": "same"},
+    )
+
+    with pytest.raises(ValueError, match="treatment hashes must all differ"):
+        _experiment(treatments={arm: duplicate for arm in Arm})
+
+
+def test_assignment_persists_treatments_and_rejects_post_assignment_mutation(
+    tmp_path: Path,
+) -> None:
+    store = SqliteExperimentStore(tmp_path / "treatment-preregistration.db")
+    kernel = ExperimentKernel(store=store, executor=RecordingExecutor(store))
+    experiment = _experiment()
+
+    assignment = kernel.assign(experiment, _task_spec())
+    preregistration = store.get_preregistration(experiment.experiment_id)
+
+    expected_hashes = {
+        arm: experiment.treatments[arm].treatment_hash
+        for arm in Arm
+    }
+    assert dict(assignment.treatment_hashes) == expected_hashes
+    assert preregistration is not None
+    assert preregistration["spec_hash"] == experiment.spec_hash
+    assert preregistration["treatment_hashes"] == {
+        arm.value: expected_hashes[arm] for arm in Arm
+    }
+
+    mutated_treatments = dict(experiment.treatments)
+    mutated_treatments[Arm.B] = TreatmentDescriptor(
+        arm_adapter="supervisor-orchestration",
+        entrypoint="supervisor.execute",
+        instruction_template=(
+            "Mutated after assignment.\n\n{problem_statement}"
+        ),
+        treatment_config={
+            "orchestration": "supervisor",
+            "review_passes": 2,
+        },
+    )
+    mutated = replace(experiment, treatments=mutated_treatments)
+
+    with pytest.raises(ValueError, match="preregistration discrepancy"):
+        kernel.assign(mutated, _task_spec())
 
 
 def _runtime_manifest() -> dict[str, Any]:
@@ -169,6 +256,17 @@ def _execution_receipt(
     execution_id = f"execution-{sequence}-{arm.name.lower()}"
     session_id = f"session-{sequence}-{arm.name.lower()}"
     token_usage = {"tokens_in": 10, "tokens_out": 5}
+    treatment_hash = _treatments()[arm].treatment_hash
+    plan_fingerprint = hashlib.sha256(
+        f"plan::{arm.value}::{treatment_hash}".encode("utf-8")
+    ).hexdigest()
+    compute_resource_hash = hashlib.sha256(
+        (
+            "compute::matched"
+            if arm in {Arm.B, Arm.C}
+            else "compute::baseline"
+        ).encode("utf-8")
+    ).hexdigest()
     return ArmExecutionReceipt(
         execution_id=execution_id,
         result_id=f"result-{sequence}-{arm.name.lower()}",
@@ -177,6 +275,9 @@ def _execution_receipt(
         canonical_task_id=task.canonical_task_id,
         task_spec_hash=task.spec_hash,
         arm=arm,
+        treatment_hash=treatment_hash,
+        plan_fingerprint=plan_fingerprint,
+        compute_resource_hash=compute_resource_hash,
         frozen_result_hash=frozen_result.result_hash,
         attempts=1,
         cost_usd=0.25,
@@ -279,6 +380,22 @@ class RecordingExecutor:
             attempts=1,
             cost_usd=0.25,
             latency_ms=10,
+            metadata={
+                "runtime_plan": {
+                    "treatment_hash": receipt.treatment_hash,
+                    "plan_fingerprint": receipt.plan_fingerprint,
+                    "compute_resource_hash": receipt.compute_resource_hash,
+                },
+                "launch_metadata": {
+                    "arm": arm.value,
+                    "assignment_id": assignment_id,
+                    "treatment_hash": receipt.treatment_hash,
+                    "plan_fingerprint": receipt.plan_fingerprint,
+                    "compute_resource_hash": (
+                        receipt.compute_resource_hash
+                    ),
+                },
+            },
             receipt=receipt,
         )
 
@@ -332,6 +449,28 @@ async def test_assignment_is_deterministic_and_persisted_before_execution(
     assert set(executor.calls) == {Arm.A, Arm.B, Arm.C}
     assert len(first.outcomes) == 3
     assert all(outcome.attempts == 1 for outcome in first.outcomes)
+
+
+@pytest.mark.asyncio
+async def test_pilot_readiness_is_required_before_any_arm_invocation(
+    tmp_path: Path,
+) -> None:
+    store = SqliteExperimentStore(tmp_path / "pilot-readiness-required.db")
+    executor = RecordingExecutor(store)
+    experiment = replace(
+        _experiment(),
+        experiment_id="pilot-001",
+        pilot_protocol_hash="b" * 64,
+        pilot_task_set_hash="c" * 64,
+    )
+
+    with pytest.raises(PilotReadinessError, match="requires"):
+        await ExperimentKernel(
+            store=store,
+            executor=executor,
+        ).run_task(experiment, _task_spec(), RecordingVerifier())
+
+    assert executor.calls == []
 
 
 def test_assignment_rejects_alias_of_an_already_assigned_underlying_task(
@@ -427,7 +566,10 @@ def test_assignment_freezes_and_hash_binds_roster(
             "assignment_roster": ("task-2", "task-1"),
         },
     )
-    with pytest.raises(ValueError, match="persisted assignment"):
+    with pytest.raises(
+        ValueError,
+        match="preregistration|persisted assignment",
+    ):
         kernel.assign(changed_roster, _task_spec("task-1"))
 
 
@@ -868,6 +1010,7 @@ async def test_explicit_hermetic_tracer_may_rebind_fixture_annotation(
         ("task_id", "other-task", "task_id"),
         ("canonical_task_id", "0" * 64, "canonical task identity"),
         ("task_spec_hash", "0" * 64, "task_spec_hash"),
+        ("treatment_hash", "0" * 64, "treatment hash"),
     ],
 )
 async def test_kernel_rejects_execution_receipt_binding_substitution(
@@ -896,6 +1039,80 @@ async def test_kernel_rejects_execution_receipt_binding_substitution(
         await ExperimentKernel(
             store=store,
             executor=MisboundExecutor(store),
+        ).run_task(_experiment(), _task_spec(), RecordingVerifier())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("launch_surface", ["launch_metadata", "runtime_plan"])
+async def test_kernel_rejects_treatment_hash_mismatch_with_launched_plan(
+    tmp_path: Path,
+    launch_surface: str,
+) -> None:
+    store = SqliteExperimentStore(
+        tmp_path / f"launch-treatment-{launch_surface}.db"
+    )
+
+    class MismatchedLaunchExecutor(RecordingExecutor):
+        async def execute(self, **kwargs: Any) -> ArmExecution:
+            execution = await super().execute(**kwargs)
+            return replace(
+                execution,
+                metadata={
+                    **dict(execution.metadata),
+                    launch_surface: {
+                        **dict(execution.metadata[launch_surface]),
+                        "treatment_hash": "0" * 64,
+                    },
+                },
+            )
+
+    with pytest.raises(
+        ValueError,
+        match="launched (plan treatment_hash|runtime plan.*treatment_hash)",
+    ):
+        await ExperimentKernel(
+            store=store,
+            executor=MismatchedLaunchExecutor(store),
+        ).run_task(_experiment(), _task_spec(), RecordingVerifier())
+
+
+@pytest.mark.asyncio
+async def test_kernel_independently_rejects_mismatched_b_c_compute_hashes(
+    tmp_path: Path,
+) -> None:
+    store = SqliteExperimentStore(tmp_path / "compute-hash-mismatch.db")
+
+    class MismatchedComputeExecutor(RecordingExecutor):
+        async def execute(self, **kwargs: Any) -> ArmExecution:
+            execution = await super().execute(**kwargs)
+            if kwargs["arm"] is not Arm.C:
+                return execution
+            assert execution.receipt is not None
+            mismatched_hash = "f" * 64
+            receipt = replace(
+                execution.receipt,
+                compute_resource_hash=mismatched_hash,
+            )
+            return replace(
+                execution,
+                receipt=receipt,
+                metadata={
+                    **dict(execution.metadata),
+                    "runtime_plan": {
+                        **dict(execution.metadata["runtime_plan"]),
+                        "compute_resource_hash": mismatched_hash,
+                    },
+                    "launch_metadata": {
+                        **dict(execution.metadata["launch_metadata"]),
+                        "compute_resource_hash": mismatched_hash,
+                    },
+                },
+            )
+
+    with pytest.raises(ValueError, match="compute/resource hashes must match"):
+        await ExperimentKernel(
+            store=store,
+            executor=MismatchedComputeExecutor(store),
         ).run_task(_experiment(), _task_spec(), RecordingVerifier())
 
 

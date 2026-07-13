@@ -5,13 +5,10 @@ import base64
 import binascii
 import json
 import os
-import platform
-import shutil
 import subprocess
-import sys
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, Iterable, Iterator
+from typing import Any, Iterable, Iterator, Mapping
 
 
 EXECUTION_PROVENANCE_SCHEMA_VERSION = "dual-agent-execution-provenance/v1"
@@ -31,6 +28,25 @@ _MODEL_ALIASES = {
     "proxy-default",
     "sonnet",
 }
+_COMPONENT_CATEGORY_ALIASES = {
+    "prompt": "prompts",
+    "prompts": "prompts",
+    "tool_contract": "tool_contracts",
+    "tool_contracts": "tool_contracts",
+    "container": "containers",
+    "containers": "containers",
+    "image": "containers",
+    "cli": "cli",
+    "evaluator": "evaluators",
+    "evaluators": "evaluators",
+}
+_BOUND_REFERENCE_PREFIXES = (
+    "artifact:",
+    "event:",
+    "ledger:",
+    "provider-response:",
+    "receipt:",
+)
 
 
 def capture_acceptance_evidence(payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -209,7 +225,7 @@ def execution_provenance_issues(provenance: Any) -> list[str]:
         or item.get("exact_model_identity") is not True
         or not _is_exact_model_identity(item.get("resolved_model"))
         or item.get("resolution_source") != "response_model"
-        or not str(item.get("provider_response_source") or "").strip()
+        or not _is_bound_reference(item.get("provider_response_source"))
         for item in model_resolutions
     ):
         issues.append("model_resolutions_not_exact")
@@ -240,6 +256,11 @@ def execution_provenance_issues(provenance: Any) -> list[str]:
                 for component in components
             ):
                 issues.append(f"component_hash_invalid:{category}")
+            if any(
+                not _verified_component_artifact(category, component)
+                for component in components
+            ):
+                issues.append(f"component_artifact_invalid:{category}")
         tool_contracts = component_hashes.get("tool_contracts")
         if (
             not isinstance(tool_contracts, list)
@@ -273,6 +294,7 @@ def build_execution_provenance(
     handoff_packets: Iterable[dict[str, Any]] = (),
     provider_model_resolutions: Iterable[dict[str, Any]] = (),
     canonical_tool_contracts: Iterable[dict[str, Any]] = (),
+    runtime_component_receipts: Iterable[dict[str, Any]] = (),
 ) -> dict[str, Any]:
     """Build deterministic model and component provenance for one run.
 
@@ -285,8 +307,13 @@ def build_execution_provenance(
     ``provider_model_resolutions`` is the explicit handoff for exact identities
     returned by providers. Requested or configured model names remain useful
     route evidence, but they are never promoted to exact identities. Each item
-    supplies the lane coordinates plus ``resolved_model`` and, when available,
-    ``provider_response_source``.
+    supplies the lane coordinates plus ``resolved_model`` and a bound
+    ``provider_response_receipt_ref`` (or equivalent receipt reference).
+
+    ``runtime_component_receipts`` contains execution-time digests or canonical
+    bytes for container, CLI, and evaluator components. Export-time filesystem
+    inspection and caller-provided hashes embedded in tool arguments are never
+    promoted to execution provenance.
     """
     model_resolutions = _model_resolutions(
         events,
@@ -298,12 +325,15 @@ def build_execution_provenance(
         missing_tool_contracts,
         invalid_tool_contracts,
     ) = _tool_contract_components(events, canonical_tool_contracts)
+    component_receipts = _runtime_component_receipt_index(
+        runtime_component_receipts
+    )
     component_hashes = {
         "prompts": _prompt_components(events, handoff_packets),
         "tool_contracts": tool_contract_components,
-        "containers": _container_components(events),
-        "cli": _cli_components(events),
-        "evaluators": _evaluator_components(events),
+        "containers": _container_components(events, component_receipts),
+        "cli": _cli_components(events, component_receipts),
+        "evaluators": _evaluator_components(events, component_receipts),
     }
     unresolved_models = (
         [
@@ -312,6 +342,9 @@ def build_execution_provenance(
             if (
                 not _is_exact_model_identity(item.get("resolved_model"))
                 or item.get("exact_model_identity") is not True
+                or not _is_bound_reference(
+                    item.get("provider_response_source")
+                )
             )
         ]
         if model_resolutions
@@ -321,7 +354,10 @@ def build_execution_provenance(
         category
         for category in REQUIRED_COMPONENT_CATEGORIES
         if (
-            _component_category_missing(component_hashes.get(category) or [])
+            _component_category_missing(
+                category,
+                component_hashes.get(category) or [],
+            )
             or (
                 category == "tool_contracts"
                 and (missing_tool_contracts or invalid_tool_contracts)
@@ -354,19 +390,14 @@ def build_execution_provenance(
     }
 
 
-def _component_category_missing(components: list[dict[str, Any]]) -> bool:
+def _component_category_missing(
+    category: str,
+    components: list[dict[str, Any]],
+) -> bool:
     if not components:
         return True
-    return all(
-        str(
-            (
-                component.get("details")
-                if isinstance(component.get("details"), dict)
-                else {}
-            ).get("status")
-            or ""
-        )
-        in {"not_recorded", "not_used", "unavailable"}
+    return any(
+        not _verified_component_artifact(category, component)
         for component in components
     )
 
@@ -573,12 +604,16 @@ def _model_resolution_record(
     provider_returned = str(
         candidate.get("provider_returned_model") or ""
     ).strip()
+    provider_response_source = str(
+        candidate.get("provider_response_source") or ""
+    ).strip()
     runtime = str(candidate.get("runtime") or "").strip()
     provider = str(candidate.get("provider_family") or "").strip()
     resolved_model, resolution_source, exact = _resolve_model(
         requested_model=requested,
         observed_model=observed,
         provider_returned_model=provider_returned,
+        provider_response_source=provider_response_source,
         runtime=runtime,
         provider_family=provider,
     )
@@ -592,9 +627,7 @@ def _model_resolution_record(
         "observed_model": observed,
         "resolved_model": resolved_model,
         "model_source": str(candidate.get("model_source") or ""),
-        "provider_response_source": str(
-            candidate.get("provider_response_source") or ""
-        ),
+        "provider_response_source": provider_response_source,
         "resolution_source": resolution_source,
         "exact_model_identity": exact,
         "lane_id": str(candidate.get("lane_id") or ""),
@@ -613,6 +646,7 @@ def _provider_model_candidates(
             }
             continue
         resolved_model = resolution.get("resolved_model")
+        provider_response_source = _provider_response_reference(resolution)
         yield {
             "event_id": resolution.get("event_id") or 0,
             "gate": resolution.get("gate") or "unknown",
@@ -628,11 +662,7 @@ def _provider_model_candidates(
             "observed_model": resolved_model,
             "provider_returned_model": resolved_model,
             "model_source": resolution.get("model_source") or "",
-            "provider_response_source": (
-                resolution.get("provider_response_source")
-                or resolution.get("model_provenance")
-                or "provider_model_resolutions"
-            ),
+            "provider_response_source": provider_response_source,
             "lane_id": resolution.get("lane_id") or "",
         }
 
@@ -667,6 +697,11 @@ def _model_candidates(events: list[dict[str, Any]]) -> Iterator[dict[str, Any]]:
                 ),
                 ("trace_envelope.result_summary.model", result.get("model")),
             )
+            provider_response_source = (
+                _provider_response_reference(call)
+                or _provider_response_reference(result)
+                or _bound_event_reference(event_id, response_source)
+            )
             observed = provider_returned or call.get("model")
             if requested in (None, "") and observed in (None, ""):
                 continue
@@ -691,9 +726,7 @@ def _model_candidates(events: list[dict[str, Any]]) -> Iterator[dict[str, Any]]:
                 "provider_returned_model": provider_returned,
                 "model_source": args.get("model_source") or "",
                 "provider_response_source": (
-                    call.get("model_provenance")
-                    or result.get("model_provenance")
-                    or response_source
+                    provider_response_source
                 ),
             }
 
@@ -716,6 +749,10 @@ def _model_candidates(events: list[dict[str, Any]]) -> Iterator[dict[str, Any]]:
             provider_returned, response_source = _first_present_value(
                 ("event_payload.resolved_model", payload.get("resolved_model")),
                 ("event_payload.served_model", payload.get("served_model")),
+            )
+            provider_response_source = (
+                _provider_response_reference(payload)
+                or _bound_event_reference(event_id, response_source)
             )
             yield {
                 "event_id": event_id,
@@ -740,8 +777,7 @@ def _model_candidates(events: list[dict[str, Any]]) -> Iterator[dict[str, Any]]:
                 "provider_returned_model": provider_returned,
                 "model_source": payload.get("model_source") or "",
                 "provider_response_source": (
-                    payload.get("model_provenance")
-                    or response_source
+                    provider_response_source
                 ),
             }
 
@@ -755,6 +791,10 @@ def _model_candidates(events: list[dict[str, Any]]) -> Iterator[dict[str, Any]]:
                 ("reviewer_result.resolved_model", result.get("resolved_model")),
                 ("reviewer_result.served_model", result.get("served_model")),
                 ("reviewer_result.model", result.get("model")),
+            )
+            provider_response_source = (
+                _provider_response_reference(result)
+                or _bound_event_reference(event_id, response_source)
             )
             observed = provider_returned
             if requested in (None, "") and observed in (None, ""):
@@ -774,8 +814,7 @@ def _model_candidates(events: list[dict[str, Any]]) -> Iterator[dict[str, Any]]:
                 "provider_returned_model": provider_returned,
                 "model_source": result.get("model_source") or "",
                 "provider_response_source": (
-                    result.get("model_provenance")
-                    or response_source
+                    provider_response_source
                 ),
             }
 
@@ -789,17 +828,60 @@ def _first_present_value(
     return None, ""
 
 
+def _provider_response_reference(payload: dict[str, Any]) -> str:
+    for key in (
+        "provider_response_receipt_ref",
+        "response_receipt_ref",
+        "provider_receipt_ref",
+        "receipt_ref",
+    ):
+        reference = _normalise_receipt_reference(payload.get(key))
+        if reference:
+            return reference
+    for key in (
+        "provider_response_source",
+        "model_provenance",
+    ):
+        value = str(payload.get(key) or "").strip()
+        if _is_bound_reference(value):
+            return value
+    receipt = payload.get("provider_response_receipt")
+    if isinstance(receipt, dict):
+        for key in ("receipt_ref", "receipt_id", "id", "ref"):
+            reference = _normalise_receipt_reference(receipt.get(key))
+            if reference:
+                return reference
+    return ""
+
+
+def _normalise_receipt_reference(value: Any) -> str:
+    reference = str(value or "").strip()
+    if not reference:
+        return ""
+    if _is_bound_reference(reference):
+        return reference
+    bound = f"receipt:{reference}"
+    return bound if _is_bound_reference(bound) else ""
+
+
+def _bound_event_reference(event_id: int, source: str) -> str:
+    source = str(source or "").strip()
+    return f"event:{event_id}:{source}" if event_id > 0 and source else ""
+
+
 def _resolve_model(
     *,
     requested_model: str,
     observed_model: str,
     provider_returned_model: str,
+    provider_response_source: str,
     runtime: str,
     provider_family: str,
 ) -> tuple[str, str, bool]:
     if (
         provider_returned_model
         and _is_exact_model_identity(provider_returned_model)
+        and _is_bound_reference(provider_response_source)
     ):
         return provider_returned_model, "response_model", True
     alias = provider_returned_model or observed_model or requested_model
@@ -819,6 +901,270 @@ def _resolve_model(
     return f"{namespace}:{alias}", "provider_route", False
 
 
+def _canonical_json_bytes(payload: Any) -> bytes:
+    return json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        default=str,
+    ).encode("ascii")
+
+
+def _canonical_component(
+    *,
+    kind: str,
+    component_id: str,
+    canonical_bytes: bytes,
+    details: dict[str, Any],
+    source: str,
+    capture_source: str,
+    receipt_ref: str,
+) -> dict[str, Any]:
+    digest = sha256(canonical_bytes).hexdigest()
+    return {
+        "component_id": component_id,
+        "kind": kind,
+        "source": source,
+        "sha256": digest,
+        "details": {
+            **details,
+            "status": "verified",
+            "capture_source": capture_source,
+            "receipt_ref": receipt_ref,
+            "declared_sha256": digest,
+            "computed_sha256": digest,
+            "canonical_bytes_base64": base64.b64encode(
+                canonical_bytes
+            ).decode("ascii"),
+            "canonical_size_bytes": len(canonical_bytes),
+        },
+    }
+
+
+def _missing_component(
+    *,
+    kind: str,
+    component_id: str,
+    status: str,
+    source: str,
+    details: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "component_id": component_id,
+        "kind": kind,
+        "source": source,
+        "sha256": "",
+        "details": {
+            **dict(details or {}),
+            "status": status,
+            "capture_source": "",
+            "receipt_ref": "",
+            "declared_sha256": "",
+            "computed_sha256": "",
+            "canonical_bytes_base64": "",
+            "canonical_size_bytes": 0,
+        },
+    }
+
+
+def _component_receipt_reference(payload: Mapping[str, Any]) -> str:
+    for key in (
+        "receipt_ref",
+        "artifact_ref",
+        "evidence_ref",
+        "runtime_receipt_ref",
+    ):
+        reference = _normalise_receipt_reference(payload.get(key))
+        if reference:
+            return reference
+    for key in ("receipt_id", "id", "ref"):
+        reference = _normalise_receipt_reference(payload.get(key))
+        if reference:
+            return reference
+    return ""
+
+
+def _runtime_component_receipt_index(
+    receipts: Iterable[dict[str, Any]],
+) -> dict[str, dict[str, list[dict[str, Any]]]]:
+    indexed: dict[str, dict[str, list[dict[str, Any]]]] = {}
+    for receipt in receipts:
+        if not isinstance(receipt, dict):
+            continue
+        category = _COMPONENT_CATEGORY_ALIASES.get(
+            str(
+                receipt.get("category")
+                or receipt.get("kind")
+                or ""
+            ).strip().lower()
+        )
+        component_id = str(receipt.get("component_id") or "").strip()
+        if not category or not component_id:
+            continue
+        indexed.setdefault(category, {}).setdefault(
+            component_id,
+            [],
+        ).append(dict(receipt))
+    return indexed
+
+
+def _runtime_component_from_receipts(
+    *,
+    category: str,
+    kind: str,
+    component_id: str,
+    receipts: list[dict[str, Any]],
+    observed_details: dict[str, Any],
+    expected_digest: str = "",
+) -> dict[str, Any]:
+    if not receipts:
+        return _missing_component(
+            kind=kind,
+            component_id=component_id,
+            status="not_recorded",
+            source="manifest_input",
+            details=observed_details,
+        )
+
+    candidates: list[dict[str, Any]] = []
+    for receipt in receipts:
+        declared_sha256 = _normalized_sha256(receipt.get("sha256"))
+        receipt_ref = _component_receipt_reference(receipt)
+        capture_source = str(receipt.get("capture_source") or "").strip()
+        canonical_bytes, bytes_status = _canonical_contract_bytes(receipt)
+        digest_only_receipt = (
+            bytes_status == "canonical_bytes_missing"
+            and bool(declared_sha256)
+        )
+        computed_sha256 = (
+            sha256(canonical_bytes).hexdigest()
+            if canonical_bytes is not None
+            else declared_sha256 if digest_only_receipt else ""
+        )
+        if not declared_sha256:
+            status = "digest_missing"
+        elif not receipt_ref:
+            status = "receipt_unbound"
+        elif capture_source != "execution_time":
+            status = "capture_source_invalid"
+        elif (
+            canonical_bytes is None
+            and not digest_only_receipt
+        ):
+            status = bytes_status
+        elif computed_sha256 != declared_sha256:
+            status = "digest_mismatch"
+        elif expected_digest and declared_sha256 != expected_digest:
+            status = "observed_digest_mismatch"
+        else:
+            status = "verified"
+        candidates.append({
+            "component_id": component_id,
+            "kind": kind,
+            "source": str(
+                receipt.get("source") or "runtime_component_receipt"
+            ),
+            "sha256": computed_sha256,
+            "details": {
+                **observed_details,
+                "status": status,
+                "capture_source": capture_source,
+                "receipt_ref": receipt_ref,
+                "declared_sha256": declared_sha256,
+                "computed_sha256": computed_sha256,
+                "canonical_bytes_base64": (
+                    base64.b64encode(canonical_bytes).decode("ascii")
+                    if canonical_bytes is not None
+                    else ""
+                ),
+                "canonical_size_bytes": (
+                    len(canonical_bytes)
+                    if canonical_bytes is not None
+                    else 0
+                ),
+                "digest_only": digest_only_receipt,
+                "expected_digest": expected_digest,
+            },
+        })
+
+    verified = [
+        candidate
+        for candidate in candidates
+        if candidate["details"]["status"] == "verified"
+    ]
+    verified_hashes = {
+        str(candidate.get("sha256") or "")
+        for candidate in verified
+    }
+    if len(verified_hashes) == 1 and len(verified) == len(candidates):
+        return verified[0]
+    if len(candidates) > 1:
+        chosen = candidates[0]
+        chosen["details"]["status"] = "conflicting_artifacts"
+        return chosen
+    return candidates[0]
+
+
+def _verified_component_artifact(
+    category: str,
+    component: Any,
+) -> bool:
+    if category == "tool_contracts":
+        return _verified_tool_contract_component(component)
+    if not isinstance(component, dict):
+        return False
+    details = component.get("details")
+    if not isinstance(details, dict):
+        return False
+    component_sha256 = _normalized_sha256(component.get("sha256"))
+    declared_sha256 = _normalized_sha256(details.get("declared_sha256"))
+    computed_sha256 = _normalized_sha256(details.get("computed_sha256"))
+    if (
+        details.get("status") != "verified"
+        or not component_sha256
+        or component_sha256 != declared_sha256
+        or component_sha256 != computed_sha256
+        or not _is_bound_reference(details.get("receipt_ref"))
+    ):
+        return False
+    capture_source = str(details.get("capture_source") or "")
+    if category == "prompts":
+        if capture_source not in {
+            "event_ledger",
+            "accepted_gate_event",
+            "execution_time",
+        }:
+            return False
+    elif capture_source != "execution_time":
+        return False
+
+    encoded = details.get("canonical_bytes_base64")
+    if isinstance(encoded, str) and encoded:
+        try:
+            canonical_bytes = base64.b64decode(
+                encoded.encode("ascii"),
+                validate=True,
+            )
+            canonical_size_bytes = int(
+                details.get("canonical_size_bytes")
+            )
+        except (
+            binascii.Error,
+            TypeError,
+            ValueError,
+            UnicodeEncodeError,
+        ):
+            return False
+        return (
+            canonical_size_bytes == len(canonical_bytes)
+            and sha256(canonical_bytes).hexdigest() == component_sha256
+        )
+    return (
+        details.get("digest_only") is True
+    )
+
+
 def _prompt_components(
     events: list[dict[str, Any]],
     handoff_packets: Iterable[dict[str, Any]],
@@ -826,6 +1172,7 @@ def _prompt_components(
     components: list[dict[str, Any]] = []
     for event in events:
         payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+        event_id = int(event.get("event_id") or 0)
         message_type = str(payload.get("message_type") or "").lower()
         content = payload.get("content")
         if isinstance(content, str) and content and (
@@ -833,38 +1180,73 @@ def _prompt_components(
             or "prompt" in message_type
             or event.get("kind") == "dual_agent_gate_request"
         ):
-            components.append(_component(
-                "prompt",
-                f"event:{int(event.get('event_id') or 0)}",
-                {
+            canonical_bytes = _canonical_json_bytes({
+                "message_type": message_type,
+                "content": content,
+            })
+            components.append(_canonical_component(
+                kind="prompt",
+                component_id=f"event:{event_id}",
+                canonical_bytes=canonical_bytes,
+                details={
                     "message_type": message_type,
                     "content": content,
                 },
                 source="event_ledger",
+                capture_source="event_ledger",
+                receipt_ref=f"event:{event_id}:payload.content",
             ))
         for key in ("prompt", "instruction", "system_prompt", "user_prompt"):
             value = payload.get(key)
             if isinstance(value, str) and value:
-                components.append(_component(
-                    "prompt",
-                    f"event:{int(event.get('event_id') or 0)}:{key}",
-                    {key: value},
+                components.append(_canonical_component(
+                    kind="prompt",
+                    component_id=f"event:{event_id}:{key}",
+                    canonical_bytes=_canonical_json_bytes({key: value}),
+                    details={key: value},
                     source="event_ledger",
+                    capture_source="event_ledger",
+                    receipt_ref=f"event:{event_id}:payload.{key}",
                 ))
     for index, packet in enumerate(handoff_packets):
         content = packet.get("content")
         if isinstance(content, str) and content:
-            components.append(_component(
-                "prompt",
-                f"handoff:{index}:{packet.get('path') or ''}",
-                {"content": content},
-                source="handoff_packet",
-            ))
+            component_id = f"handoff:{index}:{packet.get('path') or ''}"
+            content_bytes = content.encode("utf-8")
+            if (
+                packet.get("capture_source") == "accepted_gate_event"
+                and packet.get("status") == "captured"
+                and _normalized_sha256(packet.get("sha256"))
+                == sha256(content_bytes).hexdigest()
+            ):
+                components.append(_canonical_component(
+                    kind="prompt",
+                    component_id=component_id,
+                    canonical_bytes=content_bytes,
+                    details={"content": content},
+                    source="handoff_packet",
+                    capture_source="accepted_gate_event",
+                    receipt_ref=(
+                        f"artifact:{packet.get('path') or component_id}"
+                    ),
+                ))
+            else:
+                components.append(_missing_component(
+                    kind="prompt",
+                    component_id=component_id,
+                    status="not_acceptance_bound",
+                    source="handoff_packet",
+                    details={
+                        "path": packet.get("path"),
+                        "capture_source": packet.get("capture_source"),
+                        "claimed_sha256": packet.get("sha256"),
+                    },
+                ))
     return _dedupe_components(components) or [
-        _component(
-            "prompt",
-            "prompt:not-recorded",
-            {"status": "not_recorded"},
+        _missing_component(
+            kind="prompt",
+            component_id="prompt:not-recorded",
+            status="not_recorded",
             source="manifest_fallback",
         )
     ]
@@ -929,20 +1311,20 @@ def _tool_contract_components(
     for name in missing:
         if name in invalid:
             continue
-        components.append(_component(
-            "tool_contract",
-            f"tool-contract:{name}",
-            {
-                "status": "not_recorded",
+        components.append(_missing_component(
+            kind="tool_contract",
+            component_id=f"tool-contract:{name}",
+            status="not_recorded",
+            details={
                 "tool_name": name,
             },
             source="manifest_input",
         ))
     if not required and not components:
-        components.append(_component(
-            "tool_contract",
-            "tool-contract:none",
-            {"status": "not_used"},
+        components.append(_missing_component(
+            kind="tool_contract",
+            component_id="tool-contract:none",
+            status="not_used",
             source="manifest_fallback",
         ))
     return (
@@ -964,12 +1346,18 @@ def _tool_contract_artifact_component(
         if canonical_bytes is not None
         else ""
     )
+    receipt_ref = _component_receipt_reference(artifact)
+    capture_source = str(artifact.get("capture_source") or "").strip()
     if bytes_status:
         status = bytes_status
     elif not declared_sha256:
         status = "digest_missing"
     elif declared_sha256 != computed_sha256:
         status = "digest_mismatch"
+    elif not receipt_ref:
+        status = "receipt_unbound"
+    elif capture_source != "execution_time":
+        status = "capture_source_invalid"
     else:
         status = "verified"
     details = {
@@ -991,6 +1379,8 @@ def _tool_contract_artifact_component(
             artifact.get("media_type") or "application/json"
         ),
         "schema_version": str(artifact.get("schema_version") or ""),
+        "capture_source": capture_source,
+        "receipt_ref": receipt_ref,
     }
     return {
         "component_id": f"tool-contract:{name}",
@@ -1062,6 +1452,8 @@ def _verified_tool_contract_component(component: Any) -> bool:
         component.get("kind") != "tool_contract"
         or details.get("status") != "verified"
         or not str(details.get("tool_name") or "").strip()
+        or details.get("capture_source") != "execution_time"
+        or not _is_bound_reference(details.get("receipt_ref"))
     ):
         return False
     component_sha256 = _normalized_sha256(component.get("sha256"))
@@ -1095,7 +1487,10 @@ def _verified_tool_contract_component(component: Any) -> bool:
     )
 
 
-def _container_components(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _container_components(
+    events: list[dict[str, Any]],
+    receipt_index: dict[str, dict[str, list[dict[str, Any]]]],
+) -> list[dict[str, Any]]:
     components: list[dict[str, Any]] = []
     for event in events:
         payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
@@ -1103,34 +1498,37 @@ def _container_components(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
             payload,
             {"container", "container_digest", "container_image", "image_digest"},
         ):
-            digest = _normalized_sha256(value)
-            components.append(_component(
-                "container",
-                f"container:{path}",
-                {
+            component_id = f"container:{path}"
+            components.append(_runtime_component_from_receipts(
+                category="containers",
+                kind="container",
+                component_id=component_id,
+                receipts=receipt_index.get("containers", {}).get(
+                    component_id,
+                    [],
+                ),
+                observed_details={
                     "path": path,
                     "value": value,
-                    "digest": digest,
-                    "status": "resolved" if digest else "unavailable",
+                    "claimed_digest": _normalized_sha256(value),
                 },
-                source="event_ledger",
+                expected_digest=_normalized_sha256(value),
             ))
     return _dedupe_components(components) or [
-        _component(
-            "container",
-            "container:host-runtime",
-            {
-                "status": "not_used",
-                "runtime": "host",
-                "platform": platform.platform(),
-                "python": sys.version.split()[0],
-            },
-            source="export_environment",
+        _missing_component(
+            kind="container",
+            component_id="container:host-runtime",
+            status="not_used",
+            source="manifest_fallback",
+            details={"runtime": "host"},
         )
     ]
 
 
-def _cli_components(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _cli_components(
+    events: list[dict[str, Any]],
+    receipt_index: dict[str, dict[str, list[dict[str, Any]]]],
+) -> list[dict[str, Any]]:
     components: list[dict[str, Any]] = []
     for event in events:
         payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
@@ -1149,35 +1547,35 @@ def _cli_components(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "runtime": runtime,
                 "cli_command": cli_command,
                 "requested_model": args.get("requested_model") or args.get("model"),
+                "claimed_sha256": _normalized_sha256(
+                    args.get("executable_sha256")
+                    or args.get("cli_sha256")
+                    or call.get("executable_sha256")
+                    or call.get("cli_sha256")
+                ),
             }
-            executable = shutil.which(cli_command) if cli_command else None
-            if executable:
-                descriptor["executable_path"] = str(Path(executable).resolve())
-                descriptor["executable_sha256"] = _file_sha256(Path(executable))
-                descriptor["status"] = (
-                    "resolved"
-                    if _is_sha256(descriptor["executable_sha256"])
-                    else "unavailable"
-                )
-            else:
-                descriptor["status"] = "unavailable"
-            components.append(_component(
-                "cli",
-                f"cli:{name or runtime or cli_command}",
-                descriptor,
-                source="trace_envelope",
+            component_id = f"cli:{name or runtime or cli_command}"
+            components.append(_runtime_component_from_receipts(
+                category="cli",
+                kind="cli",
+                component_id=component_id,
+                receipts=receipt_index.get("cli", {}).get(component_id, []),
+                observed_details=descriptor,
             ))
     return _dedupe_components(components) or [
-        _component(
-            "cli",
-            "cli:none",
-            {"status": "not_used"},
+        _missing_component(
+            kind="cli",
+            component_id="cli:none",
+            status="not_used",
             source="manifest_fallback",
         )
     ]
 
 
-def _evaluator_components(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _evaluator_components(
+    events: list[dict[str, Any]],
+    receipt_index: dict[str, dict[str, list[dict[str, Any]]]],
+) -> list[dict[str, Any]]:
     components: list[dict[str, Any]] = []
     for event in events:
         payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
@@ -1186,30 +1584,34 @@ def _evaluator_components(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
             if not name.startswith(("evaluate_", "verify_", "check_")):
                 continue
             args = call.get("args") if isinstance(call.get("args"), dict) else {}
-            evaluator_hash = _normalized_sha256(
+            claimed_hash = _normalized_sha256(
                 args.get("verifier_hash")
                 or args.get("evaluator_hash")
                 or args.get("evaluator_sha256")
                 or call.get("verifier_hash")
                 or call.get("evaluator_hash")
             )
-            components.append(_component(
-                "evaluator",
-                f"evaluator:{name}",
-                {
+            component_id = f"evaluator:{name}"
+            components.append(_runtime_component_from_receipts(
+                category="evaluators",
+                kind="evaluator",
+                component_id=component_id,
+                receipts=receipt_index.get("evaluators", {}).get(
+                    component_id,
+                    [],
+                ),
+                observed_details={
                     "name": name,
                     "probe_id": call.get("probe_id") or args.get("probe_id"),
                     "argument_fields": sorted(str(key) for key in args),
-                    "evaluator_sha256": evaluator_hash,
-                    "status": "resolved" if evaluator_hash else "unavailable",
+                    "claimed_sha256": claimed_hash,
                 },
-                source="trace_envelope",
             ))
     return _dedupe_components(components) or [
-        _component(
-            "evaluator",
-            "evaluator:none",
-            {"status": "not_used"},
+        _missing_component(
+            kind="evaluator",
+            component_id="evaluator:none",
+            status="not_used",
             source="manifest_fallback",
         )
     ]
@@ -1509,28 +1911,28 @@ def _normalize_relative_exclusions(
     return tuple(sorted(normalized, key=lambda item: item.as_posix()))
 
 
-def _component(
-    kind: str,
-    component_id: str,
-    payload: dict[str, Any],
-    *,
-    source: str,
-) -> dict[str, Any]:
-    return {
-        "component_id": component_id,
-        "kind": kind,
-        "source": source,
-        "sha256": _canonical_sha256(payload),
-        "details": payload,
-    }
-
-
 def _dedupe_components(
     components: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    by_hash = {str(item["sha256"]): item for item in components}
+    by_identity = {
+        (
+            str(item.get("component_id") or ""),
+            str(item.get("sha256") or ""),
+            str(
+                item.get("details", {}).get("status")
+                if isinstance(item.get("details"), dict)
+                else ""
+            ),
+            str(
+                item.get("details", {}).get("receipt_ref")
+                if isinstance(item.get("details"), dict)
+                else ""
+            ),
+        ): item
+        for item in components
+    }
     return sorted(
-        by_hash.values(),
+        by_identity.values(),
         key=lambda item: (str(item["component_id"]), str(item["sha256"])),
     )
 
@@ -1563,13 +1965,6 @@ def _canonical_sha256(payload: Any) -> str:
     return sha256(encoded).hexdigest()
 
 
-def _file_sha256(path: Path) -> str:
-    try:
-        return sha256(path.read_bytes()).hexdigest()
-    except OSError:
-        return ""
-
-
 def _normalized_sha256(value: Any) -> str:
     raw = str(value or "").strip().lower().removeprefix("sha256:")
     return raw if _is_sha256(raw) else ""
@@ -1581,6 +1976,14 @@ def _is_exact_model_identity(value: Any) -> bool:
         return False
     route_tail = normalized.rsplit("/", 1)[-1].rsplit(":", 1)[-1]
     return route_tail not in _MODEL_ALIASES
+
+
+def _is_bound_reference(value: Any) -> bool:
+    reference = str(value or "").strip()
+    return any(
+        reference.startswith(prefix) and len(reference) > len(prefix)
+        for prefix in _BOUND_REFERENCE_PREFIXES
+    )
 
 
 def _is_sha256(value: Any) -> bool:
