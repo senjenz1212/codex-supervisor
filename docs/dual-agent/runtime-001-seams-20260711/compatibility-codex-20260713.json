@@ -1,0 +1,40 @@
+{
+  "capabilities_observed": {
+    "cancel": true,
+    "cost_reporting": false,
+    "filesystem_isolation": true,
+    "images": true,
+    "resume": true,
+    "stream": true,
+    "subagents": true
+  },
+  "claim_boundary": {
+    "benchmark_improvement": false,
+    "causal_efficacy": false,
+    "operational_compatibility_only": true,
+    "portability": false,
+    "roi": false
+  },
+  "cost_provenance_present": false,
+  "duration_ms": 26091,
+  "ended_at": "2026-07-13T08:28:39.513000+00:00",
+  "event_kinds": [
+    "run.started",
+    "turn.started",
+    "agent.message",
+    "turn.completed"
+  ],
+  "model_provenance_present": false,
+  "output_sha256": "565339bc4d33d72817b583024112eb7f5cdf3e5eef0252d6ec1b9c9a94e12bb3",
+  "resolved_model": null,
+  "runtime": "codex",
+  "schema_version": "harness-v1-sanitized-runtime-compatibility/v1",
+  "source_receipt_sha256": "243b6350eb6673f6146f318901374f39dfdab97229058917b1355396ebd92cd7",
+  "started_at": "2026-07-13T08:28:13.422000+00:00",
+  "status": "completed",
+  "token_provenance_present": true,
+  "token_usage": {
+    "tokens_in": 16426,
+    "tokens_out": 5
+  }
+}

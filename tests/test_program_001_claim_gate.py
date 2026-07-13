@@ -8,12 +8,31 @@ import pytest
 import yaml
 
 from supervisor.claim_gate import (
-    ClaimGate,
+    BUSINESS_VALUE_PROTOCOL_SCHEMA_VERSION,
+    CANARY_RESULT_SCHEMA_VERSION,
     ClaimLevel,
     DEFAULT_CLAIM_RULES,
+    FROZEN_CONTROL_RECEIPT_SCHEMA_VERSION,
+    HUMAN_APPROVAL_RECEIPT_SCHEMA_VERSION,
+    INCREMENTAL_COST_PROVENANCE_SCHEMA_VERSION,
+    InvalidClaimGateReceiptError,
     MANAGED_CLAIM_FIELDS,
     ManualClaimFlagError,
+    ROI_ANALYSIS_SCHEMA_VERSION,
+    ROLLBACK_RECEIPT_SCHEMA_VERSION,
+    SEALED_HOLDOUT_RECEIPT_SCHEMA_VERSION,
+    SHADOW_RESULT_SCHEMA_VERSION,
+    STRATA_REPLICATION_ANALYSIS_SCHEMA_VERSION,
     UnsupportedClaimError,
+)
+from tests.test_claim_gate import (
+    ClaimGate,
+    _attested_hidden_verifier,
+    _auto_improvement_authoritative_bundle,
+    _authoritative_causal_bundle,
+    _claim_gate_kwargs,
+    _portable_authoritative_bundle,
+    _roi_authoritative_bundle,
 )
 
 
@@ -65,137 +84,136 @@ def _outcome_bundle(evidence_root: Path) -> dict[str, object]:
             "trace_sha256": trace["sha256"],
         },
         "independent_hidden_verifier": {
-            "verifier_id": "hidden-verifier/v1",
-            "independent": True,
-            "hidden": True,
-            "result_ref": verifier_result["ref"],
-            "result_sha256": verifier_result["sha256"],
+            **_attested_hidden_verifier(verifier_result),
         },
     }
 
 
-def _causal_bundle(evidence_root: Path) -> dict[str, object]:
-    bundle = _outcome_bundle(evidence_root)
-    analysis = _write_artifact(
-        evidence_root,
-        "artifacts/b-vs-c-analysis.json",
-    )
-    bundle["randomized_powered_b_vs_c"] = {
-        "comparison": "B_vs_C",
-        "randomized": True,
-        "powered": True,
-        "supports_improvement": True,
-        "analysis_ref": analysis["ref"],
-        "analysis_sha256": analysis["sha256"],
-    }
-    return bundle
+def _causal_bundle(evidence_root: Path):
+    return _authoritative_causal_bundle(evidence_root)
 
 
-def _portable_bundle(evidence_root: Path) -> dict[str, object]:
-    bundle = _causal_bundle(evidence_root)
-    analysis = _write_artifact(
-        evidence_root,
-        "artifacts/strata-replication.json",
-    )
-    bundle["strata_replication"] = {
-        "replicated": True,
-        "strata": ["python", "unity"],
-        "model_families": [
-            {"family": "anthropic", "pinned": True, "seen_by_optimizer": True},
-            {"family": "openai", "pinned": True, "seen_by_optimizer": True},
-            {"family": "google", "pinned": True, "seen_by_optimizer": False},
-        ],
-        "analysis_ref": analysis["ref"],
-        "analysis_sha256": analysis["sha256"],
-    }
-    return bundle
+def _portable_bundle(evidence_root: Path):
+    return _portable_authoritative_bundle(evidence_root)
 
 
-def _roi_bundle(evidence_root: Path) -> dict[str, object]:
-    bundle = _portable_bundle(evidence_root)
-    analysis = _write_artifact(
-        evidence_root,
-        "artifacts/roi-analysis.json",
-    )
-    bundle["operating_cost"] = {
-        "measured": True,
-        "cost_usd": 12.5,
-        "supports_positive_roi": True,
-        "analysis_ref": analysis["ref"],
-        "analysis_sha256": analysis["sha256"],
-    }
-    return bundle
+def _roi_bundle(evidence_root: Path):
+    return _roi_authoritative_bundle(evidence_root)
 
 
 def test_l3_requires_a_positive_randomized_powered_b_vs_c_result(
     tmp_path: Path,
 ) -> None:
-    bundle = _causal_bundle(tmp_path)
+    bundle, ledger_resolver = _causal_bundle(tmp_path)
     causal_result = bundle["randomized_powered_b_vs_c"]
     assert isinstance(causal_result, dict)
 
-    assert ClaimGate.max_claim_level(bundle, evidence_root=tmp_path) == ClaimLevel.L3
+    assert ClaimGate.max_claim_level(
+        bundle,
+        evidence_root=tmp_path,
+        ledger_verification_resolver=ledger_resolver,
+    ) == ClaimLevel.L3
 
     causal_result["comparison"] = "A_vs_B"
-    assert ClaimGate.max_claim_level(bundle, evidence_root=tmp_path) == ClaimLevel.L2
+    assert ClaimGate.max_claim_level(
+        bundle,
+        evidence_root=tmp_path,
+        ledger_verification_resolver=ledger_resolver,
+    ) == ClaimLevel.L2
 
 
 def test_l4_requires_replication_across_distinct_strata(tmp_path: Path) -> None:
-    bundle = _portable_bundle(tmp_path)
+    bundle, ledger_resolver = _portable_bundle(tmp_path)
     replication = bundle["strata_replication"]
     assert isinstance(replication, dict)
 
-    assert ClaimGate.max_claim_level(bundle, evidence_root=tmp_path) == ClaimLevel.L4
+    assert ClaimGate.max_claim_level(
+        bundle,
+        evidence_root=tmp_path,
+        ledger_verification_resolver=ledger_resolver,
+    ) == ClaimLevel.L4
 
     replication["strata"] = ["python"]
-    assert ClaimGate.max_claim_level(bundle, evidence_root=tmp_path) == ClaimLevel.L3
+    assert ClaimGate.max_claim_level(
+        bundle,
+        evidence_root=tmp_path,
+        ledger_verification_resolver=ledger_resolver,
+    ) == ClaimLevel.L3
 
     replication["strata"] = ["python", "unity"]
     replication["model_families"] = replication["model_families"][:2]
-    assert ClaimGate.max_claim_level(bundle, evidence_root=tmp_path) == ClaimLevel.L3
+    assert ClaimGate.max_claim_level(
+        bundle,
+        evidence_root=tmp_path,
+        ledger_verification_resolver=ledger_resolver,
+    ) == ClaimLevel.L3
 
 
 def test_l5_requires_measured_operating_cost_and_positive_roi(
     tmp_path: Path,
 ) -> None:
-    bundle = _roi_bundle(tmp_path)
+    bundle, ledger_resolver = _roi_bundle(tmp_path)
     operating_cost = bundle["operating_cost"]
     assert isinstance(operating_cost, dict)
 
-    assert ClaimGate.max_claim_level(bundle, evidence_root=tmp_path) == ClaimLevel.L5
+    assert ClaimGate.max_claim_level(
+        bundle,
+        evidence_root=tmp_path,
+        ledger_verification_resolver=ledger_resolver,
+    ) == ClaimLevel.L5
 
     operating_cost["supports_positive_roi"] = False
-    assert ClaimGate.max_claim_level(bundle, evidence_root=tmp_path) == ClaimLevel.L4
+    assert ClaimGate.max_claim_level(
+        bundle,
+        evidence_root=tmp_path,
+        ledger_verification_resolver=ledger_resolver,
+    ) == ClaimLevel.L4
 
 
-def test_l6_requires_frozen_control_sealed_holdout_and_passing_canary(
+def test_l6_requires_all_linked_auto_improvement_receipts(
     tmp_path: Path,
 ) -> None:
-    bundle = _roi_bundle(tmp_path)
-    frozen_control = _write_artifact(tmp_path, "artifacts/frozen-control.json")
-    sealed_holdout = _write_artifact(tmp_path, "artifacts/sealed-holdout.json")
-    canary = _write_artifact(tmp_path, "artifacts/canary.json")
-    bundle.update(
-        {
-            "frozen_control": {
-                "frozen": True,
-                **frozen_control,
-            },
-            "sealed_holdout": {
-                "sealed": True,
-                **sealed_holdout,
-            },
-            "canary": {
-                "passed": True,
-                **canary,
-            },
-        }
+    bundle, ledger_resolver = _auto_improvement_authoritative_bundle(
+        tmp_path
     )
 
-    assert ClaimGate.max_claim_level(bundle, evidence_root=tmp_path) == ClaimLevel.L6
+    assert ClaimGate.max_claim_level(
+        bundle,
+        evidence_root=tmp_path,
+        ledger_verification_resolver=ledger_resolver,
+    ) == ClaimLevel.L6
 
-    del bundle["canary"]
-    assert ClaimGate.max_claim_level(bundle, evidence_root=tmp_path) == ClaimLevel.L5
+    del bundle["shadow_result"]
+    assert ClaimGate.max_claim_level(
+        bundle,
+        evidence_root=tmp_path,
+        ledger_verification_resolver=ledger_resolver,
+    ) == ClaimLevel.L5
+
+
+def test_l6_rejects_legacy_boolean_plus_hash_control_evidence(
+    tmp_path: Path,
+) -> None:
+    bundle, ledger_resolver = _roi_bundle(tmp_path)
+    for name, state_key in (
+        ("frozen_control", "frozen"),
+        ("sealed_holdout", "sealed"),
+        ("shadow_result", "passed"),
+        ("human_approval", "approved"),
+        ("canary", "passed"),
+        ("rollback_receipt", "passed"),
+    ):
+        descriptor = _write_artifact(
+            tmp_path,
+            f"artifacts/legacy-{name}.json",
+        )
+        bundle[name] = {state_key: True, **descriptor}
+
+    assert ClaimGate.max_claim_level(
+        bundle,
+        evidence_root=tmp_path,
+        ledger_verification_resolver=ledger_resolver,
+    ) == ClaimLevel.L5
 
 
 def test_report_producer_cannot_manually_set_improvement_claim_flag(
@@ -213,6 +231,7 @@ def test_report_producer_cannot_manually_set_improvement_claim_flag(
 
 
 def test_nested_manual_claim_flag_is_also_rejected(tmp_path: Path) -> None:
+    bundle, ledger_resolver = _causal_bundle(tmp_path)
     with pytest.raises(
         ManualClaimFlagError,
         match="authority_flags.powered_improvement_claim_allowed is derived by ClaimGate",
@@ -223,7 +242,33 @@ def test_nested_manual_claim_flag_is_also_rejected(tmp_path: Path) -> None:
                     "powered_improvement_claim_allowed": True,
                 }
             },
-            _causal_bundle(tmp_path),
+            bundle,
+            evidence_root=tmp_path,
+            ledger_verification_resolver=ledger_resolver,
+        )
+
+
+def test_validate_report_rejects_nested_managed_claim_fields(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(
+        ManualClaimFlagError,
+        match=(
+            "sections\\[0\\]\\.authority_flags"
+            "\\.powered_improvement_claim_allowed is derived by ClaimGate"
+        ),
+    ):
+        ClaimGate.validate_report(
+            {
+                "sections": [
+                    {
+                        "authority_flags": {
+                            "powered_improvement_claim_allowed": False,
+                        }
+                    }
+                ]
+            },
+            _outcome_bundle(tmp_path),
             evidence_root=tmp_path,
         )
 
@@ -236,10 +281,12 @@ def test_report_improvement_flags_are_derived_from_claim_level(
         _outcome_bundle(tmp_path),
         evidence_root=tmp_path,
     )
+    causal_bundle, ledger_resolver = _causal_bundle(tmp_path)
     causal_report = ClaimGate.derive_report(
         {"schema_version": "example-report/v1"},
-        _causal_bundle(tmp_path),
+        causal_bundle,
         evidence_root=tmp_path,
+        ledger_verification_resolver=ledger_resolver,
     )
 
     assert outcome_report["improvement_claim_allowed"] is False
@@ -248,6 +295,117 @@ def test_report_improvement_flags_are_derived_from_claim_level(
     assert causal_report["improvement_claim_allowed"] is True
     assert causal_report["powered_improvement_claim_allowed"] is True
     assert causal_report["claim_gate"]["max_claim_level"] == "L3"
+
+
+def test_validate_derived_report_recomputes_receipt_and_managed_flags(
+    tmp_path: Path,
+) -> None:
+    bundle, ledger_resolver = _causal_bundle(tmp_path)
+    report = ClaimGate.derive_report(
+        {"schema_version": "example-report/v1"},
+        bundle,
+        evidence_root=tmp_path,
+        **_claim_gate_kwargs(ledger_resolver),
+    )
+
+    assert (
+        ClaimGate.validate_derived_report(
+            report,
+            bundle,
+            evidence_root=tmp_path,
+            **_claim_gate_kwargs(ledger_resolver),
+        )
+        == ClaimLevel.L3
+    )
+
+    forged_receipt = {
+        **report,
+        "claim_gate": {
+            **report["claim_gate"],
+            "evidence_bundle_sha256": "f" * 64,
+        },
+    }
+    with pytest.raises(
+        InvalidClaimGateReceiptError,
+        match="evidence bundle hash does not match",
+    ):
+        ClaimGate.validate_derived_report(
+            forged_receipt,
+            bundle,
+            evidence_root=tmp_path,
+            **_claim_gate_kwargs(ledger_resolver),
+        )
+
+    forged_flags = {
+        **report,
+        "powered_improvement_claim_allowed": False,
+    }
+    with pytest.raises(
+        InvalidClaimGateReceiptError,
+        match="powered_improvement_claim_allowed does not match",
+    ):
+        ClaimGate.validate_derived_report(
+            forged_flags,
+            bundle,
+            evidence_root=tmp_path,
+            **_claim_gate_kwargs(ledger_resolver),
+        )
+
+
+def test_govern_report_receipts_legacy_nested_claim_fields() -> None:
+    report = ClaimGate.govern_report(
+        {
+            "schema_version": "legacy-report/v1",
+            "authority_flags": {
+                "improvement_claim_allowed": False,
+                "powered_improvement_claim_allowed": False,
+            },
+        }
+    )
+
+    assert report["improvement_claim_allowed"] is False
+    assert report["powered_improvement_claim_allowed"] is False
+    assert report["claim_gate"]["managed_field_paths"] == [
+        "authority_flags.improvement_claim_allowed",
+        "authority_flags.powered_improvement_claim_allowed",
+        "improvement_claim_allowed",
+        "powered_improvement_claim_allowed",
+    ]
+    assert ClaimGate.validate_derived_report(report) is None
+
+
+def test_govern_report_rejects_caller_selected_nested_authority() -> None:
+    with pytest.raises(
+        ManualClaimFlagError,
+        match=(
+            "authority_flags.improvement_claim_allowed does not match "
+            "ClaimGate-derived authority"
+        ),
+    ):
+        ClaimGate.govern_report(
+            {
+                "authority_flags": {
+                    "improvement_claim_allowed": True,
+                }
+            }
+        )
+
+
+def test_governed_report_detects_nested_authority_tampering() -> None:
+    report = ClaimGate.govern_report(
+        {
+            "authority_flags": {
+                "improvement_claim_allowed": False,
+            }
+        }
+    )
+    report["authority_flags"]["improvement_claim_allowed"] = True
+
+    with pytest.raises(
+        InvalidClaimGateReceiptError,
+        match="authority_flags.improvement_claim_allowed does not match",
+    ):
+        ClaimGate.validate_derived_report(report)
 
 
 def test_report_asserting_forbidden_improvement_claim_is_rejected(
@@ -265,6 +423,71 @@ def test_report_asserting_forbidden_improvement_claim_is_rejected(
             fixture_replay,
             evidence_root=tmp_path,
         )
+
+
+def test_nested_free_text_causal_claim_is_rejected_below_l3(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(
+        UnsupportedClaimError,
+        match="Supervisor improves outcomes requires L3; evidence supports L2",
+    ):
+        ClaimGate.validate_report(
+            {
+                "summary": {
+                    "sections": [
+                        {
+                            "heading": "Conclusion",
+                            "body": "Supervisor improves outcomes.",
+                        }
+                    ]
+                }
+            },
+            _outcome_bundle(tmp_path),
+            evidence_root=tmp_path,
+        )
+
+
+@pytest.mark.parametrize(
+    "claim_text",
+    [
+        "B produces more successful tasks than C.",
+        "The supervisor yields a higher pass rate than direct execution.",
+        "Our harness delivers better benchmark outcomes than the baseline.",
+    ],
+)
+def test_comparative_outcome_paraphrases_require_l3(
+    tmp_path: Path,
+    claim_text: str,
+) -> None:
+    with pytest.raises(UnsupportedClaimError, match="requires L3"):
+        ClaimGate.validate_report(
+            {"summary": claim_text},
+            _outcome_bundle(tmp_path),
+            evidence_root=tmp_path,
+        )
+
+
+@pytest.mark.parametrize(
+    "ordinary_text",
+    [
+        "B is scheduled before C.",
+        "The supervisor report compares outcome counts.",
+        "The harness may improve after more experiments.",
+    ],
+)
+def test_ordinary_noncausal_prose_is_not_reclassified(
+    tmp_path: Path,
+    ordinary_text: str,
+) -> None:
+    assert (
+        ClaimGate.validate_report(
+            {"summary": ordinary_text},
+            _outcome_bundle(tmp_path),
+            evidence_root=tmp_path,
+        )
+        == ClaimLevel.L2
+    )
 
 
 def test_fixture_replay_report_cannot_assert_l3(tmp_path: Path) -> None:
@@ -285,11 +508,13 @@ def test_fixture_replay_report_cannot_assert_l3(tmp_path: Path) -> None:
 def test_causal_evidence_allows_registered_improvement_claim(
     tmp_path: Path,
 ) -> None:
+    bundle, ledger_resolver = _causal_bundle(tmp_path)
     assert (
         ClaimGate.validate_report(
             {"claims": ["CLAIM-HARNESS-L3-CAUSAL-IMPROVEMENT"]},
-            _causal_bundle(tmp_path),
+            bundle,
             evidence_root=tmp_path,
+            ledger_verification_resolver=ledger_resolver,
         )
         == ClaimLevel.L3
     )
@@ -356,6 +581,34 @@ def test_program_pack_matches_runtime_claim_registry() -> None:
     assert [level["id"] for level in ladder["levels"]] == [
         level.value for level in ClaimLevel
     ]
+    assert ladder["schema_version"] == "harness-v1-claim-ladder/v2"
+    levels = {level["id"]: level for level in ladder["levels"]}
+    assert (
+        levels["L4"]["predicate"]["resolved_analysis"]["schema_version"]
+        == STRATA_REPLICATION_ANALYSIS_SCHEMA_VERSION
+    )
+    l5_analysis = levels["L5"]["predicate"]["resolved_analysis"]
+    assert l5_analysis["schema_version"] == ROI_ANALYSIS_SCHEMA_VERSION
+    assert (
+        l5_analysis["business_value_protocol"]["schema_version"]
+        == BUSINESS_VALUE_PROTOCOL_SCHEMA_VERSION
+    )
+    assert (
+        l5_analysis["incremental_cost_provenance"]["schema_version"]
+        == INCREMENTAL_COST_PROVENANCE_SCHEMA_VERSION
+    )
+    l6_records = levels["L6"]["predicate"]["all_records"]
+    assert {
+        name: details["schema_version"]
+        for name, details in l6_records.items()
+    } == {
+        "frozen_control": FROZEN_CONTROL_RECEIPT_SCHEMA_VERSION,
+        "sealed_holdout": SEALED_HOLDOUT_RECEIPT_SCHEMA_VERSION,
+        "shadow_result": SHADOW_RESULT_SCHEMA_VERSION,
+        "rollback_receipt": ROLLBACK_RECEIPT_SCHEMA_VERSION,
+        "human_approval": HUMAN_APPROVAL_RECEIPT_SCHEMA_VERSION,
+        "canary": CANARY_RESULT_SCHEMA_VERSION,
+    }
     assert set(ladder["managed_outputs"]) == set(MANAGED_CLAIM_FIELDS)
     assert {
         name: details["minimum_level"]

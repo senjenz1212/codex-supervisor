@@ -8,18 +8,25 @@ import pytest
 
 from supervisor.autoresearch.orchestrator import run_autoresearch_fixture
 from supervisor.autoresearch.policy_evolution import (
+    PolicyClaimAuthority,
     PolicyEvolutionError,
     approve_policy_proposal,
     create_policy_evolution_proposals,
     deny_policy_proposal,
     derive_policy_evolution_proposals_from_report,
+    recover_policy_transactions,
     report_contains_derivable_policy_record,
     rollback_policy_proposal,
 )
 from supervisor.autoresearch.report import build_autoresearch_report
 from supervisor.autoresearch.schema import AutoresearchAttempt, AutoresearchExperiment
 from supervisor.autoresearch.validation import validate_attempt
+from supervisor.claim_gate import ClaimGate, ClaimLevel
 from supervisor.state import State
+from tests.test_claim_gate import (
+    _authoritative_causal_bundle,
+    _claim_gate_kwargs,
+)
 
 
 BASE_OVERLAY = (
@@ -34,6 +41,52 @@ AFTER_OVERLAY = (
     "  outcome_review:\n"
     "    - Verify runtime-native evidence before accepting.\n"
 )
+
+
+@pytest.fixture(scope="module")
+def policy_authority(tmp_path_factory) -> PolicyClaimAuthority:
+    evidence_root = tmp_path_factory.mktemp("policy-claim-authority")
+    evidence, ledger_resolver = _authoritative_causal_bundle(evidence_root)
+    claim_kwargs = _claim_gate_kwargs(ledger_resolver)
+    authority = PolicyClaimAuthority(
+        evidence_bundle=evidence,
+        evidence_root=evidence_root,
+        ledger_verification_resolver=claim_kwargs.get(
+            "ledger_verification_resolver"
+        ),
+        trusted_verifier_attestors=claim_kwargs.get(
+            "trusted_verifier_attestors"
+        ),
+    )
+    level = ClaimGate.max_claim_level(
+        authority.evidence_bundle,
+        evidence_root=authority.evidence_root,
+        ledger_verification_resolver=(
+            authority.ledger_verification_resolver
+        ),
+        trusted_verifier_attestors=authority.trusted_verifier_attestors,
+    )
+    assert level is not None
+    assert tuple(ClaimLevel).index(level) >= tuple(ClaimLevel).index(
+        ClaimLevel.L3
+    )
+    return authority
+
+
+def _authorize_report(
+    report: dict,
+    authority: PolicyClaimAuthority,
+) -> dict:
+    return ClaimGate.derive_report(
+        report,
+        authority.evidence_bundle,
+        evidence_root=authority.evidence_root,
+        evidence_resolver=authority.evidence_resolver,
+        ledger_verification_resolver=(
+            authority.ledger_verification_resolver
+        ),
+        trusted_verifier_attestors=authority.trusted_verifier_attestors,
+    )
 
 
 def _write(root: Path, rel: str, text: str) -> Path:
@@ -186,12 +239,15 @@ def _proposal_fixture(root: Path) -> tuple[State, Path, Path, dict]:
     state = State(str(root / "state.db"))
     target = _write(root, ".supervisor/policy-overlay.yaml", BASE_OVERLAY)
     candidate = _write(root, "candidates/outcome-review.md", AFTER_OVERLAY)
-    [proposal] = create_policy_evolution_proposals(
-        _report(_record()),
-        repo_root=root,
-        candidate_changes={".supervisor/policy-overlay.yaml": "candidates/outcome-review.md"},
-        affected_gates=("outcome_review",),
-    )
+    proposal = {
+        "proposal_id": "proposal-fixture",
+        "changes": [{
+            "target_path": ".supervisor/policy-overlay.yaml",
+            "candidate_ref": "candidates/outcome-review.md",
+            "before_hash": _sha(target),
+            "after_hash": _sha(candidate),
+        }],
+    }
     return state, target, candidate, proposal
 
 

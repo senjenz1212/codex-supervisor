@@ -22,6 +22,12 @@ from .grade_revisions import (
     GradeRevision,
     RunEnvelopeRef,
 )
+from .pilot_readiness import (
+    FrozenPilotProtocol,
+    PilotReadinessError,
+    PilotReadinessReport,
+    validate_pilot_execution_authorization,
+)
 from .task_environment import (
     GRADE_SCHEMA_VERSION,
     FrozenTaskResult,
@@ -45,6 +51,7 @@ ARM_ORDERS: tuple[tuple[Arm, Arm, Arm], ...] = tuple(
 COMMON_PRE_TREATMENT_INFRASTRUCTURE_FAILURE = (
     "common_pre_treatment_infrastructure_failure"
 )
+TREATMENT_DESCRIPTOR_SCHEMA_VERSION = "supervisor-treatment-descriptor/v1"
 ARM_EXECUTION_RECEIPT_SCHEMA_VERSION = "supervisor-arm-execution-receipt/v1"
 ISOLATION_ATTESTATION_SCHEMA_VERSION = "supervisor-isolation-attestation/v1"
 EXECUTION_ENVIRONMENT_ATTESTATION_SCHEMA_VERSION = (
@@ -53,6 +60,22 @@ EXECUTION_ENVIRONMENT_ATTESTATION_SCHEMA_VERSION = (
 GRADE_REVISION_REF_SCHEMA_VERSION = "supervisor-grade-revision-ref/v1"
 PRIMARY_REVIEW_PACKET_SCHEMA_VERSION = "supervisor-blinded-primary-review/v2"
 RAW_TEST_ARTIFACT_SCHEMA_VERSION = "supervisor-raw-test-artifact/v1"
+BLINDED_TEST_RECEIPT_SCHEMA_VERSION = (
+    "supervisor-blinded-test-receipt/v1"
+)
+_TERMINAL_ARM_STATES = frozenset({
+    "completed",
+    "failed",
+    "common_infrastructure_failed",
+})
+_VERIFIER_METADATA_ALLOWLIST = frozenset({
+    "repo",
+    "canonical_repo_id",
+    "revision",
+    "instance_id",
+    "canonical_task_id",
+    "materialization_id",
+})
 
 _ARM_IDENTITY_KEY_TOKENS = frozenset({"arm", "assignment", "treatment"})
 _ARM_IDENTITY_EXACT_VALUES = frozenset(
@@ -130,6 +153,126 @@ _SEMANTIC_OUTCOME_LEAK_RE = re.compile(
 )
 
 
+def _freeze_json_value(value: Any, *, path: str) -> Any:
+    if isinstance(value, MappingABC):
+        normalized: dict[str, Any] = {}
+        for raw_key, child in value.items():
+            if not isinstance(raw_key, str) or not raw_key:
+                raise ValueError(f"{path} keys must be non-empty strings")
+            normalized[raw_key] = _freeze_json_value(
+                child,
+                path=f"{path}.{raw_key}",
+            )
+        return MappingProxyType(normalized)
+    if isinstance(value, (list, tuple)):
+        return tuple(
+            _freeze_json_value(child, path=f"{path}[{index}]")
+            for index, child in enumerate(value)
+        )
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError(f"{path} must not contain non-finite numbers")
+        return value
+    raise ValueError(f"{path} must contain only canonical JSON values")
+
+
+def _thaw_json_value(value: Any) -> Any:
+    if isinstance(value, MappingABC):
+        return {
+            str(key): _thaw_json_value(child)
+            for key, child in value.items()
+        }
+    if isinstance(value, tuple):
+        return [_thaw_json_value(child) for child in value]
+    return value
+
+
+@dataclass(frozen=True)
+class TreatmentDescriptor:
+    """Canonical behavioral identity for one preregistered experiment arm."""
+
+    arm_adapter: str
+    entrypoint: str
+    instruction_template: str
+    treatment_config: Mapping[str, Any] = field(default_factory=dict)
+    treatment_hash: str = ""
+    schema_version: str = TREATMENT_DESCRIPTOR_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        for field_name, value in (
+            ("arm_adapter", self.arm_adapter),
+            ("entrypoint", self.entrypoint),
+            ("instruction_template", self.instruction_template),
+        ):
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(
+                    f"treatment descriptor {field_name} must be non-empty"
+                )
+            object.__setattr__(self, field_name, value.strip())
+        if self.schema_version != TREATMENT_DESCRIPTOR_SCHEMA_VERSION:
+            raise ValueError("treatment descriptor schema is invalid")
+        if not isinstance(self.treatment_config, MappingABC):
+            raise ValueError("treatment_config must be a mapping")
+        frozen_config = _freeze_json_value(
+            self.treatment_config,
+            path="treatment_config",
+        )
+        object.__setattr__(self, "treatment_config", frozen_config)
+        expected_hash = _sha256_json(self.hash_payload())
+        supplied_hash = str(self.treatment_hash or "").strip().casefold()
+        if supplied_hash and not hmac.compare_digest(
+            supplied_hash,
+            expected_hash,
+        ):
+            raise ValueError(
+                "treatment descriptor hash does not match canonical contents"
+            )
+        object.__setattr__(self, "treatment_hash", expected_hash)
+
+    def hash_payload(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "arm_adapter": self.arm_adapter,
+            "entrypoint": self.entrypoint,
+            "instruction_template": self.instruction_template,
+            "treatment_config": _thaw_json_value(self.treatment_config),
+        }
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            **self.hash_payload(),
+            "treatment_hash": self.treatment_hash,
+        }
+
+    def render_instruction(self, problem_statement: str) -> str:
+        problem = str(problem_statement).strip()
+        template = self.instruction_template
+        if "{problem_statement}" in template:
+            return template.replace("{problem_statement}", problem)
+        return f"{template}\n\n{problem}" if problem else template
+
+    @classmethod
+    def from_mapping(
+        cls,
+        value: Mapping[str, Any],
+    ) -> "TreatmentDescriptor":
+        return cls(
+            arm_adapter=str(value.get("arm_adapter") or ""),
+            entrypoint=str(value.get("entrypoint") or ""),
+            instruction_template=str(
+                value.get("instruction_template") or ""
+            ),
+            treatment_config=dict(value.get("treatment_config") or {}),
+            treatment_hash=str(value.get("treatment_hash") or ""),
+            schema_version=str(
+                value.get("schema_version")
+                or TREATMENT_DESCRIPTOR_SCHEMA_VERSION
+            ),
+        )
+
+
 @dataclass(frozen=True)
 class ArmBudget:
     max_tokens: int
@@ -179,8 +322,11 @@ class ExperimentSpec:
     assignment_version: str
     hmac_key: bytes = field(repr=False)
     arm_budgets: Mapping[Arm, ArmBudget]
+    treatments: Mapping[Arm, TreatmentDescriptor]
     primary_comparison: tuple[Arm, Arm] = (Arm.B, Arm.C)
     metadata: Mapping[str, Any] = field(default_factory=dict)
+    pilot_protocol_hash: str = ""
+    pilot_task_set_hash: str = ""
 
     def __post_init__(self) -> None:
         normalized_budgets = {
@@ -191,7 +337,73 @@ class ExperimentSpec:
             "arm_budgets",
             MappingProxyType(normalized_budgets),
         )
+        normalized_treatments: dict[Arm, TreatmentDescriptor] = {}
+        for raw_arm, raw_descriptor in self.treatments.items():
+            arm = Arm(raw_arm)
+            if not isinstance(raw_descriptor, TreatmentDescriptor):
+                if not isinstance(raw_descriptor, MappingABC):
+                    raise ValueError(
+                        "experiment treatments must be TreatmentDescriptor values"
+                    )
+                raw_descriptor = TreatmentDescriptor.from_mapping(
+                    raw_descriptor
+                )
+            normalized_treatments[arm] = raw_descriptor
+        object.__setattr__(
+            self,
+            "treatments",
+            MappingProxyType(normalized_treatments),
+        )
         metadata = dict(self.metadata)
+        metadata_protocol_hash = str(
+            metadata.get("pilot_protocol_hash") or ""
+        ).strip().casefold()
+        metadata_task_set_hash = str(
+            metadata.get("pilot_task_set_hash") or ""
+        ).strip().casefold()
+        pilot_protocol_hash = str(
+            self.pilot_protocol_hash or metadata_protocol_hash
+        ).strip().casefold()
+        pilot_task_set_hash = str(
+            self.pilot_task_set_hash or metadata_task_set_hash
+        ).strip().casefold()
+        if (
+            self.pilot_protocol_hash
+            and metadata_protocol_hash
+            and pilot_protocol_hash != metadata_protocol_hash
+        ):
+            raise ValueError(
+                "pilot protocol hash conflicts with experiment metadata"
+            )
+        if (
+            self.pilot_task_set_hash
+            and metadata_task_set_hash
+            and pilot_task_set_hash != metadata_task_set_hash
+        ):
+            raise ValueError(
+                "pilot task-set hash conflicts with experiment metadata"
+            )
+        if bool(pilot_protocol_hash) != bool(pilot_task_set_hash):
+            raise ValueError(
+                "pilot protocol and task-set hashes must be declared together"
+            )
+        if pilot_protocol_hash and (
+            not re.fullmatch(r"[0-9a-f]{64}", pilot_protocol_hash)
+            or not re.fullmatch(r"[0-9a-f]{64}", pilot_task_set_hash)
+        ):
+            raise ValueError(
+                "pilot protocol and task-set hashes must be sha256 digests"
+            )
+        object.__setattr__(
+            self,
+            "pilot_protocol_hash",
+            pilot_protocol_hash,
+        )
+        object.__setattr__(
+            self,
+            "pilot_task_set_hash",
+            pilot_task_set_hash,
+        )
         roster = metadata.get("assignment_roster")
         if roster is not None:
             if not isinstance(roster, Sequence) or isinstance(
@@ -222,6 +434,26 @@ class ExperimentSpec:
                 "experiment missing arm budgets: "
                 + ", ".join(sorted(arm.value for arm in missing))
             )
+        missing_treatments = set(Arm) - set(normalized_treatments)
+        if missing_treatments:
+            raise ValueError(
+                "experiment missing treatment descriptors: "
+                + ", ".join(
+                    sorted(arm.value for arm in missing_treatments)
+                )
+            )
+        if len(normalized_treatments) != len(Arm):
+            raise ValueError(
+                "experiment must preregister exactly one treatment per arm"
+            )
+        treatment_hashes = {
+            descriptor.treatment_hash
+            for descriptor in normalized_treatments.values()
+        }
+        if len(treatment_hashes) != len(Arm):
+            raise ValueError(
+                "A/B/C treatment hashes must all differ"
+            )
         if normalized_budgets[Arm.B] != normalized_budgets[Arm.C]:
             raise ValueError(
                 "arms B and C must have identical ex-ante resource ceilings"
@@ -233,6 +465,58 @@ class ExperimentSpec:
                 "primary comparison must be supervisor B vs compute-matched direct C"
             )
 
+    @property
+    def treatment_hashes(self) -> Mapping[Arm, str]:
+        return MappingProxyType({
+            arm: self.treatments[arm].treatment_hash
+            for arm in Arm
+        })
+
+    def preregistration_dict(self) -> dict[str, Any]:
+        payload = {
+            "schema_version": "supervisor-experiment-preregistration/v1",
+            "experiment_id": self.experiment_id,
+            "assignment_version": self.assignment_version,
+            "assignment_key_sha256": hashlib.sha256(
+                self.hmac_key
+            ).hexdigest(),
+            "arm_budgets": {
+                arm.value: self.arm_budgets[arm].to_dict()
+                for arm in Arm
+            },
+            "treatments": {
+                arm.value: self.treatments[arm].to_dict()
+                for arm in Arm
+            },
+            "treatment_hashes": {
+                arm.value: self.treatment_hashes[arm]
+                for arm in Arm
+            },
+            "primary_comparison": [
+                arm.value for arm in self.primary_comparison
+            ],
+            "metadata": _thaw_json_value(
+                _freeze_json_value(
+                    self.metadata,
+                    path="experiment metadata",
+                )
+            ),
+            "pilot_protocol_hash": self.pilot_protocol_hash,
+            "pilot_task_set_hash": self.pilot_task_set_hash,
+        }
+        return {
+            **payload,
+            "spec_hash": _sha256_json(payload),
+        }
+
+    @property
+    def spec_hash(self) -> str:
+        return str(self.preregistration_dict()["spec_hash"])
+
+    @property
+    def is_pilot(self) -> bool:
+        return bool(self.pilot_protocol_hash)
+
 
 @dataclass(frozen=True)
 class Assignment:
@@ -243,7 +527,39 @@ class Assignment:
     assignment_id: str
     order: tuple[Arm, Arm, Arm]
     block: Mapping[str, str]
+    treatment_hashes: Mapping[Arm, str]
     assigned_at_ms: int
+
+    def __post_init__(self) -> None:
+        normalized_hashes = {
+            Arm(arm): str(value).strip().casefold()
+            for arm, value in self.treatment_hashes.items()
+        }
+        if set(normalized_hashes) != set(Arm):
+            raise ValueError(
+                "assignment must bind exactly one treatment hash per arm"
+            )
+        if any(
+            not re.fullmatch(r"[0-9a-f]{64}", digest)
+            for digest in normalized_hashes.values()
+        ):
+            raise ValueError(
+                "assignment treatment hashes must be sha256 digests"
+            )
+        if len(set(normalized_hashes.values())) != len(Arm):
+            raise ValueError(
+                "assignment A/B/C treatment hashes must all differ"
+            )
+        object.__setattr__(
+            self,
+            "treatment_hashes",
+            MappingProxyType(normalized_hashes),
+        )
+        object.__setattr__(
+            self,
+            "block",
+            MappingProxyType(dict(self.block)),
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -254,6 +570,10 @@ class Assignment:
             "assignment_id": self.assignment_id,
             "order": [arm.value for arm in self.order],
             "block": dict(self.block),
+            "treatment_hashes": {
+                arm.value: self.treatment_hashes[arm]
+                for arm in Arm
+            },
             "assigned_at_ms": self.assigned_at_ms,
         }
 
@@ -414,6 +734,9 @@ class ArmExecutionReceipt:
     canonical_task_id: str
     task_spec_hash: str
     arm: Arm
+    treatment_hash: str
+    plan_fingerprint: str
+    compute_resource_hash: str
     frozen_result_hash: str
     attempts: int
     cost_usd: float
@@ -456,6 +779,9 @@ class ArmExecutionReceipt:
             "canonical_task_id": self.canonical_task_id,
             "task_spec_hash": self.task_spec_hash,
             "arm": self.arm.value,
+            "treatment_hash": self.treatment_hash,
+            "plan_fingerprint": self.plan_fingerprint,
+            "compute_resource_hash": self.compute_resource_hash,
             "frozen_result_hash": self.frozen_result_hash,
             "attempts": self.attempts,
             "cost_usd": self.cost_usd,
@@ -503,6 +829,11 @@ class ArmExecutionReceipt:
             ),
             task_spec_hash=str(value.get("task_spec_hash") or ""),
             arm=Arm(str(value.get("arm") or "")),
+            treatment_hash=str(value.get("treatment_hash") or ""),
+            plan_fingerprint=str(value.get("plan_fingerprint") or ""),
+            compute_resource_hash=str(
+                value.get("compute_resource_hash") or ""
+            ),
             frozen_result_hash=str(
                 value.get("frozen_result_hash") or ""
             ),
@@ -792,6 +1123,13 @@ class SqliteExperimentStore:
         self._conn.execute("PRAGMA busy_timeout=30000")
         self._conn.executescript(
             """
+            CREATE TABLE IF NOT EXISTS experiment_preregistrations (
+              experiment_id TEXT NOT NULL PRIMARY KEY,
+              spec_hash TEXT NOT NULL,
+              treatment_hashes_json TEXT NOT NULL,
+              spec_json TEXT NOT NULL,
+              persisted_at_ms INTEGER NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS experiment_assignments (
               experiment_id TEXT NOT NULL,
               task_id TEXT NOT NULL,
@@ -800,6 +1138,7 @@ class SqliteExperimentStore:
               assignment_id TEXT NOT NULL,
               order_json TEXT NOT NULL,
               block_json TEXT NOT NULL,
+              treatment_hashes_json TEXT NOT NULL,
               assigned_at_ms INTEGER NOT NULL,
               PRIMARY KEY(experiment_id, task_id)
             );
@@ -854,10 +1193,49 @@ class SqliteExperimentStore:
               transition_hash TEXT NOT NULL UNIQUE,
               recorded_at_ms INTEGER NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS experiment_arm_state_events (
+              arm_state_sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+              experiment_id TEXT NOT NULL,
+              task_id TEXT NOT NULL,
+              block_attempt INTEGER NOT NULL,
+              arm TEXT NOT NULL,
+              state TEXT NOT NULL,
+              payload_json TEXT NOT NULL,
+              previous_state_hash TEXT,
+              state_hash TEXT NOT NULL UNIQUE,
+              recorded_at_ms INTEGER NOT NULL,
+              UNIQUE(
+                experiment_id, task_id, block_attempt, arm, state
+              )
+            );
             CREATE INDEX IF NOT EXISTS experiment_transitions_task
               ON experiment_transitions(
                 experiment_id, task_id, transition_sequence
               );
+            CREATE INDEX IF NOT EXISTS experiment_arm_states_task
+              ON experiment_arm_state_events(
+                experiment_id, task_id, block_attempt,
+                arm, arm_state_sequence
+              );
+            CREATE UNIQUE INDEX IF NOT EXISTS
+              experiment_arm_states_one_terminal
+              ON experiment_arm_state_events(
+                experiment_id, task_id, block_attempt, arm
+              )
+              WHERE state IN (
+                'completed', 'failed',
+                'common_infrastructure_failed'
+              );
+            CREATE TRIGGER IF NOT EXISTS experiment_preregistrations_no_update
+            BEFORE UPDATE ON experiment_preregistrations
+            BEGIN
+              SELECT RAISE(ABORT, 'experiment preregistrations are immutable');
+            END;
+            CREATE TRIGGER IF NOT EXISTS experiment_preregistrations_no_delete
+            BEFORE DELETE ON experiment_preregistrations
+            BEGIN
+              SELECT RAISE(ABORT, 'experiment preregistrations are immutable');
+            END;
             CREATE TRIGGER IF NOT EXISTS experiment_assignments_no_update
             BEFORE UPDATE ON experiment_assignments
             BEGIN
@@ -918,6 +1296,16 @@ class SqliteExperimentStore:
             BEGIN
               SELECT RAISE(ABORT, 'experiment transitions are immutable');
             END;
+            CREATE TRIGGER IF NOT EXISTS experiment_arm_states_no_update
+            BEFORE UPDATE ON experiment_arm_state_events
+            BEGIN
+              SELECT RAISE(ABORT, 'experiment arm states are immutable');
+            END;
+            CREATE TRIGGER IF NOT EXISTS experiment_arm_states_no_delete
+            BEFORE DELETE ON experiment_arm_state_events
+            BEGIN
+              SELECT RAISE(ABORT, 'experiment arm states are immutable');
+            END;
             """
         )
         self._ensure_assignment_identity_schema()
@@ -934,6 +1322,11 @@ class SqliteExperimentStore:
             self._conn.execute(
                 "ALTER TABLE experiment_assignments "
                 "ADD COLUMN canonical_task_id TEXT"
+            )
+        if "treatment_hashes_json" not in columns:
+            self._conn.execute(
+                "ALTER TABLE experiment_assignments "
+                "ADD COLUMN treatment_hashes_json TEXT"
             )
         self._conn.execute(
             """CREATE UNIQUE INDEX IF NOT EXISTS
@@ -978,6 +1371,117 @@ class SqliteExperimentStore:
             raise
         else:
             self._conn.commit()
+
+    def put_preregistration(
+        self,
+        experiment: ExperimentSpec,
+    ) -> Mapping[str, Any]:
+        with self._write_transaction():
+            return self._put_preregistration_locked(experiment)
+
+    def _put_preregistration_locked(
+        self,
+        experiment: ExperimentSpec,
+    ) -> Mapping[str, Any]:
+        requested = experiment.preregistration_dict()
+        existing = self.get_preregistration(experiment.experiment_id)
+        if existing is None:
+            treatment_hashes = requested["treatment_hashes"]
+            self._conn.execute(
+                """INSERT INTO experiment_preregistrations(
+                     experiment_id, spec_hash, treatment_hashes_json,
+                     spec_json, persisted_at_ms
+                   ) VALUES(?, ?, ?, ?, ?)""",
+                (
+                    experiment.experiment_id,
+                    requested["spec_hash"],
+                    json.dumps(
+                        treatment_hashes,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        allow_nan=False,
+                    ),
+                    json.dumps(
+                        requested,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        allow_nan=False,
+                    ),
+                    int(time.time() * 1000),
+                ),
+            )
+            existing = self.get_preregistration(experiment.experiment_id)
+        if existing is None:
+            raise RuntimeError("experiment preregistration persistence failed")
+        if dict(existing) != requested:
+            raise ValueError("experiment preregistration discrepancy")
+        return existing
+
+    def get_preregistration(
+        self,
+        experiment_id: str,
+    ) -> Mapping[str, Any] | None:
+        row = self._conn.execute(
+            """SELECT spec_hash, treatment_hashes_json, spec_json
+               FROM experiment_preregistrations
+               WHERE experiment_id=?""",
+            (experiment_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        try:
+            payload = json.loads(str(row["spec_json"]))
+            treatment_hashes = json.loads(
+                str(row["treatment_hashes_json"])
+            )
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                "persisted experiment preregistration is invalid"
+            ) from exc
+        if (
+            not isinstance(payload, dict)
+            or not isinstance(treatment_hashes, dict)
+        ):
+            raise ValueError(
+                "persisted experiment preregistration is invalid"
+            )
+        spec_hash = str(payload.get("spec_hash") or "")
+        hash_body = {
+            key: value
+            for key, value in payload.items()
+            if key != "spec_hash"
+        }
+        raw_treatments = payload.get("treatments")
+        try:
+            persisted_descriptor_hashes = {
+                arm.value: TreatmentDescriptor.from_mapping(
+                    raw_treatments[arm.value]
+                ).treatment_hash
+                for arm in Arm
+            }
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
+            raise ValueError(
+                "persisted experiment treatment descriptors are invalid"
+            ) from exc
+        if (
+            spec_hash != str(row["spec_hash"])
+            or not re.fullmatch(r"[0-9a-f]{64}", spec_hash)
+            or _sha256_json(hash_body) != spec_hash
+            or payload.get("experiment_id") != experiment_id
+            or payload.get("treatment_hashes") != treatment_hashes
+            or persisted_descriptor_hashes != treatment_hashes
+            or set(treatment_hashes) != {arm.value for arm in Arm}
+            or len(set(treatment_hashes.values())) != len(Arm)
+            or any(
+                not isinstance(value, str)
+                or not re.fullmatch(r"[0-9a-f]{64}", value)
+                for value in treatment_hashes.values()
+            )
+        ):
+            raise ValueError(
+                "persisted experiment preregistration integrity is invalid"
+            )
+        return payload
 
     def put_task_spec(
         self,
@@ -1160,8 +1664,9 @@ class SqliteExperimentStore:
                 """INSERT INTO experiment_assignments(
                      experiment_id, task_id, canonical_task_id,
                      assignment_version,
-                     assignment_id, order_json, block_json, assigned_at_ms
-                   ) VALUES(?, ?, ?, ?, ?, ?, ?, ?)""",
+                     assignment_id, order_json, block_json,
+                     treatment_hashes_json, assigned_at_ms
+                   ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     assignment.experiment_id,
                     assignment.task_id,
@@ -1174,6 +1679,14 @@ class SqliteExperimentStore:
                     ),
                     json.dumps(
                         dict(assignment.block),
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                    json.dumps(
+                        {
+                            arm.value: assignment.treatment_hashes[arm]
+                            for arm in Arm
+                        },
                         sort_keys=True,
                         separators=(",", ":"),
                     ),
@@ -1229,11 +1742,22 @@ class SqliteExperimentStore:
         try:
             order_payload = json.loads(row["order_json"])
             block_payload = json.loads(row["block_json"])
+            treatment_hashes_payload = json.loads(
+                str(row["treatment_hashes_json"] or "")
+            )
             if not isinstance(order_payload, list):
                 raise TypeError("order_json must decode to a list")
             if not isinstance(block_payload, dict):
                 raise TypeError("block_json must decode to an object")
+            if not isinstance(treatment_hashes_payload, dict):
+                raise TypeError(
+                    "treatment_hashes_json must decode to an object"
+                )
             order = tuple(Arm(value) for value in order_payload)
+            treatment_hashes = {
+                Arm(raw_arm): str(digest)
+                for raw_arm, digest in treatment_hashes_payload.items()
+            }
         except (TypeError, ValueError, json.JSONDecodeError) as exc:
             raise ValueError("persisted assignment encoding is invalid") from exc
         return Assignment(
@@ -1248,6 +1772,7 @@ class SqliteExperimentStore:
             assignment_id=row["assignment_id"],
             order=order,
             block=block_payload,
+            treatment_hashes=treatment_hashes,
             assigned_at_ms=int(row["assigned_at_ms"]),
         )
 
@@ -1475,6 +2000,301 @@ class SqliteExperimentStore:
             raise ValueError("persisted experiment result identity is invalid")
         return result
 
+    def start_arm_attempt(
+        self,
+        *,
+        experiment_id: str,
+        task_id: str,
+        block_attempt: int,
+        arm: Arm,
+        payload: Mapping[str, Any],
+        transition_idempotency_key: str,
+    ) -> Mapping[str, Any]:
+        """Atomically persist the durable started state and audit transition."""
+        with self._write_transaction():
+            event = self._append_arm_state_event_locked(
+                experiment_id=experiment_id,
+                task_id=task_id,
+                block_attempt=block_attempt,
+                arm=arm,
+                state="started",
+                payload=payload,
+            )
+            self._append_transition_locked(
+                experiment_id=experiment_id,
+                task_id=task_id,
+                arm=arm,
+                kind="arm.started",
+                payload=payload,
+                idempotency_key=transition_idempotency_key,
+            )
+            return event
+
+    def observe_arm_execution(
+        self,
+        *,
+        experiment_id: str,
+        task_id: str,
+        block_attempt: int,
+        arm: Arm,
+        payload: Mapping[str, Any],
+    ) -> Mapping[str, Any]:
+        """Persist observed usage immediately after an executor returns."""
+        with self._write_transaction():
+            return self._append_arm_state_event_locked(
+                experiment_id=experiment_id,
+                task_id=task_id,
+                block_attempt=block_attempt,
+                arm=arm,
+                state="observed",
+                payload=payload,
+            )
+
+    def finish_arm_attempt(
+        self,
+        *,
+        experiment_id: str,
+        task_id: str,
+        block_attempt: int,
+        arm: Arm,
+        state: str,
+        payload: Mapping[str, Any],
+        transition_kind: str,
+        transition_idempotency_key: str,
+        transition_payload: Mapping[str, Any],
+    ) -> Mapping[str, Any]:
+        """Atomically persist one immutable terminal arm state and transition."""
+        if state not in _TERMINAL_ARM_STATES:
+            raise ValueError("arm terminal state is invalid")
+        with self._write_transaction():
+            event = self._append_arm_state_event_locked(
+                experiment_id=experiment_id,
+                task_id=task_id,
+                block_attempt=block_attempt,
+                arm=arm,
+                state=state,
+                payload=payload,
+            )
+            self._append_transition_locked(
+                experiment_id=experiment_id,
+                task_id=task_id,
+                arm=arm,
+                kind=transition_kind,
+                payload=transition_payload,
+                idempotency_key=transition_idempotency_key,
+            )
+            return event
+
+    def get_arm_state_events(
+        self,
+        experiment_id: str,
+        task_id: str,
+        *,
+        block_attempt: int | None = None,
+        arm: Arm | None = None,
+    ) -> tuple[Mapping[str, Any], ...]:
+        clauses = ["experiment_id=?", "task_id=?"]
+        parameters: list[Any] = [experiment_id, task_id]
+        if block_attempt is not None:
+            clauses.append("block_attempt=?")
+            parameters.append(block_attempt)
+        if arm is not None:
+            clauses.append("arm=?")
+            parameters.append(arm.value)
+        rows = self._conn.execute(
+            """SELECT * FROM experiment_arm_state_events
+               WHERE """
+            + " AND ".join(clauses)
+            + """ ORDER BY block_attempt, arm, arm_state_sequence""",
+            tuple(parameters),
+        ).fetchall()
+        events: list[Mapping[str, Any]] = []
+        expected_previous: dict[tuple[int, str], str | None] = {}
+        for row in rows:
+            event = _arm_state_event_from_row(row)
+            key = (event["block_attempt"], event["arm"])
+            if event["previous_state_hash"] != expected_previous.get(key):
+                raise ValueError(
+                    "persisted experiment arm state chain is invalid"
+                )
+            expected_previous[key] = event["state_hash"]
+            events.append(event)
+        return tuple(events)
+
+    def get_arm_attempt_state(
+        self,
+        experiment_id: str,
+        task_id: str,
+        *,
+        block_attempt: int,
+        arm: Arm,
+    ) -> Mapping[str, Mapping[str, Any]]:
+        events = self.get_arm_state_events(
+            experiment_id,
+            task_id,
+            block_attempt=block_attempt,
+            arm=arm,
+        )
+        state = {
+            str(event["state"]): event
+            for event in events
+        }
+        if state and "started" not in state:
+            raise ValueError(
+                "persisted arm state is missing its started event"
+            )
+        terminal = [
+            key for key in state if key in _TERMINAL_ARM_STATES
+        ]
+        if len(terminal) > 1:
+            raise ValueError(
+                "persisted arm state has multiple terminal events"
+            )
+        return MappingProxyType(state)
+
+    def _append_arm_state_event_locked(
+        self,
+        *,
+        experiment_id: str,
+        task_id: str,
+        block_attempt: int,
+        arm: Arm,
+        state: str,
+        payload: Mapping[str, Any],
+    ) -> Mapping[str, Any]:
+        if (
+            isinstance(block_attempt, bool)
+            or not isinstance(block_attempt, int)
+            or block_attempt < 0
+        ):
+            raise ValueError("arm block_attempt must be non-negative")
+        valid_states = {
+            "started",
+            "observed",
+            *_TERMINAL_ARM_STATES,
+        }
+        if state not in valid_states:
+            raise ValueError("arm state is invalid")
+        payload_dict = dict(payload)
+        existing = self._conn.execute(
+            """SELECT * FROM experiment_arm_state_events
+               WHERE experiment_id=? AND task_id=? AND block_attempt=?
+                 AND arm=? AND state=?""",
+            (
+                experiment_id,
+                task_id,
+                block_attempt,
+                arm.value,
+                state,
+            ),
+        ).fetchone()
+        if existing is not None:
+            event = _arm_state_event_from_row(existing)
+            if event["payload"] == payload_dict:
+                return event
+            raise ValueError(
+                "experiment arm state discrepancy for "
+                f"{block_attempt}:{arm.value}:{state}"
+            )
+        if state != "started":
+            started = self._conn.execute(
+                """SELECT 1 FROM experiment_arm_state_events
+                   WHERE experiment_id=? AND task_id=? AND block_attempt=?
+                     AND arm=? AND state='started'""",
+                (
+                    experiment_id,
+                    task_id,
+                    block_attempt,
+                    arm.value,
+                ),
+            ).fetchone()
+            if started is None:
+                raise ValueError(
+                    "arm state cannot advance before durable start"
+                )
+        if state in _TERMINAL_ARM_STATES:
+            terminal = self._conn.execute(
+                """SELECT * FROM experiment_arm_state_events
+                   WHERE experiment_id=? AND task_id=? AND block_attempt=?
+                     AND arm=? AND state IN (
+                       'completed', 'failed',
+                       'common_infrastructure_failed'
+                     )""",
+                (
+                    experiment_id,
+                    task_id,
+                    block_attempt,
+                    arm.value,
+                ),
+            ).fetchone()
+            if terminal is not None:
+                event = _arm_state_event_from_row(terminal)
+                if (
+                    event["state"] == state
+                    and event["payload"] == payload_dict
+                ):
+                    return event
+                raise ValueError(
+                    "experiment arm already has a discrepant terminal state"
+                )
+        previous = self._conn.execute(
+            """SELECT state_hash FROM experiment_arm_state_events
+               WHERE experiment_id=? AND task_id=? AND block_attempt=?
+                 AND arm=?
+               ORDER BY arm_state_sequence DESC LIMIT 1""",
+            (
+                experiment_id,
+                task_id,
+                block_attempt,
+                arm.value,
+            ),
+        ).fetchone()
+        previous_hash = (
+            str(previous["state_hash"])
+            if previous is not None
+            else None
+        )
+        recorded_at_ms = int(time.time() * 1000)
+        body = {
+            "experiment_id": experiment_id,
+            "task_id": task_id,
+            "block_attempt": block_attempt,
+            "arm": arm.value,
+            "state": state,
+            "payload": payload_dict,
+            "previous_state_hash": previous_hash,
+            "recorded_at_ms": recorded_at_ms,
+        }
+        state_hash = _sha256_json(body)
+        cursor = self._conn.execute(
+            """INSERT INTO experiment_arm_state_events(
+                 experiment_id, task_id, block_attempt, arm, state,
+                 payload_json, previous_state_hash, state_hash,
+                 recorded_at_ms
+               ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                experiment_id,
+                task_id,
+                block_attempt,
+                arm.value,
+                state,
+                json.dumps(
+                    payload_dict,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    allow_nan=False,
+                ),
+                previous_hash,
+                state_hash,
+                recorded_at_ms,
+            ),
+        )
+        return {
+            **body,
+            "arm_state_sequence": int(cursor.lastrowid),
+            "state_hash": state_hash,
+        }
+
     def append_transition(
         self,
         *,
@@ -1643,6 +2463,8 @@ def _assert_assignment_write_matches(
         or existing.assignment_id != requested.assignment_id
         or existing.order != requested.order
         or dict(existing.block) != dict(requested.block)
+        or dict(existing.treatment_hashes)
+        != dict(requested.treatment_hashes)
     ):
         raise ValueError("experiment assignment discrepancy")
 
@@ -1687,6 +2509,48 @@ def _transition_from_row(row: sqlite3.Row) -> Mapping[str, Any]:
     return transition
 
 
+def _arm_state_event_from_row(row: sqlite3.Row) -> Mapping[str, Any]:
+    try:
+        payload = json.loads(str(row["payload_json"]))
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            "persisted experiment arm state is invalid"
+        ) from exc
+    if not isinstance(payload, MappingABC):
+        raise ValueError(
+            "persisted experiment arm state payload must be a mapping"
+        )
+    event = {
+        "arm_state_sequence": int(row["arm_state_sequence"]),
+        "experiment_id": str(row["experiment_id"]),
+        "task_id": str(row["task_id"]),
+        "block_attempt": int(row["block_attempt"]),
+        "arm": str(row["arm"]),
+        "state": str(row["state"]),
+        "payload": dict(payload),
+        "previous_state_hash": (
+            str(row["previous_state_hash"])
+            if row["previous_state_hash"] is not None
+            else None
+        ),
+        "state_hash": str(row["state_hash"]),
+        "recorded_at_ms": int(row["recorded_at_ms"]),
+    }
+    hash_body = {
+        key: value
+        for key, value in event.items()
+        if key not in {"arm_state_sequence", "state_hash"}
+    }
+    if not hmac.compare_digest(
+        event["state_hash"],
+        _sha256_json(hash_body),
+    ):
+        raise ValueError(
+            "persisted experiment arm state hash is invalid"
+        )
+    return event
+
+
 class ExperimentKernel:
     def __init__(
         self,
@@ -1701,6 +2565,7 @@ class ExperimentKernel:
 
     def assign(self, experiment: ExperimentSpec, task: TaskSpec) -> Assignment:
         with self.store._write_transaction():
+            self.store._put_preregistration_locked(experiment)
             task = self.store._put_task_spec_locked(
                 experiment.experiment_id,
                 task,
@@ -1769,6 +2634,7 @@ class ExperimentKernel:
                 assignment_id=digest,
                 order=order,
                 block=block,
+                treatment_hashes=experiment.treatment_hashes,
                 assigned_at_ms=int(time.time() * 1000),
             )
             persisted = self.store._put_assignment_locked(assignment)
@@ -1787,7 +2653,46 @@ class ExperimentKernel:
         experiment: ExperimentSpec,
         task: TaskSpec,
         verifier: VerifierAdapter,
+        *,
+        pilot_protocol: FrozenPilotProtocol | None = None,
+        readiness_report: PilotReadinessReport | None = None,
+        authorization_now_ms: int | None = None,
     ) -> TaskExperimentResult:
+        if (
+            experiment.is_pilot
+            or pilot_protocol is not None
+            or readiness_report is not None
+        ):
+            if pilot_protocol is None or readiness_report is None:
+                raise PilotReadinessError(
+                    "pilot execution requires a frozen protocol and current "
+                    "readiness authorization"
+                )
+            if (
+                experiment.pilot_protocol_hash
+                and experiment.pilot_protocol_hash
+                != pilot_protocol.protocol_hash
+            ):
+                raise PilotReadinessError(
+                    "experiment pilot protocol hash does not match "
+                    "authorization"
+                )
+            if (
+                experiment.pilot_task_set_hash
+                and experiment.pilot_task_set_hash
+                != pilot_protocol.task_set_hash
+            ):
+                raise PilotReadinessError(
+                    "experiment pilot task-set hash does not match "
+                    "authorization"
+                )
+            validate_pilot_execution_authorization(
+                pilot_protocol,
+                readiness_report,
+                experiment_id=experiment.experiment_id,
+                task=task,
+                now_ms=authorization_now_ms,
+            )
         assignment = self.assign(experiment, task)
         persisted_task = self.store.get_task_spec(
             experiment.experiment_id,
@@ -1798,6 +2703,9 @@ class ExperimentKernel:
         task = persisted_task
         _validate_task_verifier_pin(task)
         verifier_version = _validate_verifier_adapter(verifier, task=task)
+        bind_verifier = getattr(self.executor, "bind_verifier", None)
+        if callable(bind_verifier):
+            bind_verifier(task=task, verifier=verifier)
         execution_mode = _experiment_execution_mode(experiment)
         existing = self.store.get_result(experiment.experiment_id, task.task_id)
         if existing is not None:
@@ -1815,6 +2723,7 @@ class ExperimentKernel:
         observed_memory_namespaces: set[str] = set()
         observed_lesson_namespaces: set[str] = set()
         observed_environment_attestation_ids: set[str] = set()
+        observed_compute_resource_hashes: dict[Arm, str] = {}
         self.store.append_transition(
             experiment_id=experiment.experiment_id,
             task_id=task.task_id,
@@ -1823,6 +2732,11 @@ class ExperimentKernel:
             payload={
                 "assignment_id": assignment.assignment_id,
                 "order": [arm.value for arm in assignment.order],
+                "treatment_hashes": {
+                    arm.value: assignment.treatment_hashes[arm]
+                    for arm in Arm
+                },
+                "experiment_spec_hash": experiment.spec_hash,
                 "max_common_infrastructure_block_reruns": 1,
             },
         )
@@ -1837,6 +2751,10 @@ class ExperimentKernel:
                     "assignment_id": assignment.assignment_id,
                     "block_attempt": block_attempt,
                     "order": [arm.value for arm in assignment.order],
+                    "treatment_hashes": {
+                        arm.value: assignment.treatment_hashes[arm]
+                        for arm in Arm
+                    },
                 },
             )
             outcomes: list[ArmOutcome] = []
@@ -1846,17 +2764,121 @@ class ExperimentKernel:
                 transition_prefix = (
                     f"block.{block_attempt}.arm.{arm.value}"
                 )
-                self.store.append_transition(
+                persisted_state = self.store.get_arm_attempt_state(
+                    experiment.experiment_id,
+                    task.task_id,
+                    block_attempt=block_attempt,
+                    arm=arm,
+                )
+                terminal_event = _terminal_arm_event(persisted_state)
+                if terminal_event is not None:
+                    if (
+                        terminal_event["state"]
+                        == "common_infrastructure_failed"
+                    ):
+                        payload = terminal_event["payload"]
+                        common_failure = (
+                            CommonPreTreatmentInfrastructureError(
+                                str(payload.get("message") or "shared outage"),
+                                latency_ms=_observed_non_negative_int(
+                                    payload.get("latency_ms"),
+                                    default=0,
+                                ),
+                            )
+                        )
+                        common_failure_arm = arm
+                        break
+                    outcome = _arm_outcome_from_terminal_event(
+                        terminal_event
+                    )
+                    _remember_persisted_outcome_claims(
+                        outcome,
+                        observed_execution_ids=observed_execution_ids,
+                        observed_result_ids=observed_result_ids,
+                        observed_isolation_ids=observed_isolation_ids,
+                        observed_workspace_ids=observed_workspace_ids,
+                        observed_session_ids=observed_session_ids,
+                        observed_cache_namespaces=(
+                            observed_cache_namespaces
+                        ),
+                        observed_memory_namespaces=(
+                            observed_memory_namespaces
+                        ),
+                        observed_lesson_namespaces=(
+                            observed_lesson_namespaces
+                        ),
+                        observed_environment_attestation_ids=(
+                            observed_environment_attestation_ids
+                        ),
+                        observed_compute_resource_hashes=(
+                            observed_compute_resource_hashes
+                        ),
+                    )
+                    outcomes.append(outcome)
+                    continue
+                if "started" in persisted_state:
+                    observation_event = persisted_state.get("observed")
+                    observation = (
+                        dict(observation_event["payload"])
+                        if observation_event is not None
+                        else {
+                            "attempts": 1,
+                            "cost_usd": 0.0,
+                            "latency_ms": 0,
+                            "token_usage": {},
+                            "attempt_records": [],
+                            "original_frozen_result_hash": "",
+                        }
+                    )
+                    outcome = _post_launch_failure(
+                        arm=arm,
+                        task=task,
+                        verifier_version=verifier_version,
+                        assignment=assignment,
+                        stage="resume",
+                        exc=RuntimeError(
+                            "durable arm start lacked a terminal outcome; "
+                            "paid execution will not be repeated"
+                        ),
+                        observation=observation,
+                    )
+                    outcome = self._with_failure_grade_revision_best_effort(
+                        experiment=experiment,
+                        task=task,
+                        assignment=assignment,
+                        outcome=outcome,
+                    )
+                    self.store.finish_arm_attempt(
+                        experiment_id=experiment.experiment_id,
+                        task_id=task.task_id,
+                        block_attempt=block_attempt,
+                        arm=arm,
+                        state="failed",
+                        payload={"outcome": outcome.to_dict()},
+                        transition_kind="arm.failed",
+                        transition_idempotency_key=(
+                            f"{transition_prefix}.failed"
+                        ),
+                        transition_payload=outcome.to_dict(),
+                    )
+                    outcomes.append(outcome)
+                    continue
+
+                start_payload = {
+                    "assignment_id": assignment.assignment_id,
+                    "block_attempt": block_attempt,
+                    "budget": experiment.arm_budgets[arm].to_dict(),
+                    "treatment_hash": assignment.treatment_hashes[arm],
+                }
+                self.store.start_arm_attempt(
                     experiment_id=experiment.experiment_id,
                     task_id=task.task_id,
+                    block_attempt=block_attempt,
                     arm=arm,
-                    kind="arm.started",
-                    idempotency_key=f"{transition_prefix}.started",
-                    payload={
-                        "assignment_id": assignment.assignment_id,
-                        "block_attempt": block_attempt,
-                        "budget": experiment.arm_budgets[arm].to_dict(),
-                    },
+                    payload=start_payload,
+                    transition_idempotency_key=(
+                        f"{transition_prefix}.started"
+                    ),
                 )
                 try:
                     execution = await self.executor.execute(
@@ -1876,22 +2898,33 @@ class ExperimentKernel:
                     ):
                         common_failure = exc
                         common_failure_arm = arm
-                        self.store.append_transition(
+                        common_payload = {
+                            "block_attempt": block_attempt,
+                            "failure_classification": (
+                                COMMON_PRE_TREATMENT_INFRASTRUCTURE_FAILURE
+                            ),
+                            "message": str(exc),
+                            "latency_ms": _observed_non_negative_int(
+                                getattr(exc, "latency_ms", 0),
+                                default=0,
+                            ),
+                            "error": f"{type(exc).__name__}: {exc}",
+                        }
+                        self.store.finish_arm_attempt(
                             experiment_id=experiment.experiment_id,
                             task_id=task.task_id,
+                            block_attempt=block_attempt,
                             arm=arm,
-                            kind="arm.common_infrastructure_failed",
-                            idempotency_key=(
+                            state="common_infrastructure_failed",
+                            payload=common_payload,
+                            transition_kind=(
+                                "arm.common_infrastructure_failed"
+                            ),
+                            transition_idempotency_key=(
                                 f"{transition_prefix}."
                                 "common_infrastructure_failed"
                             ),
-                            payload={
-                                "block_attempt": block_attempt,
-                                "failure_classification": (
-                                    COMMON_PRE_TREATMENT_INFRASTRUCTURE_FAILURE
-                                ),
-                                "error": f"{type(exc).__name__}: {exc}",
-                            },
+                            transition_payload=common_payload,
                         )
                         break
                     if common_pre_treatment_failure:
@@ -1899,6 +2932,17 @@ class ExperimentKernel:
                             "common pre-treatment infrastructure failure "
                             "was reported after block treatment began"
                         )
+                    observation = _observed_exception_usage(exc)
+                    try:
+                        self.store.observe_arm_execution(
+                            experiment_id=experiment.experiment_id,
+                            task_id=task.task_id,
+                            block_attempt=block_attempt,
+                            arm=arm,
+                            payload=observation,
+                        )
+                    except Exception:
+                        pass
                     outcome = _intention_to_treat_failure(
                         arm=arm,
                         task=task,
@@ -1906,113 +2950,148 @@ class ExperimentKernel:
                         assignment=assignment,
                         exc=exc,
                     )
-                    outcomes.append(
-                        self._with_grade_revision(
-                            experiment=experiment,
-                            task=task,
-                            assignment=assignment,
-                            outcome=outcome,
-                        )
+                    outcome = self._with_failure_grade_revision_best_effort(
+                        experiment=experiment,
+                        task=task,
+                        assignment=assignment,
+                        outcome=outcome,
                     )
-                    self.store.append_transition(
+                    self.store.finish_arm_attempt(
                         experiment_id=experiment.experiment_id,
                         task_id=task.task_id,
+                        block_attempt=block_attempt,
                         arm=arm,
-                        kind="arm.failed",
-                        idempotency_key=f"{transition_prefix}.failed",
-                        payload=outcomes[-1].to_dict(),
+                        state="failed",
+                        payload={"outcome": outcome.to_dict()},
+                        transition_kind="arm.failed",
+                        transition_idempotency_key=(
+                            f"{transition_prefix}.failed"
+                        ),
+                        transition_payload=outcome.to_dict(),
                     )
+                    outcomes.append(outcome)
                     continue
 
-                receipt = _extract_execution_receipt(
-                    execution,
-                    allow_fixture_annotation_rebind=(
-                        execution_mode == "hermetic"
-                        and str(
-                            task.metadata.get("tracer_mode") or ""
-                        ).strip().casefold()
-                        == "hermetic"
-                    ),
-                )
-                _validate_arm_execution_receipt(
-                    execution,
-                    receipt=receipt,
-                    arm=arm,
-                    task=task,
-                    assignment=assignment,
-                    budget=experiment.arm_budgets[arm],
-                    expected_mode=execution_mode,
-                    observed_execution_ids=observed_execution_ids,
-                    observed_result_ids=observed_result_ids,
-                    observed_isolation_ids=observed_isolation_ids,
-                    observed_workspace_ids=observed_workspace_ids,
-                    observed_session_ids=observed_session_ids,
-                    observed_cache_namespaces=(
-                        observed_cache_namespaces
-                    ),
-                    observed_memory_namespaces=(
-                        observed_memory_namespaces
-                    ),
-                    observed_lesson_namespaces=(
-                        observed_lesson_namespaces
-                    ),
-                    observed_environment_attestation_ids=(
-                        observed_environment_attestation_ids
-                    ),
-                )
-                _validate_frozen_result_task_binding(
-                    execution.frozen_result,
-                    task,
-                )
-                verifier_bound = bind_frozen_result_to_task(
-                    task,
-                    execution.frozen_result,
-                )
-                blinded, removed_paths = _blind_frozen_result_with_audit(
-                    verifier_bound
-                )
-                blinded = self.store.put_frozen_result(
-                    experiment_id=experiment.experiment_id,
-                    task_id=task.task_id,
-                    arm=arm,
-                    frozen_result=blinded,
-                )
+                observation = _observed_execution_usage(execution)
                 try:
-                    grade = await verifier.verify(blinded)
+                    self.store.observe_arm_execution(
+                        experiment_id=experiment.experiment_id,
+                        task_id=task.task_id,
+                        block_attempt=block_attempt,
+                        arm=arm,
+                        payload=observation,
+                    )
                 except Exception as exc:
-                    outcome = _verification_failure(
+                    outcome = _post_launch_failure(
                         arm=arm,
                         task=task,
                         verifier_version=verifier_version,
-                        execution=execution,
-                        receipt=receipt,
-                        blinded_result=blinded,
-                        removed_paths=removed_paths,
+                        assignment=assignment,
+                        stage="observation_persistence",
                         exc=exc,
+                        observation=observation,
                     )
-                    outcomes.append(
-                        self._with_grade_revision(
-                            experiment=experiment,
-                            task=task,
-                            assignment=assignment,
-                            outcome=outcome,
-                        )
+                    outcome = self._with_failure_grade_revision_best_effort(
+                        experiment=experiment,
+                        task=task,
+                        assignment=assignment,
+                        outcome=outcome,
                     )
-                    self.store.append_transition(
+                    self.store.finish_arm_attempt(
+                        experiment_id=experiment.experiment_id,
+                        task_id=task.task_id,
+                        block_attempt=block_attempt,
+                        arm=arm,
+                        state="failed",
+                        payload={"outcome": outcome.to_dict()},
+                        transition_kind="arm.failed",
+                        transition_idempotency_key=(
+                            f"{transition_prefix}.failed"
+                        ),
+                        transition_payload=outcome.to_dict(),
+                    )
+                    outcomes.append(outcome)
+                    continue
+
+                stage = "receipt"
+                receipt: ArmExecutionReceipt | None = None
+                validated_receipt: ArmExecutionReceipt | None = None
+                blinded: FrozenTaskResult | None = None
+                removed_paths: tuple[str, ...] = ()
+                try:
+                    receipt = _extract_execution_receipt(
+                        execution,
+                        allow_fixture_annotation_rebind=(
+                            execution_mode == "hermetic"
+                            and str(
+                                task.metadata.get("tracer_mode") or ""
+                            ).strip().casefold()
+                            == "hermetic"
+                        ),
+                    )
+                    stage = "receipt_validation"
+                    _validate_arm_execution_receipt(
+                        execution,
+                        receipt=receipt,
+                        arm=arm,
+                        task=task,
+                        assignment=assignment,
+                        expected_treatment_hash=(
+                            experiment.treatment_hashes[arm]
+                        ),
+                        budget=experiment.arm_budgets[arm],
+                        expected_mode=execution_mode,
+                        observed_execution_ids=observed_execution_ids,
+                        observed_result_ids=observed_result_ids,
+                        observed_isolation_ids=observed_isolation_ids,
+                        observed_workspace_ids=observed_workspace_ids,
+                        observed_session_ids=observed_session_ids,
+                        observed_cache_namespaces=(
+                            observed_cache_namespaces
+                        ),
+                        observed_memory_namespaces=(
+                            observed_memory_namespaces
+                        ),
+                        observed_lesson_namespaces=(
+                            observed_lesson_namespaces
+                        ),
+                        observed_environment_attestation_ids=(
+                            observed_environment_attestation_ids
+                        ),
+                        observed_compute_resource_hashes=(
+                            observed_compute_resource_hashes
+                        ),
+                    )
+                    validated_receipt = receipt
+                    stage = "frozen_result"
+                    _validate_frozen_result_task_binding(
+                        execution.frozen_result,
+                        task,
+                    )
+                    verifier_bound = bind_frozen_result_to_task(
+                        task,
+                        execution.frozen_result,
+                    )
+                    stage = "blinding"
+                    blinded, removed_paths = (
+                        _blind_frozen_result_with_audit(verifier_bound)
+                    )
+                    stage = "frozen_result_persistence"
+                    blinded = self.store.put_frozen_result(
                         experiment_id=experiment.experiment_id,
                         task_id=task.task_id,
                         arm=arm,
-                        kind="arm.failed",
-                        idempotency_key=f"{transition_prefix}.failed",
-                        payload=outcomes[-1].to_dict(),
+                        frozen_result=blinded,
                     )
-                    continue
-                _validate_grade_binding(
-                    grade,
-                    blinded_result=blinded,
-                    task=task,
-                )
-                outcome = ArmOutcome(
+                    stage = "verifier"
+                    grade = await verifier.verify(blinded)
+                    stage = "grade_binding"
+                    _validate_grade_binding(
+                        grade,
+                        blinded_result=blinded,
+                        task=task,
+                    )
+                    outcome = ArmOutcome(
                         arm=arm,
                         status="completed",
                         grade=grade,
@@ -2028,22 +3107,71 @@ class ExperimentKernel:
                         token_usage=dict(receipt.token_usage),
                         attempt_records=tuple(receipt.attempt_records),
                     )
-                outcomes.append(
-                    self._with_grade_revision(
+                    stage = "gradebook"
+                    outcome = self._with_grade_revision(
                         experiment=experiment,
                         task=task,
                         assignment=assignment,
                         outcome=outcome,
                     )
-                )
-                self.store.append_transition(
-                    experiment_id=experiment.experiment_id,
-                    task_id=task.task_id,
-                    arm=arm,
-                    kind="arm.completed",
-                    idempotency_key=f"{transition_prefix}.completed",
-                    payload=outcomes[-1].to_dict(),
-                )
+                    stage = "terminal_persistence"
+                    self.store.finish_arm_attempt(
+                        experiment_id=experiment.experiment_id,
+                        task_id=task.task_id,
+                        block_attempt=block_attempt,
+                        arm=arm,
+                        state="completed",
+                        payload={"outcome": outcome.to_dict()},
+                        transition_kind="arm.completed",
+                        transition_idempotency_key=(
+                            f"{transition_prefix}.completed"
+                        ),
+                        transition_payload=outcome.to_dict(),
+                    )
+                except Exception as exc:
+                    outcome = _post_launch_failure(
+                        arm=arm,
+                        task=task,
+                        verifier_version=verifier_version,
+                        assignment=assignment,
+                        stage=stage,
+                        exc=exc,
+                        observation=observation,
+                        blinded_result=blinded,
+                        original_frozen_result_hash=(
+                            execution.frozen_result.result_hash
+                            if isinstance(
+                                execution.frozen_result,
+                                FrozenTaskResult,
+                            )
+                            else ""
+                        ),
+                        removed_paths=removed_paths,
+                        execution_receipt=validated_receipt,
+                    )
+                    if stage != "gradebook":
+                        outcome = (
+                            self._with_failure_grade_revision_best_effort(
+                                experiment=experiment,
+                                task=task,
+                                assignment=assignment,
+                                outcome=outcome,
+                            )
+                        )
+                    self.store.finish_arm_attempt(
+                        experiment_id=experiment.experiment_id,
+                        task_id=task.task_id,
+                        block_attempt=block_attempt,
+                        arm=arm,
+                        state="failed",
+                        payload={"outcome": outcome.to_dict()},
+                        transition_kind="arm.failed",
+                        transition_idempotency_key=(
+                            f"{transition_prefix}.failed"
+                        ),
+                        transition_payload=outcome.to_dict(),
+                    )
+                outcomes.append(outcome)
 
             if common_failure is not None:
                 if block_attempt == 0:
@@ -2066,7 +3194,7 @@ class ExperimentKernel:
                     )
                     continue
                 final_outcomes = tuple(
-                    self._with_grade_revision(
+                    self._with_failure_grade_revision_best_effort(
                         experiment=experiment,
                         task=task,
                         assignment=assignment,
@@ -2216,6 +3344,42 @@ class ExperimentKernel:
             grade_revision=GradeRevisionRef.from_revision(revision),
         )
 
+    def _with_failure_grade_revision_best_effort(
+        self,
+        *,
+        experiment: ExperimentSpec,
+        task: TaskSpec,
+        assignment: Assignment,
+        outcome: ArmOutcome,
+    ) -> ArmOutcome:
+        if outcome.status == "completed":
+            raise ValueError(
+                "best-effort grade persistence is only valid for failures"
+            )
+        try:
+            return self._with_grade_revision(
+                experiment=experiment,
+                task=task,
+                assignment=assignment,
+                outcome=outcome,
+            )
+        except Exception as exc:
+            evidence = {
+                **dict(outcome.grade.evidence),
+                "gradebook_persistence_failed": True,
+                "gradebook_error_type": type(exc).__name__,
+                "gradebook_error": str(exc),
+            }
+            return replace(
+                outcome,
+                grade=replace(outcome.grade, evidence=evidence),
+                error=(
+                    outcome.error
+                    + ("; " if outcome.error else "")
+                    + f"GradeBook {type(exc).__name__}: {exc}"
+                ),
+            )
+
     async def regrade_arm(
         self,
         *,
@@ -2298,21 +3462,41 @@ def _blind_frozen_result_with_audit(
     result: FrozenTaskResult,
 ) -> tuple[FrozenTaskResult, tuple[str, ...]]:
     removed_paths: list[str] = []
-    metadata = _scrub_arm_identity(
-        result.metadata,
-        path="metadata",
-        removed_paths=removed_paths,
-    )
-    _reject_arm_identity_scalar(result.run_result_hash, path="run_result_hash")
+    metadata: dict[str, Any] = {}
+    for key, value in result.metadata.items():
+        path = f"metadata.{key}"
+        if key not in _VERIFIER_METADATA_ALLOWLIST:
+            removed_paths.append(path)
+            continue
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(
+                f"allowlisted verifier identity must be non-empty text at {path}"
+            )
+        if key == "materialization_id":
+            metadata[key] = hashlib.sha256(
+                f"materialization::{value}".encode("utf-8")
+            ).hexdigest()
+        else:
+            metadata[key] = value
+    opaque_execution_id = hashlib.sha256(
+        (
+            "verifier-execution::"
+            + result.task_spec_hash
+            + "::"
+            + result.run_result_hash
+        ).encode("utf-8")
+    ).hexdigest()
+    metadata["verification_execution_id"] = opaque_execution_id
     _reject_arm_identity_scalar(result.patch, path="patch")
-    _reject_arm_identity_scalar(result.output, path="output")
+    if result.output:
+        removed_paths.append("output")
     blinded = FrozenTaskResult.create(
         task_id=result.task_id,
         task_family=result.task_family,
         task_spec_hash=result.task_spec_hash,
-        run_result_hash=result.run_result_hash,
+        run_result_hash=opaque_execution_id,
         patch=result.patch,
-        output=result.output,
+        output="",
         metadata=metadata,
         frozen_at_ms=result.frozen_at_ms,
     )
@@ -2424,7 +3608,7 @@ def validate_primary_reviewer_packet(
     receipt_hash = candidate.tests.get("sha256")
     if not isinstance(patch, str) or not isinstance(receipt, MappingABC):
         raise ValueError("primary reviewer packet raw artifacts are missing")
-    normalized_receipt = _primary_test_artifact(receipt)
+    normalized_receipt = _validate_blinded_test_receipt(receipt)
     if dict(receipt) != normalized_receipt:
         raise ValueError("primary reviewer packet test artifact is malformed")
     if hashlib.sha256(patch.encode("utf-8")).hexdigest() != patch_hash:
@@ -2573,6 +3757,7 @@ def _common_pre_treatment_block_failure(
             ),
             "exception_type": type(exc).__name__,
         },
+        frozen_at_ms=assignment.assigned_at_ms,
     )
     blinded, removed_paths = _blind_frozen_result_with_audit(original)
     grade = Grade(
@@ -2686,6 +3871,271 @@ def _intention_to_treat_failure(
     )
 
 
+def _observed_execution_usage(
+    execution: ArmExecution,
+) -> dict[str, Any]:
+    receipt = (
+        execution.receipt
+        if isinstance(execution.receipt, ArmExecutionReceipt)
+        else None
+    )
+    token_usage = (
+        dict(receipt.token_usage)
+        if receipt is not None
+        else {}
+    )
+    attempt_records = (
+        tuple(dict(record) for record in receipt.attempt_records)
+        if receipt is not None
+        else ()
+    )
+    return {
+        "attempts": max(1, _observed_non_negative_int(
+            execution.attempts,
+            default=1,
+        )),
+        "cost_usd": _non_negative_finite(
+            execution.cost_usd,
+            default=0.0,
+        ),
+        "latency_ms": _observed_non_negative_int(
+            execution.latency_ms,
+            default=0,
+        ),
+        "token_usage": _observed_token_usage(token_usage),
+        "attempt_records": [
+            _observed_attempt_record(record)
+            for record in attempt_records
+        ],
+        "execution_id": (
+            receipt.execution_id if receipt is not None else ""
+        ),
+        "result_id": (
+            receipt.result_id if receipt is not None else ""
+        ),
+        "original_frozen_result_hash": (
+            execution.frozen_result.result_hash
+            if isinstance(execution.frozen_result, FrozenTaskResult)
+            else ""
+        ),
+    }
+
+
+def _observed_exception_usage(exc: Exception) -> dict[str, Any]:
+    return {
+        "attempts": max(1, _observed_non_negative_int(
+            getattr(exc, "attempts", 1),
+            default=1,
+        )),
+        "cost_usd": _non_negative_finite(
+            getattr(exc, "cost_usd", 0.0),
+            default=0.0,
+        ),
+        "latency_ms": _observed_non_negative_int(
+            getattr(exc, "latency_ms", 0),
+            default=0,
+        ),
+        "token_usage": _observed_token_usage(
+            getattr(exc, "token_usage", {}) or {}
+        ),
+        "attempt_records": [
+            _observed_attempt_record(record)
+            for record in (
+                getattr(exc, "attempt_records", ()) or ()
+            )
+            if isinstance(record, MappingABC)
+        ],
+        "execution_id": "",
+        "result_id": "",
+        "original_frozen_result_hash": "",
+    }
+
+
+def _observed_non_negative_int(value: Any, *, default: int) -> int:
+    if isinstance(value, bool):
+        return default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+    return parsed if parsed >= 0 else default
+
+
+def _observed_token_usage(value: Any) -> dict[str, int]:
+    if not isinstance(value, MappingABC):
+        return {}
+    observed: dict[str, int] = {}
+    for raw_key, raw_value in value.items():
+        key = str(raw_key).strip()
+        if not key or isinstance(raw_value, bool):
+            continue
+        try:
+            numeric = float(raw_value)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(numeric) and numeric >= 0 and numeric.is_integer():
+            observed[key] = int(numeric)
+    return observed
+
+
+def _observed_attempt_record(
+    record: Mapping[str, Any],
+) -> dict[str, Any]:
+    observed: dict[str, Any] = {}
+    for field_name in (
+        "attempt_index",
+        "execution_id",
+        "run_id",
+        "session_id",
+        "status",
+        "cost_usd",
+        "latency_ms",
+    ):
+        value = record.get(field_name)
+        if value is None or isinstance(value, (str, bool, int)):
+            observed[field_name] = value
+        elif isinstance(value, float) and math.isfinite(value):
+            observed[field_name] = value
+        else:
+            observed[field_name] = str(value)
+    observed["token_usage"] = _observed_token_usage(
+        record.get("token_usage") or {}
+    )
+    return observed
+
+
+def _post_launch_failure(
+    *,
+    arm: Arm,
+    task: TaskSpec,
+    verifier_version: str,
+    assignment: Assignment,
+    stage: str,
+    exc: Exception,
+    observation: Mapping[str, Any],
+    blinded_result: FrozenTaskResult | None = None,
+    original_frozen_result_hash: str = "",
+    removed_paths: tuple[str, ...] = (),
+    execution_receipt: ArmExecutionReceipt | None = None,
+) -> ArmOutcome:
+    classification_by_stage = {
+        "receipt": "post_launch_receipt_failure",
+        "receipt_validation": "post_launch_receipt_failure",
+        "frozen_result": "post_launch_frozen_result_failure",
+        "blinding": "post_launch_blinding_failure",
+        "frozen_result_persistence": "post_launch_persistence_failure",
+        "verifier": "verifier_failure",
+        "grade_binding": "grade_binding_failure",
+        "gradebook": "gradebook_failure",
+        "terminal_persistence": "post_launch_persistence_failure",
+        "observation_persistence": "post_launch_persistence_failure",
+        "resume": "interrupted_after_launch",
+    }
+    failure_classification = classification_by_stage.get(
+        stage,
+        "post_launch_failure",
+    )
+    attempts = max(
+        1,
+        _observed_non_negative_int(
+            observation.get("attempts"),
+            default=1,
+        ),
+    )
+    cost_usd = _non_negative_finite(
+        observation.get("cost_usd"),
+        default=0.0,
+    )
+    latency_ms = _observed_non_negative_int(
+        observation.get("latency_ms"),
+        default=0,
+    )
+    token_usage = _observed_token_usage(
+        observation.get("token_usage") or {}
+    )
+    attempt_records = tuple(
+        _observed_attempt_record(record)
+        for record in (observation.get("attempt_records") or ())
+        if isinstance(record, MappingABC)
+    )
+    if blinded_result is None:
+        failure_seed = "||".join(
+            (
+                assignment.assignment_id,
+                arm.value,
+                stage,
+                type(exc).__name__,
+            )
+        )
+        original = FrozenTaskResult.create(
+            task_id=task.task_id,
+            task_family=task.task_family,
+            task_spec_hash=task.spec_hash,
+            run_result_hash=hashlib.sha256(
+                failure_seed.encode("utf-8")
+            ).hexdigest(),
+            patch="",
+            output="post-launch execution failure",
+            metadata={
+                "failure_classification": failure_classification,
+                "failure_stage": stage,
+                "exception_type": type(exc).__name__,
+            },
+        )
+        blinded_result, removed_paths = _blind_frozen_result_with_audit(
+            original
+        )
+        original_hash = (
+            original_frozen_result_hash or original.result_hash
+        )
+    else:
+        original_hash = (
+            original_frozen_result_hash
+            or str(
+                observation.get("original_frozen_result_hash") or ""
+            )
+            or blinded_result.result_hash
+        )
+    grade = Grade(
+        verifier_id=task.verifier_id,
+        verifier_version=verifier_version,
+        verifier_hash=task.verifier_hash,
+        frozen_result_hash=blinded_result.result_hash,
+        passed=False,
+        score=0.0,
+        evidence={
+            "intention_to_treat": True,
+            "failure_stage": stage,
+            "exception_type": type(exc).__name__,
+            "error": str(exc),
+            "attempts": attempts,
+            "cost_usd": cost_usd,
+            "latency_ms": latency_ms,
+            "token_usage": token_usage,
+            "attempt_records": [
+                dict(record) for record in attempt_records
+            ],
+        },
+        failure_classification=failure_classification,
+    )
+    return ArmOutcome(
+        arm=arm,
+        status="failed",
+        grade=grade,
+        attempts=attempts,
+        cost_usd=cost_usd,
+        latency_ms=latency_ms,
+        frozen_result_hash=blinded_result.result_hash,
+        original_frozen_result_hash=original_hash,
+        blinding_removed_paths=removed_paths,
+        execution_receipt=execution_receipt,
+        token_usage=token_usage,
+        attempt_records=attempt_records,
+        failure_classification=failure_classification,
+        error=f"{type(exc).__name__}: {exc}",
+    )
+
+
 def _verification_failure(
     *,
     arm: Arm,
@@ -2729,6 +4179,120 @@ def _verification_failure(
         failure_classification="verifier_failure",
         error=f"{type(exc).__name__}: {exc}",
     )
+
+
+def _terminal_arm_event(
+    state: Mapping[str, Mapping[str, Any]],
+) -> Mapping[str, Any] | None:
+    for terminal_state in (
+        "completed",
+        "failed",
+        "common_infrastructure_failed",
+    ):
+        event = state.get(terminal_state)
+        if event is not None:
+            return event
+    return None
+
+
+def _arm_outcome_from_terminal_event(
+    event: Mapping[str, Any],
+) -> ArmOutcome:
+    payload = event.get("payload")
+    outcome = (
+        payload.get("outcome")
+        if isinstance(payload, MappingABC)
+        else None
+    )
+    if not isinstance(outcome, MappingABC):
+        raise ValueError(
+            "terminal arm state does not contain an outcome"
+        )
+    parsed = _arm_outcome_from_dict(outcome)
+    if parsed.arm.value != event.get("arm"):
+        raise ValueError(
+            "terminal arm outcome does not match its durable state"
+        )
+    return parsed
+
+
+def _remember_persisted_outcome_claims(
+    outcome: ArmOutcome,
+    *,
+    observed_execution_ids: set[str],
+    observed_result_ids: set[str],
+    observed_isolation_ids: set[str],
+    observed_workspace_ids: set[str],
+    observed_session_ids: set[str],
+    observed_cache_namespaces: set[str],
+    observed_memory_namespaces: set[str],
+    observed_lesson_namespaces: set[str],
+    observed_environment_attestation_ids: set[str],
+    observed_compute_resource_hashes: dict[Arm, str],
+) -> None:
+    receipt = outcome.execution_receipt
+    if receipt is None:
+        return
+    claims = (
+        (receipt.execution_id, observed_execution_ids, "execution_id"),
+        (receipt.result_id, observed_result_ids, "result_id"),
+        (
+            receipt.isolation.isolation_id,
+            observed_isolation_ids,
+            "isolation_id",
+        ),
+        (
+            receipt.isolation.workspace_id,
+            observed_workspace_ids,
+            "workspace_id",
+        ),
+        (
+            receipt.isolation.session_id,
+            observed_session_ids,
+            "session_id",
+        ),
+        (
+            receipt.isolation.cache_namespace,
+            observed_cache_namespaces,
+            "cache_namespace",
+        ),
+        (
+            receipt.isolation.memory_namespace,
+            observed_memory_namespaces,
+            "memory_namespace",
+        ),
+        (
+            receipt.isolation.lesson_namespace,
+            observed_lesson_namespaces,
+            "lesson_namespace",
+        ),
+        (
+            receipt.environment.attestation_id,
+            observed_environment_attestation_ids,
+            "environment_attestation_id",
+        ),
+    )
+    for value, observed, label in claims:
+        if value in observed:
+            raise ValueError(
+                f"persisted arm outcomes share {label}"
+            )
+    for value, observed, _label in claims:
+        observed.add(value)
+    observed_compute_resource_hashes[outcome.arm] = (
+        receipt.compute_resource_hash
+    )
+    if (
+        Arm.B in observed_compute_resource_hashes
+        and Arm.C in observed_compute_resource_hashes
+        and not hmac.compare_digest(
+            observed_compute_resource_hashes[Arm.B],
+            observed_compute_resource_hashes[Arm.C],
+        )
+    ):
+        raise ValueError(
+            "persisted B/C compute/resource hashes do not match"
+        )
 
 
 def _assignment_stratum(
@@ -2845,6 +4409,11 @@ def _derive_assignment(
     block = {
         **dict(stratum),
         "assignment_method": assignment_method,
+        "experiment_spec_hash": experiment.spec_hash,
+        "treatment_set_hash": _sha256_json({
+            arm.value: experiment.treatment_hashes[arm]
+            for arm in Arm
+        }),
         "stratum_position": str(stratum_position),
         "permuted_block_index": str(permuted_block_index),
         "permuted_block_position": str(permuted_block_position),
@@ -2856,6 +4425,14 @@ def _derive_assignment(
             experiment.assignment_version,
             json.dumps(block, sort_keys=True, separators=(",", ":")),
             ",".join(arm.value for arm in order),
+            json.dumps(
+                {
+                    arm.value: experiment.treatment_hashes[arm]
+                    for arm in Arm
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
         )
     ).encode("utf-8")
     digest = hmac.new(experiment.hmac_key, message, hashlib.sha256).hexdigest()
@@ -2881,6 +4458,12 @@ def _validate_persisted_assignment(
         )
     if assignment.assignment_version != experiment.assignment_version:
         raise ValueError("persisted assignment version does not match experiment")
+    if dict(assignment.treatment_hashes) != dict(
+        experiment.treatment_hashes
+    ):
+        raise ValueError(
+            "persisted assignment treatment hashes do not match preregistration"
+        )
     if not hmac.compare_digest(assignment.assignment_id, expected_digest):
         raise ValueError("persisted assignment id does not match deterministic HMAC")
     if not isinstance(assignment.block, MappingABC):
@@ -2972,6 +4555,7 @@ def _validate_arm_execution_receipt(
     arm: Arm,
     task: TaskSpec,
     assignment: Assignment,
+    expected_treatment_hash: str,
     budget: ArmBudget,
     expected_mode: str,
     observed_execution_ids: set[str],
@@ -2983,6 +4567,7 @@ def _validate_arm_execution_receipt(
     observed_memory_namespaces: set[str],
     observed_lesson_namespaces: set[str],
     observed_environment_attestation_ids: set[str],
+    observed_compute_resource_hashes: dict[Arm, str],
 ) -> None:
     if receipt.schema_version != ARM_EXECUTION_RECEIPT_SCHEMA_VERSION:
         raise ValueError("ArmExecution receipt schema is invalid")
@@ -2998,6 +4583,60 @@ def _validate_arm_execution_receipt(
         raise ValueError(
             "ArmExecution receipt assignment_id does not match assignment"
         )
+    assignment_treatment_hash = assignment.treatment_hashes[arm]
+    if not hmac.compare_digest(
+        assignment_treatment_hash,
+        expected_treatment_hash,
+    ):
+        raise ValueError(
+            "assignment treatment hash does not match preregistration"
+        )
+    if not hmac.compare_digest(
+        receipt.treatment_hash,
+        expected_treatment_hash,
+    ):
+        raise ValueError(
+            "ArmExecution receipt treatment hash does not match preregistration"
+        )
+    for field_name, digest in (
+        ("plan_fingerprint", receipt.plan_fingerprint),
+        ("compute_resource_hash", receipt.compute_resource_hash),
+    ):
+        if not re.fullmatch(r"[0-9a-f]{64}", digest):
+            raise ValueError(
+                f"ArmExecution receipt {field_name} must be a sha256 digest"
+            )
+    launch_metadata = execution.metadata.get("launch_metadata")
+    if not isinstance(launch_metadata, MappingABC):
+        raise ValueError(
+            "ArmExecution must persist treatment-bound launch metadata"
+        )
+    expected_launch = {
+        "arm": arm.value,
+        "assignment_id": assignment.assignment_id,
+        "treatment_hash": receipt.treatment_hash,
+        "plan_fingerprint": receipt.plan_fingerprint,
+        "compute_resource_hash": receipt.compute_resource_hash,
+    }
+    for field_name, expected_value in expected_launch.items():
+        if launch_metadata.get(field_name) != expected_value:
+            raise ValueError(
+                "ArmExecution receipt does not match launched plan "
+                f"{field_name}"
+            )
+    runtime_plan = execution.metadata.get("runtime_plan")
+    if not isinstance(runtime_plan, MappingABC):
+        raise ValueError("ArmExecution must persist its launched runtime plan")
+    for field_name in (
+        "treatment_hash",
+        "plan_fingerprint",
+        "compute_resource_hash",
+    ):
+        if runtime_plan.get(field_name) != expected_launch[field_name]:
+            raise ValueError(
+                "ArmExecution launched runtime plan does not match receipt "
+                f"{field_name}"
+            )
     if receipt.task_id != task.task_id:
         raise ValueError("ArmExecution receipt task_id does not match TaskSpec")
     if receipt.canonical_task_id != canonical_task_identity(task):
@@ -3178,6 +4817,18 @@ def _validate_arm_execution_receipt(
         operational=expected_mode == "operational",
     )
 
+    observed_compute_resource_hashes[arm] = receipt.compute_resource_hash
+    if (
+        Arm.B in observed_compute_resource_hashes
+        and Arm.C in observed_compute_resource_hashes
+        and not hmac.compare_digest(
+            observed_compute_resource_hashes[Arm.B],
+            observed_compute_resource_hashes[Arm.C],
+        )
+    ):
+        raise ValueError(
+            "arms B and C compute/resource hashes must match"
+        )
     unique_claims = (
         (receipt.execution_id, observed_execution_ids, "execution_id"),
         (receipt.result_id, observed_result_ids, "result_id"),
@@ -3596,6 +5247,12 @@ def _task_experiment_result_from_dict(
         assignment_id=str(assignment_payload["assignment_id"]),
         order=tuple(Arm(value) for value in assignment_payload["order"]),
         block=dict(assignment_payload["block"]),
+        treatment_hashes={
+            Arm(raw_arm): str(digest)
+            for raw_arm, digest in dict(
+                assignment_payload["treatment_hashes"]
+            ).items()
+        },
         assigned_at_ms=int(assignment_payload["assigned_at_ms"]),
     )
     raw_outcomes = payload["outcomes"]
@@ -3605,87 +5262,89 @@ def _task_experiment_result_from_dict(
     for raw_outcome in raw_outcomes:
         if not isinstance(raw_outcome, MappingABC):
             raise TypeError("outcome must be a mapping")
-        raw_grade = raw_outcome["grade"]
-        if not isinstance(raw_grade, MappingABC):
-            raise TypeError("grade must be a mapping")
-        grade = Grade(
-            verifier_id=str(raw_grade["verifier_id"]),
-            verifier_version=str(raw_grade["verifier_version"]),
-            verifier_hash=str(raw_grade["verifier_hash"]),
-            frozen_result_hash=str(raw_grade["frozen_result_hash"]),
-            passed=raw_grade["passed"],
-            score=float(raw_grade["score"]),
-            evidence=dict(raw_grade["evidence"]),
-            failure_classification=str(
-                raw_grade.get("failure_classification") or ""
-            ),
-            flake_classification=str(
-                raw_grade.get("flake_classification") or ""
-            ),
-            schema_version=str(
-                raw_grade.get("schema_version") or GRADE_SCHEMA_VERSION
-            ),
-        )
-        blinding = raw_outcome.get("blinding")
-        if not isinstance(blinding, MappingABC):
-            blinding = {}
-        raw_grade_revision = raw_outcome.get("grade_revision")
-        if not isinstance(raw_grade_revision, MappingABC):
-            raise TypeError(
-                "persisted outcome must carry immutable grade lineage"
-            )
-        grade_revision = GradeRevisionRef.from_mapping(
-            raw_grade_revision
-        )
-        raw_execution_receipt = raw_outcome.get("execution_receipt")
-        execution_receipt = (
-            ArmExecutionReceipt.from_mapping(raw_execution_receipt)
-            if isinstance(raw_execution_receipt, MappingABC)
-            else None
-        )
-        if (
-            str(raw_outcome["status"]) == "completed"
-            and execution_receipt is None
-        ):
-            raise TypeError(
-                "completed persisted outcome lacks execution receipt"
-            )
-        outcomes.append(
-            ArmOutcome(
-                arm=Arm(raw_outcome["arm"]),
-                status=str(raw_outcome["status"]),
-                grade=grade,
-                attempts=int(raw_outcome["attempts"]),
-                cost_usd=float(raw_outcome["cost_usd"]),
-                latency_ms=int(raw_outcome["latency_ms"]),
-                frozen_result_hash=str(raw_outcome["frozen_result_hash"]),
-                original_frozen_result_hash=str(
-                    raw_outcome["original_frozen_result_hash"]
-                ),
-                blinding_removed_paths=tuple(
-                    str(value)
-                    for value in (blinding.get("removed_paths") or ())
-                ),
-                grade_revision=grade_revision,
-                execution_receipt=execution_receipt,
-                token_usage=dict(raw_outcome.get("token_usage") or {}),
-                attempt_records=tuple(
-                    dict(record)
-                    for record in (
-                        raw_outcome.get("attempt_records") or ()
-                    )
-                ),
-                failure_classification=str(
-                    raw_outcome.get("failure_classification") or ""
-                ),
-                error=str(raw_outcome.get("error") or ""),
-            )
-        )
+        outcomes.append(_arm_outcome_from_dict(raw_outcome))
     return TaskExperimentResult(
         experiment_id=str(payload["experiment_id"]),
         task_id=str(payload["task_id"]),
         assignment=assignment,
         outcomes=tuple(outcomes),
+    )
+
+
+def _arm_outcome_from_dict(
+    raw_outcome: Mapping[str, Any],
+) -> ArmOutcome:
+    raw_grade = raw_outcome["grade"]
+    if not isinstance(raw_grade, MappingABC):
+        raise TypeError("grade must be a mapping")
+    grade = Grade(
+        verifier_id=str(raw_grade["verifier_id"]),
+        verifier_version=str(raw_grade["verifier_version"]),
+        verifier_hash=str(raw_grade["verifier_hash"]),
+        frozen_result_hash=str(raw_grade["frozen_result_hash"]),
+        passed=raw_grade["passed"],
+        score=float(raw_grade["score"]),
+        evidence=dict(raw_grade["evidence"]),
+        failure_classification=str(
+            raw_grade.get("failure_classification") or ""
+        ),
+        flake_classification=str(
+            raw_grade.get("flake_classification") or ""
+        ),
+        schema_version=str(
+            raw_grade.get("schema_version") or GRADE_SCHEMA_VERSION
+        ),
+    )
+    blinding = raw_outcome.get("blinding")
+    if not isinstance(blinding, MappingABC):
+        blinding = {}
+    raw_grade_revision = raw_outcome.get("grade_revision")
+    grade_revision = (
+        GradeRevisionRef.from_mapping(raw_grade_revision)
+        if isinstance(raw_grade_revision, MappingABC)
+        else None
+    )
+    raw_execution_receipt = raw_outcome.get("execution_receipt")
+    execution_receipt = (
+        ArmExecutionReceipt.from_mapping(raw_execution_receipt)
+        if isinstance(raw_execution_receipt, MappingABC)
+        else None
+    )
+    status = str(raw_outcome["status"])
+    if status == "completed" and (
+        execution_receipt is None or grade_revision is None
+    ):
+        raise TypeError(
+            "completed persisted outcome lacks execution or grade receipt"
+        )
+    return ArmOutcome(
+        arm=Arm(raw_outcome["arm"]),
+        status=status,
+        grade=grade,
+        attempts=int(raw_outcome["attempts"]),
+        cost_usd=float(raw_outcome["cost_usd"]),
+        latency_ms=int(raw_outcome["latency_ms"]),
+        frozen_result_hash=str(raw_outcome["frozen_result_hash"]),
+        original_frozen_result_hash=str(
+            raw_outcome["original_frozen_result_hash"]
+        ),
+        blinding_removed_paths=tuple(
+            str(value)
+            for value in (blinding.get("removed_paths") or ())
+        ),
+        grade_revision=grade_revision,
+        execution_receipt=execution_receipt,
+        token_usage=dict(raw_outcome.get("token_usage") or {}),
+        attempt_records=tuple(
+            dict(record)
+            for record in (
+                raw_outcome.get("attempt_records") or ()
+            )
+        ),
+        failure_classification=str(
+            raw_outcome.get("failure_classification") or ""
+        ),
+        error=str(raw_outcome.get("error") or ""),
     )
 
 
@@ -3884,7 +5543,7 @@ def _primary_test_artifact(tests: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError(
             "primary review test artifact result_files must be a mapping"
         )
-    result_files: dict[str, str] = {}
+    result_files: list[dict[str, str]] = []
     for raw_path, raw_hash in raw_result_files.items():
         path = str(raw_path).strip()
         digest = str(raw_hash).strip().casefold()
@@ -3892,16 +5551,136 @@ def _primary_test_artifact(tests: Mapping[str, Any]) -> dict[str, Any]:
             raise ValueError(
                 "primary review test result files must pin sha256 digests"
             )
-        result_files[path] = digest
+        result_files.append({
+            "artifact_id": hashlib.sha256(
+                path.encode("utf-8")
+            ).hexdigest(),
+            "sha256": digest,
+        })
+    command_bytes = json.dumps(
+        [str(part) for part in command],
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
     return {
-        "schema_version": RAW_TEST_ARTIFACT_SCHEMA_VERSION,
-        "command": [str(part) for part in command],
+        "schema_version": BLINDED_TEST_RECEIPT_SCHEMA_VERSION,
+        "source_schema_version": RAW_TEST_ARTIFACT_SCHEMA_VERSION,
+        "command_sha256": hashlib.sha256(command_bytes).hexdigest(),
         "exit_code": exit_code,
-        "stdout": stdout,
-        "stderr": stderr,
+        "stdout_sha256": hashlib.sha256(
+            stdout.encode("utf-8")
+        ).hexdigest(),
+        "stdout_bytes": len(stdout.encode("utf-8")),
+        "stderr_sha256": hashlib.sha256(
+            stderr.encode("utf-8")
+        ).hexdigest(),
+        "stderr_bytes": len(stderr.encode("utf-8")),
         "duration_ms": duration_ms,
-        "result_files": result_files,
+        "result_files": sorted(
+            result_files,
+            key=lambda item: (item["artifact_id"], item["sha256"]),
+        ),
     }
+
+
+def _validate_blinded_test_receipt(
+    receipt: Mapping[str, Any],
+) -> dict[str, Any]:
+    expected_keys = {
+        "schema_version",
+        "source_schema_version",
+        "command_sha256",
+        "exit_code",
+        "stdout_sha256",
+        "stdout_bytes",
+        "stderr_sha256",
+        "stderr_bytes",
+        "duration_ms",
+        "result_files",
+    }
+    if set(receipt) != expected_keys:
+        raise ValueError(
+            "primary reviewer packet test artifact is malformed"
+        )
+    if (
+        receipt.get("schema_version")
+        != BLINDED_TEST_RECEIPT_SCHEMA_VERSION
+        or receipt.get("source_schema_version")
+        != RAW_TEST_ARTIFACT_SCHEMA_VERSION
+    ):
+        raise ValueError("primary reviewer packet test schema is invalid")
+    for field_name in (
+        "command_sha256",
+        "stdout_sha256",
+        "stderr_sha256",
+    ):
+        if not re.fullmatch(
+            r"[0-9a-f]{64}",
+            str(receipt.get(field_name) or ""),
+        ):
+            raise ValueError(
+                f"primary reviewer packet {field_name} is invalid"
+            )
+    exit_code = receipt.get("exit_code")
+    if isinstance(exit_code, bool) or not isinstance(exit_code, int):
+        raise ValueError(
+            "primary reviewer packet exit_code is invalid"
+        )
+    normalized: dict[str, Any] = {
+        "schema_version": BLINDED_TEST_RECEIPT_SCHEMA_VERSION,
+        "source_schema_version": RAW_TEST_ARTIFACT_SCHEMA_VERSION,
+        "command_sha256": str(receipt["command_sha256"]),
+        "exit_code": exit_code,
+        "stdout_sha256": str(receipt["stdout_sha256"]),
+        "stdout_bytes": _non_negative_integer(
+            receipt.get("stdout_bytes"),
+            field="primary reviewer packet stdout_bytes",
+        ),
+        "stderr_sha256": str(receipt["stderr_sha256"]),
+        "stderr_bytes": _non_negative_integer(
+            receipt.get("stderr_bytes"),
+            field="primary reviewer packet stderr_bytes",
+        ),
+        "duration_ms": _non_negative_integer(
+            receipt.get("duration_ms"),
+            field="primary reviewer packet duration_ms",
+        ),
+    }
+    raw_files = receipt.get("result_files")
+    if (
+        not isinstance(raw_files, Sequence)
+        or isinstance(raw_files, (str, bytes))
+    ):
+        raise ValueError(
+            "primary reviewer packet result_files is invalid"
+        )
+    files: list[dict[str, str]] = []
+    for item in raw_files:
+        if not isinstance(item, MappingABC) or set(item) != {
+            "artifact_id",
+            "sha256",
+        }:
+            raise ValueError(
+                "primary reviewer packet result file is malformed"
+            )
+        artifact_id = str(item.get("artifact_id") or "")
+        digest = str(item.get("sha256") or "")
+        if not re.fullmatch(r"[0-9a-f]{64}", artifact_id) or not re.fullmatch(
+            r"[0-9a-f]{64}",
+            digest,
+        ):
+            raise ValueError(
+                "primary reviewer packet result file hash is invalid"
+            )
+        files.append({
+            "artifact_id": artifact_id,
+            "sha256": digest,
+        })
+    normalized["result_files"] = sorted(
+        files,
+        key=lambda item: (item["artifact_id"], item["sha256"]),
+    )
+    return normalized
 
 
 def _reject_lead_outcome_fields(value: Any, *, path: str) -> None:

@@ -12,8 +12,35 @@ from pathlib import Path
 
 import pytest
 
+from supervisor.run_registry import register_submitted_workflow
 from supervisor.rollout_watcher import RolloutWatcher
 from supervisor.state import State
+from supervisor.target.types import ScopeContract
+
+
+def _register_rollout(
+    *,
+    state: State,
+    registry_dir: Path,
+    session_id: str,
+    cwd: Path,
+    task: str = "Monitor registered rollout",
+    scope: ScopeContract | None = None,
+) -> str:
+    run_id = f"workflow-{session_id}"
+    register_submitted_workflow(
+        state=state,
+        registry_dir=registry_dir,
+        workflow_run_id=run_id,
+        target_session_id=session_id,
+        task_id=f"task-{session_id}",
+        task=task,
+        target_kind="codex",
+        cwd=cwd,
+        session_id_source="test",
+        scope_contract=scope,
+    )
+    return run_id
 
 
 @pytest.mark.asyncio
@@ -27,22 +54,25 @@ async def test_rollout_watcher_registers_snapshot_and_persists_offsets(tmp_path)
 
     session_id = "123e4567-e89b-12d3-a456-426614174000"
     rollout = rollout_dir / f"rollout-2026-05-19T10-00-00-{session_id}.jsonl"
-    registry = registry_dir / f"{session_id}.json"
-    registry.write_text(json.dumps({
-        "task": "Refactor auth login",
-        "scope_contract": {
-            "allowed_paths": ["src/auth/"],
-            "related_paths": ["tests/auth/"],
-            "protected_paths": ["src/payments/"],
-            "never_touch_patterns": ["**/.env*"],
-        },
-    }))
+    state1 = State(db_path)
+    _register_rollout(
+        state=state1,
+        registry_dir=registry_dir,
+        session_id=session_id,
+        cwd=tmp_path,
+        task="Refactor auth login",
+        scope=ScopeContract(
+            allowed_paths=("src/auth/",),
+            related_paths=("tests/auth/",),
+            protected_paths=("src/payments/",),
+            never_touch_patterns=("**/.env*",),
+        ),
+    )
     rollout.write_text(json.dumps({
         "type": "file_change",
         "path": "src/auth/login.py",
     }) + "\n")
 
-    state1 = State(db_path)
     watcher1 = RolloutWatcher(
         sessions_root=str(sessions_root),
         registry_dir=str(registry_dir),
@@ -124,6 +154,12 @@ async def test_rollout_watcher_sweep_drains_known_file_growth_without_watch_even
     rollout.write_text(first_line)
 
     state = State(str(tmp_path / "state.db"))
+    _register_rollout(
+        state=state,
+        registry_dir=registry_dir,
+        session_id=session_id,
+        cwd=tmp_path,
+    )
     state.set_tail_offset(str(rollout), len(first_line))
     with rollout.open("a") as f:
         f.write(second_line)
@@ -138,7 +174,7 @@ async def test_rollout_watcher_sweep_drains_known_file_growth_without_watch_even
 
     assert state._conn.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 1
     row = state._conn.execute("SELECT kind, payload_json FROM events").fetchone()
-    assert row["kind"] == "task_complete"
+    assert row["kind"] == "turn.completed"
     assert "missed append" in row["payload_json"]
     assert state.get_tail_offset(str(rollout)) == rollout.stat().st_size
 
@@ -156,6 +192,12 @@ async def test_rollout_watcher_callback_failure_records_health_without_replaying
     rollout.write_text(json.dumps({"type": "message", "text": "callback fails"}) + "\n")
 
     state = State(str(tmp_path / "state.db"))
+    _register_rollout(
+        state=state,
+        registry_dir=registry_dir,
+        session_id=session_id,
+        cwd=tmp_path,
+    )
 
     async def failing_callback(run_id: str, event: dict):
         raise RuntimeError("telegram progress transport closed")
@@ -229,6 +271,12 @@ async def test_rollout_watcher_malformed_json_records_health_and_advances_offset
     rollout.write_text("{not valid json}\n")
 
     state = State(str(tmp_path / "state.db"))
+    _register_rollout(
+        state=state,
+        registry_dir=registry_dir,
+        session_id=session_id,
+        cwd=tmp_path,
+    )
     watcher = RolloutWatcher(
         sessions_root=str(sessions_root),
         registry_dir=str(registry_dir),

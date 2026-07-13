@@ -1,0 +1,6 @@
+{"timestamp":"2026-07-11T19:14:22.001Z","type":"session_meta","payload":{"id":"019f52a1-1111-7222-8333-444444444444","session_id":"019f52a1-1111-7222-8333-444444444444","source":"cli","cli_version":"0.194.0","cwd":"/captured/workspace","model_provider":"openai","originator":"codex_cli_rs"}}
+{"timestamp":"2026-07-11T19:14:22.019Z","type":"event_msg","payload":{"type":"task_started","turn_id":"019f52a1-5555-7666-8777-888888888888","started_at":"2026-07-11T19:14:22.018Z","model_context_window":200000}}
+{"timestamp":"2026-07-11T19:14:22.102Z","type":"event_msg","payload":{"type":"agent_message","message":"I will inspect the requested files first.","phase":"commentary"}}
+{"timestamp":"2026-07-11T19:14:22.201Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\"cmd\":\"pwd\"}","call_id":"call_captured_1"}}
+{"timestamp":"2026-07-11T19:14:22.241Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call_captured_1","output":"Chunk ID: captured\nProcess exited with code 0\nFinal output:\n/captured/workspace"}}
+{"timestamp":"2026-07-11T19:14:22.390Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"019f52a1-5555-7666-8777-888888888888","last_agent_message":"The requested check completed.","completed_at":"2026-07-11T19:14:22.389Z","duration_ms":370}}
