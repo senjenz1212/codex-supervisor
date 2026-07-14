@@ -52,6 +52,12 @@ codex-supervisor-axi --json approve --run-id <run> --proposal-id <proposal_id> -
 codex-supervisor-axi --json deny --run-id <run> --proposal-id <proposal_id> --approver <named-human>
 ```
 
+`submit` also accepts `--session-id` for target-agent rollout joins, plus the
+Harness v1 trace-closure fields `--trace-closure-required` /
+`--no-trace-closure-required` (default: derived from the task),
+`--trace-graph-store-path`, and `--trace-graph-store-sha256`, which pin the
+trace-graph store a harness task must close against.
+
 `experiments activate`, `experiments park`, `approve`, and `deny` no longer
 default `--operator`/`--approver` to the CLI service identity and reject
 reserved identities (`codex-supervisor-axi`, `codex-supervisor`,

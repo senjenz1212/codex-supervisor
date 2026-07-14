@@ -52,8 +52,10 @@ python -m pip install -e ".[dev]"
 ```
 
 Telegram, rollout ingest, deterministic hook fallback, and `/status` work
-without the optional Agent SDK runtime. Install the Agent SDK when you want
-model-first hook critique and L4/post-run decision skills:
+without the optional Agent SDK runtime. Model-first hook critique uses the
+direct Anthropic API when it is configured. Install the Agent SDK when you
+want the conversational supervisor, L4/post-run decision skills, or an SDK
+fallback critic when direct Anthropic is not configured:
 
 ```bash
 python -m pip install -e ".[dev,agent]"
@@ -186,8 +188,9 @@ bash /Users/sam.zhang/Documents/codex-supervisor/scripts/codex-supervisor-hook.s
 Keep `hook_blocking: shadow` for the first real session. After you see clean
 audit rows and Telegram warnings, promote hooks to `advise`, then `enforce`.
 
-With `hook_critique_strategy: model_first`, every hook is sent to the Claude
-Agent SDK critic first. If the SDK/model is unavailable, the supervisor logs a
+With `hook_critique_strategy: model_first`, every hook is sent to the model
+critic first — the direct Anthropic client when configured, otherwise the
+Claude Agent SDK model client. If neither is available, the supervisor logs a
 warning and falls back to deterministic rules for known-dangerous commands.
 
 ## Real-Time Test With Codex Desktop
@@ -389,7 +392,7 @@ python -m compileall -q supervisor daemon.py mcp_tools
 Current verified result:
 
 ```text
-1113 passed
+2175 passed, 22 skipped
 ```
 
 ## Replay Fixtures
@@ -406,6 +409,45 @@ python -m supervisor.replay \
 
 Replay must not call Telegram, target agents, subprocesses, Anthropic, or
 OpenAI by default.
+
+## Harness v1 Evidence Kernel
+
+The supervisor includes the Harness v1 evidence kernel: an append-only
+evidence ledger, ClaimGate claim validation, run manifests and a run registry,
+trace graphs, and a hermetic experiment kernel. Program documentation lives in
+`docs/program/harness-v1/` (charter, architecture, claim ladder, forbidden
+claims, and the current verification record). The harness is fail-closed:
+auto-improvement requires validated L3 evidence, recorded report/proposal
+authority, exact artifact hashes, and named-human approval. PILOT-001 has not
+run, so no causal-improvement, ROI, portability, or safe-auto-improvement
+claims are made.
+
+Two related config blocks under `supervisor:` are documented in
+`config.example.yaml`:
+
+- `ledger_checkpoints` — defaults to `mode: diagnostic_only`, which verifies
+  local structure only. `authoritative` mode fails startup unless an operator
+  `runtime_provider` plugin (`module:callable`) supplies externally managed
+  signing and rollback-independent pins.
+- `historical_evaluation` — disabled by default. Enabling it requires an
+  operator `runtime_provider` plugin that resolves pinned evidence and
+  implements distinct rerun, regrade, and deterministic replay operations.
+
+Smoke Claude Code / Codex runtime compatibility (requires both CLIs on PATH;
+writes a JSON receipt):
+
+```bash
+python scripts/run_harness_v1_runtime_smoke.py
+```
+
+When upgrading an existing deployment: SQLite forward migrations apply
+automatically at startup, but a pre-existing legacy event ledger must be
+backfilled offline with
+`supervisor.schema_migrations.migrate_legacy_event_ledger_offline` while no
+other process touches the database (startup prints the exact command).
+Postgres-backed deployments must run `make migrate POSTGRES_DSN=...` before
+starting; startup refuses to run when the schema is behind the pinned alembic
+head.
 
 ## Provider Routing
 
