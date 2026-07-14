@@ -26,9 +26,21 @@ Observed result:
 
 The final post-audit focused command covered production-trace authority,
 public export reconstruction, event-ledger migrations, replay, historical
-evaluation, run registration, and launch-receipt durability.
+evaluation, run registration, and launch-receipt durability:
 
-Observed result:
+```text
+uv run pytest -q tests/test_production_trace.py \
+  tests/test_dual_agent_artifacts.py tests/test_state_event_ledger.py \
+  tests/test_evidence_ledger_conformance.py \
+  tests/test_evidence_ledger_hardening.py tests/test_postgres_ledger_lane.py \
+  tests/test_ledger_checkpoint_lifecycle.py tests/test_replay_strict.py \
+  tests/test_version_drift_replay.py tests/test_supervisor_turn_replay.py \
+  tests/test_historical_evaluation.py tests/test_run_registry.py \
+  tests/test_obs_001_observability.py
+```
+
+Observed result (the 23 skips are the Postgres-lane tests, which skip
+without a reachable Postgres server):
 
 ```text
 295 passed, 23 skipped in 12.19s

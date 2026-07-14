@@ -720,6 +720,13 @@ def test_program_pack_matches_runtime_claim_registry() -> None:
         rule.claim_id: rule.required_level.value
         for rule in DEFAULT_CLAIM_RULES
     }
+    assert {
+        item["id"]: tuple(item["patterns"])
+        for item in claims["claims"]
+    } == {
+        rule.claim_id: rule.patterns
+        for rule in DEFAULT_CLAIM_RULES
+    }
     assert claims["claim_field_policy"] == {
         "representation": "registered_claim_ids_only",
         "canonical_text_source": "claims[].canonical_text",

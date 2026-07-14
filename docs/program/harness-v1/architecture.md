@@ -117,8 +117,8 @@ source.
 `claims.yaml` is the program registry. The code carries the same minimum-level
 rules so installed runtime packages do not depend on a repository-relative
 documentation path. Focused tests compare the YAML registry's claim IDs,
-required levels, and schema versions against the runtime rules to prevent
-drift; the tripwire regex patterns are kept in sync manually.
+required levels, tripwire regex patterns, and schema versions against the
+runtime rules to prevent drift.
 
 Governed `claims` entries and explicit claim-bearing fields such as
 `claim_text`, `outcome_claim`, and `roi_claim` accept registered claim IDs
