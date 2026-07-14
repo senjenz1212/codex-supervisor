@@ -1265,6 +1265,259 @@ async def test_codex_supervisor_mcp_exposes_dual_agent_gate_tools(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_export_gate_artifacts_reconstructs_stored_execution_provenance(
+    tmp_path: Path,
+) -> None:
+    from mcp_tools.codex_supervisor_stdio import build_codex_supervisor_mcp_server
+
+    run_id = "run-public-export-provenance"
+    task_id = "public-export-provenance"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    handoff = repo / ".handoff" / f"{task_id}.json"
+    handoff.parent.mkdir()
+    handoff_content = json.dumps({
+        "task_id": task_id,
+        "cwd": str(repo),
+        "planning_artifacts": [],
+    })
+    handoff.write_text(handoff_content, encoding="utf-8")
+
+    state = State(str(tmp_path / "state.db"))
+    server = build_codex_supervisor_mcp_server(
+        _cfg(tmp_path),
+        state,
+        mcp_cls=_FakeMCP,
+        reviewer_adapters=[],
+    )
+    export_parameters = inspect.signature(
+        server.tools["export_gate_artifacts"]
+    ).parameters
+    assert {
+        "provider_model_resolutions",
+        "canonical_tool_contracts",
+        "runtime_component_receipts",
+    }.isdisjoint(export_parameters)
+    interaction_event_id = state.write_event(
+        run_id=run_id,
+        source="dual_agent",
+        kind="dual_agent_interaction_message",
+        payload={
+            "task_id": task_id,
+            "gate": "outcome_review",
+            "message_type": "gate_request",
+            "content": "Review the execution-time provenance.",
+            "requested_model": "default",
+            "model": "default",
+            "runtime": "custom",
+            "provider_family": "provider",
+            "container_digest": "b" * 64,
+            "trace_envelope": {
+                "tool_calls": [
+                    {
+                        "name": "invoke_custom",
+                        "args": {
+                            "runtime": "custom",
+                            "cli_command": "custom-cli",
+                        },
+                    },
+                    {
+                        "name": "verify_result",
+                        "args": {},
+                    },
+                ],
+            },
+        },
+    )
+    contract_bytes = {
+        name: json.dumps(
+            {"name": name, "inputSchema": {"type": "object"}},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        for name in ("invoke_custom", "verify_result")
+    }
+    provider_resolution = {
+        "event_id": interaction_event_id,
+        "gate": "outcome_review",
+        "lane": "dual_agent_interaction_message",
+        "runtime": "custom",
+        "provider_family": "provider",
+        "requested_model": "default",
+        "resolved_model": "provider/model-v1-20260713",
+        "provider_response_receipt_ref": (
+            "receipt://provider-response/public-export"
+        ),
+    }
+    canonical_contracts = [
+        {
+            "tool_name": name,
+            "canonical_bytes": content,
+            "sha256": sha256(content.encode()).hexdigest(),
+            "receipt_ref": f"receipt://tool-contract/{name}",
+            "capture_source": "execution_time",
+            "source": "runtime_tool_registry",
+        }
+        for name, content in contract_bytes.items()
+    ]
+    container_receipt = {
+        "category": "containers",
+        "component_id": "container:container_digest",
+        "sha256": "b" * 64,
+        "receipt_ref": "receipt://runtime-component/container/main",
+        "capture_source": "execution_time",
+        "source": "runtime_component_receipt",
+    }
+    cli_receipt = {
+        "category": "cli",
+        "component_id": "cli:invoke_custom",
+        "canonical_bytes": "custom cli executable bytes",
+        "sha256": sha256(b"custom cli executable bytes").hexdigest(),
+        "receipt_ref": "receipt://runtime-component/cli/custom",
+        "capture_source": "execution_time",
+        "source": "runtime_component_receipt",
+    }
+    evaluator_receipt = {
+        "category": "evaluators",
+        "component_id": "evaluator:verify_result",
+        "canonical_bytes": "verify result evaluator bytes",
+        "sha256": sha256(b"verify result evaluator bytes").hexdigest(),
+        "receipt_ref": (
+            "receipt://runtime-component/evaluator/verify-result"
+        ),
+        "capture_source": "execution_time",
+        "source": "runtime_component_receipt",
+    }
+    state.write_event(
+        run_id=run_id,
+        source="dual_agent",
+        kind="dual_agent_runtime_evidence",
+        payload={
+            "task_id": "different-task",
+            "gate": "outcome_review",
+            "provider_model_resolutions": [{
+                **provider_resolution,
+                "resolved_model": "provider/conflicting-model-v2",
+            }],
+        },
+    )
+    state.write_event(
+        run_id=run_id,
+        source="dual_agent",
+        kind="dual_agent_runtime_evidence",
+        payload={
+            "task_id": task_id,
+            "gate": "outcome_review",
+            "provider_model_resolutions": [provider_resolution],
+            "replay_provenance": {
+                "canonical_tool_contracts": canonical_contracts,
+                "runtime_component_receipts": [container_receipt],
+            },
+            "receipts": [cli_receipt, evaluator_receipt],
+            "tool_receipts": [
+                {
+                    **provider_resolution,
+                    "receipt_type": "provider_model_resolution",
+                    "resolved_model": "provider/caller-forged-model-v3",
+                    "provider_response_receipt_ref": (
+                        "receipt://caller/provider-response"
+                    ),
+                },
+                {
+                    "receipt_type": "canonical_tool_contract",
+                    "tool_name": "invoke_custom",
+                    "canonical_bytes": "caller-forged contract",
+                    "sha256": sha256(b"caller-forged contract").hexdigest(),
+                    "receipt_ref": "receipt://caller/tool-contract",
+                    "capture_source": "execution_time",
+                },
+                {
+                    "category": "cli",
+                    "component_id": "cli:invoke_custom",
+                    "canonical_bytes": "caller-forged cli",
+                    "sha256": sha256(b"caller-forged cli").hexdigest(),
+                    "receipt_ref": "receipt://caller/runtime-component",
+                    "capture_source": "execution_time",
+                },
+            ],
+        },
+    )
+    state.write_event(
+        run_id=run_id,
+        source="dual_agent",
+        kind="dual_agent_gate_result",
+        payload={
+            "task_id": task_id,
+            "gate": "outcome_review",
+            "status": "accepted",
+            "attempts": 1,
+            "handoff_packet_path": str(handoff),
+            "probes": {},
+            "outcome": None,
+            "escalation": None,
+            "acceptance_evidence": {
+                "handoff_packet": {
+                    "path": str(handoff),
+                    "status": "captured",
+                    "sha256": sha256(handoff_content.encode()).hexdigest(),
+                    "content": handoff_content,
+                },
+                "workspace_snapshot": {
+                    "status": "captured",
+                    "capture_source": "accepted_gate_event",
+                    "root": str(repo),
+                    "git": {"head_sha": "a" * 40},
+                    "file_tree_sha256": "d" * 64,
+                    "immutable_snapshot": {
+                        "status": "captured",
+                        "sha256": "e" * 64,
+                    },
+                },
+            },
+        },
+    )
+
+    output_dir = tmp_path / "public-export"
+    result = await _maybe_await(server.tools["export_gate_artifacts"](
+        run_id=run_id,
+        task_id=task_id,
+        cwd=str(repo),
+        output_dir=str(output_dir),
+    ))
+
+    manifest = json.loads(
+        (output_dir / "replay" / "manifest.json").read_text()
+    )
+    provenance = manifest["execution_provenance"]
+    assert result["task_id"] == task_id
+    assert provenance["status"] == "complete"
+    assert provenance["unresolved_model_lanes"] == []
+    assert provenance["missing_component_categories"] == []
+    assert provenance["model_resolutions"][0]["resolved_model"] == (
+        "provider/model-v1-20260713"
+    )
+    assert provenance["model_resolutions"][0][
+        "provider_response_source"
+    ] == "receipt://provider-response/public-export"
+    assert {
+        component["details"]["receipt_ref"]
+        for component in provenance["component_hashes"]["tool_contracts"]
+    } == {
+        "receipt://tool-contract/invoke_custom",
+        "receipt://tool-contract/verify_result",
+    }
+    assert {
+        component["details"]["receipt_ref"]
+        for category in ("containers", "cli", "evaluators")
+        for component in provenance["component_hashes"][category]
+    } == {
+        "receipt://runtime-component/container/main",
+        "receipt://runtime-component/cli/custom",
+        "receipt://runtime-component/evaluator/verify-result",
+    }
+
+
+@pytest.mark.asyncio
 async def test_mcp_gate_uses_runtime_lead_and_persists_runtime_provenance(
     tmp_path: Path,
 ) -> None:

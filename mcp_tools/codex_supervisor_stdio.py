@@ -244,6 +244,19 @@ VISUAL_VALIDATION_SOURCES = {"browser", "browser_use", "browser-use", "computer_
 VISUAL_VALIDATION_PASSED = {"passed", "pass", "accepted", "accept", "ok"}
 REVIEWER_UNAVAILABLE_POLICIES = {"block", "escalate", "proceed_degraded"}
 NO_MISTAKES_POLICIES = {"off", "advisory", "required", "shipping"}
+_REPLAY_PROVENANCE_COLLECTIONS = (
+    "provider_model_resolutions",
+    "canonical_tool_contracts",
+    "runtime_component_receipts",
+)
+_RUNTIME_COMPONENT_RECEIPT_CATEGORIES = {
+    "container",
+    "containers",
+    "image",
+    "cli",
+    "evaluator",
+    "evaluators",
+}
 
 
 def _canonical_workflow_job_payload(payload: dict[str, Any]) -> str:
@@ -4370,6 +4383,11 @@ class CodexSupervisorMcpAPI:
             if output_dir
             else default_dual_agent_release_dir(cwd, task_id)
         )
+        replay_provenance = _stored_replay_provenance(
+            self.state,
+            run_id=run_id,
+            task_id=task_id,
+        )
         result = export_dual_agent_run_artifacts(
             self.state,
             run_id=run_id,
@@ -4379,6 +4397,15 @@ class CodexSupervisorMcpAPI:
             require_complete_trace=_is_harness_v1_trace_task(task_id),
             require_authoritative_ledger=True,
             trusted_workspace_root=cwd,
+            provider_model_resolutions=replay_provenance[
+                "provider_model_resolutions"
+            ],
+            canonical_tool_contracts=replay_provenance[
+                "canonical_tool_contracts"
+            ],
+            runtime_component_receipts=replay_provenance[
+                "runtime_component_receipts"
+            ],
             screenshots=tuple(
                 artifact
                 for artifact in (
@@ -7421,6 +7448,200 @@ def _normalise_receipt_payloads(
                 )
             )
     return normalised
+
+
+def _stored_replay_provenance(
+    state: State,
+    *,
+    run_id: str,
+    task_id: str,
+) -> dict[str, tuple[dict[str, Any], ...]]:
+    """Collect persisted task authority without reconstructing missing data."""
+    collected: dict[str, list[dict[str, Any]]] = {
+        field: []
+        for field in _REPLAY_PROVENANCE_COLLECTIONS
+    }
+    for row in state.read_dual_agent_gate_events(run_id):
+        try:
+            payload = strict_json_object_loads(
+                str(row["payload_json"] or "{}")
+            )
+        except (TypeError, ValueError):
+            continue
+        if payload.get("task_id") != task_id:
+            continue
+
+        provenance = payload.get("replay_provenance")
+        sources = [
+            payload,
+            *(
+                [provenance]
+                if isinstance(provenance, Mapping)
+                else []
+            ),
+        ]
+        for source in sources:
+            for field in _REPLAY_PROVENANCE_COLLECTIONS:
+                values = source.get(field)
+                if isinstance(values, list):
+                    collected[field].extend(
+                        dict(value)
+                        for value in values
+                        if isinstance(value, Mapping)
+                    )
+
+        for receipt in _stored_provenance_receipts(
+            payload,
+            event_kind=str(row["kind"]),
+            provenance=provenance,
+        ):
+            if _is_provider_model_resolution_receipt(receipt):
+                collected["provider_model_resolutions"].append(receipt)
+            if _is_canonical_tool_contract_receipt(receipt):
+                collected["canonical_tool_contracts"].append(receipt)
+            if _is_runtime_component_receipt(receipt):
+                collected["runtime_component_receipts"].append(receipt)
+
+    return {
+        field: _dedupe_stored_provenance_records(records)
+        for field, records in collected.items()
+    }
+
+
+def _stored_provenance_receipts(
+    payload: Mapping[str, Any],
+    *,
+    event_kind: str,
+    provenance: Any,
+) -> tuple[dict[str, Any], ...]:
+    receipts: list[dict[str, Any]] = []
+    # tool_receipts and trace-envelope copies can originate at MCP callers.
+    sources = [
+        *(
+            [payload]
+            if event_kind == "dual_agent_runtime_evidence"
+            else []
+        ),
+        *(
+            [provenance]
+            if isinstance(provenance, Mapping)
+            else []
+        ),
+    ]
+    for source in sources:
+        values = source.get("receipts")
+        if not isinstance(values, list):
+            continue
+        receipts.extend(
+            dict(value)
+            for value in values
+            if isinstance(value, Mapping)
+        )
+    return tuple(receipts)
+
+
+def _is_provider_model_resolution_receipt(
+    receipt: Mapping[str, Any],
+) -> bool:
+    receipt_type = _provenance_receipt_type(receipt)
+    if receipt_type in {
+        "model_resolution",
+        "model_resolution_receipt",
+        "provider_model_resolution",
+        "provider_model_resolution_receipt",
+    }:
+        return True
+    return (
+        "resolved_model" in receipt
+        and "event_id" in receipt
+        and any(
+            field in receipt
+            for field in ("lane", "worker_id", "reviewer_id")
+        )
+        and any(
+            field in receipt
+            for field in (
+                "provider_response_receipt_ref",
+                "response_receipt_ref",
+                "provider_receipt_ref",
+                "receipt_ref",
+                "provider_response_source",
+                "model_provenance",
+                "provider_response_receipt",
+            )
+        )
+    )
+
+
+def _is_canonical_tool_contract_receipt(
+    receipt: Mapping[str, Any],
+) -> bool:
+    receipt_type = _provenance_receipt_type(receipt)
+    if receipt_type in {
+        "canonical_tool_contract",
+        "canonical_tool_contract_receipt",
+        "tool_contract",
+        "tool_contract_receipt",
+    }:
+        return True
+    return (
+        "tool_name" in receipt
+        and any(
+            field in receipt
+            for field in ("canonical_bytes", "canonical_bytes_base64")
+        )
+        and "sha256" in receipt
+    )
+
+
+def _is_runtime_component_receipt(
+    receipt: Mapping[str, Any],
+) -> bool:
+    category = str(
+        receipt.get("category")
+        or receipt.get("kind")
+        or ""
+    ).strip().lower()
+    return (
+        category in _RUNTIME_COMPONENT_RECEIPT_CATEGORIES
+        and bool(str(receipt.get("component_id") or "").strip())
+    )
+
+
+def _provenance_receipt_type(receipt: Mapping[str, Any]) -> str:
+    value = (
+        receipt.get("provenance_type")
+        or receipt.get("receipt_type")
+        or receipt.get("kind")
+        or receipt.get("category")
+        or ""
+    )
+    return re.sub(r"[^a-z0-9]+", "_", str(value).strip().lower()).strip(
+        "_"
+    )
+
+
+def _dedupe_stored_provenance_records(
+    records: list[dict[str, Any]],
+) -> tuple[dict[str, Any], ...]:
+    deduped: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for record in records:
+        try:
+            identity = json.dumps(
+                record,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+                allow_nan=False,
+            )
+        except (TypeError, ValueError):
+            identity = repr(record)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        deduped.append(record)
+    return tuple(deduped)
 
 
 def _trusted_runtime_receipt_ids(receipts: list[dict[str, Any]]) -> set[str]:
