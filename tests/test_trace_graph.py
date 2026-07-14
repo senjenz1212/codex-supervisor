@@ -24,7 +24,6 @@ from supervisor.trace_graph import (
     ProvKind,
     TRACE_CLOSURE_BINDING_ATTRIBUTE,
     TraceClosureBinding,
-    TraceDecisionGradeValidation,
     TraceEdge,
     TraceGraph,
     TraceGraphError,

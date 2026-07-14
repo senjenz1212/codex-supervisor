@@ -15,7 +15,7 @@ import time
 from dataclasses import dataclass, field
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, Callable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Mapping, Sequence
 
 from .claim_gate import ClaimGate
 from .cursor_agent import (
@@ -34,6 +34,10 @@ from .reviewer_registry import (
     provider_family_verification_for_reviewer,
 )
 from .redaction import redact
+
+if TYPE_CHECKING:
+    from .model_client import ModelClient
+    from .runtime_execution import RuntimeTaskRunner
 
 
 _REPORT_ONLY_CLAIM_FLAGS = ClaimGate.derived_claim_flags()

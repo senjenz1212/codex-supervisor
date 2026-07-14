@@ -105,7 +105,6 @@ def _reject_public_review_panel(packet):
 
 def _factorial_arm_decisions(*, unmatched_tar: bool = False) -> dict[str, dict[str, object]]:
     positives = {"known-good", "secondary-rubric-only", "text-known-good"}
-    public_traps = {"hidden-behavior-miss", "text-hidden-behavior-miss"}
     candidate_ids = {
         path.stem: load_mergeability_candidate(path).candidate_id
         for path in BENCH_ROOT.glob("candidates/*.json")
@@ -3678,7 +3677,7 @@ def test_configured_full_panel_smoke_writes_paired_acceptance_report(tmp_path):
     cursor_reviewer = _cursor_sdk_accept_reviewer()
     codex_reviewer = _codex_cli_accept_reviewer()
 
-    report = run_paired_acceptance_pilot(
+    run_paired_acceptance_pilot(
         BENCH_ROOT,
         output_dir=tmp_path,
         reviewer_panel_mode="configured",

@@ -27,7 +27,6 @@ from .evidence_ledger import (
     _event_value,
     _require_canonical_sha256,
     _require_exact_integer,
-    _require_exact_text,
     _normalize_sha256,
     _open_child_directory,
     _read_regular_file_at,

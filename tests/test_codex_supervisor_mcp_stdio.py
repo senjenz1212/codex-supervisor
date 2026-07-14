@@ -6,7 +6,6 @@ import json
 import subprocess
 import sys
 import threading
-import time
 from hashlib import sha256
 try:
     import tomllib
@@ -19,7 +18,6 @@ import pytest
 from supervisor.config import Config
 from supervisor.agent_runtime import AgentRunHandle, AgentRunResult, AgentTask
 from supervisor.autoresearch.policy_evolution import PolicyClaimAuthority
-from supervisor.claim_gate import ClaimGate
 from supervisor.runtime_execution import RuntimeExecution
 from supervisor.state import State
 from supervisor.target.types import ScopeContract

@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any, Callable, Protocol
 
 from .cursor_agent import (
-    DEFAULT_STRUCTURED_REVIEWER_MAX_TOKENS,
     CursorInvocationRequest,
     CursorInvocationResult,
     cursor_accepts,
@@ -20,7 +19,7 @@ from .redaction import redact
 from .reviewer_legacy_provider_edge import (
     CodexCliReviewer,
     CodexRunner,
-    _codex_cli_reviewer_prompt,
+    _codex_cli_reviewer_prompt,  # noqa: F401 - re-exported for tests
 )
 from .reviewer_neutral import (
     RuntimeReviewerAdapter,

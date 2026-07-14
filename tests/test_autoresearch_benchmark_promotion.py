@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from supervisor.autoresearch.benchmark_promotion import (
     promote_benchmark_report_to_autoresearch_report,

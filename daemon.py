@@ -36,7 +36,6 @@ from supervisor.provider_clients import (
     ClaudeAgentSdkModelClient,
     OpenAIEmbeddingClient,
 )
-from supervisor.state import State
 from supervisor.state_factory import (
     DAEMON_REQUIRED_STATE_METHODS,
     build_state,

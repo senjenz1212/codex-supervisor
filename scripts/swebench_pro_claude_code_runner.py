@@ -17,7 +17,7 @@ import subprocess
 import sys
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping
 
 from supervisor.agent_runtime import AgentTask, ClaudeCodeRuntime
 from supervisor.runtime_execution import execute_agent_task_blocking
