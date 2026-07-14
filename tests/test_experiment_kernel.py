@@ -2891,6 +2891,41 @@ async def test_gradebook_and_frozen_result_persistence_errors_become_itt(
 
 
 @pytest.mark.asyncio
+async def test_gradebook_outage_on_completed_execution_survives_restart(
+    tmp_path: Path,
+) -> None:
+    class FailingAppendGradeBook(GradeBook):
+        def append_grade(self, **_kwargs: Any):
+            raise RuntimeError("grade ledger unavailable")
+
+    database = tmp_path / "gradebook-outage-restart.db"
+    outage_store = SqliteExperimentStore(database)
+    outage_gradebook = FailingAppendGradeBook(database)
+    outage_result = await ExperimentKernel(
+        store=outage_store,
+        executor=RecordingExecutor(outage_store),
+        gradebook=outage_gradebook,
+    ).run_task(_experiment(), _task_spec(), RecordingVerifier())
+    assert all(
+        outcome.status == "failed"
+        and outcome.failure_classification == "gradebook_failure"
+        and outcome.grade_revision is None
+        and outcome.grade.evidence.get(
+            "gradebook_persistence_failed"
+        ) is True
+        for outcome in outage_result.outcomes
+    )
+    outage_gradebook.close()
+
+    restarted_store = SqliteExperimentStore(database)
+    restarted = ExperimentKernel(
+        store=restarted_store,
+        executor=RecordingExecutor(restarted_store),
+    )
+    assert restarted.gradebook.list_uncommitted_revisions() == ()
+
+
+@pytest.mark.asyncio
 async def test_persisted_results_and_transitions_are_storage_immutable(
     tmp_path: Path,
 ) -> None:

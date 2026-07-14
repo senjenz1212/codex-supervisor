@@ -582,6 +582,19 @@ def test_artifact_manifest_rejects_duplicate_descriptors(tmp_path):
         store.verify_manifest(duplicate)
 
 
+def test_artifact_manifest_accepts_identical_content_under_distinct_names(
+    tmp_path,
+):
+    store = ContentAddressedArtifactStore(tmp_path / "artifacts")
+    first = store.put_bytes(b"", name="alpha.log", media_type="text/plain")
+    second = store.put_bytes(b"", name="beta.log", media_type="text/plain")
+    assert first["digest"] == second["digest"]
+
+    manifest = store.create_manifest([first, second])
+
+    assert store.verify_manifest(manifest) is True
+
+
 @pytest.mark.parametrize(
     ("field", "value", "failure_code"),
     (
@@ -1197,7 +1210,7 @@ def test_checkpoint_publication_recovers_after_death_after_final_link(tmp_path):
     assert final_path.stat().st_nlink == 1
 
 
-def test_append_only_publication_fsyncs_directory_after_temp_cleanup(
+def test_append_only_publication_removes_temp_after_directory_fsync(
     monkeypatch,
     tmp_path,
 ):
@@ -1222,7 +1235,7 @@ def test_append_only_publication_fsyncs_directory_after_temp_cleanup(
     monkeypatch.setattr(evidence_ledger_module.os, "fsync", tracking_fsync)
     monkeypatch.setattr(evidence_ledger_module.os, "unlink", tracking_unlink)
 
-    store.put_bytes(b"durable temp cleanup")
+    descriptor = store.put_bytes(b"durable temp cleanup")
 
     cleanup_index = next(
         index
@@ -1230,7 +1243,9 @@ def test_append_only_publication_fsyncs_directory_after_temp_cleanup(
         if operation[0] == "unlink" and operation[1].startswith(".tmp-")
     )
     assert ("fsync", "directory") in operations[:cleanup_index]
-    assert ("fsync", "directory") in operations[cleanup_index + 1 :]
+    digest = descriptor["digest"]["sha256"]
+    shard = tmp_path / "artifacts" / "sha256" / digest[:2]
+    assert not list(shard.glob(".tmp-*"))
 
 
 def test_append_only_publication_propagates_directory_fsync_error(

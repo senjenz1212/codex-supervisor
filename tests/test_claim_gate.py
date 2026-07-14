@@ -2850,6 +2850,68 @@ def test_confirmation_protocol_must_pin_the_powered_design(
     )
 
 
+def test_preregistered_win_rate_cannot_exceed_pilot_estimate_bound(
+    tmp_path: Path,
+) -> None:
+    bundle, ledger_resolver = _authoritative_causal_bundle(tmp_path)
+
+    def swap_wins_in_outcomes(document: dict[str, object]) -> None:
+        outcomes = document["outcomes"]
+        assert isinstance(outcomes, list)
+        for outcome in outcomes:
+            assert isinstance(outcome, dict)
+            if outcome["task_id"] != "pilot-task-00":
+                outcome["passed"] = not outcome["passed"]
+
+    _rewrite_study_artifact(
+        tmp_path,
+        bundle,
+        phase="pilot",
+        artifact_name="terminal_outcomes",
+        mutate=swap_wins_in_outcomes,
+    )
+
+    result = bundle["randomized_powered_b_vs_c"]
+    assert isinstance(result, dict)
+    analysis = json.loads(
+        (tmp_path / str(result["analysis_ref"])).read_text(
+            encoding="utf-8"
+        )
+    )
+    study = json.loads(
+        (tmp_path / analysis["lineage"]["study"]["ref"]).read_text(
+            encoding="utf-8"
+        )
+    )
+    outcomes_sha256 = study["pilot"]["terminal_outcomes"]["sha256"]
+
+    def swap_wins_in_analysis(pilot_analysis: dict[str, object]) -> None:
+        pilot_analysis["terminal_outcomes_sha256"] = outcomes_sha256
+        rows = pilot_analysis["task_rows"]
+        assert isinstance(rows, list)
+        for row in rows:
+            assert isinstance(row, dict)
+            if row["task_id"] != "pilot-task-00":
+                row["b_pass"], row["c_pass"] = (
+                    row["c_pass"],
+                    row["b_pass"],
+                )
+        estimates = pilot_analysis["estimates"]
+        assert isinstance(estimates, dict)
+        estimates["alternative_b_win_rate"] = 2 / 10
+
+    _rewrite_pilot_analysis(tmp_path, bundle, swap_wins_in_analysis)
+
+    assert (
+        ClaimGate.max_claim_level(
+            bundle,
+            evidence_root=tmp_path,
+            ledger_verification_resolver=ledger_resolver,
+        )
+        == ClaimLevel.L2
+    )
+
+
 def test_l3_requires_every_grade_on_the_authorizing_analysis_path(
     tmp_path: Path,
 ) -> None:

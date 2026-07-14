@@ -587,18 +587,11 @@ def _runtime_timed_out(result: AgentRunResult) -> bool:
         return True
     if _int(result.metadata.get("returncode")) == 124:
         return True
-    values = [
-        result.metadata.get("failure_reason"),
-        result.metadata.get("error"),
-    ]
-    for event in result.events:
-        values.extend((
-            event.payload.get("reason"),
-            event.payload.get("error"),
-        ))
+    reasons = [result.metadata.get("failure_reason")]
+    reasons.extend(event.payload.get("reason") for event in result.events)
     return any(
         "timeout" in str(value or "").strip().lower()
-        for value in values
+        for value in reasons
     )
 
 
@@ -606,7 +599,7 @@ def _runtime_error(
     result: AgentRunResult,
     *,
     status: str,
-    timeout_s: int,
+    timeout_s: int = 0,
 ) -> str | None:
     if status == "passed":
         return None

@@ -315,6 +315,7 @@ def freeze_pilot_protocol(payload: Mapping[str, Any]) -> FrozenPilotProtocol:
     commit_sha = _require_text(normalized, "commit_sha").lower()
     if not _GIT_SHA_RE.fullmatch(commit_sha):
         raise PilotReadinessError("commit_sha must be a full Git object id")
+    normalized["commit_sha"] = commit_sha
 
     task_ids = _require_unique_text_sequence(normalized, "task_ids")
     pilot_canonical_task_ids = _require_task_identity_mapping(
@@ -391,6 +392,7 @@ def freeze_pilot_protocol(payload: Mapping[str, Any]) -> FrozenPilotProtocol:
         raise PilotReadinessError(
             "B and C must have identical ex-ante compute ceilings"
         )
+    normalized["arm_budgets"] = normalized_budgets
 
     assignment = normalized.get("assignment")
     if not isinstance(assignment, Mapping):
@@ -816,7 +818,12 @@ def _resolve_json_receipt(
         raise PilotReadinessError(
             f"receipt signature is invalid: {pin.ref}"
         )
-    raw = resolver(pin.ref)
+    try:
+        raw = resolver(pin.ref)
+    except Exception as exc:
+        raise PilotReadinessError(
+            f"receipt cannot be resolved: {pin.ref}"
+        ) from exc
     if raw is None:
         raise PilotReadinessError(f"receipt cannot be resolved: {pin.ref}")
     data = bytes(raw)

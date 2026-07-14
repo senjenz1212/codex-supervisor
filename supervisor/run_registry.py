@@ -365,8 +365,44 @@ def register_submitted_workflow(
         "config_snapshot": config_snapshot,
         "registered_at": int(time.time()),
     }
-    _atomic_write_json(registration.registry_path, metadata)
+    try:
+        _exclusive_write_json(registration.registry_path, metadata)
+    except FileExistsError:
+        if pending:
+            _replace_write_json(registration.registry_path, metadata)
+        else:
+            existing = _read_registration_file(
+                registry_root,
+                registration.registry_path,
+            )
+            if existing is None:
+                raise RuntimeError(
+                    "workflow session sidecar exists but is unreadable"
+                ) from None
+            _validate_submitted_workflow_registration(
+                existing,
+                expected=metadata,
+            )
     return registration
+
+
+def _validate_submitted_workflow_registration(
+    observed: Mapping[str, Any],
+    *,
+    expected: Mapping[str, Any],
+) -> None:
+    """Reject a resubmission that rebinds the sidecar to different provenance."""
+    discrepancies = [
+        field
+        for field in expected
+        if field != "registered_at"
+        and observed.get(field) != expected.get(field)
+    ]
+    if discrepancies:
+        raise RuntimeError(
+            "target session sidecar provenance discrepancy: "
+            + ", ".join(sorted(discrepancies))
+        )
 
 
 def register_workflow_runtime_session(
@@ -783,6 +819,70 @@ def reserve_launch_receipt(
                 receipt_path=pending_path,
             )
     raise RuntimeError("unable to reserve a unique launch receipt")
+
+
+def release_launch_receipt(
+    *,
+    registry_dir: str | Path,
+    launch_id: str,
+    nonce: str,
+    reason: str = "released",
+    now: int | float | None = None,
+) -> bool:
+    """Cancel one pending launch receipt so it can never be consumed.
+
+    Publishes a ``released`` tombstone in the consumed namespace before
+    removing the pending receipt, so a late-arriving rollout carrying this
+    launch identity is rejected instead of joining the workflow. Returns
+    ``False`` when no pending receipt exists; raises when the receipt has
+    already been claimed or the nonce does not match.
+    """
+    registry_root = Path(registry_dir).expanduser().resolve()
+    _ensure_directory_durable(registry_root)
+    normalized_launch_id = _safe_launch_id(launch_id)
+    normalized_nonce = str(nonce).strip()
+    with _open_launch_receipt_store(registry_root) as receipt_store:
+        with _launch_receipt_consume_lock(
+            receipt_store,
+            normalized_launch_id,
+        ):
+            pending_path, consumed_path = _launch_receipt_paths(
+                registry_root,
+                normalized_launch_id,
+            )
+            if receipt_store.exists("consumed", consumed_path.name):
+                raise LaunchReceiptError(
+                    "launch receipt already claimed: "
+                    f"{normalized_launch_id}"
+                )
+            receipt = receipt_store.read_json("pending", pending_path.name)
+            if receipt is None:
+                return False
+            observed_nonce_hash = str(
+                receipt.get("nonce_sha256") or ""
+            ).strip()
+            expected_nonce_hash = _launch_nonce_digest(
+                normalized_launch_id,
+                normalized_nonce,
+            )
+            if not observed_nonce_hash or not hmac.compare_digest(
+                observed_nonce_hash,
+                expected_nonce_hash,
+            ):
+                raise LaunchReceiptError("launch receipt nonce mismatch")
+            receipt_store.atomic_exclusive_write_json(
+                "consumed",
+                consumed_path.name,
+                {
+                    **receipt,
+                    "status": "released",
+                    "released_at": _timestamp(now),
+                    "release_reason": str(reason),
+                },
+            )
+            receipt_store.unlink("pending", pending_path.name)
+            receipt_store.assert_namespace_current()
+            return True
 
 
 def consume_launch_receipt(
@@ -1991,6 +2091,17 @@ def _exclusive_write_json(path: Path, payload: Mapping[str, Any]) -> None:
         raise
 
 
+def _replace_write_json(path: Path, payload: Mapping[str, Any]) -> None:
+    _ensure_directory_durable(path.parent)
+    temp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        _exclusive_write_json(temp, payload)
+        os.replace(temp, path)
+        _fsync_directory(path.parent)
+    finally:
+        _durable_unlink(temp)
+
+
 def _atomic_exclusive_write_json(
     path: Path,
     payload: Mapping[str, Any],
@@ -2005,20 +2116,6 @@ def _atomic_exclusive_write_json(
     finally:
         _durable_unlink(temp)
 
-
-def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
-    _ensure_directory_durable(path.parent)
-    temp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
-    try:
-        with temp.open("w", encoding="utf-8") as handle:
-            json.dump(payload, handle, indent=2, sort_keys=True)
-            handle.write("\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temp, path)
-        _fsync_directory(path.parent)
-    finally:
-        _durable_unlink(temp)
 
 
 def _ensure_directory_durable(directory: Path) -> None:

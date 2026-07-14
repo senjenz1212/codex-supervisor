@@ -4745,3 +4745,131 @@ async def test_codex_supervisor_mcp_exports_artifacts_and_accepts_planning_artif
         "docs/dual-agent/gate-1/release/screenshots/01-desktop.png"
         in exported["files"]
     )
+
+
+def test_path_is_within_rejects_parent_traversal(tmp_path):
+    root = tmp_path / "root"
+    (root / "x").mkdir(parents=True)
+    (tmp_path / "victim").mkdir()
+    candidate = (root / "x" / ".." / ".." / "victim").absolute()
+    assert not dual_agent_artifacts_module._path_is_within(candidate, root)
+
+
+def test_path_is_within_rejects_symlink_component_escape(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "file.txt").write_text("outside", encoding="utf-8")
+    link = root / "link"
+    link.symlink_to(outside, target_is_directory=True)
+    assert not dual_agent_artifacts_module._path_is_within(
+        (link / "file.txt").absolute(),
+        root,
+    )
+
+
+def test_path_is_within_accepts_file_under_symlinked_root(tmp_path):
+    real_root = tmp_path / "real-root"
+    real_root.mkdir()
+    (real_root / "file.txt").write_text("ok", encoding="utf-8")
+    alias = tmp_path / "alias-root"
+    alias.symlink_to(real_root, target_is_directory=True)
+    candidate = (alias / "file.txt").absolute()
+    assert dual_agent_artifacts_module._path_is_within(candidate, alias)
+    assert dual_agent_artifacts_module._path_is_within(candidate, real_root)
+
+
+def test_workspace_snapshot_blocks_dotdot_traversal_handoff_cwd(tmp_path):
+    state = _state(tmp_path)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    victim = tmp_path / "victim"
+    victim.mkdir()
+    (victim / "secret.txt").write_text(
+        "victim-secret-bytes",
+        encoding="utf-8",
+    )
+    handoff = repo / "task-1.json"
+    handoff.write_text(
+        json.dumps({
+            "task_id": "task-1",
+            "cwd": str(repo / "x" / ".." / ".." / "victim"),
+        })
+        + "\n",
+        encoding="utf-8",
+    )
+    _insert_event(
+        state,
+        kind="dual_agent_gate_result",
+        payload={
+            **_result_payload(
+                gate="outcome_review",
+                status="revise",
+                summary="Traversal cwd must not escape the trusted root.",
+                decisions=["revise"],
+            ),
+            "handoff_packet_path": str(handoff),
+        },
+    )
+
+    result = export_dual_agent_run_artifacts(
+        state,
+        run_id="run-1",
+        task_id="task-1",
+        output_dir=repo / "docs" / "dual-agent" / "task-1",
+        trusted_workspace_root=repo,
+    )
+
+    manifest_text = (
+        result.output_dir / "replay" / "manifest.json"
+    ).read_text(encoding="utf-8")
+    manifest = json.loads(manifest_text)
+    assert manifest["workspace_snapshot"]["status"] == (
+        "posthoc_capture_blocked"
+    )
+    assert manifest["workspace_snapshot"]["reason"] == (
+        "handoff_cwd_outside_trusted_workspace"
+    )
+    assert "victim-secret-bytes" not in manifest_text
+
+
+def test_evidence_ledger_export_redacts_event_payload_secrets(tmp_path):
+    state = _state(tmp_path)
+    _insert_event(
+        state,
+        kind="dual_agent_gate_round",
+        payload=_round_payload(
+            gate="prd_review",
+            round_index=1,
+            codex_decision="accept",
+            claude_decision="accept",
+        ),
+    )
+    rows, captured_head_event_id = (
+        dual_agent_artifacts_module._read_run_ledger_rows(
+            state,
+            run_id="run-1",
+        )
+    )
+    secret = "sk-ant-supersecretvalue123456"
+    rows[0]["payload"] = {
+        **rows[0]["payload"],
+        "note": f"token {secret}",
+    }
+
+    manifest, ledger_text = (
+        dual_agent_artifacts_module._ledger_export_manifest(
+            rows,
+            run_id="run-1",
+            captured_head_event_id=captured_head_event_id,
+            path="replay/evidence-ledger.jsonl",
+            authoritative_verification=state.verify_event_ledger("run-1"),
+        )
+    )
+
+    assert secret not in ledger_text
+    assert "[REDACTED_API_KEY]" in ledger_text
+    assert manifest["sha256"] == sha256(
+        ledger_text.encode("utf-8")
+    ).hexdigest()

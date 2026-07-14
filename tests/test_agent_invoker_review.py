@@ -342,3 +342,96 @@ async def test_review_updates_invoker_uses_read_only_grounding_tools(monkeypatch
         ]
     finally:
         configure_direct_anthropic_process_env()
+
+
+@pytest.mark.asyncio
+async def test_agent_invoker_lease_covers_agent_task_timeout(
+    tmp_path: Path,
+) -> None:
+    skills = tmp_path / "skills"
+    skills.mkdir()
+    (skills / "evaluate-run.md").write_text("Evaluate.", encoding="utf-8")
+    state = State(str(tmp_path / "state.db"))
+    await state.enqueue_decision(
+        Decision(kind="evaluate_run", run_id="run-lease")
+    )
+    runtime = _SuccessfulRuntime()
+    invoker = __import__(
+        "supervisor.agent_invoker",
+        fromlist=["AgentInvoker"],
+    ).AgentInvoker(
+        _cfg(tmp_path),
+        state,
+        skills,
+        codex_mcp_server=object(),
+        telegram_mcp_server=object(),
+        agent_runtime=runtime,
+    )
+    captured: dict[str, float] = {}
+    original_next_decision = state.next_decision
+
+    async def spying_next_decision(*, lease_s=60.0):
+        captured["lease_s"] = float(lease_s)
+        return await original_next_decision(lease_s=lease_s)
+
+    state.next_decision = spying_next_decision
+
+    await invoker.run_once()
+
+    assert captured["lease_s"] >= runtime.tasks[0].timeout_s
+
+
+@pytest.mark.asyncio
+async def test_agent_invoker_run_survives_ack_failure(
+    tmp_path: Path,
+) -> None:
+    skills = tmp_path / "skills"
+    skills.mkdir()
+    (skills / "evaluate-run.md").write_text("Evaluate.", encoding="utf-8")
+    state = State(str(tmp_path / "state.db"))
+    await state.enqueue_decision(
+        Decision(kind="evaluate_run", run_id="run-ack-fails")
+    )
+    await state.enqueue_decision(
+        Decision(kind="evaluate_run", run_id="run-ack-succeeds")
+    )
+    runtime = _SuccessfulRuntime()
+    invoker = __import__(
+        "supervisor.agent_invoker",
+        fromlist=["AgentInvoker"],
+    ).AgentInvoker(
+        _cfg(tmp_path),
+        state,
+        skills,
+        codex_mcp_server=object(),
+        telegram_mcp_server=object(),
+        agent_runtime=runtime,
+        retry_base_delay_s=0,
+    )
+    original_ack = state.ack_decision
+    failed_once: list[str] = []
+
+    def flaky_ack(decision, **kwargs):
+        if not failed_once:
+            failed_once.append(decision.decision_id)
+            return False
+        return original_ack(decision, **kwargs)
+
+    state.ack_decision = flaky_ack
+
+    run_task = asyncio.create_task(invoker.run())
+
+    async def wait_for_ack() -> None:
+        while not any(
+            row["status"] == "acked"
+            for row in state.list_decision_outbox()
+        ):
+            await asyncio.sleep(0.01)
+
+    await asyncio.wait_for(wait_for_ack(), timeout=5)
+    run_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await run_task
+
+    assert len(failed_once) == 1
+    assert len(runtime.tasks) == 2

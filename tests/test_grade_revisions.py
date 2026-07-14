@@ -1186,3 +1186,99 @@ def test_gradebook_trace_projection_appends_exact_immutable_lineage(
     ].attributes["invalidation_hash"] == (
         supersession_invalidation.invalidation_hash
     )
+
+
+def _decision_ready_gradebook(tmp_path: Path, gradebook: GradeBook):
+    frozen = _frozen_result()
+    run = RunEnvelopeRef.from_frozen_result(
+        run_id="run-1",
+        run_envelope_hash=_hash("run-envelope"),
+        frozen_result=frozen,
+    )
+    revision = gradebook.append_grade(
+        run=run,
+        grade=_grade(
+            frozen,
+            version="1.0",
+            score=1.0,
+            evidence={"tests": "passed"},
+        ),
+        verifier_config_hash=_hash("config-1.0"),
+    )
+    _commit_completed(gradebook, revision, label="decision-txn")
+    return DecisionGradeCitation(revision.grade_id, revision.revision_hash)
+
+
+def test_record_decision_runs_in_one_immediate_transaction(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with GradeBook(tmp_path / "grades.db") as gradebook:
+        citation = _decision_ready_gradebook(tmp_path, gradebook)
+        original = gradebook.validate_decision
+        observed: dict[str, bool] = {}
+
+        def wrapped(citations):
+            observed["in_transaction"] = gradebook._conn.in_transaction
+            return original(citations)
+
+        monkeypatch.setattr(gradebook, "validate_decision", wrapped)
+        gradebook.record_decision(
+            decision_id="decision-txn",
+            decision={"status": "accepted"},
+            citations=[citation],
+        )
+
+        assert observed["in_transaction"] is True
+        assert not gradebook._conn.in_transaction
+
+
+def test_record_decision_maps_trigger_conflict_to_gradebook_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import supervisor.grade_revisions as grade_revisions_module
+    from supervisor.grade_revisions import (
+        GRADE_DECISION_SCHEMA_VERSION,
+        GradeBookError,
+        _sha256_json,
+    )
+
+    fixed_ns = 1_700_000_000_000_000_000
+    monkeypatch.setattr(
+        grade_revisions_module.time,
+        "time_ns",
+        lambda: fixed_ns,
+    )
+    with GradeBook(tmp_path / "grades.db") as gradebook:
+        citation = _decision_ready_gradebook(tmp_path, gradebook)
+        payload = {
+            "schema_version": GRADE_DECISION_SCHEMA_VERSION,
+            "decision_id": "decision-2",
+            "decision": {"status": "accepted"},
+            "grade_citations": [citation.to_dict()],
+            "recorded_at_ms": fixed_ns // 1_000_000,
+        }
+        gradebook._conn.execute(
+            """INSERT INTO grade_decisions(
+                 decision_id, decision_hash, decision_json,
+                 grade_citations_json, recorded_at_ms
+               ) VALUES(?, ?, ?, ?, ?)""",
+            (
+                "unrelated-decision",
+                _sha256_json(payload),
+                json.dumps({"status": "other"}),
+                json.dumps([citation.to_dict()]),
+                fixed_ns // 1_000_000,
+            ),
+        )
+
+        with pytest.raises(GradeBookError) as excinfo:
+            gradebook.record_decision(
+                decision_id="decision-2",
+                decision={"status": "accepted"},
+                citations=[citation],
+            )
+
+        assert not isinstance(excinfo.value, sqlite3.IntegrityError)
+        assert not gradebook._conn.in_transaction

@@ -79,6 +79,7 @@ class WorkflowJobDispatcher:
         base_backoff_s: int = 5,
         max_backoff_s: int = 60,
         max_dispatch_attempts: int = 3,
+        max_cleanup_retry_attempts: int = 10,
         budget_hook: BudgetHook | None = None,
         popen: PopenFactory = subprocess.Popen,
         pid_alive: PidProbe = _pid_alive,
@@ -93,6 +94,8 @@ class WorkflowJobDispatcher:
         self.base_backoff_s = max(1, int(base_backoff_s))
         self.max_backoff_s = max(self.base_backoff_s, int(max_backoff_s))
         self.max_dispatch_attempts = max(1, int(max_dispatch_attempts))
+        self.max_cleanup_retry_attempts = max(1, int(max_cleanup_retry_attempts))
+        self._reap_skipped_missing_containment: set[str] = set()
         self.budget_hook = budget_hook or (lambda _row: True)
         self.popen = popen
         self.pid_alive = pid_alive
@@ -108,8 +111,14 @@ class WorkflowJobDispatcher:
     ) -> None:
         stop = stop_event or threading.Event()
         while not stop.is_set():
-            self.reap_stale_leases()
-            self.run_once()
+            try:
+                self.reap_stale_leases()
+                self.run_once()
+            except Exception as e:
+                print(
+                    f"workflow-job-dispatcher tick failed: {e!r}",
+                    file=sys.stderr,
+                )
             stop.wait(max(0.1, float(interval_s)))
 
     def run_once(self, *, job_id: str | None = None) -> dict[str, Any]:
@@ -151,6 +160,18 @@ class WorkflowJobDispatcher:
             self.state.list_terminal_dual_agent_workflow_jobs_pending_reap()
         ):
             if not terminal_row["worker_containment_id"]:
+                terminal_job_id = str(terminal_row["job_id"])
+                if terminal_job_id not in self._reap_skipped_missing_containment:
+                    self._reap_skipped_missing_containment.add(terminal_job_id)
+                    self._write_job_event(
+                        terminal_row,
+                        status="reap_skipped_missing_containment_identity",
+                        recovery_point=str(
+                            terminal_row["recovery_point"] or "terminal"
+                        ),
+                        pid=terminal_row["pid"],
+                        error="worker_containment_identity_missing",
+                    )
                 continue
             termination = self._terminate_row_worker(terminal_row)
             if termination["safe_to_finalize"]:
@@ -204,37 +225,44 @@ class WorkflowJobDispatcher:
                 continue
             row = claimed_row
             result_path = Path(str(row["result_path"]))
+            failure_error = "worker_lease_stale_or_dead"
             if result_path.exists():
+                result: dict[str, Any] | None = None
                 try:
                     loaded = json.loads(result_path.read_text(encoding="utf-8"))
                     result = loaded if isinstance(loaded, dict) else {"raw_result": loaded}
+                except (OSError, json.JSONDecodeError) as e:
+                    failure_error = f"malformed_worker_result: {e}"
+                if result is not None:
                     termination = self._terminate_row_worker(row)
                     if not termination["safe_to_finalize"]:
-                        self._defer_unsafe_cleanup(
+                        deferred = self._defer_unsafe_cleanup(
                             row,
                             termination=termination,
                         )
-                        cleanup_retry_pending.append(str(row["job_id"]))
+                        if str(deferred["status"]) != "parked":
+                            cleanup_retry_pending.append(str(row["job_id"]))
                         continue
                     status = str(result.get("status") or "completed")
-                    self.state.complete_dual_agent_workflow_job(
-                        job_id=row["job_id"],
-                        status=status,
-                        terminal_outcome=result,
-                        error="",
-                        worker_reaped_at=int(self.now()),
-                        termination={
-                            **termination,
-                            "dispatcher_id": self.dispatcher_id,
-                        },
-                    )
-                    completed.append(row["job_id"])
-                    continue
-                except (OSError, json.JSONDecodeError):
-                    pass
+                    try:
+                        self.state.complete_dual_agent_workflow_job(
+                            job_id=row["job_id"],
+                            status=status,
+                            terminal_outcome=result,
+                            error="",
+                            worker_reaped_at=int(self.now()),
+                            termination={
+                                **termination,
+                                "dispatcher_id": self.dispatcher_id,
+                            },
+                        )
+                        completed.append(row["job_id"])
+                        continue
+                    except ValueError as e:
+                        failure_error = f"malformed_worker_result: {e}"
             failed_row = self._fail_spawned(
                 row,
-                error="worker_lease_stale_or_dead",
+                error=failure_error,
             )
             if failed_row["terminal_outcome_json"] is None:
                 if str(failed_row["leased_by"] or "").startswith("cleanup:"):
@@ -446,6 +474,17 @@ class WorkflowJobDispatcher:
         termination: dict[str, Any],
     ) -> Any:
         reason = str(termination.get("status") or "worker_cleanup_unsafe")
+        if not row["worker_containment_id"]:
+            return self._park(
+                row,
+                reason=f"worker_containment_identity_missing: {reason}",
+            )
+        attempts = int(row["dispatch_attempts"] or 0) + 1
+        if attempts > self.max_cleanup_retry_attempts:
+            return self._park(
+                row,
+                reason=f"cleanup_retry_attempts_exhausted: {reason}",
+            )
         now = int(self.now())
         delay = min(self.max_backoff_s, self.base_backoff_s)
         retry_delay = min(
@@ -459,6 +498,7 @@ class WorkflowJobDispatcher:
             leased_by=f"cleanup:{self.dispatcher_id}",
             lease_expires_at=now + int(retry_delay),
             heartbeat_at=now,
+            dispatch_attempts=attempts,
         )
         self._write_job_event(
             row,

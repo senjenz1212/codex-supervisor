@@ -17,6 +17,8 @@ from .agentic_legacy_provider_edge import (
 )
 from .agentic_workers import (
     AgenticWorkerSpec,
+    _runtime_error,
+    _runtime_timed_out,
     cleanup_orphaned_agentic_workers,
     run_agentic_worker_fanout,
 )
@@ -325,24 +327,29 @@ def plan_agentic_worker_roster(
     result = execution.result
     stdout = str(result.output or "")
     planner = _planner_result_metadata(result)
-    if str(result.status or "").strip().lower() in {"cancelled", "canceled"}:
-        return AgenticWorkerProduction(
-            status="blocked",
-            blocking_findings=[{"reason": "agentic_roster_planner_cancelled"}],
-            planner=planner,
-        )
-    if _runtime_timed_out(result):
-        return AgenticWorkerProduction(
-            status="blocked",
-            blocking_findings=[{"reason": "agentic_roster_planner_timeout"}],
-            planner=planner,
-        )
-    if str(result.status or "").strip().lower() not in {
+    status = str(result.status or "").strip().lower()
+    if status not in {
         "completed",
         "passed",
         "success",
         "succeeded",
     }:
+        if status in {"cancelled", "canceled"}:
+            return AgenticWorkerProduction(
+                status="blocked",
+                blocking_findings=[
+                    {"reason": "agentic_roster_planner_cancelled"}
+                ],
+                planner=planner,
+            )
+        if _runtime_timed_out(result):
+            return AgenticWorkerProduction(
+                status="blocked",
+                blocking_findings=[
+                    {"reason": "agentic_roster_planner_timeout"}
+                ],
+                planner=planner,
+            )
         returncode = _int_or_none(result.metadata.get("returncode"))
         if returncode not in {None, 0}:
             finding = {
@@ -352,7 +359,7 @@ def plan_agentic_worker_roster(
         else:
             finding = {
                 "reason": "agentic_roster_planner_failed",
-                "error": _runtime_error(result),
+                "error": _runtime_error(result, status="failed"),
             }
         return AgenticWorkerProduction(
             status="blocked",
@@ -504,45 +511,6 @@ def _agent_run_result_payload(result: AgentRunResult) -> dict[str, Any]:
         if key in result.metadata
     }
     return payload
-
-
-def _runtime_timed_out(result: AgentRunResult) -> bool:
-    if str(result.status or "").strip().lower() == "timeout":
-        return True
-    if _int_or_none(result.metadata.get("returncode")) == 124:
-        return True
-    values = [
-        result.metadata.get("failure_reason"),
-        result.metadata.get("error"),
-    ]
-    for event in result.events:
-        values.extend((
-            event.payload.get("reason"),
-            event.payload.get("error"),
-        ))
-    return any(
-        "timeout" in str(value or "").strip().lower()
-        for value in values
-    )
-
-
-def _runtime_error(result: AgentRunResult) -> str:
-    for value in (
-        result.metadata.get("error"),
-        result.metadata.get("stderr"),
-        *(
-            item
-            for event in reversed(result.events)
-            for item in (
-                event.payload.get("error"),
-                event.payload.get("reason"),
-            )
-        ),
-    ):
-        text = str(value or "").strip()
-        if text:
-            return text
-    return f"runtime ended with status={result.status}"
 
 
 def _planner_task(

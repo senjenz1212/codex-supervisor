@@ -145,16 +145,40 @@ def test_event_payload_object_keys_are_redacted_before_persistence(tmp_path):
     assert event["payload"]["API_KEY=[REDACTED]"] == "ordinary"
 
 
-def test_redaction_rejects_object_key_collisions():
+def test_redaction_disambiguates_object_key_collisions():
     from supervisor.redaction import redact
 
-    with pytest.raises(ValueError, match="duplicate object key"):
-        redact(
-            {
-                "API_KEY=super-secret-value": "secret-key",
-                "API_KEY=[REDACTED]": "existing-marker",
-            }
-        )
+    payload = {
+        "API_KEY=super-secret-value": "secret-key",
+        "API_KEY=[REDACTED]": "existing-marker",
+    }
+
+    result = redact(payload)
+
+    assert result == {
+        "API_KEY=[REDACTED]": "secret-key",
+        "API_KEY=[REDACTED_2]": "existing-marker",
+    }
+    assert redact(payload) == result
+    assert "super-secret-value" not in repr(result)
+
+
+def test_redaction_disambiguates_colliding_secret_keys():
+    from supervisor.redaction import redact
+
+    payload = {
+        "sk-" + "a" * 20: "first",
+        "sk-" + "b" * 20: "second",
+        "sk-" + "c" * 20: "third",
+    }
+
+    result = redact(payload)
+
+    assert result == {
+        "[REDACTED_API_KEY]": "first",
+        "[REDACTED_API_KEY_2]": "second",
+        "[REDACTED_API_KEY_3]": "third",
+    }
 
 
 def test_historical_ledger_redaction_rules_remain_frozen(

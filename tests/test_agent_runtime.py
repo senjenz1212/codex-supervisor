@@ -2051,3 +2051,161 @@ raise SystemExit(
     assert workspace_output.read_text() == "workspace-write-ok"
     assert hidden_verifier.read_text() == "hidden-verifier-secret"
     assert unrelated_secret.read_text() == "default-allow-leak"
+
+
+def test_containment_scan_scopes_unreadable_processes_to_launched_tree(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from supervisor import process_containment as process_containment_module
+
+    class CurrentProcess:
+        def username(self) -> str:
+            return "test-user"
+
+    def unreadable(pid: int, ppid: int) -> object:
+        class UnreadableProcess:
+            info = {
+                "pid": pid,
+                "ppid": ppid,
+                "username": "test-user",
+                "create_time": 200.0,
+            }
+
+            def environ(self) -> dict[str, str]:
+                raise psutil.AccessDenied(pid=pid)
+
+        UnreadableProcess.pid = pid
+        return UnreadableProcess()
+
+    unrelated = unreadable(50010, 1)
+    descendant = unreadable(50011, 41003)
+    monkeypatch.setattr(
+        process_containment_module.psutil,
+        "Process",
+        lambda *_args, **_kwargs: CurrentProcess(),
+    )
+    monkeypatch.setattr(
+        process_containment_module,
+        "same_process",
+        lambda _identity: False,
+    )
+    monkeypatch.setattr(
+        process_containment_module.os,
+        "getpid",
+        lambda: 99999,
+    )
+    root_identity = process_containment_module.ProcessIdentity(
+        pid=41003,
+        started_at=100.0,
+    )
+
+    monkeypatch.setattr(
+        process_containment_module.psutil,
+        "process_iter",
+        lambda _attrs: [unrelated],
+    )
+    default_scope = process_containment_module.scan_containment(
+        "containment-transport-scope",
+        root_identity=root_identity,
+    )
+    transport_scope = process_containment_module.scan_containment(
+        "containment-transport-scope",
+        root_identity=root_identity,
+        unreadable_scope="containment_tree",
+    )
+
+    # The strict default still fails closed on any unreadable same-user
+    # process started at or after the root.
+    assert default_scope.scan_complete is False
+    assert default_scope.errors == ("access_denied:50010",)
+    # The launched-tree scope rules the unrelated process out.
+    assert transport_scope.scan_complete is True
+    assert transport_scope.errors == ()
+
+    monkeypatch.setattr(
+        process_containment_module.psutil,
+        "process_iter",
+        lambda _attrs: [descendant],
+    )
+    descendant_scope = process_containment_module.scan_containment(
+        "containment-transport-scope",
+        root_identity=root_identity,
+        unreadable_scope="containment_tree",
+    )
+
+    # An unreadable descendant of the launched tree still fails closed.
+    assert descendant_scope.scan_complete is False
+    assert descendant_scope.errors == ("access_denied:50011",)
+
+    with pytest.raises(ValueError, match="unreadable_scope"):
+        process_containment_module.scan_containment(
+            "containment-transport-scope",
+            root_identity=root_identity,
+            unreadable_scope="everything",
+        )
+
+
+@pytest.mark.asyncio
+async def test_subprocess_collect_ignores_unreadable_unrelated_process(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from supervisor import process_containment as process_containment_module
+
+    current_username = psutil.Process().username()
+
+    class UnreadableUnrelatedProcess:
+        pid = 3_999_999
+
+        info = {
+            "pid": 3_999_999,
+            "ppid": 1,
+            "username": current_username,
+            "create_time": 4_000_000_000.0,
+        }
+
+        def environ(self) -> dict[str, str]:
+            raise psutil.AccessDenied(pid=self.pid)
+
+    monkeypatch.setattr(
+        process_containment_module.psutil,
+        "process_iter",
+        lambda _attrs: [UnreadableUnrelatedProcess()],
+    )
+
+    transport = SubprocessRuntimeTransport()
+    token = await transport.start(
+        run_id="unreadable-unrelated-process",
+        argv=(sys.executable, "-c", "print('ok')"),
+        cwd=tmp_path,
+        env=dict(os.environ),
+        timeout_s=10,
+        metadata={},
+    )
+
+    result = await transport.collect(token)
+
+    assert result.returncode == 0
+
+
+def test_codex_runtime_read_only_review_pins_read_only_sandbox(
+    tmp_path: Path,
+) -> None:
+    runtime = CodexRuntime()
+    task = AgentTask(
+        task_id="read-only-review",
+        instruction="Review only.",
+        cwd=tmp_path,
+        model="gpt-5.5",
+        metadata={
+            "reasoning_effort": "xhigh",
+            "read_only_review": True,
+        },
+    )
+
+    argv = runtime.preview_start_argv(task)
+
+    assert 'reasoning_effort="xhigh"' in argv
+    sandbox_index = argv.index("--sandbox")
+    assert argv[sandbox_index + 1] == "read-only"
+    assert "workspace-write" not in argv

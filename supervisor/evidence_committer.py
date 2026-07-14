@@ -28,7 +28,7 @@ import stat
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path, PurePosixPath
@@ -211,6 +211,82 @@ class EvidenceGradeHistory:
                 for commit in self.source_terminal_commits
             ],
         }
+
+
+class _CommittedGradeBookView(GradeBook):
+    """Authoritative GradeBook view pinned to committed grade lineages."""
+
+    def __init__(
+        self,
+        histories: Sequence[EvidenceGradeHistory],
+    ) -> None:
+        self._pinned_revisions: dict[str, GradeRevision] = {}
+        self._pinned_runs: dict[
+            RunEnvelopeRef,
+            tuple[GradeRevision, ...],
+        ] = {}
+        self._pinned_invalidations: dict[
+            str,
+            tuple[GradeInvalidation, ...],
+        ] = {}
+        self._pinned_terminal_commits: dict[str, GradeTerminalCommit] = {}
+        for history in histories:
+            self._pinned_runs[history.run] = tuple(history.revisions)
+            for revision in history.revisions:
+                self._pinned_revisions[revision.grade_id] = revision
+                self._pinned_invalidations.setdefault(revision.grade_id, ())
+            for invalidation in history.invalidations:
+                self._pinned_invalidations[invalidation.grade_id] = (
+                    self._pinned_invalidations.get(
+                        invalidation.grade_id,
+                        (),
+                    )
+                    + (invalidation,)
+                )
+            for commit in history.terminal_commits:
+                self._pinned_terminal_commits[commit.grade_id] = commit
+
+    def get_revision(self, grade_id: str) -> GradeRevision:
+        revision = self._pinned_revisions.get(str(grade_id))
+        if revision is None:
+            raise GradeNotFoundError(f"unknown grade revision: {grade_id}")
+        return revision
+
+    def list_revisions(
+        self,
+        run: RunEnvelopeRef,
+    ) -> tuple[GradeRevision, ...]:
+        return self._pinned_runs.get(run, ())
+
+    def list_invalidations(
+        self,
+        grade_id: str,
+    ) -> tuple[GradeInvalidation, ...]:
+        return self._pinned_invalidations.get(str(grade_id), ())
+
+    def get_terminal_commit(
+        self,
+        grade_id: str,
+    ) -> GradeTerminalCommit | None:
+        return self._pinned_terminal_commits.get(str(grade_id))
+
+
+def _trace_graph_is_append_extension(
+    *,
+    committed: TraceGraph,
+    live: TraceGraph,
+) -> bool:
+    for attribute in ("nodes", "edges", "waivers"):
+        committed_records = getattr(committed, attribute)
+        live_records = getattr(live, attribute)
+        if len(live_records) < len(committed_records):
+            return False
+        for pinned, observed in zip(committed_records, live_records):
+            if canonical_json_bytes(pinned.to_dict()) != (
+                canonical_json_bytes(observed.to_dict())
+            ):
+                return False
+    return True
 
 
 @dataclass(frozen=True)
@@ -673,25 +749,29 @@ class EvidenceCommitter:
             row["result_json"],
             field="result_json",
         )
-        histories = self._verify_grade_histories(request)
+        histories = self._verify_committed_grade_histories(request)
         try:
             with TraceGraphStore(self.trace_store_path) as store:
-                graph = store.load()
+                live_graph = store.load()
         except (OSError, sqlite3.DatabaseError, TraceGraphError) as exc:
             raise EvidenceCommitIntegrityError(
                 "completed evidence persisted trace graph is unreadable"
             ) from exc
-        if graph.canonical_bytes() != request.trace_graph.canonical_bytes():
+        graph = request.trace_graph
+        if not _trace_graph_is_append_extension(
+            committed=graph,
+            live=live_graph,
+        ):
             raise EvidenceCommitIntegrityError(
                 "completed evidence persisted trace graph differs from "
                 "the immutable request"
             )
-        with GradeBook(self.gradebook_path) as gradebook:
-            closure = graph.validate_closure(
-                now=request.closure_time,
-                expected_binding=request.trace_graph.expected_binding,
-                decision_grade_validator=gradebook,
-            )
+        committed_gradebook = _CommittedGradeBookView(histories)
+        closure = graph.validate_closure(
+            now=request.closure_time,
+            expected_binding=request.trace_graph.expected_binding,
+            decision_grade_validator=committed_gradebook,
+        )
         if not closure.ok:
             raise EvidenceCommitIntegrityError(
                 "completed evidence trace graph no longer closes"
@@ -703,6 +783,7 @@ class EvidenceCommitter:
         self._validate_trace_grade_decisions(
             graph,
             request.promotion,
+            grade_authority=committed_gradebook,
         )
         promotion_trace = graph.promotion_trace(request.promotion)
         self._verify_materialization(
@@ -1204,6 +1285,143 @@ class EvidenceCommitter:
                 verified.append(actual)
         return tuple(verified)
 
+    def _verify_committed_grade_histories(
+        self,
+        request: EvidenceCommitRequest,
+    ) -> tuple[EvidenceGradeHistory, ...]:
+        """Require every live lineage to be an append-extension of the commit."""
+        terminal_events = self._load_terminal_arm_events()
+        registered = set(request.registered_run_ids)
+        for run_id in registered:
+            if (
+                self.state.get_run(run_id) is None
+                or self.state.get_run_snapshot(run_id) is None
+            ):
+                raise EvidenceCommitIntegrityError(
+                    f"canonical State registration is missing for {run_id}"
+                )
+        with (
+            GradeBook(self.experiment_db_path) as authority_gradebook,
+            GradeBook(self.gradebook_path) as gradebook,
+        ):
+            for expected in request.grade_histories:
+                if not expected.terminal_commits:
+                    raise EvidenceCommitIntegrityError(
+                        "EvidenceGradeHistory terminal_commits are required "
+                        f"for execution {expected.execution_id}"
+                    )
+                if not expected.source_terminal_commits:
+                    raise EvidenceCommitIntegrityError(
+                        "EvidenceGradeHistory source_terminal_commits are "
+                        "required for execution "
+                        f"{expected.execution_id}"
+                    )
+                self._validate_terminal_commit_coverage(expected)
+                self._validate_source_terminal_commit_coverage(expected)
+                if expected.run.run_id not in registered:
+                    raise EvidenceCommitIntegrityError(
+                        "GradeBook history references an unregistered run: "
+                        f"{expected.run.run_id}"
+                    )
+                if (
+                    not expected.revisions
+                    or expected.revisions[-1].run_envelope != expected.run
+                ):
+                    raise EvidenceCommitIntegrityError(
+                        "GradeBook history has no current revision for "
+                        f"execution {expected.execution_id}"
+                    )
+                self._verify_committed_lineage_prefix(
+                    expected,
+                    gradebook=gradebook,
+                )
+                source_terminal_commits = (
+                    self._verify_terminal_grade_authority(
+                        history=expected,
+                        terminal_events=terminal_events,
+                        authority_gradebook=authority_gradebook,
+                    )
+                )
+                if canonical_json_bytes(
+                    [
+                        commit.to_dict()
+                        for commit in source_terminal_commits
+                    ]
+                ) != canonical_json_bytes(
+                    [
+                        commit.to_dict()
+                        for commit in expected.source_terminal_commits
+                    ]
+                ):
+                    raise EvidenceCommitIntegrityError(
+                        "source terminal authority does not match the "
+                        "immutable evidence request for execution "
+                        f"{expected.execution_id}"
+                    )
+        return tuple(request.grade_histories)
+
+    def _verify_committed_lineage_prefix(
+        self,
+        expected: EvidenceGradeHistory,
+        *,
+        gradebook: GradeBook,
+    ) -> None:
+        def mismatch() -> EvidenceCommitIntegrityError:
+            return EvidenceCommitIntegrityError(
+                "GradeBook history does not match the evidence request "
+                f"for execution {expected.execution_id}"
+            )
+
+        live_revisions = gradebook.list_revisions(expected.run)
+        if len(live_revisions) < len(expected.revisions):
+            raise mismatch()
+        for pinned, observed in zip(expected.revisions, live_revisions):
+            if canonical_json_bytes(pinned.to_dict()) != (
+                canonical_json_bytes(observed.to_dict())
+            ):
+                raise mismatch()
+        committed_grade_ids = {
+            revision.grade_id for revision in expected.revisions
+        }
+        pinned_invalidations: dict[str, list[GradeInvalidation]] = {}
+        for invalidation in expected.invalidations:
+            if invalidation.grade_id not in committed_grade_ids:
+                raise mismatch()
+            pinned_invalidations.setdefault(
+                invalidation.grade_id,
+                [],
+            ).append(invalidation)
+        pinned_terminal_commits = {
+            commit.grade_id: commit
+            for commit in expected.terminal_commits
+        }
+        for revision in expected.revisions:
+            try:
+                live_invalidations = gradebook.list_invalidations(
+                    revision.grade_id
+                )
+                live_commit = gradebook.get_terminal_commit(
+                    revision.grade_id
+                )
+            except (GradeIntegrityError, GradeValidationError) as exc:
+                raise EvidenceCommitIntegrityError(
+                    "GradeBook terminal grade authority is invalid for "
+                    f"execution {expected.execution_id}"
+                ) from exc
+            pinned = pinned_invalidations.get(revision.grade_id, [])
+            if len(live_invalidations) < len(pinned):
+                raise mismatch()
+            for pinned_record, observed in zip(pinned, live_invalidations):
+                if canonical_json_bytes(pinned_record.to_dict()) != (
+                    canonical_json_bytes(observed.to_dict())
+                ):
+                    raise mismatch()
+            pinned_commit = pinned_terminal_commits[revision.grade_id]
+            if live_commit is None or canonical_json_bytes(
+                live_commit.to_dict()
+            ) != canonical_json_bytes(pinned_commit.to_dict()):
+                raise mismatch()
+
     def _validate_terminal_commit_coverage(
         self,
         history: EvidenceGradeHistory,
@@ -1574,6 +1792,7 @@ class EvidenceCommitter:
         self,
         graph: TraceGraph,
         promotion: TraceIdentity,
+        grade_authority: GradeBook | None = None,
     ) -> None:
         """Bind promoted decisions to exact, resolved GradeBook citations."""
         decision_identities = {
@@ -1590,7 +1809,12 @@ class EvidenceCommitter:
         nodes_by_identity = {
             node.identity: node for node in graph.nodes
         }
-        with GradeBook(self.gradebook_path) as gradebook:
+        authority_context = (
+            nullcontext(grade_authority)
+            if grade_authority is not None
+            else GradeBook(self.gradebook_path)
+        )
+        with authority_context as gradebook:
             for decision_identity in sorted(
                 decision_identities,
                 key=lambda identity: identity.canonical_key,
@@ -1740,11 +1964,6 @@ class EvidenceCommitter:
             artifacts,
             key=lambda item: (item.role, item.relative_path),
         ):
-            _write_evidence_file(
-                self.root,
-                artifact.relative_path,
-                artifact.content,
-            )
             descriptor = self.artifact_store.put_bytes(
                 artifact.content,
                 name=artifact.relative_path,
@@ -1787,11 +2006,6 @@ class EvidenceCommitter:
             },
         )
         self.artifact_store.verify_manifest(manifest)
-        _write_evidence_file(
-            self.root,
-            "artifacts/artifact-manifest.json",
-            canonical_json_bytes(manifest),
-        )
         projection_descriptor = next(
             descriptor
             for descriptor in descriptors
@@ -1807,6 +2021,20 @@ class EvidenceCommitter:
         self._store_materialization(
             request.commit_id,
             materialization,
+        )
+        for artifact in sorted(
+            artifacts,
+            key=lambda item: (item.role, item.relative_path),
+        ):
+            _write_evidence_file(
+                self.root,
+                artifact.relative_path,
+                artifact.content,
+            )
+        _write_evidence_file(
+            self.root,
+            "artifacts/artifact-manifest.json",
+            canonical_json_bytes(manifest),
         )
         self._observe_phase("artifacts_staged")
         return materialization

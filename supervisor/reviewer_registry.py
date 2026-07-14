@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
 from .cursor_agent import (
+    DEFAULT_STRUCTURED_REVIEWER_MODEL,
     CursorInvocationRequest,
     CursorInvocationResult,
     cursor_accepts,
@@ -152,7 +154,10 @@ def configured_reviewers(
     reviewers: list[ReviewerAdapter] = [
         (
             StructuredReviewerAdapter(
-                spec=legacy_spec,
+                spec=replace(
+                    legacy_spec,
+                    model=reviewer_model or DEFAULT_STRUCTURED_REVIEWER_MODEL,
+                ),
                 model_client=model_client,
             )
             if model_client is not None
@@ -167,7 +172,9 @@ def configured_reviewers(
                     lineage=("openai", "codex", codex_model),
                 ),
                 runner=runtime_runner,
+                environment=_codex_runtime_auth_environment(),
                 inherit_environment=False,
+                task_metadata={"reasoning_effort": "xhigh"},
             )
             if runtime_runner is not None
             else CodexCliReviewer(
@@ -213,6 +220,18 @@ def configured_reviewers(
                 )
             )
     return reviewers
+
+
+_CODEX_RUNTIME_AUTH_ENV_KEYS: tuple[str, ...] = ("OPENAI_API_KEY", "CODEX_HOME")
+
+
+def _codex_runtime_auth_environment() -> dict[str, str]:
+    """Forward env-based codex auth into the non-inheriting runtime child."""
+    return {
+        key: value
+        for key in _CODEX_RUNTIME_AUTH_ENV_KEYS
+        if (value := os.environ.get(key, ""))
+    }
 
 
 def independent_reviewer_results_from_cursor_result(

@@ -10,24 +10,24 @@ import json
 import os
 import subprocess
 from pathlib import Path
-from typing import Any, Callable, Mapping, Sequence
+from typing import Callable, Mapping, Sequence
 
-from .provider_routing import DEFAULT_ANTHROPIC_MODEL, direct_anthropic_env
+from .provider_routing import (
+    CLAUDE_OPUS_SAFE_OVERRIDE_EXTRA_BODY as CLAUDE_OPUS_SAFE_OVERRIDE_EXTRA_BODY,
+    CLAUDE_OPUS_SAFE_OVERRIDE_MODEL as CLAUDE_OPUS_SAFE_OVERRIDE_MODEL,
+    CLAUDE_OPUS_ULTIMATE_EXTRA_BODY as CLAUDE_OPUS_ULTIMATE_EXTRA_BODY,
+    CLAUDE_OPUS_ULTIMATE_MODEL as CLAUDE_OPUS_ULTIMATE_MODEL,
+    CLAUDE_OPUS_UNDERLYING_MODEL as CLAUDE_OPUS_UNDERLYING_MODEL,
+    DEFAULT_ANTHROPIC_MODEL,
+    direct_anthropic_env,
+    opus_extra_body_for_pin,
+    underlying_opus_model_for_gate,
+    uses_adaptive_opus_effort as uses_adaptive_opus_effort,
+)
 
 
 CLAUDE_PRIMARY_MODEL = DEFAULT_ANTHROPIC_MODEL
-CLAUDE_OPUS_ULTIMATE_MODEL = "opus"
-CLAUDE_OPUS_UNDERLYING_MODEL = "claude-opus-4-8"
-CLAUDE_OPUS_SAFE_OVERRIDE_MODEL = "claude-opus-4-6"
 CLAUDE_CHEAP_MODEL = "haiku"
-CLAUDE_OPUS_ULTIMATE_EXTRA_BODY = {
-    "thinking": {"type": "adaptive"},
-    "output_config": {"effort": "xhigh"},
-}
-CLAUDE_OPUS_SAFE_OVERRIDE_EXTRA_BODY = {
-    "thinking": {"type": "adaptive"},
-    "output_config": {"effort": "max"},
-}
 REPORT_ONLY_EXECUTION_ALLOWED_TOOLS: tuple[str, ...] = (
     "Read",
     "Grep",
@@ -102,12 +102,12 @@ def build_legacy_claude_environment(
         # r-2026-06-10: the pinned claude-opus-4-8 route broke headless
         # write permissions. Execution therefore defaults to the CLI's Opus
         # route while planning/review keeps an operator-overridable quality pin.
-        pin = _underlying_opus_model_for_gate(gate)
+        pin = underlying_opus_model_for_gate(os.environ, gate)
         if pin is None:
             env.pop("ANTHROPIC_DEFAULT_OPUS_MODEL", None)
         else:
             env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = pin
-        env["CLAUDE_CODE_EXTRA_BODY"] = json.dumps(_opus_extra_body_for_pin(pin))
+        env["CLAUDE_CODE_EXTRA_BODY"] = json.dumps(opus_extra_body_for_pin(pin))
     else:
         env.pop("ANTHROPIC_DEFAULT_OPUS_MODEL", None)
         env.pop("CLAUDE_CODE_EXTRA_BODY", None)
@@ -132,35 +132,6 @@ def run_legacy_claude(
         text=True,
         timeout=timeout_s,
     )
-
-
-def uses_adaptive_opus_effort(model: str) -> bool:
-    return (
-        model == CLAUDE_OPUS_ULTIMATE_MODEL
-        or model == CLAUDE_OPUS_UNDERLYING_MODEL
-        or model.startswith(f"{CLAUDE_OPUS_UNDERLYING_MODEL}-")
-    )
-
-
-def _underlying_opus_model_for_gate(gate: str) -> str | None:
-    if gate == "execution":
-        override = _opus_pin_override("CODEX_SUPERVISOR_EXECUTION_OPUS_MODEL")
-        return override or None
-    override = _opus_pin_override("CODEX_SUPERVISOR_PLANNING_OPUS_MODEL")
-    return override or CLAUDE_OPUS_UNDERLYING_MODEL
-
-
-def _opus_pin_override(env_key: str) -> str:
-    value = os.environ.get(env_key, "").strip()
-    if value and not value.startswith("claude-opus-"):
-        return CLAUDE_OPUS_SAFE_OVERRIDE_MODEL
-    return value
-
-
-def _opus_extra_body_for_pin(pin: str | None) -> dict[str, Any]:
-    if pin and pin.startswith(CLAUDE_OPUS_SAFE_OVERRIDE_MODEL):
-        return CLAUDE_OPUS_SAFE_OVERRIDE_EXTRA_BODY
-    return CLAUDE_OPUS_ULTIMATE_EXTRA_BODY
 
 
 def _format_budget(value: float) -> str:

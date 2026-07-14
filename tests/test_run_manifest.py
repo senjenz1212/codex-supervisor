@@ -593,3 +593,113 @@ def test_manifest_is_complete_only_when_bytes_models_and_workspace_are_pinned(
     assert provenance["unresolved_model_lanes"] == []
     assert provenance["workspace_issues"] == []
     assert execution_provenance_issues(provenance) == []
+
+
+def test_source_artifact_hashes_skip_paths_escaping_workspace_root(tmp_path):
+    from supervisor.run_manifest import _source_artifact_hashes
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    outside = tmp_path / "outside.md"
+    outside.write_text("outside", encoding="utf-8")
+
+    hashes = _source_artifact_hashes(
+        root,
+        {
+            "planning_artifacts": [
+                {"kind": "prd", "path": "../outside.md"},
+                {"kind": "tdd", "path": str(outside)},
+            ],
+        },
+    )
+
+    assert hashes == {}
+
+
+def test_source_artifact_hashes_fall_back_when_read_fails(
+    tmp_path,
+    monkeypatch,
+):
+    from pathlib import Path
+
+    from supervisor.run_manifest import _source_artifact_hashes
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    artifact = root / "prd.md"
+    artifact.write_text("plan", encoding="utf-8")
+    declared = "f" * 64
+
+    def _deny(self):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(Path, "read_bytes", _deny)
+
+    hashes = _source_artifact_hashes(
+        root,
+        {
+            "planning_artifacts": [
+                {"kind": "prd", "path": "prd.md", "sha256": declared},
+                {"kind": "tdd", "path": "tdd.md"},
+            ],
+        },
+    )
+
+    assert hashes == {"prd": declared}
+
+
+def test_workspace_overlay_entry_degrades_on_unreadable_path(tmp_path):
+    from supervisor.run_manifest import _workspace_overlay_entry
+
+    directory = tmp_path / "now-a-directory"
+    directory.mkdir()
+
+    entry = _workspace_overlay_entry(directory, root=tmp_path)
+
+    assert entry == {
+        "path": "now-a-directory",
+        "kind": "file",
+        "content_omitted": "unreadable:IsADirectoryError",
+    }
+
+
+def test_acceptance_evidence_degrades_when_snapshot_capture_fails(
+    tmp_path,
+    monkeypatch,
+):
+    import json
+
+    from supervisor import run_manifest
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    handoff = repo / "handoff.json"
+    handoff.write_text(
+        json.dumps({
+            "cwd": str(repo),
+            "planning_artifacts": [
+                {"kind": "prd", "path": "../outside.md"},
+            ],
+        }),
+        encoding="utf-8",
+    )
+    payload = {
+        "status": "accepted",
+        "task_id": "task-1",
+        "handoff_packet_path": str(handoff),
+    }
+
+    evidence = run_manifest.capture_acceptance_evidence(dict(payload))
+    assert evidence is not None
+    assert evidence["status"] == "incomplete"
+
+    def _boom(*args, **kwargs):
+        raise ValueError("escapes workspace root")
+
+    monkeypatch.setattr(run_manifest, "capture_workspace_snapshot", _boom)
+
+    degraded = run_manifest.capture_acceptance_evidence(dict(payload))
+
+    assert degraded is not None
+    assert degraded["status"] == "incomplete"
+    assert degraded["snapshot_ref"] is not None

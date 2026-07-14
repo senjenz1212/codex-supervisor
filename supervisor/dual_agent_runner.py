@@ -836,12 +836,12 @@ class _GateCancellation:
         environment = containment_environment(base, containment_id)
         if not runtime_marker:
             return environment
-        current_path = str(environment.get("PATH") or "")
-        path_parts = (
-            current_path.split(os.pathsep)
-            if current_path
-            else os.defpath.split(os.pathsep)
+        current_path = (
+            str(environment.get("PATH") or "")
+            or os.environ.get("PATH", "")
+            or os.defpath
         )
+        path_parts = current_path.split(os.pathsep)
         if self._path_marker not in path_parts:
             environment["PATH"] = os.pathsep.join([
                 self._path_marker,

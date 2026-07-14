@@ -41,6 +41,25 @@ def upgrade() -> None:
     op.execute("LOCK TABLE events IN SHARE ROW EXCLUSIVE MODE")
     op.execute(
         """
+        DO $$
+        BEGIN
+          IF EXISTS (
+            SELECT 1
+            FROM events
+            WHERE kind = 'dual_agent_production_trace_recorded'
+              AND NULLIF(
+                TRIM(payload_json->>'source_event_hash'), ''
+              ) IS NULL
+          ) THEN
+            RAISE EXCEPTION
+              'production trace event lacks source_event_hash for idempotency backfill';
+          END IF;
+        END
+        $$
+        """
+    )
+    op.execute(
+        """
         INSERT INTO event_idempotency_claims(
           run_id, kind, idempotency_key, event_id, source,
           payload_sha256, created_at

@@ -602,3 +602,64 @@ def test_readiness_report_is_deterministic_and_missing_receipts_fail_closed():
     assert [finding.code for finding in first.findings] == [
         "missing_budget_authorization_receipt"
     ]
+
+
+def test_budget_invariant_compares_the_values_that_get_frozen():
+    payload = _protocol_payload()
+    payload["arm_budgets"]["B"]["timeout_s"] = 120.9
+    payload["arm_budgets"]["C"]["timeout_s"] = 120.1
+
+    protocol = freeze_pilot_protocol(payload)
+
+    assert protocol.payload["arm_budgets"]["B"]["timeout_s"] == 120
+    assert protocol.payload["arm_budgets"]["C"]["timeout_s"] == 120
+    assert (
+        protocol.protocol_hash
+        == freeze_pilot_protocol(_protocol_payload()).protocol_hash
+    )
+    pins, blobs = _receipts(protocol.protocol_hash)
+    report = validate_pilot_readiness(
+        protocol,
+        receipts=pins,
+        evidence_resolver=blobs.get,
+        trusted_receipt_verifiers=TRUSTED_RECEIPT_VERIFIERS,
+    )
+    assert report.ready is True
+
+
+def test_mixed_case_commit_sha_is_normalized_into_frozen_payload():
+    payload = _protocol_payload()
+    payload["commit_sha"] = COMMIT.upper()
+
+    protocol = freeze_pilot_protocol(payload)
+
+    assert protocol.payload["commit_sha"] == COMMIT
+    pins, blobs = _receipts(protocol.protocol_hash)
+    report = validate_pilot_readiness(
+        protocol,
+        receipts=pins,
+        evidence_resolver=blobs.get,
+        trusted_receipt_verifiers=TRUSTED_RECEIPT_VERIFIERS,
+    )
+    assert report.ready is True
+
+
+def test_resolver_exception_degrades_to_deterministic_blocked_finding():
+    protocol = freeze_pilot_protocol(_protocol_payload())
+    pins, _blobs = _receipts(protocol.protocol_hash)
+
+    def raising_resolver(_ref: str) -> bytes:
+        raise RuntimeError("resolver backend unavailable")
+
+    report = validate_pilot_readiness(
+        protocol,
+        receipts=pins,
+        evidence_resolver=raising_resolver,
+        trusted_receipt_verifiers=TRUSTED_RECEIPT_VERIFIERS,
+    )
+
+    assert report.ready is False
+    codes = {finding.code for finding in report.findings}
+    assert "invalid_worktree_receipt" in codes
+    assert "invalid_budget_authorization_receipt" in codes
+    assert all(finding.code.startswith("invalid_") for finding in report.findings)

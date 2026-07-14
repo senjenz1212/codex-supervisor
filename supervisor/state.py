@@ -1212,6 +1212,21 @@ class State:
                 event_kind=event_kind,
             )
 
+    def _trusted_checkpoint_event_count(self, run_id: str) -> int:
+        pin_store = getattr(
+            self._ledger_checkpoint_coordinator,
+            "trusted_pin_store",
+            None,
+        )
+        if pin_store is None:
+            return 0
+        try:
+            latest = pin_store.latest(run_id)
+            count = 0 if latest is None else int(latest["event_count"])
+        except Exception:
+            return 0
+        return max(count, 0)
+
     def reconcile_event_checkpoints(
         self,
         *,
@@ -1220,33 +1235,49 @@ class State:
         """Recover checkpoint publication from the durable event ledger.
 
         Event insertion commits before external publication. Replaying the
-        immutable stream is therefore the durable recovery queue; checkpoint
-        and trusted-pin writes are idempotent.
+        immutable stream beyond each run's trusted checkpoint head is
+        therefore the durable recovery queue; checkpoint and trusted-pin
+        writes are idempotent.
         """
-        if self._ledger_checkpoint_coordinator is None:
+        coordinator = self._ledger_checkpoint_coordinator
+        if coordinator is None:
             return 0
         with self._write_lock:
             if run_id is None:
-                rows = self._conn.execute(
-                    """SELECT run_id, event_id, kind
-                         FROM events
-                        ORDER BY run_id ASC, event_sequence ASC"""
-                ).fetchall()
+                run_ids = [
+                    str(row["run_id"])
+                    for row in self._conn.execute(
+                        """SELECT DISTINCT run_id
+                             FROM events
+                            ORDER BY run_id ASC"""
+                    ).fetchall()
+                ]
             else:
-                rows = self._conn.execute(
-                    """SELECT run_id, event_id, kind
-                         FROM events
-                        WHERE run_id=?
-                        ORDER BY event_sequence ASC""",
-                    (str(run_id),),
-                ).fetchall()
-            for row in rows:
-                self._coordinate_committed_event(
-                    run_id=str(row["run_id"]),
-                    event_id=int(row["event_id"]),
-                    event_kind=str(row["kind"]),
+                run_ids = [str(run_id)]
+            replayed = 0
+            for pending_run_id in run_ids:
+                trusted_count = self._trusted_checkpoint_event_count(
+                    pending_run_id
                 )
-            return len(rows)
+                rows = self._conn.execute(
+                    """SELECT event_id, event_sequence, kind
+                         FROM events
+                        WHERE run_id=? AND event_sequence>?
+                        ORDER BY event_sequence ASC""",
+                    (pending_run_id, trusted_count),
+                ).fetchall()
+                for row in rows:
+                    coordinator.coordinate_event(
+                        run_id=pending_run_id,
+                        event_id=int(row["event_id"]),
+                        event_count=int(row["event_sequence"]),
+                        event_kind=str(row["kind"]),
+                        events_loader=lambda rid=pending_run_id: (
+                            self._event_ledger_rows(rid)
+                        ),
+                    )
+                replayed += len(rows)
+            return replayed
 
     def write_event(
         self,

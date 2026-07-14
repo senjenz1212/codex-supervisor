@@ -2920,6 +2920,206 @@ def test_codex_supervisor_mcp_start_codex_session_can_dry_run_or_execute_with_ru
     assert registration["runtime_result_hash"] == executed["result_hash"]
 
 
+def test_codex_supervisor_mcp_start_codex_session_releases_receipt_on_timeout(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
+    from supervisor.run_registry import (
+        PENDING_SESSION_SOURCE,
+        LaunchReceiptError,
+        consume_launch_receipt,
+        register_submitted_workflow,
+    )
+
+    launch_credentials: dict[str, str] = {}
+
+    def timing_out_runner(task: AgentTask) -> RuntimeExecution:
+        launch_credentials.update({
+            "launch_id": task.env["SUPERVISOR_LAUNCH_ID"],
+            "nonce": task.env["SUPERVISOR_LAUNCH_NONCE"],
+        })
+        raise subprocess.TimeoutExpired(cmd=["codex", "exec"], timeout=30)
+
+    state = State(str(tmp_path / "state.db"))
+    api = CodexSupervisorMcpAPI(
+        _cfg(tmp_path),
+        state,
+        codex_runtime_runner=timing_out_runner,
+    )
+    register_submitted_workflow(
+        state=state,
+        registry_dir=api.cfg.orchestrator.run_registry_dir,
+        workflow_run_id="workflow-timeout",
+        target_session_id="",
+        task_id="task-timeout",
+        task="Implement the slice.",
+        target_kind="codex",
+        cwd=tmp_path,
+        session_id_source=PENDING_SESSION_SOURCE,
+    )
+
+    outcome = api.start_codex_session(
+        prompt="Implement the slice.",
+        cwd=str(tmp_path),
+        execute=True,
+        timeout_s=30,
+        workflow_run_id="workflow-timeout",
+        task_id="task-timeout",
+    )
+
+    assert outcome["status"] == "timeout"
+    receipt_root = (
+        Path(api.cfg.orchestrator.run_registry_dir) / ".launch-receipts"
+    )
+    assert list((receipt_root / "pending").glob("*.json")) == []
+    released = [
+        json.loads(path.read_text())
+        for path in (receipt_root / "consumed").glob("*.json")
+    ]
+    assert [payload["status"] for payload in released] == ["released"]
+    assert released[0]["launch_id"] == launch_credentials["launch_id"]
+    with pytest.raises(LaunchReceiptError):
+        consume_launch_receipt(
+            state=state,
+            registry_dir=api.cfg.orchestrator.run_registry_dir,
+            launch_id=launch_credentials["launch_id"],
+            nonce=launch_credentials["nonce"],
+            workflow_run_id="workflow-timeout",
+            task_id="task-timeout",
+            target_kind="codex",
+            target_session_id="late-session",
+            cwd=tmp_path,
+        )
+
+
+def test_codex_supervisor_mcp_start_codex_session_releases_receipt_on_provenance_failure(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
+    from supervisor.run_registry import (
+        PENDING_SESSION_SOURCE,
+        register_submitted_workflow,
+    )
+
+    def sessionless_runner(task: AgentTask) -> RuntimeExecution:
+        handle = AgentRunHandle(
+            run_id="codex-runtime-run",
+            task_id=task.task_id,
+            runtime="codex",
+            session_id="codex-runtime-run",
+            capabilities={},
+        )
+        result = AgentRunResult(
+            run_id=handle.run_id,
+            task_id=task.task_id,
+            runtime=handle.runtime,
+            session_id=handle.session_id,
+            status="completed",
+            output="done",
+            events=(),
+            started_at_ms=100,
+            ended_at_ms=120,
+            cost_usd=0.0,
+            resolved_model="gpt-5.5",
+            result_hash=sha256(b"codex-result").hexdigest(),
+            token_usage={},
+            model_provenance="fake.model",
+            token_provenance="fake.usage",
+            metadata={"returncode": 0, "stderr": ""},
+        )
+        return RuntimeExecution(handle=handle, events=(), result=result)
+
+    state = State(str(tmp_path / "state.db"))
+    api = CodexSupervisorMcpAPI(
+        _cfg(tmp_path),
+        state,
+        codex_runtime_runner=sessionless_runner,
+    )
+    register_submitted_workflow(
+        state=state,
+        registry_dir=api.cfg.orchestrator.run_registry_dir,
+        workflow_run_id="workflow-noprov",
+        target_session_id="",
+        task_id="task-noprov",
+        task="Implement the slice.",
+        target_kind="codex",
+        cwd=tmp_path,
+        session_id_source=PENDING_SESSION_SOURCE,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="distinct target session id",
+    ):
+        api.start_codex_session(
+            prompt="Implement the slice.",
+            cwd=str(tmp_path),
+            execute=True,
+            timeout_s=30,
+            workflow_run_id="workflow-noprov",
+            task_id="task-noprov",
+        )
+
+    receipt_root = (
+        Path(api.cfg.orchestrator.run_registry_dir) / ".launch-receipts"
+    )
+    assert list((receipt_root / "pending").glob("*.json")) == []
+    statuses = [
+        json.loads(path.read_text())["status"]
+        for path in (receipt_root / "consumed").glob("*.json")
+    ]
+    assert statuses == ["released"]
+
+
+def test_ensure_workflow_run_registration_accepts_legacy_snapshot(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
+
+    state = State(str(tmp_path / "state.db"))
+    api = CodexSupervisorMcpAPI(_cfg(tmp_path), state)
+    state.register_run(
+        run_id="legacy-run",
+        session_id="legacy-session",
+        rollout_path=str(tmp_path / "rollout.jsonl"),
+        task="Legacy task",
+        scope=ScopeContract(),
+        target_kind="codex",
+        config_snapshot={"legacy_field": "yes"},
+    )
+
+    api._ensure_workflow_run_registration(
+        run_id="legacy-run",
+        task_id="task-legacy",
+        task="Legacy task",
+        cwd=str(tmp_path),
+    )
+
+
+def test_ensure_workflow_run_registration_rejects_conflicting_snapshot(tmp_path):
+    from mcp_tools.codex_supervisor_stdio import CodexSupervisorMcpAPI
+
+    state = State(str(tmp_path / "state.db"))
+    api = CodexSupervisorMcpAPI(_cfg(tmp_path), state)
+    state.register_run(
+        run_id="conflict-run",
+        session_id="conflict-session",
+        rollout_path=str(tmp_path / "rollout.jsonl"),
+        task="Conflicting task",
+        scope=ScopeContract(),
+        target_kind="codex",
+        config_snapshot={
+            "workflow_run_id": "conflict-run",
+            "task_id": "some-other-task",
+        },
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="workflow run registration task_id mismatch",
+    ):
+        api._ensure_workflow_run_registration(
+            run_id="conflict-run",
+            task_id="task-conflict",
+            task="Conflicting task",
+            cwd=str(tmp_path),
+        )
+
+
 def test_codex_supervisor_mcp_console_script_is_registered():
     data = tomllib.loads(Path("pyproject.toml").read_text())
 

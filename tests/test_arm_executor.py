@@ -774,6 +774,63 @@ async def test_repository_arm_executor_retries_inside_the_same_arm(tmp_path):
     assert result.attempts == 2
 
 
+@pytest.mark.asyncio
+async def test_post_collect_failure_lands_on_current_attempt_record(tmp_path):
+    repo, revision = _repo(tmp_path)
+
+    class NanAttestationRuntime(DeterministicRuntime):
+        calls = 0
+
+        async def collect(self, handle: AgentRunHandle) -> AgentRunResult:
+            self.calls += 1
+            result = await super().collect(handle)
+            if self.calls == 1:
+                return replace(
+                    result,
+                    metadata={
+                        "execution_environment_attestation": {
+                            "schema_version": "broken",
+                            "value": float("nan"),
+                        }
+                    },
+                )
+            return result
+
+    runtime = NanAttestationRuntime()
+    executor = RepositoryArmExecutor(
+        task_environment=GenericRepositoryTask(work_root=tmp_path / "work"),
+        runtimes={arm: runtime for arm in Arm},
+        plans={
+            arm: _plan(
+                arm=arm,
+                model="deterministic-v1",
+                instruction_prefix=arm.value,
+            )
+            for arm in Arm
+        },
+    )
+
+    result = await executor.execute(
+        arm=Arm.C,
+        task=_task(repo, revision),
+        budget=ArmBudget(
+            max_tokens=1000,
+            max_cost_usd=1.0,
+            timeout_s=30,
+            max_retries=1,
+        ),
+        assignment_id="assignment-1",
+    )
+
+    assert result.attempts == 2
+    records = result.metadata["attempt_records"]
+    assert len(records) == 2
+    assert records[0]["attempt_index"] == 0
+    assert "ValueError" in records[0]["error"]
+    assert records[1]["attempt_index"] == 1
+    assert "error" not in records[1]
+
+
 @pytest.mark.parametrize(
     ("changed_field", "changed_value"),
     [

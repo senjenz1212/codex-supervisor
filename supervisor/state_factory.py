@@ -108,11 +108,22 @@ def build_state(
     cfg: Config,
     *,
     checkpoint_runtime_resolver: CheckpointRuntimeResolver | None = None,
+    required_capabilities: frozenset[str] | set[str] | None = None,
+    capability_profile: str = "configured state capabilities",
 ) -> Any:
-    """Build the configured State without silently weakening assurance."""
+    """Build the configured State without silently weakening assurance.
+
+    When ``required_capabilities`` is provided, composition fails fast with
+    :class:`StateFactoryError` instead of letting a partial backend reach
+    live subsystems and fail later with ``AttributeError``.
+    """
     settings = cfg.supervisor.ledger_checkpoints
     if settings.mode == "diagnostic_only":
-        return State(cfg.supervisor.state_db)
+        return _guarded_state(
+            State(cfg.supervisor.state_db),
+            required_capabilities=required_capabilities,
+            capability_profile=capability_profile,
+        )
 
     resolver = checkpoint_runtime_resolver or _resolve_runtime_provider
     try:
@@ -136,10 +147,29 @@ def build_state(
         ),
         signer_provider_id=runtime.provider_id,
     )
-    return State(
-        cfg.supervisor.state_db,
-        ledger_checkpoint_coordinator=coordinator,
+    return _guarded_state(
+        State(
+            cfg.supervisor.state_db,
+            ledger_checkpoint_coordinator=coordinator,
+        ),
+        required_capabilities=required_capabilities,
+        capability_profile=capability_profile,
     )
+
+
+def _guarded_state(
+    state: Any,
+    *,
+    required_capabilities: frozenset[str] | set[str] | None,
+    capability_profile: str,
+) -> Any:
+    if required_capabilities is not None:
+        require_state_capabilities(
+            state,
+            required_methods=required_capabilities,
+            profile=capability_profile,
+        )
+    return state
 
 
 def require_state_capabilities(

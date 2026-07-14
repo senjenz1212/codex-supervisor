@@ -408,6 +408,108 @@ def test_state_startup_reconciles_commit_before_checkpoint_failure(tmp_path):
     assert verification.authoritative_head_verified is True
 
 
+def _recording_coordinator(key, store, pins, *, interval=1):
+    coordinator = LedgerCheckpointCoordinator(
+        signer=key,
+        verifier=key,
+        checkpoint_store=store,
+        trusted_pin_store=pins,
+        policy=LedgerCheckpointPolicy(
+            max_events_between_checkpoints=interval,
+        ),
+    )
+    calls: list[tuple[str, int]] = []
+    original = coordinator.coordinate_event
+
+    def recording(**kwargs):
+        calls.append((kwargs["run_id"], kwargs["event_count"]))
+        return original(**kwargs)
+
+    coordinator.coordinate_event = recording
+    return coordinator, calls
+
+
+def test_startup_reconcile_skips_events_covered_by_trusted_head(tmp_path):
+    pins = _IndependentTrustedPins()
+    state, _key, store, _pins = _authoritative_state(
+        tmp_path,
+        interval=1,
+        pins=pins,
+    )
+    for index in range(3):
+        state.write_event(
+            run_id="covered-run",
+            source="test",
+            kind="event_msg",
+            payload={"index": index},
+            ts=100 + index,
+        )
+    assert pins.latest("covered-run")["event_count"] == 3
+    state._conn.close()
+
+    coordinator, calls = _recording_coordinator(
+        _ExternallyManagedTestKey(),
+        store,
+        pins,
+    )
+    recovered = State(
+        str(tmp_path / "state.db"),
+        ledger_checkpoint_coordinator=coordinator,
+    )
+
+    assert calls == []
+    assert recovered.reconcile_event_checkpoints() == 0
+    verification = recovered.verify_event_ledger("covered-run")
+    assert verification.valid is True
+    assert verification.authoritative_head_verified is True
+
+
+def test_startup_reconcile_replays_only_events_beyond_trusted_head(tmp_path):
+    pins = _IndependentTrustedPins()
+    state, _key, store, _pins = _authoritative_state(
+        tmp_path,
+        interval=1,
+        pins=pins,
+    )
+    state.write_event(
+        run_id="partial-run",
+        source="test",
+        kind="event_msg",
+        payload={"index": 0},
+        ts=100,
+    )
+    pins.fail_pin_calls = 1
+    with pytest.raises(
+        CheckpointPersistenceError,
+        match="trusted_pin_persistence",
+    ):
+        state.write_event(
+            run_id="partial-run",
+            source="test",
+            kind="event_msg",
+            payload={"index": 1},
+            ts=101,
+        )
+    assert pins.latest("partial-run")["event_count"] == 1
+    state._conn.close()
+
+    coordinator, calls = _recording_coordinator(
+        _ExternallyManagedTestKey(),
+        store,
+        pins,
+    )
+    recovered = State(
+        str(tmp_path / "state.db"),
+        ledger_checkpoint_coordinator=coordinator,
+    )
+
+    assert calls == [("partial-run", 2)]
+    assert pins.latest("partial-run")["event_count"] == 2
+    verification = recovered.verify_event_ledger("partial-run")
+    assert verification.valid is True
+    assert verification.authoritative_head_verified is True
+
+
 def test_checkpoint_store_failure_leaves_authoritative_verification_closed(
     monkeypatch,
     tmp_path,

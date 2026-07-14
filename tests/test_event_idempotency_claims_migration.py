@@ -46,6 +46,25 @@ def test_upgrade_locks_claims_then_events_before_backfill() -> None:
     assert claim_lock < event_lock < backfill
 
 
+def test_upgrade_prechecks_missing_source_event_hash_before_backfill() -> None:
+    sql = _record_upgrade_sql()
+
+    event_lock = sql.index(
+        "LOCK TABLE events IN SHARE ROW EXCLUSIVE MODE"
+    )
+    precheck = sql.index(
+        "production trace event lacks source_event_hash for "
+        "idempotency backfill"
+    )
+    backfill = sql.index("INSERT INTO event_idempotency_claims")
+
+    assert event_lock < precheck < backfill
+    assert (
+        "NULLIF( TRIM(payload_json->>'source_event_hash'), '' ) IS NULL"
+        in sql
+    )
+
+
 def test_upgrade_validates_exact_claim_coverage_after_backfill() -> None:
     sql = _record_upgrade_sql()
 

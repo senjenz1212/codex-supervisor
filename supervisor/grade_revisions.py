@@ -1346,14 +1346,6 @@ class GradeBook:
             field="decision",
         )
         citation_list = tuple(citations)
-        validation = self.validate_decision(citation_list)
-        if not validation.accepted:
-            codes = ", ".join(
-                blocker.code for blocker in validation.blockers
-            )
-            raise GradeValidationError(
-                "decision grade lineage is invalid: " + codes
-            )
         recorded_at_ms = int(time.time_ns() // 1_000_000)
         payload = {
             "schema_version": GRADE_DECISION_SCHEMA_VERSION,
@@ -1365,40 +1357,68 @@ class GradeBook:
             "recorded_at_ms": recorded_at_ms,
         }
         decision_hash = _sha256_json(payload)
-        with self._lock:
-            existing = self._conn.execute(
-                "SELECT * FROM grade_decisions WHERE decision_id=?",
-                (normalized_id,),
-            ).fetchone()
-            if existing is not None:
-                record = _decision_from_row(existing)
-                comparable = {
-                    **record.to_dict(),
-                    "decision_hash": decision_hash,
-                    "recorded_at_ms": recorded_at_ms,
-                }
-                if (
-                    comparable["decision"] == normalized_decision
-                    and comparable["grade_citations"]
-                    == payload["grade_citations"]
-                ):
-                    return record
-                raise GradeValidationError(
-                    "persisted grade-backed decision discrepancy"
-                )
-            self._conn.execute(
-                """INSERT INTO grade_decisions(
-                     decision_id, decision_hash, decision_json,
-                     grade_citations_json, recorded_at_ms
-                   ) VALUES(?, ?, ?, ?, ?)""",
-                (
-                    normalized_id,
-                    decision_hash,
-                    _canonical_json(normalized_decision),
-                    _canonical_json(payload["grade_citations"]),
-                    recorded_at_ms,
-                ),
+
+        def _resolve_existing(row: sqlite3.Row) -> GradeDecisionRecord:
+            record = _decision_from_row(row)
+            comparable = record.to_dict()
+            if (
+                comparable["decision"] == normalized_decision
+                and comparable["grade_citations"]
+                == payload["grade_citations"]
+            ):
+                return record
+            raise GradeValidationError(
+                "persisted grade-backed decision discrepancy"
             )
+
+        with self._lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                validation = self.validate_decision(citation_list)
+                if not validation.accepted:
+                    codes = ", ".join(
+                        blocker.code for blocker in validation.blockers
+                    )
+                    raise GradeValidationError(
+                        "decision grade lineage is invalid: " + codes
+                    )
+                existing = self._conn.execute(
+                    "SELECT * FROM grade_decisions WHERE decision_id=?",
+                    (normalized_id,),
+                ).fetchone()
+                if existing is not None:
+                    record = _resolve_existing(existing)
+                    self._conn.execute("COMMIT")
+                    return record
+                self._conn.execute(
+                    """INSERT INTO grade_decisions(
+                         decision_id, decision_hash, decision_json,
+                         grade_citations_json, recorded_at_ms
+                       ) VALUES(?, ?, ?, ?, ?)""",
+                    (
+                        normalized_id,
+                        decision_hash,
+                        _canonical_json(normalized_decision),
+                        _canonical_json(payload["grade_citations"]),
+                        recorded_at_ms,
+                    ),
+                )
+                self._conn.execute("COMMIT")
+            except sqlite3.IntegrityError as exc:
+                self._conn.execute("ROLLBACK")
+                existing = self._conn.execute(
+                    "SELECT * FROM grade_decisions WHERE decision_id=?",
+                    (normalized_id,),
+                ).fetchone()
+                if existing is None:
+                    raise GradeBookError(
+                        "grade-backed decision insert conflicts with "
+                        "immutable decision history"
+                    ) from exc
+                return _resolve_existing(existing)
+            except Exception:
+                self._conn.execute("ROLLBACK")
+                raise
         return self.get_decision(normalized_id)
 
     def get_decision(self, decision_id: str) -> GradeDecisionRecord:

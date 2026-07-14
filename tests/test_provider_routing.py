@@ -126,3 +126,38 @@ def test_anthropic_model_detection_is_narrow() -> None:
     assert not is_anthropic_model("claudette")
     assert not is_anthropic_model("")
     assert not is_anthropic_model(None)
+
+
+def test_direct_anthropic_env_keeps_supervisor_isolation_layers() -> None:
+    env = direct_anthropic_env(
+        {
+            "HOME": "/tmp/home",
+            "SUPERVISOR_LAUNCH_ID": "launch-1",
+            "SUPERVISOR_LAUNCH_NONCE": "nonce-1",
+            "SUPERVISOR_WORKFLOW_RUN_ID": "workflow-run-1",
+            "SUPERVISOR_WORKFLOW_TASK_ID": "workflow-task-1",
+            "SUPERVISOR_TARGET_KIND": "claude_code",
+            "SUPERVISOR_MEMORY_ROOT": "/tmp/isolated/memory",
+            "SUPERVISOR_LESSON_ROOT": "/tmp/isolated/lessons",
+            "XDG_CONFIG_HOME": "/tmp/isolated/config",
+            "XDG_CACHE_HOME": "/tmp/isolated/cache",
+            "ANTHROPIC_BASE_URL": "https://proxy.example",
+            "CODEX_SUPERVISOR_PLANNING_OPUS_MODEL": "claude-opus-4-8",
+            "OPENAI_API_KEY": "other-provider-secret",
+            "GITHUB_TOKEN": "github-secret",
+        }
+    )
+
+    assert env["SUPERVISOR_LAUNCH_ID"] == "launch-1"
+    assert env["SUPERVISOR_LAUNCH_NONCE"] == "nonce-1"
+    assert env["SUPERVISOR_WORKFLOW_RUN_ID"] == "workflow-run-1"
+    assert env["SUPERVISOR_WORKFLOW_TASK_ID"] == "workflow-task-1"
+    assert env["SUPERVISOR_TARGET_KIND"] == "claude_code"
+    assert env["SUPERVISOR_MEMORY_ROOT"] == "/tmp/isolated/memory"
+    assert env["SUPERVISOR_LESSON_ROOT"] == "/tmp/isolated/lessons"
+    assert env["XDG_CONFIG_HOME"] == "/tmp/isolated/config"
+    assert env["XDG_CACHE_HOME"] == "/tmp/isolated/cache"
+    assert "ANTHROPIC_BASE_URL" not in env
+    assert "CODEX_SUPERVISOR_PLANNING_OPUS_MODEL" not in env
+    assert "OPENAI_API_KEY" not in env
+    assert "GITHUB_TOKEN" not in env

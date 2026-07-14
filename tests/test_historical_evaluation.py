@@ -17,7 +17,9 @@ from supervisor.historical_evaluation import (
     HistoricalOperation,
     HistoricalOperationIndeterminate,
     HistoricalOperationInProgress,
+    HistoricalOperationPreviouslyFailed,
     HistoricalOperationReceipt,
+    RECEIPT_REDACTION_RULES_VERSION,
     HistoricalOperationRequest,
     HistoricalSemanticsError,
     HistoricalSource,
@@ -639,9 +641,48 @@ async def test_two_service_instances_fail_closed_while_same_request_runs(
     assert calls == 1
 
 
+def _mark_claim_stale(state, operation_id: str) -> None:
+    state._conn.execute(
+        """UPDATE historical_operation_claims
+              SET updated_at=0
+            WHERE operation_id=?""",
+        (operation_id,),
+    )
+    state._conn.commit()
+
+
+def _working_replay(tmp_path, artifacts, calls, name: str):
+    def replay(request):
+        calls["replay"] += 1
+        ref, digest = _write(
+            tmp_path,
+            f"outputs/{name}.json",
+            b'{"decision":"same"}',
+        )
+        artifacts[ref] = Path(ref).read_bytes()
+        return {
+            "status": "completed",
+            "execution_performed": False,
+            "source_frozen_result_sha256": (
+                request.source.frozen_result_sha256
+            ),
+            "source_manifest_sha256": (
+                request.source.source_manifest_sha256
+            ),
+            "deterministic": True,
+            "replay_schema_version": "replay/v1",
+            "artifact_ref": ref,
+            "artifact_sha256": digest,
+        }
+
+    return replay
+
+
 @pytest.mark.asyncio
-async def test_stale_running_claim_fails_closed_as_indeterminate(tmp_path):
-    state, _service, source, artifacts, _calls = _fixture(tmp_path)
+async def test_stale_pre_side_effect_claim_is_taken_over_and_completes(
+    tmp_path,
+):
+    state, _service, source, artifacts, calls = _fixture(tmp_path)
     request = _request(
         HistoricalOperation.REPLAY,
         source,
@@ -652,13 +693,61 @@ async def test_stale_running_claim_fails_closed_as_indeterminate(tmp_path):
         request_hash=request.request_hash,
         operation=request.operation.value,
     )
-    state._conn.execute(
-        """UPDATE historical_operation_claims
-              SET updated_at=0
-            WHERE operation_id=?""",
-        (request.operation_id,),
+    _mark_claim_stale(state, request.operation_id)
+    service = HistoricalEvaluationService(
+        state=state,
+        evidence_resolver=artifacts.get,
+        rerun_executor=lambda _request: {},
+        regrade_executor=lambda _request: {},
+        replay_executor=_working_replay(
+            tmp_path,
+            artifacts,
+            calls,
+            "stale-takeover-replay",
+        ),
+        claim_stale_after_s=1,
     )
-    state._conn.commit()
+
+    receipt = await service.replay(request)
+
+    assert receipt.result["deterministic"] is True
+    assert calls["replay"] == 1
+    events = state.read_events_since(
+        request.operation_id,
+        after_event_id=0,
+        limit=10,
+    )
+    assert [event["kind"] for event in events] == [
+        "historical_operation.requested",
+        "historical_operation.completed",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_stale_claim_past_side_effect_boundary_resolves_to_failed(
+    tmp_path,
+):
+    state, _service, source, artifacts, _calls = _fixture(tmp_path)
+    request = _request(
+        HistoricalOperation.REPLAY,
+        source,
+        key="stale-mid-execution-claim",
+    )
+    state.reserve_historical_operation(
+        operation_id=request.operation_id,
+        request_hash=request.request_hash,
+        operation=request.operation.value,
+    )
+    state.write_historical_operation_event(
+        run_id=request.operation_id,
+        kind="historical_operation.requested",
+        payload={
+            "operation_id": request.operation_id,
+            "request_hash": request.request_hash,
+            "request": request.to_dict(),
+        },
+    )
+    _mark_claim_stale(state, request.operation_id)
     service = HistoricalEvaluationService(
         state=state,
         evidence_resolver=artifacts.get,
@@ -672,9 +761,78 @@ async def test_stale_running_claim_fails_closed_as_indeterminate(tmp_path):
 
     with pytest.raises(
         HistoricalOperationIndeterminate,
-        match="may have crossed the side-effect boundary",
+        match="resolved to a terminal failure",
     ):
         await service.replay(request)
+
+    events = state.read_events_since(
+        request.operation_id,
+        after_event_id=0,
+        limit=10,
+    )
+    assert [event["kind"] for event in events] == [
+        "historical_operation.requested",
+        "historical_operation.failed",
+    ]
+    claim = state._conn.execute(
+        """SELECT status FROM historical_operation_claims
+            WHERE operation_id=?""",
+        (request.operation_id,),
+    ).fetchone()
+    assert claim["status"] == "failed"
+
+    with pytest.raises(HistoricalOperationPreviouslyFailed):
+        await service.replay(request)
+
+
+@pytest.mark.asyncio
+async def test_transient_source_verification_failure_stays_retryable(
+    tmp_path,
+):
+    state, _service, source, artifacts, calls = _fixture(tmp_path)
+    outages = {"remaining": 1}
+
+    def flaky_resolver(ref):
+        if outages["remaining"] > 0:
+            outages["remaining"] -= 1
+            raise ConnectionError("evidence store outage")
+        return artifacts.get(ref)
+
+    service = HistoricalEvaluationService(
+        state=state,
+        evidence_resolver=flaky_resolver,
+        rerun_executor=lambda _request: {},
+        regrade_executor=lambda _request: {},
+        replay_executor=_working_replay(
+            tmp_path,
+            artifacts,
+            calls,
+            "transient-outage-replay",
+        ),
+    )
+    request = _request(
+        HistoricalOperation.REPLAY,
+        source,
+        key="transient-outage",
+    )
+
+    with pytest.raises(
+        HistoricalEvidenceError,
+        match="could not be resolved",
+    ):
+        await service.replay(request)
+
+    assert calls["replay"] == 0
+    assert state.read_events_since(
+        request.operation_id,
+        after_event_id=0,
+        limit=10,
+    ) == []
+
+    receipt = await service.replay(request)
+
+    assert receipt.result["deterministic"] is True
+    assert calls["replay"] == 1
 
 
 @pytest.mark.asyncio
@@ -1223,3 +1381,154 @@ async def test_idempotent_receipt_revalidates_source_and_result_bytes(
         match="source run manifest hash mismatch",
     ):
         await second_service.replay(request)
+
+
+def _stricter_redact(value):
+    if isinstance(value, str):
+        return value.replace("same", "[REDACTED_NEW]")
+    if isinstance(value, dict):
+        return {key: _stricter_redact(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_stricter_redact(item) for item in value]
+    return value
+
+
+@pytest.mark.asyncio
+async def test_new_receipts_pin_the_redaction_rules_version(tmp_path):
+    _state, service, source, _artifacts, _calls = _fixture(tmp_path)
+    request = _request(
+        HistoricalOperation.REPLAY,
+        source,
+        key="pinned-redaction-receipt",
+    )
+
+    receipt = await service.replay(request)
+
+    assert receipt.redaction_rules_version == (
+        RECEIPT_REDACTION_RULES_VERSION
+    )
+    assert receipt.to_dict()["redaction_rules_version"] == (
+        RECEIPT_REDACTION_RULES_VERSION
+    )
+
+
+@pytest.mark.asyncio
+async def test_stored_receipts_survive_later_redaction_rule_additions(
+    tmp_path,
+    monkeypatch,
+):
+    state, service, source, artifacts, calls = _fixture(tmp_path)
+    request = _request(
+        HistoricalOperation.REPLAY,
+        source,
+        key="redaction-drift-receipt",
+    )
+    first = await service.replay(request)
+    assert first.result["deterministic"] is True
+    assert calls["replay"] == 1
+
+    monkeypatch.setattr(
+        "supervisor.historical_evaluation.redact",
+        _stricter_redact,
+    )
+    second = await HistoricalEvaluationService(
+        state=state,
+        evidence_resolver=artifacts.get,
+        rerun_executor=lambda _request: {},
+        regrade_executor=lambda _request: {},
+        replay_executor=lambda _request: pytest.fail(
+            "stored receipt validation must not re-execute"
+        ),
+    ).replay(request)
+
+    assert second.to_dict() == first.to_dict()
+    assert calls["replay"] == 1
+
+
+@pytest.mark.asyncio
+async def test_legacy_receipt_without_pin_validates_with_frozen_rules(
+    tmp_path,
+    monkeypatch,
+):
+    state, _service, source, artifacts, _calls = _fixture(tmp_path)
+    request = _request(
+        HistoricalOperation.REPLAY,
+        source,
+        key="legacy-unpinned-receipt",
+    )
+    state.reserve_historical_operation(
+        operation_id=request.operation_id,
+        request_hash=request.request_hash,
+        operation=request.operation.value,
+    )
+    requested_event_id = state.write_historical_operation_event(
+        run_id=request.operation_id,
+        kind="historical_operation.requested",
+        payload={
+            "operation_id": request.operation_id,
+            "request_hash": request.request_hash,
+            "request": request.to_dict(),
+        },
+    )
+    result_ref, result_sha256 = _write(
+        tmp_path,
+        "outputs/legacy-unpinned-result.json",
+        b'{"decision":"same"}',
+    )
+    artifacts[result_ref] = Path(result_ref).read_bytes()
+    result = {
+        "status": "completed",
+        "execution_performed": False,
+        "source_frozen_result_sha256": source.frozen_result_sha256,
+        "source_manifest_sha256": source.source_manifest_sha256,
+        "deterministic": True,
+        "replay_schema_version": "replay/v1",
+        "artifact_ref": result_ref,
+        "artifact_sha256": result_sha256,
+        "decision": "same",
+    }
+    receipt_body = {
+        "schema_version": HISTORICAL_OPERATION_RECEIPT_SCHEMA_VERSION,
+        "operation_id": request.operation_id,
+        "operation": request.operation.value,
+        "request_hash": request.request_hash,
+        "source_run_id": source.source_run_id,
+        "task_id": source.task_id,
+        "result_ref": result_ref,
+        "result_sha256": result_sha256,
+        "result": result,
+        "requested_event_id": requested_event_id,
+    }
+    receipt_hash = hashlib.sha256(
+        json.dumps(
+            receipt_body,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    state.write_historical_operation_event(
+        run_id=request.operation_id,
+        kind="historical_operation.completed",
+        payload={**receipt_body, "receipt_hash": receipt_hash},
+    )
+    monkeypatch.setattr(
+        "supervisor.historical_evaluation.redact",
+        _stricter_redact,
+    )
+    service = HistoricalEvaluationService(
+        state=state,
+        evidence_resolver=artifacts.get,
+        rerun_executor=lambda _request: {},
+        regrade_executor=lambda _request: {},
+        replay_executor=lambda _request: pytest.fail(
+            "legacy receipt validation must not re-execute"
+        ),
+    )
+
+    receipt = await service.replay(request)
+
+    assert receipt.redaction_rules_version is None
+    assert receipt.result["decision"] == "same"
+    assert receipt.receipt_hash == receipt_hash

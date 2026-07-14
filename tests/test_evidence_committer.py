@@ -1080,6 +1080,89 @@ def test_completed_commit_replay_uses_pinned_result_after_streams_append(
     }
 
 
+def test_crash_before_materialization_durability_resumes_after_state_change(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    crashed = EvidenceCommitter(**fixture.committer_arguments)
+
+    def crash_before_store(*args: Any, **kwargs: Any) -> None:
+        raise SimulatedCrash("power loss before materialization durability")
+
+    crashed._store_materialization = crash_before_store  # type: ignore[method-assign]
+    with pytest.raises(SimulatedCrash, match="power loss"):
+        crashed.commit(fixture.request)
+
+    fixture.state.register_run(
+        run_id="unrelated-run",
+        session_id="unrelated-session",
+        rollout_path=str(tmp_path / "unrelated.jsonl"),
+        task="unrelated post-crash state change",
+        scope=ScopeContract(allowed_paths=(str(tmp_path),)),
+        target_kind="hermetic",
+        config_snapshot={
+            "mode": "hermetic",
+            "operational_efficacy_evidence": False,
+        },
+    )
+
+    resumed = EvidenceCommitter(**fixture.committer_arguments)
+    result = resumed.commit(fixture.request)
+
+    assert result.status == "complete"
+    assert result.trace_closure.ok
+    replay = EvidenceCommitter(**fixture.committer_arguments).commit(
+        fixture.request
+    )
+    assert replay.manifest_event_hash == result.manifest_event_hash
+    assert replay.projection_sha256 == result.projection_sha256
+
+
+def test_completed_commit_replay_survives_post_commit_grade_append(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    completed = EvidenceCommitter(**fixture.committer_arguments).commit(
+        fixture.request
+    )
+    history = fixture.request.grade_histories[0]
+    gradebook_path = fixture.committer_arguments["gradebook_path"]
+    assert isinstance(gradebook_path, Path)
+    regrade = Grade(
+        verifier_id="fixture-hidden-verifier",
+        verifier_version="v2",
+        verifier_hash="3" * 64,
+        frozen_result_hash=history.run.frozen_result_hash,
+        passed=True,
+        score=0.5,
+        evidence={
+            "mode": "hermetic",
+            "operational_verifier": False,
+        },
+    )
+    with GradeBook(gradebook_path) as gradebook:
+        appended = gradebook.append_grade(
+            run=history.run,
+            grade=regrade,
+            verifier_config_hash="8" * 64,
+            supersedes_grade_id=history.revisions[-1].grade_id,
+        )
+        assert appended.grade_id not in {
+            revision.grade_id for revision in history.revisions
+        }
+
+    replayed = EvidenceCommitter(**fixture.committer_arguments).commit(
+        fixture.request
+    )
+
+    assert replayed.status == "complete"
+    assert replayed.trace_closure.ok
+    assert replayed.manifest_event_id == completed.manifest_event_id
+    assert replayed.manifest_event_hash == completed.manifest_event_hash
+    assert replayed.checkpoint_refs == completed.checkpoint_refs
+    assert replayed.projection_sha256 == completed.projection_sha256
+
+
 def test_completed_commit_replay_rejects_a_tampered_trace_store(
     tmp_path: Path,
 ) -> None:

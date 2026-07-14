@@ -18,10 +18,24 @@ SCHEMA_ALIASES: dict[str, str] = {
     "agent_interaction": "interaction",
 }
 
+# Sentinel version meaning "the schema key is absent from the manifest".
+# A KNOWN_MIGRATIONS entry keyed on it declares that the schema was
+# introduced after older manifests were exported, so its absence is
+# migratable rather than incompatible.
+SCHEMA_ABSENT = "__schema_absent__"
+
 KNOWN_MIGRATIONS: dict[tuple[str, str], dict[str, str]] = {
     ("manifest", "dual-agent-replay-manifest/v0"): {
         "to": "dual-agent-replay-manifest/v1",
         "migration": "manifest.v0_to_v1",
+    },
+    ("execution_provenance", SCHEMA_ABSENT): {
+        "to": "dual-agent-execution-provenance/v1",
+        "migration": "execution_provenance.absent_to_v1",
+    },
+    ("production_trace_export", SCHEMA_ABSENT): {
+        "to": "dual-agent-production-trace-export/v1",
+        "migration": "production_trace_export.absent_to_v1",
     },
 }
 
@@ -56,10 +70,27 @@ def check_replay_schema_versions(manifest: dict[str, Any]) -> dict[str, Any]:
             continue
         unknown_versions.append({"schema": schema_name, "version": observed_version})
 
-    missing_current = [
-        schema for schema in sorted(CURRENT_SCHEMA_VERSIONS)
-        if schema not in observed_canonical
-    ]
+    declared_any = bool(versions)
+    missing_current: list[str] = []
+    missing_schema_migrations: list[dict[str, str]] = []
+    for schema in sorted(CURRENT_SCHEMA_VERSIONS):
+        if schema in observed_canonical:
+            continue
+        current = CURRENT_SCHEMA_VERSIONS[schema]
+        migration = (
+            KNOWN_MIGRATIONS.get((schema, SCHEMA_ABSENT))
+            if declared_any
+            else None
+        )
+        if migration is not None and migration["to"] == current:
+            missing_schema_migrations.append({
+                "schema": schema,
+                "from": SCHEMA_ABSENT,
+                "to": current,
+                "migration": migration["migration"],
+            })
+            continue
+        missing_current.append(schema)
     return {
         "schema_version": "dual-agent-replay-version-check/v1",
         "status": (
@@ -70,6 +101,7 @@ def check_replay_schema_versions(manifest: dict[str, Any]) -> dict[str, Any]:
         "current_versions": dict(CURRENT_SCHEMA_VERSIONS),
         "observed_versions": {str(key): str(value) for key, value in versions.items()},
         "migrations_required": migrations_required,
+        "missing_schema_migrations": missing_schema_migrations,
         "unknown_versions": unknown_versions,
         "missing_current_schemas": missing_current,
     }

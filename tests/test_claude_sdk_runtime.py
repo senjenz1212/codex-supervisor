@@ -10,6 +10,8 @@ import pytest
 
 from supervisor.agent_runtime import AgentTask, ClaudeCodeRuntime
 from supervisor.claude_sdk_runtime import (
+    _SDK_LAUNCH_ROOT_PREFIX,
+    _scrub_stale_launch_roots,
     ClaudeAgentSdkContainmentError,
     ClaudeAgentSdkPreflightError,
     ClaudeAgentSdkTransport,
@@ -252,6 +254,110 @@ async def test_contained_sdk_launcher_scrubs_sdk_inherited_host_credentials(
         "CODEX_SUPERVISOR_SDK_LAUNCH_CONFIG",
     ):
         assert forbidden not in observed
+
+
+@pytest.mark.asyncio
+async def test_contained_sdk_launch_config_omits_secret_env_values(
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class SpawningClient(FakeClient):
+        async def __aenter__(self):
+            captured["config_text"] = Path(
+                self.options.env["CODEX_SUPERVISOR_SDK_LAUNCH_CONFIG"]
+            ).read_text(encoding="utf-8")
+            captured["options_env"] = dict(self.options.env)
+            self.process = await asyncio.create_subprocess_exec(
+                str(self.options.cli_path),
+                cwd=str(self.options.cwd),
+                env={**os.environ, **self.options.env},
+            )
+            await self.process.wait()
+            return self
+
+        async def receive_response(self):
+            class Block:
+                text = "done"
+
+            class Message:
+                content = [Block()]
+                model = "claude-served"
+
+            yield Message()
+
+    capture_dir = tmp_path / "capture"
+    capture_dir.mkdir()
+    fake_cli = tmp_path / "claude"
+    fake_cli.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os\n"
+        "from pathlib import Path\n"
+        "Path(os.environ['CLAUDE_CONFIG_DIR'], 'env.json').write_text("
+        "json.dumps(dict(os.environ), sort_keys=True), encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    fake_cli.chmod(0o700)
+    runtime = ClaudeCodeRuntime(
+        transport=ClaudeAgentSdkTransport(
+            sdk_loader=lambda: (SpawningClient, FakeOptions),
+            claude_cli_path=fake_cli,
+        )
+    )
+
+    handle = await runtime.start(
+        AgentTask(
+            task_id="sdk-launch-config-secrets",
+            instruction="review",
+            cwd=tmp_path,
+            model="claude-test",
+            inherit_env=False,
+            env={
+                "ANTHROPIC_API_KEY": "direct-key",
+                "CLAUDE_CONFIG_DIR": str(capture_dir),
+            },
+        )
+    )
+    result = await runtime.collect(handle)
+
+    assert result.status == "completed"
+    config_text = str(captured["config_text"])
+    assert "direct-key" not in config_text
+    config = json.loads(config_text)
+    assert "ANTHROPIC_API_KEY" not in config["environment"]
+    assert "ANTHROPIC_API_KEY" in config["sensitive_env_keys"]
+    options_env = captured["options_env"]
+    assert options_env["ANTHROPIC_API_KEY"] == "direct-key"
+    observed = json.loads(
+        (capture_dir / "env.json").read_text(encoding="utf-8")
+    )
+    assert observed["ANTHROPIC_API_KEY"] == "direct-key"
+    assert observed["CLAUDE_CONFIG_DIR"] == str(capture_dir)
+
+
+def test_scrub_stale_launch_roots_removes_only_old_sdk_roots(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import tempfile
+
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    old = 1.0
+    stale = tmp_path / f"{_SDK_LAUNCH_ROOT_PREFIX}stale"
+    stale.mkdir()
+    (stale / "launch.json").write_text("{}", encoding="utf-8")
+    os.utime(stale, (old, old))
+    fresh = tmp_path / f"{_SDK_LAUNCH_ROOT_PREFIX}fresh"
+    fresh.mkdir()
+    unrelated = tmp_path / "unrelated"
+    unrelated.mkdir()
+    os.utime(unrelated, (old, old))
+
+    _scrub_stale_launch_roots()
+
+    assert not stale.exists()
+    assert fresh.exists()
+    assert unrelated.exists()
 
 
 @pytest.mark.asyncio

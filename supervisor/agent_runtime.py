@@ -31,6 +31,11 @@ from .process_containment import (
     new_containment_id,
     terminate_containment,
 )
+from .provider_routing import (
+    opus_extra_body_for_pin,
+    underlying_opus_model_for_gate,
+    uses_adaptive_opus_effort,
+)
 RUN_RESULT_SCHEMA_VERSION = "supervisor-agent-run-result/v1"
 _MACOS_SANDBOX_EXEC = Path("/usr/bin/sandbox-exec")
 _SUBPROCESS_STREAM_LIMIT = 32 * 1024 * 1024
@@ -102,19 +107,6 @@ _CODEX_ENV_KEYS = frozenset({
     "OPENAI_ORGANIZATION",
     "OPENAI_PROJECT_ID",
 })
-_CLAUDE_OPUS_ULTIMATE_MODEL = "opus"
-_CLAUDE_OPUS_UNDERLYING_MODEL = "claude-opus-4-8"
-_CLAUDE_OPUS_SAFE_OVERRIDE_MODEL = "claude-opus-4-6"
-_CLAUDE_OPUS_ULTIMATE_EXTRA_BODY = {
-    "thinking": {"type": "adaptive"},
-    "output_config": {"effort": "xhigh"},
-}
-_CLAUDE_OPUS_SAFE_OVERRIDE_EXTRA_BODY = {
-    "thinking": {"type": "adaptive"},
-    "output_config": {"effort": "max"},
-}
-
-
 @dataclass(frozen=True)
 class AgentTask:
     task_id: str
@@ -634,60 +626,24 @@ def _direct_anthropic_runtime_env(
     """
 
     routed = {str(key): str(value) for key, value in source.items()}
-    if _uses_adaptive_opus_effort(requested_model) and lead_gate:
-        pin = _underlying_opus_model_for_gate(routed, lead_gate)
+    if uses_adaptive_opus_effort(requested_model) and lead_gate:
+        pin = underlying_opus_model_for_gate(routed, lead_gate)
         if pin is None:
             routed.pop("ANTHROPIC_DEFAULT_OPUS_MODEL", None)
         else:
             routed["ANTHROPIC_DEFAULT_OPUS_MODEL"] = pin
         routed["CLAUDE_CODE_EXTRA_BODY"] = json.dumps(
-            _opus_extra_body_for_pin(pin),
+            opus_extra_body_for_pin(pin),
             sort_keys=True,
             separators=(",", ":"),
         )
-    elif not _uses_adaptive_opus_effort(requested_model):
+    elif not uses_adaptive_opus_effort(requested_model):
         routed.pop("ANTHROPIC_DEFAULT_OPUS_MODEL", None)
         routed.pop("CLAUDE_CODE_EXTRA_BODY", None)
     return _allowlisted_environment(
         routed,
         allowed_keys=_CLAUDE_ENV_KEYS,
     )
-
-
-def _uses_adaptive_opus_effort(model: str) -> bool:
-    return (
-        model == _CLAUDE_OPUS_ULTIMATE_MODEL
-        or model == _CLAUDE_OPUS_UNDERLYING_MODEL
-        or model.startswith(f"{_CLAUDE_OPUS_UNDERLYING_MODEL}-")
-    )
-
-
-def _underlying_opus_model_for_gate(
-    source: Mapping[str, str],
-    gate: str,
-) -> str | None:
-    if gate == "execution":
-        override = _opus_pin_override(
-            source.get("CODEX_SUPERVISOR_EXECUTION_OPUS_MODEL")
-        )
-        return override or None
-    override = _opus_pin_override(
-        source.get("CODEX_SUPERVISOR_PLANNING_OPUS_MODEL")
-    )
-    return override or _CLAUDE_OPUS_UNDERLYING_MODEL
-
-
-def _opus_pin_override(value: str | None) -> str:
-    selected = str(value or "").strip()
-    if selected and not selected.startswith("claude-opus-"):
-        return _CLAUDE_OPUS_SAFE_OVERRIDE_MODEL
-    return selected
-
-
-def _opus_extra_body_for_pin(pin: str | None) -> dict[str, object]:
-    if pin and pin.startswith(_CLAUDE_OPUS_SAFE_OVERRIDE_MODEL):
-        return _CLAUDE_OPUS_SAFE_OVERRIDE_EXTRA_BODY
-    return _CLAUDE_OPUS_ULTIMATE_EXTRA_BODY
 
 
 class ClaudeCodeRuntime(CommandAgentRuntime):
@@ -841,7 +797,9 @@ class CodexRuntime(CommandAgentRuntime):
             argv.extend(
                 ("-c", f'reasoning_effort="{reasoning_effort}"')
             )
-        if _filesystem_isolation_policy(
+        if task.metadata.get("read_only_review"):
+            argv.extend(("--sandbox", "read-only"))
+        elif _filesystem_isolation_policy(
             task.metadata,
             cwd=Path(task.cwd).resolve(),
         ) is not None:
@@ -869,6 +827,8 @@ class CodexRuntime(CommandAgentRuntime):
             argv.extend(
                 ("-c", f'reasoning_effort="{reasoning_effort}"')
             )
+        if task.metadata.get("read_only_review"):
+            argv.extend(("--sandbox", "read-only"))
         argv.extend((session_id, instruction))
         return tuple(argv)
 
@@ -1337,6 +1297,9 @@ class SubprocessRuntimeTransport:
         await self._terminate_process(item)
 
     async def _terminate_process(self, item: _SubprocessToken) -> None:
+        # The transport launched this containment tree itself; unreadable
+        # same-user processes outside the tree are out of scope for the reap
+        # proof, while descendants still fail closed.
         termination = await asyncio.to_thread(
             terminate_containment,
             root_pid=item.process.pid,
@@ -1346,6 +1309,7 @@ class SubprocessRuntimeTransport:
             process=_AsyncioProcessPoller(item.process),
             term_timeout_s=5.0,
             kill_timeout_s=5.0,
+            unreadable_scope="containment_tree",
         )
         if not termination["safe_to_finalize"]:
             raise RuntimeError(
@@ -2216,6 +2180,11 @@ def _binary_identity_manifest(
 def _path_is_within(path: Path, root: Path) -> bool:
     try:
         path.relative_to(root)
+        return True
+    except ValueError:
+        pass
+    try:
+        Path(os.path.realpath(path)).relative_to(os.path.realpath(root))
     except ValueError:
         return False
     return True

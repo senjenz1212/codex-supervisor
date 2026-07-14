@@ -297,6 +297,7 @@ class RepositoryArmExecutor:
             attempt_started = time.monotonic()
             materialized = None
             run_result = None
+            attempt_record: dict[str, Any] | None = None
             handle = None
             handle_active = False
             streamed_events = []
@@ -411,11 +412,6 @@ class RepositoryArmExecutor:
                 streamed_events = [event async for event in runtime.stream(handle)]
                 run_result = await runtime.collect(handle)
                 handle_active = False
-                total_cost += float(run_result.cost_usd)
-                total_token_usage = _merge_token_usage(
-                    total_token_usage,
-                    run_result.token_usage,
-                )
                 attempt_record = {
                     "attempt_index": attempt_index,
                     "execution_id": execution_id,
@@ -431,6 +427,12 @@ class RepositoryArmExecutor:
                         int((time.monotonic() - attempt_started) * 1000),
                     ),
                 }
+                attempt_records.append(attempt_record)
+                total_cost += float(run_result.cost_usd)
+                total_token_usage = _merge_token_usage(
+                    total_token_usage,
+                    run_result.token_usage,
+                )
                 raw_environment_attestation = run_result.metadata.get(
                     "execution_environment_attestation"
                 )
@@ -445,7 +447,6 @@ class RepositoryArmExecutor:
                             allow_nan=False,
                         )
                     )
-                attempt_records.append(attempt_record)
                 _validate_run_result_provenance(
                     run_result,
                     runtime=runtime,
@@ -678,9 +679,34 @@ class RepositoryArmExecutor:
                                 "error": f"{type(exc).__name__}: {exc}",
                             }
                         )
-                else:
-                    attempt_records[-1]["error"] = (
+                elif attempt_record is not None:
+                    attempt_record["error"] = (
                         f"{type(exc).__name__}: {exc}"
+                    )
+                else:
+                    attempt_records.append(
+                        {
+                            "attempt_index": attempt_index,
+                            "execution_id": execution_id,
+                            "execution_task_id": execution_task_id,
+                            "run_id": run_result.run_id,
+                            "session_id": run_result.session_id,
+                            "isolation": dict(isolation),
+                            "status": "failed",
+                            "cost_usd": 0.0,
+                            "token_usage": {},
+                            "latency_ms": max(
+                                0,
+                                int(
+                                    (
+                                        time.monotonic()
+                                        - attempt_started
+                                    )
+                                    * 1000
+                                ),
+                            ),
+                            "error": f"{type(exc).__name__}: {exc}",
+                        }
                     )
                 if (
                     attempt_index < int(budget.max_retries)

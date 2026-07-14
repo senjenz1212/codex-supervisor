@@ -6,6 +6,7 @@ import hashlib
 import inspect
 import json
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -27,6 +28,7 @@ from .process_containment import (
     scan_containment,
     terminate_containment,
 )
+from .redaction import redact_for_telegram as _redact_secret_text
 
 
 class ClaudeAgentSdkPreflightError(RuntimeError):
@@ -46,6 +48,18 @@ ContainmentScanner = Callable[..., ContainmentSnapshot]
 ContainmentTerminator = Callable[..., dict[str, Any]]
 _SDK_LAUNCH_CONFIG_ENV = "CODEX_SUPERVISOR_SDK_LAUNCH_CONFIG"
 _SDK_LAUNCH_SCHEMA = "supervisor-claude-sdk-launch/v1"
+_SDK_LAUNCH_ROOT_PREFIX = "codex-supervisor-claude-sdk-"
+_SDK_STALE_LAUNCH_ROOT_AGE_S = 24 * 60 * 60
+_SENSITIVE_ENV_KEY_PATTERN = re.compile(
+    r"(?i)(?:api[_-]?key|access[_-]?key|secret|token|"
+    r"passw(?:or)?d|credential|private[_-]?key)"
+)
+
+
+def _is_sensitive_env_entry(key: str, value: str) -> bool:
+    if _SENSITIVE_ENV_KEY_PATTERN.search(key):
+        return True
+    return _redact_secret_text(value) != value
 _SDK_ATTESTATION_SCHEMA = "supervisor-claude-sdk-attestation/v1"
 _LAUNCHER_SOURCE = f"""#!{sys.executable}
 import hashlib
@@ -70,6 +84,14 @@ final_env = {{
     str(key): str(value)
     for key, value in dict(config.get("environment") or {{}}).items()
 }}
+for sensitive_key in config.get("sensitive_env_keys") or []:
+    sensitive_key = str(sensitive_key)
+    sensitive_value = os.environ.get(sensitive_key)
+    if sensitive_value is None:
+        raise SystemExit(
+            "missing sensitive SDK launch environment value: " + sensitive_key
+        )
+    final_env[sensitive_key] = sensitive_value
 containment_id = str(config.get("containment_id") or "")
 if not containment_id:
     raise SystemExit("missing SDK containment id")
@@ -131,6 +153,7 @@ class _SdkContainment:
     config_path: Path
     attestation_path: Path
     environment_sha256: str
+    sensitive_env: dict[str, str] = field(default_factory=dict)
     root_identity: ProcessIdentity | None = None
     attested: bool = False
 
@@ -215,6 +238,7 @@ class ClaudeAgentSdkTransport:
             )
             return self._capabilities
 
+        _scrub_stale_launch_roots()
         cli_path = _resolve_claude_cli_path(
             explicit=self._explicit_cli_path,
             options_cls=options_cls,
@@ -523,6 +547,7 @@ class ClaudeAgentSdkTransport:
         if execution.containment is not None:
             options_kwargs["cli_path"] = execution.containment.launcher_path
             options_kwargs["env"] = {
+                **execution.containment.sensitive_env,
                 _SDK_LAUNCH_CONFIG_ENV: str(
                     execution.containment.config_path
                 ),
@@ -568,7 +593,7 @@ class ClaudeAgentSdkTransport:
                 "Claude CLI path was not resolved during preflight"
             )
         root = Path(
-            tempfile.mkdtemp(prefix="codex-supervisor-claude-sdk-")
+            tempfile.mkdtemp(prefix=_SDK_LAUNCH_ROOT_PREFIX)
         )
         root.chmod(0o700)
         launcher_path = root / "claude-sdk-launcher"
@@ -586,6 +611,12 @@ class ClaudeAgentSdkTransport:
         }
         final_environment[CONTAINMENT_ENV_VAR] = containment_id
         environment_sha256 = _environment_sha256(final_environment)
+        sensitive_env = {
+            key: value
+            for key, value in final_environment.items()
+            if key != CONTAINMENT_ENV_VAR
+            and _is_sensitive_env_entry(key, value)
+        }
         payload = {
             "schema_version": _SDK_LAUNCH_SCHEMA,
             "containment_id": containment_id,
@@ -594,7 +625,9 @@ class ClaudeAgentSdkTransport:
                 key: value
                 for key, value in final_environment.items()
                 if key != CONTAINMENT_ENV_VAR
+                and key not in sensitive_env
             },
+            "sensitive_env_keys": sorted(sensitive_env),
             "environment_sha256": environment_sha256,
             "attestation_path": str(attestation_path),
         }
@@ -606,6 +639,7 @@ class ClaudeAgentSdkTransport:
             config_path=config_path,
             attestation_path=attestation_path,
             environment_sha256=environment_sha256,
+            sensitive_env=sensitive_env,
         )
 
     async def _attest_containment(
@@ -867,6 +901,30 @@ def _write_private_json(path: Path, payload: Mapping[str, Any]) -> None:
         except FileNotFoundError:
             pass
         raise
+
+
+def _scrub_stale_launch_roots(
+    *,
+    now: float | None = None,
+    max_age_s: float = _SDK_STALE_LAUNCH_ROOT_AGE_S,
+) -> None:
+    current = time.time() if now is None else float(now)
+    try:
+        temp_root = Path(tempfile.gettempdir())
+        entries = list(temp_root.iterdir())
+    except OSError:
+        return
+    for entry in entries:
+        if not entry.name.startswith(_SDK_LAUNCH_ROOT_PREFIX):
+            continue
+        try:
+            if not entry.is_dir() or entry.is_symlink():
+                continue
+            if current - entry.stat().st_mtime < max_age_s:
+                continue
+        except OSError:
+            continue
+        shutil.rmtree(entry, ignore_errors=True)
 
 
 def _preflight_launcher(cli_path: Path) -> None:

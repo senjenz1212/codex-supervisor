@@ -297,6 +297,7 @@ def _current_changed_files(
             "name_status": [],
             "stderr": _tail(status.stderr),
         }
+    tracked_paths = _git_tracked_repo_paths(cwd, runner=runner)
     entries: list[dict[str, str]] = []
     files: list[str] = []
     excluded_supervisor_files: list[str] = []
@@ -305,7 +306,11 @@ def _current_changed_files(
         if parsed is None:
             continue
         code, path_text = parsed
-        if _is_supervisor_owned_runtime_path(path_text, task_id=task_id):
+        if _is_supervisor_owned_runtime_path(
+            path_text,
+            task_id=task_id,
+            tracked_paths=tracked_paths,
+        ):
             excluded_supervisor_files.append(path_text)
             continue
         entries.append({"status": code, "path": path_text, "source": "worktree"})
@@ -330,6 +335,7 @@ def _current_changed_files(
                     if _is_supervisor_owned_runtime_path(
                         path_text,
                         task_id=task_id,
+                        tracked_paths=tracked_paths,
                     ):
                         excluded_supervisor_files.append(path_text)
                         continue
@@ -386,23 +392,29 @@ def _parse_git_name_status_line(line: str, *, status_width: int | None) -> tuple
     return code, path_text
 
 
-def _is_supervisor_owned_runtime_path(path_text: str, *, task_id: str) -> bool:
+def _is_supervisor_owned_runtime_path(
+    path_text: str,
+    *,
+    task_id: str,
+    tracked_paths: frozenset[str] | None = None,
+) -> bool:
     normalized = PurePath(path_text).as_posix()
     while normalized.startswith("./"):
         normalized = normalized[2:]
     if not normalized:
         return False
+    tracked = tracked_paths or frozenset()
     if normalized == ".handoff" or normalized.startswith(".handoff/"):
-        return True
+        return ".handoff" not in tracked and normalized not in tracked
     if normalized == "runs" or normalized.startswith("runs/"):
-        return True
+        return "runs" not in tracked and normalized not in tracked
     if normalized in {
         "state.db",
         "state.db-journal",
         "state.db-shm",
         "state.db-wal",
     }:
-        return True
+        return "state.db" not in tracked and normalized not in tracked
     task_prefix = f"docs/dual-agent/{task_id}/"
     if not normalized.startswith(task_prefix):
         return False
@@ -414,26 +426,67 @@ def _is_supervisor_owned_runtime_path(path_text: str, *, task_id: str) -> bool:
     )
 
 
+def _git_tracked_repo_paths(cwd: Path, *, runner: Runner) -> frozenset[str] | None:
+    try:
+        completed = _run_git(cwd, ["ls-files", "-z"], runner=runner)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0:
+        return None
+    tracked: set[str] = set()
+    for raw in (completed.stdout or "").split("\0"):
+        if not raw:
+            continue
+        path = PurePath(raw)
+        if path.is_absolute():
+            continue
+        tracked.add(path.as_posix())
+        tracked.update(
+            parent.as_posix()
+            for parent in path.parents
+            if parent.as_posix() != "."
+        )
+    return frozenset(tracked)
+
+
+def _sha256_file(path: Path) -> str:
+    digest = sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _deliverable_checks(cwd: Path, changed_files: list[str]) -> list[dict[str, Any]]:
     checks: list[dict[str, Any]] = []
     for relative in changed_files:
         path = cwd / relative
-        if not path.exists():
-            checks.append({"path": relative, "status": "failed", "reason": "runtime_deliverable_missing"})
-            continue
-        if not path.is_file():
-            checks.append({"path": relative, "status": "failed", "reason": "runtime_deliverable_not_file"})
-            continue
-        size = path.stat().st_size
-        if size <= 0:
-            checks.append({"path": relative, "status": "failed", "reason": "runtime_deliverable_empty", "size": size})
+        try:
+            if not path.exists():
+                checks.append({"path": relative, "status": "failed", "reason": "runtime_deliverable_missing"})
+                continue
+            if not path.is_file():
+                checks.append({"path": relative, "status": "failed", "reason": "runtime_deliverable_not_file"})
+                continue
+            size = path.stat().st_size
+            if size <= 0:
+                checks.append({"path": relative, "status": "failed", "reason": "runtime_deliverable_empty", "size": size})
+                continue
+            digest = _sha256_file(path)
+        except OSError as exc:
+            checks.append({
+                "path": relative,
+                "status": "failed",
+                "reason": "runtime_deliverable_unreadable",
+                "error": f"{type(exc).__name__}: {exc}",
+            })
             continue
         checks.append({
             "path": relative,
             "status": "passed",
             "reason": "runtime_deliverable_present",
             "size": size,
-            "sha256": sha256(path.read_bytes()).hexdigest(),
+            "sha256": digest,
         })
     return checks
 

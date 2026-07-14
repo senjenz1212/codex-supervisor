@@ -136,6 +136,30 @@ def test_state_factory_rejects_partial_backend_before_daemon_startup():
         )
 
 
+def test_build_state_applies_capability_guard_at_composition(tmp_path):
+    state = build_state(
+        _config(tmp_path, mode="diagnostic_only"),
+        required_capabilities=DAEMON_REQUIRED_STATE_METHODS,
+        capability_profile="daemon observability and control",
+    )
+    assert state.event_ledger_assurance == "diagnostic-only"
+
+    with pytest.raises(
+        StateFactoryError,
+        match=(
+            "does not support daemon observability and control: "
+            "missing .*not_a_real_state_method"
+        ),
+    ):
+        build_state(
+            _config(tmp_path, mode="diagnostic_only"),
+            required_capabilities=frozenset(
+                {"not_a_real_state_method", "write_event"}
+            ),
+            capability_profile="daemon observability and control",
+        )
+
+
 def test_state_factory_composes_authoritative_runtime(tmp_path):
     authority = _ExternalTestAuthority()
     pins = _ExternalPins()

@@ -573,3 +573,93 @@ def test_produce_agentic_worker_receipts_skips_when_existing_receipts_satisfy_po
 
     assert production.status == "skipped_existing_receipts"
     assert planner_calls == []
+
+
+def test_agentic_roster_planner_success_ignores_timeout_text_in_events(
+    tmp_path: Path,
+):
+    from dataclasses import replace
+
+    def fake_runtime_runner(task: AgentTask) -> RuntimeExecution:
+        execution = _planner_or_worker_execution(
+            task,
+            runtime="claude_code",
+            output='{"workers":[]}',
+        )
+        chatter = RuntimeEvent(
+            kind="agent.message",
+            payload={
+                "type": "agent.message",
+                "message": "retried once after a transient network timeout",
+                "error": "transient timeout while fetching docs",
+            },
+            ts_ms=1,
+        )
+        events = (chatter, *execution.result.events)
+        result = replace(execution.result, events=events)
+        return RuntimeExecution(
+            handle=execution.handle,
+            events=events,
+            result=result,
+        )
+
+    production = plan_agentic_worker_roster(
+        cwd=tmp_path,
+        task_id="workflow-timeout-text",
+        run_id="workflow-run",
+        intent="Plan workers despite timeout chatter.",
+        min_subagents=0,
+        required_roles=[],
+        timeout_s=60,
+        budget_usd=0.25,
+        quality="best",
+        runtime_runner=fake_runtime_runner,
+        runtime_model="claude-requested-model",
+    )
+
+    assert production.status == "passed"
+    assert production.blocking_findings == []
+
+
+def test_agentic_roster_planner_blocks_on_structured_timeout(
+    tmp_path: Path,
+):
+    def fake_runtime_runner(task: AgentTask) -> RuntimeExecution:
+        return _planner_or_worker_execution(
+            task,
+            runtime="claude_code",
+            output="",
+            status="failed",
+        )
+
+    from dataclasses import replace as _replace
+
+    def timing_out_runner(task: AgentTask) -> RuntimeExecution:
+        execution = fake_runtime_runner(task)
+        metadata = dict(execution.result.metadata)
+        metadata["failure_reason"] = "timeout"
+        result = _replace(execution.result, metadata=metadata)
+        return RuntimeExecution(
+            handle=execution.handle,
+            events=execution.events,
+            result=result,
+        )
+
+    production = plan_agentic_worker_roster(
+        cwd=tmp_path,
+        task_id="workflow-structured-timeout",
+        run_id="workflow-run",
+        intent="Plan workers that time out.",
+        min_subagents=0,
+        required_roles=[],
+        timeout_s=60,
+        budget_usd=0.25,
+        quality="best",
+        runtime_runner=timing_out_runner,
+        runtime_model="claude-requested-model",
+    )
+
+    assert production.status == "blocked"
+    assert production.blocking_findings == [
+        {"reason": "agentic_roster_planner_timeout"}
+    ]

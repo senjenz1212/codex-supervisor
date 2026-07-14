@@ -84,6 +84,7 @@ def scan_containment(
     *,
     root_identity: ProcessIdentity | None = None,
     known_identities: tuple[ProcessIdentity, ...] = (),
+    unreadable_scope: str = "same_user",
 ) -> ContainmentSnapshot:
     """Find all same-user processes that inherited ``containment_id``.
 
@@ -95,7 +96,19 @@ def scan_containment(
     the proof instead of silently passing. Same-user processes that predate
     the root may deny environment access on macOS and are not evidence that
     this containment is incomplete.
+
+    ``unreadable_scope`` narrows which access-denied processes degrade the
+    proof. The default ``"same_user"`` keeps the behaviour above. With
+    ``"containment_tree"`` an unreadable process only fails the scan closed
+    when it is known to the containment or structurally descends from a known
+    process; unrelated same-user processes that merely started at or after
+    the root (common on macOS, where ``environ()`` reads are denied for many
+    unrelated same-user processes) are out of scope.
     """
+    if unreadable_scope not in {"same_user", "containment_tree"}:
+        raise ValueError(
+            f"unknown containment unreadable_scope: {unreadable_scope!r}"
+        )
     normalized = str(containment_id).strip()
     if not normalized:
         return ContainmentSnapshot(
@@ -155,15 +168,19 @@ def scan_containment(
         except (psutil.NoSuchProcess, psutil.ZombieProcess, ProcessLookupError):
             continue
         except psutil.AccessDenied:
-            if earliest is not None or _is_structurally_related(
+            if _unreadable_in_scope(
                 int(process.pid),
+                unreadable_scope=unreadable_scope,
+                earliest=earliest,
                 parent_by_pid=parent_by_pid,
                 known_pids=known_pids,
             ):
                 errors.append(f"access_denied:{process.pid}")
         except (OSError, ValueError) as exc:
-            if earliest is not None or _is_structurally_related(
+            if _unreadable_in_scope(
                 int(process.pid),
+                unreadable_scope=unreadable_scope,
+                earliest=earliest,
                 parent_by_pid=parent_by_pid,
                 known_pids=known_pids,
             ):
@@ -191,6 +208,7 @@ def terminate_containment(
     kill_timeout_s: float = 2.0,
     quiescence_s: float = 0.25,
     poll_s: float = 0.02,
+    unreadable_scope: str = "same_user",
 ) -> dict[str, Any]:
     """Terminate a tagged process tree and prove a quiescent empty scan.
 
@@ -198,7 +216,9 @@ def terminate_containment(
     in the same phase. If the root PID was reused, the reused root and recorded
     process group are never signalled; only processes carrying the recorded
     containment id are targeted. An incomplete or non-empty final scan never
-    returns a successful reap proof.
+    returns a successful reap proof. ``unreadable_scope`` is forwarded to
+    ``scan_containment`` and controls whether unreadable processes outside the
+    launched containment tree degrade the proof.
     """
     try:
         root_pid = int(root_pid)
@@ -345,6 +365,7 @@ def terminate_containment(
         quiescence_s=quiescence_s,
         poll_s=poll_s,
         process=process,
+        unreadable_scope=unreadable_scope,
     ):
         return _result(
             status="worker_tree_terminated",
@@ -371,6 +392,7 @@ def terminate_containment(
         quiescence_s=quiescence_s,
         poll_s=poll_s,
         process=process,
+        unreadable_scope=unreadable_scope,
     ):
         return _result(
             status="worker_tree_killed",
@@ -418,6 +440,7 @@ def _terminate_phase(
     quiescence_s: float,
     poll_s: float,
     process: Any,
+    unreadable_scope: str = "same_user",
 ) -> bool:
     quiet_since: float | None = None
     while True:
@@ -425,6 +448,7 @@ def _terminate_phase(
             containment_id,
             root_identity=root_identity,
             known_identities=tuple(tracked.values()),
+            unreadable_scope=unreadable_scope,
         )
         scan_errors.update(snapshot.errors)
         for identity in snapshot.processes:
@@ -473,6 +497,7 @@ def _terminate_phase(
                     containment_id,
                     root_identity=root_identity,
                     known_identities=tuple(tracked.values()),
+                    unreadable_scope=unreadable_scope,
                 )
                 scan_errors.update(final.errors)
                 if final.scan_complete and not final.processes:
@@ -513,6 +538,24 @@ def _result(
 
 def _same_start(observed: float, expected: float) -> bool:
     return abs(float(observed) - float(expected)) <= 0.001
+
+
+def _unreadable_in_scope(
+    pid: int,
+    *,
+    unreadable_scope: str,
+    earliest: float | None,
+    parent_by_pid: Mapping[int, int],
+    known_pids: set[int],
+) -> bool:
+    """Return whether an unreadable process must degrade the scan proof."""
+    if _is_structurally_related(
+        pid,
+        parent_by_pid=parent_by_pid,
+        known_pids=known_pids,
+    ):
+        return True
+    return unreadable_scope == "same_user" and earliest is not None
 
 
 def _is_structurally_related(

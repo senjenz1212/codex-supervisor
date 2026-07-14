@@ -570,3 +570,85 @@ def test_agentic_worker_task_cleanup_discovers_and_reaps_stale_runtime_records(t
     assert [item["worker_id"] for item in result["cleaned"]] == ["stale-1"]
     assert [item["worker_id"] for item in result["active"]] == ["active-1"]
     assert [item["worker_id"] for item in result["skipped"]] == ["dead-1"]
+
+
+def _bare_result(
+    *,
+    status: str,
+    metadata: dict | None = None,
+    events: tuple[RuntimeEvent, ...] = (),
+) -> AgentRunResult:
+    return AgentRunResult(
+        run_id="run-status-probe",
+        task_id="task-status-probe",
+        runtime="claude_code",
+        session_id="session-status-probe",
+        status=status,
+        output="",
+        events=events,
+        started_at_ms=1,
+        ended_at_ms=2,
+        cost_usd=0.0,
+        resolved_model="claude-model",
+        result_hash="f" * 64,
+        token_usage={},
+        metadata=metadata or {},
+    )
+
+
+def test_worker_status_ignores_timeout_text_without_structured_signal():
+    from supervisor.agentic_workers import _runtime_timed_out, _worker_status
+
+    chatter = RuntimeEvent(
+        kind="agent.message",
+        payload={
+            "type": "agent.message",
+            "error": "transient timeout while fetching docs",
+        },
+        ts_ms=1,
+    )
+    completed = _bare_result(
+        status="completed",
+        metadata={"returncode": 0},
+        events=(chatter,),
+    )
+    failed = _bare_result(
+        status="failed",
+        metadata={
+            "returncode": 1,
+            "error": "connection timeout during provider call",
+        },
+        events=(chatter,),
+    )
+
+    assert _worker_status(completed) == "passed"
+    assert not _runtime_timed_out(completed)
+    assert _worker_status(failed) == "failed"
+
+
+def test_worker_status_honours_structured_timeout_signals():
+    from supervisor.agentic_workers import _worker_status
+
+    by_status = _bare_result(status="timeout")
+    by_returncode = _bare_result(
+        status="failed",
+        metadata={"returncode": 124},
+    )
+    by_failure_reason = _bare_result(
+        status="failed",
+        metadata={"returncode": 1, "failure_reason": "timeout"},
+    )
+    by_event_reason = _bare_result(
+        status="failed",
+        metadata={"returncode": 1},
+        events=(
+            RuntimeEvent(
+                kind="run.failed",
+                payload={"type": "run.failed", "reason": "timeout_exceeded"},
+                ts_ms=1,
+            ),
+        ),
+    )
+
+    for result in (by_status, by_returncode, by_failure_reason, by_event_reason):
+        assert _worker_status(result) == "timeout"

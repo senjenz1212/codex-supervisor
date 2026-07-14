@@ -1,6 +1,7 @@
 """Paired efficacy, pilot sizing, and operating-ROI calculations."""
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import math
@@ -450,6 +451,7 @@ def newcombe_paired_risk_difference_ci(
     return max(-1.0, lower), min(1.0, upper)
 
 
+@functools.lru_cache(maxsize=None)
 def exact_discordant_pairs_required(
     *,
     win_rate: float,
@@ -462,13 +464,18 @@ def exact_discordant_pairs_required(
     if not 0.0 < alpha < 1.0 or not 0.0 < power < 1.0:
         raise ValueError("alpha and power must be probabilities")
     for discordant in range(1, max_pairs + 1):
+        null_total = 2**discordant
+        lower_tail = 0
+        p_value_by_smaller_count = []
+        for smaller in range(discordant // 2 + 1):
+            lower_tail += math.comb(discordant, smaller)
+            p_value_by_smaller_count.append(
+                min(1.0, 2.0 * (lower_tail / null_total))
+            )
         achieved = sum(
             _binomial_probability(discordant, wins, win_rate)
             for wins in range(discordant + 1)
-            if exact_mcnemar_p_value(
-                n10=wins,
-                n01=discordant - wins,
-            )
+            if p_value_by_smaller_count[min(wins, discordant - wins)]
             <= alpha
         )
         if achieved >= power:
@@ -1085,7 +1092,18 @@ def _normal_quantile(probability: float) -> float:
 
 
 def _binomial_probability(n: int, k: int, p: float) -> float:
-    return math.comb(n, k) * (p**k) * ((1 - p) ** (n - k))
+    if p <= 0.0:
+        return 1.0 if k == 0 else 0.0
+    if p >= 1.0:
+        return 1.0 if k == n else 0.0
+    log_comb = (
+        math.lgamma(n + 1)
+        - math.lgamma(k + 1)
+        - math.lgamma(n - k + 1)
+    )
+    return math.exp(
+        log_comb + k * math.log(p) + (n - k) * math.log1p(-p)
+    )
 
 
 def _sha256_json(payload: Any) -> str:

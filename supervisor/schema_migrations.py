@@ -1339,7 +1339,7 @@ def _validate_quality_trend_audits(conn: sqlite3.Connection) -> None:
 
 
 def _repair_required_integrity_objects(conn: sqlite3.Connection) -> None:
-    _migration_event_idempotency_claims(conn)
+    _ensure_event_idempotency_claim_objects(conn)
     if _table_exists(conn, "events"):
         _ensure_event_ledger_columns(conn)
         conn.execute(
@@ -1566,7 +1566,7 @@ def _repair_required_integrity_objects(conn: sqlite3.Connection) -> None:
     )
 
 
-def _migration_event_idempotency_claims(
+def _ensure_event_idempotency_claim_objects(
     conn: sqlite3.Connection,
 ) -> None:
     conn.execute(
@@ -1583,6 +1583,32 @@ def _migration_event_idempotency_claims(
              CHECK(event_id > 0)
            )"""
     )
+    conn.execute(
+        """CREATE TRIGGER IF NOT EXISTS event_idempotency_claims_no_update
+           BEFORE UPDATE ON event_idempotency_claims
+           BEGIN
+             SELECT RAISE(
+               ABORT,
+               'event idempotency claims are immutable'
+             );
+           END"""
+    )
+    conn.execute(
+        """CREATE TRIGGER IF NOT EXISTS event_idempotency_claims_no_delete
+           BEFORE DELETE ON event_idempotency_claims
+           BEGIN
+             SELECT RAISE(
+               ABORT,
+               'event idempotency claims are immutable'
+             );
+           END"""
+    )
+
+
+def _migration_event_idempotency_claims(
+    conn: sqlite3.Connection,
+) -> None:
+    _ensure_event_idempotency_claim_objects(conn)
     if not _table_exists(conn, "events"):
         return
     rows = conn.execute(
@@ -1654,26 +1680,6 @@ def _migration_event_idempotency_claims(
             raise RuntimeError(
                 "event idempotency claim conflicts with the immutable event"
             )
-    conn.execute(
-        """CREATE TRIGGER IF NOT EXISTS event_idempotency_claims_no_update
-           BEFORE UPDATE ON event_idempotency_claims
-           BEGIN
-             SELECT RAISE(
-               ABORT,
-               'event idempotency claims are immutable'
-             );
-           END"""
-    )
-    conn.execute(
-        """CREATE TRIGGER IF NOT EXISTS event_idempotency_claims_no_delete
-           BEFORE DELETE ON event_idempotency_claims
-           BEGIN
-             SELECT RAISE(
-               ABORT,
-               'event idempotency claims are immutable'
-             );
-           END"""
-    )
 
 
 def _table_exists(conn: sqlite3.Connection, name: str) -> bool:

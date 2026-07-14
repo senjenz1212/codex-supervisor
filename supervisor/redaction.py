@@ -63,6 +63,22 @@ def _redact_str_with_patterns(
     return out
 
 
+def _disambiguate_redacted_key(
+    key: str,
+    existing: dict[Any, Any],
+) -> str:
+    suffix = 2
+    while True:
+        candidate = (
+            f"{key[:-1]}_{suffix}]"
+            if key.endswith("]")
+            else f"{key}_{suffix}"
+        )
+        if candidate not in existing:
+            return candidate
+        suffix += 1
+
+
 def _redact_with_patterns(
     value: Any,
     patterns: tuple[tuple[re.Pattern[str], str], ...],
@@ -80,9 +96,9 @@ def _redact_with_patterns(
                 else key
             )
             if redacted_key in redacted:
-                raise ValueError(
-                    "redaction produced duplicate object key: "
-                    f"{redacted_key!r}"
+                redacted_key = _disambiguate_redacted_key(
+                    str(redacted_key),
+                    redacted,
                 )
             redacted[redacted_key] = _redact_with_patterns(
                 item,

@@ -255,6 +255,76 @@ def test_postgres_reap_claim_sql_is_full_snapshot_cas():
     }
 
 
+def test_postgres_reconcile_replays_only_events_beyond_trusted_head():
+    events_by_run = {
+        "run-a": [
+            (1, 1, "event_msg"),
+            (2, 2, "event_msg"),
+            (3, 3, "run.completed"),
+        ],
+        "run-b": [(4, 1, "event_msg")],
+    }
+
+    class _Result:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def fetchall(self):
+            return self._rows
+
+    class _Connection:
+        def execute(self, statement, params=None):
+            normalized = " ".join(str(statement).split())
+            if normalized.startswith("SELECT DISTINCT run_id"):
+                return _Result([{"run_id": run} for run in events_by_run])
+            assert "WHERE run_id=%s AND event_sequence>%s" in normalized
+            run_id, trusted_count = params
+            return _Result(
+                [
+                    {
+                        "event_id": event_id,
+                        "event_sequence": sequence,
+                        "kind": kind,
+                    }
+                    for event_id, sequence, kind in events_by_run[run_id]
+                    if sequence > trusted_count
+                ]
+            )
+
+    class _Pins:
+        def latest(self, run_id):
+            return {"event_count": 2} if run_id == "run-a" else None
+
+    class _Coordinator:
+        trusted_pin_store = _Pins()
+
+        def __init__(self):
+            self.calls = []
+
+        def coordinate_event(
+            self,
+            *,
+            run_id,
+            event_id,
+            event_count,
+            event_kind,
+            events_loader,
+        ):
+            self.calls.append((run_id, event_id, event_count, event_kind))
+
+    state = PostgresState.__new__(PostgresState)
+    state._conn = _Connection()
+    state._write_lock = threading.RLock()
+    coordinator = _Coordinator()
+    state._ledger_checkpoint_coordinator = coordinator
+
+    assert state.reconcile_event_checkpoints() == 2
+    assert coordinator.calls == [
+        ("run-a", 3, 3, "run.completed"),
+        ("run-b", 4, 1, "event_msg"),
+    ]
+
+
 def test_postgres_schema_carries_idempotency_and_partitioned_catch_up():
     assert "event_stream_sequences" in POSTGRES_SCHEMA_SQL
     assert "event_sequence BIGINT NOT NULL" in POSTGRES_SCHEMA_SQL

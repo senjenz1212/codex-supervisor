@@ -2231,7 +2231,7 @@ def _ledger_export_manifest(
         expected_run_id=run_id,
     )
     ledger_text = "".join(
-        f"{canonical_json_text(row)}\n"
+        f"{canonical_json_text({**row, 'payload': redact(row.get('payload'))})}\n"
         for row in rows
     )
     complete_capture = (
@@ -3633,7 +3633,9 @@ def _ledger_event_ref(
 
 def _path_is_within(path: Path, root: Path) -> bool:
     try:
-        path.relative_to(root.resolve())
+        path.expanduser().resolve().relative_to(
+            root.expanduser().resolve()
+        )
     except ValueError:
         return False
     return True

@@ -1183,3 +1183,46 @@ def test_same_session_retry_rejects_conflicting_runtime_provenance(tmp_path):
                AND kind='workflow_target_session_bound'""",
         ("workflow-session-retry",),
     ).fetchone()[0] == 1
+
+
+def test_register_submitted_workflow_retry_is_idempotent(tmp_path):
+    state, registration = _register(tmp_path, session_id="session-123")
+
+    again = register_submitted_workflow(
+        state=state,
+        registry_dir=tmp_path / "registry",
+        workflow_run_id="workflow-run",
+        target_session_id="session-123",
+        task_id="task-1",
+        task="Do the work.",
+        target_kind="codex",
+        cwd=tmp_path,
+        session_id_source="explicit",
+    )
+
+    assert again.registry_path == registration.registry_path
+    loaded = load_session_registration(tmp_path / "registry", "session-123")
+    assert loaded is not None
+    assert loaded["workflow_run_id"] == "workflow-run"
+
+
+def test_register_submitted_workflow_rejects_conflicting_rebinding(tmp_path):
+    state, _ = _register(tmp_path, session_id="session-123")
+
+    with pytest.raises(RuntimeError, match="provenance discrepancy"):
+        register_submitted_workflow(
+            state=state,
+            registry_dir=tmp_path / "registry",
+            workflow_run_id="workflow-run-2",
+            target_session_id="session-123",
+            task_id="task-2",
+            task="Do different work.",
+            target_kind="codex",
+            cwd=tmp_path,
+            session_id_source="explicit",
+        )
+
+    loaded = load_session_registration(tmp_path / "registry", "session-123")
+    assert loaded is not None
+    assert loaded["workflow_run_id"] == "workflow-run"
+    assert loaded["task_id"] == "task-1"

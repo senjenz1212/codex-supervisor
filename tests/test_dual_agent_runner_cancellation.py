@@ -426,3 +426,39 @@ async def test_cancellation_terminates_runtime_process_group_before_returning(
             except ProcessLookupError:
                 pass
         await asyncio.to_thread(runtime_runner.exited.wait, 2)
+
+
+def test_runtime_marker_env_falls_back_to_process_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "PATH",
+        os.pathsep.join(["/opt/homebrew/bin", "/usr/bin"]),
+    )
+    cancellation = dual_agent_runner_module._GateCancellation()
+
+    environment = cancellation._tag_environment(
+        {"ANTHROPIC_API_KEY": "test-key"},
+        "containment-id",
+        runtime_marker=True,
+    )
+
+    path_parts = environment["PATH"].split(os.pathsep)
+    assert path_parts[0] == cancellation._path_marker
+    assert "/opt/homebrew/bin" in path_parts
+    assert "/usr/bin" in path_parts
+
+
+def test_runtime_marker_env_prepends_marker_to_existing_task_path() -> None:
+    cancellation = dual_agent_runner_module._GateCancellation()
+
+    environment = cancellation._tag_environment(
+        {"PATH": "/task/bin"},
+        "containment-id",
+        runtime_marker=True,
+    )
+
+    assert environment["PATH"].split(os.pathsep) == [
+        cancellation._path_marker,
+        "/task/bin",
+    ]

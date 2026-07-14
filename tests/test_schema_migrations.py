@@ -1834,6 +1834,71 @@ def test_forward_migration_adds_workflow_job_recovery_points(tmp_path):
     assert "idx_dual_agent_workflow_jobs_active_idempotency_token" in indexes
 
 
+def test_startup_does_not_rerun_event_idempotency_backfill(tmp_path):
+    db_path = tmp_path / "state.db"
+    state = State(str(db_path))
+    state.write_event_once(
+        run_id="claimed-trace-run",
+        source="dual_agent",
+        kind="dual_agent_production_trace_recorded",
+        payload={
+            "source_event_hash": "a" * 64,
+            "receipt": {"status": "recorded"},
+        },
+        idempotency_key="production-trace:" + ("a" * 64),
+    )
+    state.write_event(
+        run_id="legacy-trace-run",
+        source="dual_agent",
+        kind="dual_agent_production_trace_recorded",
+        payload={"receipt": {"status": "recorded"}},
+    )
+    state._conn.close()
+
+    reopened = State(str(db_path))
+
+    assert reopened._conn.execute(
+        "SELECT COUNT(*) FROM event_idempotency_claims"
+    ).fetchone()[0] == 1
+    with pytest.raises(
+        sqlite3.IntegrityError,
+        match="event idempotency claims are immutable",
+    ):
+        reopened._conn.execute("DELETE FROM event_idempotency_claims")
+
+
+def test_versioned_idempotency_migration_still_backfills_and_validates(
+    tmp_path,
+):
+    db_path = tmp_path / "state.db"
+    state = State(str(db_path))
+    state.write_event(
+        run_id="backfill-run",
+        source="dual_agent",
+        kind="dual_agent_production_trace_recorded",
+        payload={
+            "source_event_hash": "a" * 64,
+            "receipt": {"status": "recorded"},
+        },
+    )
+    conn = state._conn
+    conn.execute(
+        "DELETE FROM schema_migrations WHERE name='event_idempotency_claims'"
+    )
+    conn.commit()
+    state._conn.close()
+
+    reopened = State(str(db_path))
+
+    claim = reopened._conn.execute(
+        """SELECT run_id, kind, idempotency_key, event_id
+             FROM event_idempotency_claims"""
+    ).fetchone()
+    assert claim is not None
+    assert claim["run_id"] == "backfill-run"
+    assert claim["idempotency_key"] == "production-trace:" + ("a" * 64)
+
+
 def test_postgres_migrations_preserve_forward_only_integrity_contracts():
     evidence_migration = Path(
         "migrations/versions/20260712_0001_evidence_ledger.py"

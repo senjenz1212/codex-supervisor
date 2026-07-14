@@ -890,3 +890,115 @@ def test_runtime_evidence_fails_when_tdd_test_name_is_unresolved(tmp_path: Path)
     assert "tdd_test_names_unresolved" in result.probe.details["failures"]
     coverage = result.probe.details["tdd_test_coverage"]
     assert coverage["unresolved_names"] == ["test_tdd_floor_typo"]
+
+
+def test_tracked_runs_and_state_db_changes_stay_in_changed_files_evidence(tmp_path: Path) -> None:
+    _init_git_repo(tmp_path)
+    _write_test(tmp_path / "runs" / "report.py", "VALUE = 1\n")
+    (tmp_path / "state.db").write_text("schema v1\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "add", "runs/report.py", "state.db"],
+        cwd=tmp_path,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "track project runs and state.db"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    baseline_head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    _write_test(tmp_path / "runs" / "report.py", "VALUE = 2\n")
+    (tmp_path / "state.db").write_text("schema v2\n", encoding="utf-8")
+
+    result = collect_runtime_evidence(
+        cwd=tmp_path,
+        task_id="tracked-runs-task",
+        run_id="run-1",
+        gate="execution",
+        round_index=1,
+        baseline={"status": "passed", "head": baseline_head, "reason": "git_head_captured"},
+        outcome_payload={
+            "changed_files": ["runs/report.py", "state.db"],
+            "claims": [],
+            "decisions": [],
+        },
+        runner=subprocess.run,
+    )
+
+    diff_receipt = next(
+        receipt for receipt in result.receipts
+        if receipt["receipt_id"] == "runtime-git-diff-execution-1"
+    )
+    assert result.probe.status == "green"
+    assert "runs/report.py" in diff_receipt["actual_changed_files"]
+    assert "state.db" in diff_receipt["actual_changed_files"]
+    assert diff_receipt["excluded_supervisor_files"] == []
+
+
+def test_untracked_supervisor_runtime_paths_stay_excluded_from_evidence(tmp_path: Path) -> None:
+    baseline_head = _init_git_repo(tmp_path)
+    _write_test(tmp_path / "runs" / "run-1" / "result.json", "{}\n")
+    _write_test(tmp_path / ".handoff" / "packet.json", "{}\n")
+    (tmp_path / "state.db").write_text("supervisor state\n", encoding="utf-8")
+
+    result = collect_runtime_evidence(
+        cwd=tmp_path,
+        task_id="untracked-runs-task",
+        run_id="run-1",
+        gate="execution",
+        round_index=1,
+        baseline={"status": "passed", "head": baseline_head, "reason": "git_head_captured"},
+        outcome_payload={"changed_files": [], "claims": [], "decisions": []},
+        runner=subprocess.run,
+    )
+
+    diff_receipt = next(
+        receipt for receipt in result.receipts
+        if receipt["receipt_id"] == "runtime-git-diff-execution-1"
+    )
+    assert diff_receipt["actual_changed_files"] == []
+    assert set(diff_receipt["excluded_supervisor_files"]) == {
+        ".handoff/packet.json",
+        "runs/run-1/result.json",
+        "state.db",
+    }
+
+
+def test_unreadable_deliverable_degrades_to_failed_check(tmp_path: Path, monkeypatch) -> None:
+    import supervisor.runtime_evidence as runtime_evidence
+
+    baseline_head = _init_git_repo(tmp_path)
+    _write_test(tmp_path / "src" / "app.py", "VALUE = 1\n")
+
+    def raising_sha256(_path: Path) -> str:
+        raise OSError("device gone mid-read")
+
+    monkeypatch.setattr(runtime_evidence, "_sha256_file", raising_sha256)
+
+    result = collect_runtime_evidence(
+        cwd=tmp_path,
+        task_id="unreadable-task",
+        run_id="run-1",
+        gate="execution",
+        round_index=1,
+        baseline={"status": "passed", "head": baseline_head, "reason": "git_head_captured"},
+        outcome_payload={"changed_files": ["src/app.py"], "claims": [], "decisions": []},
+        runner=subprocess.run,
+    )
+
+    assert result.probe.status == "red"
+    assert "runtime_deliverable_unreadable" in result.probe.details["failures"]
+    deliverable_receipt = next(
+        receipt for receipt in result.receipts
+        if receipt["kind"] == "runtime_deliverable_check"
+    )
+    assert deliverable_receipt["status"] == "failed"
+    assert deliverable_receipt["checks"][0]["reason"] == "runtime_deliverable_unreadable"

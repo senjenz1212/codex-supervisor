@@ -24,7 +24,7 @@ from hashlib import sha256
 from types import MappingProxyType
 from typing import Any, Protocol
 
-from .redaction import redact
+from .redaction import redact, redact_v1, redact_v2
 
 
 HISTORICAL_OPERATION_REQUEST_SCHEMA_VERSION = (
@@ -34,6 +34,18 @@ HISTORICAL_OPERATION_RECEIPT_SCHEMA_VERSION = (
     "supervisor-historical-operation-receipt/v1"
 )
 HISTORICAL_OPERATION_EVENT_SOURCE = "historical_evaluation"
+RECEIPT_REDACTION_RULES_VERSION = "supervisor-redaction-rules/v2"
+_RECEIPT_REDACTORS_BY_VERSION: Mapping[str, Callable[[Any], Any]] = (
+    MappingProxyType(
+        {
+            "supervisor-redaction-rules/v1": redact_v1,
+            "supervisor-redaction-rules/v2": redact_v2,
+        }
+    )
+)
+# Receipts persisted before the redaction pin existed were validated with
+# the rules that are now frozen as v2.
+_LEGACY_RECEIPT_REDACTOR = redact_v2
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _RESULT_IDENTITY_FIELDS = frozenset(
     {
@@ -262,6 +274,7 @@ class HistoricalOperationReceipt:
     completed_event_id: int
     receipt_hash: str
     schema_version: str = HISTORICAL_OPERATION_RECEIPT_SCHEMA_VERSION
+    redaction_rules_version: str | None = None
 
     def __post_init__(self) -> None:
         _require_schema_version(
@@ -270,6 +283,15 @@ class HistoricalOperationReceipt:
             expected=HISTORICAL_OPERATION_RECEIPT_SCHEMA_VERSION,
             label="historical operation receipt",
         )
+        if self.redaction_rules_version is not None:
+            object.__setattr__(
+                self,
+                "redaction_rules_version",
+                _required_text(
+                    "redaction_rules_version",
+                    self.redaction_rules_version,
+                ),
+            )
         if not isinstance(self.operation, HistoricalOperation):
             object.__setattr__(
                 self,
@@ -323,7 +345,10 @@ class HistoricalOperationReceipt:
             self,
             "result",
             _deep_freeze(
-                _stored_result_mapping(self.result)
+                _stored_result_mapping(
+                    self.result,
+                    redaction_rules_version=self.redaction_rules_version,
+                )
             ),
         )
         expected_hash = _sha256_json(self._receipt_body())
@@ -333,7 +358,7 @@ class HistoricalOperationReceipt:
             )
 
     def _receipt_body(self) -> dict[str, Any]:
-        return {
+        body = {
             "schema_version": self.schema_version,
             "operation_id": self.operation_id,
             "operation": self.operation.value,
@@ -345,19 +370,13 @@ class HistoricalOperationReceipt:
             "result": _normalise_json(self.result),
             "requested_event_id": self.requested_event_id,
         }
+        if self.redaction_rules_version is not None:
+            body["redaction_rules_version"] = self.redaction_rules_version
+        return body
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "schema_version": self.schema_version,
-            "operation_id": self.operation_id,
-            "operation": self.operation.value,
-            "request_hash": self.request_hash,
-            "source_run_id": self.source_run_id,
-            "task_id": self.task_id,
-            "result_ref": self.result_ref,
-            "result_sha256": self.result_sha256,
-            "result": _normalise_json(self.result),
-            "requested_event_id": self.requested_event_id,
+            **self._receipt_body(),
             "completed_event_id": self.completed_event_id,
             "receipt_hash": self.receipt_hash,
         }
@@ -457,6 +476,7 @@ class HistoricalEvaluationService:
         self._claim_stale_after_s = claim_stale_after_s
         self._locks: dict[str, tuple[asyncio.Lock, int]] = {}
         self._locks_guard = threading.Lock()
+        self._preflight_failed_operations: set[str] = set()
 
     async def rerun(
         self,
@@ -498,7 +518,9 @@ class HistoricalEvaluationService:
             operation=request.operation.value,
         )
         self._validate_claim(request, claim)
-        existing = self._existing_terminal_receipt(request)
+        prior_requested_event_id, existing = (
+            self._existing_terminal_receipt(request)
+        )
         if existing is not None:
             self._state.complete_historical_operation(
                 operation_id=request.operation_id,
@@ -525,15 +547,28 @@ class HistoricalEvaluationService:
                     "historical operation claim is completed but its "
                     "completion event is missing"
                 )
-            if self._claim_is_stale(claim):
-                raise HistoricalOperationIndeterminate(
-                    "historical operation claim is stale and may have "
-                    "crossed the side-effect boundary; automatic "
-                    "re-execution is forbidden"
-                )
-            raise HistoricalOperationInProgress(
-                "historical operation is already running in another process"
+            recoverable = (
+                request.operation_id in self._preflight_failed_operations
+                or self._claim_is_stale(claim)
             )
+            if not recoverable:
+                raise HistoricalOperationInProgress(
+                    "historical operation is already running in another "
+                    "process"
+                )
+            if prior_requested_event_id is not None:
+                self._resolve_stale_claim_as_failed(
+                    request,
+                    requested_event_id=prior_requested_event_id,
+                )
+        self._preflight_failed_operations.discard(request.operation_id)
+        try:
+            self._verify_source(request.source)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            self._preflight_failed_operations.add(request.operation_id)
+            raise
         requested_event_id = self._state.write_historical_operation_event(
             run_id=request.operation_id,
             kind="historical_operation.requested",
@@ -545,7 +580,6 @@ class HistoricalEvaluationService:
         )
 
         try:
-            self._verify_source(request.source)
             raw_result = self._executors[request.operation](request)
             if inspect.isawaitable(raw_result):
                 raw_result = await raw_result
@@ -608,6 +642,7 @@ class HistoricalEvaluationService:
             "result_sha256": result_sha256,
             "result": result,
             "requested_event_id": requested_event_id,
+            "redaction_rules_version": RECEIPT_REDACTION_RULES_VERSION,
         }
         receipt_hash = _sha256_json(receipt_body)
         completed_event_id = (
@@ -643,6 +678,7 @@ class HistoricalEvaluationService:
             requested_event_id=requested_event_id,
             completed_event_id=completed_event_id,
             receipt_hash=receipt_hash,
+            redaction_rules_version=RECEIPT_REDACTION_RULES_VERSION,
         )
 
     def _acquire_operation_lock(self, operation_id: str) -> asyncio.Lock:
@@ -660,6 +696,44 @@ class HistoricalEvaluationService:
                 del self._locks[operation_id]
             else:
                 self._locks[operation_id] = (lock, holders - 1)
+
+    def _resolve_stale_claim_as_failed(
+        self,
+        request: HistoricalOperationRequest,
+        *,
+        requested_event_id: int,
+    ) -> None:
+        failed_event_id = self._state.write_historical_operation_event(
+            run_id=request.operation_id,
+            kind="historical_operation.failed",
+            payload={
+                "operation_id": request.operation_id,
+                "request_hash": request.request_hash,
+                "operation": request.operation.value,
+                "requested_event_id": requested_event_id,
+                "error_type": "HistoricalOperationIndeterminate",
+                "error": (
+                    "running claim lease expired after the side-effect "
+                    "boundary was crossed; resolved to terminal failure"
+                ),
+            },
+        )
+        self._state.complete_historical_operation(
+            operation_id=request.operation_id,
+            request_hash=request.request_hash,
+            status="failed",
+            terminal_event_id=failed_event_id,
+        )
+        self._verify_terminal_checkpoint(
+            operation_id=request.operation_id,
+            event_id=failed_event_id,
+            event_kind="historical_operation.failed",
+        )
+        raise HistoricalOperationIndeterminate(
+            "historical operation claim is stale and may have crossed "
+            "the side-effect boundary; it was resolved to a terminal "
+            "failure, use a new idempotency key after correcting the cause"
+        )
 
     def _claim_is_stale(self, claim: Mapping[str, Any]) -> bool:
         try:
@@ -825,7 +899,7 @@ class HistoricalEvaluationService:
     def _existing_terminal_receipt(
         self,
         request: HistoricalOperationRequest,
-    ) -> HistoricalOperationReceipt | None:
+    ) -> tuple[int | None, HistoricalOperationReceipt | None]:
         after = 0
         requested_events: list[Mapping[str, Any]] = []
         terminal_events: list[Mapping[str, Any]] = []
@@ -909,16 +983,21 @@ class HistoricalEvaluationService:
             raise HistoricalEvidenceError(
                 "historical operation has multiple terminal events"
             )
+        sole_requested_event_id = (
+            _required_positive_int(
+                "requested_event_id",
+                requested_events[0].get("event_id"),
+            )
+            if len(requested_events) == 1
+            else None
+        )
         if not terminal_events:
-            return None
-        if len(requested_events) != 1:
+            return sole_requested_event_id, None
+        if sole_requested_event_id is None:
             raise HistoricalEvidenceError(
                 "historical terminal event has no unique requested event"
             )
-        requested_event_id = _required_positive_int(
-            "requested_event_id",
-            requested_events[0].get("event_id"),
-        )
+        requested_event_id = sole_requested_event_id
         terminal = terminal_events[0]
         terminal_payload = terminal["payload"]
         linked_requested_event_id = _required_positive_int(
@@ -954,7 +1033,7 @@ class HistoricalEvaluationService:
                 "historical operation already failed; use a new "
                 "idempotency key after correcting the cause"
             )
-        return _receipt_from_event(terminal)
+        return sole_requested_event_id, _receipt_from_event(terminal)
 
     @staticmethod
     def _validate_claim(
@@ -1102,6 +1181,13 @@ def _receipt_from_event(
             "requested_event_id",
         )
     }
+    redaction_rules_version: str | None = None
+    if "redaction_rules_version" in payload:
+        redaction_rules_version = _required_text(
+            "redaction_rules_version",
+            payload.get("redaction_rules_version"),
+        )
+        receipt_body["redaction_rules_version"] = redaction_rules_version
     expected_hash = _sha256_json(receipt_body)
     observed_hash = _required_sha256(
         "receipt_hash",
@@ -1140,10 +1226,14 @@ def _receipt_from_event(
             "result_sha256",
             payload.get("result_sha256"),
         ),
-        result=_stored_result_mapping(payload.get("result")),
+        result=_stored_result_mapping(
+            payload.get("result"),
+            redaction_rules_version=redaction_rules_version,
+        ),
         requested_event_id=int(payload.get("requested_event_id") or 0),
         completed_event_id=int(event.get("event_id") or 0),
         receipt_hash=observed_hash,
+        redaction_rules_version=redaction_rules_version,
     )
 
 
@@ -1180,9 +1270,24 @@ def _redact_result_mapping(value: Any) -> dict[str, Any]:
     return safe
 
 
-def _stored_result_mapping(value: Any) -> dict[str, Any]:
+def _stored_result_mapping(
+    value: Any,
+    *,
+    redaction_rules_version: str | None = None,
+) -> dict[str, Any]:
+    if redaction_rules_version is None:
+        redactor = _LEGACY_RECEIPT_REDACTOR
+    else:
+        redactor = _RECEIPT_REDACTORS_BY_VERSION.get(
+            str(redaction_rules_version)
+        )
+        if redactor is None:
+            raise HistoricalEvidenceError(
+                "historical completion receipt pins unknown redaction "
+                f"rules: {redaction_rules_version}"
+            )
     normalized = _normalise_json_mapping(value, field="result")
-    safe = _normalise_json_mapping(redact(normalized), field="result")
+    safe = _normalise_json_mapping(redactor(normalized), field="result")
     if safe != normalized:
         raise HistoricalEvidenceError(
             "historical completion receipt contains unredacted result data"
@@ -1294,6 +1399,7 @@ __all__ = [
     "HISTORICAL_OPERATION_EVENT_SOURCE",
     "HISTORICAL_OPERATION_RECEIPT_SCHEMA_VERSION",
     "HISTORICAL_OPERATION_REQUEST_SCHEMA_VERSION",
+    "RECEIPT_REDACTION_RULES_VERSION",
     "HistoricalEvaluationError",
     "HistoricalEvaluationService",
     "HistoricalEvidenceError",

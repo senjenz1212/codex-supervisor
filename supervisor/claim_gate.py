@@ -21,6 +21,8 @@ from .efficacy_analysis import (
     MIN_CONFIRMATION_POWER,
     MIN_PREREGISTERED_B_WIN_RATE,
     PilotEstimate,
+    _normal_quantile,
+    _wilson_interval,
     derive_confirmation_plan,
     exact_discordant_pairs_required,
     exact_mcnemar_p_value,
@@ -648,7 +650,7 @@ class ClaimGate:
             "claim_gate": {
                 "schema_version": CLAIM_GATE_SCHEMA_VERSION,
                 "max_claim_level": level.value if level is not None else None,
-                "evidence_bundle_sha256": _sha256_canonical_json(evidence),
+                "evidence_bundle_sha256": _evidence_bundle_sha256(evidence),
                 "derived_fields": list(MANAGED_CLAIM_FIELDS),
                 "managed_field_paths": list(MANAGED_CLAIM_FIELDS),
             },
@@ -719,7 +721,7 @@ class ClaimGate:
         governed["claim_gate"] = {
             "schema_version": CLAIM_GATE_SCHEMA_VERSION,
             "max_claim_level": level.value if level is not None else None,
-            "evidence_bundle_sha256": _sha256_canonical_json(evidence),
+            "evidence_bundle_sha256": _evidence_bundle_sha256(evidence),
             "derived_fields": list(MANAGED_CLAIM_FIELDS),
             "managed_field_paths": managed_paths,
         }
@@ -842,11 +844,11 @@ class ClaimGate:
                 "ClaimGate receipt max_claim_level does not match "
                 "recomputed evidence support"
             )
-        expected_evidence_hash = _sha256_canonical_json(evidence)
-        declared_evidence_hash = str(
-            receipt.get("evidence_bundle_sha256") or ""
+        expected_evidence_hash = _evidence_bundle_sha256(evidence)
+        declared_evidence_hash = _normalized_sha256(
+            receipt.get("evidence_bundle_sha256")
         )
-        if not hmac.compare_digest(
+        if declared_evidence_hash is None or not hmac.compare_digest(
             declared_evidence_hash,
             expected_evidence_hash,
         ):
@@ -3504,6 +3506,22 @@ def _validate_pilot_confirmation_lineage(
             power.get("target_power"),
             field="design target power",
         )
+        preregistered_b_win_rate = _required_number(
+            power.get("alternative_b_win_rate"),
+            field="design alternative B win rate",
+        )
+        pilot_b_win_rate_ceiling = _wilson_interval(
+            round(pilot_b_win_rate * pilot_discordant_task_count),
+            pilot_discordant_task_count,
+            _normal_quantile(0.975),
+        )[1]
+        if preregistered_b_win_rate > pilot_b_win_rate_ceiling:
+            raise ClaimGateError(
+                "preregistered alternative_b_win_rate "
+                f"{preregistered_b_win_rate} is more optimistic than the "
+                f"pilot estimate {pilot_b_win_rate} allows "
+                f"(wilson-upper-95 bound {pilot_b_win_rate_ceiling})"
+            )
         confirmation_plan = derive_confirmation_plan(
             PilotEstimate(
                 task_count=len(pilot_roster_tasks),
@@ -3516,10 +3534,7 @@ def _validate_pilot_confirmation_lineage(
                 task_ids=tuple(pilot_roster_tasks),
                 canonical_task_ids=tuple(pilot_roster_tasks.values()),
             ),
-            alternative_b_win_rate=_required_number(
-                power.get("alternative_b_win_rate"),
-                field="design alternative B win rate",
-            ),
+            alternative_b_win_rate=preregistered_b_win_rate,
             alpha=_required_number(
                 power.get("alpha"),
                 field="design power alpha",
@@ -5212,6 +5227,16 @@ def _canonical_json(value: Any) -> str:
 
 def _sha256_canonical_json(value: Any) -> str:
     return sha256(_canonical_json(value).encode("utf-8")).hexdigest()
+
+
+def _evidence_bundle_sha256(evidence: Mapping[str, Any]) -> str:
+    try:
+        return _sha256_canonical_json(evidence)
+    except (TypeError, ValueError, RecursionError) as exc:
+        raise ClaimGateError(
+            "evidence bundle is not canonically JSON-serializable: "
+            f"{exc}"
+        ) from exc
 
 
 def _is_sha256(value: Any) -> bool:

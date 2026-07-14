@@ -17,6 +17,9 @@ from .state import State, Decision
 
 log = logging.getLogger(__name__)
 
+DECISION_TASK_TIMEOUT_S = 900
+DECISION_LEASE_S = DECISION_TASK_TIMEOUT_S + 120
+
 SKILL_FOR_DECISION = {
     "adjudicate_drift": "drift-watch",
     "evaluate_run":     "evaluate-run",
@@ -48,12 +51,20 @@ class AgentInvoker:
     async def run(self) -> None:
         log.info("AgentInvoker: starting decision loop")
         while True:
-            await self.run_once()
+            try:
+                await self.run_once()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.exception(
+                    "decision loop iteration failed; continuing",
+                )
+                await asyncio.sleep(self.retry_base_delay_s)
 
     async def run_once(self) -> None:
         """Dispatch one leased decision and durably settle its outbox row."""
 
-        decision = await self.state.next_decision()
+        decision = await self.state.next_decision(lease_s=DECISION_LEASE_S)
         try:
             await self._handle(decision)
         except asyncio.CancelledError:
@@ -116,7 +127,7 @@ class AgentInvoker:
             instruction=user_message,
             cwd=Path.cwd(),
             model=model,
-            timeout_s=900,
+            timeout_s=DECISION_TASK_TIMEOUT_S,
             env=self.agent_environment,
             inherit_env=self.inherit_agent_environment,
             metadata={

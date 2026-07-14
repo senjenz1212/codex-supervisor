@@ -188,6 +188,7 @@ from supervisor.run_registry import (
     consume_launch_receipt,
     register_submitted_workflow,
     register_workflow_runtime_session,
+    release_launch_receipt,
     reserve_launch_receipt,
     resolve_target_session_id,
 )
@@ -4478,15 +4479,33 @@ class CodexSupervisorMcpAPI:
                     },
                 },
             )
+        def _release_receipt(reason: str) -> None:
+            if launch_receipt is None:
+                return
+            try:
+                release_launch_receipt(
+                    registry_dir=self.cfg.orchestrator.run_registry_dir,
+                    launch_id=launch_receipt.launch_id,
+                    nonce=launch_receipt.nonce,
+                    reason=reason,
+                )
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    "failed to release launch receipt %s",
+                    launch_receipt.launch_id,
+                )
+
         try:
             execution = self.codex_runtime_runner(agent_task)
         except (subprocess.TimeoutExpired, TimeoutError):
+            _release_receipt("codex_runtime_timeout")
             return {
                 "status": "timeout",
                 "argv": _redacted_prompt_argv(argv),
                 "timeout_s": timeout_s,
             }
         except FileNotFoundError:
+            _release_receipt("codex_binary_not_found")
             return {"status": "failed", "reason": "codex_binary_not_found", "argv": _redacted_prompt_argv(argv)}
         result = execution.result
         discovered_session_id = str(result.session_id or "").strip()
@@ -4499,6 +4518,7 @@ class CodexSupervisorMcpAPI:
                 "executable Codex session lacks launch-receipt authority"
             )
         if not session_discovered:
+            _release_receipt("missing_target_session_id")
             raise RuntimeError(
                 "Codex runtime did not report a distinct target session id"
             )
@@ -4508,6 +4528,7 @@ class CodexSupervisorMcpAPI:
             r"[0-9a-f]{64}",
             runtime_result_hash,
         ):
+            _release_receipt("missing_runtime_provenance")
             raise RuntimeError(
                 "Codex runtime lacks exact run/result-hash provenance"
             )
@@ -4972,7 +4993,9 @@ class CodexSupervisorMcpAPI:
         }
         for field, expected_value in expected.items():
             observed = str(config_snapshot.get(field) or "").strip()
-            if field == "cwd" and observed:
+            if not observed:
+                continue
+            if field == "cwd":
                 observed = str(Path(observed).expanduser().resolve())
             if observed != expected_value:
                 raise RuntimeError(

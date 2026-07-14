@@ -109,23 +109,32 @@ def capture_acceptance_evidence(payload: dict[str, Any]) -> dict[str, Any] | Non
     task_id = str(
         payload.get("task_id") or handoff.get("task_id") or ""
     ).strip()
-    workspace_snapshot = (
-        {
+    if not root_text:
+        workspace_snapshot: dict[str, Any] = {
             "status": "not_found",
             "capture_source": "accepted_gate_event",
             "reason": "handoff_cwd_missing",
         }
-        if not root_text
-        else capture_workspace_snapshot(
-            Path(root_text),
-            handoff=handoff,
-            capture_source="accepted_gate_event",
-            excluded_roots=_acceptance_artifact_roots(
+    else:
+        try:
+            workspace_snapshot = capture_workspace_snapshot(
                 Path(root_text),
-                task_id=task_id,
-            ),
-        )
-    )
+                handoff=handoff,
+                capture_source="accepted_gate_event",
+                excluded_roots=_acceptance_artifact_roots(
+                    Path(root_text),
+                    task_id=task_id,
+                ),
+            )
+        except (OSError, ValueError) as exc:
+            workspace_snapshot = {
+                "status": "error",
+                "root": root_text,
+                "capture_source": "accepted_gate_event",
+                "reason": (
+                    f"workspace_snapshot_failed:{type(exc).__name__}"
+                ),
+            }
     snapshot_payload = {
         "schema_version": "dual-agent-acceptance-snapshot/v1",
         "handoff_packet": handoff_packet,
@@ -1827,19 +1836,18 @@ def _source_artifact_hashes(
         try:
             path = candidate.resolve()
             path.relative_to(root_resolved)
-        except ValueError:
-            raise ValueError(
-                "planning artifact path escapes workspace root: "
-                f"{path_text!r}"
-            ) from None
-        except OSError:
+        except (OSError, ValueError):
             continue
-        if (
-            path.is_file()
-            and not _excluded_snapshot_path(path, root_resolved)
-        ):
-            hashes[kind] = sha256(path.read_bytes()).hexdigest()
-        elif _is_sha256(artifact.get("sha256")):
+        try:
+            if (
+                path.is_file()
+                and not _excluded_snapshot_path(path, root_resolved)
+            ):
+                hashes[kind] = sha256(path.read_bytes()).hexdigest()
+                continue
+        except OSError:
+            pass
+        if _is_sha256(artifact.get("sha256")):
             hashes[kind] = str(artifact["sha256"]).lower().removeprefix("sha256:")
     return hashes
 
@@ -1873,6 +1881,12 @@ def _workspace_overlay_entry(path: Path, *, root: Path) -> dict[str, Any]:
         mode = path.stat().st_mode & 0o777
     except FileNotFoundError:
         return {"path": relative, "kind": "deleted"}
+    except OSError as exc:
+        return {
+            "path": relative,
+            "kind": "file",
+            "content_omitted": f"unreadable:{type(exc).__name__}",
+        }
     entry: dict[str, Any] = {
         "path": relative,
         "kind": "file",

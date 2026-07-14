@@ -1678,11 +1678,10 @@ def _append_only_file_at(
         )
         return True, None
     finally:
-        _recover_append_only_temporary_files_at(
-            parent_fd,
-            error_type=error_type,
-            label=label,
-        )
+        try:
+            os.unlink(temporary_name, dir_fd=parent_fd)
+        except OSError:
+            pass
 
 
 def _normalize_artifact_name(value: Any) -> str:
@@ -1906,25 +1905,17 @@ class ContentAddressedArtifactStore:
         if not isinstance(artifacts, list):
             raise ArtifactIntegrityError("artifact manifest artifacts must be a list")
         seen_names: set[str] = set()
-        seen_digests: set[str] = set()
-        seen_uris: set[str] = set()
         for artifact in artifacts:
             if not isinstance(artifact, Mapping):
                 raise ArtifactIntegrityError("artifact descriptor must be an object")
-            name, digest, declared_size, _media_type, uri = (
+            name, digest, declared_size, _media_type, _uri = (
                 _validate_artifact_descriptor(artifact)
             )
-            if (
-                name in seen_names
-                or digest in seen_digests
-                or uri in seen_uris
-            ):
+            if name in seen_names:
                 raise ArtifactIntegrityError(
                     "artifact manifest contains a duplicate descriptor"
                 )
             seen_names.add(name)
-            seen_digests.add(digest)
-            seen_uris.add(uri)
             value = self.read_bytes(digest)
             if len(value) != declared_size:
                 raise ArtifactIntegrityError(

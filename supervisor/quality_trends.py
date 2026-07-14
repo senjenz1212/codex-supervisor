@@ -18,7 +18,7 @@ from .historical_evaluation import HistoricalOperation
 from .policy_overlay import draft_policy_regression_rollbacks_for_trend_rows
 from .replay_versions import check_replay_schema_versions
 from .run_manifest import execution_provenance_issues
-from .runtime_evidence import RuntimeEvidenceResult, capture_runtime_baseline, collect_runtime_evidence
+from .runtime_evidence import RuntimeEvidenceResult, collect_runtime_evidence
 
 ACCEPTED_STATUSES = {"accepted", "accept"}
 AUDIT_GATES = ("execution", "outcome_review")
@@ -255,7 +255,9 @@ def run_sampled_p11_false_accept_audit(
     ][:max(0, int(sample_size))]
 
     audited: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
     by_gate: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    cleanup_failure: dict[str, Any] | None = None
     try:
         with _materialized_recorded_checkout(
             recorded_checkout,
@@ -264,10 +266,16 @@ def run_sampled_p11_false_accept_audit(
             for event in accepted_gate_events:
                 payload = event["payload"]
                 gate = str(payload.get("gate") or "unknown")
-                baseline = _runtime_baseline_for_gate(events, gate=gate) or capture_runtime_baseline(
-                    verification_cwd,
-                    runner=runner,
-                )
+                baseline = _runtime_baseline_for_gate(events, gate=gate)
+                if baseline is None:
+                    skipped.append({
+                        "event_id": event["event_id"],
+                        "gate": gate,
+                        "status": "incompatible",
+                        "reason": "runtime_baseline_missing",
+                        "evaluable": False,
+                    })
+                    continue
                 outcome_payload = payload.get("outcome") if isinstance(payload.get("outcome"), dict) else {}
                 result = collect_runtime_evidence(
                     cwd=verification_cwd,
@@ -288,12 +296,24 @@ def run_sampled_p11_false_accept_audit(
                 audited.append(item)
                 by_gate[gate].append(item)
     except RecordedCheckoutError as exc:
+        if exc.reason == "recorded_checkout_cleanup_failed":
+            cleanup_failure = {"reason": exc.reason, "details": exc.details}
+        else:
+            return _incompatible_historical_audit(
+                run_id=run_id,
+                task_id=resolved_task_id,
+                source_cwd=source_cwd,
+                reason=exc.reason,
+                details=exc.details,
+                trend_rows=trend_rows,
+            )
+    except (OSError, subprocess.SubprocessError) as exc:
         return _incompatible_historical_audit(
             run_id=run_id,
             task_id=resolved_task_id,
             source_cwd=source_cwd,
-            reason=exc.reason,
-            details=exc.details,
+            reason="audit_runner_failed",
+            details={"error": f"{type(exc).__name__}: {exc}"},
             trend_rows=trend_rows,
         )
 
@@ -334,6 +354,9 @@ def run_sampled_p11_false_accept_audit(
         "false_accept_denominator": denominator,
         "false_accept_rate": false_accept_count / denominator if denominator else 0.0,
         "audited": audited,
+        "skipped": skipped,
+        "skipped_count": len(skipped),
+        "cleanup_failure": cleanup_failure,
         "updated_trend_rows": updated_rows,
         "trend_rows_recorded": trend_rows,
         "observational_only": True,
@@ -527,6 +550,7 @@ def run_weekly_p11_audit_if_due(
         event for event in state.read_events_since(run_id, after_event_id=0, limit=10_000)
         if event["kind"] == "supervisor_p11_audit_scheduled"
         and int(event["payload"].get("scheduled_at") or 0) >= window_start
+        and _scheduled_audit_consumed_cadence(event["payload"])
     ]
     if existing:
         return {
@@ -574,11 +598,19 @@ def run_weekly_p11_audit_if_due(
             "schema_version": "supervisor-p11-audit-schedule/v1",
             "scheduled_at": timestamp,
             "audit": audit,
+            "cadence_consumed": str(audit.get("status") or "") != "incompatible",
             "observational_only": True,
             "gate_authority": "unchanged",
         },
     )
     return {**audit, "schedule_event_id": event_id}
+
+
+def _scheduled_audit_consumed_cadence(payload: dict[str, Any]) -> bool:
+    audit = payload.get("audit")
+    if isinstance(audit, dict):
+        return str(audit.get("status") or "") != "incompatible"
+    return True
 
 
 def _decode_events(rows: list[Any]) -> list[dict[str, Any]]:
@@ -975,12 +1007,24 @@ def _materialized_recorded_checkout(
     checkout = temp_parent / "worktree"
     added = False
     try:
-        completed = runner(
-            ["git", "worktree", "add", "--detach", str(checkout), commit],
-            cwd=str(repo),
-            capture_output=True,
-            text=True,
-        )
+        try:
+            completed = runner(
+                ["git", "worktree", "add", "--detach", str(checkout), commit],
+                cwd=str(repo),
+                capture_output=True,
+                text=True,
+            )
+        except RecordedCheckoutError:
+            raise
+        except Exception as exc:
+            raise RecordedCheckoutError(
+                "recorded_checkout_runner_failed",
+                details={
+                    "repo": str(repo),
+                    "commit": commit,
+                    "error": f"{type(exc).__name__}: {exc}",
+                },
+            ) from exc
         if completed.returncode != 0:
             raise RecordedCheckoutError(
                 "recorded_commit_unavailable",

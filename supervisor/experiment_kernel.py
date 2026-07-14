@@ -3555,7 +3555,7 @@ class ExperimentKernel:
                                     GradeRevisionRef.from_revision(revision)
                                 ),
                             )
-                    elif stage != "gradebook":
+                    else:
                         outcome = (
                             self._with_failure_grade_revision_best_effort(
                                 experiment=experiment,

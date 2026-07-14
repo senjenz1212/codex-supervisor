@@ -289,6 +289,37 @@ def _manifest_route_fields(path: Path) -> dict[str, str]:
     }
 
 
+def _write_runtime_baseline_event(
+    state: State,
+    *,
+    baseline_head: str,
+    run_id: str = "trend-run",
+    gate: str = "outcome_review",
+    receipts: list[dict] | None = None,
+    ts: int = 105,
+) -> int:
+    return _write_event(
+        state,
+        run_id=run_id,
+        kind="dual_agent_runtime_evidence",
+        ts=ts,
+        payload={
+            "gate": gate,
+            "round_index": 1,
+            "probe": {
+                "details": {
+                    "baseline": {
+                        "status": "passed",
+                        "head": baseline_head,
+                        "reason": "git_head_captured",
+                    },
+                },
+            },
+            "receipts": receipts or [],
+        },
+    )
+
+
 def _record_auditable_run(
     state: State,
     *,
@@ -809,6 +840,7 @@ def test_quality_trends_sampled_p11_audit_catches_false_accept(tmp_path):
             **_manifest_route_fields(manifest_path),
         },
     )
+    _write_runtime_baseline_event(state, baseline_head=_git_head(tmp_path))
     _write_event(
         state,
         kind="dual_agent_gate_result",
@@ -1154,22 +1186,20 @@ def test_quality_trends_segments_false_accept_audit_by_runtime_floor_presence(tm
                 **_manifest_route_fields(manifest_path),
             },
         )
-        if runtime_floor_present:
-            _write_event(
-                state,
-                run_id=run_id,
-                kind="dual_agent_runtime_evidence",
-                ts=105,
-                payload={
-                    "gate": "outcome_review",
-                    "round_index": 1,
-                    "receipts": [{
-                        "receipt_id": "runtime-git-diff-outcome_review-1",
-                        "source": "supervisor",
-                        "evidence_grade": "runtime_native",
-                    }],
-                },
-            )
+        _write_runtime_baseline_event(
+            state,
+            run_id=run_id,
+            baseline_head=_git_head(repo),
+            receipts=(
+                [{
+                    "receipt_id": "runtime-git-diff-outcome_review-1",
+                    "source": "supervisor",
+                    "evidence_grade": "runtime_native",
+                }]
+                if runtime_floor_present
+                else []
+            ),
+        )
         _write_event(
             state,
             run_id=run_id,
@@ -1233,6 +1263,7 @@ def test_sampled_p11_audit_counts_visual_override_usage(tmp_path):
             **_manifest_route_fields(manifest_path),
         },
     )
+    _write_runtime_baseline_event(state, baseline_head=_git_head(tmp_path), ts=104)
     _write_event(
         state,
         kind="visual_evidence_override_asserted",
@@ -1283,6 +1314,7 @@ def test_weekly_p11_audit_scheduler_writes_due_audit_row(tmp_path):
             **_manifest_route_fields(manifest_path),
         },
     )
+    _write_runtime_baseline_event(state, baseline_head=_git_head(tmp_path))
     _write_event(
         state,
         kind="dual_agent_gate_result",
@@ -1506,3 +1538,185 @@ def test_quality_trends_prefers_supervisor_final_status_over_claude_status(tmp_p
 
     assert rows[0]["accepted"] is False
     assert rows[0]["first_pass_accepted"] is False
+
+
+def test_sampled_p11_audit_skips_events_without_recorded_runtime_baseline(tmp_path):
+    _init_git_repo(tmp_path)
+    manifest_path = _write_recorded_replay_manifest(
+        tmp_path,
+        repo=tmp_path,
+        commit=_git_head(tmp_path),
+    )
+    state = State(str(tmp_path / "state.db"))
+    _record_auditable_run(
+        state,
+        repo=tmp_path,
+        manifest_path=manifest_path,
+    )
+
+    audit = run_sampled_p11_false_accept_audit(
+        state,
+        run_id="trend-run",
+        sample_size=1,
+        test_timeout_s=1,
+    )
+
+    assert audit["status"] == "audited"
+    assert audit["audited"] == []
+    assert audit["false_accept_count"] == 0
+    assert audit["false_accept_denominator"] == 0
+    assert audit["updated_trend_rows"] == []
+    assert audit["skipped_count"] == 1
+    assert audit["skipped"][0]["status"] == "incompatible"
+    assert audit["skipped"][0]["reason"] == "runtime_baseline_missing"
+    assert audit["skipped"][0]["evaluable"] is False
+
+
+def test_sampled_p11_audit_keeps_results_when_worktree_cleanup_fails(tmp_path):
+    _init_git_repo(tmp_path)
+    manifest_path = _write_recorded_replay_manifest(
+        tmp_path,
+        repo=tmp_path,
+        commit=_git_head(tmp_path),
+    )
+    state = State(str(tmp_path / "state.db"))
+    _record_auditable_run(
+        state,
+        repo=tmp_path,
+        manifest_path=manifest_path,
+    )
+    _write_runtime_baseline_event(state, baseline_head=_git_head(tmp_path))
+
+    def cleanup_failing_runner(command, **kwargs):
+        if list(command[:3]) == ["git", "worktree", "remove"]:
+            raise OSError("remove invocation failed")
+        return subprocess.run(command, check=False, **kwargs)
+
+    audit = run_sampled_p11_false_accept_audit(
+        state,
+        run_id="trend-run",
+        sample_size=1,
+        test_timeout_s=1,
+        runner=cleanup_failing_runner,
+    )
+
+    assert audit["status"] == "audited"
+    assert audit["false_accept_denominator"] == 1
+    assert audit["cleanup_failure"]["reason"] == "recorded_checkout_cleanup_failed"
+
+
+def test_sampled_p11_audit_returns_structured_incompatible_when_git_runner_fails(tmp_path):
+    _init_git_repo(tmp_path)
+    manifest_path = _write_recorded_replay_manifest(
+        tmp_path,
+        repo=tmp_path,
+        commit=_git_head(tmp_path),
+    )
+    state = State(str(tmp_path / "state.db"))
+    _record_auditable_run(
+        state,
+        repo=tmp_path,
+        manifest_path=manifest_path,
+    )
+    _write_runtime_baseline_event(state, baseline_head=_git_head(tmp_path))
+
+    def missing_git_runner(command, **kwargs):
+        raise FileNotFoundError("git executable not found")
+
+    audit = run_sampled_p11_false_accept_audit(
+        state,
+        run_id="trend-run",
+        sample_size=1,
+        test_timeout_s=1,
+        runner=missing_git_runner,
+    )
+
+    assert audit["status"] == "incompatible"
+    assert audit["reason"] == "recorded_checkout_runner_failed"
+    assert audit["audited"] == []
+    assert audit["false_accept_denominator"] == 0
+
+
+def test_weekly_p11_audit_incompatible_run_does_not_consume_cadence_window(tmp_path):
+    _init_git_repo(tmp_path)
+    state = State(str(tmp_path / "state.db"))
+    state.upsert_dual_agent_workflow(
+        run_id="trend-run",
+        task_id="trend-task",
+        cwd=str(tmp_path),
+        intent="audit accepted deliverables",
+        current_gate="outcome_review",
+        status="accepted",
+        max_rounds_per_gate=2,
+        user_facing=False,
+    )
+    _write_event(
+        state,
+        kind="dual_agent_workflow_route",
+        ts=100,
+        payload={
+            "task_id": "trend-task",
+            "run_id": "trend-run",
+            "lesson_task_class": "source_change",
+            "cwd": str(tmp_path),
+        },
+    )
+    _write_event(
+        state,
+        kind="dual_agent_gate_result",
+        ts=110,
+        payload=_gate_result(
+            gate="outcome_review",
+            status="accepted",
+            attempts=1,
+            changed_files=[],
+        ),
+    )
+
+    first = run_weekly_p11_audit_if_due(
+        state,
+        run_id="trend-run",
+        sample_size=1,
+        test_timeout_s=1,
+        now=10_000,
+    )
+
+    assert first["status"] == "incompatible"
+    assert first["reason"] == "recorded_checkout_missing"
+
+    manifest_path = _write_recorded_replay_manifest(
+        tmp_path,
+        repo=tmp_path,
+        commit=_git_head(tmp_path),
+    )
+    _write_event(
+        state,
+        kind="dual_agent_workflow_route",
+        ts=120,
+        payload={
+            "task_id": "trend-task",
+            "run_id": "trend-run",
+            "lesson_task_class": "source_change",
+            "cwd": str(tmp_path),
+            **_manifest_route_fields(manifest_path),
+        },
+    )
+    _write_runtime_baseline_event(state, baseline_head=_git_head(tmp_path), ts=125)
+
+    second = run_weekly_p11_audit_if_due(
+        state,
+        run_id="trend-run",
+        sample_size=1,
+        test_timeout_s=1,
+        now=10_001,
+    )
+    third = run_weekly_p11_audit_if_due(
+        state,
+        run_id="trend-run",
+        sample_size=1,
+        test_timeout_s=1,
+        now=10_002,
+    )
+
+    assert second["status"] == "audited"
+    assert third["status"] == "not_due"

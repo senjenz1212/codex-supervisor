@@ -1353,6 +1353,7 @@ class LedgerCheckpointCoordinator:
             ):
                 return None
 
+            checkpoints = self._load_checkpoints(normalized_run_id)
             rows, row_verification = self._load_verified_rows(
                 normalized_run_id,
                 event_id=event_id,
@@ -1378,8 +1379,9 @@ class LedgerCheckpointCoordinator:
                     ),
                 )
 
-            checkpoints = self._load_and_verify_checkpoints(
+            self._verify_checkpoints(
                 normalized_run_id,
+                checkpoints=checkpoints,
                 rows=rows,
             )
             identities = [
@@ -1553,16 +1555,22 @@ class LedgerCheckpointCoordinator:
             )
         return rows, verification
 
-    def _load_and_verify_checkpoints(
+    def _load_checkpoints(
+        self,
+        run_id: str,
+    ) -> list[PersistedLedgerCheckpoint]:
+        try:
+            return self.checkpoint_store.load_all(run_id)
+        except Exception as exc:
+            self._fail("checkpoint_store_read", exc)
+
+    def _verify_checkpoints(
         self,
         run_id: str,
         *,
+        checkpoints: Sequence[PersistedLedgerCheckpoint],
         rows: Sequence[Mapping[str, Any] | Any],
-    ) -> list[PersistedLedgerCheckpoint]:
-        try:
-            checkpoints = self.checkpoint_store.load_all(run_id)
-        except Exception as exc:
-            self._fail("checkpoint_store_read", exc)
+    ) -> None:
         for persisted in checkpoints:
             verification = verify_ledger_checkpoint(
                 persisted.checkpoint,
@@ -1598,7 +1606,6 @@ class LedgerCheckpointCoordinator:
                         "persisted checkpoint history differs from the ledger"
                     ),
                 )
-        return checkpoints
 
     def _confirm_trusted_identity(
         self,

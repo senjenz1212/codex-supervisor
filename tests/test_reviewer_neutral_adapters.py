@@ -615,3 +615,95 @@ def test_configured_reviewers_uses_injected_model_client_for_structured_slot(
     )
     assert result.probe.ok
     assert client.requests
+
+
+def test_configured_runtime_reviewer_keeps_codex_cli_parity_controls(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from supervisor.agent_runtime import CodexRuntime
+
+    monkeypatch.setenv("OPENAI_API_KEY", "codex-env-auth")
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
+    specialist = "Neutral Runtime Reviewer"
+    calls: list[AgentTask] = []
+
+    def runtime_runner(task: AgentTask) -> RuntimeExecution:
+        calls.append(task)
+        execution = _runtime_execution(
+            runtime="codex",
+            requested_model="gpt-5.5",
+            resolved_model="gpt-5.5-2026-07-01",
+            task_id=task.task_id,
+            specialist=specialist,
+        )
+        return execution
+
+    constructed = configured_reviewers(
+        reviewer_output_mode="cursor_sdk",
+        reviewer_model=None,
+        runtime_runner=runtime_runner,
+        codex_model="gpt-5.5",
+    )
+    adapter = constructed[1]
+    assert isinstance(adapter, RuntimeReviewerAdapter)
+    assert adapter.inherit_environment is False
+    assert adapter.task_metadata == {"reasoning_effort": "xhigh"}
+    assert adapter.environment == {
+        "OPENAI_API_KEY": "codex-env-auth",
+        "CODEX_HOME": str(tmp_path / "codex-home"),
+    }
+
+    result = adapter.review(
+        CursorInvocationRequest(
+            task_id="parity-runtime-review",
+            gate="outcome_review",
+            instruction="Review.",
+            cwd=tmp_path,
+            expected_specialists=(specialist,),
+        )
+    )
+    assert result.probe.ok
+    task = calls[0]
+    assert task.env["OPENAI_API_KEY"] == "codex-env-auth"
+    assert task.env["CODEX_HOME"] == str(tmp_path / "codex-home")
+    assert task.inherit_env is False
+    assert task.metadata["reasoning_effort"] == "xhigh"
+    assert task.metadata["read_only_review"] is True
+
+    argv = CodexRuntime().preview_start_argv(task)
+    assert 'reasoning_effort="xhigh"' in argv
+    sandbox_index = argv.index("--sandbox")
+    assert argv[sandbox_index + 1] == "read-only"
+
+
+def test_configured_structured_legacy_slot_defaults_reviewer_model(
+    tmp_path: Path,
+) -> None:
+    from supervisor.cursor_agent import DEFAULT_STRUCTURED_REVIEWER_MODEL
+
+    specialist = "Neutral Structured Reviewer"
+    client = _FakeModelClient(
+        _outcome("configured-structured-default-model", specialist=specialist)
+    )
+
+    reviewers = configured_reviewers(
+        reviewer_output_mode="litellm_structured",
+        reviewer_model=None,
+        model_client=client,
+    )
+
+    assert isinstance(reviewers[0], StructuredReviewerAdapter)
+    assert reviewers[0].spec.model == DEFAULT_STRUCTURED_REVIEWER_MODEL
+    result = reviewers[0].review(
+        CursorInvocationRequest(
+            task_id="configured-structured-default-model",
+            gate="outcome_review",
+            instruction="Review.",
+            cwd=tmp_path,
+            expected_specialists=(specialist,),
+        )
+    )
+    assert result.probe.ok
+    assert client.requests
+    assert client.requests[0].model == DEFAULT_STRUCTURED_REVIEWER_MODEL

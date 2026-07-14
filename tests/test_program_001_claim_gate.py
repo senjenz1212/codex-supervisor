@@ -10,6 +10,7 @@ import yaml
 from supervisor.claim_gate import (
     BUSINESS_VALUE_PROTOCOL_SCHEMA_VERSION,
     CANARY_RESULT_SCHEMA_VERSION,
+    ClaimGateError,
     ClaimLevel,
     DEFAULT_CLAIM_RULES,
     FROZEN_CONTROL_RECEIPT_SCHEMA_VERSION,
@@ -351,6 +352,64 @@ def test_validate_derived_report_recomputes_receipt_and_managed_flags(
             evidence_root=tmp_path,
             **_claim_gate_kwargs(ledger_resolver),
         )
+
+
+def test_validate_derived_report_rejects_malformed_receipt_digest(
+    tmp_path: Path,
+) -> None:
+    bundle, ledger_resolver = _causal_bundle(tmp_path)
+    report = ClaimGate.derive_report(
+        {"schema_version": "example-report/v1"},
+        bundle,
+        evidence_root=tmp_path,
+        **_claim_gate_kwargs(ledger_resolver),
+    )
+
+    for forged_digest in ("é" * 64, "z" * 64, "abc123", None):
+        forged_receipt = {
+            **report,
+            "claim_gate": {
+                **report["claim_gate"],
+                "evidence_bundle_sha256": forged_digest,
+            },
+        }
+        with pytest.raises(
+            InvalidClaimGateReceiptError,
+            match="evidence bundle hash does not match",
+        ):
+            ClaimGate.validate_derived_report(
+                forged_receipt,
+                bundle,
+                evidence_root=tmp_path,
+                **_claim_gate_kwargs(ledger_resolver),
+            )
+
+
+def test_non_serializable_evidence_bundle_rejected_as_claim_gate_error(
+    tmp_path: Path,
+) -> None:
+    for bad_bundle in (
+        {"artifact": object()},
+        {"metric": float("nan")},
+    ):
+        with pytest.raises(
+            ClaimGateError,
+            match="not canonically JSON-serializable",
+        ):
+            ClaimGate.derive_report(
+                {"schema_version": "example-report/v1"},
+                bad_bundle,
+                evidence_root=tmp_path,
+            )
+        with pytest.raises(
+            ClaimGateError,
+            match="not canonically JSON-serializable",
+        ):
+            ClaimGate.govern_report(
+                {"schema_version": "example-report/v1"},
+                bad_bundle,
+                evidence_root=tmp_path,
+            )
 
 
 def test_govern_report_receipts_legacy_nested_claim_fields() -> None:

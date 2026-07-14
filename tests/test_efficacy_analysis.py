@@ -434,6 +434,37 @@ def test_confirmation_size_is_frozen_from_pilot_discordance_not_attempt_count() 
     assert plan.plan_hash
 
 
+def test_confirmation_plan_supports_minimum_preregistered_win_rate() -> None:
+    pilot = PilotEstimate(
+        task_count=80,
+        discordant_task_count=16,
+        verifier_flake_count=1,
+        infrastructure_failure_count=2,
+        mean_cost_by_arm={"A": 0.8, "B": 1.2, "C": 1.0},
+        mean_latency_ms_by_arm={"A": 900.0, "B": 1200.0, "C": 1000.0},
+        mean_risk_cost_by_arm={"A": 0.0, "B": 0.02, "C": 0.01},
+        task_ids=tuple(f"pilot-{index}" for index in range(80)),
+        canonical_task_ids=tuple(f"{index:064x}" for index in range(80)),
+    )
+
+    plan = derive_confirmation_plan(
+        pilot,
+        alternative_b_win_rate=0.55,
+    )
+
+    assert plan.required_discordant_pairs == 1055
+    assert plan.total_unique_tasks >= plan.required_discordant_pairs
+    assert plan.total_arm_runs == plan.total_unique_tasks * 3
+    assert plan.plan_hash
+    before = exact_discordant_pairs_required.cache_info().hits
+    assert exact_discordant_pairs_required(
+        win_rate=0.55,
+        alpha=0.05,
+        power=0.90,
+    ) == 1055
+    assert exact_discordant_pairs_required.cache_info().hits > before
+
+
 @pytest.mark.parametrize(
     "kwargs",
     [
